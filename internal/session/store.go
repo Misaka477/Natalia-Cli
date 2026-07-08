@@ -1,0 +1,154 @@
+package session
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/aquama/natalia-cli/internal/chat"
+)
+
+type Session struct {
+	ID        string    `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Title     string    `json:"title,omitempty"`
+	Model     string    `json:"model"`
+	Dir       string    `json:"-"`
+}
+
+type SessionStore struct {
+	BaseDir string
+}
+
+func NewStore() (*SessionStore, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	dir := filepath.Join(home, ".config", "natalia-cli", "sessions")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, err
+	}
+	return &SessionStore{BaseDir: dir}, nil
+}
+
+func (s *SessionStore) NewSession(model string) *Session {
+	id := fmt.Sprintf("%d", time.Now().UnixNano())
+	dir := filepath.Join(s.BaseDir, id)
+	os.MkdirAll(dir, 0755)
+
+	sess := &Session{
+		ID:        id,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Model:     model,
+		Dir:       dir,
+	}
+	s.writeMeta(sess)
+	return sess
+}
+
+func (s *SessionStore) List() []Session {
+	entries, err := os.ReadDir(s.BaseDir)
+	if err != nil {
+		return nil
+	}
+	var sessions []Session
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		meta, err := s.readMeta(e.Name())
+		if err != nil {
+			continue
+		}
+		sessions = append(sessions, *meta)
+	}
+	sort.Slice(sessions, func(i, j int) bool {
+		return sessions[i].UpdatedAt.After(sessions[j].UpdatedAt)
+	})
+	return sessions
+}
+
+func (s *SessionStore) AppendMessage(sessionID string, msg chat.Message) error {
+	dir := filepath.Join(s.BaseDir, sessionID)
+	f, err := os.OpenFile(filepath.Join(dir, "context.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(append(data, '\n')); err != nil {
+		return err
+	}
+	meta, err := s.readMeta(sessionID)
+	if err == nil {
+		meta.UpdatedAt = time.Now()
+		s.writeMeta(meta)
+	}
+	return nil
+}
+
+func (s *SessionStore) LoadMessages(sessionID string) ([]chat.Message, error) {
+	dir := filepath.Join(s.BaseDir, sessionID)
+	data, err := os.ReadFile(filepath.Join(dir, "context.jsonl"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	messages := make([]chat.Message, 0, len(lines))
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		var msg chat.Message
+		if err := json.Unmarshal([]byte(line), &msg); err != nil {
+			continue
+		}
+		messages = append(messages, msg)
+	}
+	return messages, nil
+}
+
+func (s *SessionStore) Cleanup(maxSessions int) {
+	sessions := s.List()
+	if len(sessions) <= maxSessions {
+		return
+	}
+	for _, sess := range sessions[maxSessions:] {
+		os.RemoveAll(sess.Dir)
+	}
+}
+
+func (s *SessionStore) readMeta(id string) (*Session, error) {
+	dir := filepath.Join(s.BaseDir, id)
+	data, err := os.ReadFile(filepath.Join(dir, "meta.json"))
+	if err != nil {
+		return nil, err
+	}
+	var sess Session
+	if err := json.Unmarshal(data, &sess); err != nil {
+		return nil, err
+	}
+	sess.Dir = dir
+	return &sess, nil
+}
+
+func (s *SessionStore) writeMeta(sess *Session) error {
+	data, err := json.Marshal(sess)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(sess.Dir, "meta.json"), data, 0644)
+}
