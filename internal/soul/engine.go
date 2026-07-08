@@ -6,10 +6,11 @@ import (
 	"io"
 	"strings"
 
+	"github.com/aquama/natalia-cli/internal/approval"
 	"github.com/aquama/natalia-cli/internal/chat"
 	"github.com/aquama/natalia-cli/internal/compaction"
-	"github.com/aquama/natalia-cli/internal/approval"
 	"github.com/aquama/natalia-cli/internal/llm"
+	"github.com/aquama/natalia-cli/internal/rule"
 	"github.com/aquama/natalia-cli/internal/toolset"
 )
 
@@ -60,6 +61,9 @@ type Engine struct {
 
 	// Approval
 	Approver *approval.Approver
+
+	// Rule
+	Rule       *rule.Rule
 
 	// Compaction
 	Compactor      *compaction.SimpleCompaction
@@ -193,6 +197,20 @@ func (e *Engine) agentLoop() *Outcome {
 	return &Outcome{StopReason: "max_steps", FinalMessage: "达到最大步骤数"}
 }
 
+func (e *Engine) getToolDefs() []llm.ToolDef {
+	defs := e.Tools.ToToolDefs()
+	if e.Rule == nil {
+		return defs
+	}
+	filtered := make([]llm.ToolDef, 0, len(defs))
+	for _, d := range defs {
+		if e.Rule.ToolFilter(d.Function.Name) {
+			filtered = append(filtered, d)
+		}
+	}
+	return filtered
+}
+
 func (e *Engine) step() *Outcome {
 	e.Context.StepCount++
 	e.log("[ENGINE] step %d: %d messages in context", e.Context.StepCount, len(e.Context.Messages))
@@ -204,7 +222,7 @@ func (e *Engine) step() *Outcome {
 	if e.Stream && e.OnToken != nil {
 		msg, usage, err = e.streamStep()
 	} else {
-		msg, usage, err = e.LLM.Chat(e.Context, e.Tools.ToToolDefs(), false)
+		msg, usage, err = e.LLM.Chat(e.Context, e.getToolDefs(), false)
 	}
 
 	if err != nil {
@@ -242,7 +260,7 @@ func (e *Engine) step() *Outcome {
 }
 
 func (e *Engine) streamStep() (*chat.Message, *llm.Usage, error) {
-	ch := e.LLM.ChatStream(e.Context, e.Tools.ToToolDefs())
+	ch := e.LLM.ChatStream(e.Context, e.getToolDefs())
 
 	var contentBuf strings.Builder
 	var toolCalls []chat.ToolCall
@@ -306,6 +324,18 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 	tool, ok := e.Tools.Get(name)
 	if !ok {
 		result := fmt.Sprintf("错误：工具 %s 不存在", name)
+		e.Context.Messages = append(e.Context.Messages, chat.Message{
+			Role:       chat.RoleTool,
+			ToolCallID: tc.ID,
+			Content:    result,
+			Name:       name,
+		})
+		return nil
+	}
+
+	// Rule check: tool not allowed in current mode
+	if e.Rule != nil && !e.Rule.ToolFilter(name) {
+		result := fmt.Sprintf("当前模式 %q 不允许使用工具 %s", e.Rule.Name, name)
 		e.Context.Messages = append(e.Context.Messages, chat.Message{
 			Role:       chat.RoleTool,
 			ToolCallID: tc.ID,

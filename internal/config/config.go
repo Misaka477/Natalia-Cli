@@ -31,6 +31,7 @@ type Profile struct {
 	SystemPrompt    string   `yaml:"system_prompt,omitempty"`
 	WorkDir         string   `yaml:"work_dir,omitempty"`
 	AutoApprove     string   `yaml:"auto_approve"`
+	Rule            string   `yaml:"rule,omitempty"`
 }
 
 type Config struct {

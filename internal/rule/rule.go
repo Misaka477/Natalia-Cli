@@ -1,0 +1,122 @@
+package rule
+
+import "fmt"
+
+type Rule struct {
+	Name        string
+	DisplayName string
+	Prompt      string
+	ToolFilter  func(string) bool
+}
+
+var codeTools = map[string]bool{
+	"read_file": true, "write_file": true, "edit_file": true,
+	"glob": true, "grep": true, "run_shell": true,
+	"web_fetch": true, "web_search": true,
+	"todo_set": true, "todo_add": true, "todo_done": true, "todo_list": true,
+}
+
+var readTools = map[string]bool{
+	"read_file": true, "glob": true, "grep": true,
+	"web_fetch": true, "web_search": true,
+	"todo_list": true,
+}
+
+var chatTools = map[string]bool{
+	"web_search": true,
+	"todo_list": true,
+}
+
+func allTools(name string) bool { return true }
+
+func makeFilter(allowed map[string]bool) func(string) bool {
+	return func(name string) bool {
+		_, ok := allowed[name]
+		return ok
+	}
+}
+
+var Rules = []Rule{
+	{
+		Name:        "code",
+		DisplayName: "编程模式",
+		Prompt:      `你是 Natalia CLI，一个运行在用户电脑上的交互式编程助手。
+
+你的核心目标是通过调用工具来帮助用户完成软件工程任务。对于涉及文件、代码、命令执行的问题，必须调用工具来实际操作，而不是仅用文字描述。
+
+可用的工具：文件读写、代码搜索、shell 命令、网页获取、任务清单。
+
+规则：
+- 文件操作必须调用工具，不要只回复文字
+- 调用工具后根据结果决定下一步行动
+- 简单的问候可以直接回复`,
+		ToolFilter: makeFilter(codeTools),
+	},
+	{
+		Name:        "ask",
+		DisplayName: "问答模式",
+		Prompt:      `你是 Natalia CLI，一个专注于回答问题的助手。
+
+你只能使用只读工具。你可以读取文件、搜索代码、搜索网络来获取信息回答问题。
+
+注意：你不能修改任何文件或执行命令。`,
+		ToolFilter: makeFilter(readTools),
+	},
+	{
+		Name:        "plan",
+		DisplayName: "规划模式",
+		Prompt:      `你是 Natalia CLI，一个专注于架构设计和任务规划的助手。
+
+在此模式下你只能读取文件，不能做任何修改。你的任务是：
+1. 理解项目结构和代码
+2. 分析需求
+3. 制定实施方案
+4. 输出规划文档
+
+完成规划后必须通过 /sandbox 或让用户切换到 code 模式来执行。`,
+		ToolFilter: makeFilter(readTools),
+	},
+	{
+		Name:        "debug",
+		DisplayName: "调试模式",
+		Prompt:      `你是 Natalia CLI，一个专注于调试和问题排查的助手。
+
+你有完整的工具权限，但应该优先做以下操作：
+1. 读取错误信息
+2. 搜索相关代码
+3. 分析根因
+4. 提出修复方案并执行
+
+调试步骤：
+1. 复现问题
+2. 定位根因
+3. 实施修复
+4. 验证修复`,
+		ToolFilter: makeFilter(codeTools),
+	},
+	{
+		Name:        "chat",
+		DisplayName: "聊天模式",
+		Prompt:      `你是 Natalia CLI，一个友好的聊天助手。
+
+此模式下你只能进行对话和网络搜索，不能修改任何文件或执行命令。`,
+		ToolFilter: makeFilter(chatTools),
+	},
+}
+
+func Get(name string) (*Rule, error) {
+	for _, r := range Rules {
+		if r.Name == name {
+			return &r, nil
+		}
+	}
+	return nil, fmt.Errorf("未知规则: %s", name)
+}
+
+func List() []string {
+	names := make([]string, len(Rules))
+	for i, r := range Rules {
+		names[i] = fmt.Sprintf("%s (%s)", r.Name, r.DisplayName)
+	}
+	return names
+}
