@@ -1,5 +1,12 @@
 package approval
 
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"strings"
+)
+
 type Mode string
 
 const (
@@ -7,6 +14,12 @@ const (
 	ModeAsk      Mode = "ask"
 	ModeReadOnly Mode = "read_only"
 )
+
+var WriteTools = map[string]bool{
+	"write_file": true,
+	"edit_file":  true,
+	"run_shell":  true,
+}
 
 type Approver struct {
 	Mode Mode
@@ -16,14 +29,24 @@ func New(mode Mode) *Approver {
 	return &Approver{Mode: mode}
 }
 
-func (a *Approver) Request(action, description string) bool {
+func (a *Approver) Request(toolName, description string) bool {
 	switch a.Mode {
 	case ModeFuck:
 		return true
 	case ModeReadOnly:
 		return false
-	default: // ask
-		// TODO: implement interactive approval prompt
-		return true
+	default:
+		return a.interactivePrompt(toolName, description)
 	}
+}
+
+func (a *Approver) interactivePrompt(tool, desc string) bool {
+	fmt.Fprintf(os.Stderr, "\n[审批] %s: %s\n", tool, desc)
+	fmt.Fprint(os.Stderr, "允许执行？[Y/n] ")
+
+	reader := bufio.NewReader(os.Stdin)
+	response, _ := reader.ReadString('\n')
+	response = strings.TrimSpace(strings.ToLower(response))
+
+	return response != "n" && response != "no"
 }

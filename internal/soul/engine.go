@@ -8,6 +8,7 @@ import (
 
 	"github.com/aquama/natalia-cli/internal/chat"
 	"github.com/aquama/natalia-cli/internal/compaction"
+	"github.com/aquama/natalia-cli/internal/approval"
 	"github.com/aquama/natalia-cli/internal/llm"
 	"github.com/aquama/natalia-cli/internal/toolset"
 )
@@ -50,6 +51,15 @@ type Engine struct {
 
 	Debug bool
 	Log   func(format string, args ...any)
+
+	// Snapshot
+	Snapshotter interface {
+		Checkpoint(step int, files []string) (string, error)
+		Rollback(step int) error
+	}
+
+	// Approval
+	Approver *approval.Approver
 
 	// Compaction
 	Compactor      *compaction.SimpleCompaction
@@ -130,6 +140,11 @@ func (e *Engine) agentLoop() *Outcome {
 	e.log("[ENGINE] agentLoop: starting (max %d steps)", e.Context.MaxSteps)
 	for e.Context.StepCount < e.Context.MaxSteps {
 		cp := e.Context.SaveCheckpoint()
+
+		// Snapshot checkpoint before step
+		if e.Snapshotter != nil {
+			e.Snapshotter.Checkpoint(e.Context.StepCount, nil)
+		}
 
 		// Compact if needed
 		if e.AutoCompact && e.Compactor != nil && e.LLM != nil && e.MaxContextSize > 0 {
@@ -300,6 +315,22 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 		return nil
 	}
 
+	// Approval check for write tools
+	if e.Approver != nil && approval.WriteTools[name] {
+		desc := fmt.Sprintf("%s %v", name, args)
+		if !e.Approver.Request(name, desc) {
+			result := fmt.Sprintf("操作被用户拒绝: %s %v", name, args)
+			e.Context.Messages = append(e.Context.Messages, chat.Message{
+				Role:       chat.RoleTool,
+				ToolCallID: tc.ID,
+				Content:    result,
+				Name:       name,
+			})
+			e.log("[ENGINE] tool rejected: %s", name)
+			return nil
+		}
+	}
+
 	result, err := tool.Execute(args)
 	errMsg := ""
 	if err != nil {
@@ -349,4 +380,21 @@ func (e *Engine) CompactNow() (string, error) {
 	}
 	e.Context.Messages = result.Messages
 	return fmt.Sprintf("压缩完成，估计 %d tokens", result.EstimatedTokens), nil
+}
+
+func (e *Engine) RollbackTo(step int) (string, error) {
+	if e.Snapshotter == nil {
+		return "", fmt.Errorf("快照系统未启用")
+	}
+	if err := e.Snapshotter.Rollback(step); err != nil {
+		return "", fmt.Errorf("文件恢复失败: %w", err)
+	}
+	// Truncate context to step
+	for e.Context.StepCount > step {
+		e.Context.StepCount--
+		cp := e.Context.SaveCheckpoint()
+		e.Context.Messages = cp.Messages
+	}
+	e.Context.StepCount = step
+	return fmt.Sprintf("已回退到第 %d 步", step), nil
 }

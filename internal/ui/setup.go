@@ -171,6 +171,10 @@ func editProfile(cfg *config.Config) {
 		if pr.Stream {
 			streamLabel = "关闭流式输出"
 		}
+		approvalLabel := fmt.Sprintf("审批模式: %s", pr.AutoApprove)
+		if pr.AutoApprove == "" {
+			approvalLabel = "审批模式: ask"
+		}
 		opts := []string{
 			"切换配置",
 			"重命名配置",
@@ -178,6 +182,7 @@ func editProfile(cfg *config.Config) {
 			"API Key",
 			thinkingLabel,
 			streamLabel,
+			approvalLabel,
 			fmt.Sprintf("温度 (%.1f)", pr.Temperature),
 			fmt.Sprintf("最大令牌 (%d)", pr.MaxTokens),
 			fmt.Sprintf("Top P (%.1f)", pr.TopP),
@@ -193,7 +198,7 @@ func editProfile(cfg *config.Config) {
 			if pr.ReasoningEffort != "" {
 				effortLabel = "推理强度: " + pr.ReasoningEffort
 			}
-			opts = append(opts[:5], append([]string{effortLabel}, opts[5:]...)...)
+			opts = append(opts[:6], append([]string{effortLabel}, opts[6:]...)...)
 		}
 		if err := ask(&survey.Select{Message: "修改配置", Options: opts}, &action); err != nil {
 			return
@@ -254,6 +259,15 @@ func editProfile(cfg *config.Config) {
 			}
 		case strings.Contains(action, "流式"):
 			pr.Stream = !pr.Stream
+		case strings.HasPrefix(action, "审批模式"):
+			modes := []string{"fuck", "ask", "read_only"}
+			current := pr.AutoApprove
+			if current == "" {
+				current = "ask"
+			}
+			selected := current
+			ask(&survey.Select{Message: "审批模式", Options: modes, Default: current}, &selected)
+			pr.AutoApprove = selected
 		case strings.HasPrefix(action, "温度"):
 			v := fmt.Sprintf("%.1f", pr.Temperature)
 			askInput("温度 (0-2)", &v)
