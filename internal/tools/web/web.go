@@ -61,15 +61,10 @@ func (t *Search) Execute(args map[string]any) (string, error) {
 
 	if SearchBaseURL != "" {
 		results, err = searchCustom(query, limit, includeContent == "true")
-	} else if SearchAPIKey != "" {
-		switch SearchEngine {
-		case "google":
-			results, err = searchGoogle(query, limit)
-		default:
-			results, err = searchDuckDuckGo(query, limit)
-		}
+	} else if SearchAPIKey != "" && SearchEngine == "google" {
+		results, err = searchGoogle(query, limit)
 	} else {
-		return fmt.Sprintf("搜索: %s\n\n要启用网络搜索，请设置 SEARCH_API_KEY 环境变量。\n也可以使用 web_fetch 手动获取网页内容。", query), nil
+		results, err = searchDuckDuckGo(query, limit)
 	}
 
 	if err != nil {
@@ -176,42 +171,134 @@ func searchGoogle(query string, limit int) ([]SearchResult, error) {
 }
 
 func searchDuckDuckGo(query string, limit int) ([]SearchResult, error) {
+	// Try instant answer API first (faster, no key needed)
 	apiURL := fmt.Sprintf("https://api.duckduckgo.com/?q=%s&format=json&no_html=1&skip_disambig=1",
 		url.QueryEscape(query))
 	resp, err := http.Get(apiURL)
+	if err == nil {
+		defer resp.Body.Close()
+		var ddg struct {
+			Abstract       string `json:"Abstract"`
+			AbstractURL    string `json:"AbstractURL"`
+			RelatedTopics []any  `json:"RelatedTopics"`
+		}
+		json.NewDecoder(resp.Body).Decode(&ddg)
+
+		var results []SearchResult
+		if ddg.Abstract != "" {
+			results = append(results, SearchResult{
+				Title: "摘要", URL: ddg.AbstractURL,
+				Snippet: ddg.Abstract,
+			})
+		}
+		for _, rt := range ddg.RelatedTopics {
+			if len(results) >= limit {
+				break
+			}
+			switch v := rt.(type) {
+			case map[string]any:
+				if text, ok := v["Text"].(string); ok {
+					results = append(results, SearchResult{
+						Title: truncate(text, 60), Snippet: text,
+					})
+				}
+			}
+		}
+		if len(results) > 0 {
+			return results, nil
+		}
+	}
+
+	// Fallback: scrape HTML search results
+	return searchDuckDuckGoHTML(query, limit)
+}
+
+func searchDuckDuckGoHTML(query string, limit int) ([]SearchResult, error) {
+	url := fmt.Sprintf("https://html.duckduckgo.com/html/?q=%s", url.QueryEscape(query))
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+	req.Header.Set("Accept", "text/html")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	var ddg struct {
-		Abstract       string `json:"Abstract"`
-		AbstractURL    string `json:"AbstractURL"`
-		RelatedTopics []any  `json:"RelatedTopics"`
-	}
-	json.NewDecoder(resp.Body).Decode(&ddg)
+	body, _ := io.ReadAll(resp.Body)
+	html := string(body)
 
 	var results []SearchResult
-	if ddg.Abstract != "" {
+
+	// Simple extraction: find result links
+	for i := 0; i < len(html); {
+		idx := strings.Index(html[i:], `class="result__a"`)
+		if idx < 0 {
+			break
+		}
+		i += idx
+		titleStart := strings.Index(html[i:], ">")
+		if titleStart < 0 {
+			break
+		}
+		titleStart += i + 1
+		titleEnd := strings.Index(html[titleStart:], "</a>")
+		if titleEnd < 0 {
+			break
+		}
+		title := stripTags(html[titleStart : titleStart+titleEnd])
+		i = titleStart + titleEnd
+
+		snippet := ""
+		si := strings.Index(html[i:], `class="result__snippet"`)
+		if si >= 0 {
+			s := i + si
+			snipStart := strings.Index(html[s:], ">")
+			if snipStart >= 0 {
+				snipStart += s + 1
+				snipEnd := strings.Index(html[snipStart:], "</a>")
+				if snipEnd < 0 {
+					snipEnd = strings.Index(html[snipStart:], "</span>")
+				}
+				if snipEnd >= 0 {
+					snippet = stripTags(html[snipStart : snipStart+snipEnd])
+				}
+			}
+		}
+
 		results = append(results, SearchResult{
-			Title: "摘要", URL: ddg.AbstractURL,
-			Snippet: ddg.Abstract,
+			Title:   strings.TrimSpace(title),
+			Snippet: strings.TrimSpace(snippet),
 		})
-	}
-	for _, rt := range ddg.RelatedTopics {
 		if len(results) >= limit {
 			break
 		}
-		switch v := rt.(type) {
-		case map[string]any:
-			if text, ok := v["Text"].(string); ok {
-				results = append(results, SearchResult{
-					Title: truncate(text, 60), Snippet: text,
-				})
-			}
-		}
+	}
+
+	if len(results) == 0 {
+		return nil, nil
 	}
 	return results, nil
+}
+
+func stripTags(s string) string {
+	var b strings.Builder
+	inTag := false
+	for _, r := range s {
+		if r == '<' {
+			inTag = true
+			continue
+		}
+		if r == '>' {
+			inTag = false
+			continue
+		}
+		if !inTag {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 type Fetch struct{}
