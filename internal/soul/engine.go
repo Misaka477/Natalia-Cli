@@ -219,6 +219,11 @@ func (e *Engine) getToolDefs() []llm.ToolDef {
 	return filtered
 }
 
+func (e *Engine) Step(ctx context.Context) *Outcome {
+	e.ctx = ctx
+	return e.step()
+}
+
 func (e *Engine) step() *Outcome {
 	e.Context.StepCount++
 	e.log("[ENGINE] step %d: %d messages in context", e.Context.StepCount, len(e.Context.Messages))
