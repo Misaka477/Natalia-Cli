@@ -260,7 +260,7 @@ func editProfile(cfg *config.Config) {
 		case strings.Contains(action, "流式"):
 			pr.Stream = !pr.Stream
 		case strings.HasPrefix(action, "审批模式"):
-			modes := []string{"fuck", "ask", "read_only"}
+			modes := []string{"just_do_it", "ask", "read_only"}
 			current := pr.AutoApprove
 			if current == "" {
 				current = "ask"

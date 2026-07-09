@@ -10,7 +10,7 @@ import (
 type Mode string
 
 const (
-	ModeFuck     Mode = "fuck"
+	ModeJustDoIt Mode = "just_do_it"
 	ModeAsk      Mode = "ask"
 	ModeReadOnly Mode = "read_only"
 )
@@ -31,7 +31,7 @@ func New(mode Mode) *Approver {
 
 func (a *Approver) Request(toolName, description string) bool {
 	switch a.Mode {
-	case ModeFuck:
+	case ModeJustDoIt:
 		return true
 	case ModeReadOnly:
 		return false

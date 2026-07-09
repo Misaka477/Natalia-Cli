@@ -442,7 +442,6 @@ func (e *Engine) RollbackTo(step int) (string, error) {
 	if err := e.Snapshotter.Rollback(step); err != nil {
 		return "", fmt.Errorf("文件恢复失败: %w", err)
 	}
-	// Truncate context to step
 	for e.Context.StepCount > step {
 		e.Context.StepCount--
 		cp := e.Context.SaveCheckpoint()

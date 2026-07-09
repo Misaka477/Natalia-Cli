@@ -34,6 +34,7 @@ func DefaultIgnore() *IgnoreMatcher {
 	return &IgnoreMatcher{
 		Patterns: []string{
 			".git/",
+			"PLAN.md",
 			"node_modules/",
 			"__pycache__/",
 			"*.pyc",

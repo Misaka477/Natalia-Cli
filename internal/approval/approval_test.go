@@ -5,14 +5,14 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	a := New(ModeFuck)
-	if a.Mode != ModeFuck {
-		t.Errorf("expected ModeFuck, got %s", a.Mode)
+	a := New(ModeJustDoIt)
+	if a.Mode != ModeJustDoIt {
+		t.Errorf("expected ModeJustDoIt, got %s", a.Mode)
 	}
 }
 
 func TestFuckMode(t *testing.T) {
-	a := New(ModeFuck)
+	a := New(ModeJustDoIt)
 	if !a.Request("write_file", "test") {
 		t.Error("fuck mode should approve everything")
 	}
