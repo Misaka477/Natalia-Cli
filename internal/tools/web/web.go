@@ -14,14 +14,210 @@ import (
 )
 
 var (
-	SearchAPIKey  = os.Getenv("SEARCH_API_KEY")
-	SearchEngine  = os.Getenv("SEARCH_ENGINE") // "google", "bing", "duckduckgo"
+	SearchAPIKey = os.Getenv("SEARCH_API_KEY")
+	SearchEngine = os.Getenv("SEARCH_ENGINE")
+	SearchBaseURL = os.Getenv("SEARCH_BASE_URL")
 )
+
+type SearchResult struct {
+	Title   string
+	URL     string
+	Snippet string
+	Content string
+	Date    string
+	Source  string
+}
+
+type Search struct{}
+
+func (t *Search) Name() string        { return "web_search" }
+func (t *Search) Description() string { return "搜索网络，返回相关结果列表。支持设置 SEARCH_API_KEY 和 SEARCH_ENGINE 环境变量来配置搜索引擎" }
+func (t *Search) Required() []string  { return []string{"query"} }
+func (t *Search) Parameters() map[string]llm.Property {
+	return map[string]llm.Property{
+		"query":          {Type: "string", Description: "搜索关键词"},
+		"limit":          {Type: "string", Description: "可选，返回结果数量，默认 5"},
+		"include_content": {Type: "string", Description: "可选，设为 true 时同时抓取页面内容（消耗更多 token）"},
+	}
+}
+func (t *Search) Execute(args map[string]any) (string, error) {
+	query, _ := args["query"].(string)
+	if query == "" {
+		return "", fmt.Errorf("query 是必填参数")
+	}
+
+	limit := 5
+	if l, ok := args["limit"].(string); ok {
+		fmt.Sscanf(l, "%d", &limit)
+	}
+	if limit < 1 || limit > 20 {
+		limit = 5
+	}
+
+	includeContent, _ := args["include_content"].(string)
+
+	var results []SearchResult
+	var err error
+
+	if SearchBaseURL != "" {
+		results, err = searchCustom(query, limit, includeContent == "true")
+	} else if SearchAPIKey != "" {
+		switch SearchEngine {
+		case "google":
+			results, err = searchGoogle(query, limit)
+		default:
+			results, err = searchDuckDuckGo(query, limit)
+		}
+	} else {
+		return fmt.Sprintf("搜索: %s\n\n要启用网络搜索，请设置 SEARCH_API_KEY 环境变量。\n也可以使用 web_fetch 手动获取网页内容。", query), nil
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("搜索失败: %w", err)
+	}
+	if len(results) == 0 {
+		return fmt.Sprintf("未找到 %q 的相关结果", query), nil
+	}
+
+	var b strings.Builder
+	for i, r := range results {
+		if i > 0 {
+			b.WriteString("---\n")
+		}
+		b.WriteString(fmt.Sprintf("标题: %s\n", r.Title))
+		if r.Date != "" {
+			b.WriteString(fmt.Sprintf("日期: %s\n", r.Date))
+		}
+		b.WriteString(fmt.Sprintf("网址: %s\n", r.URL))
+		b.WriteString(fmt.Sprintf("摘要: %s\n", r.Snippet))
+		if r.Content != "" {
+			b.WriteString(fmt.Sprintf("\n%s\n", r.Content))
+		}
+	}
+	return b.String(), nil
+}
+
+func searchCustom(query string, limit int, includeContent bool) ([]SearchResult, error) {
+	body := map[string]any{
+		"text_query":           query,
+		"limit":                limit,
+		"enable_page_crawling": includeContent,
+	}
+
+	data, _ := json.Marshal(body)
+	req, _ := http.NewRequest("POST", SearchBaseURL, strings.NewReader(string(data)))
+	req.Header.Set("Content-Type", "application/json")
+	if SearchAPIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+SearchAPIKey)
+	}
+
+	client := &http.Client{Timeout: 180 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("search API returned status %d", resp.StatusCode)
+	}
+
+	var apiResp struct {
+		SearchResults []struct {
+			Title   string `json:"title"`
+			URL     string `json:"url"`
+			Snippet string `json:"snippet"`
+			Content string `json:"content,omitempty"`
+			Date    string `json:"date,omitempty"`
+		} `json:"search_results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return nil, err
+	}
+
+	results := make([]SearchResult, 0, len(apiResp.SearchResults))
+	for _, r := range apiResp.SearchResults {
+		results = append(results, SearchResult{
+			Title: r.Title, URL: r.URL, Snippet: r.Snippet,
+			Content: r.Content, Date: r.Date,
+		})
+	}
+	return results, nil
+}
+
+func searchGoogle(query string, limit int) ([]SearchResult, error) {
+	cx := os.Getenv("GOOGLE_CX")
+	apiURL := fmt.Sprintf("https://www.googleapis.com/customsearch/v1?key=%s&cx=%s&q=%s&num=%d",
+		SearchAPIKey, cx, url.QueryEscape(query), limit)
+	resp, err := http.Get(apiURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Items []struct {
+			Title   string `json:"title"`
+			Link    string `json:"link"`
+			Snippet string `json:"snippet"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	results := make([]SearchResult, 0, len(result.Items))
+	for _, item := range result.Items {
+		results = append(results, SearchResult{
+			Title: item.Title, URL: item.Link, Snippet: item.Snippet,
+		})
+	}
+	return results, nil
+}
+
+func searchDuckDuckGo(query string, limit int) ([]SearchResult, error) {
+	apiURL := fmt.Sprintf("https://api.duckduckgo.com/?q=%s&format=json&no_html=1&skip_disambig=1",
+		url.QueryEscape(query))
+	resp, err := http.Get(apiURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var ddg struct {
+		Abstract       string `json:"Abstract"`
+		AbstractURL    string `json:"AbstractURL"`
+		RelatedTopics []any  `json:"RelatedTopics"`
+	}
+	json.NewDecoder(resp.Body).Decode(&ddg)
+
+	var results []SearchResult
+	if ddg.Abstract != "" {
+		results = append(results, SearchResult{
+			Title: "摘要", URL: ddg.AbstractURL,
+			Snippet: ddg.Abstract,
+		})
+	}
+	for _, rt := range ddg.RelatedTopics {
+		if len(results) >= limit {
+			break
+		}
+		switch v := rt.(type) {
+		case map[string]any:
+			if text, ok := v["Text"].(string); ok {
+				results = append(results, SearchResult{
+					Title: truncate(text, 60), Snippet: text,
+				})
+			}
+		}
+	}
+	return results, nil
+}
 
 type Fetch struct{}
 
 func (t *Fetch) Name() string        { return "web_fetch" }
-func (t *Fetch) Description() string { return "获取指定 URL 的内容" }
+func (t *Fetch) Description() string { return "获取指定 URL 的网页内容，提取正文文本" }
 func (t *Fetch) Required() []string  { return []string{"url"} }
 func (t *Fetch) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
@@ -33,103 +229,87 @@ func (t *Fetch) Execute(args map[string]any) (string, error) {
 	if u == "" {
 		return "", fmt.Errorf("url 是必填参数")
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Get(u)
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	req, _ := http.NewRequest("GET", u, nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("获取失败: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return "", fmt.Errorf("HTTP %d: 页面无法访问", resp.StatusCode)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("读取失败: %w", err)
 	}
-	return string(body), nil
+
+	contentType := resp.Header.Get("Content-Type")
+	if strings.Contains(contentType, "text/plain") || strings.Contains(contentType, "text/markdown") {
+		return string(body), nil
+	}
+
+	text := stripHTML(string(body))
+	if text == "" {
+		return "无法从页面提取到有效内容（页面可能需要 JavaScript 渲染）", nil
+	}
+	return text, nil
 }
 
-type Search struct{}
-
-func (t *Search) Name() string        { return "web_search" }
-func (t *Search) Description() string { return "搜索网络。设置 SEARCH_API_KEY 环境变量以启用" }
-func (t *Search) Required() []string  { return []string{"query"} }
-func (t *Search) Parameters() map[string]llm.Property {
-	return map[string]llm.Property{
-		"query": {Type: "string", Description: "搜索关键词"},
-	}
-}
-func (t *Search) Execute(args map[string]any) (string, error) {
-	query, _ := args["query"].(string)
-	if query == "" {
-		return "", fmt.Errorf("query 是必填参数")
-	}
-	if SearchAPIKey == "" {
-		return searchWithFallback(query)
-	}
-	return searchWithAPI(query)
-}
-
-func searchWithFallback(query string) (string, error) {
-	return fmt.Sprintf("搜索: %s\n搜索结果需要配置 SEARCH_API_KEY 环境变量来启用网络搜索。目前可以使用 web_fetch 手动获取网页内容。", query), nil
-}
-
-func searchWithAPI(query string) (string, error) {
-	switch SearchEngine {
-	case "google":
-		return searchGoogle(query)
-	default:
-		return searchDuckDuckGo(query)
-	}
-}
-
-func searchGoogle(query string) (string, error) {
-	apiURL := fmt.Sprintf("https://www.googleapis.com/customsearch/v1?key=%s&cx=%s&q=%s",
-		SearchAPIKey, os.Getenv("GOOGLE_CX"), url.QueryEscape(query))
-	resp, err := http.Get(apiURL)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	var result map[string]any
-	json.NewDecoder(resp.Body).Decode(&result)
-	items, _ := result["items"].([]any)
+func stripHTML(html string) string {
 	var b strings.Builder
-	for _, item := range items {
-		it, _ := item.(map[string]any)
-		b.WriteString(fmt.Sprintf("- %s\n  %s\n", it["title"], it["link"]))
-	}
-	return b.String(), nil
-}
-
-func searchDuckDuckGo(query string) (string, error) {
-	apiURL := fmt.Sprintf("https://api.duckduckgo.com/?q=%s&format=json&no_html=1", url.QueryEscape(query))
-	resp, err := http.Get(apiURL)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	var result map[string]any
-	json.NewDecoder(resp.Body).Decode(&result)
-	abstract, _ := result["Abstract"].(string)
-	if abstract != "" {
-		return fmt.Sprintf("%s\n来源: %s", abstract, result["AbstractURL"]), nil
-	}
-	results, _ := result["RelatedTopics"].([]any)
-	var b strings.Builder
-	for _, r := range results {
-		rt, _ := r.(map[string]any)
-		if text, ok := rt["Text"].(string); ok {
-			b.WriteString(fmt.Sprintf("- %s\n", text))
+	inTag := false
+	inScript := false
+	for i := 0; i < len(html); i++ {
+		if inScript {
+			if i+8 < len(html) && strings.ToLower(html[i:i+9]) == "</script>" {
+				inScript = false
+				i += 8
+			}
+			continue
+		}
+		if i+6 < len(html) && strings.ToLower(html[i:i+7]) == "<script" {
+			inScript = true
+			continue
+		}
+		if html[i] == '<' {
+			inTag = true
+			continue
+		}
+		if html[i] == '>' {
+			inTag = false
+			continue
+		}
+		if !inTag {
+			b.WriteByte(html[i])
 		}
 	}
-	if b.Len() == 0 {
-		return fmt.Sprintf("未找到 %q 的搜索结果", query), nil
+
+	result := strings.TrimSpace(b.String())
+	lines := strings.Split(result, "\n")
+	var clean []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" {
+			clean = append(clean, trimmed)
+		}
 	}
-	return b.String(), nil
+	if len(clean) > 200 {
+		clean = clean[:200]
+	}
+	return strings.Join(clean, "\n")
 }
 
 type MediaFile struct{}
 
 func (t *MediaFile) Name() string        { return "read_media_file" }
-func (t *MediaFile) Description() string { return "读取媒体文件信息（图片尺寸、格式等）" }
+func (t *MediaFile) Description() string { return "读取媒体文件信息（图片尺寸、格式、大小等）" }
 func (t *MediaFile) Required() []string  { return []string{"path"} }
 func (t *MediaFile) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
@@ -145,22 +325,23 @@ func (t *MediaFile) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("文件不存在: %w", err)
 	}
-	size := info.Size()
-	ext := strings.ToLower(filepathExt(path))
-
-	result := fmt.Sprintf("文件: %s\n大小: %d bytes\n类型: %s\n", path, size, ext)
-
-	return result, nil
-}
-
-func filepathExt(path string) string {
+	ext := ""
 	for i := len(path) - 1; i >= 0; i-- {
 		if path[i] == '.' {
-			return path[i:]
+			ext = path[i:]
+			break
 		}
 		if path[i] == '/' || path[i] == '\\' {
 			break
 		}
 	}
-	return ""
+	return fmt.Sprintf("文件: %s\n大小: %d bytes\n类型: %s\n", path, info.Size(), ext), nil
+}
+
+func truncate(s string, n int) string {
+	runes := []rune(s)
+	if len(runes) <= n {
+		return s
+	}
+	return string(runes[:n-1]) + "…"
 }
