@@ -3,6 +3,7 @@ package llm
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -160,10 +161,10 @@ func NewClient(cfg Config) *Client {
 	}
 }
 
-func (c *Client) Chat(ctx *chat.Context, tools []ToolDef, stream bool) (*chat.Message, *Usage, error) {
+func (c *Client) Chat(ctx context.Context, chatCtx *chat.Context, tools []ToolDef, stream bool) (*chat.Message, *Usage, error) {
 	req := ChatRequest{
 		Model:       c.model,
-		Messages:    ctx.Messages,
+		Messages:    chatCtx.Messages,
 		Tools:       tools,
 		MaxTokens:   c.maxTokens,
 		Temperature: c.temperature,
@@ -176,12 +177,11 @@ func (c *Client) Chat(ctx *chat.Context, tools []ToolDef, stream bool) (*chat.Me
 		return nil, nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequest("POST", c.baseURL, bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, nil, fmt.Errorf("create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "text/event-stream")
 	httpReq.Header.Set(c.authHeader, "Bearer "+c.apiKey)
 	for k, v := range c.customHeaders {
 		httpReq.Header.Set(k, v)
@@ -195,7 +195,7 @@ func (c *Client) Chat(ctx *chat.Context, tools []ToolDef, stream bool) (*chat.Me
 	return c.chatStream(httpReq)
 }
 
-func (c *Client) ChatStream(ctx *chat.Context, tools []ToolDef) <-chan StreamEvent {
+func (c *Client) ChatStream(ctx context.Context, chatCtx *chat.Context, tools []ToolDef) <-chan StreamEvent {
 	ch := make(chan StreamEvent)
 
 	go func() {
@@ -203,7 +203,7 @@ func (c *Client) ChatStream(ctx *chat.Context, tools []ToolDef) <-chan StreamEve
 
 		req := ChatRequest{
 			Model:       c.model,
-			Messages:    ctx.Messages,
+			Messages:    chatCtx.Messages,
 			Tools:       tools,
 			MaxTokens:   c.maxTokens,
 			Temperature: c.temperature,
@@ -217,7 +217,7 @@ func (c *Client) ChatStream(ctx *chat.Context, tools []ToolDef) <-chan StreamEve
 			return
 		}
 
-		httpReq, err := http.NewRequest("POST", c.baseURL, bytes.NewReader(body))
+		httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL, bytes.NewReader(body))
 		if err != nil {
 			ch <- StreamEvent{Error: fmt.Errorf("create request: %w", err)}
 			return

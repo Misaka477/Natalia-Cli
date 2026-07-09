@@ -1,6 +1,7 @@
 package compaction
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -156,7 +157,7 @@ func (sc *SimpleCompaction) Compact(messages []chat.Message, llmClient *llm.Clie
 	}
 	ctx.Messages = append([]chat.Message{systemMsg}, ctx.Messages...)
 
-	msg, usage, err := llmClient.Chat(ctx, nil, false)
+	msg, usage, err := llmClient.Chat(context.Background(), ctx, nil, false)
 	if err != nil {
 		return nil, fmt.Errorf("compaction LLM call failed: %w", err)
 	}

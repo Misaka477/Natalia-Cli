@@ -1,12 +1,15 @@
 package rule
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type Rule struct {
 	Name        string
 	DisplayName string
 	Prompt      string
-	ToolFilter  func(string) bool
+	ToolFilter  func(name string, args map[string]any) bool
 }
 
 var codeTools = map[string]bool{
@@ -27,10 +30,10 @@ var chatTools = map[string]bool{
 	"todo_list": true,
 }
 
-func allTools(name string) bool { return true }
+func allTools(name string, args map[string]any) bool { return true }
 
-func makeFilter(allowed map[string]bool) func(string) bool {
-	return func(name string) bool {
+func makeFilter(allowed map[string]bool) func(string, map[string]any) bool {
+	return func(name string, args map[string]any) bool {
 		_, ok := allowed[name]
 		return ok
 	}
@@ -67,14 +70,26 @@ var Rules = []Rule{
 		DisplayName: "规划模式",
 		Prompt:      `你是 Natalia CLI，一个专注于架构设计和任务规划的助手。
 
-在此模式下你只能读取文件，不能做任何修改。你的任务是：
+你只能读取文件，或将规划文档写入 PLANS/ 目录。不允许修改项目代码。
+
+你的任务：
 1. 理解项目结构和代码
 2. 分析需求
 3. 制定实施方案
-4. 输出规划文档
+4. 将规划写入 PLANS/ 目录下的 .md 文件
 
-完成规划后必须通过 /sandbox 或让用户切换到 code 模式来执行。`,
-		ToolFilter: makeFilter(readTools),
+完成规划后让用户切换到 code 模式来执行。`,
+		ToolFilter: func(name string, args map[string]any) bool {
+			if allowed := readTools[name]; allowed {
+				return true
+			}
+			if name == "write_file" || name == "edit_file" {
+				if path, ok := args["path"].(string); ok {
+					return strings.HasPrefix(path, "PLANS/") || strings.Contains(path, "/PLANS/")
+				}
+			}
+			return false
+		},
 	},
 	{
 		Name:        "debug",

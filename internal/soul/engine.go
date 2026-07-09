@@ -1,6 +1,7 @@
 package soul
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -65,6 +66,10 @@ type Engine struct {
 	// Rule
 	Rule       *rule.Rule
 
+	// Cancellation
+	ctx     context.Context
+	cancel  context.CancelFunc
+
 	// Compaction
 	Compactor      *compaction.SimpleCompaction
 	MaxContextSize int
@@ -87,12 +92,15 @@ type Outcome struct {
 }
 
 func NewEngine(llmClient *llm.Client, tools *toolset.Registry) *Engine {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Engine{
 		Context: chat.NewContext(128000, 50),
 		LLM:     llmClient,
 		Tools:   tools,
 		Dedup:   toolset.NewDedup(),
 		Steer:   &SteerQueue{},
+		ctx:     ctx,
+		cancel:  cancel,
 	}
 }
 
@@ -204,7 +212,7 @@ func (e *Engine) getToolDefs() []llm.ToolDef {
 	}
 	filtered := make([]llm.ToolDef, 0, len(defs))
 	for _, d := range defs {
-		if e.Rule.ToolFilter(d.Function.Name) {
+		if e.Rule.ToolFilter(d.Function.Name, nil) {
 			filtered = append(filtered, d)
 		}
 	}
@@ -222,7 +230,7 @@ func (e *Engine) step() *Outcome {
 	if e.Stream && e.OnToken != nil {
 		msg, usage, err = e.streamStep()
 	} else {
-		msg, usage, err = e.LLM.Chat(e.Context, e.getToolDefs(), false)
+		msg, usage, err = e.LLM.Chat(e.ctx, e.Context, e.getToolDefs(), false)
 	}
 
 	if err != nil {
@@ -260,7 +268,7 @@ func (e *Engine) step() *Outcome {
 }
 
 func (e *Engine) streamStep() (*chat.Message, *llm.Usage, error) {
-	ch := e.LLM.ChatStream(e.Context, e.getToolDefs())
+	ch := e.LLM.ChatStream(e.ctx, e.Context, e.getToolDefs())
 
 	var contentBuf strings.Builder
 	var toolCalls []chat.ToolCall
@@ -334,7 +342,7 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 	}
 
 	// Rule check: tool not allowed in current mode
-	if e.Rule != nil && !e.Rule.ToolFilter(name) {
+	if e.Rule != nil && !e.Rule.ToolFilter(name, args) {
 		result := fmt.Sprintf("当前模式 %q 不允许使用工具 %s", e.Rule.Name, name)
 		e.Context.Messages = append(e.Context.Messages, chat.Message{
 			Role:       chat.RoleTool,
@@ -388,6 +396,16 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 }
 
 var debugWriter io.Writer = io.Discard
+
+func (e *Engine) Cancel() {
+	if e.cancel != nil {
+		e.cancel()
+	}
+}
+
+func (e *Engine) ResetCancel() {
+	e.ctx, e.cancel = context.WithCancel(context.Background())
+}
 
 func truncate(s string, n int) string {
 	runes := []rune(s)
