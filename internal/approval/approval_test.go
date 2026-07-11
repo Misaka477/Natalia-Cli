@@ -61,3 +61,18 @@ func TestDefaultMode(t *testing.T) {
 		t.Error("approver should not be nil")
 	}
 }
+
+func TestAskModeUsesRequestFunc(t *testing.T) {
+	a := New(ModeAsk)
+	called := false
+	a.RequestFunc = func(toolName, description string) bool {
+		called = true
+		return toolName == "write_file" && description == "write test"
+	}
+	if !a.Request("write_file", "write test") {
+		t.Fatal("expected request func approval")
+	}
+	if !called {
+		t.Fatal("expected request func to be called")
+	}
+}

@@ -38,13 +38,15 @@ type Property struct {
 }
 
 type ChatRequest struct {
-	Model       string          `json:"model"`
-	Messages    []chat.Message  `json:"messages"`
-	Tools       []ToolDef       `json:"tools,omitempty"`
-	MaxTokens   int             `json:"max_tokens,omitempty"`
-	Temperature float64         `json:"temperature,omitempty"`
-	TopP        float64         `json:"top_p,omitempty"`
-	Stream      bool            `json:"stream,omitempty"`
+	Model           string         `json:"model"`
+	Messages        []chat.Message `json:"messages"`
+	Tools           []ToolDef      `json:"tools,omitempty"`
+	MaxTokens       int            `json:"max_tokens,omitempty"`
+	Temperature     float64        `json:"temperature,omitempty"`
+	TopP            float64        `json:"top_p,omitempty"`
+	Stream          bool           `json:"stream,omitempty"`
+	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
+	ThinkingEnabled bool           `json:"thinking_enabled,omitempty"`
 }
 
 type ChatResponse struct {
@@ -73,16 +75,16 @@ type Chunk struct {
 }
 
 type ChunkChoice struct {
-	Index        int     `json:"index"`
-	Delta        Delta   `json:"delta"`
-	FinishReason string  `json:"finish_reason,omitempty"`
+	Index        int    `json:"index"`
+	Delta        Delta  `json:"delta"`
+	FinishReason string `json:"finish_reason,omitempty"`
 }
 
 type ToolCall struct {
-	ID       string         `json:"id,omitempty"`
-	Type     string         `json:"type,omitempty"`
-	Function ToolCallFunc   `json:"function,omitempty"`
-	Index    int            `json:"index,omitempty"`
+	ID       string       `json:"id,omitempty"`
+	Type     string       `json:"type,omitempty"`
+	Function ToolCallFunc `json:"function,omitempty"`
+	Index    int          `json:"index,omitempty"`
 }
 
 type ToolCallFunc struct {
@@ -98,35 +100,39 @@ type Usage struct {
 
 type StreamEvent struct {
 	Content   string
-	Reasoning string  // reasoning/thinking content
+	Reasoning string // reasoning/thinking content
 	ToolCalls []ToolCall
 	Done      bool
 	Error     error
 }
 
 type Client struct {
-	apiKey        string
-	baseURL       string
-	model         string
-	temperature   float64
-	maxTokens     int
-	topP          float64
-	authHeader    string
-	customHeaders map[string]string
-	http          *http.Client
+	apiKey          string
+	baseURL         string
+	model           string
+	temperature     float64
+	maxTokens       int
+	topP            float64
+	reasoningEffort string
+	thinkingEnabled bool
+	authHeader      string
+	customHeaders   map[string]string
+	http            *http.Client
 }
 
 type Config struct {
-	APIKey        string
-	BaseURL       string
-	Model         string
-	Temperature   float64
-	MaxTokens     int
-	TopP          float64
-	AuthHeader    string
-	CustomHeaders map[string]string
-	Timeout       time.Duration
-	Stream        bool
+	APIKey          string
+	BaseURL         string
+	Model           string
+	Temperature     float64
+	MaxTokens       int
+	TopP            float64
+	ReasoningEffort string
+	ThinkingEnabled bool
+	AuthHeader      string
+	CustomHeaders   map[string]string
+	Timeout         time.Duration
+	Stream          bool
 }
 
 func NewClient(cfg Config) *Client {
@@ -149,27 +155,31 @@ func NewClient(cfg Config) *Client {
 		cfg.CustomHeaders = make(map[string]string)
 	}
 	return &Client{
-		apiKey:        cfg.APIKey,
-		baseURL:       cfg.BaseURL,
-		model:         cfg.Model,
-		temperature:   cfg.Temperature,
-		maxTokens:     cfg.MaxTokens,
-		topP:          cfg.TopP,
-		authHeader:    cfg.AuthHeader,
-		customHeaders: cfg.CustomHeaders,
-		http:          &http.Client{Timeout: cfg.Timeout},
+		apiKey:          cfg.APIKey,
+		baseURL:         cfg.BaseURL,
+		model:           cfg.Model,
+		temperature:     cfg.Temperature,
+		maxTokens:       cfg.MaxTokens,
+		topP:            cfg.TopP,
+		reasoningEffort: cfg.ReasoningEffort,
+		thinkingEnabled: cfg.ThinkingEnabled,
+		authHeader:      cfg.AuthHeader,
+		customHeaders:   cfg.CustomHeaders,
+		http:            &http.Client{Timeout: cfg.Timeout},
 	}
 }
 
 func (c *Client) Chat(ctx context.Context, chatCtx *chat.Context, tools []ToolDef, stream bool) (*chat.Message, *Usage, error) {
 	req := ChatRequest{
-		Model:       c.model,
-		Messages:    chatCtx.Messages,
-		Tools:       tools,
-		MaxTokens:   c.maxTokens,
-		Temperature: c.temperature,
-		TopP:        c.topP,
-		Stream:      stream,
+		Model:           c.model,
+		Messages:        chatCtx.Messages,
+		Tools:           tools,
+		MaxTokens:       c.maxTokens,
+		Temperature:     c.temperature,
+		TopP:            c.topP,
+		Stream:          stream,
+		ReasoningEffort: c.reasoningEffort,
+		ThinkingEnabled: c.thinkingEnabled,
 	}
 
 	body, err := json.Marshal(req)
@@ -202,13 +212,15 @@ func (c *Client) ChatStream(ctx context.Context, chatCtx *chat.Context, tools []
 		defer close(ch)
 
 		req := ChatRequest{
-			Model:       c.model,
-			Messages:    chatCtx.Messages,
-			Tools:       tools,
-			MaxTokens:   c.maxTokens,
-			Temperature: c.temperature,
-			TopP:        c.topP,
-			Stream:      true,
+			Model:           c.model,
+			Messages:        chatCtx.Messages,
+			Tools:           tools,
+			MaxTokens:       c.maxTokens,
+			Temperature:     c.temperature,
+			TopP:            c.topP,
+			Stream:          true,
+			ReasoningEffort: c.reasoningEffort,
+			ThinkingEnabled: c.thinkingEnabled,
 		}
 
 		body, err := json.Marshal(req)
@@ -235,6 +247,15 @@ func (c *Client) ChatStream(ctx context.Context, chatCtx *chat.Context, tools []
 			return
 		}
 		defer resp.Body.Close()
+		stopCancelWatch := make(chan struct{})
+		defer close(stopCancelWatch)
+		go func() {
+			select {
+			case <-ctx.Done():
+				_ = resp.Body.Close()
+			case <-stopCancelWatch:
+			}
+		}()
 
 		if resp.StatusCode != 200 {
 			body, _ := io.ReadAll(resp.Body)
@@ -246,6 +267,10 @@ func (c *Client) ChatStream(ctx context.Context, chatCtx *chat.Context, tools []
 		var toolCallAccum map[int]*ToolCall
 		var streamDone bool
 		for scanner.Scan() {
+			if err := ctx.Err(); err != nil {
+				ch <- StreamEvent{Error: err}
+				return
+			}
 			line := scanner.Text()
 
 			if !strings.HasPrefix(line, "data: ") {
@@ -308,6 +333,10 @@ func (c *Client) ChatStream(ctx context.Context, chatCtx *chat.Context, tools []
 		}
 
 		if err := scanner.Err(); err != nil {
+			if ctx.Err() != nil {
+				ch <- StreamEvent{Error: ctx.Err()}
+				return
+			}
 			ch <- StreamEvent{Error: fmt.Errorf("read stream: %w", err)}
 			return
 		}
@@ -355,6 +384,16 @@ func (c *Client) chatStream(httpReq *http.Request) (*chat.Message, *Usage, error
 		return nil, nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
+	ctx := httpReq.Context()
+	stopCancelWatch := make(chan struct{})
+	defer close(stopCancelWatch)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = resp.Body.Close()
+		case <-stopCancelWatch:
+		}
+	}()
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
@@ -369,6 +408,9 @@ func (c *Client) chatStream(httpReq *http.Request) (*chat.Message, *Usage, error
 
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, err
+		}
 		line := scanner.Text()
 
 		if !strings.HasPrefix(line, "data: ") {
@@ -418,6 +460,9 @@ func (c *Client) chatStream(httpReq *http.Request) (*chat.Message, *Usage, error
 	}
 
 	if err := scanner.Err(); err != nil {
+		if ctx.Err() != nil {
+			return nil, nil, ctx.Err()
+		}
 		return nil, nil, fmt.Errorf("read stream: %w", err)
 	}
 

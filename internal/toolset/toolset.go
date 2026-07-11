@@ -104,6 +104,12 @@ func (d *Dedup) Count(name string, args map[string]any) int {
 	return d.repetitions[key]
 }
 
+func (d *Dedup) ResetTurn() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.repetitions = make(map[string]int)
+}
+
 func (d *Dedup) Check(name string, args map[string]any) (warn string, stop bool) {
 	count := d.Count(name, args)
 	switch {

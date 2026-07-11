@@ -8,7 +8,7 @@ import (
 func TestNewWorker(t *testing.T) {
 	w := &Worker{
 		ID:        "w1",
-		Rule:      "code",
+		Mode:      "code",
 		Task:      "test",
 		Status:    StatusIdle,
 		CreatedAt: time.Now(),
@@ -88,8 +88,14 @@ func TestStopResumeWorker(t *testing.T) {
 }
 
 func TestParseArgs(t *testing.T) {
-	m := parseArgs(`{"path": "test.txt"}`)
-	if m == nil {
-		t.Error("expected non-nil map")
+	m := parseArgs(`{"path": "test.txt", "count": 3}`)
+	if m["path"] != "test.txt" {
+		t.Fatalf("expected parsed path, got %v", m["path"])
+	}
+	if m["count"] != float64(3) {
+		t.Fatalf("expected parsed count, got %v", m["count"])
+	}
+	if malformed := parseArgs("not-json"); malformed == nil || len(malformed) != 0 {
+		t.Fatalf("expected empty map for malformed JSON, got %v", malformed)
 	}
 }

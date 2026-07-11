@@ -12,9 +12,9 @@ const (
 )
 
 type ToolCall struct {
-	ID       string        `json:"id"`
-	Type     string        `json:"type"`
-	Function ToolCallFunc  `json:"function"`
+	ID       string       `json:"id"`
+	Type     string       `json:"type"`
+	Function ToolCallFunc `json:"function"`
 }
 
 type ToolCallFunc struct {
@@ -42,28 +42,49 @@ func (c *Checkpoint) Restore(ctx *Context) {
 }
 
 type Context struct {
-	Messages  []Message `json:"messages"`
-	StepCount int       `json:"step_count"`
-	MaxTokens int       `json:"max_tokens"`
-	MaxSteps  int       `json:"max_steps"`
+	Messages    []Message `json:"messages"`
+	StepCount   int       `json:"step_count"`
+	MaxTokens   int       `json:"max_tokens"`
+	MaxSteps    int       `json:"max_steps"`
+	checkpoints map[int]*Checkpoint
 }
 
 func NewContext(maxTokens, maxSteps int) *Context {
 	return &Context{
-		Messages:  make([]Message, 0),
-		MaxTokens: maxTokens,
-		MaxSteps:  maxSteps,
+		Messages:    make([]Message, 0),
+		MaxTokens:   maxTokens,
+		MaxSteps:    maxSteps,
+		checkpoints: make(map[int]*Checkpoint),
 	}
 }
 
 func (ctx *Context) SaveCheckpoint() *Checkpoint {
 	msgs := make([]Message, len(ctx.Messages))
 	copy(msgs, ctx.Messages)
-	return &Checkpoint{
+	cp := &Checkpoint{
 		Messages:  msgs,
 		StepCount: ctx.StepCount,
 		Timestamp: time.Now(),
 	}
+	if ctx.checkpoints == nil {
+		ctx.checkpoints = make(map[int]*Checkpoint)
+	}
+	ctx.checkpoints[cp.StepCount] = cp
+	return cp
+}
+
+func (ctx *Context) RestoreCheckpoint(step int) bool {
+	cp, ok := ctx.checkpoints[step]
+	if !ok {
+		return false
+	}
+	cp.Restore(ctx)
+	for checkpointStep := range ctx.checkpoints {
+		if checkpointStep > step {
+			delete(ctx.checkpoints, checkpointStep)
+		}
+	}
+	return true
 }
 
 type ToolResult struct {

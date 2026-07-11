@@ -1,11 +1,11 @@
-package rule
+package mode
 
 import (
 	"fmt"
 	"strings"
 )
 
-type Rule struct {
+type Mode struct {
 	Name        string
 	DisplayName string
 	Prompt      string
@@ -27,10 +27,8 @@ var readTools = map[string]bool{
 
 var chatTools = map[string]bool{
 	"web_search": true,
-	"todo_list": true,
+	"todo_list":  true,
 }
-
-func allTools(name string, args map[string]any) bool { return true }
 
 func makeFilter(allowed map[string]bool) func(string, map[string]any) bool {
 	return func(name string, args map[string]any) bool {
@@ -39,11 +37,11 @@ func makeFilter(allowed map[string]bool) func(string, map[string]any) bool {
 	}
 }
 
-var Rules = []Rule{
+var Modes = []Mode{
 	{
 		Name:        "code",
 		DisplayName: "编程模式",
-		Prompt:      `你是 Natalia CLI，一个运行在用户电脑上的交互式编程助手。
+		Prompt: `你是 Natalia CLI，一个运行在用户电脑上的交互式编程助手。
 
 你的核心目标是通过调用工具来帮助用户完成软件工程任务。对于涉及文件、代码、命令执行的问题，必须调用工具来实际操作，而不是仅用文字描述。
 
@@ -58,7 +56,7 @@ var Rules = []Rule{
 	{
 		Name:        "ask",
 		DisplayName: "问答模式",
-		Prompt:      `你是 Natalia CLI，一个专注于回答问题的助手。
+		Prompt: `你是 Natalia CLI，一个专注于回答问题的助手。
 
 你只能使用只读工具。你可以读取文件、搜索代码、搜索网络来获取信息回答问题。
 
@@ -68,7 +66,7 @@ var Rules = []Rule{
 	{
 		Name:        "plan",
 		DisplayName: "规划模式",
-		Prompt:      `你是 Natalia CLI，一个专注于架构设计和任务规划的助手。
+		Prompt: `你是 Natalia CLI，一个专注于架构设计和任务规划的助手。
 
 你只能读取文件，或将规划文档写入 PLANS/ 目录。不允许修改项目代码。
 
@@ -94,7 +92,7 @@ var Rules = []Rule{
 	{
 		Name:        "debug",
 		DisplayName: "调试模式",
-		Prompt:      `你是 Natalia CLI，一个专注于调试和问题排查的助手。
+		Prompt: `你是 Natalia CLI，一个专注于调试和问题排查的助手。
 
 你有完整的工具权限，但应该优先做以下操作：
 1. 读取错误信息
@@ -112,26 +110,26 @@ var Rules = []Rule{
 	{
 		Name:        "chat",
 		DisplayName: "聊天模式",
-		Prompt:      `你是 Natalia CLI，一个友好的聊天助手。
+		Prompt: `你是 Natalia CLI，一个友好的聊天助手。
 
 此模式下你只能进行对话和网络搜索，不能修改任何文件或执行命令。`,
 		ToolFilter: makeFilter(chatTools),
 	},
 }
 
-func Get(name string) (*Rule, error) {
-	for _, r := range Rules {
-		if r.Name == name {
-			return &r, nil
+func Get(name string) (*Mode, error) {
+	for _, m := range Modes {
+		if m.Name == name {
+			return &m, nil
 		}
 	}
-	return nil, fmt.Errorf("未知规则: %s", name)
+	return nil, fmt.Errorf("未知模式: %s", name)
 }
 
 func List() []string {
-	names := make([]string, len(Rules))
-	for i, r := range Rules {
-		names[i] = fmt.Sprintf("%s (%s)", r.Name, r.DisplayName)
+	names := make([]string, len(Modes))
+	for i, m := range Modes {
+		names[i] = fmt.Sprintf("%s (%s)", m.Name, m.DisplayName)
 	}
 	return names
 }

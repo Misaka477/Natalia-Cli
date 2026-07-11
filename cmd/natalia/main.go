@@ -1,0 +1,952 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"os/signal"
+	"strings"
+	"time"
+
+	"github.com/aquama/natalia-cli/internal/agentspec"
+	"github.com/aquama/natalia-cli/internal/approval"
+	"github.com/aquama/natalia-cli/internal/chat"
+	"github.com/aquama/natalia-cli/internal/compaction"
+	"github.com/aquama/natalia-cli/internal/config"
+	"github.com/aquama/natalia-cli/internal/llm"
+	"github.com/aquama/natalia-cli/internal/mode"
+	"github.com/aquama/natalia-cli/internal/sandbox"
+	"github.com/aquama/natalia-cli/internal/session"
+	"github.com/aquama/natalia-cli/internal/skill"
+	"github.com/aquama/natalia-cli/internal/snapshot"
+	"github.com/aquama/natalia-cli/internal/soul"
+	"github.com/aquama/natalia-cli/internal/term"
+	"github.com/aquama/natalia-cli/internal/tools/agent"
+	"github.com/aquama/natalia-cli/internal/tools/skill"
+	"github.com/aquama/natalia-cli/internal/toolset"
+	"github.com/aquama/natalia-cli/internal/ui"
+	"github.com/aquama/natalia-cli/internal/worker"
+	"github.com/peterh/liner"
+)
+
+var (
+	sessStore      *session.SessionStore
+	currentSession *session.Session
+	workerPool     *worker.Pool
+	skillRegistry  *skill.Registry
+	runtime        runtimeOverrides
+)
+
+type runtimeOverrides struct {
+	Mode              string
+	ModelProfile      string
+	PermissionProfile string
+}
+
+func main() {
+	noSetupFlag := flag.Bool("no-setup", false, "跳过交互式配置引导")
+	debug := flag.Bool("debug", false, "打印调试日志")
+	profile := flag.String("profile", "", "使用指定配置")
+	wireFlag := flag.Bool("wire", false, "通过 stdin/stdout 运行 Wire JSON-RPC 服务")
+	wireReplay := flag.String("wire-replay", "", "重放 wire.jsonl 到 stdout")
+	flag.Parse()
+
+	cfg, _ := config.Load()
+
+	if *profile != "" && cfg != nil {
+		cfg.DefaultProfile = *profile
+	}
+
+	tools := toolset.NewRegistry()
+	registerTools(tools)
+	if *wireReplay != "" {
+		if err := runWireReplay(*wireReplay, os.Stdout); err != nil {
+			fmt.Fprintf(os.Stderr, "wire replay error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *wireFlag {
+		if err := runWireCLI(cfg, tools, os.Stdin, os.Stdout, *debug); err != nil {
+			fmt.Fprintf(os.Stderr, "wire error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	if len(flag.Args()) > 0 {
+		runOnce(cfg, tools, strings.Join(flag.Args(), " "))
+		return
+	}
+
+	runInteractive(cfg, tools, *noSetupFlag, *debug)
+}
+
+func registerTools(r *toolset.Registry) {
+	if err := toolset.RegisterDefaultTools(r); err != nil {
+		fmt.Fprintf(os.Stderr, "加载默认工具失败: %v\n", err)
+	}
+}
+
+func buildEngine(cfg *config.Config, tools *toolset.Registry, debug bool) *soul.Engine {
+	if cfg == nil {
+		return soul.NewEngine(nil, tools)
+	}
+	pr, p, err := cfg.ActiveProfile()
+	eff, effErr := cfg.EffectiveProfile(runtime.Mode, runtime.ModelProfile, runtime.PermissionProfile)
+	if err != nil && effErr != nil {
+		return soul.NewEngine(nil, tools)
+	}
+	if effErr == nil {
+		pr = &eff.Profile
+		p = &eff.Provider
+	}
+
+	llmClient := newLLMClient(pr, p)
+
+	engine := soul.NewEngine(llmClient, tools)
+	engine.Context.MaxSteps = pr.MaxSteps
+	if engine.Context.MaxSteps == 0 {
+		engine.Context.MaxSteps = 50
+	}
+
+	systemPrompt := "你是 Natalia CLI，一个运行在用户电脑上的交互式编程助手。"
+	if spec, err := agentspec.LoadDefaultAgentSpec(); err == nil {
+		if prompt, err := spec.RenderSystemPrompt(agentspec.DefaultTemplateArgs()); err == nil {
+			systemPrompt = prompt
+		}
+	}
+	if pr.SystemPrompt != "" {
+		systemPrompt = pr.SystemPrompt
+	}
+	engine.Context.Messages = append(engine.Context.Messages, chat.Message{
+		Role:    chat.RoleSystem,
+		Content: systemPrompt,
+	})
+
+	engine.Stream = pr.Stream
+	engine.OnToken = func(s string) { fmt.Print(s) }
+	inReasoning := false
+	engine.OnReasoning = func(s string) {
+		if !inReasoning {
+			fmt.Print("\n\033[38;5;245m")
+			inReasoning = true
+		}
+		fmt.Print(s)
+	}
+	engine.OnToken = func(s string) {
+		if inReasoning {
+			fmt.Print("\033[0m\n\n")
+			inReasoning = false
+		}
+		fmt.Print(s)
+	}
+	engine.OnStreamEnd = func() {
+		if inReasoning {
+			fmt.Print("\033[0m\n\n")
+			inReasoning = false
+		}
+	}
+
+	ctxSize := pr.MaxContext
+	if ctxSize == 0 {
+		ctxSize = ui.DetectContext(pr.Model)
+		if ctxSize == 0 {
+			ctxSize = 128000
+		}
+	}
+	engine.Compactor = compaction.NewSimpleCompaction()
+	engine.MaxContextSize = ctxSize
+	engine.CompactRatio = 0.85
+	engine.ReservedTokens = 50000
+	engine.AutoCompact = true
+
+	approvalMode := approval.Mode(pr.AutoApprove)
+	if effErr == nil && eff.Approval != "" {
+		approvalMode = approval.Mode(eff.Approval)
+	}
+	if approvalMode == "" {
+		approvalMode = approval.ModeAsk
+	}
+	engine.Approver = approval.New(approvalMode)
+
+	modeName := pr.Mode
+	if effErr == nil {
+		modeName = eff.Mode
+	}
+	if modeName == "" {
+		modeName = "code"
+	}
+	if effErr == nil {
+		if m, err := modeFromEffective(eff); err == nil {
+			engine.Mode = m
+		}
+	} else if m, err := mode.Get(modeName); err == nil {
+		engine.Mode = m
+	}
+
+	engine.Debug = debug
+	if debug {
+		engine.Log = func(format string, args ...any) {
+			fmt.Fprintf(os.Stderr, "[DEBUG] "+format+"\n", args...)
+		}
+	}
+	return engine
+}
+
+func newLLMClient(pr *config.Profile, p *config.Provider) *llm.Client {
+	return llm.NewClient(llm.Config{
+		APIKey:          p.APIKey,
+		BaseURL:         p.BaseURL,
+		Model:           pr.Model,
+		Temperature:     pr.Temperature,
+		MaxTokens:       pr.MaxTokens,
+		TopP:            pr.TopP,
+		ReasoningEffort: pr.ReasoningEffort,
+		ThinkingEnabled: pr.ThinkingEnabled,
+		AuthHeader:      p.AuthHeader,
+		CustomHeaders:   p.CustomHeaders,
+		Timeout:         time.Duration(pr.TimeoutSec) * time.Second,
+	})
+}
+
+func modeFromEffective(eff *config.EffectiveProfile) (*mode.Mode, error) {
+	if builtin, err := mode.Get(eff.Mode); err == nil {
+		m := *builtin
+		if prompt, err := modePrompt(eff.ModeConfig); err != nil {
+			return nil, err
+		} else if prompt != "" {
+			m.Prompt = prompt
+		}
+		if eff.ModeConfig.Description != "" {
+			m.DisplayName = eff.ModeConfig.Description
+		}
+		m.ToolFilter = applyToolPolicy(m.ToolFilter, eff.ModeConfig.Tools)
+		return &m, nil
+	}
+	if isZeroModeProfile(eff.ModeConfig) {
+		return nil, fmt.Errorf("未知模式: %s", eff.Mode)
+	}
+	baseName := eff.ModeConfig.Extends
+	if baseName == "" {
+		baseName = "code"
+	}
+	base, err := mode.Get(baseName)
+	if err != nil {
+		return nil, fmt.Errorf("模式 %q 继承了未知模式 %q", eff.Mode, baseName)
+	}
+	m := *base
+	m.Name = eff.Mode
+	if eff.ModeConfig.Description != "" {
+		m.DisplayName = eff.ModeConfig.Description
+	} else {
+		m.DisplayName = eff.Mode
+	}
+	if prompt, err := modePrompt(eff.ModeConfig); err != nil {
+		return nil, err
+	} else if prompt != "" {
+		m.Prompt = prompt
+	}
+	m.ToolFilter = applyToolPolicy(m.ToolFilter, eff.ModeConfig.Tools)
+	return &m, nil
+}
+
+func isZeroModeProfile(profile config.ModeProfile) bool {
+	return profile.Extends == "" && profile.Description == "" && profile.ModelProfile == "" && profile.PermissionProfile == "" && profile.SystemPrompt == "" && profile.SystemPromptPath == "" && profile.ReasoningEffort == "" && profile.ThinkingEnabled == nil && len(profile.Tools.Allowed) == 0 && len(profile.Tools.Exclude) == 0
+}
+
+func modePrompt(profile config.ModeProfile) (string, error) {
+	if profile.SystemPrompt != "" {
+		return profile.SystemPrompt, nil
+	}
+	if profile.SystemPromptPath == "" {
+		return "", nil
+	}
+	data, err := os.ReadFile(profile.SystemPromptPath)
+	if err != nil {
+		return "", fmt.Errorf("读取 mode system_prompt_path 失败: %w", err)
+	}
+	return string(data), nil
+}
+
+func applyToolPolicy(base func(string, map[string]any) bool, policy config.ToolPolicy) func(string, map[string]any) bool {
+	allowed := make(map[string]bool, len(policy.Allowed))
+	for _, name := range policy.Allowed {
+		allowed[name] = true
+	}
+	excluded := make(map[string]bool, len(policy.Exclude))
+	for _, name := range policy.Exclude {
+		excluded[name] = true
+	}
+	if len(allowed) == 0 && len(excluded) == 0 {
+		return base
+	}
+	return func(name string, args map[string]any) bool {
+		if len(allowed) > 0 && !allowed[name] {
+			return false
+		}
+		if excluded[name] {
+			return false
+		}
+		return base(name, args)
+	}
+}
+
+func runOnce(cfg *config.Config, tools *toolset.Registry, input string) {
+	engine := buildEngine(cfg, tools, false)
+	if engine.LLM == nil {
+		fmt.Fprintln(os.Stderr, "未配置模型。设置 --profile 或使用 /setup 配置。")
+		os.Exit(1)
+	}
+	outcome, err := engine.Run(input)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println(outcome.FinalMessage)
+}
+
+func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, debug bool) {
+	defer term.Close()
+
+	engine := buildEngine(cfg, tools, debug)
+	history := make([]string, 0)
+
+	if engine.LLM == nil && !noSetup {
+		fmt.Println("未配置。输入 /setup 开始配置。")
+	} else if engine.LLM != nil {
+		eff, _ := cfg.EffectiveProfile(runtime.Mode, runtime.ModelProfile, runtime.PermissionProfile)
+		pr := &eff.Profile
+		fmt.Printf("当前配置: %s (%s)\n", cfg.DefaultProfile, pr.Model)
+
+		sessStore, _ = session.NewStore()
+		if sessStore != nil {
+			currentSession = sessStore.NewSession(pr.Model)
+			msgs, _ := sessStore.LoadMessages(currentSession.ID)
+			for _, msg := range msgs {
+				engine.Context.Messages = append(engine.Context.Messages, msg)
+			}
+
+			wd, _ := os.Getwd()
+			snap, err := snapshot.NewEngine(wd, currentSession.Dir)
+			if err == nil {
+				engine.Snapshotter = snap
+			}
+		}
+
+		// Discover skills
+		wd, _ := os.Getwd()
+		skillRegistry, _ = skill.Discover(wd)
+		if skillRegistry != nil {
+			skillsBlock := skillRegistry.FormatForPrompt()
+			if skillsBlock != "" && len(engine.Context.Messages) > 0 {
+				// Append skills to system prompt
+				msg := &engine.Context.Messages[0]
+				if msg.Role == chat.RoleSystem {
+					msg.Content += skillsBlock
+				}
+			}
+			// Register skill tools
+			tools.Register(&skills.List{Registry: skillRegistry})
+			tools.Register(&skills.Read{Registry: skillRegistry})
+		}
+	}
+
+	workerPool = worker.NewPool()
+	if engine.LLM != nil {
+		eff, _ := cfg.EffectiveProfile(runtime.Mode, runtime.ModelProfile, runtime.PermissionProfile)
+		workerClient := newLLMClient(&eff.Profile, &eff.Provider)
+		tools.Register(&agent.Spawn{Pool: workerPool, Client: workerClient, Tools: tools})
+		tools.Register(&agent.List{Pool: workerPool})
+		tools.Register(&agent.Output{Pool: workerPool})
+	}
+
+	for {
+		input, err := term.ReadlineWithHistory("> ", history)
+		if err != nil {
+			if err == io.EOF || err == liner.ErrPromptAborted {
+				break
+			}
+			fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+			break
+		}
+		input = strings.TrimSpace(input)
+		if input == "" {
+			continue
+		}
+		if input == "/quit" || input == "/exit" {
+			break
+		}
+
+		history = append(history, input)
+
+		if strings.HasPrefix(input, "/") {
+			handleSlashCommand(input, &cfg, &engine, tools, debug)
+			continue
+		}
+
+		if engine.LLM == nil {
+			fmt.Println("请先配置。输入 /setup")
+			continue
+		}
+
+		engine.ResetCancel()
+
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, os.Interrupt)
+
+		type result struct {
+			out *soul.Outcome
+			err error
+		}
+		done := make(chan result, 1)
+		go func() {
+			outcome, err := engine.Run(input)
+			done <- result{outcome, err}
+		}()
+
+		select {
+		case r := <-done:
+			signal.Stop(sigCh)
+			if r.err != nil {
+				if r.err.Error() == "context canceled" {
+					fmt.Println()
+				} else {
+					fmt.Fprintf(os.Stderr, "错误: %v\n", r.err)
+				}
+				continue
+			}
+			outcome := r.out
+			stream := false
+			if pr, _, err := cfg.ActiveProfile(); err == nil {
+				stream = pr.Stream
+			}
+			if outcome.FinalMessage != "" && !stream {
+				fmt.Println(outcome.FinalMessage)
+			}
+			if outcome.FinalMessage != "" && stream {
+				fmt.Println()
+			}
+			if outcome.FinalMessage == "" && outcome.StopReason == "error" {
+				fmt.Fprintf(os.Stderr, "\n错误: %s\n", outcome.FinalMessage)
+			}
+			if currentSession != nil {
+				sessStore.AppendMessage(currentSession.ID, chat.Message{Role: chat.RoleUser, Content: input})
+				sessStore.AppendMessage(currentSession.ID, chat.Message{Role: chat.RoleAssistant, Content: outcome.FinalMessage})
+			}
+		case <-sigCh:
+			signal.Stop(sigCh)
+			engine.Cancel()
+			<-done
+			fmt.Println("\n⏹ 已停止")
+		}
+	}
+}
+
+func handleRollback(input string, engine **soul.Engine) {
+	if input == "/rollback" {
+		fmt.Println("用法: /rollback <step 编号>")
+		fmt.Printf("当前 step: %d\n", (*engine).Context.StepCount)
+		return
+	}
+	if (*engine).Snapshotter == nil {
+		fmt.Println("快照系统未启用")
+		return
+	}
+	step := 0
+	fmt.Sscanf(input, "/rollback %d", &step)
+	if step <= 0 {
+		fmt.Println("无效的 step 编号")
+		return
+	}
+
+	// Stop all sub-agents before rollback
+	if workerPool != nil {
+		for _, w := range workerPool.List() {
+			w.Stop()
+		}
+	}
+
+	msg, err := (*engine).RollbackTo(step)
+	if err != nil {
+		fmt.Printf("回退失败: %v\n", err)
+		return
+	}
+	fmt.Println(msg)
+}
+
+func handleMode(input string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool) {
+	if input == "/mode" || input == "/mode " {
+		m := (*engine).Mode
+		if m == nil {
+			fmt.Println("当前 mode: code")
+		} else {
+			fmt.Printf("当前 mode: %s (%s)\n", m.Name, m.DisplayName)
+		}
+		fmt.Println("可用 modes: /mode <code|ask|plan|debug|chat>")
+		return
+	}
+	parts := strings.Fields(input)
+	if len(parts) < 2 {
+		return
+	}
+	eff, err := cfg.EffectiveProfile(parts[1], "", "")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	m, err := modeFromEffective(eff)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	runtime.Mode = m.Name
+	runtime.ModelProfile = ""
+	runtime.PermissionProfile = ""
+	*engine = buildEngine(cfg, tools, debug)
+	if len((*engine).Context.Messages) > 0 && (*engine).Context.Messages[0].Role == chat.RoleSystem {
+		msg := &(*engine).Context.Messages[0]
+		const modeSection = "\n\n当前 mode：\n"
+		if i := strings.Index(msg.Content, modeSection); i >= 0 {
+			msg.Content = msg.Content[:i]
+		}
+		msg.Content += modeSection + m.Prompt
+	}
+	fmt.Printf("✓ 已切换 mode: %s (%s)\n", m.Name, m.DisplayName)
+}
+
+func handleModel(input string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool) {
+	parts := strings.Fields(input)
+	if len(parts) < 2 {
+		showModelProfiles(cfg)
+		return
+	}
+	name := parts[1]
+	if _, ok := cfg.ModelProfiles[name]; !ok {
+		fmt.Printf("模型配置 %q 不存在\n", name)
+		showModelProfiles(cfg)
+		return
+	}
+	runtime.ModelProfile = name
+	*engine = buildEngine(cfg, tools, debug)
+	fmt.Printf("✓ 已切换 model_profile: %s\n", name)
+}
+
+func showModelProfiles(cfg *config.Config) {
+	fmt.Printf("当前 model_profile: %s\n", currentModelProfile(cfg))
+	if len(cfg.ModelProfiles) == 0 {
+		fmt.Println("没有配置 model_profiles，当前使用 profile 内的旧 model 字段")
+		return
+	}
+	fmt.Println("可用 model_profiles:")
+	for name, mp := range cfg.ModelProfiles {
+		fmt.Printf("  %s (%s)\n", name, mp.Model)
+	}
+}
+
+func handlePermission(input string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool) {
+	parts := strings.Fields(input)
+	if len(parts) < 2 {
+		showPermissions(cfg)
+		return
+	}
+	name := parts[1]
+	if _, ok := cfg.PermissionProfiles[name]; !ok {
+		fmt.Printf("权限模式 %q 不存在\n", name)
+		showPermissions(cfg)
+		return
+	}
+	runtime.PermissionProfile = name
+	*engine = buildEngine(cfg, tools, debug)
+	fmt.Printf("✓ 已切换 permission_profile: %s\n", name)
+}
+
+func showPermissions(cfg *config.Config) {
+	fmt.Printf("当前 permission_profile: %s\n", currentPermissionProfile(cfg))
+	fmt.Println("可用 permission_profiles:")
+	for name, pp := range cfg.PermissionProfiles {
+		fmt.Printf("  %s - %s\n", name, pp.Description)
+	}
+}
+
+func handleStatus(cfg *config.Config, engine *soul.Engine) {
+	if cfg == nil {
+		fmt.Println("未配置")
+		return
+	}
+	lines, err := statusLines(cfg, engine)
+	if err != nil {
+		fmt.Printf("读取状态失败: %v\n", err)
+		return
+	}
+	for _, line := range lines {
+		fmt.Println(line)
+	}
+}
+
+func statusLines(cfg *config.Config, engine *soul.Engine) ([]string, error) {
+	eff, err := cfg.EffectiveProfile(runtime.Mode, runtime.ModelProfile, runtime.PermissionProfile)
+	if err != nil {
+		return nil, err
+	}
+	modeName := eff.Mode
+	if engine != nil && engine.Mode != nil {
+		modeName = engine.Mode.Name
+	}
+	modeSuffix := ""
+	if runtime.Mode != "" {
+		modeSuffix = " (manual override)"
+	}
+	modelSuffix := ""
+	if runtime.ModelProfile != "" {
+		modelSuffix = " (manual override)"
+	}
+	permissionSuffix := ""
+	if runtime.PermissionProfile != "" {
+		permissionSuffix = " (manual override)"
+	}
+	tools := "mode-filtered"
+	if len(eff.ModeConfig.Tools.Allowed) > 0 {
+		tools = fmt.Sprintf("allow-list (%d tools)", len(eff.ModeConfig.Tools.Allowed))
+	} else if len(eff.ModeConfig.Tools.Exclude) > 0 {
+		tools = fmt.Sprintf("exclude-list (%d tools)", len(eff.ModeConfig.Tools.Exclude))
+	}
+	return []string{
+		fmt.Sprintf("profile: %s", eff.ProfileName),
+		fmt.Sprintf("mode: %s%s", modeName, modeSuffix),
+		fmt.Sprintf("model_profile: %s%s", displayEmpty(eff.ModelProfile, "<profile model>"), modelSuffix),
+		fmt.Sprintf("permission_profile: %s%s", eff.PermissionProfile, permissionSuffix),
+		fmt.Sprintf("provider: %s", eff.Profile.Provider),
+		fmt.Sprintf("model: %s", eff.Profile.Model),
+		fmt.Sprintf("approval: %s", eff.Approval),
+		fmt.Sprintf("reasoning_effort: %s", displayEmpty(eff.Profile.ReasoningEffort, "<unset>")),
+		fmt.Sprintf("thinking_enabled: %t", eff.Profile.ThinkingEnabled),
+		fmt.Sprintf("stream: %t", eff.Profile.Stream),
+		fmt.Sprintf("tools: %s", tools),
+	}, nil
+}
+
+func displayEmpty(value, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+func currentModelProfile(cfg *config.Config) string {
+	if runtime.ModelProfile != "" {
+		return runtime.ModelProfile + " (manual override)"
+	}
+	if eff, err := cfg.EffectiveProfile(runtime.Mode, "", runtime.PermissionProfile); err == nil && eff.ModelProfile != "" {
+		return eff.ModelProfile
+	}
+	return "<profile model>"
+}
+
+func currentPermissionProfile(cfg *config.Config) string {
+	if runtime.PermissionProfile != "" {
+		return runtime.PermissionProfile + " (manual override)"
+	}
+	if eff, err := cfg.EffectiveProfile(runtime.Mode, runtime.ModelProfile, ""); err == nil {
+		return eff.PermissionProfile
+	}
+	return "ask"
+}
+
+func handleSandbox(input string) {
+	wd, _ := os.Getwd()
+	parts := strings.Fields(input)
+	if len(parts) < 2 {
+		boxes, _ := sandbox.List(wd)
+		if len(boxes) == 0 {
+			fmt.Println("没有沙盒。用法: /sandbox create <user|agent> <名称>")
+			return
+		}
+		fmt.Println("沙盒列表：")
+		for _, b := range boxes {
+			fmt.Printf("  %s (%s) — %s\n", b.Name, b.Type, b.Overlay)
+		}
+		return
+	}
+
+	cmd := parts[1]
+	switch cmd {
+	case "create":
+		if len(parts) < 4 {
+			fmt.Println("用法: /sandbox create <user|agent> <名称>")
+			return
+		}
+		b, err := sandbox.Create(parts[3], parts[2], wd)
+		if err != nil {
+			fmt.Printf("创建沙盒失败: %v\n", err)
+			return
+		}
+		fmt.Printf("✓ 沙盒 %q (%s) 已创建\n", b.Name, b.Type)
+	case "merge":
+		if len(parts) < 3 {
+			fmt.Println("用法: /sandbox merge <名称>")
+			return
+		}
+		name := parts[2]
+		boxes, _ := sandbox.List(wd)
+		var target *sandbox.Box
+		for _, b := range boxes {
+			if b.Name == name {
+				target = &b
+				break
+			}
+		}
+		if target == nil {
+			fmt.Printf("沙盒 %q 不存在\n", name)
+			return
+		}
+		changed, err := target.Merge()
+		if err != nil {
+			fmt.Printf("合并失败: %v\n", err)
+			return
+		}
+		fmt.Printf("✓ 已合并 %d 个文件\n", len(changed))
+		for _, f := range changed {
+			fmt.Printf("  %s\n", f)
+		}
+	case "diff":
+		if len(parts) < 3 {
+			fmt.Println("用法: /sandbox diff <名称>")
+			return
+		}
+		name := parts[2]
+		boxes, _ := sandbox.List(wd)
+		for _, b := range boxes {
+			if b.Name == name {
+				diff, err := b.Diff()
+				if err != nil {
+					fmt.Printf("diff 失败: %v\n", err)
+					return
+				}
+				fmt.Println(diff)
+				return
+			}
+		}
+		fmt.Printf("沙盒 %q 不存在\n", name)
+	case "delete":
+		if len(parts) < 3 {
+			fmt.Println("用法: /sandbox delete <名称>")
+			return
+		}
+		name := parts[2]
+		boxes, _ := sandbox.List(wd)
+		for _, b := range boxes {
+			if b.Name == name {
+				b.Delete()
+				fmt.Printf("✓ 沙盒 %q 已删除\n", name)
+				return
+			}
+		}
+		fmt.Printf("沙盒 %q 不存在\n", name)
+	default:
+		fmt.Printf("未知命令: /sandbox %s\n", cmd)
+	}
+}
+
+func handleWorkerCommand(input string) {
+	switch {
+	case input == "/workers" || input == "/workers ":
+		if workerPool == nil {
+			fmt.Println("子 agent 系统不可用")
+			return
+		}
+		workers := workerPool.List()
+		if len(workers) == 0 {
+			fmt.Println("没有活动的子 agent")
+			return
+		}
+		fmt.Println("子 agent：")
+		for _, w := range workers {
+			logs := w.GetLogs()
+			last := ""
+			if len(logs) > 0 {
+				last = logs[len(logs)-1].Tool
+			}
+			fmt.Printf("  %s [%s] %s", w.ID, w.Status, w.Task)
+			if last != "" {
+				fmt.Printf(" → %s", last)
+			}
+			fmt.Println()
+		}
+	case strings.HasPrefix(input, "/stop "):
+		id := strings.TrimPrefix(input, "/stop ")
+		w := workerPool.Get(id)
+		if w == nil {
+			fmt.Printf("子 agent %s 不存在\n", id)
+			return
+		}
+		w.Stop()
+		fmt.Printf("⏹ %s 已暂停\n", id)
+	case strings.HasPrefix(input, "/go "):
+		id := strings.TrimPrefix(input, "/go ")
+		w := workerPool.Get(id)
+		if w == nil {
+			fmt.Printf("子 agent %s 不存在\n", id)
+			return
+		}
+		w.Resume()
+		fmt.Printf("▶ %s 已恢复\n", id)
+	default:
+		fmt.Println("用法: /workers | /stop <id> | /go <id>")
+	}
+}
+
+func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool) {
+	if strings.HasPrefix(input, "/rollback ") || input == "/rollback" {
+		handleRollback(input, engine)
+		return
+	}
+	if input == "/stop" {
+		(*engine).Cancel()
+		(*engine).ResetCancel()
+		fmt.Println("\n⏹ 已停止")
+		return
+	}
+	if strings.HasPrefix(input, "/mode") || input == "/mode" {
+		if *cfg == nil {
+			fmt.Println("请先配置。输入 /setup")
+			return
+		}
+		handleMode(input, *cfg, engine, tools, debug)
+		return
+	}
+	if strings.HasPrefix(input, "/model") || input == "/model" {
+		if *cfg == nil {
+			fmt.Println("请先配置。输入 /setup")
+			return
+		}
+		handleModel(input, *cfg, engine, tools, debug)
+		return
+	}
+	if strings.HasPrefix(input, "/permission") || input == "/permission" {
+		if *cfg == nil {
+			fmt.Println("请先配置。输入 /setup")
+			return
+		}
+		handlePermission(input, *cfg, engine, tools, debug)
+		return
+	}
+	if input == "/status" {
+		handleStatus(*cfg, *engine)
+		return
+	}
+	if strings.HasPrefix(input, "/workers") || strings.HasPrefix(input, "/stop ") || strings.HasPrefix(input, "/go ") {
+		handleWorkerCommand(input)
+		return
+	}
+	if strings.HasPrefix(input, "/sandbox ") || input == "/sandbox" {
+		handleSandbox(input)
+		return
+	}
+
+	switch input {
+	case "/setup":
+		if *cfg == nil {
+			*cfg = &config.Config{
+				Providers:          make(map[string]config.Provider),
+				Profiles:           make(map[string]config.Profile),
+				ModelProfiles:      make(map[string]config.ModelProfile),
+				PermissionProfiles: config.DefaultPermissionProfiles(),
+			}
+		}
+		modified := ui.SetupFlow(*cfg)
+		if modified {
+			(*cfg).Save()
+			*engine = buildEngine(*cfg, tools, debug)
+		}
+	case "/profile":
+		if *cfg == nil {
+			fmt.Println("请先配置。输入 /setup")
+			return
+		}
+		name := ui.PickProfile(*cfg)
+		if name != "" {
+			(*cfg).DefaultProfile = name
+			runtime = runtimeOverrides{}
+			(*cfg).Save()
+			*engine = buildEngine(*cfg, tools, debug)
+			fmt.Printf("已切换到: %s\n", name)
+		}
+	case "/compact":
+		if (*engine).LLM == nil {
+			fmt.Println("模型未配置")
+			return
+		}
+		msg, err := (*engine).CompactNow()
+		if err != nil {
+			fmt.Printf("压缩失败: %v\n", err)
+			return
+		}
+		fmt.Println(msg)
+	case "/sessions":
+		listSessions()
+	case "/checkpoint":
+		if (*engine).Snapshotter == nil {
+			fmt.Println("快照系统未启用")
+			return
+		}
+		hash, err := (*engine).Snapshotter.Checkpoint((*engine).Context.StepCount, nil)
+		if err != nil {
+			fmt.Printf("创建快照失败: %v\n", err)
+			return
+		}
+		fmt.Printf("✓ 快照已创建 (step %d, hash: %s)\n", (*engine).Context.StepCount, hash[:12])
+	case "/config":
+		if *cfg == nil {
+			fmt.Println("未配置")
+			return
+		}
+		ui.ShowConfig(*cfg)
+	case "/help":
+		showHelp()
+	default:
+		fmt.Printf("未知命令: %s\n", input)
+	}
+}
+
+func listSessions() {
+	if sessStore == nil {
+		fmt.Println("会话存储不可用")
+		return
+	}
+	sessions := sessStore.List()
+	if len(sessions) == 0 {
+		fmt.Println("没有已保存的会话")
+		return
+	}
+	fmt.Println("历史会话：")
+	for i, s := range sessions {
+		title := s.Title
+		if title == "" {
+			title = "无标题"
+		}
+		fmt.Printf("  %d. %s (%s)\n", i+1, title, s.Model)
+	}
+}
+
+func showHelp() {
+	fmt.Println(`命令:
+  /setup    配置 LLM 服务商和模型
+  /profile  切换配置
+  /mode     切换模式（code/ask/plan/debug/chat）
+  /model    切换 model profile
+  /permission 切换权限（just_do_it/ask/read_only）
+  /status   查看当前 runtime profile
+  /checkpoint 手动创建快照
+  /rollback <n> 回退到第 n 步
+  /compact  手动压缩上下文
+  /sandbox  管理沙盒（create/merge/diff/delete）
+  /workers  查看子 agent
+  /stop <id> 暂停子 agent
+  /go <id>  恢复子 agent
+  /sessions 查看历史会话
+  /config   查看当前配置
+  /help     显示帮助
+  /quit     退出`)
+}

@@ -22,7 +22,8 @@ var WriteTools = map[string]bool{
 }
 
 type Approver struct {
-	Mode Mode
+	Mode        Mode
+	RequestFunc func(toolName, description string) bool
 }
 
 func New(mode Mode) *Approver {
@@ -36,6 +37,9 @@ func (a *Approver) Request(toolName, description string) bool {
 	case ModeReadOnly:
 		return false
 	default:
+		if a.RequestFunc != nil {
+			return a.RequestFunc(toolName, description)
+		}
 		return a.interactivePrompt(toolName, description)
 	}
 }

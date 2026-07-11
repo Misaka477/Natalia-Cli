@@ -1,0 +1,49 @@
+version: 1
+agent:
+  name: default
+  model_profile: default
+  system_prompt_path: ./system.md
+  system_prompt_args: {}
+  tools:
+    - natalia/tools/file:Read
+    - natalia/tools/file:Write
+    - natalia/tools/file:Edit
+    - natalia/tools/file:Glob
+    - natalia/tools/file:Grep
+    - natalia/tools/shell:Run
+    - natalia/tools/web:Fetch
+    - natalia/tools/web:Search
+    - natalia/tools/web:MediaFile
+    - natalia/tools/todo:Set
+    - natalia/tools/todo:Add
+    - natalia/tools/todo:Done
+    - natalia/tools/todo:List
+    - natalia/tools/ask_user:AskUser
+    - natalia/tools/browser:Visit
+    - natalia/tools/browser:Screenshot
+  allowed_tools: null
+  exclude_tools: []
+  modes:
+    code:
+      model_profile: default
+      permission_profile: ask
+      description: 执行者模式，按 plan 小步实现、跑测试、修复局部问题
+    plan:
+      model_profile: strongest
+      permission_profile: read_only
+      reasoning_effort: high
+      description: 架构师模式，负责方案设计、任务拆解、风险评估
+    debug:
+      model_profile: strongest
+      permission_profile: ask
+      reasoning_effort: high
+      description: 疑难诊断模式，负责失败升级和根因分析
+    ask:
+      model_profile: cheap
+      permission_profile: read_only
+      description: 低成本只读问答模式
+    chat:
+      model_profile: cheap
+      permission_profile: read_only
+      description: 低成本对话模式
+  subagents: {}

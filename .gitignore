@@ -4,7 +4,7 @@
 *.dll
 *.so
 *.dylib
-natalia
+/natalia
 
 # Test binary
 *.test
@@ -28,6 +28,9 @@ Thumbs.db
 
 # natalia config/sessions
 .config/
+
+# Kilo local project state
+.kilo/
 
 # Plan doc
 PLAN.md

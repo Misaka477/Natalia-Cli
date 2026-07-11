@@ -2,13 +2,14 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/aquama/natalia-cli/internal/chat"
 	"github.com/aquama/natalia-cli/internal/llm"
-	"github.com/aquama/natalia-cli/internal/rule"
+	"github.com/aquama/natalia-cli/internal/mode"
 	"github.com/aquama/natalia-cli/internal/soul"
 	"github.com/aquama/natalia-cli/internal/toolset"
 )
@@ -35,7 +36,7 @@ type LogEntry struct {
 
 type Worker struct {
 	ID        string
-	Rule      string
+	Mode      string
 	Task      string
 	Status    Status
 	Engine    *soul.Engine
@@ -48,8 +49,8 @@ type Worker struct {
 	cancel context.CancelFunc
 }
 
-func New(id, task, ruleName string, llmClient *llm.Client, tools *toolset.Registry) (*Worker, error) {
-	r, err := rule.Get(ruleName)
+func New(id, task, modeName string, llmClient *llm.Client, tools *toolset.Registry) (*Worker, error) {
+	m, err := mode.Get(modeName)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +60,7 @@ func New(id, task, ruleName string, llmClient *llm.Client, tools *toolset.Regist
 	eng := soul.NewEngine(llmClient, tools)
 	w := &Worker{
 		ID:        id,
-		Rule:      ruleName,
+		Mode:      modeName,
 		Task:      task,
 		Status:    StatusIdle,
 		Engine:    eng,
@@ -69,11 +70,11 @@ func New(id, task, ruleName string, llmClient *llm.Client, tools *toolset.Regist
 		cancel:    cancel,
 	}
 
-	eng.Rule = r
+	eng.Mode = m
 	if len(eng.Context.Messages) == 0 {
 		eng.Context.Messages = append(eng.Context.Messages, chat.Message{
 			Role:    chat.RoleSystem,
-			Content: r.Prompt,
+			Content: m.Prompt,
 		})
 	}
 	eng.Context.Messages = append(eng.Context.Messages, chat.Message{
@@ -86,11 +87,18 @@ func New(id, task, ruleName string, llmClient *llm.Client, tools *toolset.Regist
 
 func (w *Worker) Start() {
 	w.mu.Lock()
+	if w.Engine == nil || w.Engine.Dedup == nil {
+		w.Status = StatusFailed
+		w.UpdatedAt = time.Now()
+		w.mu.Unlock()
+		return
+	}
 	w.Status = StatusRunning
 	w.UpdatedAt = time.Now()
 	w.mu.Unlock()
 
 	go func() {
+		w.Engine.Dedup.ResetTurn()
 		for w.Engine.Context.StepCount < w.Engine.Context.MaxSteps {
 			if w.ctx.Err() != nil {
 				w.mu.Lock()
@@ -102,18 +110,9 @@ func (w *Worker) Start() {
 
 			cp := w.Engine.Context.SaveCheckpoint()
 
-			var msg *chat.Message
-			var llmErr error
-
 			outcome := w.Engine.Step(w.ctx)
 			if outcome.StopReason == "error" {
-				llmErr = fmt.Errorf("%s", outcome.FinalMessage)
-			} else {
-				msg = &chat.Message{Role: chat.RoleAssistant, Content: outcome.FinalMessage}
-			}
-
-			if llmErr != nil {
-				if llmErr.Error() == "context canceled" {
+				if outcome.FinalMessage == "context canceled" {
 					w.mu.Lock()
 					w.Status = StatusPaused
 					w.UpdatedAt = time.Now()
@@ -122,9 +121,9 @@ func (w *Worker) Start() {
 				}
 				w.addLog(LogEntry{
 					Step:  w.Engine.Context.StepCount,
-					Error: llmErr.Error(),
+					Error: outcome.FinalMessage,
 				})
-				if llmErr.Error() == "API error" {
+				if outcome.FinalMessage == "API error" {
 					cp.Restore(w.Engine.Context)
 					continue
 				}
@@ -135,56 +134,31 @@ func (w *Worker) Start() {
 				return
 			}
 
-			if msg != nil {
-				w.Engine.Context.Messages = append(w.Engine.Context.Messages, *msg)
+			if outcome.StopReason == "tool_called" {
+				for i := len(w.Engine.Context.Messages) - 1; i >= 0; i-- {
+					msg := w.Engine.Context.Messages[i]
+					if msg.Role != chat.RoleAssistant || len(msg.ToolCalls) == 0 {
+						continue
+					}
+					for _, tc := range msg.ToolCalls {
+						w.addLog(LogEntry{Step: w.Engine.Context.StepCount, Tool: tc.Function.Name, Args: parseArgs(tc.Function.Arguments)})
+					}
+					break
+				}
+				continue
 			}
-
-			if len(msg.ToolCalls) > 0 {
-				for _, tc := range msg.ToolCalls {
-					w.addLog(LogEntry{
-						Step:  w.Engine.Context.StepCount,
-						Tool:  tc.Function.Name,
-						Args:  parseArgs(tc.Function.Arguments),
-					})
-				}
-				// Execute tool calls (simplified - run each)
-				for _, tc := range msg.ToolCalls {
-					tool, ok := w.Engine.Tools.Get(tc.Function.Name)
-					if !ok {
-						continue
-					}
-					if w.Engine.Rule != nil && !w.Engine.Rule.ToolFilter(tc.Function.Name, parseArgs(tc.Function.Arguments)) {
-						w.Engine.Context.Messages = append(w.Engine.Context.Messages, chat.Message{
-							Role: chat.RoleTool, ToolCallID: tc.ID,
-							Content: fmt.Sprintf("规则 %q 不允许使用 %s", w.Engine.Rule.Name, tc.Function.Name),
-							Name:    tc.Function.Name,
-						})
-						continue
-					}
-					args := parseArgs(tc.Function.Arguments)
-					result, err := tool.Execute(args)
-					resultStr := result
-					if err != nil {
-						resultStr = fmt.Sprintf("错误: %v", err)
-					}
-					w.Engine.Context.Messages = append(w.Engine.Context.Messages, chat.Message{
-						Role: chat.RoleTool, ToolCallID: tc.ID,
-						Content: resultStr, Name: tc.Function.Name,
-					})
-					w.addLog(LogEntry{
-						Step: w.Engine.Context.StepCount,
-						Tool: tc.Function.Name, Args: args,
-						Result: resultStr, Error: errStr(err),
-					})
-				}
-			} else {
+			if outcome.StopReason == "back_to_future" {
+				cp.Restore(w.Engine.Context)
+				continue
+			}
+			if outcome.StopReason == "no_tool_calls" {
 				w.mu.Lock()
 				w.Status = StatusCompleted
 				w.UpdatedAt = time.Now()
 				w.mu.Unlock()
 				w.addLog(LogEntry{
-					Step: w.Engine.Context.StepCount,
-					Result: msg.Content,
+					Step:   w.Engine.Context.StepCount,
+					Result: outcome.FinalMessage,
 				})
 				return
 			}
@@ -237,13 +211,13 @@ func NewPool() *Pool {
 	return &Pool{workers: make(map[string]*Worker), nextID: 1}
 }
 
-func (p *Pool) Spawn(task, ruleName string, llmClient *llm.Client, tools *toolset.Registry) (*Worker, error) {
+func (p *Pool) Spawn(task, modeName string, llmClient *llm.Client, tools *toolset.Registry) (*Worker, error) {
 	p.mu.Lock()
 	id := fmt.Sprintf("w%d", p.nextID)
 	p.nextID++
 	p.mu.Unlock()
 
-	w, err := New(id, task, ruleName, llmClient, tools)
+	w, err := New(id, task, modeName, llmClient, tools)
 	if err != nil {
 		return nil, err
 	}
@@ -288,14 +262,6 @@ func (p *Pool) Resume(id string) {
 
 func parseArgs(raw string) map[string]any {
 	m := make(map[string]any)
-	// Simple JSON-like parser for arguments
-	_ = raw
+	_ = json.Unmarshal([]byte(raw), &m)
 	return m
-}
-
-func errStr(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
 }

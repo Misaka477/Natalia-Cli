@@ -11,7 +11,7 @@ import (
 	"github.com/aquama/natalia-cli/internal/chat"
 	"github.com/aquama/natalia-cli/internal/compaction"
 	"github.com/aquama/natalia-cli/internal/llm"
-	"github.com/aquama/natalia-cli/internal/rule"
+	"github.com/aquama/natalia-cli/internal/mode"
 	"github.com/aquama/natalia-cli/internal/toolset"
 )
 
@@ -41,15 +41,18 @@ func (q *SteerQueue) Pop() (string, bool) {
 }
 
 type Engine struct {
-	Context *chat.Context
-	LLM     *llm.Client
-	Tools   *toolset.Registry
-	Dedup   *toolset.Dedup
-	Steer   *SteerQueue
-	Stream  bool
-	OnToken func(string)
-	OnReasoning func(string)
-	OnStreamEnd func()
+	Context      *chat.Context
+	LLM          *llm.Client
+	Tools        *toolset.Registry
+	Dedup        *toolset.Dedup
+	Steer        *SteerQueue
+	Stream       bool
+	OnToken      func(string)
+	OnReasoning  func(string)
+	OnStreamEnd  func()
+	OnStepBegin  func(int)
+	OnToolCall   func(ToolCallEvent)
+	OnToolResult func(ToolResultEvent)
 
 	Debug bool
 	Log   func(format string, args ...any)
@@ -63,12 +66,12 @@ type Engine struct {
 	// Approval
 	Approver *approval.Approver
 
-	// Rule
-	Rule       *rule.Rule
+	// Mode
+	Mode *mode.Mode
 
 	// Cancellation
-	ctx     context.Context
-	cancel  context.CancelFunc
+	ctx    context.Context
+	cancel context.CancelFunc
 
 	// Compaction
 	Compactor      *compaction.SimpleCompaction
@@ -77,6 +80,8 @@ type Engine struct {
 	ReservedTokens int
 	AutoCompact    bool
 	OnCompact      func(string)
+	OnCompactBegin func()
+	OnCompactEnd   func()
 }
 
 func (e *Engine) log(format string, args ...any) {
@@ -89,6 +94,19 @@ type Outcome struct {
 	FinalMessage string
 	StopReason   string
 	Steps        int
+}
+
+type ToolCallEvent struct {
+	ID        string
+	Name      string
+	Arguments map[string]any
+}
+
+type ToolResultEvent struct {
+	ToolCallID string
+	Name       string
+	Content    string
+	Error      string
 }
 
 func NewEngine(llmClient *llm.Client, tools *toolset.Registry) *Engine {
@@ -137,6 +155,7 @@ func (e *Engine) injectSteer() (string, error) {
 }
 
 func (e *Engine) turn() (*Outcome, error) {
+	e.Dedup.ResetTurn()
 	for {
 		outcome := e.agentLoop()
 		if outcome.StopReason == "no_tool_calls" || outcome.FinalMessage != "" || outcome.StopReason == "max_steps" {
@@ -163,7 +182,9 @@ func (e *Engine) agentLoop() *Outcome {
 			tokens := compaction.EstimateTokens(e.Context.Messages)
 			if compaction.ShouldCompact(tokens, e.MaxContextSize, e.CompactRatio, e.ReservedTokens) {
 				e.log("[ENGINE] auto-compacting (%d/%d tokens)", tokens, e.MaxContextSize)
+				e.emitCompactBegin()
 				result, err := e.Compactor.Compact(e.Context.Messages, e.LLM)
+				e.emitCompactEnd()
 				if err == nil {
 					e.Context.Messages = result.Messages
 					if e.OnCompact != nil {
@@ -186,11 +207,6 @@ func (e *Engine) agentLoop() *Outcome {
 			return outcome
 		}
 
-		if outcome.StopReason == "back_to_future" {
-			cp.Restore(e.Context)
-			continue
-		}
-
 		steerMsg, err := e.injectSteer()
 		if err != nil {
 			return &Outcome{StopReason: "error", FinalMessage: err.Error()}
@@ -207,12 +223,12 @@ func (e *Engine) agentLoop() *Outcome {
 
 func (e *Engine) getToolDefs() []llm.ToolDef {
 	defs := e.Tools.ToToolDefs()
-	if e.Rule == nil {
+	if e.Mode == nil {
 		return defs
 	}
 	filtered := make([]llm.ToolDef, 0, len(defs))
 	for _, d := range defs {
-		if e.Rule.ToolFilter(d.Function.Name, nil) {
+		if e.Mode.ToolFilter(d.Function.Name, nil) {
 			filtered = append(filtered, d)
 		}
 	}
@@ -227,6 +243,9 @@ func (e *Engine) Step(ctx context.Context) *Outcome {
 func (e *Engine) step() *Outcome {
 	e.Context.StepCount++
 	e.log("[ENGINE] step %d: %d messages in context", e.Context.StepCount, len(e.Context.Messages))
+	if e.OnStepBegin != nil {
+		e.OnStepBegin(e.Context.StepCount)
+	}
 
 	var msg *chat.Message
 	var usage *llm.Usage
@@ -328,6 +347,9 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 	if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
 		args = map[string]any{}
 	}
+	if e.OnToolCall != nil {
+		e.OnToolCall(ToolCallEvent{ID: tc.ID, Name: name, Arguments: args})
+	}
 
 	warn, stop := e.Dedup.Check(name, args)
 	if stop {
@@ -343,18 +365,20 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 			Content:    result,
 			Name:       name,
 		})
+		e.emitToolResult(tc.ID, name, result, "")
 		return nil
 	}
 
-	// Rule check: tool not allowed in current mode
-	if e.Rule != nil && !e.Rule.ToolFilter(name, args) {
-		result := fmt.Sprintf("当前模式 %q 不允许使用工具 %s", e.Rule.Name, name)
+	// Mode check: tool not allowed in current mode
+	if e.Mode != nil && !e.Mode.ToolFilter(name, args) {
+		result := fmt.Sprintf("当前模式 %q 不允许使用工具 %s", e.Mode.Name, name)
 		e.Context.Messages = append(e.Context.Messages, chat.Message{
 			Role:       chat.RoleTool,
 			ToolCallID: tc.ID,
 			Content:    result,
 			Name:       name,
 		})
+		e.emitToolResult(tc.ID, name, result, "")
 		return nil
 	}
 
@@ -369,6 +393,7 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 				Content:    result,
 				Name:       name,
 			})
+			e.emitToolResult(tc.ID, name, result, "")
 			e.log("[ENGINE] tool rejected: %s", name)
 			return nil
 		}
@@ -396,8 +421,27 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 		Content:    finalResult,
 		Name:       name,
 	})
+	e.emitToolResult(tc.ID, name, finalResult, errMsg)
 
 	return nil
+}
+
+func (e *Engine) emitToolResult(toolCallID, name, content, errMsg string) {
+	if e.OnToolResult != nil {
+		e.OnToolResult(ToolResultEvent{ToolCallID: toolCallID, Name: name, Content: content, Error: errMsg})
+	}
+}
+
+func (e *Engine) emitCompactBegin() {
+	if e.OnCompactBegin != nil {
+		e.OnCompactBegin()
+	}
+}
+
+func (e *Engine) emitCompactEnd() {
+	if e.OnCompactEnd != nil {
+		e.OnCompactEnd()
+	}
 }
 
 var debugWriter io.Writer = io.Discard
@@ -427,7 +471,9 @@ func (e *Engine) CompactNow() (string, error) {
 	if len(e.Context.Messages) == 0 {
 		return "", fmt.Errorf("context is empty")
 	}
+	e.emitCompactBegin()
 	result, err := e.Compactor.Compact(e.Context.Messages, e.LLM)
+	e.emitCompactEnd()
 	if err != nil {
 		return "", fmt.Errorf("compaction failed: %w", err)
 	}
@@ -442,11 +488,8 @@ func (e *Engine) RollbackTo(step int) (string, error) {
 	if err := e.Snapshotter.Rollback(step); err != nil {
 		return "", fmt.Errorf("文件恢复失败: %w", err)
 	}
-	for e.Context.StepCount > step {
-		e.Context.StepCount--
-		cp := e.Context.SaveCheckpoint()
-		e.Context.Messages = cp.Messages
+	if !e.Context.RestoreCheckpoint(step) {
+		return "", fmt.Errorf("找不到第 %d 步的上下文检查点", step)
 	}
-	e.Context.StepCount = step
 	return fmt.Sprintf("已回退到第 %d 步", step), nil
 }
