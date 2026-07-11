@@ -147,6 +147,54 @@ func TestStatusLinesShowRuntimeRoutingDetails(t *testing.T) {
 	}
 }
 
+func TestRunOnceStreamDoesNotPrintReasoningOrDuplicateFinal(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprintln(w, `data: {"choices":[{"delta":{"reasoning_content":"hidden reasoning"}}]}`)
+		_, _ = fmt.Fprintln(w)
+		_, _ = fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"pong"}}]}`)
+		_, _ = fmt.Fprintln(w)
+		_, _ = fmt.Fprintln(w, "data: [DONE]")
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		DefaultProfile: "default",
+		Providers:      map[string]config.Provider{"mock": {BaseURL: server.URL, APIKey: "test-key"}},
+		Profiles: map[string]config.Profile{
+			"default": {Provider: "mock", Model: "mock-model", Stream: true, MaxSteps: 1},
+		},
+		PermissionProfiles: config.DefaultPermissionProfiles(),
+	}
+	output := captureStdout(t, func() {
+		runOnce(cfg, toolset.NewRegistry(), "reply pong")
+	})
+	if strings.Contains(output, "hidden reasoning") {
+		t.Fatalf("expected reasoning to be suppressed, got %q", output)
+	}
+	if strings.Count(output, "pong") != 1 {
+		t.Fatalf("expected exactly one pong, got %q", output)
+	}
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	fn()
+	_ = w.Close()
+	os.Stdout = old
+	data, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
 func TestRunWireInitializeWithoutConfig(t *testing.T) {
 	in := strings.NewReader(`{"jsonrpc":"2.0","method":"initialize","id":"init_1","params":{}}` + "\n")
 	out := &bytes.Buffer{}

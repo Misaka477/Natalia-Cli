@@ -1,6 +1,7 @@
 package toolset
 
 import (
+	"encoding/json"
 	"fmt"
 	"sync"
 
@@ -99,9 +100,17 @@ func (d *Dedup) Record(name string, args map[string]any, result, errMsg string) 
 func (d *Dedup) Count(name string, args map[string]any) int {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	key := fmt.Sprintf("%s:%v", name, args)
+	key := dedupKey(name, args)
 	d.repetitions[key]++
 	return d.repetitions[key]
+}
+
+func dedupKey(name string, args map[string]any) string {
+	data, err := json.Marshal(args)
+	if err != nil {
+		return fmt.Sprintf("%s:%v", name, args)
+	}
+	return name + ":" + string(data)
 }
 
 func (d *Dedup) ResetTurn() {

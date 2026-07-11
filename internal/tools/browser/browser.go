@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aquama/natalia-cli/internal/llm"
@@ -13,9 +15,14 @@ import (
 	"github.com/go-rod/rod/lib/proto"
 )
 
-var globalBrowser *rod.Browser
+var (
+	globalBrowser   *rod.Browser
+	globalBrowserMu sync.Mutex
+)
 
 func getBrowser() (*rod.Browser, error) {
+	globalBrowserMu.Lock()
+	defer globalBrowserMu.Unlock()
 	if globalBrowser != nil {
 		return globalBrowser, nil
 	}
@@ -40,11 +47,24 @@ func getBrowser() (*rod.Browser, error) {
 	return globalBrowser, nil
 }
 
+func Close() error {
+	globalBrowserMu.Lock()
+	defer globalBrowserMu.Unlock()
+	if globalBrowser == nil {
+		return nil
+	}
+	err := globalBrowser.Close()
+	globalBrowser = nil
+	return err
+}
+
 type Visit struct{}
 
-func (t *Visit) Name() string        { return "browser_visit" }
-func (t *Visit) Description() string { return "用真实浏览器访问网页，支持 JS 渲染，规避反爬虫。返回页面标题和正文" }
-func (t *Visit) Required() []string  { return []string{"url"} }
+func (t *Visit) Name() string { return "browser_visit" }
+func (t *Visit) Description() string {
+	return "用真实浏览器访问网页，支持 JS 渲染，规避反爬虫。返回页面标题和正文"
+}
+func (t *Visit) Required() []string { return []string{"url"} }
 func (t *Visit) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"url":  {Type: "string", Description: "要访问的网页 URL"},
@@ -58,7 +78,11 @@ func (t *Visit) Execute(args map[string]any) (string, error) {
 	}
 	waitSec := 3
 	if w, ok := args["wait"].(string); ok {
-		fmt.Sscanf(w, "%d", &waitSec)
+		parsed, err := parseWait(w)
+		if err != nil {
+			return "", err
+		}
+		waitSec = parsed
 	}
 
 	b, err := getBrowser()
@@ -97,6 +121,17 @@ func (t *Visit) Execute(args map[string]any) (string, error) {
 	return fmt.Sprintf("标题: %s\n\n%s", titleStr, text), nil
 }
 
+func parseWait(raw string) (int, error) {
+	parsed, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || parsed < 0 {
+		return 0, fmt.Errorf("wait must be a non-negative integer number of seconds")
+	}
+	if parsed > 60 {
+		return 0, fmt.Errorf("wait must be <= 60 seconds")
+	}
+	return parsed, nil
+}
+
 type Screenshot struct{}
 
 func (t *Screenshot) Name() string        { return "browser_screenshot" }
@@ -106,6 +141,7 @@ func (t *Screenshot) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"url":  {Type: "string", Description: "要截图的网页 URL"},
 		"path": {Type: "string", Description: "可选，保存路径，默认 ./screenshot.png"},
+		"wait": {Type: "string", Description: "可选，等待秒数，默认 3"},
 	}
 }
 func (t *Screenshot) Execute(args map[string]any) (string, error) {
@@ -116,6 +152,14 @@ func (t *Screenshot) Execute(args map[string]any) (string, error) {
 	savePath, _ := args["path"].(string)
 	if savePath == "" {
 		savePath = "./screenshot.png"
+	}
+	waitSec := 3
+	if w, ok := args["wait"].(string); ok {
+		parsed, err := parseWait(w)
+		if err != nil {
+			return "", err
+		}
+		waitSec = parsed
 	}
 
 	b, err := getBrowser()
@@ -133,7 +177,7 @@ func (t *Screenshot) Execute(args map[string]any) (string, error) {
 		return "", fmt.Errorf("导航失败: %w", err)
 	}
 	page.WaitLoad()
-	time.Sleep(3 * time.Second)
+	time.Sleep(time.Duration(waitSec) * time.Second)
 
 	absPath, _ := filepath.Abs(savePath)
 	data, err := page.Screenshot(true, nil)

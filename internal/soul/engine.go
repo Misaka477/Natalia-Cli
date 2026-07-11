@@ -10,8 +10,10 @@ import (
 	"github.com/aquama/natalia-cli/internal/approval"
 	"github.com/aquama/natalia-cli/internal/chat"
 	"github.com/aquama/natalia-cli/internal/compaction"
+	"github.com/aquama/natalia-cli/internal/contextbudget"
 	"github.com/aquama/natalia-cli/internal/llm"
 	"github.com/aquama/natalia-cli/internal/mode"
+	"github.com/aquama/natalia-cli/internal/toolcache"
 	"github.com/aquama/natalia-cli/internal/toolset"
 )
 
@@ -82,6 +84,10 @@ type Engine struct {
 	OnCompact      func(string)
 	OnCompactBegin func()
 	OnCompactEnd   func()
+
+	// Context budget
+	ToolResultMaxChars int
+	ToolCache          *toolcache.Cache
 }
 
 func (e *Engine) log(format string, args ...any) {
@@ -112,13 +118,15 @@ type ToolResultEvent struct {
 func NewEngine(llmClient *llm.Client, tools *toolset.Registry) *Engine {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Engine{
-		Context: chat.NewContext(128000, 50),
-		LLM:     llmClient,
-		Tools:   tools,
-		Dedup:   toolset.NewDedup(),
-		Steer:   &SteerQueue{},
-		ctx:     ctx,
-		cancel:  cancel,
+		Context:            chat.NewContext(128000, 50),
+		LLM:                llmClient,
+		Tools:              tools,
+		Dedup:              toolset.NewDedup(),
+		Steer:              &SteerQueue{},
+		ctx:                ctx,
+		cancel:             cancel,
+		ToolResultMaxChars: contextbudget.DefaultToolResultMaxChars,
+		ToolCache:          toolcache.New(),
 	}
 }
 
@@ -362,7 +370,7 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 		e.Context.Messages = append(e.Context.Messages, chat.Message{
 			Role:       chat.RoleTool,
 			ToolCallID: tc.ID,
-			Content:    result,
+			Content:    e.budgetToolResult(name, result),
 			Name:       name,
 		})
 		e.emitToolResult(tc.ID, name, result, "")
@@ -375,7 +383,7 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 		e.Context.Messages = append(e.Context.Messages, chat.Message{
 			Role:       chat.RoleTool,
 			ToolCallID: tc.ID,
-			Content:    result,
+			Content:    e.budgetToolResult(name, result),
 			Name:       name,
 		})
 		e.emitToolResult(tc.ID, name, result, "")
@@ -390,7 +398,7 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 			e.Context.Messages = append(e.Context.Messages, chat.Message{
 				Role:       chat.RoleTool,
 				ToolCallID: tc.ID,
-				Content:    result,
+				Content:    e.budgetToolResult(name, result),
 				Name:       name,
 			})
 			e.emitToolResult(tc.ID, name, result, "")
@@ -399,10 +407,24 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 		}
 	}
 
+	if e.ToolCache != nil && toolcache.IsCacheable(name) {
+		if cached, ok := e.ToolCache.Get(name, args); ok {
+			e.appendToolResult(tc.ID, name, cached)
+			e.emitToolResult(tc.ID, name, cached, "")
+			return nil
+		}
+	}
+
 	result, err := tool.Execute(args)
 	errMsg := ""
 	if err != nil {
 		errMsg = err.Error()
+	}
+	if e.ToolCache != nil && errMsg == "" && toolcache.IsCacheable(name) {
+		e.ToolCache.Set(name, args, result)
+	}
+	if e.ToolCache != nil {
+		e.ToolCache.InvalidatePath(toolcache.MutatedPath(name, args, errMsg))
 	}
 
 	e.Dedup.Record(name, args, result, errMsg)
@@ -415,15 +437,23 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 		finalResult = fmt.Sprintf("错误: %v\n%s", errMsg, result)
 	}
 
-	e.Context.Messages = append(e.Context.Messages, chat.Message{
-		Role:       chat.RoleTool,
-		ToolCallID: tc.ID,
-		Content:    finalResult,
-		Name:       name,
-	})
+	e.appendToolResult(tc.ID, name, finalResult)
 	e.emitToolResult(tc.ID, name, finalResult, errMsg)
 
 	return nil
+}
+
+func (e *Engine) appendToolResult(toolCallID, name, content string) {
+	e.Context.Messages = append(e.Context.Messages, chat.Message{
+		Role:       chat.RoleTool,
+		ToolCallID: toolCallID,
+		Content:    e.budgetToolResult(name, content),
+		Name:       name,
+	})
+}
+
+func (e *Engine) budgetToolResult(toolName, content string) string {
+	return contextbudget.BudgetToolResult(toolName, content, e.ToolResultMaxChars)
 }
 
 func (e *Engine) emitToolResult(toolCallID, name, content, errMsg string) {

@@ -299,10 +299,16 @@ func runOnce(cfg *config.Config, tools *toolset.Registry, input string) {
 		fmt.Fprintln(os.Stderr, "未配置模型。设置 --profile 或使用 /setup 配置。")
 		os.Exit(1)
 	}
+	engine.OnReasoning = nil
+	engine.OnStreamEnd = nil
 	outcome, err := engine.Run(input)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "错误: %v\n", err)
 		os.Exit(1)
+	}
+	if engine.Stream {
+		fmt.Println()
+		return
 	}
 	fmt.Println(outcome.FinalMessage)
 }

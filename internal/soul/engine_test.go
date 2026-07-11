@@ -2,9 +2,13 @@ package soul
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/aquama/natalia-cli/internal/chat"
@@ -58,6 +62,47 @@ func (n namedTool) Execute(args map[string]any) (string, error) { return "ok", n
 func (n namedTool) Parameters() map[string]llm.Property         { return nil }
 func (n namedTool) Required() []string                          { return nil }
 
+type largeResultTool struct{}
+
+func (largeResultTool) Name() string        { return "large_result" }
+func (largeResultTool) Description() string { return "large result test tool" }
+func (largeResultTool) Execute(args map[string]any) (string, error) {
+	return strings.Repeat("x", 1000), nil
+}
+func (largeResultTool) Parameters() map[string]llm.Property { return nil }
+func (largeResultTool) Required() []string                  { return nil }
+
+type shellFailureTool struct{}
+
+func (shellFailureTool) Name() string        { return "run_shell" }
+func (shellFailureTool) Description() string { return "shell failure test tool" }
+func (shellFailureTool) Execute(args map[string]any) (string, error) {
+	return strings.Repeat("noise\n", 100) + "--- FAIL: TestExample (0.01s)\nERROR: exit status 1", nil
+}
+func (shellFailureTool) Parameters() map[string]llm.Property { return nil }
+func (shellFailureTool) Required() []string                  { return nil }
+
+type countingReadTool struct {
+	count int
+}
+
+func (t *countingReadTool) Name() string        { return "read_file" }
+func (t *countingReadTool) Description() string { return "counting read test tool" }
+func (t *countingReadTool) Execute(args map[string]any) (string, error) {
+	t.count++
+	return fmt.Sprintf("read %d", t.count), nil
+}
+func (t *countingReadTool) Parameters() map[string]llm.Property { return nil }
+func (t *countingReadTool) Required() []string                  { return nil }
+
+type noOpWriteTool struct{}
+
+func (noOpWriteTool) Name() string                                { return "write_file" }
+func (noOpWriteTool) Description() string                         { return "write test tool" }
+func (noOpWriteTool) Execute(args map[string]any) (string, error) { return "written", nil }
+func (noOpWriteTool) Parameters() map[string]llm.Property         { return nil }
+func (noOpWriteTool) Required() []string                          { return nil }
+
 func TestExecuteToolCallEmitsEvents(t *testing.T) {
 	tools := toolset.NewRegistry()
 	tools.Register(eventTool{})
@@ -99,6 +144,95 @@ func TestGetToolDefsRespectsModeFilter(t *testing.T) {
 	defs := engine.getToolDefs()
 	if len(defs) != 1 || defs[0].Function.Name != "read_file" {
 		t.Fatalf("expected only read_file schema, got %+v", defs)
+	}
+}
+
+func TestExecuteToolCallBudgetsToolResultInContext(t *testing.T) {
+	tools := toolset.NewRegistry()
+	tools.Register(largeResultTool{})
+	engine := NewEngine(nil, tools)
+	engine.ToolResultMaxChars = 200
+	var emitted []ToolResultEvent
+	engine.OnToolResult = func(event ToolResultEvent) { emitted = append(emitted, event) }
+
+	err := engine.executeToolCall(chat.ToolCall{
+		ID:   "tc_large",
+		Type: "function",
+		Function: chat.ToolCallFunc{
+			Name:      "large_result",
+			Arguments: `{}`,
+		},
+	})
+	if err != nil {
+		t.Fatalf("executeToolCall failed: %v", err)
+	}
+	if len(engine.Context.Messages) != 1 {
+		t.Fatalf("expected one tool message, got %d", len(engine.Context.Messages))
+	}
+	content := engine.Context.Messages[0].Content
+	if len(content) > 200 || !strings.Contains(content, "[tool result truncated:") {
+		t.Fatalf("expected budgeted context result, got len=%d content=%q", len(content), content)
+	}
+	if len(emitted) != 1 || len(emitted[0].Content) != 1000 {
+		t.Fatalf("expected full result in event, got %+v", emitted)
+	}
+}
+
+func TestExecuteToolCallSummarizesShellFailureInContext(t *testing.T) {
+	tools := toolset.NewRegistry()
+	tools.Register(shellFailureTool{})
+	engine := NewEngine(nil, tools)
+	engine.ToolResultMaxChars = 300
+
+	err := engine.executeToolCall(chat.ToolCall{
+		ID:   "tc_shell",
+		Type: "function",
+		Function: chat.ToolCallFunc{
+			Name:      "run_shell",
+			Arguments: `{"command":"go test ./..."}`,
+		},
+	})
+	if err != nil {
+		t.Fatalf("executeToolCall failed: %v", err)
+	}
+	content := engine.Context.Messages[0].Content
+	if len(content) > 300 || !strings.Contains(content, "[shell/test output summarized:") || !strings.Contains(content, "--- FAIL: TestExample") {
+		t.Fatalf("expected summarized shell failure, got len=%d content=%q", len(content), content)
+	}
+}
+
+func TestExecuteToolCallCachesReadFileAndInvalidatesOnWrite(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cached.txt")
+	if err := os.WriteFile(path, []byte("cached"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	reader := &countingReadTool{}
+	tools := toolset.NewRegistry()
+	tools.Register(reader)
+	tools.Register(noOpWriteTool{})
+	engine := NewEngine(nil, tools)
+
+	readCall := chat.ToolCall{ID: "tc_read", Type: "function", Function: chat.ToolCallFunc{Name: "read_file", Arguments: fmt.Sprintf(`{"path":%q,"offset":"1","limit":"10"}`, path)}}
+	if err := engine.executeToolCall(readCall); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.executeToolCall(readCall); err != nil {
+		t.Fatal(err)
+	}
+	if reader.count != 1 {
+		t.Fatalf("expected second read_file call to use cache, executed %d times", reader.count)
+	}
+
+	writeCall := chat.ToolCall{ID: "tc_write", Type: "function", Function: chat.ToolCallFunc{Name: "write_file", Arguments: fmt.Sprintf(`{"path":%q,"content":"new"}`, path)}}
+	if err := engine.executeToolCall(writeCall); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.executeToolCall(readCall); err != nil {
+		t.Fatal(err)
+	}
+	if reader.count != 2 {
+		t.Fatalf("expected read_file cache invalidated after write_file, executed %d times", reader.count)
 	}
 }
 

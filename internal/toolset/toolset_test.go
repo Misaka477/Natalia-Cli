@@ -16,3 +16,15 @@ func TestDedupResetTurn(t *testing.T) {
 		t.Fatalf("expected reset count to be 1, got %d", got)
 	}
 }
+
+func TestDedupKeyIsDeterministicForMapArgs(t *testing.T) {
+	d := NewDedup()
+	argsA := map[string]any{"b": 2, "a": 1}
+	argsB := map[string]any{"a": 1, "b": 2}
+	if got := d.Count("read_file", argsA); got != 1 {
+		t.Fatalf("expected first count to be 1, got %d", got)
+	}
+	if got := d.Count("read_file", argsB); got != 2 {
+		t.Fatalf("expected deterministic key to count equivalent args, got %d", got)
+	}
+}

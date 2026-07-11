@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,8 +15,8 @@ import (
 )
 
 var (
-	SearchAPIKey = os.Getenv("SEARCH_API_KEY")
-	SearchEngine = os.Getenv("SEARCH_ENGINE")
+	SearchAPIKey  = os.Getenv("SEARCH_API_KEY")
+	SearchEngine  = os.Getenv("SEARCH_ENGINE")
 	SearchBaseURL = os.Getenv("SEARCH_BASE_URL")
 )
 
@@ -30,13 +31,15 @@ type SearchResult struct {
 
 type Search struct{}
 
-func (t *Search) Name() string        { return "web_search" }
-func (t *Search) Description() string { return "搜索网络，返回相关结果列表。支持设置 SEARCH_API_KEY 和 SEARCH_ENGINE 环境变量来配置搜索引擎" }
-func (t *Search) Required() []string  { return []string{"query"} }
+func (t *Search) Name() string { return "web_search" }
+func (t *Search) Description() string {
+	return "搜索网络，返回相关结果列表。支持设置 SEARCH_API_KEY 和 SEARCH_ENGINE 环境变量来配置搜索引擎"
+}
+func (t *Search) Required() []string { return []string{"query"} }
 func (t *Search) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"query":          {Type: "string", Description: "搜索关键词"},
-		"limit":          {Type: "string", Description: "可选，返回结果数量，默认 5"},
+		"query":           {Type: "string", Description: "搜索关键词"},
+		"limit":           {Type: "string", Description: "可选，返回结果数量，默认 5"},
 		"include_content": {Type: "string", Description: "可选，设为 true 时同时抓取页面内容（消耗更多 token）"},
 	}
 }
@@ -48,7 +51,11 @@ func (t *Search) Execute(args map[string]any) (string, error) {
 
 	limit := 5
 	if l, ok := args["limit"].(string); ok {
-		fmt.Sscanf(l, "%d", &limit)
+		parsed, err := strconv.Atoi(strings.TrimSpace(l))
+		if err != nil {
+			return "", fmt.Errorf("limit must be an integer")
+		}
+		limit = parsed
 	}
 	if limit < 1 || limit > 20 {
 		limit = 5
@@ -142,9 +149,16 @@ func searchCustom(query string, limit int, includeContent bool) ([]SearchResult,
 
 func searchGoogle(query string, limit int) ([]SearchResult, error) {
 	cx := os.Getenv("GOOGLE_CX")
-	apiURL := fmt.Sprintf("https://www.googleapis.com/customsearch/v1?key=%s&cx=%s&q=%s&num=%d",
-		SearchAPIKey, cx, url.QueryEscape(query), limit)
-	resp, err := http.Get(apiURL)
+	values := url.Values{}
+	values.Set("key", SearchAPIKey)
+	values.Set("cx", cx)
+	values.Set("q", query)
+	values.Set("num", strconv.Itoa(limit))
+	req, err := http.NewRequest("GET", "https://www.googleapis.com/customsearch/v1?"+values.Encode(), nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -178,8 +192,8 @@ func searchDuckDuckGo(query string, limit int) ([]SearchResult, error) {
 	if err == nil {
 		defer resp.Body.Close()
 		var ddg struct {
-			Abstract       string `json:"Abstract"`
-			AbstractURL    string `json:"AbstractURL"`
+			Abstract      string `json:"Abstract"`
+			AbstractURL   string `json:"AbstractURL"`
 			RelatedTopics []any  `json:"RelatedTopics"`
 		}
 		json.NewDecoder(resp.Body).Decode(&ddg)
@@ -395,9 +409,11 @@ func stripHTML(html string) string {
 
 type MediaFile struct{}
 
-func (t *MediaFile) Name() string        { return "read_media_file" }
-func (t *MediaFile) Description() string { return "读取媒体文件信息（图片尺寸、格式、大小等）" }
-func (t *MediaFile) Required() []string  { return []string{"path"} }
+func (t *MediaFile) Name() string { return "read_media_file" }
+func (t *MediaFile) Description() string {
+	return "读取媒体文件信息（图片尺寸、格式、大小等）"
+}
+func (t *MediaFile) Required() []string { return []string{"path"} }
 func (t *MediaFile) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"path": {Type: "string", Description: "媒体文件路径"},
