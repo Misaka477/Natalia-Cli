@@ -27,6 +27,7 @@ var (
 		"run_shell":         true,
 		"process_start":     true,
 		"process_stop":      true,
+		"process_restart":   true,
 		"background_start":  true,
 		"background_stop":   true,
 		"interactive_start": true,

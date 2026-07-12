@@ -233,6 +233,8 @@ func TestConfigSaveLoadAndEffectiveProfileEndToEnd(t *testing.T) {
 		MCPServers: map[string]MCPServerConfig{
 			"fixture": {Command: "fixture-mcp", Args: []string{"--stdio"}, TimeoutSec: 4, AllowedTools: []string{"echo"}, ExcludeTools: []string{"mutate"}, ReadOnly: true},
 		},
+		WebSearch: WebSearchConfig{ProviderPriority: []string{"bing", "google", "duckduckgo"}},
+		Browser:   BrowserConfig{Backend: "rod", PersistentProfile: true, ProfileDir: "/tmp/natalia-browser", UserAgent: "NataliaTest/1.0", Locale: "en-US", Timezone: "UTC", Headers: map[string]string{"X-Test": "browser"}, Stealth: true, Trace: true},
 	}
 	if err := cfg.Save(); err != nil {
 		t.Fatal(err)
@@ -261,6 +263,12 @@ func TestConfigSaveLoadAndEffectiveProfileEndToEnd(t *testing.T) {
 	server := loaded.MCPServers["fixture"]
 	if server.Command != "fixture-mcp" || len(server.Args) != 1 || server.TimeoutSec != 4 || len(server.AllowedTools) != 1 || len(server.ExcludeTools) != 1 || !server.ReadOnly {
 		t.Fatalf("loaded config did not preserve MCP servers: %+v", loaded.MCPServers)
+	}
+	if strings.Join(loaded.WebSearch.ProviderPriority, ",") != "bing,google,duckduckgo" {
+		t.Fatalf("loaded config did not preserve web search priority: %+v", loaded.WebSearch)
+	}
+	if loaded.Browser.Backend != "rod" || !loaded.Browser.PersistentProfile || loaded.Browser.ProfileDir != "/tmp/natalia-browser" || loaded.Browser.Headers["X-Test"] != "browser" || !loaded.Browser.Stealth || !loaded.Browser.Trace {
+		t.Fatalf("loaded config did not preserve browser config: %+v", loaded.Browser)
 	}
 }
 

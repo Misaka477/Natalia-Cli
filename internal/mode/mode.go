@@ -17,23 +17,31 @@ var codeTools = map[string]bool{
 	"glob": true, "grep": true, "run_shell": true,
 	"web_fetch": true, "web_search": true,
 	"todo_set": true, "todo_add": true, "todo_done": true, "todo_list": true,
+	"ask_user":      true,
 	"workflow_list": true, "workflow_read": true,
 	"plan_mode_enter": true, "plan_mode_exit": true, "plan_mode_status": true,
+	"process_start": true, "process_list": true, "process_status": true, "process_output": true, "process_stop": true, "process_restart": true,
 }
 
 var readTools = map[string]bool{
 	"read_file": true, "glob": true, "grep": true,
 	"web_fetch": true, "web_search": true,
 	"todo_list":     true,
+	"ask_user":      true,
 	"workflow_list": true, "workflow_read": true,
 	"plan_mode_enter": true, "plan_mode_exit": true, "plan_mode_status": true,
+	"process_list": true, "process_status": true, "process_output": true,
 }
 
 var chatTools = map[string]bool{
 	"web_search":       true,
+	"ask_user":         true,
 	"todo_list":        true,
 	"workflow_list":    true,
 	"plan_mode_status": true,
+	"process_list":     true,
+	"process_status":   true,
+	"process_output":   true,
 }
 
 func makeFilter(allowed map[string]bool) func(string, map[string]any) bool {

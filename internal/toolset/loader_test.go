@@ -18,7 +18,7 @@ func TestRegisterDefaultToolsFromAgentSpec(t *testing.T) {
 	if err := RegisterDefaultTools(r); err != nil {
 		t.Fatalf("RegisterDefaultTools failed: %v", err)
 	}
-	for _, name := range []string{"read_file", "write_file", "run_shell", "web_fetch", "todo_set", "ask_user", "interactive_start", "background_start", "workflow_list", "workflow_read", "plan_mode_enter", "plan_mode_status"} {
+	for _, name := range []string{"read_file", "write_file", "run_shell", "web_fetch", "file_info", "todo_set", "ask_user", "process_restart", "interactive_start", "background_start", "workflow_list", "workflow_read", "plan_mode_enter", "plan_mode_status"} {
 		if _, ok := r.Get(name); !ok {
 			t.Fatalf("expected tool %q to be registered", name)
 		}
@@ -84,6 +84,7 @@ func TestDefaultToolsetExecutesModelStyleToolFlowEndToEnd(t *testing.T) {
 	}))
 	defer server.Close()
 	mustExecTool(t, r, "web_fetch", map[string]any{"url": server.URL}, "Toolset Web OK")
+	mustExecTool(t, r, "file_info", map[string]any{"path": path}, "MIME:")
 }
 
 func TestDefaultToolsetWriteToolsRespectPlanModeGuard(t *testing.T) {

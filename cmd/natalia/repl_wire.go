@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +20,12 @@ type wireTerminalRenderState struct {
 }
 
 func startInteractiveWireRenderer(out, errOut io.Writer) (*wire.Wire, func()) {
+	return startInteractiveWireRendererWithResponder(out, errOut, newTerminalQuestionResponder(os.Stdin, errOut))
+}
+
+type questionResponder func(context.Context, wire.QuestionRequest) (wire.QuestionResponse, error)
+
+func startInteractiveWireRendererWithResponder(out, errOut io.Writer, responder questionResponder) (*wire.Wire, func()) {
 	w := wire.NewWire()
 	ch, cancel := w.UISide().SubscribeRaw()
 	done := make(chan struct{})
@@ -26,6 +35,9 @@ func startInteractiveWireRenderer(out, errOut io.Writer) (*wire.Wire, func()) {
 		state := &wireTerminalRenderState{}
 		for msg := range ch {
 			renderInteractiveWireMessage(state, msg, out, errOut)
+			if responder != nil && msg.Kind == wire.MessageRequest && msg.Request != nil && msg.Request.Type == wire.RequestQuestion {
+				respondInteractiveQuestion(w, msg.Request, responder, errOut)
+			}
 		}
 	}()
 	stop := func() {
@@ -35,6 +47,34 @@ func startInteractiveWireRenderer(out, errOut io.Writer) (*wire.Wire, func()) {
 		})
 	}
 	return w, stop
+}
+
+func respondInteractiveQuestion(w *wire.Wire, req *wire.WireRequest, responder questionResponder, errOut io.Writer) {
+	var question wire.QuestionRequest
+	if err := json.Unmarshal(req.Payload, &question); err != nil {
+		fmt.Fprintf(errOut, "[question response error] %v\n", err)
+		return
+	}
+	ctx := context.Background()
+	if question.TimeoutMS > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(question.TimeoutMS)*time.Millisecond)
+		defer cancel()
+	}
+	resp, err := responder(ctx, question)
+	if err != nil {
+		fmt.Fprintf(errOut, "[question response error] %v\n", err)
+		return
+	}
+	if resp.RequestID == "" {
+		resp.RequestID = req.ID
+	}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		fmt.Fprintf(errOut, "[question response error] %v\n", err)
+		return
+	}
+	w.ResolveResponse(req.ID, data)
 }
 
 func renderInteractiveWireMessage(state *wireTerminalRenderState, msg wire.WireMessage, out, errOut io.Writer) {
@@ -126,6 +166,18 @@ func renderInteractiveWireRequest(req *wire.WireRequest, errOut io.Writer) {
 			fmt.Fprintf(errOut, "\n[question request] %s (%d questions)\n", req.ID, len(question.Questions))
 			for _, item := range question.Questions {
 				fmt.Fprintf(errOut, "- %s: %s\n", item.Name, trimWireLine(item.Question, 300))
+				for i, option := range item.Options {
+					fmt.Fprintf(errOut, "  %d. %s\n", i+1, option)
+				}
+				if item.Multiple {
+					fmt.Fprintln(errOut, "  multiple: true")
+				}
+				if item.AllowCustom {
+					fmt.Fprintln(errOut, "  custom input allowed")
+				}
+				if item.Fallback != "" {
+					fmt.Fprintf(errOut, "  fallback: %s\n", item.Fallback)
+				}
 			}
 		}
 	case wire.RequestToolCall:
@@ -141,6 +193,91 @@ func renderInteractiveWireRequest(req *wire.WireRequest, errOut io.Writer) {
 	default:
 		fmt.Fprintf(errOut, "\n[wire request] %s %s\n", req.Type, req.ID)
 	}
+}
+
+func newTerminalQuestionResponder(in io.Reader, out io.Writer) questionResponder {
+	reader := bufio.NewReader(in)
+	return func(ctx context.Context, req wire.QuestionRequest) (wire.QuestionResponse, error) {
+		answers := make(map[string]string, len(req.Questions))
+		for _, item := range req.Questions {
+			fmt.Fprintf(out, "[answer] %s > ", item.Name)
+			answer, ok, err := readQuestionLine(ctx, reader)
+			if err != nil {
+				return wire.QuestionResponse{RequestID: req.ID, Answers: answers}, err
+			}
+			if !ok {
+				answers[item.Name] = item.Fallback
+				continue
+			}
+			answers[item.Name] = normalizeTerminalQuestionAnswer(item, answer)
+		}
+		return wire.QuestionResponse{RequestID: req.ID, Answers: answers}, nil
+	}
+}
+
+func readQuestionLine(ctx context.Context, reader *bufio.Reader) (string, bool, error) {
+	answerCh := make(chan string, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		answer, err := reader.ReadString('\n')
+		if err != nil && err != io.EOF {
+			errCh <- err
+			return
+		}
+		answerCh <- strings.TrimSpace(answer)
+	}()
+	select {
+	case <-ctx.Done():
+		return "", false, nil
+	case err := <-errCh:
+		return "", false, err
+	case answer := <-answerCh:
+		return answer, true, nil
+	}
+}
+
+func normalizeTerminalQuestionAnswer(item wire.QuestionItem, answer string) string {
+	if len(item.Options) == 0 {
+		if answer == "" {
+			return item.Fallback
+		}
+		return answer
+	}
+	if item.Multiple {
+		parts := strings.Split(answer, ",")
+		selected := make([]string, 0, len(parts))
+		for _, part := range parts {
+			if option, ok := terminalOptionByInput(item.Options, part); ok {
+				selected = append(selected, option)
+			} else if item.AllowCustom && strings.TrimSpace(part) != "" {
+				selected = append(selected, strings.TrimSpace(part))
+			}
+		}
+		if len(selected) == 0 {
+			return item.Fallback
+		}
+		return strings.Join(selected, ", ")
+	}
+	if option, ok := terminalOptionByInput(item.Options, answer); ok {
+		return option
+	}
+	if item.AllowCustom && answer != "" {
+		return answer
+	}
+	return item.Fallback
+}
+
+func terminalOptionByInput(options []string, raw string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", false
+	}
+	for i, option := range options {
+		if raw == fmt.Sprintf("%d", i+1) || strings.EqualFold(raw, strings.TrimSpace(option)) {
+			return option, true
+		}
+	}
+	return "", false
 }
 
 func renderWireDisplayBlocks(blocks []display.Block, out io.Writer) {

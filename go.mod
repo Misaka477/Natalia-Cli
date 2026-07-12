@@ -7,6 +7,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/go-rod/rod v0.116.2
 	github.com/peterh/liner v1.2.2
+	golang.org/x/net v0.0.0-20220722155237-a158d28d115b
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -23,5 +24,5 @@ require (
 	github.com/ysmood/leakless v0.9.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 // indirect
-	golang.org/x/text v0.4.0 // indirect
+	golang.org/x/text v0.40.0 // indirect
 )

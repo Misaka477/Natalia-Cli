@@ -99,6 +99,58 @@ func TestStopTerminatesProcessGroup(t *testing.T) {
 	}
 }
 
+func TestRestartReusesStartOptionsAndRedactsEnvSummary(t *testing.T) {
+	m := New()
+	dir := t.TempDir()
+	sess, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-c", "printf \"$VISIBLE:$API_KEY\\n\""}, Cwd: dir, Env: []string{"VISIBLE=ok", "API_KEY=super-secret"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, m, sess.ID, StatusExited)
+	status, ok := m.Status(sess.ID)
+	if !ok || strings.Join(status.EnvSummary, ",") != "VISIBLE=ok,API_KEY=[redacted]" {
+		t.Fatalf("expected redacted env summary, ok=%v status=%+v", ok, status)
+	}
+	output, ok := m.Output(sess.ID, 10)
+	if !ok || !strings.Contains(joinOutput(output), "ok:super-secret") {
+		t.Fatalf("expected real process env to be passed to child, output=%+v", output)
+	}
+	restarted, err := m.Restart(context.Background(), sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restarted.ID == sess.ID || restarted.Cwd != dir || strings.Join(restarted.EnvSummary, ",") != "VISIBLE=ok,API_KEY=[redacted]" {
+		t.Fatalf("restart did not preserve sanitized start options: old=%+v new=%+v", sess, restarted)
+	}
+	waitForStatus(t, m, restarted.ID, StatusExited)
+}
+
+func TestCleanupFinishedRemovesOnlyOldCompletedSessions(t *testing.T) {
+	m := New()
+	done, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-c", "true"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, m, done.ID, StatusExited)
+	running, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-c", "while true; do sleep 1; done"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	removed := m.CleanupFinished(0)
+	if removed != 1 {
+		t.Fatalf("expected one completed session removed, got %d list=%+v", removed, m.List())
+	}
+	if _, ok := m.Status(done.ID); ok {
+		t.Fatalf("expected completed session %s to be removed", done.ID)
+	}
+	if status, ok := m.Status(running.ID); !ok || status.Status != StatusRunning {
+		t.Fatalf("expected running session to remain, ok=%v status=%+v", ok, status)
+	}
+	if err := m.Stop(running.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func waitForStatus(t *testing.T, m *Manager, id string, status Status) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)

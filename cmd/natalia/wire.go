@@ -17,6 +17,7 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/plan"
 	"github.com/Misaka477/Natalia-Cli/internal/session"
 	"github.com/Misaka477/Natalia-Cli/internal/soul"
+	"github.com/Misaka477/Natalia-Cli/internal/tools/ask_user"
 	"github.com/Misaka477/Natalia-Cli/internal/toolset"
 	"github.com/Misaka477/Natalia-Cli/internal/wire"
 )
@@ -248,7 +249,20 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 			return requestWireHook(activeCtx, w, req)
 		}
 	}
+	clearQuestionHandler := ask_user.SetHandler(func(ctx context.Context, req wire.QuestionRequest) (wire.QuestionResponse, error) {
+		approvalCtxMu.RLock()
+		activeCtx := approvalCtx
+		approvalCtxMu.RUnlock()
+		if activeCtx == nil {
+			activeCtx = ctx
+		}
+		if activeCtx == nil {
+			activeCtx = context.Background()
+		}
+		return requestWireQuestion(activeCtx, w, req)
+	})
 	return &wireRuntimeServer{w: w, handler: handler, close: func() {
+		clearQuestionHandler()
 		closeRecorder()
 		detachRuntimeEvents()
 	}}, nil
@@ -482,6 +496,8 @@ func publishWireContent(w *wire.Wire, typ wire.ContentType, text string) {
 
 var approvalRequestSeq uint64
 
+var questionRequestSeq uint64
+
 var hookRequestSeq uint64
 
 func requestWireApproval(ctx context.Context, w *wire.Wire, toolName, description string, blocks []display.Block) bool {
@@ -499,6 +515,27 @@ func requestWireApproval(ctx context.Context, w *wire.Wire, toolName, descriptio
 		return false
 	}
 	return resp.RequestID == id && (resp.Response == "approve" || resp.Response == "approved")
+}
+
+func requestWireQuestion(ctx context.Context, w *wire.Wire, question wire.QuestionRequest) (wire.QuestionResponse, error) {
+	id := fmt.Sprintf("question_%d", atomic.AddUint64(&questionRequestSeq, 1))
+	question.ID = id
+	req, err := wire.NewRequest(id, wire.RequestQuestion, question)
+	if err != nil {
+		return wire.QuestionResponse{}, err
+	}
+	result, err := w.SoulSide.Request(ctx, req)
+	if err != nil {
+		return wire.QuestionResponse{}, err
+	}
+	var resp wire.QuestionResponse
+	if err := json.Unmarshal(result, &resp); err != nil {
+		return wire.QuestionResponse{}, err
+	}
+	if resp.RequestID != id {
+		return wire.QuestionResponse{}, fmt.Errorf("question response id mismatch: got %q want %q", resp.RequestID, id)
+	}
+	return resp, nil
 }
 
 func requestWireHook(ctx context.Context, w *wire.Wire, hookReq hook.WireHookRequest) hook.HookResult {

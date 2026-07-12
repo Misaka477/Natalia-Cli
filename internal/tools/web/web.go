@@ -2,6 +2,8 @@ package web
 
 import (
 	"bytes"
+	"compress/gzip"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -22,13 +24,14 @@ import (
 )
 
 var (
-	SearchAPIKey        = os.Getenv("SEARCH_API_KEY")
-	SearchEngine        = os.Getenv("SEARCH_ENGINE")
-	SearchBaseURL       = os.Getenv("SEARCH_BASE_URL")
-	BingSearchBaseURL   = "https://www.bing.com/search"
-	DDGAPIBaseURL       = "https://api.duckduckgo.com/"
-	DDGHTMLBaseURL      = "https://html.duckduckgo.com/html/"
-	webSearchHTTPClient = &http.Client{Timeout: 15 * time.Second}
+	SearchAPIKey           = os.Getenv("SEARCH_API_KEY")
+	SearchEngine           = os.Getenv("SEARCH_ENGINE")
+	SearchProviderPriority = os.Getenv("SEARCH_PROVIDER_PRIORITY")
+	SearchBaseURL          = os.Getenv("SEARCH_BASE_URL")
+	BingSearchBaseURL      = "https://www.bing.com/search"
+	DDGAPIBaseURL          = "https://api.duckduckgo.com/"
+	DDGHTMLBaseURL         = "https://html.duckduckgo.com/html/"
+	webSearchHTTPClient    = &http.Client{Timeout: 15 * time.Second}
 )
 
 type SearchResult struct {
@@ -44,14 +47,15 @@ type Search struct{}
 
 func (t *Search) Name() string { return "web_search" }
 func (t *Search) Description() string {
-	return "搜索网络，返回相关结果列表。支持设置 SEARCH_API_KEY 和 SEARCH_ENGINE 环境变量来配置搜索引擎"
+	return "搜索网络，返回相关结果列表。支持 SEARCH_PROVIDER_PRIORITY 配置 provider 顺序，默认 bing -> google -> duckduckgo"
 }
 func (t *Search) Required() []string { return []string{"query"} }
 func (t *Search) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"query":           {Type: "string", Description: "搜索关键词"},
-		"limit":           {Type: "string", Description: "可选，返回结果数量，默认 5"},
-		"include_content": {Type: "string", Description: "可选，设为 true 时同时抓取页面内容（消耗更多 token）"},
+		"query":             {Type: "string", Description: "搜索关键词"},
+		"limit":             {Type: "string", Description: "可选，返回结果数量，默认 5"},
+		"include_content":   {Type: "string", Description: "可选，设为 true 时同时抓取页面内容（消耗更多 token）"},
+		"provider_priority": {Type: "string", Description: "可选，搜索 provider 顺序，如 bing,google,duckduckgo"},
 	}
 }
 func (t *Search) Execute(args map[string]any) (string, error) {
@@ -72,29 +76,37 @@ func (t *Search) Execute(args map[string]any) (string, error) {
 		limit = 5
 	}
 
-	includeContent, _ := args["include_content"].(string)
+	includeContent := parseBoolArg(args, "include_content")
 
 	var results []SearchResult
 	var err error
+	var diagnostics []string
 
 	if SearchBaseURL != "" {
-		results, err = searchCustom(query, limit, includeContent == "true")
-	} else if SearchAPIKey != "" && SearchEngine == "google" {
-		results, err = searchGoogle(query, limit)
-	} else if SearchEngine == "duckduckgo" {
-		results, err = searchDuckDuckGo(query, limit)
+		results, err = searchCustom(query, limit, includeContent)
+	} else if SearchEngine != "" {
+		results, diagnostics, err = searchByPriority(query, limit, []string{SearchEngine})
 	} else {
-		results, err = searchDefault(query, limit)
+		results, diagnostics, err = searchByPriority(query, limit, effectiveSearchProviderPriority(args))
 	}
 
 	if err != nil {
 		return "", fmt.Errorf("搜索失败: %w", err)
 	}
 	if len(results) == 0 {
-		return fmt.Sprintf("未找到 %q 的相关结果", query), nil
+		msg := fmt.Sprintf("未找到 %q 的相关结果", query)
+		if len(diagnostics) > 0 {
+			msg += "\n搜索诊断:\n- " + strings.Join(diagnostics, "\n- ")
+		}
+		return msg, nil
 	}
 
 	var b strings.Builder
+	if len(diagnostics) > 0 {
+		b.WriteString("搜索诊断:\n- ")
+		b.WriteString(strings.Join(diagnostics, "\n- "))
+		b.WriteString("\n\n")
+	}
 	for i, r := range results {
 		if i > 0 {
 			b.WriteString("---\n")
@@ -102,6 +114,9 @@ func (t *Search) Execute(args map[string]any) (string, error) {
 		b.WriteString(fmt.Sprintf("标题: %s\n", r.Title))
 		if r.Date != "" {
 			b.WriteString(fmt.Sprintf("日期: %s\n", r.Date))
+		}
+		if r.Source != "" {
+			b.WriteString(fmt.Sprintf("来源: %s\n", r.Source))
 		}
 		b.WriteString(fmt.Sprintf("网址: %s\n", r.URL))
 		b.WriteString(fmt.Sprintf("摘要: %s\n", r.Snippet))
@@ -113,11 +128,94 @@ func (t *Search) Execute(args map[string]any) (string, error) {
 }
 
 func searchDefault(query string, limit int) ([]SearchResult, error) {
-	results, err := searchBingHTML(query, limit)
-	if err == nil && len(results) > 0 {
-		return results, nil
+	results, _, err := searchByPriority(query, limit, defaultSearchProviderPriority())
+	return results, err
+
+}
+
+func searchByPriority(query string, limit int, providers []string) ([]SearchResult, []string, error) {
+	if len(providers) == 0 {
+		providers = defaultSearchProviderPriority()
 	}
-	return searchDuckDuckGo(query, limit)
+	diagnostics := make([]string, 0, len(providers))
+	for _, provider := range providers {
+		provider = normalizeSearchProvider(provider)
+		if provider == "" {
+			continue
+		}
+		results, err := searchByProvider(provider, query, limit)
+		if err != nil {
+			diagnostics = append(diagnostics, fmt.Sprintf("%s: %s", provider, sanitizeSearchDiagnostic(err)))
+			continue
+		}
+		if len(results) == 0 {
+			diagnostics = append(diagnostics, fmt.Sprintf("%s: no results", provider))
+			continue
+		}
+		return results, diagnostics, nil
+	}
+	return nil, diagnostics, nil
+}
+
+func searchByProvider(provider, query string, limit int) ([]SearchResult, error) {
+	switch provider {
+	case "bing":
+		return searchBingHTML(query, limit)
+	case "google":
+		return searchGoogle(query, limit)
+	case "duckduckgo", "ddg":
+		return searchDuckDuckGo(query, limit)
+	default:
+		return nil, fmt.Errorf("unsupported provider %q", provider)
+	}
+}
+
+func effectiveSearchProviderPriority(args map[string]any) []string {
+	if raw, ok := args["provider_priority"].(string); ok && strings.TrimSpace(raw) != "" {
+		return splitSearchProviders(raw)
+	}
+	if strings.TrimSpace(SearchProviderPriority) != "" {
+		return splitSearchProviders(SearchProviderPriority)
+	}
+	return defaultSearchProviderPriority()
+}
+
+func defaultSearchProviderPriority() []string {
+	return []string{"bing", "google", "duckduckgo"}
+}
+
+func splitSearchProviders(raw string) []string {
+	fields := strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == '>' || r == ' ' || r == '\t' || r == '\n' })
+	providers := make([]string, 0, len(fields))
+	seen := make(map[string]bool)
+	for _, field := range fields {
+		provider := normalizeSearchProvider(field)
+		if provider == "" || seen[provider] {
+			continue
+		}
+		seen[provider] = true
+		providers = append(providers, provider)
+	}
+	return providers
+}
+
+func normalizeSearchProvider(provider string) string {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "", "none":
+		return ""
+	case "ddg", "duckduckgo", "duck-duck-go":
+		return "duckduckgo"
+	default:
+		return strings.ToLower(strings.TrimSpace(provider))
+	}
+}
+
+func sanitizeSearchDiagnostic(err error) string {
+	msg := err.Error()
+	if SearchAPIKey != "" {
+		msg = strings.ReplaceAll(msg, SearchAPIKey, "[redacted]")
+	}
+	return msg
 }
 
 func searchCustom(query string, limit int, includeContent bool) ([]SearchResult, error) {
@@ -169,7 +267,13 @@ func searchCustom(query string, limit int, includeContent bool) ([]SearchResult,
 }
 
 func searchGoogle(query string, limit int) ([]SearchResult, error) {
+	if SearchAPIKey == "" {
+		return nil, fmt.Errorf("missing SEARCH_API_KEY")
+	}
 	cx := os.Getenv("GOOGLE_CX")
+	if cx == "" {
+		return nil, fmt.Errorf("missing GOOGLE_CX")
+	}
 	values := url.Values{}
 	values.Set("key", SearchAPIKey)
 	values.Set("cx", cx)
@@ -184,6 +288,12 @@ func searchGoogle(query string, limit int) ([]SearchResult, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, fmt.Errorf("google search returned 429 rate limited")
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("google search returned status %d", resp.StatusCode)
+	}
 
 	var result struct {
 		Items []struct {
@@ -199,7 +309,7 @@ func searchGoogle(query string, limit int) ([]SearchResult, error) {
 	results := make([]SearchResult, 0, len(result.Items))
 	for _, item := range result.Items {
 		results = append(results, SearchResult{
-			Title: item.Title, URL: item.Link, Snippet: item.Snippet,
+			Title: item.Title, URL: item.Link, Snippet: item.Snippet, Source: "google",
 		})
 	}
 	return results, nil
@@ -213,6 +323,9 @@ func searchDuckDuckGo(query string, limit int) ([]SearchResult, error) {
 	resp, err := webSearchHTTPClient.Do(req)
 	if err == nil {
 		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusTooManyRequests {
+			return nil, fmt.Errorf("duckduckgo search returned 429 rate limited")
+		}
 		var ddg struct {
 			Abstract      string `json:"Abstract"`
 			AbstractURL   string `json:"AbstractURL"`
@@ -224,7 +337,7 @@ func searchDuckDuckGo(query string, limit int) ([]SearchResult, error) {
 		if ddg.Abstract != "" {
 			results = append(results, SearchResult{
 				Title: "摘要", URL: ddg.AbstractURL,
-				Snippet: ddg.Abstract,
+				Snippet: ddg.Abstract, Source: "duckduckgo",
 			})
 		}
 		for _, rt := range ddg.RelatedTopics {
@@ -235,7 +348,7 @@ func searchDuckDuckGo(query string, limit int) ([]SearchResult, error) {
 			case map[string]any:
 				if text, ok := v["Text"].(string); ok {
 					results = append(results, SearchResult{
-						Title: truncate(text, 60), Snippet: text,
+						Title: truncate(text, 60), Snippet: text, Source: "duckduckgo",
 					})
 				}
 			}
@@ -260,6 +373,12 @@ func searchDuckDuckGoHTML(query string, limit int) ([]SearchResult, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, fmt.Errorf("duckduckgo html search returned 429 rate limited")
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("duckduckgo html search returned status %d", resp.StatusCode)
+	}
 
 	body, _ := io.ReadAll(resp.Body)
 	html := string(body)
@@ -305,6 +424,7 @@ func searchDuckDuckGoHTML(query string, limit int) ([]SearchResult, error) {
 		results = append(results, SearchResult{
 			Title:   strings.TrimSpace(title),
 			Snippet: strings.TrimSpace(snippet),
+			Source:  "duckduckgo",
 		})
 		if len(results) >= limit {
 			break
@@ -328,6 +448,9 @@ func searchBingHTML(query string, limit int) ([]SearchResult, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, fmt.Errorf("bing search returned 429 rate limited")
+	}
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("bing search returned status %d", resp.StatusCode)
 	}
@@ -437,10 +560,11 @@ func (t *Fetch) Description() string { return "获取指定 URL 的网页内容�
 func (t *Fetch) Required() []string  { return []string{"url"} }
 func (t *Fetch) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"url":       {Type: "string", Description: "要获取的 URL"},
-		"format":    {Type: "string", Description: "可选，text|markdown|html，默认 text"},
-		"timeout":   {Type: "string", Description: "可选，超时秒数，默认 60，范围 1-120"},
-		"max_bytes": {Type: "string", Description: "可选，最多读取响应字节数，默认 1048576，最大 5242880"},
+		"url":           {Type: "string", Description: "要获取的 URL"},
+		"format":        {Type: "string", Description: "可选，text|markdown|html，默认 text"},
+		"timeout":       {Type: "string", Description: "可选，超时秒数，默认 60，范围 1-120"},
+		"max_bytes":     {Type: "string", Description: "可选，最多读取响应字节数，默认 1048576，最大 5242880"},
+		"include_links": {Type: "string", Description: "可选，设为 true 时在 text/markdown 输出中包含页面链接引用"},
 	}
 }
 func (t *Fetch) Execute(args map[string]any) (string, error) {
@@ -452,6 +576,7 @@ func (t *Fetch) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	includeLinks := parseBoolArg(args, "include_links")
 	timeout, err := parseStringIntArg(args, "timeout", 60, 1, 120)
 	if err != nil {
 		return "", err
@@ -476,7 +601,11 @@ func (t *Fetch) Execute(args map[string]any) (string, error) {
 		return "", fmt.Errorf("HTTP %d: 页面无法访问", resp.StatusCode)
 	}
 
-	body, truncated, err := readLimited(resp.Body, maxBytes)
+	bodyReader, err := decodedResponseBody(resp)
+	if err != nil {
+		return "", fmt.Errorf("解码响应失败: %w", err)
+	}
+	body, truncated, err := readLimited(bodyReader, maxBytes)
 	if err != nil {
 		return "", fmt.Errorf("读取失败: %w", err)
 	}
@@ -485,19 +614,23 @@ func (t *Fetch) Execute(args map[string]any) (string, error) {
 	if isBinaryResponse(contentType, body) {
 		return fmt.Sprintf("Binary response not included. URL: %s\nContent-Type: %s\nRead: %d bytes\nTruncated: %t", u, contentType, len(body), truncated), nil
 	}
+	bodyText, err := decodeTextBody(body, contentType)
+	if err != nil {
+		return "", fmt.Errorf("字符集解码失败: %w", err)
+	}
 	if format == "html" {
-		return appendTruncationMarker(string(body), truncated, maxBytes), nil
+		return appendTruncationMarker(bodyText, truncated, maxBytes), nil
 	}
 	if strings.Contains(contentType, "text/plain") || strings.Contains(contentType, "text/markdown") {
-		return appendTruncationMarker(string(body), truncated, maxBytes), nil
+		return appendTruncationMarker(bodyText, truncated, maxBytes), nil
 	}
 
-	text := stripHTML(string(body))
+	text, err := renderHTMLBody(bodyText, u, format, includeLinks)
+	if err != nil {
+		return "", fmt.Errorf("HTML 解析失败: %w", err)
+	}
 	if text == "" {
 		return "无法从页面提取到有效内容（页面可能需要 JavaScript 渲染）", nil
-	}
-	if format == "markdown" {
-		text = htmlTextToMarkdown(text)
 	}
 	return appendTruncationMarker(text, truncated, maxBytes), nil
 }
@@ -555,6 +688,28 @@ func readLimited(r io.Reader, maxBytes int) ([]byte, bool, error) {
 	return data, false, nil
 }
 
+func decodedResponseBody(resp *http.Response) (io.Reader, error) {
+	if strings.EqualFold(resp.Header.Get("Content-Encoding"), "gzip") {
+		return gzip.NewReader(resp.Body)
+	}
+	return resp.Body, nil
+}
+
+func parseBoolArg(args map[string]any, name string) bool {
+	raw, ok := args[name]
+	if !ok || raw == nil {
+		return false
+	}
+	switch v := raw.(type) {
+	case bool:
+		return v
+	case string:
+		return strings.EqualFold(strings.TrimSpace(v), "true") || strings.TrimSpace(v) == "1" || strings.EqualFold(strings.TrimSpace(v), "yes")
+	default:
+		return false
+	}
+}
+
 func isBinaryResponse(contentType string, body []byte) bool {
 	lower := strings.ToLower(contentType)
 	if strings.Contains(lower, "text/") || strings.Contains(lower, "html") || strings.Contains(lower, "json") || strings.Contains(lower, "xml") || strings.Contains(lower, "markdown") {
@@ -570,54 +725,6 @@ func appendTruncationMarker(text string, truncated bool, maxBytes int) string {
 	return text + fmt.Sprintf("\n[response truncated at %d bytes]", maxBytes)
 }
 
-func htmlTextToMarkdown(text string) string {
-	return strings.ReplaceAll(text, "\n", "\n\n")
-}
-
-func stripHTML(html string) string {
-	var b strings.Builder
-	inTag := false
-	inScript := false
-	for i := 0; i < len(html); i++ {
-		if inScript {
-			if i+8 < len(html) && strings.ToLower(html[i:i+9]) == "</script>" {
-				inScript = false
-				i += 8
-			}
-			continue
-		}
-		if i+6 < len(html) && strings.ToLower(html[i:i+7]) == "<script" {
-			inScript = true
-			continue
-		}
-		if html[i] == '<' {
-			inTag = true
-			continue
-		}
-		if html[i] == '>' {
-			inTag = false
-			continue
-		}
-		if !inTag {
-			b.WriteByte(html[i])
-		}
-	}
-
-	result := strings.TrimSpace(b.String())
-	lines := strings.Split(result, "\n")
-	var clean []string
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed != "" {
-			clean = append(clean, trimmed)
-		}
-	}
-	if len(clean) > 200 {
-		clean = clean[:200]
-	}
-	return strings.Join(clean, "\n")
-}
-
 type MediaFile struct{}
 
 func (t *MediaFile) Name() string { return "read_media_file" }
@@ -631,6 +738,24 @@ func (t *MediaFile) Parameters() map[string]llm.Property {
 	}
 }
 func (t *MediaFile) Execute(args map[string]any) (string, error) {
+	return executeFileInfo(args)
+}
+
+type FileInfo struct{}
+
+func (t *FileInfo) Name() string { return "file_info" }
+func (t *FileInfo) Description() string {
+	return "读取文件信息（大小、MIME、图片尺寸、基础 EXIF metadata 等），read_media_file 的新名称"
+}
+func (t *FileInfo) Required() []string { return []string{"path"} }
+func (t *FileInfo) Parameters() map[string]llm.Property {
+	return (&MediaFile{}).Parameters()
+}
+func (t *FileInfo) Execute(args map[string]any) (string, error) {
+	return executeFileInfo(args)
+}
+
+func executeFileInfo(args map[string]any) (string, error) {
 	path, _ := args["path"].(string)
 	if path == "" {
 		return "", fmt.Errorf("path 是必填参数")
@@ -649,14 +774,91 @@ func (t *MediaFile) Execute(args map[string]any) (string, error) {
 	mimeType := http.DetectContentType(data)
 	ext := filepath.Ext(path)
 	var b strings.Builder
-	fmt.Fprintf(&b, "文件: %s\n大小: %d bytes\n扩展名: %s\nMIME: %s\n", path, info.Size(), ext, mimeType)
+	fmt.Fprintf(&b, "文件: %s\n大小: %d bytes\n扩展名: %s\nMIME: %s\n修改时间: %s\n权限: %s\n", path, info.Size(), ext, mimeType, info.ModTime().Format(time.RFC3339), info.Mode().String())
 	if strings.HasPrefix(mimeType, "image/") {
 		cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
 		if err == nil {
 			fmt.Fprintf(&b, "图片格式: %s\n宽度: %d\n高度: %d\n", format, cfg.Width, cfg.Height)
 		}
+		if exif := parseJPEGEXIFSummary(data); exif != "" {
+			b.WriteString(exif)
+		}
 	}
 	return b.String(), nil
+}
+
+func parseJPEGEXIFSummary(data []byte) string {
+	if len(data) < 4 || data[0] != 0xff || data[1] != 0xd8 {
+		return ""
+	}
+	for offset := 2; offset+4 <= len(data); {
+		if data[offset] != 0xff {
+			return ""
+		}
+		marker := data[offset+1]
+		offset += 2
+		if marker == 0xd9 || marker == 0xda {
+			return ""
+		}
+		if offset+2 > len(data) {
+			return ""
+		}
+		segLen := int(binary.BigEndian.Uint16(data[offset : offset+2]))
+		if segLen < 2 || offset+segLen > len(data) {
+			return ""
+		}
+		segment := data[offset+2 : offset+segLen]
+		if marker == 0xe1 && bytes.HasPrefix(segment, []byte("Exif\x00\x00")) {
+			return formatEXIFSummary(segment[6:])
+		}
+		offset += segLen
+	}
+	return ""
+}
+
+func formatEXIFSummary(tiff []byte) string {
+	if len(tiff) < 8 {
+		return "EXIF: present\n"
+	}
+	var order binary.ByteOrder
+	switch string(tiff[:2]) {
+	case "II":
+		order = binary.LittleEndian
+	case "MM":
+		order = binary.BigEndian
+	default:
+		return "EXIF: present\n"
+	}
+	if order.Uint16(tiff[2:4]) != 42 {
+		return "EXIF: present\n"
+	}
+	ifdOffset := int(order.Uint32(tiff[4:8]))
+	orientation := readEXIFOrientation(tiff, order, ifdOffset)
+	if orientation == 0 {
+		return "EXIF: present\n"
+	}
+	return fmt.Sprintf("EXIF: present\nEXIF orientation: %d\n", orientation)
+}
+
+func readEXIFOrientation(tiff []byte, order binary.ByteOrder, ifdOffset int) uint16 {
+	if ifdOffset < 0 || ifdOffset+2 > len(tiff) {
+		return 0
+	}
+	count := int(order.Uint16(tiff[ifdOffset : ifdOffset+2]))
+	entryStart := ifdOffset + 2
+	for i := 0; i < count; i++ {
+		entry := entryStart + i*12
+		if entry+12 > len(tiff) {
+			return 0
+		}
+		tag := order.Uint16(tiff[entry : entry+2])
+		fieldType := order.Uint16(tiff[entry+2 : entry+4])
+		valueCount := order.Uint32(tiff[entry+4 : entry+8])
+		if tag == 0x0112 && fieldType == 3 && valueCount == 1 {
+			return order.Uint16(tiff[entry+8 : entry+10])
+		}
+	}
+	return 0
 }
 
 func truncate(s string, n int) string {

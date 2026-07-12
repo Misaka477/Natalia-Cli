@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -27,12 +28,29 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/processmgr"
 	"github.com/Misaka477/Natalia-Cli/internal/session"
 	"github.com/Misaka477/Natalia-Cli/internal/soul"
+	"github.com/Misaka477/Natalia-Cli/internal/tools/browser"
+	"github.com/Misaka477/Natalia-Cli/internal/tools/web"
 	"github.com/Misaka477/Natalia-Cli/internal/toolset"
 	"github.com/Misaka477/Natalia-Cli/internal/wire"
 	"github.com/Misaka477/Natalia-Cli/internal/worker"
 )
 
 func testBoolPtr(v bool) *bool { return &v }
+
+func TestConfigureWebBrowserToolsAppliesConfig(t *testing.T) {
+	oldPriority := web.SearchProviderPriority
+	t.Cleanup(func() {
+		web.SearchProviderPriority = oldPriority
+		browser.Configure(browser.Options{})
+	})
+	configureWebBrowserTools(&config.Config{
+		WebSearch: config.WebSearchConfig{ProviderPriority: []string{"duckduckgo", "bing"}},
+		Browser:   config.BrowserConfig{Backend: "rod", PersistentProfile: true, ProfileDir: "/tmp/natalia-test-browser", UserAgent: "NataliaTest/1.0", Locale: "en-US", Timezone: "UTC", Headers: map[string]string{"X-Test": "1"}, Stealth: true, Trace: true},
+	})
+	if web.SearchProviderPriority != "duckduckgo,bing" {
+		t.Fatalf("expected web search priority from config, got %q", web.SearchProviderPriority)
+	}
+}
 
 type bridgeReadTool struct{}
 
@@ -1110,6 +1128,83 @@ func TestRunWirePromptEmitsToolEvents(t *testing.T) {
 	}
 }
 
+func TestRunWirePromptRoutesAskUserThroughQuestionRequest(t *testing.T) {
+	questionRequestSeq = 0
+	var requestCount int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "application/json")
+		if requestCount == 1 {
+			response := map[string]any{
+				"choices": []map[string]any{{
+					"message": map[string]any{
+						"role":    "assistant",
+						"content": "",
+						"tool_calls": []map[string]any{{
+							"id":   "tc_ask",
+							"type": "function",
+							"function": map[string]any{
+								"name":      "ask_user",
+								"arguments": `{"question":"Proceed?","options":["yes","no"],"fallback":"no"}`,
+							},
+						}},
+					},
+				}},
+				"usage": map[string]any{"total_tokens": 1},
+			}
+			_ = json.NewEncoder(w).Encode(response)
+			return
+		}
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"done"}}],"usage":{"total_tokens":2}}`))
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		DefaultProfile: "default",
+		Providers: map[string]config.Provider{
+			"mock": {BaseURL: server.URL, APIKey: "test-key"},
+		},
+		PermissionProfiles: config.DefaultPermissionProfiles(),
+		Profiles: map[string]config.Profile{
+			"default": {Provider: "mock", Model: "mock-model", MaxSteps: 4, AutoApprove: "ask"},
+		},
+	}
+	oldActiveConfig := activeConfig
+	activeConfig = cfg
+	t.Cleanup(func() { activeConfig = oldActiveConfig })
+	tools := toolset.NewRegistry()
+	registerTools(tools)
+	inR, inW := io.Pipe()
+	out := &lockedBuffer{}
+	errCh := make(chan error, 1)
+	go func() { errCh <- runWire(cfg, tools, inR, out, false) }()
+	if _, err := inW.Write([]byte(`{"jsonrpc":"2.0","method":"prompt","id":"prompt_question","params":{"user_input":"ask human"}}` + "\n")); err != nil {
+		t.Fatal(err)
+	}
+	waitForOutput(t, out, `"QuestionRequest"`)
+	if _, err := inW.Write([]byte(`{"jsonrpc":"2.0","id":"question_1","result":{"request_id":"question_1","answers":{"answer":"yes"}}}` + "\n")); err != nil {
+		t.Fatal(err)
+	}
+	_ = inW.Close()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("runWire failed: %v\n%s", err, out.String())
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("runWire timed out, output=%s", out.String())
+	}
+	msgs := decodeWireRPCOutput(t, out.String())
+	questionIndex := wireRequestIndex(t, msgs, wire.RequestQuestion)
+	toolResultIndex := wireEventIndex(t, msgs, wire.EventToolResult)
+	if questionIndex < 0 || toolResultIndex < 0 || questionIndex > toolResultIndex {
+		t.Fatalf("expected QuestionRequest before ask_user ToolResult, got %s", out.String())
+	}
+	if !strings.Contains(out.String(), `"QuestionRequest"`) || !strings.Contains(out.String(), `"Proceed?"`) || !strings.Contains(out.String(), `"yes"`) {
+		t.Fatalf("expected wire output to include question and answered tool result, got %s", out.String())
+	}
+}
+
 func TestRequestWireApprovalApprovesResponse(t *testing.T) {
 	approvalRequestSeq = 0
 	w := wire.NewWire()
@@ -1134,6 +1229,40 @@ func TestRequestWireApprovalApprovesResponse(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("approval did not receive response")
+	}
+}
+
+func TestRequestWireQuestionPublishesAndParsesResponse(t *testing.T) {
+	questionRequestSeq = 0
+	w := wire.NewWire()
+	requests, cancel := w.UISide().SubscribeRaw()
+	defer cancel()
+
+	resultCh := make(chan wire.QuestionResponse, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		resp, err := requestWireQuestion(context.Background(), w, wire.QuestionRequest{Questions: []wire.QuestionItem{{Name: "choice", Question: "Proceed?", Options: []string{"yes", "no"}}}})
+		if err != nil {
+			errCh <- err
+			return
+		}
+		resultCh <- resp
+	}()
+
+	msg := receiveWireMessageForTest(t, requests)
+	if msg.Request == nil || msg.Request.Type != wire.RequestQuestion || msg.Request.ID != "question_1" || !strings.Contains(string(msg.Request.Payload), "Proceed?") {
+		t.Fatalf("expected question request, got %+v", msg)
+	}
+	w.ResolveResponse("question_1", json.RawMessage(`{"request_id":"question_1","answers":{"choice":"yes"}}`))
+	select {
+	case err := <-errCh:
+		t.Fatalf("question request failed: %v", err)
+	case resp := <-resultCh:
+		if resp.Answers["choice"] != "yes" {
+			t.Fatalf("unexpected question response: %+v", resp)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("question did not receive response")
 	}
 }
 
@@ -1609,6 +1738,49 @@ func TestInteractiveWireRendererHandlesRuntimeEventsAndRequests(t *testing.T) {
 	}
 }
 
+func TestInteractiveWireRendererRespondsToQuestionRequest(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	w, stop := startInteractiveWireRendererWithResponder(&out, &errOut, func(ctx context.Context, req wire.QuestionRequest) (wire.QuestionResponse, error) {
+		if len(req.Questions) != 1 || req.Questions[0].Name != "choice" {
+			t.Fatalf("unexpected question request: %+v", req)
+		}
+		return wire.QuestionResponse{RequestID: req.ID, Answers: map[string]string{"choice": "yes"}}, nil
+	})
+	defer stop()
+	req, err := wire.NewRequest("question_test", wire.RequestQuestion, wire.QuestionRequest{ID: "question_test", Questions: []wire.QuestionItem{{Name: "choice", Question: "Proceed?", Options: []string{"yes", "no"}, Fallback: "no"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resultCh := make(chan json.RawMessage, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		result, err := w.SoulSide.Request(context.Background(), req)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		resultCh <- result
+	}()
+	select {
+	case err := <-errCh:
+		t.Fatalf("question request failed: %v", err)
+	case result := <-resultCh:
+		var resp wire.QuestionResponse
+		if err := json.Unmarshal(result, &resp); err != nil {
+			t.Fatal(err)
+		}
+		if resp.Answers["choice"] != "yes" {
+			t.Fatalf("unexpected question response: %+v", resp)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("renderer did not answer question request")
+	}
+	if !strings.Contains(errOut.String(), "[question request] question_test") || !strings.Contains(errOut.String(), "Proceed?") || !strings.Contains(errOut.String(), "fallback: no") {
+		t.Fatalf("expected question rendering, got %q", errOut.String())
+	}
+}
+
 func decodeWireRPCOutput(t *testing.T, output string) []wire.RPCMessage {
 	t.Helper()
 	lines := strings.Split(strings.TrimSpace(output), "\n")
@@ -1643,6 +1815,40 @@ func scanWireOutput(r io.Reader) (<-chan wire.RPCMessage, <-chan error) {
 		errs <- scanner.Err()
 	}()
 	return msgs, errs
+}
+
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.b.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.b.String()
+}
+
+func waitForOutput(t *testing.T, out *lockedBuffer, needle string) {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for %q in output %s", needle, out.String())
+		case <-tick.C:
+			if strings.Contains(out.String(), needle) {
+				return
+			}
+		}
+	}
 }
 
 func receiveRPCMessageForTest(t *testing.T, ch <-chan wire.RPCMessage) wire.RPCMessage {
@@ -1744,6 +1950,23 @@ func wireEventIndex(t *testing.T, msgs []wire.RPCMessage, eventType wire.EventTy
 			t.Fatalf("decode event params: %v", err)
 		}
 		if payload.Type == string(eventType) {
+			return i
+		}
+	}
+	return -1
+}
+
+func wireRequestIndex(t *testing.T, msgs []wire.RPCMessage, requestType wire.RequestType) int {
+	t.Helper()
+	for i, msg := range msgs {
+		if msg.Method != wire.MethodRequest {
+			continue
+		}
+		var payload wire.TypedPayload
+		if err := json.Unmarshal(msg.Params, &payload); err != nil {
+			t.Fatalf("decode request params: %v", err)
+		}
+		if payload.Type == string(requestType) {
 			return i
 		}
 	}

@@ -35,9 +35,12 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/snapshot"
 	"github.com/Misaka477/Natalia-Cli/internal/soul"
 	"github.com/Misaka477/Natalia-Cli/internal/term"
+	"github.com/Misaka477/Natalia-Cli/internal/tools/ask_user"
+	"github.com/Misaka477/Natalia-Cli/internal/tools/browser"
 	filetool "github.com/Misaka477/Natalia-Cli/internal/tools/file"
 	mcptools "github.com/Misaka477/Natalia-Cli/internal/tools/mcptools"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/skilltools"
+	"github.com/Misaka477/Natalia-Cli/internal/tools/web"
 	workflowtools "github.com/Misaka477/Natalia-Cli/internal/tools/workflowtools"
 	"github.com/Misaka477/Natalia-Cli/internal/toolset"
 	"github.com/Misaka477/Natalia-Cli/internal/ui"
@@ -67,7 +70,7 @@ type runtimeOverrides struct {
 }
 
 func main() {
-	defer closeMCPClients()
+	defer closeRuntimeResources()
 
 	noSetupFlag := flag.Bool("no-setup", false, "跳过交互式配置引导")
 	debug := flag.Bool("debug", false, "打印调试日志")
@@ -90,28 +93,28 @@ func main() {
 	if *wireReplay != "" {
 		if err := runWireReplay(*wireReplay, os.Stdout); err != nil {
 			fmt.Fprintf(os.Stderr, "wire replay error: %v\n", err)
-			os.Exit(1)
+			exitWithCleanup(1)
 		}
 		return
 	}
 	if *wireFlag {
 		if err := runWireCLI(cfg, tools, os.Stdin, os.Stdout, *debug); err != nil {
 			fmt.Fprintf(os.Stderr, "wire error: %v\n", err)
-			os.Exit(1)
+			exitWithCleanup(1)
 		}
 		return
 	}
 	if *wireHTTP != "" {
 		if err := runWireHTTPCLI(cfg, tools, *wireHTTP, *debug); err != nil {
 			fmt.Fprintf(os.Stderr, "wire http error: %v\n", err)
-			os.Exit(1)
+			exitWithCleanup(1)
 		}
 		return
 	}
 	if *wireUnix != "" {
 		if err := runWireUnixCLI(cfg, tools, *wireUnix, *debug); err != nil {
 			fmt.Fprintf(os.Stderr, "wire unix error: %v\n", err)
-			os.Exit(1)
+			exitWithCleanup(1)
 		}
 		return
 	}
@@ -125,6 +128,7 @@ func main() {
 }
 
 func registerTools(r *toolset.Registry) {
+	configureWebBrowserTools(activeConfig)
 	wd, _ := os.Getwd()
 	workflowReg, _ = workflowcore.Discover(wd)
 	workflowtools.SetDefaultRegistry(workflowReg)
@@ -132,6 +136,26 @@ func registerTools(r *toolset.Registry) {
 		fmt.Fprintf(os.Stderr, "加载默认工具失败: %v\n", err)
 	}
 	registerPolicyAwareFileTools(r, activeConfig)
+}
+
+func configureWebBrowserTools(cfg *config.Config) {
+	if cfg == nil {
+		return
+	}
+	if len(cfg.WebSearch.ProviderPriority) > 0 {
+		web.SearchProviderPriority = strings.Join(cfg.WebSearch.ProviderPriority, ",")
+	}
+	browser.Configure(browser.Options{
+		Backend:           cfg.Browser.Backend,
+		PersistentProfile: cfg.Browser.PersistentProfile,
+		ProfileDir:        cfg.Browser.ProfileDir,
+		UserAgent:         cfg.Browser.UserAgent,
+		Locale:            cfg.Browser.Locale,
+		Timezone:          cfg.Browser.Timezone,
+		Headers:           cfg.Browser.Headers,
+		Stealth:           cfg.Browser.Stealth,
+		Trace:             cfg.Browser.Trace,
+	})
 }
 
 func registerPolicyAwareFileTools(r *toolset.Registry, cfg *config.Config) {
@@ -238,6 +262,16 @@ func closeMCPClients() {
 	for _, client := range clients {
 		_ = client.Close()
 	}
+}
+
+func closeRuntimeResources() {
+	closeMCPClients()
+	_ = browser.Close()
+}
+
+func exitWithCleanup(code int) {
+	closeRuntimeResources()
+	os.Exit(code)
 }
 
 func mcpToolAllowed(cfg config.MCPServerConfig, originalName, registeredName string) bool {
@@ -698,14 +732,14 @@ func runOnce(cfg *config.Config, tools *toolset.Registry, input string) {
 	engine := buildEngine(cfg, tools, false)
 	if engine.LLM == nil {
 		fmt.Fprintln(os.Stderr, "未配置模型。设置 --profile 或使用 /setup 配置。")
-		os.Exit(1)
+		exitWithCleanup(1)
 	}
 	engine.OnReasoning = nil
 	engine.OnStreamEnd = nil
 	outcome, err := engine.Run(input)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "错误: %v\n", err)
-		os.Exit(1)
+		exitWithCleanup(1)
 	}
 	if engine.Stream {
 		fmt.Println()
@@ -722,6 +756,10 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 	engine := buildEngine(cfg, tools, debug)
 	wireRuntime, stopWireRenderer := startInteractiveWireRenderer(os.Stdout, os.Stderr)
 	defer stopWireRenderer()
+	clearAskUserHandler := ask_user.SetHandler(func(ctx context.Context, req wire.QuestionRequest) (wire.QuestionResponse, error) {
+		return requestWireQuestion(ctx, wireRuntime, req)
+	})
+	defer clearAskUserHandler()
 	configureEngineForWire(engine, wireRuntime)
 	escalator := &autoflow.Escalator{Threshold: autoflow.DefaultFailureThreshold}
 	autoEnabled := true

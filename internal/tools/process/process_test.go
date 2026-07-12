@@ -85,6 +85,39 @@ func TestProcessStop(t *testing.T) {
 	}
 }
 
+func TestProcessRestartReusesEnvAndRedactsStatus(t *testing.T) {
+	resetManager()
+	result, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "args": []any{"-c", "printf \"$VISIBLE:$API_KEY\\n\""}, "env": map[string]any{"VISIBLE": "ok", "API_KEY": "super-secret"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := extractProcessID(t, result)
+	waitForProcessStatus(t, id, "exited")
+	status, err := (&Status{}).Execute(map[string]any{"id": id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(status, "VISIBLE=ok") || !strings.Contains(status, "API_KEY=[redacted]") || strings.Contains(status, "super-secret") {
+		t.Fatalf("expected redacted env status, got %q", status)
+	}
+	restarted, err := (&Restart{}).Execute(map[string]any{"id": id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	newID := extractProcessID(t, restarted)
+	if newID == id || !strings.Contains(restarted, "已重启进程") || !strings.Contains(restarted, "API_KEY=[redacted]") {
+		t.Fatalf("unexpected restart output: %q", restarted)
+	}
+	waitForProcessStatus(t, newID, "exited")
+	output, err := (&Output{}).Execute(map[string]any{"id": newID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output, "ok:super-secret") {
+		t.Fatalf("expected restarted process to receive original env, got %q", output)
+	}
+}
+
 func TestProcessStartRejectsInvalidArgs(t *testing.T) {
 	resetManager()
 	_, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "args": "bad"})
@@ -109,6 +142,7 @@ func TestProcessEmptyUnknownAndFormattingPaths(t *testing.T) {
 		{name: "status", run: func() (string, error) { return (&Status{}).Execute(map[string]any{"id": "missing"}) }},
 		{name: "output", run: func() (string, error) { return (&Output{}).Execute(map[string]any{"id": "missing"}) }},
 		{name: "stop", run: func() (string, error) { return (&Stop{}).Execute(map[string]any{"id": "missing"}) }},
+		{name: "restart", run: func() (string, error) { return (&Restart{}).Execute(map[string]any{"id": "missing"}) }},
 	} {
 		_, err := tool.run()
 		if err == nil || !strings.Contains(err.Error(), "unknown process session") {
@@ -129,6 +163,9 @@ func TestProcessParseKindAndIntArg(t *testing.T) {
 	}
 	if intArg(float64(3)) != 3 || intArg(4) != 4 || intArg("bad") != 0 {
 		t.Fatal("unexpected process intArg behavior")
+	}
+	if _, err := parseEnv("bad"); err == nil || !strings.Contains(err.Error(), "env") {
+		t.Fatalf("expected invalid env error, got %v", err)
 	}
 }
 

@@ -54,7 +54,7 @@ func TestAskModeRoutesNormalAndExplicitRequestsToCallback(t *testing.T) {
 }
 
 func TestWriteToolsCoversAllMutatingRuntimeTools(t *testing.T) {
-	mutating := []string{"write_file", "edit_file", "run_shell", "process_start", "process_stop", "background_start", "background_stop", "interactive_start", "interactive_write", "interactive_keys", "interactive_stop", "agent_spawn", "agent_stop", "agent_resume"}
+	mutating := []string{"write_file", "edit_file", "run_shell", "process_start", "process_stop", "process_restart", "background_start", "background_stop", "interactive_start", "interactive_write", "interactive_keys", "interactive_stop", "agent_spawn", "agent_stop", "agent_resume"}
 	for _, tool := range mutating {
 		if !IsWriteTool(tool) {
 			t.Fatalf("expected %s to require approval", tool)

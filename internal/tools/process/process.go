@@ -21,6 +21,7 @@ func (t *Start) Parameters() map[string]llm.Property {
 		"command": {Type: "string", Description: "要启动的命令路径或可执行名"},
 		"args":    {Type: "array", Description: "可选，命令参数数组"},
 		"cwd":     {Type: "string", Description: "可选，工作目录，必须已存在"},
+		"env":     {Type: "object", Description: "可选，附加环境变量；secret/token/password/key 名称会在状态中 redacted"},
 		"kind":    {Type: "string", Description: "可选，process|background|interactive|mcp，默认 process"},
 	}
 }
@@ -33,9 +34,13 @@ func (t *Start) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	env, err := parseEnv(args["env"])
+	if err != nil {
+		return "", err
+	}
 	cwd, _ := args["cwd"].(string)
 	kind := parseKind(args)
-	sess, err := processmgr.DefaultManager().Start(context.Background(), processmgr.StartOptions{Command: command, Args: argv, Cwd: cwd, Kind: kind})
+	sess, err := processmgr.DefaultManager().Start(context.Background(), processmgr.StartOptions{Command: command, Args: argv, Cwd: cwd, Env: env, Kind: kind})
 	if err != nil {
 		return "", err
 	}
@@ -111,6 +116,28 @@ func (t *Stop) Required() []string  { return []string{"id"} }
 func (t *Stop) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{"id": {Type: "string", Description: "process session id"}}
 }
+
+type Restart struct{}
+
+func (t *Restart) Name() string { return "process_restart" }
+func (t *Restart) Description() string {
+	return "重启 Natalia 管理的进程，复用原 command/args/cwd/env"
+}
+func (t *Restart) Required() []string { return []string{"id"} }
+func (t *Restart) Parameters() map[string]llm.Property {
+	return map[string]llm.Property{"id": {Type: "string", Description: "process session id"}}
+}
+func (t *Restart) Execute(args map[string]any) (string, error) {
+	id, _ := args["id"].(string)
+	if id == "" {
+		return "", fmt.Errorf("id required")
+	}
+	sess, err := processmgr.DefaultManager().Restart(context.Background(), id)
+	if err != nil {
+		return "", err
+	}
+	return "已重启进程\n" + formatSession(sess), nil
+}
 func (t *Stop) Execute(args map[string]any) (string, error) {
 	id, _ := args["id"].(string)
 	if id == "" {
@@ -121,6 +148,28 @@ func (t *Stop) Execute(args map[string]any) (string, error) {
 	}
 	sess, _ := processmgr.DefaultManager().Status(id)
 	return "已停止进程\n" + formatSession(sess), nil
+}
+
+func parseEnv(raw any) ([]string, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	items, ok := raw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("env must be an object")
+	}
+	env := make([]string, 0, len(items))
+	for key, value := range items {
+		if strings.TrimSpace(key) == "" || strings.Contains(key, "=") {
+			return nil, fmt.Errorf("env key %q is invalid", key)
+		}
+		text, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("env[%s] must be a string", key)
+		}
+		env = append(env, key+"="+text)
+	}
+	return env, nil
 }
 
 func parseArgs(raw any) ([]string, error) {
@@ -187,5 +236,9 @@ func formatSession(sess *processmgr.Session) string {
 	if sess.Error != "" {
 		errLine = "\nerror: " + sess.Error
 	}
-	return fmt.Sprintf("id: %s\nkind: %s\nstatus: %s\npid: %d\ncommand: %s %s%s%s", sess.ID, sess.Kind, sess.Status, sess.PID, sess.Command, strings.Join(sess.Args, " "), exitCode, errLine)
+	envLine := ""
+	if len(sess.EnvSummary) > 0 {
+		envLine = "\nenv: " + strings.Join(sess.EnvSummary, ", ")
+	}
+	return fmt.Sprintf("id: %s\nkind: %s\nstatus: %s\npid: %d\ncommand: %s %s%s%s%s", sess.ID, sess.Kind, sess.Status, sess.PID, sess.Command, strings.Join(sess.Args, " "), envLine, exitCode, errLine)
 }

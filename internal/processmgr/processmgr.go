@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -53,6 +54,7 @@ type Session struct {
 	ExitedAt       time.Time
 	ExitCode       *int
 	Error          string
+	EnvSummary     []string
 }
 
 type OutputLine struct {
@@ -88,6 +90,7 @@ type managedSession struct {
 	maxTail int
 	output  []OutputLine
 	done    chan struct{}
+	opts    StartOptions
 }
 
 func New() *Manager {
@@ -153,10 +156,14 @@ func (m *Manager) Start(ctx context.Context, opts StartOptions) (*Session, error
 
 	now := time.Now()
 	id := fmt.Sprintf("proc_%d", atomic.AddUint64(&m.nextID, 1))
+	optsCopy := opts
+	optsCopy.Args = append([]string(nil), opts.Args...)
+	optsCopy.Env = append([]string(nil), opts.Env...)
 	ms := &managedSession{
 		manager: m,
-		meta:    Session{ID: id, Kind: opts.Kind, Command: opts.Command, Args: append([]string(nil), opts.Args...), Cwd: opts.Cwd, Status: StatusRunning, PID: cmd.Process.Pid, StartedAt: now, LastActivityAt: now},
+		meta:    Session{ID: id, Kind: opts.Kind, Command: opts.Command, Args: append([]string(nil), opts.Args...), Cwd: opts.Cwd, Status: StatusRunning, PID: cmd.Process.Pid, StartedAt: now, LastActivityAt: now, EnvSummary: summarizeEnv(opts.Env)},
 		cmd:     cmd, cancel: cancel, maxTail: opts.MaxTail, done: make(chan struct{}),
+		opts: optsCopy,
 	}
 	m.mu.Lock()
 	m.sessions[id] = ms
@@ -232,6 +239,44 @@ func (m *Manager) Stop(id string) error {
 	return nil
 }
 
+func (m *Manager) Restart(ctx context.Context, id string) (*Session, error) {
+	ms, ok := m.get(id)
+	if !ok {
+		return nil, fmt.Errorf("unknown process session %q", id)
+	}
+	ms.mu.RLock()
+	opts := ms.opts
+	status := ms.meta.Status
+	ms.mu.RUnlock()
+	if status == StatusRunning {
+		if err := m.Stop(id); err != nil {
+			return nil, err
+		}
+	}
+	return m.Start(ctx, opts)
+}
+
+func (m *Manager) CleanupFinished(maxAge time.Duration) int {
+	if maxAge < 0 {
+		maxAge = 0
+	}
+	cutoff := time.Now().Add(-maxAge)
+	removed := 0
+	m.mu.Lock()
+	for id, session := range m.sessions {
+		snapshot := session.snapshot()
+		if snapshot.Status == StatusRunning {
+			continue
+		}
+		if !snapshot.ExitedAt.IsZero() && snapshot.ExitedAt.Before(cutoff) {
+			delete(m.sessions, id)
+			removed++
+		}
+	}
+	m.mu.Unlock()
+	return removed
+}
+
 func (m *Manager) get(id string) (*managedSession, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -300,5 +345,35 @@ func (s *managedSession) snapshot() *Session {
 	defer s.mu.RUnlock()
 	copy := s.meta
 	copy.Args = append([]string(nil), s.meta.Args...)
+	copy.EnvSummary = append([]string(nil), s.meta.EnvSummary...)
 	return &copy
+}
+
+func summarizeEnv(env []string) []string {
+	if len(env) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(env))
+	for _, item := range env {
+		key, value, ok := strings.Cut(item, "=")
+		if !ok {
+			out = append(out, item)
+			continue
+		}
+		if isSecretEnvName(key) {
+			value = "[redacted]"
+		}
+		out = append(out, key+"="+value)
+	}
+	return out
+}
+
+func isSecretEnvName(name string) bool {
+	upper := strings.ToUpper(name)
+	for _, marker := range []string{"SECRET", "TOKEN", "PASSWORD", "PRIVATE_KEY", "ACCESS_KEY", "API_KEY"} {
+		if strings.Contains(upper, marker) {
+			return true
+		}
+	}
+	return strings.HasSuffix(upper, "_KEY")
 }

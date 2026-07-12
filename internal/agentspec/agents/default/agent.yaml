@@ -14,6 +14,7 @@ agent:
     - natalia/tools/web:Fetch
     - natalia/tools/web:Search
     - natalia/tools/web:MediaFile
+    - natalia/tools/web:FileInfo
     - natalia/tools/todo:Set
     - natalia/tools/todo:Add
     - natalia/tools/todo:Done
@@ -26,6 +27,7 @@ agent:
     - natalia/tools/process:Status
     - natalia/tools/process:Output
     - natalia/tools/process:Stop
+    - natalia/tools/process:Restart
     - natalia/tools/background:Start
     - natalia/tools/background:List
     - natalia/tools/background:Output

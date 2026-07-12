@@ -18,13 +18,39 @@ import (
 var (
 	globalBrowser   *rod.Browser
 	globalBrowserMu sync.Mutex
+	globalOptions   Options
 )
+
+type Options struct {
+	Backend           string
+	PersistentProfile bool
+	ProfileDir        string
+	UserAgent         string
+	Locale            string
+	Timezone          string
+	Headers           map[string]string
+	Stealth           bool
+	Trace             bool
+}
+
+func Configure(options Options) {
+	globalBrowserMu.Lock()
+	defer globalBrowserMu.Unlock()
+	if globalBrowser != nil {
+		_ = globalBrowser.Close()
+		globalBrowser = nil
+	}
+	globalOptions = options
+}
 
 func getBrowser() (*rod.Browser, error) {
 	globalBrowserMu.Lock()
 	defer globalBrowserMu.Unlock()
 	if globalBrowser != nil {
 		return globalBrowser, nil
+	}
+	if globalOptions.Backend != "" && globalOptions.Backend != "rod" {
+		return nil, fmt.Errorf("browser backend %q is not supported yet; supported backend: rod", globalOptions.Backend)
 	}
 
 	l := launcher.New().
@@ -33,6 +59,14 @@ func getBrowser() (*rod.Browser, error) {
 		Set("disable-gpu", "true").
 		Set("disable-dev-shm-usage", "true").
 		Set("disable-setuid-sandbox", "true")
+	if globalOptions.ProfileDir != "" {
+		l = l.UserDataDir(globalOptions.ProfileDir)
+	} else if globalOptions.PersistentProfile {
+		l = l.UserDataDir(filepath.Join(os.TempDir(), "natalia-cli-browser-profile"))
+	}
+	if globalOptions.Stealth {
+		l = l.Set("disable-blink-features", "AutomationControlled")
+	}
 
 	u, err := l.Launch()
 	if err != nil {
@@ -117,6 +151,9 @@ func renderPageWithRod(u string, options pageOptions, includeScreenshot bool) (r
 	}
 	defer page.Close()
 	page = page.Timeout(time.Duration(options.TimeoutSec) * time.Second)
+	if err := applyPageOptions(page); err != nil {
+		return renderedPage{}, err
+	}
 	if options.ViewportWidth > 0 && options.ViewportHeight > 0 {
 		if err := page.SetViewport(&proto.EmulationSetDeviceMetricsOverride{Width: options.ViewportWidth, Height: options.ViewportHeight, DeviceScaleFactor: 1, Mobile: false}); err != nil {
 			return renderedPage{}, fmt.Errorf("设置 viewport 失败: %w", err)
@@ -155,6 +192,33 @@ func renderPageWithRod(u string, options pageOptions, includeScreenshot bool) (r
 		rendered.Screenshot = data
 	}
 	return rendered, nil
+}
+
+func applyPageOptions(page *rod.Page) error {
+	globalBrowserMu.Lock()
+	options := globalOptions
+	globalBrowserMu.Unlock()
+	if options.UserAgent != "" || options.Locale != "" {
+		if err := page.SetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: options.UserAgent, AcceptLanguage: options.Locale}); err != nil {
+			return fmt.Errorf("设置 user-agent/locale 失败: %w", err)
+		}
+	}
+	if options.Timezone != "" {
+		if err := (proto.EmulationSetTimezoneOverride{TimezoneID: options.Timezone}).Call(page); err != nil {
+			return fmt.Errorf("设置 timezone 失败: %w", err)
+		}
+	}
+	if len(options.Headers) > 0 {
+		headers := make([]string, 0, len(options.Headers)*2)
+		for key, value := range options.Headers {
+			headers = append(headers, key, value)
+		}
+		_, err := page.SetExtraHeaders(headers)
+		if err != nil {
+			return fmt.Errorf("设置 headers 失败: %w", err)
+		}
+	}
+	return nil
 }
 
 func parseWait(raw string) (int, error) {

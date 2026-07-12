@@ -96,6 +96,24 @@ type Config struct {
 	PermissionProfiles map[string]PermissionProfile `yaml:"permission_profiles,omitempty"`
 	Hooks              []HookDef                    `yaml:"hooks,omitempty"`
 	MCPServers         map[string]MCPServerConfig   `yaml:"mcp_servers,omitempty"`
+	WebSearch          WebSearchConfig              `yaml:"web_search,omitempty"`
+	Browser            BrowserConfig                `yaml:"browser,omitempty"`
+}
+
+type WebSearchConfig struct {
+	ProviderPriority []string `yaml:"provider_priority,omitempty"`
+}
+
+type BrowserConfig struct {
+	Backend           string            `yaml:"backend,omitempty"`
+	PersistentProfile bool              `yaml:"persistent_profile,omitempty"`
+	ProfileDir        string            `yaml:"profile_dir,omitempty"`
+	UserAgent         string            `yaml:"user_agent,omitempty"`
+	Locale            string            `yaml:"locale,omitempty"`
+	Timezone          string            `yaml:"timezone,omitempty"`
+	Headers           map[string]string `yaml:"headers,omitempty"`
+	Stealth           bool              `yaml:"stealth,omitempty"`
+	Trace             bool              `yaml:"trace,omitempty"`
 }
 
 type MCPServerConfig struct {

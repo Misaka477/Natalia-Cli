@@ -164,15 +164,18 @@ type ApprovalResponse struct {
 }
 
 type QuestionItem struct {
-	Name     string   `json:"name"`
-	Question string   `json:"question"`
-	Options  []string `json:"options,omitempty"`
-	Multiple bool     `json:"multiple,omitempty"`
+	Name        string   `json:"name"`
+	Question    string   `json:"question"`
+	Options     []string `json:"options,omitempty"`
+	Multiple    bool     `json:"multiple,omitempty"`
+	AllowCustom bool     `json:"allow_custom,omitempty"`
+	Fallback    string   `json:"fallback,omitempty"`
 }
 
 type QuestionRequest struct {
 	ID        string         `json:"id"`
 	Questions []QuestionItem `json:"questions"`
+	TimeoutMS int64          `json:"timeout_ms,omitempty"`
 }
 
 type QuestionResponse struct {

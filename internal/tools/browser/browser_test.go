@@ -67,6 +67,26 @@ func TestCloseWithoutBrowser(t *testing.T) {
 	}
 }
 
+func TestConfigureStoresBrowserRuntimeOptions(t *testing.T) {
+	Configure(Options{Backend: "rod", PersistentProfile: true, ProfileDir: "/tmp/profile", UserAgent: "NataliaTest/1.0", Locale: "en-US", Timezone: "UTC", Headers: map[string]string{"X-Test": "1"}, Stealth: true, Trace: true})
+	t.Cleanup(func() { Configure(Options{}) })
+	globalBrowserMu.Lock()
+	options := globalOptions
+	globalBrowserMu.Unlock()
+	if options.Backend != "rod" || !options.PersistentProfile || options.ProfileDir != "/tmp/profile" || options.UserAgent != "NataliaTest/1.0" || options.Locale != "en-US" || options.Timezone != "UTC" || options.Headers["X-Test"] != "1" || !options.Stealth || !options.Trace {
+		t.Fatalf("unexpected browser options: %+v", options)
+	}
+}
+
+func TestUnsupportedBrowserBackendReturnsActionableError(t *testing.T) {
+	Configure(Options{Backend: "playwright"})
+	t.Cleanup(func() { Configure(Options{}) })
+	_, err := getBrowser()
+	if err == nil || !strings.Contains(err.Error(), "not supported yet") || !strings.Contains(err.Error(), "rod") {
+		t.Fatalf("expected unsupported backend diagnostic, got %v", err)
+	}
+}
+
 func TestBrowserToolsExecuteThroughRendererFallback(t *testing.T) {
 	oldRender := renderBrowserPage
 	renderBrowserPage = func(u string, options pageOptions, includeScreenshot bool) (renderedPage, error) {
