@@ -174,7 +174,7 @@ func TestStatusLinesShowRuntimeRoutingDetails(t *testing.T) {
 		"model_profile: cheap (manual override)",
 		"permission_profile: read_only (manual override)",
 		"model: cheap-model",
-		"context_tokens: 2/128000 (0.0% estimated)",
+		"context_tokens: 6/128000 (0.0% estimated)",
 		"reasoning_effort: high",
 		"thinking_enabled: true",
 		"stream: true",
@@ -452,8 +452,9 @@ func TestHandleAutoCommandStatusShowsPlan(t *testing.T) {
 
 func TestHandlePlanCommandMarksNextDone(t *testing.T) {
 	oldPlan := currentPlan
+	oldMTime := currentPlanMTime
 	currentPlan = nil
-	t.Cleanup(func() { currentPlan = oldPlan })
+	t.Cleanup(func() { currentPlan = oldPlan; currentPlanMTime = oldMTime })
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "plan.md")
 	if err := os.WriteFile(planPath, []byte("- [ ] first\n- [ ] second"), 0644); err != nil {
@@ -464,14 +465,92 @@ func TestHandlePlanCommandMarksNextDone(t *testing.T) {
 	captureStdout(t, func() { handleExecutePlan("/execute-plan "+planPath, cfg, &engine, toolset.NewRegistry(), false) })
 
 	output := captureStdout(t, func() { handlePlan("/plan done") })
-	for _, want := range []string{"已标记完成: line 1: first", "下一未完成项: line 2: second"} {
+	for _, want := range []string{"已标记完成: line 1: first", "已安全写回计划文件", "下一未完成项: line 2: second"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("expected output to contain %q, got %q", want, output)
 		}
 	}
+	data, err := os.ReadFile(planPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "- [x] first") || !strings.Contains(string(data), "- [ ] second") {
+		t.Fatalf("expected plan file writeback, got %q", string(data))
+	}
 	output = captureStdout(t, func() { handlePlan("/plan status") })
 	if !strings.Contains(output, "plan_steps: 1/2 done") || !strings.Contains(output, "next_step: line 2: second") {
 		t.Fatalf("expected updated plan status, got %q", output)
+	}
+}
+
+func TestHandlePlanCommandRejectsConcurrentPlanWriteback(t *testing.T) {
+	oldPlan := currentPlan
+	oldMTime := currentPlanMTime
+	currentPlan = nil
+	t.Cleanup(func() { currentPlan = oldPlan; currentPlanMTime = oldMTime })
+	dir := t.TempDir()
+	planPath := filepath.Join(dir, "plan.md")
+	content := "- [ ] first\n- [ ] second\n"
+	if err := os.WriteFile(planPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{DefaultProfile: "default", Providers: map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}}, Profiles: map[string]config.Profile{"default": {Provider: "p", Model: "base"}}, PermissionProfiles: config.DefaultPermissionProfiles()}
+	engine := buildEngine(cfg, toolset.NewRegistry(), false)
+	captureStdout(t, func() { handleExecutePlan("/execute-plan "+planPath, cfg, &engine, toolset.NewRegistry(), false) })
+
+	future := time.Now().Add(time.Hour).Round(0)
+	if err := os.Chtimes(planPath, future, future); err != nil {
+		t.Fatal(err)
+	}
+	output := captureStdout(t, func() { handlePlan("/plan done") })
+	if !strings.Contains(output, "写回计划失败") || !strings.Contains(output, "changed on disk") {
+		t.Fatalf("expected concurrent modification writeback failure, got %q", output)
+	}
+	data, err := os.ReadFile(planPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != content {
+		t.Fatalf("plan file should remain unchanged, got %q", string(data))
+	}
+	if currentPlan == nil || currentPlan.Steps[0].Done {
+		t.Fatalf("expected failed writeback to roll back in-memory step, got %+v", currentPlan)
+	}
+	if step, ok := currentPlan.NextOpenStep(); !ok || step.Text != "first" {
+		t.Fatalf("expected first step to remain next after rollback, step=%+v ok=%v", step, ok)
+	}
+}
+
+func TestHandleExecutePlanResolvesSlugFromPlanDirectories(t *testing.T) {
+	oldPlan := currentPlan
+	oldMTime := currentPlanMTime
+	oldRuntime := runtime
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	workDir := t.TempDir()
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(wd)
+		currentPlan = oldPlan
+		currentPlanMTime = oldMTime
+		runtime = oldRuntime
+	})
+	planPath := filepath.Join(workDir, ".kilo", "plans", "Slug Plan.md")
+	if err := os.MkdirAll(filepath.Dir(planPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(planPath, []byte("- [ ] first"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{DefaultProfile: "default", Providers: map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}}, Profiles: map[string]config.Profile{"default": {Provider: "p", Model: "base"}}, PermissionProfiles: config.DefaultPermissionProfiles()}
+	engine := buildEngine(cfg, toolset.NewRegistry(), false)
+	output := captureStdout(t, func() { handleExecutePlan("/execute-plan slug-plan", cfg, &engine, toolset.NewRegistry(), false) })
+	if currentPlan == nil || currentPlan.Path != planPath || !strings.Contains(output, "Slug Plan.md") {
+		t.Fatalf("expected slug-resolved plan, currentPlan=%+v output=%q", currentPlan, output)
 	}
 }
 
@@ -521,14 +600,15 @@ func TestSessionsRestoreRestoresRuntimePlanAndMessages(t *testing.T) {
 	oldRuntime := runtime
 	oldPlan := currentPlan
 	oldConfig := activeConfig
-	plan.Exit()
+	oldPlanManager := planManager
+	planManager = &plan.Manager{}
 	t.Cleanup(func() {
 		sessStore = oldStore
 		currentSession = oldSession
 		runtime = oldRuntime
 		currentPlan = oldPlan
 		activeConfig = oldConfig
-		plan.Exit()
+		planManager = oldPlanManager
 	})
 
 	sessStore = &session.SessionStore{BaseDir: t.TempDir()}
@@ -542,7 +622,7 @@ func TestSessionsRestoreRestoresRuntimePlanAndMessages(t *testing.T) {
 	runtime = runtimeOverrides{Mode: "debug", ModelProfile: "strongest", PermissionProfile: "read_only"}
 	currentPlan = planexec.Parse(planPath, "# Plan\n\n- [ ] first\n- [ ] second")
 	currentPlan.MarkNextDone()
-	plan.Enter("roadmap", planPath, "test")
+	planManager.Enter("roadmap", planPath, "test")
 	persistCurrentSessionState()
 	if err := sessStore.AppendMessage(sess.ID, chat.Message{Role: chat.RoleUser, Content: "remember me"}); err != nil {
 		t.Fatal(err)
@@ -551,7 +631,7 @@ func TestSessionsRestoreRestoresRuntimePlanAndMessages(t *testing.T) {
 	currentSession = nil
 	runtime = runtimeOverrides{}
 	currentPlan = nil
-	plan.Exit()
+	planManager.Exit()
 	cfg := &config.Config{
 		DefaultProfile: "default",
 		Providers:      map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}},
@@ -582,8 +662,8 @@ func TestSessionsRestoreRestoresRuntimePlanAndMessages(t *testing.T) {
 	if step, ok := currentPlan.NextOpenStep(); !ok || step.Text != "second" {
 		t.Fatalf("expected current disk checklist to determine next open step, step=%+v ok=%v", step, ok)
 	}
-	if plan.Status().Enabled != true || plan.Status().Path != planPath {
-		t.Fatalf("expected plan mode restored, got %+v", plan.Status())
+	if planManager.Status().Enabled != true || planManager.Status().Path != planPath {
+		t.Fatalf("expected plan mode restored, got %+v", planManager.Status())
 	}
 	found := false
 	for _, msg := range engine.Context.Messages {
@@ -609,7 +689,7 @@ func TestSessionsListShowsContextTokens(t *testing.T) {
 		t.Fatal(err)
 	}
 	output := captureStdout(t, func() { handleSessions("/sessions", nil, nil, toolset.NewRegistry(), false) })
-	if !strings.Contains(output, "context_tokens=2") || !strings.Contains(output, sess.ID) {
+	if !strings.Contains(output, "context_tokens=6") || !strings.Contains(output, sess.ID) {
 		t.Fatalf("expected sessions list to show context token estimate and id, got %q", output)
 	}
 }
@@ -814,8 +894,9 @@ func TestRunWireInitializeWithoutConfig(t *testing.T) {
 }
 
 func TestRunWireSetPlanModeEmitsStatusUpdate(t *testing.T) {
-	plan.Exit()
-	t.Cleanup(func() { plan.Exit() })
+	oldPlanManager := planManager
+	planManager = &plan.Manager{}
+	t.Cleanup(func() { planManager = oldPlanManager })
 	in := strings.NewReader(`{"jsonrpc":"2.0","method":"set_plan_mode","id":"plan_1","params":{"enabled":true}}` + "\n")
 	out := &bytes.Buffer{}
 
@@ -827,7 +908,7 @@ func TestRunWireSetPlanModeEmitsStatusUpdate(t *testing.T) {
 	if !hasWireRPCID(msgs, `"plan_1"`) || !hasWireEventType(t, msgs, wire.EventStatusUpdate) {
 		t.Fatalf("expected status update event and response, got %s", out.String())
 	}
-	if state := plan.Status(); !state.Enabled || state.Reason != "wire set_plan_mode" {
+	if state := planManager.Status(); !state.Enabled || state.Reason != "wire set_plan_mode" {
 		t.Fatalf("expected wire set_plan_mode to update plan state, got %+v", state)
 	}
 }
@@ -876,9 +957,11 @@ func TestRunWireSetRuntimeProfileEmitsStatusAndPreservesState(t *testing.T) {
 func TestRunWireRestoreSessionRestoresStateAndPublishesStatus(t *testing.T) {
 	oldRuntime := runtime
 	oldPlan := currentPlan
+	oldPlanManager := planManager
 	runtime = runtimeOverrides{}
 	currentPlan = nil
-	t.Cleanup(func() { runtime = oldRuntime; currentPlan = oldPlan; plan.Exit() })
+	planManager = &plan.Manager{}
+	t.Cleanup(func() { runtime = oldRuntime; currentPlan = oldPlan; planManager = oldPlanManager })
 	store := &session.SessionStore{BaseDir: t.TempDir()}
 	sess := store.NewSession("base-model")
 	if err := store.SaveState(sess.ID, session.State{Mode: "debug", ModelProfile: "cheap", PermissionProfile: "read_only"}); err != nil {
@@ -960,7 +1043,7 @@ func TestRunWireListSessionsReturnsStateSummaries(t *testing.T) {
 	for _, got := range result.Sessions {
 		if got.ID == sess.ID {
 			found = true
-			if got.Model != "base-model" || got.ContextTokens != 2 || got.Mode != "debug" || got.ModelProfile != "cheap" || got.PermissionProfile != "read_only" || !got.PlanMode || got.PlanSlug != "roadmap" {
+			if got.Model != "base-model" || got.ContextTokens != 6 || got.Mode != "debug" || got.ModelProfile != "cheap" || got.PermissionProfile != "read_only" || !got.PlanMode || got.PlanSlug != "roadmap" {
 				t.Fatalf("unexpected session summary: %+v", got)
 			}
 		}
@@ -989,8 +1072,9 @@ func TestRunWireSteerAndCancel(t *testing.T) {
 }
 
 func TestRunWireRecordsWireJSONL(t *testing.T) {
-	plan.Exit()
-	t.Cleanup(func() { plan.Exit() })
+	oldPlanManager := planManager
+	planManager = &plan.Manager{}
+	t.Cleanup(func() { planManager = oldPlanManager })
 	store := &session.SessionStore{BaseDir: t.TempDir()}
 	dir := t.TempDir()
 	cfg := &config.Config{
@@ -1363,7 +1447,7 @@ func TestConfigureEngineForWirePublishesCompactionEvents(t *testing.T) {
 	if err := json.Unmarshal(status.Event.Payload, &statusPayload); err != nil {
 		t.Fatal(err)
 	}
-	if statusPayload.ContextTokens == nil || *statusPayload.ContextTokens != 2 || statusPayload.MaxContextTokens == nil || *statusPayload.MaxContextTokens <= 0 {
+	if statusPayload.ContextTokens == nil || *statusPayload.ContextTokens != 6 || statusPayload.MaxContextTokens == nil || *statusPayload.MaxContextTokens <= 0 {
 		t.Fatalf("expected compaction status token diagnostics, got %+v", statusPayload)
 	}
 }
@@ -1714,6 +1798,80 @@ func TestBridgeWorkerEventsPublishesSubagentWireEvents(t *testing.T) {
 		case <-deadline:
 			t.Fatalf("timed out waiting for subagent wire events: created=%t tool=%t completed=%t", seenCreated, seenToolLog, seenCompleted)
 		}
+	}
+}
+
+func TestHandleWorkerCommandAttachDetach(t *testing.T) {
+	oldPool := workerPool
+	t.Cleanup(func() { workerPool = oldPool })
+	workerPool = worker.NewPool()
+	w, err := workerPool.SpawnWithOptions("cli attach", "code", nil, toolset.NewRegistry(), worker.SpawnOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	detached := captureStdout(t, func() { handleWorkerCommand("/detach " + w.ID) })
+	if w.IsAttached() || !strings.Contains(detached, "已 detach") {
+		t.Fatalf("expected worker detached, attached=%t out=%q", w.IsAttached(), detached)
+	}
+	list := captureStdout(t, func() { handleWorkerCommand("/workers") })
+	if !strings.Contains(list, "attached=false") {
+		t.Fatalf("expected workers list to show detached state, got %q", list)
+	}
+	attached := captureStdout(t, func() { handleWorkerCommand("/attach " + w.ID) })
+	if !w.IsAttached() || !strings.Contains(attached, "已 attach") {
+		t.Fatalf("expected worker attached, attached=%t out=%q", w.IsAttached(), attached)
+	}
+}
+
+func TestBridgeWorkerEventsSkipsDetachedWorkersUntilAttach(t *testing.T) {
+	oldPool := workerPool
+	t.Cleanup(func() { workerPool = oldPool })
+	workerPool = worker.NewPool()
+	w := wire.NewWire()
+	msgs, cancel := w.UISide().SubscribeRaw()
+	defer cancel()
+	detach := bridgeWorkerEvents(w)
+	defer detach()
+	workerInstance, err := workerPool.SpawnWithOptions("detached bridge", "code", nil, toolset.NewRegistry(), worker.SpawnOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workerPool.Detach(workerInstance.ID)
+	workerInstance.OnLog(worker.LogEntry{Result: "hidden", Timestamp: time.Now()})
+	workerPool.Attach(workerInstance.ID)
+	seenDetach := false
+	seenHidden := false
+	seenAttach := false
+	deadline := time.After(time.Second)
+	for !(seenDetach && seenAttach) {
+		select {
+		case msg := <-msgs:
+			if msg.Event == nil || msg.Event.Type != wire.EventSubagentEvent {
+				continue
+			}
+			var sub wire.SubagentEvent
+			if err := json.Unmarshal(msg.Event.Payload, &sub); err != nil {
+				t.Fatal(err)
+			}
+			var payload worker.Event
+			if err := json.Unmarshal(sub.Payload, &payload); err != nil {
+				t.Fatal(err)
+			}
+			if sub.Event == "detach" && !payload.Attached {
+				seenDetach = true
+			}
+			if sub.Event == "log" && payload.Log != nil && payload.Log.Result == "hidden" {
+				seenHidden = true
+			}
+			if sub.Event == "attach" && payload.Attached {
+				seenAttach = true
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for detach/attach events: detach=%t attach=%t hidden=%t", seenDetach, seenAttach, seenHidden)
+		}
+	}
+	if seenHidden {
+		t.Fatal("detached worker log should not be forwarded")
 	}
 }
 

@@ -34,6 +34,25 @@ func TestPlanToolsEnterStatusAndExitThroughDefaultManager(t *testing.T) {
 	}
 }
 
+func TestPlanToolsUseInjectedManager(t *testing.T) {
+	plan.Exit()
+	t.Cleanup(func() { plan.Exit() })
+	manager := &plan.Manager{}
+	if _, err := (&Enter{Manager: manager}).Execute(map[string]any{"path": "plans/Injected.md"}); err != nil {
+		t.Fatal(err)
+	}
+	if !manager.Status().Enabled || manager.Status().Slug != "injected" {
+		t.Fatalf("expected injected manager to be updated, got %+v", manager.Status())
+	}
+	if plan.Status().Enabled {
+		t.Fatalf("default manager should not be updated by injected tool, got %+v", plan.Status())
+	}
+	out, err := (&Status{Manager: manager}).Execute(nil)
+	if err != nil || !strings.Contains(out, "injected") {
+		t.Fatalf("expected injected status, out=%q err=%v", out, err)
+	}
+}
+
 func TestPlanToolSchemas(t *testing.T) {
 	if (&Enter{}).Name() != "plan_mode_enter" || (&Exit{}).Name() != "plan_mode_exit" || (&Status{}).Name() != "plan_mode_status" {
 		t.Fatal("unexpected plan tool names")

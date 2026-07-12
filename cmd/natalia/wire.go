@@ -14,7 +14,6 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/config"
 	"github.com/Misaka477/Natalia-Cli/internal/display"
 	"github.com/Misaka477/Natalia-Cli/internal/hook"
-	"github.com/Misaka477/Natalia-Cli/internal/plan"
 	"github.com/Misaka477/Natalia-Cli/internal/session"
 	"github.com/Misaka477/Natalia-Cli/internal/soul"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/ask_user"
@@ -146,9 +145,9 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 		},
 		SetPlanMode: func(ctx context.Context, params wire.SetPlanModeParams) (any, error) {
 			if params.Enabled {
-				plan.Enter("", "", "wire set_plan_mode")
+				planManager.Enter("", "", "wire set_plan_mode")
 			} else {
-				plan.Exit()
+				planManager.Exit()
 			}
 			persistWireSessionState(cfg, opts.SessionStore, wireSession)
 			status := runtimeStatusUpdate(cfg, engine)
@@ -332,7 +331,7 @@ func persistWireSessionState(cfg *config.Config, store *session.SessionStore, se
 	if store == nil || sess == nil {
 		return
 	}
-	planState := plan.Status()
+	planState := planManager.Status()
 	state := session.State{
 		Mode:              runtime.Mode,
 		ModelProfile:      runtime.ModelProfile,
@@ -342,6 +341,11 @@ func persistWireSessionState(cfg *config.Config, store *session.SessionStore, se
 		PlanSlug:          planState.Slug,
 		PlanPath:          planState.Path,
 		AdditionalDirs:    effectiveAdditionalDirs(cfg),
+	}
+	if currentPlan != nil {
+		state.PlanSlug = currentPlan.Slug
+		state.PlanPath = currentPlan.Path
+		state.PlanDoneLines = donePlanLines(currentPlan)
 	}
 	_ = store.SaveState(sess.ID, state)
 }
@@ -387,7 +391,7 @@ func wireSessionSummaries(store *session.SessionStore) []wireSessionSummary {
 
 func runtimeStatusUpdate(cfg *config.Config, engine *soul.Engine) wire.StatusUpdate {
 	status := wire.StatusUpdate{}
-	planMode := plan.Status().Enabled
+	planMode := planManager.Status().Enabled
 	status.PlanMode = &planMode
 	contextTokens, maxContextTokens, contextUsage := contextTokenStats(engine)
 	status.ContextTokens = &contextTokens

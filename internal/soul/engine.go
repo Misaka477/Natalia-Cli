@@ -237,7 +237,7 @@ func (e *Engine) agentLoop() *Outcome {
 
 		// Compact if needed
 		if e.AutoCompact && e.Compactor != nil && e.LLM != nil && e.MaxContextSize > 0 {
-			tokens := compaction.EstimateTokens(e.Context.Messages)
+			tokens := compaction.EstimateTokensForModel(e.llmModel(), e.Context.Messages)
 			if compaction.ShouldCompact(tokens, e.MaxContextSize, e.CompactRatio, e.ReservedTokens) {
 				e.log("[ENGINE] auto-compacting (%d/%d tokens)", tokens, e.MaxContextSize)
 				e.emitCompactBegin()
@@ -276,6 +276,13 @@ func (e *Engine) agentLoop() *Outcome {
 		}
 	}
 	return &Outcome{StopReason: "max_steps", FinalMessage: "达到最大步骤数"}
+}
+
+func (e *Engine) llmModel() string {
+	if e == nil || e.LLM == nil {
+		return ""
+	}
+	return e.LLM.Model()
 }
 
 func (e *Engine) getToolDefs() []llm.ToolDef {

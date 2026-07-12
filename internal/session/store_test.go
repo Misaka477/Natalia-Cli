@@ -120,7 +120,7 @@ func TestAppendMessageUpdatesContextTokenEstimate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
-	if loaded.ContextTokens != 3 {
+	if loaded.ContextTokens != 11 {
 		t.Fatalf("expected estimated tokens to be accumulated, got %d", loaded.ContextTokens)
 	}
 	messages, err := store.LoadMessages(sess.ID)

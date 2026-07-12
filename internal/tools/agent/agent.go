@@ -146,7 +146,7 @@ func (t *List) Execute(args map[string]any) (string, error) {
 		if w.ModelProfile != "" {
 			profile = " model_profile=" + w.ModelProfile
 		}
-		b.WriteString(fmt.Sprintf("%s [%s] %s%s", w.ID, w.Status, w.Task, profile))
+		b.WriteString(fmt.Sprintf("%s [%s] attached=%t %s%s", w.ID, w.Status, w.IsAttached(), w.Task, profile))
 		if last != "" {
 			b.WriteString(" → " + truncate(last, 40))
 		}
@@ -194,6 +194,58 @@ func (t *Output) Execute(args map[string]any) (string, error) {
 		}
 	}
 	return strings.TrimSpace(b.String()), nil
+}
+
+type Attach struct{ Pool *worker.Pool }
+
+func (t *Attach) Name() string { return "agent_attach" }
+func (t *Attach) Description() string {
+	return "attach 子 agent，使其事件继续转发到当前 Wire/runtime 视图"
+}
+func (t *Attach) Required() []string { return []string{"agent_id"} }
+func (t *Attach) Parameters() map[string]llm.Property {
+	return map[string]llm.Property{"agent_id": {Type: "string", Description: "子 agent ID（如 w1）"}}
+}
+func (t *Attach) Execute(args map[string]any) (string, error) {
+	id, err := requireAgentID(args)
+	if err != nil {
+		return "", err
+	}
+	if t.Pool == nil {
+		return "", fmt.Errorf("子 agent 系统不可用")
+	}
+	w := t.Pool.Get(id)
+	if w == nil {
+		return "", fmt.Errorf("子 agent %s 不存在", id)
+	}
+	t.Pool.Attach(id)
+	return fmt.Sprintf("已 attach 子 agent %s\n%s", id, formatWorkerDetail(w)), nil
+}
+
+type Detach struct{ Pool *worker.Pool }
+
+func (t *Detach) Name() string { return "agent_detach" }
+func (t *Detach) Description() string {
+	return "detach 子 agent；agent 继续运行，但可在 UI 中隐藏实时事件"
+}
+func (t *Detach) Required() []string { return []string{"agent_id"} }
+func (t *Detach) Parameters() map[string]llm.Property {
+	return map[string]llm.Property{"agent_id": {Type: "string", Description: "子 agent ID（如 w1）"}}
+}
+func (t *Detach) Execute(args map[string]any) (string, error) {
+	id, err := requireAgentID(args)
+	if err != nil {
+		return "", err
+	}
+	if t.Pool == nil {
+		return "", fmt.Errorf("子 agent 系统不可用")
+	}
+	w := t.Pool.Get(id)
+	if w == nil {
+		return "", fmt.Errorf("子 agent %s 不存在", id)
+	}
+	t.Pool.Detach(id)
+	return fmt.Sprintf("已 detach 子 agent %s\n%s", id, formatWorkerDetail(w)), nil
 }
 
 type Stop struct{ Pool *worker.Pool }
@@ -296,7 +348,7 @@ func formatWorkerDetail(w *worker.Worker) string {
 	if w.ModelProfile != "" {
 		profile = " model_profile=" + w.ModelProfile
 	}
-	fmt.Fprintf(&b, "%s [%s] %s%s\n", w.ID, w.GetStatus(), w.Task, profile)
+	fmt.Fprintf(&b, "%s [%s] attached=%t %s%s\n", w.ID, w.GetStatus(), w.IsAttached(), w.Task, profile)
 	for _, entry := range logs {
 		if entry.Tool != "" {
 			fmt.Fprintf(&b, "[%s] %s %v\n", w.ID, entry.Tool, entry.Args)

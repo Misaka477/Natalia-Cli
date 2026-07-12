@@ -43,6 +43,8 @@ var (
 		"interactive_detach": true,
 		"interactive_resize": true,
 		"agent_spawn":        true,
+		"agent_attach":       true,
+		"agent_detach":       true,
 		"agent_stop":         true,
 		"agent_resume":       true,
 	}

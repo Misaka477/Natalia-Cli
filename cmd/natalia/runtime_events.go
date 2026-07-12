@@ -40,6 +40,8 @@ func registerAgentToolsForEngine(cfg *config.Config, engine *soul.Engine, tools 
 	}})
 	tools.Register(&agent.List{Pool: workerPool})
 	tools.Register(&agent.Output{Pool: workerPool})
+	tools.Register(&agent.Attach{Pool: workerPool})
+	tools.Register(&agent.Detach{Pool: workerPool})
 	tools.Register(&agent.Stop{Pool: workerPool})
 	tools.Register(&agent.Resume{Pool: workerPool})
 }
@@ -140,6 +142,9 @@ func bridgeWorkerEvents(w *wire.Wire) func() {
 	}
 	return workerPool.Subscribe(func(event worker.Event) {
 		if w == nil {
+			return
+		}
+		if !event.Attached && event.Event != "detach" {
 			return
 		}
 		payload, err := json.Marshal(event)

@@ -65,10 +65,20 @@ func (p NotificationInjectionProvider) GetInjections(history []chat.Message, eng
 func (NotificationInjectionProvider) OnContextCompacted() error { return nil }
 func (NotificationInjectionProvider) OnAfkChanged(bool) error   { return nil }
 
-type PlanModeInjectionProvider struct{}
+type PlanModeManager interface {
+	Status() plan.State
+}
 
-func (PlanModeInjectionProvider) GetInjections(history []chat.Message, engine *Engine) ([]Injection, error) {
-	state := plan.Status()
+type PlanModeInjectionProvider struct {
+	Manager PlanModeManager
+}
+
+func (p PlanModeInjectionProvider) GetInjections(history []chat.Message, engine *Engine) ([]Injection, error) {
+	manager := p.Manager
+	if manager == nil {
+		manager = plan.Default()
+	}
+	state := manager.Status()
 	if !state.Enabled {
 		return nil, nil
 	}

@@ -1,8 +1,12 @@
 package planexec
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseChecklistSteps(t *testing.T) {
@@ -113,6 +117,50 @@ func TestMarkNextDone(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(session.StatusLines(), "\n"), "plan_steps: 2/3 done") {
 		t.Fatalf("expected updated status lines, got %+v", session.StatusLines())
+	}
+}
+
+func TestRenderDoneContentOnlyUpdatesCompletedChecklistLines(t *testing.T) {
+	content := "# Plan\n- [ ] first\n```\n- [ ] not real\n```\n- [ ] second\n"
+	session := Parse("plan.md", content)
+	if _, ok := session.MarkNextDone(); !ok {
+		t.Fatal("expected first open step to be marked")
+	}
+	updated := session.RenderDoneContent(content)
+	if !strings.Contains(updated, "- [x] first") || !strings.Contains(updated, "- [ ] second") || !strings.Contains(updated, "```\n- [ ] not real") {
+		t.Fatalf("unexpected rendered content:\n%s", updated)
+	}
+}
+
+func TestWriteDoneUsesMtimeCheckAndAtomicTempFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "plan.md")
+	content := "- [ ] first\n- [ ] second\n"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := Parse(path, content)
+	if _, ok := session.MarkNextDone(); !ok {
+		t.Fatal("expected mark done")
+	}
+	if err := session.WriteDone(info.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "- [x] first\n- [ ] second\n" || strings.Contains(session.Content, "[ ] first") {
+		t.Fatalf("unexpected written content: file=%q session=%q", string(data), session.Content)
+	}
+	stale := time.Unix(1, 0)
+	var concurrent ConcurrentModificationError
+	if err := session.WriteDone(stale); !errors.As(err, &concurrent) {
+		t.Fatalf("expected concurrent modification error, got %v", err)
 	}
 }
 

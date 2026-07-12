@@ -7,6 +7,7 @@ import (
 
 	"github.com/Misaka477/Natalia-Cli/internal/chat"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
+	"github.com/Misaka477/Natalia-Cli/internal/tokenizer"
 )
 
 const COMPACT_PROMPT = `The above is a list of messages in an agent conversation. You are now given a task to compact this conversation context according to specific priorities and rules.
@@ -70,11 +71,11 @@ func ShouldCompact(tokenCount, maxContext int, triggerRatio float64, reservedTok
 }
 
 func EstimateTokens(messages []chat.Message) int {
-	total := 0
-	for _, msg := range messages {
-		total += len(msg.Content) / 4
-	}
-	return total
+	return EstimateTokensForModel("", messages)
+}
+
+func EstimateTokensForModel(model string, messages []chat.Message) int {
+	return tokenizer.CountMessages(model, messages)
 }
 
 type PrepareResult struct {

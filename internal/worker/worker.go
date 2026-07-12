@@ -41,6 +41,7 @@ type Worker struct {
 	ModelProfile string
 	Task         string
 	Status       Status
+	Attached     bool
 	Engine       *soul.Engine
 	Logs         []LogEntry
 	CreatedAt    time.Time
@@ -81,6 +82,7 @@ func NewWithOptions(id, task, modeName string, llmClient *llm.Client, tools *too
 		ModelProfile: opts.ModelProfile,
 		Task:         task,
 		Status:       StatusIdle,
+		Attached:     true,
 		Engine:       eng,
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
@@ -105,7 +107,7 @@ func NewWithOptions(id, task, modeName string, llmClient *llm.Client, tools *too
 }
 
 func (w *Worker) Start() {
-	if w.Engine == nil || w.Engine.Dedup == nil {
+	if w.Engine == nil || w.Engine.Dedup == nil || w.Engine.LLM == nil {
 		w.setStatus(StatusFailed)
 		return
 	}
@@ -180,6 +182,20 @@ func (w *Worker) Resume() {
 	w.Start()
 }
 
+func (w *Worker) Attach() bool {
+	return w.setAttached(true)
+}
+
+func (w *Worker) Detach() bool {
+	return w.setAttached(false)
+}
+
+func (w *Worker) IsAttached() bool {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.Attached
+}
+
 func (w *Worker) GetLogs() []LogEntry {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
@@ -216,6 +232,15 @@ func (w *Worker) setStatus(status Status) {
 	}
 }
 
+func (w *Worker) setAttached(attached bool) bool {
+	w.mu.Lock()
+	changed := w.Attached != attached
+	w.Attached = attached
+	w.UpdatedAt = time.Now()
+	w.mu.Unlock()
+	return changed
+}
+
 type Event struct {
 	WorkerID     string    `json:"worker_id"`
 	Task         string    `json:"task,omitempty"`
@@ -223,6 +248,7 @@ type Event struct {
 	ModelProfile string    `json:"model_profile,omitempty"`
 	Event        string    `json:"event"`
 	Status       Status    `json:"status,omitempty"`
+	Attached     bool      `json:"attached"`
 	Log          *LogEntry `json:"log,omitempty"`
 	Time         time.Time `json:"time,omitempty"`
 }
@@ -271,16 +297,16 @@ func (p *Pool) SpawnWithOptions(task, modeName string, llmClient *llm.Client, to
 	}
 	w.OnLog = func(entry LogEntry) {
 		entryCopy := entry
-		p.emit(Event{WorkerID: w.ID, Task: w.Task, Mode: w.Mode, ModelProfile: w.ModelProfile, Event: "log", Log: &entryCopy, Time: entry.Timestamp})
+		p.emit(Event{WorkerID: w.ID, Task: w.Task, Mode: w.Mode, ModelProfile: w.ModelProfile, Event: "log", Log: &entryCopy, Attached: w.IsAttached(), Time: entry.Timestamp})
 	}
 	w.OnStatus = func(status Status) {
-		p.emit(Event{WorkerID: w.ID, Task: w.Task, Mode: w.Mode, ModelProfile: w.ModelProfile, Event: "status", Status: status, Time: time.Now()})
+		p.emit(Event{WorkerID: w.ID, Task: w.Task, Mode: w.Mode, ModelProfile: w.ModelProfile, Event: "status", Status: status, Attached: w.IsAttached(), Time: time.Now()})
 	}
 
 	p.mu.Lock()
 	p.workers[id] = w
 	p.mu.Unlock()
-	p.emit(Event{WorkerID: w.ID, Task: w.Task, Mode: w.Mode, ModelProfile: w.ModelProfile, Event: "created", Status: w.GetStatus(), Time: time.Now()})
+	p.emit(Event{WorkerID: w.ID, Task: w.Task, Mode: w.Mode, ModelProfile: w.ModelProfile, Event: "created", Status: w.GetStatus(), Attached: w.IsAttached(), Time: time.Now()})
 
 	w.Start()
 	return w, nil
@@ -319,6 +345,26 @@ func (p *Pool) Stop(id string) {
 	if w != nil {
 		w.Stop()
 	}
+}
+
+func (p *Pool) Attach(id string) bool {
+	w := p.Get(id)
+	if w == nil {
+		return false
+	}
+	w.Attach()
+	p.emit(Event{WorkerID: w.ID, Task: w.Task, Mode: w.Mode, ModelProfile: w.ModelProfile, Event: "attach", Status: w.GetStatus(), Attached: w.IsAttached(), Time: time.Now()})
+	return true
+}
+
+func (p *Pool) Detach(id string) bool {
+	w := p.Get(id)
+	if w == nil {
+		return false
+	}
+	w.Detach()
+	p.emit(Event{WorkerID: w.ID, Task: w.Task, Mode: w.Mode, ModelProfile: w.ModelProfile, Event: "detach", Status: w.GetStatus(), Attached: w.IsAttached(), Time: time.Now()})
+	return true
 }
 
 func (p *Pool) Resume(id string) {

@@ -68,6 +68,12 @@ func TestStopResumeWithoutPool(t *testing.T) {
 	if _, err := (&Resume{}).Execute(map[string]any{"agent_id": "w1"}); err == nil {
 		t.Fatal("expected resume error (pool is nil)")
 	}
+	if _, err := (&Attach{}).Execute(map[string]any{"agent_id": "w1"}); err == nil {
+		t.Fatal("expected attach error (pool is nil)")
+	}
+	if _, err := (&Detach{}).Execute(map[string]any{"agent_id": "w1"}); err == nil {
+		t.Fatal("expected detach error (pool is nil)")
+	}
 }
 
 func TestStopResumeUnknownWorker(t *testing.T) {
@@ -77,6 +83,50 @@ func TestStopResumeUnknownWorker(t *testing.T) {
 	}
 	if _, err := (&Resume{Pool: pool}).Execute(map[string]any{"agent_id": "missing"}); err == nil || !strings.Contains(err.Error(), "不存在") {
 		t.Fatalf("expected missing resume error, got %v", err)
+	}
+	if _, err := (&Attach{Pool: pool}).Execute(map[string]any{"agent_id": "missing"}); err == nil || !strings.Contains(err.Error(), "不存在") {
+		t.Fatalf("expected missing attach error, got %v", err)
+	}
+	if _, err := (&Detach{Pool: pool}).Execute(map[string]any{"agent_id": "missing"}); err == nil || !strings.Contains(err.Error(), "不存在") {
+		t.Fatalf("expected missing detach error, got %v", err)
+	}
+}
+
+func TestAttachDetachWorkerThroughAgentTools(t *testing.T) {
+	pool := worker.NewPool()
+	var events []worker.Event
+	detachEvents := pool.Subscribe(func(event worker.Event) { events = append(events, event) })
+	defer detachEvents()
+	w, err := pool.SpawnWithOptions("attach test", "code", nil, toolset.NewRegistry(), worker.SpawnOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := (&Detach{Pool: pool}).Execute(map[string]any{"agent_id": w.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.IsAttached() || !strings.Contains(out, "attached=false") {
+		t.Fatalf("expected detached worker output, attached=%t out=%q", w.IsAttached(), out)
+	}
+	out, err = (&Attach{Pool: pool}).Execute(map[string]any{"agent_id": w.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !w.IsAttached() || !strings.Contains(out, "attached=true") {
+		t.Fatalf("expected attached worker output, attached=%t out=%q", w.IsAttached(), out)
+	}
+	seenDetach := false
+	seenAttach := false
+	for _, event := range events {
+		if event.Event == "detach" && !event.Attached {
+			seenDetach = true
+		}
+		if event.Event == "attach" && event.Attached {
+			seenAttach = true
+		}
+	}
+	if !seenDetach || !seenAttach {
+		t.Fatalf("expected attach/detach events, got %+v", events)
 	}
 }
 

@@ -2,9 +2,11 @@ package planexec
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 )
 
 type Step struct {
@@ -18,6 +20,14 @@ type Session struct {
 	Slug    string
 	Content string
 	Steps   []Step
+}
+
+type ConcurrentModificationError struct {
+	Path string
+}
+
+func (e ConcurrentModificationError) Error() string {
+	return fmt.Sprintf("plan file %q changed on disk; refusing to overwrite", e.Path)
 }
 
 func Parse(path string, content string) *Session {
@@ -56,6 +66,55 @@ func (s *Session) MarkNextDone() (Step, bool) {
 	return Step{}, false
 }
 
+func (s *Session) WriteDone(expectedModTime time.Time) error {
+	if s == nil || strings.TrimSpace(s.Path) == "" {
+		return fmt.Errorf("plan session path is required")
+	}
+	info, err := os.Stat(s.Path)
+	if err != nil {
+		return err
+	}
+	if !expectedModTime.IsZero() && !info.ModTime().Equal(expectedModTime) {
+		return ConcurrentModificationError{Path: s.Path}
+	}
+	data, err := os.ReadFile(s.Path)
+	if err != nil {
+		return err
+	}
+	updated := s.RenderDoneContent(string(data))
+	tmp := s.Path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(updated), info.Mode()); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, s.Path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	s.Content = updated
+	return nil
+}
+
+func (s *Session) RenderDoneContent(content string) string {
+	if s == nil || len(s.Steps) == 0 {
+		return content
+	}
+	doneLines := make(map[int]bool, len(s.Steps))
+	for _, step := range s.Steps {
+		if step.Done {
+			doneLines[step.Line] = true
+		}
+	}
+	lines := strings.SplitAfter(content, "\n")
+	for i, line := range lines {
+		lineNo := i + 1
+		if !doneLines[lineNo] {
+			continue
+		}
+		lines[i] = markChecklistLineDone(line)
+	}
+	return strings.Join(lines, "")
+}
+
 func (s *Session) StatusLines() []string {
 	if s == nil {
 		return []string{"plan: <none>"}
@@ -89,6 +148,21 @@ func (s *Session) Instruction() string {
 }
 
 var checklistRe = regexp.MustCompile(`^\s*[-*]\s+\[([ xX])\]\s+(.+?)\s*$`)
+
+var checklistLineRe = regexp.MustCompile(`^(\s*[-*]\s+\[)([ xX])(\]\s+.*)$`)
+
+func markChecklistLineDone(line string) string {
+	suffix := ""
+	if strings.HasSuffix(line, "\n") {
+		suffix = "\n"
+		line = strings.TrimSuffix(line, "\n")
+	}
+	if strings.HasSuffix(line, "\r") {
+		suffix = "\r" + suffix
+		line = strings.TrimSuffix(line, "\r")
+	}
+	return checklistLineRe.ReplaceAllString(line, `${1}x${3}`) + suffix
+}
 
 func parseSteps(content string) []Step {
 	lines := strings.Split(content, "\n")

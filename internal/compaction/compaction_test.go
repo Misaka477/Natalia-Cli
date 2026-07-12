@@ -49,8 +49,8 @@ func TestShouldCompactAndEstimateTokensUseRealMessages(t *testing.T) {
 		{Role: chat.RoleUser, Content: strings.Repeat("a", 40)},
 		{Role: chat.RoleAssistant, Content: strings.Repeat("b", 20)},
 	}
-	if got := EstimateTokens(messages); got != 15 {
-		t.Fatalf("EstimateTokens=%d want 15", got)
+	if got := EstimateTokens(messages); got != 25 {
+		t.Fatalf("EstimateTokens=%d want 25", got)
 	}
 	if !ShouldCompact(80, 100, 0.8, 0) {
 		t.Fatal("expected token ratio to trigger compaction")

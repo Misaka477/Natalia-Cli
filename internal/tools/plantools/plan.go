@@ -7,7 +7,9 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/plan"
 )
 
-type Enter struct{}
+type Enter struct {
+	Manager *plan.Manager
+}
 
 func (t *Enter) Name() string        { return "plan_mode_enter" }
 func (t *Enter) Description() string { return "进入 Plan Mode，记录计划会话状态" }
@@ -23,11 +25,13 @@ func (t *Enter) Execute(args map[string]any) (string, error) {
 	slug, _ := args["slug"].(string)
 	path, _ := args["path"].(string)
 	reason, _ := args["reason"].(string)
-	state := plan.Enter(slug, path, reason)
+	state := managerOrDefault(t.Manager).Enter(slug, path, reason)
 	return strings.Join(state.Lines(), "\n"), nil
 }
 
-type Exit struct{}
+type Exit struct {
+	Manager *plan.Manager
+}
 
 func (t *Exit) Name() string        { return "plan_mode_exit" }
 func (t *Exit) Description() string { return "退出 Plan Mode" }
@@ -36,11 +40,14 @@ func (t *Exit) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{}
 }
 func (t *Exit) Execute(args map[string]any) (string, error) {
-	plan.Exit()
-	return strings.Join(plan.Status().Lines(), "\n"), nil
+	manager := managerOrDefault(t.Manager)
+	manager.Exit()
+	return strings.Join(manager.Status().Lines(), "\n"), nil
 }
 
-type Status struct{}
+type Status struct {
+	Manager *plan.Manager
+}
 
 func (t *Status) Name() string        { return "plan_mode_status" }
 func (t *Status) Description() string { return "查看 Plan Mode 当前状态" }
@@ -49,5 +56,12 @@ func (t *Status) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{}
 }
 func (t *Status) Execute(args map[string]any) (string, error) {
-	return strings.Join(plan.Status().Lines(), "\n"), nil
+	return strings.Join(managerOrDefault(t.Manager).Status().Lines(), "\n"), nil
+}
+
+func managerOrDefault(manager *plan.Manager) *plan.Manager {
+	if manager != nil {
+		return manager
+	}
+	return plan.Default()
 }

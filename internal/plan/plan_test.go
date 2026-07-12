@@ -1,6 +1,8 @@
 package plan
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -47,5 +49,48 @@ func TestGuardWriteBlocksNonPlanPathsOnlyWhileEnabled(t *testing.T) {
 	err := m.GuardWrite("main.go")
 	if err == nil || !strings.Contains(err.Error(), "plan mode blocks") {
 		t.Fatalf("expected non-plan write block, got %v", err)
+	}
+}
+
+func TestDiscoverAndFindBySlug(t *testing.T) {
+	workDir := t.TempDir()
+	for _, rel := range []string{"plans/Roadmap.md", ".natalia/plans/Feature Plan.md", ".kilo/plans/Kilo Plan.md"} {
+		path := filepath.Join(workDir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("- [ ] step"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plans, err := Discover(workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plans) != 3 || plans[0].Slug != "roadmap" || plans[1].Slug != "feature-plan" || plans[2].Slug != "kilo-plan" {
+		t.Fatalf("unexpected discovered plans: %+v", plans)
+	}
+	path, err := FindBySlug(workDir, "feature-plan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(filepath.ToSlash(path), ".natalia/plans/Feature Plan.md") {
+		t.Fatalf("unexpected slug lookup path: %s", path)
+	}
+}
+
+func TestFindBySlugReportsAmbiguousPlans(t *testing.T) {
+	workDir := t.TempDir()
+	for _, rel := range []string{"plans/Roadmap.md", ".kilo/plans/Roadmap.md"} {
+		path := filepath.Join(workDir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("- [ ] step"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := FindBySlug(workDir, "roadmap"); err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("expected ambiguous slug error, got %v", err)
 	}
 }

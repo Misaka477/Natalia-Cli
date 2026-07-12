@@ -40,6 +40,7 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/tools/browser"
 	filetool "github.com/Misaka477/Natalia-Cli/internal/tools/file"
 	mcptools "github.com/Misaka477/Natalia-Cli/internal/tools/mcptools"
+	"github.com/Misaka477/Natalia-Cli/internal/tools/plantools"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/skilltools"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/web"
 	workflowtools "github.com/Misaka477/Natalia-Cli/internal/tools/workflowtools"
@@ -52,17 +53,19 @@ import (
 )
 
 var (
-	sessStore      *session.SessionStore
-	currentSession *session.Session
-	workerPool     *worker.Pool
-	skillRegistry  *skill.Registry
-	runtime        runtimeOverrides
-	currentPlan    *planexec.Session
-	activeConfig   *config.Config
-	mcpMu          sync.Mutex
-	mcpClients     = map[string]*coremcp.Client{}
-	mcpDiagnostics = map[string]string{}
-	workflowReg    *workflowcore.Registry
+	sessStore        *session.SessionStore
+	currentSession   *session.Session
+	workerPool       *worker.Pool
+	skillRegistry    *skill.Registry
+	runtime          runtimeOverrides
+	currentPlan      *planexec.Session
+	currentPlanMTime time.Time
+	activeConfig     *config.Config
+	mcpMu            sync.Mutex
+	mcpClients       = map[string]*coremcp.Client{}
+	mcpDiagnostics   = map[string]string{}
+	workflowReg      *workflowcore.Registry
+	planManager      = &plan.Manager{}
 )
 
 type runtimeOverrides struct {
@@ -138,7 +141,17 @@ func registerTools(r *toolset.Registry) {
 	if err := toolset.RegisterDefaultTools(r); err != nil {
 		fmt.Fprintf(os.Stderr, "加载默认工具失败: %v\n", err)
 	}
+	registerRuntimePlanTools(r)
 	registerPolicyAwareFileTools(r, activeConfig)
+}
+
+func registerRuntimePlanTools(r *toolset.Registry) {
+	if r == nil {
+		return
+	}
+	r.Register(&plantools.Enter{Manager: planManager})
+	r.Register(&plantools.Exit{Manager: planManager})
+	r.Register(&plantools.Status{Manager: planManager})
 }
 
 func configureWebBrowserTools(cfg *config.Config) {
@@ -167,7 +180,7 @@ func registerPolicyAwareFileTools(r *toolset.Registry, cfg *config.Config) {
 		if err := policy.GuardWrite(path); err != nil {
 			return err
 		}
-		return plan.GuardWrite(path)
+		return planManager.GuardWrite(path)
 	}
 	r.Register(&filetool.Read{Guard: policy.GuardRead})
 	r.Register(&filetool.Write{Guard: writeGuard})
@@ -355,7 +368,7 @@ func buildEngine(cfg *config.Config, tools *toolset.Registry, debug bool) *soul.
 
 	engine := soul.NewEngine(llmClient, tools)
 	engine.InjectionProviders = []soul.InjectionProvider{
-		soul.PlanModeInjectionProvider{},
+		soul.PlanModeInjectionProvider{Manager: planManager},
 		soul.SafetyInjectionProvider{},
 		soul.NotificationInjectionProvider{Store: notifications.DefaultStore()},
 		&soul.AFKInjectionProvider{},
@@ -582,9 +595,9 @@ func handleExecutePlan(input string, cfg *config.Config, engine **soul.Engine, t
 		fmt.Println("用法: /execute-plan <plan.md>")
 		return
 	}
-	planPath := strings.Trim(parts[1], "\"'")
-	if filepath.Ext(planPath) != ".md" {
-		fmt.Println("计划文件必须是 .md 文件")
+	planPath, err := resolvePlanArgument(strings.Trim(parts[1], "\"'"))
+	if err != nil {
+		fmt.Printf("读取计划失败: %v\n", err)
 		return
 	}
 	planPath = filepath.Clean(planPath)
@@ -607,6 +620,7 @@ func handleExecutePlan(input string, cfg *config.Config, engine **soul.Engine, t
 		return
 	}
 	currentPlan = planexec.Parse(planPath, string(data))
+	currentPlanMTime = info.ModTime()
 	runtime.Mode = "code"
 	runtime.ModelProfile = ""
 	runtime.PermissionProfile = ""
@@ -620,6 +634,21 @@ func handleExecutePlan(input string, cfg *config.Config, engine **soul.Engine, t
 	fmt.Println("下一条普通输入将带着该计划继续执行。")
 }
 
+func resolvePlanArgument(arg string) (string, error) {
+	if strings.TrimSpace(arg) == "" {
+		return "", fmt.Errorf("plan path or slug is required")
+	}
+	ext := filepath.Ext(arg)
+	if ext != "" || strings.ContainsAny(arg, `/\`) {
+		if ext != ".md" {
+			return "", fmt.Errorf("计划文件必须是 .md 文件")
+		}
+		return arg, nil
+	}
+	wd, _ := os.Getwd()
+	return plan.FindBySlug(wd, arg)
+}
+
 func handlePlan(input string) {
 	parts := strings.Fields(input)
 	cmd := "status"
@@ -631,30 +660,60 @@ func handlePlan(input string) {
 		for _, line := range currentPlan.StatusLines() {
 			fmt.Println(line)
 		}
-	case "done":
-		if currentPlan == nil {
-			fmt.Println("没有活动计划。用法: /execute-plan <plan.md>")
-			return
-		}
-		step, ok := currentPlan.MarkNextDone()
-		if !ok {
-			fmt.Println("计划中没有未完成项")
-			return
-		}
-		fmt.Printf("✓ 已标记完成: line %d: %s\n", step.Line, step.Text)
-		if next, ok := currentPlan.NextOpenStep(); ok {
-			fmt.Printf("下一未完成项: line %d: %s\n", next.Line, next.Text)
-		} else {
-			fmt.Println("计划 checklist 已全部完成")
-		}
-		persistCurrentSessionState()
+	case "done", "confirm":
+		markCurrentPlanDone(true)
 	case "clear":
 		currentPlan = nil
+		currentPlanMTime = time.Time{}
 		persistCurrentSessionState()
 		fmt.Println("✓ 已清除当前计划")
+	case "show":
+		if currentPlan == nil {
+			fmt.Println("没有活动计划。用法: /execute-plan <plan.md|slug>")
+			return
+		}
+		fmt.Println(currentPlan.Instruction())
 	default:
-		fmt.Println("用法: /plan [status|done|clear]")
+		fmt.Println("用法: /plan [status|show|done|confirm|clear]")
 	}
+}
+
+func markCurrentPlanDone(writeBack bool) bool {
+	if currentPlan == nil {
+		fmt.Println("没有活动计划。用法: /execute-plan <plan.md|slug>")
+		return false
+	}
+	step, ok := currentPlan.MarkNextDone()
+	if !ok {
+		fmt.Println("计划中没有未完成项")
+		return false
+	}
+	if writeBack {
+		if err := currentPlan.WriteDone(currentPlanMTime); err != nil {
+			step.Done = false
+			for i := range currentPlan.Steps {
+				if currentPlan.Steps[i].Line == step.Line {
+					currentPlan.Steps[i].Done = false
+				}
+			}
+			fmt.Printf("写回计划失败: %v\n", err)
+			return false
+		}
+		if info, err := os.Stat(currentPlan.Path); err == nil {
+			currentPlanMTime = info.ModTime()
+		}
+	}
+	fmt.Printf("✓ 已标记完成: line %d: %s\n", step.Line, step.Text)
+	if writeBack {
+		fmt.Printf("✓ 已安全写回计划文件: %s\n", currentPlan.Path)
+	}
+	if next, ok := currentPlan.NextOpenStep(); ok {
+		fmt.Printf("下一未完成项: line %d: %s\n", next.Line, next.Text)
+	} else {
+		fmt.Println("计划 checklist 已全部完成")
+	}
+	persistCurrentSessionState()
+	return true
 }
 
 func handleWorkflow(input string, engine *soul.Engine) {
@@ -1021,6 +1080,7 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 			registerAgentToolsForEngine(cfg, engine, tools)
 			configureEngineForWire(engine, wireRuntime)
 			persistCurrentSessionState()
+			printPlanConfirmationHint(os.Stderr)
 			if decision.Action == autoflow.ActionDebug {
 				fmt.Fprintln(os.Stderr, "连续失败，已自动升级到 debug mode。输入 /status 可查看当前模型和权限。")
 			} else if decision.Action == autoflow.ActionRecoveredMode {
@@ -1033,6 +1093,15 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 			stopTurnStatus()
 			fmt.Println("\n⏹ 已停止")
 		}
+	}
+}
+
+func printPlanConfirmationHint(w io.Writer) {
+	if w == nil || currentPlan == nil {
+		return
+	}
+	if step, ok := currentPlan.NextOpenStep(); ok {
+		fmt.Fprintf(w, "plan next_step pending: line %d: %s (use /plan confirm after verification)\n", step.Line, step.Text)
 	}
 }
 
@@ -1318,7 +1387,11 @@ func contextTokenStats(engine *soul.Engine) (int, int, float64) {
 	if engine == nil || engine.Context == nil {
 		return 0, 0, 0
 	}
-	tokens := compaction.EstimateTokens(engine.Context.Messages)
+	model := ""
+	if engine.LLM != nil {
+		model = engine.LLM.Model()
+	}
+	tokens := compaction.EstimateTokensForModel(model, engine.Context.Messages)
 	maxTokens := engine.Context.MaxTokens
 	if engine.MaxContextSize > 0 {
 		maxTokens = engine.MaxContextSize
@@ -1471,13 +1544,17 @@ func handleWorkerCommand(input string) {
 			if len(logs) > 0 {
 				last = logs[len(logs)-1].Tool
 			}
-			fmt.Printf("  %s [%s] %s", w.ID, w.Status, w.Task)
+			fmt.Printf("  %s [%s] attached=%t %s", w.ID, w.Status, w.IsAttached(), w.Task)
 			if last != "" {
 				fmt.Printf(" → %s", last)
 			}
 			fmt.Println()
 		}
 	case strings.HasPrefix(input, "/stop "):
+		if workerPool == nil {
+			fmt.Println("子 agent 系统不可用")
+			return
+		}
 		id := strings.TrimPrefix(input, "/stop ")
 		w := workerPool.Get(id)
 		if w == nil {
@@ -1487,6 +1564,10 @@ func handleWorkerCommand(input string) {
 		w.Stop()
 		fmt.Printf("⏹ %s 已暂停\n", id)
 	case strings.HasPrefix(input, "/go "):
+		if workerPool == nil {
+			fmt.Println("子 agent 系统不可用")
+			return
+		}
 		id := strings.TrimPrefix(input, "/go ")
 		w := workerPool.Get(id)
 		if w == nil {
@@ -1495,8 +1576,30 @@ func handleWorkerCommand(input string) {
 		}
 		w.Resume()
 		fmt.Printf("▶ %s 已恢复\n", id)
+	case strings.HasPrefix(input, "/attach "):
+		if workerPool == nil {
+			fmt.Println("子 agent 系统不可用")
+			return
+		}
+		id := strings.TrimPrefix(input, "/attach ")
+		if !workerPool.Attach(id) {
+			fmt.Printf("子 agent %s 不存在\n", id)
+			return
+		}
+		fmt.Printf("%s 已 attach\n", id)
+	case strings.HasPrefix(input, "/detach "):
+		if workerPool == nil {
+			fmt.Println("子 agent 系统不可用")
+			return
+		}
+		id := strings.TrimPrefix(input, "/detach ")
+		if !workerPool.Detach(id) {
+			fmt.Printf("子 agent %s 不存在\n", id)
+			return
+		}
+		fmt.Printf("%s 已 detach\n", id)
 	default:
-		fmt.Println("用法: /workers | /stop <id> | /go <id>")
+		fmt.Println("用法: /workers | /stop <id> | /go <id> | /attach <id> | /detach <id>")
 	}
 }
 
@@ -1563,7 +1666,7 @@ func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine,
 		handleWorkflow(input, *engine)
 		return
 	}
-	if strings.HasPrefix(input, "/workers") || strings.HasPrefix(input, "/stop ") || strings.HasPrefix(input, "/go ") {
+	if strings.HasPrefix(input, "/workers") || strings.HasPrefix(input, "/stop ") || strings.HasPrefix(input, "/go ") || strings.HasPrefix(input, "/attach ") || strings.HasPrefix(input, "/detach ") {
 		handleWorkerCommand(input)
 		return
 	}
@@ -1650,7 +1753,7 @@ func persistCurrentSessionState() {
 		PermissionProfile: runtime.PermissionProfile,
 		AdditionalDirs:    effectiveAdditionalDirs(activeConfig),
 	}
-	planState := plan.Status()
+	planState := planManager.Status()
 	state.PlanMode = planState.Enabled
 	state.PlanSessionID = planState.Slug
 	if planState.Slug != "" {
@@ -1839,22 +1942,28 @@ func resolveSessionRef(ref string) (*session.Session, error) {
 
 func restorePlanMode(state session.State) {
 	if state.PlanMode {
-		plan.Enter(state.PlanSlug, state.PlanPath, "restored session")
+		planManager.Enter(state.PlanSlug, state.PlanPath, "restored session")
 		return
 	}
-	plan.Exit()
+	planManager.Exit()
 }
 
 func restorePlanSession(state session.State) []string {
 	currentPlan = nil
+	currentPlanMTime = time.Time{}
 	if state.PlanPath == "" {
 		return nil
+	}
+	info, err := os.Stat(state.PlanPath)
+	if err != nil {
+		return []string{fmt.Sprintf("⚠ 计划文件未恢复: %v", err)}
 	}
 	data, err := os.ReadFile(state.PlanPath)
 	if err != nil {
 		return []string{fmt.Sprintf("⚠ 计划文件未恢复: %v", err)}
 	}
 	currentPlan = planexec.Parse(state.PlanPath, string(data))
+	currentPlanMTime = info.ModTime()
 	done := make(map[int]bool, len(state.PlanDoneLines))
 	for _, line := range state.PlanDoneLines {
 		done[line] = true
@@ -1919,8 +2028,8 @@ func showHelp() {
   /permission 切换权限（just_do_it/ask/read_only）
   /status   查看当前 runtime profile
   /auto     自动流转开关（status/on/off）
-  /plan     当前计划状态（status/done/clear）
-  /execute-plan <plan.md> 载入计划并切回 code mode
+  /plan     当前计划状态（status/show/done/confirm/clear）
+  /execute-plan <plan.md|slug> 载入计划并切回 code mode
   /workflow 管理 workflow（list/run/diagnostics）
   /checkpoint 手动创建快照
   /rollback <n> 回退到第 n 步
@@ -1929,6 +2038,8 @@ func showHelp() {
   /workers  查看子 agent
   /stop <id> 暂停子 agent
   /go <id>  恢复子 agent
+  /attach <id> attach 子 agent 事件
+  /detach <id> detach 子 agent 事件
   /sessions 查看历史会话
   /sessions restore <id|序号> 恢复历史会话
   /config   查看当前配置

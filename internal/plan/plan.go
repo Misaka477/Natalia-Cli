@@ -2,7 +2,9 @@ package plan
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -32,6 +34,72 @@ func Exit() State { return defaultManager.Exit() }
 func Status() State { return defaultManager.Status() }
 
 func GuardWrite(path string) error { return defaultManager.GuardWrite(path) }
+
+type DiscoveredPlan struct {
+	Slug string
+	Path string
+}
+
+func Discover(workDir string) ([]DiscoveredPlan, error) {
+	if strings.TrimSpace(workDir) == "" {
+		var err error
+		workDir, err = os.Getwd()
+		if err != nil {
+			return nil, err
+		}
+	}
+	patterns := []string{
+		filepath.Join(workDir, "plans", "*.md"),
+		filepath.Join(workDir, ".natalia", "plans", "*.md"),
+		filepath.Join(workDir, ".kilo", "plans", "*.md"),
+	}
+	out := make([]DiscoveredPlan, 0)
+	seen := map[string]bool{}
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			return nil, err
+		}
+		sort.Strings(matches)
+		for _, match := range matches {
+			clean := filepath.Clean(match)
+			if seen[clean] {
+				continue
+			}
+			seen[clean] = true
+			out = append(out, DiscoveredPlan{Slug: slugFromPath(clean), Path: clean})
+		}
+	}
+	return out, nil
+}
+
+func FindBySlug(workDir, slug string) (string, error) {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return "", fmt.Errorf("plan slug is required")
+	}
+	plans, err := Discover(workDir)
+	if err != nil {
+		return "", err
+	}
+	var matches []DiscoveredPlan
+	for _, item := range plans {
+		if item.Slug == slug {
+			matches = append(matches, item)
+		}
+	}
+	if len(matches) == 0 {
+		return "", fmt.Errorf("plan slug %q not found", slug)
+	}
+	if len(matches) > 1 {
+		paths := make([]string, 0, len(matches))
+		for _, item := range matches {
+			paths = append(paths, item.Path)
+		}
+		return "", fmt.Errorf("plan slug %q is ambiguous: %s", slug, strings.Join(paths, ", "))
+	}
+	return matches[0].Path, nil
+}
 
 func (m *Manager) Enter(slug, path, reason string) State {
 	m.mu.Lock()

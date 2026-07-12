@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/chat"
+	"github.com/Misaka477/Natalia-Cli/internal/tokenizer"
 )
 
 type Session struct {
@@ -108,7 +109,7 @@ func (s *SessionStore) AppendMessage(sessionID string, msg chat.Message) error {
 	meta, err := s.readMeta(sessionID)
 	if err == nil {
 		meta.UpdatedAt = time.Now()
-		meta.ContextTokens += estimateMessageTokens(msg)
+		meta.ContextTokens += estimateMessageTokens(meta.Model, msg)
 		s.writeMeta(meta)
 	}
 	return nil
@@ -181,15 +182,8 @@ func (s *SessionStore) LoadState(sessionID string) (State, error) {
 	return state, nil
 }
 
-func estimateMessageTokens(msg chat.Message) int {
-	if msg.Content == "" {
-		return 0
-	}
-	tokens := len(msg.Content) / 4
-	if tokens == 0 {
-		return 1
-	}
-	return tokens
+func estimateMessageTokens(model string, msg chat.Message) int {
+	return tokenizer.CountMessages(model, []chat.Message{msg})
 }
 
 func (s *SessionStore) Cleanup(maxSessions int) {

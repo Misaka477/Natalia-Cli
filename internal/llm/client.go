@@ -169,6 +169,13 @@ func NewClient(cfg Config) *Client {
 	}
 }
 
+func (c *Client) Model() string {
+	if c == nil {
+		return ""
+	}
+	return c.model
+}
+
 func (c *Client) Chat(ctx context.Context, chatCtx *chat.Context, tools []ToolDef, stream bool) (*chat.Message, *Usage, error) {
 	req := ChatRequest{
 		Model:           c.model,
