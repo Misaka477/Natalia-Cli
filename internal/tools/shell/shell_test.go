@@ -1,8 +1,11 @@
 package shell
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/aquama/natalia-cli/internal/display"
 )
 
 func TestRunRejectsInvalidTimeout(t *testing.T) {
@@ -38,6 +41,23 @@ func TestRunReportsTimeout(t *testing.T) {
 	}
 	if !strings.Contains(result, "TIMEOUT:") || !strings.Contains(result, "ERROR:") {
 		t.Fatalf("expected timeout result, got %q", result)
+	}
+}
+
+func TestRunExecuteReturnIncludesShellDisplay(t *testing.T) {
+	ret, err := (&Run{}).ExecuteReturn(map[string]any{"command": "printf hello", "timeout": "5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ret.ModelText, "hello") || len(ret.Display) != 1 || ret.Display[0].Type != display.BlockShell {
+		t.Fatalf("expected shell display block, got %+v", ret)
+	}
+	var payload display.ShellBlock
+	if err := json.Unmarshal(ret.Display[0].Data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Command != "printf hello" || !strings.Contains(payload.Output, "hello") {
+		t.Fatalf("unexpected shell display payload: %+v", payload)
 	}
 }
 

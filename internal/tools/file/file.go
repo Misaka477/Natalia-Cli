@@ -8,7 +8,9 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/aquama/natalia-cli/internal/display"
 	"github.com/aquama/natalia-cli/internal/llm"
+	"github.com/aquama/natalia-cli/internal/toolreturn"
 	"github.com/aquama/natalia-cli/internal/toolschema"
 )
 
@@ -35,14 +37,26 @@ func (t *Read) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	data, err := os.ReadFile(params.Path)
+	return RenderReadFilePath(params.Path, params.Offset, params.Limit)
+}
+
+func RenderReadFilePath(path, offset, limit string) (string, error) {
+	totalLines, trailingNewline, err := countFileLines(path)
 	if err != nil {
 		return "", fmt.Errorf("read failed: %w", err)
 	}
-	return RenderReadFile(params.Path, string(data), params.Offset, params.Limit)
+	start, end, limited, err := parseLineLimit(offset, limit, totalLines)
+	if err != nil {
+		return "", err
+	}
+	if !limited && totalLines > defaultReadWindowLines {
+		return fmt.Sprintf("File: %s\nLines: %d total\nLarge file: choose a window with offset \"1\" and limit \"100\", request a larger range like offset \"1\" limit \"500\", use legacy limit \"1-500\", or use limit \"all\" to read the whole file.", path, totalLines), nil
+	}
+	return renderReadFileWindow(path, start, end, totalLines, trailingNewline, limited)
 }
 
 const defaultReadWindowLines = 100
+const maxReadScannerTokenBytes = 1024 * 1024
 
 func RenderReadFile(path, content, offset, limit string) (string, error) {
 	lines := strings.Split(content, "\n")
@@ -72,6 +86,88 @@ func RenderReadFile(path, content, offset, limit string) (string, error) {
 		}
 	}
 	return b.String(), nil
+}
+
+func countFileLines(path string) (int, bool, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, false, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), maxReadScannerTokenBytes)
+	total := 0
+	for scanner.Scan() {
+		total++
+	}
+	if err := scanner.Err(); err != nil {
+		return 0, false, err
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return 0, false, err
+	}
+	if info.Size() == 0 {
+		return 1, false, nil
+	}
+	last := []byte{0}
+	if _, err := file.ReadAt(last, info.Size()-1); err != nil {
+		return 0, false, err
+	}
+	trailingNewline := last[0] == '\n'
+	if trailingNewline {
+		total++
+	}
+	return total, trailingNewline, nil
+}
+
+func renderReadFileWindow(path string, start, end, totalLines int, trailingNewline, limited bool) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("read failed: %w", err)
+	}
+	defer file.Close()
+
+	var b strings.Builder
+	if limited {
+		fmt.Fprintf(&b, "File: %s\nLines: %d total, showing %d-%d\n", path, totalLines, start, end)
+		if end < totalLines {
+			fmt.Fprintf(&b, "Hint: continue with limit %d-%d or choose a nearby 100-line window.\n", end+1, min(totalLines, end+defaultReadWindowLines))
+		}
+		b.WriteString("\n")
+	}
+
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), maxReadScannerTokenBytes)
+	lineNo := 0
+	for scanner.Scan() {
+		lineNo++
+		if lineNo < start {
+			continue
+		}
+		if lineNo > end {
+			break
+		}
+		writeNumberedLine(&b, lineNo, scanner.Text(), lineNo < end)
+	}
+	if err := scanner.Err(); err != nil {
+		return "", err
+	}
+	if lineNo == 0 && totalLines == 1 && start == 1 && end == 1 {
+		writeNumberedLine(&b, 1, "", false)
+	}
+	if trailingNewline && totalLines >= start && totalLines <= end {
+		writeNumberedLine(&b, totalLines, "", false)
+	}
+	return b.String(), nil
+}
+
+func writeNumberedLine(b *strings.Builder, lineNo int, text string, newline bool) {
+	fmt.Fprintf(b, "%d: %s", lineNo, text)
+	if newline {
+		b.WriteString("\n")
+	}
 }
 
 func parseLineLimit(offset, limit string, totalLines int) (int, int, bool, error) {
@@ -126,6 +222,8 @@ func parseLineLimit(offset, limit string, totalLines int) (int, int, bool, error
 
 type Write struct{}
 
+const maxWriteFileBytes = 1024 * 1024
+
 func (t *Write) Name() string        { return "write_file" }
 func (t *Write) Description() string { return "写入/覆盖文件" }
 func (t *Write) Required() []string  { return []string{"path", "content"} }
@@ -141,13 +239,34 @@ func (t *Write) Execute(args map[string]any) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("path required")
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return "", fmt.Errorf("mkdir failed: %w", err)
+	if strings.ContainsRune(content, '\x00') {
+		return "", fmt.Errorf("refusing to write binary content containing NUL bytes")
+	}
+	if len(content) > maxWriteFileBytes {
+		return "", fmt.Errorf("content too large: %d bytes exceeds %d byte limit", len(content), maxWriteFileBytes)
+	}
+	parent := filepath.Dir(path)
+	info, err := os.Stat(parent)
+	if err != nil {
+		return "", fmt.Errorf("parent directory check failed: %w", err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("parent path is not a directory: %s", parent)
+	}
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		return "", fmt.Errorf("refusing to overwrite directory: %s", path)
 	}
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		return "", fmt.Errorf("write failed: %w", err)
 	}
-	return fmt.Sprintf("已写入 %s (%d bytes)", path, len(content)), nil
+	return fmt.Sprintf("已写入 %s (%d bytes, %d lines)", path, len(content), countLines(content)), nil
+}
+
+func countLines(content string) int {
+	if content == "" {
+		return 0
+	}
+	return strings.Count(content, "\n") + 1
 }
 
 type Edit struct{}
@@ -157,31 +276,111 @@ func (t *Edit) Description() string { return "对文件做精确字符串替换�
 func (t *Edit) Required() []string  { return []string{"path", "old_string", "new_string"} }
 func (t *Edit) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"path":       {Type: "string", Description: "文件绝对路径"},
-		"old_string": {Type: "string", Description: "要被替换的字符串（必须精确匹配）"},
-		"new_string": {Type: "string", Description: "替换后的字符串"},
+		"path":        {Type: "string", Description: "文件绝对路径"},
+		"old_string":  {Type: "string", Description: "要被替换的字符串（必须精确匹配）；未提供 edits 时使用"},
+		"new_string":  {Type: "string", Description: "替换后的字符串；未提供 edits 时使用"},
+		"edits":       {Type: "array", Description: "可选，多编辑批处理数组；每项为 {old_string,new_string}，按顺序应用，全部成功后一次性写入"},
+		"replace_all": {Type: "boolean", Description: "可选，是否替换全部匹配；默认 false，只替换第一处"},
 	}
 }
 func (t *Edit) Execute(args map[string]any) (string, error) {
+	ret, err := t.ExecuteReturn(args)
+	return ret.ModelText, err
+}
+
+func (t *Edit) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 	path, _ := args["path"].(string)
-	oldStr, _ := args["old_string"].(string)
-	newStr, _ := args["new_string"].(string)
-	if path == "" || oldStr == "" {
-		return "", fmt.Errorf("path and old_string required")
+	edits, err := parseEditOperations(args)
+	if err != nil {
+		return toolreturn.Return{IsError: true}, err
+	}
+	replaceAll, _ := args["replace_all"].(bool)
+	if path == "" {
+		return toolreturn.Return{IsError: true}, fmt.Errorf("path required")
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("read failed: %w", err)
+		return toolreturn.Return{IsError: true}, fmt.Errorf("read failed: %w", err)
 	}
 	content := string(data)
-	if !strings.Contains(content, oldStr) {
-		return "", fmt.Errorf("old_string not found in %s", path)
+	newContent := content
+	totalReplacements := 0
+	for i, edit := range edits {
+		matches := strings.Count(newContent, edit.Old)
+		if matches == 0 {
+			return toolreturn.Return{IsError: true}, fmt.Errorf("edit %d old_string not found in %s", i+1, path)
+		}
+		replacements := 1
+		if replaceAll {
+			replacements = matches
+		}
+		newContent = strings.Replace(newContent, edit.Old, edit.New, replacements)
+		totalReplacements += replacements
 	}
-	newContent := strings.Replace(content, oldStr, newStr, 1)
 	if err := os.WriteFile(path, []byte(newContent), 0644); err != nil {
-		return "", fmt.Errorf("write failed: %w", err)
+		return toolreturn.Return{IsError: true}, fmt.Errorf("write failed: %w", err)
 	}
-	return fmt.Sprintf("已编辑 %s — 替换 1 处", path), nil
+	modelText := fmt.Sprintf("已编辑 %s — 替换 %d 处", path, totalReplacements)
+	block, err := display.NewBlock(display.BlockDiff, filepath.Base(path), display.DiffBlock{Path: path, Diff: replacementDiff(path, content, newContent)})
+	if err != nil {
+		return toolreturn.Return{ModelText: modelText}, nil
+	}
+	return toolreturn.Return{ModelText: modelText, Display: []display.Block{block}}, nil
+}
+
+type editOperation struct {
+	Old string
+	New string
+}
+
+func parseEditOperations(args map[string]any) ([]editOperation, error) {
+	if raw, ok := args["edits"]; ok {
+		items, ok := raw.([]any)
+		if !ok {
+			return nil, fmt.Errorf("edits must be an array")
+		}
+		if len(items) == 0 {
+			return nil, fmt.Errorf("edits must not be empty")
+		}
+		edits := make([]editOperation, 0, len(items))
+		for i, item := range items {
+			m, ok := item.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("edit %d must be an object", i+1)
+			}
+			oldStr, _ := m["old_string"].(string)
+			newStr, _ := m["new_string"].(string)
+			if oldStr == "" {
+				return nil, fmt.Errorf("edit %d old_string required", i+1)
+			}
+			edits = append(edits, editOperation{Old: oldStr, New: newStr})
+		}
+		return edits, nil
+	}
+	oldStr, _ := args["old_string"].(string)
+	newStr, _ := args["new_string"].(string)
+	if oldStr == "" {
+		return nil, fmt.Errorf("old_string required")
+	}
+	return []editOperation{{Old: oldStr, New: newStr}}, nil
+}
+
+func replacementDiff(path, before, after string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "--- %s\n+++ %s\n", path, path)
+	beforeLines := strings.Split(before, "\n")
+	afterLines := strings.Split(after, "\n")
+	for _, line := range beforeLines {
+		b.WriteString("-")
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	for _, line := range afterLines {
+		b.WriteString("+")
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 type Grep struct{}
@@ -193,9 +392,10 @@ func (t *Grep) Description() string {
 func (t *Grep) Required() []string { return []string{"pattern"} }
 func (t *Grep) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"pattern": {Type: "string", Description: "搜索模式（正则）"},
-		"path":    {Type: "string", Description: "可选，搜索目录，默认当前目录"},
-		"include": {Type: "string", Description: "可选，文件 glob 过滤如 '*.go'"},
+		"pattern":    {Type: "string", Description: "搜索模式（正则）"},
+		"path":       {Type: "string", Description: "可选，搜索目录，默认当前目录"},
+		"include":    {Type: "string", Description: "可选，文件 glob 过滤如 '*.go'"},
+		"head_limit": {Type: "integer", Description: "可选，最多返回多少条匹配，默认 200，范围 1-10000"},
 	}
 }
 func (t *Grep) Execute(args map[string]any) (string, error) {
@@ -213,6 +413,10 @@ func (t *Grep) Execute(args map[string]any) (string, error) {
 		searchPath = "."
 	}
 	include, _ := args["include"].(string)
+	headLimit, err := parsePositiveIntArg(args, "head_limit", 200, 10000)
+	if err != nil {
+		return "", err
+	}
 
 	var results []string
 	truncated := false
@@ -247,7 +451,7 @@ func (t *Grep) Execute(args map[string]any) (string, error) {
 			line := scanner.Text()
 			if re.MatchString(line) {
 				results = append(results, fmt.Sprintf("%s:%d: %s", path, lineNo, strings.TrimSpace(line)))
-				if len(results) >= 200 {
+				if len(results) >= headLimit {
 					truncated = true
 					break
 				}
@@ -267,9 +471,38 @@ func (t *Grep) Execute(args map[string]any) (string, error) {
 		return "未找到匹配", nil
 	}
 	if truncated {
-		results = append(results, "[grep results truncated at 200 matches]")
+		results = append(results, fmt.Sprintf("[grep results truncated at %d matches]", headLimit))
 	}
 	return strings.Join(results, "\n"), nil
+}
+
+func parsePositiveIntArg(args map[string]any, name string, defaultValue, maxValue int) (int, error) {
+	raw, ok := args[name]
+	if !ok || raw == nil {
+		return defaultValue, nil
+	}
+	var value int
+	switch v := raw.(type) {
+	case int:
+		value = v
+	case int64:
+		value = int(v)
+	case float64:
+		if v != float64(int(v)) {
+			return 0, fmt.Errorf("%s must be an integer", name)
+		}
+		value = int(v)
+	case string:
+		if _, err := fmt.Sscanf(strings.TrimSpace(v), "%d", &value); err != nil {
+			return 0, fmt.Errorf("%s must be an integer", name)
+		}
+	default:
+		return 0, fmt.Errorf("%s must be an integer", name)
+	}
+	if value < 1 || value > maxValue {
+		return 0, fmt.Errorf("%s must be between 1 and %d", name, maxValue)
+	}
+	return value, nil
 }
 
 type Glob struct{}

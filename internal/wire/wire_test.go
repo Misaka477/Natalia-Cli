@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
+
+	"github.com/aquama/natalia-cli/internal/display"
 )
 
 func TestNewEvent(t *testing.T) {
@@ -46,6 +48,24 @@ func TestContentPartTypes(t *testing.T) {
 	think := ContentPart{Type: ContentThink, Text: "reasoning"}
 	if text.Type != "text" || think.Type != "think" {
 		t.Fatalf("unexpected content types: %+v %+v", text, think)
+	}
+}
+
+func TestToolResultIncludesDisplayBlocks(t *testing.T) {
+	block, err := display.NewBlock(display.BlockShell, "tests", display.ShellBlock{Command: "go test ./...", Output: "ok"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	event, err := NewEvent(EventToolResult, ToolResult{ToolCallID: "tc_1", Name: "run_shell", Content: "tests passed", Display: []display.Block{block}})
+	if err != nil {
+		t.Fatalf("NewEvent failed: %v", err)
+	}
+	var payload ToolResult
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal payload failed: %v", err)
+	}
+	if len(payload.Display) != 1 || payload.Display[0].Type != display.BlockShell || payload.Content != "tests passed" {
+		t.Fatalf("unexpected tool result payload: %+v", payload)
 	}
 }
 

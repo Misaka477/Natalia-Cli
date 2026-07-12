@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aquama/natalia-cli/internal/display"
 	"github.com/aquama/natalia-cli/internal/llm"
+	"github.com/aquama/natalia-cli/internal/toolreturn"
 	"github.com/aquama/natalia-cli/internal/toolschema"
 )
 
@@ -37,18 +39,23 @@ func (t *Run) Required() []string {
 	return required
 }
 func (t *Run) Execute(args map[string]any) (string, error) {
+	ret, err := t.ExecuteReturn(args)
+	return ret.ModelText, err
+}
+
+func (t *Run) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 	params, err := toolschema.Decode[RunParams](args)
 	if err != nil {
-		return "", err
+		return toolreturn.Return{IsError: true}, err
 	}
 	timeout := 60
 	if params.Timeout != "" {
 		parsed, err := strconv.Atoi(strings.TrimSpace(params.Timeout))
 		if err != nil || parsed < 1 {
-			return "", fmt.Errorf("timeout must be a positive integer number of seconds")
+			return toolreturn.Return{IsError: true}, fmt.Errorf("timeout must be a positive integer number of seconds")
 		}
 		if parsed > 600 {
-			return "", fmt.Errorf("timeout must be <= 600 seconds")
+			return toolreturn.Return{IsError: true}, fmt.Errorf("timeout must be <= 600 seconds")
 		}
 		timeout = parsed
 	}
@@ -61,8 +68,13 @@ func (t *Run) Execute(args map[string]any) (string, error) {
 	cmd.Stderr = &stderr
 
 	err = cmd.Run()
+	exitCode := 0
+	if cmd.ProcessState != nil {
+		exitCode = cmd.ProcessState.ExitCode()
+	}
 	var result strings.Builder
-	if ctx.Err() == context.DeadlineExceeded {
+	timedOut := ctx.Err() == context.DeadlineExceeded
+	if timedOut {
 		result.WriteString(fmt.Sprintf("TIMEOUT: command exceeded %d seconds\n", timeout))
 	}
 	if stdout.Len() > 0 {
@@ -74,7 +86,17 @@ func (t *Run) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		result.WriteString(fmt.Sprintf("\nERROR: %v", err))
 	}
-	return result.String(), nil
+	modelText := result.String()
+	block, blockErr := display.NewBlock(display.BlockShell, params.Command, display.ShellBlock{
+		Command:  params.Command,
+		ExitCode: exitCode,
+		Output:   modelText,
+		TimedOut: timedOut,
+	})
+	if blockErr != nil {
+		return toolreturn.Return{ModelText: modelText, IsError: err != nil}, nil
+	}
+	return toolreturn.Return{ModelText: modelText, Display: []display.Block{block}, IsError: err != nil}, nil
 }
 
 func limitOutput(s string, maxBytes int) string {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/aquama/natalia-cli/internal/chat"
 	"github.com/aquama/natalia-cli/internal/compaction"
+	"github.com/aquama/natalia-cli/internal/display"
 	"github.com/aquama/natalia-cli/internal/llm"
 	"github.com/aquama/natalia-cli/internal/mode"
 	filetool "github.com/aquama/natalia-cli/internal/tools/file"
@@ -54,6 +55,21 @@ func (eventTool) Description() string                         { return "event te
 func (eventTool) Execute(args map[string]any) (string, error) { return "tool ok", nil }
 func (eventTool) Parameters() map[string]llm.Property         { return nil }
 func (eventTool) Required() []string                          { return nil }
+
+type richEventTool struct{}
+
+func (richEventTool) Name() string                                { return "rich_event_tool" }
+func (richEventTool) Description() string                         { return "rich event test tool" }
+func (richEventTool) Execute(args map[string]any) (string, error) { return "legacy", nil }
+func (richEventTool) Parameters() map[string]llm.Property         { return nil }
+func (richEventTool) Required() []string                          { return nil }
+func (richEventTool) ExecuteReturn(args map[string]any) (toolset.ToolReturn, error) {
+	block, err := display.NewBlock(display.BlockDiff, "patch", display.DiffBlock{Path: "main.go", Diff: "--- a/main.go"})
+	if err != nil {
+		return toolset.ToolReturn{}, err
+	}
+	return toolset.ToolReturn{ModelText: "model summary", Display: []display.Block{block}}, nil
+}
 
 type namedTool string
 
@@ -138,6 +154,33 @@ func TestExecuteToolCallEmitsEvents(t *testing.T) {
 	}
 	if len(results) != 1 || results[0].ToolCallID != "tc_1" || results[0].Name != "event_tool" || results[0].Content != "tool ok" || results[0].Error != "" {
 		t.Fatalf("unexpected tool result events: %+v", results)
+	}
+}
+
+func TestExecuteToolCallEmitsDisplayBlocks(t *testing.T) {
+	tools := toolset.NewRegistry()
+	tools.Register(richEventTool{})
+	engine := NewEngine(nil, tools)
+
+	var results []ToolResultEvent
+	engine.OnToolResult = func(event ToolResultEvent) { results = append(results, event) }
+
+	err := engine.executeToolCall(chat.ToolCall{
+		ID:   "tc_display",
+		Type: "function",
+		Function: chat.ToolCallFunc{
+			Name:      "rich_event_tool",
+			Arguments: `{}`,
+		},
+	})
+	if err != nil {
+		t.Fatalf("executeToolCall failed: %v", err)
+	}
+	if len(engine.Context.Messages) != 1 || engine.Context.Messages[0].Content != "model summary" {
+		t.Fatalf("expected model text in context, got %+v", engine.Context.Messages)
+	}
+	if len(results) != 1 || results[0].Content != "model summary" || len(results[0].Display) != 1 || results[0].Display[0].Type != display.BlockDiff {
+		t.Fatalf("unexpected tool result event: %+v", results)
 	}
 }
 

@@ -1,8 +1,11 @@
 package todo
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/aquama/natalia-cli/internal/display"
 )
 
 func TestTodoSetAndList(t *testing.T) {
@@ -42,6 +45,35 @@ func TestTodoAdd(t *testing.T) {
 	r, _ := l.Execute(map[string]any{})
 	if !strings.Contains(r, "a") || !strings.Contains(r, "b") || !strings.Contains(r, "c") {
 		t.Errorf("expected all 3 tasks, got %q", r)
+	}
+}
+
+func TestTodoExecuteReturnIncludesTodoDisplay(t *testing.T) {
+	items = nil
+	ret, err := (&Set{}).ExecuteReturn(map[string]any{"items": []any{"a", "b"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ret.ModelText, "2") || len(ret.Display) != 1 || ret.Display[0].Type != display.BlockTodo {
+		t.Fatalf("expected todo display block, got %+v", ret)
+	}
+	var payload display.TodoBlock
+	if err := json.Unmarshal(ret.Display[0].Data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Items) != 2 || payload.Items[0].Text != "a" || payload.Items[0].Done {
+		t.Fatalf("unexpected todo display payload: %+v", payload)
+	}
+
+	ret, err = (&Done{}).ExecuteReturn(map[string]any{"index": float64(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(ret.Display[0].Data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if !payload.Items[0].Done || payload.Items[1].Done {
+		t.Fatalf("expected first item done in display payload: %+v", payload)
 	}
 }
 

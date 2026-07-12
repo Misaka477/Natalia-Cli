@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+
+	"github.com/aquama/natalia-cli/internal/display"
 )
 
 type EventType string
@@ -124,10 +126,11 @@ type ToolCall struct {
 }
 
 type ToolResult struct {
-	ToolCallID string `json:"tool_call_id"`
-	Name       string `json:"name"`
-	Content    string `json:"content"`
-	Error      string `json:"error,omitempty"`
+	ToolCallID string          `json:"tool_call_id"`
+	Name       string          `json:"name"`
+	Content    string          `json:"content"`
+	Display    []display.Block `json:"display,omitempty"`
+	Error      string          `json:"error,omitempty"`
 }
 
 type SubagentEvent struct {

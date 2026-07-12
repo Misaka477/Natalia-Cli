@@ -1,11 +1,14 @@
 package file
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aquama/natalia-cli/internal/display"
 )
 
 func TestReadSmallFileReturnsNumberedContent(t *testing.T) {
@@ -20,6 +23,34 @@ func TestReadSmallFileReturnsNumberedContent(t *testing.T) {
 	}
 	if result != "1: alpha\n2: beta" {
 		t.Fatalf("unexpected read result: %q", result)
+	}
+}
+
+func TestReadFilePreservesTrailingBlankLine(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "trailing.txt")
+	os.WriteFile(path, []byte("alpha\n"), 0644)
+
+	result, err := (&Read{}).Execute(map[string]any{"path": path, "limit": "all"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "Lines: 2 total") || !strings.Contains(result, "1: alpha\n2: ") {
+		t.Fatalf("unexpected trailing newline rendering: %q", result)
+	}
+}
+
+func TestReadFileEmptyFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "empty.txt")
+	os.WriteFile(path, []byte(""), 0644)
+
+	result, err := (&Read{}).Execute(map[string]any{"path": path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != "1: " {
+		t.Fatalf("unexpected empty file rendering: %q", result)
 	}
 }
 
@@ -163,6 +194,188 @@ func TestReadFileLimitAllReadsWholeFile(t *testing.T) {
 	}
 }
 
+func TestWriteFileRequiresExistingParentAndReportsMetadata(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "out.txt")
+	result, err := (&Write{}).Execute(map[string]any{"path": path, "content": "one\ntwo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "7 bytes") || !strings.Contains(result, "2 lines") {
+		t.Fatalf("expected write metadata, got %q", result)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "one\ntwo" {
+		t.Fatalf("unexpected file content: %q", data)
+	}
+}
+
+func TestWriteFileRejectsMissingParent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing", "out.txt")
+	_, err := (&Write{}).Execute(map[string]any{"path": path, "content": "data"})
+	if err == nil || !strings.Contains(err.Error(), "parent directory") {
+		t.Fatalf("expected parent directory error, got %v", err)
+	}
+}
+
+func TestWriteFileRejectsBinaryContent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "out.txt")
+	_, err := (&Write{}).Execute(map[string]any{"path": path, "content": "a\x00b"})
+	if err == nil || !strings.Contains(err.Error(), "binary") {
+		t.Fatalf("expected binary content error, got %v", err)
+	}
+}
+
+func TestWriteFileRejectsLargeContent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "out.txt")
+	_, err := (&Write{}).Execute(map[string]any{"path": path, "content": strings.Repeat("x", maxWriteFileBytes+1)})
+	if err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("expected size limit error, got %v", err)
+	}
+}
+
+func TestEditExecuteReturnIncludesDiffDisplay(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "edit.txt")
+	if err := os.WriteFile(path, []byte("one\ntwo\nthree"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ret, err := (&Edit{}).ExecuteReturn(map[string]any{"path": path, "old_string": "two", "new_string": "TWO"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ret.ModelText, "替换 1 处") || len(ret.Display) != 1 || ret.Display[0].Type != display.BlockDiff {
+		t.Fatalf("expected diff display block, got %+v", ret)
+	}
+	var payload display.DiffBlock
+	if err := json.Unmarshal(ret.Display[0].Data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Path != path || !strings.Contains(payload.Diff, "-two") || !strings.Contains(payload.Diff, "+TWO") {
+		t.Fatalf("unexpected diff payload: %+v", payload)
+	}
+}
+
+func TestEditDefaultsToSingleReplacement(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "single.txt")
+	if err := os.WriteFile(path, []byte("foo foo foo"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ret, err := (&Edit{}).ExecuteReturn(map[string]any{"path": path, "old_string": "foo", "new_string": "bar"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ret.ModelText, "替换 1 处") {
+		t.Fatalf("expected single replacement metadata, got %q", ret.ModelText)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "bar foo foo" {
+		t.Fatalf("expected only first match replaced, got %q", data)
+	}
+}
+
+func TestEditReplaceAll(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "all.txt")
+	if err := os.WriteFile(path, []byte("foo foo foo"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ret, err := (&Edit{}).ExecuteReturn(map[string]any{"path": path, "old_string": "foo", "new_string": "bar", "replace_all": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ret.ModelText, "替换 3 处") {
+		t.Fatalf("expected replace_all metadata, got %q", ret.ModelText)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "bar bar bar" {
+		t.Fatalf("expected all matches replaced, got %q", data)
+	}
+}
+
+func TestEditBatchAppliesSequentialEdits(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "batch.txt")
+	if err := os.WriteFile(path, []byte("alpha beta gamma"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ret, err := (&Edit{}).ExecuteReturn(map[string]any{
+		"path": path,
+		"edits": []any{
+			map[string]any{"old_string": "alpha", "new_string": "ALPHA"},
+			map[string]any{"old_string": "beta", "new_string": "BETA"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ret.ModelText, "替换 2 处") || len(ret.Display) != 1 {
+		t.Fatalf("expected batch metadata and diff display, got %+v", ret)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "ALPHA BETA gamma" {
+		t.Fatalf("unexpected batch edit result: %q", data)
+	}
+}
+
+func TestEditBatchFailsWithoutPartialWrite(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "batch-fail.txt")
+	original := "alpha beta gamma"
+	if err := os.WriteFile(path, []byte(original), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ret, err := (&Edit{}).ExecuteReturn(map[string]any{
+		"path": path,
+		"edits": []any{
+			map[string]any{"old_string": "alpha", "new_string": "ALPHA"},
+			map[string]any{"old_string": "missing", "new_string": "MISSING"},
+		},
+	})
+	if err == nil || !ret.IsError || !strings.Contains(err.Error(), "edit 2") {
+		t.Fatalf("expected edit 2 error, ret=%+v err=%v", ret, err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != original {
+		t.Fatalf("batch edit should not partially write, got %q", data)
+	}
+}
+
+func TestEditBatchRejectsInvalidEdits(t *testing.T) {
+	_, err := (&Edit{}).ExecuteReturn(map[string]any{"path": "x", "edits": []any{map[string]any{"new_string": "x"}}})
+	if err == nil || !strings.Contains(err.Error(), "old_string required") {
+		t.Fatalf("expected old_string validation error, got %v", err)
+	}
+}
+
+func TestEditExecuteReturnErrorHasNoDisplay(t *testing.T) {
+	ret, err := (&Edit{}).ExecuteReturn(map[string]any{"path": "", "old_string": "x", "new_string": "y"})
+	if err == nil || !ret.IsError || len(ret.Display) != 0 {
+		t.Fatalf("expected validation error without display, ret=%+v err=%v", ret, err)
+	}
+}
+
 func TestGrep(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "test.go"), []byte("package main\nfunc main() {}\n"), 0644)
@@ -234,6 +447,28 @@ func TestGrepTruncatesAtResultLimit(t *testing.T) {
 	}
 	if strings.Contains(result, "match 249") {
 		t.Fatalf("expected late matches to be omitted, got %q", result)
+	}
+}
+
+func TestGrepHeadLimit(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "many.txt"), []byte("match 1\nmatch 2\nmatch 3\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := (&Grep{}).Execute(map[string]any{"pattern": "match", "path": dir, "head_limit": float64(2)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(result, "many.txt") != 2 || !strings.Contains(result, "[grep results truncated at 2 matches]") || strings.Contains(result, "match 3") {
+		t.Fatalf("unexpected head_limit result: %q", result)
+	}
+}
+
+func TestGrepRejectsInvalidHeadLimit(t *testing.T) {
+	_, err := (&Grep{}).Execute(map[string]any{"pattern": "x", "head_limit": float64(0)})
+	if err == nil || !strings.Contains(err.Error(), "head_limit") {
+		t.Fatalf("expected head_limit validation error, got %v", err)
 	}
 }
 

@@ -198,7 +198,7 @@ func configureEngineForWire(engine *soul.Engine, w *wire.Wire) {
 		}
 	}
 	engine.OnToolResult = func(event soul.ToolResultEvent) {
-		wireEvent, err := wire.NewEvent(wire.EventToolResult, wire.ToolResult{ToolCallID: event.ToolCallID, Name: event.Name, Content: event.Content, Error: event.Error})
+		wireEvent, err := wire.NewEvent(wire.EventToolResult, wire.ToolResult{ToolCallID: event.ToolCallID, Name: event.Name, Content: event.Content, Display: event.Display, Error: event.Error})
 		if err == nil {
 			w.SoulSide.PublishEvent(wireEvent)
 		}

@@ -12,6 +12,7 @@ import (
 	"github.com/aquama/natalia-cli/internal/chat"
 	"github.com/aquama/natalia-cli/internal/compaction"
 	"github.com/aquama/natalia-cli/internal/contextbudget"
+	"github.com/aquama/natalia-cli/internal/display"
 	"github.com/aquama/natalia-cli/internal/llm"
 	"github.com/aquama/natalia-cli/internal/mode"
 	"github.com/aquama/natalia-cli/internal/prefetch"
@@ -116,6 +117,7 @@ type ToolResultEvent struct {
 	ToolCallID string
 	Name       string
 	Content    string
+	Display    []display.Block
 	Error      string
 }
 
@@ -397,7 +399,7 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 			Content:    e.budgetToolResult(name, result),
 			Name:       name,
 		})
-		e.emitToolResult(tc.ID, name, result, "")
+		e.emitToolResult(tc.ID, name, result, nil, "")
 		return nil
 	}
 
@@ -410,7 +412,7 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 			Content:    e.budgetToolResult(name, result),
 			Name:       name,
 		})
-		e.emitToolResult(tc.ID, name, result, "")
+		e.emitToolResult(tc.ID, name, result, nil, "")
 		return nil
 	}
 
@@ -425,7 +427,7 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 				Content:    e.budgetToolResult(name, result),
 				Name:       name,
 			})
-			e.emitToolResult(tc.ID, name, result, "")
+			e.emitToolResult(tc.ID, name, result, nil, "")
 			e.log("[ENGINE] tool rejected: %s", name)
 			return nil
 		}
@@ -434,12 +436,13 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 	if e.ToolCache != nil && toolcache.IsCacheable(name) {
 		if cached, ok := e.ToolCache.Get(name, args); ok {
 			e.appendToolResult(tc.ID, name, cached)
-			e.emitToolResult(tc.ID, name, cached, "")
+			e.emitToolResult(tc.ID, name, cached, nil, "")
 			return nil
 		}
 	}
 
-	result, err := tool.Execute(args)
+	ret, err := toolset.Execute(tool, args)
+	result := ret.ModelText
 	errMsg := ""
 	if err != nil {
 		errMsg = err.Error()
@@ -468,7 +471,7 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 	}
 
 	e.appendToolResult(tc.ID, name, finalResult)
-	e.emitToolResult(tc.ID, name, finalResult, errMsg)
+	e.emitToolResult(tc.ID, name, finalResult, ret.Display, errMsg)
 
 	return nil
 }
@@ -501,9 +504,9 @@ func (e *Engine) budgetToolResult(toolName, content string) string {
 	return contextbudget.BudgetToolResult(toolName, content, e.ToolResultMaxChars)
 }
 
-func (e *Engine) emitToolResult(toolCallID, name, content, errMsg string) {
+func (e *Engine) emitToolResult(toolCallID, name, content string, displayBlocks []display.Block, errMsg string) {
 	if e.OnToolResult != nil {
-		e.OnToolResult(ToolResultEvent{ToolCallID: toolCallID, Name: name, Content: content, Error: errMsg})
+		e.OnToolResult(ToolResultEvent{ToolCallID: toolCallID, Name: name, Content: content, Display: displayBlocks, Error: errMsg})
 	}
 }
 

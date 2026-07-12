@@ -7,6 +7,7 @@ import (
 
 	"github.com/aquama/natalia-cli/internal/chat"
 	"github.com/aquama/natalia-cli/internal/llm"
+	"github.com/aquama/natalia-cli/internal/toolreturn"
 )
 
 type Tool interface {
@@ -15,6 +16,25 @@ type Tool interface {
 	Execute(args map[string]any) (string, error)
 	Parameters() map[string]llm.Property
 	Required() []string
+}
+
+type RichTool interface {
+	Tool
+	ExecuteReturn(args map[string]any) (toolreturn.Return, error)
+}
+
+type ToolReturn = toolreturn.Return
+
+func Execute(t Tool, args map[string]any) (ToolReturn, error) {
+	if rich, ok := t.(RichTool); ok {
+		ret, err := rich.ExecuteReturn(args)
+		if ret.ModelText == "" && len(ret.Display) == 0 && err == nil {
+			ret.ModelText = "工具执行完成"
+		}
+		return ret, err
+	}
+	text, err := t.Execute(args)
+	return toolreturn.Return{ModelText: text, IsError: err != nil}, err
 }
 
 type Registry struct {
