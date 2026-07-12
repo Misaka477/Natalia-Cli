@@ -2,18 +2,25 @@ package file
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/display"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	"github.com/Misaka477/Natalia-Cli/internal/toolreturn"
 	"github.com/Misaka477/Natalia-Cli/internal/toolschema"
 )
+
+var rgLookPath = exec.LookPath
+var rgCommandContext = exec.CommandContext
 
 type Read struct{}
 
@@ -409,33 +416,53 @@ func (t *Grep) Description() string {
 func (t *Grep) Required() []string { return []string{"pattern"} }
 func (t *Grep) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"pattern":        {Type: "string", Description: "搜索模式（正则）"},
-		"path":           {Type: "string", Description: "可选，搜索目录，默认当前目录"},
-		"include":        {Type: "string", Description: "可选，文件 glob 过滤如 '*.go'"},
-		"glob":           {Type: "string", Description: "可选，ripgrep 风格文件 glob 过滤；当前作为 include 的别名"},
-		"head_limit":     {Type: "integer", Description: "可选，最多返回多少条匹配，默认 200，范围 1-10000"},
-		"ignore_case":    {Type: "boolean", Description: "可选，是否忽略大小写，默认 false"},
-		"before_context": {Type: "integer", Description: "可选，每条匹配前显示多少行上下文，默认 0，范围 0-100"},
-		"after_context":  {Type: "integer", Description: "可选，每条匹配后显示多少行上下文，默认 0，范围 0-100"},
-		"context":        {Type: "integer", Description: "可选，同时设置 before_context 和 after_context，范围 0-100"},
-		"output_mode":    {Type: "string", Description: "可选，content|files|count；默认 content"},
+		"pattern":         {Type: "string", Description: "搜索模式（正则）"},
+		"path":            {Type: "string", Description: "可选，搜索目录，默认当前目录"},
+		"include":         {Type: "string", Description: "可选，文件 glob 过滤如 '*.go'"},
+		"glob":            {Type: "string", Description: "可选，ripgrep 风格文件 glob 过滤；当前作为 include 的别名"},
+		"type":            {Type: "string", Description: "可选，按 ripgrep 文件类型过滤，如 go、py、js、md"},
+		"multiline":       {Type: "boolean", Description: "可选，启用跨行正则搜索"},
+		"include_ignored": {Type: "boolean", Description: "可选，包含 .gitignore 忽略的文件"},
+		"hidden":          {Type: "boolean", Description: "可选，包含隐藏文件和隐藏目录"},
+		"head_limit":      {Type: "integer", Description: "可选，最多返回多少条匹配，默认 200，范围 1-10000"},
+		"ignore_case":     {Type: "boolean", Description: "可选，是否忽略大小写，默认 false"},
+		"before_context":  {Type: "integer", Description: "可选，每条匹配前显示多少行上下文，默认 0，范围 0-100"},
+		"after_context":   {Type: "integer", Description: "可选，每条匹配后显示多少行上下文，默认 0，范围 0-100"},
+		"context":         {Type: "integer", Description: "可选，同时设置 before_context 和 after_context，范围 0-100"},
+		"output_mode":     {Type: "string", Description: "可选，content|files|count；默认 content"},
 	}
 }
 func (t *Grep) Execute(args map[string]any) (string, error) {
+	opts, err := parseGrepOptions(args)
+	if err != nil {
+		return "", err
+	}
+	if result, ok := grepWithRG(opts); ok {
+		return result, nil
+	}
+	return grepWithScanner(opts)
+}
+
+type grepOptions struct {
+	Pattern        string
+	SearchPath     string
+	Include        string
+	Type           string
+	HeadLimit      int
+	IgnoreCase     bool
+	Multiline      bool
+	IncludeIgnored bool
+	Hidden         bool
+	BeforeContext  int
+	AfterContext   int
+	OutputMode     string
+}
+
+func parseGrepOptions(args map[string]any) (grepOptions, error) {
 	pattern, _ := args["pattern"].(string)
 	if pattern == "" {
-		return "", fmt.Errorf("pattern 是必填参数")
+		return grepOptions{}, fmt.Errorf("pattern 是必填参数")
 	}
-	ignoreCase, _ := args["ignore_case"].(bool)
-	compilePattern := pattern
-	if ignoreCase {
-		compilePattern = "(?i)" + pattern
-	}
-	re, err := regexp.Compile(compilePattern)
-	if err != nil {
-		return "", fmt.Errorf("正则编译失败: %w", err)
-	}
-
 	searchPath, _ := args["path"].(string)
 	if searchPath == "" {
 		searchPath = "."
@@ -444,44 +471,70 @@ func (t *Grep) Execute(args map[string]any) (string, error) {
 	if include == "" {
 		include, _ = args["glob"].(string)
 	}
+	typeName, _ := args["type"].(string)
 	headLimit, err := parsePositiveIntArg(args, "head_limit", 200, 10000)
 	if err != nil {
-		return "", err
+		return grepOptions{}, err
 	}
 	beforeContext, afterContext, err := parseGrepContextArgs(args)
 	if err != nil {
-		return "", err
+		return grepOptions{}, err
 	}
 	outputMode, err := parseGrepOutputMode(args)
 	if err != nil {
-		return "", err
+		return grepOptions{}, err
+	}
+	ignoreCase, _ := args["ignore_case"].(bool)
+	multiline, _ := args["multiline"].(bool)
+	includeIgnored, _ := args["include_ignored"].(bool)
+	hidden, _ := args["hidden"].(bool)
+	return grepOptions{Pattern: pattern, SearchPath: searchPath, Include: include, Type: typeName, HeadLimit: headLimit, IgnoreCase: ignoreCase, Multiline: multiline, IncludeIgnored: includeIgnored, Hidden: hidden, BeforeContext: beforeContext, AfterContext: afterContext, OutputMode: outputMode}, nil
+}
+
+func grepWithScanner(opts grepOptions) (string, error) {
+	compilePattern := opts.Pattern
+	if opts.IgnoreCase {
+		compilePattern = "(?i)" + opts.Pattern
+	}
+	re, err := regexp.Compile(compilePattern)
+	if err != nil {
+		return "", fmt.Errorf("正则编译失败: %w", err)
 	}
 
 	var results []string
 	matchedFiles := make(map[string]bool)
 	matchCount := 0
 	truncated := false
-	walkErr := filepath.Walk(searchPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
+	walkErr := walkSearchFiles(opts.SearchPath, searchWalkOptions{IncludeIgnored: opts.IncludeIgnored, Hidden: opts.Hidden}, func(path string, info os.FileInfo) error {
 		if truncated {
 			return filepath.SkipDir
 		}
-		if info.IsDir() {
-			if strings.HasPrefix(info.Name(), ".") && info.Name() != "." {
-				return filepath.SkipDir
+		if opts.Include != "" {
+			rel, _ := filepath.Rel(opts.SearchPath, path)
+			matched := matchGlobPattern(opts.Include, filepath.ToSlash(rel))
+			if !matched {
+				matched = matchGlobPattern(opts.Include, filepath.Base(path))
 			}
-			return nil
-		}
-		if include != "" {
-			matched, _ := filepath.Match(include, filepath.Base(path))
 			if !matched {
 				return nil
 			}
 		}
+		if opts.Type != "" && !fileMatchesType(path, opts.Type) {
+			return nil
+		}
 		lines, err := scanTextFileLines(path)
 		if err != nil {
+			return nil
+		}
+		if opts.Multiline {
+			joined := strings.Join(lines, "\n")
+			if re.MatchString(joined) {
+				matchedFiles[path] = true
+				matchCount++
+				if opts.OutputMode == "content" {
+					results = append(results, fmt.Sprintf("%s: multiline match", path))
+				}
+			}
 			return nil
 		}
 		matches := make([]bool, len(lines))
@@ -493,18 +546,18 @@ func (t *Grep) Execute(args map[string]any) (string, error) {
 			matches[i] = true
 			matchedFiles[path] = true
 			matchCount++
-			if outputMode == "content" && len(matchLines) >= headLimit {
+			if opts.OutputMode == "content" && len(matchLines) >= opts.HeadLimit {
 				truncated = true
 				break
 			}
-			if outputMode == "content" {
+			if opts.OutputMode == "content" {
 				matchLines = append(matchLines, i+1)
 			}
 		}
 		emit := make(map[int]bool)
 		for _, lineNo := range matchLines {
-			start := max(1, lineNo-beforeContext)
-			end := min(len(lines), lineNo+afterContext)
+			start := max(1, lineNo-opts.BeforeContext)
+			end := min(len(lines), lineNo+opts.AfterContext)
 			for n := start; n <= end; n++ {
 				emit[n] = true
 			}
@@ -523,10 +576,10 @@ func (t *Grep) Execute(args map[string]any) (string, error) {
 	if matchCount == 0 {
 		return "未找到匹配", nil
 	}
-	if outputMode == "count" {
+	if opts.OutputMode == "count" {
 		return fmt.Sprintf("%d", matchCount), nil
 	}
-	if outputMode == "files" {
+	if opts.OutputMode == "files" {
 		files := make([]string, 0, len(matchedFiles))
 		for path := range matchedFiles {
 			files = append(files, path)
@@ -535,9 +588,140 @@ func (t *Grep) Execute(args map[string]any) (string, error) {
 		return strings.Join(files, "\n"), nil
 	}
 	if truncated {
-		results = append(results, fmt.Sprintf("[grep results truncated at %d matches]", headLimit))
+		results = append(results, fmt.Sprintf("[grep results truncated at %d matches]", opts.HeadLimit))
 	}
 	return strings.Join(results, "\n"), nil
+}
+
+func grepWithRG(opts grepOptions) (string, bool) {
+	bin, err := rgLookPath("rg")
+	if err != nil {
+		return "", false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	args := []string{"--color", "never", "--line-number", "--no-heading"}
+	if opts.IgnoreCase {
+		args = append(args, "--ignore-case")
+	}
+	if opts.Include != "" {
+		args = append(args, "--glob", opts.Include)
+	}
+	if opts.Type != "" {
+		args = append(args, "--type", opts.Type)
+	}
+	if opts.Multiline {
+		args = append(args, "--multiline", "--multiline-dotall")
+	}
+	if opts.IncludeIgnored {
+		args = append(args, "--no-ignore")
+	}
+	if opts.Hidden {
+		args = append(args, "--hidden")
+	}
+	if opts.BeforeContext > 0 {
+		args = append(args, "--before-context", strconv.Itoa(opts.BeforeContext))
+	}
+	if opts.AfterContext > 0 {
+		args = append(args, "--after-context", strconv.Itoa(opts.AfterContext))
+	}
+	switch opts.OutputMode {
+	case "files":
+		args = append(args, "--files-with-matches")
+	case "count":
+		args = append(args, "--count")
+	}
+	args = append(args, opts.Pattern, opts.SearchPath)
+	out, err := rgCommandContext(ctx, bin, args...).CombinedOutput()
+	text := strings.TrimSpace(string(out))
+	if err != nil {
+		if text == "" {
+			if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+				return "未找到匹配", true
+			}
+			return "", false
+		}
+		return "", false
+	}
+	if text == "" {
+		return "未找到匹配", true
+	}
+	switch opts.OutputMode {
+	case "count":
+		return strconv.Itoa(totalRGCount(text)), true
+	case "files":
+		lines := nonEmptyLines(text)
+		sort.Strings(lines)
+		return strings.Join(lines, "\n"), true
+	default:
+		return limitRGContent(normalizeRGContent(text), opts.HeadLimit), true
+	}
+}
+
+func normalizeRGContent(text string) string {
+	lines := nonEmptyLines(text)
+	for i, line := range lines {
+		lines[i] = normalizeRGLine(line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func normalizeRGLine(line string) string {
+	re := regexp.MustCompile(`^(.+)([:\-])([0-9]+)([:\-])(.*)$`)
+	m := re.FindStringSubmatch(line)
+	if len(m) != 6 || m[2] != m[4] {
+		return line
+	}
+	return fmt.Sprintf("%s%s%s%s %s", m[1], m[2], m[3], m[4], strings.TrimSpace(m[5]))
+}
+
+func totalRGCount(text string) int {
+	total := 0
+	for _, line := range nonEmptyLines(text) {
+		idx := strings.LastIndex(line, ":")
+		if idx >= 0 {
+			line = line[idx+1:]
+		}
+		count, err := strconv.Atoi(strings.TrimSpace(line))
+		if err == nil {
+			total += count
+		}
+	}
+	return total
+}
+
+func limitRGContent(text string, headLimit int) string {
+	lines := nonEmptyLines(text)
+	if headLimit <= 0 {
+		return strings.Join(lines, "\n")
+	}
+	matchCount := 0
+	keep := make([]string, 0, min(len(lines), headLimit))
+	for _, line := range lines {
+		if regexp.MustCompile(`^.+:[0-9]+:`).MatchString(line) {
+			matchCount++
+		}
+		if matchCount > headLimit {
+			break
+		}
+		keep = append(keep, line)
+	}
+	if matchCount > headLimit {
+		keep = append(keep, fmt.Sprintf("[grep results truncated at %d matches]", headLimit))
+	}
+	return strings.Join(keep, "\n")
+}
+
+func nonEmptyLines(text string) []string {
+	parts := strings.Split(strings.TrimSpace(text), "\n")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func parseGrepOutputMode(args map[string]any) (string, error) {
@@ -631,6 +815,189 @@ func parseIntArg(args map[string]any, name string, defaultValue, minValue, maxVa
 	return value, nil
 }
 
+type searchWalkOptions struct {
+	IncludeIgnored bool
+	Hidden         bool
+}
+
+type ignoreRule struct {
+	Pattern string
+	Negate  bool
+	DirOnly bool
+	Rooted  bool
+	BaseDir string
+}
+
+func walkSearchFiles(root string, opts searchWalkOptions, fn func(path string, info os.FileInfo) error) error {
+	root = filepath.Clean(root)
+	var rules []ignoreRule
+	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if path != root {
+			if info.IsDir() && info.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			if !opts.Hidden && strings.HasPrefix(info.Name(), ".") {
+				if info.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if !opts.IncludeIgnored && ignoredByRules(root, path, info.IsDir(), rules) {
+				if info.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+		}
+		if info.IsDir() {
+			if !opts.IncludeIgnored {
+				rules = append(rules, readGitignoreRules(path)...)
+			}
+			return nil
+		}
+		return fn(path, info)
+	})
+}
+
+func readGitignoreRules(dir string) []ignoreRule {
+	data, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		return nil
+	}
+	lines := strings.Split(string(data), "\n")
+	rules := make([]ignoreRule, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		rule := ignoreRule{BaseDir: dir}
+		if strings.HasPrefix(line, "!") {
+			rule.Negate = true
+			line = strings.TrimPrefix(line, "!")
+		}
+		if strings.HasPrefix(line, "/") {
+			rule.Rooted = true
+			line = strings.TrimPrefix(line, "/")
+		}
+		if strings.HasSuffix(line, "/") {
+			rule.DirOnly = true
+			line = strings.TrimSuffix(line, "/")
+		}
+		line = filepath.ToSlash(strings.TrimSpace(line))
+		if line != "" {
+			rule.Pattern = line
+			rules = append(rules, rule)
+		}
+	}
+	return rules
+}
+
+func ignoredByRules(root, path string, isDir bool, rules []ignoreRule) bool {
+	ignored := false
+	for _, rule := range rules {
+		if rule.DirOnly && !isDir {
+			continue
+		}
+		if ignoreRuleMatches(root, path, rule) {
+			ignored = !rule.Negate
+		}
+	}
+	return ignored
+}
+
+func ignoreRuleMatches(root, path string, rule ignoreRule) bool {
+	base := root
+	if rule.BaseDir != "" {
+		base = rule.BaseDir
+	}
+	rel, err := filepath.Rel(base, path)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return false
+	}
+	rel = filepath.ToSlash(rel)
+	pattern := rule.Pattern
+	if rule.Rooted || strings.Contains(pattern, "/") {
+		return matchGlobPattern(pattern, rel)
+	}
+	parts := strings.Split(rel, "/")
+	for _, part := range parts {
+		if matchGlobPattern(pattern, part) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchGlobPattern(pattern, path string) bool {
+	pattern = filepath.ToSlash(filepath.Clean(pattern))
+	path = filepath.ToSlash(filepath.Clean(path))
+	if pattern == "." {
+		pattern = ""
+	}
+	if path == "." {
+		path = ""
+	}
+	return matchGlobParts(splitPathPattern(pattern), splitPathPattern(path))
+}
+
+func splitPathPattern(s string) []string {
+	s = strings.Trim(s, "/")
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, "/")
+}
+
+func matchGlobParts(pattern, path []string) bool {
+	if len(pattern) == 0 {
+		return len(path) == 0
+	}
+	if pattern[0] == "**" {
+		if matchGlobParts(pattern[1:], path) {
+			return true
+		}
+		return len(path) > 0 && matchGlobParts(pattern, path[1:])
+	}
+	if len(path) == 0 {
+		return false
+	}
+	matched, err := filepath.Match(pattern[0], path[0])
+	if err != nil || !matched {
+		return false
+	}
+	return matchGlobParts(pattern[1:], path[1:])
+}
+
+func fileMatchesType(path, typeName string) bool {
+	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")
+	switch strings.ToLower(strings.TrimSpace(typeName)) {
+	case "go", "golang":
+		return ext == "go"
+	case "md", "markdown":
+		return ext == "md" || ext == "markdown"
+	case "js", "javascript":
+		return ext == "js" || ext == "jsx" || ext == "mjs" || ext == "cjs"
+	case "ts", "typescript":
+		return ext == "ts" || ext == "tsx"
+	case "py", "python":
+		return ext == "py"
+	case "json":
+		return ext == "json"
+	case "yaml", "yml":
+		return ext == "yaml" || ext == "yml"
+	case "txt", "text":
+		return ext == "txt"
+	case "all", "":
+		return true
+	default:
+		return ext == strings.ToLower(strings.TrimSpace(typeName))
+	}
+}
+
 type Glob struct{}
 
 func (t *Glob) Name() string { return "glob" }
@@ -640,10 +1007,12 @@ func (t *Glob) Description() string {
 func (t *Glob) Required() []string { return []string{"pattern"} }
 func (t *Glob) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"pattern": {Type: "string", Description: "glob 模式如 '**/*.go' 或 'src/**/*.ts'"},
-		"path":    {Type: "string", Description: "可选，搜索根目录，默认当前"},
-		"limit":   {Type: "integer", Description: "可选，最多返回多少条结果；默认返回全部，范围 1-10000"},
-		"offset":  {Type: "integer", Description: "可选，从第几条结果开始返回，0-based，默认 0"},
+		"pattern":         {Type: "string", Description: "glob 模式如 '**/*.go' 或 'src/**/*.ts'"},
+		"path":            {Type: "string", Description: "可选，搜索根目录，默认当前"},
+		"include_ignored": {Type: "boolean", Description: "可选，包含 .gitignore 忽略的文件"},
+		"hidden":          {Type: "boolean", Description: "可选，包含隐藏文件和隐藏目录"},
+		"limit":           {Type: "integer", Description: "可选，最多返回多少条结果；默认返回全部，范围 1-10000"},
+		"offset":          {Type: "integer", Description: "可选，从第几条结果开始返回，0-based，默认 0"},
 	}
 }
 func (t *Glob) Execute(args map[string]any) (string, error) {
@@ -664,33 +1033,21 @@ func (t *Glob) Execute(args map[string]any) (string, error) {
 		return "", err
 	}
 
-	parts := strings.SplitN(pattern, "**", 2)
+	includeIgnored, _ := args["include_ignored"].(bool)
+	hidden, _ := args["hidden"].(bool)
 	var results []string
-
-	if len(parts) == 2 {
-		suffix := strings.TrimPrefix(parts[1], "/")
-		if err := filepath.Walk(searchPath, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return nil
-			}
-			if info.IsDir() && strings.HasPrefix(info.Name(), ".") && info.Name() != "." {
-				return filepath.SkipDir
-			}
-			rel, _ := filepath.Rel(searchPath, path)
-			matched, _ := filepath.Match(suffix, rel)
-			if !matched {
-				matched, _ = filepath.Match(suffix, filepath.Base(path))
-			}
-			if matched && !info.IsDir() {
-				results = append(results, path)
-			}
+	if err := walkSearchFiles(searchPath, searchWalkOptions{IncludeIgnored: includeIgnored, Hidden: hidden}, func(path string, info os.FileInfo) error {
+		rel, err := filepath.Rel(searchPath, path)
+		if err != nil {
 			return nil
-		}); err != nil {
-			return "", err
 		}
-	} else {
-		matches, _ := filepath.Glob(filepath.Join(searchPath, pattern))
-		results = matches
+		rel = filepath.ToSlash(rel)
+		if matchGlobPattern(pattern, rel) || matchGlobPattern(pattern, filepath.Base(path)) {
+			results = append(results, path)
+		}
+		return nil
+	}); err != nil {
+		return "", err
 	}
 	sort.Strings(results)
 

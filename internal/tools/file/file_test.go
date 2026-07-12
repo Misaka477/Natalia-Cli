@@ -718,6 +718,82 @@ func TestGrepRejectsInvalidRegexAndScanMissingFile(t *testing.T) {
 	}
 }
 
+func TestGrepUsesRgBackendAndMapsArguments(t *testing.T) {
+	oldLookPath := rgLookPath
+	t.Cleanup(func() { rgLookPath = oldLookPath })
+	dir := t.TempDir()
+	argsPath := filepath.Join(dir, "args.txt")
+	fakeRG := filepath.Join(dir, "rg")
+	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\n' \"$@\" > %q\nprintf 'fake.go:1:fake\\n'\n", argsPath)
+	if err := os.WriteFile(fakeRG, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	rgLookPath = func(string) (string, error) { return fakeRG, nil }
+
+	result, err := (&Grep{}).Execute(map[string]any{"pattern": "fake", "path": dir, "glob": "**/*.go", "type": "go", "ignore_case": true, "multiline": true, "include_ignored": true, "hidden": true, "before_context": float64(1), "after_context": float64(2)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "fake.go:1: fake") {
+		t.Fatalf("expected normalized rg output, got %q", result)
+	}
+	args, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	argText := string(args)
+	for _, want := range []string{"--ignore-case", "--glob", "**/*.go", "--type", "go", "--multiline", "--multiline-dotall", "--no-ignore", "--hidden", "--before-context", "1", "--after-context", "2"} {
+		if !strings.Contains(argText, want) {
+			t.Fatalf("expected rg args to contain %q, got %q", want, argText)
+		}
+	}
+}
+
+func TestGrepFallbackRespectsGitignoreHiddenTypeAndMultiline(t *testing.T) {
+	oldLookPath := rgLookPath
+	t.Cleanup(func() { rgLookPath = oldLookPath })
+	rgLookPath = func(string) (string, error) { return "", os.ErrNotExist }
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("ignored.txt\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"visible.go":  "alpha\nbeta\n",
+		"ignored.txt": "alpha\n",
+		".hidden.go":  "alpha\n",
+		"note.md":     "alpha\n",
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result, err := (&Grep{}).Execute(map[string]any{"pattern": "alpha", "path": dir, "type": "go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "visible.go") || strings.Contains(result, "ignored.txt") || strings.Contains(result, ".hidden.go") || strings.Contains(result, "note.md") {
+		t.Fatalf("expected fallback grep to respect ignore/hidden/type, got %q", result)
+	}
+
+	result, err = (&Grep{}).Execute(map[string]any{"pattern": "alpha", "path": dir, "include_ignored": true, "hidden": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "ignored.txt") || !strings.Contains(result, ".hidden.go") {
+		t.Fatalf("expected include_ignored+hidden grep to include ignored and hidden files, got %q", result)
+	}
+
+	result, err = (&Grep{}).Execute(map[string]any{"pattern": "alpha\nbeta", "path": dir, "multiline": true, "type": "go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "visible.go: multiline match") {
+		t.Fatalf("expected multiline fallback match, got %q", result)
+	}
+}
+
 func TestParseIntArgSupportsInt64(t *testing.T) {
 	got, err := parseIntArg(map[string]any{"limit": int64(7)}, "limit", 0, 0, 10)
 	if err != nil || got != 7 {
@@ -759,6 +835,80 @@ func TestGlobRecursive(t *testing.T) {
 	}
 	if !strings.Contains(result, "deep.go") {
 		t.Errorf("expected deep.go in results, got %s", result)
+	}
+}
+
+func TestGlobDoubleStarComplexPatterns(t *testing.T) {
+	dir := t.TempDir()
+	paths := []string{
+		"a/b/c/target.txt",
+		"a/x/b/y/c/file.go",
+		"root.go",
+	}
+	for _, rel := range paths {
+		path := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(rel), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result, err := (&Glob{}).Execute(map[string]any{"pattern": "a/**/target.txt", "path": dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "target.txt") {
+		t.Fatalf("expected middle ** match, got %q", result)
+	}
+	result, err = (&Glob{}).Execute(map[string]any{"pattern": "a/**/b/**/c/*.go", "path": dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "file.go") {
+		t.Fatalf("expected multiple ** match, got %q", result)
+	}
+	result, err = (&Glob{}).Execute(map[string]any{"pattern": "**/*.go", "path": dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "root.go") || !strings.Contains(result, "file.go") {
+		t.Fatalf("expected **/*.go to match root and deep go files, got %q", result)
+	}
+}
+
+func TestGlobRespectsGitignoreHiddenAndIncludeIgnored(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("ignored/\n!important.txt\n/root-only.txt\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range []string{"visible.txt", "ignored/drop.txt", "important.txt", "root-only.txt", ".hidden/secret.txt"} {
+		path := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(rel), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result, err := (&Glob{}).Execute(map[string]any{"pattern": "**/*.txt", "path": dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "visible.txt") || !strings.Contains(result, "important.txt") || strings.Contains(result, "drop.txt") || strings.Contains(result, "root-only.txt") || strings.Contains(result, "secret.txt") {
+		t.Fatalf("expected glob to respect gitignore and hidden defaults, got %q", result)
+	}
+
+	result, err = (&Glob{}).Execute(map[string]any{"pattern": "**/*.txt", "path": dir, "include_ignored": true, "hidden": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"drop.txt", "root-only.txt", "secret.txt"} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("expected include_ignored+hidden glob to contain %q, got %q", want, result)
+		}
 	}
 }
 
