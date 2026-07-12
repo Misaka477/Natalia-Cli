@@ -18,6 +18,7 @@ import (
 	"github.com/aquama/natalia-cli/internal/autoflow"
 	"github.com/aquama/natalia-cli/internal/chat"
 	"github.com/aquama/natalia-cli/internal/config"
+	"github.com/aquama/natalia-cli/internal/planexec"
 	"github.com/aquama/natalia-cli/internal/session"
 	"github.com/aquama/natalia-cli/internal/soul"
 	"github.com/aquama/natalia-cli/internal/toolset"
@@ -214,6 +215,150 @@ func TestApplyAutoflowDecisionRecoversPreviousModePreservingState(t *testing.T) 
 	}
 	if engine.Mode == nil || engine.Mode.Name != "code" || engine.Context != oldContext {
 		t.Fatalf("expected engine recovered to code preserving state, mode=%+v context=%v", engine.Mode, engine.Context == oldContext)
+	}
+}
+
+func TestMaybeRecordAutoflowDisabledSkipsEscalator(t *testing.T) {
+	escalator := &autoflow.Escalator{Threshold: 1}
+	decision := maybeRecordAutoflow(false, escalator, &soul.Outcome{StopReason: "error"}, nil)
+	if decision.Action != autoflow.ActionNone || escalator.Consecutive != 0 {
+		t.Fatalf("expected disabled auto to skip state changes, decision=%+v escalator=%+v", decision, escalator)
+	}
+}
+
+func TestHandleAutoCommandTogglesAndResets(t *testing.T) {
+	enabled := true
+	escalator := &autoflow.Escalator{Threshold: 1}
+	escalator.Record(&soul.Outcome{StopReason: "error"}, "code")
+
+	output := captureStdout(t, func() { handleAuto("/auto off", &enabled, escalator) })
+	if enabled || escalator.AutoDebug || escalator.PreviousMode != "" || !strings.Contains(output, "auto 已关闭") {
+		t.Fatalf("expected auto off to disable and reset, enabled=%v escalator=%+v output=%q", enabled, escalator, output)
+	}
+
+	output = captureStdout(t, func() { handleAuto("/auto on", &enabled, escalator) })
+	if !enabled || !strings.Contains(output, "auto 已开启") {
+		t.Fatalf("expected auto on, enabled=%v output=%q", enabled, output)
+	}
+}
+
+func TestHandleAutoCommandStatus(t *testing.T) {
+	oldPlan := currentPlan
+	currentPlan = nil
+	t.Cleanup(func() { currentPlan = oldPlan })
+	enabled := true
+	escalator := &autoflow.Escalator{Threshold: 1, Consecutive: 1, AutoDebug: true, PreviousMode: "code"}
+	output := captureStdout(t, func() { handleAuto("/auto", &enabled, escalator) })
+	for _, want := range []string{"auto: on", "failure_threshold: 1", "consecutive_failures: 1", "auto_debug: true", "previous_mode: code", "plan: <none>"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected output to contain %q, got %q", want, output)
+		}
+	}
+}
+
+func TestHandleAutoCommandStatusShowsPlan(t *testing.T) {
+	oldPlan := currentPlan
+	currentPlan = nil
+	t.Cleanup(func() { currentPlan = oldPlan })
+	enabled := true
+	escalator := &autoflow.Escalator{Threshold: 1}
+	dir := t.TempDir()
+	planPath := filepath.Join(dir, "plan.md")
+	if err := os.WriteFile(planPath, []byte("- [x] done\n- [ ] next item"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{DefaultProfile: "default", Providers: map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}}, Profiles: map[string]config.Profile{"default": {Provider: "p", Model: "base"}}, PermissionProfiles: config.DefaultPermissionProfiles()}
+	engine := buildEngine(cfg, toolset.NewRegistry(), false)
+	captureStdout(t, func() { handleExecutePlan("/execute-plan "+planPath, cfg, &engine, toolset.NewRegistry(), false) })
+	output := captureStdout(t, func() { handleAuto("/auto", &enabled, escalator) })
+	for _, want := range []string{"plan: plan", "plan_steps: 1/2 done", "next_step: line 2: next item"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected output to contain %q, got %q", want, output)
+		}
+	}
+}
+
+func TestHandlePlanCommandMarksNextDone(t *testing.T) {
+	oldPlan := currentPlan
+	currentPlan = nil
+	t.Cleanup(func() { currentPlan = oldPlan })
+	dir := t.TempDir()
+	planPath := filepath.Join(dir, "plan.md")
+	if err := os.WriteFile(planPath, []byte("- [ ] first\n- [ ] second"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{DefaultProfile: "default", Providers: map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}}, Profiles: map[string]config.Profile{"default": {Provider: "p", Model: "base"}}, PermissionProfiles: config.DefaultPermissionProfiles()}
+	engine := buildEngine(cfg, toolset.NewRegistry(), false)
+	captureStdout(t, func() { handleExecutePlan("/execute-plan "+planPath, cfg, &engine, toolset.NewRegistry(), false) })
+
+	output := captureStdout(t, func() { handlePlan("/plan done") })
+	for _, want := range []string{"已标记完成: line 1: first", "下一未完成项: line 2: second"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected output to contain %q, got %q", want, output)
+		}
+	}
+	output = captureStdout(t, func() { handlePlan("/plan status") })
+	if !strings.Contains(output, "plan_steps: 1/2 done") || !strings.Contains(output, "next_step: line 2: second") {
+		t.Fatalf("expected updated plan status, got %q", output)
+	}
+}
+
+func TestHandlePlanCommandClear(t *testing.T) {
+	oldPlan := currentPlan
+	currentPlan = planexec.Parse("plan.md", "- [ ] task")
+	t.Cleanup(func() { currentPlan = oldPlan })
+	output := captureStdout(t, func() { handlePlan("/plan clear") })
+	if currentPlan != nil || !strings.Contains(output, "已清除当前计划") {
+		t.Fatalf("expected plan cleared, currentPlan=%+v output=%q", currentPlan, output)
+	}
+}
+
+func TestHandleExecutePlanLoadsPlanAndQueuesSteer(t *testing.T) {
+	oldRuntime := runtime
+	runtime = runtimeOverrides{Mode: "debug", ModelProfile: "cheap", PermissionProfile: "read_only"}
+	oldPlan := currentPlan
+	currentPlan = nil
+	t.Cleanup(func() { runtime = oldRuntime; currentPlan = oldPlan })
+
+	dir := t.TempDir()
+	planPath := filepath.Join(dir, "plan.md")
+	if err := os.WriteFile(planPath, []byte("# Plan\n\n- [ ] next task"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{
+		DefaultProfile:     "default",
+		Providers:          map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}},
+		PermissionProfiles: config.DefaultPermissionProfiles(),
+		Profiles: map[string]config.Profile{
+			"default": {Provider: "p", Model: "base", Mode: "debug"},
+		},
+	}
+	tools := toolset.NewRegistry()
+	engine := buildEngine(cfg, tools, false)
+	oldContext := engine.Context
+
+	output := captureStdout(t, func() { handleExecutePlan("/execute-plan "+planPath, cfg, &engine, tools, false) })
+	if !strings.Contains(output, "已载入计划") || !strings.Contains(output, "下一未完成项: line 3: next task") || runtime.Mode != "code" || runtime.ModelProfile != "" || runtime.PermissionProfile != "" {
+		t.Fatalf("expected plan loaded and runtime switched to code, output=%q runtime=%+v", output, runtime)
+	}
+	if currentPlan == nil || currentPlan.Slug != "plan" {
+		t.Fatalf("expected current plan session, got %+v", currentPlan)
+	}
+	if engine.Mode == nil || engine.Mode.Name != "code" || engine.Context != oldContext {
+		t.Fatalf("expected rebuilt code engine preserving context, mode=%+v context=%v", engine.Mode, engine.Context == oldContext)
+	}
+	steer, ok := engine.Steer.Pop()
+	if !ok || !strings.Contains(steer, "# Plan") || !strings.Contains(steer, planPath) || !strings.Contains(steer, "下一未完成项（line 3）：next task") {
+		t.Fatalf("expected queued plan steer, ok=%v steer=%q", ok, steer)
+	}
+}
+
+func TestHandleExecutePlanRejectsNonMarkdown(t *testing.T) {
+	cfg := &config.Config{DefaultProfile: "default"}
+	engine := soul.NewEngine(nil, toolset.NewRegistry())
+	output := captureStdout(t, func() { handleExecutePlan("/execute-plan plan.txt", cfg, &engine, toolset.NewRegistry(), false) })
+	if !strings.Contains(output, "必须是 .md") {
+		t.Fatalf("expected markdown validation error, got %q", output)
 	}
 }
 

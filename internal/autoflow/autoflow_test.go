@@ -13,7 +13,7 @@ func TestEscalatorSwitchesToDebugAfterThreshold(t *testing.T) {
 		t.Fatalf("expected no action on first error, got %+v", decision)
 	}
 	decision = escalator.Record(&soul.Outcome{StopReason: "error", FinalMessage: "second"}, "code")
-	if decision.Action != ActionDebug || decision.TargetMode != "debug" {
+	if decision.Action != ActionDebug || decision.TargetMode != "debug" || decision.FailureKind != FailureError {
 		t.Fatalf("expected debug escalation, got %+v", decision)
 	}
 	if !escalator.AutoDebug || escalator.PreviousMode != "code" || escalator.Consecutive != 0 {
@@ -45,10 +45,48 @@ func TestEscalatorResetsAfterSuccess(t *testing.T) {
 	}
 }
 
+func TestEscalatorResetClearsState(t *testing.T) {
+	escalator := &Escalator{Threshold: 1}
+	escalator.Record(&soul.Outcome{StopReason: "error"}, "code")
+	escalator.Reset()
+	if escalator.Consecutive != 0 || escalator.AutoDebug || escalator.PreviousMode != "" {
+		t.Fatalf("expected reset state, got %+v", escalator)
+	}
+}
+
 func TestEscalatorDoesNotEscalateAlreadyDebug(t *testing.T) {
 	escalator := &Escalator{Threshold: 1}
 	decision := escalator.Record(&soul.Outcome{StopReason: "error"}, "debug")
 	if decision.Action != ActionNone {
 		t.Fatalf("expected no action when already in debug, got %+v", decision)
+	}
+}
+
+func TestEscalatorEscalatesOnMaxSteps(t *testing.T) {
+	escalator := &Escalator{Threshold: 1}
+	decision := escalator.Record(&soul.Outcome{StopReason: "max_steps", FinalMessage: "达到最大步骤数"}, "code")
+	if decision.Action != ActionDebug || decision.TargetMode != "debug" || decision.FailureKind != FailureMaxSteps {
+		t.Fatalf("expected max_steps debug escalation, got %+v", decision)
+	}
+}
+
+func TestClassifyFailure(t *testing.T) {
+	cases := []struct {
+		name string
+		out  *soul.Outcome
+		want FailureKind
+	}{
+		{name: "nil", out: nil, want: FailureNone},
+		{name: "error", out: &soul.Outcome{StopReason: "error"}, want: FailureError},
+		{name: "max steps", out: &soul.Outcome{StopReason: "max_steps"}, want: FailureMaxSteps},
+		{name: "success", out: &soul.Outcome{StopReason: "no_tool_calls", FinalMessage: "ok"}, want: FailureNone},
+		{name: "approval", out: &soul.Outcome{StopReason: "requires_approval"}, want: FailureNone},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ClassifyFailure(tc.out); got != tc.want {
+				t.Fatalf("expected %q, got %q", tc.want, got)
+			}
+		})
 	}
 }

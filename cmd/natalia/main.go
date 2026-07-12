@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/aquama/natalia-cli/internal/config"
 	"github.com/aquama/natalia-cli/internal/llm"
 	"github.com/aquama/natalia-cli/internal/mode"
+	"github.com/aquama/natalia-cli/internal/planexec"
 	"github.com/aquama/natalia-cli/internal/sandbox"
 	"github.com/aquama/natalia-cli/internal/session"
 	"github.com/aquama/natalia-cli/internal/skill"
@@ -37,6 +39,7 @@ var (
 	workerPool     *worker.Pool
 	skillRegistry  *skill.Registry
 	runtime        runtimeOverrides
+	currentPlan    *planexec.Session
 )
 
 type runtimeOverrides struct {
@@ -243,6 +246,145 @@ func applyAutoflowDecision(decision autoflow.Decision, cfg *config.Config, engin
 	*engine = rebuildEnginePreservingState(cfg, *engine, tools, debug)
 }
 
+func maybeRecordAutoflow(enabled bool, escalator *autoflow.Escalator, outcome *soul.Outcome, cfg *config.Config) autoflow.Decision {
+	if !enabled || escalator == nil {
+		return autoflow.Decision{}
+	}
+	return escalator.Record(outcome, currentModeName(cfg))
+}
+
+func handleAuto(input string, enabled *bool, escalator *autoflow.Escalator) {
+	if enabled == nil {
+		return
+	}
+	parts := strings.Fields(input)
+	cmd := "status"
+	if len(parts) > 1 {
+		cmd = parts[1]
+	}
+	switch cmd {
+	case "status":
+		state := "off"
+		if *enabled {
+			state = "on"
+		}
+		consecutive := 0
+		autoDebug := false
+		previousMode := ""
+		threshold := autoflow.DefaultFailureThreshold
+		if escalator != nil {
+			consecutive = escalator.Consecutive
+			autoDebug = escalator.AutoDebug
+			previousMode = escalator.PreviousMode
+			if escalator.Threshold > 0 {
+				threshold = escalator.Threshold
+			}
+		}
+		fmt.Printf("auto: %s\n", state)
+		fmt.Printf("failure_threshold: %d\n", threshold)
+		fmt.Printf("consecutive_failures: %d\n", consecutive)
+		fmt.Printf("auto_debug: %t\n", autoDebug)
+		if previousMode != "" {
+			fmt.Printf("previous_mode: %s\n", previousMode)
+		}
+		for _, line := range currentPlan.StatusLines() {
+			fmt.Println(line)
+		}
+	case "on":
+		*enabled = true
+		if escalator != nil {
+			escalator.Reset()
+		}
+		fmt.Println("✓ auto 已开启")
+	case "off":
+		*enabled = false
+		if escalator != nil {
+			escalator.Reset()
+		}
+		fmt.Println("✓ auto 已关闭")
+	default:
+		fmt.Println("用法: /auto [status|on|off]")
+	}
+}
+
+func handleExecutePlan(input string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool) {
+	parts := strings.Fields(input)
+	if len(parts) < 2 {
+		fmt.Println("用法: /execute-plan <plan.md>")
+		return
+	}
+	planPath := strings.Trim(parts[1], "\"'")
+	if filepath.Ext(planPath) != ".md" {
+		fmt.Println("计划文件必须是 .md 文件")
+		return
+	}
+	planPath = filepath.Clean(planPath)
+	info, err := os.Stat(planPath)
+	if err != nil {
+		fmt.Printf("读取计划失败: %v\n", err)
+		return
+	}
+	if info.IsDir() {
+		fmt.Println("计划路径不能是目录")
+		return
+	}
+	if info.Size() > 200*1024 {
+		fmt.Println("计划文件过大，当前限制 200 KiB")
+		return
+	}
+	data, err := os.ReadFile(planPath)
+	if err != nil {
+		fmt.Printf("读取计划失败: %v\n", err)
+		return
+	}
+	currentPlan = planexec.Parse(planPath, string(data))
+	runtime.Mode = "code"
+	runtime.ModelProfile = ""
+	runtime.PermissionProfile = ""
+	*engine = rebuildEnginePreservingState(cfg, *engine, tools, debug)
+	(*engine).Steer.Push(currentPlan.Instruction())
+	fmt.Printf("✓ 已载入计划并切换到 code mode: %s\n", planPath)
+	if step, ok := currentPlan.NextOpenStep(); ok {
+		fmt.Printf("下一未完成项: line %d: %s\n", step.Line, step.Text)
+	}
+	fmt.Println("下一条普通输入将带着该计划继续执行。")
+}
+
+func handlePlan(input string) {
+	parts := strings.Fields(input)
+	cmd := "status"
+	if len(parts) > 1 {
+		cmd = parts[1]
+	}
+	switch cmd {
+	case "status":
+		for _, line := range currentPlan.StatusLines() {
+			fmt.Println(line)
+		}
+	case "done":
+		if currentPlan == nil {
+			fmt.Println("没有活动计划。用法: /execute-plan <plan.md>")
+			return
+		}
+		step, ok := currentPlan.MarkNextDone()
+		if !ok {
+			fmt.Println("计划中没有未完成项")
+			return
+		}
+		fmt.Printf("✓ 已标记完成: line %d: %s\n", step.Line, step.Text)
+		if next, ok := currentPlan.NextOpenStep(); ok {
+			fmt.Printf("下一未完成项: line %d: %s\n", next.Line, next.Text)
+		} else {
+			fmt.Println("计划 checklist 已全部完成")
+		}
+	case "clear":
+		currentPlan = nil
+		fmt.Println("✓ 已清除当前计划")
+	default:
+		fmt.Println("用法: /plan [status|done|clear]")
+	}
+}
+
 func newLLMClient(pr *config.Profile, p *config.Provider) *llm.Client {
 	return llm.NewClient(llm.Config{
 		APIKey:          p.APIKey,
@@ -366,6 +508,7 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 
 	engine := buildEngine(cfg, tools, debug)
 	escalator := &autoflow.Escalator{Threshold: autoflow.DefaultFailureThreshold}
+	autoEnabled := true
 	history := make([]string, 0)
 
 	if engine.LLM == nil && !noSetup {
@@ -437,7 +580,7 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 		history = append(history, input)
 
 		if strings.HasPrefix(input, "/") {
-			handleSlashCommand(input, &cfg, &engine, tools, debug)
+			handleSlashCommand(input, &cfg, &engine, tools, debug, &autoEnabled, escalator)
 			continue
 		}
 
@@ -490,7 +633,7 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 				sessStore.AppendMessage(currentSession.ID, chat.Message{Role: chat.RoleUser, Content: input})
 				sessStore.AppendMessage(currentSession.ID, chat.Message{Role: chat.RoleAssistant, Content: outcome.FinalMessage})
 			}
-			decision := escalator.Record(outcome, currentModeName(cfg))
+			decision := maybeRecordAutoflow(autoEnabled, escalator, outcome, cfg)
 			applyAutoflowDecision(decision, cfg, &engine, tools, debug)
 			if decision.Action == autoflow.ActionDebug {
 				fmt.Fprintln(os.Stderr, "连续失败，已自动升级到 debug mode。输入 /status 可查看当前模型和权限。")
@@ -852,7 +995,7 @@ func handleWorkerCommand(input string) {
 	}
 }
 
-func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool) {
+func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool, autoEnabled *bool, escalator *autoflow.Escalator) {
 	if strings.HasPrefix(input, "/rollback ") || input == "/rollback" {
 		handleRollback(input, engine)
 		return
@@ -889,6 +1032,22 @@ func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine,
 	}
 	if input == "/status" {
 		handleStatus(*cfg, *engine)
+		return
+	}
+	if strings.HasPrefix(input, "/auto") || input == "/auto" {
+		handleAuto(input, autoEnabled, escalator)
+		return
+	}
+	if strings.HasPrefix(input, "/execute-plan") || input == "/execute-plan" {
+		if *cfg == nil {
+			fmt.Println("请先配置。输入 /setup")
+			return
+		}
+		handleExecutePlan(input, *cfg, engine, tools, debug)
+		return
+	}
+	if strings.HasPrefix(input, "/plan") || input == "/plan" {
+		handlePlan(input)
 		return
 	}
 	if strings.HasPrefix(input, "/workers") || strings.HasPrefix(input, "/stop ") || strings.HasPrefix(input, "/go ") {
@@ -993,6 +1152,9 @@ func showHelp() {
   /model    切换 model profile
   /permission 切换权限（just_do_it/ask/read_only）
   /status   查看当前 runtime profile
+  /auto     自动流转开关（status/on/off）
+  /plan     当前计划状态（status/done/clear）
+  /execute-plan <plan.md> 载入计划并切回 code mode
   /checkpoint 手动创建快照
   /rollback <n> 回退到第 n 步
   /compact  手动压缩上下文
