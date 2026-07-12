@@ -1,6 +1,13 @@
 package browser
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 func TestParseWait(t *testing.T) {
 	got, err := parseWait("5")
@@ -58,4 +65,42 @@ func TestCloseWithoutBrowser(t *testing.T) {
 	if err := Close(); err != nil {
 		t.Fatalf("expected close without browser to be no-op, got %v", err)
 	}
+}
+
+func TestBrowserVisitAndScreenshotLocalPage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<!doctype html><html><head><title>Browser Smoke</title></head><body><main id="main">initial</main><script>document.querySelector('#main').innerText = 'selector rendered ok';</script></body></html>`))
+	}))
+	defer server.Close()
+	t.Cleanup(func() { _ = Close() })
+
+	visit, err := (&Visit{}).Execute(map[string]any{"url": server.URL, "selector": "#main", "wait": "0", "timeout": "10", "viewport": "800x600"})
+	if err != nil {
+		if isBrowserUnavailable(err) {
+			t.Skipf("browser unavailable in this environment: %v", err)
+		}
+		t.Fatal(err)
+	}
+	if !strings.Contains(visit, "Browser Smoke") || !strings.Contains(visit, "selector rendered ok") || strings.Contains(visit, "initial") {
+		t.Fatalf("expected rendered selector text, got %q", visit)
+	}
+
+	shotPath := filepath.Join(t.TempDir(), "shot.png")
+	shot, err := (&Screenshot{}).Execute(map[string]any{"url": server.URL, "path": shotPath, "selector": "#main", "wait": "0", "timeout": "10", "viewport": "800x600"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(shotPath)
+	if err != nil {
+		t.Fatalf("expected screenshot file: %v", err)
+	}
+	if info.Size() == 0 || !strings.Contains(shot, shotPath) {
+		t.Fatalf("expected non-empty screenshot result, size=%d output=%q", info.Size(), shot)
+	}
+}
+
+func isBrowserUnavailable(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "启动浏览器失败") || strings.Contains(msg, "连接浏览器失败")
 }

@@ -1,6 +1,6 @@
 package toolreturn
 
-import "github.com/aquama/natalia-cli/internal/display"
+import "github.com/Misaka477/Natalia-Cli/internal/display"
 
 type Return struct {
 	ModelText string

@@ -15,14 +15,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aquama/natalia-cli/internal/autoflow"
-	"github.com/aquama/natalia-cli/internal/chat"
-	"github.com/aquama/natalia-cli/internal/config"
-	"github.com/aquama/natalia-cli/internal/planexec"
-	"github.com/aquama/natalia-cli/internal/session"
-	"github.com/aquama/natalia-cli/internal/soul"
-	"github.com/aquama/natalia-cli/internal/toolset"
-	"github.com/aquama/natalia-cli/internal/wire"
+	"github.com/Misaka477/Natalia-Cli/internal/autoflow"
+	"github.com/Misaka477/Natalia-Cli/internal/chat"
+	"github.com/Misaka477/Natalia-Cli/internal/config"
+	"github.com/Misaka477/Natalia-Cli/internal/planexec"
+	"github.com/Misaka477/Natalia-Cli/internal/session"
+	"github.com/Misaka477/Natalia-Cli/internal/soul"
+	"github.com/Misaka477/Natalia-Cli/internal/toolset"
+	"github.com/Misaka477/Natalia-Cli/internal/wire"
 )
 
 func testBoolPtr(v bool) *bool { return &v }

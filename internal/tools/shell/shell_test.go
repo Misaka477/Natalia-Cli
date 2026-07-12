@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aquama/natalia-cli/internal/display"
+	"github.com/Misaka477/Natalia-Cli/internal/display"
 )
 
 func TestRunRejectsInvalidTimeout(t *testing.T) {
@@ -95,9 +95,41 @@ func TestRunMaxOutput(t *testing.T) {
 }
 
 func TestRunBlocksDangerousCommand(t *testing.T) {
-	_, err := (&Run{}).Execute(map[string]any{"command": "sudo rm -rf /"})
-	if err == nil || !strings.Contains(err.Error(), "dangerous") || !strings.Contains(err.Error(), "confirmation") {
-		t.Fatalf("expected dangerous command rejection, got %v", err)
+	commands := []string{
+		"rm -rf /",
+		"rm -rf /*",
+		"sudo rm -rf /",
+		"sudo rm -rf /*",
+		"mkfs /dev/sda",
+		"dd if=/dev/zero of=/dev/sda",
+		":(){ :|:& };:",
+	}
+	for _, command := range commands {
+		t.Run(command, func(t *testing.T) {
+			_, err := (&Run{}).Execute(map[string]any{"command": command})
+			if err == nil || !strings.Contains(err.Error(), "dangerous") || !strings.Contains(err.Error(), "confirmation") {
+				t.Fatalf("expected dangerous command rejection, got %v", err)
+			}
+		})
+	}
+}
+
+func TestDangerousCommandReasonAllowsSafeCommands(t *testing.T) {
+	for _, command := range []string{"rm file.txt", "rm -rf ./tmp", "sudo ls /", "printf safe"} {
+		if reason := DangerousCommandReason(command); reason != "" {
+			t.Fatalf("expected %q to be allowed, got reason %q", command, reason)
+		}
+	}
+}
+
+func TestDangerConfirmationFlag(t *testing.T) {
+	args := map[string]any{}
+	if IsDangerConfirmed(args) {
+		t.Fatal("expected new args to be unconfirmed")
+	}
+	MarkDangerConfirmed(args)
+	if !IsDangerConfirmed(args) {
+		t.Fatal("expected danger confirmation flag")
 	}
 }
 
@@ -108,6 +140,19 @@ func TestRunShellParameter(t *testing.T) {
 	}
 	if result != "ok" {
 		t.Fatalf("expected sh command output, got %q", result)
+	}
+}
+
+func TestResolveShellAllowsOnlySupportedShells(t *testing.T) {
+	cases := map[string]string{"": "/bin/bash", "bash": "/bin/bash", "/bin/bash": "/bin/bash", "sh": "/bin/sh", "/bin/sh": "/bin/sh"}
+	for input, want := range cases {
+		got, err := resolveShell(input)
+		if err != nil || got != want {
+			t.Fatalf("resolveShell(%q)=%q err=%v want %q", input, got, err, want)
+		}
+	}
+	if _, err := resolveShell("zsh"); err == nil {
+		t.Fatal("expected unsupported shell error")
 	}
 }
 
@@ -132,6 +177,19 @@ func TestRunRejectsSensitiveEnvName(t *testing.T) {
 	_, err := (&Run{}).Execute(map[string]any{"command": "true", "env": map[string]any{"API_KEY": "secret"}})
 	if err == nil || !strings.Contains(err.Error(), "sensitive") || strings.Contains(err.Error(), "secret") {
 		t.Fatalf("expected sensitive env name rejection without value leak, got %v", err)
+	}
+}
+
+func TestSensitiveEnvNamePatterns(t *testing.T) {
+	for _, name := range []string{"SECRET", "MY_TOKEN", "DB_PASSWORD", "SSH_PRIVATE_KEY", "ACCESS_KEY_ID", "API_KEY", "KEY", "OPENAI_KEY"} {
+		if !isSensitiveEnvName(name) {
+			t.Fatalf("expected %s to be sensitive", name)
+		}
+	}
+	for _, name := range []string{"NATALIA_TEST_VALUE", "MONKEY", "KEYSTONE"} {
+		if isSensitiveEnvName(name) {
+			t.Fatalf("expected %s to be allowed", name)
+		}
 	}
 }
 

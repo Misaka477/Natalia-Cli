@@ -20,13 +20,28 @@ func TestCacheReadFileUsesFileMetadata(t *testing.T) {
 		t.Fatalf("expected cache hit, got %q ok=%v", got, ok)
 	}
 
-	time.Sleep(time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
 	if err := os.WriteFile(path, []byte("two"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if got, ok := c.Get("read_file", args); ok {
 		t.Fatalf("expected cache miss after file change, got %q", got)
 	}
+}
+
+func TestCacheMissAndNoOpPaths(t *testing.T) {
+	c := New()
+	if got, ok := c.Get("read_file", map[string]any{"path": ""}); ok || got != "" {
+		t.Fatalf("expected empty read_file path to miss, got %q ok=%v", got, ok)
+	}
+	if got, ok := c.Get("read_file", map[string]any{"path": filepath.Join(t.TempDir(), "missing.txt")}); ok || got != "" {
+		t.Fatalf("expected missing file path to miss, got %q ok=%v", got, ok)
+	}
+	c.Set("read_file", map[string]any{"path": ""}, "ignored")
+	if got, ok := c.Get("read_file", map[string]any{"path": ""}); ok || got != "" {
+		t.Fatalf("expected Set with empty path to be ignored, got %q ok=%v", got, ok)
+	}
+	c.InvalidatePath("")
 }
 
 func TestCacheInvalidatePath(t *testing.T) {
@@ -99,6 +114,15 @@ func TestCacheGlobAndGrepUseStableArgs(t *testing.T) {
 	c.Set("grep", map[string]any{"pattern": "Needle", "path": ".", "include": "*.go"}, "hits")
 	if got, ok := c.Get("grep", map[string]any{"include": "*.go", "path": ".", "pattern": "Needle"}); !ok || got != "hits" {
 		t.Fatalf("expected stable grep cache hit, got %q ok=%v", got, ok)
+	}
+}
+
+func TestCacheRejectsUnmarshalableSearchArgs(t *testing.T) {
+	c := New()
+	args := map[string]any{"pattern": "x", "bad": make(chan int)}
+	c.Set("glob", args, "ignored")
+	if got, ok := c.Get("glob", args); ok || got != "" {
+		t.Fatalf("expected unmarshalable glob args to be uncacheable, got %q ok=%v", got, ok)
 	}
 }
 

@@ -10,26 +10,26 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aquama/natalia-cli/internal/agentspec"
-	"github.com/aquama/natalia-cli/internal/approval"
-	"github.com/aquama/natalia-cli/internal/autoflow"
-	"github.com/aquama/natalia-cli/internal/chat"
-	"github.com/aquama/natalia-cli/internal/compaction"
-	"github.com/aquama/natalia-cli/internal/config"
-	"github.com/aquama/natalia-cli/internal/llm"
-	"github.com/aquama/natalia-cli/internal/mode"
-	"github.com/aquama/natalia-cli/internal/planexec"
-	"github.com/aquama/natalia-cli/internal/sandbox"
-	"github.com/aquama/natalia-cli/internal/session"
-	"github.com/aquama/natalia-cli/internal/skill"
-	"github.com/aquama/natalia-cli/internal/snapshot"
-	"github.com/aquama/natalia-cli/internal/soul"
-	"github.com/aquama/natalia-cli/internal/term"
-	"github.com/aquama/natalia-cli/internal/tools/agent"
-	"github.com/aquama/natalia-cli/internal/tools/skill"
-	"github.com/aquama/natalia-cli/internal/toolset"
-	"github.com/aquama/natalia-cli/internal/ui"
-	"github.com/aquama/natalia-cli/internal/worker"
+	"github.com/Misaka477/Natalia-Cli/internal/agentspec"
+	"github.com/Misaka477/Natalia-Cli/internal/approval"
+	"github.com/Misaka477/Natalia-Cli/internal/autoflow"
+	"github.com/Misaka477/Natalia-Cli/internal/chat"
+	"github.com/Misaka477/Natalia-Cli/internal/compaction"
+	"github.com/Misaka477/Natalia-Cli/internal/config"
+	"github.com/Misaka477/Natalia-Cli/internal/llm"
+	"github.com/Misaka477/Natalia-Cli/internal/mode"
+	"github.com/Misaka477/Natalia-Cli/internal/planexec"
+	"github.com/Misaka477/Natalia-Cli/internal/sandbox"
+	"github.com/Misaka477/Natalia-Cli/internal/session"
+	"github.com/Misaka477/Natalia-Cli/internal/skill"
+	"github.com/Misaka477/Natalia-Cli/internal/snapshot"
+	"github.com/Misaka477/Natalia-Cli/internal/soul"
+	"github.com/Misaka477/Natalia-Cli/internal/term"
+	"github.com/Misaka477/Natalia-Cli/internal/tools/agent"
+	"github.com/Misaka477/Natalia-Cli/internal/tools/skill"
+	"github.com/Misaka477/Natalia-Cli/internal/toolset"
+	"github.com/Misaka477/Natalia-Cli/internal/ui"
+	"github.com/Misaka477/Natalia-Cli/internal/worker"
 	"github.com/peterh/liner"
 )
 
@@ -558,6 +558,8 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 		tools.Register(&agent.Spawn{Pool: workerPool, Client: workerClient, Tools: tools})
 		tools.Register(&agent.List{Pool: workerPool})
 		tools.Register(&agent.Output{Pool: workerPool})
+		tools.Register(&agent.Stop{Pool: workerPool})
+		tools.Register(&agent.Resume{Pool: workerPool})
 	}
 
 	for {

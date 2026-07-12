@@ -5,9 +5,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/aquama/natalia-cli/internal/display"
-	"github.com/aquama/natalia-cli/internal/llm"
-	"github.com/aquama/natalia-cli/internal/toolreturn"
+	"github.com/Misaka477/Natalia-Cli/internal/display"
+	"github.com/Misaka477/Natalia-Cli/internal/llm"
+	"github.com/Misaka477/Natalia-Cli/internal/toolreturn"
 )
 
 type Item struct {

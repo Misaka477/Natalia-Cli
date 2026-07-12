@@ -3,7 +3,7 @@ package autoflow
 import (
 	"testing"
 
-	"github.com/aquama/natalia-cli/internal/soul"
+	"github.com/Misaka477/Natalia-Cli/internal/soul"
 )
 
 func TestEscalatorSwitchesToDebugAfterThreshold(t *testing.T) {
@@ -88,5 +88,34 @@ func TestClassifyFailure(t *testing.T) {
 				t.Fatalf("expected %q, got %q", tc.want, got)
 			}
 		})
+	}
+}
+
+func TestEscalatorNilAndDefaultBoundaryBehavior(t *testing.T) {
+	var nilEscalator *Escalator
+	if decision := nilEscalator.Record(&soul.Outcome{StopReason: "error"}, "code"); decision.Action != ActionNone {
+		t.Fatalf("nil escalator should do nothing, got %+v", decision)
+	}
+	nilEscalator.Reset()
+
+	escalator := &Escalator{Threshold: 0}
+	if decision := escalator.Record(nil, "code"); decision.Action != ActionNone || escalator.Consecutive != 0 {
+		t.Fatalf("nil outcome should do nothing, decision=%+v state=%+v", decision, escalator)
+	}
+	if decision := escalator.Record(&soul.Outcome{StopReason: "error"}, ""); decision.Action != ActionNone {
+		t.Fatalf("default threshold first failure should not escalate, got %+v", decision)
+	}
+	decision := escalator.Record(&soul.Outcome{StopReason: "error"}, "")
+	if decision.Action != ActionDebug || decision.TargetMode != "debug" || escalator.PreviousMode != "code" {
+		t.Fatalf("expected default threshold escalation from implicit code mode, decision=%+v state=%+v", decision, escalator)
+	}
+}
+
+func TestSuccessfulOutcomeRequiresFinalMessage(t *testing.T) {
+	if isSuccessfulOutcome(&soul.Outcome{StopReason: "no_tool_calls"}) {
+		t.Fatal("expected no_tool_calls without final message to be unsuccessful")
+	}
+	if !isSuccessfulOutcome(&soul.Outcome{StopReason: "no_tool_calls", FinalMessage: "done"}) {
+		t.Fatal("expected final no_tool_calls message to be successful")
 	}
 }

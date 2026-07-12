@@ -7,39 +7,43 @@ import (
 	"testing"
 )
 
-func TestCreateUserSandbox(t *testing.T) {
+func TestUserSandboxLifecycleCreateListDuplicateDelete(t *testing.T) {
 	workDir := t.TempDir()
 
-	b, err := Create("test-sandbox", "user", workDir)
+	b2, err := Create("sb2", "user", workDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	if b.Name != "test-sandbox" {
-		t.Errorf("expected name test-sandbox, got %s", b.Name)
+	b1, err := Create("sb1", "user", workDir)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if b.Type != "user" {
-		t.Errorf("expected type user, got %s", b.Type)
+	if b1.Type != "user" || b1.WorkDir != workDir || b1.Overlay == "" || b2.Overlay == "" {
+		t.Fatalf("created sandbox metadata incomplete: b1=%+v b2=%+v", b1, b2)
 	}
-
-	metaPath := filepath.Join(BaseDir(workDir), "test-sandbox", "meta.json")
+	metaPath := filepath.Join(BaseDir(workDir), "sb1", "meta.json")
 	if _, err := os.Stat(metaPath); os.IsNotExist(err) {
 		t.Error("meta.json should exist")
 	}
-}
-
-func TestListSandboxes(t *testing.T) {
-	workDir := t.TempDir()
-
-	Create("sb1", "user", workDir)
-
-	// agent box requires git repo — skip in test
 	boxes, err := List(workDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(boxes) != 1 {
-		t.Fatalf("expected 1 box, got %d", len(boxes))
+	if len(boxes) != 2 || boxes[0].Name != "sb1" || boxes[1].Name != "sb2" {
+		t.Fatalf("expected sorted boxes sb1/sb2, got %+v", boxes)
+	}
+	if _, err := Create("sb1", "user", workDir); err == nil {
+		t.Fatal("expected duplicate create error")
+	}
+	if err := b1.Delete(); err != nil {
+		t.Fatal(err)
+	}
+	boxes, err = List(workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(boxes) != 1 || boxes[0].Name != "sb2" {
+		t.Fatalf("expected only sb2 after delete, got %+v", boxes)
 	}
 }
 
@@ -138,27 +142,5 @@ func TestDiff(t *testing.T) {
 	}
 	if !strings.Contains(diff, "M a.txt") {
 		t.Errorf("diff should show modified file, got: %s", diff)
-	}
-}
-
-func TestDelete(t *testing.T) {
-	workDir := t.TempDir()
-
-	b, _ := Create("test", "user", workDir)
-	b.Delete()
-
-	boxes, _ := List(workDir)
-	if len(boxes) != 0 {
-		t.Error("should have no boxes after delete")
-	}
-}
-
-func TestDuplicateCreate(t *testing.T) {
-	workDir := t.TempDir()
-
-	Create("dup", "user", workDir)
-	_, err := Create("dup", "user", workDir)
-	if err == nil {
-		t.Error("expected error for duplicate sandbox")
 	}
 }

@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aquama/natalia-cli/internal/mode"
-	"github.com/aquama/natalia-cli/internal/toolcache"
-	"github.com/aquama/natalia-cli/internal/toolset"
+	"github.com/Misaka477/Natalia-Cli/internal/mode"
+	"github.com/Misaka477/Natalia-Cli/internal/toolcache"
+	"github.com/Misaka477/Natalia-Cli/internal/toolset"
 )
 
 const DefaultTimeout = 2 * time.Second

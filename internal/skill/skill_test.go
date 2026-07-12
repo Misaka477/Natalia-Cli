@@ -3,6 +3,7 @@ package skill
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -55,17 +56,74 @@ func TestLoadSkillNoFrontmatter(t *testing.T) {
 
 func TestDiscover(t *testing.T) {
 	workDir := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
 	skillDir := filepath.Join(workDir, ".natalia", "skills", "test1")
-	os.MkdirAll(skillDir, 0755)
-	os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: test1\ndescription: First\n---\nContent1"), 0644)
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: test1\ndescription: First\n---\nContent1"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	r, err := Discover(workDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	skills := r.List()
-	if len(skills) < 1 {
-		t.Fatalf("expected at least 1 skill, got %d", len(skills))
+	if len(skills) != 1 || skills[0].Name != "test1" || skills[0].Description != "First" || skills[0].Content != "Content1" || skills[0].Scope != "project" {
+		t.Fatalf("expected concrete discovered project skill, got %+v", skills)
+	}
+}
+
+func TestDiscoverProjectSkillOverridesUserSkill(t *testing.T) {
+	workDir := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeSkill(t, filepath.Join(home, ".config", "natalia-cli", "skills", "shared"), "shared", "User version", "user content")
+	writeSkill(t, filepath.Join(workDir, ".natalia", "skills", "shared"), "shared", "Project version", "project content")
+	writeSkill(t, filepath.Join(home, ".config", "natalia-cli", "skills", "user-only"), "user-only", "User only", "user only content")
+
+	r, err := Discover(workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shared := r.Get("shared")
+	if shared == nil || shared.Scope != "project" || shared.Description != "Project version" || shared.Content != "project content" {
+		t.Fatalf("expected project skill to override user skill, got %+v", shared)
+	}
+	userOnly := r.Get("user-only")
+	if userOnly == nil || userOnly.Scope != "user" || userOnly.Content != "user only content" {
+		t.Fatalf("expected user-only skill to be discovered, got %+v", userOnly)
+	}
+}
+
+func TestRegistryFormatForPromptGroupsScopesAndOmitsBuiltin(t *testing.T) {
+	if got := (&Registry{}).FormatForPrompt(); got != "" {
+		t.Fatalf("expected empty registry prompt to be empty, got %q", got)
+	}
+	r := &Registry{}
+	r.Add(Skill{Name: "project-a", Description: "Project A", Scope: "project"})
+	r.Add(Skill{Name: "user-a", Description: "User A", Scope: "user"})
+	r.Add(Skill{Name: "builtin-a", Description: "Builtin A", Scope: "builtin"})
+	prompt := r.FormatForPrompt()
+	for _, want := range []string{"## 可用技能", "### 项目技能", "- project-a: Project A", "### 用户技能", "- user-a: User A", "skill_read <name>"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("expected prompt to contain %q, got %q", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, "builtin-a") {
+		t.Fatalf("expected builtin skills to be omitted by current prompt contract, got %q", prompt)
+	}
+}
+
+func writeSkill(t *testing.T, dir, name, description, content string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	data := "---\nname: " + name + "\ndescription: " + description + "\n---\n" + content
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(data), 0644); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -91,7 +149,7 @@ func TestRegistryGetCaseInsensitive(t *testing.T) {
 }
 
 func contains(s, substr string) bool {
-	return len(s) >= len(substr)
+	return strings.Contains(s, substr)
 }
 
 func TestParseFlow(t *testing.T) {
@@ -210,7 +268,55 @@ edges:
 		t.Errorf("expected options A and B, got %s", msg)
 	}
 
-	// Wait, r is at 'decide'. Let me restart - the begin advances to decide,
-	// then Advance on decide asks for choice
-	_ = msg
+	node, msg, err := r.Advance("B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if node == nil || node.ID != "pathB" || msg != "Path B" {
+		t.Fatalf("expected pathB after choice B, node=%+v msg=%q", node, msg)
+	}
+	node, _, err = r.Advance("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if node == nil || node.Kind != NodeEnd || !r.IsDone() {
+		t.Fatalf("expected flow to reach end, node=%+v done=%v", node, r.IsDone())
+	}
+}
+
+func TestFlowRunnerErrorAndBoundaryPaths(t *testing.T) {
+	f, err := ParseFlow(`
+nodes:
+  - id: begin
+    label: BEGIN
+    kind: begin
+  - id: decide
+    label: Pick one
+    kind: decision
+  - id: end
+    label: END
+    kind: end
+edges:
+  - src: begin
+    dst: decide
+  - src: decide
+    dst: end
+    label: done
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := NewFlowRunner(f)
+	if _, _, err := r.Advance(""); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := r.Advance("missing"); err == nil || !strings.Contains(err.Error(), "invalid choice") {
+		t.Fatalf("expected invalid decision choice error, got %v", err)
+	}
+	if _, _, err := r.Advance("done"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := r.Advance(""); err == nil || !strings.Contains(err.Error(), "已结束") {
+		t.Fatalf("expected already done error, got %v", err)
+	}
 }

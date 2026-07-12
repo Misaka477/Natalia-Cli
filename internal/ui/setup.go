@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/aquama/natalia-cli/internal/config"
+	"github.com/Misaka477/Natalia-Cli/internal/config"
 )
 
 func ask(p survey.Prompt, response interface{}, opts ...survey.AskOpt) error {
@@ -97,9 +97,9 @@ func addProfile(cfg *config.Config) bool {
 	}
 
 	pr := config.Profile{
-		Provider:   providerName,
-		Model:      modelName,
-		MaxContext: maxCtx,
+		Provider:    providerName,
+		Model:       modelName,
+		MaxContext:  maxCtx,
 		Temperature: 0.0,
 		MaxTokens:   8192,
 		TopP:        1.0,
@@ -375,30 +375,30 @@ func PickProfile(cfg *config.Config) string {
 
 func DetectContext(modelName string) int {
 	known := map[string]int{
-		"step-3.7-flash":   131072,
-		"step-3.5-flash":   131072,
-		"step-4.0-flash":   262144,
-		"step-router-v1":   262144,
-		"gpt-4o":           128000,
-		"gpt-4o-mini":      128000,
-		"gpt-4.1":          1048576,
-		"deepseek-chat":    65536,
+		"step-3.7-flash":    131072,
+		"step-3.5-flash":    131072,
+		"step-4.0-flash":    262144,
+		"step-router-v1":    262144,
+		"gpt-4o":            128000,
+		"gpt-4o-mini":       128000,
+		"gpt-4.1":           1048576,
+		"deepseek-chat":     65536,
 		"deepseek-reasoner": 65536,
-		"claude-sonnet-4":  200000,
+		"claude-sonnet-4":   200000,
 		"claude-3.5-sonnet": 200000,
 	}
 	if n, ok := known[modelName]; ok {
 		return n
 	}
 	for prefix, n := range map[string]int{
-		"step-":   131072,
-		"gpt-4":   128000,
-		"gpt-3.5": 16384,
+		"step-":    131072,
+		"gpt-4":    128000,
+		"gpt-3.5":  16384,
 		"deepseek": 65536,
-		"claude":  200000,
-		"gemini":  1048576,
-		"qwen":    131072,
-		"glm":     131072,
+		"claude":   200000,
+		"gemini":   1048576,
+		"qwen":     131072,
+		"glm":      131072,
 	} {
 		if strings.HasPrefix(modelName, prefix) {
 			return n

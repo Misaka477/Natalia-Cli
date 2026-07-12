@@ -1,6 +1,11 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 func boolPtr(v bool) *bool { return &v }
 
@@ -181,5 +186,70 @@ func TestEffectiveProfileBuiltinModeRoutingFallsBackToProfileModel(t *testing.T)
 	}
 	if eff.ModelProfile != "" || eff.Profile.Model != "base" || eff.PermissionProfile != "ask" || eff.Profile.ReasoningEffort != "high" {
 		t.Fatalf("unexpected fallback routing: %+v", eff)
+	}
+}
+
+func TestEffectiveProfileReturnsActionableErrorsForBrokenReferences(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  *Config
+		want string
+	}{
+		{name: "missing default profile", cfg: &Config{DefaultProfile: "missing", Profiles: map[string]Profile{}, Providers: map[string]Provider{}, ModelProfiles: map[string]ModelProfile{}, PermissionProfiles: DefaultPermissionProfiles()}, want: "配置 \"missing\" 不存在"},
+		{name: "missing model profile", cfg: &Config{DefaultProfile: "default", Profiles: map[string]Profile{"default": {Provider: "p", ModelProfile: "missing-model"}}, Providers: map[string]Provider{"p": {}}, ModelProfiles: map[string]ModelProfile{}, PermissionProfiles: DefaultPermissionProfiles()}, want: "模型配置 \"missing-model\" 不存在"},
+		{name: "missing provider", cfg: &Config{DefaultProfile: "default", Profiles: map[string]Profile{"default": {Provider: "missing-provider"}}, Providers: map[string]Provider{}, ModelProfiles: map[string]ModelProfile{}, PermissionProfiles: DefaultPermissionProfiles()}, want: "服务商 \"missing-provider\" 不存在"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := tc.cfg.EffectiveProfile("", "", "")
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected error containing %q, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
+func TestConfigSaveLoadAndEffectiveProfileEndToEnd(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	thinking := true
+	cfg := &Config{
+		DefaultProfile: "default",
+		Providers: map[string]Provider{
+			"local": {BaseURL: "http://127.0.0.1:1234/v1/chat/completions", APIKey: "test-key", AuthHeader: "X-Test-Auth", CustomHeaders: map[string]string{"X-Model-Gateway": "local"}},
+		},
+		ModelProfiles: map[string]ModelProfile{
+			"cheap": {Provider: "local", Model: "step-3.7-flash", MaxTokens: 2048, ReasoningEffort: "low", ThinkingEnabled: &thinking},
+		},
+		PermissionProfiles: DefaultPermissionProfiles(),
+		Profiles: map[string]Profile{
+			"default": {Provider: "local", Model: "base", ModelProfile: "cheap", PermissionProfile: "ask", Mode: "ask"},
+		},
+	}
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(home, ".config", "natalia-cli", "config.yaml")
+	if _, err := os.Stat(configPath); err != nil {
+		t.Fatalf("expected config saved at %s: %v", configPath, err)
+	}
+	loaded, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	eff, err := loaded.EffectiveProfile("", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eff.Mode != "ask" || eff.Profile.Model != "step-3.7-flash" || eff.Profile.Provider != "local" || eff.Approval != "read_only" || eff.Provider.AuthHeader != "X-Test-Auth" || eff.Provider.CustomHeaders["X-Model-Gateway"] != "local" {
+		t.Fatalf("loaded config did not produce expected runtime profile: %+v", eff)
+	}
+}
+
+func TestLoadReturnsNilWhenConfigFileDoesNotExist(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cfg, err := Load()
+	if err != nil || cfg != nil {
+		t.Fatalf("expected missing config to return nil,nil, cfg=%+v err=%v", cfg, err)
 	}
 }

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/aquama/natalia-cli/internal/display"
+	"github.com/Misaka477/Natalia-Cli/internal/display"
 )
 
 type EventType string

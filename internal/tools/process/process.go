@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aquama/natalia-cli/internal/llm"
-	"github.com/aquama/natalia-cli/internal/processmgr"
+	"github.com/Misaka477/Natalia-Cli/internal/llm"
+	"github.com/Misaka477/Natalia-Cli/internal/processmgr"
 )
 
 type Start struct{}

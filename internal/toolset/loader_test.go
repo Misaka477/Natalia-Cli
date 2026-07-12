@@ -1,9 +1,15 @@
 package toolset
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/aquama/natalia-cli/internal/agentspec"
+	"github.com/Misaka477/Natalia-Cli/internal/agentspec"
+	"github.com/Misaka477/Natalia-Cli/internal/llm"
 )
 
 func TestRegisterDefaultToolsFromAgentSpec(t *testing.T) {
@@ -11,10 +17,107 @@ func TestRegisterDefaultToolsFromAgentSpec(t *testing.T) {
 	if err := RegisterDefaultTools(r); err != nil {
 		t.Fatalf("RegisterDefaultTools failed: %v", err)
 	}
-	for _, name := range []string{"read_file", "write_file", "run_shell", "web_fetch", "todo_set", "ask_user"} {
+	for _, name := range []string{"read_file", "write_file", "run_shell", "web_fetch", "todo_set", "ask_user", "interactive_start", "background_start"} {
 		if _, ok := r.Get(name); !ok {
 			t.Fatalf("expected tool %q to be registered", name)
 		}
+	}
+
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "fixture.txt")
+	if err := os.WriteFile(filePath, []byte("loader-ok\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	readTool, _ := r.Get("read_file")
+	read, err := readTool.Execute(map[string]any{"path": filePath, "limit": "all"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(read, "loader-ok") {
+		t.Fatalf("registered read_file did not read fixture, got %q", read)
+	}
+	globTool, _ := r.Get("glob")
+	glob, err := globTool.Execute(map[string]any{"pattern": "*.txt", "path": dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(glob, "fixture.txt") {
+		t.Fatalf("registered glob did not find fixture, got %q", glob)
+	}
+	shellTool, _ := r.Get("run_shell")
+	shell, err := shellTool.Execute(map[string]any{"command": "printf loader-shell-ok", "timeout": "5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shell != "loader-shell-ok" {
+		t.Fatalf("registered run_shell returned %q", shell)
+	}
+}
+
+func TestDefaultToolsetExecutesModelStyleToolFlowEndToEnd(t *testing.T) {
+	r := NewRegistry()
+	if err := RegisterDefaultTools(r); err != nil {
+		t.Fatalf("RegisterDefaultTools failed: %v", err)
+	}
+	defs := r.ToToolDefs()
+	assertToolDefRequired(t, defs, "read_file", []string{"path"})
+	assertToolDefRequired(t, defs, "write_file", []string{"path", "content"})
+	assertToolDefRequired(t, defs, "run_shell", []string{"command"})
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "flow.txt")
+	mustExecTool(t, r, "write_file", map[string]any{"path": path, "content": "alpha\nbeta\n"}, "已写入")
+	mustExecTool(t, r, "read_file", map[string]any{"path": path, "limit": "all"}, "alpha")
+	mustExecTool(t, r, "edit_file", map[string]any{"path": path, "old_string": "beta", "new_string": "BETA"}, "替换 1 处")
+	mustExecTool(t, r, "grep", map[string]any{"pattern": "BETA", "path": dir, "include": "*.txt"}, "BETA")
+	mustExecTool(t, r, "glob", map[string]any{"pattern": "*.txt", "path": dir}, "flow.txt")
+	mustExecTool(t, r, "run_shell", map[string]any{"command": "printf shell-ok", "cwd": dir, "timeout": "5"}, "shell-ok")
+	mustExecTool(t, r, "todo_set", map[string]any{"items": []any{"one", "two"}}, "2")
+	mustExecTool(t, r, "todo_done", map[string]any{"index": float64(2)}, "完成")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<html><body><h1>Toolset Web OK</h1><script>bad()</script></body></html>"))
+	}))
+	defer server.Close()
+	mustExecTool(t, r, "web_fetch", map[string]any{"url": server.URL}, "Toolset Web OK")
+}
+
+func assertToolDefRequired(t *testing.T, defs []llm.ToolDef, name string, want []string) {
+	t.Helper()
+	for _, def := range defs {
+		if def.Function.Name != name {
+			continue
+		}
+		for _, required := range want {
+			found := false
+			for _, got := range def.Function.Parameters.Required {
+				if got == required {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("tool %s required fields %v missing %s", name, def.Function.Parameters.Required, required)
+			}
+		}
+		return
+	}
+	t.Fatalf("tool def %s not found in %+v", name, defs)
+}
+
+func mustExecTool(t *testing.T, r *Registry, name string, args map[string]any, want string) {
+	t.Helper()
+	tool, ok := r.Get(name)
+	if !ok {
+		t.Fatalf("tool %s not registered", name)
+	}
+	result, err := tool.Execute(args)
+	if err != nil {
+		t.Fatalf("tool %s failed with args %+v: %v", name, args, err)
+	}
+	if !strings.Contains(result, want) {
+		t.Fatalf("tool %s result missing %q: %q", name, want, result)
 	}
 }
 

@@ -1,9 +1,11 @@
 package web
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -125,6 +127,58 @@ func TestSearchDuckDuckGoEngineSkipsBing(t *testing.T) {
 	})
 }
 
+func TestSearchCustomPostsQueryLimitAndContentFlag(t *testing.T) {
+	withSearchGlobals(t, func() {
+		var body string
+		var auth string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			auth = r.Header.Get("Authorization")
+			data, _ := io.ReadAll(r.Body)
+			body = string(data)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"search_results":[{"title":"Custom Result","url":"https://example.com","snippet":"custom snippet","content":"custom content","date":"2026-07-12"}]}`))
+		}))
+		defer server.Close()
+
+		SearchBaseURL = server.URL
+		SearchAPIKey = "test-key"
+		result, err := (&Search{}).Execute(map[string]any{"query": "natalia", "limit": "7", "include_content": "true"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{`"text_query":"natalia"`, `"limit":7`, `"enable_page_crawling":true`} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("expected custom search body to contain %s, got %s", want, body)
+			}
+		}
+		if auth != "Bearer test-key" || !strings.Contains(result, "Custom Result") || !strings.Contains(result, "custom content") || !strings.Contains(result, "2026-07-12") {
+			t.Fatalf("unexpected custom search auth=%q result=%q", auth, result)
+		}
+	})
+}
+
+func TestSearchLimitOutOfRangeFallsBackToDefault(t *testing.T) {
+	withSearchGlobals(t, func() {
+		var requested string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requested = r.URL.RawQuery
+			for i := 0; i < 6; i++ {
+				_, _ = fmt.Fprintf(w, `<li class="b_algo"><h2><a href="https://example.com/%d">Result %d</a></h2><p class="b_caption">Snippet %d</p></li>`, i, i, i)
+			}
+		}))
+		defer server.Close()
+
+		BingSearchBaseURL = server.URL
+		result, err := (&Search{}).Execute(map[string]any{"query": "natalia", "limit": "100"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Count(result, "标题:") != 5 || !strings.Contains(requested, "q=natalia") {
+			t.Fatalf("expected default limit 5 after out-of-range limit, query=%q result=%q", requested, result)
+		}
+	})
+}
+
 func TestFetchHTMLFormat(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
@@ -157,6 +211,34 @@ func TestFetchTextStripsHTMLAndScript(t *testing.T) {
 	}
 }
 
+func TestFetchMarkdownAndPlainTextFormats(t *testing.T) {
+	htmlServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<html><body><p>Line One</p>\n<p>Line Two</p></body></html>"))
+	}))
+	defer htmlServer.Close()
+	markdown, err := (&Fetch{}).Execute(map[string]any{"url": htmlServer.URL, "format": "markdown"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(markdown, "Line One\n\nLine Two") {
+		t.Fatalf("expected markdown spacing, got %q", markdown)
+	}
+
+	plainServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("<b>literal text</b>"))
+	}))
+	defer plainServer.Close()
+	plain, err := (&Fetch{}).Execute(map[string]any{"url": plainServer.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain != "<b>literal text</b>" {
+		t.Fatalf("expected text/plain to be returned without HTML stripping, got %q", plain)
+	}
+}
+
 func TestFetchMaxBytesTruncates(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
@@ -186,6 +268,22 @@ func TestFetchBinaryResponseReturnsMetadata(t *testing.T) {
 	}
 	if !strings.Contains(result, "Binary response not included") || strings.Contains(result, "a\x00b") {
 		t.Fatalf("expected binary metadata only, got %q", result)
+	}
+}
+
+func TestFetchUnknownContentTypeWithNulIsBinary(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Del("Content-Type")
+		_, _ = w.Write([]byte{'a', 0, 'b'})
+	}))
+	defer server.Close()
+
+	result, err := (&Fetch{}).Execute(map[string]any{"url": server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "Binary response not included") || strings.Contains(result, "a\x00b") {
+		t.Fatalf("expected unknown content type with NUL to be treated as binary, got %q", result)
 	}
 }
 
@@ -239,6 +337,20 @@ func TestMediaFileGenericFile(t *testing.T) {
 	}
 	if !strings.Contains(result, "MIME: text/plain") || !strings.Contains(result, "扩展名: .txt") {
 		t.Fatalf("unexpected generic file info: %q", result)
+	}
+}
+
+func TestMediaFileCorruptImageStillReturnsFileMetadata(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "broken.png")
+	if err := os.WriteFile(path, []byte("not a real png"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := (&MediaFile{}).Execute(map[string]any{"path": path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "broken.png") || !strings.Contains(result, "扩展名: .png") || strings.Contains(result, "宽度:") {
+		t.Fatalf("expected metadata without image dimensions for corrupt image, got %q", result)
 	}
 }
 

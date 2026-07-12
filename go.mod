@@ -1,15 +1,16 @@
-module github.com/aquama/natalia-cli
+module github.com/Misaka477/Natalia-Cli
 
 go 1.25.0
 
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
+	github.com/creack/pty v1.1.24
+	github.com/go-rod/rod v0.116.2
 	github.com/peterh/liner v1.2.2
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
-	github.com/go-rod/rod v0.116.2 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/mattn/go-colorable v0.1.2 // indirect
 	github.com/mattn/go-isatty v0.0.8 // indirect

@@ -7,11 +7,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aquama/natalia-cli/internal/chat"
-	"github.com/aquama/natalia-cli/internal/llm"
-	"github.com/aquama/natalia-cli/internal/mode"
-	"github.com/aquama/natalia-cli/internal/soul"
-	"github.com/aquama/natalia-cli/internal/toolset"
+	"github.com/Misaka477/Natalia-Cli/internal/chat"
+	"github.com/Misaka477/Natalia-Cli/internal/llm"
+	"github.com/Misaka477/Natalia-Cli/internal/mode"
+	"github.com/Misaka477/Natalia-Cli/internal/soul"
+	"github.com/Misaka477/Natalia-Cli/internal/toolset"
 )
 
 type Status string
@@ -49,13 +49,24 @@ type Worker struct {
 	cancel context.CancelFunc
 }
 
+type SpawnOptions struct {
+	Timeout time.Duration
+}
+
 func New(id, task, modeName string, llmClient *llm.Client, tools *toolset.Registry) (*Worker, error) {
+	return NewWithOptions(id, task, modeName, llmClient, tools, SpawnOptions{})
+}
+
+func NewWithOptions(id, task, modeName string, llmClient *llm.Client, tools *toolset.Registry, opts SpawnOptions) (*Worker, error) {
 	m, err := mode.Get(modeName)
 	if err != nil {
 		return nil, err
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	if opts.Timeout > 0 {
+		ctx, cancel = context.WithTimeout(context.Background(), opts.Timeout)
+	}
 
 	eng := soul.NewEngine(llmClient, tools)
 	w := &Worker{
@@ -212,12 +223,16 @@ func NewPool() *Pool {
 }
 
 func (p *Pool) Spawn(task, modeName string, llmClient *llm.Client, tools *toolset.Registry) (*Worker, error) {
+	return p.SpawnWithOptions(task, modeName, llmClient, tools, SpawnOptions{})
+}
+
+func (p *Pool) SpawnWithOptions(task, modeName string, llmClient *llm.Client, tools *toolset.Registry, opts SpawnOptions) (*Worker, error) {
 	p.mu.Lock()
 	id := fmt.Sprintf("w%d", p.nextID)
 	p.nextID++
 	p.mu.Unlock()
 
-	w, err := New(id, task, modeName, llmClient, tools)
+	w, err := NewWithOptions(id, task, modeName, llmClient, tools, opts)
 	if err != nil {
 		return nil, err
 	}

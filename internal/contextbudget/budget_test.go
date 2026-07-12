@@ -108,3 +108,49 @@ func TestBudgetToolResultUsesGenericLimitForNonFileLargeContent(t *testing.T) {
 		t.Fatalf("expected generic truncation, got %q", got)
 	}
 }
+
+func TestContextBudgetPureFailureHelpers(t *testing.T) {
+	for _, line := range []string{"ERROR: bad", "--- FAIL: TestX", "panic: boom", "file not found", "cannot compile", "FAIL"} {
+		if !isFailureLine(line) || !hasFailureLine("ok\n"+line+"\nmore") {
+			t.Fatalf("expected failure line detection for %q", line)
+		}
+	}
+	if isFailureLine("all good") || hasFailureLine("all good\nno issues") {
+		t.Fatal("expected non-failure content not to be classified as failure")
+	}
+}
+
+func TestShouldSummarizeShellAndFallbackSummary(t *testing.T) {
+	longShell := strings.Repeat("noise\n", 100) + "STDERR:\ncompiler failed"
+	if !shouldSummarizeShell("run_shell", longShell, len(longShell), 100) {
+		t.Fatal("expected large shell stderr output to be summarized")
+	}
+	if shouldSummarizeShell("read_file", longShell, len(longShell), 100) {
+		t.Fatal("expected non-shell tool not to use shell summarizer")
+	}
+	if shouldSummarizeShell("run_shell", longShell, len(longShell), 0) {
+		t.Fatal("expected maxChars <= 0 to disable summarization")
+	}
+	content := strings.Repeat("plain output\n", 80)
+	got := summarizeShellFailure(content, 200)
+	if !strings.Contains(got, "[tool result truncated:") || strings.Contains(got, "[shell/test output summarized:") {
+		t.Fatalf("expected fallback generic truncation when no failure lines, got %q", got)
+	}
+}
+
+func TestLimitToolResultSmallMaxCharsFloorsAt128(t *testing.T) {
+	content := strings.Repeat("x", 300)
+	got := LimitToolResult(content, 10)
+	if len(got) > 128 || !strings.Contains(got, "[tool result truncated:") {
+		t.Fatalf("expected small maxChars to floor at 128 with marker, len=%d got=%q", len(got), got)
+	}
+}
+
+func TestCollapseRepeatedLinesDisabledAndEmpty(t *testing.T) {
+	if got := CollapseRepeatedLines("same\nsame", 0); got != "same\nsame" {
+		t.Fatalf("expected maxRepeats <= 0 to disable collapse, got %q", got)
+	}
+	if got := CollapseRepeatedLines("", 3); got != "" {
+		t.Fatalf("expected empty content unchanged, got %q", got)
+	}
+}

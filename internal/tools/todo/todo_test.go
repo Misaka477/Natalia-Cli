@@ -5,131 +5,78 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aquama/natalia-cli/internal/display"
+	"github.com/Misaka477/Natalia-Cli/internal/display"
 )
 
-func TestTodoSetAndList(t *testing.T) {
-	items = nil // reset
+func TestTodoToolLifecycleAndDisplayBlocks(t *testing.T) {
+	items = nil
 
-	s := &Set{}
-	r, err := s.Execute(map[string]any{
-		"items": []any{"task 1", "task 2", "task 3"},
-	})
+	ret, err := (&Set{}).ExecuteReturn(map[string]any{"items": []any{"task 1", "task 2"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(r, "3") {
-		t.Errorf("expected '3 tasks', got %q", r)
-	}
+	assertTodoDisplay(t, ret.Display, []display.TodoItem{{Text: "task 1"}, {Text: "task 2"}})
 
-	l := &List{}
-	r, err = l.Execute(map[string]any{})
+	if _, err := (&Add{}).Execute(map[string]any{"items": []any{"task 3"}}); err != nil {
+		t.Fatal(err)
+	}
+	listed, err := (&List{}).Execute(map[string]any{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(r, "task 1") || !strings.Contains(r, "task 3") {
-		t.Errorf("expected all tasks in list, got %q", r)
+	for _, want := range []string{"1. [ ] task 1", "2. [ ] task 2", "3. [ ] task 3"} {
+		if !strings.Contains(listed, want) {
+			t.Fatalf("expected list to contain %q, got %q", want, listed)
+		}
+	}
+
+	ret, err = (&Done{}).ExecuteReturn(map[string]any{"index": float64(2)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertTodoDisplay(t, ret.Display, []display.TodoItem{{Text: "task 1"}, {Text: "task 2", Done: true}, {Text: "task 3"}})
+	listed, err = (&List{}).Execute(map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(listed, "2. [✓] task 2") || strings.Contains(listed, "1. [✓] task 1") {
+		t.Fatalf("expected only task 2 done, got %q", listed)
+	}
+
+	if _, err := (&Done{}).Execute(map[string]any{"index": float64(5)}); err == nil {
+		t.Fatal("expected out-of-range done error")
 	}
 }
 
-func TestTodoAdd(t *testing.T) {
+func TestTodoEmptyListAndInvalidItems(t *testing.T) {
 	items = nil
-
-	s := &Set{}
-	s.Execute(map[string]any{"items": []any{"a"}})
-
-	a := &Add{}
-	a.Execute(map[string]any{"items": []any{"b", "c"}})
-
-	l := &List{}
-	r, _ := l.Execute(map[string]any{})
-	if !strings.Contains(r, "a") || !strings.Contains(r, "b") || !strings.Contains(r, "c") {
-		t.Errorf("expected all 3 tasks, got %q", r)
-	}
-}
-
-func TestTodoExecuteReturnIncludesTodoDisplay(t *testing.T) {
-	items = nil
-	ret, err := (&Set{}).ExecuteReturn(map[string]any{"items": []any{"a", "b"}})
+	listed, err := (&List{}).Execute(map[string]any{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(ret.ModelText, "2") || len(ret.Display) != 1 || ret.Display[0].Type != display.BlockTodo {
-		t.Fatalf("expected todo display block, got %+v", ret)
+	if !strings.Contains(listed, "空") {
+		t.Fatalf("expected empty list message, got %q", listed)
+	}
+	if parsed := parseItems(map[string]any{"items": []any{"valid", 1, "also valid"}}); len(parsed) != 2 || parsed[0].Content != "valid" || parsed[1].Content != "also valid" {
+		t.Fatalf("expected parseItems to keep only string tasks, got %+v", parsed)
+	}
+}
+
+func assertTodoDisplay(t *testing.T, blocks []display.Block, want []display.TodoItem) {
+	t.Helper()
+	if len(blocks) != 1 || blocks[0].Type != display.BlockTodo {
+		t.Fatalf("expected one todo display block, got %+v", blocks)
 	}
 	var payload display.TodoBlock
-	if err := json.Unmarshal(ret.Display[0].Data, &payload); err != nil {
+	if err := json.Unmarshal(blocks[0].Data, &payload); err != nil {
 		t.Fatal(err)
 	}
-	if len(payload.Items) != 2 || payload.Items[0].Text != "a" || payload.Items[0].Done {
-		t.Fatalf("unexpected todo display payload: %+v", payload)
+	if len(payload.Items) != len(want) {
+		t.Fatalf("expected %d todo items, got %+v", len(want), payload.Items)
 	}
-
-	ret, err = (&Done{}).ExecuteReturn(map[string]any{"index": float64(1)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(ret.Display[0].Data, &payload); err != nil {
-		t.Fatal(err)
-	}
-	if !payload.Items[0].Done || payload.Items[1].Done {
-		t.Fatalf("expected first item done in display payload: %+v", payload)
-	}
-}
-
-func TestTodoDone(t *testing.T) {
-	items = nil
-
-	s := &Set{}
-	s.Execute(map[string]any{"items": []any{"x", "y", "z"}})
-
-	d := &Done{}
-	d.Execute(map[string]any{"index": float64(2)})
-
-	mu.Lock()
-	if !items[1].Done {
-		t.Error("task 2 should be done")
-	}
-	if items[0].Done || items[2].Done {
-		t.Error("tasks 1 and 3 should not be done")
-	}
-	mu.Unlock()
-}
-
-func TestTodoDoneOutOfRange(t *testing.T) {
-	items = nil
-
-	s := &Set{}
-	s.Execute(map[string]any{"items": []any{"only one"}})
-
-	d := &Done{}
-	_, err := d.Execute(map[string]any{"index": float64(5)})
-	if err == nil {
-		t.Error("expected error for out of range index")
-	}
-}
-
-func TestTodoEmptyList(t *testing.T) {
-	items = nil
-
-	l := &List{}
-	r, err := l.Execute(map[string]any{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(r, "空") {
-		t.Errorf("expected empty message, got %q", r)
-	}
-}
-
-func TestParseItems(t *testing.T) {
-	result := parseItems(map[string]any{
-		"items": []any{"hello", "world"},
-	})
-	if len(result) != 2 {
-		t.Fatalf("expected 2 items, got %d", len(result))
-	}
-	if result[0].Content != "hello" {
-		t.Errorf("expected 'hello', got %q", result[0].Content)
+	for i := range want {
+		if payload.Items[i] != want[i] {
+			t.Fatalf("todo item %d: got %+v want %+v", i, payload.Items[i], want[i])
+		}
 	}
 }

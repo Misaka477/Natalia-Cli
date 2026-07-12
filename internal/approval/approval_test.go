@@ -1,78 +1,76 @@
 package approval
 
-import (
-	"testing"
-)
+import "testing"
 
-func TestNew(t *testing.T) {
-	a := New(ModeJustDoIt)
-	if a.Mode != ModeJustDoIt {
-		t.Errorf("expected ModeJustDoIt, got %s", a.Mode)
+func TestApprovalModesEnforceRuntimePolicy(t *testing.T) {
+	justDoIt := New(ModeJustDoIt)
+	if !justDoIt.Request("write_file", "write") {
+		t.Fatal("just_do_it should approve normal requests")
+	}
+	justDoIt.RequestFunc = func(toolName, description string) bool {
+		return toolName == "run_shell" && description == "danger"
+	}
+	if !justDoIt.RequestExplicit("run_shell", "danger") {
+		t.Fatal("explicit requests should route through explicit confirmation callback")
+	}
+
+	readOnly := New(ModeReadOnly)
+	for _, tool := range []string{"write_file", "edit_file", "run_shell", "interactive_write", "agent_spawn"} {
+		if readOnly.Request(tool, "blocked") {
+			t.Fatalf("read_only should reject %s", tool)
+		}
+		if readOnly.RequestExplicit(tool, "blocked") {
+			t.Fatalf("read_only should reject explicit %s", tool)
+		}
 	}
 }
 
-func TestFuckMode(t *testing.T) {
-	a := New(ModeJustDoIt)
-	if !a.Request("write_file", "test") {
-		t.Error("fuck mode should approve everything")
-	}
-	if !a.Request("run_shell", "test") {
-		t.Error("fuck mode should approve everything")
-	}
-}
-
-func TestReadOnlyMode(t *testing.T) {
-	a := New(ModeReadOnly)
-	if a.Request("write_file", "test") {
-		t.Error("read_only mode should reject write_file")
-	}
-	if a.Request("edit_file", "test") {
-		t.Error("read_only mode should reject edit_file")
-	}
-	if a.Request("run_shell", "test") {
-		t.Error("read_only mode should reject run_shell")
-	}
-}
-
-func TestWriteTools(t *testing.T) {
-	if !WriteTools["write_file"] {
-		t.Error("write_file should be in WriteTools")
-	}
-	if !WriteTools["edit_file"] {
-		t.Error("edit_file should be in WriteTools")
-	}
-	if !WriteTools["run_shell"] {
-		t.Error("run_shell should be in WriteTools")
-	}
-	if WriteTools["read_file"] {
-		t.Error("read_file should NOT be in WriteTools")
-	}
-	if WriteTools["glob"] {
-		t.Error("glob should NOT be in WriteTools")
-	}
-}
-
-func TestDefaultMode(t *testing.T) {
-	a := New("")
-	// Empty mode defaults to ask, which uses interactivePrompt.
-	// In non-interactive test, we can't test the prompt.
-	// Just verify the approver is created.
-	if a == nil {
-		t.Error("approver should not be nil")
-	}
-}
-
-func TestAskModeUsesRequestFunc(t *testing.T) {
+func TestAskModeRoutesNormalAndExplicitRequestsToCallback(t *testing.T) {
 	a := New(ModeAsk)
-	called := false
+	var calls []string
 	a.RequestFunc = func(toolName, description string) bool {
-		called = true
-		return toolName == "write_file" && description == "write test"
+		calls = append(calls, toolName+":"+description)
+		return toolName == "write_file" || description == "explicit ok"
 	}
-	if !a.Request("write_file", "write test") {
-		t.Fatal("expected request func approval")
+
+	if !a.Request("write_file", "normal") {
+		t.Fatal("expected callback approval for write_file")
 	}
-	if !called {
-		t.Fatal("expected request func to be called")
+	if a.Request("run_shell", "normal") {
+		t.Fatal("expected callback rejection for run_shell")
+	}
+	if !a.RequestExplicit("run_shell", "explicit ok") {
+		t.Fatal("expected explicit callback approval")
+	}
+	want := []string{"write_file:normal", "run_shell:normal", "run_shell:explicit ok"}
+	if len(calls) != len(want) {
+		t.Fatalf("expected calls %v, got %v", want, calls)
+	}
+	for i := range want {
+		if calls[i] != want[i] {
+			t.Fatalf("expected calls %v, got %v", want, calls)
+		}
+	}
+}
+
+func TestWriteToolsCoversAllMutatingRuntimeTools(t *testing.T) {
+	mutating := []string{"write_file", "edit_file", "run_shell", "process_start", "process_stop", "background_start", "background_stop", "interactive_start", "interactive_write", "interactive_keys", "interactive_stop", "agent_spawn", "agent_stop", "agent_resume"}
+	for _, tool := range mutating {
+		if !WriteTools[tool] {
+			t.Fatalf("expected %s to require approval", tool)
+		}
+	}
+	readOnly := []string{"read_file", "glob", "grep", "web_fetch", "agent_list", "interactive_read"}
+	for _, tool := range readOnly {
+		if WriteTools[tool] {
+			t.Fatalf("expected %s to remain read-only", tool)
+		}
+	}
+}
+
+func TestNilApproverExplicitRequestIsRejected(t *testing.T) {
+	var approver *Approver
+	if approver.RequestExplicit("run_shell", "danger") {
+		t.Fatal("nil approver should reject explicit requests")
 	}
 }

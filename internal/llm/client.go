@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aquama/natalia-cli/internal/chat"
+	"github.com/Misaka477/Natalia-Cli/internal/chat"
 )
 
 type ToolDef struct {
@@ -338,6 +338,10 @@ func (c *Client) ChatStream(ctx context.Context, chatCtx *chat.Context, tools []
 				return
 			}
 			ch <- StreamEvent{Error: fmt.Errorf("read stream: %w", err)}
+			return
+		}
+		if err := ctx.Err(); err != nil {
+			ch <- StreamEvent{Error: err}
 			return
 		}
 		if streamDone {

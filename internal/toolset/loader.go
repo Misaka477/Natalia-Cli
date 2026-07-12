@@ -3,15 +3,16 @@ package toolset
 import (
 	"fmt"
 
-	"github.com/aquama/natalia-cli/internal/agentspec"
-	"github.com/aquama/natalia-cli/internal/tools/ask_user"
-	"github.com/aquama/natalia-cli/internal/tools/background"
-	"github.com/aquama/natalia-cli/internal/tools/browser"
-	"github.com/aquama/natalia-cli/internal/tools/file"
-	"github.com/aquama/natalia-cli/internal/tools/process"
-	"github.com/aquama/natalia-cli/internal/tools/shell"
-	"github.com/aquama/natalia-cli/internal/tools/todo"
-	"github.com/aquama/natalia-cli/internal/tools/web"
+	"github.com/Misaka477/Natalia-Cli/internal/agentspec"
+	"github.com/Misaka477/Natalia-Cli/internal/tools/ask_user"
+	"github.com/Misaka477/Natalia-Cli/internal/tools/background"
+	"github.com/Misaka477/Natalia-Cli/internal/tools/browser"
+	"github.com/Misaka477/Natalia-Cli/internal/tools/file"
+	"github.com/Misaka477/Natalia-Cli/internal/tools/interactive"
+	"github.com/Misaka477/Natalia-Cli/internal/tools/process"
+	"github.com/Misaka477/Natalia-Cli/internal/tools/shell"
+	"github.com/Misaka477/Natalia-Cli/internal/tools/todo"
+	"github.com/Misaka477/Natalia-Cli/internal/tools/web"
 )
 
 var builtInToolFactories = map[string]func() Tool{
@@ -40,6 +41,12 @@ var builtInToolFactories = map[string]func() Tool{
 	"natalia/tools/background:List":    func() Tool { return &background.List{} },
 	"natalia/tools/background:Output":  func() Tool { return &background.Output{} },
 	"natalia/tools/background:Stop":    func() Tool { return &background.Stop{} },
+	"natalia/tools/interactive:Start":  func() Tool { return &interactive.Start{} },
+	"natalia/tools/interactive:Read":   func() Tool { return &interactive.Read{} },
+	"natalia/tools/interactive:Write":  func() Tool { return &interactive.Write{} },
+	"natalia/tools/interactive:Keys":   func() Tool { return &interactive.Keys{} },
+	"natalia/tools/interactive:Stop":   func() Tool { return &interactive.Stop{} },
+	"natalia/tools/interactive:List":   func() Tool { return &interactive.List{} },
 }
 
 func LoadFromAgentSpec(spec *agentspec.ResolvedAgentSpec) (*Registry, error) {

@@ -1,6 +1,10 @@
 package toolschema
 
-import "testing"
+import (
+	"reflect"
+	"strings"
+	"testing"
+)
 
 type schemaTestParams struct {
 	Command string   `json:"command" description:"Command to run"`
@@ -8,6 +12,10 @@ type schemaTestParams struct {
 	Mode    string   `json:"mode,omitempty" description:"Mode" enum:"fast, safe"`
 	Hidden  string   `json:"-"`
 	Items   []string `json:"items,omitempty" description:"Items" required:"true"`
+}
+
+type noTagParams struct {
+	LongFieldName string
 }
 
 func TestFromStruct(t *testing.T) {
@@ -29,6 +37,25 @@ func TestFromStruct(t *testing.T) {
 	}
 	if len(required) != 2 || required[0] != "command" || required[1] != "items" {
 		t.Fatalf("unexpected required fields: %+v", required)
+	}
+}
+
+func TestFromStructPointerNilAndNoTagPaths(t *testing.T) {
+	props, required := FromStruct(&schemaTestParams{})
+	if len(props) != 4 || len(required) != 2 {
+		t.Fatalf("expected pointer struct schema, props=%+v required=%+v", props, required)
+	}
+	props, required = FromStruct(nil)
+	if len(props) != 0 || len(required) != 0 {
+		t.Fatalf("expected nil input to produce empty schema, props=%+v required=%+v", props, required)
+	}
+	field, ok := reflect.TypeOf(noTagParams{}).FieldByName("LongFieldName")
+	if !ok {
+		t.Fatal("missing test field")
+	}
+	name, optional := jsonFieldName(field)
+	if name != "longFieldName" || optional {
+		t.Fatalf("unexpected no-tag json field name: name=%q optional=%v", name, optional)
 	}
 }
 
@@ -64,5 +91,16 @@ func TestDecodeTypeError(t *testing.T) {
 	_, err := Decode[schemaTestParams](map[string]any{"command": "x", "timeout": "bad", "items": []any{"a"}})
 	if err == nil {
 		t.Fatal("expected decode type error")
+	}
+}
+
+func TestDecodeMarshalAndNilPointerRequiredErrors(t *testing.T) {
+	_, err := Decode[schemaTestParams](map[string]any{"command": "x", "items": []any{"a"}, "bad": make(chan int)})
+	if err == nil || !strings.Contains(err.Error(), "marshal tool args") {
+		t.Fatalf("expected marshal error for unsupported arg value, got %v", err)
+	}
+	var params *schemaTestParams
+	if err := validateRequired(params); err == nil || !strings.Contains(err.Error(), "cannot be nil") {
+		t.Fatalf("expected nil pointer validation error, got %v", err)
 	}
 }

@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aquama/natalia-cli/internal/llm"
+	"github.com/Misaka477/Natalia-Cli/internal/llm"
 )
 
 var (

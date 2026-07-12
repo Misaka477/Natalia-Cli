@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/aquama/natalia-cli/internal/chat"
-	"github.com/aquama/natalia-cli/internal/llm"
-	"github.com/aquama/natalia-cli/internal/toolreturn"
+	"github.com/Misaka477/Natalia-Cli/internal/chat"
+	"github.com/Misaka477/Natalia-Cli/internal/llm"
+	"github.com/Misaka477/Natalia-Cli/internal/toolreturn"
 )
 
 type Tool interface {
@@ -69,6 +69,24 @@ func (r *Registry) List() []Tool {
 		list = append(list, t)
 	}
 	return list
+}
+
+func (r *Registry) Filtered(allowed, excluded []string) *Registry {
+	allowedSet := stringSet(allowed)
+	excludedSet := stringSet(excluded)
+	out := NewRegistry()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for name, tool := range r.tools {
+		if len(allowedSet) > 0 && !allowedSet[name] {
+			continue
+		}
+		if excludedSet[name] {
+			continue
+		}
+		out.tools[name] = tool
+	}
+	return out
 }
 
 func (r *Registry) ToToolDefs() []llm.ToolDef {

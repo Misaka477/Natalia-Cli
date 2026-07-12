@@ -10,9 +10,9 @@ import (
 )
 
 type FileEntry struct {
-	Path     string `json:"path"`
-	Hash     string `json:"hash"`
-	Mode     os.FileMode `json:"mode"`
+	Path string      `json:"path"`
+	Hash string      `json:"hash"`
+	Mode os.FileMode `json:"mode"`
 }
 
 type Tree struct {
@@ -20,7 +20,7 @@ type Tree struct {
 }
 
 type Ref struct {
-	Step    int    `json:"step"`
+	Step     int    `json:"step"`
 	TreeHash string `json:"tree_hash"`
 }
 

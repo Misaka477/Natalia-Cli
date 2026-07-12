@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/aquama/natalia-cli/internal/llm"
+	"github.com/Misaka477/Natalia-Cli/internal/llm"
 )
 
 type AskUser struct{}

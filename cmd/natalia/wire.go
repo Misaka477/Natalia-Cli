@@ -10,11 +10,11 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/aquama/natalia-cli/internal/config"
-	"github.com/aquama/natalia-cli/internal/session"
-	"github.com/aquama/natalia-cli/internal/soul"
-	"github.com/aquama/natalia-cli/internal/toolset"
-	"github.com/aquama/natalia-cli/internal/wire"
+	"github.com/Misaka477/Natalia-Cli/internal/config"
+	"github.com/Misaka477/Natalia-Cli/internal/session"
+	"github.com/Misaka477/Natalia-Cli/internal/soul"
+	"github.com/Misaka477/Natalia-Cli/internal/toolset"
+	"github.com/Misaka477/Natalia-Cli/internal/wire"
 )
 
 func runWire(cfg *config.Config, tools *toolset.Registry, in io.Reader, out io.Writer, debug bool) error {

@@ -87,84 +87,46 @@ func TestIgnoreFile(t *testing.T) {
 	}
 }
 
-func TestTree(t *testing.T) {
-	dir := t.TempDir()
-	obs, err := NewObjects(dir)
-	if err != nil {
+func TestCheckpointPersistsLoadableTreeAndObjects(t *testing.T) {
+	workDir := t.TempDir()
+	sessionDir := t.TempDir()
+	file := filepath.Join(workDir, "nested", "test.txt")
+	if err := os.MkdirAll(filepath.Dir(file), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte("snapshot content"), 0600); err != nil {
 		t.Fatal(err)
 	}
 
-	tree := &Tree{
-		Files: []FileEntry{
-			{Path: "test.txt", Hash: "abc123", Mode: 0644},
-		},
-	}
-	hash, err := saveTreeHelper(obs, tree)
+	eng, err := NewEngine(workDir, sessionDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hash == "" {
-		t.Fatal("expected non-empty hash")
-	}
-
-	loaded, err := loadTreeHelper(obs, hash)
+	treeHash, err := eng.Checkpoint(7, []string{file})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(loaded.Files) != 1 {
-		t.Fatalf("expected 1 file, got %d", len(loaded.Files))
-	}
-	if loaded.Files[0].Path != "test.txt" {
-		t.Errorf("expected test.txt, got %s", loaded.Files[0].Path)
-	}
-}
-
-func saveTreeHelper(obs *Objects, tree *Tree) (string, error) {
-	h := obs.Store(mustMarshal(tree))
-	return h, nil
-}
-
-func loadTreeHelper(obs *Objects, hash string) (*Tree, error) {
-	data, err := obs.Load(hash)
+	refHash, err := eng.GetTreeHash(7)
 	if err != nil {
-		return nil, err
+		t.Fatal(err)
 	}
-	return unmarshalTree(data)
-}
-
-func mustMarshal(t *Tree) []byte {
-	s := "{"
-	for i, f := range t.Files {
-		if i > 0 {
-			s += ","
-		}
-		s += `"` + f.Path + `":"` + f.Hash + `"`
+	if refHash != treeHash {
+		t.Fatalf("expected refs tree hash %q, got %q", treeHash, refHash)
 	}
-	s += "}"
-	return []byte(s)
-}
-
-func unmarshalTree(data []byte) (*Tree, error) {
-	tree := &Tree{}
-	content := string(data)
-	content = strings.Trim(content, "{}")
-	if content == "" {
-		return tree, nil
+	tree, err := eng.LoadTree(treeHash)
+	if err != nil {
+		t.Fatal(err)
 	}
-	pairs := strings.Split(content, ",")
-	for _, pair := range pairs {
-		parts := strings.SplitN(pair, ":", 2)
-		if len(parts) == 2 {
-			path := strings.Trim(parts[0], "\"")
-			hash := strings.Trim(parts[1], "\"")
-			tree.Files = append(tree.Files, FileEntry{
-				Path: path,
-				Hash: hash,
-				Mode: 0644,
-			})
-		}
+	if len(tree.Files) != 1 || tree.Files[0].Path != filepath.Join("nested", "test.txt") || tree.Files[0].Mode.Perm() != 0600 {
+		t.Fatalf("unexpected checkpoint tree: %+v", tree.Files)
 	}
-	return tree, nil
+	stored, err := eng.Objects.Load(tree.Files[0].Hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(stored) != "snapshot content" {
+		t.Fatalf("expected stored file content, got %q", stored)
+	}
 }
 
 func TestCheckpoint(t *testing.T) {

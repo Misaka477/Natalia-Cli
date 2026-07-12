@@ -16,13 +16,20 @@ const (
 )
 
 var WriteTools = map[string]bool{
-	"write_file":       true,
-	"edit_file":        true,
-	"run_shell":        true,
-	"process_start":    true,
-	"process_stop":     true,
-	"background_start": true,
-	"background_stop":  true,
+	"write_file":        true,
+	"edit_file":         true,
+	"run_shell":         true,
+	"process_start":     true,
+	"process_stop":      true,
+	"background_start":  true,
+	"background_stop":   true,
+	"interactive_start": true,
+	"interactive_write": true,
+	"interactive_keys":  true,
+	"interactive_stop":  true,
+	"agent_spawn":       true,
+	"agent_stop":        true,
+	"agent_resume":      true,
 }
 
 type Approver struct {

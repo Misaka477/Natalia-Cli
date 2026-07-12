@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aquama/natalia-cli/internal/display"
+	"github.com/Misaka477/Natalia-Cli/internal/display"
 )
 
 func TestNewEvent(t *testing.T) {

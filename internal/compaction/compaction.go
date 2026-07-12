@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aquama/natalia-cli/internal/chat"
-	"github.com/aquama/natalia-cli/internal/llm"
+	"github.com/Misaka477/Natalia-Cli/internal/chat"
+	"github.com/Misaka477/Natalia-Cli/internal/llm"
 )
 
 const COMPACT_PROMPT = `The above is a list of messages in an agent conversation. You are now given a task to compact this conversation context according to specific priorities and rules.
@@ -84,8 +84,8 @@ type PrepareResult struct {
 }
 
 type CompactionResult struct {
-	Messages           []chat.Message
-	EstimatedTokens    int
+	Messages        []chat.Message
+	EstimatedTokens int
 }
 
 type SimpleCompaction struct {

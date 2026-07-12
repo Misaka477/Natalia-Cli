@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aquama/natalia-cli/internal/display"
+	"github.com/Misaka477/Natalia-Cli/internal/display"
 )
 
 func TestReadSmallFileReturnsNumberedContent(t *testing.T) {
@@ -95,6 +95,61 @@ func TestReadLargeFileDefaultsToOverview(t *testing.T) {
 	}
 	if strings.Contains(result, "1: line 001") {
 		t.Fatalf("expected overview only without file body, got %q", result)
+	}
+}
+
+func TestReadExactDefaultWindowSizeDoesNotUseOverview(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "exact.txt")
+	var b strings.Builder
+	for i := 1; i <= defaultReadWindowLines; i++ {
+		fmt.Fprintf(&b, "line %03d", i)
+		if i < defaultReadWindowLines {
+			b.WriteString("\n")
+		}
+	}
+	if err := os.WriteFile(path, []byte(b.String()), 0644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := (&Read{}).Execute(map[string]any{"path": path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(result, "Large file") || !strings.Contains(result, "100: line 100") {
+		t.Fatalf("expected exact default window file body, got %q", result)
+	}
+}
+
+func TestReadMissingFileAndInvalidLineLimits(t *testing.T) {
+	_, err := (&Read{}).Execute(map[string]any{"path": filepath.Join(t.TempDir(), "missing.txt")})
+	if err == nil || !strings.Contains(err.Error(), "read failed") {
+		t.Fatalf("expected missing file read failure, got %v", err)
+	}
+	badCases := []struct {
+		offset string
+		limit  string
+		want   string
+	}{
+		{offset: "bad", limit: "", want: "invalid offset"},
+		{offset: "1", limit: "2-3", want: "with offset"},
+		{offset: "", limit: "0-2", want: "positive"},
+		{offset: "", limit: "99-100", want: "after end"},
+	}
+	for _, tc := range badCases {
+		_, _, _, err := parseLineLimit(tc.offset, tc.limit, 3)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("parseLineLimit(%q,%q) expected %q error, got %v", tc.offset, tc.limit, tc.want, err)
+		}
+	}
+}
+
+func TestRenderReadFileStringContent(t *testing.T) {
+	result, err := RenderReadFile("virtual.txt", "one\ntwo\nthree", "2", "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "Lines: 3 total, showing 2-2") || !strings.Contains(result, "2: two") || strings.Contains(result, "1: one") {
+		t.Fatalf("unexpected string content render: %q", result)
 	}
 }
 
@@ -237,6 +292,14 @@ func TestWriteFileRejectsLargeContent(t *testing.T) {
 	}
 }
 
+func TestWriteFileRejectsOverwritingDirectory(t *testing.T) {
+	dir := t.TempDir()
+	_, err := (&Write{}).Execute(map[string]any{"path": dir, "content": "data"})
+	if err == nil || !strings.Contains(err.Error(), "overwrite directory") {
+		t.Fatalf("expected directory overwrite rejection, got %v", err)
+	}
+}
+
 func TestEditExecuteReturnIncludesDiffDisplay(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "edit.txt")
@@ -366,6 +429,35 @@ func TestEditBatchRejectsInvalidEdits(t *testing.T) {
 	_, err := (&Edit{}).ExecuteReturn(map[string]any{"path": "x", "edits": []any{map[string]any{"new_string": "x"}}})
 	if err == nil || !strings.Contains(err.Error(), "old_string required") {
 		t.Fatalf("expected old_string validation error, got %v", err)
+	}
+	_, err = (&Edit{}).ExecuteReturn(map[string]any{"path": "x", "edits": "bad"})
+	if err == nil || !strings.Contains(err.Error(), "edits must be an array") {
+		t.Fatalf("expected edits array validation error, got %v", err)
+	}
+}
+
+func TestEditReplaceAllNoMatchAndReplacementDiff(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "nomatch.txt")
+	if err := os.WriteFile(path, []byte("alpha beta"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	ret, err := (&Edit{}).ExecuteReturn(map[string]any{"path": path, "old_string": "missing", "new_string": "x", "replace_all": true})
+	if err == nil || !ret.IsError || !strings.Contains(err.Error(), "old_string not found") {
+		t.Fatalf("expected replace_all no-match error, ret=%+v err=%v", ret, err)
+	}
+	data, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(data) != "alpha beta" {
+		t.Fatalf("no-match edit should not modify file, got %q", data)
+	}
+	diff := replacementDiff("file.txt", "old\nline", "new\nline")
+	for _, want := range []string{"--- file.txt", "+++ file.txt", "-old", "+new"} {
+		if !strings.Contains(diff, want) {
+			t.Fatalf("expected diff to contain %q, got %q", want, diff)
+		}
 	}
 }
 
@@ -587,6 +679,24 @@ func TestGrepRejectsInvalidHeadLimit(t *testing.T) {
 	}
 }
 
+func TestGrepRejectsInvalidRegexAndScanMissingFile(t *testing.T) {
+	_, err := (&Grep{}).Execute(map[string]any{"pattern": "[", "path": t.TempDir()})
+	if err == nil || !strings.Contains(err.Error(), "正则编译失败") {
+		t.Fatalf("expected invalid regex error, got %v", err)
+	}
+	_, err = scanTextFileLines(filepath.Join(t.TempDir(), "missing.txt"))
+	if err == nil {
+		t.Fatal("expected scanTextFileLines missing file error")
+	}
+}
+
+func TestParseIntArgSupportsInt64(t *testing.T) {
+	got, err := parseIntArg(map[string]any{"limit": int64(7)}, "limit", 0, 0, 10)
+	if err != nil || got != 7 {
+		t.Fatalf("expected int64 parse result 7, got %d err=%v", got, err)
+	}
+}
+
 func TestGlobBasic(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "a.go"), []byte("a"), 0644)
@@ -645,5 +755,19 @@ func TestGlobRejectsInvalidLimit(t *testing.T) {
 	_, err := (&Glob{}).Execute(map[string]any{"pattern": "*.go", "limit": float64(-1)})
 	if err == nil || !strings.Contains(err.Error(), "limit") {
 		t.Fatalf("expected limit validation error, got %v", err)
+	}
+}
+
+func TestGlobNoMatchAndOffsetBeyondTotal(t *testing.T) {
+	result, err := (&Glob{}).Execute(map[string]any{"pattern": "*.missing", "path": t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "未找到匹配文件") {
+		t.Fatalf("expected no match message, got %q", result)
+	}
+	page, marker := paginateResults([]string{"a", "b"}, 2, 1)
+	if page != nil || marker != "" {
+		t.Fatalf("expected empty pagination past end, page=%+v marker=%q", page, marker)
 	}
 }

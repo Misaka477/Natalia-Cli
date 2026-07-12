@@ -30,6 +30,12 @@ agent:
     - natalia/tools/background:List
     - natalia/tools/background:Output
     - natalia/tools/background:Stop
+    - natalia/tools/interactive:Start
+    - natalia/tools/interactive:Read
+    - natalia/tools/interactive:Write
+    - natalia/tools/interactive:Keys
+    - natalia/tools/interactive:Stop
+    - natalia/tools/interactive:List
   allowed_tools: null
   exclude_tools: []
   modes:

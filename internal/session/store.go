@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aquama/natalia-cli/internal/chat"
+	"github.com/Misaka477/Natalia-Cli/internal/chat"
 )
 
 type Session struct {

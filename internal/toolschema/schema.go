@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/aquama/natalia-cli/internal/llm"
+	"github.com/Misaka477/Natalia-Cli/internal/llm"
 )
 
 func FromStruct(v any) (map[string]llm.Property, []string) {

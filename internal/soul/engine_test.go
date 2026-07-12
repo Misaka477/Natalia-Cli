@@ -11,15 +11,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aquama/natalia-cli/internal/approval"
-	"github.com/aquama/natalia-cli/internal/chat"
-	"github.com/aquama/natalia-cli/internal/compaction"
-	"github.com/aquama/natalia-cli/internal/display"
-	"github.com/aquama/natalia-cli/internal/llm"
-	"github.com/aquama/natalia-cli/internal/mode"
-	filetool "github.com/aquama/natalia-cli/internal/tools/file"
-	shelltool "github.com/aquama/natalia-cli/internal/tools/shell"
-	"github.com/aquama/natalia-cli/internal/toolset"
+	"github.com/Misaka477/Natalia-Cli/internal/approval"
+	"github.com/Misaka477/Natalia-Cli/internal/chat"
+	"github.com/Misaka477/Natalia-Cli/internal/compaction"
+	"github.com/Misaka477/Natalia-Cli/internal/display"
+	"github.com/Misaka477/Natalia-Cli/internal/llm"
+	"github.com/Misaka477/Natalia-Cli/internal/mode"
+	filetool "github.com/Misaka477/Natalia-Cli/internal/tools/file"
+	shelltool "github.com/Misaka477/Natalia-Cli/internal/tools/shell"
+	"github.com/Misaka477/Natalia-Cli/internal/toolset"
 )
 
 type snapshotStub struct {
@@ -198,6 +198,30 @@ func TestExecuteToolCallEmitsDisplayBlocks(t *testing.T) {
 	}
 	if len(results) != 1 || results[0].Content != "model summary" || len(results[0].Display) != 1 || results[0].Display[0].Type != display.BlockDiff {
 		t.Fatalf("unexpected tool result event: %+v", results)
+	}
+}
+
+func TestExecuteToolCallRunsRealFileToolEndToEnd(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "engine-real.txt")
+	if err := os.WriteFile(path, []byte("engine-real-ok\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	tools := toolset.NewRegistry()
+	tools.Register(&filetool.Read{})
+	engine := NewEngine(nil, tools)
+	var results []ToolResultEvent
+	engine.OnToolResult = func(event ToolResultEvent) { results = append(results, event) }
+
+	err := engine.executeToolCall(chat.ToolCall{ID: "tc_real_read", Type: "function", Function: chat.ToolCallFunc{Name: "read_file", Arguments: fmt.Sprintf(`{"path":%q,"limit":"all"}`, path)}})
+	if err != nil {
+		t.Fatalf("executeToolCall real read_file failed: %v", err)
+	}
+	if len(engine.Context.Messages) != 1 || engine.Context.Messages[0].Role != chat.RoleTool || !strings.Contains(engine.Context.Messages[0].Content, "engine-real-ok") {
+		t.Fatalf("expected real read_file result in tool context, got %+v", engine.Context.Messages)
+	}
+	if len(results) != 1 || results[0].Name != "read_file" || !strings.Contains(results[0].Content, "engine-real-ok") {
+		t.Fatalf("expected real read_file result event, got %+v", results)
 	}
 }
 

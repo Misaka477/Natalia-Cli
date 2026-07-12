@@ -77,8 +77,14 @@ func ParseFlow(yamlContent string) (*Flow, error) {
 	return f, nil
 }
 
-func (f *Flow) BeginID() string           { return f.beginID }
-func (f *Flow) Node(id string) *FlowNode  { n, ok := f.nodeMap[id]; if !ok { return nil }; return &n }
+func (f *Flow) BeginID() string { return f.beginID }
+func (f *Flow) Node(id string) *FlowNode {
+	n, ok := f.nodeMap[id]
+	if !ok {
+		return nil
+	}
+	return &n
+}
 func (f *Flow) Edges(id string) []FlowEdge { return f.outgoing[id] }
 
 type FlowRunner struct {
@@ -146,12 +152,18 @@ func (r *FlowRunner) Advance(choice string) (*FlowNode, string, error) {
 		for _, e := range edges {
 			if strings.EqualFold(e.Label, choice) {
 				r.Current = e.Dst
-				break
+				current := r.Flow.Node(r.Current)
+				if current != nil {
+					return current, current.Label, nil
+				}
+				return current, "", nil
 			}
 		}
-		if r.Current == node.ID {
-			r.Current = r.Flow.endID
+		options := make([]string, len(edges))
+		for i, e := range edges {
+			options[i] = e.Label
 		}
+		return nil, "", fmt.Errorf("invalid choice %q for decision %s; options: %s", choice, node.ID, strings.Join(options, ", "))
 
 	case NodeEnd:
 		return node, "", nil

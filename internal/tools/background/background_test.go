@@ -2,12 +2,14 @@ package background
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/aquama/natalia-cli/internal/processmgr"
+	"github.com/Misaka477/Natalia-Cli/internal/processmgr"
 )
 
 func resetManager() {
@@ -36,6 +38,28 @@ func TestBackgroundStartOutputList(t *testing.T) {
 	}
 	if !strings.Contains(list, id) || !strings.Contains(list, "kind: background") {
 		t.Fatalf("unexpected list: %q", list)
+	}
+}
+
+func TestBackgroundOutputWithTailAndCWD(t *testing.T) {
+	resetManager()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "marker.txt"), []byte("ok"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "args": []any{"-c", "pwd; ls marker.txt; printf 'line1\\nline2\\nline3\\n'"}, "cwd": dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := extractBackgroundID(t, result)
+	waitForBackgroundStatus(t, id, "exited")
+
+	output, err := (&Output{}).Execute(map[string]any{"id": id, "tail": float64(2)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output, "line1") || !strings.Contains(output, "line2") || !strings.Contains(output, "line3") {
+		t.Fatalf("expected tail output to keep last two lines, got %q", output)
 	}
 }
 
@@ -72,6 +96,45 @@ func TestBackgroundStartRejectsInvalidMaxTail(t *testing.T) {
 	_, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "max_tail": float64(0)})
 	if err == nil || !strings.Contains(err.Error(), "between") {
 		t.Fatalf("expected max_tail validation error, got %v", err)
+	}
+}
+
+func TestBackgroundEmptyListUnknownAndFormattingPaths(t *testing.T) {
+	resetManager()
+	listed, err := (&List{}).Execute(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listed != "<no background tasks>" {
+		t.Fatalf("expected empty background list, got %q", listed)
+	}
+	for _, tool := range []struct {
+		name string
+		run  func() (string, error)
+	}{
+		{name: "output", run: func() (string, error) { return (&Output{}).Execute(map[string]any{"id": "missing"}) }},
+		{name: "stop", run: func() (string, error) { return (&Stop{}).Execute(map[string]any{"id": "missing"}) }},
+	} {
+		_, err := tool.run()
+		if err == nil || !strings.Contains(err.Error(), "unknown background task") {
+			t.Fatalf("expected unknown background error for %s, got %v", tool.name, err)
+		}
+	}
+	if got := formatSession(nil); got != "<nil background task>" {
+		t.Fatalf("unexpected nil background session formatting: %q", got)
+	}
+}
+
+func TestBackgroundRejectsInvalidArgsAndIntTypes(t *testing.T) {
+	resetManager()
+	if _, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "args": "bad"}); err == nil || !strings.Contains(err.Error(), "args") {
+		t.Fatalf("expected args type error, got %v", err)
+	}
+	if _, err := (&Output{}).Execute(map[string]any{"id": "missing", "tail": "bad"}); err == nil || !strings.Contains(err.Error(), "unknown background task") {
+		t.Fatalf("expected unknown id checked before tail validation, got %v", err)
+	}
+	if _, err := intArg("bad", 0, 0, 10); err == nil || !strings.Contains(err.Error(), "integer") {
+		t.Fatalf("expected intArg type error, got %v", err)
 	}
 }
 

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aquama/natalia-cli/internal/llm"
+	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"

@@ -1,6 +1,6 @@
 package autoflow
 
-import "github.com/aquama/natalia-cli/internal/soul"
+import "github.com/Misaka477/Natalia-Cli/internal/soul"
 
 const DefaultFailureThreshold = 2
 

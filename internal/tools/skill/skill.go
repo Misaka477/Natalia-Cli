@@ -3,8 +3,8 @@ package skills
 import (
 	"fmt"
 
-	"github.com/aquama/natalia-cli/internal/llm"
-	"github.com/aquama/natalia-cli/internal/skill"
+	"github.com/Misaka477/Natalia-Cli/internal/llm"
+	"github.com/Misaka477/Natalia-Cli/internal/skill"
 )
 
 type List struct {
