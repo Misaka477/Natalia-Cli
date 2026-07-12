@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Misaka477/Natalia-Cli/internal/display"
 	"github.com/Misaka477/Natalia-Cli/internal/wire"
 )
 
@@ -117,6 +118,7 @@ func renderInteractiveWireRequest(req *wire.WireRequest, errOut io.Writer) {
 		var approval wire.ApprovalRequest
 		if json.Unmarshal(req.Payload, &approval) == nil {
 			fmt.Fprintf(errOut, "\n[approval request] %s: %s\n", approval.Action, trimWireLine(approval.Description, 800))
+			renderWireDisplayBlocks(approval.Display, errOut)
 		}
 	case wire.RequestQuestion:
 		var question wire.QuestionRequest
@@ -138,6 +140,23 @@ func renderInteractiveWireRequest(req *wire.WireRequest, errOut io.Writer) {
 		}
 	default:
 		fmt.Fprintf(errOut, "\n[wire request] %s %s\n", req.Type, req.ID)
+	}
+}
+
+func renderWireDisplayBlocks(blocks []display.Block, out io.Writer) {
+	for _, block := range blocks {
+		switch block.Type {
+		case display.BlockDiff:
+			var diff display.DiffBlock
+			if json.Unmarshal(block.Data, &diff) == nil {
+				fmt.Fprintf(out, "[diff] %s\n%s\n", diff.Path, trimWireLine(diff.Diff, 4000))
+			}
+		case display.BlockShell:
+			var shell display.ShellBlock
+			if json.Unmarshal(block.Data, &shell) == nil {
+				fmt.Fprintf(out, "[shell] %s\n%s\n", shell.Command, trimWireLine(shell.Output, 2000))
+			}
+		}
 	}
 }
 

@@ -1018,7 +1018,8 @@ func TestRunWireReplayOutputsJSONRPC(t *testing.T) {
 }
 
 func TestRunWirePromptEmitsToolEvents(t *testing.T) {
-	filePath := filepath.Join(t.TempDir(), "fixture.txt")
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "fixture.txt")
 	if err := os.WriteFile(filePath, []byte("fixture content"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1069,9 +1070,12 @@ func TestRunWirePromptEmitsToolEvents(t *testing.T) {
 		},
 		PermissionProfiles: config.DefaultPermissionProfiles(),
 		Profiles: map[string]config.Profile{
-			"default": {Provider: "mock", Model: "mock-model", MaxSteps: 4, AutoApprove: "ask"},
+			"default": {Provider: "mock", Model: "mock-model", MaxSteps: 4, AutoApprove: "ask", WorkDir: dir},
 		},
 	}
+	oldActiveConfig := activeConfig
+	activeConfig = cfg
+	t.Cleanup(func() { activeConfig = oldActiveConfig })
 	tools := toolset.NewRegistry()
 	registerTools(tools)
 	in := strings.NewReader(`{"jsonrpc":"2.0","method":"prompt","id":"prompt_1","params":{"user_input":"read fixture"}}` + "\n")
@@ -1114,7 +1118,7 @@ func TestRequestWireApprovalApprovesResponse(t *testing.T) {
 
 	resultCh := make(chan bool, 1)
 	go func() {
-		resultCh <- requestWireApproval(context.Background(), w, "write_file", "write_file test")
+		resultCh <- requestWireApproval(context.Background(), w, "write_file", "write_file test", nil)
 	}()
 
 	msg := receiveWireMessageForTest(t, requests)
@@ -1255,9 +1259,12 @@ func TestRunWireApprovalWritesFileEndToEnd(t *testing.T) {
 		},
 		PermissionProfiles: config.DefaultPermissionProfiles(),
 		Profiles: map[string]config.Profile{
-			"default": {Provider: "mock", Model: "mock-model", MaxSteps: 4, AutoApprove: "ask"},
+			"default": {Provider: "mock", Model: "mock-model", MaxSteps: 4, AutoApprove: "ask", WorkDir: dir},
 		},
 	}
+	oldActiveConfig := activeConfig
+	activeConfig = cfg
+	t.Cleanup(func() { activeConfig = oldActiveConfig })
 	tools := toolset.NewRegistry()
 	registerTools(tools)
 	inR, inW := io.Pipe()
@@ -1283,6 +1290,13 @@ func TestRunWireApprovalWritesFileEndToEnd(t *testing.T) {
 			t.Fatalf("decode request params: %v", err)
 		}
 		if payload.Type == string(wire.RequestApproval) {
+			var approval wire.ApprovalRequest
+			if err := json.Unmarshal(payload.Payload, &approval); err != nil {
+				t.Fatalf("decode approval payload: %v", err)
+			}
+			if len(approval.Display) != 1 {
+				t.Fatalf("expected approval diff display block, got %+v", approval)
+			}
 			if err := json.Unmarshal(msg.ID, &approvalID); err != nil {
 				t.Fatalf("decode approval id: %v", err)
 			}

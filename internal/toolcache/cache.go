@@ -10,11 +10,16 @@ import (
 
 type Cache struct {
 	mu      sync.RWMutex
-	entries map[string]string
+	entries map[string]entry
+}
+
+type entry struct {
+	value      string
+	searchRoot string
 }
 
 func New() *Cache {
-	return &Cache{entries: make(map[string]string)}
+	return &Cache{entries: make(map[string]entry)}
 }
 
 func (c *Cache) Get(toolName string, args map[string]any) (string, bool) {
@@ -25,7 +30,7 @@ func (c *Cache) Get(toolName string, args map[string]any) (string, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	value, ok := c.entries[key]
-	return value, ok
+	return value.value, ok
 }
 
 func (c *Cache) Set(toolName string, args map[string]any, value string) {
@@ -35,7 +40,7 @@ func (c *Cache) Set(toolName string, args map[string]any, value string) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.entries[key] = value
+	c.entries[key] = entry{value: value, searchRoot: searchRootFor(toolName, args)}
 }
 
 func (c *Cache) InvalidatePath(path string) {
@@ -44,13 +49,18 @@ func (c *Cache) InvalidatePath(path string) {
 	}
 	absPath, ok := normalizePath(path)
 	if !ok {
-		absPath = path
+		c.InvalidateAll()
+		return
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	prefix := "read_file:" + absPath + ":"
-	for key := range c.entries {
-		if (len(key) >= len(prefix) && key[:len(prefix)] == prefix) || (len(key) >= 5 && (key[:5] == "glob:" || key[:5] == "grep:")) {
+	for key, ent := range c.entries {
+		if len(key) >= len(prefix) && key[:len(prefix)] == prefix {
+			delete(c.entries, key)
+			continue
+		}
+		if (len(key) >= 5 && (key[:5] == "glob:" || key[:5] == "grep:")) && searchRootAffected(ent.searchRoot, absPath) {
 			delete(c.entries, key)
 		}
 	}
@@ -59,7 +69,37 @@ func (c *Cache) InvalidatePath(path string) {
 func (c *Cache) InvalidateAll() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.entries = make(map[string]string)
+	c.entries = make(map[string]entry)
+}
+
+func searchRootFor(toolName string, args map[string]any) string {
+	if toolName != "glob" && toolName != "grep" {
+		return ""
+	}
+	path, _ := args["path"].(string)
+	if path == "" {
+		path = "."
+	}
+	root, ok := normalizePath(path)
+	if !ok {
+		return ""
+	}
+	return root
+}
+
+func searchRootAffected(root, absPath string) bool {
+	if root == "" {
+		return true
+	}
+	if root == absPath {
+		return true
+	}
+	rel, err := filepath.Rel(root, absPath)
+	return err == nil && rel != "." && !isParentRel(rel)
+}
+
+func isParentRel(rel string) bool {
+	return rel == ".." || len(rel) > 3 && rel[:3] == ".."+string(filepath.Separator)
 }
 
 func IsCacheable(toolName string) bool {

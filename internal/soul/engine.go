@@ -443,7 +443,8 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 		if command, _ := args["command"].(string); command != "" {
 			if reason := shelltool.DangerousCommandReason(command); reason != "" {
 				desc := fmt.Sprintf("危险命令需要二次确认 (%s): %s", reason, command)
-				if e.Approver == nil || !e.Approver.RequestExplicit(name, desc) {
+				blocks := approvalDisplayBlocks(name, args)
+				if e.Approver == nil || !e.Approver.RequestExplicitWithDisplay(name, desc, blocks) {
 					result := fmt.Sprintf("危险命令未获用户二次确认，已拒绝执行: %s", reason)
 					e.Context.Messages = append(e.Context.Messages, chat.Message{
 						Role:       chat.RoleTool,
@@ -463,8 +464,8 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 
 	// Approval check for write tools
 	if e.Approver != nil && approval.IsWriteTool(name) && !dangerApproved {
-		desc := fmt.Sprintf("%s %v", name, args)
-		if !e.Approver.Request(name, desc) {
+		desc, blocks := approvalPreview(name, args)
+		if !e.Approver.RequestWithDisplay(name, desc, blocks) {
 			result := fmt.Sprintf("操作被用户拒绝: %s %v", name, args)
 			e.Context.Messages = append(e.Context.Messages, chat.Message{
 				Role:       chat.RoleTool,
@@ -522,6 +523,50 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 	e.triggerHook(hook.EventPostToolUse, name, map[string]any{"tool_call_id": tc.ID, "tool_name": name, "arguments": args, "result": finalResult, "error": errMsg})
 
 	return nil
+}
+
+func approvalPreview(name string, args map[string]any) (string, []display.Block) {
+	switch name {
+	case "write_file":
+		if preview, err := filetool.PreviewWrite(args); err == nil {
+			return preview.Summary, diffApprovalBlock(preview)
+		}
+	case "edit_file":
+		if preview, err := filetool.PreviewEdit(args); err == nil {
+			return preview.Summary, diffApprovalBlock(preview)
+		}
+	case "run_shell":
+		command, _ := args["command"].(string)
+		blocks := approvalDisplayBlocks(name, args)
+		if command != "" {
+			return "run_shell: " + command, blocks
+		}
+		return fmt.Sprintf("%s %v", name, args), blocks
+	}
+	return fmt.Sprintf("%s %v", name, args), nil
+}
+
+func diffApprovalBlock(preview filetool.Preview) []display.Block {
+	block, err := display.NewBlock(display.BlockDiff, preview.Path, display.DiffBlock{Path: preview.Path, Diff: preview.Diff})
+	if err != nil {
+		return nil
+	}
+	return []display.Block{block}
+}
+
+func approvalDisplayBlocks(name string, args map[string]any) []display.Block {
+	if name != "run_shell" {
+		return nil
+	}
+	command, _ := args["command"].(string)
+	if command == "" {
+		return nil
+	}
+	block, err := display.NewBlock(display.BlockShell, command, display.ShellBlock{Command: command})
+	if err != nil {
+		return nil
+	}
+	return []display.Block{block}
 }
 
 func (e *Engine) triggerHook(event hook.EventType, target string, inputData map[string]any) {

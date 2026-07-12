@@ -53,9 +53,21 @@ func TestCacheInvalidatePath(t *testing.T) {
 	c := New()
 	args := map[string]any{"path": path}
 	c.Set("read_file", args, "cached")
+	c.Set("read_file", map[string]any{"path": path, "offset": "2", "limit": "3"}, "partial cached")
+	other := filepath.Join(dir, "other.txt")
+	if err := os.WriteFile(other, []byte("two"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	c.Set("read_file", map[string]any{"path": other}, "other cached")
 	c.InvalidatePath(path)
 	if got, ok := c.Get("read_file", args); ok {
 		t.Fatalf("expected cache miss after invalidate, got %q", got)
+	}
+	if got, ok := c.Get("read_file", map[string]any{"path": path, "offset": "2", "limit": "3"}); ok {
+		t.Fatalf("expected partial read cache miss after invalidate, got %q", got)
+	}
+	if got, ok := c.Get("read_file", map[string]any{"path": other}); !ok || got != "other cached" {
+		t.Fatalf("expected other read cache preserved, got %q ok=%v", got, ok)
 	}
 }
 
@@ -127,15 +139,31 @@ func TestCacheRejectsUnmarshalableSearchArgs(t *testing.T) {
 }
 
 func TestCacheInvalidatePathClearsSearchCaches(t *testing.T) {
+	dir := t.TempDir()
+	changedDir := filepath.Join(dir, "changed")
+	otherDir := filepath.Join(dir, "other")
+	if err := os.MkdirAll(changedDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(otherDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 	c := New()
-	c.Set("glob", map[string]any{"pattern": "**/*.go"}, "matches")
-	c.Set("grep", map[string]any{"pattern": "Needle", "path": "."}, "hits")
-	c.InvalidatePath("changed.go")
-	if got, ok := c.Get("glob", map[string]any{"pattern": "**/*.go"}); ok {
+	changedGlobArgs := map[string]any{"pattern": "**/*.go", "path": changedDir}
+	changedGrepArgs := map[string]any{"pattern": "Needle", "path": changedDir}
+	otherGlobArgs := map[string]any{"pattern": "**/*.go", "path": otherDir}
+	c.Set("glob", changedGlobArgs, "changed matches")
+	c.Set("grep", changedGrepArgs, "changed hits")
+	c.Set("glob", otherGlobArgs, "other matches")
+	c.InvalidatePath(filepath.Join(changedDir, "changed.go"))
+	if got, ok := c.Get("glob", changedGlobArgs); ok {
 		t.Fatalf("expected glob cache invalidated, got %q", got)
 	}
-	if got, ok := c.Get("grep", map[string]any{"pattern": "Needle", "path": "."}); ok {
+	if got, ok := c.Get("grep", changedGrepArgs); ok {
 		t.Fatalf("expected grep cache invalidated, got %q", got)
+	}
+	if got, ok := c.Get("glob", otherGlobArgs); !ok || got != "other matches" {
+		t.Fatalf("expected unrelated glob cache preserved, got %q ok=%v", got, ok)
 	}
 }
 

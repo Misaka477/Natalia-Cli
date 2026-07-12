@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/display"
 )
@@ -66,6 +67,32 @@ func TestReadRequiresPath(t *testing.T) {
 	_, err := (&Read{}).Execute(map[string]any{})
 	if err == nil || !strings.Contains(err.Error(), `missing required parameter "path"`) {
 		t.Fatalf("expected missing path error, got %v", err)
+	}
+}
+
+func TestReadUsesInjectedGuardAndRejectsBinary(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "blocked.txt")
+	if err := os.WriteFile(path, []byte("alpha"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	guardErr := fmt.Errorf("blocked by policy")
+	_, err := (&Read{Guard: func(got string) error {
+		if got != path {
+			t.Fatalf("guard saw path %q want %q", got, path)
+		}
+		return guardErr
+	}}).Execute(map[string]any{"path": path})
+	if err != guardErr {
+		t.Fatalf("expected guard error, got %v", err)
+	}
+	binaryPath := filepath.Join(dir, "bin.dat")
+	if err := os.WriteFile(binaryPath, []byte{'a', 0, 'b'}, 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, err = (&Read{}).Execute(map[string]any{"path": binaryPath})
+	if err == nil || !strings.Contains(err.Error(), "binary file") {
+		t.Fatalf("expected binary read rejection, got %v", err)
 	}
 }
 
@@ -261,6 +288,38 @@ func TestWriteFileRequiresExistingParentAndReportsMetadata(t *testing.T) {
 	}
 	if string(data) != "one\ntwo" {
 		t.Fatalf("unexpected file content: %q", data)
+	}
+}
+
+func TestWriteExecuteReturnIncludesDiffDisplayForCreateAndOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "out.txt")
+	ret, err := (&Write{}).ExecuteReturn(map[string]any{"path": path, "content": "one\ntwo\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ret.ModelText, "已写入") || len(ret.Display) != 1 || ret.Display[0].Type != display.BlockDiff {
+		t.Fatalf("expected create diff display, got %+v", ret)
+	}
+	var payload display.DiffBlock
+	if err := json.Unmarshal(ret.Display[0].Data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(payload.Diff, "--- a/") || !strings.Contains(payload.Diff, "+one") {
+		t.Fatalf("unexpected create diff: %s", payload.Diff)
+	}
+	ret, err = (&Write{}).ExecuteReturn(map[string]any{"path": path, "content": "one\nTWO\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ret.Display) != 1 {
+		t.Fatalf("expected overwrite diff display, got %+v", ret)
+	}
+	if err := json.Unmarshal(ret.Display[0].Data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(payload.Diff, "-two") || !strings.Contains(payload.Diff, "+TWO") || !strings.Contains(payload.Diff, "@@") {
+		t.Fatalf("expected hunk diff for overwrite, got %s", payload.Diff)
 	}
 }
 
@@ -482,10 +541,39 @@ func TestEditReplaceAllNoMatchAndReplacementDiff(t *testing.T) {
 		t.Fatalf("no-match edit should not modify file, got %q", data)
 	}
 	diff := replacementDiff("file.txt", "old\nline", "new\nline")
-	for _, want := range []string{"--- file.txt", "+++ file.txt", "-old", "+new"} {
+	for _, want := range []string{"--- a/file.txt", "+++ b/file.txt", "-old", "+new"} {
 		if !strings.Contains(diff, want) {
 			t.Fatalf("expected diff to contain %q, got %q", want, diff)
 		}
+	}
+}
+
+func TestEditRejectsBinaryFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bin.dat")
+	if err := os.WriteFile(path, []byte{'a', 0, 'b'}, 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := (&Edit{}).ExecuteReturn(map[string]any{"path": path, "old_string": "a", "new_string": "b"})
+	if err == nil || !strings.Contains(err.Error(), "binary file") {
+		t.Fatalf("expected binary edit rejection, got %v", err)
+	}
+}
+
+func TestGrepAndGlobUseInjectedGuard(t *testing.T) {
+	guardErr := fmt.Errorf("blocked by policy")
+	guard := PathGuardFunc(func(path string) error {
+		if path == "" {
+			t.Fatal("guard path should not be empty")
+		}
+		return guardErr
+	})
+	_, err := (&Grep{Guard: guard}).Execute(map[string]any{"pattern": "x", "path": t.TempDir()})
+	if err != guardErr {
+		t.Fatalf("expected grep guard error, got %v", err)
+	}
+	_, err = (&Glob{Guard: guard}).Execute(map[string]any{"pattern": "**/*.go", "path": t.TempDir()})
+	if err != guardErr {
+		t.Fatalf("expected glob guard error, got %v", err)
 	}
 }
 
@@ -724,7 +812,7 @@ func TestGrepUsesRgBackendAndMapsArguments(t *testing.T) {
 	dir := t.TempDir()
 	argsPath := filepath.Join(dir, "args.txt")
 	fakeRG := filepath.Join(dir, "rg")
-	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\n' \"$@\" > %q\nprintf 'fake.go:1:fake\\n'\n", argsPath)
+	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\n' \"$@\" > %q\nprintf '%%s\n' '{\"type\":\"match\",\"data\":{\"path\":{\"text\":\"fake.go\"},\"lines\":{\"text\":\"fake\\n\"},\"line_number\":1}}'\n", argsPath)
 	if err := os.WriteFile(fakeRG, []byte(script), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -742,10 +830,30 @@ func TestGrepUsesRgBackendAndMapsArguments(t *testing.T) {
 		t.Fatal(err)
 	}
 	argText := string(args)
-	for _, want := range []string{"--ignore-case", "--glob", "**/*.go", "--type", "go", "--multiline", "--multiline-dotall", "--no-ignore", "--hidden", "--before-context", "1", "--after-context", "2"} {
+	for _, want := range []string{"--json", "--max-filesize", "10M", "--ignore-case", "--glob", "**/*.go", "--type", "go", "--multiline", "--multiline-dotall", "--no-ignore", "--hidden", "--before-context", "1", "--after-context", "2"} {
 		if !strings.Contains(argText, want) {
 			t.Fatalf("expected rg args to contain %q, got %q", want, argText)
 		}
+	}
+}
+
+func TestParseRGJSONContentHandlesColonPathContextAndLimit(t *testing.T) {
+	jsonLines := strings.Join([]string{
+		`{"type":"context","data":{"path":{"text":"dir/file:name.txt"},"lines":{"text":"before\n"},"line_number":1}}`,
+		`{"type":"match","data":{"path":{"text":"dir/file:name.txt"},"lines":{"text":"needle\n"},"line_number":2}}`,
+		`{"type":"match","data":{"path":{"text":"dir/file:name.txt"},"lines":{"text":"needle again\n"},"line_number":3}}`,
+	}, "\n")
+	result, err := parseRGJSONContent(jsonLines, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"dir/file:name.txt-1- before", "dir/file:name.txt:2: needle", "[grep results truncated at 1 matches]"} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("expected rg json result to contain %q, got %q", want, result)
+		}
+	}
+	if strings.Contains(result, "needle again") {
+		t.Fatalf("expected head_limit truncation before second match, got %q", result)
 	}
 }
 
@@ -791,6 +899,91 @@ func TestGrepFallbackRespectsGitignoreHiddenTypeAndMultiline(t *testing.T) {
 	}
 	if !strings.Contains(result, "visible.go: multiline match") {
 		t.Fatalf("expected multiline fallback match, got %q", result)
+	}
+}
+
+func TestGrepFallbackSkipsBinaryAndLargeFiles(t *testing.T) {
+	oldLookPath := rgLookPath
+	t.Cleanup(func() { rgLookPath = oldLookPath })
+	rgLookPath = func(string) (string, error) { return "", os.ErrNotExist }
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "small.txt"), []byte("needle\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "binary.txt"), []byte{'n', 'e', 'e', 'd', 'l', 'e', 0, '\n'}, 0644); err != nil {
+		t.Fatal(err)
+	}
+	large := strings.Repeat("x", maxGrepScannerFileBytes+1) + "needle\n"
+	if err := os.WriteFile(filepath.Join(dir, "large.txt"), []byte(large), 0644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := (&Grep{}).Execute(map[string]any{"pattern": "needle", "path": dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "small.txt") || strings.Contains(result, "binary.txt") || strings.Contains(result, "large.txt:1") || !strings.Contains(result, "[skipped") {
+		t.Fatalf("expected fallback grep to skip binary/large files, got %q", result)
+	}
+}
+
+func TestGrepFallbackTypeMappings(t *testing.T) {
+	oldLookPath := rgLookPath
+	t.Cleanup(func() { rgLookPath = oldLookPath })
+	rgLookPath = func(string) (string, error) { return "", os.ErrNotExist }
+	dir := t.TempDir()
+	files := map[string]string{
+		"main.rs":         "needle\n",
+		"Dockerfile":      "needle\n",
+		"style.scss":      "needle\n",
+		"schema.proto":    "needle\n",
+		"unrelated.go":    "needle\n",
+		"script.bash":     "needle\n",
+		"component.swift": "needle\n",
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cases := []struct{ typ, want string }{{"rust", "main.rs"}, {"dockerfile", "Dockerfile"}, {"scss", "style.scss"}, {"protobuf", "schema.proto"}, {"bash", "script.bash"}, {"swift", "component.swift"}}
+	for _, tc := range cases {
+		result, err := (&Grep{}).Execute(map[string]any{"pattern": "needle", "path": dir, "type": tc.typ})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(result, tc.want) || strings.Contains(result, "unrelated.go") {
+			t.Fatalf("type %s expected %s only, got %q", tc.typ, tc.want, result)
+		}
+	}
+}
+
+func TestGrepLargeRepoOutputSmoke(t *testing.T) {
+	oldLookPath := rgLookPath
+	t.Cleanup(func() { rgLookPath = oldLookPath })
+	rgLookPath = func(string) (string, error) { return "", os.ErrNotExist }
+	dir := t.TempDir()
+	for i := 0; i < 120; i++ {
+		sub := filepath.Join(dir, fmt.Sprintf("pkg%03d", i))
+		if err := os.MkdirAll(sub, 0755); err != nil {
+			t.Fatal(err)
+		}
+		for j := 0; j < 5; j++ {
+			content := fmt.Sprintf("package p\n// needle %d %d\n", i, j)
+			if err := os.WriteFile(filepath.Join(sub, fmt.Sprintf("file%d.go", j)), []byte(content), 0644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	start := time.Now()
+	result, err := (&Grep{}).Execute(map[string]any{"pattern": "needle", "path": dir, "type": "go", "head_limit": float64(7)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Fatalf("large repo grep smoke took too long: %s", time.Since(start))
+	}
+	if strings.Count(result, "needle") != 7 || !strings.Contains(result, "[grep results truncated at 7 matches]") || len(result) > 5000 {
+		t.Fatalf("expected bounded large repo output, len=%d result=%q", len(result), result)
 	}
 }
 
@@ -909,6 +1102,48 @@ func TestGlobRespectsGitignoreHiddenAndIncludeIgnored(t *testing.T) {
 		if !strings.Contains(result, want) {
 			t.Fatalf("expected include_ignored+hidden glob to contain %q, got %q", want, result)
 		}
+	}
+}
+
+func TestGlobGitignoreReincludeScope(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("*.txt\n!root-keep.txt\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	child := filepath.Join(dir, "child")
+	if err := os.MkdirAll(child, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(child, ".gitignore"), []byte("!child-keep.txt\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range []string{"root-drop.txt", "root-keep.txt", "child/child-keep.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, rel), []byte(rel), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := (&Glob{}).Execute(map[string]any{"pattern": "**/*.txt", "path": dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "root-keep.txt") || strings.Contains(result, "root-drop.txt") || strings.Contains(result, "child-keep.txt") {
+		t.Fatalf("expected negation to apply only within same .gitignore scope, got %q", result)
+	}
+
+	if err := os.WriteFile(filepath.Join(child, ".gitignore"), []byte("*.md\n!child-keep.md\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range []string{"child/child-drop.md", "child/child-keep.md"} {
+		if err := os.WriteFile(filepath.Join(dir, rel), []byte(rel), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err = (&Glob{}).Execute(map[string]any{"pattern": "**/*.md", "path": dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "child-keep.md") || strings.Contains(result, "child-drop.md") {
+		t.Fatalf("expected same-scope negation reinclude, got %q", result)
 	}
 }
 

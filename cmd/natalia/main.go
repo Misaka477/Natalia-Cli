@@ -21,6 +21,7 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/chat"
 	"github.com/Misaka477/Natalia-Cli/internal/compaction"
 	"github.com/Misaka477/Natalia-Cli/internal/config"
+	"github.com/Misaka477/Natalia-Cli/internal/filepolicy"
 	"github.com/Misaka477/Natalia-Cli/internal/hook"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	coremcp "github.com/Misaka477/Natalia-Cli/internal/mcp"
@@ -34,6 +35,7 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/snapshot"
 	"github.com/Misaka477/Natalia-Cli/internal/soul"
 	"github.com/Misaka477/Natalia-Cli/internal/term"
+	filetool "github.com/Misaka477/Natalia-Cli/internal/tools/file"
 	mcptools "github.com/Misaka477/Natalia-Cli/internal/tools/mcptools"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/skilltools"
 	workflowtools "github.com/Misaka477/Natalia-Cli/internal/tools/workflowtools"
@@ -129,6 +131,35 @@ func registerTools(r *toolset.Registry) {
 	if err := toolset.RegisterDefaultTools(r); err != nil {
 		fmt.Fprintf(os.Stderr, "加载默认工具失败: %v\n", err)
 	}
+	registerPolicyAwareFileTools(r, activeConfig)
+}
+
+func registerPolicyAwareFileTools(r *toolset.Registry, cfg *config.Config) {
+	policy := runtimeFilePolicy(cfg)
+	writeGuard := func(path string) error {
+		if err := policy.GuardWrite(path); err != nil {
+			return err
+		}
+		return plan.GuardWrite(path)
+	}
+	r.Register(&filetool.Read{Guard: policy.GuardRead})
+	r.Register(&filetool.Write{Guard: writeGuard})
+	r.Register(&filetool.Edit{Guard: writeGuard})
+	r.Register(&filetool.Grep{Guard: policy})
+	r.Register(&filetool.Glob{Guard: policy})
+}
+
+func runtimeFilePolicy(cfg *config.Config) filepolicy.Policy {
+	workDir := ""
+	if cfg != nil {
+		if eff, err := cfg.EffectiveProfile(runtime.Mode, runtime.ModelProfile, runtime.PermissionProfile); err == nil {
+			workDir = eff.Profile.WorkDir
+		}
+	}
+	if workDir == "" {
+		workDir, _ = os.Getwd()
+	}
+	return filepolicy.New(workDir, effectiveAdditionalDirs(cfg))
 }
 
 func loadMCPServers(cfg *config.Config, r *toolset.Registry, modeConfig *config.ModeProfile) error {

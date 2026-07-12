@@ -151,10 +151,11 @@ type Notification struct {
 }
 
 type ApprovalRequest struct {
-	ID          string `json:"id"`
-	ToolCallID  string `json:"tool_call_id,omitempty"`
-	Action      string `json:"action"`
-	Description string `json:"description"`
+	ID          string          `json:"id"`
+	ToolCallID  string          `json:"tool_call_id,omitempty"`
+	Action      string          `json:"action"`
+	Description string          `json:"description"`
+	Display     []display.Block `json:"display,omitempty"`
 }
 
 type ApprovalResponse struct {

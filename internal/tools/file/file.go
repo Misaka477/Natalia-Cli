@@ -2,8 +2,11 @@ package file
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Misaka477/Natalia-Cli/internal/diffutil"
 	"github.com/Misaka477/Natalia-Cli/internal/display"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	"github.com/Misaka477/Natalia-Cli/internal/toolreturn"
@@ -22,7 +26,9 @@ import (
 var rgLookPath = exec.LookPath
 var rgCommandContext = exec.CommandContext
 
-type Read struct{}
+type Read struct {
+	Guard WriteGuard
+}
 
 type ReadParams struct {
 	Path   string `json:"path" description:"文件绝对路径或相对路径"`
@@ -44,6 +50,16 @@ func (t *Read) Execute(args map[string]any) (string, error) {
 	params, err := toolschema.Decode[ReadParams](args)
 	if err != nil {
 		return "", err
+	}
+	if t.Guard != nil {
+		if err := t.Guard(params.Path); err != nil {
+			return "", err
+		}
+	}
+	if binary, err := looksBinaryFile(params.Path); err != nil {
+		return "", fmt.Errorf("read failed: %w", err)
+	} else if binary {
+		return "", fmt.Errorf("refusing to read binary file: %s", params.Path)
 	}
 	return RenderReadFilePath(params.Path, params.Offset, params.Limit)
 }
@@ -178,6 +194,20 @@ func writeNumberedLine(b *strings.Builder, lineNo int, text string, newline bool
 	}
 }
 
+func looksBinaryFile(path string) (bool, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer file.Close()
+	buf := make([]byte, 8192)
+	n, err := file.Read(buf)
+	if err != nil && n == 0 {
+		return false, nil
+	}
+	return bytes.IndexByte(buf[:n], 0) >= 0, nil
+}
+
 func parseLineLimit(offset, limit string, totalLines int) (int, int, bool, error) {
 	if totalLines < 1 {
 		totalLines = 1
@@ -246,37 +276,53 @@ func (t *Write) Parameters() map[string]llm.Property {
 	}
 }
 func (t *Write) Execute(args map[string]any) (string, error) {
+	ret, err := t.ExecuteReturn(args)
+	return ret.ModelText, err
+}
+
+func (t *Write) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 	path, _ := args["path"].(string)
 	content, _ := args["content"].(string)
 	if path == "" {
-		return "", fmt.Errorf("path required")
+		return toolreturn.Return{IsError: true}, fmt.Errorf("path required")
 	}
 	if t.Guard != nil {
 		if err := t.Guard(path); err != nil {
-			return "", err
+			return toolreturn.Return{IsError: true}, err
 		}
 	}
 	if strings.ContainsRune(content, '\x00') {
-		return "", fmt.Errorf("refusing to write binary content containing NUL bytes")
+		return toolreturn.Return{IsError: true}, fmt.Errorf("refusing to write binary content containing NUL bytes")
 	}
 	if len(content) > maxWriteFileBytes {
-		return "", fmt.Errorf("content too large: %d bytes exceeds %d byte limit", len(content), maxWriteFileBytes)
+		return toolreturn.Return{IsError: true}, fmt.Errorf("content too large: %d bytes exceeds %d byte limit", len(content), maxWriteFileBytes)
 	}
 	parent := filepath.Dir(path)
 	info, err := os.Stat(parent)
 	if err != nil {
-		return "", fmt.Errorf("parent directory check failed: %w", err)
+		return toolreturn.Return{IsError: true}, fmt.Errorf("parent directory check failed: %w", err)
 	}
 	if !info.IsDir() {
-		return "", fmt.Errorf("parent path is not a directory: %s", parent)
+		return toolreturn.Return{IsError: true}, fmt.Errorf("parent path is not a directory: %s", parent)
 	}
 	if info, err := os.Stat(path); err == nil && info.IsDir() {
-		return "", fmt.Errorf("refusing to overwrite directory: %s", path)
+		return toolreturn.Return{IsError: true}, fmt.Errorf("refusing to overwrite directory: %s", path)
+	}
+	preview, err := PreviewWrite(args)
+	if err != nil {
+		return toolreturn.Return{IsError: true}, err
 	}
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		return "", fmt.Errorf("write failed: %w", err)
+		return toolreturn.Return{IsError: true}, fmt.Errorf("write failed: %w", err)
 	}
-	return fmt.Sprintf("已写入 %s (%d bytes, %d lines)", path, len(content), countLines(content)), nil
+	modelText := fmt.Sprintf("已写入 %s (%d bytes, %d lines)", path, len(content), countLines(content))
+	if preview.Kind == "overwrite" || preview.Kind == "create" {
+		block, blockErr := display.NewBlock(display.BlockDiff, filepath.Base(path), display.DiffBlock{Path: path, Diff: preview.Diff})
+		if blockErr == nil {
+			return toolreturn.Return{ModelText: modelText, Display: []display.Block{block}}, nil
+		}
+	}
+	return toolreturn.Return{ModelText: modelText + "\n" + preview.Summary}, nil
 }
 
 func countLines(content string) int {
@@ -325,6 +371,9 @@ func (t *Edit) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return toolreturn.Return{IsError: true}, fmt.Errorf("read failed: %w", err)
+	}
+	if bytes.IndexByte(data, 0) >= 0 {
+		return toolreturn.Return{IsError: true}, fmt.Errorf("refusing to edit binary file: %s", path)
 	}
 	content := string(data)
 	newContent := content
@@ -390,24 +439,88 @@ func parseEditOperations(args map[string]any) ([]editOperation, error) {
 }
 
 func replacementDiff(path, before, after string) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "--- %s\n+++ %s\n", path, path)
-	beforeLines := strings.Split(before, "\n")
-	afterLines := strings.Split(after, "\n")
-	for _, line := range beforeLines {
-		b.WriteString("-")
-		b.WriteString(line)
-		b.WriteString("\n")
-	}
-	for _, line := range afterLines {
-		b.WriteString("+")
-		b.WriteString(line)
-		b.WriteString("\n")
-	}
-	return strings.TrimRight(b.String(), "\n")
+	return diffutil.Unified(path, before, after)
 }
 
-type Grep struct{}
+type Preview struct {
+	Tool    string
+	Path    string
+	Kind    string
+	Summary string
+	Diff    string
+}
+
+func PreviewWrite(args map[string]any) (Preview, error) {
+	path, _ := args["path"].(string)
+	content, _ := args["content"].(string)
+	if path == "" {
+		return Preview{}, fmt.Errorf("path required")
+	}
+	if strings.ContainsRune(content, '\x00') {
+		return Preview{}, fmt.Errorf("refusing to write binary content containing NUL bytes")
+	}
+	if len(content) > maxWriteFileBytes {
+		return Preview{}, fmt.Errorf("content too large: %d bytes exceeds %d byte limit", len(content), maxWriteFileBytes)
+	}
+	before := ""
+	kind := "create"
+	if data, err := os.ReadFile(path); err == nil {
+		before = string(data)
+		kind = "overwrite"
+	} else if !os.IsNotExist(err) {
+		return Preview{}, fmt.Errorf("read existing file failed: %w", err)
+	}
+	return Preview{Tool: "write_file", Path: path, Kind: kind, Summary: fmt.Sprintf("write_file %s %s (%d bytes, %d lines)", kind, path, len(content), countLines(content)), Diff: replacementDiff(path, before, content)}, nil
+}
+
+func PreviewEdit(args map[string]any) (Preview, error) {
+	path, _ := args["path"].(string)
+	if path == "" {
+		return Preview{}, fmt.Errorf("path required")
+	}
+	edits, err := parseEditOperations(args)
+	if err != nil {
+		return Preview{}, err
+	}
+	replaceAll, _ := args["replace_all"].(bool)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Preview{}, fmt.Errorf("read failed: %w", err)
+	}
+	if bytes.IndexByte(data, 0) >= 0 {
+		return Preview{}, fmt.Errorf("refusing to edit binary file: %s", path)
+	}
+	content := string(data)
+	newContent := content
+	totalReplacements := 0
+	for i, edit := range edits {
+		matches := strings.Count(newContent, edit.Old)
+		if matches == 0 {
+			return Preview{}, fmt.Errorf("edit %d old_string not found in %s", i+1, path)
+		}
+		replacements := 1
+		if replaceAll {
+			replacements = matches
+		}
+		newContent = strings.Replace(newContent, edit.Old, edit.New, replacements)
+		totalReplacements += replacements
+	}
+	return Preview{Tool: "edit_file", Path: path, Kind: "edit", Summary: fmt.Sprintf("edit_file %s (%d replacements)", path, totalReplacements), Diff: replacementDiff(path, content, newContent)}, nil
+}
+
+type SearchGuard interface {
+	GuardRead(path string) error
+}
+
+type PathGuardFunc func(path string) error
+
+func (fn PathGuardFunc) GuardRead(path string) error { return fn(path) }
+
+type Grep struct {
+	Guard SearchGuard
+}
+
+const maxGrepScannerFileBytes = 10 * 1024 * 1024
 
 func (t *Grep) Name() string { return "grep" }
 func (t *Grep) Description() string {
@@ -436,6 +549,11 @@ func (t *Grep) Execute(args map[string]any) (string, error) {
 	opts, err := parseGrepOptions(args)
 	if err != nil {
 		return "", err
+	}
+	if t.Guard != nil {
+		if err := t.Guard.GuardRead(opts.SearchPath); err != nil {
+			return "", err
+		}
 	}
 	if result, ok := grepWithRG(opts); ok {
 		return result, nil
@@ -507,7 +625,7 @@ func grepWithScanner(opts grepOptions) (string, error) {
 	truncated := false
 	walkErr := walkSearchFiles(opts.SearchPath, searchWalkOptions{IncludeIgnored: opts.IncludeIgnored, Hidden: opts.Hidden}, func(path string, info os.FileInfo) error {
 		if truncated {
-			return filepath.SkipDir
+			return filepath.SkipAll
 		}
 		if opts.Include != "" {
 			rel, _ := filepath.Rel(opts.SearchPath, path)
@@ -520,6 +638,12 @@ func grepWithScanner(opts grepOptions) (string, error) {
 			}
 		}
 		if opts.Type != "" && !fileMatchesType(path, opts.Type) {
+			return nil
+		}
+		if skip, reason := skipGrepScannerFile(path, info); skip {
+			if opts.OutputMode == "content" && reason != "binary" {
+				results = append(results, fmt.Sprintf("[skipped %s: %s]", path, reason))
+			}
 			return nil
 		}
 		lines, err := scanTextFileLines(path)
@@ -546,7 +670,7 @@ func grepWithScanner(opts grepOptions) (string, error) {
 			matches[i] = true
 			matchedFiles[path] = true
 			matchCount++
-			if opts.OutputMode == "content" && len(matchLines) >= opts.HeadLimit {
+			if opts.OutputMode == "content" && matchCount > opts.HeadLimit {
 				truncated = true
 				break
 			}
@@ -600,7 +724,12 @@ func grepWithRG(opts grepOptions) (string, bool) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	args := []string{"--color", "never", "--line-number", "--no-heading"}
+	args := []string{"--color", "never", "--max-filesize", "10M"}
+	if opts.OutputMode == "content" {
+		args = append(args, "--json")
+	} else {
+		args = append(args, "--line-number", "--no-heading")
+	}
 	if opts.IgnoreCase {
 		args = append(args, "--ignore-case")
 	}
@@ -654,8 +783,66 @@ func grepWithRG(opts grepOptions) (string, bool) {
 		sort.Strings(lines)
 		return strings.Join(lines, "\n"), true
 	default:
-		return limitRGContent(normalizeRGContent(text), opts.HeadLimit), true
+		result, err := parseRGJSONContent(text, opts.HeadLimit)
+		if err != nil {
+			return "", false
+		}
+		return result, true
 	}
+}
+
+type rgJSONEvent struct {
+	Type string     `json:"type"`
+	Data rgJSONData `json:"data"`
+}
+
+type rgJSONData struct {
+	Path       rgJSONText `json:"path"`
+	Lines      rgJSONText `json:"lines"`
+	LineNumber int        `json:"line_number"`
+}
+
+type rgJSONText struct {
+	Text string `json:"text"`
+}
+
+func parseRGJSONContent(text string, headLimit int) (string, error) {
+	var lines []string
+	matchCount := 0
+	truncated := false
+	for _, raw := range strings.Split(strings.TrimSpace(text), "\n") {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		var event rgJSONEvent
+		if err := json.Unmarshal([]byte(raw), &event); err != nil {
+			return "", err
+		}
+		if event.Type != "match" && event.Type != "context" {
+			continue
+		}
+		if event.Type == "match" {
+			matchCount++
+			if headLimit > 0 && matchCount > headLimit {
+				truncated = true
+				break
+			}
+		}
+		sep := "-"
+		if event.Type == "match" {
+			sep = ":"
+		}
+		line := strings.TrimRight(event.Data.Lines.Text, "\r\n")
+		lines = append(lines, fmt.Sprintf("%s%s%d%s %s", event.Data.Path.Text, sep, event.Data.LineNumber, sep, line))
+	}
+	if len(lines) == 0 {
+		return "未找到匹配", nil
+	}
+	if truncated {
+		lines = append(lines, fmt.Sprintf("[grep results truncated at %d matches]", headLimit))
+	}
+	return strings.Join(lines, "\n"), nil
 }
 
 func normalizeRGContent(text string) string {
@@ -735,6 +922,17 @@ func parseGrepOutputMode(args map[string]any) (string, error) {
 	default:
 		return "", fmt.Errorf("output_mode must be one of content, files, count")
 	}
+}
+
+func skipGrepScannerFile(path string, info os.FileInfo) (bool, string) {
+	if info != nil && info.Size() > maxGrepScannerFileBytes {
+		return true, fmt.Sprintf("file too large (%d bytes > %d bytes)", info.Size(), maxGrepScannerFileBytes)
+	}
+	binary, err := looksBinaryFile(path)
+	if err == nil && binary {
+		return true, "binary"
+	}
+	return false, ""
 }
 
 func scanTextFileLines(path string) ([]string, error) {
@@ -831,28 +1029,32 @@ type ignoreRule struct {
 func walkSearchFiles(root string, opts searchWalkOptions, fn func(path string, info os.FileInfo) error) error {
 	root = filepath.Clean(root)
 	var rules []ignoreRule
-	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		info, err := d.Info()
 		if err != nil {
 			return nil
 		}
 		if path != root {
-			if info.IsDir() && info.Name() == ".git" {
+			if d.IsDir() && d.Name() == ".git" {
 				return filepath.SkipDir
 			}
-			if !opts.Hidden && strings.HasPrefix(info.Name(), ".") {
-				if info.IsDir() {
+			if !opts.Hidden && strings.HasPrefix(d.Name(), ".") {
+				if d.IsDir() {
 					return filepath.SkipDir
 				}
 				return nil
 			}
-			if !opts.IncludeIgnored && ignoredByRules(root, path, info.IsDir(), rules) {
-				if info.IsDir() {
+			if !opts.IncludeIgnored && ignoredByRules(root, path, d.IsDir(), rules) {
+				if d.IsDir() {
 					return filepath.SkipDir
 				}
 				return nil
 			}
 		}
-		if info.IsDir() {
+		if d.IsDir() {
 			if !opts.IncludeIgnored {
 				rules = append(rules, readGitignoreRules(path)...)
 			}
@@ -898,12 +1100,21 @@ func readGitignoreRules(dir string) []ignoreRule {
 
 func ignoredByRules(root, path string, isDir bool, rules []ignoreRule) bool {
 	ignored := false
+	ignoredBase := ""
 	for _, rule := range rules {
 		if rule.DirOnly && !isDir {
 			continue
 		}
 		if ignoreRuleMatches(root, path, rule) {
-			ignored = !rule.Negate
+			if rule.Negate {
+				if ignored && rule.BaseDir == ignoredBase {
+					ignored = false
+					ignoredBase = ""
+				}
+				continue
+			}
+			ignored = true
+			ignoredBase = rule.BaseDir
 		}
 	}
 	return ignored
@@ -974,9 +1185,28 @@ func matchGlobParts(pattern, path []string) bool {
 
 func fileMatchesType(path, typeName string) bool {
 	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")
+	base := strings.ToLower(filepath.Base(path))
 	switch strings.ToLower(strings.TrimSpace(typeName)) {
 	case "go", "golang":
 		return ext == "go"
+	case "rs", "rust":
+		return ext == "rs"
+	case "rb", "ruby":
+		return ext == "rb"
+	case "java":
+		return ext == "java"
+	case "c":
+		return extIn(ext, "c", "h")
+	case "c++", "cpp", "cc":
+		return extIn(ext, "cc", "cpp", "cxx", "hpp", "hh", "hxx")
+	case "cs", "csharp":
+		return ext == "cs"
+	case "php":
+		return ext == "php"
+	case "swift":
+		return ext == "swift"
+	case "kt", "kotlin":
+		return ext == "kt" || ext == "kts"
 	case "md", "markdown":
 		return ext == "md" || ext == "markdown"
 	case "js", "javascript":
@@ -991,6 +1221,20 @@ func fileMatchesType(path, typeName string) bool {
 		return ext == "yaml" || ext == "yml"
 	case "txt", "text":
 		return ext == "txt"
+	case "sh", "bash", "shell":
+		return extIn(ext, "sh", "bash", "zsh", "fish") || base == "bashrc" || base == ".bashrc" || base == ".zshrc"
+	case "css", "scss", "less":
+		return extIn(ext, "css", "scss", "less")
+	case "html", "htm":
+		return ext == "html" || ext == "htm"
+	case "xml":
+		return extIn(ext, "xml", "svg", "plist")
+	case "toml":
+		return ext == "toml"
+	case "docker", "dockerfile":
+		return base == "dockerfile" || strings.HasPrefix(base, "dockerfile.")
+	case "proto", "protobuf":
+		return ext == "proto"
 	case "all", "":
 		return true
 	default:
@@ -998,7 +1242,18 @@ func fileMatchesType(path, typeName string) bool {
 	}
 }
 
-type Glob struct{}
+func extIn(ext string, values ...string) bool {
+	for _, value := range values {
+		if ext == value {
+			return true
+		}
+	}
+	return false
+}
+
+type Glob struct {
+	Guard SearchGuard
+}
 
 func (t *Glob) Name() string { return "glob" }
 func (t *Glob) Description() string {
@@ -1023,6 +1278,11 @@ func (t *Glob) Execute(args map[string]any) (string, error) {
 	searchPath, _ := args["path"].(string)
 	if searchPath == "" {
 		searchPath = "."
+	}
+	if t.Guard != nil {
+		if err := t.Guard.GuardRead(searchPath); err != nil {
+			return "", err
+		}
 	}
 	limit, err := parseIntArg(args, "limit", 0, 0, 10000)
 	if err != nil {

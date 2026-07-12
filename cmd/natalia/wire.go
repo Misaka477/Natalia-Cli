@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/config"
+	"github.com/Misaka477/Natalia-Cli/internal/display"
 	"github.com/Misaka477/Natalia-Cli/internal/hook"
 	"github.com/Misaka477/Natalia-Cli/internal/plan"
 	"github.com/Misaka477/Natalia-Cli/internal/session"
@@ -220,7 +221,7 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 	}
 	if engine.Approver != nil {
 		baseRequest := engine.Approver.RequestFunc
-		engine.Approver.RequestFunc = func(toolName, description string) bool {
+		engine.Approver.RequestDisplayFunc = func(toolName, description string, blocks []display.Block) bool {
 			approvalCtxMu.RLock()
 			ctx := approvalCtx
 			approvalCtxMu.RUnlock()
@@ -230,7 +231,7 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 			if baseRequest != nil {
 				return baseRequest(toolName, description)
 			}
-			return requestWireApproval(ctx, w, toolName, description)
+			return requestWireApproval(ctx, w, toolName, description, blocks)
 		}
 	}
 	if engine.Hooks != nil {
@@ -483,9 +484,9 @@ var approvalRequestSeq uint64
 
 var hookRequestSeq uint64
 
-func requestWireApproval(ctx context.Context, w *wire.Wire, toolName, description string) bool {
+func requestWireApproval(ctx context.Context, w *wire.Wire, toolName, description string, blocks []display.Block) bool {
 	id := fmt.Sprintf("approval_%d", atomic.AddUint64(&approvalRequestSeq, 1))
-	req, err := wire.NewRequest(id, wire.RequestApproval, wire.ApprovalRequest{ID: id, Action: toolName, Description: description})
+	req, err := wire.NewRequest(id, wire.RequestApproval, wire.ApprovalRequest{ID: id, Action: toolName, Description: description, Display: blocks})
 	if err != nil {
 		return false
 	}
