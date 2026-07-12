@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/aquama/natalia-cli/internal/approval"
@@ -13,7 +14,9 @@ import (
 	"github.com/aquama/natalia-cli/internal/contextbudget"
 	"github.com/aquama/natalia-cli/internal/llm"
 	"github.com/aquama/natalia-cli/internal/mode"
+	"github.com/aquama/natalia-cli/internal/prefetch"
 	"github.com/aquama/natalia-cli/internal/toolcache"
+	filetool "github.com/aquama/natalia-cli/internal/tools/file"
 	"github.com/aquama/natalia-cli/internal/toolset"
 )
 
@@ -88,6 +91,7 @@ type Engine struct {
 	// Context budget
 	ToolResultMaxChars int
 	ToolCache          *toolcache.Cache
+	PrefetchEnabled    bool
 }
 
 func (e *Engine) log(format string, args ...any) {
@@ -127,6 +131,7 @@ func NewEngine(llmClient *llm.Client, tools *toolset.Registry) *Engine {
 		cancel:             cancel,
 		ToolResultMaxChars: contextbudget.DefaultToolResultMaxChars,
 		ToolCache:          toolcache.New(),
+		PrefetchEnabled:    true,
 	}
 }
 
@@ -151,7 +156,26 @@ func (e *Engine) Run(userInput string) (*Outcome, error) {
 		})
 	}
 
+	e.prefetchReadOnly(userInput)
+
 	return e.turn()
+}
+
+func (e *Engine) prefetchReadOnly(input string) {
+	if !e.PrefetchEnabled || e.ToolCache == nil || e.Tools == nil {
+		return
+	}
+	go func() {
+		result := prefetch.Warm(e.ctx, prefetch.Options{
+			Tools: e.Tools,
+			Cache: e.ToolCache,
+			Mode:  e.Mode,
+			Input: input,
+		})
+		if result.Planned > 0 {
+			e.log("[ENGINE] prefetch: planned=%d cached=%d errors=%d", result.Planned, result.Cached, result.Errors)
+		}
+	}()
 }
 
 func (e *Engine) injectSteer() (string, error) {
@@ -424,7 +448,13 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 		e.ToolCache.Set(name, args, result)
 	}
 	if e.ToolCache != nil {
-		e.ToolCache.InvalidatePath(toolcache.MutatedPath(name, args, errMsg))
+		if toolcache.MutatesUnknownFiles(name, errMsg) {
+			e.ToolCache.InvalidateAll()
+		} else {
+			mutatedPath := toolcache.MutatedPath(name, args, errMsg)
+			e.ToolCache.InvalidatePath(mutatedPath)
+			e.refreshReadFileCache(mutatedPath)
+		}
 	}
 
 	e.Dedup.Record(name, args, result, errMsg)
@@ -441,6 +471,21 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 	e.emitToolResult(tc.ID, name, finalResult, errMsg)
 
 	return nil
+}
+
+func (e *Engine) refreshReadFileCache(path string) {
+	if path == "" || e.ToolCache == nil {
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	rendered, err := filetool.RenderReadFile(path, string(data), "", "")
+	if err != nil {
+		return
+	}
+	e.ToolCache.Set("read_file", map[string]any{"path": path}, rendered)
 }
 
 func (e *Engine) appendToolResult(toolCallID, name, content string) {

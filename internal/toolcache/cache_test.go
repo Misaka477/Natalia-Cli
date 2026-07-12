@@ -44,6 +44,77 @@ func TestCacheInvalidatePath(t *testing.T) {
 	}
 }
 
+func TestCacheReadFileNormalizesRelativeAndAbsolutePaths(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(path, []byte("one"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWd) })
+
+	c := New()
+	c.Set("read_file", map[string]any{"path": "file.txt"}, "cached")
+	if got, ok := c.Get("read_file", map[string]any{"path": path}); !ok || got != "cached" {
+		t.Fatalf("expected absolute path to hit relative-path cache, got %q ok=%v", got, ok)
+	}
+	c.InvalidatePath(path)
+	if got, ok := c.Get("read_file", map[string]any{"path": "file.txt"}); ok {
+		t.Fatalf("expected normalized invalidate to clear cache, got %q", got)
+	}
+}
+
+func TestCacheInvalidateAll(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(path, []byte("one"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	c := New()
+	c.Set("read_file", map[string]any{"path": path}, "cached")
+	c.Set("glob", map[string]any{"pattern": "**/*.go"}, "matches")
+	c.InvalidateAll()
+	if got, ok := c.Get("read_file", map[string]any{"path": path}); ok {
+		t.Fatalf("expected read cache invalidated, got %q", got)
+	}
+	if got, ok := c.Get("glob", map[string]any{"pattern": "**/*.go"}); ok {
+		t.Fatalf("expected glob cache invalidated, got %q", got)
+	}
+}
+
+func TestCacheGlobAndGrepUseStableArgs(t *testing.T) {
+	c := New()
+	argsA := map[string]any{"path": ".", "pattern": "**/*.go"}
+	argsB := map[string]any{"pattern": "**/*.go", "path": "."}
+	c.Set("glob", argsA, "matches")
+	if got, ok := c.Get("glob", argsB); !ok || got != "matches" {
+		t.Fatalf("expected stable glob cache hit, got %q ok=%v", got, ok)
+	}
+	c.Set("grep", map[string]any{"pattern": "Needle", "path": ".", "include": "*.go"}, "hits")
+	if got, ok := c.Get("grep", map[string]any{"include": "*.go", "path": ".", "pattern": "Needle"}); !ok || got != "hits" {
+		t.Fatalf("expected stable grep cache hit, got %q ok=%v", got, ok)
+	}
+}
+
+func TestCacheInvalidatePathClearsSearchCaches(t *testing.T) {
+	c := New()
+	c.Set("glob", map[string]any{"pattern": "**/*.go"}, "matches")
+	c.Set("grep", map[string]any{"pattern": "Needle", "path": "."}, "hits")
+	c.InvalidatePath("changed.go")
+	if got, ok := c.Get("glob", map[string]any{"pattern": "**/*.go"}); ok {
+		t.Fatalf("expected glob cache invalidated, got %q", got)
+	}
+	if got, ok := c.Get("grep", map[string]any{"pattern": "Needle", "path": "."}); ok {
+		t.Fatalf("expected grep cache invalidated, got %q", got)
+	}
+}
+
 func TestMutatedPathOnlyForSuccessfulWrites(t *testing.T) {
 	args := map[string]any{"path": "a.txt"}
 	if got := MutatedPath("write_file", args, ""); got != "a.txt" {
@@ -54,5 +125,17 @@ func TestMutatedPathOnlyForSuccessfulWrites(t *testing.T) {
 	}
 	if got := MutatedPath("read_file", args, ""); got != "" {
 		t.Fatalf("expected read_file not to mutate, got %q", got)
+	}
+}
+
+func TestMutatesUnknownFilesForSuccessfulShell(t *testing.T) {
+	if !MutatesUnknownFiles("run_shell", "") {
+		t.Fatal("expected successful shell to conservatively invalidate all caches")
+	}
+	if MutatesUnknownFiles("run_shell", "failed") {
+		t.Fatal("expected failed shell not to invalidate all caches")
+	}
+	if MutatesUnknownFiles("read_file", "") {
+		t.Fatal("expected read_file not to invalidate all caches")
 	}
 }

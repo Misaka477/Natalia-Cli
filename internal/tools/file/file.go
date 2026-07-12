@@ -39,12 +39,12 @@ func (t *Read) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read failed: %w", err)
 	}
-	return renderFileRead(params.Path, string(data), params.Offset, params.Limit)
+	return RenderReadFile(params.Path, string(data), params.Offset, params.Limit)
 }
 
 const defaultReadWindowLines = 100
 
-func renderFileRead(path, content, offset, limit string) (string, error) {
+func RenderReadFile(path, content, offset, limit string) (string, error) {
 	lines := strings.Split(content, "\n")
 	if content == "" {
 		lines = []string{""}

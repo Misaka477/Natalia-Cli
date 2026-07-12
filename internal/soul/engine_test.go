@@ -15,6 +15,7 @@ import (
 	"github.com/aquama/natalia-cli/internal/compaction"
 	"github.com/aquama/natalia-cli/internal/llm"
 	"github.com/aquama/natalia-cli/internal/mode"
+	filetool "github.com/aquama/natalia-cli/internal/tools/file"
 	"github.com/aquama/natalia-cli/internal/toolset"
 )
 
@@ -102,6 +103,14 @@ func (noOpWriteTool) Description() string                         { return "writ
 func (noOpWriteTool) Execute(args map[string]any) (string, error) { return "written", nil }
 func (noOpWriteTool) Parameters() map[string]llm.Property         { return nil }
 func (noOpWriteTool) Required() []string                          { return nil }
+
+type noOpShellTool struct{}
+
+func (noOpShellTool) Name() string                                { return "run_shell" }
+func (noOpShellTool) Description() string                         { return "shell test tool" }
+func (noOpShellTool) Execute(args map[string]any) (string, error) { return "shell ok", nil }
+func (noOpShellTool) Parameters() map[string]llm.Property         { return nil }
+func (noOpShellTool) Required() []string                          { return nil }
 
 func TestExecuteToolCallEmitsEvents(t *testing.T) {
 	tools := toolset.NewRegistry()
@@ -201,7 +210,7 @@ func TestExecuteToolCallSummarizesShellFailureInContext(t *testing.T) {
 	}
 }
 
-func TestExecuteToolCallCachesReadFileAndInvalidatesOnWrite(t *testing.T) {
+func TestExecuteToolCallCachesReadFileAndRefreshesAfterWrite(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "cached.txt")
 	if err := os.WriteFile(path, []byte("cached"), 0644); err != nil {
@@ -210,10 +219,10 @@ func TestExecuteToolCallCachesReadFileAndInvalidatesOnWrite(t *testing.T) {
 	reader := &countingReadTool{}
 	tools := toolset.NewRegistry()
 	tools.Register(reader)
-	tools.Register(noOpWriteTool{})
+	tools.Register(&filetool.Write{})
 	engine := NewEngine(nil, tools)
 
-	readCall := chat.ToolCall{ID: "tc_read", Type: "function", Function: chat.ToolCallFunc{Name: "read_file", Arguments: fmt.Sprintf(`{"path":%q,"offset":"1","limit":"10"}`, path)}}
+	readCall := chat.ToolCall{ID: "tc_read", Type: "function", Function: chat.ToolCallFunc{Name: "read_file", Arguments: fmt.Sprintf(`{"path":%q}`, path)}}
 	if err := engine.executeToolCall(readCall); err != nil {
 		t.Fatal(err)
 	}
@@ -231,8 +240,83 @@ func TestExecuteToolCallCachesReadFileAndInvalidatesOnWrite(t *testing.T) {
 	if err := engine.executeToolCall(readCall); err != nil {
 		t.Fatal(err)
 	}
+	if reader.count != 1 {
+		t.Fatalf("expected write_file to refresh read cache without re-executing read_file, executed %d times", reader.count)
+	}
+	last := engine.Context.Messages[len(engine.Context.Messages)-1].Content
+	if !strings.Contains(last, "1: new") {
+		t.Fatalf("expected refreshed cache to contain new file content, got %q", last)
+	}
+}
+
+func TestExecuteToolCallRefreshesReadCacheAfterEdit(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cached.txt")
+	if err := os.WriteFile(path, []byte("old value"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	reader := &countingReadTool{}
+	tools := toolset.NewRegistry()
+	tools.Register(reader)
+	tools.Register(&filetool.Edit{})
+	engine := NewEngine(nil, tools)
+
+	readCall := chat.ToolCall{ID: "tc_read", Type: "function", Function: chat.ToolCallFunc{Name: "read_file", Arguments: fmt.Sprintf(`{"path":%q}`, path)}}
+	if err := engine.executeToolCall(readCall); err != nil {
+		t.Fatal(err)
+	}
+	if reader.count != 1 {
+		t.Fatalf("expected initial read_file execution, got %d", reader.count)
+	}
+
+	editCall := chat.ToolCall{ID: "tc_edit", Type: "function", Function: chat.ToolCallFunc{Name: "edit_file", Arguments: fmt.Sprintf(`{"path":%q,"old_string":"old","new_string":"new"}`, path)}}
+	if err := engine.executeToolCall(editCall); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.executeToolCall(readCall); err != nil {
+		t.Fatal(err)
+	}
+	if reader.count != 1 {
+		t.Fatalf("expected edit_file to refresh read cache without re-executing read_file, executed %d times", reader.count)
+	}
+	last := engine.Context.Messages[len(engine.Context.Messages)-1].Content
+	if !strings.Contains(last, "1: new value") {
+		t.Fatalf("expected refreshed cache to contain edited file content, got %q", last)
+	}
+}
+
+func TestExecuteToolCallInvalidatesReadCacheAfterShell(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cached.txt")
+	if err := os.WriteFile(path, []byte("cached"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	reader := &countingReadTool{}
+	tools := toolset.NewRegistry()
+	tools.Register(reader)
+	tools.Register(noOpShellTool{})
+	engine := NewEngine(nil, tools)
+
+	readCall := chat.ToolCall{ID: "tc_read", Type: "function", Function: chat.ToolCallFunc{Name: "read_file", Arguments: fmt.Sprintf(`{"path":%q}`, path)}}
+	if err := engine.executeToolCall(readCall); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.executeToolCall(readCall); err != nil {
+		t.Fatal(err)
+	}
+	if reader.count != 1 {
+		t.Fatalf("expected cache hit before shell, executed %d times", reader.count)
+	}
+
+	shellCall := chat.ToolCall{ID: "tc_shell", Type: "function", Function: chat.ToolCallFunc{Name: "run_shell", Arguments: `{"command":"touch cached.txt"}`}}
+	if err := engine.executeToolCall(shellCall); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.executeToolCall(readCall); err != nil {
+		t.Fatal(err)
+	}
 	if reader.count != 2 {
-		t.Fatalf("expected read_file cache invalidated after write_file, executed %d times", reader.count)
+		t.Fatalf("expected shell to invalidate read_file cache, executed %d times", reader.count)
 	}
 }
 

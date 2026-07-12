@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aquama/natalia-cli/internal/autoflow"
+	"github.com/aquama/natalia-cli/internal/chat"
 	"github.com/aquama/natalia-cli/internal/config"
 	"github.com/aquama/natalia-cli/internal/session"
 	"github.com/aquama/natalia-cli/internal/soul"
@@ -144,6 +146,74 @@ func TestStatusLinesShowRuntimeRoutingDetails(t *testing.T) {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("expected status to contain %q, got:\n%s", want, joined)
 		}
+	}
+}
+
+func TestApplyAutoflowDecisionSwitchesToDebugPreservingState(t *testing.T) {
+	oldRuntime := runtime
+	runtime = runtimeOverrides{Mode: "code", ModelProfile: "cheap", PermissionProfile: "read_only"}
+	t.Cleanup(func() { runtime = oldRuntime })
+
+	cfg := &config.Config{
+		DefaultProfile: "default",
+		Providers:      map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}},
+		ModelProfiles: map[string]config.ModelProfile{
+			"cheap":     {Provider: "p", Model: "cheap-model"},
+			"strongest": {Provider: "p", Model: "strongest-model", ReasoningEffort: "high"},
+		},
+		PermissionProfiles: config.DefaultPermissionProfiles(),
+		Profiles: map[string]config.Profile{
+			"default": {Provider: "p", Model: "base", Mode: "code"},
+		},
+	}
+	tools := toolset.NewRegistry()
+	engine := buildEngine(cfg, tools, false)
+	engine.Context.Messages = append(engine.Context.Messages, chat.Message{Role: chat.RoleUser, Content: "user context"})
+	oldContext := engine.Context
+	oldCache := engine.ToolCache
+
+	applyAutoflowDecision(autoflow.Decision{Action: autoflow.ActionDebug, TargetMode: "debug"}, cfg, &engine, tools, false)
+	if runtime.Mode != "debug" || runtime.ModelProfile != "" || runtime.PermissionProfile != "" {
+		t.Fatalf("expected runtime switched to debug with cleared overrides, got %+v", runtime)
+	}
+	if engine.Mode == nil || engine.Mode.Name != "debug" {
+		t.Fatalf("expected rebuilt engine in debug mode, got %+v", engine.Mode)
+	}
+	if engine.Context != oldContext || engine.ToolCache != oldCache {
+		t.Fatal("expected escalation to preserve context and tool cache")
+	}
+	if len(engine.Context.Messages) < 2 || engine.Context.Messages[len(engine.Context.Messages)-1].Content != "user context" {
+		t.Fatalf("expected conversation context preserved, got %+v", engine.Context.Messages)
+	}
+}
+
+func TestApplyAutoflowDecisionRecoversPreviousModePreservingState(t *testing.T) {
+	oldRuntime := runtime
+	runtime = runtimeOverrides{Mode: "debug", ModelProfile: "cheap", PermissionProfile: "read_only"}
+	t.Cleanup(func() { runtime = oldRuntime })
+
+	cfg := &config.Config{
+		DefaultProfile: "default",
+		Providers:      map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}},
+		ModelProfiles: map[string]config.ModelProfile{
+			"cheap":     {Provider: "p", Model: "cheap-model"},
+			"strongest": {Provider: "p", Model: "strongest-model"},
+		},
+		PermissionProfiles: config.DefaultPermissionProfiles(),
+		Profiles: map[string]config.Profile{
+			"default": {Provider: "p", Model: "base", Mode: "code"},
+		},
+	}
+	tools := toolset.NewRegistry()
+	engine := buildEngine(cfg, tools, false)
+	oldContext := engine.Context
+
+	applyAutoflowDecision(autoflow.Decision{Action: autoflow.ActionRecoveredMode, TargetMode: "code"}, cfg, &engine, tools, false)
+	if runtime.Mode != "code" || runtime.ModelProfile != "" || runtime.PermissionProfile != "" {
+		t.Fatalf("expected runtime recovered to code with cleared overrides, got %+v", runtime)
+	}
+	if engine.Mode == nil || engine.Mode.Name != "code" || engine.Context != oldContext {
+		t.Fatalf("expected engine recovered to code preserving state, mode=%+v context=%v", engine.Mode, engine.Context == oldContext)
 	}
 }
 

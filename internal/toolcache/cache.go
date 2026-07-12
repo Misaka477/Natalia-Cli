@@ -1,8 +1,10 @@
 package toolcache
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -40,18 +42,28 @@ func (c *Cache) InvalidatePath(path string) {
 	if path == "" {
 		return
 	}
+	absPath, ok := normalizePath(path)
+	if !ok {
+		absPath = path
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	prefix := "read_file:" + path + ":"
+	prefix := "read_file:" + absPath + ":"
 	for key := range c.entries {
-		if len(key) >= len(prefix) && key[:len(prefix)] == prefix {
+		if (len(key) >= len(prefix) && key[:len(prefix)] == prefix) || (len(key) >= 5 && (key[:5] == "glob:" || key[:5] == "grep:")) {
 			delete(c.entries, key)
 		}
 	}
 }
 
+func (c *Cache) InvalidateAll() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries = make(map[string]string)
+}
+
 func IsCacheable(toolName string) bool {
-	return toolName == "read_file"
+	return toolName == "read_file" || toolName == "glob" || toolName == "grep"
 }
 
 func MutatedPath(toolName string, args map[string]any, errMsg string) string {
@@ -65,7 +77,18 @@ func MutatedPath(toolName string, args map[string]any, errMsg string) string {
 	return path
 }
 
+func MutatesUnknownFiles(toolName string, errMsg string) bool {
+	return errMsg == "" && toolName == "run_shell"
+}
+
 func keyFor(toolName string, args map[string]any) (string, bool) {
+	if toolName == "glob" || toolName == "grep" {
+		data, err := json.Marshal(args)
+		if err != nil {
+			return "", false
+		}
+		return toolName + ":" + string(data), true
+	}
 	if toolName != "read_file" {
 		return "", false
 	}
@@ -73,11 +96,23 @@ func keyFor(toolName string, args map[string]any) (string, bool) {
 	if path == "" {
 		return "", false
 	}
-	info, err := os.Stat(path)
+	absPath, ok := normalizePath(path)
+	if !ok {
+		return "", false
+	}
+	info, err := os.Stat(absPath)
 	if err != nil {
 		return "", false
 	}
 	offset, _ := args["offset"].(string)
 	limit, _ := args["limit"].(string)
-	return fmt.Sprintf("read_file:%s:%s:%s:%d:%d", path, offset, limit, info.ModTime().UnixNano(), info.Size()), true
+	return fmt.Sprintf("read_file:%s:%s:%s:%d:%d", absPath, offset, limit, info.ModTime().UnixNano(), info.Size()), true
+}
+
+func normalizePath(path string) (string, bool) {
+	absPath, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return "", false
+	}
+	return absPath, true
 }

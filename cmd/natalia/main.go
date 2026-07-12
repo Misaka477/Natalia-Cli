@@ -11,6 +11,7 @@ import (
 
 	"github.com/aquama/natalia-cli/internal/agentspec"
 	"github.com/aquama/natalia-cli/internal/approval"
+	"github.com/aquama/natalia-cli/internal/autoflow"
 	"github.com/aquama/natalia-cli/internal/chat"
 	"github.com/aquama/natalia-cli/internal/compaction"
 	"github.com/aquama/natalia-cli/internal/config"
@@ -195,6 +196,53 @@ func buildEngine(cfg *config.Config, tools *toolset.Registry, debug bool) *soul.
 	return engine
 }
 
+func rebuildEnginePreservingState(cfg *config.Config, old *soul.Engine, tools *toolset.Registry, debug bool) *soul.Engine {
+	engine := buildEngine(cfg, tools, debug)
+	if old == nil {
+		return engine
+	}
+	engine.Context = old.Context
+	engine.Snapshotter = old.Snapshotter
+	engine.ToolCache = old.ToolCache
+	if engine.Mode != nil {
+		applyModePrompt(engine, engine.Mode)
+	}
+	return engine
+}
+
+func applyModePrompt(engine *soul.Engine, m *mode.Mode) {
+	if engine == nil || m == nil || len(engine.Context.Messages) == 0 || engine.Context.Messages[0].Role != chat.RoleSystem {
+		return
+	}
+	msg := &engine.Context.Messages[0]
+	const modeSection = "\n\n当前 mode：\n"
+	if i := strings.Index(msg.Content, modeSection); i >= 0 {
+		msg.Content = msg.Content[:i]
+	}
+	msg.Content += modeSection + m.Prompt
+}
+
+func currentModeName(cfg *config.Config) string {
+	if cfg == nil {
+		return "code"
+	}
+	eff, err := cfg.EffectiveProfile(runtime.Mode, runtime.ModelProfile, runtime.PermissionProfile)
+	if err != nil || eff.Mode == "" {
+		return "code"
+	}
+	return eff.Mode
+}
+
+func applyAutoflowDecision(decision autoflow.Decision, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool) {
+	if decision.Action == autoflow.ActionNone || decision.TargetMode == "" {
+		return
+	}
+	runtime.Mode = decision.TargetMode
+	runtime.ModelProfile = ""
+	runtime.PermissionProfile = ""
+	*engine = rebuildEnginePreservingState(cfg, *engine, tools, debug)
+}
+
 func newLLMClient(pr *config.Profile, p *config.Provider) *llm.Client {
 	return llm.NewClient(llm.Config{
 		APIKey:          p.APIKey,
@@ -317,6 +365,7 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 	defer term.Close()
 
 	engine := buildEngine(cfg, tools, debug)
+	escalator := &autoflow.Escalator{Threshold: autoflow.DefaultFailureThreshold}
 	history := make([]string, 0)
 
 	if engine.LLM == nil && !noSetup {
@@ -441,6 +490,13 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 				sessStore.AppendMessage(currentSession.ID, chat.Message{Role: chat.RoleUser, Content: input})
 				sessStore.AppendMessage(currentSession.ID, chat.Message{Role: chat.RoleAssistant, Content: outcome.FinalMessage})
 			}
+			decision := escalator.Record(outcome, currentModeName(cfg))
+			applyAutoflowDecision(decision, cfg, &engine, tools, debug)
+			if decision.Action == autoflow.ActionDebug {
+				fmt.Fprintln(os.Stderr, "连续失败，已自动升级到 debug mode。输入 /status 可查看当前模型和权限。")
+			} else if decision.Action == autoflow.ActionRecoveredMode {
+				fmt.Fprintln(os.Stderr, "debug 修复完成，已自动回到之前的 mode。")
+			}
 		case <-sigCh:
 			signal.Stop(sigCh)
 			engine.Cancel()
@@ -510,15 +566,8 @@ func handleMode(input string, cfg *config.Config, engine **soul.Engine, tools *t
 	runtime.Mode = m.Name
 	runtime.ModelProfile = ""
 	runtime.PermissionProfile = ""
-	*engine = buildEngine(cfg, tools, debug)
-	if len((*engine).Context.Messages) > 0 && (*engine).Context.Messages[0].Role == chat.RoleSystem {
-		msg := &(*engine).Context.Messages[0]
-		const modeSection = "\n\n当前 mode：\n"
-		if i := strings.Index(msg.Content, modeSection); i >= 0 {
-			msg.Content = msg.Content[:i]
-		}
-		msg.Content += modeSection + m.Prompt
-	}
+	*engine = rebuildEnginePreservingState(cfg, *engine, tools, debug)
+	applyModePrompt(*engine, m)
 	fmt.Printf("✓ 已切换 mode: %s (%s)\n", m.Name, m.DisplayName)
 }
 
