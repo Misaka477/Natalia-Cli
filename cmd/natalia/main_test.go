@@ -18,6 +18,7 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/autoflow"
 	"github.com/Misaka477/Natalia-Cli/internal/chat"
 	"github.com/Misaka477/Natalia-Cli/internal/config"
+	"github.com/Misaka477/Natalia-Cli/internal/hook"
 	"github.com/Misaka477/Natalia-Cli/internal/planexec"
 	"github.com/Misaka477/Natalia-Cli/internal/session"
 	"github.com/Misaka477/Natalia-Cli/internal/soul"
@@ -185,6 +186,41 @@ func TestApplyAutoflowDecisionSwitchesToDebugPreservingState(t *testing.T) {
 	}
 	if len(engine.Context.Messages) < 2 || engine.Context.Messages[len(engine.Context.Messages)-1].Content != "user context" {
 		t.Fatalf("expected conversation context preserved, got %+v", engine.Context.Messages)
+	}
+}
+
+func TestBuildEngineAttachesConfiguredHooks(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{
+		DefaultProfile:     "default",
+		Providers:          map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}},
+		PermissionProfiles: config.DefaultPermissionProfiles(),
+		Profiles:           map[string]config.Profile{"default": {Provider: "p", Model: "base"}},
+		Hooks: []config.HookDef{
+			{ID: "notify", Event: "Notification", Target: "build", Command: "tee hook.json >/dev/null", Cwd: dir, TimeoutSec: 1},
+		},
+	}
+	engine := buildEngine(cfg, toolset.NewRegistry(), false)
+	if engine.Hooks == nil || len(engine.Hooks.Hooks()) != 1 {
+		t.Fatalf("expected buildEngine to attach configured hooks, got %+v", engine.Hooks)
+	}
+	if len(engine.InjectionProviders) == 0 {
+		t.Fatal("expected buildEngine to attach default injection providers")
+	}
+	results := engine.Hooks.Trigger(context.Background(), hook.EventNotification, "build", map[string]any{"message": "done"})
+	if len(results) != 1 || results[0].Error != "" {
+		t.Fatalf("expected configured hook to run, got %+v", results)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "hook.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var input hook.TriggerInput
+	if err := json.Unmarshal(raw, &input); err != nil {
+		t.Fatal(err)
+	}
+	if input.Event != hook.EventNotification || input.Target != "build" || input.InputData["message"] != "done" {
+		t.Fatalf("unexpected hook payload: %+v", input)
 	}
 }
 
@@ -621,6 +657,40 @@ func TestRequestWireApprovalApprovesResponse(t *testing.T) {
 	}
 }
 
+func TestRequestWireHookPublishesHookRequestAndReturnsResult(t *testing.T) {
+	hookRequestSeq = 0
+	w := wire.NewWire()
+	requests, cancel := w.UISide().SubscribeRaw()
+	defer cancel()
+
+	resultCh := make(chan hook.HookResult, 1)
+	go func() {
+		resultCh <- requestWireHook(context.Background(), w, hook.WireHookRequest{SubscriptionID: "sub_1", Event: hook.EventPreToolUse, Target: "read_file", InputData: map[string]any{"path": "README.md"}})
+	}()
+
+	msg := receiveWireMessageForTest(t, requests)
+	if msg.Request == nil || msg.Request.Type != wire.RequestHook || msg.Request.ID != "hook_1" {
+		t.Fatalf("expected hook request, got %+v", msg)
+	}
+	var payload wire.HookRequest
+	if err := json.Unmarshal(msg.Request.Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.SubscriptionID != "sub_1" || payload.Event != string(hook.EventPreToolUse) || payload.Target != "read_file" || payload.InputData["path"] != "README.md" {
+		t.Fatalf("unexpected hook request payload: %+v", payload)
+	}
+	w.ResolveResponse("hook_1", json.RawMessage(`{"status":"ok"}`))
+
+	select {
+	case result := <-resultCh:
+		if result.Error != "" || result.ID != "sub_1" || result.Event != hook.EventPreToolUse || result.Target != "read_file" || result.Stdout != `{"status":"ok"}` {
+			t.Fatalf("unexpected hook result: %+v", result)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("hook request did not receive response")
+	}
+}
+
 func TestConfigureEngineForWirePublishesCompactionEvents(t *testing.T) {
 	w := wire.NewWire()
 	msgs, cancel := w.UISide().SubscribeRaw()
@@ -746,6 +816,91 @@ func TestRunWireApprovalWritesFileEndToEnd(t *testing.T) {
 	}
 	if !hasWireEventType(t, collected, wire.EventToolResult) || !hasWireEventType(t, collected, wire.EventTurnEnd) || !hasWireRPCID(collected, `"prompt_approval"`) {
 		t.Fatalf("expected tool result, turn end, and prompt response, got %+v", collected)
+	}
+}
+
+func TestRunWirePromptWaitsForHookRequestResponseEndToEnd(t *testing.T) {
+	hookRequestSeq = 0
+	llmCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		llmCalls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"hook complete"}}],"usage":{"total_tokens":2}}`))
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		DefaultProfile: "default",
+		Providers: map[string]config.Provider{
+			"mock": {BaseURL: server.URL, APIKey: "test-key"},
+		},
+		PermissionProfiles: config.DefaultPermissionProfiles(),
+		Profiles: map[string]config.Profile{
+			"default": {Provider: "mock", Model: "mock-model", MaxSteps: 2, AutoApprove: "ask"},
+		},
+		Hooks: []config.HookDef{{ID: "wire-prompt", Event: string(hook.EventUserPromptSubmit), Target: "user_prompt"}},
+	}
+	tools := toolset.NewRegistry()
+	registerTools(tools)
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- runWire(cfg, tools, inR, outW, false)
+		_ = outW.Close()
+	}()
+
+	msgs, scanErr := scanWireOutput(outR)
+	_, _ = fmt.Fprintln(inW, `{"jsonrpc":"2.0","method":"prompt","id":"prompt_hook","params":{"user_input":"trigger hook"}}`)
+	hookID := ""
+	var collected []wire.RPCMessage
+	for hookID == "" {
+		msg := receiveRPCMessageForTest(t, msgs)
+		collected = append(collected, msg)
+		if msg.Method != wire.MethodRequest {
+			continue
+		}
+		var payload wire.TypedPayload
+		if err := json.Unmarshal(msg.Params, &payload); err != nil {
+			t.Fatalf("decode hook request params: %v", err)
+		}
+		if payload.Type != string(wire.RequestHook) {
+			continue
+		}
+		if err := json.Unmarshal(msg.ID, &hookID); err != nil {
+			t.Fatalf("decode hook id: %v", err)
+		}
+		var hookPayload wire.HookRequest
+		if err := json.Unmarshal(payload.Payload, &hookPayload); err != nil {
+			t.Fatalf("decode hook payload: %v", err)
+		}
+		if hookPayload.SubscriptionID != "wire-prompt" || hookPayload.Event != string(hook.EventUserPromptSubmit) || hookPayload.Target != "user_prompt" || hookPayload.InputData["user_input"] != "trigger hook" {
+			t.Fatalf("unexpected hook payload: %+v", hookPayload)
+		}
+	}
+	if llmCalls != 0 {
+		t.Fatalf("expected hook response before LLM request, llmCalls=%d", llmCalls)
+	}
+	_, _ = fmt.Fprintf(inW, `{"jsonrpc":"2.0","id":%q,"result":{"status":"ok"}}`+"\n", hookID)
+	_ = inW.Close()
+
+	for msg := range msgs {
+		collected = append(collected, msg)
+	}
+	if err := <-scanErr; err != nil {
+		t.Fatalf("scan output failed: %v", err)
+	}
+	if err := <-runErr; err != nil {
+		t.Fatalf("runWire failed: %v", err)
+	}
+	if llmCalls != 1 {
+		t.Fatalf("expected exactly one LLM request after hook response, got %d", llmCalls)
+	}
+	if !hasWireEventType(t, collected, wire.EventTurnEnd) || !hasWireRPCID(collected, `"prompt_hook"`) {
+		t.Fatalf("expected turn end and prompt response, got %+v", collected)
+	}
+	if wireEventIndex(t, collected, wire.EventTurnEnd) > wireRPCIDIndex(collected, `"prompt_hook"`) {
+		t.Fatalf("expected TurnEnd before prompt response, got %+v", collected)
 	}
 }
 

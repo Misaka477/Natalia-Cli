@@ -13,6 +13,7 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/compaction"
 	"github.com/Misaka477/Natalia-Cli/internal/contextbudget"
 	"github.com/Misaka477/Natalia-Cli/internal/display"
+	"github.com/Misaka477/Natalia-Cli/internal/hook"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	"github.com/Misaka477/Natalia-Cli/internal/mode"
 	"github.com/Misaka477/Natalia-Cli/internal/prefetch"
@@ -94,6 +95,12 @@ type Engine struct {
 	ToolResultMaxChars int
 	ToolCache          *toolcache.Cache
 	PrefetchEnabled    bool
+
+	// Hooks
+	Hooks *hook.Engine
+
+	// Dynamic injections
+	InjectionProviders []InjectionProvider
 }
 
 func (e *Engine) log(format string, args ...any) {
@@ -143,6 +150,7 @@ func (e *Engine) Run(userInput string) (*Outcome, error) {
 		return nil, fmt.Errorf("LLM 未配置，请先运行 /setup")
 	}
 	e.log("[ENGINE] Run: %s", userInput)
+	e.triggerHook(hook.EventUserPromptSubmit, "user_prompt", map[string]any{"user_input": userInput})
 	e.Context.Messages = append(e.Context.Messages, chat.Message{
 		Role:    chat.RoleUser,
 		Content: userInput,
@@ -161,7 +169,19 @@ func (e *Engine) Run(userInput string) (*Outcome, error) {
 
 	e.prefetchReadOnly(userInput)
 
-	return e.turn()
+	outcome, err := e.turn()
+	if err != nil {
+		e.triggerHook(hook.EventStopFailure, "run", map[string]any{"user_input": userInput, "error": err.Error()})
+		return nil, err
+	}
+	if outcome != nil && outcome.StopReason == "error" {
+		e.triggerHook(hook.EventStopFailure, "run", map[string]any{"user_input": userInput, "stop_reason": outcome.StopReason, "final_message": outcome.FinalMessage})
+		return outcome, nil
+	}
+	if outcome != nil {
+		e.triggerHook(hook.EventStop, "run", map[string]any{"user_input": userInput, "stop_reason": outcome.StopReason, "final_message": outcome.FinalMessage, "steps": outcome.Steps})
+	}
+	return outcome, nil
 }
 
 func (e *Engine) prefetchReadOnly(input string) {
@@ -222,9 +242,8 @@ func (e *Engine) agentLoop() *Outcome {
 				e.emitCompactEnd()
 				if err == nil {
 					e.Context.Messages = result.Messages
-					if e.OnCompact != nil {
-						e.OnCompact(fmt.Sprintf("压缩完成，估计 %d tokens", result.EstimatedTokens))
-					}
+					e.notifyContextCompacted()
+					e.notify("compaction", fmt.Sprintf("压缩完成，估计 %d tokens", result.EstimatedTokens))
 				}
 			}
 		}
@@ -281,6 +300,8 @@ func (e *Engine) step() *Outcome {
 	if e.OnStepBegin != nil {
 		e.OnStepBegin(e.Context.StepCount)
 	}
+	removeInjections := e.injectDynamicStepMessages()
+	defer removeInjections()
 
 	var msg *chat.Message
 	var usage *llm.Usage
@@ -461,10 +482,12 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 		if cached, ok := e.ToolCache.Get(name, args); ok {
 			e.appendToolResult(tc.ID, name, cached)
 			e.emitToolResult(tc.ID, name, cached, nil, "")
+			e.triggerHook(hook.EventPostToolUse, name, map[string]any{"tool_call_id": tc.ID, "tool_name": name, "arguments": args, "result": cached, "cached": true})
 			return nil
 		}
 	}
 
+	e.triggerHook(hook.EventPreToolUse, name, map[string]any{"tool_call_id": tc.ID, "tool_name": name, "arguments": args})
 	ret, err := toolset.Execute(tool, args)
 	result := ret.ModelText
 	errMsg := ""
@@ -496,8 +519,40 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 
 	e.appendToolResult(tc.ID, name, finalResult)
 	e.emitToolResult(tc.ID, name, finalResult, ret.Display, errMsg)
+	e.triggerHook(hook.EventPostToolUse, name, map[string]any{"tool_call_id": tc.ID, "tool_name": name, "arguments": args, "result": finalResult, "error": errMsg})
 
 	return nil
+}
+
+func (e *Engine) triggerHook(event hook.EventType, target string, inputData map[string]any) {
+	if e.Hooks == nil {
+		return
+	}
+	for _, result := range e.Hooks.Trigger(e.ctx, event, target, inputData) {
+		if result.Error != "" {
+			e.log("[HOOK] %s %s failed: %s", event, target, result.Error)
+			continue
+		}
+		e.log("[HOOK] %s %s completed in %s", event, target, result.Duration)
+	}
+}
+
+func (e *Engine) notify(target, message string) {
+	if e.OnCompact != nil {
+		e.OnCompact(message)
+	}
+	e.triggerHook(hook.EventNotification, target, map[string]any{"message": message})
+}
+
+func (e *Engine) notifyContextCompacted() {
+	for _, provider := range e.InjectionProviders {
+		if provider == nil {
+			continue
+		}
+		if err := provider.OnContextCompacted(); err != nil {
+			e.log("[INJECTION] compaction callback failed: %v", err)
+		}
+	}
 }
 
 func (e *Engine) refreshReadFileCache(path string) {

@@ -92,6 +92,16 @@ type Config struct {
 	Profiles           map[string]Profile           `yaml:"profiles"`
 	ModelProfiles      map[string]ModelProfile      `yaml:"model_profiles,omitempty"`
 	PermissionProfiles map[string]PermissionProfile `yaml:"permission_profiles,omitempty"`
+	Hooks              []HookDef                    `yaml:"hooks,omitempty"`
+}
+
+type HookDef struct {
+	ID         string `yaml:"id,omitempty"`
+	Event      string `yaml:"event"`
+	Target     string `yaml:"target,omitempty"`
+	Command    string `yaml:"command,omitempty"`
+	Cwd        string `yaml:"cwd,omitempty"`
+	TimeoutSec int    `yaml:"timeout_sec,omitempty"`
 }
 
 func Path() (string, error) {

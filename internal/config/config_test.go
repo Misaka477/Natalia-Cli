@@ -225,6 +225,7 @@ func TestConfigSaveLoadAndEffectiveProfileEndToEnd(t *testing.T) {
 		Profiles: map[string]Profile{
 			"default": {Provider: "local", Model: "base", ModelProfile: "cheap", PermissionProfile: "ask", Mode: "ask"},
 		},
+		Hooks: []HookDef{{ID: "pre-read", Event: "PreToolUse", Target: "read_file", Command: "printf hook", TimeoutSec: 2}},
 	}
 	if err := cfg.Save(); err != nil {
 		t.Fatal(err)
@@ -243,6 +244,9 @@ func TestConfigSaveLoadAndEffectiveProfileEndToEnd(t *testing.T) {
 	}
 	if eff.Mode != "ask" || eff.Profile.Model != "step-3.7-flash" || eff.Profile.Provider != "local" || eff.Approval != "read_only" || eff.Provider.AuthHeader != "X-Test-Auth" || eff.Provider.CustomHeaders["X-Model-Gateway"] != "local" {
 		t.Fatalf("loaded config did not produce expected runtime profile: %+v", eff)
+	}
+	if len(loaded.Hooks) != 1 || loaded.Hooks[0].ID != "pre-read" || loaded.Hooks[0].Target != "read_file" || loaded.Hooks[0].TimeoutSec != 2 {
+		t.Fatalf("loaded config did not preserve hooks: %+v", loaded.Hooks)
 	}
 }
 

@@ -10,11 +10,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/approval"
 	"github.com/Misaka477/Natalia-Cli/internal/chat"
 	"github.com/Misaka477/Natalia-Cli/internal/compaction"
 	"github.com/Misaka477/Natalia-Cli/internal/display"
+	"github.com/Misaka477/Natalia-Cli/internal/hook"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	"github.com/Misaka477/Natalia-Cli/internal/mode"
 	filetool "github.com/Misaka477/Natalia-Cli/internal/tools/file"
@@ -145,6 +147,21 @@ func (t *shelltoolForTest) Execute(args map[string]any) (string, error) {
 func (t *shelltoolForTest) Parameters() map[string]llm.Property { return nil }
 func (t *shelltoolForTest) Required() []string                  { return nil }
 
+type recordingInjectionProvider struct {
+	compacted int
+}
+
+func (p *recordingInjectionProvider) GetInjections(history []chat.Message, engine *Engine) ([]Injection, error) {
+	return nil, nil
+}
+
+func (p *recordingInjectionProvider) OnContextCompacted() error {
+	p.compacted++
+	return nil
+}
+
+func (p *recordingInjectionProvider) OnAfkChanged(bool) error { return nil }
+
 func TestExecuteToolCallEmitsEvents(t *testing.T) {
 	tools := toolset.NewRegistry()
 	tools.Register(eventTool{})
@@ -223,6 +240,55 @@ func TestExecuteToolCallRunsRealFileToolEndToEnd(t *testing.T) {
 	if len(results) != 1 || results[0].Name != "read_file" || !strings.Contains(results[0].Content, "engine-real-ok") {
 		t.Fatalf("expected real read_file result event, got %+v", results)
 	}
+}
+
+func TestExecuteToolCallTriggersPreAndPostHooksWithRealToolResult(t *testing.T) {
+	dir := t.TempDir()
+	readPath := filepath.Join(dir, "input.txt")
+	if err := os.WriteFile(readPath, []byte("hooked content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	prePath := filepath.Join(dir, "pre.json")
+	postPath := filepath.Join(dir, "post.json")
+	tools := toolset.NewRegistry()
+	tools.Register(&filetool.Read{})
+	engine := NewEngine(nil, tools)
+	engine.Hooks = hook.NewEngine([]hook.HookDef{
+		{ID: "pre", Event: hook.EventPreToolUse, Target: "read_file", Command: "tee pre.json >/dev/null", Cwd: dir, Timeout: time.Second},
+		{ID: "post", Event: hook.EventPostToolUse, Target: "read_file", Command: "tee post.json >/dev/null", Cwd: dir, Timeout: time.Second},
+	})
+	var emitted []ToolResultEvent
+	engine.OnToolResult = func(event ToolResultEvent) { emitted = append(emitted, event) }
+
+	err := engine.executeToolCall(chat.ToolCall{ID: "tc_hook", Type: "function", Function: chat.ToolCallFunc{Name: "read_file", Arguments: fmt.Sprintf(`{"path":%q,"limit":"all"}`, readPath)}})
+	if err != nil {
+		t.Fatalf("executeToolCall failed: %v", err)
+	}
+	if len(emitted) != 1 || !strings.Contains(emitted[0].Content, "hooked content") {
+		t.Fatalf("expected real read_file tool result, got %+v", emitted)
+	}
+	pre := readHookInput(t, prePath)
+	post := readHookInput(t, postPath)
+	if pre.Event != hook.EventPreToolUse || pre.Target != "read_file" || pre.InputData["tool_call_id"] != "tc_hook" {
+		t.Fatalf("unexpected pre hook input: %+v", pre)
+	}
+	postResult, _ := post.InputData["result"].(string)
+	if post.Event != hook.EventPostToolUse || post.Target != "read_file" || post.InputData["tool_call_id"] != "tc_hook" || !strings.Contains(postResult, "hooked content") {
+		t.Fatalf("unexpected post hook input: %+v", post)
+	}
+}
+
+func readHookInput(t *testing.T, path string) hook.TriggerInput {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read hook input %s: %v", path, err)
+	}
+	var input hook.TriggerInput
+	if err := json.Unmarshal(raw, &input); err != nil {
+		t.Fatalf("decode hook input %s: %v", path, err)
+	}
+	return input
 }
 
 func TestGetToolDefsRespectsModeFilter(t *testing.T) {
@@ -443,6 +509,8 @@ func TestExecuteToolCallInvalidatesReadCacheAfterShell(t *testing.T) {
 }
 
 func TestAgentLoopEmitsCompactionLifecycleCallbacks(t *testing.T) {
+	dir := t.TempDir()
+	notificationPath := filepath.Join(dir, "notification.json")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -479,19 +547,157 @@ func TestAgentLoopEmitsCompactionLifecycleCallbacks(t *testing.T) {
 	var events []string
 	engine.OnCompactBegin = func() { events = append(events, "compact_begin") }
 	engine.OnCompactEnd = func() { events = append(events, "compact_end") }
+	engine.OnCompact = func(message string) { events = append(events, "notification:"+message) }
 	engine.OnStepBegin = func(int) { events = append(events, "step_begin") }
+	engine.Hooks = hook.NewEngine([]hook.HookDef{{ID: "compact-notify", Event: hook.EventNotification, Target: "compaction", Command: "tee notification.json >/dev/null", Cwd: dir, Timeout: time.Second}})
+	provider := &recordingInjectionProvider{}
+	engine.InjectionProviders = []InjectionProvider{provider}
 
 	outcome := engine.agentLoop()
 	if outcome.StopReason != "no_tool_calls" || outcome.FinalMessage != "final" {
 		t.Fatalf("unexpected outcome: %+v", outcome)
 	}
-	want := []string{"compact_begin", "compact_end", "step_begin"}
+	if provider.compacted != 1 {
+		t.Fatalf("expected injection provider compaction callback once, got %d", provider.compacted)
+	}
+	want := []string{"compact_begin", "compact_end", "notification:", "step_begin"}
 	if len(events) != len(want) {
 		t.Fatalf("expected events %v, got %v", want, events)
 	}
 	for i := range want {
-		if events[i] != want[i] {
+		if !strings.HasPrefix(events[i], want[i]) {
 			t.Fatalf("expected events %v, got %v", want, events)
 		}
+	}
+	notification := readHookInput(t, notificationPath)
+	message, _ := notification.InputData["message"].(string)
+	if notification.Event != hook.EventNotification || notification.Target != "compaction" || !strings.HasPrefix(message, "压缩完成，估计 ") {
+		t.Fatalf("unexpected notification hook payload: %+v", notification)
+	}
+}
+
+func TestRunTriggersUserPromptSubmitHookBeforeLLMStep(t *testing.T) {
+	dir := t.TempDir()
+	hookPath := filepath.Join(dir, "prompt.json")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := os.Stat(hookPath); err != nil {
+			t.Errorf("expected UserPromptSubmit hook to run before LLM request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "content": "done"}}},
+			"usage":   map[string]any{"completion_tokens": 1, "total_tokens": 2},
+		})
+	}))
+	defer server.Close()
+
+	engine := NewEngine(llm.NewClient(llm.Config{BaseURL: server.URL, Model: "mock"}), toolset.NewRegistry())
+	engine.PrefetchEnabled = false
+	engine.Context.MaxSteps = 1
+	engine.Hooks = hook.NewEngine([]hook.HookDef{{ID: "prompt", Event: hook.EventUserPromptSubmit, Target: "user_prompt", Command: "tee prompt.json >/dev/null", Cwd: dir, Timeout: time.Second}})
+	outcome, err := engine.Run("please continue")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.FinalMessage != "done" || outcome.StopReason != "no_tool_calls" {
+		t.Fatalf("unexpected outcome: %+v", outcome)
+	}
+	input := readHookInput(t, hookPath)
+	if input.Event != hook.EventUserPromptSubmit || input.Target != "user_prompt" || input.InputData["user_input"] != "please continue" {
+		t.Fatalf("unexpected prompt hook payload: %+v", input)
+	}
+}
+
+func TestRunInjectsDynamicSystemMessageForStepOnly(t *testing.T) {
+	var seenMessages []chat.Message
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read request body: %v", err)
+		}
+		var req llm.ChatRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Errorf("decode request body: %v", err)
+		}
+		seenMessages = req.Messages
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "content": "done"}}},
+			"usage":   map[string]any{"completion_tokens": 1, "total_tokens": 2},
+		})
+	}))
+	defer server.Close()
+
+	engine := NewEngine(llm.NewClient(llm.Config{BaseURL: server.URL, Model: "mock"}), toolset.NewRegistry())
+	engine.PrefetchEnabled = false
+	engine.Context.MaxSteps = 1
+	engine.Context.Messages = append(engine.Context.Messages, chat.Message{Role: chat.RoleSystem, Content: "base system"})
+	engine.InjectionProviders = []InjectionProvider{SafetyInjectionProvider{}}
+	outcome, err := engine.Run("need safe action")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.FinalMessage != "done" {
+		t.Fatalf("unexpected outcome: %+v", outcome)
+	}
+	if len(seenMessages) != 3 || seenMessages[0].Content != "base system" || seenMessages[1].Role != chat.RoleSystem || !strings.Contains(seenMessages[1].Content, "Safety reminder") || seenMessages[2].Content != "need safe action" {
+		t.Fatalf("expected injected system message only in LLM request, got %+v", seenMessages)
+	}
+	if len(engine.Context.Messages) != 3 || strings.Contains(engine.Context.Messages[1].Content, "Safety reminder") {
+		t.Fatalf("dynamic injection leaked into persistent context: %+v", engine.Context.Messages)
+	}
+}
+
+func TestRunTriggersStopHookAfterSuccessfulTurn(t *testing.T) {
+	dir := t.TempDir()
+	hookPath := filepath.Join(dir, "stop.json")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "content": "completed"}}},
+			"usage":   map[string]any{"completion_tokens": 1, "total_tokens": 2},
+		})
+	}))
+	defer server.Close()
+
+	engine := NewEngine(llm.NewClient(llm.Config{BaseURL: server.URL, Model: "mock"}), toolset.NewRegistry())
+	engine.PrefetchEnabled = false
+	engine.Context.MaxSteps = 1
+	engine.Hooks = hook.NewEngine([]hook.HookDef{{ID: "stop", Event: hook.EventStop, Target: "run", Command: "tee stop.json >/dev/null", Cwd: dir, Timeout: time.Second}})
+	outcome, err := engine.Run("finish cleanly")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.StopReason != "no_tool_calls" || outcome.FinalMessage != "completed" {
+		t.Fatalf("unexpected outcome: %+v", outcome)
+	}
+	input := readHookInput(t, hookPath)
+	if input.Event != hook.EventStop || input.Target != "run" || input.InputData["user_input"] != "finish cleanly" || input.InputData["stop_reason"] != "no_tool_calls" || input.InputData["final_message"] != "completed" {
+		t.Fatalf("unexpected stop hook payload: %+v", input)
+	}
+}
+
+func TestRunTriggersStopFailureHookOnLLMError(t *testing.T) {
+	dir := t.TempDir()
+	hookPath := filepath.Join(dir, "failure.json")
+
+	engine := NewEngine(llm.NewClient(llm.Config{BaseURL: "http://127.0.0.1:1", Model: "mock"}), toolset.NewRegistry())
+	engine.PrefetchEnabled = false
+	engine.Context.MaxSteps = 1
+	engine.Hooks = hook.NewEngine([]hook.HookDef{{ID: "failure", Event: hook.EventStopFailure, Target: "run", Command: "tee failure.json >/dev/null", Cwd: dir, Timeout: time.Second}})
+	outcome, err := engine.Run("this will fail")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome == nil || outcome.StopReason != "error" {
+		t.Fatalf("expected error outcome, got %+v", outcome)
+	}
+	input := readHookInput(t, hookPath)
+	if input.Event != hook.EventStopFailure || input.Target != "run" || input.InputData["user_input"] != "this will fail" {
+		t.Fatalf("unexpected failure hook payload: %+v", input)
+	}
+	errorText, _ := input.InputData["final_message"].(string)
+	if !strings.Contains(errorText, "request") && !strings.Contains(errorText, "connect") {
+		t.Fatalf("expected LLM error in hook payload, got %+v", input)
 	}
 }

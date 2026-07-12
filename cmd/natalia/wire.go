@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 
 	"github.com/Misaka477/Natalia-Cli/internal/config"
+	"github.com/Misaka477/Natalia-Cli/internal/hook"
 	"github.com/Misaka477/Natalia-Cli/internal/session"
 	"github.com/Misaka477/Natalia-Cli/internal/soul"
 	"github.com/Misaka477/Natalia-Cli/internal/toolset"
@@ -106,6 +107,20 @@ func runWireWithOptions(cfg *config.Config, tools *toolset.Registry, in io.Reade
 				return baseRequest(toolName, description)
 			}
 			return requestWireApproval(ctx, w, toolName, description)
+		}
+	}
+	if engine.Hooks != nil {
+		engine.Hooks.OnWireHook = func(ctx context.Context, req hook.WireHookRequest) hook.HookResult {
+			approvalCtxMu.RLock()
+			activeCtx := approvalCtx
+			approvalCtxMu.RUnlock()
+			if activeCtx == nil {
+				activeCtx = ctx
+			}
+			if activeCtx == nil {
+				activeCtx = context.Background()
+			}
+			return requestWireHook(activeCtx, w, req)
 		}
 	}
 	return server.Run(context.Background())
@@ -213,6 +228,8 @@ func publishWireContent(w *wire.Wire, typ wire.ContentType, text string) {
 
 var approvalRequestSeq uint64
 
+var hookRequestSeq uint64
+
 func requestWireApproval(ctx context.Context, w *wire.Wire, toolName, description string) bool {
 	id := fmt.Sprintf("approval_%d", atomic.AddUint64(&approvalRequestSeq, 1))
 	req, err := wire.NewRequest(id, wire.RequestApproval, wire.ApprovalRequest{ID: id, Action: toolName, Description: description})
@@ -228,4 +245,21 @@ func requestWireApproval(ctx context.Context, w *wire.Wire, toolName, descriptio
 		return false
 	}
 	return resp.RequestID == id && (resp.Response == "approve" || resp.Response == "approved")
+}
+
+func requestWireHook(ctx context.Context, w *wire.Wire, hookReq hook.WireHookRequest) hook.HookResult {
+	id := fmt.Sprintf("hook_%d", atomic.AddUint64(&hookRequestSeq, 1))
+	result := hook.HookResult{ID: hookReq.SubscriptionID, Event: hookReq.Event, Target: hookReq.Target, Matched: true}
+	req, err := wire.NewRequest(id, wire.RequestHook, wire.HookRequest{ID: id, SubscriptionID: hookReq.SubscriptionID, Event: string(hookReq.Event), Target: hookReq.Target, InputData: hookReq.InputData})
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	raw, err := w.SoulSide.Request(ctx, req)
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	result.Stdout = string(raw)
+	return result
 }

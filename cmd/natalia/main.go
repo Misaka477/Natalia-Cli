@@ -16,6 +16,7 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/chat"
 	"github.com/Misaka477/Natalia-Cli/internal/compaction"
 	"github.com/Misaka477/Natalia-Cli/internal/config"
+	"github.com/Misaka477/Natalia-Cli/internal/hook"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	"github.com/Misaka477/Natalia-Cli/internal/mode"
 	"github.com/Misaka477/Natalia-Cli/internal/planexec"
@@ -110,6 +111,7 @@ func buildEngine(cfg *config.Config, tools *toolset.Registry, debug bool) *soul.
 	llmClient := newLLMClient(pr, p)
 
 	engine := soul.NewEngine(llmClient, tools)
+	engine.InjectionProviders = []soul.InjectionProvider{soul.SafetyInjectionProvider{}}
 	engine.Context.MaxSteps = pr.MaxSteps
 	if engine.Context.MaxSteps == 0 {
 		engine.Context.MaxSteps = 50
@@ -196,7 +198,19 @@ func buildEngine(cfg *config.Config, tools *toolset.Registry, debug bool) *soul.
 			fmt.Fprintf(os.Stderr, "[DEBUG] "+format+"\n", args...)
 		}
 	}
+	engine.Hooks = buildHookEngine(cfg)
 	return engine
+}
+
+func buildHookEngine(cfg *config.Config) *hook.Engine {
+	if cfg == nil || len(cfg.Hooks) == 0 {
+		return nil
+	}
+	hooks := make([]hook.HookDef, 0, len(cfg.Hooks))
+	for _, def := range cfg.Hooks {
+		hooks = append(hooks, hook.HookDef{ID: def.ID, Event: hook.EventType(def.Event), Target: def.Target, Command: def.Command, Cwd: def.Cwd, TimeoutSec: def.TimeoutSec})
+	}
+	return hook.NewEngine(hooks)
 }
 
 func rebuildEnginePreservingState(cfg *config.Config, old *soul.Engine, tools *toolset.Registry, debug bool) *soul.Engine {
