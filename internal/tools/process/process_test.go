@@ -10,7 +10,7 @@ import (
 )
 
 func resetManager() {
-	manager = processmgr.New()
+	processmgr.ResetDefaultManagerForTest()
 }
 
 func TestProcessStartStatusOutputList(t *testing.T) {

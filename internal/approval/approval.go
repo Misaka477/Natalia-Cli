@@ -16,11 +16,13 @@ const (
 )
 
 var WriteTools = map[string]bool{
-	"write_file":    true,
-	"edit_file":     true,
-	"run_shell":     true,
-	"process_start": true,
-	"process_stop":  true,
+	"write_file":       true,
+	"edit_file":        true,
+	"run_shell":        true,
+	"process_start":    true,
+	"process_stop":     true,
+	"background_start": true,
+	"background_stop":  true,
 }
 
 type Approver struct {

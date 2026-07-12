@@ -67,6 +67,16 @@ type Manager struct {
 	sessions map[string]*managedSession
 }
 
+var defaultManager = New()
+
+func DefaultManager() *Manager {
+	return defaultManager
+}
+
+func ResetDefaultManagerForTest() {
+	defaultManager = New()
+}
+
 type managedSession struct {
 	mu      sync.RWMutex
 	meta    Session
