@@ -70,7 +70,6 @@ type Wire struct {
 	SoulSide *WireSoulSide
 	uiSide   *WireUISide
 	raw      *broadcastQueue
-	merged   *broadcastQueue
 	pending  *pendingResponses
 	sinks    *syncSinks
 }
@@ -213,7 +212,6 @@ func NewRequest(id string, requestType RequestType, payload any) (WireRequest, e
 func NewWire() *Wire {
 	w := &Wire{
 		raw:     newBroadcastQueue(),
-		merged:  newBroadcastQueue(),
 		pending: newPendingResponses(),
 		sinks:   newSyncSinks(),
 	}
@@ -259,7 +257,6 @@ func (w *Wire) AddSink(fn func(WireMessage)) func() {
 
 func (s *WireSoulSide) publish(message WireMessage) {
 	s.wire.raw.publish(message)
-	s.wire.merged.publish(message)
 	s.wire.sinks.publish(message)
 }
 
@@ -268,7 +265,80 @@ func (u *WireUISide) SubscribeRaw() (<-chan WireMessage, func()) {
 }
 
 func (u *WireUISide) SubscribeMerged() (<-chan WireMessage, func()) {
-	return u.wire.merged.subscribe()
+	raw, cancelRaw := u.wire.raw.subscribe()
+	out := make(chan WireMessage, 16)
+	done := make(chan struct{})
+	var once sync.Once
+
+	go func() {
+		defer close(out)
+		var pending *ContentPart
+		flush := func() bool {
+			if pending == nil {
+				return true
+			}
+			event, err := NewEvent(EventContentPart, *pending)
+			pending = nil
+			if err != nil {
+				return true
+			}
+			return sendMerged(out, done, WireMessage{Kind: MessageEvent, Event: &event})
+		}
+		for {
+			select {
+			case <-done:
+				return
+			case msg, ok := <-raw:
+				if !ok {
+					flush()
+					return
+				}
+				part, ok := messageContentPart(msg)
+				if !ok {
+					if !flush() || !sendMerged(out, done, msg) {
+						return
+					}
+					continue
+				}
+				if pending != nil && pending.Type == part.Type {
+					pending.Text += part.Text
+					continue
+				}
+				if !flush() {
+					return
+				}
+				pending = &ContentPart{Type: part.Type, Text: part.Text}
+			}
+		}
+	}()
+
+	cancel := func() {
+		once.Do(func() {
+			close(done)
+			cancelRaw()
+		})
+	}
+	return out, cancel
+}
+
+func messageContentPart(msg WireMessage) (ContentPart, bool) {
+	if msg.Kind != MessageEvent || msg.Event == nil || msg.Event.Type != EventContentPart {
+		return ContentPart{}, false
+	}
+	var part ContentPart
+	if err := json.Unmarshal(msg.Event.Payload, &part); err != nil {
+		return ContentPart{}, false
+	}
+	return part, true
+}
+
+func sendMerged(out chan<- WireMessage, done <-chan struct{}, msg WireMessage) bool {
+	select {
+	case out <- msg:
+		return true
+	case <-done:
+		return false
+	}
 }
 
 func marshalPayload(payload any) (json.RawMessage, error) {

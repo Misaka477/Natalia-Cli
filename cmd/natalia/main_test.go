@@ -1499,6 +1499,61 @@ func TestBridgeWorkerEventsPublishesSubagentWireEvents(t *testing.T) {
 	}
 }
 
+func TestInteractiveWireRendererRendersContentStatusAndNotification(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	w, stop := startInteractiveWireRenderer(&out, &errOut)
+
+	publishWireContent(w, wire.ContentThink, "thinking")
+	publishWireContent(w, wire.ContentText, "answer")
+	running := true
+	elapsed := int64(1500)
+	status, err := wire.NewEvent(wire.EventStatusUpdate, wire.StatusUpdate{TurnRunning: &running, TurnElapsedMS: &elapsed})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.SoulSide.PublishEvent(status)
+	notification, err := wire.NewEvent(wire.EventNotification, wire.Notification{Title: "Background task completed", Message: "proc_1 exited"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.SoulSide.PublishEvent(notification)
+	end, err := wire.NewEvent(wire.EventTurnEnd, wire.TurnEnd{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.SoulSide.PublishEvent(end)
+	stop()
+
+	if !strings.Contains(out.String(), "thinking") || !strings.Contains(out.String(), "answer") || !strings.Contains(out.String(), "\x1b[38;5;245m") || !strings.Contains(out.String(), "\x1b[0m") {
+		t.Fatalf("expected renderer output to include reasoning color and answer, got %q", out.String())
+	}
+	if !strings.Contains(errOut.String(), "[elapsed 1s]") || !strings.Contains(errOut.String(), "Background task completed") || !strings.Contains(errOut.String(), "proc_1 exited") {
+		t.Fatalf("expected stderr renderer output to include elapsed status and notification, got %q", errOut.String())
+	}
+}
+
+func TestConfigureEngineForWireFeedsInteractiveRenderer(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	w, stop := startInteractiveWireRenderer(&out, &errOut)
+	engine := soul.NewEngine(nil, toolset.NewRegistry())
+	configureEngineForWire(engine, w)
+
+	engine.OnReasoning("reason")
+	engine.OnToken("final")
+	end, err := wire.NewEvent(wire.EventTurnEnd, wire.TurnEnd{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.SoulSide.PublishEvent(end)
+	stop()
+
+	if !strings.Contains(out.String(), "reason") || !strings.Contains(out.String(), "final") {
+		t.Fatalf("expected engine callbacks to render through wire, got %q", out.String())
+	}
+}
+
 func decodeWireRPCOutput(t *testing.T, output string) []wire.RPCMessage {
 	t.Helper()
 	lines := strings.Split(strings.TrimSpace(output), "\n")

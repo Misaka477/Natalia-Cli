@@ -128,6 +128,70 @@ func TestWireBroadcastsSoulMessagesToSubscribers(t *testing.T) {
 	}
 }
 
+func TestSubscribeMergedCoalescesConsecutiveContentParts(t *testing.T) {
+	w := NewWire()
+	ch, cancel := w.UISide().SubscribeMerged()
+	defer cancel()
+
+	publishContentForTest(t, w, ContentText, "hello")
+	publishContentForTest(t, w, ContentText, " world")
+	publishEventForTest(t, w, EventTurnEnd, TurnEnd{})
+
+	part := receiveContentPart(t, "merged content", ch)
+	if part.Type != ContentText || part.Text != "hello world" {
+		t.Fatalf("expected merged text content, got %+v", part)
+	}
+	msg := receiveWireMessage(t, "turn end", ch)
+	if msg.Event == nil || msg.Event.Type != EventTurnEnd {
+		t.Fatalf("expected TurnEnd after content flush, got %+v", msg)
+	}
+}
+
+func TestSubscribeMergedFlushesOnContentTypeSwitch(t *testing.T) {
+	w := NewWire()
+	ch, cancel := w.UISide().SubscribeMerged()
+	defer cancel()
+
+	publishContentForTest(t, w, ContentText, "answer")
+	publishContentForTest(t, w, ContentThink, "reasoning")
+	publishEventForTest(t, w, EventTurnEnd, TurnEnd{})
+
+	text := receiveContentPart(t, "text", ch)
+	if text.Type != ContentText || text.Text != "answer" {
+		t.Fatalf("expected text part before reasoning, got %+v", text)
+	}
+	think := receiveContentPart(t, "think", ch)
+	if think.Type != ContentThink || think.Text != "reasoning" {
+		t.Fatalf("expected reasoning part after type switch, got %+v", think)
+	}
+	msg := receiveWireMessage(t, "turn end", ch)
+	if msg.Event == nil || msg.Event.Type != EventTurnEnd {
+		t.Fatalf("expected TurnEnd after reasoning flush, got %+v", msg)
+	}
+}
+
+func TestSubscribeMergedPassesRequestsAfterFlushingContent(t *testing.T) {
+	w := NewWire()
+	ch, cancel := w.UISide().SubscribeMerged()
+	defer cancel()
+
+	publishContentForTest(t, w, ContentText, "before approval")
+	req, err := NewRequest("req_1", RequestApproval, ApprovalRequest{ID: "req_1", Action: "write_file"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.SoulSide.PublishRequest(req)
+
+	part := receiveContentPart(t, "flushed content", ch)
+	if part.Text != "before approval" {
+		t.Fatalf("expected content before request, got %+v", part)
+	}
+	msg := receiveWireMessage(t, "request", ch)
+	if msg.Request == nil || msg.Request.ID != "req_1" {
+		t.Fatalf("expected request after flushed content, got %+v", msg)
+	}
+}
+
 func TestWireBroadcastsRequests(t *testing.T) {
 	w := NewWire()
 	ch, cancel := w.UISide().SubscribeRaw()
@@ -195,4 +259,31 @@ func receiveWireMessage(t *testing.T, name string, ch <-chan WireMessage) WireMe
 		t.Fatalf("%s subscriber did not receive message", name)
 		return WireMessage{}
 	}
+}
+
+func receiveContentPart(t *testing.T, name string, ch <-chan WireMessage) ContentPart {
+	t.Helper()
+	msg := receiveWireMessage(t, name, ch)
+	if msg.Event == nil || msg.Event.Type != EventContentPart {
+		t.Fatalf("expected ContentPart event, got %+v", msg)
+	}
+	var part ContentPart
+	if err := json.Unmarshal(msg.Event.Payload, &part); err != nil {
+		t.Fatalf("unmarshal content part: %v", err)
+	}
+	return part
+}
+
+func publishContentForTest(t *testing.T, w *Wire, typ ContentType, text string) {
+	t.Helper()
+	publishEventForTest(t, w, EventContentPart, ContentPart{Type: typ, Text: text})
+}
+
+func publishEventForTest(t *testing.T, w *Wire, typ EventType, payload any) {
+	t.Helper()
+	event, err := NewEvent(typ, payload)
+	if err != nil {
+		t.Fatalf("NewEvent(%s) failed: %v", typ, err)
+	}
+	w.SoulSide.PublishEvent(event)
 }

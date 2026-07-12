@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -38,6 +39,7 @@ import (
 	workflowtools "github.com/Misaka477/Natalia-Cli/internal/tools/workflowtools"
 	"github.com/Misaka477/Natalia-Cli/internal/toolset"
 	"github.com/Misaka477/Natalia-Cli/internal/ui"
+	"github.com/Misaka477/Natalia-Cli/internal/wire"
 	"github.com/Misaka477/Natalia-Cli/internal/worker"
 	workflowcore "github.com/Misaka477/Natalia-Cli/internal/workflow"
 	"github.com/peterh/liner"
@@ -671,6 +673,9 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 	defer persistCurrentSessionState()
 
 	engine := buildEngine(cfg, tools, debug)
+	wireRuntime, stopWireRenderer := startInteractiveWireRenderer(os.Stdout, os.Stderr)
+	defer stopWireRenderer()
+	configureEngineForWire(engine, wireRuntime)
 	escalator := &autoflow.Escalator{Threshold: autoflow.DefaultFailureThreshold}
 	autoEnabled := true
 	history := make([]string, 0)
@@ -717,7 +722,7 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 	}
 
 	registerAgentToolsForEngine(cfg, engine, tools)
-	detachRuntimeEvents := bridgeRuntimeEvents(engine, nil)
+	detachRuntimeEvents := bridgeRuntimeEvents(engine, wireRuntime)
 	defer detachRuntimeEvents()
 
 	for {
@@ -741,6 +746,7 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 
 		if strings.HasPrefix(input, "/") {
 			handleSlashCommand(input, &cfg, &engine, tools, debug, &autoEnabled, escalator)
+			configureEngineForWire(engine, wireRuntime)
 			continue
 		}
 
@@ -750,7 +756,12 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 		}
 
 		engine.ResetCancel()
-		stopElapsed := startTurnElapsedDisplay(os.Stderr, time.Now(), time.Second)
+		inputPayload, _ := json.Marshal(input)
+		if event, err := wire.NewEvent(wire.EventTurnBegin, wire.TurnBegin{UserInput: inputPayload}); err == nil {
+			wireRuntime.SoulSide.PublishEvent(event)
+		}
+		turnStarted := time.Now()
+		stopTurnStatus := startWireTurnStatusTicker(wireRuntime, cfg, func() *soul.Engine { return engine }, turnStarted, time.Second)
 
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, os.Interrupt)
@@ -767,7 +778,7 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 
 		select {
 		case r := <-done:
-			stopElapsed()
+			stopTurnStatus()
 			signal.Stop(sigCh)
 			if r.err != nil {
 				if r.err.Error() == "context canceled" {
@@ -778,18 +789,19 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 				continue
 			}
 			outcome := r.out
-			stream := false
-			if pr, _, err := cfg.ActiveProfile(); err == nil {
-				stream = pr.Stream
-			}
-			if outcome.FinalMessage != "" && !stream {
-				fmt.Println(outcome.FinalMessage)
-			}
-			if outcome.FinalMessage != "" && stream {
-				fmt.Println()
+			if outcome.FinalMessage != "" && !engine.Stream {
+				publishWireContent(wireRuntime, wire.ContentText, outcome.FinalMessage)
 			}
 			if outcome.FinalMessage == "" && outcome.StopReason == "error" {
 				fmt.Fprintf(os.Stderr, "\n错误: %s\n", outcome.FinalMessage)
+			}
+			if event, err := wire.NewEvent(wire.EventTurnEnd, wire.TurnEnd{}); err == nil {
+				wireRuntime.SoulSide.PublishEvent(event)
+			}
+			status := runtimeStatusUpdate(cfg, engine)
+			setTurnElapsed(&status, turnStarted, false)
+			if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
+				wireRuntime.SoulSide.PublishEvent(event)
 			}
 			if currentSession != nil {
 				sessStore.AppendMessage(currentSession.ID, chat.Message{Role: chat.RoleUser, Content: input})
@@ -797,6 +809,8 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 			}
 			decision := maybeRecordAutoflow(autoEnabled, escalator, outcome, cfg)
 			applyAutoflowDecision(decision, cfg, &engine, tools, debug)
+			registerAgentToolsForEngine(cfg, engine, tools)
+			configureEngineForWire(engine, wireRuntime)
 			persistCurrentSessionState()
 			if decision.Action == autoflow.ActionDebug {
 				fmt.Fprintln(os.Stderr, "连续失败，已自动升级到 debug mode。输入 /status 可查看当前模型和权限。")
@@ -807,7 +821,7 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 			signal.Stop(sigCh)
 			engine.Cancel()
 			<-done
-			stopElapsed()
+			stopTurnStatus()
 			fmt.Println("\n⏹ 已停止")
 		}
 	}
