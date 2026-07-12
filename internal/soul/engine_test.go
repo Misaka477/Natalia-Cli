@@ -20,6 +20,7 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	"github.com/Misaka477/Natalia-Cli/internal/mode"
 	"github.com/Misaka477/Natalia-Cli/internal/notifications"
+	"github.com/Misaka477/Natalia-Cli/internal/plan"
 	filetool "github.com/Misaka477/Natalia-Cli/internal/tools/file"
 	shelltool "github.com/Misaka477/Natalia-Cli/internal/tools/shell"
 	"github.com/Misaka477/Natalia-Cli/internal/toolset"
@@ -183,6 +184,36 @@ func TestNotificationInjectionProviderDrainsStore(t *testing.T) {
 	}
 }
 
+func TestPlanModeAndAFKInjectionProvidersUseRuntimeState(t *testing.T) {
+	plan.Exit()
+	defer plan.Exit()
+	if injections, err := (PlanModeInjectionProvider{}).GetInjections(nil, nil); err != nil || len(injections) != 0 {
+		t.Fatalf("expected no plan injection outside plan mode, got %+v err=%v", injections, err)
+	}
+	plan.Enter("test-plan", filepath.Join(t.TempDir(), "plans", "test.md"), "test")
+	planInjections, err := (PlanModeInjectionProvider{}).GetInjections(nil, nil)
+	if err != nil || len(planInjections) != 1 || planInjections[0].Type != "plan_mode" {
+		t.Fatalf("expected plan mode injection, got %+v err=%v", planInjections, err)
+	}
+	af := &AFKInjectionProvider{}
+	engine := NewEngine(nil, toolset.NewRegistry())
+	engine.Context.Messages = append(engine.Context.Messages, chat.Message{Role: chat.RoleSystem, Content: "system"})
+	engine.InjectionProviders = []InjectionProvider{PlanModeInjectionProvider{}, af}
+	engine.SetAFK(true)
+	cleanup := engine.injectDynamicStepMessages()
+	if len(engine.Context.Messages) < 2 || !strings.Contains(engine.Context.Messages[1].Content, "[plan_mode]") || !strings.Contains(engine.Context.Messages[1].Content, "[afk]") {
+		t.Fatalf("expected plan and afk injections in temporary system message: %+v", engine.Context.Messages)
+	}
+	diag := engine.LastInjectionDiagnostics()
+	if len(diag) != 2 || diag[0].Count != 1 || diag[1].Count != 1 {
+		t.Fatalf("expected injection diagnostics, got %+v", diag)
+	}
+	cleanup()
+	if len(engine.Context.Messages) != 1 {
+		t.Fatalf("expected temporary injection cleanup, got %+v", engine.Context.Messages)
+	}
+}
+
 func TestExecuteToolCallEmitsEvents(t *testing.T) {
 	tools := toolset.NewRegistry()
 	tools.Register(eventTool{})
@@ -209,6 +240,25 @@ func TestExecuteToolCallEmitsEvents(t *testing.T) {
 	}
 	if len(results) != 1 || results[0].ToolCallID != "tc_1" || results[0].Name != "event_tool" || results[0].Content != "tool ok" || results[0].Error != "" {
 		t.Fatalf("unexpected tool result events: %+v", results)
+	}
+}
+
+func TestExecuteToolCallStopsWhenPreHookDenies(t *testing.T) {
+	tools := toolset.NewRegistry()
+	tools.Register(eventTool{})
+	engine := NewEngine(nil, tools)
+	engine.Hooks = hook.NewEngine([]hook.HookDef{{ID: "deny", Event: hook.EventPreToolUse, Target: "event_tool", Command: `printf '{"action":"deny","reason":"policy"}'`}})
+	var results []ToolResultEvent
+	engine.OnToolResult = func(event ToolResultEvent) { results = append(results, event) }
+	err := engine.executeToolCall(chat.ToolCall{ID: "tc_deny", Type: "function", Function: chat.ToolCallFunc{Name: "event_tool", Arguments: `{}`}})
+	if err != nil {
+		t.Fatalf("executeToolCall failed: %v", err)
+	}
+	if len(results) != 1 || !strings.Contains(results[0].Content, "hook") || !strings.Contains(results[0].Content, "policy") {
+		t.Fatalf("expected hook denial tool result, got %+v", results)
+	}
+	if audit := engine.Hooks.AuditLog(); len(audit) != 1 || audit[0].Action != "deny" {
+		t.Fatalf("expected hook audit deny, got %+v", audit)
 	}
 }
 

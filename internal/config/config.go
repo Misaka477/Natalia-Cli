@@ -70,6 +70,7 @@ type ModeProfile struct {
 	ThinkingEnabled   *bool      `yaml:"thinking_enabled,omitempty"`
 	Tools             ToolPolicy `yaml:"tools,omitempty"`
 	MCPServers        []string   `yaml:"mcp_servers,omitempty"`
+	Hooks             []HookDef  `yaml:"hooks,omitempty"`
 }
 
 type ToolPolicy struct {
@@ -96,8 +97,23 @@ type Config struct {
 	PermissionProfiles map[string]PermissionProfile `yaml:"permission_profiles,omitempty"`
 	Hooks              []HookDef                    `yaml:"hooks,omitempty"`
 	MCPServers         map[string]MCPServerConfig   `yaml:"mcp_servers,omitempty"`
+	Instructions       InstructionConfig            `yaml:"instructions,omitempty"`
 	WebSearch          WebSearchConfig              `yaml:"web_search,omitempty"`
 	Browser            BrowserConfig                `yaml:"browser,omitempty"`
+}
+
+type InstructionConfig struct {
+	Enabled       *bool    `yaml:"enabled,omitempty"`
+	IncludeReadme bool     `yaml:"include_readme,omitempty"`
+	IncludeDocs   bool     `yaml:"include_docs,omitempty"`
+	ExtraFiles    []string `yaml:"extra_files,omitempty"`
+}
+
+func (c *Config) InstructionsEnabled() bool {
+	if c == nil || c.Instructions.Enabled == nil {
+		return true
+	}
+	return *c.Instructions.Enabled
 }
 
 type WebSearchConfig struct {
@@ -117,13 +133,16 @@ type BrowserConfig struct {
 }
 
 type MCPServerConfig struct {
-	Command      string   `yaml:"command"`
-	Args         []string `yaml:"args,omitempty"`
-	Cwd          string   `yaml:"cwd,omitempty"`
-	TimeoutSec   int      `yaml:"timeout_sec,omitempty"`
-	AllowedTools []string `yaml:"allowed_tools,omitempty"`
-	ExcludeTools []string `yaml:"exclude_tools,omitempty"`
-	ReadOnly     bool     `yaml:"read_only,omitempty"`
+	Command      string            `yaml:"command,omitempty"`
+	Args         []string          `yaml:"args,omitempty"`
+	Cwd          string            `yaml:"cwd,omitempty"`
+	URL          string            `yaml:"url,omitempty"`
+	Headers      map[string]string `yaml:"headers,omitempty"`
+	OAuthToken   string            `yaml:"oauth_token,omitempty"`
+	TimeoutSec   int               `yaml:"timeout_sec,omitempty"`
+	AllowedTools []string          `yaml:"allowed_tools,omitempty"`
+	ExcludeTools []string          `yaml:"exclude_tools,omitempty"`
+	ReadOnly     bool              `yaml:"read_only,omitempty"`
 }
 
 type HookDef struct {
@@ -133,6 +152,7 @@ type HookDef struct {
 	Command    string `yaml:"command,omitempty"`
 	Cwd        string `yaml:"cwd,omitempty"`
 	TimeoutSec int    `yaml:"timeout_sec,omitempty"`
+	OnFailure  string `yaml:"on_failure,omitempty"`
 }
 
 func Path() (string, error) {
@@ -361,6 +381,30 @@ func mergeModeProfile(base, override ModeProfile) ModeProfile {
 	}
 	if len(override.MCPServers) > 0 {
 		out.MCPServers = append([]string(nil), override.MCPServers...)
+	}
+	if len(override.Hooks) > 0 {
+		out.Hooks = mergeHookDefs(out.Hooks, override.Hooks)
+	}
+	return out
+}
+
+func mergeHookDefs(base, override []HookDef) []HookDef {
+	out := append([]HookDef(nil), base...)
+	index := map[string]int{}
+	for i, def := range out {
+		if def.ID != "" {
+			index[def.ID] = i
+		}
+	}
+	for _, def := range override {
+		if def.ID != "" {
+			if i, ok := index[def.ID]; ok {
+				out[i] = def
+				continue
+			}
+			index[def.ID] = len(out)
+		}
+		out = append(out, def)
 	}
 	return out
 }

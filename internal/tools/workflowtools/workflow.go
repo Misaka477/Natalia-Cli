@@ -2,6 +2,8 @@ package workflowtools
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -21,6 +23,50 @@ func SetDefaultRegistry(r *workflowcore.Registry) {
 		r = &workflowcore.Registry{}
 	}
 	defaultRegistry = r
+}
+
+type Run struct {
+	Registry  *workflowcore.Registry
+	StatePath string
+}
+
+func (t *Run) Name() string { return "workflow_run" }
+func (t *Run) Description() string {
+	return "开始执行 workflow，返回当前步骤指令并可持久化运行状态"
+}
+func (t *Run) Required() []string { return []string{"name"} }
+func (t *Run) Parameters() map[string]llm.Property {
+	return map[string]llm.Property{
+		"name":       {Type: "string", Description: "workflow 名称"},
+		"state_path": {Type: "string", Description: "可选，保存运行状态 JSON 的路径"},
+	}
+}
+
+func (t *Run) Execute(args map[string]any) (string, error) {
+	name, _ := args["name"].(string)
+	if strings.TrimSpace(name) == "" {
+		return "", fmt.Errorf("name 是必填参数")
+	}
+	state, instruction, err := registryOrDefault(t.Registry).Run(name)
+	if err != nil {
+		return "", err
+	}
+	statePath, _ := args["state_path"].(string)
+	if strings.TrimSpace(statePath) == "" {
+		statePath = t.StatePath
+	}
+	if strings.TrimSpace(statePath) != "" {
+		clean := filepath.Clean(statePath)
+		if !filepath.IsAbs(clean) {
+			wd, _ := os.Getwd()
+			clean = filepath.Join(wd, clean)
+		}
+		if err := workflowcore.SaveRunState(clean, *state); err != nil {
+			return "", err
+		}
+		instruction += "\n\nWorkflow state saved to: " + clean
+	}
+	return instruction, nil
 }
 
 func registryOrDefault(r *workflowcore.Registry) *workflowcore.Registry {

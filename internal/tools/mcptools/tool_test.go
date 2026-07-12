@@ -67,6 +67,22 @@ func TestMCPToolFormatsNonTextContentAndErrorResult(t *testing.T) {
 	if err == nil || !strings.Contains(out, "image/png") {
 		t.Fatalf("expected error result with formatted content, out=%q err=%v", out, err)
 	}
+	ret, err := tool.ExecuteReturn(nil)
+	if err == nil || len(ret.Display) != 1 || ret.Display[0].Type != "media" || !ret.IsError {
+		t.Fatalf("expected rich media display for non-text error, ret=%+v err=%v", ret, err)
+	}
+}
+
+func TestMCPToolInfersReadOnlyFromAnnotationsAndNames(t *testing.T) {
+	if !IsReadOnly(coremcp.Tool{Name: "mutate", Annotations: map[string]any{"readOnlyHint": true}}) {
+		t.Fatal("expected readOnlyHint annotation to mark tool read-only")
+	}
+	if !IsReadOnly(coremcp.Tool{Name: "list_repositories"}) {
+		t.Fatal("expected list prefix to mark tool read-only")
+	}
+	if IsReadOnly(coremcp.Tool{Name: "delete_repository"}) {
+		t.Fatal("expected mutating name not to be read-only")
+	}
 }
 
 func TestMCPToolNameSanitizesServerAndToolNames(t *testing.T) {

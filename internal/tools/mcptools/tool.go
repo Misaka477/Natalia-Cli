@@ -8,8 +8,10 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/Misaka477/Natalia-Cli/internal/display"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	coremcp "github.com/Misaka477/Natalia-Cli/internal/mcp"
+	"github.com/Misaka477/Natalia-Cli/internal/toolreturn"
 )
 
 type Caller interface {
@@ -62,18 +64,23 @@ func (t *Tool) Required() []string {
 }
 
 func (t *Tool) Execute(args map[string]any) (string, error) {
+	ret, err := t.ExecuteReturn(args)
+	return ret.ModelText, err
+}
+
+func (t *Tool) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 	if t.caller == nil {
-		return "", fmt.Errorf("mcp client is not configured")
+		return toolreturn.Return{IsError: true}, fmt.Errorf("mcp client is not configured")
 	}
 	result, err := t.caller.CallTool(context.Background(), t.origName, args)
 	if err != nil {
-		return "", err
+		return toolreturn.Return{IsError: true}, err
 	}
-	text := formatCallResult(result)
+	text, blocks := formatCallReturn(t.serverName, t.origName, result)
 	if result != nil && result.IsError {
-		return text, fmt.Errorf("mcp tool returned error")
+		return toolreturn.Return{ModelText: text, Display: blocks, IsError: true}, fmt.Errorf("mcp tool returned error")
 	}
-	return text, nil
+	return toolreturn.Return{ModelText: text, Display: blocks}, nil
 }
 
 func propertyFromSchema(schema map[string]any) llm.Property {
@@ -111,10 +118,16 @@ func requiredFromSchema(schema map[string]any) []string {
 }
 
 func formatCallResult(result *coremcp.CallResult) string {
+	text, _ := formatCallReturn("", "", result)
+	return text
+}
+
+func formatCallReturn(serverName, toolName string, result *coremcp.CallResult) (string, []display.Block) {
 	if result == nil || len(result.Content) == 0 {
-		return "MCP tool completed with no content."
+		return "MCP tool completed with no content.", nil
 	}
 	parts := make([]string, 0, len(result.Content))
+	blocks := make([]display.Block, 0)
 	for _, item := range result.Content {
 		if item["type"] == "text" {
 			if text, ok := item["text"].(string); ok {
@@ -127,9 +140,31 @@ func formatCallResult(result *coremcp.CallResult) string {
 			parts = append(parts, fmt.Sprint(item))
 			continue
 		}
+		title := strings.TrimSpace(fmt.Sprintf("MCP %s/%s %v", serverName, toolName, item["type"]))
+		block, blockErr := display.NewBlock(display.BlockMedia, title, item)
+		if blockErr == nil {
+			blocks = append(blocks, block)
+		}
 		parts = append(parts, string(raw))
 	}
-	return strings.Join(parts, "\n")
+	return strings.Join(parts, "\n"), blocks
+}
+
+func IsReadOnly(tool coremcp.Tool) bool {
+	for _, key := range []string{"readOnlyHint", "read_only", "readonly"} {
+		if raw, ok := tool.Annotations[key]; ok {
+			if value, ok := raw.(bool); ok && value {
+				return true
+			}
+		}
+	}
+	name := strings.ToLower(tool.Name)
+	for _, prefix := range []string{"read", "get", "list", "search", "find", "fetch", "query"} {
+		if strings.HasPrefix(name, prefix) || strings.HasPrefix(name, prefix+"_") || strings.HasPrefix(name, prefix+"-") {
+			return true
+		}
+	}
+	return false
 }
 
 var invalidToolNameChar = regexp.MustCompile(`[^A-Za-z0-9_-]+`)

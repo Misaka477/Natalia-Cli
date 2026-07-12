@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -60,6 +61,7 @@ var (
 	activeConfig   *config.Config
 	mcpMu          sync.Mutex
 	mcpClients     = map[string]*coremcp.Client{}
+	mcpDiagnostics = map[string]string{}
 	workflowReg    *workflowcore.Registry
 )
 
@@ -129,6 +131,7 @@ func main() {
 
 func registerTools(r *toolset.Registry) {
 	configureWebBrowserTools(activeConfig)
+	skill.ConfigureInstructions(activeConfig)
 	wd, _ := os.Getwd()
 	workflowReg, _ = workflowcore.Discover(wd)
 	workflowtools.SetDefaultRegistry(workflowReg)
@@ -199,10 +202,12 @@ func loadMCPServers(cfg *config.Config, r *toolset.Registry, modeConfig *config.
 		serverCfg, ok := cfg.MCPServers[serverName]
 		if !ok {
 			errs = append(errs, fmt.Sprintf("%s: 未配置", serverName))
+			recordMCPDiagnostic(serverName, "missing config")
 			continue
 		}
 		if err := loadMCPServer(serverName, serverCfg, r); err != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", serverName, err))
+			recordMCPDiagnostic(serverName, err.Error())
 		}
 	}
 	if len(errs) > 0 {
@@ -220,6 +225,7 @@ func loadMCPServer(serverName string, cfg config.MCPServerConfig, r *toolset.Reg
 	if err != nil {
 		return err
 	}
+	registered := 0
 	for _, remoteTool := range tools {
 		wrapped, err := mcptools.NewTool(serverName, remoteTool, client)
 		if err != nil {
@@ -229,10 +235,13 @@ func loadMCPServer(serverName string, cfg config.MCPServerConfig, r *toolset.Reg
 			continue
 		}
 		r.Register(wrapped)
-		if !cfg.ReadOnly {
+		registered++
+		if !cfg.ReadOnly && !mcptools.IsReadOnly(remoteTool) {
 			approval.RegisterWriteTool(wrapped.Name())
 		}
 	}
+	stats := client.Stats()
+	recordMCPDiagnostic(serverName, fmt.Sprintf("ok transport=%s tools=%d registered=%d requests=%d errors=%d", stats.Transport, len(tools), registered, stats.Requests, stats.Errors))
 	return nil
 }
 
@@ -242,7 +251,14 @@ func mcpClientForServer(serverName string, cfg config.MCPServerConfig) (*coremcp
 	if client := mcpClients[serverName]; client != nil {
 		return client, nil
 	}
-	client, err := coremcp.Start(context.Background(), coremcp.ServerConfig{Command: cfg.Command, Args: cfg.Args, Cwd: cfg.Cwd, TimeoutSec: cfg.TimeoutSec})
+	headers := map[string]string{}
+	for key, value := range cfg.Headers {
+		headers[key] = value
+	}
+	if cfg.OAuthToken != "" {
+		headers["Authorization"] = "Bearer " + cfg.OAuthToken
+	}
+	client, err := coremcp.Start(context.Background(), coremcp.ServerConfig{Command: cfg.Command, Args: cfg.Args, Cwd: cfg.Cwd, URL: cfg.URL, Headers: headers, TimeoutSec: cfg.TimeoutSec})
 	if err != nil {
 		return nil, err
 	}
@@ -252,6 +268,22 @@ func mcpClientForServer(serverName string, cfg config.MCPServerConfig) (*coremcp
 	}
 	mcpClients[serverName] = client
 	return client, nil
+}
+
+func recordMCPDiagnostic(server, message string) {
+	mcpMu.Lock()
+	mcpDiagnostics[server] = message
+	mcpMu.Unlock()
+}
+
+func currentMCPDiagnostics() map[string]string {
+	mcpMu.Lock()
+	defer mcpMu.Unlock()
+	out := make(map[string]string, len(mcpDiagnostics))
+	for key, value := range mcpDiagnostics {
+		out[key] = value
+	}
+	return out
 }
 
 func closeMCPClients() {
@@ -322,7 +354,12 @@ func buildEngine(cfg *config.Config, tools *toolset.Registry, debug bool) *soul.
 	llmClient := newLLMClient(pr, p)
 
 	engine := soul.NewEngine(llmClient, tools)
-	engine.InjectionProviders = []soul.InjectionProvider{soul.SafetyInjectionProvider{}, soul.NotificationInjectionProvider{Store: notifications.DefaultStore()}}
+	engine.InjectionProviders = []soul.InjectionProvider{
+		soul.PlanModeInjectionProvider{},
+		soul.SafetyInjectionProvider{},
+		soul.NotificationInjectionProvider{Store: notifications.DefaultStore()},
+		&soul.AFKInjectionProvider{},
+	}
 	engine.Context.MaxSteps = pr.MaxSteps
 	if engine.Context.MaxSteps == 0 {
 		engine.Context.MaxSteps = 50
@@ -414,12 +451,19 @@ func buildEngine(cfg *config.Config, tools *toolset.Registry, debug bool) *soul.
 }
 
 func buildHookEngine(cfg *config.Config) *hook.Engine {
-	if cfg == nil || len(cfg.Hooks) == 0 {
+	if cfg == nil {
 		return nil
 	}
-	hooks := make([]hook.HookDef, 0, len(cfg.Hooks))
-	for _, def := range cfg.Hooks {
-		hooks = append(hooks, hook.HookDef{ID: def.ID, Event: hook.EventType(def.Event), Target: def.Target, Command: def.Command, Cwd: def.Cwd, TimeoutSec: def.TimeoutSec})
+	defs := append([]config.HookDef(nil), cfg.Hooks...)
+	if eff, err := cfg.EffectiveProfile(runtime.Mode, runtime.ModelProfile, runtime.PermissionProfile); err == nil {
+		defs = append(defs, eff.ModeConfig.Hooks...)
+	}
+	if len(defs) == 0 {
+		return nil
+	}
+	hooks := make([]hook.HookDef, 0, len(defs))
+	for _, def := range defs {
+		hooks = append(hooks, hook.HookDef{ID: def.ID, Event: hook.EventType(def.Event), Target: def.Target, Command: def.Command, Cwd: def.Cwd, TimeoutSec: def.TimeoutSec, OnFailure: def.OnFailure})
 	}
 	return hook.NewEngine(hooks)
 }
@@ -611,6 +655,86 @@ func handlePlan(input string) {
 	default:
 		fmt.Println("用法: /plan [status|done|clear]")
 	}
+}
+
+func handleWorkflow(input string, engine *soul.Engine) {
+	parts := strings.Fields(input)
+	cmd := "list"
+	if len(parts) > 1 {
+		cmd = parts[1]
+	}
+	if workflowReg == nil {
+		fmt.Println("没有可用的 workflow registry")
+		return
+	}
+	switch cmd {
+	case "list":
+		items := workflowReg.List()
+		if len(items) == 0 {
+			fmt.Println("没有可用的 workflow")
+			return
+		}
+		for _, wf := range items {
+			fmt.Printf("- %s: %s (%d steps)\n", wf.Name, displayEmpty(wf.Description, wf.Source), len(wf.Steps))
+		}
+	case "run":
+		if len(parts) < 3 {
+			fmt.Println("用法: /workflow run <name> [state_path]")
+			return
+		}
+		state, instruction, err := workflowReg.Run(parts[2])
+		if err != nil {
+			fmt.Printf("启动 workflow 失败: %v\n", err)
+			return
+		}
+		if len(parts) > 3 {
+			statePath := expandSlashVariables(parts[3])
+			if err := workflowcore.SaveRunState(statePath, *state); err != nil {
+				fmt.Printf("保存 workflow 状态失败: %v\n", err)
+				return
+			}
+			instruction += "\n\nWorkflow state saved to: " + statePath
+		}
+		if engine != nil && engine.Steer != nil {
+			engine.Steer.Push(instruction)
+		}
+		fmt.Printf("✓ 已载入 workflow: %s (%d steps)\n", state.WorkflowName, state.TotalSteps)
+		fmt.Println("下一条普通输入将带着该 workflow 当前步骤继续执行。")
+	case "diagnostics":
+		diag := workflowReg.Diagnostics()
+		if len(diag) == 0 {
+			fmt.Println("workflow diagnostics: none")
+			return
+		}
+		for _, item := range diag {
+			status := "loaded"
+			if !item.Loaded {
+				status = "skipped"
+			}
+			fmt.Printf("- %s: %s %s\n", item.Source, status, item.Reason)
+		}
+	default:
+		fmt.Println("用法: /workflow [list|run <name> [state_path]|diagnostics]")
+	}
+}
+
+func expandSlashVariables(value string) string {
+	return os.Expand(strings.Trim(value, "\"'"), func(key string) string {
+		switch key {
+		case "workDir", "WORK_DIR":
+			wd, _ := os.Getwd()
+			return wd
+		case "mode", "MODE":
+			return runtime.Mode
+		case "profile", "PROFILE":
+			if activeConfig != nil {
+				return activeConfig.DefaultProfile
+			}
+		case "timestamp", "TIMESTAMP":
+			return time.Now().Format("20060102-150405")
+		}
+		return os.Getenv(key)
+	})
 }
 
 func newLLMClient(pr *config.Profile, p *config.Provider) *llm.Client {
@@ -1121,7 +1245,7 @@ func statusLines(cfg *config.Config, engine *soul.Engine) ([]string, error) {
 		tools = fmt.Sprintf("exclude-list (%d tools)", len(eff.ModeConfig.Tools.Exclude))
 	}
 	contextTokens, maxContextTokens, contextUsage := contextTokenStats(engine)
-	return []string{
+	lines := []string{
 		fmt.Sprintf("profile: %s", eff.ProfileName),
 		fmt.Sprintf("mode: %s%s", modeName, modeSuffix),
 		fmt.Sprintf("model_profile: %s%s", displayEmpty(eff.ModelProfile, "<profile model>"), modelSuffix),
@@ -1134,7 +1258,48 @@ func statusLines(cfg *config.Config, engine *soul.Engine) ([]string, error) {
 		fmt.Sprintf("thinking_enabled: %t", eff.Profile.ThinkingEnabled),
 		fmt.Sprintf("stream: %t", eff.Profile.Stream),
 		fmt.Sprintf("tools: %s", tools),
-	}, nil
+	}
+	lines = append(lines, runtimeDiagnostics(engine)...)
+	return lines, nil
+}
+
+func runtimeDiagnostics(engine *soul.Engine) []string {
+	lines := []string{"agent_spec_adapters: generic,kimi,kilo,openai,mcp_schema"}
+	if engine != nil && engine.Hooks != nil {
+		lines = append(lines, fmt.Sprintf("hooks: configured=%d audit_entries=%d", len(engine.Hooks.Hooks()), len(engine.Hooks.AuditLog())))
+	}
+	if engine != nil {
+		diag := engine.LastInjectionDiagnostics()
+		if len(diag) > 0 {
+			errors := 0
+			injections := 0
+			for _, item := range diag {
+				if item.Error != "" {
+					errors++
+				}
+				injections += item.Count
+			}
+			lines = append(lines, fmt.Sprintf("injections: providers=%d active=%d errors=%d", len(diag), injections, errors))
+		}
+	}
+	mcpDiag := currentMCPDiagnostics()
+	if len(mcpDiag) > 0 {
+		keys := make([]string, 0, len(mcpDiag))
+		for key := range mcpDiag {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			lines = append(lines, fmt.Sprintf("mcp.%s: %s", key, mcpDiag[key]))
+		}
+	}
+	if workflowReg != nil {
+		lines = append(lines, fmt.Sprintf("workflows: loaded=%d diagnostics=%d", len(workflowReg.List()), len(workflowReg.Diagnostics())))
+	}
+	if skillRegistry != nil {
+		lines = append(lines, fmt.Sprintf("instructions: diagnostics=%d", len(skillRegistry.Diagnostics())))
+	}
+	return lines
 }
 
 func printRuntimeStatusSummary(cfg *config.Config, engine *soul.Engine) {
@@ -1392,6 +1557,10 @@ func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine,
 	}
 	if strings.HasPrefix(input, "/plan") || input == "/plan" {
 		handlePlan(input)
+		return
+	}
+	if strings.HasPrefix(input, "/workflow") || input == "/workflow" {
+		handleWorkflow(input, *engine)
 		return
 	}
 	if strings.HasPrefix(input, "/workers") || strings.HasPrefix(input, "/stop ") || strings.HasPrefix(input, "/go ") {
@@ -1752,6 +1921,7 @@ func showHelp() {
   /auto     自动流转开关（status/on/off）
   /plan     当前计划状态（status/done/clear）
   /execute-plan <plan.md> 载入计划并切回 code mode
+  /workflow 管理 workflow（list/run/diagnostics）
   /checkpoint 手动创建快照
   /rollback <n> 回退到第 n 步
   /compact  手动压缩上下文

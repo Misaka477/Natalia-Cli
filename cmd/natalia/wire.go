@@ -394,6 +394,7 @@ func runtimeStatusUpdate(cfg *config.Config, engine *soul.Engine) wire.StatusUpd
 	status.MaxContextTokens = &maxContextTokens
 	status.ContextUsage = &contextUsage
 	if cfg == nil {
+		status.Diagnostics = runtimeDiagnostics(engine)
 		return status
 	}
 	if eff, err := cfg.EffectiveProfile(runtime.Mode, runtime.ModelProfile, runtime.PermissionProfile); err == nil {
@@ -403,6 +404,7 @@ func runtimeStatusUpdate(cfg *config.Config, engine *soul.Engine) wire.StatusUpd
 		status.Provider = eff.Profile.Provider
 		status.Model = eff.Profile.Model
 	}
+	status.Diagnostics = runtimeDiagnostics(engine)
 	return status
 }
 
@@ -552,5 +554,13 @@ func requestWireHook(ctx context.Context, w *wire.Wire, hookReq hook.WireHookReq
 		return result
 	}
 	result.Stdout = string(raw)
+	var resp wire.HookResponse
+	if err := json.Unmarshal(raw, &resp); err == nil {
+		if resp.RequestID != "" && resp.RequestID != id {
+			result.Error = fmt.Sprintf("hook response id mismatch: got %q want %q", resp.RequestID, id)
+			return result
+		}
+		result.Response = hook.HookResponse{Action: resp.Action, Reason: resp.Reason, Message: resp.Message, ModifiedInputData: resp.ModifiedInputData}
+	}
 	return result
 }

@@ -65,6 +65,7 @@ var builtInToolFactories = map[string]func() Tool{
 	"natalia/tools/interactive:Transcript": func() Tool { return &interactive.Transcript{} },
 	"natalia/tools/workflow:List":          func() Tool { return &workflowtools.List{} },
 	"natalia/tools/workflow:Read":          func() Tool { return &workflowtools.Read{} },
+	"natalia/tools/workflow:Run":           func() Tool { return &workflowtools.Run{} },
 	"natalia/tools/plan:EnterMode":         func() Tool { return &plantools.Enter{} },
 	"natalia/tools/plan:ExitMode":          func() Tool { return &plantools.Exit{} },
 	"natalia/tools/plan:Status":            func() Tool { return &plantools.Status{} },

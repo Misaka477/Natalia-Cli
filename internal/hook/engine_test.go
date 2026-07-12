@@ -107,6 +107,29 @@ func TestHookEngineWireHandlerDefaultsResultMetadata(t *testing.T) {
 	}
 }
 
+func TestHookEngineParsesStructuredShellResponseAndAudits(t *testing.T) {
+	engine := NewEngine([]HookDef{{ID: "policy", Event: EventPreToolUse, Target: "run_shell", Command: `printf '{"action":"deny","reason":"no shell"}'`}})
+	results := engine.Trigger(context.Background(), EventPreToolUse, "run_shell", map[string]any{"command": "rm -rf tmp"})
+	if len(results) != 1 || results[0].Response.Action != "deny" || results[0].Response.Reason != "no shell" {
+		t.Fatalf("expected structured deny response, got %+v", results)
+	}
+	audit := engine.AuditLog()
+	if len(audit) != 1 || audit[0].HookID != "policy" || audit[0].Action != "deny" || audit[0].Reason != "no shell" {
+		t.Fatalf("expected audited hook response, got %+v", audit)
+	}
+}
+
+func TestHookEngineWireHandlerStructuredResponse(t *testing.T) {
+	engine := NewEngine([]HookDef{{ID: "wire-policy", Event: EventPreToolUse, Target: "edit_file"}})
+	engine.OnWireHook = func(ctx context.Context, req WireHookRequest) HookResult {
+		return HookResult{Response: HookResponse{Action: "modify", ModifiedInputData: map[string]any{"note": "observed"}}}
+	}
+	results := engine.Trigger(context.Background(), EventPreToolUse, "edit_file", map[string]any{"path": "a.txt"})
+	if len(results) != 1 || results[0].Response.Action != "modify" || results[0].Response.ModifiedInputData["note"] != "observed" {
+		t.Fatalf("expected structured wire response, got %+v", results)
+	}
+}
+
 func TestHookEngineReportsMissingWireHandler(t *testing.T) {
 	engine := NewEngine([]HookDef{{ID: "wire-sub", Event: EventNotification, Target: "*"}})
 	results := engine.Trigger(context.Background(), EventNotification, "build", nil)

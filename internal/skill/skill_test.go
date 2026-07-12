@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Misaka477/Natalia-Cli/internal/config"
 )
 
 func TestLoadSkill(t *testing.T) {
@@ -123,6 +125,7 @@ func TestDiscoverReturnsEmptyRegistryAndSkipsBrokenSkillDirs(t *testing.T) {
 }
 
 func TestDiscoverImportsExternalInstructionFilesAsReadOnlySkills(t *testing.T) {
+	ConfigureInstructions(nil)
 	workDir := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 	if err := os.WriteFile(filepath.Join(workDir, "AGENTS.md"), []byte("Use project conventions."), 0644); err != nil {
@@ -156,6 +159,63 @@ func TestDiscoverImportsExternalInstructionFilesAsReadOnlySkills(t *testing.T) {
 	copilot := r.Get("imported-github-copilot-instructions")
 	if copilot == nil || copilot.Scope != "imported" || !strings.Contains(copilot.Content, "GitHub guidance") {
 		t.Fatalf("expected GitHub instruction imported skill, got %+v", copilot)
+	}
+	if len(r.Diagnostics()) == 0 {
+		t.Fatal("expected instruction source diagnostics")
+	}
+}
+
+func TestDiscoverImportsConfiguredReadmeDocsAndExtraInstructions(t *testing.T) {
+	enabled := true
+	ConfigureInstructions(&config.Config{Instructions: config.InstructionConfig{Enabled: &enabled, IncludeReadme: true, IncludeDocs: true, ExtraFiles: []string{"CONVENTIONS.md"}}})
+	defer ConfigureInstructions(nil)
+	workDir := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	if err := os.WriteFile(filepath.Join(workDir, "README.md"), []byte("README conventions"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, "CONTRIBUTING.md"), []byte("Contribution rules"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, "CONVENTIONS.md"), []byte("Extra rules"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(workDir, "docs"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, "docs", "testing.md"), []byte("Docs testing rules"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Discover(workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"imported-readme-md", "imported-contributing-md", "imported-extra-conventions", "imported-docs-testing"} {
+		if r.Get(name) == nil {
+			t.Fatalf("expected configured imported instruction %s, got %+v", name, r.List())
+		}
+	}
+}
+
+func TestDiscoverExternalInstructionsCanBeDisabled(t *testing.T) {
+	disabled := false
+	ConfigureInstructions(&config.Config{Instructions: config.InstructionConfig{Enabled: &disabled, IncludeReadme: true}})
+	defer ConfigureInstructions(nil)
+	workDir := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	if err := os.WriteFile(filepath.Join(workDir, "AGENTS.md"), []byte("rules"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Discover(workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Get("imported-agents-md") != nil {
+		t.Fatalf("expected imported instructions disabled, got %+v", r.List())
+	}
+	diag := r.Diagnostics()
+	if len(diag) != 1 || diag[0].Loaded || !strings.Contains(diag[0].Reason, "disabled") {
+		t.Fatalf("expected disabled diagnostic, got %+v", diag)
 	}
 }
 

@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 )
@@ -37,6 +39,55 @@ func TestMCPClientReturnsServerError(t *testing.T) {
 	_, err := client.CallTool(context.Background(), "missing", nil)
 	if err == nil || err.Error() == "" {
 		t.Fatalf("expected server error, got %v", err)
+	}
+}
+
+func TestMCPHTTPClientUsesJSONRPCAndBearerToken(t *testing.T) {
+	var sawAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawAuth = r.Header.Get("Authorization")
+		var req rpcRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		resp := rpcResponse{JSONRPC: "2.0", ID: req.ID}
+		switch req.Method {
+		case "initialize":
+			resp.Result = mustJSON(map[string]any{"serverInfo": map[string]any{"name": "remote"}})
+		case "tools/list":
+			resp.Result = mustJSON(map[string]any{"tools": []Tool{{Name: "read", Description: "Read", InputSchema: map[string]any{"type": "object"}, Annotations: map[string]any{"readOnlyHint": true}}}})
+		case "tools/call":
+			resp.Result = mustJSON(CallResult{Content: []map[string]any{{"type": "text", "text": "remote-ok"}}})
+		default:
+			resp.Error = &rpcError{Code: -32601, Message: "unknown method"}
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+	client, err := Start(context.Background(), ServerConfig{URL: server.URL, Headers: map[string]string{"Authorization": "Bearer token"}, TimeoutSec: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Initialize(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	tools, err := client.ListTools(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tools) != 1 || tools[0].Annotations["readOnlyHint"] != true {
+		t.Fatalf("unexpected remote tools: %+v", tools)
+	}
+	result, err := client.CallTool(context.Background(), "read", nil)
+	if err != nil || result.Content[0]["text"] != "remote-ok" {
+		t.Fatalf("unexpected remote call: result=%+v err=%v", result, err)
+	}
+	if sawAuth != "Bearer token" {
+		t.Fatalf("expected bearer auth header, got %q", sawAuth)
+	}
+	stats := client.Stats()
+	if stats.Transport != "http" || stats.Requests < 3 || stats.Errors != 0 {
+		t.Fatalf("unexpected stats: %+v", stats)
 	}
 }
 

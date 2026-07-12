@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/Misaka477/Natalia-Cli/internal/approval"
 	"github.com/Misaka477/Natalia-Cli/internal/chat"
@@ -100,7 +101,9 @@ type Engine struct {
 	Hooks *hook.Engine
 
 	// Dynamic injections
-	InjectionProviders []InjectionProvider
+	InjectionProviders     []InjectionProvider
+	injectionDiagnosticsMu sync.Mutex
+	injectionDiagnostics   []InjectionDiagnostic
 }
 
 func (e *Engine) log(format string, args ...any) {
@@ -488,7 +491,16 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 		}
 	}
 
-	e.triggerHook(hook.EventPreToolUse, name, map[string]any{"tool_call_id": tc.ID, "tool_name": name, "arguments": args})
+	preHookResults := e.triggerHook(hook.EventPreToolUse, name, map[string]any{"tool_call_id": tc.ID, "tool_name": name, "arguments": args})
+	if blocked, reason := hookBlocked(preHookResults); blocked {
+		result := "工具执行被 hook 拒绝"
+		if reason != "" {
+			result += ": " + reason
+		}
+		e.appendToolResult(tc.ID, name, result)
+		e.emitToolResult(tc.ID, name, result, nil, result)
+		return nil
+	}
 	ret, err := toolset.Execute(tool, args)
 	result := ret.ModelText
 	errMsg := ""
@@ -569,17 +581,41 @@ func approvalDisplayBlocks(name string, args map[string]any) []display.Block {
 	return []display.Block{block}
 }
 
-func (e *Engine) triggerHook(event hook.EventType, target string, inputData map[string]any) {
+func (e *Engine) triggerHook(event hook.EventType, target string, inputData map[string]any) []hook.HookResult {
 	if e.Hooks == nil {
-		return
+		return nil
 	}
-	for _, result := range e.Hooks.Trigger(e.ctx, event, target, inputData) {
+	results := e.Hooks.Trigger(e.ctx, event, target, inputData)
+	for _, result := range results {
 		if result.Error != "" {
 			e.log("[HOOK] %s %s failed: %s", event, target, result.Error)
 			continue
 		}
-		e.log("[HOOK] %s %s completed in %s", event, target, result.Duration)
+		e.log("[HOOK] %s %s completed in %s action=%s", event, target, result.Duration, result.Response.Action)
 	}
+	return results
+}
+
+func hookBlocked(results []hook.HookResult) (bool, string) {
+	for _, result := range results {
+		if result.Response.Action == "deny" {
+			if result.Response.Reason != "" {
+				return true, result.Response.Reason
+			}
+			if result.Response.Message != "" {
+				return true, result.Response.Message
+			}
+			return true, result.ID
+		}
+		if result.Error != "" && strings.EqualFold(strings.TrimSpace(resultHookFailurePolicy(result)), "block") {
+			return true, result.Error
+		}
+	}
+	return false, ""
+}
+
+func resultHookFailurePolicy(result hook.HookResult) string {
+	return result.OnFailure
 }
 
 func (e *Engine) notify(target, message string) {

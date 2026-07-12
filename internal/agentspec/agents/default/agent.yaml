@@ -51,6 +51,7 @@ agent:
     - natalia/tools/interactive:Transcript
     - natalia/tools/workflow:List
     - natalia/tools/workflow:Read
+    - natalia/tools/workflow:Run
     - natalia/tools/plan:EnterMode
     - natalia/tools/plan:ExitMode
     - natalia/tools/plan:Status

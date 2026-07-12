@@ -48,3 +48,44 @@ func TestImportGenericAgentSpecYAMLRejectsMissingName(t *testing.T) {
 		t.Fatalf("expected missing name error, got %v", err)
 	}
 }
+
+func TestImportKimiAgentSpecYAMLBestEffort(t *testing.T) {
+	res, err := ImportKimiAgentSpecYAML("agents/default/agent.yaml", []byte(`version: 1
+agent:
+  name: kimi-coder
+  model_profile: strong
+  tools: [read_file, grep]
+  allowed_tools: [read_file]
+  modes:
+    review:
+      permission_profile: read_only
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Spec.Name != "kimi-coder" || res.Spec.ModelProfile != "strong" || len(res.Spec.Tools) != 2 || res.Diagnostic.Format != "kimi" || res.Diagnostic.Source != "agents/default/agent.yaml" {
+		t.Fatalf("unexpected Kimi import: %+v", res)
+	}
+	if res.Spec.Modes["review"].PermissionProfile != "read_only" || len(res.Diagnostic.Notes) == 0 {
+		t.Fatalf("expected modes and diagnostics, got %+v", res)
+	}
+}
+
+func TestImportKiloAgentMarkdownBestEffort(t *testing.T) {
+	res, err := ImportKiloAgentMarkdown(".kilo/agent/reviewer.md", []byte(`---
+name: reviewer
+description: Review code
+tools: read_file, grep
+---
+You review code and report bugs first.
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Spec.Name != "reviewer" || res.Spec.WhenToUse != "Review code" || !strings.Contains(res.Spec.SystemPromptArgs["INLINE_PROMPT"], "report bugs") || res.Diagnostic.Format != "kilo" {
+		t.Fatalf("unexpected Kilo import: %+v", res)
+	}
+	if len(res.Spec.AllowedTools) != 2 || res.Spec.AllowedTools[0] != "read_file" || len(res.Diagnostic.Notes) == 0 {
+		t.Fatalf("expected tools and diagnostics, got %+v", res)
+	}
+}

@@ -18,7 +18,7 @@ var codeTools = map[string]bool{
 	"web_fetch": true, "web_search": true,
 	"todo_set": true, "todo_add": true, "todo_done": true, "todo_list": true,
 	"ask_user":      true,
-	"workflow_list": true, "workflow_read": true,
+	"workflow_list": true, "workflow_read": true, "workflow_run": true,
 	"plan_mode_enter": true, "plan_mode_exit": true, "plan_mode_status": true,
 	"process_start": true, "process_list": true, "process_status": true, "process_output": true, "process_stop": true, "process_restart": true, "process_attach": true, "process_detach": true, "process_cleanup": true, "process_audit": true,
 	"background_start": true, "background_list": true, "background_output": true, "background_stop": true, "background_restart": true, "background_cleanup": true, "background_audit": true,

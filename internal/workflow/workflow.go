@@ -28,7 +28,22 @@ type Step struct {
 }
 
 type Registry struct {
-	workflows []Workflow
+	workflows   []Workflow
+	diagnostics []Diagnostic
+}
+
+type Diagnostic struct {
+	Source string
+	Loaded bool
+	Reason string
+}
+
+type RunState struct {
+	WorkflowName string `json:"workflow_name"`
+	Source       string `json:"source,omitempty"`
+	CurrentStep  int    `json:"current_step"`
+	TotalSteps   int    `json:"total_steps"`
+	Status       string `json:"status"`
 }
 
 func (r *Registry) List() []Workflow {
@@ -36,6 +51,13 @@ func (r *Registry) List() []Workflow {
 		return nil
 	}
 	return append([]Workflow(nil), r.workflows...)
+}
+
+func (r *Registry) Diagnostics() []Diagnostic {
+	if r == nil {
+		return nil
+	}
+	return append([]Diagnostic(nil), r.diagnostics...)
 }
 
 func (r *Registry) Get(name string) *Workflow {
@@ -61,6 +83,41 @@ func (r *Registry) Add(wf Workflow) {
 	r.workflows = append(r.workflows, wf)
 }
 
+func (r *Registry) Run(name string) (*RunState, string, error) {
+	wf := r.Get(name)
+	if wf == nil {
+		return nil, "", fmt.Errorf("workflow %q not found", name)
+	}
+	state := &RunState{WorkflowName: wf.Name, Source: wf.Source, CurrentStep: 1, TotalSteps: len(wf.Steps), Status: "running"}
+	return state, formatRunInstruction(*wf, *state), nil
+}
+
+func SaveRunState(path string, state RunState) error {
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("workflow state path is required")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	raw, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, raw, 0644)
+}
+
+func LoadRunState(path string) (*RunState, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var state RunState
+	if err := json.Unmarshal(raw, &state); err != nil {
+		return nil, err
+	}
+	return &state, nil
+}
+
 func Discover(workDir string) (*Registry, error) {
 	r := &Registry{}
 	loadMatches := func(pattern string, loader func(string, []byte) (*Workflow, error)) error {
@@ -72,11 +129,15 @@ func Discover(workDir string) (*Registry, error) {
 		for _, match := range matches {
 			data, err := os.ReadFile(match)
 			if err != nil {
+				r.diagnostics = append(r.diagnostics, Diagnostic{Source: relativeSource(workDir, match), Loaded: false, Reason: err.Error()})
 				continue
 			}
 			wf, err := loader(relativeSource(workDir, match), data)
 			if err == nil {
 				r.Add(*wf)
+				r.diagnostics = append(r.diagnostics, Diagnostic{Source: relativeSource(workDir, match), Loaded: true})
+			} else {
+				r.diagnostics = append(r.diagnostics, Diagnostic{Source: relativeSource(workDir, match), Loaded: false, Reason: err.Error()})
 			}
 		}
 		return nil
@@ -115,6 +176,26 @@ func discoverGeneratedWorkflows(workDir string) []Workflow {
 				out = append(out, workflows...)
 			}
 			break
+		}
+	}
+	if matches, err := filepath.Glob(filepath.Join(workDir, ".github", "workflows", "*.yml")); err == nil {
+		sort.Strings(matches)
+		for _, match := range matches {
+			if data, err := os.ReadFile(match); err == nil {
+				if wf, err := ImportGitHubActionsWorkflow(relativeSource(workDir, match), data); err == nil {
+					out = append(out, *wf)
+				}
+			}
+		}
+	}
+	if matches, err := filepath.Glob(filepath.Join(workDir, ".github", "workflows", "*.yaml")); err == nil {
+		sort.Strings(matches)
+		for _, match := range matches {
+			if data, err := os.ReadFile(match); err == nil {
+				if wf, err := ImportGitHubActionsWorkflow(relativeSource(workDir, match), data); err == nil {
+					out = append(out, *wf)
+				}
+			}
 		}
 	}
 	return out
@@ -219,6 +300,76 @@ func ImportMakefileTargets(source string, data []byte) ([]Workflow, error) {
 		}
 	}
 	return out, nil
+}
+
+func ImportGitHubActionsWorkflow(source string, data []byte) (*Workflow, error) {
+	var raw struct {
+		Name string `yaml:"name"`
+		Jobs map[string]struct {
+			Name  string `yaml:"name"`
+			Steps []struct {
+				Name string `yaml:"name"`
+				Run  string `yaml:"run"`
+				Uses string `yaml:"uses"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("parse GitHub Actions workflow: %w", err)
+	}
+	name := raw.Name
+	if strings.TrimSpace(name) == "" {
+		name = strings.TrimSuffix(filepath.Base(source), filepath.Ext(source))
+	}
+	steps := make([]Step, 0)
+	jobNames := make([]string, 0, len(raw.Jobs))
+	for jobName := range raw.Jobs {
+		jobNames = append(jobNames, jobName)
+	}
+	sort.Strings(jobNames)
+	for _, jobName := range jobNames {
+		job := raw.Jobs[jobName]
+		jobTitle := job.Name
+		if jobTitle == "" {
+			jobTitle = jobName
+		}
+		for i, step := range job.Steps {
+			title := strings.TrimSpace(step.Name)
+			if title == "" {
+				title = fmt.Sprintf("%s step %d", jobTitle, i+1)
+			}
+			prompt := strings.TrimSpace(step.Run)
+			kind := "shell"
+			if prompt == "" && step.Uses != "" {
+				prompt = "GitHub Action uses: " + strings.TrimSpace(step.Uses)
+				kind = "action"
+			}
+			if prompt == "" {
+				continue
+			}
+			steps = append(steps, Step{Title: jobTitle + ": " + title, Prompt: prompt, Kind: kind})
+		}
+	}
+	return normalize(Workflow{Name: "github-" + slug(name), Description: "GitHub Actions workflow: " + name, Source: source, Steps: steps})
+}
+
+func formatRunInstruction(wf Workflow, state RunState) string {
+	step := wf.Steps[0]
+	var b strings.Builder
+	fmt.Fprintf(&b, "Execute workflow %q from %s.\n", wf.Name, displaySource(wf.Source))
+	fmt.Fprintf(&b, "Progress: step %d/%d.\n\n", state.CurrentStep, state.TotalSteps)
+	fmt.Fprintf(&b, "Current step: %s [%s]\n", step.Title, step.Kind)
+	if step.Prompt != "" {
+		b.WriteString(step.Prompt)
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func displaySource(source string) string {
+	if source == "" {
+		return "<unknown>"
+	}
+	return source
 }
 
 func normalize(wf Workflow) (*Workflow, error) {

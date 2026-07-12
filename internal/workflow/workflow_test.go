@@ -162,3 +162,79 @@ func TestDiscoverIncludesPackageScriptsAndMakefileTargets(t *testing.T) {
 		t.Fatalf("expected generated workflows from package scripts and Makefile, got %+v", r.List())
 	}
 }
+
+func TestImportGitHubActionsWorkflowBuildsCanonicalShellSteps(t *testing.T) {
+	wf, err := ImportGitHubActionsWorkflow(".github/workflows/ci.yml", []byte(`name: CI
+jobs:
+  test:
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tests
+        run: go test ./...
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wf.Name != "github-ci" || wf.Source != ".github/workflows/ci.yml" || len(wf.Steps) != 2 {
+		t.Fatalf("unexpected GitHub workflow: %+v", wf)
+	}
+	if wf.Steps[0].Kind != "action" || !strings.Contains(wf.Steps[0].Prompt, "actions/checkout") || wf.Steps[1].Kind != "shell" || !strings.Contains(wf.Steps[1].Prompt, "go test") {
+		t.Fatalf("unexpected GitHub workflow steps: %+v", wf.Steps)
+	}
+}
+
+func TestDiscoverIncludesGitHubActionsAndDiagnostics(t *testing.T) {
+	workDir := t.TempDir()
+	dir := filepath.Join(workDir, ".github", "workflows")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ci.yml"), []byte("name: CI\njobs:\n  test:\n    steps:\n      - run: go test ./...\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(workDir, ".natalia", "workflows"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, ".natalia", "workflows", "bad.yaml"), []byte("name: bad\nsteps: ["), 0644); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Discover(workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Get("github-ci") == nil {
+		t.Fatalf("expected GitHub Actions workflow, got %+v", r.List())
+	}
+	foundBad := false
+	for _, diag := range r.Diagnostics() {
+		if diag.Source == ".natalia/workflows/bad.yaml" && !diag.Loaded && strings.Contains(diag.Reason, "parse") {
+			foundBad = true
+		}
+	}
+	if !foundBad {
+		t.Fatalf("expected bad workflow diagnostic, got %+v", r.Diagnostics())
+	}
+}
+
+func TestWorkflowRunAndStatePersistence(t *testing.T) {
+	r := &Registry{}
+	r.Add(Workflow{Name: "release", Source: ".natalia/workflows/release.yaml", Steps: []Step{{ID: "step-1", Title: "Test", Prompt: "Run tests", Kind: "shell"}}})
+	state, instruction, err := r.Run("release")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.WorkflowName != "release" || state.CurrentStep != 1 || state.TotalSteps != 1 || !strings.Contains(instruction, "Run tests") {
+		t.Fatalf("unexpected run state/instruction: %+v %q", state, instruction)
+	}
+	path := filepath.Join(t.TempDir(), "state.json")
+	if err := SaveRunState(path, *state); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadRunState(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.WorkflowName != "release" || loaded.Status != "running" {
+		t.Fatalf("unexpected loaded workflow state: %+v", loaded)
+	}
+}

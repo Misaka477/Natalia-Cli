@@ -33,6 +33,7 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/toolset"
 	"github.com/Misaka477/Natalia-Cli/internal/wire"
 	"github.com/Misaka477/Natalia-Cli/internal/worker"
+	workflowcore "github.com/Misaka477/Natalia-Cli/internal/workflow"
 )
 
 func testBoolPtr(v bool) *bool { return &v }
@@ -481,6 +482,36 @@ func TestHandlePlanCommandClear(t *testing.T) {
 	output := captureStdout(t, func() { handlePlan("/plan clear") })
 	if currentPlan != nil || !strings.Contains(output, "已清除当前计划") {
 		t.Fatalf("expected plan cleared, currentPlan=%+v output=%q", currentPlan, output)
+	}
+}
+
+func TestHandleWorkflowRunPushesSteerAndPersistsState(t *testing.T) {
+	oldReg := workflowReg
+	oldConfig := activeConfig
+	t.Cleanup(func() {
+		workflowReg = oldReg
+		activeConfig = oldConfig
+	})
+	workflowReg = &workflowcore.Registry{}
+	workflowReg.Add(workflowcore.Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []workflowcore.Step{{ID: "step-1", Title: "Inspect", Prompt: "Run git diff", Kind: "task"}}})
+	engine := soul.NewEngine(nil, toolset.NewRegistry())
+	statePath := filepath.Join(t.TempDir(), "${profile}-${timestamp}.json")
+	activeConfig = &config.Config{DefaultProfile: "default"}
+	output := captureStdout(t, func() { handleWorkflow("/workflow run review "+statePath, engine) })
+	instruction, ok := engine.Steer.Pop()
+	if !strings.Contains(output, "已载入 workflow: review") || !ok || !strings.Contains(instruction, "Run git diff") {
+		t.Fatalf("expected workflow run output and steer instruction, output=%q", output)
+	}
+	matches, err := filepath.Glob(filepath.Join(filepath.Dir(statePath), "default-*.json"))
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("expected expanded workflow state file, matches=%v err=%v", matches, err)
+	}
+	state, err := workflowcore.LoadRunState(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.WorkflowName != "review" || state.TotalSteps != 1 {
+		t.Fatalf("unexpected workflow state: %+v", state)
 	}
 }
 

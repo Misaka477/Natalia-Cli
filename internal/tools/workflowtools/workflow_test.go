@@ -1,6 +1,7 @@
 package workflowtools
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -34,5 +35,25 @@ func TestWorkflowReadValidatesNameAndUnknownWorkflow(t *testing.T) {
 	}
 	if _, err := (&Read{Registry: r}).Execute(map[string]any{"name": "missing"}); err == nil || !strings.Contains(err.Error(), "不存在") {
 		t.Fatalf("expected missing workflow error, got %v", err)
+	}
+}
+
+func TestWorkflowRunReturnsInstructionAndPersistsState(t *testing.T) {
+	r := &workflowcore.Registry{}
+	r.Add(workflowcore.Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []workflowcore.Step{{ID: "step-1", Title: "Inspect diff", Prompt: "Run git diff", Kind: "task"}}})
+	statePath := filepath.Join(t.TempDir(), "workflow-state.json")
+	out, err := (&Run{Registry: r}).Execute(map[string]any{"name": "review", "state_path": statePath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Execute workflow") || !strings.Contains(out, "Run git diff") || !strings.Contains(out, statePath) {
+		t.Fatalf("unexpected workflow_run output: %q", out)
+	}
+	state, err := workflowcore.LoadRunState(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.WorkflowName != "review" || state.CurrentStep != 1 || state.TotalSteps != 1 {
+		t.Fatalf("unexpected persisted state: %+v", state)
 	}
 }

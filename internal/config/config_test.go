@@ -143,6 +143,35 @@ func TestEffectiveProfileReturnsCustomModeConfig(t *testing.T) {
 	}
 }
 
+func TestEffectiveProfileMergesModeHooksByID(t *testing.T) {
+	cfg := &Config{
+		DefaultProfile:     "default",
+		Providers:          map[string]Provider{"p": {BaseURL: "https://example", APIKey: "key"}},
+		ModelProfiles:      map[string]ModelProfile{},
+		PermissionProfiles: DefaultPermissionProfiles(),
+		Profiles: map[string]Profile{
+			"default": {
+				Provider: "p",
+				Model:    "base",
+				Modes: map[string]ModeProfile{
+					"code":   {Hooks: []HookDef{{ID: "shared", Event: "PreToolUse", Target: "read_file"}, {ID: "base", Event: "Stop", Target: "run"}}},
+					"review": {Extends: "code", Hooks: []HookDef{{ID: "shared", Event: "PreToolUse", Target: "grep", OnFailure: "block"}, {ID: "extra", Event: "Notification", Target: "*"}}},
+				},
+			},
+		},
+	}
+	eff, err := cfg.EffectiveProfile("review", "", "")
+	if err != nil {
+		t.Fatalf("EffectiveProfile failed: %v", err)
+	}
+	if len(eff.ModeConfig.Hooks) != 3 {
+		t.Fatalf("expected merged hooks, got %+v", eff.ModeConfig.Hooks)
+	}
+	if eff.ModeConfig.Hooks[0].ID != "shared" || eff.ModeConfig.Hooks[0].Target != "grep" || eff.ModeConfig.Hooks[0].OnFailure != "block" {
+		t.Fatalf("expected override by hook id, got %+v", eff.ModeConfig.Hooks[0])
+	}
+}
+
 func TestEffectiveProfileUsesBuiltinModeRouting(t *testing.T) {
 	cfg := &Config{
 		DefaultProfile: "default",

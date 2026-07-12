@@ -113,6 +113,7 @@ type StatusUpdate struct {
 	PermissionProfile string   `json:"permission_profile,omitempty"`
 	Provider          string   `json:"provider,omitempty"`
 	Model             string   `json:"model,omitempty"`
+	Diagnostics       []string `json:"diagnostics,omitempty"`
 }
 
 type ContentPart struct {
@@ -232,6 +233,14 @@ type HookRequest struct {
 	Event          string         `json:"event"`
 	Target         string         `json:"target"`
 	InputData      map[string]any `json:"input_data,omitempty"`
+}
+
+type HookResponse struct {
+	RequestID         string         `json:"request_id"`
+	Action            string         `json:"action,omitempty"`
+	Reason            string         `json:"reason,omitempty"`
+	Message           string         `json:"message,omitempty"`
+	ModifiedInputData map[string]any `json:"modified_input_data,omitempty"`
 }
 
 func NewEvent(eventType EventType, payload any) (WireEvent, error) {
