@@ -32,27 +32,68 @@ func runWireCLI(cfg *config.Config, tools *toolset.Registry, in io.Reader, out i
 	return runWireWithOptions(cfg, tools, in, out, debug, wireRunOptions{SessionStore: store})
 }
 
+func runWireHTTPCLI(cfg *config.Config, tools *toolset.Registry, addr string, debug bool) error {
+	store, err := session.NewStore()
+	if err != nil {
+		return err
+	}
+	runtimeServer, err := newWireRuntimeServer(cfg, tools, debug, wireRunOptions{SessionStore: store})
+	if err != nil {
+		return err
+	}
+	defer runtimeServer.close()
+	return wire.NewHTTPServer(runtimeServer.w, runtimeServer.handler).ListenAndServe(addr)
+}
+
+func runWireUnixCLI(cfg *config.Config, tools *toolset.Registry, path string, debug bool) error {
+	store, err := session.NewStore()
+	if err != nil {
+		return err
+	}
+	runtimeServer, err := newWireRuntimeServer(cfg, tools, debug, wireRunOptions{SessionStore: store})
+	if err != nil {
+		return err
+	}
+	defer runtimeServer.close()
+	return wire.NewHTTPServer(runtimeServer.w, runtimeServer.handler).ListenAndServeUnix(path)
+}
+
 type wireRunOptions struct {
 	SessionStore *session.SessionStore
 }
 
+type wireRuntimeServer struct {
+	w       *wire.Wire
+	handler wire.ServerHandler
+	close   func()
+}
+
 func runWireWithOptions(cfg *config.Config, tools *toolset.Registry, in io.Reader, out io.Writer, debug bool, opts wireRunOptions) error {
+	runtimeServer, err := newWireRuntimeServer(cfg, tools, debug, opts)
+	if err != nil {
+		return err
+	}
+	defer runtimeServer.close()
+	server := wire.NewServer(runtimeServer.w, in, out, runtimeServer.handler)
+	return server.Run(context.Background())
+}
+
+func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug bool, opts wireRunOptions) (*wireRuntimeServer, error) {
 	w := wire.NewWire()
 	engine := buildEngine(cfg, tools, debug)
 	registerAgentToolsForEngine(cfg, engine, tools)
 	configureEngineForWire(engine, w)
 	detachRuntimeEvents := bridgeRuntimeEvents(engine, w)
-	defer detachRuntimeEvents()
 	closeRecorder, wireSession, err := attachWireRecorder(w, cfg, opts.SessionStore)
 	if err != nil {
-		return err
+		detachRuntimeEvents()
+		return nil, err
 	}
-	defer closeRecorder()
 	persistWireSessionState(cfg, opts.SessionStore, wireSession)
 
 	var approvalCtxMu sync.RWMutex
 	var approvalCtx context.Context
-	server := wire.NewServer(w, in, out, wire.ServerHandler{
+	handler := wire.ServerHandler{
 		Initialize: func(context.Context, wire.InitializeParams) (any, error) {
 			return map[string]any{"status": "ok", "server": "natalia-cli"}, nil
 		},
@@ -176,7 +217,7 @@ func runWireWithOptions(cfg *config.Config, tools *toolset.Registry, in io.Reade
 			}
 			return map[string]any{"sessions": wireSessionSummaries(opts.SessionStore)}, nil
 		},
-	})
+	}
 	if engine.Approver != nil {
 		baseRequest := engine.Approver.RequestFunc
 		engine.Approver.RequestFunc = func(toolName, description string) bool {
@@ -206,7 +247,10 @@ func runWireWithOptions(cfg *config.Config, tools *toolset.Registry, in io.Reade
 			return requestWireHook(activeCtx, w, req)
 		}
 	}
-	return server.Run(context.Background())
+	return &wireRuntimeServer{w: w, handler: handler, close: func() {
+		closeRecorder()
+		detachRuntimeEvents()
+	}}, nil
 }
 
 func runWireReplay(path string, out io.Writer) error {

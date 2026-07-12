@@ -103,6 +103,16 @@ func MarshalRequest(request WireRequest) ([]byte, error) {
 	return json.Marshal(RPCMessage{JSONRPC: JSONRPCVersion, Method: MethodRequest, ID: id, Params: params})
 }
 
+func MarshalWireMessage(message WireMessage) ([]byte, error) {
+	if message.Kind == MessageEvent && message.Event != nil {
+		return MarshalEvent(*message.Event)
+	}
+	if message.Kind == MessageRequest && message.Request != nil {
+		return MarshalRequest(*message.Request)
+	}
+	return nil, nil
+}
+
 func MarshalResult(id json.RawMessage, result any) ([]byte, error) {
 	raw, err := marshalPayload(result)
 	if err != nil {

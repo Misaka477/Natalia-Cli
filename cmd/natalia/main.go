@@ -71,6 +71,8 @@ func main() {
 	debug := flag.Bool("debug", false, "打印调试日志")
 	profile := flag.String("profile", "", "使用指定配置")
 	wireFlag := flag.Bool("wire", false, "通过 stdin/stdout 运行 Wire JSON-RPC 服务")
+	wireHTTP := flag.String("wire-http", "", "通过 HTTP/SSE/WebSocket 提供 Wire 服务，例如 127.0.0.1:8787")
+	wireUnix := flag.String("wire-unix", "", "通过 Unix socket 提供 Wire HTTP 服务")
 	wireReplay := flag.String("wire-replay", "", "重放 wire.jsonl 到 stdout")
 	flag.Parse()
 
@@ -93,6 +95,20 @@ func main() {
 	if *wireFlag {
 		if err := runWireCLI(cfg, tools, os.Stdin, os.Stdout, *debug); err != nil {
 			fmt.Fprintf(os.Stderr, "wire error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *wireHTTP != "" {
+		if err := runWireHTTPCLI(cfg, tools, *wireHTTP, *debug); err != nil {
+			fmt.Fprintf(os.Stderr, "wire http error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *wireUnix != "" {
+		if err := runWireUnixCLI(cfg, tools, *wireUnix, *debug); err != nil {
+			fmt.Fprintf(os.Stderr, "wire unix error: %v\n", err)
 			os.Exit(1)
 		}
 		return

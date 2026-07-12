@@ -105,6 +105,84 @@ func TestSubagentAndNotificationEventsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestAllWireEventTypesRoundTrip(t *testing.T) {
+	cases := []struct {
+		typ     EventType
+		payload any
+	}{
+		{EventTurnBegin, TurnBegin{UserInput: json.RawMessage(`"hi"`)}},
+		{EventTurnEnd, TurnEnd{}},
+		{EventStepBegin, StepBegin{N: 1}},
+		{EventStepInterrupted, StepInterrupted{}},
+		{EventCompactionBegin, CompactionBegin{}},
+		{EventCompactionEnd, CompactionEnd{}},
+		{EventStatusUpdate, StatusUpdate{Mode: "code"}},
+		{EventContentPart, ContentPart{Type: ContentText, Text: "hello"}},
+		{EventToolCall, ToolCall{ID: "tc_1", Name: "read_file", Arguments: json.RawMessage(`{"path":"README.md"}`)}},
+		{EventToolResult, ToolResult{ToolCallID: "tc_1", Name: "read_file", Content: "ok"}},
+		{EventSubagentEvent, SubagentEvent{ID: "worker_1", Event: "log", Payload: json.RawMessage(`{"status":"running"}`)}},
+		{EventNotification, Notification{Title: "done", Message: "complete"}},
+	}
+	for _, tc := range cases {
+		t.Run(string(tc.typ), func(t *testing.T) {
+			event, err := NewEvent(tc.typ, tc.payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := MarshalWireMessage(WireMessage{Kind: MessageEvent, Event: &event})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var rpc RPCMessage
+			if err := json.Unmarshal(data, &rpc); err != nil {
+				t.Fatal(err)
+			}
+			var typed TypedPayload
+			if err := json.Unmarshal(rpc.Params, &typed); err != nil {
+				t.Fatal(err)
+			}
+			if rpc.Method != MethodEvent || typed.Type != string(tc.typ) || len(typed.Payload) == 0 && tc.payload != nil {
+				t.Fatalf("unexpected event round-trip: rpc=%+v typed=%+v", rpc, typed)
+			}
+		})
+	}
+}
+
+func TestAllWireRequestTypesRoundTrip(t *testing.T) {
+	cases := []struct {
+		typ     RequestType
+		payload any
+	}{
+		{RequestApproval, ApprovalRequest{ID: "approval_1", Action: "run_shell", Description: "go test"}},
+		{RequestQuestion, QuestionRequest{ID: "question_1", Questions: []QuestionItem{{Name: "choice", Question: "Proceed?"}}}},
+		{RequestToolCall, ToolCallRequest{ID: "tool_1", Name: "external", Arguments: json.RawMessage(`{"ok":true}`)}},
+		{RequestHook, HookRequest{ID: "hook_1", Event: "PreToolUse", Target: "read_file"}},
+	}
+	for _, tc := range cases {
+		t.Run(string(tc.typ), func(t *testing.T) {
+			req, err := NewRequest("req_1", tc.typ, tc.payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := MarshalWireMessage(WireMessage{Kind: MessageRequest, Request: &req})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var rpc RPCMessage
+			if err := json.Unmarshal(data, &rpc); err != nil {
+				t.Fatal(err)
+			}
+			var typed TypedPayload
+			if err := json.Unmarshal(rpc.Params, &typed); err != nil {
+				t.Fatal(err)
+			}
+			if rpc.Method != MethodRequest || string(rpc.ID) != `"req_1"` || typed.Type != string(tc.typ) {
+				t.Fatalf("unexpected request round-trip: rpc=%+v typed=%+v", rpc, typed)
+			}
+		})
+	}
+}
+
 func TestWireBroadcastsSoulMessagesToSubscribers(t *testing.T) {
 	w := NewWire()
 	rawA, cancelRawA := w.UISide().SubscribeRaw()

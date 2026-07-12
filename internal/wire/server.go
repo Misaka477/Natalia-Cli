@@ -91,18 +91,29 @@ func (s *Server) resolveResponse(incoming IncomingMessage) {
 }
 
 func (s *Server) handle(ctx context.Context, incoming IncomingMessage) error {
-	result, rpcErr := s.dispatch(ctx, incoming)
-	if len(incoming.ID) == 0 {
-		return nil
-	}
-	if rpcErr != nil {
-		return s.writeRPCError(incoming.ID, rpcErr.Code, rpcErr.Message, rpcErr.Data)
-	}
-	data, err := MarshalResult(incoming.ID, result)
+	data, err := s.HandleIncoming(ctx, incoming)
 	if err != nil {
 		return err
 	}
+	if len(data) == 0 {
+		return nil
+	}
 	return s.writeLine(data)
+}
+
+func (s *Server) HandleIncoming(ctx context.Context, incoming IncomingMessage) ([]byte, error) {
+	if incoming.Method == "" {
+		s.resolveResponse(incoming)
+		return nil, nil
+	}
+	result, rpcErr := s.dispatch(ctx, incoming)
+	if len(incoming.ID) == 0 {
+		return nil, nil
+	}
+	if rpcErr != nil {
+		return MarshalError(incoming.ID, rpcErr.Code, rpcErr.Message, rpcErr.Data)
+	}
+	return MarshalResult(incoming.ID, result)
 }
 
 func (s *Server) dispatch(ctx context.Context, incoming IncomingMessage) (any, *RPCError) {
@@ -183,21 +194,11 @@ func rpcError(code int, message string, data any) *RPCError {
 }
 
 func (s *Server) writeWireMessage(msg WireMessage) error {
-	if msg.Kind == MessageEvent && msg.Event != nil {
-		data, err := MarshalEvent(*msg.Event)
-		if err != nil {
-			return err
-		}
-		return s.writeLine(data)
+	data, err := MarshalWireMessage(msg)
+	if err != nil || len(data) == 0 {
+		return err
 	}
-	if msg.Kind == MessageRequest && msg.Request != nil {
-		data, err := MarshalRequest(*msg.Request)
-		if err != nil {
-			return err
-		}
-		return s.writeLine(data)
-	}
-	return nil
+	return s.writeLine(data)
 }
 
 func (s *Server) writeRPCError(id json.RawMessage, code int, message string, data any) error {

@@ -1554,6 +1554,47 @@ func TestConfigureEngineForWireFeedsInteractiveRenderer(t *testing.T) {
 	}
 }
 
+func TestInteractiveWireRendererHandlesRuntimeEventsAndRequests(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	state := &wireTerminalRenderState{}
+	renderEvent := func(typ wire.EventType, payload any) {
+		t.Helper()
+		event, err := wire.NewEvent(typ, payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		renderInteractiveWireMessage(state, wire.WireMessage{Kind: wire.MessageEvent, Event: &event}, &out, &errOut)
+	}
+	renderRequest := func(id string, typ wire.RequestType, payload any) {
+		t.Helper()
+		req, err := wire.NewRequest(id, typ, payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		renderInteractiveWireMessage(state, wire.WireMessage{Kind: wire.MessageRequest, Request: &req}, &out, &errOut)
+	}
+
+	renderEvent(wire.EventStepBegin, wire.StepBegin{N: 2})
+	renderEvent(wire.EventStepInterrupted, wire.StepInterrupted{})
+	renderEvent(wire.EventCompactionBegin, wire.CompactionBegin{})
+	renderEvent(wire.EventCompactionEnd, wire.CompactionEnd{})
+	renderEvent(wire.EventToolCall, wire.ToolCall{ID: "tc_1", Name: "read_file", Arguments: json.RawMessage(`{"path":"README.md"}`)})
+	renderEvent(wire.EventToolResult, wire.ToolResult{ToolCallID: "tc_1", Name: "read_file", Content: "ok"})
+	renderEvent(wire.EventSubagentEvent, wire.SubagentEvent{ID: "worker_1", Event: "log", Payload: json.RawMessage(`{"status":"running"}`)})
+	renderRequest("approval_1", wire.RequestApproval, wire.ApprovalRequest{ID: "approval_1", Action: "run_shell", Description: "go test ./..."})
+	renderRequest("question_1", wire.RequestQuestion, wire.QuestionRequest{ID: "question_1", Questions: []wire.QuestionItem{{Name: "choice", Question: "Proceed?"}}})
+	renderRequest("tool_1", wire.RequestToolCall, wire.ToolCallRequest{ID: "tool_1", Name: "external_tool", Arguments: json.RawMessage(`{"ok":true}`)})
+	renderRequest("hook_1", wire.RequestHook, wire.HookRequest{ID: "hook_1", Event: "PreToolUse", Target: "read_file"})
+
+	got := errOut.String()
+	for _, want := range []string{"[step 2]", "[step interrupted]", "[compaction begin]", "[compaction end]", "[tool call] read_file", "[tool result] read_file: ok", "[subagent] worker_1 log", "[approval request] run_shell", "[question request] question_1", "[tool request] external_tool", "[hook request] PreToolUse read_file"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected renderer stderr to contain %q, got %q", want, got)
+		}
+	}
+}
+
 func decodeWireRPCOutput(t *testing.T, output string) []wire.RPCMessage {
 	t.Helper()
 	lines := strings.Split(strings.TrimSpace(output), "\n")

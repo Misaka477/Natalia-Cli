@@ -85,6 +85,80 @@ func TestServerUnknownMethodReturnsJSONRPCError(t *testing.T) {
 	}
 }
 
+func TestServerHandleIncomingCoversWireMethodMatrix(t *testing.T) {
+	called := map[string]bool{}
+	server := NewServer(NewWire(), nil, nil, ServerHandler{
+		Initialize: func(context.Context, InitializeParams) (any, error) {
+			called[MethodInitialize] = true
+			return map[string]any{"ok": true}, nil
+		},
+		Prompt: func(context.Context, PromptParams) (any, error) {
+			called[MethodPrompt] = true
+			return map[string]any{"ok": true}, nil
+		},
+		Steer: func(context.Context, SteerParams) (any, error) {
+			called[MethodSteer] = true
+			return map[string]any{"ok": true}, nil
+		},
+		Cancel: func(context.Context) (any, error) {
+			called[MethodCancel] = true
+			return map[string]any{"ok": true}, nil
+		},
+		SetPlanMode: func(context.Context, SetPlanModeParams) (any, error) {
+			called[MethodSetPlanMode] = true
+			return map[string]any{"ok": true}, nil
+		},
+		SetRuntimeProfile: func(context.Context, SetRuntimeProfileParams) (any, error) {
+			called[MethodSetRuntimeProfile] = true
+			return map[string]any{"ok": true}, nil
+		},
+		RestoreSession: func(context.Context, RestoreSessionParams) (any, error) {
+			called[MethodRestoreSession] = true
+			return map[string]any{"ok": true}, nil
+		},
+		ListSessions: func(context.Context) (any, error) {
+			called[MethodListSessions] = true
+			return map[string]any{"ok": true}, nil
+		},
+	})
+	cases := []struct {
+		method string
+		params string
+	}{
+		{MethodInitialize, `{"client_name":"test"}`},
+		{MethodPrompt, `{"user_input":"hi"}`},
+		{MethodSteer, `{"user_input":"steer"}`},
+		{MethodCancel, `{}`},
+		{MethodSetPlanMode, `{"enabled":true}`},
+		{MethodSetRuntimeProfile, `{"mode":"code"}`},
+		{MethodRestoreSession, `{"session_id":"sess_1"}`},
+		{MethodListSessions, `{}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.method, func(t *testing.T) {
+			raw := []byte(`{"jsonrpc":"2.0","method":"` + tc.method + `","id":"` + tc.method + `","params":` + tc.params + `}`)
+			incoming, err := UnmarshalIncoming(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := server.HandleIncoming(context.Background(), incoming)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var msg RPCMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				t.Fatal(err)
+			}
+			if string(msg.ID) != `"`+tc.method+`"` || msg.Error != nil || len(msg.Result) == 0 {
+				t.Fatalf("unexpected response for %s: %+v", tc.method, msg)
+			}
+			if !called[tc.method] {
+				t.Fatalf("handler for %s was not called", tc.method)
+			}
+		})
+	}
+}
+
 func decodeRPCOutput(t *testing.T, output string) []RPCMessage {
 	t.Helper()
 	lines := strings.Split(strings.TrimSpace(output), "\n")

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -39,10 +40,25 @@ func renderInteractiveWireMessage(state *wireTerminalRenderState, msg wire.WireM
 	if state == nil {
 		state = &wireTerminalRenderState{}
 	}
+	if msg.Kind == wire.MessageRequest && msg.Request != nil {
+		renderInteractiveWireRequest(msg.Request, errOut)
+		return
+	}
 	if msg.Kind != wire.MessageEvent || msg.Event == nil {
 		return
 	}
 	switch msg.Event.Type {
+	case wire.EventStepBegin:
+		var step wire.StepBegin
+		if json.Unmarshal(msg.Event.Payload, &step) == nil {
+			fmt.Fprintf(errOut, "\n[step %d]\n", step.N)
+		}
+	case wire.EventStepInterrupted:
+		fmt.Fprintln(errOut, "\n[step interrupted]")
+	case wire.EventCompactionBegin:
+		fmt.Fprintln(errOut, "\n[compaction begin]")
+	case wire.EventCompactionEnd:
+		fmt.Fprintln(errOut, "\n[compaction end]")
 	case wire.EventContentPart:
 		var part wire.ContentPart
 		if json.Unmarshal(msg.Event.Payload, &part) != nil {
@@ -69,6 +85,59 @@ func renderInteractiveWireMessage(state *wireTerminalRenderState, msg wire.WireM
 		if notification.Title != "" || notification.Message != "" {
 			fmt.Fprintf(errOut, "\n[notification] %s: %s\n", notification.Title, notification.Message)
 		}
+	case wire.EventToolCall:
+		var call wire.ToolCall
+		if json.Unmarshal(msg.Event.Payload, &call) == nil {
+			fmt.Fprintf(errOut, "\n[tool call] %s %s\n", call.Name, trimWireLine(string(call.Arguments), 300))
+		}
+	case wire.EventToolResult:
+		var result wire.ToolResult
+		if json.Unmarshal(msg.Event.Payload, &result) == nil {
+			label := "tool result"
+			if result.Error != "" {
+				label = "tool error"
+			}
+			content := strings.TrimSpace(result.Content)
+			if result.Error != "" {
+				content = result.Error
+			}
+			fmt.Fprintf(errOut, "\n[%s] %s: %s\n", label, result.Name, trimWireLine(content, 800))
+		}
+	case wire.EventSubagentEvent:
+		var event wire.SubagentEvent
+		if json.Unmarshal(msg.Event.Payload, &event) == nil {
+			fmt.Fprintf(errOut, "\n[subagent] %s %s %s\n", event.ID, event.Event, trimWireLine(string(event.Payload), 300))
+		}
+	}
+}
+
+func renderInteractiveWireRequest(req *wire.WireRequest, errOut io.Writer) {
+	switch req.Type {
+	case wire.RequestApproval:
+		var approval wire.ApprovalRequest
+		if json.Unmarshal(req.Payload, &approval) == nil {
+			fmt.Fprintf(errOut, "\n[approval request] %s: %s\n", approval.Action, trimWireLine(approval.Description, 800))
+		}
+	case wire.RequestQuestion:
+		var question wire.QuestionRequest
+		if json.Unmarshal(req.Payload, &question) == nil {
+			fmt.Fprintf(errOut, "\n[question request] %s (%d questions)\n", req.ID, len(question.Questions))
+			for _, item := range question.Questions {
+				fmt.Fprintf(errOut, "- %s: %s\n", item.Name, trimWireLine(item.Question, 300))
+			}
+		}
+	case wire.RequestToolCall:
+		var toolReq wire.ToolCallRequest
+		if json.Unmarshal(req.Payload, &toolReq) == nil {
+			fmt.Fprintf(errOut, "\n[tool request] %s %s\n", toolReq.Name, trimWireLine(string(toolReq.Arguments), 300))
+		}
+	case wire.RequestHook:
+		var hookReq wire.HookRequest
+		if json.Unmarshal(req.Payload, &hookReq) == nil {
+			fmt.Fprintf(errOut, "\n[hook request] %s %s\n", hookReq.Event, hookReq.Target)
+		}
+	default:
+		fmt.Fprintf(errOut, "\n[wire request] %s %s\n", req.Type, req.ID)
 	}
 }
 
@@ -100,4 +169,12 @@ func renderInteractiveStatus(status wire.StatusUpdate, errOut io.Writer) {
 		return
 	}
 	fmt.Fprintf(errOut, "\r[elapsed %s]\n", formatElapsed(elapsed))
+}
+
+func trimWireLine(s string, limit int) string {
+	s = strings.Join(strings.Fields(strings.TrimSpace(s)), " ")
+	if limit <= 0 || len(s) <= limit {
+		return s
+	}
+	return s[:limit] + "..."
 }
