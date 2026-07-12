@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/display"
 )
@@ -12,18 +13,20 @@ import (
 type EventType string
 
 const (
-	EventTurnBegin       EventType = "TurnBegin"
-	EventTurnEnd         EventType = "TurnEnd"
-	EventStepBegin       EventType = "StepBegin"
-	EventStepInterrupted EventType = "StepInterrupted"
-	EventCompactionBegin EventType = "CompactionBegin"
-	EventCompactionEnd   EventType = "CompactionEnd"
-	EventStatusUpdate    EventType = "StatusUpdate"
-	EventContentPart     EventType = "ContentPart"
-	EventToolCall        EventType = "ToolCall"
-	EventToolResult      EventType = "ToolResult"
-	EventSubagentEvent   EventType = "SubagentEvent"
-	EventNotification    EventType = "Notification"
+	EventTurnBegin        EventType = "TurnBegin"
+	EventTurnEnd          EventType = "TurnEnd"
+	EventStepBegin        EventType = "StepBegin"
+	EventStepInterrupted  EventType = "StepInterrupted"
+	EventCompactionBegin  EventType = "CompactionBegin"
+	EventCompactionEnd    EventType = "CompactionEnd"
+	EventStatusUpdate     EventType = "StatusUpdate"
+	EventContentPart      EventType = "ContentPart"
+	EventToolCall         EventType = "ToolCall"
+	EventToolResult       EventType = "ToolResult"
+	EventSubagentEvent    EventType = "SubagentEvent"
+	EventProcessEvent     EventType = "ProcessEvent"
+	EventInteractiveEvent EventType = "InteractiveEvent"
+	EventNotification     EventType = "Notification"
 )
 
 type RequestType string
@@ -143,6 +146,40 @@ type SubagentEvent struct {
 	ID      string          `json:"id"`
 	Event   string          `json:"event"`
 	Payload json.RawMessage `json:"payload,omitempty"`
+}
+
+type ProcessEvent struct {
+	ID         string    `json:"id"`
+	Kind       string    `json:"kind"`
+	Event      string    `json:"event"`
+	Status     string    `json:"status"`
+	PID        int       `json:"pid,omitempty"`
+	Command    string    `json:"command,omitempty"`
+	Args       []string  `json:"args,omitempty"`
+	Output     string    `json:"output,omitempty"`
+	Stream     string    `json:"stream,omitempty"`
+	ExitCode   *int      `json:"exit_code,omitempty"`
+	Error      string    `json:"error,omitempty"`
+	Attached   bool      `json:"attached"`
+	EnvSummary []string  `json:"env_summary,omitempty"`
+	Message    string    `json:"message,omitempty"`
+	Time       time.Time `json:"time"`
+}
+
+type InteractiveEvent struct {
+	ID       string    `json:"id"`
+	Event    string    `json:"event"`
+	Status   string    `json:"status"`
+	PID      int       `json:"pid,omitempty"`
+	Command  string    `json:"command,omitempty"`
+	Args     []string  `json:"args,omitempty"`
+	Output   string    `json:"output,omitempty"`
+	Error    string    `json:"error,omitempty"`
+	Attached bool      `json:"attached"`
+	Rows     int       `json:"rows,omitempty"`
+	Cols     int       `json:"cols,omitempty"`
+	Message  string    `json:"message,omitempty"`
+	Time     time.Time `json:"time"`
 }
 
 type Notification struct {

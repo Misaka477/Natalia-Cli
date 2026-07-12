@@ -28,16 +28,27 @@ agent:
     - natalia/tools/process:Output
     - natalia/tools/process:Stop
     - natalia/tools/process:Restart
+    - natalia/tools/process:Attach
+    - natalia/tools/process:Detach
+    - natalia/tools/process:Cleanup
+    - natalia/tools/process:Audit
     - natalia/tools/background:Start
     - natalia/tools/background:List
     - natalia/tools/background:Output
     - natalia/tools/background:Stop
+    - natalia/tools/background:Restart
+    - natalia/tools/background:Cleanup
+    - natalia/tools/background:Audit
     - natalia/tools/interactive:Start
     - natalia/tools/interactive:Read
     - natalia/tools/interactive:Write
     - natalia/tools/interactive:Keys
     - natalia/tools/interactive:Stop
     - natalia/tools/interactive:List
+    - natalia/tools/interactive:Attach
+    - natalia/tools/interactive:Detach
+    - natalia/tools/interactive:Resize
+    - natalia/tools/interactive:Transcript
     - natalia/tools/workflow:List
     - natalia/tools/workflow:Read
     - natalia/tools/plan:EnterMode
@@ -68,4 +79,13 @@ agent:
       model_profile: cheap
       permission_profile: read_only
       description: 低成本对话模式
-  subagents: {}
+  subagents:
+    coder:
+      path: ""
+      description: General software engineering implementation agent
+    explore:
+      path: ""
+      description: Fast codebase exploration and research agent
+    plan:
+      path: ""
+      description: Planning and architecture breakdown agent

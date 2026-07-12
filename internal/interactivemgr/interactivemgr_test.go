@@ -4,6 +4,7 @@ import (
 	"context"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -90,6 +91,71 @@ func TestInteractiveSensitiveWriteRedactsFutureReads(t *testing.T) {
 	if !strings.Contains(obs.Tail, "secret redacted") {
 		t.Fatalf("expected redaction marker, got %+v", obs)
 	}
+	page, err := m.Transcript(sess.ID, 0, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(page.Text, "secret-value") || !strings.Contains(page.Text, "secret redacted") {
+		t.Fatalf("expected redacted transcript, got %+v", page)
+	}
+}
+
+func TestInteractiveEventsAttachDetachResizeAndTranscript(t *testing.T) {
+	m := New()
+	var mu sync.Mutex
+	var events []Event
+	detachSub := m.Subscribe(func(event Event) {
+		mu.Lock()
+		events = append(events, event)
+		mu.Unlock()
+	})
+	defer detachSub()
+	sess, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-i"}, Rows: 24, Cols: 80})
+	if err != nil {
+		skipIfPTYUnsupported(t, err)
+		t.Fatal(err)
+	}
+	defer m.Stop(sess.ID)
+	if _, err := m.Detach(sess.ID); err != nil {
+		t.Fatal(err)
+	}
+	attached, err := m.Attach(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !attached.Attached {
+		t.Fatalf("expected attached session, got %+v", attached)
+	}
+	resized, err := m.Resize(sess.ID, 30, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resized.Rows != 30 || resized.Cols != 100 {
+		t.Fatalf("expected resized session, got %+v", resized)
+	}
+	if _, err := m.Write(sess.ID, "printf event_ready\\n\n", false, ObserveOptions{WaitFor: "event_ready", IdleTimeout: 50 * time.Millisecond, MaxWait: time.Second, IncludeOutput: true}); err != nil {
+		t.Fatal(err)
+	}
+	page, err := m.Transcript(sess.ID, 0, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(page.Text, "event_ready") || page.Total == 0 {
+		t.Fatalf("expected transcript page with command output, got %+v", page)
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		got := append([]Event(nil), events...)
+		mu.Unlock()
+		if hasInteractiveEvent(got, EventStarted, sess.ID) && hasInteractiveEvent(got, EventDetached, sess.ID) && hasInteractiveEvent(got, EventAttached, sess.ID) && hasInteractiveEvent(got, EventResized, sess.ID) && hasInteractiveOutput(got, sess.ID, "event_ready") {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	t.Fatalf("expected lifecycle/output events, got %+v", events)
 }
 
 func TestInteractiveEnterKeyAndStop(t *testing.T) {
@@ -155,6 +221,8 @@ func TestDetectPromptCoversShellAndCustomWaitPatterns(t *testing.T) {
 		{name: "root hash", tail: "root#", want: "root#"},
 		{name: "question", tail: "Continue?", want: "Continue?"},
 		{name: "password", tail: "Password:", want: "Password:"},
+		{name: "select", tail: "Select project:", want: "Select project:"},
+		{name: "yes no", tail: "Overwrite file? [y/N]", want: "Overwrite file? [y/N]"},
 		{name: "none", tail: "just output\nnext line", want: ""},
 	}
 	for _, tc := range cases {
@@ -164,6 +232,24 @@ func TestDetectPromptCoversShellAndCustomWaitPatterns(t *testing.T) {
 			}
 		})
 	}
+}
+
+func hasInteractiveEvent(events []Event, typ EventType, id string) bool {
+	for _, event := range events {
+		if event.Type == typ && event.Session.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func hasInteractiveOutput(events []Event, id, text string) bool {
+	for _, event := range events {
+		if event.Type == EventOutput && event.Session.ID == id && strings.Contains(event.Output, text) {
+			return true
+		}
+	}
+	return false
 }
 
 func skipIfPTYUnsupported(t *testing.T, err error) {

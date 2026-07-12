@@ -12,10 +12,11 @@ import (
 )
 
 type Spawn struct {
-	Pool     *worker.Pool
-	Client   *llm.Client
-	Tools    *toolset.Registry
-	Approver *approval.Approver
+	Pool                  *worker.Pool
+	Client                *llm.Client
+	Tools                 *toolset.Registry
+	Approver              *approval.Approver
+	ClientForModelProfile func(string) (*llm.Client, error)
 }
 
 func (t *Spawn) Name() string        { return "agent_spawn" }
@@ -27,6 +28,7 @@ func (t *Spawn) Parameters() map[string]llm.Property {
 		"mode":          {Type: "string", Description: "模式（code/ask/plan/debug/chat），默认 code"},
 		"foreground":    {Type: "boolean", Description: "可选，true 时等待子 agent 完成或超时后返回输出摘要"},
 		"timeout_sec":   {Type: "integer", Description: "可选，子 agent 超时秒数；foreground 默认 30，background 默认 0 不限制，最大 3600"},
+		"model_profile": {Type: "string", Description: "可选，覆盖子 agent 使用的 model profile；默认继承当前 runtime profile"},
 		"allowed_tools": {Type: "array", Description: "可选，子 agent 允许使用的工具名列表；为空表示继承当前工具集"},
 		"exclude_tools": {Type: "array", Description: "可选，子 agent 禁用的工具名列表"},
 	}
@@ -48,11 +50,23 @@ func (t *Spawn) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	client := t.Client
+	modelProfile, _ := args["model_profile"].(string)
+	modelProfile = strings.TrimSpace(modelProfile)
+	if modelProfile != "" {
+		if t.ClientForModelProfile == nil {
+			return "", fmt.Errorf("model_profile override is not available")
+		}
+		client, err = t.ClientForModelProfile(modelProfile)
+		if err != nil {
+			return "", err
+		}
+	}
 	childTools, err := childToolRegistry(t.Tools, args)
 	if err != nil {
 		return "", err
 	}
-	w, err := t.Pool.SpawnWithOptions(task, modeName, t.Client, childTools, worker.SpawnOptions{Timeout: time.Duration(timeoutSec) * time.Second, Approver: t.Approver})
+	w, err := t.Pool.SpawnWithOptions(task, modeName, client, childTools, worker.SpawnOptions{Timeout: time.Duration(timeoutSec) * time.Second, Approver: t.Approver, ModelProfile: modelProfile})
 	if err != nil {
 		return "", fmt.Errorf("创建子 agent 失败: %w", err)
 	}
@@ -60,7 +74,11 @@ func (t *Spawn) Execute(args map[string]any) (string, error) {
 		waitForWorker(w, time.Duration(timeoutSec)*time.Second)
 		return formatWorkerDetail(w), nil
 	}
-	return fmt.Sprintf("子 agent %s 已创建\n任务: %s\n模式: %s\n状态: %s", w.ID, task, modeName, w.Status), nil
+	profileLine := ""
+	if modelProfile != "" {
+		profileLine = "\n模型配置: " + modelProfile
+	}
+	return fmt.Sprintf("子 agent %s 已创建\n任务: %s\n模式: %s%s\n状态: %s", w.ID, task, modeName, profileLine, w.Status), nil
 }
 
 func childToolRegistry(base *toolset.Registry, args map[string]any) (*toolset.Registry, error) {
@@ -124,7 +142,11 @@ func (t *List) Execute(args map[string]any) (string, error) {
 				last = logs[len(logs)-1].Result
 			}
 		}
-		b.WriteString(fmt.Sprintf("%s [%s] %s", w.ID, w.Status, w.Task))
+		profile := ""
+		if w.ModelProfile != "" {
+			profile = " model_profile=" + w.ModelProfile
+		}
+		b.WriteString(fmt.Sprintf("%s [%s] %s%s", w.ID, w.Status, w.Task, profile))
 		if last != "" {
 			b.WriteString(" → " + truncate(last, 40))
 		}
@@ -270,7 +292,11 @@ func waitForWorker(w *worker.Worker, timeout time.Duration) {
 func formatWorkerDetail(w *worker.Worker) string {
 	logs := w.GetLogs()
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s [%s] %s\n", w.ID, w.GetStatus(), w.Task)
+	profile := ""
+	if w.ModelProfile != "" {
+		profile = " model_profile=" + w.ModelProfile
+	}
+	fmt.Fprintf(&b, "%s [%s] %s%s\n", w.ID, w.GetStatus(), w.Task, profile)
 	for _, entry := range logs {
 		if entry.Tool != "" {
 			fmt.Fprintf(&b, "[%s] %s %v\n", w.ID, entry.Tool, entry.Args)

@@ -24,6 +24,11 @@ func TestLoadDefaultAgentSpec(t *testing.T) {
 	if spec.Modes["plan"].ModelProfile != "strongest" || spec.Modes["debug"].ModelProfile != "strongest" {
 		t.Fatalf("expected plan/debug to use strongest model, got %+v", spec.Modes)
 	}
+	for _, name := range []string{"coder", "explore", "plan"} {
+		if spec.Subagents[name].Description == "" {
+			t.Fatalf("expected default subagent %s to have description, got %+v", name, spec.Subagents)
+		}
+	}
 	prompt, err := spec.RenderSystemPrompt(TemplateArgs{WorkDir: "/tmp/work", Now: "now", Shell: "/bin/zsh"})
 	if err != nil {
 		t.Fatalf("RenderSystemPrompt failed: %v", err)

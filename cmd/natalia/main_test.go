@@ -1583,6 +1583,50 @@ func TestBridgeProcessNotificationsPublishesWireAndInjection(t *testing.T) {
 	}
 }
 
+func TestBridgeProcessWireEventsPublishesLifecycleEvents(t *testing.T) {
+	processmgr.ResetDefaultManagerForTest()
+	defer processmgr.ResetDefaultManagerForTest()
+	w := wire.NewWire()
+	msgs, cancel := w.UISide().SubscribeRaw()
+	defer cancel()
+	detach := bridgeProcessWireEvents(w)
+	defer detach()
+	sess, err := processmgr.DefaultManager().Start(context.Background(), processmgr.StartOptions{Command: "/bin/sh", Args: []string{"-c", "printf 'bridge-ok\\n'"}, Env: []string{"API_KEY=super-secret"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seenStarted, seenOutput, seenExited bool
+	deadline := time.After(2 * time.Second)
+	for !(seenStarted && seenOutput && seenExited) {
+		select {
+		case msg := <-msgs:
+			if msg.Event == nil || msg.Event.Type != wire.EventProcessEvent {
+				continue
+			}
+			var event wire.ProcessEvent
+			if err := json.Unmarshal(msg.Event.Payload, &event); err != nil {
+				t.Fatal(err)
+			}
+			if event.ID != sess.ID {
+				t.Fatalf("unexpected process event id: %+v", event)
+			}
+			if strings.Contains(strings.Join(event.EnvSummary, ","), "super-secret") {
+				t.Fatalf("process wire event leaked secret env: %+v", event)
+			}
+			switch event.Event {
+			case string(processmgr.EventStarted):
+				seenStarted = true
+			case string(processmgr.EventOutput):
+				seenOutput = event.Output == "bridge-ok" && event.Stream == "stdout"
+			case string(processmgr.EventExited):
+				seenExited = event.ExitCode != nil && *event.ExitCode == 0
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for process wire events: started=%t output=%t exited=%t", seenStarted, seenOutput, seenExited)
+		}
+	}
+}
+
 func TestBridgeWorkerEventsPublishesSubagentWireEvents(t *testing.T) {
 	oldPool := workerPool
 	t.Cleanup(func() { workerPool = oldPool })
@@ -1725,13 +1769,14 @@ func TestInteractiveWireRendererHandlesRuntimeEventsAndRequests(t *testing.T) {
 	renderEvent(wire.EventToolCall, wire.ToolCall{ID: "tc_1", Name: "read_file", Arguments: json.RawMessage(`{"path":"README.md"}`)})
 	renderEvent(wire.EventToolResult, wire.ToolResult{ToolCallID: "tc_1", Name: "read_file", Content: "ok"})
 	renderEvent(wire.EventSubagentEvent, wire.SubagentEvent{ID: "worker_1", Event: "log", Payload: json.RawMessage(`{"status":"running"}`)})
+	renderEvent(wire.EventProcessEvent, wire.ProcessEvent{ID: "proc_1", Event: "output", Status: "running", Stream: "stdout", Output: "ready", Attached: true})
 	renderRequest("approval_1", wire.RequestApproval, wire.ApprovalRequest{ID: "approval_1", Action: "run_shell", Description: "go test ./..."})
 	renderRequest("question_1", wire.RequestQuestion, wire.QuestionRequest{ID: "question_1", Questions: []wire.QuestionItem{{Name: "choice", Question: "Proceed?"}}})
 	renderRequest("tool_1", wire.RequestToolCall, wire.ToolCallRequest{ID: "tool_1", Name: "external_tool", Arguments: json.RawMessage(`{"ok":true}`)})
 	renderRequest("hook_1", wire.RequestHook, wire.HookRequest{ID: "hook_1", Event: "PreToolUse", Target: "read_file"})
 
 	got := errOut.String()
-	for _, want := range []string{"[step 2]", "[step interrupted]", "[compaction begin]", "[compaction end]", "[tool call] read_file", "[tool result] read_file: ok", "[subagent] worker_1 log", "[approval request] run_shell", "[question request] question_1", "[tool request] external_tool", "[hook request] PreToolUse read_file"} {
+	for _, want := range []string{"[step 2]", "[step interrupted]", "[compaction begin]", "[compaction end]", "[tool call] read_file", "[tool result] read_file: ok", "[subagent] worker_1 log", "[process] proc_1 output status=running stdout: ready", "[approval request] run_shell", "[question request] question_1", "[tool request] external_tool", "[hook request] PreToolUse read_file"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected renderer stderr to contain %q, got %q", want, got)
 		}

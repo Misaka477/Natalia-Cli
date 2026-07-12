@@ -36,25 +36,27 @@ type LogEntry struct {
 }
 
 type Worker struct {
-	ID        string
-	Mode      string
-	Task      string
-	Status    Status
-	Engine    *soul.Engine
-	Logs      []LogEntry
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	OnLog     func(LogEntry)
-	OnStatus  func(Status)
-	mu        sync.RWMutex
+	ID           string
+	Mode         string
+	ModelProfile string
+	Task         string
+	Status       Status
+	Engine       *soul.Engine
+	Logs         []LogEntry
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	OnLog        func(LogEntry)
+	OnStatus     func(Status)
+	mu           sync.RWMutex
 
 	ctx    context.Context
 	cancel context.CancelFunc
 }
 
 type SpawnOptions struct {
-	Timeout  time.Duration
-	Approver *approval.Approver
+	Timeout      time.Duration
+	Approver     *approval.Approver
+	ModelProfile string
 }
 
 func New(id, task, modeName string, llmClient *llm.Client, tools *toolset.Registry) (*Worker, error) {
@@ -74,15 +76,16 @@ func NewWithOptions(id, task, modeName string, llmClient *llm.Client, tools *too
 
 	eng := soul.NewEngine(llmClient, tools)
 	w := &Worker{
-		ID:        id,
-		Mode:      modeName,
-		Task:      task,
-		Status:    StatusIdle,
-		Engine:    eng,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-		ctx:       ctx,
-		cancel:    cancel,
+		ID:           id,
+		Mode:         modeName,
+		ModelProfile: opts.ModelProfile,
+		Task:         task,
+		Status:       StatusIdle,
+		Engine:       eng,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+		ctx:          ctx,
+		cancel:       cancel,
 	}
 
 	eng.Mode = m
@@ -214,13 +217,14 @@ func (w *Worker) setStatus(status Status) {
 }
 
 type Event struct {
-	WorkerID string    `json:"worker_id"`
-	Task     string    `json:"task,omitempty"`
-	Mode     string    `json:"mode,omitempty"`
-	Event    string    `json:"event"`
-	Status   Status    `json:"status,omitempty"`
-	Log      *LogEntry `json:"log,omitempty"`
-	Time     time.Time `json:"time,omitempty"`
+	WorkerID     string    `json:"worker_id"`
+	Task         string    `json:"task,omitempty"`
+	Mode         string    `json:"mode,omitempty"`
+	ModelProfile string    `json:"model_profile,omitempty"`
+	Event        string    `json:"event"`
+	Status       Status    `json:"status,omitempty"`
+	Log          *LogEntry `json:"log,omitempty"`
+	Time         time.Time `json:"time,omitempty"`
 }
 
 type Pool struct {
@@ -267,16 +271,16 @@ func (p *Pool) SpawnWithOptions(task, modeName string, llmClient *llm.Client, to
 	}
 	w.OnLog = func(entry LogEntry) {
 		entryCopy := entry
-		p.emit(Event{WorkerID: w.ID, Task: w.Task, Mode: w.Mode, Event: "log", Log: &entryCopy, Time: entry.Timestamp})
+		p.emit(Event{WorkerID: w.ID, Task: w.Task, Mode: w.Mode, ModelProfile: w.ModelProfile, Event: "log", Log: &entryCopy, Time: entry.Timestamp})
 	}
 	w.OnStatus = func(status Status) {
-		p.emit(Event{WorkerID: w.ID, Task: w.Task, Mode: w.Mode, Event: "status", Status: status, Time: time.Now()})
+		p.emit(Event{WorkerID: w.ID, Task: w.Task, Mode: w.Mode, ModelProfile: w.ModelProfile, Event: "status", Status: status, Time: time.Now()})
 	}
 
 	p.mu.Lock()
 	p.workers[id] = w
 	p.mu.Unlock()
-	p.emit(Event{WorkerID: w.ID, Task: w.Task, Mode: w.Mode, Event: "created", Status: w.GetStatus(), Time: time.Now()})
+	p.emit(Event{WorkerID: w.ID, Task: w.Task, Mode: w.Mode, ModelProfile: w.ModelProfile, Event: "created", Status: w.GetStatus(), Time: time.Now()})
 
 	w.Start()
 	return w, nil

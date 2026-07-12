@@ -147,9 +147,61 @@ func renderInteractiveWireMessage(state *wireTerminalRenderState, msg wire.WireM
 	case wire.EventSubagentEvent:
 		var event wire.SubagentEvent
 		if json.Unmarshal(msg.Event.Payload, &event) == nil {
-			fmt.Fprintf(errOut, "\n[subagent] %s %s %s\n", event.ID, event.Event, trimWireLine(string(event.Payload), 300))
+			fmt.Fprintf(errOut, "\n[subagent] %s %s %s\n", event.ID, event.Event, trimWireLine(formatSubagentPayload(event.Payload), 500))
+		}
+	case wire.EventProcessEvent:
+		var event wire.ProcessEvent
+		if json.Unmarshal(msg.Event.Payload, &event) == nil {
+			detail := event.Message
+			if detail == "" && event.Output != "" {
+				detail = event.Stream + ": " + event.Output
+			}
+			if detail == "" && event.Error != "" {
+				detail = event.Error
+			}
+			fmt.Fprintf(errOut, "\n[process] %s %s status=%s %s\n", event.ID, event.Event, event.Status, trimWireLine(detail, 500))
+		}
+	case wire.EventInteractiveEvent:
+		var event wire.InteractiveEvent
+		if json.Unmarshal(msg.Event.Payload, &event) == nil {
+			detail := event.Message
+			if detail == "" && event.Output != "" {
+				detail = event.Output
+			}
+			if detail == "" && event.Error != "" {
+				detail = event.Error
+			}
+			fmt.Fprintf(errOut, "\n[interactive] %s %s status=%s %s\n", event.ID, event.Event, event.Status, trimWireLine(detail, 500))
 		}
 	}
+}
+
+func formatSubagentPayload(raw json.RawMessage) string {
+	var payload map[string]any
+	if json.Unmarshal(raw, &payload) != nil {
+		return string(raw)
+	}
+	parts := make([]string, 0, 5)
+	for _, key := range []string{"status", "mode", "model_profile", "task"} {
+		if value, ok := payload[key]; ok && fmt.Sprint(value) != "" {
+			parts = append(parts, key+"="+fmt.Sprint(value))
+		}
+	}
+	if logValue, ok := payload["log"].(map[string]any); ok {
+		if tool, ok := logValue["tool"]; ok && fmt.Sprint(tool) != "" {
+			parts = append(parts, "tool="+fmt.Sprint(tool))
+		}
+		if result, ok := logValue["result"]; ok && fmt.Sprint(result) != "" {
+			parts = append(parts, "result="+fmt.Sprint(result))
+		}
+		if errText, ok := logValue["error"]; ok && fmt.Sprint(errText) != "" {
+			parts = append(parts, "error="+fmt.Sprint(errText))
+		}
+	}
+	if len(parts) == 0 {
+		return string(raw)
+	}
+	return strings.Join(parts, " ")
 }
 
 func renderInteractiveWireRequest(req *wire.WireRequest, errOut io.Writer) {

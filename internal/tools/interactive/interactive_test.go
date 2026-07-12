@@ -27,7 +27,7 @@ func (m *fakeManager) Start(ctx context.Context, opts interactivemgr.StartOption
 	if opts.Command != "fake-cli" || len(opts.Args) != 1 || opts.Args[0] != "--repl" || opts.Rows != 30 || opts.Cols != 120 {
 		return nil, fmt.Errorf("unexpected start options: %+v", opts)
 	}
-	sess := interactivemgr.Session{ID: "tty_fake", Command: opts.Command, Args: opts.Args, Status: interactivemgr.StatusRunning, PID: 123}
+	sess := interactivemgr.Session{ID: "tty_fake", Command: opts.Command, Args: opts.Args, Status: interactivemgr.StatusRunning, PID: 123, Attached: true, Rows: opts.Rows, Cols: opts.Cols}
 	m.sessions = []interactivemgr.Session{sess}
 	return &sess, nil
 }
@@ -46,6 +46,41 @@ func (m *fakeManager) Status(id string) (*interactivemgr.Session, bool) {
 		}
 	}
 	return nil, false
+}
+
+func (m *fakeManager) Attach(id string) (*interactivemgr.Session, error) {
+	sess, ok := m.Status(id)
+	if !ok {
+		return nil, fmt.Errorf("missing")
+	}
+	sess.Attached = true
+	m.sessions[0] = *sess
+	return sess, nil
+}
+
+func (m *fakeManager) Detach(id string) (*interactivemgr.Session, error) {
+	sess, ok := m.Status(id)
+	if !ok {
+		return nil, fmt.Errorf("missing")
+	}
+	sess.Attached = false
+	m.sessions[0] = *sess
+	return sess, nil
+}
+
+func (m *fakeManager) Resize(id string, rows, cols int) (*interactivemgr.Session, error) {
+	sess, ok := m.Status(id)
+	if !ok {
+		return nil, fmt.Errorf("missing")
+	}
+	sess.Rows = rows
+	sess.Cols = cols
+	m.sessions[0] = *sess
+	return sess, nil
+}
+
+func (m *fakeManager) Transcript(id string, offset, limit int) (interactivemgr.TranscriptPage, error) {
+	return interactivemgr.TranscriptPage{Text: "ready> ok", Total: 9, Offset: offset, NextOffset: offset + len("ready> ok"), HasMore: false}, nil
 }
 
 func (m *fakeManager) Observe(id string, opts interactivemgr.ObserveOptions) (*interactivemgr.Observation, error) {
@@ -114,6 +149,34 @@ func TestInteractiveToolsFallbackManagerCoversExecuteFlow(t *testing.T) {
 	}
 	if !strings.Contains(listed, "tty_fake") {
 		t.Fatalf("expected fake session in list, got %q", listed)
+	}
+	detached, err := (&Detach{}).Execute(map[string]any{"id": "tty_fake"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(detached, "attached: false") {
+		t.Fatalf("expected detached fake session, got %q", detached)
+	}
+	attached, err := (&Attach{}).Execute(map[string]any{"id": "tty_fake"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(attached, "attached: true") {
+		t.Fatalf("expected attached fake session, got %q", attached)
+	}
+	resized, err := (&Resize{}).Execute(map[string]any{"id": "tty_fake", "rows": float64(40), "cols": float64(100)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(resized, "size: 40x100") {
+		t.Fatalf("expected resized fake session, got %q", resized)
+	}
+	transcript, err := (&Transcript{}).Execute(map[string]any{"id": "tty_fake", "offset": float64(0), "limit": float64(20)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(transcript, "ready> ok") || !strings.Contains(transcript, "has_more=false") {
+		t.Fatalf("expected transcript page, got %q", transcript)
 	}
 	stopped, err := (&Stop{}).Execute(map[string]any{"id": "tty_fake"})
 	if err != nil {

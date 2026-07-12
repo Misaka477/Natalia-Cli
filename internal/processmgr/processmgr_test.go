@@ -60,6 +60,60 @@ func TestSubscribeCompleteFiresOnProcessExit(t *testing.T) {
 	t.Fatalf("expected completion callback for %s, got %+v", sess.ID, completed)
 }
 
+func TestSubscribePublishesLifecycleOutputAndAttachDetachEvents(t *testing.T) {
+	m := New()
+	var mu sync.Mutex
+	var events []Event
+	detach := m.Subscribe(func(event Event) {
+		mu.Lock()
+		events = append(events, event)
+		mu.Unlock()
+	})
+	defer detach()
+
+	running, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-c", "while true; do sleep 1; done"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	detached, err := m.Detach(running.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detached.Attached {
+		t.Fatalf("expected detached session, got %+v", detached)
+	}
+	attached, err := m.Attach(running.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !attached.Attached {
+		t.Fatalf("expected attached session, got %+v", attached)
+	}
+	if err := m.Stop(running.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	done, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-c", "printf 'hello\\n'"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, m, done.ID, StatusExited)
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		got := append([]Event(nil), events...)
+		mu.Unlock()
+		if hasEvent(got, EventStarted, running.ID) && hasEvent(got, EventDetached, running.ID) && hasEvent(got, EventAttached, running.ID) && hasEvent(got, EventStopped, running.ID) && hasOutputEvent(got, done.ID, "hello") && hasEvent(got, EventExited, done.ID) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	t.Fatalf("expected lifecycle/output events, got %+v", events)
+}
+
 func TestStartValidatesCwd(t *testing.T) {
 	m := New()
 	_, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-c", "true"}, Cwd: filepath.Join(t.TempDir(), "missing")})
@@ -151,6 +205,55 @@ func TestCleanupFinishedRemovesOnlyOldCompletedSessions(t *testing.T) {
 	}
 }
 
+func TestSweepStopsExpiredSessionsAndAuditIsRedacted(t *testing.T) {
+	m := New()
+	running, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-c", "while true; do sleep 1; done"}, Env: []string{"VISIBLE=ok", "TOKEN=secret"}, IdleTimeout: time.Nanosecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(time.Millisecond)
+	result := m.Sweep(SweepOptions{})
+	if result.Stopped != 1 {
+		t.Fatalf("expected one idle session stopped, got %+v", result)
+	}
+	status, ok := m.Status(running.ID)
+	if !ok || status.Status != StatusStopped {
+		t.Fatalf("expected stopped session after sweep, ok=%v status=%+v", ok, status)
+	}
+	done, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-c", "true"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, m, done.ID, StatusExited)
+	if removed := m.CleanupFinished(0); removed < 1 {
+		t.Fatalf("expected completed cleanup to remove at least one session, got %d", removed)
+	}
+	audit := m.AuditLog()
+	joined := formatAuditForTest(audit)
+	if !strings.Contains(joined, "start") || !strings.Contains(joined, "stop") || !strings.Contains(joined, "cleanup") || !strings.Contains(joined, "TOKEN=[redacted]") || strings.Contains(joined, "secret") {
+		t.Fatalf("expected redacted start/stop/cleanup audit, got %s", joined)
+	}
+}
+
+func TestStartSweeperRunsUntilStopped(t *testing.T) {
+	m := New()
+	done, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-c", "true"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, m, done.ID, StatusExited)
+	stop := m.StartSweeper(context.Background(), 10*time.Millisecond, SweepOptions{FinishedMaxAge: 0})
+	defer stop()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := m.Status(done.ID); !ok {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("expected sweeper to remove completed session %s", done.ID)
+}
+
 func waitForStatus(t *testing.T, m *Manager, id string, status Status) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
@@ -172,6 +275,35 @@ func joinOutput(lines []OutputLine) string {
 		b.WriteString(":")
 		b.WriteString(line.Text)
 		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func hasEvent(events []Event, typ EventType, id string) bool {
+	for _, event := range events {
+		if event.Type == typ && event.Session.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func hasOutputEvent(events []Event, id, text string) bool {
+	for _, event := range events {
+		if event.Type == EventOutput && event.Session.ID == id && event.Output != nil && event.Output.Text == text {
+			return true
+		}
+	}
+	return false
+}
+
+func formatAuditForTest(entries []AuditEntry) string {
+	var b strings.Builder
+	for _, entry := range entries {
+		b.WriteString(entry.Action)
+		b.WriteByte(' ')
+		b.WriteString(strings.Join(entry.EnvSummary, ","))
+		b.WriteByte('\n')
 	}
 	return b.String()
 }

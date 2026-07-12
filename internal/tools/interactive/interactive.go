@@ -14,6 +14,10 @@ type manager interface {
 	Start(context.Context, interactivemgr.StartOptions) (*interactivemgr.Session, error)
 	List() []interactivemgr.Session
 	Status(string) (*interactivemgr.Session, bool)
+	Attach(string) (*interactivemgr.Session, error)
+	Detach(string) (*interactivemgr.Session, error)
+	Resize(string, int, int) (*interactivemgr.Session, error)
+	Transcript(string, int, int) (interactivemgr.TranscriptPage, error)
 	Observe(string, interactivemgr.ObserveOptions) (*interactivemgr.Observation, error)
 	Write(string, string, bool, interactivemgr.ObserveOptions) (*interactivemgr.Observation, error)
 	SendKey(string, string, interactivemgr.ObserveOptions) (*interactivemgr.Observation, error)
@@ -208,6 +212,112 @@ func (t *Stop) Execute(args map[string]any) (string, error) {
 	return "interactive session stopped\n" + formatSession(sess), nil
 }
 
+type Attach struct{}
+
+func (t *Attach) Name() string        { return "interactive_attach" }
+func (t *Attach) Description() string { return "重新附加到交互式 PTY session" }
+func (t *Attach) Required() []string  { return []string{"id"} }
+func (t *Attach) Parameters() map[string]llm.Property {
+	return map[string]llm.Property{"id": {Type: "string", Description: "interactive session id"}}
+}
+func (t *Attach) Execute(args map[string]any) (string, error) {
+	id, err := requireID(args)
+	if err != nil {
+		return "", err
+	}
+	sess, err := currentManager().Attach(id)
+	if err != nil {
+		return "", err
+	}
+	return "interactive session attached\n" + formatSession(sess), nil
+}
+
+type Detach struct{}
+
+func (t *Detach) Name() string        { return "interactive_detach" }
+func (t *Detach) Description() string { return "detach 交互式 PTY session；进程继续运行" }
+func (t *Detach) Required() []string  { return []string{"id"} }
+func (t *Detach) Parameters() map[string]llm.Property {
+	return map[string]llm.Property{"id": {Type: "string", Description: "interactive session id"}}
+}
+func (t *Detach) Execute(args map[string]any) (string, error) {
+	id, err := requireID(args)
+	if err != nil {
+		return "", err
+	}
+	sess, err := currentManager().Detach(id)
+	if err != nil {
+		return "", err
+	}
+	return "interactive session detached\n" + formatSession(sess), nil
+}
+
+type Resize struct{}
+
+func (t *Resize) Name() string        { return "interactive_resize" }
+func (t *Resize) Description() string { return "调整交互式 PTY session 的窗口大小" }
+func (t *Resize) Required() []string  { return []string{"id", "rows", "cols"} }
+func (t *Resize) Parameters() map[string]llm.Property {
+	return map[string]llm.Property{
+		"id":   {Type: "string", Description: "interactive session id"},
+		"rows": {Type: "integer", Description: "PTY 行数，范围 10-200"},
+		"cols": {Type: "integer", Description: "PTY 列数，范围 20-400"},
+	}
+}
+func (t *Resize) Execute(args map[string]any) (string, error) {
+	id, err := requireID(args)
+	if err != nil {
+		return "", err
+	}
+	rows, err := intArg(args["rows"], 24, 10, 200, "rows")
+	if err != nil {
+		return "", err
+	}
+	cols, err := intArg(args["cols"], 80, 20, 400, "cols")
+	if err != nil {
+		return "", err
+	}
+	sess, err := currentManager().Resize(id, rows, cols)
+	if err != nil {
+		return "", err
+	}
+	return "interactive session resized\n" + formatSession(sess), nil
+}
+
+type Transcript struct{}
+
+func (t *Transcript) Name() string { return "interactive_transcript" }
+func (t *Transcript) Description() string {
+	return "分页读取交互式 PTY transcript；sensitive 输入会显示为 redacted"
+}
+func (t *Transcript) Required() []string { return []string{"id"} }
+func (t *Transcript) Parameters() map[string]llm.Property {
+	return map[string]llm.Property{
+		"id":     {Type: "string", Description: "interactive session id"},
+		"offset": {Type: "integer", Description: "可选，字节偏移，默认 0"},
+		"limit":  {Type: "integer", Description: "可选，读取字节数，默认 4096"},
+	}
+}
+func (t *Transcript) Execute(args map[string]any) (string, error) {
+	id, err := requireID(args)
+	if err != nil {
+		return "", err
+	}
+	offset, err := intArg(args["offset"], 0, 0, 10000000, "offset")
+	if err != nil {
+		return "", err
+	}
+	limit, err := intArg(args["limit"], 4096, 1, 200000, "limit")
+	if err != nil {
+		return "", err
+	}
+	page, err := currentManager().Transcript(id, offset, limit)
+	if err != nil {
+		return "", err
+	}
+	return formatTranscript(page), nil
+}
+
 type List struct{}
 
 func (t *List) Name() string                        { return "interactive_list" }
@@ -305,7 +415,7 @@ func formatSession(sess *interactivemgr.Session) string {
 	if sess.Error != "" {
 		errLine = "\nerror: " + sess.Error
 	}
-	return fmt.Sprintf("id: %s\nstatus: %s\npid: %d\ncommand: %s %s%s%s", sess.ID, sess.Status, sess.PID, sess.Command, strings.Join(sess.Args, " "), exitCode, errLine)
+	return fmt.Sprintf("id: %s\nstatus: %s\npid: %d\ncommand: %s %s\nattached: %t\nsize: %dx%d%s%s", sess.ID, sess.Status, sess.PID, sess.Command, strings.Join(sess.Args, " "), sess.Attached, sess.Rows, sess.Cols, exitCode, errLine)
 }
 
 func formatObservation(obs *interactivemgr.Observation) string {
@@ -330,5 +440,17 @@ func formatObservation(obs *interactivemgr.Observation) string {
 	if obs.Tail != "" {
 		fmt.Fprintf(&b, "tail:\n%s", obs.Tail)
 	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func formatTranscript(page interactivemgr.TranscriptPage) string {
+	var b strings.Builder
+	if page.Text == "" {
+		b.WriteString("<empty transcript>\n")
+	} else {
+		b.WriteString(page.Text)
+		b.WriteByte('\n')
+	}
+	fmt.Fprintf(&b, "page: offset=%d next_offset=%d total=%d has_more=%t", page.Offset, page.NextOffset, page.Total, page.HasMore)
 	return strings.TrimRight(b.String(), "\n")
 }

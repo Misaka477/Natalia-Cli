@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	"github.com/Misaka477/Natalia-Cli/internal/processmgr"
@@ -18,11 +19,13 @@ func (t *Start) Description() string {
 func (t *Start) Required() []string { return []string{"command"} }
 func (t *Start) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"command": {Type: "string", Description: "要启动的命令路径或可执行名"},
-		"args":    {Type: "array", Description: "可选，命令参数数组"},
-		"cwd":     {Type: "string", Description: "可选，工作目录，必须已存在"},
-		"env":     {Type: "object", Description: "可选，附加环境变量；secret/token/password/key 名称会在状态中 redacted"},
-		"kind":    {Type: "string", Description: "可选，process|background|interactive|mcp，默认 process"},
+		"command":      {Type: "string", Description: "要启动的命令路径或可执行名"},
+		"args":         {Type: "array", Description: "可选，命令参数数组"},
+		"cwd":          {Type: "string", Description: "可选，工作目录，必须已存在"},
+		"env":          {Type: "object", Description: "可选，附加环境变量；secret/token/password/key 名称会在状态中 redacted"},
+		"kind":         {Type: "string", Description: "可选，process|background|interactive|mcp，默认 process"},
+		"idle_timeout": {Type: "integer", Description: "可选，空闲自动停止秒数，0 表示不限制"},
+		"max_lifetime": {Type: "integer", Description: "可选，最大运行秒数，0 表示不限制"},
 	}
 }
 func (t *Start) Execute(args map[string]any) (string, error) {
@@ -40,7 +43,15 @@ func (t *Start) Execute(args map[string]any) (string, error) {
 	}
 	cwd, _ := args["cwd"].(string)
 	kind := parseKind(args)
-	sess, err := processmgr.DefaultManager().Start(context.Background(), processmgr.StartOptions{Command: command, Args: argv, Cwd: cwd, Env: env, Kind: kind})
+	idleTimeout, err := durationSecondsArg(args["idle_timeout"], 0, 0, 86400)
+	if err != nil {
+		return "", err
+	}
+	maxLifetime, err := durationSecondsArg(args["max_lifetime"], 0, 0, 86400)
+	if err != nil {
+		return "", err
+	}
+	sess, err := processmgr.DefaultManager().Start(context.Background(), processmgr.StartOptions{Command: command, Args: argv, Cwd: cwd, Env: env, Kind: kind, IdleTimeout: idleTimeout, MaxLifetime: maxLifetime})
 	if err != nil {
 		return "", err
 	}
@@ -138,6 +149,113 @@ func (t *Restart) Execute(args map[string]any) (string, error) {
 	}
 	return "已重启进程\n" + formatSession(sess), nil
 }
+
+type Attach struct{}
+
+func (t *Attach) Name() string { return "process_attach" }
+func (t *Attach) Description() string {
+	return "重新附加到 Natalia 管理的进程，恢复事件/状态关注"
+}
+func (t *Attach) Required() []string { return []string{"id"} }
+func (t *Attach) Parameters() map[string]llm.Property {
+	return map[string]llm.Property{"id": {Type: "string", Description: "process session id"}}
+}
+func (t *Attach) Execute(args map[string]any) (string, error) {
+	id, _ := args["id"].(string)
+	if id == "" {
+		return "", fmt.Errorf("id required")
+	}
+	sess, err := processmgr.DefaultManager().Attach(id)
+	if err != nil {
+		return "", err
+	}
+	return "已附加进程\n" + formatSession(sess), nil
+}
+
+type Detach struct{}
+
+func (t *Detach) Name() string { return "process_detach" }
+func (t *Detach) Description() string {
+	return "从 Natalia 管理的进程 detach；进程继续运行但状态标记为 detached"
+}
+func (t *Detach) Required() []string { return []string{"id"} }
+func (t *Detach) Parameters() map[string]llm.Property {
+	return map[string]llm.Property{"id": {Type: "string", Description: "process session id"}}
+}
+func (t *Detach) Execute(args map[string]any) (string, error) {
+	id, _ := args["id"].(string)
+	if id == "" {
+		return "", fmt.Errorf("id required")
+	}
+	sess, err := processmgr.DefaultManager().Detach(id)
+	if err != nil {
+		return "", err
+	}
+	return "已 detach 进程\n" + formatSession(sess), nil
+}
+
+type Cleanup struct{}
+
+func (t *Cleanup) Name() string { return "process_cleanup" }
+func (t *Cleanup) Description() string {
+	return "清理已完成的进程，并可按 idle/max lifetime 停止运行中的进程"
+}
+func (t *Cleanup) Required() []string { return nil }
+func (t *Cleanup) Parameters() map[string]llm.Property {
+	return map[string]llm.Property{
+		"finished_max_age": {Type: "integer", Description: "可选，完成后保留秒数，默认 0"},
+		"idle_timeout":     {Type: "integer", Description: "可选，运行中进程空闲秒数阈值，0 表示不检查"},
+		"max_lifetime":     {Type: "integer", Description: "可选，运行中进程最大运行秒数阈值，0 表示不检查"},
+		"detect_stale":     {Type: "boolean", Description: "可选，检查 PID 是否已失效"},
+	}
+}
+func (t *Cleanup) Execute(args map[string]any) (string, error) {
+	finishedMaxAge, err := durationSecondsArg(args["finished_max_age"], 0, 0, 86400*30)
+	if err != nil {
+		return "", err
+	}
+	idleTimeout, err := durationSecondsArg(args["idle_timeout"], 0, 0, 86400)
+	if err != nil {
+		return "", err
+	}
+	maxLifetime, err := durationSecondsArg(args["max_lifetime"], 0, 0, 86400)
+	if err != nil {
+		return "", err
+	}
+	result := processmgr.DefaultManager().Sweep(processmgr.SweepOptions{FinishedMaxAge: finishedMaxAge, IdleTimeout: idleTimeout, MaxLifetime: maxLifetime, DetectStale: boolArg(args["detect_stale"])})
+	return fmt.Sprintf("cleanup complete\nremoved: %d\nstopped: %d\nstale: %d", result.Removed, result.Stopped, result.Stale), nil
+}
+
+type Audit struct{}
+
+func (t *Audit) Name() string { return "process_audit" }
+func (t *Audit) Description() string {
+	return "查看 Natalia 进程管理审计日志，secret env 只显示 redacted 摘要"
+}
+func (t *Audit) Required() []string { return nil }
+func (t *Audit) Parameters() map[string]llm.Property {
+	return map[string]llm.Property{"tail": {Type: "integer", Description: "可选，最近多少条审计记录，默认全部"}}
+}
+func (t *Audit) Execute(args map[string]any) (string, error) {
+	tail := intArg(args["tail"])
+	entries := processmgr.DefaultManager().AuditLog()
+	if tail > 0 && tail < len(entries) {
+		entries = entries[len(entries)-tail:]
+	}
+	if len(entries) == 0 {
+		return "<no process audit entries>", nil
+	}
+	var b strings.Builder
+	for _, entry := range entries {
+		fmt.Fprintf(&b, "%s %s id=%s kind=%s status=%s command=%s %s", entry.Time.Format(time.RFC3339), entry.Action, entry.SessionID, entry.Kind, entry.Status, entry.Command, strings.Join(entry.Args, " "))
+		if len(entry.EnvSummary) > 0 {
+			fmt.Fprintf(&b, " env=%s", strings.Join(entry.EnvSummary, ","))
+		}
+		b.WriteByte('\n')
+	}
+	return strings.TrimRight(b.String(), "\n"), nil
+}
+
 func (t *Stop) Execute(args map[string]any) (string, error) {
 	id, _ := args["id"].(string)
 	if id == "" {
@@ -212,6 +330,35 @@ func intArg(raw any) int {
 	}
 }
 
+func durationSecondsArg(raw any, defaultValue, minValue, maxValue int) (time.Duration, error) {
+	if raw == nil {
+		return time.Duration(defaultValue) * time.Second, nil
+	}
+	value := intArg(raw)
+	if value == 0 {
+		switch raw.(type) {
+		case int, float64:
+		default:
+			return 0, fmt.Errorf("duration must be an integer number of seconds")
+		}
+	}
+	if value < minValue || value > maxValue {
+		return 0, fmt.Errorf("duration must be between %d and %d seconds", minValue, maxValue)
+	}
+	return time.Duration(value) * time.Second, nil
+}
+
+func boolArg(raw any) bool {
+	switch v := raw.(type) {
+	case bool:
+		return v
+	case string:
+		return strings.EqualFold(strings.TrimSpace(v), "true") || strings.TrimSpace(v) == "1" || strings.EqualFold(strings.TrimSpace(v), "yes")
+	default:
+		return false
+	}
+}
+
 func formatSessions(sessions []processmgr.Session) string {
 	if len(sessions) == 0 {
 		return "<no managed processes>"
@@ -240,5 +387,13 @@ func formatSession(sess *processmgr.Session) string {
 	if len(sess.EnvSummary) > 0 {
 		envLine = "\nenv: " + strings.Join(sess.EnvSummary, ", ")
 	}
-	return fmt.Sprintf("id: %s\nkind: %s\nstatus: %s\npid: %d\ncommand: %s %s%s%s%s", sess.ID, sess.Kind, sess.Status, sess.PID, sess.Command, strings.Join(sess.Args, " "), envLine, exitCode, errLine)
+	attachedLine := fmt.Sprintf("\nattached: %t", sess.Attached)
+	lifetimeLine := ""
+	if sess.IdleTimeout > 0 {
+		lifetimeLine += fmt.Sprintf("\nidle_timeout: %s", sess.IdleTimeout)
+	}
+	if sess.MaxLifetime > 0 {
+		lifetimeLine += fmt.Sprintf("\nmax_lifetime: %s", sess.MaxLifetime)
+	}
+	return fmt.Sprintf("id: %s\nkind: %s\nstatus: %s\npid: %d\ncommand: %s %s%s%s%s%s%s", sess.ID, sess.Kind, sess.Status, sess.PID, sess.Command, strings.Join(sess.Args, " "), attachedLine, lifetimeLine, envLine, exitCode, errLine)
 }

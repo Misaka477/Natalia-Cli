@@ -118,6 +118,44 @@ func TestProcessRestartReusesEnvAndRedactsStatus(t *testing.T) {
 	}
 }
 
+func TestProcessAttachDetachCleanupAndAudit(t *testing.T) {
+	resetManager()
+	result, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "args": []any{"-c", "while true; do sleep 1; done"}, "env": map[string]any{"TOKEN": "super-secret"}, "idle_timeout": float64(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := extractProcessID(t, result)
+	detached, err := (&Detach{}).Execute(map[string]any{"id": id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(detached, "attached: false") {
+		t.Fatalf("expected detached output, got %q", detached)
+	}
+	attached, err := (&Attach{}).Execute(map[string]any{"id": id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(attached, "attached: true") || !strings.Contains(attached, "idle_timeout: 1s") {
+		t.Fatalf("expected attached output with lifetime metadata, got %q", attached)
+	}
+	time.Sleep(1100 * time.Millisecond)
+	cleanup, err := (&Cleanup{}).Execute(map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(cleanup, "stopped: 1") {
+		t.Fatalf("expected cleanup to stop idle process, got %q", cleanup)
+	}
+	audit, err := (&Audit{}).Execute(map[string]any{"tail": float64(10)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(audit, "detach") || !strings.Contains(audit, "attach") || !strings.Contains(audit, "TOKEN=[redacted]") || strings.Contains(audit, "super-secret") {
+		t.Fatalf("expected redacted attach/detach audit, got %q", audit)
+	}
+}
+
 func TestProcessStartRejectsInvalidArgs(t *testing.T) {
 	resetManager()
 	_, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "args": "bad"})
@@ -143,6 +181,8 @@ func TestProcessEmptyUnknownAndFormattingPaths(t *testing.T) {
 		{name: "output", run: func() (string, error) { return (&Output{}).Execute(map[string]any{"id": "missing"}) }},
 		{name: "stop", run: func() (string, error) { return (&Stop{}).Execute(map[string]any{"id": "missing"}) }},
 		{name: "restart", run: func() (string, error) { return (&Restart{}).Execute(map[string]any{"id": "missing"}) }},
+		{name: "attach", run: func() (string, error) { return (&Attach{}).Execute(map[string]any{"id": "missing"}) }},
+		{name: "detach", run: func() (string, error) { return (&Detach{}).Execute(map[string]any{"id": "missing"}) }},
 	} {
 		_, err := tool.run()
 		if err == nil || !strings.Contains(err.Error(), "unknown process session") {
@@ -166,6 +206,12 @@ func TestProcessParseKindAndIntArg(t *testing.T) {
 	}
 	if _, err := parseEnv("bad"); err == nil || !strings.Contains(err.Error(), "env") {
 		t.Fatalf("expected invalid env error, got %v", err)
+	}
+	if _, err := durationSecondsArg("bad", 0, 0, 10); err == nil || !strings.Contains(err.Error(), "duration") {
+		t.Fatalf("expected invalid duration error, got %v", err)
+	}
+	if !boolArg("yes") || boolArg("no") {
+		t.Fatal("unexpected boolArg behavior")
 	}
 }
 

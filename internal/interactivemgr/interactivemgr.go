@@ -36,6 +36,14 @@ type StartOptions struct {
 	MaxTail int
 }
 
+type TranscriptPage struct {
+	Text       string
+	Total      int
+	Offset     int
+	NextOffset int
+	HasMore    bool
+}
+
 type ObserveOptions struct {
 	WaitFor       string
 	IdleTimeout   time.Duration
@@ -54,8 +62,12 @@ type Session struct {
 	StartedAt      time.Time
 	LastActivityAt time.Time
 	ExitedAt       time.Time
+	DetachedAt     time.Time
 	ExitCode       *int
 	Error          string
+	Attached       bool
+	Rows           int
+	Cols           int
 }
 
 type Observation struct {
@@ -70,12 +82,35 @@ type Observation struct {
 }
 
 type Manager struct {
-	mu       sync.RWMutex
-	nextID   uint64
-	sessions map[string]*managedSession
+	mu          sync.RWMutex
+	nextID      uint64
+	nextSubID   uint64
+	sessions    map[string]*managedSession
+	subscribers map[uint64]func(Event)
+}
+
+type EventType string
+
+const (
+	EventStarted  EventType = "started"
+	EventOutput   EventType = "output"
+	EventStatus   EventType = "status"
+	EventStopped  EventType = "stopped"
+	EventAttached EventType = "attached"
+	EventDetached EventType = "detached"
+	EventResized  EventType = "resized"
+)
+
+type Event struct {
+	Type    EventType
+	Session Session
+	Output  string
+	Message string
+	Time    time.Time
 }
 
 type managedSession struct {
+	manager    *Manager
 	mu         sync.RWMutex
 	meta       Session
 	cmd        *exec.Cmd
@@ -87,12 +122,13 @@ type managedSession struct {
 	outputCond *sync.Cond
 	done       chan struct{}
 	stopped    bool
+	redacting  bool
 }
 
 var defaultManager = New()
 
 func New() *Manager {
-	return &Manager{sessions: make(map[string]*managedSession)}
+	return &Manager{sessions: make(map[string]*managedSession), subscribers: make(map[uint64]func(Event))}
 }
 
 func DefaultManager() *Manager {
@@ -101,6 +137,21 @@ func DefaultManager() *Manager {
 
 func ResetDefaultManagerForTest() {
 	defaultManager = New()
+}
+
+func (m *Manager) Subscribe(fn func(Event)) func() {
+	if fn == nil {
+		return func() {}
+	}
+	id := atomic.AddUint64(&m.nextSubID, 1)
+	m.mu.Lock()
+	m.subscribers[id] = fn
+	m.mu.Unlock()
+	return func() {
+		m.mu.Lock()
+		delete(m.subscribers, id)
+		m.mu.Unlock()
+	}
 }
 
 func (m *Manager) Start(ctx context.Context, opts StartOptions) (*Session, error) {
@@ -142,13 +193,15 @@ func (m *Manager) Start(ctx context.Context, opts StartOptions) (*Session, error
 	now := time.Now()
 	id := fmt.Sprintf("tty_%d", atomic.AddUint64(&m.nextID, 1))
 	ms := &managedSession{
-		meta: Session{ID: id, Command: opts.Command, Args: append([]string(nil), opts.Args...), Cwd: opts.Cwd, Status: StatusRunning, PID: cmd.Process.Pid, StartedAt: now, LastActivityAt: now},
-		cmd:  cmd, pty: f, cancel: cancel, maxTail: opts.MaxTail, done: make(chan struct{}),
+		manager: m,
+		meta:    Session{ID: id, Command: opts.Command, Args: append([]string(nil), opts.Args...), Cwd: opts.Cwd, Status: StatusRunning, PID: cmd.Process.Pid, StartedAt: now, LastActivityAt: now, Attached: true, Rows: rows, Cols: cols},
+		cmd:     cmd, pty: f, cancel: cancel, maxTail: opts.MaxTail, done: make(chan struct{}),
 	}
 	ms.outputCond = sync.NewCond(&ms.mu)
 	m.mu.Lock()
 	m.sessions[id] = ms
 	m.mu.Unlock()
+	m.emit(Event{Type: EventStarted, Session: *ms.snapshot(), Time: now})
 	go ms.capture()
 	go ms.wait()
 	return ms.snapshot(), nil
@@ -180,12 +233,94 @@ func (m *Manager) Observe(id string, opts ObserveOptions) (*Observation, error) 
 	return ms.observe(opts)
 }
 
+func (m *Manager) Attach(id string) (*Session, error) {
+	ms, ok := m.get(id)
+	if !ok {
+		return nil, fmt.Errorf("unknown interactive session %q", id)
+	}
+	ms.mu.Lock()
+	now := time.Now()
+	ms.meta.Attached = true
+	ms.meta.DetachedAt = time.Time{}
+	ms.meta.LastActivityAt = now
+	ms.mu.Unlock()
+	snapshot := ms.snapshot()
+	m.emit(Event{Type: EventAttached, Session: *snapshot, Time: now})
+	return snapshot, nil
+}
+
+func (m *Manager) Detach(id string) (*Session, error) {
+	ms, ok := m.get(id)
+	if !ok {
+		return nil, fmt.Errorf("unknown interactive session %q", id)
+	}
+	ms.mu.Lock()
+	now := time.Now()
+	ms.meta.Attached = false
+	ms.meta.DetachedAt = now
+	ms.meta.LastActivityAt = now
+	ms.mu.Unlock()
+	snapshot := ms.snapshot()
+	m.emit(Event{Type: EventDetached, Session: *snapshot, Time: now})
+	return snapshot, nil
+}
+
+func (m *Manager) Resize(id string, rows, cols int) (*Session, error) {
+	ms, ok := m.get(id)
+	if !ok {
+		return nil, fmt.Errorf("unknown interactive session %q", id)
+	}
+	if rows <= 0 || cols <= 0 {
+		return nil, fmt.Errorf("rows and cols must be positive")
+	}
+	if err := pty.Setsize(ms.pty, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)}); err != nil {
+		return nil, err
+	}
+	ms.mu.Lock()
+	now := time.Now()
+	ms.meta.Rows = rows
+	ms.meta.Cols = cols
+	ms.meta.LastActivityAt = now
+	ms.mu.Unlock()
+	snapshot := ms.snapshot()
+	m.emit(Event{Type: EventResized, Session: *snapshot, Time: now})
+	return snapshot, nil
+}
+
+func (m *Manager) Transcript(id string, offset, limit int) (TranscriptPage, error) {
+	ms, ok := m.get(id)
+	if !ok {
+		return TranscriptPage{}, fmt.Errorf("unknown interactive session %q", id)
+	}
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	total := len(ms.buf)
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > total {
+		offset = total
+	}
+	if limit <= 0 {
+		limit = total - offset
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+	return TranscriptPage{Text: cleanTerminal(string(ms.buf[offset:end])), Total: total, Offset: offset, NextOffset: end, HasMore: end < total}, nil
+}
+
 func (m *Manager) Write(id, input string, sensitive bool, opts ObserveOptions) (*Observation, error) {
 	ms, ok := m.get(id)
 	if !ok {
 		return nil, fmt.Errorf("unknown interactive session %q", id)
 	}
 	redactFrom := ms.markReadBoundary()
+	if sensitive {
+		ms.setRedacting(true)
+		defer ms.setRedacting(false)
+	}
 	if err := ms.write(input); err != nil {
 		return nil, err
 	}
@@ -245,6 +380,18 @@ func (m *Manager) get(id string) (*managedSession, bool) {
 	return ms, ok
 }
 
+func (m *Manager) emit(event Event) {
+	m.mu.RLock()
+	subscribers := make([]func(Event), 0, len(m.subscribers))
+	for _, fn := range m.subscribers {
+		subscribers = append(subscribers, fn)
+	}
+	m.mu.RUnlock()
+	for _, fn := range subscribers {
+		fn(event)
+	}
+}
+
 func (s *managedSession) capture() {
 	buf := make([]byte, 4096)
 	for {
@@ -267,7 +414,11 @@ func (s *managedSession) capture() {
 
 func (s *managedSession) appendOutput(chunk []byte) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	text := string(chunk)
+	if s.redacting {
+		text = "[secret redacted]\n"
+		chunk = []byte(text)
+	}
 	now := time.Now()
 	s.meta.LastActivityAt = now
 	s.buf = append(s.buf, chunk...)
@@ -283,7 +434,18 @@ func (s *managedSession) appendOutput(chunk []byte) {
 	if s.meta.Status == StatusWaitingForInput {
 		s.meta.Status = StatusRunning
 	}
+	snapshot := s.meta
 	s.outputCond.Broadcast()
+	s.mu.Unlock()
+	if s.manager != nil {
+		s.manager.emit(Event{Type: EventOutput, Session: snapshot, Output: cleanTerminal(text), Time: now})
+	}
+}
+
+func (s *managedSession) setRedacting(enabled bool) {
+	s.mu.Lock()
+	s.redacting = enabled
+	s.mu.Unlock()
 }
 
 func (s *managedSession) write(input string) error {
@@ -406,7 +568,6 @@ func (s *managedSession) makeObservation(full []byte, opts ObserveOptions, waitR
 func (s *managedSession) wait() {
 	err := s.cmd.Wait()
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	now := time.Now()
 	s.meta.ExitedAt = now
 	s.meta.LastActivityAt = now
@@ -424,6 +585,15 @@ func (s *managedSession) wait() {
 	}
 	s.outputCond.Broadcast()
 	close(s.done)
+	snapshot := s.meta
+	s.mu.Unlock()
+	if s.manager != nil {
+		typeName := EventStatus
+		if snapshot.Status == StatusStopped {
+			typeName = EventStopped
+		}
+		s.manager.emit(Event{Type: typeName, Session: snapshot, Time: now})
+	}
 }
 
 func (s *managedSession) snapshot() *Session {
@@ -465,10 +635,15 @@ func detectPrompt(tail string, waitRe *regexp.Regexp) string {
 	if last == "" {
 		return ""
 	}
-	patterns := []string{"?", ">", "$", "#", ":", "continue?", "password:"}
-	lower := strings.ToLower(last)
+	patterns := []string{
+		`(?i)(password|passphrase|token|api key)\s*:?\s*$`,
+		`(?i)(continue|proceed|confirm|overwrite|are you sure).*\?\s*(\[[^\]]+\])?\s*$`,
+		`(?i)(select|choose|pick).*(option|item|project|profile)\s*:?\s*$`,
+		`(?i)(yes/no|y/n|\[y/n\]|\[Y/n\]|\[y/N\])\s*$`,
+		`[>$#:]\s*$`,
+	}
 	for _, p := range patterns {
-		if strings.HasSuffix(lower, p) || strings.Contains(lower, p) {
+		if regexp.MustCompile(p).MatchString(last) {
 			return last
 		}
 	}

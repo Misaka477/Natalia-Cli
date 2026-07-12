@@ -118,6 +118,41 @@ func TestChildToolRegistryRejectsInvalidList(t *testing.T) {
 	}
 }
 
+func TestSpawnUsesModelProfileOverride(t *testing.T) {
+	var requestedProfile string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		var req llm.ChatRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if req.Model != "strong-model" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "content": "wrong model"}}}})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "content": "profile-ok"}}}})
+	}))
+	defer server.Close()
+	out, err := (&Spawn{Pool: worker.NewPool(), Client: llm.NewClient(llm.Config{BaseURL: server.URL, Model: "default-model", APIKey: "test"}), Tools: toolset.NewRegistry(), ClientForModelProfile: func(profile string) (*llm.Client, error) {
+		requestedProfile = profile
+		return llm.NewClient(llm.Config{BaseURL: server.URL, Model: "strong-model", APIKey: "test"}), nil
+	}}).Execute(map[string]any{"task": "use strong", "foreground": true, "timeout_sec": float64(2), "model_profile": "strong"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requestedProfile != "strong" || !strings.Contains(out, "profile-ok") || !strings.Contains(out, "model_profile=strong") {
+		t.Fatalf("expected model profile override, profile=%q out=%q", requestedProfile, out)
+	}
+}
+
+func TestSpawnRejectsUnavailableModelProfileOverride(t *testing.T) {
+	_, err := (&Spawn{Pool: worker.NewPool(), Client: llm.NewClient(llm.Config{BaseURL: "http://127.0.0.1:1", Model: "mock"}), Tools: toolset.NewRegistry()}).Execute(map[string]any{"task": "use strong", "model_profile": "strong"})
+	if err == nil || !strings.Contains(err.Error(), "model_profile") {
+		t.Fatalf("expected unavailable model_profile error, got %v", err)
+	}
+}
+
 func TestSpawnForegroundRunsWorkerToolCallChainWithFilteredTools(t *testing.T) {
 	var requests atomic.Int32
 	toolSchemaChecked := make(chan error, 1)

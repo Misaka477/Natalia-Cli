@@ -8,6 +8,8 @@ import (
 
 	"github.com/Misaka477/Natalia-Cli/internal/config"
 	"github.com/Misaka477/Natalia-Cli/internal/hook"
+	"github.com/Misaka477/Natalia-Cli/internal/interactivemgr"
+	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	"github.com/Misaka477/Natalia-Cli/internal/notifications"
 	"github.com/Misaka477/Natalia-Cli/internal/processmgr"
 	"github.com/Misaka477/Natalia-Cli/internal/soul"
@@ -29,7 +31,13 @@ func registerAgentToolsForEngine(cfg *config.Config, engine *soul.Engine, tools 
 		return
 	}
 	workerClient := newLLMClient(&eff.Profile, &eff.Provider)
-	tools.Register(&agent.Spawn{Pool: workerPool, Client: workerClient, Tools: tools, Approver: engine.Approver})
+	tools.Register(&agent.Spawn{Pool: workerPool, Client: workerClient, Tools: tools, Approver: engine.Approver, ClientForModelProfile: func(modelProfile string) (*llm.Client, error) {
+		eff, err := cfg.EffectiveProfile(runtime.Mode, modelProfile, runtime.PermissionProfile)
+		if err != nil {
+			return nil, err
+		}
+		return newLLMClient(&eff.Profile, &eff.Provider), nil
+	}})
 	tools.Register(&agent.List{Pool: workerPool})
 	tools.Register(&agent.Output{Pool: workerPool})
 	tools.Register(&agent.Stop{Pool: workerPool})
@@ -38,9 +46,13 @@ func registerAgentToolsForEngine(cfg *config.Config, engine *soul.Engine, tools 
 
 func bridgeRuntimeEvents(engine *soul.Engine, w *wire.Wire) func() {
 	detachProcess := bridgeProcessNotifications(engine, w)
+	detachProcessWire := bridgeProcessWireEvents(w)
+	detachInteractiveWire := bridgeInteractiveWireEvents(w)
 	detachWorker := bridgeWorkerEvents(w)
 	return func() {
 		detachProcess()
+		detachProcessWire()
+		detachInteractiveWire()
 		detachWorker()
 	}
 }
@@ -58,6 +70,52 @@ func bridgeProcessNotifications(engine *soul.Engine, w *wire.Wire) func() {
 		if w != nil {
 			publishWireNotification(w, wire.Notification{Title: n.Title, Message: n.Message})
 		}
+	})
+}
+
+func bridgeProcessWireEvents(w *wire.Wire) func() {
+	return processmgr.DefaultManager().Subscribe(func(event processmgr.Event) {
+		if w == nil {
+			return
+		}
+		payload := wire.ProcessEvent{
+			ID:         event.Session.ID,
+			Kind:       string(event.Session.Kind),
+			Event:      string(event.Type),
+			Status:     string(event.Session.Status),
+			PID:        event.Session.PID,
+			Command:    event.Session.Command,
+			Args:       append([]string(nil), event.Session.Args...),
+			ExitCode:   event.Session.ExitCode,
+			Error:      event.Session.Error,
+			Attached:   event.Session.Attached,
+			EnvSummary: append([]string(nil), event.Session.EnvSummary...),
+			Message:    event.Message,
+			Time:       event.Time,
+		}
+		if event.Output != nil {
+			payload.Output = event.Output.Text
+			payload.Stream = event.Output.Stream
+		}
+		wireEvent, err := wire.NewEvent(wire.EventProcessEvent, payload)
+		if err != nil {
+			return
+		}
+		w.SoulSide.PublishEvent(wireEvent)
+	})
+}
+
+func bridgeInteractiveWireEvents(w *wire.Wire) func() {
+	return interactivemgr.DefaultManager().Subscribe(func(event interactivemgr.Event) {
+		if w == nil {
+			return
+		}
+		payload := wire.InteractiveEvent{ID: event.Session.ID, Event: string(event.Type), Status: string(event.Session.Status), PID: event.Session.PID, Command: event.Session.Command, Args: append([]string(nil), event.Session.Args...), Output: event.Output, Error: event.Session.Error, Attached: event.Session.Attached, Rows: event.Session.Rows, Cols: event.Session.Cols, Message: event.Message, Time: event.Time}
+		wireEvent, err := wire.NewEvent(wire.EventInteractiveEvent, payload)
+		if err != nil {
+			return
+		}
+		w.SoulSide.PublishEvent(wireEvent)
 	})
 }
 
