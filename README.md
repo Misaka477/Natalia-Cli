@@ -49,6 +49,22 @@ Run Wire JSON-RPC mode over stdin/stdout:
 ./natalia --wire
 ```
 
+Serve Wire over HTTP/SSE/WebSocket:
+
+```bash
+./natalia --wire-http 127.0.0.1:8787 --wire-auth-token "$NATALIA_WIRE_TOKEN"
+```
+
+Production deployments should terminate TLS either directly with `--wire-tls-cert` and `--wire-tls-key`, or at a reverse proxy that forwards only trusted clients to the loopback listener. Keep `--wire-auth-token` enabled for `/rpc`, `/events`, and `/ws`; `/healthz` intentionally remains unauthenticated for local process supervision. Use `--wire-allow-methods initialize,prompt,cancel` to narrow the transport-level JSON-RPC method boundary for limited frontends.
+
+Serve Wire over a Unix socket:
+
+```bash
+./natalia --wire-unix /tmp/natalia-wire.sock --wire-auth-token "$NATALIA_WIRE_TOKEN"
+```
+
+Unix socket startup removes stale socket files only when the path is a dead socket, and refuses to remove regular files or live sockets.
+
 Replay a recorded Wire JSONL file:
 
 ```bash
@@ -193,6 +209,22 @@ go build ./cmd/natalia
 ```bash
 ./natalia --wire
 ```
+
+通过 HTTP/SSE/WebSocket 提供 Wire 服务：
+
+```bash
+./natalia --wire-http 127.0.0.1:8787 --wire-auth-token "$NATALIA_WIRE_TOKEN"
+```
+
+生产部署可以用 `--wire-tls-cert` 和 `--wire-tls-key` 直接启用 TLS，也可以在反向代理终止 TLS，并只把可信客户端转发到 loopback listener。`/rpc`、`/events`、`/ws` 应保持 `--wire-auth-token` 鉴权；`/healthz` 保持无鉴权，供本地进程监管使用。受限前端可以用 `--wire-allow-methods initialize,prompt,cancel` 缩小 transport 层 JSON-RPC method 边界。
+
+通过 Unix socket 提供 Wire HTTP 服务：
+
+```bash
+./natalia --wire-unix /tmp/natalia-wire.sock --wire-auth-token "$NATALIA_WIRE_TOKEN"
+```
+
+Unix socket 启动只会清理已经死亡的 socket 文件；普通文件和仍在监听的 live socket 都不会被删除。
 
 重放 Wire JSONL 记录：
 

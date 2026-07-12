@@ -486,6 +486,12 @@ func (p *pendingResponses) cancel(id string) {
 	p.mu.Unlock()
 }
 
+func (p *pendingResponses) len() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.pending)
+}
+
 func newBroadcastQueue() *broadcastQueue {
 	return &broadcastQueue{subscribers: make(map[chan WireMessage]struct{})}
 }

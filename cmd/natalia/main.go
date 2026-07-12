@@ -83,6 +83,10 @@ func main() {
 	wireFlag := flag.Bool("wire", false, "通过 stdin/stdout 运行 Wire JSON-RPC 服务")
 	wireHTTP := flag.String("wire-http", "", "通过 HTTP/SSE/WebSocket 提供 Wire 服务，例如 127.0.0.1:8787")
 	wireUnix := flag.String("wire-unix", "", "通过 Unix socket 提供 Wire HTTP 服务")
+	wireAuthToken := flag.String("wire-auth-token", "", "HTTP/SSE/WebSocket/Unix Wire transport Bearer token")
+	wireAllowMethods := flag.String("wire-allow-methods", "", "逗号分隔的 Wire JSON-RPC method allowlist，默认允许全部内置方法")
+	wireTLSCert := flag.String("wire-tls-cert", "", "Wire HTTP TLS certificate file")
+	wireTLSKey := flag.String("wire-tls-key", "", "Wire HTTP TLS private key file")
 	wireReplay := flag.String("wire-replay", "", "重放 wire.jsonl 到 stdout")
 	flag.Parse()
 
@@ -110,14 +114,14 @@ func main() {
 		return
 	}
 	if *wireHTTP != "" {
-		if err := runWireHTTPCLI(cfg, tools, *wireHTTP, *debug); err != nil {
+		if err := runWireHTTPCLI(cfg, tools, *wireHTTP, *debug, wireHTTPCLIOptions{AuthToken: *wireAuthToken, AllowedMethods: parseWireAllowedMethods(*wireAllowMethods), TLSCertFile: *wireTLSCert, TLSKeyFile: *wireTLSKey}); err != nil {
 			fmt.Fprintf(os.Stderr, "wire http error: %v\n", err)
 			exitWithCleanup(1)
 		}
 		return
 	}
 	if *wireUnix != "" {
-		if err := runWireUnixCLI(cfg, tools, *wireUnix, *debug); err != nil {
+		if err := runWireUnixCLI(cfg, tools, *wireUnix, *debug, wireHTTPCLIOptions{AuthToken: *wireAuthToken, AllowedMethods: parseWireAllowedMethods(*wireAllowMethods)}); err != nil {
 			fmt.Fprintf(os.Stderr, "wire unix error: %v\n", err)
 			exitWithCleanup(1)
 		}
@@ -130,6 +134,21 @@ func main() {
 	}
 
 	runInteractive(cfg, tools, *noSetupFlag, *debug)
+}
+
+func parseWireAllowedMethods(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func registerTools(r *toolset.Registry) {

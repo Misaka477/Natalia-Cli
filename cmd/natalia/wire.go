@@ -33,20 +33,14 @@ func runWireCLI(cfg *config.Config, tools *toolset.Registry, in io.Reader, out i
 	return runWireWithOptions(cfg, tools, in, out, debug, wireRunOptions{SessionStore: store})
 }
 
-func runWireHTTPCLI(cfg *config.Config, tools *toolset.Registry, addr string, debug bool) error {
-	store, err := session.NewStore()
-	if err != nil {
-		return err
-	}
-	runtimeServer, err := newWireRuntimeServer(cfg, tools, debug, wireRunOptions{SessionStore: store})
-	if err != nil {
-		return err
-	}
-	defer runtimeServer.close()
-	return wire.NewHTTPServer(runtimeServer.w, runtimeServer.handler).ListenAndServe(addr)
+type wireHTTPCLIOptions struct {
+	AuthToken      string
+	AllowedMethods []string
+	TLSCertFile    string
+	TLSKeyFile     string
 }
 
-func runWireUnixCLI(cfg *config.Config, tools *toolset.Registry, path string, debug bool) error {
+func runWireHTTPCLI(cfg *config.Config, tools *toolset.Registry, addr string, debug bool, opts wireHTTPCLIOptions) error {
 	store, err := session.NewStore()
 	if err != nil {
 		return err
@@ -56,7 +50,28 @@ func runWireUnixCLI(cfg *config.Config, tools *toolset.Registry, path string, de
 		return err
 	}
 	defer runtimeServer.close()
-	return wire.NewHTTPServer(runtimeServer.w, runtimeServer.handler).ListenAndServeUnix(path)
+	server := wire.NewHTTPServerWithOptions(runtimeServer.w, runtimeServer.handler, wire.HTTPServerOptions{AuthToken: opts.AuthToken, AllowedMethods: opts.AllowedMethods})
+	if opts.TLSCertFile != "" || opts.TLSKeyFile != "" {
+		if opts.TLSCertFile == "" || opts.TLSKeyFile == "" {
+			return fmt.Errorf("wire TLS requires both cert and key files")
+		}
+		return server.ListenAndServeTLS(addr, opts.TLSCertFile, opts.TLSKeyFile)
+	}
+	return server.ListenAndServe(addr)
+}
+
+func runWireUnixCLI(cfg *config.Config, tools *toolset.Registry, path string, debug bool, opts wireHTTPCLIOptions) error {
+	store, err := session.NewStore()
+	if err != nil {
+		return err
+	}
+	runtimeServer, err := newWireRuntimeServer(cfg, tools, debug, wireRunOptions{SessionStore: store})
+	if err != nil {
+		return err
+	}
+	defer runtimeServer.close()
+	server := wire.NewHTTPServerWithOptions(runtimeServer.w, runtimeServer.handler, wire.HTTPServerOptions{AuthToken: opts.AuthToken, AllowedMethods: opts.AllowedMethods})
+	return server.ListenAndServeUnix(path)
 }
 
 type wireRunOptions struct {

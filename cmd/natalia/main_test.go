@@ -20,6 +20,7 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/autoflow"
 	"github.com/Misaka477/Natalia-Cli/internal/chat"
 	"github.com/Misaka477/Natalia-Cli/internal/config"
+	"github.com/Misaka477/Natalia-Cli/internal/display"
 	"github.com/Misaka477/Natalia-Cli/internal/hook"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	"github.com/Misaka477/Natalia-Cli/internal/notifications"
@@ -1955,17 +1956,30 @@ func TestInteractiveWireRendererHandlesRuntimeEventsAndRequests(t *testing.T) {
 	renderEvent(wire.EventStepInterrupted, wire.StepInterrupted{})
 	renderEvent(wire.EventCompactionBegin, wire.CompactionBegin{})
 	renderEvent(wire.EventCompactionEnd, wire.CompactionEnd{})
+	diffBlock, err := display.NewBlock(display.BlockDiff, "file diff", display.DiffBlock{Path: "README.md", Diff: "@@\n-old\n+new"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	todoBlock, err := display.NewBlock(display.BlockTodo, "plan", display.TodoBlock{Items: []display.TodoItem{{Text: "wire auth", Done: true}, {Text: "renderer", Done: false}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mediaBlock, err := display.NewBlock(display.BlockMedia, "image", map[string]any{"mime": "image/png", "width": 10})
+	if err != nil {
+		t.Fatal(err)
+	}
 	renderEvent(wire.EventToolCall, wire.ToolCall{ID: "tc_1", Name: "read_file", Arguments: json.RawMessage(`{"path":"README.md"}`)})
-	renderEvent(wire.EventToolResult, wire.ToolResult{ToolCallID: "tc_1", Name: "read_file", Content: "ok"})
-	renderEvent(wire.EventSubagentEvent, wire.SubagentEvent{ID: "worker_1", Event: "log", Payload: json.RawMessage(`{"status":"running"}`)})
-	renderEvent(wire.EventProcessEvent, wire.ProcessEvent{ID: "proc_1", Event: "output", Status: "running", Stream: "stdout", Output: "ready", Attached: true})
-	renderRequest("approval_1", wire.RequestApproval, wire.ApprovalRequest{ID: "approval_1", Action: "run_shell", Description: "go test ./..."})
+	renderEvent(wire.EventToolResult, wire.ToolResult{ToolCallID: "tc_1", Name: "read_file", Content: "ok", Display: []display.Block{todoBlock, mediaBlock}})
+	renderEvent(wire.EventSubagentEvent, wire.SubagentEvent{ID: "worker_1", Event: "log", Payload: json.RawMessage(`{"status":"running","mode":"code","model_profile":"cheap","task":"inspect","log":{"tool":"read_file","result":"ok"}}`)})
+	renderEvent(wire.EventProcessEvent, wire.ProcessEvent{ID: "proc_1", Event: "output", Status: "running", PID: 123, Command: "go", Args: []string{"test", "./..."}, Stream: "stdout", Output: "ready", Attached: true, EnvSummary: []string{"API_KEY=<redacted>"}})
+	renderEvent(wire.EventInteractiveEvent, wire.InteractiveEvent{ID: "pty_1", Event: "resize", Status: "running", PID: 456, Command: "python", Rows: 24, Cols: 80, Attached: true})
+	renderRequest("approval_1", wire.RequestApproval, wire.ApprovalRequest{ID: "approval_1", Action: "run_shell", Description: "go test ./...", Display: []display.Block{diffBlock}})
 	renderRequest("question_1", wire.RequestQuestion, wire.QuestionRequest{ID: "question_1", Questions: []wire.QuestionItem{{Name: "choice", Question: "Proceed?"}}})
 	renderRequest("tool_1", wire.RequestToolCall, wire.ToolCallRequest{ID: "tool_1", Name: "external_tool", Arguments: json.RawMessage(`{"ok":true}`)})
 	renderRequest("hook_1", wire.RequestHook, wire.HookRequest{ID: "hook_1", Event: "PreToolUse", Target: "read_file"})
 
 	got := errOut.String()
-	for _, want := range []string{"[step 2]", "[step interrupted]", "[compaction begin]", "[compaction end]", "[tool call] read_file", "[tool result] read_file: ok", "[subagent] worker_1 log", "[process] proc_1 output status=running stdout: ready", "[approval request] run_shell", "[question request] question_1", "[tool request] external_tool", "[hook request] PreToolUse read_file"} {
+	for _, want := range []string{"[step 2]", "[step interrupted]", "[compaction begin]", "[compaction end]", "[tool call] read_file", "[tool result] read_file: ok", "[todo] plan", "- [x] wire auth", "[media] image", "[subagent] worker_1 log", "task: inspect", "log.tool: read_file", "[process] proc_1 output status=running stdout: ready", "command: go test ./...", "env: API_KEY=<redacted>", "[interactive] pty_1 resize status=running", "size: 24x80", "[approval request] run_shell", "[diff] README.md", "[question request] question_1", "[tool request] external_tool", "[hook request] PreToolUse read_file"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected renderer stderr to contain %q, got %q", want, got)
 		}
@@ -2012,6 +2026,49 @@ func TestInteractiveWireRendererRespondsToQuestionRequest(t *testing.T) {
 	}
 	if !strings.Contains(errOut.String(), "[question request] question_test") || !strings.Contains(errOut.String(), "Proceed?") || !strings.Contains(errOut.String(), "fallback: no") {
 		t.Fatalf("expected question rendering, got %q", errOut.String())
+	}
+}
+
+func TestInteractiveWireRendererRespondsToApprovalRequest(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	w, stop := startInteractiveWireRendererWithResponders(&out, &errOut, nil, func(ctx context.Context, req wire.ApprovalRequest) (wire.ApprovalResponse, error) {
+		if req.ID != "approval_test" || req.Action != "write_file" {
+			t.Fatalf("unexpected approval request: %+v", req)
+		}
+		return wire.ApprovalResponse{RequestID: req.ID, Response: "approve"}, nil
+	})
+	defer stop()
+	req, err := wire.NewRequest("approval_test", wire.RequestApproval, wire.ApprovalRequest{ID: "approval_test", Action: "write_file", Description: "update file"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resultCh := make(chan json.RawMessage, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		result, err := w.SoulSide.Request(context.Background(), req)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		resultCh <- result
+	}()
+	select {
+	case err := <-errCh:
+		t.Fatalf("approval request failed: %v", err)
+	case result := <-resultCh:
+		var resp wire.ApprovalResponse
+		if err := json.Unmarshal(result, &resp); err != nil {
+			t.Fatal(err)
+		}
+		if resp.Response != "approve" {
+			t.Fatalf("unexpected approval response: %+v", resp)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("renderer did not answer approval request")
+	}
+	if !strings.Contains(errOut.String(), "[approval request] write_file") || !strings.Contains(errOut.String(), "update file") {
+		t.Fatalf("expected approval rendering, got %q", errOut.String())
 	}
 }
 

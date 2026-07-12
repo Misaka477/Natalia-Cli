@@ -3,6 +3,7 @@ package wire
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -325,6 +326,98 @@ func TestWireSoulSideRequestWaitsForResponse(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("request did not receive response")
+	}
+}
+
+func TestWireSoulSideConcurrentRequestsResolveIndependently(t *testing.T) {
+	w := NewWire()
+	requests, cancel := w.UISide().SubscribeRaw()
+	defer cancel()
+	type result struct {
+		id   string
+		body json.RawMessage
+		err  error
+	}
+	resultCh := make(chan result, 3)
+	for _, id := range []string{"req_a", "req_b", "req_c"} {
+		id := id
+		req, err := NewRequest(id, RequestQuestion, QuestionRequest{ID: id, Questions: []QuestionItem{{Name: "q", Question: id}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		go func() {
+			body, err := w.SoulSide.Request(context.Background(), req)
+			resultCh <- result{id: id, body: body, err: err}
+		}()
+	}
+	seen := map[string]bool{}
+	for len(seen) < 3 {
+		msg := receiveWireMessage(t, "concurrent request", requests)
+		if msg.Request == nil {
+			t.Fatalf("expected request, got %+v", msg)
+		}
+		seen[msg.Request.ID] = true
+	}
+	for _, id := range []string{"req_c", "req_a", "req_b"} {
+		if ok := w.ResolveResponse(id, json.RawMessage(fmt.Sprintf(`{"request_id":%q,"answers":{"q":%q}}`, id, id))); !ok {
+			t.Fatalf("expected %s to resolve", id)
+		}
+	}
+	got := map[string]string{}
+	for range 3 {
+		select {
+		case res := <-resultCh:
+			if res.err != nil {
+				t.Fatalf("request %s failed: %v", res.id, res.err)
+			}
+			var resp QuestionResponse
+			if err := json.Unmarshal(res.body, &resp); err != nil {
+				t.Fatal(err)
+			}
+			got[res.id] = resp.Answers["q"]
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for concurrent response")
+		}
+	}
+	for id, answer := range got {
+		if answer != id {
+			t.Fatalf("request %s received wrong answer %q", id, answer)
+		}
+	}
+}
+
+func TestWireSoulSideRequestContextCancelCleansPendingResponse(t *testing.T) {
+	w := NewWire()
+	requests, cancel := w.UISide().SubscribeRaw()
+	defer cancel()
+	req, err := NewRequest("req_cancel", RequestApproval, ApprovalRequest{ID: "req_cancel", Action: "write_file"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancelRequest := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := w.SoulSide.Request(ctx, req)
+		errCh <- err
+	}()
+	msg := receiveWireMessage(t, "cancel request", requests)
+	if msg.Request == nil || msg.Request.ID != "req_cancel" {
+		t.Fatalf("expected req_cancel publication, got %+v", msg)
+	}
+	cancelRequest()
+	select {
+	case err := <-errCh:
+		if err == nil || err != context.Canceled {
+			t.Fatalf("expected context.Canceled, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("request did not return after cancellation")
+	}
+	if got := w.pending.len(); got != 0 {
+		t.Fatalf("expected pending responses cleaned up, got %d", got)
+	}
+	if ok := w.ResolveResponse("req_cancel", json.RawMessage(`{"request_id":"req_cancel","response":"approve"}`)); ok {
+		t.Fatal("expected canceled response to be absent")
 	}
 }
 
