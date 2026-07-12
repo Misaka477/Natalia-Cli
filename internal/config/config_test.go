@@ -246,6 +246,55 @@ func TestConfigSaveLoadAndEffectiveProfileEndToEnd(t *testing.T) {
 	}
 }
 
+func TestActiveProfileReturnsExpectedProfileAndProvider(t *testing.T) {
+	cfg := &Config{
+		DefaultProfile: "default",
+		Providers:      map[string]Provider{"step": {BaseURL: "https://step.example/v1", APIKey: "secret"}},
+		Profiles:       map[string]Profile{"default": {Provider: "step", Model: "step-3.7-flash", MaxContext: 131072}},
+	}
+	profile, provider, err := cfg.ActiveProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if profile.Model != "step-3.7-flash" || provider.BaseURL != "https://step.example/v1" {
+		t.Fatalf("unexpected active profile/provider: profile=%+v provider=%+v", profile, provider)
+	}
+}
+
+func TestLoadMalformedYAMLReturnsError(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	configPath := filepath.Join(home, ".config", "natalia-cli", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte("default_profile: ["), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(); err == nil {
+		t.Fatal("expected malformed YAML to return an error")
+	}
+}
+
+func TestLoadInitializesMissingMaps(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	configPath := filepath.Join(home, ".config", "natalia-cli", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte("default_profile: default\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Providers == nil || loaded.Profiles == nil || loaded.ModelProfiles == nil || loaded.PermissionProfiles == nil {
+		t.Fatalf("expected Load to initialize nil maps, got %+v", loaded)
+	}
+}
+
 func TestLoadReturnsNilWhenConfigFileDoesNotExist(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	cfg, err := Load()

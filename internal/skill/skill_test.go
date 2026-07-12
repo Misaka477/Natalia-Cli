@@ -97,6 +97,31 @@ func TestDiscoverProjectSkillOverridesUserSkill(t *testing.T) {
 	}
 }
 
+func TestDiscoverReturnsEmptyRegistryAndSkipsBrokenSkillDirs(t *testing.T) {
+	workDir := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	r, err := Discover(workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.List()) != 0 {
+		t.Fatalf("expected empty registry, got %+v", r.List())
+	}
+
+	brokenDir := filepath.Join(workDir, ".natalia", "skills", "broken")
+	if err := os.MkdirAll(brokenDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeSkill(t, filepath.Join(workDir, ".natalia", "skills", "valid"), "valid", "Valid skill", "valid content")
+	r, err = Discover(workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.List()) != 1 || r.Get("valid") == nil || r.Get("broken") != nil {
+		t.Fatalf("expected broken skill dir to be skipped, got %+v", r.List())
+	}
+}
+
 func TestRegistryFormatForPromptGroupsScopesAndOmitsBuiltin(t *testing.T) {
 	if got := (&Registry{}).FormatForPrompt(); got != "" {
 		t.Fatalf("expected empty registry prompt to be empty, got %q", got)
@@ -179,6 +204,12 @@ edges:
 	}
 	if f.Node("step1") == nil {
 		t.Error("step1 node should exist")
+	}
+}
+
+func TestParseFlowRejectsInvalidYAML(t *testing.T) {
+	if _, err := ParseFlow("nodes: ["); err == nil || !strings.Contains(err.Error(), "解析 flow 失败") {
+		t.Fatalf("expected invalid YAML error, got %v", err)
 	}
 }
 
@@ -318,5 +349,25 @@ edges:
 	}
 	if _, _, err := r.Advance(""); err == nil || !strings.Contains(err.Error(), "已结束") {
 		t.Fatalf("expected already done error, got %v", err)
+	}
+}
+
+func TestFlowRunnerMaxMovesBoundary(t *testing.T) {
+	yaml := "nodes:\n  - id: begin\n    label: BEGIN\n    kind: begin\n  - id: loop\n    label: Loop\n    kind: task\n  - id: end\n    label: END\n    kind: end\nedges:\n  - src: begin\n    dst: loop\n  - src: loop\n    dst: loop\n"
+	f, err := ParseFlow(yaml)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := NewFlowRunner(f)
+	for i := 0; i < r.MaxMoves; i++ {
+		if _, _, err := r.Advance(""); err != nil {
+			t.Fatalf("advance %d failed: %v", i, err)
+		}
+	}
+	if !r.IsDone() {
+		t.Fatal("expected runner to stop at max moves")
+	}
+	if _, _, err := r.Advance(""); err == nil || !strings.Contains(err.Error(), "已结束") {
+		t.Fatalf("expected max-move done error, got %v", err)
 	}
 }

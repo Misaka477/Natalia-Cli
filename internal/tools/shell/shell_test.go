@@ -17,7 +17,7 @@ func TestRunRejectsInvalidTimeout(t *testing.T) {
 	}
 }
 
-func TestRunSchemaGeneratedFromParams(t *testing.T) {
+func TestRunSchemaDescriptionAndExecution(t *testing.T) {
 	run := &Run{}
 	props := run.Parameters()
 	required := run.Required()
@@ -27,12 +27,16 @@ func TestRunSchemaGeneratedFromParams(t *testing.T) {
 	if len(required) != 1 || required[0] != "command" {
 		t.Fatalf("unexpected required fields: %+v", required)
 	}
-}
-
-func TestRunDescriptionLoadedFromMarkdown(t *testing.T) {
-	desc := (&Run{}).Description()
+	desc := run.Description()
 	if !strings.Contains(desc, "Execute a short shell command") || !strings.Contains(desc, "timeout") {
 		t.Fatalf("expected markdown description, got %q", desc)
+	}
+	result, err := run.Execute(map[string]any{"command": "printf schema-ok", "timeout": "5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "schema-ok") {
+		t.Fatalf("expected real command output, got %q", result)
 	}
 }
 

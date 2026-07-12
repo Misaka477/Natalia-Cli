@@ -11,12 +11,20 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/display"
 )
 
-func TestReadSmallFileReturnsNumberedContent(t *testing.T) {
+func TestReadSchemaAndSmallFileExecution(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "small.txt")
 	os.WriteFile(path, []byte("alpha\nbeta"), 0644)
 
 	r := &Read{}
+	props := r.Parameters()
+	required := r.Required()
+	if props["path"].Type != "string" || props["offset"].Description == "" || props["limit"].Description == "" {
+		t.Fatalf("unexpected read schema: %+v", props)
+	}
+	if len(required) != 1 || required[0] != "path" {
+		t.Fatalf("unexpected required fields: %+v", required)
+	}
 	result, err := r.Execute(map[string]any{"path": path})
 	if err != nil {
 		t.Fatal(err)
@@ -51,18 +59,6 @@ func TestReadFileEmptyFile(t *testing.T) {
 	}
 	if result != "1: " {
 		t.Fatalf("unexpected empty file rendering: %q", result)
-	}
-}
-
-func TestReadSchemaGeneratedFromParams(t *testing.T) {
-	read := &Read{}
-	props := read.Parameters()
-	required := read.Required()
-	if props["path"].Type != "string" || props["offset"].Description == "" || props["limit"].Description == "" {
-		t.Fatalf("unexpected read schema: %+v", props)
-	}
-	if len(required) != 1 || required[0] != "path" {
-		t.Fatalf("unexpected required fields: %+v", required)
 	}
 }
 

@@ -93,7 +93,16 @@ var checklistRe = regexp.MustCompile(`^\s*[-*]\s+\[([ xX])\]\s+(.+?)\s*$`)
 func parseSteps(content string) []Step {
 	lines := strings.Split(content, "\n")
 	steps := make([]Step, 0)
+	inFence := false
 	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			continue
+		}
 		m := checklistRe.FindStringSubmatch(line)
 		if len(m) != 3 {
 			continue

@@ -1,15 +1,127 @@
 package interactive
 
 import (
+	"context"
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/interactivemgr"
 )
 
 func resetManager() {
 	interactivemgr.ResetDefaultManagerForTest()
+	currentManager = func() manager { return interactivemgr.DefaultManager() }
+}
+
+type fakeManager struct {
+	sessions  []interactivemgr.Session
+	lastOpts  interactivemgr.ObserveOptions
+	lastInput string
+	stopped   bool
+}
+
+func (m *fakeManager) Start(ctx context.Context, opts interactivemgr.StartOptions) (*interactivemgr.Session, error) {
+	if opts.Command != "fake-cli" || len(opts.Args) != 1 || opts.Args[0] != "--repl" || opts.Rows != 30 || opts.Cols != 120 {
+		return nil, fmt.Errorf("unexpected start options: %+v", opts)
+	}
+	sess := interactivemgr.Session{ID: "tty_fake", Command: opts.Command, Args: opts.Args, Status: interactivemgr.StatusRunning, PID: 123}
+	m.sessions = []interactivemgr.Session{sess}
+	return &sess, nil
+}
+
+func (m *fakeManager) List() []interactivemgr.Session {
+	return append([]interactivemgr.Session(nil), m.sessions...)
+}
+
+func (m *fakeManager) Status(id string) (*interactivemgr.Session, bool) {
+	for _, sess := range m.sessions {
+		if sess.ID == id {
+			if m.stopped {
+				sess.Status = interactivemgr.StatusStopped
+			}
+			return &sess, true
+		}
+	}
+	return nil, false
+}
+
+func (m *fakeManager) Observe(id string, opts interactivemgr.ObserveOptions) (*interactivemgr.Observation, error) {
+	m.lastOpts = opts
+	return &interactivemgr.Observation{SessionID: id, Status: interactivemgr.StatusWaitingForInput, NewOutput: "ready>", Tail: "ready>", DetectedPrompt: "ready>", Suggestion: "send input"}, nil
+}
+
+func (m *fakeManager) Write(id, input string, sensitive bool, opts interactivemgr.ObserveOptions) (*interactivemgr.Observation, error) {
+	m.lastInput = input
+	m.lastOpts = opts
+	return &interactivemgr.Observation{SessionID: id, Status: interactivemgr.StatusWaitingForInput, NewOutput: input + "ok", Tail: input + "ok", Suggestion: "continue"}, nil
+}
+
+func (m *fakeManager) SendKey(id, key string, opts interactivemgr.ObserveOptions) (*interactivemgr.Observation, error) {
+	m.lastInput = key
+	m.lastOpts = opts
+	return &interactivemgr.Observation{SessionID: id, Status: interactivemgr.StatusWaitingForInput, NewOutput: "key:" + key, Tail: "key:" + key, Suggestion: "continue"}, nil
+}
+
+func (m *fakeManager) Stop(id string) error {
+	m.stopped = true
+	return nil
+}
+
+func TestInteractiveToolsFallbackManagerCoversExecuteFlow(t *testing.T) {
+	resetManager()
+	fake := &fakeManager{}
+	currentManager = func() manager { return fake }
+	t.Cleanup(resetManager)
+
+	started, err := (&Start{}).Execute(map[string]any{"command": "fake-cli", "args": []any{"--repl"}, "rows": float64(30), "cols": float64(120), "wait_for": "ready>", "idle_timeout_ms": float64(50), "max_wait_ms": float64(500)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(started, "id: tty_fake") || !strings.Contains(started, "detected_prompt: ready>") || fake.lastOpts.WaitFor != "ready>" || fake.lastOpts.IdleTimeout != 50*time.Millisecond {
+		t.Fatalf("unexpected start output/options: output=%q opts=%+v", started, fake.lastOpts)
+	}
+
+	read, err := (&Read{}).Execute(map[string]any{"id": "tty_fake", "tail_bytes": float64(512)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(read, "tail:\nready>") || fake.lastOpts.TailBytes != 512 {
+		t.Fatalf("unexpected read output/options: output=%q opts=%+v", read, fake.lastOpts)
+	}
+
+	written, err := (&Write{}).Execute(map[string]any{"id": "tty_fake", "input": "secret\n", "sensitive": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fake.lastInput != "secret\n" || strings.Contains(written, "secret") || !strings.Contains(written, "redacted") {
+		t.Fatalf("sensitive write was not routed/redacted: input=%q output=%q", fake.lastInput, written)
+	}
+
+	keyed, err := (&Keys{}).Execute(map[string]any{"id": "tty_fake", "key": "enter"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fake.lastInput != "enter" || !strings.Contains(keyed, "key:enter") {
+		t.Fatalf("key was not routed through manager: input=%q output=%q", fake.lastInput, keyed)
+	}
+
+	listed, err := (&List{}).Execute(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(listed, "tty_fake") {
+		t.Fatalf("expected fake session in list, got %q", listed)
+	}
+	stopped, err := (&Stop{}).Execute(map[string]any{"id": "tty_fake"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stopped, "status: stopped") {
+		t.Fatalf("expected stopped fake session, got %q", stopped)
+	}
 }
 
 func TestInteractiveToolsStartWriteReadListStop(t *testing.T) {

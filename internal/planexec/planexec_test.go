@@ -19,6 +19,17 @@ func TestParseChecklistSteps(t *testing.T) {
 	}
 }
 
+func TestParseWithComplexMarkdownOnlyExtractsChecklistSteps(t *testing.T) {
+	content := "# Plan\n\nIntro paragraph\n\n```bash\n- [ ] not a real step\n```\n\n## Steps\n- [ ] implement feature\nplain line\n* [x] verified\n"
+	session := Parse("plans/Complex Plan.md", content)
+	if session.Path != "plans/Complex Plan.md" || session.Slug != "complex-plan" {
+		t.Fatalf("unexpected session identity: %+v", session)
+	}
+	if len(session.Steps) != 2 || session.Steps[0].Text != "implement feature" || !session.Steps[1].Done || session.Steps[1].Text != "verified" {
+		t.Fatalf("unexpected parsed steps: %+v", session.Steps)
+	}
+}
+
 func TestPlanSessionBoundaryMethods(t *testing.T) {
 	if got := (*Session)(nil).Instruction(); got != "" {
 		t.Fatalf("expected nil instruction empty, got %q", got)
@@ -66,6 +77,19 @@ func TestParseWithoutChecklistStillProducesUsableSession(t *testing.T) {
 	instruction := session.Instruction()
 	if !strings.Contains(instruction, "未找到 checklist 未完成项") || !strings.Contains(instruction, "No checklist here") {
 		t.Fatalf("expected fallback instruction for no checklist, got %q", instruction)
+	}
+}
+
+func TestParseEmptyContentAndMarkNextDoneWithEmptySteps(t *testing.T) {
+	session := Parse("empty.md", "")
+	if session.Slug != "empty" || len(session.Steps) != 0 {
+		t.Fatalf("unexpected empty session: %+v", session)
+	}
+	if _, ok := session.MarkNextDone(); ok {
+		t.Fatal("expected MarkNextDone to fail with no steps")
+	}
+	if instruction := session.Instruction(); !strings.Contains(instruction, "未找到 checklist 未完成项") {
+		t.Fatalf("unexpected empty instruction: %q", instruction)
 	}
 }
 

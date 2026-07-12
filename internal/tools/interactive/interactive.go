@@ -10,6 +10,18 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 )
 
+type manager interface {
+	Start(context.Context, interactivemgr.StartOptions) (*interactivemgr.Session, error)
+	List() []interactivemgr.Session
+	Status(string) (*interactivemgr.Session, bool)
+	Observe(string, interactivemgr.ObserveOptions) (*interactivemgr.Observation, error)
+	Write(string, string, bool, interactivemgr.ObserveOptions) (*interactivemgr.Observation, error)
+	SendKey(string, string, interactivemgr.ObserveOptions) (*interactivemgr.Observation, error)
+	Stop(string) error
+}
+
+var currentManager = func() manager { return interactivemgr.DefaultManager() }
+
 type Start struct{}
 
 func (t *Start) Name() string { return "interactive_start" }
@@ -51,11 +63,12 @@ func (t *Start) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	sess, err := interactivemgr.DefaultManager().Start(context.Background(), interactivemgr.StartOptions{Command: command, Args: argv, Cwd: cwd, Rows: rows, Cols: cols})
+	mgr := currentManager()
+	sess, err := mgr.Start(context.Background(), interactivemgr.StartOptions{Command: command, Args: argv, Cwd: cwd, Rows: rows, Cols: cols})
 	if err != nil {
 		return "", err
 	}
-	obs, err := interactivemgr.DefaultManager().Observe(sess.ID, observeOpts)
+	obs, err := mgr.Observe(sess.ID, observeOpts)
 	if err != nil {
 		return "", err
 	}
@@ -87,7 +100,7 @@ func (t *Read) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	obs, err := interactivemgr.DefaultManager().Observe(id, observeOpts)
+	obs, err := currentManager().Observe(id, observeOpts)
 	if err != nil {
 		return "", err
 	}
@@ -126,7 +139,7 @@ func (t *Write) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	obs, err := interactivemgr.DefaultManager().Write(id, input, sensitive, observeOpts)
+	obs, err := currentManager().Write(id, input, sensitive, observeOpts)
 	if err != nil {
 		return "", err
 	}
@@ -167,7 +180,7 @@ func (t *Keys) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	obs, err := interactivemgr.DefaultManager().SendKey(id, key, observeOpts)
+	obs, err := currentManager().SendKey(id, key, observeOpts)
 	if err != nil {
 		return "", err
 	}
@@ -187,10 +200,11 @@ func (t *Stop) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := interactivemgr.DefaultManager().Stop(id); err != nil {
+	mgr := currentManager()
+	if err := mgr.Stop(id); err != nil {
 		return "", err
 	}
-	sess, _ := interactivemgr.DefaultManager().Status(id)
+	sess, _ := mgr.Status(id)
 	return "interactive session stopped\n" + formatSession(sess), nil
 }
 
@@ -201,7 +215,7 @@ func (t *List) Description() string                 { return "列出交互式 PT
 func (t *List) Required() []string                  { return nil }
 func (t *List) Parameters() map[string]llm.Property { return map[string]llm.Property{} }
 func (t *List) Execute(args map[string]any) (string, error) {
-	sessions := interactivemgr.DefaultManager().List()
+	sessions := currentManager().List()
 	if len(sessions) == 0 {
 		return "<no interactive sessions>", nil
 	}

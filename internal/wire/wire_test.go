@@ -43,11 +43,22 @@ func TestNewRequest(t *testing.T) {
 	}
 }
 
-func TestContentPartTypes(t *testing.T) {
-	text := ContentPart{Type: ContentText, Text: "hello"}
-	think := ContentPart{Type: ContentThink, Text: "reasoning"}
-	if text.Type != "text" || think.Type != "think" {
-		t.Fatalf("unexpected content types: %+v %+v", text, think)
+func TestContentPartEventRoundTrip(t *testing.T) {
+	for _, part := range []ContentPart{
+		{Type: ContentText, Text: "hello"},
+		{Type: ContentThink, Text: "reasoning"},
+	} {
+		event, err := NewEvent(EventContentPart, part)
+		if err != nil {
+			t.Fatalf("NewEvent failed: %v", err)
+		}
+		var payload ContentPart
+		if err := json.Unmarshal(event.Payload, &payload); err != nil {
+			t.Fatalf("unmarshal content payload failed: %v", err)
+		}
+		if payload != part {
+			t.Fatalf("content part did not round-trip: got %+v want %+v", payload, part)
+		}
 	}
 }
 

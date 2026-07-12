@@ -60,6 +60,14 @@ func Close() error {
 
 type Visit struct{}
 
+type renderedPage struct {
+	Title      string
+	Text       string
+	Screenshot []byte
+}
+
+var renderBrowserPage = renderPageWithRod
+
 func (t *Visit) Name() string { return "browser_visit" }
 func (t *Visit) Description() string {
 	return "用真实浏览器访问网页，支持 JS 渲染，规避反爬虫。返回页面标题和正文"
@@ -84,30 +92,44 @@ func (t *Visit) Execute(args map[string]any) (string, error) {
 		return "", err
 	}
 
-	b, err := getBrowser()
+	rendered, err := renderBrowserPage(u, options, false)
 	if err != nil {
 		return "", err
+	}
+	text := strings.TrimSpace(rendered.Text)
+
+	if len([]rune(text)) > 5000 {
+		text = string([]rune(text)[:5000]) + "\n\n...（内容过长已截断）"
+	}
+
+	return fmt.Sprintf("标题: %s\n\n%s", rendered.Title, text), nil
+}
+
+func renderPageWithRod(u string, options pageOptions, includeScreenshot bool) (renderedPage, error) {
+	b, err := getBrowser()
+	if err != nil {
+		return renderedPage{}, err
 	}
 
 	page, err := b.Page(proto.TargetCreateTarget{})
 	if err != nil {
-		return "", fmt.Errorf("创建页面失败: %w", err)
+		return renderedPage{}, fmt.Errorf("创建页面失败: %w", err)
 	}
 	defer page.Close()
 	page = page.Timeout(time.Duration(options.TimeoutSec) * time.Second)
 	if options.ViewportWidth > 0 && options.ViewportHeight > 0 {
 		if err := page.SetViewport(&proto.EmulationSetDeviceMetricsOverride{Width: options.ViewportWidth, Height: options.ViewportHeight, DeviceScaleFactor: 1, Mobile: false}); err != nil {
-			return "", fmt.Errorf("设置 viewport 失败: %w", err)
+			return renderedPage{}, fmt.Errorf("设置 viewport 失败: %w", err)
 		}
 	}
 
 	if err := page.Navigate(u); err != nil {
-		return "", fmt.Errorf("导航失败: %w", err)
+		return renderedPage{}, fmt.Errorf("导航失败: %w", err)
 	}
 	page.WaitLoad()
 	if options.Selector != "" {
 		if _, err := page.Element(options.Selector); err != nil {
-			return "", fmt.Errorf("等待 selector 失败: %w", err)
+			return renderedPage{}, fmt.Errorf("等待 selector 失败: %w", err)
 		}
 	}
 	time.Sleep(time.Duration(options.WaitSec) * time.Second)
@@ -118,20 +140,21 @@ func (t *Visit) Execute(args map[string]any) (string, error) {
 		bodyText, _ = page.Eval(fmt.Sprintf(`() => document.querySelector(%q)?.innerText || ""`, options.Selector))
 	}
 
-	titleStr := ""
+	rendered := renderedPage{}
 	if title != nil {
-		titleStr = title.Value.String()
+		rendered.Title = title.Value.String()
 	}
-	text := ""
 	if bodyText != nil {
-		text = strings.TrimSpace(bodyText.Value.String())
+		rendered.Text = bodyText.Value.String()
 	}
-
-	if len([]rune(text)) > 5000 {
-		text = string([]rune(text)[:5000]) + "\n\n...（内容过长已截断）"
+	if includeScreenshot {
+		data, err := page.Screenshot(true, nil)
+		if err != nil {
+			return renderedPage{}, fmt.Errorf("截图失败: %w", err)
+		}
+		rendered.Screenshot = data
 	}
-
-	return fmt.Sprintf("标题: %s\n\n%s", titleStr, text), nil
+	return rendered, nil
 }
 
 func parseWait(raw string) (int, error) {
@@ -239,43 +262,15 @@ func (t *Screenshot) Execute(args map[string]any) (string, error) {
 		return "", err
 	}
 
-	b, err := getBrowser()
+	rendered, err := renderBrowserPage(u, options, true)
 	if err != nil {
 		return "", err
 	}
 
-	page, err := b.Page(proto.TargetCreateTarget{})
-	if err != nil {
-		return "", fmt.Errorf("创建页面失败: %w", err)
-	}
-	defer page.Close()
-	page = page.Timeout(time.Duration(options.TimeoutSec) * time.Second)
-	if options.ViewportWidth > 0 && options.ViewportHeight > 0 {
-		if err := page.SetViewport(&proto.EmulationSetDeviceMetricsOverride{Width: options.ViewportWidth, Height: options.ViewportHeight, DeviceScaleFactor: 1, Mobile: false}); err != nil {
-			return "", fmt.Errorf("设置 viewport 失败: %w", err)
-		}
-	}
-
-	if err := page.Navigate(u); err != nil {
-		return "", fmt.Errorf("导航失败: %w", err)
-	}
-	page.WaitLoad()
-	if options.Selector != "" {
-		if _, err := page.Element(options.Selector); err != nil {
-			return "", fmt.Errorf("等待 selector 失败: %w", err)
-		}
-	}
-	time.Sleep(time.Duration(options.WaitSec) * time.Second)
-
 	absPath, _ := filepath.Abs(savePath)
-	data, err := page.Screenshot(true, nil)
-	if err != nil {
-		return "", fmt.Errorf("截图失败: %w", err)
-	}
-
-	if err := os.WriteFile(absPath, data, 0644); err != nil {
+	if err := os.WriteFile(absPath, rendered.Screenshot, 0644); err != nil {
 		return "", fmt.Errorf("保存截图失败: %w", err)
 	}
 
-	return fmt.Sprintf("截图已保存到 %s (%d bytes)", absPath, len(data)), nil
+	return fmt.Sprintf("截图已保存到 %s (%d bytes)", absPath, len(rendered.Screenshot)), nil
 }

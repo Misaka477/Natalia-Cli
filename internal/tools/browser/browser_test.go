@@ -67,6 +67,45 @@ func TestCloseWithoutBrowser(t *testing.T) {
 	}
 }
 
+func TestBrowserToolsExecuteThroughRendererFallback(t *testing.T) {
+	oldRender := renderBrowserPage
+	renderBrowserPage = func(u string, options pageOptions, includeScreenshot bool) (renderedPage, error) {
+		if u != "https://example.test/page" {
+			t.Fatalf("unexpected URL: %s", u)
+		}
+		if options.WaitSec != 0 || options.TimeoutSec != 7 || options.ViewportWidth != 800 || options.ViewportHeight != 600 || options.Selector != "#main" {
+			t.Fatalf("renderer received unexpected options: %+v", options)
+		}
+		rendered := renderedPage{Title: "Fallback Browser", Text: "selector text"}
+		if includeScreenshot {
+			rendered.Screenshot = []byte("png-bytes")
+		}
+		return rendered, nil
+	}
+	t.Cleanup(func() { renderBrowserPage = oldRender })
+
+	visit, err := (&Visit{}).Execute(map[string]any{"url": "https://example.test/page", "selector": "#main", "wait": "0", "timeout": "7", "viewport": "800x600"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(visit, "Fallback Browser") || !strings.Contains(visit, "selector text") {
+		t.Fatalf("expected renderer output in visit result, got %q", visit)
+	}
+
+	shotPath := filepath.Join(t.TempDir(), "shot.png")
+	shot, err := (&Screenshot{}).Execute(map[string]any{"url": "https://example.test/page", "path": shotPath, "selector": "#main", "wait": "0", "timeout": "7", "viewport": "800x600"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(shotPath)
+	if err != nil {
+		t.Fatalf("expected screenshot file: %v", err)
+	}
+	if string(data) != "png-bytes" || !strings.Contains(shot, shotPath) {
+		t.Fatalf("expected screenshot output from renderer, file=%q output=%q", string(data), shot)
+	}
+}
+
 func TestBrowserVisitAndScreenshotLocalPage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")

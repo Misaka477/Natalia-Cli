@@ -75,6 +75,9 @@ agent:
 	if spec.SystemPromptArgs["Extra"] != "value" {
 		t.Fatalf("expected merged prompt args, got %v", spec.SystemPromptArgs)
 	}
+	if len(spec.AllowedTools) != 1 || spec.AllowedTools[0] != "read_file" {
+		t.Fatalf("expected merged allowed tools, got %+v", spec.AllowedTools)
+	}
 	if got := spec.Subagents["helper"].Path; got != filepath.Join(dir, "helper.yaml") {
 		t.Fatalf("expected resolved subagent path, got %q", got)
 	}
@@ -124,6 +127,51 @@ agent:
 	}
 	if spec.SystemPromptPath != filepath.Join(dir, "system.md") {
 		t.Fatalf("expected inherited resolved prompt path, got %q", spec.SystemPromptPath)
+	}
+}
+
+func TestLoadAgentSpecRendersCustomPromptArgsFromRelativeSpec(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "agent.yaml")
+	if err := os.WriteFile(filepath.Join(dir, "system.md"), []byte("work={{.WorkDir}} extra={{.Extra}} shell={{.Shell}}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(specPath, []byte(`version: 1
+agent:
+  name: custom
+  system_prompt_path: ./system.md
+  system_prompt_args:
+    Extra: custom-value
+  tools:
+    - natalia/tools/file:Read
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	spec, err := LoadAgentSpec(specPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := spec.RenderSystemPrompt(TemplateArgs{WorkDir: "/repo", Shell: "/bin/bash"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prompt != "work=/repo extra=custom-value shell=/bin/bash" {
+		t.Fatalf("unexpected rendered prompt: %q", prompt)
+	}
+}
+
+func TestLoadAgentSpecRejectsUnsupportedVersion(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "agent.yaml")
+	if err := os.WriteFile(specPath, []byte(`version: 99
+agent:
+  name: future
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadAgentSpec(specPath)
+	if err == nil || !strings.Contains(err.Error(), "unsupported agent spec version") {
+		t.Fatalf("expected unsupported version error, got %v", err)
 	}
 }
 
