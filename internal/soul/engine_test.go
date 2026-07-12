@@ -19,6 +19,7 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/hook"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	"github.com/Misaka477/Natalia-Cli/internal/mode"
+	"github.com/Misaka477/Natalia-Cli/internal/notifications"
 	filetool "github.com/Misaka477/Natalia-Cli/internal/tools/file"
 	shelltool "github.com/Misaka477/Natalia-Cli/internal/tools/shell"
 	"github.com/Misaka477/Natalia-Cli/internal/toolset"
@@ -161,6 +162,26 @@ func (p *recordingInjectionProvider) OnContextCompacted() error {
 }
 
 func (p *recordingInjectionProvider) OnAfkChanged(bool) error { return nil }
+
+func TestNotificationInjectionProviderDrainsStore(t *testing.T) {
+	store := notifications.NewStore()
+	store.Add("background", "Background task completed", "proc_1 exited")
+	provider := NotificationInjectionProvider{Store: store}
+	injections, err := provider.GetInjections(nil, NewEngine(nil, toolset.NewRegistry()))
+	if err != nil {
+		t.Fatalf("GetInjections failed: %v", err)
+	}
+	if len(injections) != 1 || injections[0].Type != "notifications" || !strings.Contains(injections[0].Content, "proc_1 exited") {
+		t.Fatalf("unexpected notification injection: %+v", injections)
+	}
+	again, err := provider.GetInjections(nil, NewEngine(nil, toolset.NewRegistry()))
+	if err != nil {
+		t.Fatalf("second GetInjections failed: %v", err)
+	}
+	if len(again) != 0 {
+		t.Fatalf("expected notification store to be drained, got %+v", again)
+	}
+}
 
 func TestExecuteToolCallEmitsEvents(t *testing.T) {
 	tools := toolset.NewRegistry()

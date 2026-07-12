@@ -32,6 +32,7 @@ type Profile struct {
 	TimeoutSec        int                    `yaml:"timeout_sec"`
 	SystemPrompt      string                 `yaml:"system_prompt,omitempty"`
 	WorkDir           string                 `yaml:"work_dir,omitempty"`
+	AdditionalDirs    []string               `yaml:"additional_dirs,omitempty"`
 	AutoApprove       string                 `yaml:"auto_approve"`
 	Mode              string                 `yaml:"mode,omitempty"`
 	Modes             map[string]ModeProfile `yaml:"modes,omitempty"`

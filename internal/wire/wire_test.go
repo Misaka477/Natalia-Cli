@@ -80,6 +80,31 @@ func TestToolResultIncludesDisplayBlocks(t *testing.T) {
 	}
 }
 
+func TestSubagentAndNotificationEventsRoundTrip(t *testing.T) {
+	sub, err := NewEvent(EventSubagentEvent, SubagentEvent{ID: "w1", Event: "log", Payload: json.RawMessage(`{"event":"log"}`)})
+	if err != nil {
+		t.Fatalf("NewEvent subagent failed: %v", err)
+	}
+	var subPayload SubagentEvent
+	if err := json.Unmarshal(sub.Payload, &subPayload); err != nil {
+		t.Fatalf("unmarshal subagent payload: %v", err)
+	}
+	if subPayload.ID != "w1" || subPayload.Event != "log" || string(subPayload.Payload) != `{"event":"log"}` {
+		t.Fatalf("unexpected subagent payload: %+v", subPayload)
+	}
+	notif, err := NewEvent(EventNotification, Notification{Title: "done", Message: "background complete"})
+	if err != nil {
+		t.Fatalf("NewEvent notification failed: %v", err)
+	}
+	var notifPayload Notification
+	if err := json.Unmarshal(notif.Payload, &notifPayload); err != nil {
+		t.Fatalf("unmarshal notification payload: %v", err)
+	}
+	if notifPayload.Title != "done" || notifPayload.Message != "background complete" {
+		t.Fatalf("unexpected notification payload: %+v", notifPayload)
+	}
+}
+
 func TestWireBroadcastsSoulMessagesToSubscribers(t *testing.T) {
 	w := NewWire()
 	rawA, cancelRawA := w.UISide().SubscribeRaw()

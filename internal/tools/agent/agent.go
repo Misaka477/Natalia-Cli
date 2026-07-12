@@ -5,15 +5,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Misaka477/Natalia-Cli/internal/approval"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	"github.com/Misaka477/Natalia-Cli/internal/toolset"
 	"github.com/Misaka477/Natalia-Cli/internal/worker"
 )
 
 type Spawn struct {
-	Pool   *worker.Pool
-	Client *llm.Client
-	Tools  *toolset.Registry
+	Pool     *worker.Pool
+	Client   *llm.Client
+	Tools    *toolset.Registry
+	Approver *approval.Approver
 }
 
 func (t *Spawn) Name() string        { return "agent_spawn" }
@@ -50,7 +52,7 @@ func (t *Spawn) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	w, err := t.Pool.SpawnWithOptions(task, modeName, t.Client, childTools, worker.SpawnOptions{Timeout: time.Duration(timeoutSec) * time.Second})
+	w, err := t.Pool.SpawnWithOptions(task, modeName, t.Client, childTools, worker.SpawnOptions{Timeout: time.Duration(timeoutSec) * time.Second, Approver: t.Approver})
 	if err != nil {
 		return "", fmt.Errorf("创建子 agent 失败: %w", err)
 	}

@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/Misaka477/Natalia-Cli/internal/approval"
 	"github.com/Misaka477/Natalia-Cli/internal/chat"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	filetool "github.com/Misaka477/Natalia-Cli/internal/tools/file"
@@ -205,6 +206,73 @@ func TestSpawnForegroundRunsWorkerToolCallChainWithFilteredTools(t *testing.T) {
 	}
 	if !strings.Contains(out, "agent-final-ok") || !strings.Contains(out, "completed") {
 		t.Fatalf("expected completed foreground output with final answer, got %q", out)
+	}
+}
+
+func TestSpawnForegroundUsesRootApproverForChildWriteTool(t *testing.T) {
+	var requests atomic.Int32
+	var writeExecuted atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		var req llm.ChatRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		call := requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		if call == 1 {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"choices": []map[string]any{{"message": map[string]any{
+					"role": "assistant",
+					"tool_calls": []map[string]any{{
+						"id":   "tc_write",
+						"type": "function",
+						"function": map[string]any{
+							"name":      "write_file",
+							"arguments": `{"path":"forbidden.txt","content":"nope"}`,
+						},
+					}},
+				}}},
+				"usage": map[string]any{"completion_tokens": 1, "total_tokens": 1},
+			})
+			return
+		}
+		rejectionSeen := false
+		for _, msg := range req.Messages {
+			if msg.Role == chat.RoleTool && msg.Name == "write_file" && strings.Contains(msg.Content, "操作被用户拒绝") {
+				rejectionSeen = true
+			}
+		}
+		if !rejectionSeen {
+			_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "content": "missing rejection"}}}})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "content": "write was rejected"}}},
+			"usage":   map[string]any{"completion_tokens": 1, "total_tokens": 2},
+		})
+	}))
+	defer server.Close()
+
+	tools := toolset.NewRegistry()
+	tools.Register(testTool{name: "write_file", checkArgs: func(map[string]any) error {
+		writeExecuted.Store(true)
+		return nil
+	}})
+	out, err := (&Spawn{Pool: worker.NewPool(), Client: llm.NewClient(llm.Config{BaseURL: server.URL, Model: "mock", APIKey: "test"}), Tools: tools, Approver: approval.New(approval.ModeReadOnly)}).Execute(map[string]any{
+		"task":        "try writing",
+		"foreground":  true,
+		"timeout_sec": float64(2),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if writeExecuted.Load() {
+		t.Fatal("expected read_only root approver to prevent child write tool execution")
+	}
+	if !strings.Contains(out, "write was rejected") {
+		t.Fatalf("expected child worker to receive rejection and finish, got %q", out)
 	}
 }
 

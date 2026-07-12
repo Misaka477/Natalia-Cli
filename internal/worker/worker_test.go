@@ -89,6 +89,53 @@ func TestPoolSpawnRunsToolCallAndCompletes(t *testing.T) {
 	}
 }
 
+func TestPoolSubscribeReceivesWorkerEvents(t *testing.T) {
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "application/json")
+		if requestCount == 1 {
+			_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "tool_calls": []map[string]any{{"id": "tc_read", "type": "function", "function": map[string]any{"name": "read_file", "arguments": `{}`}}}}}}})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "content": "done"}}}})
+	}))
+	defer server.Close()
+	tools := toolset.NewRegistry()
+	tools.Register(workerTool{})
+	pool := NewPool()
+	events := make(chan Event, 8)
+	detach := pool.Subscribe(func(event Event) { events <- event })
+	defer detach()
+	w, err := pool.Spawn("subtask", "code", llm.NewClient(llm.Config{BaseURL: server.URL, Model: "mock", APIKey: "test"}), tools)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, w, StatusCompleted)
+	seenCreated, seenRunning, seenToolLog, seenCompleted := false, false, false, false
+	deadline := time.After(time.Second)
+	for !(seenCreated && seenRunning && seenToolLog && seenCompleted) {
+		select {
+		case event := <-events:
+			if event.WorkerID != w.ID {
+				t.Fatalf("unexpected worker id in event: %+v", event)
+			}
+			switch {
+			case event.Event == "created":
+				seenCreated = true
+			case event.Event == "status" && event.Status == StatusRunning:
+				seenRunning = true
+			case event.Event == "status" && event.Status == StatusCompleted:
+				seenCompleted = true
+			case event.Event == "log" && event.Log != nil && event.Log.Tool == "read_file":
+				seenToolLog = true
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for worker events: created=%t running=%t tool=%t completed=%t", seenCreated, seenRunning, seenToolLog, seenCompleted)
+		}
+	}
+}
+
 func TestPoolSpawnWithTimeoutFailsBlockedWorker(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(200 * time.Millisecond)

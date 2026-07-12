@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/Misaka477/Natalia-Cli/internal/chat"
+	"github.com/Misaka477/Natalia-Cli/internal/notifications"
 )
 
 type Injection struct {
@@ -26,6 +27,34 @@ func (SafetyInjectionProvider) GetInjections(history []chat.Message, engine *Eng
 
 func (SafetyInjectionProvider) OnContextCompacted() error { return nil }
 func (SafetyInjectionProvider) OnAfkChanged(bool) error   { return nil }
+
+type NotificationInjectionProvider struct {
+	Store *notifications.Store
+}
+
+func (p NotificationInjectionProvider) GetInjections(history []chat.Message, engine *Engine) ([]Injection, error) {
+	store := p.Store
+	if store == nil {
+		store = notifications.DefaultStore()
+	}
+	items := store.Drain()
+	if len(items) == 0 {
+		return nil, nil
+	}
+	var b strings.Builder
+	b.WriteString("Recent runtime notifications:\n")
+	for _, item := range items {
+		label := item.Title
+		if label == "" {
+			label = item.Source
+		}
+		fmt.Fprintf(&b, "- %s: %s\n", label, strings.TrimSpace(item.Message))
+	}
+	return []Injection{{Type: "notifications", Content: strings.TrimSpace(b.String())}}, nil
+}
+
+func (NotificationInjectionProvider) OnContextCompacted() error { return nil }
+func (NotificationInjectionProvider) OnAfkChanged(bool) error   { return nil }
 
 func formatInjections(injections []Injection) string {
 	var b strings.Builder

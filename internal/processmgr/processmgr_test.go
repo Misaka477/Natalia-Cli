@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -27,6 +28,36 @@ func TestStartCapturesOutputAndStatus(t *testing.T) {
 	if !strings.Contains(joined, "stdout:hello") || !strings.Contains(joined, "stderr:err") {
 		t.Fatalf("unexpected output: %+v", output)
 	}
+}
+
+func TestSubscribeCompleteFiresOnProcessExit(t *testing.T) {
+	m := New()
+	var mu sync.Mutex
+	var completed []Session
+	detach := m.SubscribeComplete(func(sess Session) {
+		mu.Lock()
+		completed = append(completed, sess)
+		mu.Unlock()
+	})
+	defer detach()
+	sess, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-c", "exit 0"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, m, sess.ID, StatusExited)
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		got := append([]Session(nil), completed...)
+		mu.Unlock()
+		if len(got) == 1 && got[0].ID == sess.ID && got[0].Status == StatusExited && got[0].ExitCode != nil && *got[0].ExitCode == 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	t.Fatalf("expected completion callback for %s, got %+v", sess.ID, completed)
 }
 
 func TestStartValidatesCwd(t *testing.T) {

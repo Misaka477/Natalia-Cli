@@ -24,6 +24,7 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	coremcp "github.com/Misaka477/Natalia-Cli/internal/mcp"
 	"github.com/Misaka477/Natalia-Cli/internal/mode"
+	"github.com/Misaka477/Natalia-Cli/internal/notifications"
 	"github.com/Misaka477/Natalia-Cli/internal/plan"
 	"github.com/Misaka477/Natalia-Cli/internal/planexec"
 	"github.com/Misaka477/Natalia-Cli/internal/sandbox"
@@ -32,7 +33,6 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/snapshot"
 	"github.com/Misaka477/Natalia-Cli/internal/soul"
 	"github.com/Misaka477/Natalia-Cli/internal/term"
-	"github.com/Misaka477/Natalia-Cli/internal/tools/agent"
 	mcptools "github.com/Misaka477/Natalia-Cli/internal/tools/mcptools"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/skilltools"
 	workflowtools "github.com/Misaka477/Natalia-Cli/internal/tools/workflowtools"
@@ -50,6 +50,7 @@ var (
 	skillRegistry  *skill.Registry
 	runtime        runtimeOverrides
 	currentPlan    *planexec.Session
+	activeConfig   *config.Config
 	mcpMu          sync.Mutex
 	mcpClients     = map[string]*coremcp.Client{}
 	workflowReg    *workflowcore.Registry
@@ -76,6 +77,7 @@ func main() {
 	if *profile != "" && cfg != nil {
 		cfg.DefaultProfile = *profile
 	}
+	activeConfig = cfg
 
 	tools := toolset.NewRegistry()
 	registerTools(tools)
@@ -237,7 +239,7 @@ func buildEngine(cfg *config.Config, tools *toolset.Registry, debug bool) *soul.
 	llmClient := newLLMClient(pr, p)
 
 	engine := soul.NewEngine(llmClient, tools)
-	engine.InjectionProviders = []soul.InjectionProvider{soul.SafetyInjectionProvider{}}
+	engine.InjectionProviders = []soul.InjectionProvider{soul.SafetyInjectionProvider{}, soul.NotificationInjectionProvider{Store: notifications.DefaultStore()}}
 	engine.Context.MaxSteps = pr.MaxSteps
 	if engine.Context.MaxSteps == 0 {
 		engine.Context.MaxSteps = 50
@@ -665,6 +667,7 @@ func runOnce(cfg *config.Config, tools *toolset.Registry, input string) {
 
 func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, debug bool) {
 	defer term.Close()
+	activeConfig = cfg
 	defer persistCurrentSessionState()
 
 	engine := buildEngine(cfg, tools, debug)
@@ -713,16 +716,9 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 		}
 	}
 
-	workerPool = worker.NewPool()
-	if engine.LLM != nil {
-		eff, _ := cfg.EffectiveProfile(runtime.Mode, runtime.ModelProfile, runtime.PermissionProfile)
-		workerClient := newLLMClient(&eff.Profile, &eff.Provider)
-		tools.Register(&agent.Spawn{Pool: workerPool, Client: workerClient, Tools: tools})
-		tools.Register(&agent.List{Pool: workerPool})
-		tools.Register(&agent.Output{Pool: workerPool})
-		tools.Register(&agent.Stop{Pool: workerPool})
-		tools.Register(&agent.Resume{Pool: workerPool})
-	}
+	registerAgentToolsForEngine(cfg, engine, tools)
+	detachRuntimeEvents := bridgeRuntimeEvents(engine, nil)
+	defer detachRuntimeEvents()
 
 	for {
 		input, err := term.ReadlineWithHistory("> ", history)
@@ -916,9 +912,11 @@ func handleMode(input string, cfg *config.Config, engine **soul.Engine, tools *t
 	runtime.ModelProfile = ""
 	runtime.PermissionProfile = ""
 	*engine = rebuildEnginePreservingState(cfg, *engine, tools, debug)
+	registerAgentToolsForEngine(cfg, *engine, tools)
 	applyModePrompt(*engine, m)
 	persistCurrentSessionState()
 	fmt.Printf("✓ 已切换 mode: %s (%s)\n", m.Name, m.DisplayName)
+	printRuntimeStatusSummary(cfg, *engine)
 }
 
 func handleModel(input string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool) {
@@ -935,8 +933,10 @@ func handleModel(input string, cfg *config.Config, engine **soul.Engine, tools *
 	}
 	runtime.ModelProfile = name
 	*engine = rebuildEnginePreservingState(cfg, *engine, tools, debug)
+	registerAgentToolsForEngine(cfg, *engine, tools)
 	persistCurrentSessionState()
 	fmt.Printf("✓ 已切换 model_profile: %s\n", name)
+	printRuntimeStatusSummary(cfg, *engine)
 }
 
 func showModelProfiles(cfg *config.Config) {
@@ -965,8 +965,10 @@ func handlePermission(input string, cfg *config.Config, engine **soul.Engine, to
 	}
 	runtime.PermissionProfile = name
 	*engine = rebuildEnginePreservingState(cfg, *engine, tools, debug)
+	registerAgentToolsForEngine(cfg, *engine, tools)
 	persistCurrentSessionState()
 	fmt.Printf("✓ 已切换 permission_profile: %s\n", name)
+	printRuntimeStatusSummary(cfg, *engine)
 }
 
 func showPermissions(cfg *config.Config) {
@@ -1034,6 +1036,18 @@ func statusLines(cfg *config.Config, engine *soul.Engine) ([]string, error) {
 		fmt.Sprintf("stream: %t", eff.Profile.Stream),
 		fmt.Sprintf("tools: %s", tools),
 	}, nil
+}
+
+func printRuntimeStatusSummary(cfg *config.Config, engine *soul.Engine) {
+	if cfg == nil {
+		return
+	}
+	eff, err := cfg.EffectiveProfile(runtime.Mode, runtime.ModelProfile, runtime.PermissionProfile)
+	if err != nil {
+		return
+	}
+	contextTokens, maxContextTokens, contextUsage := contextTokenStats(engine)
+	fmt.Printf("runtime_status: mode=%s model_profile=%s permission_profile=%s model=%s context_tokens=%d/%d (%.1f%% estimated)\n", eff.Mode, displayEmpty(eff.ModelProfile, "<profile>"), eff.PermissionProfile, eff.Profile.Model, contextTokens, maxContextTokens, contextUsage*100)
 }
 
 func contextTokenStats(engine *soul.Engine) (int, int, float64) {
@@ -1304,6 +1318,7 @@ func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine,
 		if modified {
 			(*cfg).Save()
 			*engine = buildEngine(*cfg, tools, debug)
+			registerAgentToolsForEngine(*cfg, *engine, tools)
 		}
 	case "/profile":
 		if *cfg == nil {
@@ -1313,11 +1328,14 @@ func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine,
 		name := ui.PickProfile(*cfg)
 		if name != "" {
 			(*cfg).DefaultProfile = name
+			activeConfig = *cfg
 			runtime = runtimeOverrides{}
 			(*cfg).Save()
 			*engine = buildEngine(*cfg, tools, debug)
+			registerAgentToolsForEngine(*cfg, *engine, tools)
 			persistCurrentSessionState()
 			fmt.Printf("已切换到: %s\n", name)
+			printRuntimeStatusSummary(*cfg, *engine)
 		}
 	case "/compact":
 		if (*engine).LLM == nil {
@@ -1362,6 +1380,7 @@ func persistCurrentSessionState() {
 		Mode:              runtime.Mode,
 		ModelProfile:      runtime.ModelProfile,
 		PermissionProfile: runtime.PermissionProfile,
+		AdditionalDirs:    effectiveAdditionalDirs(activeConfig),
 	}
 	planState := plan.Status()
 	state.PlanMode = planState.Enabled
@@ -1454,6 +1473,7 @@ func restoreSession(parts []string, cfg *config.Config, engine **soul.Engine, to
 func validateRestoredRuntime(cfg *config.Config, state session.State) (runtimeOverrides, []string) {
 	restored := runtimeOverrides{Mode: state.Mode, ModelProfile: state.ModelProfile, PermissionProfile: state.PermissionProfile}
 	warnings := make([]string, 0)
+	warnings = append(warnings, validateRestoredAdditionalDirs(state.AdditionalDirs)...)
 	if cfg == nil {
 		return restored, warnings
 	}
@@ -1484,6 +1504,52 @@ func validateRestoredRuntime(cfg *config.Config, state session.State) (runtimeOv
 		restored = runtimeOverrides{}
 	}
 	return restored, warnings
+}
+
+func effectiveAdditionalDirs(cfg *config.Config) []string {
+	if cfg == nil {
+		return nil
+	}
+	eff, err := cfg.EffectiveProfile(runtime.Mode, runtime.ModelProfile, runtime.PermissionProfile)
+	if err != nil || len(eff.Profile.AdditionalDirs) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(eff.Profile.AdditionalDirs))
+	seen := make(map[string]bool, len(eff.Profile.AdditionalDirs))
+	for _, dir := range eff.Profile.AdditionalDirs {
+		dir = strings.TrimSpace(dir)
+		if dir == "" {
+			continue
+		}
+		if abs, err := filepath.Abs(dir); err == nil {
+			dir = abs
+		}
+		dir = filepath.Clean(dir)
+		if seen[dir] {
+			continue
+		}
+		seen[dir] = true
+		out = append(out, dir)
+	}
+	return out
+}
+
+func validateRestoredAdditionalDirs(dirs []string) []string {
+	if len(dirs) == 0 {
+		return nil
+	}
+	warnings := make([]string, 0)
+	for _, dir := range dirs {
+		info, err := os.Stat(dir)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("⚠ additional_dir %q 不可用: %v", dir, err))
+			continue
+		}
+		if !info.IsDir() {
+			warnings = append(warnings, fmt.Sprintf("⚠ additional_dir %q 不是目录", dir))
+		}
+	}
+	return warnings
 }
 
 func resolveSessionRef(ref string) (*session.Session, error) {

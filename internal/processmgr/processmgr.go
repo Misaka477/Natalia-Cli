@@ -62,9 +62,11 @@ type OutputLine struct {
 }
 
 type Manager struct {
-	mu       sync.RWMutex
-	nextID   uint64
-	sessions map[string]*managedSession
+	mu        sync.RWMutex
+	nextID    uint64
+	nextSubID uint64
+	sessions  map[string]*managedSession
+	callbacks map[uint64]func(Session)
 }
 
 var defaultManager = New()
@@ -78,6 +80,7 @@ func ResetDefaultManagerForTest() {
 }
 
 type managedSession struct {
+	manager *Manager
 	mu      sync.RWMutex
 	meta    Session
 	cmd     *exec.Cmd
@@ -88,7 +91,22 @@ type managedSession struct {
 }
 
 func New() *Manager {
-	return &Manager{sessions: make(map[string]*managedSession)}
+	return &Manager{sessions: make(map[string]*managedSession), callbacks: make(map[uint64]func(Session))}
+}
+
+func (m *Manager) SubscribeComplete(fn func(Session)) func() {
+	if fn == nil {
+		return func() {}
+	}
+	id := atomic.AddUint64(&m.nextSubID, 1)
+	m.mu.Lock()
+	m.callbacks[id] = fn
+	m.mu.Unlock()
+	return func() {
+		m.mu.Lock()
+		delete(m.callbacks, id)
+		m.mu.Unlock()
+	}
 }
 
 func (m *Manager) Start(ctx context.Context, opts StartOptions) (*Session, error) {
@@ -136,8 +154,9 @@ func (m *Manager) Start(ctx context.Context, opts StartOptions) (*Session, error
 	now := time.Now()
 	id := fmt.Sprintf("proc_%d", atomic.AddUint64(&m.nextID, 1))
 	ms := &managedSession{
-		meta: Session{ID: id, Kind: opts.Kind, Command: opts.Command, Args: append([]string(nil), opts.Args...), Cwd: opts.Cwd, Status: StatusRunning, PID: cmd.Process.Pid, StartedAt: now, LastActivityAt: now},
-		cmd:  cmd, cancel: cancel, maxTail: opts.MaxTail, done: make(chan struct{}),
+		manager: m,
+		meta:    Session{ID: id, Kind: opts.Kind, Command: opts.Command, Args: append([]string(nil), opts.Args...), Cwd: opts.Cwd, Status: StatusRunning, PID: cmd.Process.Pid, StartedAt: now, LastActivityAt: now},
+		cmd:     cmd, cancel: cancel, maxTail: opts.MaxTail, done: make(chan struct{}),
 	}
 	m.mu.Lock()
 	m.sessions[id] = ms
@@ -242,7 +261,6 @@ func (s *managedSession) appendOutput(stream, text string) {
 func (s *managedSession) wait() {
 	err := s.cmd.Wait()
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	now := time.Now()
 	s.meta.ExitedAt = now
 	s.meta.LastActivityAt = now
@@ -259,6 +277,22 @@ func (s *managedSession) wait() {
 		s.meta.ExitCode = &code
 	}
 	close(s.done)
+	s.mu.Unlock()
+	if s.manager != nil {
+		s.manager.notifyComplete(*s.snapshot())
+	}
+}
+
+func (m *Manager) notifyComplete(sess Session) {
+	m.mu.RLock()
+	callbacks := make([]func(Session), 0, len(m.callbacks))
+	for _, fn := range m.callbacks {
+		callbacks = append(callbacks, fn)
+	}
+	m.mu.RUnlock()
+	for _, fn := range callbacks {
+		fn(sess)
+	}
 }
 
 func (s *managedSession) snapshot() *Session {

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Misaka477/Natalia-Cli/internal/approval"
 	"github.com/Misaka477/Natalia-Cli/internal/chat"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	"github.com/Misaka477/Natalia-Cli/internal/mode"
@@ -25,13 +26,13 @@ const (
 )
 
 type LogEntry struct {
-	Step      int
-	Tool      string
-	Args      map[string]any
-	Result    string
-	Error     string
-	Reasoning string
-	Timestamp time.Time
+	Step      int            `json:"step,omitempty"`
+	Tool      string         `json:"tool,omitempty"`
+	Args      map[string]any `json:"args,omitempty"`
+	Result    string         `json:"result,omitempty"`
+	Error     string         `json:"error,omitempty"`
+	Reasoning string         `json:"reasoning,omitempty"`
+	Timestamp time.Time      `json:"timestamp,omitempty"`
 }
 
 type Worker struct {
@@ -43,6 +44,8 @@ type Worker struct {
 	Logs      []LogEntry
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	OnLog     func(LogEntry)
+	OnStatus  func(Status)
 	mu        sync.RWMutex
 
 	ctx    context.Context
@@ -50,7 +53,8 @@ type Worker struct {
 }
 
 type SpawnOptions struct {
-	Timeout time.Duration
+	Timeout  time.Duration
+	Approver *approval.Approver
 }
 
 func New(id, task, modeName string, llmClient *llm.Client, tools *toolset.Registry) (*Worker, error) {
@@ -82,6 +86,7 @@ func NewWithOptions(id, task, modeName string, llmClient *llm.Client, tools *too
 	}
 
 	eng.Mode = m
+	eng.Approver = opts.Approver
 	if len(eng.Context.Messages) == 0 {
 		eng.Context.Messages = append(eng.Context.Messages, chat.Message{
 			Role:    chat.RoleSystem,
@@ -97,25 +102,17 @@ func NewWithOptions(id, task, modeName string, llmClient *llm.Client, tools *too
 }
 
 func (w *Worker) Start() {
-	w.mu.Lock()
 	if w.Engine == nil || w.Engine.Dedup == nil {
-		w.Status = StatusFailed
-		w.UpdatedAt = time.Now()
-		w.mu.Unlock()
+		w.setStatus(StatusFailed)
 		return
 	}
-	w.Status = StatusRunning
-	w.UpdatedAt = time.Now()
-	w.mu.Unlock()
+	w.setStatus(StatusRunning)
 
 	go func() {
 		w.Engine.Dedup.ResetTurn()
 		for w.Engine.Context.StepCount < w.Engine.Context.MaxSteps {
 			if w.ctx.Err() != nil {
-				w.mu.Lock()
-				w.Status = StatusPaused
-				w.UpdatedAt = time.Now()
-				w.mu.Unlock()
+				w.setStatus(StatusPaused)
 				return
 			}
 
@@ -124,10 +121,7 @@ func (w *Worker) Start() {
 			outcome := w.Engine.Step(w.ctx)
 			if outcome.StopReason == "error" {
 				if outcome.FinalMessage == "context canceled" {
-					w.mu.Lock()
-					w.Status = StatusPaused
-					w.UpdatedAt = time.Now()
-					w.mu.Unlock()
+					w.setStatus(StatusPaused)
 					return
 				}
 				w.addLog(LogEntry{
@@ -138,10 +132,7 @@ func (w *Worker) Start() {
 					cp.Restore(w.Engine.Context)
 					continue
 				}
-				w.mu.Lock()
-				w.Status = StatusFailed
-				w.UpdatedAt = time.Now()
-				w.mu.Unlock()
+				w.setStatus(StatusFailed)
 				return
 			}
 
@@ -163,10 +154,7 @@ func (w *Worker) Start() {
 				continue
 			}
 			if outcome.StopReason == "no_tool_calls" {
-				w.mu.Lock()
-				w.Status = StatusCompleted
-				w.UpdatedAt = time.Now()
-				w.mu.Unlock()
+				w.setStatus(StatusCompleted)
 				w.addLog(LogEntry{
 					Step:   w.Engine.Context.StepCount,
 					Result: outcome.FinalMessage,
@@ -174,10 +162,7 @@ func (w *Worker) Start() {
 				return
 			}
 		}
-		w.mu.Lock()
-		w.Status = StatusCompleted
-		w.UpdatedAt = time.Now()
-		w.mu.Unlock()
+		w.setStatus(StatusCompleted)
 	}()
 }
 
@@ -209,17 +194,61 @@ func (w *Worker) addLog(entry LogEntry) {
 	entry.Timestamp = time.Now()
 	w.Logs = append(w.Logs, entry)
 	w.UpdatedAt = time.Now()
+	onLog := w.OnLog
 	w.mu.Unlock()
+	if onLog != nil {
+		onLog(entry)
+	}
+}
+
+func (w *Worker) setStatus(status Status) {
+	w.mu.Lock()
+	changed := w.Status != status
+	w.Status = status
+	w.UpdatedAt = time.Now()
+	onStatus := w.OnStatus
+	w.mu.Unlock()
+	if changed && onStatus != nil {
+		onStatus(status)
+	}
+}
+
+type Event struct {
+	WorkerID string    `json:"worker_id"`
+	Task     string    `json:"task,omitempty"`
+	Mode     string    `json:"mode,omitempty"`
+	Event    string    `json:"event"`
+	Status   Status    `json:"status,omitempty"`
+	Log      *LogEntry `json:"log,omitempty"`
+	Time     time.Time `json:"time,omitempty"`
 }
 
 type Pool struct {
-	mu      sync.RWMutex
-	workers map[string]*Worker
-	nextID  int
+	mu          sync.RWMutex
+	workers     map[string]*Worker
+	subscribers map[uint64]func(Event)
+	nextID      int
+	nextSubID   uint64
 }
 
 func NewPool() *Pool {
-	return &Pool{workers: make(map[string]*Worker), nextID: 1}
+	return &Pool{workers: make(map[string]*Worker), subscribers: make(map[uint64]func(Event)), nextID: 1}
+}
+
+func (p *Pool) Subscribe(fn func(Event)) func() {
+	if fn == nil {
+		return func() {}
+	}
+	p.mu.Lock()
+	p.nextSubID++
+	id := p.nextSubID
+	p.subscribers[id] = fn
+	p.mu.Unlock()
+	return func() {
+		p.mu.Lock()
+		delete(p.subscribers, id)
+		p.mu.Unlock()
+	}
 }
 
 func (p *Pool) Spawn(task, modeName string, llmClient *llm.Client, tools *toolset.Registry) (*Worker, error) {
@@ -236,13 +265,33 @@ func (p *Pool) SpawnWithOptions(task, modeName string, llmClient *llm.Client, to
 	if err != nil {
 		return nil, err
 	}
+	w.OnLog = func(entry LogEntry) {
+		entryCopy := entry
+		p.emit(Event{WorkerID: w.ID, Task: w.Task, Mode: w.Mode, Event: "log", Log: &entryCopy, Time: entry.Timestamp})
+	}
+	w.OnStatus = func(status Status) {
+		p.emit(Event{WorkerID: w.ID, Task: w.Task, Mode: w.Mode, Event: "status", Status: status, Time: time.Now()})
+	}
 
 	p.mu.Lock()
 	p.workers[id] = w
 	p.mu.Unlock()
+	p.emit(Event{WorkerID: w.ID, Task: w.Task, Mode: w.Mode, Event: "created", Status: w.GetStatus(), Time: time.Now()})
 
 	w.Start()
 	return w, nil
+}
+
+func (p *Pool) emit(event Event) {
+	p.mu.RLock()
+	subscribers := make([]func(Event), 0, len(p.subscribers))
+	for _, fn := range p.subscribers {
+		subscribers = append(subscribers, fn)
+	}
+	p.mu.RUnlock()
+	for _, fn := range subscribers {
+		fn(event)
+	}
 }
 
 func (p *Pool) Get(id string) *Worker {

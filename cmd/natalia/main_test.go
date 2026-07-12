@@ -20,15 +20,27 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/chat"
 	"github.com/Misaka477/Natalia-Cli/internal/config"
 	"github.com/Misaka477/Natalia-Cli/internal/hook"
+	"github.com/Misaka477/Natalia-Cli/internal/llm"
+	"github.com/Misaka477/Natalia-Cli/internal/notifications"
 	"github.com/Misaka477/Natalia-Cli/internal/plan"
 	"github.com/Misaka477/Natalia-Cli/internal/planexec"
+	"github.com/Misaka477/Natalia-Cli/internal/processmgr"
 	"github.com/Misaka477/Natalia-Cli/internal/session"
 	"github.com/Misaka477/Natalia-Cli/internal/soul"
 	"github.com/Misaka477/Natalia-Cli/internal/toolset"
 	"github.com/Misaka477/Natalia-Cli/internal/wire"
+	"github.com/Misaka477/Natalia-Cli/internal/worker"
 )
 
 func testBoolPtr(v bool) *bool { return &v }
+
+type bridgeReadTool struct{}
+
+func (bridgeReadTool) Name() string                           { return "read_file" }
+func (bridgeReadTool) Description() string                    { return "bridge read" }
+func (bridgeReadTool) Execute(map[string]any) (string, error) { return "ok", nil }
+func (bridgeReadTool) Parameters() map[string]llm.Property    { return nil }
+func (bridgeReadTool) Required() []string                     { return nil }
 
 func TestModeFromEffectiveCustomMode(t *testing.T) {
 	eff := &config.EffectiveProfile{
@@ -459,12 +471,14 @@ func TestSessionsRestoreRestoresRuntimePlanAndMessages(t *testing.T) {
 	oldSession := currentSession
 	oldRuntime := runtime
 	oldPlan := currentPlan
+	oldConfig := activeConfig
 	plan.Exit()
 	t.Cleanup(func() {
 		sessStore = oldStore
 		currentSession = oldSession
 		runtime = oldRuntime
 		currentPlan = oldPlan
+		activeConfig = oldConfig
 		plan.Exit()
 	})
 
@@ -475,6 +489,7 @@ func TestSessionsRestoreRestoresRuntimePlanAndMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 	currentSession = sess
+	activeConfig = nil
 	runtime = runtimeOverrides{Mode: "debug", ModelProfile: "strongest", PermissionProfile: "read_only"}
 	currentPlan = planexec.Parse(planPath, "# Plan\n\n- [ ] first\n- [ ] second")
 	currentPlan.MarkNextDone()
@@ -550,18 +565,59 @@ func TestSessionsListShowsContextTokens(t *testing.T) {
 	}
 }
 
-func TestSessionsRestoreWarnsAndDropsStaleRuntimeOverrides(t *testing.T) {
+func TestPersistCurrentSessionStateStoresConfiguredAdditionalDirs(t *testing.T) {
 	oldStore := sessStore
 	oldSession := currentSession
 	oldRuntime := runtime
+	oldConfig := activeConfig
 	t.Cleanup(func() {
 		sessStore = oldStore
 		currentSession = oldSession
 		runtime = oldRuntime
+		activeConfig = oldConfig
+	})
+	dir := t.TempDir()
+	sessStore = &session.SessionStore{BaseDir: t.TempDir()}
+	currentSession = sessStore.NewSession("base-model")
+	runtime = runtimeOverrides{Mode: "code"}
+	activeConfig = &config.Config{
+		DefaultProfile:     "default",
+		Providers:          map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}},
+		PermissionProfiles: config.DefaultPermissionProfiles(),
+		Profiles: map[string]config.Profile{
+			"default": {Provider: "p", Model: "base-model", Mode: "code", AdditionalDirs: []string{dir, "", dir}},
+		},
+	}
+
+	persistCurrentSessionState()
+	state, err := sessStore.LoadState(currentSession.ID)
+	if err != nil {
+		t.Fatalf("LoadState failed: %v", err)
+	}
+	if len(state.AdditionalDirs) != 1 || state.AdditionalDirs[0] != dir {
+		t.Fatalf("expected deduplicated configured additional dirs, got %+v", state.AdditionalDirs)
+	}
+}
+
+func TestSessionsRestoreWarnsAndDropsStaleRuntimeOverrides(t *testing.T) {
+	oldStore := sessStore
+	oldSession := currentSession
+	oldRuntime := runtime
+	oldConfig := activeConfig
+	t.Cleanup(func() {
+		sessStore = oldStore
+		currentSession = oldSession
+		runtime = oldRuntime
+		activeConfig = oldConfig
 	})
 	sessStore = &session.SessionStore{BaseDir: t.TempDir()}
 	sess := sessStore.NewSession("base-model")
-	if err := sessStore.SaveState(sess.ID, session.State{Mode: "ghost", ModelProfile: "deleted", PermissionProfile: "missing"}); err != nil {
+	missingDir := filepath.Join(t.TempDir(), "missing")
+	notDir := filepath.Join(t.TempDir(), "file.txt")
+	if err := os.WriteFile(notDir, []byte("not a dir"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := sessStore.SaveState(sess.ID, session.State{Mode: "ghost", ModelProfile: "deleted", PermissionProfile: "missing", AdditionalDirs: []string{missingDir, notDir}}); err != nil {
 		t.Fatal(err)
 	}
 	cfg := &config.Config{
@@ -575,7 +631,7 @@ func TestSessionsRestoreWarnsAndDropsStaleRuntimeOverrides(t *testing.T) {
 	engine := buildEngine(cfg, toolset.NewRegistry(), false)
 
 	output := captureStdout(t, func() { handleSessions("/sessions restore 1", cfg, &engine, toolset.NewRegistry(), false) })
-	for _, want := range []string{"已恢复会话", "已忽略已失效 mode", "已忽略已失效 model_profile", "已忽略已失效 permission_profile"} {
+	for _, want := range []string{"已恢复会话", "已忽略已失效 mode", "已忽略已失效 model_profile", "已忽略已失效 permission_profile", "additional_dir", "不是目录"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("expected restore output to contain %q, got %q", want, output)
 		}
@@ -887,10 +943,19 @@ func TestRunWireRecordsWireJSONL(t *testing.T) {
 	plan.Exit()
 	t.Cleanup(func() { plan.Exit() })
 	store := &session.SessionStore{BaseDir: t.TempDir()}
+	dir := t.TempDir()
+	cfg := &config.Config{
+		DefaultProfile:     "default",
+		Providers:          map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}},
+		PermissionProfiles: config.DefaultPermissionProfiles(),
+		Profiles: map[string]config.Profile{
+			"default": {Provider: "p", Model: "base-model", AdditionalDirs: []string{dir}},
+		},
+	}
 	in := strings.NewReader(`{"jsonrpc":"2.0","method":"set_plan_mode","id":"plan_record","params":{"enabled":true}}` + "\n")
 	out := &bytes.Buffer{}
 
-	if err := runWireWithOptions(nil, toolset.NewRegistry(), in, out, false, wireRunOptions{SessionStore: store}); err != nil {
+	if err := runWireWithOptions(cfg, toolset.NewRegistry(), in, out, false, wireRunOptions{SessionStore: store}); err != nil {
 		t.Fatalf("runWireWithOptions failed: %v", err)
 	}
 	sessions := store.List()
@@ -912,7 +977,7 @@ func TestRunWireRecordsWireJSONL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load wire session state: %v", err)
 	}
-	if state.Version != session.StateVersion || !state.PlanMode {
+	if state.Version != session.StateVersion || !state.PlanMode || len(state.AdditionalDirs) != 1 || state.AdditionalDirs[0] != dir {
 		t.Fatalf("expected wire session plan state persisted, got %+v", state)
 	}
 }
@@ -1120,6 +1185,23 @@ func TestConfigureEngineForWirePublishesCompactionEvents(t *testing.T) {
 	if end.Event == nil || end.Event.Type != wire.EventCompactionEnd {
 		t.Fatalf("expected CompactionEnd event, got %+v", end)
 	}
+	engine.Context.Messages = append(engine.Context.Messages, chat.Message{Role: chat.RoleUser, Content: "12345678"})
+	engine.OnCompact("compacted to 2 tokens")
+	notification := receiveWireMessageForTest(t, msgs)
+	if notification.Event == nil || notification.Event.Type != wire.EventNotification {
+		t.Fatalf("expected compaction Notification event, got %+v", notification)
+	}
+	status := receiveWireMessageForTest(t, msgs)
+	if status.Event == nil || status.Event.Type != wire.EventStatusUpdate {
+		t.Fatalf("expected compaction StatusUpdate event, got %+v", status)
+	}
+	var statusPayload wire.StatusUpdate
+	if err := json.Unmarshal(status.Event.Payload, &statusPayload); err != nil {
+		t.Fatal(err)
+	}
+	if statusPayload.ContextTokens == nil || *statusPayload.ContextTokens != 2 || statusPayload.MaxContextTokens == nil || *statusPayload.MaxContextTokens <= 0 {
+		t.Fatalf("expected compaction status token diagnostics, got %+v", statusPayload)
+	}
 }
 
 func TestRunWireApprovalWritesFileEndToEnd(t *testing.T) {
@@ -1312,6 +1394,108 @@ func TestRunWirePromptWaitsForHookRequestResponseEndToEnd(t *testing.T) {
 	}
 	if wireEventIndex(t, collected, wire.EventTurnEnd) > wireRPCIDIndex(collected, `"prompt_hook"`) {
 		t.Fatalf("expected TurnEnd before prompt response, got %+v", collected)
+	}
+}
+
+func TestBridgeProcessNotificationsPublishesWireAndInjection(t *testing.T) {
+	processmgr.ResetDefaultManagerForTest()
+	notifications.ResetDefaultStoreForTest()
+	defer processmgr.ResetDefaultManagerForTest()
+	defer notifications.ResetDefaultStoreForTest()
+	w := wire.NewWire()
+	msgs, cancel := w.UISide().SubscribeRaw()
+	defer cancel()
+	engine := soul.NewEngine(nil, toolset.NewRegistry())
+	detach := bridgeProcessNotifications(engine, w)
+	defer detach()
+	sess, err := processmgr.DefaultManager().Start(context.Background(), processmgr.StartOptions{Kind: processmgr.KindBackground, Command: "/bin/sh", Args: []string{"-c", "exit 0"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var notification wire.Notification
+	deadline := time.After(2 * time.Second)
+	for notification.Message == "" {
+		select {
+		case msg := <-msgs:
+			if msg.Event == nil || msg.Event.Type != wire.EventNotification {
+				continue
+			}
+			if err := json.Unmarshal(msg.Event.Payload, &notification); err != nil {
+				t.Fatal(err)
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for background notification for %s", sess.ID)
+		}
+	}
+	if notification.Title != "Background task completed" || !strings.Contains(notification.Message, sess.ID) || !strings.Contains(notification.Message, "exit_code=0") {
+		t.Fatalf("unexpected wire notification: %+v", notification)
+	}
+	provider := soul.NotificationInjectionProvider{Store: notifications.DefaultStore()}
+	injections, err := provider.GetInjections(nil, engine)
+	if err != nil {
+		t.Fatalf("GetInjections failed: %v", err)
+	}
+	if len(injections) != 1 || !strings.Contains(injections[0].Content, sess.ID) || !strings.Contains(injections[0].Content, "Background task completed") {
+		t.Fatalf("expected background notification injection, got %+v", injections)
+	}
+}
+
+func TestBridgeWorkerEventsPublishesSubagentWireEvents(t *testing.T) {
+	oldPool := workerPool
+	t.Cleanup(func() { workerPool = oldPool })
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "application/json")
+		if requestCount == 1 {
+			_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "tool_calls": []map[string]any{{"id": "tc_read", "type": "function", "function": map[string]any{"name": "read_file", "arguments": `{}`}}}}}}})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "content": "done"}}}})
+	}))
+	defer server.Close()
+	workerPool = worker.NewPool()
+	w := wire.NewWire()
+	msgs, cancel := w.UISide().SubscribeRaw()
+	defer cancel()
+	detach := bridgeWorkerEvents(w)
+	defer detach()
+	tools := toolset.NewRegistry()
+	tools.Register(bridgeReadTool{})
+	workerInstance, err := workerPool.Spawn("bridge subagent", "code", llm.NewClient(llm.Config{BaseURL: server.URL, Model: "mock", APIKey: "test"}), tools)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seenCreated, seenToolLog, seenCompleted bool
+	deadline := time.After(2 * time.Second)
+	for !(seenCreated && seenToolLog && seenCompleted) {
+		select {
+		case msg := <-msgs:
+			if msg.Event == nil || msg.Event.Type != wire.EventSubagentEvent {
+				continue
+			}
+			var sub wire.SubagentEvent
+			if err := json.Unmarshal(msg.Event.Payload, &sub); err != nil {
+				t.Fatal(err)
+			}
+			if sub.ID != workerInstance.ID {
+				t.Fatalf("unexpected subagent id: %+v", sub)
+			}
+			var payload worker.Event
+			if err := json.Unmarshal(sub.Payload, &payload); err != nil {
+				t.Fatal(err)
+			}
+			switch {
+			case sub.Event == "created":
+				seenCreated = true
+			case sub.Event == "log" && payload.Log != nil && payload.Log.Tool == "read_file":
+				seenToolLog = true
+			case sub.Event == "status" && payload.Status == worker.StatusCompleted:
+				seenCompleted = true
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for subagent wire events: created=%t tool=%t completed=%t", seenCreated, seenToolLog, seenCompleted)
+		}
 	}
 }
 

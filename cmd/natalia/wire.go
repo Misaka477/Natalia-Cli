@@ -39,13 +39,16 @@ type wireRunOptions struct {
 func runWireWithOptions(cfg *config.Config, tools *toolset.Registry, in io.Reader, out io.Writer, debug bool, opts wireRunOptions) error {
 	w := wire.NewWire()
 	engine := buildEngine(cfg, tools, debug)
+	registerAgentToolsForEngine(cfg, engine, tools)
 	configureEngineForWire(engine, w)
+	detachRuntimeEvents := bridgeRuntimeEvents(engine, w)
+	defer detachRuntimeEvents()
 	closeRecorder, wireSession, err := attachWireRecorder(w, cfg, opts.SessionStore)
 	if err != nil {
 		return err
 	}
 	defer closeRecorder()
-	persistWireSessionState(opts.SessionStore, wireSession)
+	persistWireSessionState(cfg, opts.SessionStore, wireSession)
 
 	var approvalCtxMu sync.RWMutex
 	var approvalCtx context.Context
@@ -104,7 +107,7 @@ func runWireWithOptions(cfg *config.Config, tools *toolset.Registry, in io.Reade
 			} else {
 				plan.Exit()
 			}
-			persistWireSessionState(opts.SessionStore, wireSession)
+			persistWireSessionState(cfg, opts.SessionStore, wireSession)
 			status := runtimeStatusUpdate(cfg, engine)
 			status.PlanMode = &params.Enabled
 			if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
@@ -123,8 +126,9 @@ func runWireWithOptions(cfg *config.Config, tools *toolset.Registry, in io.Reade
 			runtime.ModelProfile = params.ModelProfile
 			runtime.PermissionProfile = params.PermissionProfile
 			engine = rebuildEnginePreservingState(cfg, engine, tools, debug)
+			registerAgentToolsForEngine(cfg, engine, tools)
 			configureEngineForWire(engine, w)
-			persistWireSessionState(opts.SessionStore, wireSession)
+			persistWireSessionState(cfg, opts.SessionStore, wireSession)
 			status := runtimeStatusUpdate(cfg, engine)
 			if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
 				w.SoulSide.PublishEvent(event)
@@ -155,10 +159,11 @@ func runWireWithOptions(cfg *config.Config, tools *toolset.Registry, in io.Reade
 			restorePlanMode(state)
 			warnings = append(warnings, restorePlanSession(state)...)
 			engine = buildEngine(cfg, tools, debug)
+			registerAgentToolsForEngine(cfg, engine, tools)
 			engine.Context.Messages = append(engine.Context.Messages, messages...)
 			attachSnapshotter(engine, sess)
 			configureEngineForWire(engine, w)
-			persistWireSessionState(opts.SessionStore, wireSession)
+			persistWireSessionState(cfg, opts.SessionStore, wireSession)
 			status := runtimeStatusUpdate(cfg, engine)
 			if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
 				w.SoulSide.PublishEvent(event)
@@ -264,7 +269,7 @@ func attachWireRecorder(w *wire.Wire, cfg *config.Config, store *session.Session
 	}, sess, nil
 }
 
-func persistWireSessionState(store *session.SessionStore, sess *session.Session) {
+func persistWireSessionState(cfg *config.Config, store *session.SessionStore, sess *session.Session) {
 	if store == nil || sess == nil {
 		return
 	}
@@ -277,6 +282,7 @@ func persistWireSessionState(store *session.SessionStore, sess *session.Session)
 		PlanSessionID:     planState.Slug,
 		PlanSlug:          planState.Slug,
 		PlanPath:          planState.Path,
+		AdditionalDirs:    effectiveAdditionalDirs(cfg),
 	}
 	_ = store.SaveState(sess.ID, state)
 }
@@ -394,6 +400,17 @@ func configureEngineForWire(engine *soul.Engine, w *wire.Wire) {
 	}
 	engine.OnCompactEnd = func() {
 		if event, err := wire.NewEvent(wire.EventCompactionEnd, wire.CompactionEnd{}); err == nil {
+			w.SoulSide.PublishEvent(event)
+		}
+	}
+	engine.OnCompact = func(message string) {
+		publishWireNotification(w, wire.Notification{Title: "Context compacted", Message: message})
+		status := wire.StatusUpdate{}
+		contextTokens, maxContextTokens, contextUsage := contextTokenStats(engine)
+		status.ContextTokens = &contextTokens
+		status.MaxContextTokens = &maxContextTokens
+		status.ContextUsage = &contextUsage
+		if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
 			w.SoulSide.PublishEvent(event)
 		}
 	}
