@@ -10,11 +10,14 @@ import (
 )
 
 type ServerHandler struct {
-	Initialize  func(context.Context, InitializeParams) (any, error)
-	Prompt      func(context.Context, PromptParams) (any, error)
-	Steer       func(context.Context, SteerParams) (any, error)
-	Cancel      func(context.Context) (any, error)
-	SetPlanMode func(context.Context, SetPlanModeParams) (any, error)
+	Initialize        func(context.Context, InitializeParams) (any, error)
+	Prompt            func(context.Context, PromptParams) (any, error)
+	Steer             func(context.Context, SteerParams) (any, error)
+	Cancel            func(context.Context) (any, error)
+	SetPlanMode       func(context.Context, SetPlanModeParams) (any, error)
+	SetRuntimeProfile func(context.Context, SetRuntimeProfileParams) (any, error)
+	RestoreSession    func(context.Context, RestoreSessionParams) (any, error)
+	ListSessions      func(context.Context) (any, error)
 }
 
 type Server struct {
@@ -137,6 +140,27 @@ func (s *Server) dispatch(ctx context.Context, incoming IncomingMessage) (any, *
 			return nil, rpcError(ErrorInvalidParams, err.Error(), nil)
 		}
 		return callHandler(ctx, params, s.handler.SetPlanMode, map[string]any{"status": "ok"})
+	case MethodSetRuntimeProfile:
+		params, err := DecodeParams[SetRuntimeProfileParams](incoming.Params)
+		if err != nil {
+			return nil, rpcError(ErrorInvalidParams, err.Error(), nil)
+		}
+		return callHandler(ctx, params, s.handler.SetRuntimeProfile, map[string]any{"status": "ok"})
+	case MethodRestoreSession:
+		params, err := DecodeParams[RestoreSessionParams](incoming.Params)
+		if err != nil {
+			return nil, rpcError(ErrorInvalidParams, err.Error(), nil)
+		}
+		return callHandler(ctx, params, s.handler.RestoreSession, map[string]any{"status": "ok"})
+	case MethodListSessions:
+		if s.handler.ListSessions == nil {
+			return map[string]any{"sessions": []any{}}, nil
+		}
+		result, err := s.handler.ListSessions(ctx)
+		if err != nil {
+			return nil, rpcError(ErrorInternal, err.Error(), nil)
+		}
+		return result, nil
 	default:
 		return nil, rpcError(ErrorMethodNotFound, fmt.Sprintf("method %q not found", incoming.Method), nil)
 	}

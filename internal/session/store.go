@@ -13,12 +13,28 @@ import (
 )
 
 type Session struct {
-	ID        string    `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Title     string    `json:"title,omitempty"`
-	Model     string    `json:"model"`
-	Dir       string    `json:"-"`
+	ID            string    `json:"id"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	Title         string    `json:"title,omitempty"`
+	Model         string    `json:"model"`
+	ContextTokens int       `json:"context_tokens,omitempty"`
+	Dir           string    `json:"-"`
+}
+
+const StateVersion = 1
+
+type State struct {
+	Version           int      `json:"version"`
+	Mode              string   `json:"mode,omitempty"`
+	ModelProfile      string   `json:"model_profile,omitempty"`
+	PermissionProfile string   `json:"permission_profile,omitempty"`
+	PlanMode          bool     `json:"plan_mode,omitempty"`
+	PlanSessionID     string   `json:"plan_session_id,omitempty"`
+	PlanSlug          string   `json:"plan_slug,omitempty"`
+	PlanPath          string   `json:"plan_path,omitempty"`
+	PlanDoneLines     []int    `json:"plan_done_lines,omitempty"`
+	AdditionalDirs    []string `json:"additional_dirs,omitempty"`
 }
 
 type SessionStore struct {
@@ -92,6 +108,7 @@ func (s *SessionStore) AppendMessage(sessionID string, msg chat.Message) error {
 	meta, err := s.readMeta(sessionID)
 	if err == nil {
 		meta.UpdatedAt = time.Now()
+		meta.ContextTokens += estimateMessageTokens(msg)
 		s.writeMeta(meta)
 	}
 	return nil
@@ -119,6 +136,60 @@ func (s *SessionStore) LoadMessages(sessionID string) ([]chat.Message, error) {
 		messages = append(messages, msg)
 	}
 	return messages, nil
+}
+
+func (s *SessionStore) Load(id string) (*Session, error) {
+	return s.readMeta(id)
+}
+
+func (s *SessionStore) SaveState(sessionID string, state State) error {
+	dir := filepath.Join(s.BaseDir, sessionID)
+	if state.Version == 0 {
+		state.Version = StateVersion
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "state.json"), data, 0644); err != nil {
+		return err
+	}
+	meta, err := s.readMeta(sessionID)
+	if err == nil {
+		meta.UpdatedAt = time.Now()
+		return s.writeMeta(meta)
+	}
+	return nil
+}
+
+func (s *SessionStore) LoadState(sessionID string) (State, error) {
+	dir := filepath.Join(s.BaseDir, sessionID)
+	data, err := os.ReadFile(filepath.Join(dir, "state.json"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return State{}, nil
+		}
+		return State{}, err
+	}
+	var state State
+	if err := json.Unmarshal(data, &state); err != nil {
+		return State{}, err
+	}
+	if state.Version == 0 {
+		state.Version = StateVersion
+	}
+	return state, nil
+}
+
+func estimateMessageTokens(msg chat.Message) int {
+	if msg.Content == "" {
+		return 0
+	}
+	tokens := len(msg.Content) / 4
+	if tokens == 0 {
+		return 1
+	}
+	return tokens
 }
 
 func (s *SessionStore) Cleanup(maxSessions int) {

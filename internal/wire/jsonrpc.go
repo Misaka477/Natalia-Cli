@@ -8,13 +8,16 @@ import (
 const JSONRPCVersion = "2.0"
 
 const (
-	MethodEvent       = "event"
-	MethodRequest     = "request"
-	MethodInitialize  = "initialize"
-	MethodPrompt      = "prompt"
-	MethodSteer       = "steer"
-	MethodCancel      = "cancel"
-	MethodSetPlanMode = "set_plan_mode"
+	MethodEvent             = "event"
+	MethodRequest           = "request"
+	MethodInitialize        = "initialize"
+	MethodPrompt            = "prompt"
+	MethodSteer             = "steer"
+	MethodCancel            = "cancel"
+	MethodSetPlanMode       = "set_plan_mode"
+	MethodSetRuntimeProfile = "set_runtime_profile"
+	MethodRestoreSession    = "restore_session"
+	MethodListSessions      = "list_sessions"
 )
 
 const (
@@ -68,6 +71,16 @@ type SteerParams struct {
 
 type SetPlanModeParams struct {
 	Enabled bool `json:"enabled"`
+}
+
+type SetRuntimeProfileParams struct {
+	Mode              string `json:"mode,omitempty"`
+	ModelProfile      string `json:"model_profile,omitempty"`
+	PermissionProfile string `json:"permission_profile,omitempty"`
+}
+
+type RestoreSessionParams struct {
+	SessionID string `json:"session_id"`
 }
 
 func MarshalEvent(event WireEvent) ([]byte, error) {

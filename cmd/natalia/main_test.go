@@ -126,6 +126,7 @@ func TestStatusLinesShowRuntimeRoutingDetails(t *testing.T) {
 		},
 	}
 	engine := soul.NewEngine(nil, toolset.NewRegistry())
+	engine.Context.Messages = append(engine.Context.Messages, chat.Message{Role: chat.RoleUser, Content: "12345678"})
 	m, err := modeFromEffective(&config.EffectiveProfile{Mode: "debug", ModeConfig: cfg.Profiles["default"].Modes["debug"]})
 	if err != nil {
 		t.Fatalf("modeFromEffective failed: %v", err)
@@ -142,6 +143,7 @@ func TestStatusLinesShowRuntimeRoutingDetails(t *testing.T) {
 		"model_profile: cheap (manual override)",
 		"permission_profile: read_only (manual override)",
 		"model: cheap-model",
+		"context_tokens: 2/128000 (0.0% estimated)",
 		"reasoning_effort: high",
 		"thinking_enabled: true",
 		"stream: true",
@@ -452,6 +454,149 @@ func TestHandlePlanCommandClear(t *testing.T) {
 	}
 }
 
+func TestSessionsRestoreRestoresRuntimePlanAndMessages(t *testing.T) {
+	oldStore := sessStore
+	oldSession := currentSession
+	oldRuntime := runtime
+	oldPlan := currentPlan
+	plan.Exit()
+	t.Cleanup(func() {
+		sessStore = oldStore
+		currentSession = oldSession
+		runtime = oldRuntime
+		currentPlan = oldPlan
+		plan.Exit()
+	})
+
+	sessStore = &session.SessionStore{BaseDir: t.TempDir()}
+	sess := sessStore.NewSession("base-model")
+	planPath := filepath.Join(t.TempDir(), "roadmap.md")
+	if err := os.WriteFile(planPath, []byte("# Plan\n\n- [ ] first\n- [ ] second"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	currentSession = sess
+	runtime = runtimeOverrides{Mode: "debug", ModelProfile: "strongest", PermissionProfile: "read_only"}
+	currentPlan = planexec.Parse(planPath, "# Plan\n\n- [ ] first\n- [ ] second")
+	currentPlan.MarkNextDone()
+	plan.Enter("roadmap", planPath, "test")
+	persistCurrentSessionState()
+	if err := sessStore.AppendMessage(sess.ID, chat.Message{Role: chat.RoleUser, Content: "remember me"}); err != nil {
+		t.Fatal(err)
+	}
+
+	currentSession = nil
+	runtime = runtimeOverrides{}
+	currentPlan = nil
+	plan.Exit()
+	cfg := &config.Config{
+		DefaultProfile: "default",
+		Providers:      map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}},
+		ModelProfiles: map[string]config.ModelProfile{
+			"strongest": {Provider: "p", Model: "strong-model"},
+		},
+		PermissionProfiles: config.DefaultPermissionProfiles(),
+		Profiles: map[string]config.Profile{
+			"default": {Provider: "p", Model: "base-model", Mode: "code"},
+		},
+	}
+	tools := toolset.NewRegistry()
+	engine := buildEngine(cfg, tools, false)
+
+	output := captureStdout(t, func() { handleSessions("/sessions restore 1", cfg, &engine, tools, false) })
+	if !strings.Contains(output, "已恢复会话") {
+		t.Fatalf("expected restore output, got %q", output)
+	}
+	if currentSession == nil || currentSession.ID != sess.ID {
+		t.Fatalf("expected current session restored, got %+v", currentSession)
+	}
+	if runtime.Mode != "debug" || runtime.ModelProfile != "strongest" || runtime.PermissionProfile != "read_only" {
+		t.Fatalf("expected runtime restored, got %+v", runtime)
+	}
+	if currentPlan == nil || currentPlan.Path != planPath || !currentPlan.Steps[0].Done || currentPlan.Steps[1].Done {
+		t.Fatalf("expected plan restored with persisted done line, got %+v", currentPlan)
+	}
+	if step, ok := currentPlan.NextOpenStep(); !ok || step.Text != "second" {
+		t.Fatalf("expected current disk checklist to determine next open step, step=%+v ok=%v", step, ok)
+	}
+	if plan.Status().Enabled != true || plan.Status().Path != planPath {
+		t.Fatalf("expected plan mode restored, got %+v", plan.Status())
+	}
+	found := false
+	for _, msg := range engine.Context.Messages {
+		if msg.Role == chat.RoleUser && msg.Content == "remember me" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected restored messages in engine context: %+v", engine.Context.Messages)
+	}
+	if engine.Snapshotter == nil {
+		t.Fatal("expected restore to attach snapshotter for restored session")
+	}
+}
+
+func TestSessionsListShowsContextTokens(t *testing.T) {
+	oldStore := sessStore
+	t.Cleanup(func() { sessStore = oldStore })
+	sessStore = &session.SessionStore{BaseDir: t.TempDir()}
+	sess := sessStore.NewSession("base-model")
+	if err := sessStore.AppendMessage(sess.ID, chat.Message{Role: chat.RoleUser, Content: "12345678"}); err != nil {
+		t.Fatal(err)
+	}
+	output := captureStdout(t, func() { handleSessions("/sessions", nil, nil, toolset.NewRegistry(), false) })
+	if !strings.Contains(output, "context_tokens=2") || !strings.Contains(output, sess.ID) {
+		t.Fatalf("expected sessions list to show context token estimate and id, got %q", output)
+	}
+}
+
+func TestSessionsRestoreWarnsAndDropsStaleRuntimeOverrides(t *testing.T) {
+	oldStore := sessStore
+	oldSession := currentSession
+	oldRuntime := runtime
+	t.Cleanup(func() {
+		sessStore = oldStore
+		currentSession = oldSession
+		runtime = oldRuntime
+	})
+	sessStore = &session.SessionStore{BaseDir: t.TempDir()}
+	sess := sessStore.NewSession("base-model")
+	if err := sessStore.SaveState(sess.ID, session.State{Mode: "ghost", ModelProfile: "deleted", PermissionProfile: "missing"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{
+		DefaultProfile:     "default",
+		Providers:          map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}},
+		PermissionProfiles: config.DefaultPermissionProfiles(),
+		Profiles: map[string]config.Profile{
+			"default": {Provider: "p", Model: "base-model", Mode: "code"},
+		},
+	}
+	engine := buildEngine(cfg, toolset.NewRegistry(), false)
+
+	output := captureStdout(t, func() { handleSessions("/sessions restore 1", cfg, &engine, toolset.NewRegistry(), false) })
+	for _, want := range []string{"已恢复会话", "已忽略已失效 mode", "已忽略已失效 model_profile", "已忽略已失效 permission_profile"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected restore output to contain %q, got %q", want, output)
+		}
+	}
+	if runtime != (runtimeOverrides{}) {
+		t.Fatalf("expected stale overrides to be dropped, got %+v", runtime)
+	}
+	if engine.Mode == nil || engine.Mode.Name != "code" {
+		t.Fatalf("expected restored engine to fall back to code mode, got %+v", engine.Mode)
+	}
+}
+
+func TestFormatElapsedForTurnDisplay(t *testing.T) {
+	if got := formatElapsed(1500 * time.Millisecond); got != "1s" {
+		t.Fatalf("expected truncated seconds, got %q", got)
+	}
+	if got := formatElapsed(250 * time.Millisecond); got != "250ms" {
+		t.Fatalf("expected milliseconds, got %q", got)
+	}
+}
+
 func TestHandleExecutePlanLoadsPlanAndQueuesSteer(t *testing.T) {
 	oldRuntime := runtime
 	runtime = runtimeOverrides{Mode: "debug", ModelProfile: "cheap", PermissionProfile: "read_only"}
@@ -582,6 +727,144 @@ func TestRunWireSetPlanModeEmitsStatusUpdate(t *testing.T) {
 	}
 }
 
+func TestRunWireSetRuntimeProfileEmitsStatusAndPreservesState(t *testing.T) {
+	oldRuntime := runtime
+	runtime = runtimeOverrides{}
+	t.Cleanup(func() { runtime = oldRuntime })
+	cfg := &config.Config{
+		DefaultProfile: "default",
+		Providers:      map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}},
+		ModelProfiles: map[string]config.ModelProfile{
+			"cheap": {Provider: "p", Model: "cheap-model"},
+		},
+		PermissionProfiles: config.DefaultPermissionProfiles(),
+		Profiles: map[string]config.Profile{
+			"default": {Provider: "p", Model: "base", Mode: "code", Modes: map[string]config.ModeProfile{"ask": {ModelProfile: "cheap", PermissionProfile: "read_only"}}},
+		},
+	}
+	in := strings.NewReader(`{"jsonrpc":"2.0","method":"set_runtime_profile","id":"runtime_1","params":{"mode":"ask","model_profile":"cheap","permission_profile":"read_only"}}` + "\n")
+	out := &bytes.Buffer{}
+
+	if err := runWire(cfg, toolset.NewRegistry(), in, out, false); err != nil {
+		t.Fatalf("runWire failed: %v", err)
+	}
+	msgs := decodeWireRPCOutput(t, out.String())
+	if !hasWireRPCID(msgs, `"runtime_1"`) {
+		t.Fatalf("expected runtime response, got %s", out.String())
+	}
+	idx := wireEventIndex(t, msgs, wire.EventStatusUpdate)
+	if idx < 0 {
+		t.Fatalf("expected status update event, got %s", out.String())
+	}
+	status := decodeStatusUpdatePayload(t, msgs[idx])
+	if status.Mode != "ask" || status.ModelProfile != "cheap" || status.PermissionProfile != "read_only" || status.Model != "cheap-model" {
+		t.Fatalf("unexpected status update: %+v", status)
+	}
+	if status.ContextTokens == nil || *status.ContextTokens < 0 || status.MaxContextTokens == nil || *status.MaxContextTokens <= 0 || status.ContextUsage == nil || *status.ContextUsage < 0 {
+		t.Fatalf("expected status update to expose context token window, got %+v", status)
+	}
+	if runtime.Mode != "ask" || runtime.ModelProfile != "cheap" || runtime.PermissionProfile != "read_only" {
+		t.Fatalf("expected runtime override updated, got %+v", runtime)
+	}
+}
+
+func TestRunWireRestoreSessionRestoresStateAndPublishesStatus(t *testing.T) {
+	oldRuntime := runtime
+	oldPlan := currentPlan
+	runtime = runtimeOverrides{}
+	currentPlan = nil
+	t.Cleanup(func() { runtime = oldRuntime; currentPlan = oldPlan; plan.Exit() })
+	store := &session.SessionStore{BaseDir: t.TempDir()}
+	sess := store.NewSession("base-model")
+	if err := store.SaveState(sess.ID, session.State{Mode: "debug", ModelProfile: "cheap", PermissionProfile: "read_only"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AppendMessage(sess.ID, chat.Message{Role: chat.RoleUser, Content: "12345678"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{
+		DefaultProfile:     "default",
+		Providers:          map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}},
+		ModelProfiles:      map[string]config.ModelProfile{"cheap": {Provider: "p", Model: "cheap-model"}},
+		PermissionProfiles: config.DefaultPermissionProfiles(),
+		Profiles: map[string]config.Profile{
+			"default": {Provider: "p", Model: "base", Mode: "code"},
+		},
+	}
+	in := strings.NewReader(fmt.Sprintf(`{"jsonrpc":"2.0","method":"restore_session","id":"restore_1","params":{"session_id":%q}}`, sess.ID) + "\n")
+	out := &bytes.Buffer{}
+
+	if err := runWireWithOptions(cfg, toolset.NewRegistry(), in, out, false, wireRunOptions{SessionStore: store}); err != nil {
+		t.Fatalf("runWireWithOptions failed: %v", err)
+	}
+	msgs := decodeWireRPCOutput(t, out.String())
+	idx := wireEventIndex(t, msgs, wire.EventStatusUpdate)
+	if idx < 0 || !hasWireRPCID(msgs, `"restore_1"`) {
+		t.Fatalf("expected restore status event and response, got %s", out.String())
+	}
+	status := decodeStatusUpdatePayload(t, msgs[idx])
+	if status.Mode != "debug" || status.ModelProfile != "cheap" || status.PermissionProfile != "read_only" || status.Model != "cheap-model" || status.ContextTokens == nil || *status.ContextTokens == 0 {
+		t.Fatalf("unexpected restored status: %+v", status)
+	}
+	result := decodeRPCResult[struct {
+		Status           string   `json:"status"`
+		SessionID        string   `json:"session_id"`
+		MessagesRestored int      `json:"messages_restored"`
+		Warnings         []string `json:"warnings"`
+	}](t, msgs[wireRPCIDIndex(msgs, `"restore_1"`)].Result)
+	if result.Status != "restored" || result.SessionID != sess.ID || result.MessagesRestored != 1 || len(result.Warnings) != 0 {
+		t.Fatalf("unexpected restore result: %+v", result)
+	}
+	if runtime.Mode != "debug" || runtime.ModelProfile != "cheap" || runtime.PermissionProfile != "read_only" {
+		t.Fatalf("expected runtime restored, got %+v", runtime)
+	}
+}
+
+func TestRunWireListSessionsReturnsStateSummaries(t *testing.T) {
+	store := &session.SessionStore{BaseDir: t.TempDir()}
+	sess := store.NewSession("base-model")
+	if err := store.SaveState(sess.ID, session.State{Mode: "debug", ModelProfile: "cheap", PermissionProfile: "read_only", PlanMode: true, PlanSlug: "roadmap", PlanPath: "plans/roadmap.md"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AppendMessage(sess.ID, chat.Message{Role: chat.RoleUser, Content: "12345678"}); err != nil {
+		t.Fatal(err)
+	}
+	in := strings.NewReader(`{"jsonrpc":"2.0","method":"list_sessions","id":"sessions_1","params":{}}` + "\n")
+	out := &bytes.Buffer{}
+	if err := runWireWithOptions(nil, toolset.NewRegistry(), in, out, false, wireRunOptions{SessionStore: store}); err != nil {
+		t.Fatalf("runWireWithOptions failed: %v", err)
+	}
+	msgs := decodeWireRPCOutput(t, out.String())
+	idx := wireRPCIDIndex(msgs, `"sessions_1"`)
+	if idx < 0 {
+		t.Fatalf("expected list_sessions response, got %s", out.String())
+	}
+	result := decodeRPCResult[struct {
+		Sessions []struct {
+			ID                string `json:"id"`
+			Model             string `json:"model"`
+			ContextTokens     int    `json:"context_tokens"`
+			Mode              string `json:"mode"`
+			ModelProfile      string `json:"model_profile"`
+			PermissionProfile string `json:"permission_profile"`
+			PlanMode          bool   `json:"plan_mode"`
+			PlanSlug          string `json:"plan_slug"`
+		} `json:"sessions"`
+	}](t, msgs[idx].Result)
+	found := false
+	for _, got := range result.Sessions {
+		if got.ID == sess.ID {
+			found = true
+			if got.Model != "base-model" || got.ContextTokens != 2 || got.Mode != "debug" || got.ModelProfile != "cheap" || got.PermissionProfile != "read_only" || !got.PlanMode || got.PlanSlug != "roadmap" {
+				t.Fatalf("unexpected session summary: %+v", got)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected original session in list, got %+v", result.Sessions)
+	}
+}
+
 func TestRunWireSteerAndCancel(t *testing.T) {
 	in := strings.NewReader(strings.Join([]string{
 		`{"jsonrpc":"2.0","method":"steer","id":"steer_1","params":{"user_input":"extra"}}`,
@@ -624,6 +907,13 @@ func TestRunWireRecordsWireJSONL(t *testing.T) {
 	}
 	if len(messages) != 1 || messages[0].Event == nil || messages[0].Event.Type != wire.EventStatusUpdate {
 		t.Fatalf("expected recorded StatusUpdate, got %+v", messages)
+	}
+	state, err := store.LoadState(sessions[0].ID)
+	if err != nil {
+		t.Fatalf("load wire session state: %v", err)
+	}
+	if state.Version != session.StateVersion || !state.PlanMode {
+		t.Fatalf("expected wire session plan state persisted, got %+v", state)
 	}
 }
 
@@ -737,6 +1027,17 @@ func TestRunWirePromptEmitsToolEvents(t *testing.T) {
 	responseIndex := wireRPCIDIndex(msgs, `"prompt_1"`)
 	if turnEndIndex < 0 || responseIndex < 0 || turnEndIndex > responseIndex {
 		t.Fatalf("expected TurnEnd before prompt response, got %s", out.String())
+	}
+	statusIndex := wireEventIndex(t, msgs, wire.EventStatusUpdate)
+	if statusIndex < turnEndIndex || statusIndex > responseIndex {
+		t.Fatalf("expected StatusUpdate with context tokens after TurnEnd and before prompt response, got %s", out.String())
+	}
+	status := decodeStatusUpdatePayload(t, msgs[statusIndex])
+	if status.ContextTokens == nil || *status.ContextTokens == 0 || status.MaxContextTokens == nil || *status.MaxContextTokens <= 0 {
+		t.Fatalf("expected prompt StatusUpdate to expose non-zero context tokens, got %+v", status)
+	}
+	if status.TurnRunning == nil || *status.TurnRunning || status.TurnElapsedMS == nil || *status.TurnElapsedMS < 0 {
+		t.Fatalf("expected final prompt StatusUpdate to expose completed elapsed time, got %+v", status)
 	}
 }
 
@@ -1153,4 +1454,29 @@ func wireEventIndex(t *testing.T, msgs []wire.RPCMessage, eventType wire.EventTy
 		}
 	}
 	return -1
+}
+
+func decodeStatusUpdatePayload(t *testing.T, msg wire.RPCMessage) wire.StatusUpdate {
+	t.Helper()
+	var payload wire.TypedPayload
+	if err := json.Unmarshal(msg.Params, &payload); err != nil {
+		t.Fatalf("decode status update params: %v", err)
+	}
+	if payload.Type != string(wire.EventStatusUpdate) {
+		t.Fatalf("expected StatusUpdate payload, got %s", payload.Type)
+	}
+	var status wire.StatusUpdate
+	if err := json.Unmarshal(payload.Payload, &status); err != nil {
+		t.Fatalf("decode status update payload: %v", err)
+	}
+	return status
+}
+
+func decodeRPCResult[T any](t *testing.T, raw json.RawMessage) T {
+	t.Helper()
+	var result T
+	if err := json.Unmarshal(raw, &result); err != nil {
+		t.Fatalf("decode rpc result: %v", err)
+	}
+	return result
 }

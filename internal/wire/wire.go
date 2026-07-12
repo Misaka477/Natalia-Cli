@@ -100,10 +100,17 @@ type CompactionBegin struct{}
 type CompactionEnd struct{}
 
 type StatusUpdate struct {
-	ContextUsage     *float64 `json:"context_usage,omitempty"`
-	ContextTokens    *int     `json:"context_tokens,omitempty"`
-	MaxContextTokens *int     `json:"max_context_tokens,omitempty"`
-	PlanMode         *bool    `json:"plan_mode,omitempty"`
+	ContextUsage      *float64 `json:"context_usage,omitempty"`
+	ContextTokens     *int     `json:"context_tokens,omitempty"`
+	MaxContextTokens  *int     `json:"max_context_tokens,omitempty"`
+	PlanMode          *bool    `json:"plan_mode,omitempty"`
+	TurnRunning       *bool    `json:"turn_running,omitempty"`
+	TurnElapsedMS     *int64   `json:"turn_elapsed_ms,omitempty"`
+	Mode              string   `json:"mode,omitempty"`
+	ModelProfile      string   `json:"model_profile,omitempty"`
+	PermissionProfile string   `json:"permission_profile,omitempty"`
+	Provider          string   `json:"provider,omitempty"`
+	Model             string   `json:"model,omitempty"`
 }
 
 type ContentPart struct {

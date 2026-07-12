@@ -1,10 +1,13 @@
 package session
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/Misaka477/Natalia-Cli/internal/chat"
 )
 
 func TestCleanupKeepsNewestSessions(t *testing.T) {
@@ -63,6 +66,85 @@ func TestCleanupBoundaryCases(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSessionStateRoundTrip(t *testing.T) {
+	store := &SessionStore{BaseDir: t.TempDir()}
+	sess := writeTestSession(t, store, "stateful", time.Now())
+	state := State{
+		Version:           StateVersion,
+		Mode:              "debug",
+		ModelProfile:      "strongest",
+		PermissionProfile: "ask",
+		PlanMode:          true,
+		PlanSessionID:     "roadmap",
+		PlanSlug:          "roadmap",
+		PlanPath:          filepath.Join(t.TempDir(), "roadmap.md"),
+		PlanDoneLines:     []int{3, 7},
+		AdditionalDirs:    []string{"/tmp/project"},
+	}
+
+	if err := store.SaveState(sess.ID, state); err != nil {
+		t.Fatalf("SaveState failed: %v", err)
+	}
+	got, err := store.LoadState(sess.ID)
+	if err != nil {
+		t.Fatalf("LoadState failed: %v", err)
+	}
+	if got.Version != StateVersion || got.Mode != state.Mode || got.ModelProfile != state.ModelProfile || got.PermissionProfile != state.PermissionProfile || !got.PlanMode || got.PlanSlug != state.PlanSlug || got.PlanPath != state.PlanPath || len(got.PlanDoneLines) != 2 || got.PlanDoneLines[1] != 7 || len(got.AdditionalDirs) != 1 {
+		t.Fatalf("unexpected restored state: %+v", got)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(sess.Dir, "state.json"))
+	if err != nil {
+		t.Fatalf("expected state.json: %v", err)
+	}
+	var decoded State
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("state.json should be valid JSON: %v", err)
+	}
+}
+
+func TestAppendMessageUpdatesContextTokenEstimate(t *testing.T) {
+	store := &SessionStore{BaseDir: t.TempDir()}
+	sess := writeTestSession(t, store, "tokens", time.Now())
+
+	if err := store.AppendMessage(sess.ID, chatMessage("12345678")); err != nil {
+		t.Fatalf("AppendMessage failed: %v", err)
+	}
+	if err := store.AppendMessage(sess.ID, chatMessage("abc")); err != nil {
+		t.Fatalf("AppendMessage failed: %v", err)
+	}
+	loaded, err := store.Load(sess.ID)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if loaded.ContextTokens != 3 {
+		t.Fatalf("expected estimated tokens to be accumulated, got %d", loaded.ContextTokens)
+	}
+	messages, err := store.LoadMessages(sess.ID)
+	if err != nil {
+		t.Fatalf("LoadMessages failed: %v", err)
+	}
+	if len(messages) != 2 || messages[0].Content != "12345678" || messages[1].Content != "abc" {
+		t.Fatalf("expected real context.jsonl messages, got %+v", messages)
+	}
+}
+
+func chatMessage(content string) chat.Message {
+	return chat.Message{Role: chat.RoleUser, Content: content}
+}
+
+func TestLoadStateMissingFileReturnsZeroState(t *testing.T) {
+	store := &SessionStore{BaseDir: t.TempDir()}
+	sess := writeTestSession(t, store, "nostate", time.Now())
+	state, err := store.LoadState(sess.ID)
+	if err != nil {
+		t.Fatalf("LoadState missing file should not fail: %v", err)
+	}
+	if state.Version != 0 || state.Mode != "" || state.ModelProfile != "" || state.PermissionProfile != "" || state.PlanMode || state.PlanSlug != "" || len(state.PlanDoneLines) != 0 {
+		t.Fatalf("expected zero state, got %+v", state)
 	}
 }
 

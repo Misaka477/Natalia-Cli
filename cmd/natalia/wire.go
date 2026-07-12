@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/config"
 	"github.com/Misaka477/Natalia-Cli/internal/hook"
@@ -39,11 +40,12 @@ func runWireWithOptions(cfg *config.Config, tools *toolset.Registry, in io.Reade
 	w := wire.NewWire()
 	engine := buildEngine(cfg, tools, debug)
 	configureEngineForWire(engine, w)
-	closeRecorder, err := attachWireRecorder(w, cfg, opts.SessionStore)
+	closeRecorder, wireSession, err := attachWireRecorder(w, cfg, opts.SessionStore)
 	if err != nil {
 		return err
 	}
 	defer closeRecorder()
+	persistWireSessionState(opts.SessionStore, wireSession)
 
 	var approvalCtxMu sync.RWMutex
 	var approvalCtx context.Context
@@ -59,6 +61,8 @@ func runWireWithOptions(cfg *config.Config, tools *toolset.Registry, in io.Reade
 			if event, err := wire.NewEvent(wire.EventTurnBegin, wire.TurnBegin{UserInput: input}); err == nil {
 				w.SoulSide.PublishEvent(event)
 			}
+			turnStarted := time.Now()
+			stopTurnStatus := startWireTurnStatusTicker(w, cfg, func() *soul.Engine { return engine }, turnStarted, time.Second)
 			engine.ResetCancel()
 			approvalCtxMu.Lock()
 			approvalCtx = ctx
@@ -69,6 +73,7 @@ func runWireWithOptions(cfg *config.Config, tools *toolset.Registry, in io.Reade
 				approvalCtxMu.Unlock()
 			}()
 			outcome, err := engine.Run(params.UserInput)
+			stopTurnStatus()
 			if err != nil {
 				return nil, err
 			}
@@ -76,6 +81,11 @@ func runWireWithOptions(cfg *config.Config, tools *toolset.Registry, in io.Reade
 				publishWireContent(w, wire.ContentText, outcome.FinalMessage)
 			}
 			if event, err := wire.NewEvent(wire.EventTurnEnd, wire.TurnEnd{}); err == nil {
+				w.SoulSide.PublishEvent(event)
+			}
+			status := runtimeStatusUpdate(cfg, engine)
+			setTurnElapsed(&status, turnStarted, false)
+			if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
 				w.SoulSide.PublishEvent(event)
 			}
 			return map[string]any{"status": "completed", "stop_reason": outcome.StopReason}, nil
@@ -94,10 +104,72 @@ func runWireWithOptions(cfg *config.Config, tools *toolset.Registry, in io.Reade
 			} else {
 				plan.Exit()
 			}
-			if event, err := wire.NewEvent(wire.EventStatusUpdate, wire.StatusUpdate{PlanMode: &params.Enabled}); err == nil {
+			persistWireSessionState(opts.SessionStore, wireSession)
+			status := runtimeStatusUpdate(cfg, engine)
+			status.PlanMode = &params.Enabled
+			if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
 				w.SoulSide.PublishEvent(event)
 			}
 			return map[string]any{"status": "ok"}, nil
+		},
+		SetRuntimeProfile: func(ctx context.Context, params wire.SetRuntimeProfileParams) (any, error) {
+			if cfg == nil {
+				return nil, fmt.Errorf("未配置 runtime profile")
+			}
+			if _, err := cfg.EffectiveProfile(params.Mode, params.ModelProfile, params.PermissionProfile); err != nil {
+				return nil, err
+			}
+			runtime.Mode = params.Mode
+			runtime.ModelProfile = params.ModelProfile
+			runtime.PermissionProfile = params.PermissionProfile
+			engine = rebuildEnginePreservingState(cfg, engine, tools, debug)
+			configureEngineForWire(engine, w)
+			persistWireSessionState(opts.SessionStore, wireSession)
+			status := runtimeStatusUpdate(cfg, engine)
+			if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
+				w.SoulSide.PublishEvent(event)
+			}
+			return map[string]any{"status": "ok"}, nil
+		},
+		RestoreSession: func(ctx context.Context, params wire.RestoreSessionParams) (any, error) {
+			if opts.SessionStore == nil {
+				return nil, fmt.Errorf("会话存储不可用")
+			}
+			if cfg == nil {
+				return nil, fmt.Errorf("未配置 runtime profile")
+			}
+			sess, err := opts.SessionStore.Load(params.SessionID)
+			if err != nil {
+				return nil, err
+			}
+			state, err := opts.SessionStore.LoadState(sess.ID)
+			if err != nil {
+				return nil, err
+			}
+			messages, err := opts.SessionStore.LoadMessages(sess.ID)
+			if err != nil {
+				return nil, err
+			}
+			restoredRuntime, warnings := validateRestoredRuntime(cfg, state)
+			runtime = restoredRuntime
+			restorePlanMode(state)
+			warnings = append(warnings, restorePlanSession(state)...)
+			engine = buildEngine(cfg, tools, debug)
+			engine.Context.Messages = append(engine.Context.Messages, messages...)
+			attachSnapshotter(engine, sess)
+			configureEngineForWire(engine, w)
+			persistWireSessionState(opts.SessionStore, wireSession)
+			status := runtimeStatusUpdate(cfg, engine)
+			if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
+				w.SoulSide.PublishEvent(event)
+			}
+			return map[string]any{"status": "restored", "session_id": sess.ID, "messages_restored": len(messages), "warnings": warnings}, nil
+		},
+		ListSessions: func(ctx context.Context) (any, error) {
+			if opts.SessionStore == nil {
+				return nil, fmt.Errorf("会话存储不可用")
+			}
+			return map[string]any{"sessions": wireSessionSummaries(opts.SessionStore)}, nil
 		},
 	})
 	if engine.Approver != nil {
@@ -167,9 +239,9 @@ func marshalWireReplayMessage(message wire.WireMessage) ([]byte, error) {
 	return nil, fmt.Errorf("invalid replay message kind %q", message.Kind)
 }
 
-func attachWireRecorder(w *wire.Wire, cfg *config.Config, store *session.SessionStore) (func(), error) {
+func attachWireRecorder(w *wire.Wire, cfg *config.Config, store *session.SessionStore) (func(), *session.Session, error) {
 	if store == nil {
-		return func() {}, nil
+		return func() {}, nil, nil
 	}
 	model := "wire"
 	if cfg != nil {
@@ -179,17 +251,131 @@ func attachWireRecorder(w *wire.Wire, cfg *config.Config, store *session.Session
 	}
 	sess := store.NewSession(model)
 	if sess == nil || sess.Dir == "" {
-		return func() {}, nil
+		return func() {}, nil, nil
 	}
 	file, err := os.OpenFile(filepath.Join(sess.Dir, "wire.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	detach := wire.NewRecorder(file).Attach(w)
 	return func() {
 		detach()
 		_ = file.Close()
-	}, nil
+	}, sess, nil
+}
+
+func persistWireSessionState(store *session.SessionStore, sess *session.Session) {
+	if store == nil || sess == nil {
+		return
+	}
+	planState := plan.Status()
+	state := session.State{
+		Mode:              runtime.Mode,
+		ModelProfile:      runtime.ModelProfile,
+		PermissionProfile: runtime.PermissionProfile,
+		PlanMode:          planState.Enabled,
+		PlanSessionID:     planState.Slug,
+		PlanSlug:          planState.Slug,
+		PlanPath:          planState.Path,
+	}
+	_ = store.SaveState(sess.ID, state)
+}
+
+type wireSessionSummary struct {
+	ID                string `json:"id"`
+	Title             string `json:"title,omitempty"`
+	Model             string `json:"model"`
+	UpdatedAt         string `json:"updated_at"`
+	ContextTokens     int    `json:"context_tokens,omitempty"`
+	Mode              string `json:"mode,omitempty"`
+	ModelProfile      string `json:"model_profile,omitempty"`
+	PermissionProfile string `json:"permission_profile,omitempty"`
+	PlanMode          bool   `json:"plan_mode,omitempty"`
+	PlanSlug          string `json:"plan_slug,omitempty"`
+	PlanPath          string `json:"plan_path,omitempty"`
+}
+
+func wireSessionSummaries(store *session.SessionStore) []wireSessionSummary {
+	if store == nil {
+		return nil
+	}
+	sessions := store.List()
+	out := make([]wireSessionSummary, 0, len(sessions))
+	for _, sess := range sessions {
+		state, _ := store.LoadState(sess.ID)
+		out = append(out, wireSessionSummary{
+			ID:                sess.ID,
+			Title:             sess.Title,
+			Model:             sess.Model,
+			UpdatedAt:         sess.UpdatedAt.Format(time.RFC3339Nano),
+			ContextTokens:     sess.ContextTokens,
+			Mode:              state.Mode,
+			ModelProfile:      state.ModelProfile,
+			PermissionProfile: state.PermissionProfile,
+			PlanMode:          state.PlanMode,
+			PlanSlug:          state.PlanSlug,
+			PlanPath:          state.PlanPath,
+		})
+	}
+	return out
+}
+
+func runtimeStatusUpdate(cfg *config.Config, engine *soul.Engine) wire.StatusUpdate {
+	status := wire.StatusUpdate{}
+	planMode := plan.Status().Enabled
+	status.PlanMode = &planMode
+	contextTokens, maxContextTokens, contextUsage := contextTokenStats(engine)
+	status.ContextTokens = &contextTokens
+	status.MaxContextTokens = &maxContextTokens
+	status.ContextUsage = &contextUsage
+	if cfg == nil {
+		return status
+	}
+	if eff, err := cfg.EffectiveProfile(runtime.Mode, runtime.ModelProfile, runtime.PermissionProfile); err == nil {
+		status.Mode = eff.Mode
+		status.ModelProfile = eff.ModelProfile
+		status.PermissionProfile = eff.PermissionProfile
+		status.Provider = eff.Profile.Provider
+		status.Model = eff.Profile.Model
+	}
+	return status
+}
+
+func startWireTurnStatusTicker(w *wire.Wire, cfg *config.Config, engine func() *soul.Engine, started time.Time, interval time.Duration) func() {
+	if w == nil || interval <= 0 {
+		return func() {}
+	}
+	done := make(chan struct{})
+	var once sync.Once
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				status := runtimeStatusUpdate(cfg, engine())
+				setTurnElapsed(&status, started, true)
+				if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
+					w.SoulSide.PublishEvent(event)
+				}
+			case <-done:
+				return
+			}
+		}
+	}()
+	return func() { once.Do(func() { close(done) }) }
+}
+
+func setTurnElapsed(status *wire.StatusUpdate, started time.Time, running bool) {
+	if status == nil || started.IsZero() {
+		return
+	}
+	elapsed := time.Since(started).Milliseconds()
+	if elapsed < 0 {
+		elapsed = 0
+	}
+	status.TurnElapsedMS = &elapsed
+	status.TurnRunning = &running
 }
 
 func configureEngineForWire(engine *soul.Engine, w *wire.Wire) {

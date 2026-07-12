@@ -24,6 +24,7 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	coremcp "github.com/Misaka477/Natalia-Cli/internal/mcp"
 	"github.com/Misaka477/Natalia-Cli/internal/mode"
+	"github.com/Misaka477/Natalia-Cli/internal/plan"
 	"github.com/Misaka477/Natalia-Cli/internal/planexec"
 	"github.com/Misaka477/Natalia-Cli/internal/sandbox"
 	"github.com/Misaka477/Natalia-Cli/internal/session"
@@ -482,6 +483,7 @@ func handleExecutePlan(input string, cfg *config.Config, engine **soul.Engine, t
 	runtime.PermissionProfile = ""
 	*engine = rebuildEnginePreservingState(cfg, *engine, tools, debug)
 	(*engine).Steer.Push(currentPlan.Instruction())
+	persistCurrentSessionState()
 	fmt.Printf("✓ 已载入计划并切换到 code mode: %s\n", planPath)
 	if step, ok := currentPlan.NextOpenStep(); ok {
 		fmt.Printf("下一未完成项: line %d: %s\n", step.Line, step.Text)
@@ -516,8 +518,10 @@ func handlePlan(input string) {
 		} else {
 			fmt.Println("计划 checklist 已全部完成")
 		}
+		persistCurrentSessionState()
 	case "clear":
 		currentPlan = nil
+		persistCurrentSessionState()
 		fmt.Println("✓ 已清除当前计划")
 	default:
 		fmt.Println("用法: /plan [status|done|clear]")
@@ -661,6 +665,7 @@ func runOnce(cfg *config.Config, tools *toolset.Registry, input string) {
 
 func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, debug bool) {
 	defer term.Close()
+	defer persistCurrentSessionState()
 
 	engine := buildEngine(cfg, tools, debug)
 	escalator := &autoflow.Escalator{Threshold: autoflow.DefaultFailureThreshold}
@@ -677,6 +682,7 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 		sessStore, _ = session.NewStore()
 		if sessStore != nil {
 			currentSession = sessStore.NewSession(pr.Model)
+			persistCurrentSessionState()
 			msgs, _ := sessStore.LoadMessages(currentSession.ID)
 			for _, msg := range msgs {
 				engine.Context.Messages = append(engine.Context.Messages, msg)
@@ -748,6 +754,7 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 		}
 
 		engine.ResetCancel()
+		stopElapsed := startTurnElapsedDisplay(os.Stderr, time.Now(), time.Second)
 
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, os.Interrupt)
@@ -764,6 +771,7 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 
 		select {
 		case r := <-done:
+			stopElapsed()
 			signal.Stop(sigCh)
 			if r.err != nil {
 				if r.err.Error() == "context canceled" {
@@ -793,6 +801,7 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 			}
 			decision := maybeRecordAutoflow(autoEnabled, escalator, outcome, cfg)
 			applyAutoflowDecision(decision, cfg, &engine, tools, debug)
+			persistCurrentSessionState()
 			if decision.Action == autoflow.ActionDebug {
 				fmt.Fprintln(os.Stderr, "连续失败，已自动升级到 debug mode。输入 /status 可查看当前模型和权限。")
 			} else if decision.Action == autoflow.ActionRecoveredMode {
@@ -802,9 +811,48 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 			signal.Stop(sigCh)
 			engine.Cancel()
 			<-done
+			stopElapsed()
 			fmt.Println("\n⏹ 已停止")
 		}
 	}
+}
+
+func startTurnElapsedDisplay(w io.Writer, started time.Time, interval time.Duration) func() time.Duration {
+	if w == nil || interval <= 0 {
+		return func() time.Duration { return time.Since(started) }
+	}
+	done := make(chan struct{})
+	var once sync.Once
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				fmt.Fprintf(w, "\r[elapsed %s]", formatElapsed(time.Since(started)))
+			case <-done:
+				return
+			}
+		}
+	}()
+	return func() time.Duration {
+		elapsed := time.Since(started)
+		once.Do(func() {
+			close(done)
+			fmt.Fprintf(w, "\r[elapsed %s]\n", formatElapsed(elapsed))
+		})
+		return elapsed
+	}
+}
+
+func formatElapsed(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	if d < time.Second {
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	}
+	return d.Truncate(time.Second).String()
 }
 
 func handleRollback(input string, engine **soul.Engine) {
@@ -869,6 +917,7 @@ func handleMode(input string, cfg *config.Config, engine **soul.Engine, tools *t
 	runtime.PermissionProfile = ""
 	*engine = rebuildEnginePreservingState(cfg, *engine, tools, debug)
 	applyModePrompt(*engine, m)
+	persistCurrentSessionState()
 	fmt.Printf("✓ 已切换 mode: %s (%s)\n", m.Name, m.DisplayName)
 }
 
@@ -885,7 +934,8 @@ func handleModel(input string, cfg *config.Config, engine **soul.Engine, tools *
 		return
 	}
 	runtime.ModelProfile = name
-	*engine = buildEngine(cfg, tools, debug)
+	*engine = rebuildEnginePreservingState(cfg, *engine, tools, debug)
+	persistCurrentSessionState()
 	fmt.Printf("✓ 已切换 model_profile: %s\n", name)
 }
 
@@ -914,7 +964,8 @@ func handlePermission(input string, cfg *config.Config, engine **soul.Engine, to
 		return
 	}
 	runtime.PermissionProfile = name
-	*engine = buildEngine(cfg, tools, debug)
+	*engine = rebuildEnginePreservingState(cfg, *engine, tools, debug)
+	persistCurrentSessionState()
 	fmt.Printf("✓ 已切换 permission_profile: %s\n", name)
 }
 
@@ -968,6 +1019,7 @@ func statusLines(cfg *config.Config, engine *soul.Engine) ([]string, error) {
 	} else if len(eff.ModeConfig.Tools.Exclude) > 0 {
 		tools = fmt.Sprintf("exclude-list (%d tools)", len(eff.ModeConfig.Tools.Exclude))
 	}
+	contextTokens, maxContextTokens, contextUsage := contextTokenStats(engine)
 	return []string{
 		fmt.Sprintf("profile: %s", eff.ProfileName),
 		fmt.Sprintf("mode: %s%s", modeName, modeSuffix),
@@ -975,12 +1027,29 @@ func statusLines(cfg *config.Config, engine *soul.Engine) ([]string, error) {
 		fmt.Sprintf("permission_profile: %s%s", eff.PermissionProfile, permissionSuffix),
 		fmt.Sprintf("provider: %s", eff.Profile.Provider),
 		fmt.Sprintf("model: %s", eff.Profile.Model),
+		fmt.Sprintf("context_tokens: %d/%d (%.1f%% estimated)", contextTokens, maxContextTokens, contextUsage*100),
 		fmt.Sprintf("approval: %s", eff.Approval),
 		fmt.Sprintf("reasoning_effort: %s", displayEmpty(eff.Profile.ReasoningEffort, "<unset>")),
 		fmt.Sprintf("thinking_enabled: %t", eff.Profile.ThinkingEnabled),
 		fmt.Sprintf("stream: %t", eff.Profile.Stream),
 		fmt.Sprintf("tools: %s", tools),
 	}, nil
+}
+
+func contextTokenStats(engine *soul.Engine) (int, int, float64) {
+	if engine == nil || engine.Context == nil {
+		return 0, 0, 0
+	}
+	tokens := compaction.EstimateTokens(engine.Context.Messages)
+	maxTokens := engine.Context.MaxTokens
+	if engine.MaxContextSize > 0 {
+		maxTokens = engine.MaxContextSize
+	}
+	usage := 0.0
+	if maxTokens > 0 {
+		usage = float64(tokens) / float64(maxTokens)
+	}
+	return tokens, maxTokens, usage
 }
 
 func displayEmpty(value, fallback string) string {
@@ -1154,6 +1223,10 @@ func handleWorkerCommand(input string) {
 }
 
 func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool, autoEnabled *bool, escalator *autoflow.Escalator) {
+	if strings.HasPrefix(input, "/sessions") || input == "/sessions" {
+		handleSessions(input, *cfg, engine, tools, debug)
+		return
+	}
 	if strings.HasPrefix(input, "/rollback ") || input == "/rollback" {
 		handleRollback(input, engine)
 		return
@@ -1243,6 +1316,7 @@ func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine,
 			runtime = runtimeOverrides{}
 			(*cfg).Save()
 			*engine = buildEngine(*cfg, tools, debug)
+			persistCurrentSessionState()
 			fmt.Printf("已切换到: %s\n", name)
 		}
 	case "/compact":
@@ -1256,8 +1330,6 @@ func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine,
 			return
 		}
 		fmt.Println(msg)
-	case "/sessions":
-		listSessions()
 	case "/checkpoint":
 		if (*engine).Snapshotter == nil {
 			fmt.Println("快照系统未启用")
@@ -1282,6 +1354,196 @@ func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine,
 	}
 }
 
+func persistCurrentSessionState() {
+	if sessStore == nil || currentSession == nil {
+		return
+	}
+	state := session.State{
+		Mode:              runtime.Mode,
+		ModelProfile:      runtime.ModelProfile,
+		PermissionProfile: runtime.PermissionProfile,
+	}
+	planState := plan.Status()
+	state.PlanMode = planState.Enabled
+	state.PlanSessionID = planState.Slug
+	if planState.Slug != "" {
+		state.PlanSlug = planState.Slug
+	}
+	if planState.Path != "" {
+		state.PlanPath = planState.Path
+	}
+	if currentPlan != nil {
+		state.PlanSlug = currentPlan.Slug
+		state.PlanPath = currentPlan.Path
+		state.PlanDoneLines = donePlanLines(currentPlan)
+	}
+	if err := sessStore.SaveState(currentSession.ID, state); err != nil {
+		fmt.Fprintf(os.Stderr, "保存会话状态失败: %v\n", err)
+	}
+}
+
+func donePlanLines(planSession *planexec.Session) []int {
+	if planSession == nil {
+		return nil
+	}
+	lines := make([]int, 0)
+	for _, step := range planSession.Steps {
+		if step.Done {
+			lines = append(lines, step.Line)
+		}
+	}
+	return lines
+}
+
+func handleSessions(input string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool) {
+	parts := strings.Fields(input)
+	if len(parts) >= 2 && parts[1] == "restore" {
+		restoreSession(parts, cfg, engine, tools, debug)
+		return
+	}
+	if len(parts) > 1 {
+		fmt.Println("用法: /sessions 或 /sessions restore <id|序号>")
+		return
+	}
+	listSessions()
+}
+
+func restoreSession(parts []string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool) {
+	if sessStore == nil {
+		fmt.Println("会话存储不可用")
+		return
+	}
+	if cfg == nil {
+		fmt.Println("请先配置。输入 /setup")
+		return
+	}
+	if len(parts) < 3 {
+		fmt.Println("用法: /sessions restore <id|序号>")
+		return
+	}
+	sess, err := resolveSessionRef(parts[2])
+	if err != nil {
+		fmt.Printf("恢复会话失败: %v\n", err)
+		return
+	}
+	state, err := sessStore.LoadState(sess.ID)
+	if err != nil {
+		fmt.Printf("读取会话状态失败: %v\n", err)
+		return
+	}
+	messages, err := sessStore.LoadMessages(sess.ID)
+	if err != nil {
+		fmt.Printf("读取会话消息失败: %v\n", err)
+		return
+	}
+	restoredRuntime, warnings := validateRestoredRuntime(cfg, state)
+	runtime = restoredRuntime
+	restorePlanMode(state)
+	warnings = append(warnings, restorePlanSession(state)...)
+	currentSession = sess
+	*engine = buildEngine(cfg, tools, debug)
+	(*engine).Context.Messages = append((*engine).Context.Messages, messages...)
+	attachSnapshotter(*engine, sess)
+	persistCurrentSessionState()
+	fmt.Printf("✓ 已恢复会话: %s\n", sess.ID)
+	for _, warning := range warnings {
+		fmt.Println(warning)
+	}
+}
+
+func validateRestoredRuntime(cfg *config.Config, state session.State) (runtimeOverrides, []string) {
+	restored := runtimeOverrides{Mode: state.Mode, ModelProfile: state.ModelProfile, PermissionProfile: state.PermissionProfile}
+	warnings := make([]string, 0)
+	if cfg == nil {
+		return restored, warnings
+	}
+	if restored.Mode != "" {
+		eff, err := cfg.EffectiveProfile(restored.Mode, "", "")
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("⚠ 已忽略已失效 mode %q: %v", restored.Mode, err))
+			restored.Mode = ""
+		} else if _, err := modeFromEffective(eff); err != nil {
+			warnings = append(warnings, fmt.Sprintf("⚠ 已忽略已失效 mode %q: %v", restored.Mode, err))
+			restored.Mode = ""
+		}
+	}
+	if restored.ModelProfile != "" {
+		if _, ok := cfg.ModelProfiles[restored.ModelProfile]; !ok {
+			warnings = append(warnings, fmt.Sprintf("⚠ 已忽略已失效 model_profile %q", restored.ModelProfile))
+			restored.ModelProfile = ""
+		}
+	}
+	if restored.PermissionProfile != "" && len(cfg.PermissionProfiles) > 0 {
+		if _, ok := cfg.PermissionProfiles[restored.PermissionProfile]; !ok {
+			warnings = append(warnings, fmt.Sprintf("⚠ 已忽略已失效 permission_profile %q", restored.PermissionProfile))
+			restored.PermissionProfile = ""
+		}
+	}
+	if _, err := cfg.EffectiveProfile(restored.Mode, restored.ModelProfile, restored.PermissionProfile); err != nil {
+		warnings = append(warnings, fmt.Sprintf("⚠ 已忽略已恢复 runtime overrides: %v", err))
+		restored = runtimeOverrides{}
+	}
+	return restored, warnings
+}
+
+func resolveSessionRef(ref string) (*session.Session, error) {
+	sessions := sessStore.List()
+	var idx int
+	if _, err := fmt.Sscanf(ref, "%d", &idx); err == nil && idx > 0 {
+		if idx > len(sessions) {
+			return nil, fmt.Errorf("序号 %d 不存在", idx)
+		}
+		return &sessions[idx-1], nil
+	}
+	for _, sess := range sessions {
+		if sess.ID == ref {
+			return &sess, nil
+		}
+	}
+	return nil, fmt.Errorf("会话 %q 不存在", ref)
+}
+
+func restorePlanMode(state session.State) {
+	if state.PlanMode {
+		plan.Enter(state.PlanSlug, state.PlanPath, "restored session")
+		return
+	}
+	plan.Exit()
+}
+
+func restorePlanSession(state session.State) []string {
+	currentPlan = nil
+	if state.PlanPath == "" {
+		return nil
+	}
+	data, err := os.ReadFile(state.PlanPath)
+	if err != nil {
+		return []string{fmt.Sprintf("⚠ 计划文件未恢复: %v", err)}
+	}
+	currentPlan = planexec.Parse(state.PlanPath, string(data))
+	done := make(map[int]bool, len(state.PlanDoneLines))
+	for _, line := range state.PlanDoneLines {
+		done[line] = true
+	}
+	for i := range currentPlan.Steps {
+		if done[currentPlan.Steps[i].Line] {
+			currentPlan.Steps[i].Done = true
+		}
+	}
+	return nil
+}
+
+func attachSnapshotter(engine *soul.Engine, sess *session.Session) {
+	if engine == nil || sess == nil {
+		return
+	}
+	wd, _ := os.Getwd()
+	snap, err := snapshot.NewEngine(wd, sess.Dir)
+	if err == nil {
+		engine.Snapshotter = snap
+	}
+}
+
 func listSessions() {
 	if sessStore == nil {
 		fmt.Println("会话存储不可用")
@@ -1298,7 +1560,19 @@ func listSessions() {
 		if title == "" {
 			title = "无标题"
 		}
-		fmt.Printf("  %d. %s (%s)\n", i+1, title, s.Model)
+		state, _ := sessStore.LoadState(s.ID)
+		stateSummary := ""
+		if state.Mode != "" {
+			stateSummary += fmt.Sprintf(", mode=%s", state.Mode)
+		}
+		if state.PlanSlug != "" {
+			stateSummary += fmt.Sprintf(", plan=%s", state.PlanSlug)
+		}
+		tokenSummary := ""
+		if s.ContextTokens > 0 {
+			tokenSummary = fmt.Sprintf(", context_tokens=%d", s.ContextTokens)
+		}
+		fmt.Printf("  %d. %s (%s%s%s) [%s]\n", i+1, title, s.Model, stateSummary, tokenSummary, s.ID)
 	}
 }
 
@@ -1321,6 +1595,7 @@ func showHelp() {
   /stop <id> 暂停子 agent
   /go <id>  恢复子 agent
   /sessions 查看历史会话
+  /sessions restore <id|序号> 恢复历史会话
   /config   查看当前配置
   /help     显示帮助
   /quit     退出`)
