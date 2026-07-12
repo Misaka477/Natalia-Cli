@@ -296,6 +296,24 @@ func TestWriteFileRejectsOverwritingDirectory(t *testing.T) {
 	}
 }
 
+func TestWriteFileUsesInjectedGuardBeforeWriting(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "blocked.txt")
+	guardErr := fmt.Errorf("blocked by policy")
+	_, err := (&Write{Guard: func(got string) error {
+		if got != path {
+			t.Fatalf("guard saw path %q want %q", got, path)
+		}
+		return guardErr
+	}}).Execute(map[string]any{"path": path, "content": "data"})
+	if err != guardErr {
+		t.Fatalf("expected guard error, got %v", err)
+	}
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Fatalf("guarded write should not create file, stat=%v", statErr)
+	}
+}
+
 func TestEditExecuteReturnIncludesDiffDisplay(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "edit.txt")
@@ -418,6 +436,20 @@ func TestEditBatchFailsWithoutPartialWrite(t *testing.T) {
 	}
 	if string(data) != original {
 		t.Fatalf("batch edit should not partially write, got %q", data)
+	}
+}
+
+func TestEditUsesInjectedGuardBeforeReadingOrWriting(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing.txt")
+	guardErr := fmt.Errorf("blocked by policy")
+	ret, err := (&Edit{Guard: func(got string) error {
+		if got != path {
+			t.Fatalf("guard saw path %q want %q", got, path)
+		}
+		return guardErr
+	}}).ExecuteReturn(map[string]any{"path": path, "old_string": "a", "new_string": "b"})
+	if err != guardErr || !ret.IsError {
+		t.Fatalf("expected guard error return, ret=%+v err=%v", ret, err)
 	}
 }
 

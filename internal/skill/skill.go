@@ -43,7 +43,7 @@ func (r *Registry) FormatForPrompt() string {
 	}
 	var b strings.Builder
 	b.WriteString("\n## 可用技能\n\n")
-	scopes := []string{"project", "user"}
+	scopes := []string{"project", "user", "imported"}
 	for _, scope := range scopes {
 		has := false
 		for _, s := range r.skills {
@@ -51,8 +51,10 @@ func (r *Registry) FormatForPrompt() string {
 				if !has {
 					if scope == "project" {
 						b.WriteString("### 项目技能\n")
-					} else {
+					} else if scope == "user" {
 						b.WriteString("### 用户技能\n")
+					} else {
+						b.WriteString("### 导入说明\n")
 					}
 					has = true
 				}
@@ -101,10 +103,85 @@ func Discover(workDir string) (*Registry, error) {
 		}
 	}
 
+	for _, imported := range discoverExternalInstructions(workDir) {
+		if r.Get(imported.Name) == nil {
+			r.Add(imported)
+		}
+	}
+
 	sort.Slice(r.skills, func(i, j int) bool {
 		return r.skills[i].Name < r.skills[j].Name
 	})
 	return r, nil
+}
+
+func discoverExternalInstructions(workDir string) []Skill {
+	candidates := []struct {
+		path string
+		name string
+		desc string
+	}{
+		{path: filepath.Join(workDir, "AGENTS.md"), name: "imported-agents-md", desc: "Imported project instructions from AGENTS.md"},
+		{path: filepath.Join(workDir, "CLAUDE.md"), name: "imported-claude-md", desc: "Imported project instructions from CLAUDE.md"},
+		{path: filepath.Join(workDir, ".github", "copilot-instructions.md"), name: "imported-github-copilot-instructions", desc: "Imported project instructions from .github/copilot-instructions.md"},
+	}
+	out := make([]Skill, 0, len(candidates))
+	for _, candidate := range candidates {
+		if skill, ok := loadInstructionFile(workDir, candidate.path, candidate.name, candidate.desc); ok {
+			out = append(out, skill)
+		}
+	}
+	cursorRules := filepath.Join(workDir, ".cursor", "rules")
+	if matches, err := filepath.Glob(filepath.Join(cursorRules, "*.mdc")); err == nil {
+		sort.Strings(matches)
+		for _, match := range matches {
+			base := strings.TrimSuffix(filepath.Base(match), filepath.Ext(match))
+			name := "imported-cursor-" + slugify(base)
+			desc := "Imported Cursor rule from .cursor/rules/" + filepath.Base(match)
+			if skill, ok := loadInstructionFile(workDir, match, name, desc); ok {
+				out = append(out, skill)
+			}
+		}
+	}
+	return out
+}
+
+func loadInstructionFile(workDir, pathValue, name, description string) (Skill, bool) {
+	data, err := os.ReadFile(pathValue)
+	if err != nil || len(strings.TrimSpace(string(data))) == 0 {
+		return Skill{}, false
+	}
+	source := relativeSource(workDir, pathValue)
+	return Skill{Name: name, Description: description, Dir: filepath.Dir(pathValue), Content: fmt.Sprintf("Source: %s\n\n%s", source, strings.TrimSpace(string(data))), Scope: "imported"}, true
+}
+
+func relativeSource(workDir, pathValue string) string {
+	if rel, err := filepath.Rel(workDir, pathValue); err == nil && !strings.HasPrefix(rel, "..") {
+		return filepath.ToSlash(rel)
+	}
+	return filepath.ToSlash(pathValue)
+}
+
+func slugify(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	var b strings.Builder
+	lastDash := false
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash && b.Len() > 0 {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return "item"
+	}
+	return out
 }
 
 func loadSkill(dir string, scope string) (*Skill, error) {

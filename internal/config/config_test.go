@@ -122,10 +122,11 @@ func TestEffectiveProfileReturnsCustomModeConfig(t *testing.T) {
 				Provider: "p",
 				Model:    "base",
 				Modes: map[string]ModeProfile{
-					"review": {Extends: "code", Description: "Review Mode", SystemPrompt: "review prompt", Tools: ToolPolicy{Exclude: []string{"write_file"}}},
+					"review": {Extends: "code", Description: "Review Mode", SystemPrompt: "review prompt", Tools: ToolPolicy{Exclude: []string{"write_file"}}, MCPServers: []string{"fixture"}},
 				},
 			},
 		},
+		MCPServers: map[string]MCPServerConfig{"fixture": {Command: "fixture-mcp", Args: []string{"--stdio"}, TimeoutSec: 3, AllowedTools: []string{"echo"}, ReadOnly: true}},
 	}
 	eff, err := cfg.EffectiveProfile("review", "", "")
 	if err != nil {
@@ -136,6 +137,9 @@ func TestEffectiveProfileReturnsCustomModeConfig(t *testing.T) {
 	}
 	if len(eff.ModeConfig.Tools.Exclude) != 1 || eff.ModeConfig.Tools.Exclude[0] != "write_file" {
 		t.Fatalf("unexpected custom mode tool policy: %+v", eff.ModeConfig.Tools)
+	}
+	if len(eff.ModeConfig.MCPServers) != 1 || eff.ModeConfig.MCPServers[0] != "fixture" {
+		t.Fatalf("unexpected custom mode MCP servers: %+v", eff.ModeConfig.MCPServers)
 	}
 }
 
@@ -226,6 +230,9 @@ func TestConfigSaveLoadAndEffectiveProfileEndToEnd(t *testing.T) {
 			"default": {Provider: "local", Model: "base", ModelProfile: "cheap", PermissionProfile: "ask", Mode: "ask"},
 		},
 		Hooks: []HookDef{{ID: "pre-read", Event: "PreToolUse", Target: "read_file", Command: "printf hook", TimeoutSec: 2}},
+		MCPServers: map[string]MCPServerConfig{
+			"fixture": {Command: "fixture-mcp", Args: []string{"--stdio"}, TimeoutSec: 4, AllowedTools: []string{"echo"}, ExcludeTools: []string{"mutate"}, ReadOnly: true},
+		},
 	}
 	if err := cfg.Save(); err != nil {
 		t.Fatal(err)
@@ -247,6 +254,10 @@ func TestConfigSaveLoadAndEffectiveProfileEndToEnd(t *testing.T) {
 	}
 	if len(loaded.Hooks) != 1 || loaded.Hooks[0].ID != "pre-read" || loaded.Hooks[0].Target != "read_file" || loaded.Hooks[0].TimeoutSec != 2 {
 		t.Fatalf("loaded config did not preserve hooks: %+v", loaded.Hooks)
+	}
+	server := loaded.MCPServers["fixture"]
+	if server.Command != "fixture-mcp" || len(server.Args) != 1 || server.TimeoutSec != 4 || len(server.AllowedTools) != 1 || len(server.ExcludeTools) != 1 || !server.ReadOnly {
+		t.Fatalf("loaded config did not preserve MCP servers: %+v", loaded.MCPServers)
 	}
 }
 

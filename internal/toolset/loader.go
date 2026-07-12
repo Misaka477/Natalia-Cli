@@ -4,21 +4,24 @@ import (
 	"fmt"
 
 	"github.com/Misaka477/Natalia-Cli/internal/agentspec"
+	"github.com/Misaka477/Natalia-Cli/internal/plan"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/ask_user"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/background"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/browser"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/file"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/interactive"
+	"github.com/Misaka477/Natalia-Cli/internal/tools/plantools"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/process"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/shell"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/todo"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/web"
+	"github.com/Misaka477/Natalia-Cli/internal/tools/workflowtools"
 )
 
 var builtInToolFactories = map[string]func() Tool{
 	"natalia/tools/file:Read":          func() Tool { return &file.Read{} },
-	"natalia/tools/file:Write":         func() Tool { return &file.Write{} },
-	"natalia/tools/file:Edit":          func() Tool { return &file.Edit{} },
+	"natalia/tools/file:Write":         func() Tool { return &file.Write{Guard: plan.GuardWrite} },
+	"natalia/tools/file:Edit":          func() Tool { return &file.Edit{Guard: plan.GuardWrite} },
 	"natalia/tools/file:Glob":          func() Tool { return &file.Glob{} },
 	"natalia/tools/file:Grep":          func() Tool { return &file.Grep{} },
 	"natalia/tools/shell:Run":          func() Tool { return &shell.Run{} },
@@ -47,6 +50,11 @@ var builtInToolFactories = map[string]func() Tool{
 	"natalia/tools/interactive:Keys":   func() Tool { return &interactive.Keys{} },
 	"natalia/tools/interactive:Stop":   func() Tool { return &interactive.Stop{} },
 	"natalia/tools/interactive:List":   func() Tool { return &interactive.List{} },
+	"natalia/tools/workflow:List":      func() Tool { return &workflowtools.List{} },
+	"natalia/tools/workflow:Read":      func() Tool { return &workflowtools.Read{} },
+	"natalia/tools/plan:EnterMode":     func() Tool { return &plantools.Enter{} },
+	"natalia/tools/plan:ExitMode":      func() Tool { return &plantools.Exit{} },
+	"natalia/tools/plan:Status":        func() Tool { return &plantools.Status{} },
 }
 
 func LoadFromAgentSpec(spec *agentspec.ResolvedAgentSpec) (*Registry, error) {

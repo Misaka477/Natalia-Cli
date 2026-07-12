@@ -68,6 +68,7 @@ type ModeProfile struct {
 	ReasoningEffort   string     `yaml:"reasoning_effort,omitempty"`
 	ThinkingEnabled   *bool      `yaml:"thinking_enabled,omitempty"`
 	Tools             ToolPolicy `yaml:"tools,omitempty"`
+	MCPServers        []string   `yaml:"mcp_servers,omitempty"`
 }
 
 type ToolPolicy struct {
@@ -93,6 +94,17 @@ type Config struct {
 	ModelProfiles      map[string]ModelProfile      `yaml:"model_profiles,omitempty"`
 	PermissionProfiles map[string]PermissionProfile `yaml:"permission_profiles,omitempty"`
 	Hooks              []HookDef                    `yaml:"hooks,omitempty"`
+	MCPServers         map[string]MCPServerConfig   `yaml:"mcp_servers,omitempty"`
+}
+
+type MCPServerConfig struct {
+	Command      string   `yaml:"command"`
+	Args         []string `yaml:"args,omitempty"`
+	Cwd          string   `yaml:"cwd,omitempty"`
+	TimeoutSec   int      `yaml:"timeout_sec,omitempty"`
+	AllowedTools []string `yaml:"allowed_tools,omitempty"`
+	ExcludeTools []string `yaml:"exclude_tools,omitempty"`
+	ReadOnly     bool     `yaml:"read_only,omitempty"`
 }
 
 type HookDef struct {
@@ -327,6 +339,9 @@ func mergeModeProfile(base, override ModeProfile) ModeProfile {
 	}
 	if len(override.Tools.Exclude) > 0 {
 		out.Tools.Exclude = append([]string(nil), override.Tools.Exclude...)
+	}
+	if len(override.MCPServers) > 0 {
+		out.MCPServers = append([]string(nil), override.MCPServers...)
 	}
 	return out
 }

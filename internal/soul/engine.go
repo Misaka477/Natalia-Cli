@@ -462,7 +462,7 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 	}
 
 	// Approval check for write tools
-	if e.Approver != nil && approval.WriteTools[name] && !dangerApproved {
+	if e.Approver != nil && approval.IsWriteTool(name) && !dangerApproved {
 		desc := fmt.Sprintf("%s %v", name, args)
 		if !e.Approver.Request(name, desc) {
 			result := fmt.Sprintf("操作被用户拒绝: %s %v", name, args)

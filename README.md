@@ -132,14 +132,6 @@ Run vet and tests:
 go vet ./... && go test ./...
 ```
 
-The active engineering roadmap is currently maintained in:
-
-```text
-.kilo/plans/natalia-cli-roadmap.md
-```
-
-That roadmap is local project planning material and may not be included in published packages.
-
 ## License
 
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
@@ -284,14 +276,6 @@ go test ./...
 ```bash
 go vet ./... && go test ./...
 ```
-
-当前工程路线图维护在：
-
-```text
-.kilo/plans/natalia-cli-roadmap.md
-```
-
-这个 roadmap 是本地项目规划材料，发布包里不一定包含。
 
 ## 许可
 

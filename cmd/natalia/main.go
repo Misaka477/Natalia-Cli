@@ -1,13 +1,17 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/agentspec"
@@ -18,6 +22,7 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/config"
 	"github.com/Misaka477/Natalia-Cli/internal/hook"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
+	coremcp "github.com/Misaka477/Natalia-Cli/internal/mcp"
 	"github.com/Misaka477/Natalia-Cli/internal/mode"
 	"github.com/Misaka477/Natalia-Cli/internal/planexec"
 	"github.com/Misaka477/Natalia-Cli/internal/sandbox"
@@ -27,10 +32,13 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/soul"
 	"github.com/Misaka477/Natalia-Cli/internal/term"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/agent"
-	"github.com/Misaka477/Natalia-Cli/internal/tools/skill"
+	mcptools "github.com/Misaka477/Natalia-Cli/internal/tools/mcptools"
+	"github.com/Misaka477/Natalia-Cli/internal/tools/skilltools"
+	workflowtools "github.com/Misaka477/Natalia-Cli/internal/tools/workflowtools"
 	"github.com/Misaka477/Natalia-Cli/internal/toolset"
 	"github.com/Misaka477/Natalia-Cli/internal/ui"
 	"github.com/Misaka477/Natalia-Cli/internal/worker"
+	workflowcore "github.com/Misaka477/Natalia-Cli/internal/workflow"
 	"github.com/peterh/liner"
 )
 
@@ -41,6 +49,9 @@ var (
 	skillRegistry  *skill.Registry
 	runtime        runtimeOverrides
 	currentPlan    *planexec.Session
+	mcpMu          sync.Mutex
+	mcpClients     = map[string]*coremcp.Client{}
+	workflowReg    *workflowcore.Registry
 )
 
 type runtimeOverrides struct {
@@ -50,6 +61,8 @@ type runtimeOverrides struct {
 }
 
 func main() {
+	defer closeMCPClients()
+
 	noSetupFlag := flag.Bool("no-setup", false, "跳过交互式配置引导")
 	debug := flag.Bool("debug", false, "打印调试日志")
 	profile := flag.String("profile", "", "使用指定配置")
@@ -89,9 +102,118 @@ func main() {
 }
 
 func registerTools(r *toolset.Registry) {
+	wd, _ := os.Getwd()
+	workflowReg, _ = workflowcore.Discover(wd)
+	workflowtools.SetDefaultRegistry(workflowReg)
 	if err := toolset.RegisterDefaultTools(r); err != nil {
 		fmt.Fprintf(os.Stderr, "加载默认工具失败: %v\n", err)
 	}
+}
+
+func loadMCPServers(cfg *config.Config, r *toolset.Registry, modeConfig *config.ModeProfile) error {
+	if cfg == nil || r == nil || modeConfig == nil || len(cfg.MCPServers) == 0 || len(modeConfig.MCPServers) == 0 {
+		return nil
+	}
+	var errs []string
+	for _, serverName := range modeConfig.MCPServers {
+		serverName = strings.TrimSpace(serverName)
+		if serverName == "" {
+			continue
+		}
+		serverCfg, ok := cfg.MCPServers[serverName]
+		if !ok {
+			errs = append(errs, fmt.Sprintf("%s: 未配置", serverName))
+			continue
+		}
+		if err := loadMCPServer(serverName, serverCfg, r); err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", serverName, err))
+		}
+	}
+	if len(errs) > 0 {
+		return errors.New(strings.Join(errs, "; "))
+	}
+	return nil
+}
+
+func loadMCPServer(serverName string, cfg config.MCPServerConfig, r *toolset.Registry) error {
+	client, err := mcpClientForServer(serverName, cfg)
+	if err != nil {
+		return err
+	}
+	tools, err := client.ListTools(nil)
+	if err != nil {
+		return err
+	}
+	for _, remoteTool := range tools {
+		wrapped, err := mcptools.NewTool(serverName, remoteTool, client)
+		if err != nil {
+			return err
+		}
+		if !mcpToolAllowed(cfg, remoteTool.Name, wrapped.Name()) {
+			continue
+		}
+		r.Register(wrapped)
+		if !cfg.ReadOnly {
+			approval.RegisterWriteTool(wrapped.Name())
+		}
+	}
+	return nil
+}
+
+func mcpClientForServer(serverName string, cfg config.MCPServerConfig) (*coremcp.Client, error) {
+	mcpMu.Lock()
+	defer mcpMu.Unlock()
+	if client := mcpClients[serverName]; client != nil {
+		return client, nil
+	}
+	client, err := coremcp.Start(context.Background(), coremcp.ServerConfig{Command: cfg.Command, Args: cfg.Args, Cwd: cfg.Cwd, TimeoutSec: cfg.TimeoutSec})
+	if err != nil {
+		return nil, err
+	}
+	if err := client.Initialize(nil); err != nil {
+		_ = client.Close()
+		return nil, err
+	}
+	mcpClients[serverName] = client
+	return client, nil
+}
+
+func closeMCPClients() {
+	mcpMu.Lock()
+	clients := mcpClients
+	mcpClients = map[string]*coremcp.Client{}
+	mcpMu.Unlock()
+	for _, client := range clients {
+		_ = client.Close()
+	}
+}
+
+func mcpToolAllowed(cfg config.MCPServerConfig, originalName, registeredName string) bool {
+	if len(cfg.AllowedTools) > 0 && !matchesAnyToolPattern(cfg.AllowedTools, originalName, registeredName) {
+		return false
+	}
+	if matchesAnyToolPattern(cfg.ExcludeTools, originalName, registeredName) {
+		return false
+	}
+	return true
+}
+
+func matchesAnyToolPattern(patterns []string, names ...string) bool {
+	for _, patternValue := range patterns {
+		patternValue = strings.TrimSpace(patternValue)
+		if patternValue == "" {
+			continue
+		}
+		for _, name := range names {
+			if patternValue == name {
+				return true
+			}
+			if matched, err := path.Match(patternValue, name); err == nil && matched {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func buildEngine(cfg *config.Config, tools *toolset.Registry, debug bool) *soul.Engine {
@@ -106,6 +228,9 @@ func buildEngine(cfg *config.Config, tools *toolset.Registry, debug bool) *soul.
 	if effErr == nil {
 		pr = &eff.Profile
 		p = &eff.Provider
+		if err := loadMCPServers(cfg, tools, &eff.ModeConfig); err != nil {
+			fmt.Fprintf(os.Stderr, "加载 MCP 工具失败: %v\n", err)
+		}
 	}
 
 	llmClient := newLLMClient(pr, p)
@@ -426,7 +551,7 @@ func modeFromEffective(eff *config.EffectiveProfile) (*mode.Mode, error) {
 		if eff.ModeConfig.Description != "" {
 			m.DisplayName = eff.ModeConfig.Description
 		}
-		m.ToolFilter = applyToolPolicy(m.ToolFilter, eff.ModeConfig.Tools)
+		m.ToolFilter = applyMCPServerPolicy(applyToolPolicy(m.ToolFilter, eff.ModeConfig.Tools), eff.ModeConfig.MCPServers, eff.ModeConfig.Tools)
 		return &m, nil
 	}
 	if isZeroModeProfile(eff.ModeConfig) {
@@ -452,12 +577,12 @@ func modeFromEffective(eff *config.EffectiveProfile) (*mode.Mode, error) {
 	} else if prompt != "" {
 		m.Prompt = prompt
 	}
-	m.ToolFilter = applyToolPolicy(m.ToolFilter, eff.ModeConfig.Tools)
+	m.ToolFilter = applyMCPServerPolicy(applyToolPolicy(m.ToolFilter, eff.ModeConfig.Tools), eff.ModeConfig.MCPServers, eff.ModeConfig.Tools)
 	return &m, nil
 }
 
 func isZeroModeProfile(profile config.ModeProfile) bool {
-	return profile.Extends == "" && profile.Description == "" && profile.ModelProfile == "" && profile.PermissionProfile == "" && profile.SystemPrompt == "" && profile.SystemPromptPath == "" && profile.ReasoningEffort == "" && profile.ThinkingEnabled == nil && len(profile.Tools.Allowed) == 0 && len(profile.Tools.Exclude) == 0
+	return profile.Extends == "" && profile.Description == "" && profile.ModelProfile == "" && profile.PermissionProfile == "" && profile.SystemPrompt == "" && profile.SystemPromptPath == "" && profile.ReasoningEffort == "" && profile.ThinkingEnabled == nil && len(profile.Tools.Allowed) == 0 && len(profile.Tools.Exclude) == 0 && len(profile.MCPServers) == 0
 }
 
 func modePrompt(profile config.ModeProfile) (string, error) {
@@ -492,6 +617,23 @@ func applyToolPolicy(base func(string, map[string]any) bool, policy config.ToolP
 		}
 		if excluded[name] {
 			return false
+		}
+		return base(name, args)
+	}
+}
+
+func applyMCPServerPolicy(base func(string, map[string]any) bool, servers []string, policy config.ToolPolicy) func(string, map[string]any) bool {
+	if len(servers) == 0 {
+		return base
+	}
+	return func(name string, args map[string]any) bool {
+		if matchesAnyToolPattern(policy.Exclude, name) {
+			return false
+		}
+		for _, server := range servers {
+			if mcptools.IsToolFromServer(name, server) {
+				return true
+			}
 		}
 		return base(name, args)
 	}
@@ -560,8 +702,8 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 				}
 			}
 			// Register skill tools
-			tools.Register(&skills.List{Registry: skillRegistry})
-			tools.Register(&skills.Read{Registry: skillRegistry})
+			tools.Register(&skilltools.List{Registry: skillRegistry})
+			tools.Register(&skilltools.Read{Registry: skillRegistry})
 		}
 	}
 

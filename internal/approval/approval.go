@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 )
 
 type Mode string
@@ -15,21 +16,40 @@ const (
 	ModeReadOnly Mode = "read_only"
 )
 
-var WriteTools = map[string]bool{
-	"write_file":        true,
-	"edit_file":         true,
-	"run_shell":         true,
-	"process_start":     true,
-	"process_stop":      true,
-	"background_start":  true,
-	"background_stop":   true,
-	"interactive_start": true,
-	"interactive_write": true,
-	"interactive_keys":  true,
-	"interactive_stop":  true,
-	"agent_spawn":       true,
-	"agent_stop":        true,
-	"agent_resume":      true,
+var (
+	writeToolsMu sync.RWMutex
+	WriteTools   = map[string]bool{
+		"write_file":        true,
+		"edit_file":         true,
+		"run_shell":         true,
+		"process_start":     true,
+		"process_stop":      true,
+		"background_start":  true,
+		"background_stop":   true,
+		"interactive_start": true,
+		"interactive_write": true,
+		"interactive_keys":  true,
+		"interactive_stop":  true,
+		"agent_spawn":       true,
+		"agent_stop":        true,
+		"agent_resume":      true,
+	}
+)
+
+func RegisterWriteTool(name string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+	writeToolsMu.Lock()
+	defer writeToolsMu.Unlock()
+	WriteTools[name] = true
+}
+
+func IsWriteTool(name string) bool {
+	writeToolsMu.RLock()
+	defer writeToolsMu.RUnlock()
+	return WriteTools[name]
 }
 
 type Approver struct {

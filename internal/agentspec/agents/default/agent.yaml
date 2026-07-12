@@ -36,6 +36,11 @@ agent:
     - natalia/tools/interactive:Keys
     - natalia/tools/interactive:Stop
     - natalia/tools/interactive:List
+    - natalia/tools/workflow:List
+    - natalia/tools/workflow:Read
+    - natalia/tools/plan:EnterMode
+    - natalia/tools/plan:ExitMode
+    - natalia/tools/plan:Status
   allowed_tools: null
   exclude_tools: []
   modes:

@@ -12,6 +12,7 @@ import (
 
 	"github.com/Misaka477/Natalia-Cli/internal/config"
 	"github.com/Misaka477/Natalia-Cli/internal/hook"
+	"github.com/Misaka477/Natalia-Cli/internal/plan"
 	"github.com/Misaka477/Natalia-Cli/internal/session"
 	"github.com/Misaka477/Natalia-Cli/internal/soul"
 	"github.com/Misaka477/Natalia-Cli/internal/toolset"
@@ -88,6 +89,11 @@ func runWireWithOptions(cfg *config.Config, tools *toolset.Registry, in io.Reade
 			return map[string]any{"status": "ok"}, nil
 		},
 		SetPlanMode: func(ctx context.Context, params wire.SetPlanModeParams) (any, error) {
+			if params.Enabled {
+				plan.Enter("", "", "wire set_plan_mode")
+			} else {
+				plan.Exit()
+			}
 			if event, err := wire.NewEvent(wire.EventStatusUpdate, wire.StatusUpdate{PlanMode: &params.Enabled}); err == nil {
 				w.SoulSide.PublishEvent(event)
 			}

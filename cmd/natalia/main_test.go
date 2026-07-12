@@ -15,10 +15,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Misaka477/Natalia-Cli/internal/approval"
 	"github.com/Misaka477/Natalia-Cli/internal/autoflow"
 	"github.com/Misaka477/Natalia-Cli/internal/chat"
 	"github.com/Misaka477/Natalia-Cli/internal/config"
 	"github.com/Misaka477/Natalia-Cli/internal/hook"
+	"github.com/Misaka477/Natalia-Cli/internal/plan"
 	"github.com/Misaka477/Natalia-Cli/internal/planexec"
 	"github.com/Misaka477/Natalia-Cli/internal/session"
 	"github.com/Misaka477/Natalia-Cli/internal/soul"
@@ -222,6 +224,107 @@ func TestBuildEngineAttachesConfiguredHooks(t *testing.T) {
 	if input.Event != hook.EventNotification || input.Target != "build" || input.InputData["message"] != "done" {
 		t.Fatalf("unexpected hook payload: %+v", input)
 	}
+}
+
+func TestBuildEngineLoadsModeAwareMCPTools(t *testing.T) {
+	resetMCPClientsForTest(t)
+	cfg := &config.Config{
+		DefaultProfile:     "default",
+		Providers:          map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}},
+		PermissionProfiles: config.DefaultPermissionProfiles(),
+		Profiles: map[string]config.Profile{
+			"default": {Provider: "p", Model: "base", Mode: "code", Modes: map[string]config.ModeProfile{
+				"code": {MCPServers: []string{"fixture"}},
+			}},
+		},
+		MCPServers: map[string]config.MCPServerConfig{
+			"fixture": {Command: os.Args[0], Args: []string{"-test.run=TestNataliaMCPStubServer", "--", "natalia-mcp-stub"}, TimeoutSec: 2, AllowedTools: []string{"echo"}, ReadOnly: true},
+		},
+	}
+	tools := toolset.NewRegistry()
+	engine := buildEngine(cfg, tools, false)
+	tool, ok := tools.Get("mcp_fixture_echo")
+	if !ok {
+		t.Fatalf("expected MCP tool to be registered")
+	}
+	if engine.Mode == nil || !engine.Mode.ToolFilter("mcp_fixture_echo", nil) {
+		t.Fatalf("expected current mode to allow configured MCP server tools")
+	}
+	if approval.IsWriteTool("mcp_fixture_echo") {
+		t.Fatal("read_only MCP server tool should not require approval")
+	}
+	out, err := tool.Execute(map[string]any{"text": "from natalia"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "from natalia" {
+		t.Fatalf("unexpected MCP tool output: %q", out)
+	}
+	if _, ok := tools.Get("mcp_fixture_mutate"); ok {
+		t.Fatal("excluded or non-allowed MCP tool should not be registered")
+	}
+}
+
+func TestBuildEngineRegistersMutatingMCPToolsForApproval(t *testing.T) {
+	resetMCPClientsForTest(t)
+	cfg := &config.Config{
+		DefaultProfile:     "default",
+		Providers:          map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}},
+		PermissionProfiles: config.DefaultPermissionProfiles(),
+		Profiles: map[string]config.Profile{
+			"default": {Provider: "p", Model: "base", Modes: map[string]config.ModeProfile{"code": {MCPServers: []string{"fixture"}}}},
+		},
+		MCPServers: map[string]config.MCPServerConfig{
+			"fixture": {Command: os.Args[0], Args: []string{"-test.run=TestNataliaMCPStubServer", "--", "natalia-mcp-stub"}, TimeoutSec: 2, AllowedTools: []string{"mutate"}},
+		},
+	}
+	tools := toolset.NewRegistry()
+	_ = buildEngine(cfg, tools, false)
+	if _, ok := tools.Get("mcp_fixture_mutate"); !ok {
+		t.Fatal("expected mutating MCP tool to be registered")
+	}
+	if !approval.IsWriteTool("mcp_fixture_mutate") {
+		t.Fatal("non-read_only MCP server tool should require approval")
+	}
+}
+
+func TestLoadMCPServersKeepsGoodServerWhenAnotherFails(t *testing.T) {
+	resetMCPClientsForTest(t)
+	cfg := &config.Config{MCPServers: map[string]config.MCPServerConfig{
+		"bad":     {Command: filepath.Join(t.TempDir(), "missing-mcp")},
+		"fixture": {Command: os.Args[0], Args: []string{"-test.run=TestNataliaMCPStubServer", "--", "natalia-mcp-stub"}, TimeoutSec: 2, AllowedTools: []string{"echo"}, ReadOnly: true},
+	}}
+	tools := toolset.NewRegistry()
+	err := loadMCPServers(cfg, tools, &config.ModeProfile{MCPServers: []string{"bad", "fixture"}})
+	if err == nil || !strings.Contains(err.Error(), "bad:") {
+		t.Fatalf("expected bad server error while continuing, got %v", err)
+	}
+	if _, ok := tools.Get("mcp_fixture_echo"); !ok {
+		t.Fatal("expected good server tool to be registered despite another server failing")
+	}
+}
+
+func TestCloseMCPClientsClearsAndStopsTrackedClients(t *testing.T) {
+	resetMCPClientsForTest(t)
+	client, err := mcpClientForServer("fixture", config.MCPServerConfig{Command: os.Args[0], Args: []string{"-test.run=TestNataliaMCPStubServer", "--", "natalia-mcp-stub"}, TimeoutSec: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client == nil || len(mcpClients) != 1 {
+		t.Fatalf("expected tracked MCP client, got %+v", mcpClients)
+	}
+	closeMCPClients()
+	if len(mcpClients) != 0 {
+		t.Fatalf("expected MCP clients to be cleared, got %+v", mcpClients)
+	}
+}
+
+func resetMCPClientsForTest(t *testing.T) {
+	t.Helper()
+	closeMCPClients()
+	t.Cleanup(func() {
+		closeMCPClients()
+	})
 }
 
 func TestApplyAutoflowDecisionRecoversPreviousModePreservingState(t *testing.T) {
@@ -461,6 +564,8 @@ func TestRunWireInitializeWithoutConfig(t *testing.T) {
 }
 
 func TestRunWireSetPlanModeEmitsStatusUpdate(t *testing.T) {
+	plan.Exit()
+	t.Cleanup(func() { plan.Exit() })
 	in := strings.NewReader(`{"jsonrpc":"2.0","method":"set_plan_mode","id":"plan_1","params":{"enabled":true}}` + "\n")
 	out := &bytes.Buffer{}
 
@@ -471,6 +576,9 @@ func TestRunWireSetPlanModeEmitsStatusUpdate(t *testing.T) {
 	msgs := decodeWireRPCOutput(t, out.String())
 	if !hasWireRPCID(msgs, `"plan_1"`) || !hasWireEventType(t, msgs, wire.EventStatusUpdate) {
 		t.Fatalf("expected status update event and response, got %s", out.String())
+	}
+	if state := plan.Status(); !state.Enabled || state.Reason != "wire set_plan_mode" {
+		t.Fatalf("expected wire set_plan_mode to update plan state, got %+v", state)
 	}
 }
 
@@ -493,6 +601,8 @@ func TestRunWireSteerAndCancel(t *testing.T) {
 }
 
 func TestRunWireRecordsWireJSONL(t *testing.T) {
+	plan.Exit()
+	t.Cleanup(func() { plan.Exit() })
 	store := &session.SessionStore{BaseDir: t.TempDir()}
 	in := strings.NewReader(`{"jsonrpc":"2.0","method":"set_plan_mode","id":"plan_record","params":{"enabled":true}}` + "\n")
 	out := &bytes.Buffer{}
@@ -967,6 +1077,52 @@ func receiveWireMessageForTest(t *testing.T, ch <-chan wire.WireMessage) wire.Wi
 
 func hasWireRPCID(msgs []wire.RPCMessage, id string) bool {
 	return wireRPCIDIndex(msgs, id) >= 0
+}
+
+func TestNataliaMCPStubServer(t *testing.T) {
+	if len(os.Args) == 0 || os.Args[len(os.Args)-1] != "natalia-mcp-stub" {
+		return
+	}
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		var req struct {
+			JSONRPC string          `json:"jsonrpc"`
+			ID      uint64          `json:"id"`
+			Method  string          `json:"method"`
+			Params  json.RawMessage `json:"params"`
+		}
+		if err := json.Unmarshal(scanner.Bytes(), &req); err != nil {
+			continue
+		}
+		resp := map[string]any{"jsonrpc": "2.0", "id": req.ID}
+		switch req.Method {
+		case "initialize":
+			resp["result"] = map[string]any{"protocolVersion": "2024-11-05"}
+		case "tools/list":
+			resp["result"] = map[string]any{"tools": []map[string]any{
+				{"name": "echo", "description": "Echo text", "inputSchema": map[string]any{"type": "object", "required": []string{"text"}, "properties": map[string]any{"text": map[string]any{"type": "string"}}}},
+				{"name": "mutate", "description": "Mutate state", "inputSchema": map[string]any{"type": "object"}},
+			}}
+		case "tools/call":
+			var params struct {
+				Name      string         `json:"name"`
+				Arguments map[string]any `json:"arguments"`
+			}
+			_ = json.Unmarshal(req.Params, &params)
+			if params.Name == "echo" {
+				resp["result"] = map[string]any{"content": []map[string]any{{"type": "text", "text": params.Arguments["text"]}}}
+			} else if params.Name == "mutate" {
+				resp["result"] = map[string]any{"content": []map[string]any{{"type": "text", "text": "mutated"}}}
+			} else {
+				resp["error"] = map[string]any{"code": -32601, "message": "unknown tool"}
+			}
+		default:
+			resp["error"] = map[string]any{"code": -32601, "message": "unknown method"}
+		}
+		raw, _ := json.Marshal(resp)
+		fmt.Println(string(raw))
+	}
+	os.Exit(0)
 }
 
 func wireRPCIDIndex(msgs []wire.RPCMessage, id string) int {

@@ -56,15 +56,30 @@ func TestAskModeRoutesNormalAndExplicitRequestsToCallback(t *testing.T) {
 func TestWriteToolsCoversAllMutatingRuntimeTools(t *testing.T) {
 	mutating := []string{"write_file", "edit_file", "run_shell", "process_start", "process_stop", "background_start", "background_stop", "interactive_start", "interactive_write", "interactive_keys", "interactive_stop", "agent_spawn", "agent_stop", "agent_resume"}
 	for _, tool := range mutating {
-		if !WriteTools[tool] {
+		if !IsWriteTool(tool) {
 			t.Fatalf("expected %s to require approval", tool)
 		}
 	}
 	readOnly := []string{"read_file", "glob", "grep", "web_fetch", "agent_list", "interactive_read"}
 	for _, tool := range readOnly {
-		if WriteTools[tool] {
+		if IsWriteTool(tool) {
 			t.Fatalf("expected %s to remain read-only", tool)
 		}
+	}
+}
+
+func TestRegisterWriteToolAddsDynamicMutatingTool(t *testing.T) {
+	name := "mcp_test_write"
+	if IsWriteTool(name) {
+		t.Fatalf("test tool %s should not be registered before test", name)
+	}
+	RegisterWriteTool(name)
+	if !IsWriteTool(name) {
+		t.Fatalf("expected %s to require approval after dynamic registration", name)
+	}
+	RegisterWriteTool(" ")
+	if IsWriteTool(" ") {
+		t.Fatal("blank dynamic tool name should be ignored")
 	}
 }
 

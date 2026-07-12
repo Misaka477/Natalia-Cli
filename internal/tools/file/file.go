@@ -221,7 +221,11 @@ func parseLineLimit(offset, limit string, totalLines int) (int, int, bool, error
 	return start, end, true, nil
 }
 
-type Write struct{}
+type WriteGuard func(path string) error
+
+type Write struct {
+	Guard WriteGuard
+}
 
 const maxWriteFileBytes = 1024 * 1024
 
@@ -239,6 +243,11 @@ func (t *Write) Execute(args map[string]any) (string, error) {
 	content, _ := args["content"].(string)
 	if path == "" {
 		return "", fmt.Errorf("path required")
+	}
+	if t.Guard != nil {
+		if err := t.Guard(path); err != nil {
+			return "", err
+		}
 	}
 	if strings.ContainsRune(content, '\x00') {
 		return "", fmt.Errorf("refusing to write binary content containing NUL bytes")
@@ -270,7 +279,9 @@ func countLines(content string) int {
 	return strings.Count(content, "\n") + 1
 }
 
-type Edit struct{}
+type Edit struct {
+	Guard WriteGuard
+}
 
 func (t *Edit) Name() string        { return "edit_file" }
 func (t *Edit) Description() string { return "对文件做精确字符串替换编辑" }
@@ -298,6 +309,11 @@ func (t *Edit) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 	replaceAll, _ := args["replace_all"].(bool)
 	if path == "" {
 		return toolreturn.Return{IsError: true}, fmt.Errorf("path required")
+	}
+	if t.Guard != nil {
+		if err := t.Guard(path); err != nil {
+			return toolreturn.Return{IsError: true}, err
+		}
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {

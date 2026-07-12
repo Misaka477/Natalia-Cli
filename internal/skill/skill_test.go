@@ -122,6 +122,43 @@ func TestDiscoverReturnsEmptyRegistryAndSkipsBrokenSkillDirs(t *testing.T) {
 	}
 }
 
+func TestDiscoverImportsExternalInstructionFilesAsReadOnlySkills(t *testing.T) {
+	workDir := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	if err := os.WriteFile(filepath.Join(workDir, "AGENTS.md"), []byte("Use project conventions."), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(workDir, ".cursor", "rules"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, ".cursor", "rules", "Go Style.mdc"), []byte("Prefer small Go functions."), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(workDir, ".github"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, ".github", "copilot-instructions.md"), []byte("GitHub guidance."), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := Discover(workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agents := r.Get("imported-agents-md")
+	if agents == nil || agents.Scope != "imported" || !strings.Contains(agents.Content, "Use project conventions") || !strings.Contains(agents.Content, "Source:") {
+		t.Fatalf("expected AGENTS.md imported skill, got %+v", agents)
+	}
+	cursor := r.Get("imported-cursor-go-style")
+	if cursor == nil || cursor.Scope != "imported" || !strings.Contains(cursor.Content, "Prefer small Go functions") {
+		t.Fatalf("expected Cursor rule imported skill, got %+v", cursor)
+	}
+	copilot := r.Get("imported-github-copilot-instructions")
+	if copilot == nil || copilot.Scope != "imported" || !strings.Contains(copilot.Content, "GitHub guidance") {
+		t.Fatalf("expected GitHub instruction imported skill, got %+v", copilot)
+	}
+}
+
 func TestRegistryFormatForPromptGroupsScopesAndOmitsBuiltin(t *testing.T) {
 	if got := (&Registry{}).FormatForPrompt(); got != "" {
 		t.Fatalf("expected empty registry prompt to be empty, got %q", got)
@@ -129,9 +166,10 @@ func TestRegistryFormatForPromptGroupsScopesAndOmitsBuiltin(t *testing.T) {
 	r := &Registry{}
 	r.Add(Skill{Name: "project-a", Description: "Project A", Scope: "project"})
 	r.Add(Skill{Name: "user-a", Description: "User A", Scope: "user"})
+	r.Add(Skill{Name: "imported-a", Description: "Imported A", Scope: "imported"})
 	r.Add(Skill{Name: "builtin-a", Description: "Builtin A", Scope: "builtin"})
 	prompt := r.FormatForPrompt()
-	for _, want := range []string{"## 可用技能", "### 项目技能", "- project-a: Project A", "### 用户技能", "- user-a: User A", "skill_read <name>"} {
+	for _, want := range []string{"## 可用技能", "### 项目技能", "- project-a: Project A", "### 用户技能", "- user-a: User A", "### 导入说明", "- imported-a: Imported A", "skill_read <name>"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("expected prompt to contain %q, got %q", want, prompt)
 		}

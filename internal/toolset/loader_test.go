@@ -10,6 +10,7 @@ import (
 
 	"github.com/Misaka477/Natalia-Cli/internal/agentspec"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
+	"github.com/Misaka477/Natalia-Cli/internal/plan"
 )
 
 func TestRegisterDefaultToolsFromAgentSpec(t *testing.T) {
@@ -17,7 +18,7 @@ func TestRegisterDefaultToolsFromAgentSpec(t *testing.T) {
 	if err := RegisterDefaultTools(r); err != nil {
 		t.Fatalf("RegisterDefaultTools failed: %v", err)
 	}
-	for _, name := range []string{"read_file", "write_file", "run_shell", "web_fetch", "todo_set", "ask_user", "interactive_start", "background_start"} {
+	for _, name := range []string{"read_file", "write_file", "run_shell", "web_fetch", "todo_set", "ask_user", "interactive_start", "background_start", "workflow_list", "workflow_read", "plan_mode_enter", "plan_mode_status"} {
 		if _, ok := r.Get(name); !ok {
 			t.Fatalf("expected tool %q to be registered", name)
 		}
@@ -55,6 +56,8 @@ func TestRegisterDefaultToolsFromAgentSpec(t *testing.T) {
 }
 
 func TestDefaultToolsetExecutesModelStyleToolFlowEndToEnd(t *testing.T) {
+	plan.Exit()
+	t.Cleanup(func() { plan.Exit() })
 	r := NewRegistry()
 	if err := RegisterDefaultTools(r); err != nil {
 		t.Fatalf("RegisterDefaultTools failed: %v", err)
@@ -81,6 +84,30 @@ func TestDefaultToolsetExecutesModelStyleToolFlowEndToEnd(t *testing.T) {
 	}))
 	defer server.Close()
 	mustExecTool(t, r, "web_fetch", map[string]any{"url": server.URL}, "Toolset Web OK")
+}
+
+func TestDefaultToolsetWriteToolsRespectPlanModeGuard(t *testing.T) {
+	plan.Exit()
+	t.Cleanup(func() { plan.Exit() })
+	r := NewRegistry()
+	if err := RegisterDefaultTools(r); err != nil {
+		t.Fatalf("RegisterDefaultTools failed: %v", err)
+	}
+	dir := t.TempDir()
+	plan.Enter("", filepath.Join(dir, "plans", "roadmap.md"), "guard test")
+	writeTool, _ := r.Get("write_file")
+	blockedPath := filepath.Join(dir, "main.go")
+	if _, err := writeTool.Execute(map[string]any{"path": blockedPath, "content": "package main"}); err == nil || !strings.Contains(err.Error(), "plan mode blocks") {
+		t.Fatalf("expected plan mode write block, got %v", err)
+	}
+	planDir := filepath.Join(dir, "plans")
+	if err := os.MkdirAll(planDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	planPath := filepath.Join(planDir, "roadmap.md")
+	if result, err := writeTool.Execute(map[string]any{"path": planPath, "content": "# Plan"}); err != nil || !strings.Contains(result, "已写入") {
+		t.Fatalf("expected plan path write to succeed, result=%q err=%v", result, err)
+	}
 }
 
 func assertToolDefRequired(t *testing.T, defs []llm.ToolDef, name string, want []string) {
