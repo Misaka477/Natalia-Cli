@@ -21,6 +21,11 @@ agent:
     - natalia/tools/ask_user:AskUser
     - natalia/tools/browser:Visit
     - natalia/tools/browser:Screenshot
+    - natalia/tools/process:Start
+    - natalia/tools/process:List
+    - natalia/tools/process:Status
+    - natalia/tools/process:Output
+    - natalia/tools/process:Stop
   allowed_tools: null
   exclude_tools: []
   modes:

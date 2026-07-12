@@ -2,6 +2,8 @@ package shell
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -19,7 +21,7 @@ func TestRunSchemaGeneratedFromParams(t *testing.T) {
 	run := &Run{}
 	props := run.Parameters()
 	required := run.Required()
-	if props["command"].Type != "string" || props["timeout"].Description == "" {
+	if props["command"].Type != "string" || props["timeout"].Description == "" || props["cwd"].Description == "" || props["max_output"].Description == "" || props["shell"].Description == "" || props["env"].Description == "" {
 		t.Fatalf("unexpected shell schema: %+v", props)
 	}
 	if len(required) != 1 || required[0] != "command" {
@@ -58,6 +60,85 @@ func TestRunExecuteReturnIncludesShellDisplay(t *testing.T) {
 	}
 	if payload.Command != "printf hello" || !strings.Contains(payload.Output, "hello") {
 		t.Fatalf("unexpected shell display payload: %+v", payload)
+	}
+}
+
+func TestRunWithCWD(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "marker.txt"), []byte("ok"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := (&Run{}).Execute(map[string]any{"command": "pwd && ls marker.txt", "cwd": dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, dir) || !strings.Contains(result, "marker.txt") {
+		t.Fatalf("expected command to run in cwd, got %q", result)
+	}
+}
+
+func TestRunRejectsInvalidCWD(t *testing.T) {
+	_, err := (&Run{}).Execute(map[string]any{"command": "true", "cwd": filepath.Join(t.TempDir(), "missing")})
+	if err == nil || !strings.Contains(err.Error(), "cwd") {
+		t.Fatalf("expected cwd validation error, got %v", err)
+	}
+}
+
+func TestRunMaxOutput(t *testing.T) {
+	result, err := (&Run{}).Execute(map[string]any{"command": "printf 123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890", "max_output": "80"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "output truncated") || len(result) > 80 {
+		t.Fatalf("expected max_output truncation, got %q", result)
+	}
+}
+
+func TestRunBlocksDangerousCommand(t *testing.T) {
+	_, err := (&Run{}).Execute(map[string]any{"command": "sudo rm -rf /"})
+	if err == nil || !strings.Contains(err.Error(), "dangerous") || !strings.Contains(err.Error(), "confirmation") {
+		t.Fatalf("expected dangerous command rejection, got %v", err)
+	}
+}
+
+func TestRunShellParameter(t *testing.T) {
+	result, err := (&Run{}).Execute(map[string]any{"command": "printf ok", "shell": "sh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != "ok" {
+		t.Fatalf("expected sh command output, got %q", result)
+	}
+}
+
+func TestRunRejectsInvalidShell(t *testing.T) {
+	_, err := (&Run{}).Execute(map[string]any{"command": "true", "shell": "/bin/zsh"})
+	if err == nil || !strings.Contains(err.Error(), "shell") {
+		t.Fatalf("expected shell validation error, got %v", err)
+	}
+}
+
+func TestRunEnvAllowlist(t *testing.T) {
+	result, err := (&Run{}).Execute(map[string]any{"command": "printf $NATALIA_TEST_VALUE", "env": map[string]any{"NATALIA_TEST_VALUE": "ok"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != "ok" {
+		t.Fatalf("expected env output, got %q", result)
+	}
+}
+
+func TestRunRejectsSensitiveEnvName(t *testing.T) {
+	_, err := (&Run{}).Execute(map[string]any{"command": "true", "env": map[string]any{"API_KEY": "secret"}})
+	if err == nil || !strings.Contains(err.Error(), "sensitive") || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("expected sensitive env name rejection without value leak, got %v", err)
+	}
+}
+
+func TestRunRejectsInvalidEnvName(t *testing.T) {
+	_, err := (&Run{}).Execute(map[string]any{"command": "true", "env": map[string]any{"BAD-NAME": "x"}})
+	if err == nil || !strings.Contains(err.Error(), "invalid") {
+		t.Fatalf("expected invalid env name rejection, got %v", err)
 	}
 }
 

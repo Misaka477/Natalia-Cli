@@ -11,12 +11,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aquama/natalia-cli/internal/approval"
 	"github.com/aquama/natalia-cli/internal/chat"
 	"github.com/aquama/natalia-cli/internal/compaction"
 	"github.com/aquama/natalia-cli/internal/display"
 	"github.com/aquama/natalia-cli/internal/llm"
 	"github.com/aquama/natalia-cli/internal/mode"
 	filetool "github.com/aquama/natalia-cli/internal/tools/file"
+	shelltool "github.com/aquama/natalia-cli/internal/tools/shell"
 	"github.com/aquama/natalia-cli/internal/toolset"
 )
 
@@ -127,6 +129,21 @@ func (noOpShellTool) Description() string                         { return "shel
 func (noOpShellTool) Execute(args map[string]any) (string, error) { return "shell ok", nil }
 func (noOpShellTool) Parameters() map[string]llm.Property         { return nil }
 func (noOpShellTool) Required() []string                          { return nil }
+
+type shelltoolForTest struct {
+	executed  bool
+	confirmed bool
+}
+
+func (t *shelltoolForTest) Name() string        { return "run_shell" }
+func (t *shelltoolForTest) Description() string { return "shell test tool" }
+func (t *shelltoolForTest) Execute(args map[string]any) (string, error) {
+	t.executed = true
+	t.confirmed = shelltool.IsDangerConfirmed(args)
+	return "shell ok", nil
+}
+func (t *shelltoolForTest) Parameters() map[string]llm.Property { return nil }
+func (t *shelltoolForTest) Required() []string                  { return nil }
 
 func TestExecuteToolCallEmitsEvents(t *testing.T) {
 	tools := toolset.NewRegistry()
@@ -325,6 +342,44 @@ func TestExecuteToolCallRefreshesReadCacheAfterEdit(t *testing.T) {
 	last := engine.Context.Messages[len(engine.Context.Messages)-1].Content
 	if !strings.Contains(last, "1: new value") {
 		t.Fatalf("expected refreshed cache to contain edited file content, got %q", last)
+	}
+}
+
+func TestExecuteToolCallDangerousShellRequiresExplicitApproval(t *testing.T) {
+	tools := toolset.NewRegistry()
+	tools.Register(&shelltoolForTest{})
+	engine := NewEngine(nil, tools)
+	requested := false
+	engine.Approver = &approval.Approver{Mode: approval.ModeJustDoIt, RequestFunc: func(toolName, description string) bool {
+		requested = true
+		return false
+	}}
+
+	err := engine.executeToolCall(chat.ToolCall{ID: "tc_danger", Type: "function", Function: chat.ToolCallFunc{Name: "run_shell", Arguments: `{"command":"sudo rm -rf /"}`}})
+	if err != nil {
+		t.Fatalf("executeToolCall failed: %v", err)
+	}
+	if !requested {
+		t.Fatal("expected explicit approval request")
+	}
+	if len(engine.Context.Messages) != 1 || !strings.Contains(engine.Context.Messages[0].Content, "未获用户二次确认") {
+		t.Fatalf("expected dangerous shell rejection in context, got %+v", engine.Context.Messages)
+	}
+}
+
+func TestExecuteToolCallDangerousShellRunsAfterExplicitApproval(t *testing.T) {
+	tools := toolset.NewRegistry()
+	shellTool := &shelltoolForTest{}
+	tools.Register(shellTool)
+	engine := NewEngine(nil, tools)
+	engine.Approver = &approval.Approver{Mode: approval.ModeJustDoIt, RequestFunc: func(toolName, description string) bool { return true }}
+
+	err := engine.executeToolCall(chat.ToolCall{ID: "tc_danger", Type: "function", Function: chat.ToolCallFunc{Name: "run_shell", Arguments: `{"command":"sudo rm -rf /"}`}})
+	if err != nil {
+		t.Fatalf("executeToolCall failed: %v", err)
+	}
+	if !shellTool.executed || !shellTool.confirmed {
+		t.Fatalf("expected shell tool to execute with confirmation, executed=%v confirmed=%v", shellTool.executed, shellTool.confirmed)
 	}
 }
 

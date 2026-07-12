@@ -18,6 +18,7 @@ import (
 	"github.com/aquama/natalia-cli/internal/prefetch"
 	"github.com/aquama/natalia-cli/internal/toolcache"
 	filetool "github.com/aquama/natalia-cli/internal/tools/file"
+	shelltool "github.com/aquama/natalia-cli/internal/tools/shell"
 	"github.com/aquama/natalia-cli/internal/toolset"
 )
 
@@ -416,8 +417,31 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 		return nil
 	}
 
+	dangerApproved := false
+	if name == "run_shell" {
+		if command, _ := args["command"].(string); command != "" {
+			if reason := shelltool.DangerousCommandReason(command); reason != "" {
+				desc := fmt.Sprintf("危险命令需要二次确认 (%s): %s", reason, command)
+				if e.Approver == nil || !e.Approver.RequestExplicit(name, desc) {
+					result := fmt.Sprintf("危险命令未获用户二次确认，已拒绝执行: %s", reason)
+					e.Context.Messages = append(e.Context.Messages, chat.Message{
+						Role:       chat.RoleTool,
+						ToolCallID: tc.ID,
+						Content:    e.budgetToolResult(name, result),
+						Name:       name,
+					})
+					e.emitToolResult(tc.ID, name, result, nil, "")
+					e.log("[ENGINE] dangerous shell rejected: %s", reason)
+					return nil
+				}
+				shelltool.MarkDangerConfirmed(args)
+				dangerApproved = true
+			}
+		}
+	}
+
 	// Approval check for write tools
-	if e.Approver != nil && approval.WriteTools[name] {
+	if e.Approver != nil && approval.WriteTools[name] && !dangerApproved {
 		desc := fmt.Sprintf("%s %v", name, args)
 		if !e.Approver.Request(name, desc) {
 			result := fmt.Sprintf("操作被用户拒绝: %s %v", name, args)

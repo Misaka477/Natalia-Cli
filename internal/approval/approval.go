@@ -16,9 +16,11 @@ const (
 )
 
 var WriteTools = map[string]bool{
-	"write_file": true,
-	"edit_file":  true,
-	"run_shell":  true,
+	"write_file":    true,
+	"edit_file":     true,
+	"run_shell":     true,
+	"process_start": true,
+	"process_stop":  true,
 }
 
 type Approver struct {
@@ -42,6 +44,16 @@ func (a *Approver) Request(toolName, description string) bool {
 		}
 		return a.interactivePrompt(toolName, description)
 	}
+}
+
+func (a *Approver) RequestExplicit(toolName, description string) bool {
+	if a == nil || a.Mode == ModeReadOnly {
+		return false
+	}
+	if a.RequestFunc != nil {
+		return a.RequestFunc(toolName, description)
+	}
+	return a.interactivePrompt(toolName, description)
 }
 
 func (a *Approver) interactivePrompt(tool, desc string) bool {

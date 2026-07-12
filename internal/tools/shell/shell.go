@@ -5,7 +5,9 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -19,13 +21,18 @@ import (
 type Run struct{}
 
 const maxShellOutputBytes = 20000
+const dangerConfirmedArg = "__natalia_danger_confirmed"
 
 //go:embed run.md
 var runDescription string
 
 type RunParams struct {
-	Command string `json:"command" description:"要执行的 shell 命令"`
-	Timeout string `json:"timeout,omitempty" description:"可选，超时秒数，默认 60，最大 600"`
+	Command   string            `json:"command" description:"要执行的 shell 命令"`
+	Timeout   string            `json:"timeout,omitempty" description:"可选，超时秒数，默认 60，最大 600"`
+	CWD       string            `json:"cwd,omitempty" description:"可选，命令工作目录，必须是已存在目录"`
+	MaxOutput string            `json:"max_output,omitempty" description:"可选，最大输出字节数，默认 20000，最大 200000"`
+	Shell     string            `json:"shell,omitempty" description:"可选，shell 路径或名称；允许 /bin/bash、bash、/bin/sh、sh，默认 /bin/bash"`
+	Env       map[string]string `json:"env,omitempty" description:"可选，附加环境变量；变量名必须安全且不得包含 secret/token/password/key 等敏感名称"`
 }
 
 func (t *Run) Name() string        { return "run_shell" }
@@ -48,6 +55,17 @@ func (t *Run) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 	if err != nil {
 		return toolreturn.Return{IsError: true}, err
 	}
+	if reason := DangerousCommandReason(params.Command); reason != "" && !dangerConfirmed(args) {
+		return toolreturn.Return{IsError: true}, fmt.Errorf("dangerous command requires explicit user confirmation: %s", reason)
+	}
+	shellPath, err := resolveShell(params.Shell)
+	if err != nil {
+		return toolreturn.Return{IsError: true}, err
+	}
+	env, err := buildSafeEnv(params.Env)
+	if err != nil {
+		return toolreturn.Return{IsError: true}, err
+	}
 	timeout := 60
 	if params.Timeout != "" {
 		parsed, err := strconv.Atoi(strings.TrimSpace(params.Timeout))
@@ -59,10 +77,34 @@ func (t *Run) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 		}
 		timeout = parsed
 	}
+	maxOutput := maxShellOutputBytes
+	if params.MaxOutput != "" {
+		parsed, err := strconv.Atoi(strings.TrimSpace(params.MaxOutput))
+		if err != nil || parsed < 1 {
+			return toolreturn.Return{IsError: true}, fmt.Errorf("max_output must be a positive integer number of bytes")
+		}
+		if parsed > 200000 {
+			return toolreturn.Return{IsError: true}, fmt.Errorf("max_output must be <= 200000 bytes")
+		}
+		maxOutput = parsed
+	}
+	if params.CWD != "" {
+		info, err := os.Stat(params.CWD)
+		if err != nil {
+			return toolreturn.Return{IsError: true}, fmt.Errorf("cwd check failed: %w", err)
+		}
+		if !info.IsDir() {
+			return toolreturn.Return{IsError: true}, fmt.Errorf("cwd is not a directory: %s", params.CWD)
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "/bin/bash", "-c", params.Command)
+	cmd := exec.CommandContext(ctx, shellPath, "-c", params.Command)
+	if params.CWD != "" {
+		cmd.Dir = params.CWD
+	}
+	cmd.Env = env
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -78,10 +120,10 @@ func (t *Run) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 		result.WriteString(fmt.Sprintf("TIMEOUT: command exceeded %d seconds\n", timeout))
 	}
 	if stdout.Len() > 0 {
-		result.WriteString(limitOutput(stdout.String(), maxShellOutputBytes))
+		result.WriteString(limitOutput(stdout.String(), maxOutput))
 	}
 	if stderr.Len() > 0 {
-		result.WriteString("\nSTDERR:\n" + limitOutput(stderr.String(), maxShellOutputBytes))
+		result.WriteString("\nSTDERR:\n" + limitOutput(stderr.String(), maxOutput))
 	}
 	if err != nil {
 		result.WriteString(fmt.Sprintf("\nERROR: %v", err))
@@ -97,6 +139,77 @@ func (t *Run) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 		return toolreturn.Return{ModelText: modelText, IsError: err != nil}, nil
 	}
 	return toolreturn.Return{ModelText: modelText, Display: []display.Block{block}, IsError: err != nil}, nil
+}
+
+func DangerousCommandReason(command string) string {
+	normalized := strings.ToLower(strings.Join(strings.Fields(command), " "))
+	blocked := []string{
+		"rm -rf /",
+		"rm -rf /*",
+		"sudo rm -rf /",
+		"sudo rm -rf /*",
+		"mkfs",
+		"dd if=/dev/zero of=/dev/",
+		":(){ :|:& };:",
+	}
+	for _, pattern := range blocked {
+		if strings.Contains(normalized, pattern) {
+			return pattern
+		}
+	}
+	return ""
+}
+
+func MarkDangerConfirmed(args map[string]any) {
+	args[dangerConfirmedArg] = true
+}
+
+func dangerConfirmed(args map[string]any) bool {
+	return IsDangerConfirmed(args)
+}
+
+func IsDangerConfirmed(args map[string]any) bool {
+	confirmed, _ := args[dangerConfirmedArg].(bool)
+	return confirmed
+}
+
+func resolveShell(shell string) (string, error) {
+	shell = strings.TrimSpace(shell)
+	if shell == "" {
+		return "/bin/bash", nil
+	}
+	switch shell {
+	case "/bin/bash", "bash":
+		return "/bin/bash", nil
+	case "/bin/sh", "sh":
+		return "/bin/sh", nil
+	default:
+		return "", fmt.Errorf("shell must be one of /bin/bash, bash, /bin/sh, sh")
+	}
+}
+
+var envNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+func buildSafeEnv(extra map[string]string) ([]string, error) {
+	env := os.Environ()
+	for name, value := range extra {
+		if !envNameRe.MatchString(name) {
+			return nil, fmt.Errorf("env variable name %q is invalid", name)
+		}
+		if isSensitiveEnvName(name) {
+			return nil, fmt.Errorf("env variable name %q looks sensitive and is not allowed", name)
+		}
+		env = append(env, name+"="+value)
+	}
+	return env, nil
+}
+
+func isSensitiveEnvName(name string) bool {
+	upper := strings.ToUpper(name)
+	if strings.Contains(upper, "SECRET") || strings.Contains(upper, "TOKEN") || strings.Contains(upper, "PASSWORD") || strings.Contains(upper, "PRIVATE_KEY") || strings.Contains(upper, "ACCESS_KEY") || strings.Contains(upper, "API_KEY") {
+		return true
+	}
+	return upper == "KEY" || strings.HasSuffix(upper, "_KEY")
 }
 
 func limitOutput(s string, maxBytes int) string {

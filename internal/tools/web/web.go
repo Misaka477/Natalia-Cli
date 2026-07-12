@@ -1,12 +1,19 @@
 package web
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"html"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -15,9 +22,13 @@ import (
 )
 
 var (
-	SearchAPIKey  = os.Getenv("SEARCH_API_KEY")
-	SearchEngine  = os.Getenv("SEARCH_ENGINE")
-	SearchBaseURL = os.Getenv("SEARCH_BASE_URL")
+	SearchAPIKey        = os.Getenv("SEARCH_API_KEY")
+	SearchEngine        = os.Getenv("SEARCH_ENGINE")
+	SearchBaseURL       = os.Getenv("SEARCH_BASE_URL")
+	BingSearchBaseURL   = "https://www.bing.com/search"
+	DDGAPIBaseURL       = "https://api.duckduckgo.com/"
+	DDGHTMLBaseURL      = "https://html.duckduckgo.com/html/"
+	webSearchHTTPClient = &http.Client{Timeout: 15 * time.Second}
 )
 
 type SearchResult struct {
@@ -70,8 +81,10 @@ func (t *Search) Execute(args map[string]any) (string, error) {
 		results, err = searchCustom(query, limit, includeContent == "true")
 	} else if SearchAPIKey != "" && SearchEngine == "google" {
 		results, err = searchGoogle(query, limit)
-	} else {
+	} else if SearchEngine == "duckduckgo" {
 		results, err = searchDuckDuckGo(query, limit)
+	} else {
+		results, err = searchDefault(query, limit)
 	}
 
 	if err != nil {
@@ -97,6 +110,14 @@ func (t *Search) Execute(args map[string]any) (string, error) {
 		}
 	}
 	return b.String(), nil
+}
+
+func searchDefault(query string, limit int) ([]SearchResult, error) {
+	results, err := searchBingHTML(query, limit)
+	if err == nil && len(results) > 0 {
+		return results, nil
+	}
+	return searchDuckDuckGo(query, limit)
 }
 
 func searchCustom(query string, limit int, includeContent bool) ([]SearchResult, error) {
@@ -158,7 +179,7 @@ func searchGoogle(query string, limit int) ([]SearchResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := webSearchHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -186,9 +207,10 @@ func searchGoogle(query string, limit int) ([]SearchResult, error) {
 
 func searchDuckDuckGo(query string, limit int) ([]SearchResult, error) {
 	// Try instant answer API first (faster, no key needed)
-	apiURL := fmt.Sprintf("https://api.duckduckgo.com/?q=%s&format=json&no_html=1&skip_disambig=1",
-		url.QueryEscape(query))
-	resp, err := http.Get(apiURL)
+	apiURL := fmt.Sprintf("%s?q=%s&format=json&no_html=1&skip_disambig=1",
+		strings.TrimRight(DDGAPIBaseURL, "/"), url.QueryEscape(query))
+	req, _ := http.NewRequest("GET", apiURL, nil)
+	resp, err := webSearchHTTPClient.Do(req)
 	if err == nil {
 		defer resp.Body.Close()
 		var ddg struct {
@@ -228,13 +250,12 @@ func searchDuckDuckGo(query string, limit int) ([]SearchResult, error) {
 }
 
 func searchDuckDuckGoHTML(query string, limit int) ([]SearchResult, error) {
-	url := fmt.Sprintf("https://html.duckduckgo.com/html/?q=%s", url.QueryEscape(query))
-	req, _ := http.NewRequest("GET", url, nil)
+	searchURL := fmt.Sprintf("%s?q=%s", strings.TrimRight(DDGHTMLBaseURL, "/"), url.QueryEscape(query))
+	req, _ := http.NewRequest("GET", searchURL, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0")
 	req.Header.Set("Accept", "text/html")
 
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := webSearchHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -296,6 +317,100 @@ func searchDuckDuckGoHTML(query string, limit int) ([]SearchResult, error) {
 	return results, nil
 }
 
+func searchBingHTML(query string, limit int) ([]SearchResult, error) {
+	searchURL := fmt.Sprintf("%s?q=%s", strings.TrimRight(BingSearchBaseURL, "/"), url.QueryEscape(query))
+	req, _ := http.NewRequest("GET", searchURL, nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+	req.Header.Set("Accept", "text/html")
+
+	resp, err := webSearchHTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("bing search returned status %d", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	return parseBingHTML(string(body), limit), nil
+}
+
+func parseBingHTML(page string, limit int) []SearchResult {
+	results := make([]SearchResult, 0)
+	for i := 0; i < len(page) && len(results) < limit; {
+		idx := strings.Index(page[i:], `class="b_algo"`)
+		if idx < 0 {
+			idx = strings.Index(page[i:], `class='b_algo'`)
+		}
+		if idx < 0 {
+			break
+		}
+		i += idx
+		blockEnd := strings.Index(page[i:], "</li>")
+		if blockEnd < 0 {
+			break
+		}
+		block := page[i : i+blockEnd]
+		title, href := extractFirstAnchor(block)
+		if title == "" || href == "" {
+			i += blockEnd + len("</li>")
+			continue
+		}
+		snippet := extractClassText(block, "b_caption")
+		if snippet == "" {
+			snippet = extractClassText(block, "b_snippet")
+		}
+		results = append(results, SearchResult{Title: title, URL: href, Snippet: snippet, Source: "bing"})
+		i += blockEnd + len("</li>")
+	}
+	return results
+}
+
+func extractFirstAnchor(block string) (string, string) {
+	hrefIdx := strings.Index(block, `href="`)
+	quote := `"`
+	if hrefIdx < 0 {
+		hrefIdx = strings.Index(block, `href='`)
+		quote = `'`
+	}
+	if hrefIdx < 0 {
+		return "", ""
+	}
+	hrefStart := hrefIdx + len(`href=`) + 1
+	hrefEnd := strings.Index(block[hrefStart:], quote)
+	if hrefEnd < 0 {
+		return "", ""
+	}
+	href := block[hrefStart : hrefStart+hrefEnd]
+	textStart := strings.Index(block[hrefStart+hrefEnd:], ">")
+	if textStart < 0 {
+		return "", ""
+	}
+	textStart += hrefStart + hrefEnd + 1
+	textEnd := strings.Index(block[textStart:], "</a>")
+	if textEnd < 0 {
+		return "", ""
+	}
+	return strings.TrimSpace(html.UnescapeString(stripTags(block[textStart : textStart+textEnd]))), strings.TrimSpace(html.UnescapeString(href))
+}
+
+func extractClassText(block, className string) string {
+	idx := strings.Index(block, className)
+	if idx < 0 {
+		return ""
+	}
+	start := strings.Index(block[idx:], ">")
+	if start < 0 {
+		return ""
+	}
+	start += idx + 1
+	end := strings.Index(block[start:], "</")
+	if end < 0 {
+		return ""
+	}
+	return strings.TrimSpace(html.UnescapeString(stripTags(block[start : start+end])))
+}
+
 func stripTags(s string) string {
 	var b strings.Builder
 	inTag := false
@@ -322,7 +437,10 @@ func (t *Fetch) Description() string { return "获取指定 URL 的网页内容�
 func (t *Fetch) Required() []string  { return []string{"url"} }
 func (t *Fetch) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"url": {Type: "string", Description: "要获取的 URL"},
+		"url":       {Type: "string", Description: "要获取的 URL"},
+		"format":    {Type: "string", Description: "可选，text|markdown|html，默认 text"},
+		"timeout":   {Type: "string", Description: "可选，超时秒数，默认 60，范围 1-120"},
+		"max_bytes": {Type: "string", Description: "可选，最多读取响应字节数，默认 1048576，最大 5242880"},
 	}
 }
 func (t *Fetch) Execute(args map[string]any) (string, error) {
@@ -330,8 +448,20 @@ func (t *Fetch) Execute(args map[string]any) (string, error) {
 	if u == "" {
 		return "", fmt.Errorf("url 是必填参数")
 	}
+	format, err := parseFetchFormat(args)
+	if err != nil {
+		return "", err
+	}
+	timeout, err := parseStringIntArg(args, "timeout", 60, 1, 120)
+	if err != nil {
+		return "", err
+	}
+	maxBytes, err := parseStringIntArg(args, "max_bytes", 1024*1024, 1, 5*1024*1024)
+	if err != nil {
+		return "", err
+	}
 
-	client := &http.Client{Timeout: 60 * time.Second}
+	client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
 	req, _ := http.NewRequest("GET", u, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
@@ -346,21 +476,102 @@ func (t *Fetch) Execute(args map[string]any) (string, error) {
 		return "", fmt.Errorf("HTTP %d: 页面无法访问", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, truncated, err := readLimited(resp.Body, maxBytes)
 	if err != nil {
 		return "", fmt.Errorf("读取失败: %w", err)
 	}
 
 	contentType := resp.Header.Get("Content-Type")
+	if isBinaryResponse(contentType, body) {
+		return fmt.Sprintf("Binary response not included. URL: %s\nContent-Type: %s\nRead: %d bytes\nTruncated: %t", u, contentType, len(body), truncated), nil
+	}
+	if format == "html" {
+		return appendTruncationMarker(string(body), truncated, maxBytes), nil
+	}
 	if strings.Contains(contentType, "text/plain") || strings.Contains(contentType, "text/markdown") {
-		return string(body), nil
+		return appendTruncationMarker(string(body), truncated, maxBytes), nil
 	}
 
 	text := stripHTML(string(body))
 	if text == "" {
 		return "无法从页面提取到有效内容（页面可能需要 JavaScript 渲染）", nil
 	}
-	return text, nil
+	if format == "markdown" {
+		text = htmlTextToMarkdown(text)
+	}
+	return appendTruncationMarker(text, truncated, maxBytes), nil
+}
+
+func parseFetchFormat(args map[string]any) (string, error) {
+	format, _ := args["format"].(string)
+	if format == "" {
+		return "text", nil
+	}
+	switch format {
+	case "text", "markdown", "html":
+		return format, nil
+	default:
+		return "", fmt.Errorf("format must be one of text, markdown, html")
+	}
+}
+
+func parseStringIntArg(args map[string]any, name string, defaultValue, minValue, maxValue int) (int, error) {
+	raw, ok := args[name]
+	if !ok || raw == nil {
+		return defaultValue, nil
+	}
+	var value int
+	switch v := raw.(type) {
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil {
+			return 0, fmt.Errorf("%s must be an integer", name)
+		}
+		value = parsed
+	case float64:
+		if v != float64(int(v)) {
+			return 0, fmt.Errorf("%s must be an integer", name)
+		}
+		value = int(v)
+	case int:
+		value = v
+	default:
+		return 0, fmt.Errorf("%s must be an integer", name)
+	}
+	if value < minValue || value > maxValue {
+		return 0, fmt.Errorf("%s must be between %d and %d", name, minValue, maxValue)
+	}
+	return value, nil
+}
+
+func readLimited(r io.Reader, maxBytes int) ([]byte, bool, error) {
+	data, err := io.ReadAll(io.LimitReader(r, int64(maxBytes)+1))
+	if err != nil {
+		return nil, false, err
+	}
+	if len(data) > maxBytes {
+		return data[:maxBytes], true, nil
+	}
+	return data, false, nil
+}
+
+func isBinaryResponse(contentType string, body []byte) bool {
+	lower := strings.ToLower(contentType)
+	if strings.Contains(lower, "text/") || strings.Contains(lower, "html") || strings.Contains(lower, "json") || strings.Contains(lower, "xml") || strings.Contains(lower, "markdown") {
+		return false
+	}
+	return strings.ContainsRune(string(body), '\x00') || lower != ""
+}
+
+func appendTruncationMarker(text string, truncated bool, maxBytes int) string {
+	if !truncated {
+		return text
+	}
+	return text + fmt.Sprintf("\n[response truncated at %d bytes]", maxBytes)
+}
+
+func htmlTextToMarkdown(text string) string {
+	return strings.ReplaceAll(text, "\n", "\n\n")
 }
 
 func stripHTML(html string) string {
@@ -428,17 +639,24 @@ func (t *MediaFile) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("文件不存在: %w", err)
 	}
-	ext := ""
-	for i := len(path) - 1; i >= 0; i-- {
-		if path[i] == '.' {
-			ext = path[i:]
-			break
-		}
-		if path[i] == '/' || path[i] == '\\' {
-			break
+	if info.IsDir() {
+		return "", fmt.Errorf("path 是目录，不是文件: %s", path)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("读取文件失败: %w", err)
+	}
+	mimeType := http.DetectContentType(data)
+	ext := filepath.Ext(path)
+	var b strings.Builder
+	fmt.Fprintf(&b, "文件: %s\n大小: %d bytes\n扩展名: %s\nMIME: %s\n", path, info.Size(), ext, mimeType)
+	if strings.HasPrefix(mimeType, "image/") {
+		cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
+		if err == nil {
+			fmt.Fprintf(&b, "图片格式: %s\n宽度: %d\n高度: %d\n", format, cfg.Width, cfg.Height)
 		}
 	}
-	return fmt.Sprintf("文件: %s\n大小: %d bytes\n类型: %s\n", path, info.Size(), ext), nil
+	return b.String(), nil
 }
 
 func truncate(s string, n int) string {

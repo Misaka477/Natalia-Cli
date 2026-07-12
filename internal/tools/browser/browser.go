@@ -67,8 +67,11 @@ func (t *Visit) Description() string {
 func (t *Visit) Required() []string { return []string{"url"} }
 func (t *Visit) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"url":  {Type: "string", Description: "要访问的网页 URL"},
-		"wait": {Type: "string", Description: "可选，等待秒数，默认 3"},
+		"url":      {Type: "string", Description: "要访问的网页 URL"},
+		"wait":     {Type: "string", Description: "可选，等待秒数，默认 3"},
+		"timeout":  {Type: "string", Description: "可选，页面操作超时秒数，默认 30，最大 120"},
+		"viewport": {Type: "string", Description: "可选，视口大小，如 1280x720"},
+		"selector": {Type: "string", Description: "可选，等待并提取指定 CSS selector 的文本"},
 	}
 }
 func (t *Visit) Execute(args map[string]any) (string, error) {
@@ -76,13 +79,9 @@ func (t *Visit) Execute(args map[string]any) (string, error) {
 	if u == "" {
 		return "", fmt.Errorf("url 是必填参数")
 	}
-	waitSec := 3
-	if w, ok := args["wait"].(string); ok {
-		parsed, err := parseWait(w)
-		if err != nil {
-			return "", err
-		}
-		waitSec = parsed
+	options, err := parsePageOptions(args)
+	if err != nil {
+		return "", err
 	}
 
 	b, err := getBrowser()
@@ -95,15 +94,29 @@ func (t *Visit) Execute(args map[string]any) (string, error) {
 		return "", fmt.Errorf("创建页面失败: %w", err)
 	}
 	defer page.Close()
+	page = page.Timeout(time.Duration(options.TimeoutSec) * time.Second)
+	if options.ViewportWidth > 0 && options.ViewportHeight > 0 {
+		if err := page.SetViewport(&proto.EmulationSetDeviceMetricsOverride{Width: options.ViewportWidth, Height: options.ViewportHeight, DeviceScaleFactor: 1, Mobile: false}); err != nil {
+			return "", fmt.Errorf("设置 viewport 失败: %w", err)
+		}
+	}
 
 	if err := page.Navigate(u); err != nil {
 		return "", fmt.Errorf("导航失败: %w", err)
 	}
 	page.WaitLoad()
-	time.Sleep(time.Duration(waitSec) * time.Second)
+	if options.Selector != "" {
+		if _, err := page.Element(options.Selector); err != nil {
+			return "", fmt.Errorf("等待 selector 失败: %w", err)
+		}
+	}
+	time.Sleep(time.Duration(options.WaitSec) * time.Second)
 
 	title, _ := page.Eval(`() => document.title`)
 	bodyText, _ := page.Eval(`() => document.body.innerText`)
+	if options.Selector != "" {
+		bodyText, _ = page.Eval(fmt.Sprintf(`() => document.querySelector(%q)?.innerText || ""`, options.Selector))
+	}
 
 	titleStr := ""
 	if title != nil {
@@ -132,6 +145,71 @@ func parseWait(raw string) (int, error) {
 	return parsed, nil
 }
 
+type pageOptions struct {
+	WaitSec        int
+	TimeoutSec     int
+	ViewportWidth  int
+	ViewportHeight int
+	Selector       string
+}
+
+func parsePageOptions(args map[string]any) (pageOptions, error) {
+	options := pageOptions{WaitSec: 3, TimeoutSec: 30}
+	if w, ok := args["wait"].(string); ok {
+		parsed, err := parseWait(w)
+		if err != nil {
+			return pageOptions{}, err
+		}
+		options.WaitSec = parsed
+	}
+	if raw, ok := args["timeout"].(string); ok {
+		parsed, err := parseBoundedInt(raw, "timeout", 1, 120)
+		if err != nil {
+			return pageOptions{}, err
+		}
+		options.TimeoutSec = parsed
+	}
+	if raw, ok := args["viewport"].(string); ok && strings.TrimSpace(raw) != "" {
+		w, h, err := parseViewport(raw)
+		if err != nil {
+			return pageOptions{}, err
+		}
+		options.ViewportWidth = w
+		options.ViewportHeight = h
+	}
+	if selector, ok := args["selector"].(string); ok {
+		options.Selector = strings.TrimSpace(selector)
+	}
+	return options, nil
+}
+
+func parseBoundedInt(raw, name string, minValue, maxValue int) (int, error) {
+	parsed, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return 0, fmt.Errorf("%s must be an integer", name)
+	}
+	if parsed < minValue || parsed > maxValue {
+		return 0, fmt.Errorf("%s must be between %d and %d", name, minValue, maxValue)
+	}
+	return parsed, nil
+}
+
+func parseViewport(raw string) (int, int, error) {
+	parts := strings.Split(strings.ToLower(strings.TrimSpace(raw)), "x")
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("viewport must be WIDTHxHEIGHT")
+	}
+	width, err := parseBoundedInt(parts[0], "viewport width", 100, 10000)
+	if err != nil {
+		return 0, 0, err
+	}
+	height, err := parseBoundedInt(parts[1], "viewport height", 100, 10000)
+	if err != nil {
+		return 0, 0, err
+	}
+	return width, height, nil
+}
+
 type Screenshot struct{}
 
 func (t *Screenshot) Name() string        { return "browser_screenshot" }
@@ -139,9 +217,12 @@ func (t *Screenshot) Description() string { return "用真实浏览器打开网�
 func (t *Screenshot) Required() []string  { return []string{"url"} }
 func (t *Screenshot) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"url":  {Type: "string", Description: "要截图的网页 URL"},
-		"path": {Type: "string", Description: "可选，保存路径，默认 ./screenshot.png"},
-		"wait": {Type: "string", Description: "可选，等待秒数，默认 3"},
+		"url":      {Type: "string", Description: "要截图的网页 URL"},
+		"path":     {Type: "string", Description: "可选，保存路径，默认 ./screenshot.png"},
+		"wait":     {Type: "string", Description: "可选，等待秒数，默认 3"},
+		"timeout":  {Type: "string", Description: "可选，页面操作超时秒数，默认 30，最大 120"},
+		"viewport": {Type: "string", Description: "可选，视口大小，如 1280x720"},
+		"selector": {Type: "string", Description: "可选，等待指定 CSS selector 后截图"},
 	}
 }
 func (t *Screenshot) Execute(args map[string]any) (string, error) {
@@ -153,13 +234,9 @@ func (t *Screenshot) Execute(args map[string]any) (string, error) {
 	if savePath == "" {
 		savePath = "./screenshot.png"
 	}
-	waitSec := 3
-	if w, ok := args["wait"].(string); ok {
-		parsed, err := parseWait(w)
-		if err != nil {
-			return "", err
-		}
-		waitSec = parsed
+	options, err := parsePageOptions(args)
+	if err != nil {
+		return "", err
 	}
 
 	b, err := getBrowser()
@@ -172,12 +249,23 @@ func (t *Screenshot) Execute(args map[string]any) (string, error) {
 		return "", fmt.Errorf("创建页面失败: %w", err)
 	}
 	defer page.Close()
+	page = page.Timeout(time.Duration(options.TimeoutSec) * time.Second)
+	if options.ViewportWidth > 0 && options.ViewportHeight > 0 {
+		if err := page.SetViewport(&proto.EmulationSetDeviceMetricsOverride{Width: options.ViewportWidth, Height: options.ViewportHeight, DeviceScaleFactor: 1, Mobile: false}); err != nil {
+			return "", fmt.Errorf("设置 viewport 失败: %w", err)
+		}
+	}
 
 	if err := page.Navigate(u); err != nil {
 		return "", fmt.Errorf("导航失败: %w", err)
 	}
 	page.WaitLoad()
-	time.Sleep(time.Duration(waitSec) * time.Second)
+	if options.Selector != "" {
+		if _, err := page.Element(options.Selector); err != nil {
+			return "", fmt.Errorf("等待 selector 失败: %w", err)
+		}
+	}
+	time.Sleep(time.Duration(options.WaitSec) * time.Second)
 
 	absPath, _ := filepath.Abs(savePath)
 	data, err := page.Screenshot(true, nil)

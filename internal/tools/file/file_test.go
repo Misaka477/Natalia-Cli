@@ -429,6 +429,20 @@ func TestGrepWithInclude(t *testing.T) {
 	}
 }
 
+func TestGrepWithGlobAlias(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "a.go"), []byte("match go"), 0644)
+	os.WriteFile(filepath.Join(dir, "b.txt"), []byte("match text"), 0644)
+
+	result, err := (&Grep{}).Execute(map[string]any{"pattern": "match", "path": dir, "glob": "*.go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "a.go") || strings.Contains(result, "b.txt") {
+		t.Fatalf("expected glob alias to filter .go files, got %q", result)
+	}
+}
+
 func TestGrepTruncatesAtResultLimit(t *testing.T) {
 	dir := t.TempDir()
 	var b strings.Builder
@@ -462,6 +476,107 @@ func TestGrepHeadLimit(t *testing.T) {
 	}
 	if strings.Count(result, "many.txt") != 2 || !strings.Contains(result, "[grep results truncated at 2 matches]") || strings.Contains(result, "match 3") {
 		t.Fatalf("unexpected head_limit result: %q", result)
+	}
+}
+
+func TestGrepIgnoreCase(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "case.txt"), []byte("Alpha\nbeta\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := (&Grep{}).Execute(map[string]any{"pattern": "alpha", "path": dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "未找到") {
+		t.Fatalf("expected case-sensitive search to miss, got %q", result)
+	}
+
+	result, err = (&Grep{}).Execute(map[string]any{"pattern": "alpha", "path": dir, "ignore_case": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "Alpha") {
+		t.Fatalf("expected ignore_case search to match, got %q", result)
+	}
+}
+
+func TestGrepContext(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ctx.txt")
+	if err := os.WriteFile(path, []byte("one\ntwo\nmatch\nfour\nfive\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := (&Grep{}).Execute(map[string]any{"pattern": "match", "path": dir, "before_context": float64(1), "after_context": float64(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"ctx.txt-2- two", "ctx.txt:3: match", "ctx.txt-4- four"} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("expected context output to contain %q, got %q", want, result)
+		}
+	}
+	if strings.Contains(result, "1- one") || strings.Contains(result, "5- five") {
+		t.Fatalf("unexpected context output: %q", result)
+	}
+}
+
+func TestGrepContextShorthand(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "ctx.txt"), []byte("one\nmatch\nthree\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := (&Grep{}).Execute(map[string]any{"pattern": "match", "path": dir, "context": float64(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "ctx.txt-1- one") || !strings.Contains(result, "ctx.txt-3- three") {
+		t.Fatalf("expected context shorthand output, got %q", result)
+	}
+}
+
+func TestGrepOutputModeFiles(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("match\nmatch\n"), 0644)
+	os.WriteFile(filepath.Join(dir, "b.txt"), []byte("match\n"), 0644)
+
+	result, err := (&Grep{}).Execute(map[string]any{"pattern": "match", "path": dir, "output_mode": "files"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(result, ".txt") != 2 || strings.Contains(result, ":1:") {
+		t.Fatalf("expected files output mode, got %q", result)
+	}
+}
+
+func TestGrepOutputModeCount(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("match\nmatch\n"), 0644)
+	os.WriteFile(filepath.Join(dir, "b.txt"), []byte("match\n"), 0644)
+
+	result, err := (&Grep{}).Execute(map[string]any{"pattern": "match", "path": dir, "output_mode": "count"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != "3" {
+		t.Fatalf("expected count output mode to return 3, got %q", result)
+	}
+}
+
+func TestGrepRejectsInvalidOutputMode(t *testing.T) {
+	_, err := (&Grep{}).Execute(map[string]any{"pattern": "x", "output_mode": "bad"})
+	if err == nil || !strings.Contains(err.Error(), "output_mode") {
+		t.Fatalf("expected output_mode validation error, got %v", err)
+	}
+}
+
+func TestGrepRejectsInvalidContext(t *testing.T) {
+	_, err := (&Grep{}).Execute(map[string]any{"pattern": "x", "context": float64(101)})
+	if err == nil || !strings.Contains(err.Error(), "context") {
+		t.Fatalf("expected context validation error, got %v", err)
 	}
 }
 
@@ -506,5 +621,29 @@ func TestGlobRecursive(t *testing.T) {
 	}
 	if !strings.Contains(result, "deep.go") {
 		t.Errorf("expected deep.go in results, got %s", result)
+	}
+}
+
+func TestGlobLimitOffsetAndSort(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"c.go", "a.go", "b.go"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result, err := (&Glob{}).Execute(map[string]any{"pattern": "*.go", "path": dir, "limit": float64(1), "offset": float64(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "b.go") || strings.Contains(result, "a.go") || strings.Contains(result, "c.go") || !strings.Contains(result, "[glob results showing 2-2 of 3]") {
+		t.Fatalf("unexpected paginated glob result: %q", result)
+	}
+}
+
+func TestGlobRejectsInvalidLimit(t *testing.T) {
+	_, err := (&Glob{}).Execute(map[string]any{"pattern": "*.go", "limit": float64(-1)})
+	if err == nil || !strings.Contains(err.Error(), "limit") {
+		t.Fatalf("expected limit validation error, got %v", err)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/aquama/natalia-cli/internal/display"
@@ -392,10 +393,16 @@ func (t *Grep) Description() string {
 func (t *Grep) Required() []string { return []string{"pattern"} }
 func (t *Grep) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"pattern":    {Type: "string", Description: "搜索模式（正则）"},
-		"path":       {Type: "string", Description: "可选，搜索目录，默认当前目录"},
-		"include":    {Type: "string", Description: "可选，文件 glob 过滤如 '*.go'"},
-		"head_limit": {Type: "integer", Description: "可选，最多返回多少条匹配，默认 200，范围 1-10000"},
+		"pattern":        {Type: "string", Description: "搜索模式（正则）"},
+		"path":           {Type: "string", Description: "可选，搜索目录，默认当前目录"},
+		"include":        {Type: "string", Description: "可选，文件 glob 过滤如 '*.go'"},
+		"glob":           {Type: "string", Description: "可选，ripgrep 风格文件 glob 过滤；当前作为 include 的别名"},
+		"head_limit":     {Type: "integer", Description: "可选，最多返回多少条匹配，默认 200，范围 1-10000"},
+		"ignore_case":    {Type: "boolean", Description: "可选，是否忽略大小写，默认 false"},
+		"before_context": {Type: "integer", Description: "可选，每条匹配前显示多少行上下文，默认 0，范围 0-100"},
+		"after_context":  {Type: "integer", Description: "可选，每条匹配后显示多少行上下文，默认 0，范围 0-100"},
+		"context":        {Type: "integer", Description: "可选，同时设置 before_context 和 after_context，范围 0-100"},
+		"output_mode":    {Type: "string", Description: "可选，content|files|count；默认 content"},
 	}
 }
 func (t *Grep) Execute(args map[string]any) (string, error) {
@@ -403,7 +410,12 @@ func (t *Grep) Execute(args map[string]any) (string, error) {
 	if pattern == "" {
 		return "", fmt.Errorf("pattern 是必填参数")
 	}
-	re, err := regexp.Compile(pattern)
+	ignoreCase, _ := args["ignore_case"].(bool)
+	compilePattern := pattern
+	if ignoreCase {
+		compilePattern = "(?i)" + pattern
+	}
+	re, err := regexp.Compile(compilePattern)
 	if err != nil {
 		return "", fmt.Errorf("正则编译失败: %w", err)
 	}
@@ -413,12 +425,25 @@ func (t *Grep) Execute(args map[string]any) (string, error) {
 		searchPath = "."
 	}
 	include, _ := args["include"].(string)
+	if include == "" {
+		include, _ = args["glob"].(string)
+	}
 	headLimit, err := parsePositiveIntArg(args, "head_limit", 200, 10000)
+	if err != nil {
+		return "", err
+	}
+	beforeContext, afterContext, err := parseGrepContextArgs(args)
+	if err != nil {
+		return "", err
+	}
+	outputMode, err := parseGrepOutputMode(args)
 	if err != nil {
 		return "", err
 	}
 
 	var results []string
+	matchedFiles := make(map[string]bool)
+	matchCount := 0
 	truncated := false
 	walkErr := filepath.Walk(searchPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -439,36 +464,59 @@ func (t *Grep) Execute(args map[string]any) (string, error) {
 				return nil
 			}
 		}
-		file, err := os.Open(path)
+		lines, err := scanTextFileLines(path)
 		if err != nil {
 			return nil
 		}
-		scanner := bufio.NewScanner(file)
-		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-		lineNo := 0
-		for scanner.Scan() {
-			lineNo++
-			line := scanner.Text()
-			if re.MatchString(line) {
-				results = append(results, fmt.Sprintf("%s:%d: %s", path, lineNo, strings.TrimSpace(line)))
-				if len(results) >= headLimit {
-					truncated = true
-					break
-				}
+		matches := make([]bool, len(lines))
+		matchLines := make([]int, 0)
+		for i, line := range lines {
+			if !re.MatchString(line) {
+				continue
+			}
+			matches[i] = true
+			matchedFiles[path] = true
+			matchCount++
+			if outputMode == "content" && len(matchLines) >= headLimit {
+				truncated = true
+				break
+			}
+			if outputMode == "content" {
+				matchLines = append(matchLines, i+1)
 			}
 		}
-		if err := scanner.Err(); err != nil {
-			results = append(results, fmt.Sprintf("%s: read error: %v", path, err))
+		emit := make(map[int]bool)
+		for _, lineNo := range matchLines {
+			start := max(1, lineNo-beforeContext)
+			end := min(len(lines), lineNo+afterContext)
+			for n := start; n <= end; n++ {
+				emit[n] = true
+			}
 		}
-		_ = file.Close()
+		for n := 1; n <= len(lines); n++ {
+			if emit[n] {
+				results = append(results, formatGrepLine(path, n, lines[n-1], matches[n-1]))
+			}
+		}
 		return nil
 	})
 	if walkErr != nil {
 		return "", walkErr
 	}
 
-	if len(results) == 0 {
+	if matchCount == 0 {
 		return "未找到匹配", nil
+	}
+	if outputMode == "count" {
+		return fmt.Sprintf("%d", matchCount), nil
+	}
+	if outputMode == "files" {
+		files := make([]string, 0, len(matchedFiles))
+		for path := range matchedFiles {
+			files = append(files, path)
+		}
+		sort.Strings(files)
+		return strings.Join(files, "\n"), nil
 	}
 	if truncated {
 		results = append(results, fmt.Sprintf("[grep results truncated at %d matches]", headLimit))
@@ -476,7 +524,69 @@ func (t *Grep) Execute(args map[string]any) (string, error) {
 	return strings.Join(results, "\n"), nil
 }
 
+func parseGrepOutputMode(args map[string]any) (string, error) {
+	mode, _ := args["output_mode"].(string)
+	if mode == "" {
+		return "content", nil
+	}
+	switch mode {
+	case "content", "files", "count":
+		return mode, nil
+	default:
+		return "", fmt.Errorf("output_mode must be one of content, files, count")
+	}
+}
+
+func scanTextFileLines(path string) ([]string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), maxReadScannerTokenBytes)
+	lines := make([]string, 0)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return lines, nil
+}
+
+func formatGrepLine(path string, lineNo int, line string, match bool) string {
+	if match {
+		return fmt.Sprintf("%s:%d: %s", path, lineNo, strings.TrimSpace(line))
+	}
+	return fmt.Sprintf("%s-%d- %s", path, lineNo, strings.TrimSpace(line))
+}
+
+func parseGrepContextArgs(args map[string]any) (int, int, error) {
+	before, err := parseIntArg(args, "before_context", 0, 0, 100)
+	if err != nil {
+		return 0, 0, err
+	}
+	after, err := parseIntArg(args, "after_context", 0, 0, 100)
+	if err != nil {
+		return 0, 0, err
+	}
+	if _, ok := args["context"]; ok {
+		context, err := parseIntArg(args, "context", 0, 0, 100)
+		if err != nil {
+			return 0, 0, err
+		}
+		before = context
+		after = context
+	}
+	return before, after, nil
+}
+
 func parsePositiveIntArg(args map[string]any, name string, defaultValue, maxValue int) (int, error) {
+	return parseIntArg(args, name, defaultValue, 1, maxValue)
+}
+
+func parseIntArg(args map[string]any, name string, defaultValue, minValue, maxValue int) (int, error) {
 	raw, ok := args[name]
 	if !ok || raw == nil {
 		return defaultValue, nil
@@ -499,8 +609,8 @@ func parsePositiveIntArg(args map[string]any, name string, defaultValue, maxValu
 	default:
 		return 0, fmt.Errorf("%s must be an integer", name)
 	}
-	if value < 1 || value > maxValue {
-		return 0, fmt.Errorf("%s must be between 1 and %d", name, maxValue)
+	if value < minValue || value > maxValue {
+		return 0, fmt.Errorf("%s must be between %d and %d", name, minValue, maxValue)
 	}
 	return value, nil
 }
@@ -516,6 +626,8 @@ func (t *Glob) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"pattern": {Type: "string", Description: "glob 模式如 '**/*.go' 或 'src/**/*.ts'"},
 		"path":    {Type: "string", Description: "可选，搜索根目录，默认当前"},
+		"limit":   {Type: "integer", Description: "可选，最多返回多少条结果；默认返回全部，范围 1-10000"},
+		"offset":  {Type: "integer", Description: "可选，从第几条结果开始返回，0-based，默认 0"},
 	}
 }
 func (t *Glob) Execute(args map[string]any) (string, error) {
@@ -527,13 +639,21 @@ func (t *Glob) Execute(args map[string]any) (string, error) {
 	if searchPath == "" {
 		searchPath = "."
 	}
+	limit, err := parseIntArg(args, "limit", 0, 0, 10000)
+	if err != nil {
+		return "", err
+	}
+	offset, err := parseIntArg(args, "offset", 0, 0, 1000000)
+	if err != nil {
+		return "", err
+	}
 
 	parts := strings.SplitN(pattern, "**", 2)
 	var results []string
 
 	if len(parts) == 2 {
 		suffix := strings.TrimPrefix(parts[1], "/")
-		filepath.Walk(searchPath, func(path string, info os.FileInfo, err error) error {
+		if err := filepath.Walk(searchPath, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return nil
 			}
@@ -548,18 +668,41 @@ func (t *Glob) Execute(args map[string]any) (string, error) {
 			if matched && !info.IsDir() {
 				results = append(results, path)
 			}
-			if len(results) > 200 {
-				return fmt.Errorf("结果超过 200 条，已截断")
-			}
 			return nil
-		})
+		}); err != nil {
+			return "", err
+		}
 	} else {
 		matches, _ := filepath.Glob(filepath.Join(searchPath, pattern))
 		results = matches
 	}
+	sort.Strings(results)
 
 	if len(results) == 0 {
 		return "未找到匹配文件", nil
 	}
+	results, marker := paginateResults(results, offset, limit)
+	if len(results) == 0 {
+		return "未找到匹配文件", nil
+	}
+	if marker != "" {
+		results = append(results, marker)
+	}
 	return strings.Join(results, "\n"), nil
+}
+
+func paginateResults(results []string, offset, limit int) ([]string, string) {
+	total := len(results)
+	if offset >= total {
+		return nil, ""
+	}
+	end := total
+	if limit > 0 && offset+limit < end {
+		end = offset + limit
+	}
+	page := results[offset:end]
+	if offset == 0 && end == total {
+		return page, ""
+	}
+	return page, fmt.Sprintf("[glob results showing %d-%d of %d]", offset+1, end, total)
 }

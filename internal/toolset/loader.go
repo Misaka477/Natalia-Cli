@@ -7,6 +7,7 @@ import (
 	"github.com/aquama/natalia-cli/internal/tools/ask_user"
 	"github.com/aquama/natalia-cli/internal/tools/browser"
 	"github.com/aquama/natalia-cli/internal/tools/file"
+	"github.com/aquama/natalia-cli/internal/tools/process"
 	"github.com/aquama/natalia-cli/internal/tools/shell"
 	"github.com/aquama/natalia-cli/internal/tools/todo"
 	"github.com/aquama/natalia-cli/internal/tools/web"
@@ -29,6 +30,11 @@ var builtInToolFactories = map[string]func() Tool{
 	"natalia/tools/ask_user:AskUser":   func() Tool { return &ask_user.AskUser{} },
 	"natalia/tools/browser:Visit":      func() Tool { return &browser.Visit{} },
 	"natalia/tools/browser:Screenshot": func() Tool { return &browser.Screenshot{} },
+	"natalia/tools/process:Start":      func() Tool { return &process.Start{} },
+	"natalia/tools/process:List":       func() Tool { return &process.List{} },
+	"natalia/tools/process:Status":     func() Tool { return &process.Status{} },
+	"natalia/tools/process:Output":     func() Tool { return &process.Output{} },
+	"natalia/tools/process:Stop":       func() Tool { return &process.Stop{} },
 }
 
 func LoadFromAgentSpec(spec *agentspec.ResolvedAgentSpec) (*Registry, error) {
