@@ -7,6 +7,8 @@ import (
 	"io"
 	"sync"
 	"time"
+
+	"github.com/Misaka477/Natalia-Cli/internal/secret"
 )
 
 type RecordedMessage struct {
@@ -32,6 +34,7 @@ func (r *Recorder) Record(message WireMessage) error {
 	if err != nil {
 		return fmt.Errorf("marshal wire record: %w", err)
 	}
+	data = secret.RedactJSONBytes(data)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, err := r.w.Write(data); err != nil {

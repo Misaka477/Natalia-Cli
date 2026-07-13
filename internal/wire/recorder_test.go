@@ -76,6 +76,26 @@ func TestRecorderAttachRecordsPublishedWireMessages(t *testing.T) {
 	}
 }
 
+func TestRecorderRedactsSecretsBeforePersisting(t *testing.T) {
+	var buf bytes.Buffer
+	recorder := NewRecorder(&buf)
+	event, err := NewEvent(EventToolResult, ToolResult{Name: "run_shell", Content: "token=tool-secret safe=ok"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := recorder.Record(WireMessage{Kind: MessageEvent, Event: &event}); err != nil {
+		t.Fatal(err)
+	}
+	text := buf.String()
+	if strings.Contains(text, "tool-secret") || !strings.Contains(text, "[redacted]") || !strings.Contains(text, "safe=ok") {
+		t.Fatalf("expected redacted wire record, got %s", text)
+	}
+	messages, err := Replay(strings.NewReader(text))
+	if err != nil || len(messages) != 1 {
+		t.Fatalf("expected redacted replayable message, messages=%+v err=%v", messages, err)
+	}
+}
+
 func TestReplayRejectsInvalidJSONL(t *testing.T) {
 	_, err := Replay(strings.NewReader("not-json\n"))
 	if err == nil || !strings.Contains(err.Error(), "line 1") {

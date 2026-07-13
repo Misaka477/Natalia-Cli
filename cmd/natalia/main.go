@@ -27,10 +27,12 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	coremcp "github.com/Misaka477/Natalia-Cli/internal/mcp"
 	"github.com/Misaka477/Natalia-Cli/internal/mode"
+	"github.com/Misaka477/Natalia-Cli/internal/networkpolicy"
 	"github.com/Misaka477/Natalia-Cli/internal/notifications"
 	"github.com/Misaka477/Natalia-Cli/internal/plan"
 	"github.com/Misaka477/Natalia-Cli/internal/planexec"
 	"github.com/Misaka477/Natalia-Cli/internal/sandbox"
+	"github.com/Misaka477/Natalia-Cli/internal/secret"
 	"github.com/Misaka477/Natalia-Cli/internal/session"
 	"github.com/Misaka477/Natalia-Cli/internal/skill"
 	"github.com/Misaka477/Natalia-Cli/internal/snapshot"
@@ -177,8 +179,18 @@ func configureWebBrowserTools(cfg *config.Config) {
 	if cfg == nil {
 		return
 	}
+	secret.SetEnvAllowlist(cfg.Security.EnvAllowlist)
+	policy, err := networkPolicyFromConfig(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "网络策略配置无效，使用默认策略: %v\n", err)
+		policy = networkpolicy.Default()
+	}
+	web.ConfigureNetworkPolicy(policy)
 	if len(cfg.WebSearch.ProviderPriority) > 0 {
 		web.SearchProviderPriority = strings.Join(cfg.WebSearch.ProviderPriority, ",")
+	}
+	if cfg.WebSearch.BaseURL != "" {
+		web.SearchBaseURL = cfg.WebSearch.BaseURL
 	}
 	browser.Configure(browser.Options{
 		Backend:           cfg.Browser.Backend,
@@ -190,6 +202,20 @@ func configureWebBrowserTools(cfg *config.Config) {
 		Headers:           cfg.Browser.Headers,
 		Stealth:           cfg.Browser.Stealth,
 		Trace:             cfg.Browser.Trace,
+		NetworkPolicy:     policy,
+	})
+}
+
+func networkPolicyFromConfig(cfg *config.Config) (*networkpolicy.Policy, error) {
+	if cfg == nil {
+		return networkpolicy.Default(), nil
+	}
+	return networkpolicy.New(networkpolicy.Config{
+		AllowedHosts:   cfg.NetworkPolicy.AllowedHosts,
+		AllowedCIDRs:   cfg.NetworkPolicy.AllowedCIDRs,
+		AllowedSchemes: cfg.NetworkPolicy.AllowedSchemes,
+		AllowLocalhost: cfg.NetworkPolicy.AllowLocalhost,
+		AllowPrivate:   cfg.NetworkPolicy.AllowPrivate,
 	})
 }
 
@@ -290,7 +316,11 @@ func mcpClientForServer(serverName string, cfg config.MCPServerConfig) (*coremcp
 	if cfg.OAuthToken != "" {
 		headers["Authorization"] = "Bearer " + cfg.OAuthToken
 	}
-	client, err := coremcp.Start(context.Background(), coremcp.ServerConfig{Command: cfg.Command, Args: cfg.Args, Cwd: cfg.Cwd, URL: cfg.URL, Headers: headers, TimeoutSec: cfg.TimeoutSec})
+	policy, err := networkPolicyFromConfig(activeConfig)
+	if err != nil {
+		return nil, err
+	}
+	client, err := coremcp.Start(context.Background(), coremcp.ServerConfig{Command: cfg.Command, Args: cfg.Args, Cwd: cfg.Cwd, URL: cfg.URL, Headers: headers, TimeoutSec: cfg.TimeoutSec, Policy: policy})
 	if err != nil {
 		return nil, err
 	}

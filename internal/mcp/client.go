@@ -12,6 +12,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/Misaka477/Natalia-Cli/internal/networkpolicy"
+	"github.com/Misaka477/Natalia-Cli/internal/secret"
 )
 
 type ServerConfig struct {
@@ -21,6 +24,7 @@ type ServerConfig struct {
 	URL        string
 	Headers    map[string]string
 	TimeoutSec int
+	Policy     *networkpolicy.Policy
 }
 
 type Client struct {
@@ -33,6 +37,7 @@ type Client struct {
 	httpURL string
 	headers map[string]string
 	http    *http.Client
+	policy  *networkpolicy.Policy
 	info    map[string]any
 	started time.Time
 	stats   ClientStats
@@ -85,6 +90,7 @@ func Start(ctx context.Context, cfg ServerConfig) (*Client, error) {
 	}
 	cmd := exec.CommandContext(ctx, cfg.Command, cfg.Args...)
 	cmd.Dir = cfg.Cwd
+	cmd.Env = secret.SanitizedEnv()
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -112,7 +118,14 @@ func StartHTTP(ctx context.Context, cfg ServerConfig) (*Client, error) {
 		timeout = 5 * time.Second
 	}
 	now := time.Now()
-	return &Client{timeout: timeout, httpURL: cfg.URL, headers: copyHeaders(cfg.Headers), http: &http.Client{Timeout: timeout}, started: now, stats: ClientStats{Transport: "http", StartedAt: now}}, nil
+	policy := cfg.Policy
+	if policy == nil {
+		policy = networkpolicy.Default()
+	}
+	if err := policy.ValidateURL(ctx, cfg.URL); err != nil {
+		return nil, err
+	}
+	return &Client{timeout: timeout, httpURL: cfg.URL, headers: copyHeaders(cfg.Headers), http: policy.HTTPClient(timeout), policy: policy, started: now, stats: ClientStats{Transport: "http", StartedAt: now}}, nil
 }
 
 func (c *Client) Close() error {
@@ -256,6 +269,12 @@ func (c *Client) callHTTP(ctx context.Context, req rpcRequest, out any) error {
 	if err != nil {
 		atomic.AddUint64(&c.stats.Errors, 1)
 		return err
+	}
+	if c.policy != nil {
+		if err := c.policy.ValidateURL(ctx, c.httpURL); err != nil {
+			atomic.AddUint64(&c.stats.Errors, 1)
+			return err
+		}
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	for key, value := range c.headers {

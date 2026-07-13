@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Misaka477/Natalia-Cli/internal/securefs"
 )
 
 func boolPtr(v bool) *bool { return &v }
@@ -262,8 +264,10 @@ func TestConfigSaveLoadAndEffectiveProfileEndToEnd(t *testing.T) {
 		MCPServers: map[string]MCPServerConfig{
 			"fixture": {Command: "fixture-mcp", Args: []string{"--stdio"}, TimeoutSec: 4, AllowedTools: []string{"echo"}, ExcludeTools: []string{"mutate"}, ReadOnly: true},
 		},
-		WebSearch: WebSearchConfig{ProviderPriority: []string{"bing", "google", "duckduckgo"}},
-		Browser:   BrowserConfig{Backend: "rod", PersistentProfile: true, ProfileDir: "/tmp/natalia-browser", UserAgent: "NataliaTest/1.0", Locale: "en-US", Timezone: "UTC", Headers: map[string]string{"X-Test": "browser"}, Stealth: true, Trace: true},
+		WebSearch:     WebSearchConfig{ProviderPriority: []string{"bing", "google", "duckduckgo"}, BaseURL: "https://search.example/api"},
+		Browser:       BrowserConfig{Backend: "rod", PersistentProfile: true, ProfileDir: "/tmp/natalia-browser", UserAgent: "NataliaTest/1.0", Locale: "en-US", Timezone: "UTC", Headers: map[string]string{"X-Test": "browser"}, Stealth: true, Trace: true},
+		NetworkPolicy: NetworkPolicyConfig{AllowedHosts: []string{"search.example"}, AllowedCIDRs: []string{"203.0.113.0/24"}, AllowedSchemes: []string{"https"}, AllowLocalhost: true, AllowPrivate: true},
+		Security:      SecurityConfig{EnvAllowlist: []string{"NATALIA_TEST_PASS"}},
 	}
 	if err := cfg.Save(); err != nil {
 		t.Fatal(err)
@@ -272,6 +276,8 @@ func TestConfigSaveLoadAndEffectiveProfileEndToEnd(t *testing.T) {
 	if _, err := os.Stat(configPath); err != nil {
 		t.Fatalf("expected config saved at %s: %v", configPath, err)
 	}
+	assertConfigMode(t, filepath.Dir(configPath), securefs.DirMode)
+	assertConfigMode(t, configPath, securefs.FileMode)
 	loaded, err := Load()
 	if err != nil {
 		t.Fatal(err)
@@ -293,11 +299,45 @@ func TestConfigSaveLoadAndEffectiveProfileEndToEnd(t *testing.T) {
 	if server.Command != "fixture-mcp" || len(server.Args) != 1 || server.TimeoutSec != 4 || len(server.AllowedTools) != 1 || len(server.ExcludeTools) != 1 || !server.ReadOnly {
 		t.Fatalf("loaded config did not preserve MCP servers: %+v", loaded.MCPServers)
 	}
-	if strings.Join(loaded.WebSearch.ProviderPriority, ",") != "bing,google,duckduckgo" {
+	if strings.Join(loaded.WebSearch.ProviderPriority, ",") != "bing,google,duckduckgo" || loaded.WebSearch.BaseURL != "https://search.example/api" {
 		t.Fatalf("loaded config did not preserve web search priority: %+v", loaded.WebSearch)
 	}
 	if loaded.Browser.Backend != "rod" || !loaded.Browser.PersistentProfile || loaded.Browser.ProfileDir != "/tmp/natalia-browser" || loaded.Browser.Headers["X-Test"] != "browser" || !loaded.Browser.Stealth || !loaded.Browser.Trace {
 		t.Fatalf("loaded config did not preserve browser config: %+v", loaded.Browser)
+	}
+	if strings.Join(loaded.NetworkPolicy.AllowedHosts, ",") != "search.example" || strings.Join(loaded.NetworkPolicy.AllowedCIDRs, ",") != "203.0.113.0/24" || !loaded.NetworkPolicy.AllowLocalhost || !loaded.NetworkPolicy.AllowPrivate {
+		t.Fatalf("loaded config did not preserve network policy: %+v", loaded.NetworkPolicy)
+	}
+	if strings.Join(loaded.Security.EnvAllowlist, ",") != "NATALIA_TEST_PASS" {
+		t.Fatalf("loaded config did not preserve security config: %+v", loaded.Security)
+	}
+}
+
+func TestLoadMigratesExistingConfigPermissions(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	configPath := filepath.Join(home, ".config", "natalia-cli", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte("default_profile: default\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(); err != nil {
+		t.Fatal(err)
+	}
+	assertConfigMode(t, filepath.Dir(configPath), securefs.DirMode)
+	assertConfigMode(t, configPath, securefs.FileMode)
+}
+
+func assertConfigMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != want {
+		t.Fatalf("expected %s mode %o, got %o", path, want, info.Mode().Perm())
 	}
 }
 

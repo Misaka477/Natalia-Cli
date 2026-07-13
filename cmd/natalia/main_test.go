@@ -27,6 +27,8 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/plan"
 	"github.com/Misaka477/Natalia-Cli/internal/planexec"
 	"github.com/Misaka477/Natalia-Cli/internal/processmgr"
+	"github.com/Misaka477/Natalia-Cli/internal/secret"
+	"github.com/Misaka477/Natalia-Cli/internal/securefs"
 	"github.com/Misaka477/Natalia-Cli/internal/session"
 	"github.com/Misaka477/Natalia-Cli/internal/soul"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/browser"
@@ -41,16 +43,33 @@ func testBoolPtr(v bool) *bool { return &v }
 
 func TestConfigureWebBrowserToolsAppliesConfig(t *testing.T) {
 	oldPriority := web.SearchProviderPriority
+	oldBaseURL := web.SearchBaseURL
+	oldPolicy := web.NetworkPolicy
+	oldEnvAllowlist := secret.EnvAllowlist()
 	t.Cleanup(func() {
 		web.SearchProviderPriority = oldPriority
+		web.SearchBaseURL = oldBaseURL
+		web.ConfigureNetworkPolicy(oldPolicy)
+		secret.SetEnvAllowlist(oldEnvAllowlist)
 		browser.Configure(browser.Options{})
 	})
 	configureWebBrowserTools(&config.Config{
-		WebSearch: config.WebSearchConfig{ProviderPriority: []string{"duckduckgo", "bing"}},
-		Browser:   config.BrowserConfig{Backend: "rod", PersistentProfile: true, ProfileDir: "/tmp/natalia-test-browser", UserAgent: "NataliaTest/1.0", Locale: "en-US", Timezone: "UTC", Headers: map[string]string{"X-Test": "1"}, Stealth: true, Trace: true},
+		WebSearch:     config.WebSearchConfig{ProviderPriority: []string{"duckduckgo", "bing"}, BaseURL: "https://search.example/api"},
+		Browser:       config.BrowserConfig{Backend: "rod", PersistentProfile: true, ProfileDir: "/tmp/natalia-test-browser", UserAgent: "NataliaTest/1.0", Locale: "en-US", Timezone: "UTC", Headers: map[string]string{"X-Test": "1"}, Stealth: true, Trace: true},
+		NetworkPolicy: config.NetworkPolicyConfig{AllowedHosts: []string{"search.example"}, AllowLocalhost: true},
+		Security:      config.SecurityConfig{EnvAllowlist: []string{"NATALIA_TEST_API_KEY"}},
 	})
 	if web.SearchProviderPriority != "duckduckgo,bing" {
 		t.Fatalf("expected web search priority from config, got %q", web.SearchProviderPriority)
+	}
+	if web.SearchBaseURL != "https://search.example/api" {
+		t.Fatalf("expected web search base URL from config, got %q", web.SearchBaseURL)
+	}
+	if err := web.NetworkPolicy.ValidateURL(nil, "http://127.0.0.1/"); err != nil {
+		t.Fatalf("expected configured network policy to allow localhost: %v", err)
+	}
+	if strings.Join(secret.EnvAllowlist(), ",") != "NATALIA_TEST_API_KEY" {
+		t.Fatalf("expected security env allowlist from config, got %+v", secret.EnvAllowlist())
 	}
 }
 
@@ -1107,12 +1126,25 @@ func TestRunWireRecordsWireJSONL(t *testing.T) {
 	if len(messages) != 1 || messages[0].Event == nil || messages[0].Event.Type != wire.EventStatusUpdate {
 		t.Fatalf("expected recorded StatusUpdate, got %+v", messages)
 	}
+	assertMainMode(t, sessions[0].Dir, securefs.DirMode)
+	assertMainMode(t, filepath.Join(sessions[0].Dir, "wire.jsonl"), securefs.FileMode)
 	state, err := store.LoadState(sessions[0].ID)
 	if err != nil {
 		t.Fatalf("load wire session state: %v", err)
 	}
 	if state.Version != session.StateVersion || !state.PlanMode || len(state.AdditionalDirs) != 1 || state.AdditionalDirs[0] != dir {
 		t.Fatalf("expected wire session plan state persisted, got %+v", state)
+	}
+}
+
+func assertMainMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != want {
+		t.Fatalf("expected %s mode %o, got %o", path, want, info.Mode().Perm())
 	}
 }
 
@@ -1890,6 +1922,12 @@ func TestInteractiveWireRendererRendersContentStatusAndNotification(t *testing.T
 		t.Fatal(err)
 	}
 	w.SoulSide.PublishEvent(status)
+	completed := false
+	finalElapsed := int64(2200)
+	finalStatus, err := wire.NewEvent(wire.EventStatusUpdate, wire.StatusUpdate{TurnRunning: &completed, TurnElapsedMS: &finalElapsed})
+	if err != nil {
+		t.Fatal(err)
+	}
 	notification, err := wire.NewEvent(wire.EventNotification, wire.Notification{Title: "Background task completed", Message: "proc_1 exited"})
 	if err != nil {
 		t.Fatal(err)
@@ -1900,13 +1938,29 @@ func TestInteractiveWireRendererRendersContentStatusAndNotification(t *testing.T
 		t.Fatal(err)
 	}
 	w.SoulSide.PublishEvent(end)
+	w.SoulSide.PublishEvent(finalStatus)
 	stop()
 
-	if !strings.Contains(out.String(), "thinking") || !strings.Contains(out.String(), "answer") || !strings.Contains(out.String(), "\x1b[38;5;245m") || !strings.Contains(out.String(), "\x1b[0m") {
-		t.Fatalf("expected renderer output to include reasoning color and answer, got %q", out.String())
+	if strings.Contains(out.String(), "thinking") || !strings.Contains(out.String(), "answer") || !strings.Contains(errOut.String(), "Thinking") || !strings.Contains(errOut.String(), "Thought for") {
+		t.Fatalf("expected renderer to hide raw reasoning while showing thinking summary and answer, stdout=%q stderr=%q", out.String(), errOut.String())
 	}
-	if !strings.Contains(errOut.String(), "[elapsed 1s]") || !strings.Contains(errOut.String(), "Background task completed") || !strings.Contains(errOut.String(), "proc_1 exited") {
+	if strings.Contains(errOut.String(), "elapsed 1s") || !strings.Contains(errOut.String(), "elapsed 2s") || !strings.Contains(errOut.String(), "Background task completed") || !strings.Contains(errOut.String(), "proc_1 exited") {
 		t.Fatalf("expected stderr renderer output to include elapsed status and notification, got %q", errOut.String())
+	}
+}
+
+func TestInteractiveWireRendererDoesNotRenderRunningElapsed(t *testing.T) {
+	var errOut bytes.Buffer
+	running := true
+	elapsed := int64(1500)
+	renderInteractiveStatus(wire.StatusUpdate{TurnRunning: &running, TurnElapsedMS: &elapsed}, &errOut)
+	if errOut.String() != "" {
+		t.Fatalf("running elapsed should be reserved for future status bar, got %q", errOut.String())
+	}
+	running = false
+	renderInteractiveStatus(wire.StatusUpdate{TurnRunning: &running, TurnElapsedMS: &elapsed}, &errOut)
+	if errOut.String() != "[elapsed 1s]\n" {
+		t.Fatalf("expected final elapsed line only, got %q", errOut.String())
 	}
 }
 
@@ -1926,8 +1980,8 @@ func TestConfigureEngineForWireFeedsInteractiveRenderer(t *testing.T) {
 	w.SoulSide.PublishEvent(end)
 	stop()
 
-	if !strings.Contains(out.String(), "reason") || !strings.Contains(out.String(), "final") {
-		t.Fatalf("expected engine callbacks to render through wire, got %q", out.String())
+	if strings.Contains(out.String(), "reason") || !strings.Contains(out.String(), "final") || !strings.Contains(errOut.String(), "Thought for") {
+		t.Fatalf("expected engine callbacks to hide reasoning and render final through wire, stdout=%q stderr=%q", out.String(), errOut.String())
 	}
 }
 
@@ -1979,7 +2033,7 @@ func TestInteractiveWireRendererHandlesRuntimeEventsAndRequests(t *testing.T) {
 	renderRequest("hook_1", wire.RequestHook, wire.HookRequest{ID: "hook_1", Event: "PreToolUse", Target: "read_file"})
 
 	got := errOut.String()
-	for _, want := range []string{"[step 2]", "[step interrupted]", "[compaction begin]", "[compaction end]", "[tool call] read_file", "[tool result] read_file: ok", "[todo] plan", "- [x] wire auth", "[media] image", "[subagent] worker_1 log", "task: inspect", "log.tool: read_file", "[process] proc_1 output status=running stdout: ready", "command: go test ./...", "env: API_KEY=<redacted>", "[interactive] pty_1 resize status=running", "size: 24x80", "[approval request] run_shell", "[diff] README.md", "[question request] question_1", "[tool request] external_tool", "[hook request] PreToolUse read_file"} {
+	for _, want := range []string{"step 2", "Step interrupted", "Compacting context", "Compaction finished", "Using read_file", "Used read_file", "[todo] plan", "- [x] wire auth", "[media] image", "subagent worker_1 log", "task=inspect", "log.tool=read_file", "process proc_1 output [running]", "go test ./...", "interactive pty_1 resize [running]", "python", "Approval required", "Diff", "Question", "Tool request", "Hook request"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected renderer stderr to contain %q, got %q", want, got)
 		}
@@ -2024,7 +2078,7 @@ func TestInteractiveWireRendererRespondsToQuestionRequest(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("renderer did not answer question request")
 	}
-	if !strings.Contains(errOut.String(), "[question request] question_test") || !strings.Contains(errOut.String(), "Proceed?") || !strings.Contains(errOut.String(), "fallback: no") {
+	if !strings.Contains(errOut.String(), "Question") || !strings.Contains(errOut.String(), "question_test") || !strings.Contains(errOut.String(), "Proceed?") || !strings.Contains(errOut.String(), "fallback: no") {
 		t.Fatalf("expected question rendering, got %q", errOut.String())
 	}
 }
@@ -2067,7 +2121,7 @@ func TestInteractiveWireRendererRespondsToApprovalRequest(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("renderer did not answer approval request")
 	}
-	if !strings.Contains(errOut.String(), "[approval request] write_file") || !strings.Contains(errOut.String(), "update file") {
+	if !strings.Contains(errOut.String(), "Approval required") || !strings.Contains(errOut.String(), "write_file") || !strings.Contains(errOut.String(), "update file") {
 		t.Fatalf("expected approval rendering, got %q", errOut.String())
 	}
 }

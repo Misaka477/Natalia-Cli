@@ -14,6 +14,7 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/config"
 	"github.com/Misaka477/Natalia-Cli/internal/display"
 	"github.com/Misaka477/Natalia-Cli/internal/hook"
+	"github.com/Misaka477/Natalia-Cli/internal/securefs"
 	"github.com/Misaka477/Natalia-Cli/internal/session"
 	"github.com/Misaka477/Natalia-Cli/internal/soul"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/ask_user"
@@ -331,7 +332,7 @@ func attachWireRecorder(w *wire.Wire, cfg *config.Config, store *session.Session
 	if sess == nil || sess.Dir == "" {
 		return func() {}, nil, nil
 	}
-	file, err := os.OpenFile(filepath.Join(sess.Dir, "wire.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := securefs.OpenAppend(filepath.Join(sess.Dir, "wire.jsonl"))
 	if err != nil {
 		return nil, nil, err
 	}

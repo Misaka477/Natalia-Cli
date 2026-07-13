@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/chat"
+	"github.com/Misaka477/Natalia-Cli/internal/securefs"
 )
 
 func TestCleanupKeepsNewestSessions(t *testing.T) {
@@ -104,6 +106,8 @@ func TestSessionStateRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(raw, &decoded); err != nil {
 		t.Fatalf("state.json should be valid JSON: %v", err)
 	}
+	assertMode(t, filepath.Join(sess.Dir, "state.json"), securefs.FileMode)
+	assertMode(t, sess.Dir, securefs.DirMode)
 }
 
 func TestAppendMessageUpdatesContextTokenEstimate(t *testing.T) {
@@ -130,6 +134,24 @@ func TestAppendMessageUpdatesContextTokenEstimate(t *testing.T) {
 	if len(messages) != 2 || messages[0].Content != "12345678" || messages[1].Content != "abc" {
 		t.Fatalf("expected real context.jsonl messages, got %+v", messages)
 	}
+}
+
+func TestAppendMessageRedactsStoredContext(t *testing.T) {
+	store := &SessionStore{BaseDir: t.TempDir()}
+	sess := writeTestSession(t, store, "redact", time.Now())
+	msg := chat.Message{Role: chat.RoleAssistant, Content: "api_key=plain-secret", ToolCalls: []chat.ToolCall{{ID: "call_1", Type: "function", Function: chat.ToolCallFunc{Name: "tool", Arguments: `{"token":"tool-secret","safe":"ok"}`}}}}
+	if err := store.AppendMessage(sess.ID, msg); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(sess.Dir, "context.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if strings.Contains(text, "plain-secret") || strings.Contains(text, "tool-secret") || !strings.Contains(text, "[redacted]") || !strings.Contains(text, "safe") || !strings.Contains(text, "ok") {
+		t.Fatalf("expected redacted stored context, got %s", text)
+	}
+	assertMode(t, filepath.Join(sess.Dir, "context.jsonl"), securefs.FileMode)
 }
 
 func chatMessage(content string) chat.Message {
@@ -164,4 +186,15 @@ func writeTestSession(t *testing.T, store *SessionStore, id string, updatedAt ti
 		t.Fatalf("write session meta: %v", err)
 	}
 	return sess
+}
+
+func assertMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != want {
+		t.Fatalf("expected %s mode %o, got %o", path, want, info.Mode().Perm())
+	}
 }

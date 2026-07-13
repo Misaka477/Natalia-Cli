@@ -120,10 +120,25 @@ func within(root, path string) bool {
 func IsSensitivePath(path string) bool {
 	path = filepath.ToSlash(filepath.Clean(path))
 	base := strings.ToLower(filepath.Base(path))
-	if base == ".env" || strings.HasPrefix(base, ".env.") || base == ".netrc" || base == ".npmrc" || base == ".pypirc" {
+	if base == ".env" || strings.HasPrefix(base, ".env.") || base == ".netrc" || base == ".npmrc" || base == ".pypirc" || base == ".git-credentials" || base == ".yarnrc" || base == ".pnpmrc" || base == "npmrc" || base == "yarnrc" || base == "pnpmrc" {
 		return true
 	}
 	if strings.Contains(path, "/.ssh/") && strings.HasPrefix(base, "id_") {
+		return true
+	}
+	sensitiveDirs := []string{"/.aws/", "/.kube/", "/.docker/", "/.config/gcloud/", "/.azure/", "/.npm/", "/.yarn/", "/.pnpm/"}
+	for _, dir := range sensitiveDirs {
+		if strings.Contains(path, dir) {
+			return true
+		}
+	}
+	if strings.Contains(path, "/.aws/") && base == "credentials" {
+		return true
+	}
+	if strings.Contains(path, "/.kube/") && base == "config" {
+		return true
+	}
+	if strings.Contains(path, "/.docker/") && base == "config.json" {
 		return true
 	}
 	for _, marker := range []string{"secret", "token", "password", "private_key", "access_key", "api_key"} {

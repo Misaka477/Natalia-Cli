@@ -8,7 +8,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
+
+	"github.com/Misaka477/Natalia-Cli/internal/networkpolicy"
 )
 
 func TestMCPClientTalksToRealStdioServer(t *testing.T) {
@@ -42,6 +45,18 @@ func TestMCPClientReturnsServerError(t *testing.T) {
 	}
 }
 
+func TestMCPStdioStripsInheritedSensitiveEnv(t *testing.T) {
+	t.Setenv("NATALIA_TEST_API_KEY", "host-secret")
+	client := startStubServer(t)
+	defer client.Close()
+	if err := client.Initialize(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := client.ServerInfo()["env"]; got == "host-secret" {
+		t.Fatalf("expected MCP subprocess env to strip sensitive inherited value, got %+v", client.ServerInfo())
+	}
+}
+
 func TestMCPHTTPClientUsesJSONRPCAndBearerToken(t *testing.T) {
 	var sawAuth string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -64,7 +79,11 @@ func TestMCPHTTPClientUsesJSONRPCAndBearerToken(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
-	client, err := Start(context.Background(), ServerConfig{URL: server.URL, Headers: map[string]string{"Authorization": "Bearer token"}, TimeoutSec: 2})
+	policy, err := networkpolicy.New(networkpolicy.Config{AllowLocalhost: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := Start(context.Background(), ServerConfig{URL: server.URL, Headers: map[string]string{"Authorization": "Bearer token"}, TimeoutSec: 2, Policy: policy})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,6 +110,32 @@ func TestMCPHTTPClientUsesJSONRPCAndBearerToken(t *testing.T) {
 	}
 }
 
+func TestMCPHTTPDefaultPolicyRejectsLocalhost(t *testing.T) {
+	_, err := Start(context.Background(), ServerConfig{URL: "http://127.0.0.1:1234/mcp", TimeoutSec: 1})
+	if err == nil || !strings.Contains(err.Error(), "network policy denied") || !strings.Contains(err.Error(), "loopback") {
+		t.Fatalf("expected localhost rejection, got %v", err)
+	}
+}
+
+func TestMCPHTTPRejectsRedirectToBlockedAddress(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://169.254.169.254/latest/meta-data/", http.StatusTemporaryRedirect)
+	}))
+	defer server.Close()
+	policy, err := networkpolicy.New(networkpolicy.Config{AllowLocalhost: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := Start(context.Background(), ServerConfig{URL: server.URL, TimeoutSec: 2, Policy: policy})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = client.Initialize(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "169.254.169.254") || !strings.Contains(err.Error(), "link-local") {
+		t.Fatalf("expected redirect rejection, got %v", err)
+	}
+}
+
 func startStubServer(t *testing.T) *Client {
 	t.Helper()
 	cmd := os.Args[0]
@@ -114,7 +159,7 @@ func TestMCPStubServer(t *testing.T) {
 		resp := rpcResponse{JSONRPC: "2.0", ID: req.ID}
 		switch req.Method {
 		case "initialize":
-			resp.Result = mustJSON(map[string]any{"protocolVersion": "2024-11-05"})
+			resp.Result = mustJSON(map[string]any{"protocolVersion": "2024-11-05", "env": os.Getenv("NATALIA_TEST_API_KEY")})
 		case "tools/list":
 			resp.Result = mustJSON(map[string]any{"tools": []Tool{{Name: "echo", Description: "Echo input", InputSchema: map[string]any{"type": "object"}}}})
 		case "tools/call":

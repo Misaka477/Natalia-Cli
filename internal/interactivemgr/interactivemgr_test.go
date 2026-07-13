@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Misaka477/Natalia-Cli/internal/secret"
 )
 
 func TestInteractiveShellWriteReadAndStop(t *testing.T) {
@@ -97,6 +99,43 @@ func TestInteractiveSensitiveWriteRedactsFutureReads(t *testing.T) {
 	}
 	if strings.Contains(page.Text, "secret-value") || !strings.Contains(page.Text, "secret redacted") {
 		t.Fatalf("expected redacted transcript, got %+v", page)
+	}
+}
+
+func TestInteractiveStartStripsInheritedSensitiveEnv(t *testing.T) {
+	t.Setenv("NATALIA_TEST_API_KEY", "host-secret")
+	secret.SetEnvAllowlist(nil)
+	t.Cleanup(func() { secret.SetEnvAllowlist(nil) })
+	m := New()
+	sess, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-i"}, MaxTail: 4096})
+	if err != nil {
+		skipIfPTYUnsupported(t, err)
+		t.Fatal(err)
+	}
+	defer m.Stop(sess.ID)
+	obs, err := m.Write(sess.ID, "printf ${NATALIA_TEST_API_KEY:-missing}\\n\n", false, ObserveOptions{WaitFor: "missing", IdleTimeout: 50 * time.Millisecond, MaxWait: time.Second, IncludeOutput: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(obs.Tail, "host-secret") || !strings.Contains(obs.Tail, "missing") {
+		t.Fatalf("expected inherited sensitive env to be stripped, got %+v", obs)
+	}
+}
+
+func TestInteractiveOutputRedactsSensitivePatterns(t *testing.T) {
+	m := New()
+	sess, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-i"}, MaxTail: 4096})
+	if err != nil {
+		skipIfPTYUnsupported(t, err)
+		t.Fatal(err)
+	}
+	defer m.Stop(sess.ID)
+	obs, err := m.Write(sess.ID, "printf 'token=pty-secret safe=ok'\\n\n", false, ObserveOptions{WaitFor: "safe=ok", IdleTimeout: 50 * time.Millisecond, MaxWait: time.Second, IncludeOutput: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(obs.Tail, "pty-secret") || !strings.Contains(obs.Tail, "token=[redacted]") || !strings.Contains(obs.Tail, "safe=ok") {
+		t.Fatalf("expected redacted interactive output, got %+v", obs)
 	}
 }
 

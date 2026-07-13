@@ -7,7 +7,19 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Misaka477/Natalia-Cli/internal/networkpolicy"
 )
+
+func configureBrowserPolicyForTest(t *testing.T, cfg networkpolicy.Config) {
+	t.Helper()
+	policy, err := networkpolicy.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	Configure(Options{NetworkPolicy: policy})
+	t.Cleanup(func() { Configure(Options{}) })
+}
 
 func TestParseWait(t *testing.T) {
 	got, err := parseWait("5")
@@ -88,6 +100,7 @@ func TestUnsupportedBrowserBackendReturnsActionableError(t *testing.T) {
 }
 
 func TestBrowserToolsExecuteThroughRendererFallback(t *testing.T) {
+	configureBrowserPolicyForTest(t, networkpolicy.Config{AllowedHosts: []string{"example.test"}})
 	oldRender := renderBrowserPage
 	renderBrowserPage = func(u string, options pageOptions, includeScreenshot bool) (renderedPage, error) {
 		if u != "https://example.test/page" {
@@ -126,7 +139,38 @@ func TestBrowserToolsExecuteThroughRendererFallback(t *testing.T) {
 	}
 }
 
+func TestBrowserDefaultPolicyRejectsLocalhostBeforeRenderer(t *testing.T) {
+	Configure(Options{})
+	t.Cleanup(func() { Configure(Options{}) })
+	oldRender := renderBrowserPage
+	renderBrowserPage = func(u string, options pageOptions, includeScreenshot bool) (renderedPage, error) {
+		t.Fatalf("renderer should not be called for blocked URL %s", u)
+		return renderedPage{}, nil
+	}
+	t.Cleanup(func() { renderBrowserPage = oldRender })
+
+	_, err := (&Visit{}).Execute(map[string]any{"url": "http://127.0.0.1/"})
+	if err == nil || !strings.Contains(err.Error(), "network policy denied") || !strings.Contains(err.Error(), "loopback") {
+		t.Fatalf("expected localhost rejection, got %v", err)
+	}
+}
+
+func TestBrowserRejectsRenderedRedirectToBlockedAddress(t *testing.T) {
+	configureBrowserPolicyForTest(t, networkpolicy.Config{AllowedHosts: []string{"example.test"}})
+	oldRender := renderBrowserPage
+	renderBrowserPage = func(u string, options pageOptions, includeScreenshot bool) (renderedPage, error) {
+		return renderedPage{Title: "redirect", Text: "redirect", FinalURL: "http://169.254.169.254/latest/meta-data/"}, nil
+	}
+	t.Cleanup(func() { renderBrowserPage = oldRender })
+
+	_, err := (&Visit{}).Execute(map[string]any{"url": "https://example.test/page", "wait": "0"})
+	if err == nil || !strings.Contains(err.Error(), "169.254.169.254") || !strings.Contains(err.Error(), "link-local") {
+		t.Fatalf("expected redirect rejection, got %v", err)
+	}
+}
+
 func TestBrowserVisitAndScreenshotLocalPage(t *testing.T) {
+	configureBrowserPolicyForTest(t, networkpolicy.Config{AllowLocalhost: true})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte(`<!doctype html><html><head><title>Browser Smoke</title></head><body><main id="main">initial</main><script>document.querySelector('#main').innerText = 'selector rendered ok';</script></body></html>`))

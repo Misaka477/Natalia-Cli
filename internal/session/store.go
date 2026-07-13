@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/chat"
+	"github.com/Misaka477/Natalia-Cli/internal/secret"
+	"github.com/Misaka477/Natalia-Cli/internal/securefs"
 	"github.com/Misaka477/Natalia-Cli/internal/tokenizer"
 )
 
@@ -48,7 +50,7 @@ func NewStore() (*SessionStore, error) {
 		return nil, err
 	}
 	dir := filepath.Join(home, ".config", "natalia-cli", "sessions")
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := securefs.EnsureDir(dir); err != nil {
 		return nil, err
 	}
 	return &SessionStore{BaseDir: dir}, nil
@@ -57,7 +59,7 @@ func NewStore() (*SessionStore, error) {
 func (s *SessionStore) NewSession(model string) *Session {
 	id := fmt.Sprintf("%d", time.Now().UnixNano())
 	dir := filepath.Join(s.BaseDir, id)
-	os.MkdirAll(dir, 0755)
+	_ = securefs.EnsureDir(dir)
 
 	sess := &Session{
 		ID:        id,
@@ -94,12 +96,12 @@ func (s *SessionStore) List() []Session {
 
 func (s *SessionStore) AppendMessage(sessionID string, msg chat.Message) error {
 	dir := filepath.Join(s.BaseDir, sessionID)
-	f, err := os.OpenFile(filepath.Join(dir, "context.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := securefs.OpenAppend(filepath.Join(dir, "context.jsonl"))
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	data, err := json.Marshal(msg)
+	data, err := json.Marshal(redactMessage(msg))
 	if err != nil {
 		return err
 	}
@@ -152,7 +154,7 @@ func (s *SessionStore) SaveState(sessionID string, state State) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "state.json"), data, 0644); err != nil {
+	if err := securefs.WriteFile(filepath.Join(dir, "state.json"), data); err != nil {
 		return err
 	}
 	meta, err := s.readMeta(sessionID)
@@ -215,5 +217,13 @@ func (s *SessionStore) writeMeta(sess *Session) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(sess.Dir, "meta.json"), data, 0644)
+	return securefs.WriteFile(filepath.Join(sess.Dir, "meta.json"), data)
+}
+
+func redactMessage(msg chat.Message) chat.Message {
+	msg.Content = secret.RedactString(msg.Content)
+	for i := range msg.ToolCalls {
+		msg.ToolCalls[i].Function.Arguments = string(secret.RedactJSONBytes([]byte(msg.ToolCalls[i].Function.Arguments)))
+	}
+	return msg
 }

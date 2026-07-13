@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Misaka477/Natalia-Cli/internal/secret"
 )
 
 func TestStartCapturesOutputAndStatus(t *testing.T) {
@@ -166,8 +168,8 @@ func TestRestartReusesStartOptionsAndRedactsEnvSummary(t *testing.T) {
 		t.Fatalf("expected redacted env summary, ok=%v status=%+v", ok, status)
 	}
 	output, ok := m.Output(sess.ID, 10)
-	if !ok || !strings.Contains(joinOutput(output), "ok:super-secret") {
-		t.Fatalf("expected real process env to be passed to child, output=%+v", output)
+	if !ok || !strings.Contains(joinOutput(output), "ok:") || strings.Contains(joinOutput(output), "super-secret") {
+		t.Fatalf("expected sensitive process env to be stripped from child, output=%+v", output)
 	}
 	restarted, err := m.Restart(context.Background(), sess.ID)
 	if err != nil {
@@ -177,6 +179,47 @@ func TestRestartReusesStartOptionsAndRedactsEnvSummary(t *testing.T) {
 		t.Fatalf("restart did not preserve sanitized start options: old=%+v new=%+v", sess, restarted)
 	}
 	waitForStatus(t, m, restarted.ID, StatusExited)
+}
+
+func TestStartStripsInheritedSensitiveEnvAndAllowlistCanPassThrough(t *testing.T) {
+	t.Setenv("NATALIA_TEST_API_KEY", "host-secret")
+	secret.SetEnvAllowlist(nil)
+	t.Cleanup(func() { secret.SetEnvAllowlist(nil) })
+	m := New()
+	sess, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-c", "printf ${NATALIA_TEST_API_KEY:-missing}"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, m, sess.ID, StatusExited)
+	output, _ := m.Output(sess.ID, 10)
+	if strings.Contains(joinOutput(output), "host-secret") || !strings.Contains(joinOutput(output), "missing") {
+		t.Fatalf("expected inherited sensitive env to be stripped, output=%+v", output)
+	}
+
+	secret.SetEnvAllowlist([]string{"NATALIA_TEST_API_KEY"})
+	allowed, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-c", "printf $NATALIA_TEST_API_KEY"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, m, allowed.ID, StatusExited)
+	output, _ = m.Output(allowed.ID, 10)
+	if !strings.Contains(joinOutput(output), "host-secret") {
+		t.Fatalf("expected allowlisted inherited sensitive env to pass through, output=%+v", output)
+	}
+}
+
+func TestStartRedactsSensitiveOutput(t *testing.T) {
+	m := New()
+	sess, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-c", "printf 'token=process-secret safe=ok'"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, m, sess.ID, StatusExited)
+	output, _ := m.Output(sess.ID, 10)
+	joined := joinOutput(output)
+	if strings.Contains(joined, "process-secret") || !strings.Contains(joined, "token=[redacted]") || !strings.Contains(joined, "safe=ok") {
+		t.Fatalf("expected redacted process output, got %s", joined)
+	}
 }
 
 func TestCleanupFinishedRemovesOnlyOldCompletedSessions(t *testing.T) {

@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/Misaka477/Natalia-Cli/internal/securefs"
 )
 
 type FileEntry struct {
@@ -132,7 +134,7 @@ func (e *Engine) Checkpoint(step int, files []string) (string, error) {
 	ref := Ref{Step: step, TreeHash: treeHash}
 	data, _ := json.Marshal(ref)
 	refsFile := filepath.Join(e.sessionDir, "refs.jsonl")
-	f, err := os.OpenFile(refsFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := securefs.OpenAppend(refsFile)
 	if err != nil {
 		return "", err
 	}

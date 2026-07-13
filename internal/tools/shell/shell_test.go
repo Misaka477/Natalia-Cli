@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Misaka477/Natalia-Cli/internal/display"
+	"github.com/Misaka477/Natalia-Cli/internal/secret"
 )
 
 func TestRunRejectsInvalidTimeout(t *testing.T) {
@@ -64,6 +65,16 @@ func TestRunExecuteReturnIncludesShellDisplay(t *testing.T) {
 	}
 	if payload.Command != "printf hello" || !strings.Contains(payload.Output, "hello") {
 		t.Fatalf("unexpected shell display payload: %+v", payload)
+	}
+}
+
+func TestRunRedactsSensitiveOutput(t *testing.T) {
+	result, err := (&Run{}).Execute(map[string]any{"command": "printf 'api_key=shell-secret safe=ok'", "timeout": "5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(result, "shell-secret") || !strings.Contains(result, "api_key=[redacted]") || !strings.Contains(result, "safe=ok") {
+		t.Fatalf("expected redacted shell output, got %q", result)
 	}
 }
 
@@ -181,6 +192,27 @@ func TestRunRejectsSensitiveEnvName(t *testing.T) {
 	_, err := (&Run{}).Execute(map[string]any{"command": "true", "env": map[string]any{"API_KEY": "secret"}})
 	if err == nil || !strings.Contains(err.Error(), "sensitive") || strings.Contains(err.Error(), "secret") {
 		t.Fatalf("expected sensitive env name rejection without value leak, got %v", err)
+	}
+}
+
+func TestRunStripsInheritedSensitiveEnvAndAllowlistPassesThrough(t *testing.T) {
+	t.Setenv("NATALIA_TEST_API_KEY", "host-secret")
+	secret.SetEnvAllowlist(nil)
+	t.Cleanup(func() { secret.SetEnvAllowlist(nil) })
+	result, err := (&Run{}).Execute(map[string]any{"command": "printf ${NATALIA_TEST_API_KEY:-missing}", "timeout": "5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(result, "host-secret") || !strings.Contains(result, "missing") {
+		t.Fatalf("expected inherited sensitive env to be stripped, got %q", result)
+	}
+	secret.SetEnvAllowlist([]string{"NATALIA_TEST_API_KEY"})
+	result, err = (&Run{}).Execute(map[string]any{"command": "printf $NATALIA_TEST_API_KEY", "timeout": "5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "host-secret") {
+		t.Fatalf("expected allowlisted env to pass through, got %q", result)
 	}
 }
 

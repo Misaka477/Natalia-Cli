@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/display"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
+	"github.com/Misaka477/Natalia-Cli/internal/secret"
 	"github.com/Misaka477/Natalia-Cli/internal/toolreturn"
 	"github.com/Misaka477/Natalia-Cli/internal/toolschema"
 )
@@ -128,7 +128,7 @@ func (t *Run) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 	if err != nil {
 		result.WriteString(fmt.Sprintf("\nERROR: %v", err))
 	}
-	modelText := result.String()
+	modelText := secret.RedactString(result.String())
 	block, blockErr := display.NewBlock(display.BlockShell, params.Command, display.ShellBlock{
 		Command:  params.Command,
 		ExitCode: exitCode,
@@ -188,16 +188,11 @@ func resolveShell(shell string) (string, error) {
 	}
 }
 
-var envNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-
 func buildSafeEnv(extra map[string]string) ([]string, error) {
-	env := os.Environ()
+	env := secret.SanitizedEnv()
 	for name, value := range extra {
-		if !envNameRe.MatchString(name) {
-			return nil, fmt.Errorf("env variable name %q is invalid", name)
-		}
-		if isSensitiveEnvName(name) {
-			return nil, fmt.Errorf("env variable name %q looks sensitive and is not allowed", name)
+		if err := secret.ValidateEnvName(name); err != nil {
+			return nil, err
 		}
 		env = append(env, name+"="+value)
 	}
@@ -205,11 +200,7 @@ func buildSafeEnv(extra map[string]string) ([]string, error) {
 }
 
 func isSensitiveEnvName(name string) bool {
-	upper := strings.ToUpper(name)
-	if strings.Contains(upper, "SECRET") || strings.Contains(upper, "TOKEN") || strings.Contains(upper, "PASSWORD") || strings.Contains(upper, "PRIVATE_KEY") || strings.Contains(upper, "ACCESS_KEY") || strings.Contains(upper, "API_KEY") {
-		return true
-	}
-	return upper == "KEY" || strings.HasSuffix(upper, "_KEY")
+	return secret.IsSensitiveName(name)
 }
 
 func limitOutput(s string, maxBytes int) string {

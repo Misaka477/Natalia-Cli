@@ -110,8 +110,8 @@ func TestBackgroundRestartCleanupAuditAndRedaction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output, "ok:super-secret") {
-		t.Fatalf("expected restarted background to receive env, got %q", output)
+	if !strings.Contains(output, "ok:") || strings.Contains(output, "super-secret") {
+		t.Fatalf("expected restarted background to strip sensitive env, got %q", output)
 	}
 	cleanup, err := (&Cleanup{}).Execute(map[string]any{})
 	if err != nil {

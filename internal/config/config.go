@@ -7,6 +7,8 @@ import (
 	"sort"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/Misaka477/Natalia-Cli/internal/securefs"
 )
 
 type Provider struct {
@@ -100,6 +102,8 @@ type Config struct {
 	Instructions       InstructionConfig            `yaml:"instructions,omitempty"`
 	WebSearch          WebSearchConfig              `yaml:"web_search,omitempty"`
 	Browser            BrowserConfig                `yaml:"browser,omitempty"`
+	NetworkPolicy      NetworkPolicyConfig          `yaml:"network_policy,omitempty"`
+	Security           SecurityConfig               `yaml:"security,omitempty"`
 }
 
 type InstructionConfig struct {
@@ -118,6 +122,7 @@ func (c *Config) InstructionsEnabled() bool {
 
 type WebSearchConfig struct {
 	ProviderPriority []string `yaml:"provider_priority,omitempty"`
+	BaseURL          string   `yaml:"base_url,omitempty"`
 }
 
 type BrowserConfig struct {
@@ -130,6 +135,18 @@ type BrowserConfig struct {
 	Headers           map[string]string `yaml:"headers,omitempty"`
 	Stealth           bool              `yaml:"stealth,omitempty"`
 	Trace             bool              `yaml:"trace,omitempty"`
+}
+
+type NetworkPolicyConfig struct {
+	AllowedHosts   []string `yaml:"allowed_hosts,omitempty"`
+	AllowedCIDRs   []string `yaml:"allowed_cidrs,omitempty"`
+	AllowedSchemes []string `yaml:"allowed_schemes,omitempty"`
+	AllowLocalhost bool     `yaml:"allow_localhost,omitempty"`
+	AllowPrivate   bool     `yaml:"allow_private,omitempty"`
+}
+
+type SecurityConfig struct {
+	EnvAllowlist []string `yaml:"env_allowlist,omitempty"`
 }
 
 type MCPServerConfig struct {
@@ -175,6 +192,8 @@ func Load() (*Config, error) {
 		}
 		return nil, err
 	}
+	_ = securefs.EnsureDir(filepath.Dir(p))
+	_ = securefs.ChmodFileIfExists(p)
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, err
@@ -199,14 +218,14 @@ func (c *Config) Save() error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+	if err := securefs.EnsureDir(filepath.Dir(p)); err != nil {
 		return err
 	}
 	data, err := yaml.Marshal(c)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(p, data, 0644)
+	return securefs.WriteFile(p, data)
 }
 
 func (c *Config) ActiveProfile() (*Profile, *Provider, error) {

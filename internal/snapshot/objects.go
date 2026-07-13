@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/Misaka477/Natalia-Cli/internal/securefs"
 )
 
 type Objects struct {
@@ -13,7 +15,7 @@ type Objects struct {
 
 func NewObjects(base string) (*Objects, error) {
 	dir := filepath.Join(base, "objects")
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := securefs.EnsureDir(dir); err != nil {
 		return nil, err
 	}
 	return &Objects{dir: dir}, nil
@@ -25,7 +27,7 @@ func (o *Objects) Store(data []byte) string {
 	if _, err := os.Stat(path); err == nil {
 		return h
 	}
-	os.WriteFile(path, data, 0644)
+	_ = securefs.WriteFile(path, data)
 	return h
 }
 

@@ -65,6 +65,22 @@ func TestHookEngineReportsFailuresAndTimeoutsWithoutStoppingOtherHooks(t *testin
 	}
 }
 
+func TestHookShellRedactsOutputAndStripsInheritedSensitiveEnv(t *testing.T) {
+	t.Setenv("NATALIA_TEST_API_KEY", "host-secret")
+	engine := NewEngine([]HookDef{{ID: "env", Event: EventNotification, Target: "*", Command: `printf "${NATALIA_TEST_API_KEY:-missing} token=stdout-secret"; printf " password=stderr-secret" >&2`}})
+	results := engine.Trigger(context.Background(), EventNotification, "build", nil)
+	if len(results) != 1 {
+		t.Fatalf("expected one hook result, got %+v", results)
+	}
+	result := results[0]
+	if strings.Contains(result.Stdout, "host-secret") || strings.Contains(result.Stdout, "stdout-secret") || strings.Contains(result.Stderr, "stderr-secret") {
+		t.Fatalf("expected hook output redaction and env stripping, got %+v", result)
+	}
+	if !strings.Contains(result.Stdout, "missing") || !strings.Contains(result.Stdout, "[redacted]") || !strings.Contains(result.Stderr, "[redacted]") {
+		t.Fatalf("expected redaction markers and missing env, got %+v", result)
+	}
+}
+
 func TestHookEngineReturnsCopiesAndIgnoresInvalidPatterns(t *testing.T) {
 	engine := NewEngine([]HookDef{{ID: "copy", Event: EventPreToolUse, Target: "[", Command: "exit 1"}})
 	hooks := engine.Hooks()

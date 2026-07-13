@@ -41,3 +41,25 @@ func TestPolicyBlocksSensitivePathsAndSymlinkEscapes(t *testing.T) {
 		t.Fatalf("expected symlink escape rejection, got %v", err)
 	}
 }
+
+func TestSensitivePathCoversCloudAndPackageCredentials(t *testing.T) {
+	cases := []string{
+		"/home/me/.aws/credentials",
+		"/home/me/.kube/config",
+		"/home/me/.docker/config.json",
+		"/home/me/.git-credentials",
+		"/home/me/.config/gcloud/application_default_credentials.json",
+		"/home/me/.azure/accessTokens.json",
+		"/repo/.npmrc",
+		"/repo/.yarnrc",
+		"/repo/.pnpmrc",
+	}
+	for _, path := range cases {
+		if !IsSensitivePath(path) {
+			t.Fatalf("expected sensitive path: %s", path)
+		}
+	}
+	if IsSensitivePath("/repo/config.json") {
+		t.Fatal("generic config.json should not be blocked unless it is in a known credential directory")
+	}
+}

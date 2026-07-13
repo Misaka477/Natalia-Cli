@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
+	"github.com/Misaka477/Natalia-Cli/internal/networkpolicy"
 )
 
 var (
@@ -31,8 +32,17 @@ var (
 	BingSearchBaseURL      = "https://www.bing.com/search"
 	DDGAPIBaseURL          = "https://api.duckduckgo.com/"
 	DDGHTMLBaseURL         = "https://html.duckduckgo.com/html/"
-	webSearchHTTPClient    = &http.Client{Timeout: 15 * time.Second}
+	NetworkPolicy          = networkpolicy.Default()
+	webSearchHTTPClient    = NetworkPolicy.HTTPClient(15 * time.Second)
 )
+
+func ConfigureNetworkPolicy(policy *networkpolicy.Policy) {
+	if policy == nil {
+		policy = networkpolicy.Default()
+	}
+	NetworkPolicy = policy
+	webSearchHTTPClient = policy.HTTPClient(15 * time.Second)
+}
 
 type SearchResult struct {
 	Title   string
@@ -232,7 +242,10 @@ func searchCustom(query string, limit int, includeContent bool) ([]SearchResult,
 		req.Header.Set("Authorization", "Bearer "+SearchAPIKey)
 	}
 
-	client := &http.Client{Timeout: 180 * time.Second}
+	client := NetworkPolicy.HTTPClient(180 * time.Second)
+	if err := NetworkPolicy.ValidateURL(req.Context(), SearchBaseURL); err != nil {
+		return nil, err
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -586,10 +599,13 @@ func (t *Fetch) Execute(args map[string]any) (string, error) {
 		return "", err
 	}
 
-	client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
+	client := NetworkPolicy.HTTPClient(time.Duration(timeout) * time.Second)
 	req, _ := http.NewRequest("GET", u, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	if err := NetworkPolicy.ValidateURL(req.Context(), u); err != nil {
+		return "", fmt.Errorf("获取失败: %w", err)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {

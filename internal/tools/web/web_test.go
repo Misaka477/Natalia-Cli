@@ -16,10 +16,28 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Misaka477/Natalia-Cli/internal/networkpolicy"
 )
+
+func allowLocalNetworkForTest(t *testing.T) {
+	t.Helper()
+	oldPolicy := NetworkPolicy
+	oldClient := webSearchHTTPClient
+	policy, err := networkpolicy.New(networkpolicy.Config{AllowLocalhost: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ConfigureNetworkPolicy(policy)
+	t.Cleanup(func() {
+		NetworkPolicy = oldPolicy
+		webSearchHTTPClient = oldClient
+	})
+}
 
 func withSearchGlobals(t *testing.T, fn func()) {
 	t.Helper()
+	allowLocalNetworkForTest(t)
 	oldAPIKey := SearchAPIKey
 	oldEngine := SearchEngine
 	oldBaseURL := SearchBaseURL
@@ -27,7 +45,6 @@ func withSearchGlobals(t *testing.T, fn func()) {
 	oldBing := BingSearchBaseURL
 	oldDDGAPI := DDGAPIBaseURL
 	oldDDGHTML := DDGHTMLBaseURL
-	oldClient := webSearchHTTPClient
 	t.Cleanup(func() {
 		SearchAPIKey = oldAPIKey
 		SearchEngine = oldEngine
@@ -36,13 +53,12 @@ func withSearchGlobals(t *testing.T, fn func()) {
 		BingSearchBaseURL = oldBing
 		DDGAPIBaseURL = oldDDGAPI
 		DDGHTMLBaseURL = oldDDGHTML
-		webSearchHTTPClient = oldClient
 	})
 	SearchAPIKey = ""
 	SearchEngine = ""
 	SearchBaseURL = ""
 	SearchProviderPriority = ""
-	webSearchHTTPClient = &http.Client{Timeout: 2 * time.Second}
+	webSearchHTTPClient = NetworkPolicy.HTTPClient(2 * time.Second)
 	fn()
 }
 
@@ -216,6 +232,7 @@ func TestSearchLimitOutOfRangeFallsBackToDefault(t *testing.T) {
 }
 
 func TestFetchHTMLFormat(t *testing.T) {
+	allowLocalNetworkForTest(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte(`<html><body><h1>Hello</h1><script>bad()</script><p>World</p></body></html>`))
@@ -232,6 +249,7 @@ func TestFetchHTMLFormat(t *testing.T) {
 }
 
 func TestFetchTextStripsHTMLAndScript(t *testing.T) {
+	allowLocalNetworkForTest(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte(`<html><body><h1>Hello</h1><script>bad()</script><p>World</p></body></html>`))
@@ -248,6 +266,7 @@ func TestFetchTextStripsHTMLAndScript(t *testing.T) {
 }
 
 func TestFetchHTMLExtractionSkipsStyleCommentsAndDecodesCharset(t *testing.T) {
+	allowLocalNetworkForTest(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=iso-8859-1")
 		_, _ = w.Write([]byte("<html><head><style>.bad{}</style></head><body><!--hidden--><h1>Caf\xe9</h1><script>bad()</script><p>Visible</p></body></html>"))
@@ -264,6 +283,7 @@ func TestFetchHTMLExtractionSkipsStyleCommentsAndDecodesCharset(t *testing.T) {
 }
 
 func TestFetchGzipAndIncludeLinksMarkdown(t *testing.T) {
+	allowLocalNetworkForTest(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.Header().Set("Content-Encoding", "gzip")
@@ -283,6 +303,7 @@ func TestFetchGzipAndIncludeLinksMarkdown(t *testing.T) {
 }
 
 func TestFetchIncludeLinksText(t *testing.T) {
+	allowLocalNetworkForTest(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte(`<html><body><p>Read <a href="/ref">Reference</a></p></body></html>`))
@@ -299,6 +320,7 @@ func TestFetchIncludeLinksText(t *testing.T) {
 }
 
 func TestFetchMarkdownAndPlainTextFormats(t *testing.T) {
+	allowLocalNetworkForTest(t)
 	htmlServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte("<html><body><p>Line One</p>\n<p>Line Two</p></body></html>"))
@@ -327,6 +349,7 @@ func TestFetchMarkdownAndPlainTextFormats(t *testing.T) {
 }
 
 func TestFetchMaxBytesTruncates(t *testing.T) {
+	allowLocalNetworkForTest(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write([]byte("1234567890"))
@@ -343,6 +366,7 @@ func TestFetchMaxBytesTruncates(t *testing.T) {
 }
 
 func TestFetchBinaryResponseReturnsMetadata(t *testing.T) {
+	allowLocalNetworkForTest(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		_, _ = w.Write([]byte{'a', 0, 'b'})
@@ -359,6 +383,7 @@ func TestFetchBinaryResponseReturnsMetadata(t *testing.T) {
 }
 
 func TestFetchUnknownContentTypeWithNulIsBinary(t *testing.T) {
+	allowLocalNetworkForTest(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Del("Content-Type")
 		_, _ = w.Write([]byte{'a', 0, 'b'})
@@ -382,6 +407,52 @@ func TestFetchRejectsInvalidOptions(t *testing.T) {
 	_, err = (&Fetch{}).Execute(map[string]any{"url": "http://example.com", "timeout": "0"})
 	if err == nil || !strings.Contains(err.Error(), "timeout") {
 		t.Fatalf("expected invalid timeout error, got %v", err)
+	}
+}
+
+func TestFetchDefaultPolicyRejectsLocalhost(t *testing.T) {
+	oldPolicy := NetworkPolicy
+	oldClient := webSearchHTTPClient
+	ConfigureNetworkPolicy(networkpolicy.Default())
+	t.Cleanup(func() {
+		NetworkPolicy = oldPolicy
+		webSearchHTTPClient = oldClient
+	})
+
+	_, err := (&Fetch{}).Execute(map[string]any{"url": "http://127.0.0.1/"})
+	if err == nil || !strings.Contains(err.Error(), "network policy denied") || !strings.Contains(err.Error(), "loopback") {
+		t.Fatalf("expected default network policy localhost rejection, got %v", err)
+	}
+}
+
+func TestFetchRejectsRedirectToBlockedAddress(t *testing.T) {
+	allowLocalNetworkForTest(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://169.254.169.254/latest/meta-data/", http.StatusFound)
+	}))
+	defer server.Close()
+
+	_, err := (&Fetch{}).Execute(map[string]any{"url": server.URL})
+	if err == nil || !strings.Contains(err.Error(), "169.254.169.254") || !strings.Contains(err.Error(), "link-local") {
+		t.Fatalf("expected metadata redirect rejection, got %v", err)
+	}
+}
+
+func TestCustomSearchDefaultPolicyRejectsLocalhostBaseURL(t *testing.T) {
+	oldPolicy := NetworkPolicy
+	oldClient := webSearchHTTPClient
+	oldBaseURL := SearchBaseURL
+	ConfigureNetworkPolicy(networkpolicy.Default())
+	SearchBaseURL = "http://127.0.0.1/search"
+	t.Cleanup(func() {
+		NetworkPolicy = oldPolicy
+		webSearchHTTPClient = oldClient
+		SearchBaseURL = oldBaseURL
+	})
+
+	_, err := (&Search{}).Execute(map[string]any{"query": "natalia"})
+	if err == nil || !strings.Contains(err.Error(), "network policy denied") {
+		t.Fatalf("expected custom search base URL rejection, got %v", err)
 	}
 }
 

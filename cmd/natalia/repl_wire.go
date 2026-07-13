@@ -12,11 +12,28 @@ import (
 	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/display"
+	"github.com/Misaka477/Natalia-Cli/internal/terminalui"
 	"github.com/Misaka477/Natalia-Cli/internal/wire"
 )
 
 type wireTerminalRenderState struct {
 	inReasoning bool
+	theme       *terminalui.Theme
+	view        *terminalui.LiveView
+}
+
+func (s *wireTerminalRenderState) terminalTheme() terminalui.Theme {
+	if s == nil || s.theme == nil {
+		return terminalui.DefaultTheme
+	}
+	return *s.theme
+}
+
+func (s *wireTerminalRenderState) liveView() *terminalui.LiveView {
+	if s.view == nil {
+		s.view = terminalui.NewLiveView()
+	}
+	return s.view
 }
 
 func startInteractiveWireRenderer(out, errOut io.Writer) (*wire.Wire, func()) {
@@ -111,102 +128,18 @@ func renderInteractiveWireMessage(state *wireTerminalRenderState, msg wire.WireM
 	if state == nil {
 		state = &wireTerminalRenderState{}
 	}
-	if msg.Kind == wire.MessageRequest && msg.Request != nil {
-		renderInteractiveWireRequest(msg.Request, errOut)
-		return
-	}
-	if msg.Kind != wire.MessageEvent || msg.Event == nil {
-		return
-	}
-	switch msg.Event.Type {
-	case wire.EventStepBegin:
-		var step wire.StepBegin
-		if json.Unmarshal(msg.Event.Payload, &step) == nil {
-			fmt.Fprintf(errOut, "\n[step %d]\n", step.N)
+	for _, frame := range state.liveView().Dispatch(msg) {
+		if frame.Text == "" {
+			continue
 		}
-	case wire.EventStepInterrupted:
-		fmt.Fprintln(errOut, "\n[step interrupted]")
-	case wire.EventCompactionBegin:
-		fmt.Fprintln(errOut, "\n[compaction begin]")
-	case wire.EventCompactionEnd:
-		fmt.Fprintln(errOut, "\n[compaction end]")
-	case wire.EventContentPart:
-		var part wire.ContentPart
-		if json.Unmarshal(msg.Event.Payload, &part) != nil {
-			return
-		}
-		renderInteractiveContentPart(state, part, out)
-	case wire.EventTurnEnd:
-		if state.inReasoning {
-			fmt.Fprint(out, "\033[0m")
-			state.inReasoning = false
-		}
-		fmt.Fprintln(out)
-	case wire.EventStatusUpdate:
-		var status wire.StatusUpdate
-		if json.Unmarshal(msg.Event.Payload, &status) != nil {
-			return
-		}
-		renderInteractiveStatus(status, errOut)
-	case wire.EventNotification:
-		var notification wire.Notification
-		if json.Unmarshal(msg.Event.Payload, &notification) != nil {
-			return
-		}
-		if notification.Title != "" || notification.Message != "" {
-			fmt.Fprintf(errOut, "\n[notification] %s: %s\n", notification.Title, notification.Message)
-		}
-	case wire.EventToolCall:
-		var call wire.ToolCall
-		if json.Unmarshal(msg.Event.Payload, &call) == nil {
-			fmt.Fprintf(errOut, "\n[tool call] %s %s\n", call.Name, trimWireLine(string(call.Arguments), 300))
-		}
-	case wire.EventToolResult:
-		var result wire.ToolResult
-		if json.Unmarshal(msg.Event.Payload, &result) == nil {
-			label := "tool result"
-			if result.Error != "" {
-				label = "tool error"
+		switch frame.Stream {
+		case terminalui.StreamOutput:
+			fmt.Fprint(out, frame.Text)
+		default:
+			fmt.Fprint(errOut, frame.Text)
+			if !strings.HasSuffix(frame.Text, "\n") {
+				fmt.Fprintln(errOut)
 			}
-			content := strings.TrimSpace(result.Content)
-			if result.Error != "" {
-				content = result.Error
-			}
-			fmt.Fprintf(errOut, "\n[%s] %s: %s\n", label, result.Name, trimWireLine(content, 800))
-			renderWireDisplayBlocks(result.Display, errOut)
-		}
-	case wire.EventSubagentEvent:
-		var event wire.SubagentEvent
-		if json.Unmarshal(msg.Event.Payload, &event) == nil {
-			detail := formatSubagentPayload(event.Payload)
-			fmt.Fprintf(errOut, "\n[subagent] %s %s %s\n", event.ID, event.Event, trimWireLine(detail, 500))
-			renderSubagentPayloadDetails(event.Payload, errOut)
-		}
-	case wire.EventProcessEvent:
-		var event wire.ProcessEvent
-		if json.Unmarshal(msg.Event.Payload, &event) == nil {
-			detail := event.Message
-			if detail == "" && event.Output != "" {
-				detail = event.Stream + ": " + event.Output
-			}
-			if detail == "" && event.Error != "" {
-				detail = event.Error
-			}
-			fmt.Fprintf(errOut, "\n[process] %s %s status=%s %s\n", event.ID, event.Event, event.Status, trimWireLine(detail, 500))
-			renderProcessEventDetails(event, errOut)
-		}
-	case wire.EventInteractiveEvent:
-		var event wire.InteractiveEvent
-		if json.Unmarshal(msg.Event.Payload, &event) == nil {
-			detail := event.Message
-			if detail == "" && event.Output != "" {
-				detail = event.Output
-			}
-			if detail == "" && event.Error != "" {
-				detail = event.Error
-			}
-			fmt.Fprintf(errOut, "\n[interactive] %s %s status=%s %s\n", event.ID, event.Event, event.Status, trimWireLine(detail, 500))
-			renderInteractiveEventDetails(event, errOut)
 		}
 	}
 }
@@ -240,17 +173,18 @@ func formatSubagentPayload(raw json.RawMessage) string {
 }
 
 func renderInteractiveWireRequest(req *wire.WireRequest, errOut io.Writer) {
+	theme := terminalui.DefaultTheme
 	switch req.Type {
 	case wire.RequestApproval:
 		var approval wire.ApprovalRequest
 		if json.Unmarshal(req.Payload, &approval) == nil {
-			fmt.Fprintf(errOut, "\n[approval request] %s: %s\n", approval.Action, trimWireLine(approval.Description, 800))
+			fmt.Fprintf(errOut, "%s%s: %s\n", theme.Inline(terminalui.KindApproval, "approval request"), approval.Action, trimWireLine(approval.Description, 800))
 			renderWireDisplayBlocks(approval.Display, errOut)
 		}
 	case wire.RequestQuestion:
 		var question wire.QuestionRequest
 		if json.Unmarshal(req.Payload, &question) == nil {
-			fmt.Fprintf(errOut, "\n[question request] %s (%d questions)\n", req.ID, len(question.Questions))
+			fmt.Fprintf(errOut, "%s%s (%d questions)\n", theme.Inline(terminalui.KindQuestion, "question request"), req.ID, len(question.Questions))
 			for _, item := range question.Questions {
 				fmt.Fprintf(errOut, "- %s: %s\n", item.Name, trimWireLine(item.Question, 300))
 				for i, option := range item.Options {
@@ -270,15 +204,15 @@ func renderInteractiveWireRequest(req *wire.WireRequest, errOut io.Writer) {
 	case wire.RequestToolCall:
 		var toolReq wire.ToolCallRequest
 		if json.Unmarshal(req.Payload, &toolReq) == nil {
-			fmt.Fprintf(errOut, "\n[tool request] %s %s\n", toolReq.Name, trimWireLine(string(toolReq.Arguments), 300))
+			fmt.Fprintf(errOut, "%s%s %s\n", theme.Inline(terminalui.KindTool, "tool request"), toolReq.Name, trimWireLine(string(toolReq.Arguments), 300))
 		}
 	case wire.RequestHook:
 		var hookReq wire.HookRequest
 		if json.Unmarshal(req.Payload, &hookReq) == nil {
-			fmt.Fprintf(errOut, "\n[hook request] %s %s\n", hookReq.Event, hookReq.Target)
+			fmt.Fprintf(errOut, "%s%s %s\n", theme.Inline(terminalui.KindHook, "hook request"), hookReq.Event, hookReq.Target)
 		}
 	default:
-		fmt.Fprintf(errOut, "\n[wire request] %s %s\n", req.Type, req.ID)
+		fmt.Fprintf(errOut, "%s%s %s\n", theme.Inline(terminalui.KindInfo, "wire request"), req.Type, req.ID)
 	}
 }
 
@@ -390,27 +324,23 @@ func renderWireDisplayBlocks(blocks []display.Block, out io.Writer) {
 	for _, block := range blocks {
 		switch block.Type {
 		case display.BlockText:
-			fmt.Fprintf(out, "[text] %s\n%s\n", block.Title, trimWireLine(string(block.Data), 2000))
+			fmt.Fprintf(out, "%s %s\n%s\n", terminalui.DefaultTheme.DisplayLabel("text"), block.Title, trimWireLine(string(block.Data), 2000))
 		case display.BlockDiff:
 			var diff display.DiffBlock
 			if json.Unmarshal(block.Data, &diff) == nil {
-				fmt.Fprintf(out, "[diff] %s\n%s\n", diff.Path, trimWireLine(diff.Diff, 4000))
+				fmt.Fprintf(out, "%s %s\n%s\n", terminalui.DefaultTheme.DisplayLabel("diff"), diff.Path, trimWireLine(diff.Diff, 4000))
 			}
 		case display.BlockShell:
 			var shell display.ShellBlock
 			if json.Unmarshal(block.Data, &shell) == nil {
-				fmt.Fprintf(out, "[shell] %s\n%s\n", shell.Command, trimWireLine(shell.Output, 2000))
+				fmt.Fprintf(out, "%s %s\n%s\n", terminalui.DefaultTheme.DisplayLabel("shell"), shell.Command, trimWireLine(shell.Output, 2000))
 			}
 		case display.BlockTodo:
 			var todo display.TodoBlock
 			if json.Unmarshal(block.Data, &todo) == nil {
-				fmt.Fprintf(out, "[todo] %s\n", block.Title)
+				fmt.Fprintf(out, "%s %s\n", terminalui.DefaultTheme.DisplayLabel("todo"), block.Title)
 				for _, item := range todo.Items {
-					mark := " "
-					if item.Done {
-						mark = "x"
-					}
-					fmt.Fprintf(out, "- [%s] %s\n", mark, trimWireLine(item.Text, 300))
+					fmt.Fprintln(out, terminalui.DefaultTheme.Checklist(item.Done, trimWireLine(item.Text, 300)))
 				}
 			}
 		case display.BlockBackgroundTask:
@@ -435,7 +365,7 @@ func renderJSONDisplayBlock(out io.Writer, label string, block display.Block) {
 	if title == "" {
 		title = label
 	}
-	fmt.Fprintf(out, "[%s] %s\n%s\n", label, title, trimWireLine(text, 3000))
+	fmt.Fprintf(out, "%s %s\n%s\n", terminalui.DefaultTheme.DisplayLabel(label), title, trimWireLine(text, 3000))
 }
 
 func renderSubagentPayloadDetails(raw json.RawMessage, out io.Writer) {
@@ -445,13 +375,13 @@ func renderSubagentPayloadDetails(raw json.RawMessage, out io.Writer) {
 	}
 	for _, key := range []string{"task", "mode", "model_profile", "status"} {
 		if value, ok := payload[key]; ok && fmt.Sprint(value) != "" {
-			fmt.Fprintf(out, "  %s: %s\n", key, trimWireLine(fmt.Sprint(value), 500))
+			fmt.Fprintln(out, terminalui.DefaultTheme.Detail(fmt.Sprintf("  %s: %s", key, trimWireLine(fmt.Sprint(value), 500))))
 		}
 	}
 	if logValue, ok := payload["log"].(map[string]any); ok {
 		for _, key := range []string{"tool", "result", "error"} {
 			if value, ok := logValue[key]; ok && fmt.Sprint(value) != "" {
-				fmt.Fprintf(out, "  log.%s: %s\n", key, trimWireLine(fmt.Sprint(value), 500))
+				fmt.Fprintln(out, terminalui.DefaultTheme.Detail(fmt.Sprintf("  log.%s: %s", key, trimWireLine(fmt.Sprint(value), 500))))
 			}
 		}
 	}
@@ -459,41 +389,41 @@ func renderSubagentPayloadDetails(raw json.RawMessage, out io.Writer) {
 
 func renderProcessEventDetails(event wire.ProcessEvent, out io.Writer) {
 	if event.Command != "" {
-		fmt.Fprintf(out, "  command: %s %s\n", event.Command, strings.Join(event.Args, " "))
+		fmt.Fprintln(out, terminalui.DefaultTheme.Detail(fmt.Sprintf("  command: %s %s", event.Command, strings.Join(event.Args, " "))))
 	}
 	if event.PID != 0 {
-		fmt.Fprintf(out, "  pid: %d\n", event.PID)
+		fmt.Fprintln(out, terminalui.DefaultTheme.Detail(fmt.Sprintf("  pid: %d", event.PID)))
 	}
-	fmt.Fprintf(out, "  attached: %t\n", event.Attached)
+	fmt.Fprintln(out, terminalui.DefaultTheme.Detail(fmt.Sprintf("  attached: %t", event.Attached)))
 	if len(event.EnvSummary) > 0 {
-		fmt.Fprintf(out, "  env: %s\n", strings.Join(event.EnvSummary, ", "))
+		fmt.Fprintln(out, terminalui.DefaultTheme.Detail(fmt.Sprintf("  env: %s", strings.Join(event.EnvSummary, ", "))))
 	}
 }
 
 func renderInteractiveEventDetails(event wire.InteractiveEvent, out io.Writer) {
 	if event.Command != "" {
-		fmt.Fprintf(out, "  command: %s %s\n", event.Command, strings.Join(event.Args, " "))
+		fmt.Fprintln(out, terminalui.DefaultTheme.Detail(fmt.Sprintf("  command: %s %s", event.Command, strings.Join(event.Args, " "))))
 	}
 	if event.PID != 0 {
-		fmt.Fprintf(out, "  pid: %d\n", event.PID)
+		fmt.Fprintln(out, terminalui.DefaultTheme.Detail(fmt.Sprintf("  pid: %d", event.PID)))
 	}
 	if event.Rows > 0 || event.Cols > 0 {
-		fmt.Fprintf(out, "  size: %dx%d\n", event.Rows, event.Cols)
+		fmt.Fprintln(out, terminalui.DefaultTheme.Detail(fmt.Sprintf("  size: %dx%d", event.Rows, event.Cols)))
 	}
-	fmt.Fprintf(out, "  attached: %t\n", event.Attached)
+	fmt.Fprintln(out, terminalui.DefaultTheme.Detail(fmt.Sprintf("  attached: %t", event.Attached)))
 }
 
 func renderInteractiveContentPart(state *wireTerminalRenderState, part wire.ContentPart, out io.Writer) {
 	switch part.Type {
 	case wire.ContentThink:
 		if !state.inReasoning {
-			fmt.Fprint(out, "\n\033[38;5;245m")
+			fmt.Fprint(out, "\n")
 			state.inReasoning = true
 		}
-		fmt.Fprint(out, part.Text)
+		fmt.Fprint(out, state.terminalTheme().Reasoning(part.Text))
 	default:
 		if state.inReasoning {
-			fmt.Fprint(out, "\033[0m\n\n")
+			fmt.Fprint(out, "\n\n")
 			state.inReasoning = false
 		}
 		fmt.Fprint(out, part.Text)
@@ -507,10 +437,9 @@ func renderInteractiveStatus(status wire.StatusUpdate, errOut io.Writer) {
 	elapsed := time.Duration(*status.TurnElapsedMS) * time.Millisecond
 	running := status.TurnRunning != nil && *status.TurnRunning
 	if running {
-		fmt.Fprintf(errOut, "\r[elapsed %s]", formatElapsed(elapsed))
 		return
 	}
-	fmt.Fprintf(errOut, "\r[elapsed %s]\n", formatElapsed(elapsed))
+	fmt.Fprintln(errOut, terminalui.DefaultTheme.Status("elapsed "+formatElapsed(elapsed)))
 }
 
 func trimWireLine(s string, limit int) string {

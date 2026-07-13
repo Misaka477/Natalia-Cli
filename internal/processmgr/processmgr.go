@@ -7,11 +7,12 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/Misaka477/Natalia-Cli/internal/secret"
 )
 
 type Status string
@@ -209,9 +210,7 @@ func (m *Manager) Start(ctx context.Context, opts StartOptions) (*Session, error
 	cmd := exec.CommandContext(runCtx, opts.Command, opts.Args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Dir = opts.Cwd
-	if len(opts.Env) > 0 {
-		cmd.Env = append(os.Environ(), opts.Env...)
-	}
+	cmd.Env = secret.FilterEnv(append(os.Environ(), opts.Env...), secret.EnvAllowlist())
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		cancel()
@@ -518,6 +517,7 @@ func (s *managedSession) appendOutput(stream, text string) {
 	s.mu.Lock()
 	now := time.Now()
 	s.meta.LastActivityAt = now
+	text = secret.RedactString(text)
 	line := OutputLine{Stream: stream, Text: text, Time: now}
 	s.output = append(s.output, line)
 	if len(s.output) > s.maxTail {
@@ -609,30 +609,9 @@ func processAlive(pid int) bool {
 }
 
 func summarizeEnv(env []string) []string {
-	if len(env) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(env))
-	for _, item := range env {
-		key, value, ok := strings.Cut(item, "=")
-		if !ok {
-			out = append(out, item)
-			continue
-		}
-		if isSecretEnvName(key) {
-			value = "[redacted]"
-		}
-		out = append(out, key+"="+value)
-	}
-	return out
+	return secret.SummarizeEnv(env)
 }
 
 func isSecretEnvName(name string) bool {
-	upper := strings.ToUpper(name)
-	for _, marker := range []string{"SECRET", "TOKEN", "PASSWORD", "PRIVATE_KEY", "ACCESS_KEY", "API_KEY"} {
-		if strings.Contains(upper, marker) {
-			return true
-		}
-	}
-	return strings.HasSuffix(upper, "_KEY")
+	return secret.IsSensitiveName(name)
 }

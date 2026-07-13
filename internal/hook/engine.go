@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Misaka477/Natalia-Cli/internal/secret"
 )
 
 type EventType string
@@ -243,20 +245,21 @@ func runShellHook(parent context.Context, def HookDef, input TriggerInput) HookR
 
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", def.Command)
 	cmd.Dir = def.Cwd
+	cmd.Env = secret.SanitizedEnv()
 	cmd.Stdin = bytes.NewReader(raw)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err = cmd.Run()
-	result.Stdout = stdout.String()
-	result.Stderr = stderr.String()
+	result.Stdout = secret.RedactString(stdout.String())
+	result.Stderr = secret.RedactString(stderr.String())
 	if ctx.Err() == context.DeadlineExceeded {
 		result.TimedOut = true
 		result.Error = fmt.Sprintf("hook timed out after %s", timeout)
 		return result
 	}
 	if err != nil {
-		result.Error = err.Error()
+		result.Error = secret.RedactString(err.Error())
 	}
 	result.Response = parseHookResponse(result.Stdout)
 	return result

@@ -10,7 +10,9 @@ import (
 
 	"github.com/Misaka477/Natalia-Cli/internal/agentspec"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
+	"github.com/Misaka477/Natalia-Cli/internal/networkpolicy"
 	"github.com/Misaka477/Natalia-Cli/internal/plan"
+	"github.com/Misaka477/Natalia-Cli/internal/tools/web"
 )
 
 func TestRegisterDefaultToolsFromAgentSpec(t *testing.T) {
@@ -83,6 +85,13 @@ func TestDefaultToolsetExecutesModelStyleToolFlowEndToEnd(t *testing.T) {
 		_, _ = w.Write([]byte("<html><body><h1>Toolset Web OK</h1><script>bad()</script></body></html>"))
 	}))
 	defer server.Close()
+	oldPolicy := web.NetworkPolicy
+	policy, err := networkpolicy.New(networkpolicy.Config{AllowLocalhost: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	web.ConfigureNetworkPolicy(policy)
+	t.Cleanup(func() { web.ConfigureNetworkPolicy(oldPolicy) })
 	mustExecTool(t, r, "web_fetch", map[string]any{"url": server.URL}, "Toolset Web OK")
 	mustExecTool(t, r, "file_info", map[string]any{"path": path}, "MIME:")
 }

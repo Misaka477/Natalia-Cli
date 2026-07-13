@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
+	"github.com/Misaka477/Natalia-Cli/internal/networkpolicy"
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
@@ -19,6 +20,7 @@ var (
 	globalBrowser   *rod.Browser
 	globalBrowserMu sync.Mutex
 	globalOptions   Options
+	NetworkPolicy   = networkpolicy.Default()
 )
 
 type Options struct {
@@ -31,6 +33,7 @@ type Options struct {
 	Headers           map[string]string
 	Stealth           bool
 	Trace             bool
+	NetworkPolicy     *networkpolicy.Policy
 }
 
 func Configure(options Options) {
@@ -39,6 +42,9 @@ func Configure(options Options) {
 	if globalBrowser != nil {
 		_ = globalBrowser.Close()
 		globalBrowser = nil
+	}
+	if options.NetworkPolicy == nil {
+		options.NetworkPolicy = networkpolicy.Default()
 	}
 	globalOptions = options
 }
@@ -98,6 +104,7 @@ type renderedPage struct {
 	Title      string
 	Text       string
 	Screenshot []byte
+	FinalURL   string
 }
 
 var renderBrowserPage = renderPageWithRod
@@ -125,10 +132,18 @@ func (t *Visit) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if err := validateURL(u); err != nil {
+		return "", err
+	}
 
 	rendered, err := renderBrowserPage(u, options, false)
 	if err != nil {
 		return "", err
+	}
+	if rendered.FinalURL != "" {
+		if err := validateURL(rendered.FinalURL); err != nil {
+			return "", fmt.Errorf("浏览器重定向被网络策略拒绝: %w", err)
+		}
 	}
 	text := strings.TrimSpace(rendered.Text)
 
@@ -184,6 +199,10 @@ func renderPageWithRod(u string, options pageOptions, includeScreenshot bool) (r
 	if bodyText != nil {
 		rendered.Text = bodyText.Value.String()
 	}
+	finalURL, _ := page.Eval(`() => location.href`)
+	if finalURL != nil {
+		rendered.FinalURL = finalURL.Value.String()
+	}
 	if includeScreenshot {
 		data, err := page.Screenshot(true, nil)
 		if err != nil {
@@ -219,6 +238,19 @@ func applyPageOptions(page *rod.Page) error {
 		}
 	}
 	return nil
+}
+
+func validateURL(raw string) error {
+	globalBrowserMu.Lock()
+	policy := globalOptions.NetworkPolicy
+	globalBrowserMu.Unlock()
+	if policy == nil {
+		policy = NetworkPolicy
+	}
+	if policy == nil {
+		policy = networkpolicy.Default()
+	}
+	return policy.ValidateURL(nil, raw)
 }
 
 func parseWait(raw string) (int, error) {
@@ -325,10 +357,18 @@ func (t *Screenshot) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if err := validateURL(u); err != nil {
+		return "", err
+	}
 
 	rendered, err := renderBrowserPage(u, options, true)
 	if err != nil {
 		return "", err
+	}
+	if rendered.FinalURL != "" {
+		if err := validateURL(rendered.FinalURL); err != nil {
+			return "", fmt.Errorf("浏览器重定向被网络策略拒绝: %w", err)
+		}
 	}
 
 	absPath, _ := filepath.Abs(savePath)

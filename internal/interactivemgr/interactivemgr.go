@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Misaka477/Natalia-Cli/internal/secret"
 	"github.com/creack/pty"
 )
 
@@ -184,7 +185,7 @@ func (m *Manager) Start(ctx context.Context, opts StartOptions) (*Session, error
 	runCtx, cancel := context.WithCancel(ctx)
 	cmd := exec.CommandContext(runCtx, opts.Command, opts.Args...)
 	cmd.Dir = opts.Cwd
-	cmd.Env = os.Environ()
+	cmd.Env = secret.SanitizedEnv()
 	f, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)})
 	if err != nil {
 		cancel()
@@ -417,6 +418,9 @@ func (s *managedSession) appendOutput(chunk []byte) {
 	text := string(chunk)
 	if s.redacting {
 		text = "[secret redacted]\n"
+		chunk = []byte(text)
+	} else {
+		text = secret.RedactString(text)
 		chunk = []byte(text)
 	}
 	now := time.Now()

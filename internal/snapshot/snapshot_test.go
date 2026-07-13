@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Misaka477/Natalia-Cli/internal/securefs"
 )
 
 func TestObjects(t *testing.T) {
@@ -153,6 +155,19 @@ func TestCheckpoint(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"step":1`) {
 		t.Error("refs.jsonl should contain step 1")
+	}
+	assertSnapshotMode(t, refsFile, securefs.FileMode)
+	assertSnapshotMode(t, filepath.Join(sessionDir, "snapshots"), securefs.DirMode)
+}
+
+func assertSnapshotMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != want {
+		t.Fatalf("expected %s mode %o, got %o", path, want, info.Mode().Perm())
 	}
 }
 
