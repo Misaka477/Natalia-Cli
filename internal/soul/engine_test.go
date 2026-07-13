@@ -377,7 +377,7 @@ func TestGetToolDefsRespectsModeFilter(t *testing.T) {
 	}
 }
 
-func TestExecuteToolCallBudgetsToolResultInContext(t *testing.T) {
+func TestExecuteToolCallKeepsFullToolResultInContext(t *testing.T) {
 	tools := toolset.NewRegistry()
 	tools.Register(largeResultTool{})
 	engine := NewEngine(nil, tools)
@@ -400,15 +400,15 @@ func TestExecuteToolCallBudgetsToolResultInContext(t *testing.T) {
 		t.Fatalf("expected one tool message, got %d", len(engine.Context.Messages))
 	}
 	content := engine.Context.Messages[0].Content
-	if len(content) > 200 || !strings.Contains(content, "[tool result truncated:") {
-		t.Fatalf("expected budgeted context result, got len=%d content=%q", len(content), content)
+	if len(content) != 1000 || strings.Contains(content, "[tool result truncated:") {
+		t.Fatalf("expected full context result, got len=%d content=%q", len(content), content)
 	}
 	if len(emitted) != 1 || len(emitted[0].Content) != 1000 {
 		t.Fatalf("expected full result in event, got %+v", emitted)
 	}
 }
 
-func TestExecuteToolCallSummarizesShellFailureInContext(t *testing.T) {
+func TestExecuteToolCallKeepsFullShellFailureInContext(t *testing.T) {
 	tools := toolset.NewRegistry()
 	tools.Register(shellFailureTool{})
 	engine := NewEngine(nil, tools)
@@ -426,8 +426,8 @@ func TestExecuteToolCallSummarizesShellFailureInContext(t *testing.T) {
 		t.Fatalf("executeToolCall failed: %v", err)
 	}
 	content := engine.Context.Messages[0].Content
-	if len(content) > 300 || !strings.Contains(content, "[shell/test output summarized:") || !strings.Contains(content, "--- FAIL: TestExample") {
-		t.Fatalf("expected summarized shell failure, got len=%d content=%q", len(content), content)
+	if strings.Contains(content, "[shell/test output summarized:") || !strings.Contains(content, "--- FAIL: TestExample") || !strings.Contains(content, "ERROR: exit status 1") || strings.Count(content, "noise") != 100 {
+		t.Fatalf("expected full shell failure, got len=%d content=%q", len(content), content)
 	}
 }
 

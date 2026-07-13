@@ -1380,6 +1380,38 @@ func TestRequestWireApprovalApprovesResponse(t *testing.T) {
 	}
 }
 
+func TestConfigureEngineApprovalForWireRoutesInteractiveStart(t *testing.T) {
+	approvalRequestSeq = 0
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	w, stop := startInteractiveWireRendererWithResponders(&out, &errOut, nil, func(ctx context.Context, req wire.ApprovalRequest) (wire.ApprovalResponse, error) {
+		if req.Action != "interactive_start" || !strings.Contains(req.Description, "python -i") {
+			t.Fatalf("unexpected approval request: %+v", req)
+		}
+		return wire.ApprovalResponse{RequestID: req.ID, Response: "approve"}, nil
+	})
+	defer stop()
+	engine := soul.NewEngine(nil, toolset.NewRegistry())
+	engine.Approver = approval.New(approval.ModeAsk)
+	configureEngineApprovalForWire(engine, w, nil)
+
+	resultCh := make(chan bool, 1)
+	go func() {
+		resultCh <- engine.Approver.RequestWithDisplay("interactive_start", "python -i", nil)
+	}()
+	select {
+	case approved := <-resultCh:
+		if !approved {
+			t.Fatal("expected interactive_start approval to be approved through wire renderer")
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("interactive_start approval did not unblock, stderr=%q", errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "Approval required") || !strings.Contains(errOut.String(), "interactive_start") {
+		t.Fatalf("expected approval panel for interactive_start, got %q", errOut.String())
+	}
+}
+
 func TestRequestWireQuestionPublishesAndParsesResponse(t *testing.T) {
 	questionRequestSeq = 0
 	w := wire.NewWire()
@@ -1941,8 +1973,8 @@ func TestInteractiveWireRendererRendersContentStatusAndNotification(t *testing.T
 	w.SoulSide.PublishEvent(finalStatus)
 	stop()
 
-	if strings.Contains(out.String(), "thinking") || !strings.Contains(out.String(), "answer") || !strings.Contains(errOut.String(), "Thinking") || !strings.Contains(errOut.String(), "Thought for") {
-		t.Fatalf("expected renderer to hide raw reasoning while showing thinking summary and answer, stdout=%q stderr=%q", out.String(), errOut.String())
+	if strings.Contains(out.String(), "thinking") || !strings.Contains(out.String(), "answer") || !strings.Contains(errOut.String(), "Thinking") || !strings.Contains(errOut.String(), "thinking") || !strings.Contains(errOut.String(), "Thought for") {
+		t.Fatalf("expected renderer to show reasoning preview on stderr and answer on stdout, stdout=%q stderr=%q", out.String(), errOut.String())
 	}
 	if strings.Contains(errOut.String(), "elapsed 1s") || !strings.Contains(errOut.String(), "elapsed 2s") || !strings.Contains(errOut.String(), "Background task completed") || !strings.Contains(errOut.String(), "proc_1 exited") {
 		t.Fatalf("expected stderr renderer output to include elapsed status and notification, got %q", errOut.String())
@@ -1980,8 +2012,8 @@ func TestConfigureEngineForWireFeedsInteractiveRenderer(t *testing.T) {
 	w.SoulSide.PublishEvent(end)
 	stop()
 
-	if strings.Contains(out.String(), "reason") || !strings.Contains(out.String(), "final") || !strings.Contains(errOut.String(), "Thought for") {
-		t.Fatalf("expected engine callbacks to hide reasoning and render final through wire, stdout=%q stderr=%q", out.String(), errOut.String())
+	if strings.Contains(out.String(), "reason") || !strings.Contains(out.String(), "final") || !strings.Contains(errOut.String(), "reason") || !strings.Contains(errOut.String(), "Thought for") {
+		t.Fatalf("expected engine callbacks to preview reasoning on stderr and render final through wire, stdout=%q stderr=%q", out.String(), errOut.String())
 	}
 }
 
@@ -2123,6 +2155,49 @@ func TestInteractiveWireRendererRespondsToApprovalRequest(t *testing.T) {
 	}
 	if !strings.Contains(errOut.String(), "Approval required") || !strings.Contains(errOut.String(), "write_file") || !strings.Contains(errOut.String(), "update file") {
 		t.Fatalf("expected approval rendering, got %q", errOut.String())
+	}
+}
+
+func TestTerminalLineReaderTimeoutDoesNotStealNextApprovalAnswer(t *testing.T) {
+	inR, inW, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer inR.Close()
+	defer inW.Close()
+	reader := newTerminalLineReader(inR)
+	var errOut bytes.Buffer
+	questionResponder := newTerminalQuestionResponder(reader, &errOut)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	questionResp, err := questionResponder(ctx, wire.QuestionRequest{ID: "question_timeout", Questions: []wire.QuestionItem{{Name: "choice", Question: "Proceed?", Fallback: "fallback"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if questionResp.Answers["choice"] != "fallback" {
+		t.Fatalf("expected timeout fallback answer, got %+v", questionResp)
+	}
+
+	writeErr := make(chan error, 1)
+	go func() {
+		_, err := inW.Write([]byte("y\n"))
+		writeErr <- err
+	}()
+	approvalResponder := newTerminalApprovalResponder(reader, &errOut)
+	approvalResp, err := approvalResponder(context.Background(), wire.ApprovalRequest{ID: "approval_after_timeout", Action: "interactive_start", Description: "python -i"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if approvalResp.Response != "approve" {
+		t.Fatalf("expected approval answer after timed out question, got %+v", approvalResp)
+	}
+	select {
+	case err := <-writeErr:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("approval answer write did not complete")
 	}
 }
 

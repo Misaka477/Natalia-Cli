@@ -99,6 +99,8 @@ Common runtime commands inside the interactive CLI include:
 /plan [status|done|clear]
 ```
 
+See `docs/commands.md` for the complete command, slash command, Wire method, and tool reference.
+
 ## Tooling
 
 Natalia CLI ships with built-in tools for:

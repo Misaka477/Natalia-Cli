@@ -5,6 +5,7 @@
 *.so
 *.dylib
 /natalia
+/bin/
 
 # Test binary
 *.test
@@ -31,5 +32,4 @@ Thumbs.db
 
 # Kilo local project state
 .kilo/
-
 

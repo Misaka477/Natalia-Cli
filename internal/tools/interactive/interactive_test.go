@@ -187,6 +187,26 @@ func TestInteractiveToolsFallbackManagerCoversExecuteFlow(t *testing.T) {
 	}
 }
 
+func TestInteractiveWriteSubmitsSingleLineByDefault(t *testing.T) {
+	resetManager()
+	fake := &fakeManager{}
+	currentManager = func() manager { return fake }
+	t.Cleanup(resetManager)
+
+	if _, err := (&Write{}).Execute(map[string]any{"id": "tty_fake", "input": "echo ready"}); err != nil {
+		t.Fatal(err)
+	}
+	if fake.lastInput != "echo ready\n" {
+		t.Fatalf("expected default write to submit line, got %q", fake.lastInput)
+	}
+	if _, err := (&Write{}).Execute(map[string]any{"id": "tty_fake", "input": "partial", "submit": false}); err != nil {
+		t.Fatal(err)
+	}
+	if fake.lastInput != "partial" {
+		t.Fatalf("expected submit=false to preserve partial input, got %q", fake.lastInput)
+	}
+}
+
 func TestInteractiveToolsStartWriteReadListStop(t *testing.T) {
 	resetManager()
 	start, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "args": []any{"-i"}, "idle_timeout_ms": float64(50), "max_wait_ms": float64(500)})
@@ -197,7 +217,7 @@ func TestInteractiveToolsStartWriteReadListStop(t *testing.T) {
 	id := extractID(t, start)
 	defer (&Stop{}).Execute(map[string]any{"id": id})
 
-	written, err := (&Write{}).Execute(map[string]any{"id": id, "input": "printf tool_ready\\n\n", "wait_for": "tool_ready", "idle_timeout_ms": float64(50), "max_wait_ms": float64(1000)})
+	written, err := (&Write{}).Execute(map[string]any{"id": id, "input": "printf tool_ready\\n", "wait_for": "tool_ready", "idle_timeout_ms": float64(50), "max_wait_ms": float64(1000)})
 	if err != nil {
 		t.Fatal(err)
 	}

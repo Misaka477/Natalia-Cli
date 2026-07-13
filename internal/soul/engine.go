@@ -561,8 +561,28 @@ func approvalPreview(name string, args map[string]any) (string, []display.Block)
 			return "run_shell: " + command, blocks
 		}
 		return fmt.Sprintf("%s %v", name, args), blocks
+	case "interactive_start":
+		command, _ := args["command"].(string)
+		if command != "" {
+			return "start interactive session: " + command, nil
+		}
+	case "interactive_write":
+		id, _ := args["id"].(string)
+		input, _ := args["input"].(string)
+		if id != "" || input != "" {
+			return fmt.Sprintf("write to interactive session %s: %s", id, trimApprovalText(input, 80)), nil
+		}
 	}
 	return fmt.Sprintf("%s %v", name, args), nil
+}
+
+func trimApprovalText(text string, limit int) string {
+	text = strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
+	if limit <= 0 || len([]rune(text)) <= limit {
+		return text
+	}
+	runes := []rune(text)
+	return string(runes[:limit]) + "..."
 }
 
 func diffApprovalBlock(preview filetool.Preview) []display.Block {

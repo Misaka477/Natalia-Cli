@@ -92,7 +92,7 @@ func (t *Read) Parameters() map[string]llm.Property {
 		"wait_for":        {Type: "string", Description: "可选，等待的 prompt 正则"},
 		"idle_timeout_ms": {Type: "integer", Description: "可选，输出静默多久视为等待输入，默认 200"},
 		"max_wait_ms":     {Type: "integer", Description: "可选，最长观察时间，默认 2000"},
-		"tail_bytes":      {Type: "integer", Description: "可选，tail 字节数，默认 4096"},
+		"tail_bytes":      {Type: "integer", Description: "可选，仅用于显式请求 tail 切片；默认不截断"},
 	}
 }
 func (t *Read) Execute(args map[string]any) (string, error) {
@@ -115,18 +115,19 @@ type Write struct{}
 
 func (t *Write) Name() string { return "interactive_write" }
 func (t *Write) Description() string {
-	return "向交互式 PTY session 写入输入，然后返回 observation；写入后必须观察输出再继续"
+	return "向交互式 PTY session 写入输入并返回 observation；默认会为单行输入追加 Enter，部分输入可设置 submit=false"
 }
 func (t *Write) Required() []string { return []string{"id", "input"} }
 func (t *Write) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"id":              {Type: "string", Description: "interactive session id"},
-		"input":           {Type: "string", Description: "要写入的输入；需要提交时包含换行"},
+		"input":           {Type: "string", Description: "要写入的输入；默认作为一行提交"},
+		"submit":          {Type: "boolean", Description: "可选，默认 true；false 表示只写入但不按 Enter，用于分段输入"},
 		"sensitive":       {Type: "boolean", Description: "可选，true 表示 secret 输入，不在返回中回显输入"},
 		"wait_for":        {Type: "string", Description: "可选，写入后等待的 prompt 正则"},
 		"idle_timeout_ms": {Type: "integer", Description: "可选，输出静默多久视为等待输入，默认 200"},
 		"max_wait_ms":     {Type: "integer", Description: "可选，最长观察时间，默认 2000"},
-		"tail_bytes":      {Type: "integer", Description: "可选，tail 字节数，默认 4096"},
+		"tail_bytes":      {Type: "integer", Description: "可选，仅用于显式请求 tail 切片；默认不截断"},
 	}
 }
 func (t *Write) Execute(args map[string]any) (string, error) {
@@ -137,6 +138,13 @@ func (t *Write) Execute(args map[string]any) (string, error) {
 	input, _ := args["input"].(string)
 	if input == "" {
 		return "", fmt.Errorf("input required")
+	}
+	submit := true
+	if raw, ok := args["submit"].(bool); ok {
+		submit = raw
+	}
+	if submit && !strings.HasSuffix(input, "\n") && !strings.HasSuffix(input, "\r") {
+		input += "\n"
 	}
 	sensitive, _ := args["sensitive"].(bool)
 	observeOpts, err := observeOptions(args, !sensitive)
@@ -355,9 +363,13 @@ func observeOptions(args map[string]any, includeOutput bool) (interactivemgr.Obs
 	if err != nil {
 		return interactivemgr.ObserveOptions{}, err
 	}
-	tailBytes, err := intArg(args["tail_bytes"], 4096, 256, 200000, "tail_bytes")
-	if err != nil {
-		return interactivemgr.ObserveOptions{}, err
+	tailBytes := 0
+	if _, ok := args["tail_bytes"]; ok {
+		var err error
+		tailBytes, err = intArg(args["tail_bytes"], 0, 256, 1024*1024, "tail_bytes")
+		if err != nil {
+			return interactivemgr.ObserveOptions{}, err
+		}
 	}
 	return interactivemgr.ObserveOptions{WaitFor: waitFor, IdleTimeout: time.Duration(idle) * time.Millisecond, MaxWait: time.Duration(maxWait) * time.Millisecond, TailBytes: tailBytes, IncludeOutput: includeOutput}, nil
 }

@@ -5,65 +5,18 @@ import (
 	"strings"
 )
 
-const DefaultToolResultMaxChars = 12000
+const DefaultToolResultMaxChars = 0
 
 func BudgetToolResult(toolName, content string, maxChars int) string {
-	originalLen := len(content)
-	content = CollapseRepeatedLines(content, 3)
-	if shouldSummarizeShell(toolName, content, originalLen, maxChars) {
-		return summarizeShellFailure(content, maxChars)
-	}
-	return LimitToolResult(content, maxChars)
+	return content
 }
 
 func CollapseRepeatedLines(content string, maxRepeats int) string {
-	if maxRepeats <= 0 || content == "" {
-		return content
-	}
-	lines := strings.Split(content, "\n")
-	out := make([]string, 0, len(lines))
-	last := ""
-	repeats := 0
-	skipped := 0
-	flushSkipped := func() {
-		if skipped > 0 {
-			out = append(out, fmt.Sprintf("[repeated line omitted %d times]", skipped))
-			skipped = 0
-		}
-	}
-	for _, line := range lines {
-		if line == last {
-			repeats++
-			if repeats <= maxRepeats {
-				out = append(out, line)
-			} else {
-				skipped++
-			}
-			continue
-		}
-		flushSkipped()
-		last = line
-		repeats = 1
-		out = append(out, line)
-	}
-	flushSkipped()
-	return strings.Join(out, "\n")
+	return content
 }
 
 func LimitToolResult(content string, maxChars int) string {
-	if maxChars <= 0 || len(content) <= maxChars {
-		return content
-	}
-	if maxChars < 128 {
-		maxChars = 128
-	}
-	marker := fmt.Sprintf("\n\n[tool result truncated: original %d bytes, kept %d bytes]", len(content), maxChars)
-	keep := maxChars - len(marker)
-	if keep < 1 {
-		keep = maxChars
-		marker = ""
-	}
-	return content[:keep] + marker
+	return content
 }
 
 func shouldSummarizeShell(toolName, content string, originalLen, maxChars int) bool {

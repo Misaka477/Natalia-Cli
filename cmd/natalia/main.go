@@ -992,7 +992,11 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 		return requestWireQuestion(ctx, wireRuntime, req)
 	})
 	defer clearAskUserHandler()
-	configureEngineForWire(engine, wireRuntime)
+	configureInteractiveEngine := func() {
+		configureEngineForWire(engine, wireRuntime)
+		configureEngineApprovalForWire(engine, wireRuntime, nil)
+	}
+	configureInteractiveEngine()
 	escalator := &autoflow.Escalator{Threshold: autoflow.DefaultFailureThreshold}
 	autoEnabled := true
 	history := make([]string, 0)
@@ -1063,7 +1067,7 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 
 		if strings.HasPrefix(input, "/") {
 			handleSlashCommand(input, &cfg, &engine, tools, debug, &autoEnabled, escalator)
-			configureEngineForWire(engine, wireRuntime)
+			configureInteractiveEngine()
 			continue
 		}
 
@@ -1127,7 +1131,7 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 			decision := maybeRecordAutoflow(autoEnabled, escalator, outcome, cfg)
 			applyAutoflowDecision(decision, cfg, &engine, tools, debug)
 			registerAgentToolsForEngine(cfg, engine, tools)
-			configureEngineForWire(engine, wireRuntime)
+			configureInteractiveEngine()
 			persistCurrentSessionState()
 			printPlanConfirmationHint(os.Stderr)
 			if decision.Action == autoflow.ActionDebug {

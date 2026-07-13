@@ -3,8 +3,11 @@ package terminalui
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/Misaka477/Natalia-Cli/internal/display"
@@ -14,8 +17,9 @@ import (
 type Stream string
 
 const (
-	StreamOutput Stream = "output"
-	StreamMeta   Stream = "meta"
+	StreamOutput    Stream = "output"
+	StreamMeta      Stream = "meta"
+	StreamReasoning Stream = "reasoning"
 )
 
 type Frame struct {
@@ -24,24 +28,30 @@ type Frame struct {
 }
 
 type LiveView struct {
-	theme        Theme
-	content      *contentBlock
-	tools        map[string]*toolBlock
-	toolOrder    []string
-	lastStatus   wire.StatusUpdate
-	activeStep   int
-	compacting   bool
-	turnHasText  bool
-	turnHadMeta  bool
-	lastMetaKind Kind
+	theme                 Theme
+	reasoningDisplay      ReasoningDisplay
+	reasoningPreviewChars int
+	content               *contentBlock
+	tools                 map[string]*toolBlock
+	toolOrder             []string
+	lastStatus            wire.StatusUpdate
+	activeStep            int
+	compacting            bool
+	turnHasText           bool
+	turnHadMeta           bool
+	lastMetaKind          Kind
 }
 
 type contentBlock struct {
-	isThink      bool
-	started      time.Time
-	tokens       float64
-	textStarted  bool
-	receivedText bool
+	isThink        bool
+	started        time.Time
+	tokens         float64
+	textStarted    bool
+	receivedText   bool
+	previewStarted bool
+	previewRunes   int
+	pendingSpace   bool
+	lastRune       rune
 }
 
 type toolBlock struct {
@@ -53,11 +63,54 @@ type toolBlock struct {
 	errorText string
 }
 
+type ReasoningDisplay string
+
+const (
+	ReasoningSummary ReasoningDisplay = "summary"
+	ReasoningPreview ReasoningDisplay = "preview"
+	ReasoningStream  ReasoningDisplay = "stream"
+)
+
+const defaultReasoningPreviewChars = 600
+
+type LiveViewOptions struct {
+	ReasoningDisplay      ReasoningDisplay
+	ReasoningPreviewChars int
+}
+
 func NewLiveView() *LiveView {
-	return &LiveView{
-		theme: NewTheme(),
-		tools: make(map[string]*toolBlock),
+	return NewLiveViewWithOptions(liveViewOptionsFromEnv())
+}
+
+func NewLiveViewWithOptions(options LiveViewOptions) *LiveView {
+	if options.ReasoningDisplay == "" {
+		options.ReasoningDisplay = ReasoningStream
 	}
+	if options.ReasoningDisplay != ReasoningSummary && options.ReasoningDisplay != ReasoningPreview && options.ReasoningDisplay != ReasoningStream {
+		options.ReasoningDisplay = ReasoningStream
+	}
+	if options.ReasoningPreviewChars <= 0 {
+		options.ReasoningPreviewChars = defaultReasoningPreviewChars
+	}
+	return &LiveView{
+		theme:                 NewTheme(),
+		reasoningDisplay:      options.ReasoningDisplay,
+		reasoningPreviewChars: options.ReasoningPreviewChars,
+		tools:                 make(map[string]*toolBlock),
+	}
+}
+
+func liveViewOptionsFromEnv() LiveViewOptions {
+	options := LiveViewOptions{ReasoningDisplay: ReasoningStream, ReasoningPreviewChars: defaultReasoningPreviewChars}
+	if raw := strings.TrimSpace(strings.ToLower(os.Getenv("NATALIA_REASONING_DISPLAY"))); raw != "" {
+		options.ReasoningDisplay = ReasoningDisplay(raw)
+	}
+	if raw := strings.TrimSpace(os.Getenv("NATALIA_REASONING_PREVIEW_CHARS")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			options.ReasoningPreviewChars = parsed
+		}
+	}
+	return options
 }
 
 func (v *LiveView) Dispatch(msg wire.WireMessage) []Frame {
@@ -145,6 +198,9 @@ func (v *LiveView) Dispatch(msg wire.WireMessage) []Frame {
 		if json.Unmarshal(msg.Event.Payload, &event) != nil {
 			return nil
 		}
+		if event.Event == "output" {
+			return nil
+		}
 		return []Frame{{Stream: StreamMeta, Text: v.theme.RuntimeLine(KindInteractive, "interactive", event.ID, event.Event, event.Status, interactiveDetail(event))}}
 	default:
 		return nil
@@ -202,11 +258,12 @@ func (v *LiveView) appendContent(part wire.ContentPart) []Frame {
 			frames := v.flushContent(false)
 			v.content = &contentBlock{isThink: true, started: time.Now(), tokens: estimateTokens(part.Text), receivedText: part.Text != ""}
 			frames = append(frames, Frame{Stream: StreamMeta, Text: v.theme.ThinkingLine("Thinking", 0, 0)})
+			frames = append(frames, v.renderReasoningDelta(v.content, part.Text)...)
 			return frames
 		}
 		v.content.tokens += estimateTokens(part.Text)
 		v.content.receivedText = v.content.receivedText || part.Text != ""
-		return nil
+		return v.renderReasoningDelta(v.content, part.Text)
 	}
 
 	frames := []Frame{}
@@ -223,6 +280,61 @@ func (v *LiveView) appendContent(part wire.ContentPart) []Frame {
 	}
 	v.turnHasText = true
 	return append(frames, Frame{Stream: StreamOutput, Text: text})
+}
+
+func (v *LiveView) renderReasoningDelta(block *contentBlock, text string) []Frame {
+	if block == nil || text == "" || v.reasoningDisplay == ReasoningSummary {
+		return nil
+	}
+	delta := text
+	if v.reasoningDisplay == ReasoningPreview {
+		remaining := v.reasoningPreviewChars - block.previewRunes
+		if remaining <= 0 {
+			return nil
+		}
+		delta = firstRunes(text, remaining)
+		if delta == "" {
+			return nil
+		}
+		block.previewRunes += utf8.RuneCountInString(delta)
+	}
+	delta = normalizeReasoningDelta(block, delta)
+	if delta == "" {
+		return nil
+	}
+	if !block.previewStarted {
+		block.previewStarted = true
+		delta = "  " + strings.TrimLeft(delta, " \t")
+	}
+	return []Frame{{Stream: StreamReasoning, Text: v.theme.Reasoning(delta)}}
+}
+
+func normalizeReasoningDelta(block *contentBlock, text string) string {
+	var b strings.Builder
+	for _, r := range text {
+		if unicode.IsSpace(r) {
+			block.pendingSpace = true
+			continue
+		}
+		if block.pendingSpace && shouldInsertReasoningSpace(block.lastRune, r) {
+			b.WriteByte(' ')
+		}
+		block.pendingSpace = false
+		b.WriteRune(r)
+		block.lastRune = r
+	}
+	return b.String()
+}
+
+func shouldInsertReasoningSpace(prev, next rune) bool {
+	if prev == 0 || isCJK(prev) || isCJK(next) || unicode.IsPunct(next) {
+		return false
+	}
+	return unicode.IsLetter(prev) || unicode.IsDigit(prev) || unicode.IsLetter(next) || unicode.IsDigit(next)
+}
+
+func isCJK(r rune) bool {
+	return (r >= 0x4E00 && r <= 0x9FFF) || (r >= 0x3400 && r <= 0x4DBF) || (r >= 0x3000 && r <= 0x303F) || (r >= 0xFF00 && r <= 0xFFEF)
 }
 
 func (v *LiveView) flushContent(final bool) []Frame {
@@ -265,7 +377,7 @@ func (v *LiveView) renderToolResult(result wire.ToolResult) string {
 		content = result.Error
 	}
 	if content != "" {
-		parts = append(parts, v.theme.Detail("  "+trimLine(content, 900)))
+		parts = append(parts, v.theme.Detail(indent(content, "  ")))
 	}
 	if len(result.Display) > 0 {
 		parts = append(parts, v.renderDisplayBlocks(result.Display))
@@ -505,6 +617,17 @@ func trimLine(s string, limit int) string {
 	}
 	runes := []rune(s)
 	return string(runes[:limit]) + "..."
+}
+
+func firstRunes(s string, limit int) string {
+	if limit <= 0 || s == "" {
+		return ""
+	}
+	if utf8.RuneCountInString(s) <= limit {
+		return s
+	}
+	runes := []rune(s)
+	return string(runes[:limit])
 }
 
 func formatDuration(d time.Duration) string {

@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/display"
@@ -37,7 +38,8 @@ func (s *wireTerminalRenderState) liveView() *terminalui.LiveView {
 }
 
 func startInteractiveWireRenderer(out, errOut io.Writer) (*wire.Wire, func()) {
-	return startInteractiveWireRendererWithResponders(out, errOut, newTerminalQuestionResponder(os.Stdin, errOut), newTerminalApprovalResponder(os.Stdin, errOut))
+	lineReader := newTerminalLineReader(os.Stdin)
+	return startInteractiveWireRendererWithResponders(out, errOut, newTerminalQuestionResponder(lineReader, errOut), newTerminalApprovalResponder(lineReader, errOut))
 }
 
 type questionResponder func(context.Context, wire.QuestionRequest) (wire.QuestionResponse, error)
@@ -135,6 +137,8 @@ func renderInteractiveWireMessage(state *wireTerminalRenderState, msg wire.WireM
 		switch frame.Stream {
 		case terminalui.StreamOutput:
 			fmt.Fprint(out, frame.Text)
+		case terminalui.StreamReasoning:
+			fmt.Fprint(errOut, frame.Text)
 		default:
 			fmt.Fprint(errOut, frame.Text)
 			if !strings.HasSuffix(frame.Text, "\n") {
@@ -216,13 +220,99 @@ func renderInteractiveWireRequest(req *wire.WireRequest, errOut io.Writer) {
 	}
 }
 
-func newTerminalQuestionResponder(in io.Reader, out io.Writer) questionResponder {
-	reader := bufio.NewReader(in)
+type terminalLineReader struct {
+	in     io.Reader
+	reader *bufio.Reader
+	mu     sync.Mutex
+}
+
+func newTerminalLineReader(in io.Reader) *terminalLineReader {
+	return &terminalLineReader{in: in, reader: bufio.NewReader(in)}
+}
+
+func (r *terminalLineReader) read(ctx context.Context) (string, bool, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if file, ok := r.in.(*os.File); ok {
+		return readLineFromFile(ctx, file)
+	}
+	answer, err := r.reader.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return "", false, err
+	}
+	if answer == "" && err == io.EOF {
+		return "", false, io.EOF
+	}
+	return strings.TrimSpace(answer), true, nil
+}
+
+func readLineFromFile(ctx context.Context, file *os.File) (string, bool, error) {
+	fd := int(file.Fd())
+	var b strings.Builder
+	buf := make([]byte, 1)
+	for {
+		ready, err := waitReadable(ctx, fd)
+		if err != nil || !ready {
+			return "", false, err
+		}
+		n, err := file.Read(buf)
+		if n > 0 {
+			switch buf[0] {
+			case '\n', '\r':
+				return strings.TrimSpace(b.String()), true, nil
+			default:
+				b.WriteByte(buf[0])
+			}
+		}
+		if err != nil {
+			if err == io.EOF && b.Len() > 0 {
+				return strings.TrimSpace(b.String()), true, nil
+			}
+			return "", false, err
+		}
+	}
+}
+
+func waitReadable(ctx context.Context, fd int) (bool, error) {
+	for {
+		select {
+		case <-ctx.Done():
+			return false, nil
+		default:
+		}
+		var rfds syscall.FdSet
+		fdSet(fd, &rfds)
+		timeout := syscall.NsecToTimeval((50 * time.Millisecond).Nanoseconds())
+		n, err := syscall.Select(fd+1, &rfds, nil, nil, &timeout)
+		if err == syscall.EINTR {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		if n > 0 && fdIsSet(fd, &rfds) {
+			return true, nil
+		}
+	}
+}
+
+func fdSet(fd int, set *syscall.FdSet) {
+	set.Bits[fd/64] |= 1 << (uint(fd) % 64)
+}
+
+func fdIsSet(fd int, set *syscall.FdSet) bool {
+	return set.Bits[fd/64]&(1<<(uint(fd)%64)) != 0
+}
+
+func newTerminalQuestionResponder(reader *terminalLineReader, out io.Writer) questionResponder {
 	return func(ctx context.Context, req wire.QuestionRequest) (wire.QuestionResponse, error) {
 		answers := make(map[string]string, len(req.Questions))
 		for _, item := range req.Questions {
 			fmt.Fprintf(out, "[answer] %s > ", item.Name)
-			answer, ok, err := readQuestionLine(ctx, reader)
+			answer, ok, err := reader.read(ctx)
 			if err != nil {
 				return wire.QuestionResponse{RequestID: req.ID, Answers: answers}, err
 			}
@@ -236,11 +326,10 @@ func newTerminalQuestionResponder(in io.Reader, out io.Writer) questionResponder
 	}
 }
 
-func newTerminalApprovalResponder(in io.Reader, out io.Writer) approvalResponder {
-	reader := bufio.NewReader(in)
+func newTerminalApprovalResponder(reader *terminalLineReader, out io.Writer) approvalResponder {
 	return func(ctx context.Context, req wire.ApprovalRequest) (wire.ApprovalResponse, error) {
-		fmt.Fprintf(out, "[approve] %s %s (y/N) > ", req.Action, trimWireLine(req.Description, 200))
-		answer, ok, err := readQuestionLine(ctx, reader)
+		fmt.Fprintf(out, "[approve] %s (y/N) > ", req.Action)
+		answer, ok, err := reader.read(ctx)
 		if err != nil {
 			return wire.ApprovalResponse{RequestID: req.ID, Response: "reject"}, err
 		}
@@ -252,27 +341,6 @@ func newTerminalApprovalResponder(in io.Reader, out io.Writer) approvalResponder
 			}
 		}
 		return wire.ApprovalResponse{RequestID: req.ID, Response: response}, nil
-	}
-}
-
-func readQuestionLine(ctx context.Context, reader *bufio.Reader) (string, bool, error) {
-	answerCh := make(chan string, 1)
-	errCh := make(chan error, 1)
-	go func() {
-		answer, err := reader.ReadString('\n')
-		if err != nil && err != io.EOF {
-			errCh <- err
-			return
-		}
-		answerCh <- strings.TrimSpace(answer)
-	}()
-	select {
-	case <-ctx.Done():
-		return "", false, nil
-	case err := <-errCh:
-		return "", false, err
-	case answer := <-answerCh:
-		return answer, true, nil
 	}
 }
 

@@ -162,8 +162,8 @@ func (m *Manager) Start(ctx context.Context, opts StartOptions) (*Session, error
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if opts.MaxTail <= 0 {
-		opts.MaxTail = 64 * 1024
+	if opts.MaxTail < 0 {
+		opts.MaxTail = 0
 	}
 	if opts.Cwd != "" {
 		info, err := os.Stat(opts.Cwd)
@@ -401,7 +401,7 @@ func (s *managedSession) capture() {
 			s.appendOutput(buf[:n])
 		}
 		if err != nil {
-			if err != io.EOF && !strings.Contains(err.Error(), "file already closed") {
+			if !isPTYClosedError(err) {
 				s.mu.Lock()
 				if s.meta.Status == StatusRunning || s.meta.Status == StatusWaitingForInput {
 					s.meta.Error = err.Error()
@@ -426,7 +426,7 @@ func (s *managedSession) appendOutput(chunk []byte) {
 	now := time.Now()
 	s.meta.LastActivityAt = now
 	s.buf = append(s.buf, chunk...)
-	if len(s.buf) > s.maxTail {
+	if s.maxTail > 0 && len(s.buf) > s.maxTail {
 		drop := len(s.buf) - s.maxTail
 		s.buf = append([]byte(nil), s.buf[drop:]...)
 		if s.lastRead < drop {
@@ -489,8 +489,8 @@ func (s *managedSession) observe(opts ObserveOptions) (*Observation, error) {
 	if opts.MaxWait <= 0 {
 		opts.MaxWait = 2 * time.Second
 	}
-	if opts.TailBytes <= 0 {
-		opts.TailBytes = 4096
+	if opts.TailBytes < 0 {
+		opts.TailBytes = 0
 	}
 	var waitRe *regexp.Regexp
 	if opts.WaitFor != "" {
@@ -548,9 +548,9 @@ func (s *managedSession) makeObservation(full []byte, opts ObserveOptions, waitR
 		newOutput = cleanTerminal(string(s.buf[s.lastRead:]))
 	}
 	s.lastRead = len(s.buf)
-	tailBytes := opts.TailBytes
 	truncated := false
-	if len(full) > tailBytes {
+	if opts.TailBytes > 0 && len(full) > opts.TailBytes {
+		tailBytes := opts.TailBytes
 		full = full[len(full)-tailBytes:]
 		truncated = true
 	}
@@ -655,27 +655,116 @@ func detectPrompt(tail string, waitRe *regexp.Regexp) string {
 }
 
 func cleanTerminal(s string) string {
-	s = strings.ReplaceAll(s, "\r\n", "\n")
-	s = strings.ReplaceAll(s, "\r", "\n")
-	return strings.TrimRight(stripANSI(s), "\n")
+	return strings.TrimRight(applyTerminalControls(stripANSI(s)), "\n")
+}
+
+func isPTYClosedError(err error) bool {
+	if err == nil || err == io.EOF {
+		return true
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "file already closed") || strings.Contains(text, "input/output error")
+}
+
+func applyTerminalControls(s string) string {
+	var out strings.Builder
+	line := make([]rune, 0, 256)
+	cursor := 0
+	flushLine := func() {
+		out.WriteString(string(line))
+		line = line[:0]
+		cursor = 0
+	}
+	writeRune := func(r rune) {
+		if cursor < len(line) {
+			line[cursor] = r
+		} else {
+			line = append(line, r)
+		}
+		cursor++
+	}
+	for i, r := range s {
+		switch r {
+		case '\r':
+			if i+1 < len(s) && s[i+1] == '\n' {
+				flushLine()
+				out.WriteByte('\n')
+			} else {
+				cursor = 0
+			}
+		case '\n':
+			if i > 0 && s[i-1] == '\r' {
+				continue
+			}
+			flushLine()
+			out.WriteByte('\n')
+		case '\b', 0x7f:
+			if cursor > 0 {
+				cursor--
+				line = append(line[:cursor], line[cursor+1:]...)
+			}
+		case '\v':
+			if cursor < len(line) {
+				line = line[:cursor]
+			}
+		case '\t':
+			writeRune(r)
+		default:
+			if r < 0x20 {
+				continue
+			}
+			writeRune(r)
+		}
+	}
+	flushLine()
+	return out.String()
 }
 
 func stripANSI(s string) string {
 	var out bytes.Buffer
-	inEsc := false
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		if inEsc {
-			if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') {
-				inEsc = false
+		if c != 0x1b {
+			out.WriteByte(c)
+			continue
+		}
+		if i+1 >= len(s) {
+			break
+		}
+		next := s[i+1]
+		switch next {
+		case '[':
+			i += 2
+			for i < len(s) && (s[i] < 0x40 || s[i] > 0x7e) {
+				i++
 			}
-			continue
+			if i < len(s) && s[i] == 'K' {
+				out.WriteByte('\v')
+			}
+		case ']':
+			i += 2
+			for i < len(s) {
+				if s[i] == '\a' {
+					break
+				}
+				if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '\\' {
+					i++
+					break
+				}
+				i++
+			}
+		case 'P', '^', '_', 'X':
+			i += 2
+			for i < len(s) {
+				if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '\\' {
+					i++
+					break
+				}
+				i++
+			}
+		default:
+			i++
 		}
-		if c == 0x1b {
-			inEsc = true
-			continue
-		}
-		out.WriteByte(c)
 	}
 	return out.String()
 }

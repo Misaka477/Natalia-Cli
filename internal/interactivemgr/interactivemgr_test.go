@@ -2,6 +2,8 @@ package interactivemgr
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"regexp"
 	"strings"
 	"sync"
@@ -68,6 +70,24 @@ func TestInteractiveWaitForOnlyMatchesUnreadOutput(t *testing.T) {
 	}
 	if !strings.Contains(second.NewOutput, "second_marker") {
 		t.Fatalf("expected second output, got %+v", second)
+	}
+}
+
+func TestInteractiveDefaultObservationDoesNotTruncateTail(t *testing.T) {
+	m := New()
+	sess, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-i"}})
+	if err != nil {
+		skipIfPTYUnsupported(t, err)
+		t.Fatal(err)
+	}
+	defer m.Stop(sess.ID)
+	long := strings.Repeat("x", 9000)
+	obs, err := m.Write(sess.ID, "printf '"+long+"'\n", false, ObserveOptions{WaitFor: strings.Repeat("x", 80), IdleTimeout: 50 * time.Millisecond, MaxWait: time.Second, IncludeOutput: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if obs.Truncated || !strings.Contains(obs.Tail, long) || !strings.Contains(obs.NewOutput, long) {
+		t.Fatalf("expected default observation to keep full output, truncated=%t tail_len=%d new_len=%d", obs.Truncated, len(obs.Tail), len(obs.NewOutput))
 	}
 }
 
@@ -238,12 +258,29 @@ func TestCleanTerminalStripsANSI(t *testing.T) {
 		"\x1b[31mred\x1b[0m\r\n": "red",
 		"plain":                  "plain",
 		"a\r\nb\r":               "a\nb",
-		"\x1b[1;32mok\x1b[0m":    "ok",
+		"abc\b \bD":              "abD",
+		">>> x\r\x1b[K>>> x = \r\x1b[K>>> x = [i*i for i in range(3)]\r\n[0, 1, 4]\r\n>>> ": ">>> x = [i*i for i in range(3)]\n[0, 1, 4]\n>>> ",
+		"\x1b[1;32mok\x1b[0m":            "ok",
+		"\x1b]633;A\a(base) user@host$ ": "(base) user@host$ ",
+		"\x1b]633;P;start=abc;machineid=mid;user=aquama;hostname=host\a(base) $ ": "(base) $ ",
+		"\x1b]0;title\x1b\\prompt$ ": "prompt$ ",
 	}
 	for input, want := range cases {
 		if got := cleanTerminal(input); got != want {
 			t.Fatalf("cleanTerminal(%q)=%q want %q", input, got, want)
 		}
+	}
+}
+
+func TestPTYClosedErrorsAreNormalEOF(t *testing.T) {
+	if !isPTYClosedError(io.EOF) {
+		t.Fatal("io.EOF should be treated as closed PTY")
+	}
+	if !isPTYClosedError(fmt.Errorf("read /dev/ptmx: input/output error")) {
+		t.Fatal("Linux PTY EIO should be treated as closed PTY")
+	}
+	if isPTYClosedError(fmt.Errorf("permission denied")) {
+		t.Fatal("unrelated errors should not be treated as closed PTY")
 	}
 }
 

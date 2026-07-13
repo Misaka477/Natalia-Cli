@@ -99,7 +99,18 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 	w := wire.NewWire()
 	engine := buildEngine(cfg, tools, debug)
 	registerAgentToolsForEngine(cfg, engine, tools)
-	configureEngineForWire(engine, w)
+	var approvalCtxMu sync.RWMutex
+	var approvalCtx context.Context
+	activeApprovalCtx := func() context.Context {
+		approvalCtxMu.RLock()
+		defer approvalCtxMu.RUnlock()
+		return approvalCtx
+	}
+	configureRuntimeEngine := func() {
+		configureEngineForWire(engine, w)
+		configureEngineApprovalForWire(engine, w, activeApprovalCtx)
+	}
+	configureRuntimeEngine()
 	detachRuntimeEvents := bridgeRuntimeEvents(engine, w)
 	closeRecorder, wireSession, err := attachWireRecorder(w, cfg, opts.SessionStore)
 	if err != nil {
@@ -108,8 +119,6 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 	}
 	persistWireSessionState(cfg, opts.SessionStore, wireSession)
 
-	var approvalCtxMu sync.RWMutex
-	var approvalCtx context.Context
 	handler := wire.ServerHandler{
 		Initialize: func(context.Context, wire.InitializeParams) (any, error) {
 			return map[string]any{"status": "ok", "server": "natalia-cli"}, nil
@@ -185,7 +194,7 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 			runtime.PermissionProfile = params.PermissionProfile
 			engine = rebuildEnginePreservingState(cfg, engine, tools, debug)
 			registerAgentToolsForEngine(cfg, engine, tools)
-			configureEngineForWire(engine, w)
+			configureRuntimeEngine()
 			persistWireSessionState(cfg, opts.SessionStore, wireSession)
 			status := runtimeStatusUpdate(cfg, engine)
 			if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
@@ -220,7 +229,7 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 			registerAgentToolsForEngine(cfg, engine, tools)
 			engine.Context.Messages = append(engine.Context.Messages, messages...)
 			attachSnapshotter(engine, sess)
-			configureEngineForWire(engine, w)
+			configureRuntimeEngine()
 			persistWireSessionState(cfg, opts.SessionStore, wireSession)
 			status := runtimeStatusUpdate(cfg, engine)
 			if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
@@ -234,21 +243,6 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 			}
 			return map[string]any{"sessions": wireSessionSummaries(opts.SessionStore)}, nil
 		},
-	}
-	if engine.Approver != nil {
-		baseRequest := engine.Approver.RequestFunc
-		engine.Approver.RequestDisplayFunc = func(toolName, description string, blocks []display.Block) bool {
-			approvalCtxMu.RLock()
-			ctx := approvalCtx
-			approvalCtxMu.RUnlock()
-			if ctx == nil {
-				ctx = context.Background()
-			}
-			if baseRequest != nil {
-				return baseRequest(toolName, description)
-			}
-			return requestWireApproval(ctx, w, toolName, description, blocks)
-		}
 	}
 	if engine.Hooks != nil {
 		engine.Hooks.OnWireHook = func(ctx context.Context, req hook.WireHookRequest) hook.HookResult {
@@ -507,6 +501,25 @@ func configureEngineForWire(engine *soul.Engine, w *wire.Wire) {
 		if err == nil {
 			w.SoulSide.PublishEvent(wireEvent)
 		}
+	}
+}
+
+func configureEngineApprovalForWire(engine *soul.Engine, w *wire.Wire, ctxProvider func() context.Context) {
+	if engine == nil || engine.Approver == nil || w == nil {
+		return
+	}
+	baseRequest := engine.Approver.RequestFunc
+	engine.Approver.RequestDisplayFunc = func(toolName, description string, blocks []display.Block) bool {
+		if baseRequest != nil {
+			return baseRequest(toolName, description)
+		}
+		ctx := context.Background()
+		if ctxProvider != nil {
+			if provided := ctxProvider(); provided != nil {
+				ctx = provided
+			}
+		}
+		return requestWireApproval(ctx, w, toolName, description, blocks)
 	}
 }
 

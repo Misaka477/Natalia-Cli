@@ -10,7 +10,7 @@ import (
 )
 
 func TestLiveViewRendersKimiStyleContentToolAndStatus(t *testing.T) {
-	view := NewLiveView()
+	view := NewLiveViewWithOptions(LiveViewOptions{ReasoningDisplay: ReasoningStream})
 	frames := dispatchEvent(t, view, wire.EventTurnBegin, wire.TurnBegin{})
 	if len(frames) != 0 {
 		t.Fatalf("turn begin should not render, got %+v", frames)
@@ -21,12 +21,9 @@ func TestLiveViewRendersKimiStyleContentToolAndStatus(t *testing.T) {
 		t.Fatalf("expected step rule, got %q", got)
 	}
 
-	got = joinFrames(dispatchEvent(t, view, wire.EventContentPart, wire.ContentPart{Type: wire.ContentThink, Text: "hidden reasoning"}))
-	if !strings.Contains(got, "Thinking") {
-		t.Fatalf("expected compact thinking indicator, got %q", got)
-	}
-	if strings.Contains(got, "hidden reasoning") {
-		t.Fatalf("thinking indicator should not leak raw reasoning, got %q", got)
+	got = joinFrames(dispatchEvent(t, view, wire.EventContentPart, wire.ContentPart{Type: wire.ContentThink, Text: "visible reasoning"}))
+	if !strings.Contains(got, "Thinking") || !strings.Contains(got, "visible reasoning") {
+		t.Fatalf("expected thinking indicator with reasoning preview, got %q", got)
 	}
 
 	got = joinFrames(dispatchEvent(t, view, wire.EventContentPart, wire.ContentPart{Type: wire.ContentText, Text: "answer"}))
@@ -57,6 +54,42 @@ func TestLiveViewRendersKimiStyleContentToolAndStatus(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected status to contain %q, got %q", want, got)
 		}
+	}
+}
+
+func TestLiveViewReasoningDisplayModes(t *testing.T) {
+	summary := NewLiveViewWithOptions(LiveViewOptions{ReasoningDisplay: ReasoningSummary})
+	got := joinFrames(dispatchEvent(t, summary, wire.EventContentPart, wire.ContentPart{Type: wire.ContentThink, Text: "hidden reasoning"}))
+	if !strings.Contains(got, "Thinking") || strings.Contains(got, "hidden reasoning") {
+		t.Fatalf("summary mode should hide raw reasoning, got %q", got)
+	}
+
+	preview := NewLiveViewWithOptions(LiveViewOptions{ReasoningDisplay: ReasoningPreview, ReasoningPreviewChars: 4})
+	got = joinFrames(dispatchEvent(t, preview, wire.EventContentPart, wire.ContentPart{Type: wire.ContentThink, Text: "abcdef"}))
+	if !strings.Contains(got, "abcd") || strings.Contains(got, "abcdef") {
+		t.Fatalf("preview mode should truncate reasoning preview, got %q", got)
+	}
+
+	stream := NewLiveViewWithOptions(LiveViewOptions{ReasoningDisplay: ReasoningStream})
+	got = joinFrames(dispatchEvent(t, stream, wire.EventContentPart, wire.ContentPart{Type: wire.ContentThink, Text: "full reasoning"}))
+	if !strings.Contains(got, "full reasoning") {
+		t.Fatalf("stream mode should render full reasoning delta, got %q", got)
+	}
+}
+
+func TestLiveViewStreamsReasoningWithoutChunkNewlinesOrCJKSpaces(t *testing.T) {
+	view := NewLiveViewWithOptions(LiveViewOptions{ReasoningDisplay: ReasoningStream})
+	got := joinFrames(dispatchEvent(t, view, wire.EventContentPart, wire.ContentPart{Type: wire.ContentThink, Text: "用户"}))
+	got += joinFrames(dispatchEvent(t, view, wire.EventContentPart, wire.ContentPart{Type: wire.ContentThink, Text: "\n"}))
+	got += joinFrames(dispatchEvent(t, view, wire.EventContentPart, wire.ContentPart{Type: wire.ContentThink, Text: "要求"}))
+	got += joinFrames(dispatchEvent(t, view, wire.EventContentPart, wire.ContentPart{Type: wire.ContentThink, Text: "："}))
+	got += joinFrames(dispatchEvent(t, view, wire.EventContentPart, wire.ContentPart{Type: wire.ContentThink, Text: " start"}))
+	got += joinFrames(dispatchEvent(t, view, wire.EventContentPart, wire.ContentPart{Type: wire.ContentThink, Text: " python"}))
+	if !strings.Contains(got, "用户要求：start python") {
+		t.Fatalf("expected normalized streamed reasoning, got %q", got)
+	}
+	if strings.Contains(got, "用户\n要求") || strings.Contains(got, "用户 要求") {
+		t.Fatalf("reasoning chunks should not force newlines or spaces between CJK tokens, got %q", got)
 	}
 }
 
