@@ -81,6 +81,9 @@ func TestClassifyFailure(t *testing.T) {
 		{name: "max steps", out: &soul.Outcome{StopReason: "max_steps"}, want: FailureMaxSteps},
 		{name: "success", out: &soul.Outcome{StopReason: "no_tool_calls", FinalMessage: "ok"}, want: FailureNone},
 		{name: "approval", out: &soul.Outcome{StopReason: "requires_approval"}, want: FailureNone},
+		{name: "transient flag", out: &soul.Outcome{StopReason: "error", FinalMessage: "API error 400", Transient: true}, want: FailureTransient},
+		{name: "transient msg", out: &soul.Outcome{StopReason: "error", FinalMessage: "API error 502: upstream down", Transient: false}, want: FailureTransient},
+		{name: "transient empty", out: &soul.Outcome{StopReason: "error", FinalMessage: "empty assistant response from model"}, want: FailureTransient},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -88,6 +91,31 @@ func TestClassifyFailure(t *testing.T) {
 				t.Fatalf("expected %q, got %q", tc.want, got)
 			}
 		})
+	}
+}
+
+func TestTransientFailuresDoNotIncrementConsecutive(t *testing.T) {
+	escalator := &Escalator{Threshold: 2}
+	// Two transient errors should not increment consecutive
+	escalator.Record(&soul.Outcome{StopReason: "error", FinalMessage: "API error 502", Transient: true}, "code")
+	if escalator.Consecutive != 0 {
+		t.Fatalf("expected transient to not increment consecutive, got %d", escalator.Consecutive)
+	}
+	escalator.Record(&soul.Outcome{StopReason: "error", FinalMessage: "API error 502", Transient: true}, "code")
+	if escalator.Consecutive != 0 {
+		t.Fatalf("expected second transient to also not increment, got %d", escalator.Consecutive)
+	}
+
+	// First real error: Consecutive=1, no escalation
+	decision := escalator.Record(&soul.Outcome{StopReason: "error", FinalMessage: "tool not found: foo"}, "code")
+	if decision.Action != ActionNone || escalator.Consecutive != 1 {
+		t.Fatalf("expected first real error to set Consecutive=1, decision=%+v state=%+v", decision, escalator)
+	}
+
+	// Second real error triggers escalation
+	decision = escalator.Record(&soul.Outcome{StopReason: "error", FinalMessage: "tool not found: bar"}, "code")
+	if decision.Action != ActionDebug {
+		t.Fatalf("expected second real error to escalate, got %+v", decision)
 	}
 }
 

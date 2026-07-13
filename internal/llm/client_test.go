@@ -52,6 +52,19 @@ func TestChatRequestIncludesReasoningConfig(t *testing.T) {
 	}
 }
 
+func TestChatRequestOmitsNullRequired(t *testing.T) {
+	body, err := json.Marshal(ChatRequest{Messages: []chat.Message{
+		{Role: chat.RoleSystem, Content: "system"},
+		{Role: chat.RoleUser, Content: "hello"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), `"required":null`) {
+		t.Fatalf("required should not be null: %s", string(body))
+	}
+}
+
 func TestChatStreamStopsOnCancellation(t *testing.T) {
 	requestStarted := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -110,5 +123,47 @@ func TestChatStreamReturnsAPIErrorForNon200Responses(t *testing.T) {
 	event, ok := <-events
 	if !ok || event.Error == nil || !strings.Contains(event.Error.Error(), "API error 429") || !strings.Contains(event.Error.Error(), "rate limited") {
 		t.Fatalf("expected streaming API error event, ok=%v event=%+v", ok, event)
+	}
+}
+
+func TestChatStreamParsesCompactDataLinesAndLongChunks(t *testing.T) {
+	long := strings.Repeat("x", 70*1024)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(`data:{"choices":[{"delta":{"reasoning_content":"thinking"}}]}` + "\n"))
+		_, _ = w.Write([]byte(`data: {"choices":[{"delta":{"content":"` + long + `"}}]}` + "\n"))
+		_, _ = w.Write([]byte("data:[DONE]\n"))
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{BaseURL: server.URL, Model: "test", Timeout: time.Second})
+	events := client.ChatStream(context.Background(), chat.NewContext(100, 10), nil)
+	var content strings.Builder
+	var reasoning strings.Builder
+	done := false
+	for event := range events {
+		if event.Error != nil {
+			t.Fatalf("unexpected stream error: %v", event.Error)
+		}
+		content.WriteString(event.Content)
+		reasoning.WriteString(event.Reasoning)
+		done = done || event.Done
+	}
+	if !done || reasoning.String() != "thinking" || content.String() != long {
+		t.Fatalf("unexpected stream parse: done=%t reasoning_len=%d content_len=%d", done, reasoning.Len(), content.Len())
+	}
+}
+
+func TestChatStreamMethodErrorsOnEmptyAssistantResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: [DONE]\n"))
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{BaseURL: server.URL, Model: "test", Timeout: time.Second})
+	msg, _, err := client.Chat(context.Background(), chat.NewContext(100, 10), nil, true)
+	if err == nil || !strings.Contains(err.Error(), "empty assistant response") || msg != nil {
+		t.Fatalf("expected empty assistant response error, msg=%+v err=%v", msg, err)
 	}
 }

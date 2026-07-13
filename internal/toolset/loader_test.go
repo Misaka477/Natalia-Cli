@@ -52,7 +52,7 @@ func TestRegisterDefaultToolsFromAgentSpec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if shell != "loader-shell-ok" {
+	if !strings.Contains(shell, "loader-shell-ok") {
 		t.Fatalf("registered run_shell returned %q", shell)
 	}
 }
@@ -67,13 +67,13 @@ func TestDefaultToolsetExecutesModelStyleToolFlowEndToEnd(t *testing.T) {
 	defs := r.ToToolDefs()
 	assertToolDefRequired(t, defs, "read_file", []string{"path"})
 	assertToolDefRequired(t, defs, "write_file", []string{"path", "content"})
-	assertToolDefRequired(t, defs, "run_shell", []string{"command"})
+	assertToolDefRequired(t, defs, "run_shell", []string{}) // command is optional; output_id can be used instead
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "flow.txt")
-	mustExecTool(t, r, "write_file", map[string]any{"path": path, "content": "alpha\nbeta\n"}, "已写入")
+	mustExecTool(t, r, "write_file", map[string]any{"path": path, "content": "alpha\nbeta\n"}, "wrote")
 	mustExecTool(t, r, "read_file", map[string]any{"path": path, "limit": "all"}, "alpha")
-	mustExecTool(t, r, "edit_file", map[string]any{"path": path, "old_string": "beta", "new_string": "BETA"}, "替换 1 处")
+	mustExecTool(t, r, "edit_file", map[string]any{"path": path, "old_string": "beta", "new_string": "BETA"}, "1 replacements")
 	mustExecTool(t, r, "grep", map[string]any{"pattern": "BETA", "path": dir, "include": "*.txt"}, "BETA")
 	mustExecTool(t, r, "glob", map[string]any{"pattern": "*.txt", "path": dir}, "flow.txt")
 	mustExecTool(t, r, "run_shell", map[string]any{"command": "printf shell-ok", "cwd": dir, "timeout": "5"}, "shell-ok")
@@ -115,7 +115,7 @@ func TestDefaultToolsetWriteToolsRespectPlanModeGuard(t *testing.T) {
 		t.Fatal(err)
 	}
 	planPath := filepath.Join(planDir, "roadmap.md")
-	if result, err := writeTool.Execute(map[string]any{"path": planPath, "content": "# Plan"}); err != nil || !strings.Contains(result, "已写入") {
+	if result, err := writeTool.Execute(map[string]any{"path": planPath, "content": "# Plan"}); err != nil || !strings.Contains(result, "wrote") {
 		t.Fatalf("expected plan path write to succeed, result=%q err=%v", result, err)
 	}
 }

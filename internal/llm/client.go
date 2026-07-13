@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -248,6 +249,7 @@ func (c *Client) ChatStream(ctx context.Context, chatCtx *chat.Context, tools []
 			httpReq.Header.Set(k, v)
 		}
 
+		fmt.Fprintf(os.Stderr, "[natalia] POST %s model=%s stream=%t\n", c.baseURL, c.model, true)
 		resp, err := c.http.Do(httpReq)
 		if err != nil {
 			ch <- StreamEvent{Error: fmt.Errorf("request failed: %w", err)}
@@ -271,6 +273,7 @@ func (c *Client) ChatStream(ctx context.Context, chatCtx *chat.Context, tools []
 		}
 
 		scanner := bufio.NewScanner(resp.Body)
+		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 		var toolCallAccum map[int]*ToolCall
 		var streamDone bool
 		for scanner.Scan() {
@@ -278,13 +281,10 @@ func (c *Client) ChatStream(ctx context.Context, chatCtx *chat.Context, tools []
 				ch <- StreamEvent{Error: err}
 				return
 			}
-			line := scanner.Text()
-
-			if !strings.HasPrefix(line, "data: ") {
+			data, ok := streamDataFromLine(scanner.Text())
+			if !ok {
 				continue
 			}
-
-			data := strings.TrimPrefix(line, "data: ")
 
 			if data == "[DONE]" {
 				streamDone = true
@@ -362,6 +362,7 @@ func (c *Client) ChatStream(ctx context.Context, chatCtx *chat.Context, tools []
 }
 
 func (c *Client) chatSync(httpReq *http.Request) (*chat.Message, *Usage, error) {
+	fmt.Fprintf(os.Stderr, "[natalia] POST %s model=%s stream=false\n", c.baseURL, c.model)
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
 		return nil, nil, fmt.Errorf("request failed: %w", err)
@@ -390,6 +391,7 @@ func (c *Client) chatSync(httpReq *http.Request) (*chat.Message, *Usage, error) 
 }
 
 func (c *Client) chatStream(httpReq *http.Request) (*chat.Message, *Usage, error) {
+	fmt.Fprintf(os.Stderr, "[natalia] POST %s model=%s stream=true\n", c.baseURL, c.model)
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
 		return nil, nil, fmt.Errorf("request failed: %w", err)
@@ -418,17 +420,15 @@ func (c *Client) chatStream(httpReq *http.Request) (*chat.Message, *Usage, error
 	toolCallMap := make(map[int]*chat.ToolCall)
 
 	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
 			return nil, nil, err
 		}
-		line := scanner.Text()
-
-		if !strings.HasPrefix(line, "data: ") {
+		data, ok := streamDataFromLine(scanner.Text())
+		if !ok {
 			continue
 		}
-
-		data := strings.TrimPrefix(line, "data: ")
 
 		if data == "[DONE]" {
 			break
@@ -487,9 +487,21 @@ func (c *Client) chatStream(httpReq *http.Request) (*chat.Message, *Usage, error
 		msg.ToolCalls = currentToolCalls
 	}
 
+	if msg.Content == "" && len(msg.ToolCalls) == 0 {
+		return nil, nil, fmt.Errorf("empty assistant response from model")
+	}
+
 	if usage == nil {
 		usage = &Usage{}
 	}
 
 	return &msg, usage, nil
+}
+
+func streamDataFromLine(line string) (string, bool) {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "data:") {
+		return "", false
+	}
+	return strings.TrimSpace(strings.TrimPrefix(line, "data:")), true
 }

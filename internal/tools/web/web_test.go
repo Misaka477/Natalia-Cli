@@ -121,6 +121,24 @@ func TestSearchDefaultUsesBingFirst(t *testing.T) {
 	})
 }
 
+func TestSearchWarnsOnLowLexicalRelevance(t *testing.T) {
+	withSearchGlobals(t, func() {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`<li class="b_algo"><h2><a href="https://oil.example/a">Crude Futures</a></h2><p class="b_caption">Energy market prices</p></li>`))
+		}))
+		defer server.Close()
+
+		BingSearchBaseURL = server.URL
+		result, err := (&Search{}).Execute(map[string]any{"query": "Natalia CLI", "limit": "3"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(result, "low lexical relevance") || !strings.Contains(result, "Crude Futures") {
+			t.Fatalf("expected low relevance diagnostic with result, got %q", result)
+		}
+	})
+}
+
 func TestSearchDefaultFallsBackToDuckDuckGo(t *testing.T) {
 	withSearchGlobals(t, func() {
 		var bingHits, ddgHits int

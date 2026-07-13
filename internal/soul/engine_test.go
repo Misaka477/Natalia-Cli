@@ -313,6 +313,40 @@ func TestExecuteToolCallRunsRealFileToolEndToEnd(t *testing.T) {
 	}
 }
 
+func TestStreamToolCallNormalizesMissingIDAndType(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"run_shell","arguments":"{\"command\":\"true\"}"}}]}}]}` + "\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n"))
+	}))
+	defer server.Close()
+
+	tools := toolset.NewRegistry()
+	tools.Register(noOpShellTool{})
+	engine := NewEngine(llm.NewClient(llm.Config{BaseURL: server.URL, Model: "mock", Timeout: time.Second}), tools)
+	engine.Stream = true
+	engine.OnToken = func(string) {}
+	engine.Context.MaxSteps = 1
+	outcome, err := engine.Run("run true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome == nil || outcome.StopReason != "max_steps" {
+		t.Fatalf("expected max_steps after one tool step, got %+v", outcome)
+	}
+	if len(engine.Context.Messages) != 3 {
+		t.Fatalf("expected system, assistant tool call, and tool result messages, got %+v", engine.Context.Messages)
+	}
+	assistant := engine.Context.Messages[1]
+	toolResult := engine.Context.Messages[2]
+	if len(assistant.ToolCalls) != 1 || assistant.ToolCalls[0].ID == "" || assistant.ToolCalls[0].Type != "function" {
+		t.Fatalf("expected normalized assistant tool call, got %+v", assistant.ToolCalls)
+	}
+	if toolResult.Role != chat.RoleTool || toolResult.ToolCallID != assistant.ToolCalls[0].ID {
+		t.Fatalf("expected tool result to reference normalized tool call ID, assistant=%+v tool=%+v", assistant, toolResult)
+	}
+}
+
 func TestExecuteToolCallTriggersPreAndPostHooksWithRealToolResult(t *testing.T) {
 	dir := t.TempDir()
 	readPath := filepath.Join(dir, "input.txt")
@@ -770,5 +804,25 @@ func TestRunTriggersStopFailureHookOnLLMError(t *testing.T) {
 	errorText, _ := input.InputData["final_message"].(string)
 	if !strings.Contains(errorText, "request") && !strings.Contains(errorText, "connect") {
 		t.Fatalf("expected LLM error in hook payload, got %+v", input)
+	}
+}
+
+func TestStreamStepTreatsEmptyAssistantResponseAsError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: [DONE]\n"))
+	}))
+	defer server.Close()
+
+	engine := NewEngine(llm.NewClient(llm.Config{BaseURL: server.URL, Model: "mock", Timeout: time.Second}), toolset.NewRegistry())
+	engine.Stream = true
+	engine.OnToken = func(string) {}
+	engine.Context.MaxSteps = 1
+	outcome, err := engine.Run("hello")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome == nil || outcome.StopReason != "error" || !strings.Contains(outcome.FinalMessage, "empty assistant response") {
+		t.Fatalf("expected empty stream response error, got %+v", outcome)
 	}
 }

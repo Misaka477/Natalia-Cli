@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/approval"
 	"github.com/Misaka477/Natalia-Cli/internal/chat"
@@ -113,9 +114,10 @@ func (e *Engine) log(format string, args ...any) {
 }
 
 type Outcome struct {
-	FinalMessage string
 	StopReason   string
+	FinalMessage string
 	Steps        int
+	Transient    bool
 }
 
 type ToolCallEvent struct {
@@ -317,15 +319,36 @@ func (e *Engine) step() *Outcome {
 	var usage *llm.Usage
 	var err error
 
-	if e.Stream && e.OnToken != nil {
-		msg, usage, err = e.streamStep()
-	} else {
-		msg, usage, err = e.LLM.Chat(e.ctx, e.Context, e.getToolDefs(), false)
+	const maxRetries = 2
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if e.Stream && e.OnToken != nil {
+			msg, usage, err = e.streamStep()
+		} else {
+			msg, usage, err = e.LLM.Chat(e.ctx, e.Context, e.getToolDefs(), false)
+		}
+
+		if err == nil {
+			break
+		}
+		if msg == nil && err == nil {
+			err = fmt.Errorf("empty assistant response from model")
+		}
+
+		if !isRetryableLLMError(err) || attempt == maxRetries {
+			return &Outcome{StopReason: "error", FinalMessage: err.Error(), Transient: attempt > 0}
+		}
+		e.log("[ENGINE] transient LLM error (attempt %d/%d): %v", attempt+1, maxRetries+1, err)
+		select {
+		case <-time.After(time.Duration(attempt+1) * time.Second):
+		case <-e.ctx.Done():
+			return &Outcome{StopReason: "error", FinalMessage: "context canceled"}
+		}
 	}
 
-	if err != nil {
-		return &Outcome{StopReason: "error", FinalMessage: err.Error()}
+	if msg == nil || (msg.Content == "" && len(msg.ToolCalls) == 0) {
+		return &Outcome{StopReason: "error", FinalMessage: "empty assistant response from model", Transient: true}
 	}
+	normalizeAssistantToolCalls(msg)
 
 	hasContent := msg.Content != "" || len(msg.ToolCalls) > 0
 	if hasContent {
@@ -376,9 +399,17 @@ func (e *Engine) streamStep() (*chat.Message, *llm.Usage, error) {
 		contentBuf.WriteString(evt.Content)
 		if len(evt.ToolCalls) > 0 {
 			for _, tc := range evt.ToolCalls {
+				id := strings.TrimSpace(tc.ID)
+				if id == "" {
+					id = fmt.Sprintf("call_%d", len(toolCalls))
+				}
+				typ := strings.TrimSpace(tc.Type)
+				if typ == "" {
+					typ = "function"
+				}
 				toolCalls = append(toolCalls, chat.ToolCall{
-					ID:   tc.ID,
-					Type: tc.Type,
+					ID:   id,
+					Type: typ,
 					Function: chat.ToolCallFunc{
 						Name:      tc.Function.Name,
 						Arguments: tc.Function.Arguments,
@@ -405,6 +436,23 @@ func (e *Engine) streamStep() (*chat.Message, *llm.Usage, error) {
 	}
 
 	return msg, &llm.Usage{}, nil
+}
+
+func normalizeAssistantToolCalls(msg *chat.Message) {
+	if msg == nil || len(msg.ToolCalls) == 0 {
+		return
+	}
+	for i := range msg.ToolCalls {
+		if strings.TrimSpace(msg.ToolCalls[i].ID) == "" {
+			msg.ToolCalls[i].ID = fmt.Sprintf("call_%d", i)
+		}
+		if strings.TrimSpace(msg.ToolCalls[i].Type) == "" {
+			msg.ToolCalls[i].Type = "function"
+		}
+		if strings.TrimSpace(msg.ToolCalls[i].Function.Arguments) == "" {
+			msg.ToolCalls[i].Function.Arguments = "{}"
+		}
+	}
 }
 
 func (e *Engine) executeToolCall(tc chat.ToolCall) error {
@@ -530,9 +578,6 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 	e.Dedup.Record(name, args, result, errMsg)
 
 	finalResult := result
-	if warn != "" {
-		finalResult = warn + "\n\n" + result
-	}
 	if err != nil {
 		finalResult = fmt.Sprintf("错误: %v\n%s", errMsg, result)
 	}
@@ -757,4 +802,25 @@ func (e *Engine) RollbackTo(step int) (string, error) {
 		return "", fmt.Errorf("找不到第 %d 步的上下文检查点", step)
 	}
 	return fmt.Sprintf("已回退到第 %d 步", step), nil
+}
+
+func isRetryableLLMError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	// Do NOT retry context-caused errors; retry only provider/network transient issues
+	if strings.Contains(msg, "context canceled") || strings.Contains(msg, "context deadline exceeded") {
+		return false
+	}
+	if strings.Contains(msg, "API error 5") || strings.Contains(msg, "API error 429") {
+		return true
+	}
+	if strings.Contains(msg, "empty assistant response") {
+		return true
+	}
+	if strings.Contains(msg, "request failed") || strings.Contains(msg, "read stream") {
+		return true
+	}
+	return false
 }

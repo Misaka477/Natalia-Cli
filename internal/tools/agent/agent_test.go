@@ -78,16 +78,16 @@ func TestStopResumeWithoutPool(t *testing.T) {
 
 func TestStopResumeUnknownWorker(t *testing.T) {
 	pool := worker.NewPool()
-	if _, err := (&Stop{Pool: pool}).Execute(map[string]any{"agent_id": "missing"}); err == nil || !strings.Contains(err.Error(), "不存在") {
+	if _, err := (&Stop{Pool: pool}).Execute(map[string]any{"agent_id": "missing"}); err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("expected missing stop error, got %v", err)
 	}
-	if _, err := (&Resume{Pool: pool}).Execute(map[string]any{"agent_id": "missing"}); err == nil || !strings.Contains(err.Error(), "不存在") {
+	if _, err := (&Resume{Pool: pool}).Execute(map[string]any{"agent_id": "missing"}); err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("expected missing resume error, got %v", err)
 	}
-	if _, err := (&Attach{Pool: pool}).Execute(map[string]any{"agent_id": "missing"}); err == nil || !strings.Contains(err.Error(), "不存在") {
+	if _, err := (&Attach{Pool: pool}).Execute(map[string]any{"agent_id": "missing"}); err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("expected missing attach error, got %v", err)
 	}
-	if _, err := (&Detach{Pool: pool}).Execute(map[string]any{"agent_id": "missing"}); err == nil || !strings.Contains(err.Error(), "不存在") {
+	if _, err := (&Detach{Pool: pool}).Execute(map[string]any{"agent_id": "missing"}); err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("expected missing detach error, got %v", err)
 	}
 }
@@ -165,6 +165,13 @@ func TestChildToolRegistryRejectsInvalidList(t *testing.T) {
 	_, err := childToolRegistry(toolset.NewRegistry(), map[string]any{"allowed_tools": "bad"})
 	if err == nil || !strings.Contains(err.Error(), "allowed_tools") {
 		t.Fatalf("expected allowed_tools validation error, got %v", err)
+	}
+}
+
+func TestSpawnRejectsInvalidModeWithValidModes(t *testing.T) {
+	_, err := (&Spawn{Pool: worker.NewPool(), Tools: toolset.NewRegistry()}).Execute(map[string]any{"task": "bad mode", "mode": "decode"})
+	if err == nil || !strings.Contains(err.Error(), "valid modes: code, ask, plan, debug, chat") {
+		t.Fatalf("expected invalid mode error with valid modes, got %v", err)
 	}
 }
 
@@ -254,7 +261,7 @@ func TestSpawnForegroundRunsWorkerToolCallChainWithFilteredTools(t *testing.T) {
 		}
 		toolResultSeen := false
 		for _, msg := range req.Messages {
-			if msg.Role == chat.RoleTool && msg.Name == "read_file" && strings.Contains(msg.Content, "real-file-tool-ok") {
+			if msg.Role == chat.RoleTool && msg.ToolCallID == "tc_read" && strings.Contains(msg.Content, "real-file-tool-ok") {
 				toolResultSeen = true
 			}
 		}
@@ -325,7 +332,7 @@ func TestSpawnForegroundUsesRootApproverForChildWriteTool(t *testing.T) {
 		}
 		rejectionSeen := false
 		for _, msg := range req.Messages {
-			if msg.Role == chat.RoleTool && msg.Name == "write_file" && strings.Contains(msg.Content, "操作被用户拒绝") {
+			if msg.Role == chat.RoleTool && msg.ToolCallID == "tc_write" && strings.Contains(msg.Content, "操作被用户拒绝") {
 				rejectionSeen = true
 			}
 		}

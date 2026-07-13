@@ -119,6 +119,14 @@ func TestInteractiveToolsFallbackManagerCoversExecuteFlow(t *testing.T) {
 		t.Fatalf("unexpected start output/options: output=%q opts=%+v", started, fake.lastOpts)
 	}
 
+	readIncremental, err := (&Read{}).Execute(map[string]any{"id": "tty_fake"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(readIncremental, "tail:\n") || !strings.Contains(readIncremental, "new_output:\nready>") {
+		t.Fatalf("default read should return clean incremental output without tail duplication, got %q", readIncremental)
+	}
+
 	read, err := (&Read{}).Execute(map[string]any{"id": "tty_fake", "tail_bytes": float64(512)})
 	if err != nil {
 		t.Fatal(err)
@@ -318,7 +326,7 @@ func TestInteractivePureValidationAndFormattingPaths(t *testing.T) {
 	if _, err := intArg(float64(9), 24, 10, 200, "rows"); err == nil || !strings.Contains(err.Error(), "between") {
 		t.Fatalf("expected intArg range error, got %v", err)
 	}
-	if got := formatObservation(nil); got != "<nil observation>" {
+	if got := formatObservation(nil, false); got != "<nil observation>" {
 		t.Fatalf("unexpected nil observation formatting: %q", got)
 	}
 	if got := formatSession(nil); got != "<nil interactive session>" {

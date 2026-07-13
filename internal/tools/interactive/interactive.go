@@ -76,7 +76,7 @@ func (t *Start) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return formatSession(sess) + "\n" + formatObservation(obs), nil
+	return formatSession(sess) + "\n" + formatObservation(obs, explicitTail(args)), nil
 }
 
 type Read struct{}
@@ -108,7 +108,7 @@ func (t *Read) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return formatObservation(obs), nil
+	return formatObservation(obs, explicitTail(args)), nil
 }
 
 type Write struct{}
@@ -156,11 +156,11 @@ func (t *Write) Execute(args map[string]any) (string, error) {
 		return "", err
 	}
 	if sensitive {
-		obs.NewOutput = ""
-		obs.Tail = "[redacted after sensitive input]"
+		obs.NewOutput = "[redacted after sensitive input]"
+		obs.Tail = ""
 		obs.Truncated = false
 	}
-	return formatObservation(obs), nil
+	return formatObservation(obs, explicitTail(args)), nil
 }
 
 type Keys struct{}
@@ -196,7 +196,7 @@ func (t *Keys) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return formatObservation(obs), nil
+	return formatObservation(obs, explicitTail(args)), nil
 }
 
 type Stop struct{}
@@ -353,6 +353,14 @@ func requireID(args map[string]any) (string, error) {
 	return id, nil
 }
 
+func explicitTail(args map[string]any) bool {
+	if args == nil {
+		return false
+	}
+	_, ok := args["tail_bytes"]
+	return ok
+}
+
 func observeOptions(args map[string]any, includeOutput bool) (interactivemgr.ObserveOptions, error) {
 	waitFor, _ := args["wait_for"].(string)
 	idle, err := intArg(args["idle_timeout_ms"], 200, 20, 60000, "idle_timeout_ms")
@@ -430,7 +438,7 @@ func formatSession(sess *interactivemgr.Session) string {
 	return fmt.Sprintf("id: %s\nstatus: %s\npid: %d\ncommand: %s %s\nattached: %t\nsize: %dx%d%s%s", sess.ID, sess.Status, sess.PID, sess.Command, strings.Join(sess.Args, " "), sess.Attached, sess.Rows, sess.Cols, exitCode, errLine)
 }
 
-func formatObservation(obs *interactivemgr.Observation) string {
+func formatObservation(obs *interactivemgr.Observation, includeTail bool) string {
 	if obs == nil {
 		return "<nil observation>"
 	}
@@ -449,7 +457,7 @@ func formatObservation(obs *interactivemgr.Observation) string {
 	if obs.NewOutput != "" {
 		fmt.Fprintf(&b, "new_output:\n%s\n", obs.NewOutput)
 	}
-	if obs.Tail != "" {
+	if includeTail && obs.Tail != "" {
 		fmt.Fprintf(&b, "tail:\n%s", obs.Tail)
 	}
 	return strings.TrimRight(b.String(), "\n")
@@ -463,6 +471,11 @@ func formatTranscript(page interactivemgr.TranscriptPage) string {
 		b.WriteString(page.Text)
 		b.WriteByte('\n')
 	}
-	fmt.Fprintf(&b, "page: offset=%d next_offset=%d total=%d has_more=%t", page.Offset, page.NextOffset, page.Total, page.HasMore)
+	fmt.Fprintf(&b, "page: offset=%d next_offset=%d total=%d has_more=%t",
+		page.Offset, page.NextOffset, page.Total, page.HasMore)
+	if page.HasMore {
+		fmt.Fprintf(&b, " — use interactive_transcript(id=..., offset=%d, limit=4096) to read next page",
+			page.NextOffset)
+	}
 	return strings.TrimRight(b.String(), "\n")
 }

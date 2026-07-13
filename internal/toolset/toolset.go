@@ -106,7 +106,7 @@ func (r *Registry) ToToolDefs() []llm.ToolDef {
 				Parameters: llm.Parameters{
 					Type:       "object",
 					Properties: props,
-					Required:   t.Required(),
+					Required:   nonilRequired(t.Required()),
 				},
 			},
 		})
@@ -118,6 +118,26 @@ type Dedup struct {
 	mu          sync.Mutex
 	history     []chat.ToolResult
 	repetitions map[string]int
+}
+
+// pollSafeTools are read-only polling tools that should never be dedup-blocked.
+var pollSafeTools = map[string]bool{
+	"agent_output":           true,
+	"agent_list":             true,
+	"interactive_read":       true,
+	"interactive_transcript": true,
+	"interactive_list":       true,
+	"process_output":         true,
+	"process_list":           true,
+	"process_status":         true,
+	"background_output":      true,
+	"background_list":        true,
+	"todo_list":              true,
+	"plan_mode_status":       true,
+	"workflow_list":          true,
+	"workflow_read":          true,
+	"skill_list":             true,
+	"skill_read":             true,
 }
 
 func NewDedup() *Dedup {
@@ -158,16 +178,27 @@ func (d *Dedup) ResetTurn() {
 }
 
 func (d *Dedup) Check(name string, args map[string]any) (warn string, stop bool) {
+	// Poll-safe tools should never be dedup-blocked
+	if pollSafeTools[name] {
+		return "", false
+	}
 	count := d.Count(name, args)
 	switch {
 	case count >= 12:
-		return "强制终止：重复工具调用 12 次", true
+		return "[natalia] Repeated tool call blocked: " + name + " called 12+ times with same args", true
 	case count >= 8:
-		return fmt.Sprintf("⚠️ 你已重复 %s %d 次，立即停止所有工具调用", name, count), false
+		return "[natalia] Repeated tool call: " + name + " (" + fmt.Sprint(count) + "x) — stop and reassess", false
 	case count >= 5:
-		return fmt.Sprintf("⚠️ 你已重复 %s %d 次，注意", name, count), false
+		return "[natalia] Repeated tool call: " + name + " (" + fmt.Sprint(count) + "x) — check if stuck", false
 	case count >= 3:
-		return fmt.Sprintf("➡️ 你已重复 %s %d 次，请检查", name, count), false
+		return "[natalia] Repeated tool call: " + name + " (" + fmt.Sprint(count) + "x)", false
 	}
 	return "", false
+}
+
+func nonilRequired(req []string) []string {
+	if req == nil {
+		return []string{}
+	}
+	return req
 }

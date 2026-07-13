@@ -143,10 +143,10 @@ func TestDedupCheckWarnsAndStopsAtThresholds(t *testing.T) {
 		wantWarn string
 		wantStop bool
 	}{
-		3:  {wantWarn: "请检查"},
-		5:  {wantWarn: "注意"},
-		8:  {wantWarn: "立即停止"},
-		12: {wantWarn: "强制终止", wantStop: true},
+		3:  {wantWarn: "Repeated tool call: read_file (3x)"},
+		5:  {wantWarn: "Repeated tool call: read_file (5x)"},
+		8:  {wantWarn: "Repeated tool call: read_file (8x)"},
+		12: {wantWarn: "Repeated tool call blocked: read_file called 12+ times with same args", wantStop: true},
 	}
 	for i := 1; i <= 12; i++ {
 		warn, stop := d.Check("read_file", args)
@@ -161,6 +161,16 @@ func TestDedupCheckWarnsAndStopsAtThresholds(t *testing.T) {
 		}
 		if i > 3 && warn == "" {
 			t.Fatalf("call %d: expected repeated calls to keep warning", i)
+		}
+	}
+}
+
+func TestDedupSkipsPollSafeTools(t *testing.T) {
+	d := NewDedup()
+	for i := 0; i < 20; i++ {
+		warn, stop := d.Check("agent_output", map[string]any{"agent_id": "w1"})
+		if warn != "" || stop {
+			t.Fatalf("call %d: poll-safe tool should not trigger dedup, got warn=%q stop=%v", i+1, warn, stop)
 		}
 	}
 }

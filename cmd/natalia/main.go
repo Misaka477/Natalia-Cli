@@ -1110,11 +1110,9 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 				continue
 			}
 			outcome := r.out
-			if outcome.FinalMessage != "" && !engine.Stream {
-				publishWireContent(wireRuntime, wire.ContentText, outcome.FinalMessage)
-			}
+			publishOutcomeFinalMessage(wireRuntime, outcome, engine.Stream)
 			if outcome.FinalMessage == "" && outcome.StopReason == "error" {
-				fmt.Fprintf(os.Stderr, "\n错误: %s\n", outcome.FinalMessage)
+				fmt.Fprintln(os.Stderr, "\n错误: unknown error")
 			}
 			if event, err := wire.NewEvent(wire.EventTurnEnd, wire.TurnEnd{}); err == nil {
 				wireRuntime.SoulSide.PublishEvent(event)
@@ -1270,7 +1268,7 @@ func handleModel(input string, cfg *config.Config, engine **soul.Engine, tools *
 		showModelProfiles(cfg)
 		return
 	}
-	name := parts[1]
+	name := strings.Join(parts[1:], " ")
 	if _, ok := cfg.ModelProfiles[name]; !ok {
 		fmt.Printf("模型配置 %q 不存在\n", name)
 		showModelProfiles(cfg)
@@ -1657,11 +1655,11 @@ func handleWorkerCommand(input string) {
 }
 
 func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool, autoEnabled *bool, escalator *autoflow.Escalator) {
-	if strings.HasPrefix(input, "/sessions") || input == "/sessions" {
+	if isSlashCommand(input, "/sessions") {
 		handleSessions(input, *cfg, engine, tools, debug)
 		return
 	}
-	if strings.HasPrefix(input, "/rollback ") || input == "/rollback" {
+	if isSlashCommand(input, "/rollback") {
 		handleRollback(input, engine)
 		return
 	}
@@ -1671,7 +1669,7 @@ func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine,
 		fmt.Println("\n⏹ 已停止")
 		return
 	}
-	if strings.HasPrefix(input, "/mode") || input == "/mode" {
+	if isSlashCommand(input, "/mode") {
 		if *cfg == nil {
 			fmt.Println("请先配置。输入 /setup")
 			return
@@ -1679,7 +1677,7 @@ func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine,
 		handleMode(input, *cfg, engine, tools, debug)
 		return
 	}
-	if strings.HasPrefix(input, "/model") || input == "/model" {
+	if isSlashCommand(input, "/model") {
 		if *cfg == nil {
 			fmt.Println("请先配置。输入 /setup")
 			return
@@ -1687,7 +1685,7 @@ func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine,
 		handleModel(input, *cfg, engine, tools, debug)
 		return
 	}
-	if strings.HasPrefix(input, "/permission") || input == "/permission" {
+	if isSlashCommand(input, "/permission") {
 		if *cfg == nil {
 			fmt.Println("请先配置。输入 /setup")
 			return
@@ -1699,11 +1697,11 @@ func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine,
 		handleStatus(*cfg, *engine)
 		return
 	}
-	if strings.HasPrefix(input, "/auto") || input == "/auto" {
+	if isSlashCommand(input, "/auto") {
 		handleAuto(input, autoEnabled, escalator)
 		return
 	}
-	if strings.HasPrefix(input, "/execute-plan") || input == "/execute-plan" {
+	if isSlashCommand(input, "/execute-plan") {
 		if *cfg == nil {
 			fmt.Println("请先配置。输入 /setup")
 			return
@@ -1711,11 +1709,11 @@ func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine,
 		handleExecutePlan(input, *cfg, engine, tools, debug)
 		return
 	}
-	if strings.HasPrefix(input, "/plan") || input == "/plan" {
+	if isSlashCommand(input, "/plan") {
 		handlePlan(input)
 		return
 	}
-	if strings.HasPrefix(input, "/workflow") || input == "/workflow" {
+	if isSlashCommand(input, "/workflow") {
 		handleWorkflow(input, *engine)
 		return
 	}
@@ -1723,7 +1721,7 @@ func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine,
 		handleWorkerCommand(input)
 		return
 	}
-	if strings.HasPrefix(input, "/sandbox ") || input == "/sandbox" {
+	if isSlashCommand(input, "/sandbox") {
 		handleSandbox(input)
 		return
 	}
@@ -1836,6 +1834,10 @@ func donePlanLines(planSession *planexec.Session) []int {
 		}
 	}
 	return lines
+}
+
+func isSlashCommand(input, command string) bool {
+	return input == command || strings.HasPrefix(input, command+" ")
 }
 
 func handleSessions(input string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool) {

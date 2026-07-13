@@ -7,6 +7,7 @@ import (
 
 	"github.com/Misaka477/Natalia-Cli/internal/approval"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
+	"github.com/Misaka477/Natalia-Cli/internal/mode"
 	"github.com/Misaka477/Natalia-Cli/internal/toolset"
 	"github.com/Misaka477/Natalia-Cli/internal/worker"
 )
@@ -36,14 +37,17 @@ func (t *Spawn) Parameters() map[string]llm.Property {
 func (t *Spawn) Execute(args map[string]any) (string, error) {
 	task, _ := args["task"].(string)
 	if task == "" {
-		return "", fmt.Errorf("task 是必填参数")
+		return "", fmt.Errorf("task is required")
 	}
 	if t.Pool == nil {
-		return "", fmt.Errorf("子 agent 系统不可用")
+		return "", fmt.Errorf("agent system unavailable")
 	}
 	modeName, _ := args["mode"].(string)
 	if modeName == "" {
 		modeName = "code"
+	}
+	if _, err := mode.Get(modeName); err != nil {
+		return "", fmt.Errorf("unknown mode %q; valid modes: %s", modeName, strings.Join(validModeNames(), ", "))
 	}
 	foreground, _ := args["foreground"].(bool)
 	timeoutSec, err := parseTimeoutSec(args["timeout_sec"], foreground)
@@ -71,14 +75,26 @@ func (t *Spawn) Execute(args map[string]any) (string, error) {
 		return "", fmt.Errorf("创建子 agent 失败: %w", err)
 	}
 	if foreground {
-		waitForWorker(w, time.Duration(timeoutSec)*time.Second)
-		return formatWorkerDetail(w), nil
+		completed := waitForWorker(w, time.Duration(timeoutSec)*time.Second)
+		detail := formatWorkerDetail(w)
+		if !completed {
+			detail = fmt.Sprintf("timeout after %ds — worker still running\n%s", timeoutSec, detail)
+		}
+		return detail, nil
 	}
 	profileLine := ""
 	if modelProfile != "" {
 		profileLine = "\n模型配置: " + modelProfile
 	}
 	return fmt.Sprintf("子 agent %s 已创建\n任务: %s\n模式: %s%s\n状态: %s", w.ID, task, modeName, profileLine, w.Status), nil
+}
+
+func validModeNames() []string {
+	names := make([]string, 0, len(mode.Modes))
+	for _, item := range mode.Modes {
+		names = append(names, item.Name)
+	}
+	return names
 }
 
 func childToolRegistry(base *toolset.Registry, args map[string]any) (*toolset.Registry, error) {
@@ -126,7 +142,7 @@ func (t *List) Required() []string                  { return []string{} }
 func (t *List) Parameters() map[string]llm.Property { return map[string]llm.Property{} }
 func (t *List) Execute(args map[string]any) (string, error) {
 	if t.Pool == nil {
-		return "", fmt.Errorf("子 agent 系统不可用")
+		return "", fmt.Errorf("agent system unavailable")
 	}
 	workers := t.Pool.List()
 	if len(workers) == 0 {
@@ -168,14 +184,14 @@ func (t *Output) Parameters() map[string]llm.Property {
 func (t *Output) Execute(args map[string]any) (string, error) {
 	id, _ := args["agent_id"].(string)
 	if id == "" {
-		return "", fmt.Errorf("agent_id 是必填参数")
+		return "", fmt.Errorf("agent_id is required")
 	}
 	if t.Pool == nil {
-		return "", fmt.Errorf("子 agent 系统不可用")
+		return "", fmt.Errorf("agent system unavailable")
 	}
 	w := t.Pool.Get(id)
 	if w == nil {
-		return "", fmt.Errorf("子 agent %s 不存在", id)
+		return "", fmt.Errorf("agent %s not found", id)
 	}
 	logs := w.GetLogs()
 	if len(logs) == 0 {
@@ -212,11 +228,11 @@ func (t *Attach) Execute(args map[string]any) (string, error) {
 		return "", err
 	}
 	if t.Pool == nil {
-		return "", fmt.Errorf("子 agent 系统不可用")
+		return "", fmt.Errorf("agent system unavailable")
 	}
 	w := t.Pool.Get(id)
 	if w == nil {
-		return "", fmt.Errorf("子 agent %s 不存在", id)
+		return "", fmt.Errorf("agent %s not found", id)
 	}
 	t.Pool.Attach(id)
 	return fmt.Sprintf("已 attach 子 agent %s\n%s", id, formatWorkerDetail(w)), nil
@@ -238,11 +254,11 @@ func (t *Detach) Execute(args map[string]any) (string, error) {
 		return "", err
 	}
 	if t.Pool == nil {
-		return "", fmt.Errorf("子 agent 系统不可用")
+		return "", fmt.Errorf("agent system unavailable")
 	}
 	w := t.Pool.Get(id)
 	if w == nil {
-		return "", fmt.Errorf("子 agent %s 不存在", id)
+		return "", fmt.Errorf("agent %s not found", id)
 	}
 	t.Pool.Detach(id)
 	return fmt.Sprintf("已 detach 子 agent %s\n%s", id, formatWorkerDetail(w)), nil
@@ -262,11 +278,11 @@ func (t *Stop) Execute(args map[string]any) (string, error) {
 		return "", err
 	}
 	if t.Pool == nil {
-		return "", fmt.Errorf("子 agent 系统不可用")
+		return "", fmt.Errorf("agent system unavailable")
 	}
 	w := t.Pool.Get(id)
 	if w == nil {
-		return "", fmt.Errorf("子 agent %s 不存在", id)
+		return "", fmt.Errorf("agent %s not found", id)
 	}
 	w.Stop()
 	return fmt.Sprintf("已请求停止子 agent %s\n状态: %s", id, w.GetStatus()), nil
@@ -286,11 +302,11 @@ func (t *Resume) Execute(args map[string]any) (string, error) {
 		return "", err
 	}
 	if t.Pool == nil {
-		return "", fmt.Errorf("子 agent 系统不可用")
+		return "", fmt.Errorf("agent system unavailable")
 	}
 	w := t.Pool.Get(id)
 	if w == nil {
-		return "", fmt.Errorf("子 agent %s 不存在", id)
+		return "", fmt.Errorf("agent %s not found", id)
 	}
 	w.Resume()
 	return fmt.Sprintf("已恢复子 agent %s\n状态: %s", id, w.GetStatus()), nil
@@ -299,7 +315,7 @@ func (t *Resume) Execute(args map[string]any) (string, error) {
 func requireAgentID(args map[string]any) (string, error) {
 	id, _ := args["agent_id"].(string)
 	if id == "" {
-		return "", fmt.Errorf("agent_id 是必填参数")
+		return "", fmt.Errorf("agent_id is required")
 	}
 	return id, nil
 }
@@ -330,15 +346,16 @@ func parseTimeoutSec(raw any, foreground bool) (int, error) {
 	return value, nil
 }
 
-func waitForWorker(w *worker.Worker, timeout time.Duration) {
+func waitForWorker(w *worker.Worker, timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		status := w.GetStatus()
 		if status == worker.StatusCompleted || status == worker.StatusFailed || status == worker.StatusPaused {
-			return
+			return true
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+	return false
 }
 
 func formatWorkerDetail(w *worker.Worker) string {

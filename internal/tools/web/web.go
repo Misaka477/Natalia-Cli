@@ -63,7 +63,7 @@ func (t *Search) Required() []string { return []string{"query"} }
 func (t *Search) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"query":             {Type: "string", Description: "搜索关键词"},
-		"limit":             {Type: "string", Description: "可选，返回结果数量，默认 5"},
+		"limit":             {Type: "integer", Description: "可选，返回结果数量，默认 5"},
 		"include_content":   {Type: "string", Description: "可选，设为 true 时同时抓取页面内容（消耗更多 token）"},
 		"provider_priority": {Type: "string", Description: "可选，搜索 provider 顺序，如 bing,google,duckduckgo"},
 	}
@@ -71,19 +71,19 @@ func (t *Search) Parameters() map[string]llm.Property {
 func (t *Search) Execute(args map[string]any) (string, error) {
 	query, _ := args["query"].(string)
 	if query == "" {
-		return "", fmt.Errorf("query 是必填参数")
+		return "", fmt.Errorf("query is required")
 	}
 
 	limit := 5
-	if l, ok := args["limit"].(string); ok {
-		parsed, err := strconv.Atoi(strings.TrimSpace(l))
-		if err != nil {
-			return "", fmt.Errorf("limit must be an integer")
+	if l, ok := args["limit"].(float64); ok {
+		if l >= 1 && l <= 20 {
+			limit = int(l)
 		}
-		limit = parsed
-	}
-	if limit < 1 || limit > 20 {
-		limit = 5
+	} else if l, ok := args["limit"].(string); ok {
+		parsed, err := strconv.Atoi(strings.TrimSpace(l))
+		if err == nil && parsed >= 1 && parsed <= 20 {
+			limit = parsed
+		}
 	}
 
 	includeContent := parseBoolArg(args, "include_content")
@@ -104,11 +104,14 @@ func (t *Search) Execute(args map[string]any) (string, error) {
 		return "", fmt.Errorf("搜索失败: %w", err)
 	}
 	if len(results) == 0 {
-		msg := fmt.Sprintf("未找到 %q 的相关结果", query)
+		msg := fmt.Sprintf("no results found for %q", query)
 		if len(diagnostics) > 0 {
 			msg += "\n搜索诊断:\n- " + strings.Join(diagnostics, "\n- ")
 		}
 		return msg, nil
+	}
+	if warning := searchRelevanceWarning(query, results); warning != "" {
+		diagnostics = append(diagnostics, warning)
 	}
 
 	var b strings.Builder
@@ -135,6 +138,40 @@ func (t *Search) Execute(args map[string]any) (string, error) {
 		}
 	}
 	return b.String(), nil
+}
+
+func searchRelevanceWarning(query string, results []SearchResult) string {
+	terms := queryTerms(query)
+	if len(terms) == 0 || len(results) == 0 {
+		return ""
+	}
+	relevant := 0
+	for _, result := range results {
+		haystack := strings.ToLower(result.Title + " " + result.Snippet + " " + result.URL)
+		for _, term := range terms {
+			if strings.Contains(haystack, term) {
+				relevant++
+				break
+			}
+		}
+	}
+	if relevant == 0 || relevant*2 < len(results) {
+		return fmt.Sprintf("warning: low lexical relevance for query %q; verify provider results or fetch target pages", query)
+	}
+	return ""
+}
+
+func queryTerms(query string) []string {
+	fields := strings.FieldsFunc(strings.ToLower(query), func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9')
+	})
+	terms := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if len(field) >= 3 {
+			terms = append(terms, field)
+		}
+	}
+	return terms
 }
 
 func searchDefault(query string, limit int) ([]SearchResult, error) {
@@ -583,7 +620,7 @@ func (t *Fetch) Parameters() map[string]llm.Property {
 func (t *Fetch) Execute(args map[string]any) (string, error) {
 	u, _ := args["url"].(string)
 	if u == "" {
-		return "", fmt.Errorf("url 是必填参数")
+		return "", fmt.Errorf("url is required")
 	}
 	format, err := parseFetchFormat(args)
 	if err != nil {
@@ -640,13 +677,16 @@ func (t *Fetch) Execute(args map[string]any) (string, error) {
 	if strings.Contains(contentType, "text/plain") || strings.Contains(contentType, "text/markdown") {
 		return appendTruncationMarker(bodyText, truncated, maxBytes), nil
 	}
+	if strings.Contains(contentType, "application/json") {
+		return appendTruncationMarker(bodyText, truncated, maxBytes), nil
+	}
 
 	text, err := renderHTMLBody(bodyText, u, format, includeLinks)
 	if err != nil {
 		return "", fmt.Errorf("HTML 解析失败: %w", err)
 	}
 	if text == "" {
-		return "无法从页面提取到有效内容（页面可能需要 JavaScript 渲染）", nil
+		return fmt.Sprintf("no content extracted from page (may require JavaScript rendering)\nURL: %s\nContent-Type: %s\nStatus: %d\nRead: %d bytes", u, contentType, resp.StatusCode, len(body)), nil
 	}
 	return appendTruncationMarker(text, truncated, maxBytes), nil
 }
@@ -774,11 +814,11 @@ func (t *FileInfo) Execute(args map[string]any) (string, error) {
 func executeFileInfo(args map[string]any) (string, error) {
 	path, _ := args["path"].(string)
 	if path == "" {
-		return "", fmt.Errorf("path 是必填参数")
+		return "", fmt.Errorf("path is required")
 	}
 	info, err := os.Stat(path)
 	if err != nil {
-		return "", fmt.Errorf("文件不存在: %w", err)
+		return "", fmt.Errorf("file not found: %w", err)
 	}
 	if info.IsDir() {
 		return "", fmt.Errorf("path 是目录，不是文件: %s", path)

@@ -19,9 +19,6 @@ var (
 func SetDefaultRegistry(r *workflowcore.Registry) {
 	defaultMu.Lock()
 	defer defaultMu.Unlock()
-	if r == nil {
-		r = &workflowcore.Registry{}
-	}
 	defaultRegistry = r
 }
 
@@ -43,9 +40,10 @@ func (t *Run) Parameters() map[string]llm.Property {
 }
 
 func (t *Run) Execute(args map[string]any) (string, error) {
+	refreshDefaultRegistry()
 	name, _ := args["name"].(string)
 	if strings.TrimSpace(name) == "" {
-		return "", fmt.Errorf("name 是必填参数")
+		return "", fmt.Errorf("name is required")
 	}
 	state, instruction, err := registryOrDefault(t.Registry).Run(name)
 	if err != nil {
@@ -69,6 +67,22 @@ func (t *Run) Execute(args map[string]any) (string, error) {
 	return instruction, nil
 }
 
+// refreshDefaultRegistry re-scans .natalia/workflows/ and .natalia/commands/
+// from the current working directory and replaces the default registry.
+// This ensures newly added workflow files are discovered without a restart.
+func refreshDefaultRegistry() {
+	defaultMu.Lock()
+	defer defaultMu.Unlock()
+	wd, err := os.Getwd()
+	if err != nil {
+		return
+	}
+	r, err := workflowcore.Discover(wd)
+	if err == nil {
+		defaultRegistry = r
+	}
+}
+
 func registryOrDefault(r *workflowcore.Registry) *workflowcore.Registry {
 	if r != nil {
 		return r
@@ -90,9 +104,10 @@ func (t *List) Parameters() map[string]llm.Property {
 }
 
 func (t *List) Execute(args map[string]any) (string, error) {
+	refreshDefaultRegistry()
 	items := registryOrDefault(t.Registry).List()
 	if len(items) == 0 {
-		return "没有可用的 workflow", nil
+		return "no workflows available. " + workflowHint(registryOrDefault(t.Registry)), nil
 	}
 	var b strings.Builder
 	for _, wf := range items {
@@ -117,13 +132,26 @@ func (t *Read) Parameters() map[string]llm.Property {
 }
 
 func (t *Read) Execute(args map[string]any) (string, error) {
+	refreshDefaultRegistry()
 	name, _ := args["name"].(string)
 	if strings.TrimSpace(name) == "" {
-		return "", fmt.Errorf("name 是必填参数")
+		return "", fmt.Errorf("name is required")
 	}
 	wf := registryOrDefault(t.Registry).Get(name)
 	if wf == nil {
-		return "", fmt.Errorf("workflow %s 不存在", name)
+		return "", fmt.Errorf("workflow %s not found. %s", name, workflowHint(registryOrDefault(t.Registry)))
 	}
 	return wf.Format(), nil
+}
+
+func workflowHint(r *workflowcore.Registry) string {
+	items := r.List()
+	if len(items) > 0 {
+		names := make([]string, 0, len(items))
+		for _, item := range items {
+			names = append(names, item.Name)
+		}
+		return "available: " + strings.Join(names, ", ")
+	}
+	return "add .yaml files to .natalia/workflows/ or .md files to .natalia/commands/; package.json scripts and Makefile targets are also imported automatically."
 }

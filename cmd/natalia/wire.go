@@ -147,9 +147,7 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 			if err != nil {
 				return nil, err
 			}
-			if outcome.FinalMessage != "" && !engine.Stream {
-				publishWireContent(w, wire.ContentText, outcome.FinalMessage)
-			}
+			publishOutcomeFinalMessage(w, outcome, engine.Stream)
 			if event, err := wire.NewEvent(wire.EventTurnEnd, wire.TurnEnd{}); err == nil {
 				w.SoulSide.PublishEvent(event)
 			}
@@ -520,6 +518,15 @@ func configureEngineApprovalForWire(engine *soul.Engine, w *wire.Wire, ctxProvid
 			}
 		}
 		return requestWireApproval(ctx, w, toolName, description, blocks)
+	}
+}
+
+func publishOutcomeFinalMessage(w *wire.Wire, outcome *soul.Outcome, stream bool) {
+	if outcome == nil || outcome.FinalMessage == "" {
+		return
+	}
+	if !stream || outcome.StopReason == "error" || outcome.StopReason == "max_steps" {
+		publishWireContent(w, wire.ContentText, outcome.FinalMessage)
 	}
 }
 

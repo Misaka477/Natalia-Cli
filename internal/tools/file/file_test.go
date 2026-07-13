@@ -298,7 +298,7 @@ func TestWriteExecuteReturnIncludesDiffDisplayForCreateAndOverwrite(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(ret.ModelText, "已写入") || len(ret.Display) != 1 || ret.Display[0].Type != display.BlockDiff {
+	if !strings.Contains(ret.ModelText, "wrote") || len(ret.Display) != 1 || ret.Display[0].Type != display.BlockDiff {
 		t.Fatalf("expected create diff display, got %+v", ret)
 	}
 	var payload display.DiffBlock
@@ -384,7 +384,7 @@ func TestEditExecuteReturnIncludesDiffDisplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(ret.ModelText, "替换 1 处") || len(ret.Display) != 1 || ret.Display[0].Type != display.BlockDiff {
+	if !strings.Contains(ret.ModelText, "1 replacements") || len(ret.Display) != 1 || ret.Display[0].Type != display.BlockDiff {
 		t.Fatalf("expected diff display block, got %+v", ret)
 	}
 	var payload display.DiffBlock
@@ -407,7 +407,7 @@ func TestEditDefaultsToSingleReplacement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(ret.ModelText, "替换 1 处") {
+	if !strings.Contains(ret.ModelText, "1 replacements") {
 		t.Fatalf("expected single replacement metadata, got %q", ret.ModelText)
 	}
 	data, err := os.ReadFile(path)
@@ -430,7 +430,7 @@ func TestEditReplaceAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(ret.ModelText, "替换 3 处") {
+	if !strings.Contains(ret.ModelText, "3 replacements") {
 		t.Fatalf("expected replace_all metadata, got %q", ret.ModelText)
 	}
 	data, err := os.ReadFile(path)
@@ -459,7 +459,7 @@ func TestEditBatchAppliesSequentialEdits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(ret.ModelText, "替换 2 处") || len(ret.Display) != 1 {
+	if !strings.Contains(ret.ModelText, "2 replacements") || len(ret.Display) != 1 {
 		t.Fatalf("expected batch metadata and diff display, got %+v", ret)
 	}
 	data, err := os.ReadFile(path)
@@ -613,8 +613,8 @@ func TestGrepNoMatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(result, "未找到") {
-		t.Errorf("expected '未找到', got %s", result)
+	if !strings.Contains(result, "no matches found") {
+		t.Errorf("expected 'no matches found', got %s", result)
 	}
 }
 
@@ -697,7 +697,7 @@ func TestGrepIgnoreCase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(result, "未找到") {
+	if !strings.Contains(result, "no matches found") {
 		t.Fatalf("expected case-sensitive search to miss, got %q", result)
 	}
 
@@ -1176,7 +1176,7 @@ func TestGlobNoMatchAndOffsetBeyondTotal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(result, "未找到匹配文件") {
+	if !strings.Contains(result, "no matching files found") {
 		t.Fatalf("expected no match message, got %q", result)
 	}
 	page, marker := paginateResults([]string{"a", "b"}, 2, 1)

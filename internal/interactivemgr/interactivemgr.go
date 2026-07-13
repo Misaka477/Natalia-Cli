@@ -28,6 +28,12 @@ const (
 	StatusFailed          Status = "failed"
 )
 
+const (
+	eraseToStartMarker = '\ue000'
+	eraseLineMarker    = '\ue001'
+	clearScreenMarker  = '\ue002'
+)
+
 type StartOptions struct {
 	Command string
 	Args    []string
@@ -325,6 +331,9 @@ func (m *Manager) Write(id, input string, sensitive bool, opts ObserveOptions) (
 	if err := ms.write(input); err != nil {
 		return nil, err
 	}
+	// Brief yield to capture goroutine so PTY echo arrives before observe starts
+	time.Sleep(10 * time.Millisecond)
+
 	obs, err := ms.observe(opts)
 	if sensitive {
 		ms.redactFrom(redactFrom)
@@ -667,15 +676,34 @@ func isPTYClosedError(err error) bool {
 }
 
 func applyTerminalControls(s string) string {
-	var out strings.Builder
+	type savedLine struct {
+		text string
+	}
+	buf := make([]savedLine, 0, 64)
 	line := make([]rune, 0, 256)
 	cursor := 0
+	truncateResidue := false
+	crReset := false
+
+	appendLine := func(text string) {
+		buf = append(buf, savedLine{text: text})
+	}
+
 	flushLine := func() {
-		out.WriteString(string(line))
+		if truncateResidue && cursor < len(line) {
+			line = line[:cursor]
+		}
+		appendLine(string(line))
 		line = line[:0]
 		cursor = 0
+		truncateResidue = false
+		crReset = false
 	}
 	writeRune := func(r rune) {
+		if crReset {
+			truncateResidue = true
+			crReset = false
+		}
 		if cursor < len(line) {
 			line[cursor] = r
 		} else {
@@ -683,21 +711,41 @@ func applyTerminalControls(s string) string {
 		}
 		cursor++
 	}
+	// isCompletionCandidate: short line that does NOT look like a prompt/header
+	isCompletionCandidate := func(text string) bool {
+		if len([]rune(text)) > 80 {
+			return false
+		}
+		// Don't suppress lines that look like prompts, file content, or shell output
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return false
+		}
+		for _, pattern := range []string{">>> ", "$ ", "# ", "> ", "error", "Error", "Traceback", "Stderr", "STDERR", "/"} {
+			if strings.HasPrefix(text, pattern) || strings.HasPrefix(text, strings.ToUpper(pattern)) {
+				return false
+			}
+		}
+		if len(text) > 60 {
+			return false
+		}
+		return true
+	}
+
 	for i, r := range s {
 		switch r {
 		case '\r':
 			if i+1 < len(s) && s[i+1] == '\n' {
 				flushLine()
-				out.WriteByte('\n')
 			} else {
 				cursor = 0
+				crReset = true
 			}
 		case '\n':
 			if i > 0 && s[i-1] == '\r' {
 				continue
 			}
 			flushLine()
-			out.WriteByte('\n')
 		case '\b', 0x7f:
 			if cursor > 0 {
 				cursor--
@@ -707,6 +755,28 @@ func applyTerminalControls(s string) string {
 			if cursor < len(line) {
 				line = line[:cursor]
 			}
+			crReset = false
+		case eraseToStartMarker:
+			if cursor > 0 {
+				if cursor >= len(line) {
+					line = line[:0]
+				} else {
+					line = append(line[:0], line[cursor:]...)
+				}
+				cursor = 0
+			}
+			crReset = false
+		case eraseLineMarker:
+			line = line[:0]
+			cursor = 0
+			truncateResidue = false
+			crReset = false
+		case clearScreenMarker:
+			line = line[:0]
+			cursor = 0
+			truncateResidue = false
+			crReset = false
+			buf = buf[:0]
 		case '\t':
 			writeRune(r)
 		default:
@@ -716,7 +786,58 @@ func applyTerminalControls(s string) string {
 			writeRune(r)
 		}
 	}
-	flushLine()
+	// Flush final line; skip if the last char already triggered a flush (empty line after \n flush)
+	currentLine := string(line)
+	if currentLine != "" || len(buf) == 0 {
+		if truncateResidue && cursor < len(line) {
+			line = line[:cursor]
+			currentLine = string(line)
+		}
+		appendLine(currentLine)
+	}
+
+	// Suppress Python per-character echo intermediate lines: lines that are
+	// short, each a prefix of the next (growing incrementally by 1-3 chars).
+	if len(buf) >= 4 {
+		end := len(buf) - 1
+		start := end
+		last := buf[end].text
+		for start > 0 {
+			prev := buf[start-1].text
+			if len(prev) < 3 || len(prev) >= len(last) || !strings.HasPrefix(last, prev) || len(last)-len(prev) > 3 {
+				break
+			}
+			last = prev
+			start--
+		}
+		if end-start >= 3 {
+			copy(buf[start:], buf[end:])
+			buf = buf[:len(buf)-(end-start)]
+		}
+	}
+
+	// Suppress Tab completion intermediate lines: find a block of 2+ consecutive
+	// completion candidates before the final line, remove them.
+	if len(buf) >= 3 {
+		blockEnd := len(buf) - 1 // block ends before final line
+		blockStart := blockEnd
+		for blockStart > 0 && isCompletionCandidate(buf[blockStart-1].text) {
+			blockStart--
+		}
+		if blockEnd-blockStart >= 2 {
+			// Remove the candidate block
+			copy(buf[blockStart:], buf[blockEnd:])
+			buf = buf[:len(buf)-(blockEnd-blockStart)]
+		}
+	}
+
+	var out strings.Builder
+	for i, l := range buf {
+		if i > 0 {
+			out.WriteByte('\n')
+		}
+		out.WriteString(l.text)
+	}
 	return out.String()
 }
 
@@ -735,11 +856,29 @@ func stripANSI(s string) string {
 		switch next {
 		case '[':
 			i += 2
+			paramsStart := i
 			for i < len(s) && (s[i] < 0x40 || s[i] > 0x7e) {
 				i++
 			}
-			if i < len(s) && s[i] == 'K' {
-				out.WriteByte('\v')
+			if i < len(s) {
+				param := firstCSIParam(s[paramsStart:i], 0)
+				switch s[i] {
+				case 'K':
+					switch param {
+					case 1:
+						out.WriteRune(eraseToStartMarker)
+					case 2:
+						out.WriteRune(eraseLineMarker)
+					default:
+						out.WriteByte('\v')
+					}
+				case 'J':
+					if param == 2 {
+						out.WriteRune(clearScreenMarker)
+					}
+				case 'G':
+					out.WriteByte('\r')
+				}
 			}
 		case ']':
 			i += 2
@@ -767,4 +906,25 @@ func stripANSI(s string) string {
 		}
 	}
 	return out.String()
+}
+
+func firstCSIParam(raw string, fallback int) int {
+	if raw == "" {
+		return fallback
+	}
+	value := 0
+	seen := false
+	for i := 0; i < len(raw); i++ {
+		c := raw[i]
+		if c >= '0' && c <= '9' {
+			seen = true
+			value = value*10 + int(c-'0')
+			continue
+		}
+		break
+	}
+	if !seen {
+		return fallback
+	}
+	return value
 }

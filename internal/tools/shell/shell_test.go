@@ -22,14 +22,14 @@ func TestRunSchemaDescriptionAndExecution(t *testing.T) {
 	run := &Run{}
 	props := run.Parameters()
 	required := run.Required()
-	if props["command"].Type != "string" || props["timeout"].Description == "" || props["cwd"].Description == "" || props["max_output"].Description == "" || props["shell"].Description == "" || props["env"].Description == "" {
+	if props["command"].Type != "string" || props["timeout"].Description == "" || props["cwd"].Description == "" || props["max_output"].Description == "" || props["shell"].Description == "" || props["env"].Description == "" || props["output_id"].Description == "" || props["offset"].Type != "integer" || props["limit"].Type != "integer" {
 		t.Fatalf("unexpected shell schema: %+v", props)
 	}
-	if len(required) != 1 || required[0] != "command" {
-		t.Fatalf("unexpected required fields: %+v", required)
+	if len(required) == 1 && required[0] == "command" {
+		t.Fatalf("command should not be schema-required when output_id is available; both are optional at schema level")
 	}
 	desc := run.Description()
-	if !strings.Contains(desc, "Execute a short shell command") || !strings.Contains(desc, "timeout") {
+	if !strings.Contains(desc, "shell command") || !strings.Contains(desc, "timeout") {
 		t.Fatalf("expected markdown description, got %q", desc)
 	}
 	result, err := run.Execute(map[string]any{"command": "printf schema-ok", "timeout": "5"})
@@ -104,8 +104,39 @@ func TestRunMaxOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(result, "output truncated") || len(result) > 80 {
-		t.Fatalf("expected max_output truncation, got %q", result)
+	if !strings.Contains(result, "output_cached_id") || !strings.Contains(result, "output truncated") || !strings.Contains(result, "run_shell") {
+		t.Fatalf("expected cache id header with truncated output, got %q", result)
+	}
+	if _, err := (&Run{}).Execute(map[string]any{"command": "printf small", "max_output": "80"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRunCacheAutoCachesLargeOutputAndReadsBack(t *testing.T) {
+	run := &Run{}
+	// Execute a command that produces output just above default threshold
+	result, err := run.Execute(map[string]any{"command": "python3 -c \"print('x'*60000)\""})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "output_cached_id") || !strings.Contains(result, "read more") {
+		t.Fatalf("expected auto-cache with read instruction, got len=%d result=%q", len(result), result)
+	}
+	// Extract the cached ID
+	idStart := strings.Index(result, "output_cached_id=") + len("output_cached_id=")
+	idEnd := strings.Index(result[idStart:], "\n")
+	if idEnd < 0 {
+		t.Fatal("cannot find cached ID in result")
+	}
+	cachedID := result[idStart : idStart+idEnd]
+
+	// Read back via output_id
+	readBack, err := run.Execute(map[string]any{"output_id": cachedID, "offset": 0, "limit": 20000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(readBack, "cached output") || !strings.Contains(readBack, cachedID) || !strings.Contains(readBack, "xxxxx") {
+		t.Fatalf("expected cached output readback, got len=%d result=%q", len(readBack), readBack)
 	}
 }
 
@@ -153,8 +184,11 @@ func TestRunShellParameter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result != "ok" {
-		t.Fatalf("expected sh command output, got %q", result)
+	if !strings.Contains(result, "ok") {
+		t.Fatalf("expected sh command output containing ok, got %q", result)
+	}
+	if !strings.Contains(result, "output_cached_id=") {
+		t.Fatalf("expected output_cached_id in result, got %q", result)
 	}
 }
 
@@ -183,8 +217,8 @@ func TestRunEnvAllowlist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result != "ok" {
-		t.Fatalf("expected env output, got %q", result)
+	if !strings.Contains(result, "ok") || !strings.Contains(result, "output_cached_id=") {
+		t.Fatalf("expected env output with cached_id, got %q", result)
 	}
 }
 

@@ -33,8 +33,18 @@ func TestWorkflowReadValidatesNameAndUnknownWorkflow(t *testing.T) {
 	if _, err := (&Read{Registry: r}).Execute(map[string]any{}); err == nil || !strings.Contains(err.Error(), "name") {
 		t.Fatalf("expected missing name error, got %v", err)
 	}
-	if _, err := (&Read{Registry: r}).Execute(map[string]any{"name": "missing"}); err == nil || !strings.Contains(err.Error(), "不存在") {
+	if _, err := (&Read{Registry: r}).Execute(map[string]any{"name": "missing"}); err == nil || !strings.Contains(err.Error(), "not found") || !strings.Contains(err.Error(), ".natalia/workflows") {
 		t.Fatalf("expected missing workflow error, got %v", err)
+	}
+}
+
+func TestWorkflowListEmptyShowsDiscoveryHint(t *testing.T) {
+	out, err := (&List{Registry: &workflowcore.Registry{}}).Execute(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "no workflows available") || !strings.Contains(out, ".natalia/workflows") || !strings.Contains(out, "Makefile") {
+		t.Fatalf("expected empty workflow hint, got %q", out)
 	}
 }
 

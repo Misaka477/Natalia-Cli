@@ -206,6 +206,33 @@ func TestStatusLinesShowRuntimeRoutingDetails(t *testing.T) {
 	}
 }
 
+func TestSlashCommandRoutesModelBeforeModeAndSupportsSpaces(t *testing.T) {
+	oldRuntime := runtime
+	runtime = runtimeOverrides{}
+	t.Cleanup(func() { runtime = oldRuntime })
+
+	cfg := &config.Config{
+		DefaultProfile: "default",
+		Providers:      map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}},
+		ModelProfiles: map[string]config.ModelProfile{
+			"step ai": {Provider: "p", Model: "step-3.7-flash"},
+		},
+		PermissionProfiles: config.DefaultPermissionProfiles(),
+		Profiles: map[string]config.Profile{
+			"default": {Provider: "p", Model: "base", Mode: "code"},
+		},
+	}
+	tools := toolset.NewRegistry()
+	engine := buildEngine(cfg, tools, false)
+	autoEnabled := true
+	escalator := &autoflow.Escalator{}
+
+	output := captureStdout(t, func() { handleSlashCommand("/model step ai", &cfg, &engine, tools, false, &autoEnabled, escalator) })
+	if runtime.ModelProfile != "step ai" || !strings.Contains(output, "已切换 model_profile: step ai") || strings.Contains(output, "未知模式") {
+		t.Fatalf("expected /model step ai to switch model profile, runtime=%+v output=%q", runtime, output)
+	}
+}
+
 func TestApplyAutoflowDecisionSwitchesToDebugPreservingState(t *testing.T) {
 	oldRuntime := runtime
 	runtime = runtimeOverrides{Mode: "code", ModelProfile: "cheap", PermissionProfile: "read_only"}
@@ -2014,6 +2041,28 @@ func TestConfigureEngineForWireFeedsInteractiveRenderer(t *testing.T) {
 
 	if strings.Contains(out.String(), "reason") || !strings.Contains(out.String(), "final") || !strings.Contains(errOut.String(), "reason") || !strings.Contains(errOut.String(), "Thought for") {
 		t.Fatalf("expected engine callbacks to preview reasoning on stderr and render final through wire, stdout=%q stderr=%q", out.String(), errOut.String())
+	}
+}
+
+func TestPublishOutcomeFinalMessageShowsStreamingFailuresOnly(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	w, stop := startInteractiveWireRenderer(&out, &errOut)
+
+	publishOutcomeFinalMessage(w, &soul.Outcome{StopReason: "no_tool_calls", FinalMessage: "already streamed"}, true)
+	publishOutcomeFinalMessage(w, &soul.Outcome{StopReason: "error", FinalMessage: "API error 400"}, true)
+	publishOutcomeFinalMessage(w, &soul.Outcome{StopReason: "max_steps", FinalMessage: "达到最大步骤数"}, true)
+	publishOutcomeFinalMessage(w, &soul.Outcome{StopReason: "no_tool_calls", FinalMessage: "non-stream final"}, false)
+	stop()
+
+	got := out.String()
+	if strings.Contains(got, "already streamed") {
+		t.Fatalf("streaming success final message should not be duplicated, got %q", got)
+	}
+	for _, want := range []string{"API error 400", "达到最大步骤数", "non-stream final"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected final outcome message %q to be visible, got %q", want, got)
+		}
 	}
 }
 

@@ -33,7 +33,7 @@ type Read struct {
 type ReadParams struct {
 	Path   string `json:"path" description:"文件绝对路径或相对路径"`
 	Offset string `json:"offset,omitempty" description:"可选，起始行号，从 1 开始；例如 '200'"`
-	Limit  string `json:"limit,omitempty" description:"可选，读取行数；也兼容 'start-end' 或 'all'"`
+	Limit  string `json:"limit,omitempty" description:"可选，读取行数；数字、'start-end' 或 'all'；也接受纯数字"`
 }
 
 func (t *Read) Name() string        { return "read_file" }
@@ -47,6 +47,12 @@ func (t *Read) Required() []string {
 	return required
 }
 func (t *Read) Execute(args map[string]any) (string, error) {
+	// Normalize limit from number to string if needed
+	if v, ok := args["limit"]; ok {
+		if n, ok := v.(float64); ok {
+			args["limit"] = fmt.Sprintf("%.0f", n)
+		}
+	}
 	params, err := toolschema.Decode[ReadParams](args)
 	if err != nil {
 		return "", err
@@ -315,7 +321,7 @@ func (t *Write) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		return toolreturn.Return{IsError: true}, fmt.Errorf("write failed: %w", err)
 	}
-	modelText := fmt.Sprintf("已写入 %s (%d bytes, %d lines)", path, len(content), countLines(content))
+	modelText := fmt.Sprintf("wrote %s (%d bytes, %d lines)", filepath.Base(path), len(content), countLines(content))
 	if preview.Kind == "overwrite" || preview.Kind == "create" {
 		block, blockErr := display.NewBlock(display.BlockDiff, filepath.Base(path), display.DiffBlock{Path: path, Diff: preview.Diff})
 		if blockErr == nil {
@@ -336,16 +342,20 @@ type Edit struct {
 	Guard WriteGuard
 }
 
-func (t *Edit) Name() string        { return "edit_file" }
-func (t *Edit) Description() string { return "对文件做精确字符串替换编辑" }
-func (t *Edit) Required() []string  { return []string{"path", "old_string", "new_string"} }
+func (t *Edit) Name() string { return "edit_file" }
+func (t *Edit) Description() string {
+	return "对文件做精确字符串替换编辑，支持正则匹配和追加"
+}
+func (t *Edit) Required() []string { return []string{"path", "old_string", "new_string"} }
 func (t *Edit) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"path":        {Type: "string", Description: "文件绝对路径"},
-		"old_string":  {Type: "string", Description: "要被替换的字符串（必须精确匹配）；未提供 edits 时使用"},
-		"new_string":  {Type: "string", Description: "替换后的字符串；未提供 edits 时使用"},
+		"old_string":  {Type: "string", Description: "要被替换的字符串；regex=true 时为正则模式；append=true 时忽略"},
+		"new_string":  {Type: "string", Description: "替换后的字符串；append=true 时追加此内容到文件末尾"},
 		"edits":       {Type: "array", Description: "可选，多编辑批处理数组；每项为 {old_string,new_string}，按顺序应用，全部成功后一次性写入"},
 		"replace_all": {Type: "boolean", Description: "可选，是否替换全部匹配；默认 false，只替换第一处"},
+		"regex":       {Type: "boolean", Description: "可选，true 时 old_string 为正则模式；默认 false，精确字符串匹配"},
+		"append":      {Type: "boolean", Description: "可选，true 时将 new_string 追加到文件末尾，忽略 old_string 和 edits"},
 	}
 }
 func (t *Edit) Execute(args map[string]any) (string, error) {
@@ -355,14 +365,30 @@ func (t *Edit) Execute(args map[string]any) (string, error) {
 
 func (t *Edit) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 	path, _ := args["path"].(string)
+	if path == "" {
+		return toolreturn.Return{IsError: true}, fmt.Errorf("path required")
+	}
+	appendMode, _ := args["append"].(bool)
+	regexMode, _ := args["regex"].(bool)
+
+	if appendMode {
+		newStr, _ := args["new_string"].(string)
+		if err := t.doAppend(path, newStr); err != nil {
+			return toolreturn.Return{IsError: true}, err
+		}
+		modelText := fmt.Sprintf("appended to %s", path)
+		return toolreturn.Return{ModelText: modelText}, nil
+	}
+
+	if regexMode {
+		return t.doEditRegex(path, args)
+	}
+
 	edits, err := parseEditOperations(args)
 	if err != nil {
 		return toolreturn.Return{IsError: true}, err
 	}
 	replaceAll, _ := args["replace_all"].(bool)
-	if path == "" {
-		return toolreturn.Return{IsError: true}, fmt.Errorf("path required")
-	}
 	if t.Guard != nil {
 		if err := t.Guard(path); err != nil {
 			return toolreturn.Return{IsError: true}, err
@@ -381,6 +407,12 @@ func (t *Edit) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 	for i, edit := range edits {
 		matches := strings.Count(newContent, edit.Old)
 		if matches == 0 {
+			snippet := fileSnippet(content, edit.Old, 80)
+			if snippet != "" {
+				return toolreturn.Return{IsError: true}, fmt.Errorf(
+					"edit %d old_string not found in %s. Closest fragment near line %d: %q",
+					i+1, path, snippetLine(content, edit.Old), snippet)
+			}
 			return toolreturn.Return{IsError: true}, fmt.Errorf("edit %d old_string not found in %s", i+1, path)
 		}
 		replacements := 1
@@ -393,7 +425,64 @@ func (t *Edit) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 	if err := os.WriteFile(path, []byte(newContent), 0644); err != nil {
 		return toolreturn.Return{IsError: true}, fmt.Errorf("write failed: %w", err)
 	}
-	modelText := fmt.Sprintf("已编辑 %s — 替换 %d 处", path, totalReplacements)
+	modelText := fmt.Sprintf("edited %s — %d replacements", path, totalReplacements)
+	block, err := display.NewBlock(display.BlockDiff, filepath.Base(path), display.DiffBlock{Path: path, Diff: replacementDiff(path, content, newContent)})
+	if err != nil {
+		return toolreturn.Return{ModelText: modelText}, nil
+	}
+	return toolreturn.Return{ModelText: modelText, Display: []display.Block{block}}, nil
+}
+
+func (t *Edit) doAppend(path, newStr string) error {
+	if t.Guard != nil {
+		if err := t.Guard(path); err != nil {
+			return err
+		}
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("open for append failed: %w", err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString(newStr); err != nil {
+		return fmt.Errorf("append failed: %w", err)
+	}
+	return nil
+}
+
+func (t *Edit) doEditRegex(path string, args map[string]any) (toolreturn.Return, error) {
+	oldStr, _ := args["old_string"].(string)
+	newStr, _ := args["new_string"].(string)
+	if oldStr == "" {
+		return toolreturn.Return{IsError: true}, fmt.Errorf("old_string required for regex edit")
+	}
+	re, err := regexp.Compile(oldStr)
+	if err != nil {
+		return toolreturn.Return{IsError: true}, fmt.Errorf("invalid regex %q: %w", oldStr, err)
+	}
+	if t.Guard != nil {
+		if err := t.Guard(path); err != nil {
+			return toolreturn.Return{IsError: true}, err
+		}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return toolreturn.Return{IsError: true}, fmt.Errorf("read failed: %w", err)
+	}
+	if bytes.IndexByte(data, 0) >= 0 {
+		return toolreturn.Return{IsError: true}, fmt.Errorf("refusing to edit binary file: %s", path)
+	}
+	content := string(data)
+	matches := re.FindAllString(content, -1)
+	if len(matches) == 0 {
+		return toolreturn.Return{IsError: true}, fmt.Errorf("regex %q matched nothing in %s", oldStr, path)
+	}
+	replacementCount := len(matches)
+	newContent := re.ReplaceAllString(content, newStr)
+	if err := os.WriteFile(path, []byte(newContent), 0644); err != nil {
+		return toolreturn.Return{IsError: true}, fmt.Errorf("write failed: %w", err)
+	}
+	modelText := fmt.Sprintf("edited %s — %d regex replacements", path, replacementCount)
 	block, err := display.NewBlock(display.BlockDiff, filepath.Base(path), display.DiffBlock{Path: path, Diff: replacementDiff(path, content, newContent)})
 	if err != nil {
 		return toolreturn.Return{ModelText: modelText}, nil
@@ -496,6 +585,12 @@ func PreviewEdit(args map[string]any) (Preview, error) {
 	for i, edit := range edits {
 		matches := strings.Count(newContent, edit.Old)
 		if matches == 0 {
+			snippet := fileSnippet(content, edit.Old, 80)
+			if snippet != "" {
+				return Preview{}, fmt.Errorf(
+					"edit %d old_string not found in %s. Closest fragment near line %d: %q",
+					i+1, path, snippetLine(content, edit.Old), snippet)
+			}
 			return Preview{}, fmt.Errorf("edit %d old_string not found in %s", i+1, path)
 		}
 		replacements := 1
@@ -698,7 +793,7 @@ func grepWithScanner(opts grepOptions) (string, error) {
 	}
 
 	if matchCount == 0 {
-		return "未找到匹配", nil
+		return "no matches found", nil
 	}
 	if opts.OutputMode == "count" {
 		return fmt.Sprintf("%d", matchCount), nil
@@ -766,14 +861,14 @@ func grepWithRG(opts grepOptions) (string, bool) {
 	if err != nil {
 		if text == "" {
 			if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
-				return "未找到匹配", true
+				return "no matches found", true
 			}
 			return "", false
 		}
 		return "", false
 	}
 	if text == "" {
-		return "未找到匹配", true
+		return "no matches found", true
 	}
 	switch opts.OutputMode {
 	case "count":
@@ -837,7 +932,7 @@ func parseRGJSONContent(text string, headLimit int) (string, error) {
 		lines = append(lines, fmt.Sprintf("%s%s%d%s %s", event.Data.Path.Text, sep, event.Data.LineNumber, sep, line))
 	}
 	if len(lines) == 0 {
-		return "未找到匹配", nil
+		return "no matches found", nil
 	}
 	if truncated {
 		lines = append(lines, fmt.Sprintf("[grep results truncated at %d matches]", headLimit))
@@ -1312,11 +1407,11 @@ func (t *Glob) Execute(args map[string]any) (string, error) {
 	sort.Strings(results)
 
 	if len(results) == 0 {
-		return "未找到匹配文件", nil
+		return "no matching files found", nil
 	}
 	results, marker := paginateResults(results, offset, limit)
 	if len(results) == 0 {
-		return "未找到匹配文件", nil
+		return "no matching files found", nil
 	}
 	if marker != "" {
 		results = append(results, marker)
@@ -1338,4 +1433,47 @@ func paginateResults(results []string, offset, limit int) ([]string, string) {
 		return page, ""
 	}
 	return page, fmt.Sprintf("[glob results showing %d-%d of %d]", offset+1, end, total)
+}
+
+// fileSnippet returns a fragment of content surrounding the closest match to needle.
+func fileSnippet(content, needle string, radius int) string {
+	if len(needle) == 0 || len(content) == 0 {
+		return ""
+	}
+	// Get the first N chars of needle for fuzzy matching
+	prefix := needle
+	if len([]rune(needle)) > 20 {
+		prefix = string([]rune(needle)[:20])
+	}
+	idx := strings.Index(content, prefix[:1])
+	if idx < 0 {
+		// Fall back: show beginning of file
+		start := 0
+		end := radius
+		if end > len(content) {
+			end = len(content)
+		}
+		return string([]rune(content[start:end]))
+	}
+	start := idx - radius/2
+	if start < 0 {
+		start = 0
+	}
+	end := idx + radius
+	if end > len(content) {
+		end = len(content)
+	}
+	return string([]rune(content[start:end]))
+}
+
+func snippetLine(content, needle string) int {
+	if len(needle) == 0 || len(content) == 0 {
+		return 1
+	}
+	prefix := string([]rune(needle)[:1])
+	idx := strings.Index(content, prefix)
+	if idx < 0 {
+		return 1
+	}
+	return strings.Count(content[:idx], "\n") + 1
 }

@@ -55,7 +55,7 @@ func TestPoolSpawnRunsToolCallAndCompletes(t *testing.T) {
 		}
 		toolResultSeen := false
 		for _, msg := range req.Messages {
-			if msg.Role == chat.RoleTool && msg.Name == "read_file" && strings.Contains(msg.Content, "worker-tool-ok") {
+			if msg.Role == chat.RoleTool && msg.ToolCallID == "tc_echo" && strings.Contains(msg.Content, "worker-tool-ok") {
 				toolResultSeen = true
 			}
 		}
