@@ -64,7 +64,7 @@ func (t *Search) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"query":             {Type: "string", Description: "搜索关键词"},
 		"limit":             {Type: "integer", Description: "可选，返回结果数量，默认 5"},
-		"include_content":   {Type: "string", Description: "可选，设为 true 时同时抓取页面内容（消耗更多 token）"},
+		"include_content":   {Type: "boolean", Description: "可选，true 时同时抓取页面内容（消耗更多 token）"},
 		"provider_priority": {Type: "string", Description: "可选，搜索 provider 顺序，如 bing,google,duckduckgo"},
 	}
 }
@@ -199,9 +199,30 @@ func searchByPriority(query string, limit int, providers []string) ([]SearchResu
 			diagnostics = append(diagnostics, fmt.Sprintf("%s: no results", provider))
 			continue
 		}
+		if warning := searchRelevanceWarning(query, results); warning != "" && hasRemainingProvider(providers, provider) {
+			diagnostics = append(diagnostics, fmt.Sprintf("%s: %s; trying next provider", provider, warning))
+			continue
+		}
 		return results, diagnostics, nil
 	}
 	return nil, diagnostics, nil
+}
+
+func hasRemainingProvider(providers []string, current string) bool {
+	seenCurrent := false
+	for _, provider := range providers {
+		provider = normalizeSearchProvider(provider)
+		if provider == "" {
+			continue
+		}
+		if seenCurrent {
+			return true
+		}
+		if provider == current {
+			seenCurrent = true
+		}
+	}
+	return false
 }
 
 func searchByProvider(provider, query string, limit int) ([]SearchResult, error) {
@@ -442,6 +463,17 @@ func searchDuckDuckGoHTML(query string, limit int) ([]SearchResult, error) {
 			break
 		}
 		i += idx
+		anchorStart := strings.LastIndex(html[:i], "<a ")
+		if anchorStart < 0 {
+			i++
+			continue
+		}
+		anchorEnd := strings.Index(html[anchorStart:], ">")
+		if anchorEnd < 0 {
+			break
+		}
+		anchor := html[anchorStart : anchorStart+anchorEnd+1]
+		_, href := extractFirstAnchor(anchor + "</a>")
 		titleStart := strings.Index(html[i:], ">")
 		if titleStart < 0 {
 			break
@@ -471,8 +503,12 @@ func searchDuckDuckGoHTML(query string, limit int) ([]SearchResult, error) {
 			}
 		}
 
+		if !isValidResultURL(href) {
+			continue
+		}
 		results = append(results, SearchResult{
 			Title:   strings.TrimSpace(title),
+			URL:     href,
 			Snippet: strings.TrimSpace(snippet),
 			Source:  "duckduckgo",
 		})
@@ -525,7 +561,7 @@ func parseBingHTML(page string, limit int) []SearchResult {
 		}
 		block := page[i : i+blockEnd]
 		title, href := extractFirstAnchor(block)
-		if title == "" || href == "" {
+		if title == "" || !isValidResultURL(href) {
 			i += blockEnd + len("</li>")
 			continue
 		}
@@ -537,6 +573,23 @@ func parseBingHTML(page string, limit int) []SearchResult {
 		i += blockEnd + len("</li>")
 	}
 	return results
+}
+
+func isValidResultURL(rawURL string) bool {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return false
+	}
+	lower := strings.ToLower(u.Path)
+	if strings.Contains(lower, "/rs/") {
+		return false
+	}
+	for _, suffix := range []string{".css", ".js", ".ico", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"} {
+		if strings.HasSuffix(lower, suffix) {
+			return false
+		}
+	}
+	return true
 }
 
 func extractFirstAnchor(block string) (string, string) {

@@ -104,8 +104,8 @@ func TestProcessRestartReusesEnvAndRedactsStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	newID := extractProcessID(t, restarted)
-	if newID == id || !strings.Contains(restarted, "已重启进程") || !strings.Contains(restarted, "API_KEY=[redacted]") {
+	newID := extractRestartedProcessID(t, restarted)
+	if newID == id || !strings.Contains(restarted, "old_id: "+id) || !strings.Contains(restarted, "new_id: "+newID) || !strings.Contains(restarted, "API_KEY=[redacted]") {
 		t.Fatalf("unexpected restart output: %q", restarted)
 	}
 	waitForProcessStatus(t, newID, "exited")
@@ -221,6 +221,16 @@ func extractProcessID(t *testing.T, output string) string {
 	m := re.FindStringSubmatch(output)
 	if len(m) != 2 {
 		t.Fatalf("could not extract process id from %q", output)
+	}
+	return m[1]
+}
+
+func extractRestartedProcessID(t *testing.T, output string) string {
+	t.Helper()
+	re := regexp.MustCompile(`new_id: (proc_\d+)`)
+	m := re.FindStringSubmatch(output)
+	if len(m) != 2 {
+		t.Fatalf("could not extract restarted process id from %q", output)
 	}
 	return m[1]
 }

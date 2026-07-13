@@ -277,8 +277,9 @@ func (t *Write) Description() string { return "写入/覆盖文件" }
 func (t *Write) Required() []string  { return []string{"path", "content"} }
 func (t *Write) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"path":    {Type: "string", Description: "文件绝对路径"},
-		"content": {Type: "string", Description: "文件内容"},
+		"path":        {Type: "string", Description: "文件绝对路径"},
+		"content":     {Type: "string", Description: "文件内容"},
+		"create_dirs": {Type: "boolean", Description: "可选，true 时自动创建不存在的父目录；默认 false"},
 	}
 }
 func (t *Write) Execute(args map[string]any) (string, error) {
@@ -305,7 +306,17 @@ func (t *Write) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 	}
 	parent := filepath.Dir(path)
 	info, err := os.Stat(parent)
+	createDirs, _ := args["create_dirs"].(bool)
+	if os.IsNotExist(err) && createDirs {
+		if err := os.MkdirAll(parent, 0755); err != nil {
+			return toolreturn.Return{IsError: true}, fmt.Errorf("failed to create parent directories: %w", err)
+		}
+		info, err = os.Stat(parent)
+	}
 	if err != nil {
+		if os.IsNotExist(err) {
+			return toolreturn.Return{IsError: true}, fmt.Errorf("parent directory does not exist: %s (set create_dirs=true to auto-create)", parent)
+		}
 		return toolreturn.Return{IsError: true}, fmt.Errorf("parent directory check failed: %w", err)
 	}
 	if !info.IsDir() {

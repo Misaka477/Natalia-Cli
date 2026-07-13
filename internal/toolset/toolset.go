@@ -127,6 +127,7 @@ var pollSafeTools = map[string]bool{
 	"interactive_read":       true,
 	"interactive_transcript": true,
 	"interactive_list":       true,
+	"interactive_cleanup":    true,
 	"process_output":         true,
 	"process_list":           true,
 	"process_status":         true,

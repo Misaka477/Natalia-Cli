@@ -18,6 +18,7 @@ type manager interface {
 	Detach(string) (*interactivemgr.Session, error)
 	Resize(string, int, int) (*interactivemgr.Session, error)
 	Transcript(string, int, int) (interactivemgr.TranscriptPage, error)
+	CleanupFinished(time.Duration) int
 	Observe(string, interactivemgr.ObserveOptions) (*interactivemgr.Observation, error)
 	Write(string, string, bool, interactivemgr.ObserveOptions) (*interactivemgr.Observation, error)
 	SendKey(string, string, interactivemgr.ObserveOptions) (*interactivemgr.Observation, error)
@@ -298,6 +299,27 @@ func (t *Transcript) Name() string { return "interactive_transcript" }
 func (t *Transcript) Description() string {
 	return "分页读取交互式 PTY transcript；sensitive 输入会显示为 redacted"
 }
+
+type Cleanup struct{}
+
+func (t *Cleanup) Name() string { return "interactive_cleanup" }
+func (t *Cleanup) Description() string {
+	return "清理已停止、退出或失败的交互式 PTY sessions"
+}
+func (t *Cleanup) Required() []string { return nil }
+func (t *Cleanup) Parameters() map[string]llm.Property {
+	return map[string]llm.Property{
+		"finished_max_age": {Type: "integer", Description: "可选，完成后保留秒数，默认 0"},
+	}
+}
+func (t *Cleanup) Execute(args map[string]any) (string, error) {
+	maxAge, err := intArg(args["finished_max_age"], 0, 0, 86400*30, "finished_max_age")
+	if err != nil {
+		return "", err
+	}
+	removed := currentManager().CleanupFinished(time.Duration(maxAge) * time.Second)
+	return fmt.Sprintf("interactive cleanup complete\nremoved: %d", removed), nil
+}
 func (t *Transcript) Required() []string { return []string{"id"} }
 func (t *Transcript) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
@@ -435,7 +457,11 @@ func formatSession(sess *interactivemgr.Session) string {
 	if sess.Error != "" {
 		errLine = "\nerror: " + sess.Error
 	}
-	return fmt.Sprintf("id: %s\nstatus: %s\npid: %d\ncommand: %s %s\nattached: %t\nsize: %dx%d%s%s", sess.ID, sess.Status, sess.PID, sess.Command, strings.Join(sess.Args, " "), sess.Attached, sess.Rows, sess.Cols, exitCode, errLine)
+	detachedAt := ""
+	if !sess.DetachedAt.IsZero() {
+		detachedAt = "\ndetached_at: " + sess.DetachedAt.Format(time.RFC3339)
+	}
+	return fmt.Sprintf("id: %s\nstatus: %s\npid: %d\ncommand: %s %s\nattached: %t\nsize: %dx%d%s%s%s", sess.ID, sess.Status, sess.PID, sess.Command, strings.Join(sess.Args, " "), sess.Attached, sess.Rows, sess.Cols, detachedAt, exitCode, errLine)
 }
 
 func formatObservation(obs *interactivemgr.Observation, includeTail bool) string {

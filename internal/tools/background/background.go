@@ -158,7 +158,7 @@ func (t *Restart) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return "background task restarted\n" + formatSession(sess), nil
+	return fmt.Sprintf("background task restarted\nold_id: %s\nnew_id: %s\n%s", id, sess.ID, formatSession(sess)), nil
 }
 
 type Stop struct{}

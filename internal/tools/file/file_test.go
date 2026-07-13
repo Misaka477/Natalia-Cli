@@ -326,8 +326,20 @@ func TestWriteExecuteReturnIncludesDiffDisplayForCreateAndOverwrite(t *testing.T
 func TestWriteFileRejectsMissingParent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "missing", "out.txt")
 	_, err := (&Write{}).Execute(map[string]any{"path": path, "content": "data"})
-	if err == nil || !strings.Contains(err.Error(), "parent directory") {
+	if err == nil || !strings.Contains(err.Error(), "create_dirs=true") {
 		t.Fatalf("expected parent directory error, got %v", err)
+	}
+}
+
+func TestWriteFileCreateDirs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing", "nested", "out.txt")
+	result, err := (&Write{}).Execute(map[string]any{"path": path, "content": "created", "create_dirs": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != "created" || !strings.Contains(result, "wrote") {
+		t.Fatalf("expected nested file creation, data=%q result=%q err=%v", data, result, err)
 	}
 }
 

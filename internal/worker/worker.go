@@ -21,6 +21,7 @@ const (
 	StatusIdle      Status = "idle"
 	StatusRunning   Status = "running"
 	StatusPaused    Status = "paused"
+	StatusStopped   Status = "stopped"
 	StatusCompleted Status = "completed"
 	StatusFailed    Status = "failed"
 )
@@ -50,8 +51,9 @@ type Worker struct {
 	OnStatus     func(Status)
 	mu           sync.RWMutex
 
-	ctx    context.Context
-	cancel context.CancelFunc
+	ctx     context.Context
+	cancel  context.CancelFunc
+	stopped bool
 }
 
 type SpawnOptions struct {
@@ -117,7 +119,7 @@ func (w *Worker) Start() {
 		w.Engine.Dedup.ResetTurn()
 		for w.Engine.Context.StepCount < w.Engine.Context.MaxSteps {
 			if w.ctx.Err() != nil {
-				w.setStatus(StatusPaused)
+				w.setCancelledStatus()
 				return
 			}
 
@@ -126,7 +128,7 @@ func (w *Worker) Start() {
 			outcome := w.Engine.Step(w.ctx)
 			if outcome.StopReason == "error" {
 				if outcome.FinalMessage == "context canceled" {
-					w.setStatus(StatusPaused)
+					w.setCancelledStatus()
 					return
 				}
 				w.addLog(LogEntry{
@@ -172,14 +174,43 @@ func (w *Worker) Start() {
 }
 
 func (w *Worker) Stop() {
-	if w.cancel != nil {
-		w.cancel()
+	w.mu.Lock()
+	if w.Status != StatusRunning {
+		w.mu.Unlock()
+		return
+	}
+	w.stopped = true
+	cancel := w.cancel
+	w.mu.Unlock()
+	w.setStatus(StatusStopped)
+	if cancel != nil {
+		cancel()
 	}
 }
 
-func (w *Worker) Resume() {
+func (w *Worker) Resume() error {
+	w.mu.Lock()
+	if w.Status != StatusPaused {
+		status := w.Status
+		w.mu.Unlock()
+		return fmt.Errorf("worker is %s; only paused workers can be resumed", status)
+	}
+	w.stopped = false
 	w.ctx, w.cancel = context.WithCancel(context.Background())
+	w.mu.Unlock()
 	w.Start()
+	return nil
+}
+
+func (w *Worker) setCancelledStatus() {
+	w.mu.RLock()
+	stopped := w.stopped
+	w.mu.RUnlock()
+	if stopped {
+		w.setStatus(StatusStopped)
+		return
+	}
+	w.setStatus(StatusPaused)
 }
 
 func (w *Worker) Attach() bool {
@@ -370,7 +401,7 @@ func (p *Pool) Detach(id string) bool {
 func (p *Pool) Resume(id string) {
 	w := p.Get(id)
 	if w != nil {
-		w.Resume()
+		_ = w.Resume()
 	}
 }
 

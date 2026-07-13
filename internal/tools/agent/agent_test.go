@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/approval"
 	"github.com/Misaka477/Natalia-Cli/internal/chat"
@@ -208,6 +209,67 @@ func TestSpawnRejectsUnavailableModelProfileOverride(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "model_profile") {
 		t.Fatalf("expected unavailable model_profile error, got %v", err)
 	}
+}
+
+func TestAgentResumeRejectsCompletedWorker(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "content": "done"}}}})
+	}))
+	defer server.Close()
+	pool := worker.NewPool()
+	w, err := pool.Spawn("complete", "code", llm.NewClient(llm.Config{BaseURL: server.URL, Model: "mock", APIKey: "test"}), toolset.NewRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForWorkerStatus(t, w, worker.StatusCompleted)
+	if _, err := (&Resume{Pool: pool}).Execute(map[string]any{"agent_id": w.ID}); err == nil || !strings.Contains(err.Error(), "only paused workers") {
+		t.Fatalf("expected completed worker resume rejection, got %v", err)
+	}
+}
+
+func TestAgentStopReportsStoppedWorker(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-started:
+		default:
+			close(started)
+		}
+		<-release
+	}))
+	defer server.Close()
+	defer close(release)
+	pool := worker.NewPool()
+	w, err := pool.Spawn("block", "code", llm.NewClient(llm.Config{BaseURL: server.URL, Model: "mock", APIKey: "test"}), toolset.NewRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("worker did not start request")
+	}
+	out, err := (&Stop{Pool: pool}).Execute(map[string]any{"agent_id": w.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.GetStatus() != worker.StatusStopped || !strings.Contains(out, "status: stopped") {
+		t.Fatalf("expected stopped worker, status=%s out=%q", w.GetStatus(), out)
+	}
+}
+
+func waitForWorkerStatus(t *testing.T, w *worker.Worker, want worker.Status) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if w.GetStatus() == want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s, got %s", want, w.GetStatus())
 }
 
 func TestSpawnForegroundRunsWorkerToolCallChainWithFilteredTools(t *testing.T) {

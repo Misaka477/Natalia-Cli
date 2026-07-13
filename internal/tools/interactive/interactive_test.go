@@ -83,6 +83,20 @@ func (m *fakeManager) Transcript(id string, offset, limit int) (interactivemgr.T
 	return interactivemgr.TranscriptPage{Text: "ready> ok", Total: 9, Offset: offset, NextOffset: offset + len("ready> ok"), HasMore: false}, nil
 }
 
+func (m *fakeManager) CleanupFinished(maxAge time.Duration) int {
+	removed := 0
+	kept := m.sessions[:0]
+	for _, sess := range m.sessions {
+		if sess.Status == interactivemgr.StatusStopped || sess.Status == interactivemgr.StatusExited || sess.Status == interactivemgr.StatusFailed {
+			removed++
+			continue
+		}
+		kept = append(kept, sess)
+	}
+	m.sessions = kept
+	return removed
+}
+
 func (m *fakeManager) Observe(id string, opts interactivemgr.ObserveOptions) (*interactivemgr.Observation, error) {
 	m.lastOpts = opts
 	return &interactivemgr.Observation{SessionID: id, Status: interactivemgr.StatusWaitingForInput, NewOutput: "ready>", Tail: "ready>", DetectedPrompt: "ready>", Suggestion: "send input"}, nil
@@ -102,6 +116,11 @@ func (m *fakeManager) SendKey(id, key string, opts interactivemgr.ObserveOptions
 
 func (m *fakeManager) Stop(id string) error {
 	m.stopped = true
+	for i := range m.sessions {
+		if m.sessions[i].ID == id {
+			m.sessions[i].Status = interactivemgr.StatusStopped
+		}
+	}
 	return nil
 }
 
@@ -192,6 +211,13 @@ func TestInteractiveToolsFallbackManagerCoversExecuteFlow(t *testing.T) {
 	}
 	if !strings.Contains(stopped, "status: stopped") {
 		t.Fatalf("expected stopped fake session, got %q", stopped)
+	}
+	cleaned, err := (&Cleanup{}).Execute(map[string]any{"finished_max_age": float64(0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(cleaned, "removed: 1") {
+		t.Fatalf("expected cleanup result, got %q", cleaned)
 	}
 }
 

@@ -99,7 +99,7 @@ func TestSearchDefaultUsesBingFirst(t *testing.T) {
 			switch r.URL.Path {
 			case "/bing":
 				bingHits++
-				_, _ = w.Write([]byte(`<li class="b_algo"><h2><a href="https://example.com/a">Bing Result</a></h2><p class="b_caption">Bing snippet</p></li>`))
+				_, _ = w.Write([]byte(`<li class="b_algo"><h2><a href="https://example.com/a">Natalia Bing Result</a></h2><p class="b_caption">Natalia snippet</p></li>`))
 			case "/ddg":
 				ddgHits++
 				_, _ = w.Write([]byte(`{"Abstract":"DDG result","AbstractURL":"https://example.com/ddg","RelatedTopics":[]}`))
@@ -115,7 +115,7 @@ func TestSearchDefaultUsesBingFirst(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if bingHits != 1 || ddgHits != 0 || !strings.Contains(result, "Bing Result") {
+		if bingHits != 1 || ddgHits != 0 || !strings.Contains(result, "Natalia Bing Result") {
 			t.Fatalf("expected Bing-first result, bing=%d ddg=%d result=%q", bingHits, ddgHits, result)
 		}
 	})
@@ -129,7 +129,7 @@ func TestSearchWarnsOnLowLexicalRelevance(t *testing.T) {
 		defer server.Close()
 
 		BingSearchBaseURL = server.URL
-		result, err := (&Search{}).Execute(map[string]any{"query": "Natalia CLI", "limit": "3"})
+		result, err := (&Search{}).Execute(map[string]any{"query": "Natalia CLI", "limit": "3", "provider_priority": "bing"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -137,6 +137,43 @@ func TestSearchWarnsOnLowLexicalRelevance(t *testing.T) {
 			t.Fatalf("expected low relevance diagnostic with result, got %q", result)
 		}
 	})
+}
+
+func TestSearchFallsBackOnLowRelevance(t *testing.T) {
+	withSearchGlobals(t, func() {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/bing":
+				_, _ = w.Write([]byte(`<li class="b_algo"><h2><a href="https://oil.example/a">Crude Futures</a></h2></li>`))
+			case "/ddg":
+				_, _ = w.Write([]byte(`{"Abstract":"Natalia CLI result","AbstractURL":"https://example.com/natalia","RelatedTopics":[]}`))
+			}
+		}))
+		defer server.Close()
+		BingSearchBaseURL = server.URL + "/bing"
+		DDGAPIBaseURL = server.URL + "/ddg"
+		result, err := (&Search{}).Execute(map[string]any{"query": "Natalia CLI", "provider_priority": "bing,duckduckgo"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(result, "Natalia CLI result") || strings.Contains(result, "Crude Futures\n") || !strings.Contains(result, "trying next provider") {
+			t.Fatalf("expected relevance fallback result, got %q", result)
+		}
+	})
+}
+
+func TestSearchFiltersStaticResourceURLs(t *testing.T) {
+	page := `<li class="b_algo"><a href="https://r.bing.com/rs/site.css">Stylesheet</a></li><li class="b_algo"><a href="https://example.com/natalia">Natalia CLI</a><p class="b_caption">Natalia result</p></li>`
+	results := parseBingHTML(page, 5)
+	if len(results) != 1 || results[0].URL != "https://example.com/natalia" {
+		t.Fatalf("expected static resource to be filtered, got %+v", results)
+	}
+}
+
+func TestSearchSchemaUsesBooleanIncludeContent(t *testing.T) {
+	if got := (&Search{}).Parameters()["include_content"].Type; got != "boolean" {
+		t.Fatalf("expected boolean include_content schema, got %q", got)
+	}
 }
 
 func TestSearchDefaultFallsBackToDuckDuckGo(t *testing.T) {
@@ -233,7 +270,7 @@ func TestSearchLimitOutOfRangeFallsBackToDefault(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requested = r.URL.RawQuery
 			for i := 0; i < 6; i++ {
-				_, _ = fmt.Fprintf(w, `<li class="b_algo"><h2><a href="https://example.com/%d">Result %d</a></h2><p class="b_caption">Snippet %d</p></li>`, i, i, i)
+				_, _ = fmt.Fprintf(w, `<li class="b_algo"><h2><a href="https://example.com/%d">Natalia Result %d</a></h2><p class="b_caption">Natalia Snippet %d</p></li>`, i, i, i)
 			}
 		}))
 		defer server.Close()

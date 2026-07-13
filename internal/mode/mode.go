@@ -22,7 +22,7 @@ var codeTools = map[string]bool{
 	"plan_mode_enter": true, "plan_mode_exit": true, "plan_mode_status": true,
 	"process_start": true, "process_list": true, "process_status": true, "process_output": true, "process_stop": true, "process_restart": true, "process_attach": true, "process_detach": true, "process_cleanup": true, "process_audit": true,
 	"background_start": true, "background_list": true, "background_output": true, "background_stop": true, "background_restart": true, "background_cleanup": true, "background_audit": true,
-	"interactive_start": true, "interactive_read": true, "interactive_write": true, "interactive_keys": true, "interactive_stop": true, "interactive_list": true, "interactive_attach": true, "interactive_detach": true, "interactive_resize": true, "interactive_transcript": true,
+	"interactive_start": true, "interactive_read": true, "interactive_write": true, "interactive_keys": true, "interactive_stop": true, "interactive_list": true, "interactive_attach": true, "interactive_detach": true, "interactive_resize": true, "interactive_transcript": true, "interactive_cleanup": true,
 	"agent_spawn": true, "agent_list": true, "agent_output": true, "agent_attach": true, "agent_detach": true, "agent_stop": true, "agent_resume": true,
 }
 

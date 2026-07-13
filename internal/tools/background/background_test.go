@@ -101,8 +101,8 @@ func TestBackgroundRestartCleanupAuditAndRedaction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	newID := extractBackgroundID(t, restarted)
-	if newID == id || !strings.Contains(restarted, "background task restarted") || !strings.Contains(restarted, "idle_timeout: 1s") {
+	newID := extractRestartedBackgroundID(t, restarted)
+	if newID == id || !strings.Contains(restarted, "old_id: "+id) || !strings.Contains(restarted, "new_id: "+newID) || !strings.Contains(restarted, "idle_timeout: 1s") {
 		t.Fatalf("unexpected restart output: %q", restarted)
 	}
 	waitForBackgroundStatus(t, newID, "exited")
@@ -226,6 +226,16 @@ func extractBackgroundID(t *testing.T, output string) string {
 	m := re.FindStringSubmatch(output)
 	if len(m) != 2 {
 		t.Fatalf("could not extract background id from %q", output)
+	}
+	return m[1]
+}
+
+func extractRestartedBackgroundID(t *testing.T, output string) string {
+	t.Helper()
+	re := regexp.MustCompile(`new_id: (proc_\d+)`)
+	m := re.FindStringSubmatch(output)
+	if len(m) != 2 {
+		t.Fatalf("could not extract restarted background id from %q", output)
 	}
 	return m[1]
 }

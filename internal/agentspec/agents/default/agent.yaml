@@ -49,6 +49,7 @@ agent:
     - natalia/tools/interactive:Detach
     - natalia/tools/interactive:Resize
     - natalia/tools/interactive:Transcript
+    - natalia/tools/interactive:Cleanup
     - natalia/tools/workflow:List
     - natalia/tools/workflow:Read
     - natalia/tools/workflow:Run

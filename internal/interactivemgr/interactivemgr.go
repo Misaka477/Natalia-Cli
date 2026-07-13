@@ -266,10 +266,34 @@ func (m *Manager) Detach(id string) (*Session, error) {
 	ms.meta.Attached = false
 	ms.meta.DetachedAt = now
 	ms.meta.LastActivityAt = now
+	if ms.meta.Status == StatusRunning {
+		ms.meta.Status = StatusWaitingForInput
+	}
 	ms.mu.Unlock()
 	snapshot := ms.snapshot()
 	m.emit(Event{Type: EventDetached, Session: *snapshot, Time: now})
 	return snapshot, nil
+}
+
+// CleanupFinished removes terminal sessions that have been retained for at
+// least maxAge. Active PTYs are never removed by this operation.
+func (m *Manager) CleanupFinished(maxAge time.Duration) int {
+	if maxAge < 0 {
+		maxAge = 0
+	}
+	cutoff := time.Now().Add(-maxAge)
+	removed := 0
+	m.mu.Lock()
+	for id, session := range m.sessions {
+		snapshot := session.snapshot()
+		if (snapshot.Status != StatusExited && snapshot.Status != StatusStopped && snapshot.Status != StatusFailed) || snapshot.ExitedAt.IsZero() || snapshot.ExitedAt.After(cutoff) {
+			continue
+		}
+		delete(m.sessions, id)
+		removed++
+	}
+	m.mu.Unlock()
+	return removed
 }
 
 func (m *Manager) Resize(id string, rows, cols int) (*Session, error) {
@@ -331,9 +355,6 @@ func (m *Manager) Write(id, input string, sensitive bool, opts ObserveOptions) (
 	if err := ms.write(input); err != nil {
 		return nil, err
 	}
-	// Brief yield to capture goroutine so PTY echo arrives before observe starts
-	time.Sleep(10 * time.Millisecond)
-
 	obs, err := ms.observe(opts)
 	if sensitive {
 		ms.redactFrom(redactFrom)
@@ -641,13 +662,6 @@ func detectPrompt(tail string, waitRe *regexp.Regexp) string {
 		}
 	}
 	lines := strings.Split(strings.TrimRight(tail, "\r\n"), "\n")
-	if len(lines) == 0 {
-		return ""
-	}
-	last := strings.TrimSpace(lines[len(lines)-1])
-	if last == "" {
-		return ""
-	}
 	patterns := []string{
 		`(?i)(password|passphrase|token|api key)\s*:?\s*$`,
 		`(?i)(continue|proceed|confirm|overwrite|are you sure).*\?\s*(\[[^\]]+\])?\s*$`,
@@ -655,10 +669,17 @@ func detectPrompt(tail string, waitRe *regexp.Regexp) string {
 		`(?i)(yes/no|y/n|\[y/n\]|\[Y/n\]|\[y/N\])\s*$`,
 		`[>$#:]\s*$`,
 	}
-	for _, p := range patterns {
-		if regexp.MustCompile(p).MatchString(last) {
-			return last
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
 		}
+		for _, p := range patterns {
+			if regexp.MustCompile(p).MatchString(line) {
+				return line
+			}
+		}
+		break
 	}
 	return ""
 }

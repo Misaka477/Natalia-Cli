@@ -44,6 +44,7 @@ func TestModeToolPolicyMatrix(t *testing.T) {
 		{mode: "code", tool: "ask_user", want: true},
 		{mode: "code", tool: "process_restart", want: true},
 		{mode: "code", tool: "process_cleanup", want: true},
+		{mode: "code", tool: "interactive_cleanup", want: true},
 		{mode: "code", tool: "background_restart", want: true},
 		{mode: "code", tool: "interactive_resize", want: true},
 		{mode: "code", tool: "unknown_tool_xyz", want: false},

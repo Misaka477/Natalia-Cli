@@ -285,7 +285,7 @@ func (t *Stop) Execute(args map[string]any) (string, error) {
 		return "", fmt.Errorf("agent %s not found", id)
 	}
 	w.Stop()
-	return fmt.Sprintf("已请求停止子 agent %s\n状态: %s", id, w.GetStatus()), nil
+	return fmt.Sprintf("stopped agent %s\nstatus: %s", id, w.GetStatus()), nil
 }
 
 type Resume struct{ Pool *worker.Pool }
@@ -308,8 +308,10 @@ func (t *Resume) Execute(args map[string]any) (string, error) {
 	if w == nil {
 		return "", fmt.Errorf("agent %s not found", id)
 	}
-	w.Resume()
-	return fmt.Sprintf("已恢复子 agent %s\n状态: %s", id, w.GetStatus()), nil
+	if err := w.Resume(); err != nil {
+		return "", fmt.Errorf("agent %s %w", id, err)
+	}
+	return fmt.Sprintf("resumed agent %s\nstatus: %s", id, w.GetStatus()), nil
 }
 
 func requireAgentID(args map[string]any) (string, error) {

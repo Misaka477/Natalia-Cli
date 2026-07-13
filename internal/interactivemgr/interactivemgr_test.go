@@ -35,6 +35,13 @@ func TestInteractiveShellWriteReadAndStop(t *testing.T) {
 	if strings.Count(obs.NewOutput, "printf ready") > 1 {
 		t.Fatalf("expected command echo at most once, got %q", obs.NewOutput)
 	}
+	page, err := m.Transcript(sess.ID, 0, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(page.Text, "ready") || page.Total == 0 {
+		t.Fatalf("expected direct-submit output in transcript, got %+v", page)
+	}
 
 	if err := m.Stop(sess.ID); err != nil {
 		t.Fatal(err)
@@ -175,8 +182,12 @@ func TestInteractiveEventsAttachDetachResizeAndTranscript(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Stop(sess.ID)
-	if _, err := m.Detach(sess.ID); err != nil {
+	detached, err := m.Detach(sess.ID)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if detached.Attached || detached.Status != StatusWaitingForInput || detached.DetachedAt.IsZero() {
+		t.Fatalf("expected detached session to wait for input, got %+v", detached)
 	}
 	attached, err := m.Attach(sess.ID)
 	if err != nil {
@@ -215,6 +226,24 @@ func TestInteractiveEventsAttachDetachResizeAndTranscript(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	t.Fatalf("expected lifecycle/output events, got %+v", events)
+}
+
+func TestInteractiveCleanupRemovesStoppedSessions(t *testing.T) {
+	m := New()
+	sess, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-i"}})
+	if err != nil {
+		skipIfPTYUnsupported(t, err)
+		t.Fatal(err)
+	}
+	if err := m.Stop(sess.ID); err != nil {
+		t.Fatal(err)
+	}
+	if removed := m.CleanupFinished(0); removed != 1 {
+		t.Fatalf("expected one stopped session removed, got %d", removed)
+	}
+	if _, ok := m.Status(sess.ID); ok {
+		t.Fatal("expected cleaned session to be unavailable")
+	}
 }
 
 func TestInteractiveEnterKeyAndStop(t *testing.T) {
@@ -303,6 +332,7 @@ func TestDetectPromptCoversShellAndCustomWaitPatterns(t *testing.T) {
 	}{
 		{name: "wait regex", tail: "noise\nREADY>", re: waitRe, want: "READY>"},
 		{name: "shell dollar", tail: "output\nuser@host$", want: "user@host$"},
+		{name: "prompt before trailing blank line", tail: "output\nbash-5.3$ \n\n", want: "bash-5.3$"},
 		{name: "root hash", tail: "root#", want: "root#"},
 		{name: "question", tail: "Continue?", want: "Continue?"},
 		{name: "password", tail: "Password:", want: "Password:"},

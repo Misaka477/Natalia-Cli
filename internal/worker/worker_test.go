@@ -169,6 +169,26 @@ func TestParseArgs(t *testing.T) {
 	}
 }
 
+func TestWorkerStopTransitionsToStopped(t *testing.T) {
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+	}))
+	defer server.Close()
+	defer close(release)
+	pool := NewPool()
+	w, err := pool.Spawn("block", "code", llm.NewClient(llm.Config{BaseURL: server.URL, Model: "mock", APIKey: "test"}), toolset.NewRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, w, StatusRunning)
+	w.Stop()
+	waitForStatus(t, w, StatusStopped)
+	if err := w.Resume(); err == nil || !strings.Contains(err.Error(), "only paused workers") {
+		t.Fatalf("expected stopped worker resume rejection, got %v", err)
+	}
+}
+
 func waitForStatus(t *testing.T, w *Worker, status Status) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)

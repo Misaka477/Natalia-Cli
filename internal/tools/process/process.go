@@ -147,7 +147,7 @@ func (t *Restart) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return "已重启进程\n" + formatSession(sess), nil
+	return fmt.Sprintf("process restarted\nold_id: %s\nnew_id: %s\n%s", id, sess.ID, formatSession(sess)), nil
 }
 
 type Attach struct{}
