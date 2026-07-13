@@ -79,10 +79,14 @@ func RenderReadFilePath(path, offset, limit string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !limited && totalLines > defaultReadWindowLines {
-		return fmt.Sprintf("File: %s\nLines: %d total\nLarge file: choose a window with offset \"1\" and limit \"100\", request a larger range like offset \"1\" limit \"500\", use legacy limit \"1-500\", or use limit \"all\" to read the whole file.", path, totalLines), nil
+	fileSize := ""
+	if fi, statErr := os.Stat(path); statErr == nil {
+		fileSize = fmt.Sprintf(" (%d bytes)", fi.Size())
 	}
-	return renderReadFileWindow(path, start, end, totalLines, trailingNewline, limited)
+	if !limited && totalLines > defaultReadWindowLines {
+		return fmt.Sprintf("File: %s%s\nLines: %d total\nLarge file: choose a window with offset \"1\" and limit \"100\", request a larger range like offset \"1\" limit \"500\", use legacy limit \"1-500\", or use limit \"all\" to read the whole file.", path, fileSize, totalLines), nil
+	}
+	return renderReadFileWindowWithSize(path, start, end, totalLines, trailingNewline, limited, fileSize)
 }
 
 const defaultReadWindowLines = 100
@@ -153,6 +157,10 @@ func countFileLines(path string) (int, bool, error) {
 }
 
 func renderReadFileWindow(path string, start, end, totalLines int, trailingNewline, limited bool) (string, error) {
+	return renderReadFileWindowWithSize(path, start, end, totalLines, trailingNewline, limited, "")
+}
+
+func renderReadFileWindowWithSize(path string, start, end, totalLines int, trailingNewline, limited bool, fileSize string) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return "", fmt.Errorf("read failed: %w", err)
@@ -161,7 +169,7 @@ func renderReadFileWindow(path string, start, end, totalLines int, trailingNewli
 
 	var b strings.Builder
 	if limited {
-		fmt.Fprintf(&b, "File: %s\nLines: %d total, showing %d-%d\n", path, totalLines, start, end)
+		fmt.Fprintf(&b, "File: %s%s\nLines: %d total, showing %d-%d\n", path, fileSize, totalLines, start, end)
 		if end < totalLines {
 			fmt.Fprintf(&b, "Hint: continue with limit %d-%d or choose a nearby 100-line window.\n", end+1, min(totalLines, end+defaultReadWindowLines))
 		}
@@ -280,6 +288,9 @@ func (t *Write) Parameters() map[string]llm.Property {
 		"path":        {Type: "string", Description: "文件绝对路径"},
 		"content":     {Type: "string", Description: "文件内容"},
 		"create_dirs": {Type: "boolean", Description: "可选，true 时自动创建不存在的父目录；默认 false"},
+		"create_only": {Type: "boolean", Description: "可选，true 时若文件已存在则报错；默认 false"},
+		"backup":      {Type: "boolean", Description: "可选，true 时覆盖前备份原文件为 path.bak；默认 false"},
+		"dry_run":     {Type: "boolean", Description: "可选，true 时预览写入但不实际写入；默认 false"},
 	}
 }
 func (t *Write) Execute(args map[string]any) (string, error) {
@@ -304,6 +315,14 @@ func (t *Write) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 	if len(content) > maxWriteFileBytes {
 		return toolreturn.Return{IsError: true}, fmt.Errorf("content too large: %d bytes exceeds %d byte limit", len(content), maxWriteFileBytes)
 	}
+
+	createOnly, _ := args["create_only"].(bool)
+	if createOnly {
+		if _, err := os.Stat(path); err == nil {
+			return toolreturn.Return{IsError: true}, fmt.Errorf("file already exists: %s", path)
+		}
+	}
+
 	parent := filepath.Dir(path)
 	info, err := os.Stat(parent)
 	createDirs, _ := args["create_dirs"].(bool)
@@ -325,6 +344,22 @@ func (t *Write) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 	if info, err := os.Stat(path); err == nil && info.IsDir() {
 		return toolreturn.Return{IsError: true}, fmt.Errorf("refusing to overwrite directory: %s", path)
 	}
+
+	dryRun, _ := args["dry_run"].(bool)
+	if dryRun {
+		return toolreturn.Return{ModelText: fmt.Sprintf("[dry_run] would write %s (%d bytes, %d lines)", path, len(content), countLines(content))}, nil
+	}
+
+	backup, _ := args["backup"].(bool)
+	if backup {
+		if _, statErr := os.Stat(path); statErr == nil {
+			backupPath := path + ".bak"
+			if err := os.Rename(path, backupPath); err != nil {
+				return toolreturn.Return{IsError: true}, fmt.Errorf("backup failed: %w", err)
+			}
+		}
+	}
+
 	preview, err := PreviewWrite(args)
 	if err != nil {
 		return toolreturn.Return{IsError: true}, err
@@ -332,7 +367,7 @@ func (t *Write) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		return toolreturn.Return{IsError: true}, fmt.Errorf("write failed: %w", err)
 	}
-	modelText := fmt.Sprintf("wrote %s (%d bytes, %d lines)", filepath.Base(path), len(content), countLines(content))
+	modelText := fmt.Sprintf("wrote %s (%d bytes, %d lines)", path, len(content), countLines(content))
 	if preview.Kind == "overwrite" || preview.Kind == "create" {
 		block, blockErr := display.NewBlock(display.BlockDiff, filepath.Base(path), display.DiffBlock{Path: path, Diff: preview.Diff})
 		if blockErr == nil {
@@ -415,6 +450,7 @@ func (t *Edit) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 	content := string(data)
 	newContent := content
 	totalReplacements := 0
+	warnings := make([]string, 0)
 	for i, edit := range edits {
 		matches := strings.Count(newContent, edit.Old)
 		if matches == 0 {
@@ -430,6 +466,9 @@ func (t *Edit) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 		if replaceAll {
 			replacements = matches
 		}
+		if replacements == 1 && matches > 1 {
+			warnings = append(warnings, fmt.Sprintf("edit %d: %d matches found, only first replaced", i+1, matches))
+		}
 		newContent = strings.Replace(newContent, edit.Old, edit.New, replacements)
 		totalReplacements += replacements
 	}
@@ -437,6 +476,9 @@ func (t *Edit) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 		return toolreturn.Return{IsError: true}, fmt.Errorf("write failed: %w", err)
 	}
 	modelText := fmt.Sprintf("edited %s — %d replacements", path, totalReplacements)
+	if len(warnings) > 0 {
+		modelText += "\nwarning: " + strings.Join(warnings, "; ")
+	}
 	block, err := display.NewBlock(display.BlockDiff, filepath.Base(path), display.DiffBlock{Path: path, Diff: replacementDiff(path, content, newContent)})
 	if err != nil {
 		return toolreturn.Return{ModelText: modelText}, nil
@@ -467,7 +509,11 @@ func (t *Edit) doEditRegex(path string, args map[string]any) (toolreturn.Return,
 	if oldStr == "" {
 		return toolreturn.Return{IsError: true}, fmt.Errorf("old_string required for regex edit")
 	}
-	re, err := regexp.Compile(oldStr)
+	pattern := oldStr
+	if !strings.Contains(pattern, "(?m)") && (strings.Contains(pattern, "^") || strings.Contains(pattern, "$")) {
+		pattern = "(?m)" + pattern
+	}
+	re, err := regexp.Compile(pattern)
 	if err != nil {
 		return toolreturn.Return{IsError: true}, fmt.Errorf("invalid regex %q: %w", oldStr, err)
 	}
@@ -488,12 +534,28 @@ func (t *Edit) doEditRegex(path string, args map[string]any) (toolreturn.Return,
 	if len(matches) == 0 {
 		return toolreturn.Return{IsError: true}, fmt.Errorf("regex %q matched nothing in %s", oldStr, path)
 	}
+	replaceAll, _ := args["replace_all"].(bool)
 	replacementCount := len(matches)
-	newContent := re.ReplaceAllString(content, newStr)
+	if !replaceAll && replacementCount > 1 {
+		replacementCount = 1
+	}
+	newContent := content
+	if replaceAll {
+		newContent = re.ReplaceAllString(content, newStr)
+	} else {
+		loc := re.FindStringIndex(content)
+		if loc != nil {
+			replaced := re.ReplaceAllString(content[loc[0]:loc[1]], newStr)
+			newContent = content[:loc[0]] + replaced + content[loc[1]:]
+		}
+	}
 	if err := os.WriteFile(path, []byte(newContent), 0644); err != nil {
 		return toolreturn.Return{IsError: true}, fmt.Errorf("write failed: %w", err)
 	}
 	modelText := fmt.Sprintf("edited %s — %d regex replacements", path, replacementCount)
+	if !replaceAll && len(matches) > 1 {
+		modelText += fmt.Sprintf(" (warning: %d regex matches found, only first replaced)", len(matches))
+	}
 	block, err := display.NewBlock(display.BlockDiff, filepath.Base(path), display.DiffBlock{Path: path, Diff: replacementDiff(path, content, newContent)})
 	if err != nil {
 		return toolreturn.Return{ModelText: modelText}, nil
@@ -1420,12 +1482,15 @@ func (t *Glob) Execute(args map[string]any) (string, error) {
 	if len(results) == 0 {
 		return "no matching files found", nil
 	}
+	total := len(results)
 	results, marker := paginateResults(results, offset, limit)
 	if len(results) == 0 {
 		return "no matching files found", nil
 	}
 	if marker != "" {
 		results = append(results, marker)
+	} else if total > 0 {
+		results = append(results, fmt.Sprintf("[glob results: %d files]", total))
 	}
 	return strings.Join(results, "\n"), nil
 }

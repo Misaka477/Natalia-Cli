@@ -46,6 +46,26 @@ type RunState struct {
 	Status       string `json:"status"`
 }
 
+func (wf Workflow) SourceCategory() string {
+	source := wf.Source
+	if strings.Contains(source, ".natalia/workflows/") {
+		return "Natalia workflow"
+	}
+	if strings.Contains(source, ".natalia/commands/") {
+		return "Markdown command"
+	}
+	if strings.Contains(source, ".github/workflows/") {
+		return "GitHub Actions"
+	}
+	if source == "package.json" {
+		return "Package script"
+	}
+	if source == "Makefile" || source == "makefile" {
+		return "Make target"
+	}
+	return "Custom"
+}
+
 func (r *Registry) List() []Workflow {
 	if r == nil {
 		return nil

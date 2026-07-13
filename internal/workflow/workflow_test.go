@@ -216,6 +216,27 @@ func TestDiscoverIncludesGitHubActionsAndDiagnostics(t *testing.T) {
 	}
 }
 
+func TestWorkflowSourceCategory(t *testing.T) {
+	tests := []struct {
+		source   string
+		expected string
+	}{
+		{".natalia/workflows/release.yaml", "Natalia workflow"},
+		{".natalia/commands/review.md", "Markdown command"},
+		{".github/workflows/ci.yml", "GitHub Actions"},
+		{"package.json", "Package script"},
+		{"Makefile", "Make target"},
+		{"makefile", "Make target"},
+		{"custom/path/workflow.yaml", "Custom"},
+	}
+	for _, tc := range tests {
+		wf := Workflow{Name: "test", Source: tc.source, Steps: []Step{{Title: "Step 1"}}}
+		if got := wf.SourceCategory(); got != tc.expected {
+			t.Errorf("SourceCategory(%q) = %q, want %q", tc.source, got, tc.expected)
+		}
+	}
+}
+
 func TestWorkflowRunAndStatePersistence(t *testing.T) {
 	r := &Registry{}
 	r.Add(Workflow{Name: "release", Source: ".natalia/workflows/release.yaml", Steps: []Step{{ID: "step-1", Title: "Test", Prompt: "Run tests", Kind: "shell"}}})

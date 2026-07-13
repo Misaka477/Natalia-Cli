@@ -16,14 +16,14 @@ var codeTools = map[string]bool{
 	"read_file": true, "write_file": true, "edit_file": true,
 	"glob": true, "grep": true, "run_shell": true,
 	"web_fetch": true, "web_search": true,
-	"todo_set": true, "todo_add": true, "todo_done": true, "todo_list": true,
+	"todo_set": true, "todo_add": true, "todo_done": true, "todo_list": true, "todo_update": true,
 	"ask_user":      true,
 	"workflow_list": true, "workflow_read": true, "workflow_run": true,
 	"plan_mode_enter": true, "plan_mode_exit": true, "plan_mode_status": true,
 	"process_start": true, "process_list": true, "process_status": true, "process_output": true, "process_stop": true, "process_restart": true, "process_attach": true, "process_detach": true, "process_cleanup": true, "process_audit": true,
 	"background_start": true, "background_list": true, "background_output": true, "background_stop": true, "background_restart": true, "background_cleanup": true, "background_audit": true,
 	"interactive_start": true, "interactive_read": true, "interactive_write": true, "interactive_keys": true, "interactive_stop": true, "interactive_list": true, "interactive_attach": true, "interactive_detach": true, "interactive_resize": true, "interactive_transcript": true, "interactive_cleanup": true,
-	"agent_spawn": true, "agent_list": true, "agent_output": true, "agent_attach": true, "agent_detach": true, "agent_stop": true, "agent_resume": true,
+	"agent_spawn": true, "agent_list": true, "agent_output": true, "agent_attach": true, "agent_detach": true, "agent_stop": true, "agent_resume": true, "agent_status": true, "agent_cleanup": true, "agent_audit": true,
 }
 
 var readTools = map[string]bool{
@@ -36,7 +36,7 @@ var readTools = map[string]bool{
 	"process_list": true, "process_status": true, "process_output": true, "process_audit": true,
 	"background_list": true, "background_output": true, "background_audit": true,
 	"interactive_list": true, "interactive_read": true, "interactive_transcript": true,
-	"agent_list": true, "agent_output": true,
+	"agent_list": true, "agent_output": true, "agent_status": true, "agent_audit": true,
 }
 
 var chatTools = map[string]bool{
@@ -57,6 +57,8 @@ var chatTools = map[string]bool{
 	"interactive_transcript": true,
 	"agent_list":             true,
 	"agent_output":           true,
+	"agent_status":           true,
+	"agent_audit":            true,
 }
 
 func makeFilter(allowed map[string]bool) func(string, map[string]any) bool {

@@ -36,6 +36,7 @@ func (t *Run) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"name":       {Type: "string", Description: "workflow 名称"},
 		"state_path": {Type: "string", Description: "可选，保存运行状态 JSON 的路径"},
+		"dry_run":    {Type: "boolean", Description: "可选，设为 true 时只预览不初始化状态"},
 	}
 }
 
@@ -45,6 +46,20 @@ func (t *Run) Execute(args map[string]any) (string, error) {
 	if strings.TrimSpace(name) == "" {
 		return "", fmt.Errorf("name is required")
 	}
+
+	dryRun := false
+	if d, ok := args["dry_run"].(bool); ok {
+		dryRun = d
+	}
+
+	if dryRun {
+		wf := registryOrDefault(t.Registry).Get(name)
+		if wf == nil {
+			return "", fmt.Errorf("workflow %q not found. %s", name, workflowHint(registryOrDefault(t.Registry)))
+		}
+		return fmt.Sprintf("[dry-run] Workflow %q has %d steps.\n%s", wf.Name, len(wf.Steps), wf.Format()), nil
+	}
+
 	state, instruction, err := registryOrDefault(t.Registry).Run(name)
 	if err != nil {
 		return "", err
@@ -115,7 +130,7 @@ func (t *List) Execute(args map[string]any) (string, error) {
 		if desc == "" {
 			desc = wf.Source
 		}
-		fmt.Fprintf(&b, "- %s: %s (%d steps)\n", wf.Name, desc, len(wf.Steps))
+		fmt.Fprintf(&b, "- %s [%s]: %s (%d steps)\n", wf.Name, wf.SourceCategory(), desc, len(wf.Steps))
 	}
 	return strings.TrimSpace(b.String()), nil
 }

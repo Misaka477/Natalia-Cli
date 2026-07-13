@@ -188,7 +188,7 @@ type Cleanup struct{}
 
 func (t *Cleanup) Name() string { return "background_cleanup" }
 func (t *Cleanup) Description() string {
-	return "清理已完成后台任务，并可按 idle/max lifetime 停止运行中的后台任务"
+	return "清理已完成后台任务，并可按 idle/max lifetime 停止运行中的后台任务；返回受影响 ID"
 }
 func (t *Cleanup) Required() []string { return nil }
 func (t *Cleanup) Parameters() map[string]llm.Property {
@@ -197,6 +197,7 @@ func (t *Cleanup) Parameters() map[string]llm.Property {
 		"idle_timeout":     {Type: "integer", Description: "可选，运行中任务空闲秒数阈值，0 表示不检查"},
 		"max_lifetime":     {Type: "integer", Description: "可选，运行中任务最大运行秒数阈值，0 表示不检查"},
 		"detect_stale":     {Type: "boolean", Description: "可选，检查 PID 是否已失效"},
+		"dry_run":          {Type: "boolean", Description: "可选，仅预览即将清理的任务而不实际操作"},
 	}
 }
 func (t *Cleanup) Execute(args map[string]any) (string, error) {
@@ -212,7 +213,8 @@ func (t *Cleanup) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	result := processmgr.DefaultManager().Sweep(processmgr.SweepOptions{FinishedMaxAge: finishedMaxAge, IdleTimeout: idleTimeout, MaxLifetime: maxLifetime, DetectStale: boolArg(args["detect_stale"])})
+	dryRun := boolArg(args["dry_run"])
+	result := processmgr.DefaultManager().Sweep(processmgr.SweepOptions{FinishedMaxAge: finishedMaxAge, IdleTimeout: idleTimeout, MaxLifetime: maxLifetime, DetectStale: boolArg(args["detect_stale"]), DryRun: dryRun})
 	return fmt.Sprintf("background cleanup complete\nremoved: %d\nstopped: %d\nstale: %d", result.Removed, result.Stopped, result.Stale), nil
 }
 
@@ -224,7 +226,10 @@ func (t *Audit) Description() string {
 }
 func (t *Audit) Required() []string { return nil }
 func (t *Audit) Parameters() map[string]llm.Property {
-	return map[string]llm.Property{"tail": {Type: "integer", Description: "可选，最近多少条审计记录，默认全部"}}
+	return map[string]llm.Property{
+		"tail":   {Type: "integer", Description: "可选，最近多少条审计记录，默认全部"},
+		"format": {Type: "string", Description: "可选，输出格式：text 或 json，默认 text"},
+	}
 }
 func (t *Audit) Execute(args map[string]any) (string, error) {
 	tail, err := intArg(args["tail"], 0, 0, 10000)
@@ -244,6 +249,10 @@ func (t *Audit) Execute(args map[string]any) (string, error) {
 	if len(filtered) == 0 {
 		return "<no background audit entries>", nil
 	}
+	format, _ := args["format"].(string)
+	if format == "json" {
+		return auditEntriesJSON(filtered), nil
+	}
 	var b strings.Builder
 	for _, entry := range filtered {
 		fmt.Fprintf(&b, "%s %s id=%s status=%s command=%s %s", entry.Time.Format(time.RFC3339), entry.Action, entry.SessionID, entry.Status, entry.Command, strings.Join(entry.Args, " "))
@@ -253,6 +262,19 @@ func (t *Audit) Execute(args map[string]any) (string, error) {
 		b.WriteByte('\n')
 	}
 	return strings.TrimRight(b.String(), "\n"), nil
+}
+
+func auditEntriesJSON(entries []processmgr.AuditEntry) string {
+	var b strings.Builder
+	b.WriteByte('[')
+	for i, entry := range entries {
+		if i > 0 {
+			b.WriteString(",\n ")
+		}
+		fmt.Fprintf(&b, `{"event_id":%q,"action":%q,"session_id":%q,"kind":%q,"status":%q,"command":%q,"time":%q}`, entry.EventID, entry.Action, entry.SessionID, entry.Kind, entry.Status, entry.Command, entry.Time.Format(time.RFC3339))
+	}
+	b.WriteByte(']')
+	return b.String()
 }
 
 func requireBackground(id string) error {
@@ -395,5 +417,13 @@ func formatSession(sess *processmgr.Session) string {
 	if sess.MaxLifetime > 0 {
 		lifetimeLine += fmt.Sprintf("\nmax_lifetime: %s", sess.MaxLifetime)
 	}
-	return fmt.Sprintf("id: %s\nkind: %s\nstatus: %s\npid: %d\ncommand: %s %s\nattached: %t%s%s%s%s", sess.ID, sess.Kind, sess.Status, sess.PID, sess.Command, strings.Join(sess.Args, " "), sess.Attached, lifetimeLine, envLine, exitCode, errLine)
+	duration := ""
+	if !sess.StartedAt.IsZero() && !sess.ExitedAt.IsZero() {
+		duration = fmt.Sprintf("\nduration: %s", sess.ExitedAt.Sub(sess.StartedAt).Round(time.Millisecond))
+	}
+	startedAt := ""
+	if !sess.StartedAt.IsZero() {
+		startedAt = "\nstarted_at: " + sess.StartedAt.Format(time.RFC3339)
+	}
+	return fmt.Sprintf("id: %s\nkind: %s\nstatus: %s\npid: %d\ncommand: %s %s\nattached: %t%s%s%s%s%s%s", sess.ID, sess.Kind, sess.Status, sess.PID, sess.Command, strings.Join(sess.Args, " "), sess.Attached, startedAt, duration, lifetimeLine, envLine, exitCode, errLine)
 }

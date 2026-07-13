@@ -16,7 +16,7 @@ func TestWorkflowToolsListAndReadCanonicalRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(list, "review") || !strings.Contains(list, "1 steps") {
+	if !strings.Contains(list, "review") || !strings.Contains(list, "1 steps") || !strings.Contains(list, "Markdown command") || !strings.Contains(list, "[Markdown command]") {
 		t.Fatalf("unexpected list output: %q", list)
 	}
 	read, err := (&Read{Registry: r}).Execute(map[string]any{"name": "review"})
@@ -45,6 +45,18 @@ func TestWorkflowListEmptyShowsDiscoveryHint(t *testing.T) {
 	}
 	if !strings.Contains(out, "no workflows available") || !strings.Contains(out, ".natalia/workflows") || !strings.Contains(out, "Makefile") {
 		t.Fatalf("expected empty workflow hint, got %q", out)
+	}
+}
+
+func TestWorkflowRunDryRunDoesNotPersistState(t *testing.T) {
+	r := &workflowcore.Registry{}
+	r.Add(workflowcore.Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []workflowcore.Step{{ID: "step-1", Title: "Inspect diff", Prompt: "Run git diff", Kind: "task"}}})
+	out, err := (&Run{Registry: r}).Execute(map[string]any{"name": "review", "dry_run": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "[dry-run]") || !strings.Contains(out, "Inspect diff") || !strings.Contains(out, "1 steps") {
+		t.Fatalf("unexpected dry_run output: %q", out)
 	}
 }
 

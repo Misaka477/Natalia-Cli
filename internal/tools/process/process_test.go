@@ -1,6 +1,7 @@
 package process
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -233,6 +234,77 @@ func extractRestartedProcessID(t *testing.T, output string) string {
 		t.Fatalf("could not extract restarted process id from %q", output)
 	}
 	return m[1]
+}
+
+func TestProcessCleanupDryRun(t *testing.T) {
+	resetManager()
+	result, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "args": []any{"-c", "true"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := extractProcessID(t, result)
+	waitForProcessStatus(t, id, "exited")
+	cleanup, err := (&Cleanup{}).Execute(map[string]any{"dry_run": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(cleanup, "dry-run") || !strings.Contains(cleanup, "removed: 1") {
+		t.Fatalf("expected dry-run cleanup report, got %q", cleanup)
+	}
+	if _, ok := processmgr.DefaultManager().Status(id); !ok {
+		t.Fatal("expected process to remain after dry-run cleanup")
+	}
+}
+
+func TestProcessAuditJSONFormat(t *testing.T) {
+	resetManager()
+	_, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "args": []any{"-c", "true"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	audit, err := (&Audit{}).Execute(map[string]any{"format": "json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(audit, "[") || !strings.Contains(audit, "event_id") || !strings.Contains(audit, "action") {
+		t.Fatalf("expected JSON audit output, got %q", audit)
+	}
+}
+
+func TestProcessSessionIncludesTimestamps(t *testing.T) {
+	resetManager()
+	result, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "args": []any{"-c", "true"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := extractProcessID(t, result)
+	waitForProcessStatus(t, id, "exited")
+	status, err := (&Status{}).Execute(map[string]any{"id": id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(status, "started_at") || !strings.Contains(status, "duration") {
+		t.Fatalf("expected session format to include timestamps, got %q", status)
+	}
+}
+
+func TestProcessListOnlyProcessKind(t *testing.T) {
+	resetManager()
+	_, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "args": []any{"-c", "true"}, "kind": "process"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	processmgr.DefaultManager().Start(context.Background(), processmgr.StartOptions{Command: "/bin/sh", Args: []string{"-c", "true"}, Kind: processmgr.KindBackground})
+	listed, err := (&List{}).Execute(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(listed, "kind: background") {
+		t.Fatalf("process_list should not include background tasks, got %q", listed)
+	}
+	if !strings.Contains(listed, "kind: process") {
+		t.Fatalf("process_list should include process entries, got %q", listed)
+	}
 }
 
 func waitForProcessStatus(t *testing.T, id, want string) {

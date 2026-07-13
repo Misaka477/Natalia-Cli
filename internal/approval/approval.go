@@ -48,6 +48,7 @@ var (
 		"agent_detach":        true,
 		"agent_stop":          true,
 		"agent_resume":        true,
+		"agent_cleanup":       true,
 	}
 )
 

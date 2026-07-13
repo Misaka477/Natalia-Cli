@@ -44,6 +44,9 @@ type TodoBlock struct {
 }
 
 type TodoItem struct {
-	Text string `json:"text"`
-	Done bool   `json:"done"`
+	Text     string `json:"text"`
+	Done     bool   `json:"done"`
+	Status   string `json:"status,omitempty"`
+	Notes    string `json:"notes,omitempty"`
+	Priority int    `json:"priority,omitempty"`
 }

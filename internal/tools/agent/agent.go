@@ -382,6 +382,117 @@ func formatWorkerDetail(w *worker.Worker) string {
 	return strings.TrimSpace(b.String())
 }
 
+type Status struct{ Pool *worker.Pool }
+
+func (t *Status) Name() string        { return "agent_status" }
+func (t *Status) Description() string { return "查看单个子 agent 的详细状态" }
+func (t *Status) Required() []string  { return []string{"agent_id"} }
+func (t *Status) Parameters() map[string]llm.Property {
+	return map[string]llm.Property{"agent_id": {Type: "string", Description: "子 agent ID（如 w1）"}}
+}
+func (t *Status) Execute(args map[string]any) (string, error) {
+	id, err := requireAgentID(args)
+	if err != nil {
+		return "", err
+	}
+	if t.Pool == nil {
+		return "", fmt.Errorf("agent system unavailable")
+	}
+	w := t.Pool.Get(id)
+	if w == nil {
+		return "", fmt.Errorf("agent %s not found", id)
+	}
+	return formatWorkerDetail(w), nil
+}
+
+type Cleanup struct{ Pool *worker.Pool }
+
+func (t *Cleanup) Name() string        { return "agent_cleanup" }
+func (t *Cleanup) Description() string { return "清理已完成的子 agent，释放资源" }
+func (t *Cleanup) Required() []string  { return []string{} }
+func (t *Cleanup) Parameters() map[string]llm.Property {
+	return map[string]llm.Property{"dry_run": {Type: "boolean", Description: "可选，仅预览即将清理的 agent 而不实际操作"}}
+}
+func (t *Cleanup) Execute(args map[string]any) (string, error) {
+	if t.Pool == nil {
+		return "", fmt.Errorf("agent system unavailable")
+	}
+	dryRun := false
+	if v, ok := args["dry_run"].(bool); ok {
+		dryRun = v
+	}
+	if dryRun {
+		all := t.Pool.List()
+		var affected []string
+		for _, w := range all {
+			s := w.GetStatus()
+			if s == worker.StatusCompleted || s == worker.StatusFailed || s == worker.StatusStopped {
+				affected = append(affected, w.ID)
+			}
+		}
+		if len(affected) == 0 {
+			return "agent cleanup dry-run: no agents to clean up", nil
+		}
+		return fmt.Sprintf("agent cleanup dry-run\nwould_remove: %d\naffected_ids: %s", len(affected), strings.Join(affected, ", ")), nil
+	}
+	affected := t.Pool.Cleanup()
+	if len(affected) == 0 {
+		return "agent cleanup complete: no agents to clean up", nil
+	}
+	return fmt.Sprintf("agent cleanup complete\nremoved: %d\naffected_ids: %s", len(affected), strings.Join(affected, ", ")), nil
+}
+
+type Audit struct{ Pool *worker.Pool }
+
+func (t *Audit) Name() string        { return "agent_audit" }
+func (t *Audit) Description() string { return "查看子 agent 审计日志" }
+func (t *Audit) Required() []string  { return []string{} }
+func (t *Audit) Parameters() map[string]llm.Property {
+	return map[string]llm.Property{
+		"tail":   {Type: "integer", Description: "可选，最近多少条审计记录，默认全部"},
+		"format": {Type: "string", Description: "可选，输出格式：text 或 json，默认 text"},
+	}
+}
+func (t *Audit) Execute(args map[string]any) (string, error) {
+	if t.Pool == nil {
+		return "", fmt.Errorf("agent system unavailable")
+	}
+	tail := 0
+	if v, ok := args["tail"]; ok {
+		switch vv := v.(type) {
+		case float64:
+			tail = int(vv)
+		case int:
+			tail = vv
+		}
+	}
+	entries := t.Pool.AuditLog()
+	if tail > 0 && tail < len(entries) {
+		entries = entries[len(entries)-tail:]
+	}
+	if len(entries) == 0 {
+		return "<no agent audit entries>", nil
+	}
+	format, _ := args["format"].(string)
+	if format == "json" {
+		var b strings.Builder
+		b.WriteByte('[')
+		for i, entry := range entries {
+			if i > 0 {
+				b.WriteString(",\n ")
+			}
+			fmt.Fprintf(&b, `{"event_id":%q,"worker_id":%q,"event":%q,"status":%q,"time":%q}`, entry.EventID, entry.WorkerID, entry.Event, entry.Status, entry.Time.Format(time.RFC3339))
+		}
+		b.WriteByte(']')
+		return b.String(), nil
+	}
+	var b strings.Builder
+	for _, entry := range entries {
+		fmt.Fprintf(&b, "%s %s id=%s event=%s status=%s attached=%t\n", entry.Time.Format(time.RFC3339), entry.EventID, entry.WorkerID, entry.Event, entry.Status, entry.Attached)
+	}
+	return strings.TrimSpace(b.String()), nil
+}
+
 func truncate(s string, n int) string {
 	runes := []rune(s)
 	if len(runes) <= n {

@@ -44,6 +44,9 @@ func registerAgentToolsForEngine(cfg *config.Config, engine *soul.Engine, tools 
 	tools.Register(&agent.Detach{Pool: workerPool})
 	tools.Register(&agent.Stop{Pool: workerPool})
 	tools.Register(&agent.Resume{Pool: workerPool})
+	tools.Register(&agent.Status{Pool: workerPool})
+	tools.Register(&agent.Cleanup{Pool: workerPool})
+	tools.Register(&agent.Audit{Pool: workerPool})
 }
 
 func bridgeRuntimeEvents(engine *soul.Engine, w *wire.Wire) func() {

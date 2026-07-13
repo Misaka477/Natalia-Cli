@@ -19,6 +19,7 @@ agent:
     - natalia/tools/todo:Add
     - natalia/tools/todo:Done
     - natalia/tools/todo:List
+    - natalia/tools/todo:Update
     - natalia/tools/ask_user:AskUser
     - natalia/tools/browser:Visit
     - natalia/tools/browser:Screenshot

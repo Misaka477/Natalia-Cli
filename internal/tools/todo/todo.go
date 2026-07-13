@@ -11,13 +11,18 @@ import (
 )
 
 type Item struct {
-	Content string `json:"content"`
-	Done    bool   `json:"done"`
+	ID       string `json:"id"`
+	Content  string `json:"content"`
+	Status   string `json:"status"`
+	Done     bool   `json:"done"`
+	Notes    string `json:"notes,omitempty"`
+	Priority int    `json:"priority,omitempty"`
 }
 
 var (
-	mu    sync.Mutex
-	items []Item
+	mu     sync.Mutex
+	items  []Item
+	nextID int
 )
 
 type Set struct{}
@@ -38,10 +43,26 @@ func (t *Set) Execute(args map[string]any) (string, error) {
 func (t *Set) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 	list := parseItems(args)
 	mu.Lock()
-	items = list
+	items = normalizeItemsLocked(list)
 	snapshot := snapshotItemsLocked()
 	mu.Unlock()
 	return todoReturn(fmt.Sprintf("已设置 %d 个任务", len(list)), snapshot), nil
+}
+
+func normalizeItemsLocked(list []Item) []Item {
+	for i := range list {
+		if list[i].ID == "" {
+			assignID(&list[i])
+		}
+		if list[i].Status == "" {
+			if list[i].Done {
+				list[i].Status = "done"
+			} else {
+				list[i].Status = "pending"
+			}
+		}
+	}
+	return list
 }
 
 type Add struct{}
@@ -62,7 +83,7 @@ func (t *Add) Execute(args map[string]any) (string, error) {
 func (t *Add) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 	list := parseItems(args)
 	mu.Lock()
-	items = append(items, list...)
+	items = append(items, normalizeItemsLocked(list)...)
 	snapshot := snapshotItemsLocked()
 	mu.Unlock()
 	return todoReturn(fmt.Sprintf("已添加 %d 个任务", len(list)), snapshot), nil
@@ -72,10 +93,11 @@ type Done struct{}
 
 func (t *Done) Name() string        { return "todo_done" }
 func (t *Done) Description() string { return "标记任务为已完成" }
-func (t *Done) Required() []string  { return []string{"index"} }
+func (t *Done) Required() []string  { return nil }
 func (t *Done) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"index": {Type: "integer", Description: "任务编号（从 1 开始）"},
+		"id":    {Type: "string", Description: "可选，任务稳定 ID"},
 	}
 }
 func (t *Done) Execute(args map[string]any) (string, error) {
@@ -88,16 +110,98 @@ func (t *Done) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 	if i, ok := args["index"].(float64); ok {
 		idx = int(i)
 	}
-	if idx < 1 {
-		return toolreturn.Return{IsError: true}, fmt.Errorf("index 从 1 开始")
-	}
 	mu.Lock()
 	defer mu.Unlock()
-	if idx > len(items) {
+	target := -1
+	if idx >= 1 && idx <= len(items) {
+		target = idx - 1
+	}
+	if id, ok := args["id"].(string); ok && id != "" {
+		for i := range items {
+			if items[i].ID == id {
+				target = i
+				break
+			}
+		}
+	}
+	if target < 0 {
 		return toolreturn.Return{IsError: true}, fmt.Errorf("index %d 超出范围（共 %d 个任务）", idx, len(items))
 	}
-	items[idx-1].Done = true
-	return todoReturn(fmt.Sprintf("✓ 任务 %d 已完成", idx), snapshotItemsLocked()), nil
+	items[target].Done = true
+	items[target].Status = "done"
+	return todoReturn(fmt.Sprintf("✓ task %s completed", items[target].ID), snapshotItemsLocked()), nil
+}
+
+type Update struct{}
+
+func (t *Update) Name() string        { return "todo_update" }
+func (t *Update) Description() string { return "更新任务状态、备注或优先级" }
+func (t *Update) Required() []string  { return []string{} }
+func (t *Update) Parameters() map[string]llm.Property {
+	return map[string]llm.Property{
+		"index":    {Type: "integer", Description: "可选，任务编号（从 1 开始），兼容标记"},
+		"id":       {Type: "string", Description: "可选，任务稳定 ID"},
+		"done":     {Type: "boolean", Description: "可选，true 标记完成，false 标记未完成"},
+		"status":   {Type: "string", Description: "可选，新状态：pending/in_progress/blocked/done/skipped"},
+		"notes":    {Type: "string", Description: "可选，简短备注（建议 60 字以内）"},
+		"priority": {Type: "integer", Description: "可选，优先级 1-5，越高越重要"},
+	}
+}
+func (t *Update) Execute(args map[string]any) (string, error) {
+	ret, err := t.ExecuteReturn(args)
+	return ret.ModelText, err
+}
+
+func (t *Update) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	var target *Item
+
+	if idx, ok := args["index"].(float64); ok && int(idx) >= 1 && int(idx) <= len(items) {
+		target = &items[int(idx)-1]
+	}
+	if id, ok := args["id"].(string); ok && id != "" {
+		for i := range items {
+			if items[i].ID == id {
+				target = &items[i]
+				break
+			}
+		}
+	}
+
+	if target == nil {
+		return toolreturn.Return{IsError: true}, fmt.Errorf("未找到匹配的任务，请提供有效的 index（1-%d）或 id", len(items))
+	}
+
+	if done, ok := args["done"].(bool); ok {
+		target.Done = done
+		if done {
+			target.Status = "done"
+		} else if target.Status == "done" {
+			target.Status = "pending"
+		}
+	}
+	if status, ok := args["status"].(string); ok && status != "" {
+		if !validStatus(status) {
+			return toolreturn.Return{IsError: true}, fmt.Errorf("invalid status %q; valid statuses: pending, in_progress, blocked, done, skipped", status)
+		}
+		target.Status = status
+		if status == "done" {
+			target.Done = true
+		} else if target.Done {
+			target.Done = false
+		}
+	}
+	if notes, ok := args["notes"].(string); ok {
+		target.Notes = notes
+	}
+	if priority, ok := args["priority"].(float64); ok {
+		target.Priority = int(priority)
+	}
+
+	msg := fmt.Sprintf("已更新任务 %s", target.ID)
+	return todoReturn(msg, snapshotItemsLocked()), nil
 }
 
 type List struct{}
@@ -125,7 +229,14 @@ func (t *List) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 		if item.Done {
 			mark = "✓"
 		}
-		b.WriteString(fmt.Sprintf("%d. [%s] %s\n", i+1, mark, item.Content))
+		extra := ""
+		if item.Priority > 0 {
+			extra = fmt.Sprintf(" [p%d]", item.Priority)
+		}
+		if item.Notes != "" && len(item.Notes) <= 60 {
+			extra += " note: " + item.Notes
+		}
+		b.WriteString(fmt.Sprintf("%d. [%s] %s%s\n", i+1, mark, item.Content, extra))
 	}
 	return todoReturn(b.String(), snapshotItemsLocked()), nil
 }
@@ -136,16 +247,27 @@ func snapshotItemsLocked() []Item {
 	return snapshot
 }
 
-func todoReturn(modelText string, snapshot []Item) toolreturn.Return {
-	blockItems := make([]display.TodoItem, 0, len(snapshot))
-	for _, item := range snapshot {
-		blockItems = append(blockItems, display.TodoItem{Text: item.Content, Done: item.Done})
+func assignID(item *Item) {
+	if item.ID == "" {
+		nextID++
+		item.ID = fmt.Sprintf("todo-%d", nextID)
 	}
-	block, err := display.NewBlock(display.BlockTodo, "todo", display.TodoBlock{Items: blockItems})
-	if err != nil {
-		return toolreturn.Return{ModelText: modelText}
+	if item.Status == "" {
+		if item.Done {
+			item.Status = "done"
+		} else {
+			item.Status = "pending"
+		}
 	}
-	return toolreturn.Return{ModelText: modelText, Display: []display.Block{block}}
+}
+
+func validStatus(status string) bool {
+	switch status {
+	case "pending", "in_progress", "blocked", "done", "skipped":
+		return true
+	default:
+		return false
+	}
 }
 
 func parseItems(args map[string]any) []Item {
@@ -160,8 +282,22 @@ func parseItems(args map[string]any) []Item {
 	result := make([]Item, 0, len(list))
 	for _, item := range list {
 		if s, ok := item.(string); ok {
-			result = append(result, Item{Content: s})
+			it := Item{Content: s}
+			assignID(&it)
+			result = append(result, it)
 		}
 	}
 	return result
+}
+
+func todoReturn(modelText string, snapshot []Item) toolreturn.Return {
+	blockItems := make([]display.TodoItem, 0, len(snapshot))
+	for _, item := range snapshot {
+		blockItems = append(blockItems, display.TodoItem{Text: item.Content, Done: item.Done, Status: item.Status, Notes: item.Notes, Priority: item.Priority})
+	}
+	block, err := display.NewBlock(display.BlockTodo, "todo", display.TodoBlock{Items: blockItems})
+	if err != nil {
+		return toolreturn.Return{ModelText: modelText}
+	}
+	return toolreturn.Return{ModelText: modelText, Display: []display.Block{block}}
 }

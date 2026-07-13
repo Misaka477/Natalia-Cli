@@ -65,7 +65,14 @@ func (t *List) Description() string                 { return "列出 Natalia 管
 func (t *List) Required() []string                  { return nil }
 func (t *List) Parameters() map[string]llm.Property { return map[string]llm.Property{} }
 func (t *List) Execute(args map[string]any) (string, error) {
-	return formatSessions(processmgr.DefaultManager().List()), nil
+	sessions := processmgr.DefaultManager().List()
+	items := make([]processmgr.Session, 0, len(sessions))
+	for _, sess := range sessions {
+		if sess.Kind == processmgr.KindProcess {
+			items = append(items, sess)
+		}
+	}
+	return formatSessions(items), nil
 }
 
 type Status struct{}
@@ -198,7 +205,7 @@ type Cleanup struct{}
 
 func (t *Cleanup) Name() string { return "process_cleanup" }
 func (t *Cleanup) Description() string {
-	return "清理已完成的进程，并可按 idle/max lifetime 停止运行中的进程"
+	return "清理已完成的进程，并可按 idle/max lifetime 停止运行中的进程；返回受影响 ID"
 }
 func (t *Cleanup) Required() []string { return nil }
 func (t *Cleanup) Parameters() map[string]llm.Property {
@@ -207,6 +214,7 @@ func (t *Cleanup) Parameters() map[string]llm.Property {
 		"idle_timeout":     {Type: "integer", Description: "可选，运行中进程空闲秒数阈值，0 表示不检查"},
 		"max_lifetime":     {Type: "integer", Description: "可选，运行中进程最大运行秒数阈值，0 表示不检查"},
 		"detect_stale":     {Type: "boolean", Description: "可选，检查 PID 是否已失效"},
+		"dry_run":          {Type: "boolean", Description: "可选，仅预览即将清理的进程而不实际操作"},
 	}
 }
 func (t *Cleanup) Execute(args map[string]any) (string, error) {
@@ -222,8 +230,9 @@ func (t *Cleanup) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	result := processmgr.DefaultManager().Sweep(processmgr.SweepOptions{FinishedMaxAge: finishedMaxAge, IdleTimeout: idleTimeout, MaxLifetime: maxLifetime, DetectStale: boolArg(args["detect_stale"])})
-	return fmt.Sprintf("cleanup complete\nremoved: %d\nstopped: %d\nstale: %d", result.Removed, result.Stopped, result.Stale), nil
+	dryRun := boolArg(args["dry_run"])
+	result := processmgr.DefaultManager().Sweep(processmgr.SweepOptions{FinishedMaxAge: finishedMaxAge, IdleTimeout: idleTimeout, MaxLifetime: maxLifetime, DetectStale: boolArg(args["detect_stale"]), DryRun: dryRun})
+	return fmtCleanupResult("process cleanup", result, dryRun), nil
 }
 
 type Audit struct{}
@@ -234,16 +243,30 @@ func (t *Audit) Description() string {
 }
 func (t *Audit) Required() []string { return nil }
 func (t *Audit) Parameters() map[string]llm.Property {
-	return map[string]llm.Property{"tail": {Type: "integer", Description: "可选，最近多少条审计记录，默认全部"}}
+	return map[string]llm.Property{
+		"tail":   {Type: "integer", Description: "可选，最近多少条审计记录，默认全部"},
+		"format": {Type: "string", Description: "可选，输出格式：text 或 json，默认 text"},
+	}
 }
 func (t *Audit) Execute(args map[string]any) (string, error) {
 	tail := intArg(args["tail"])
 	entries := processmgr.DefaultManager().AuditLog()
+	filtered := make([]processmgr.AuditEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Kind == processmgr.KindProcess {
+			filtered = append(filtered, entry)
+		}
+	}
+	entries = filtered
 	if tail > 0 && tail < len(entries) {
 		entries = entries[len(entries)-tail:]
 	}
 	if len(entries) == 0 {
 		return "<no process audit entries>", nil
+	}
+	format, _ := args["format"].(string)
+	if format == "json" {
+		return auditEntriesJSON(entries), nil
 	}
 	var b strings.Builder
 	for _, entry := range entries {
@@ -375,6 +398,39 @@ func formatSession(sess *processmgr.Session) string {
 	if sess == nil {
 		return "<nil process session>"
 	}
+	return formatSessionCommon("process", sess)
+}
+
+func fmtCleanupResult(label string, result processmgr.SweepResult, dryRun bool) string {
+	var b strings.Builder
+	b.WriteString(label)
+	if dryRun {
+		b.WriteString(" dry-run")
+	}
+	b.WriteString(fmt.Sprintf(" complete\nremoved: %d\nstopped: %d\nstale: %d", result.Removed, result.Stopped, result.Stale))
+	if len(result.AffectedIDs) > 0 {
+		b.WriteString("\naffected_ids: " + strings.Join(result.AffectedIDs, ", "))
+	}
+	return b.String()
+}
+
+func auditEntriesJSON(entries []processmgr.AuditEntry) string {
+	var b strings.Builder
+	b.WriteByte('[')
+	for i, entry := range entries {
+		if i > 0 {
+			b.WriteString(",\n ")
+		}
+		fmt.Fprintf(&b, `{"event_id":%q,"action":%q,"session_id":%q,"kind":%q,"status":%q,"command":%q,"time":%q}`, entry.EventID, entry.Action, entry.SessionID, entry.Kind, entry.Status, entry.Command, entry.Time.Format(time.RFC3339))
+	}
+	b.WriteByte(']')
+	return b.String()
+}
+
+func formatSessionCommon(kindLabel string, sess *processmgr.Session) string {
+	if sess == nil {
+		return fmt.Sprintf("<nil %s session>", kindLabel)
+	}
 	exitCode := ""
 	if sess.ExitCode != nil {
 		exitCode = fmt.Sprintf("\nexit_code: %d", *sess.ExitCode)
@@ -395,5 +451,13 @@ func formatSession(sess *processmgr.Session) string {
 	if sess.MaxLifetime > 0 {
 		lifetimeLine += fmt.Sprintf("\nmax_lifetime: %s", sess.MaxLifetime)
 	}
-	return fmt.Sprintf("id: %s\nkind: %s\nstatus: %s\npid: %d\ncommand: %s %s%s%s%s%s%s", sess.ID, sess.Kind, sess.Status, sess.PID, sess.Command, strings.Join(sess.Args, " "), attachedLine, lifetimeLine, envLine, exitCode, errLine)
+	duration := ""
+	if !sess.StartedAt.IsZero() && !sess.ExitedAt.IsZero() {
+		duration = fmt.Sprintf("\nduration: %s", sess.ExitedAt.Sub(sess.StartedAt).Round(time.Millisecond))
+	}
+	startedAt := ""
+	if !sess.StartedAt.IsZero() {
+		startedAt = "\nstarted_at: " + sess.StartedAt.Format(time.RFC3339)
+	}
+	return fmt.Sprintf("id: %s\nkind: %s\nstatus: %s\npid: %d\ncommand: %s %s%s%s%s%s%s%s%s", sess.ID, sess.Kind, sess.Status, sess.PID, sess.Command, strings.Join(sess.Args, " "), attachedLine, startedAt, duration, lifetimeLine, envLine, exitCode, errLine)
 }

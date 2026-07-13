@@ -54,13 +54,13 @@ func TestAskModeRoutesNormalAndExplicitRequestsToCallback(t *testing.T) {
 }
 
 func TestWriteToolsCoversAllMutatingRuntimeTools(t *testing.T) {
-	mutating := []string{"write_file", "edit_file", "run_shell", "process_start", "process_stop", "process_restart", "process_attach", "process_detach", "process_cleanup", "background_start", "background_stop", "background_restart", "background_cleanup", "interactive_start", "interactive_write", "interactive_keys", "interactive_stop", "interactive_cleanup", "interactive_attach", "interactive_detach", "interactive_resize", "agent_spawn", "agent_attach", "agent_detach", "agent_stop", "agent_resume"}
+	mutating := []string{"write_file", "edit_file", "run_shell", "process_start", "process_stop", "process_restart", "process_attach", "process_detach", "process_cleanup", "background_start", "background_stop", "background_restart", "background_cleanup", "interactive_start", "interactive_write", "interactive_keys", "interactive_stop", "interactive_cleanup", "interactive_attach", "interactive_detach", "interactive_resize", "agent_spawn", "agent_attach", "agent_detach", "agent_stop", "agent_resume", "agent_cleanup"}
 	for _, tool := range mutating {
 		if !IsWriteTool(tool) {
 			t.Fatalf("expected %s to require approval", tool)
 		}
 	}
-	readOnly := []string{"read_file", "glob", "grep", "web_fetch", "agent_list", "interactive_read", "interactive_list", "interactive_transcript", "process_audit", "background_audit"}
+	readOnly := []string{"read_file", "glob", "grep", "web_fetch", "agent_list", "agent_status", "agent_audit", "interactive_read", "interactive_list", "interactive_transcript", "process_audit", "background_audit"}
 	for _, tool := range readOnly {
 		if IsWriteTool(tool) {
 			t.Fatalf("expected %s to remain read-only", tool)

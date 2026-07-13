@@ -284,16 +284,31 @@ type Event struct {
 	Time         time.Time `json:"time,omitempty"`
 }
 
+type AuditEntry struct {
+	EventID      string    `json:"event_id"`
+	WorkerID     string    `json:"worker_id"`
+	Task         string    `json:"task,omitempty"`
+	Mode         string    `json:"mode,omitempty"`
+	ModelProfile string    `json:"model_profile,omitempty"`
+	Event        string    `json:"event"`
+	Status       Status    `json:"status,omitempty"`
+	Attached     bool      `json:"attached"`
+	Time         time.Time `json:"time"`
+}
+
 type Pool struct {
 	mu          sync.RWMutex
 	workers     map[string]*Worker
 	subscribers map[uint64]func(Event)
 	nextID      int
 	nextSubID   uint64
+	audit       []AuditEntry
+	auditID     uint64
+	maxAudit    int
 }
 
 func NewPool() *Pool {
-	return &Pool{workers: make(map[string]*Worker), subscribers: make(map[uint64]func(Event)), nextID: 1}
+	return &Pool{workers: make(map[string]*Worker), subscribers: make(map[uint64]func(Event)), nextID: 1, maxAudit: 1000}
 }
 
 func (p *Pool) Subscribe(fn func(Event)) func() {
@@ -344,12 +359,28 @@ func (p *Pool) SpawnWithOptions(task, modeName string, llmClient *llm.Client, to
 }
 
 func (p *Pool) emit(event Event) {
-	p.mu.RLock()
+	p.mu.Lock()
+	p.auditID++
+	eventID := fmt.Sprintf("wevt_%d", p.auditID)
+	p.audit = append(p.audit, AuditEntry{
+		EventID:      eventID,
+		WorkerID:     event.WorkerID,
+		Task:         event.Task,
+		Mode:         event.Mode,
+		ModelProfile: event.ModelProfile,
+		Event:        event.Event,
+		Status:       event.Status,
+		Attached:     event.Attached,
+		Time:         event.Time,
+	})
+	if len(p.audit) > p.maxAudit {
+		p.audit = p.audit[len(p.audit)-p.maxAudit:]
+	}
 	subscribers := make([]func(Event), 0, len(p.subscribers))
 	for _, fn := range p.subscribers {
 		subscribers = append(subscribers, fn)
 	}
-	p.mu.RUnlock()
+	p.mu.Unlock()
 	for _, fn := range subscribers {
 		fn(event)
 	}
@@ -403,6 +434,51 @@ func (p *Pool) Resume(id string) {
 	if w != nil {
 		_ = w.Resume()
 	}
+}
+
+func (p *Pool) Remove(id string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if _, ok := p.workers[id]; ok {
+		delete(p.workers, id)
+		return true
+	}
+	return false
+}
+
+func (p *Pool) Cleanup() []string {
+	var affected []string
+	p.mu.Lock()
+	for id, w := range p.workers {
+		w.mu.RLock()
+		status := w.Status
+		w.mu.RUnlock()
+		if status == StatusCompleted || status == StatusFailed || status == StatusStopped {
+			affected = append(affected, id)
+		}
+	}
+	for _, id := range affected {
+		delete(p.workers, id)
+	}
+	p.mu.Unlock()
+	if len(affected) > 0 {
+		for _, id := range affected {
+			p.emit(Event{WorkerID: id, Event: "cleanup", Status: StatusCompleted, Time: time.Now()})
+		}
+	}
+	return affected
+}
+
+func (p *Pool) AuditLog() []AuditEntry {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	out := make([]AuditEntry, len(p.audit))
+	copy(out, p.audit)
+	return out
+}
+
+func (p *Pool) Status(id string) *Worker {
+	return p.Get(id)
 }
 
 func parseArgs(raw string) map[string]any {

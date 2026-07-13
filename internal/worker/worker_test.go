@@ -189,6 +189,88 @@ func TestWorkerStopTransitionsToStopped(t *testing.T) {
 	}
 }
 
+func TestPoolCleanupRemovesCompletedWorkers(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "content": "done"}}}})
+	}))
+	defer server.Close()
+	pool := NewPool()
+	w, err := pool.Spawn("cleanup test", "code", llm.NewClient(llm.Config{BaseURL: server.URL, Model: "mock", APIKey: "test"}), toolset.NewRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, w, StatusCompleted)
+	affected := pool.Cleanup()
+	if len(affected) != 1 || affected[0] != w.ID {
+		t.Fatalf("expected cleanup to remove one worker, got %v", affected)
+	}
+	if pool.Get(w.ID) != nil {
+		t.Fatal("expected worker to be removed after cleanup")
+	}
+}
+
+func TestPoolAuditLogStoresEvents(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "content": "done"}}}})
+	}))
+	defer server.Close()
+	pool := NewPool()
+	w, err := pool.Spawn("audit test", "code", llm.NewClient(llm.Config{BaseURL: server.URL, Model: "mock", APIKey: "test"}), toolset.NewRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, w, StatusCompleted)
+	entries := pool.AuditLog()
+	if len(entries) < 2 {
+		t.Fatalf("expected at least 2 audit entries, got %d", len(entries))
+	}
+	if entries[0].Event != "created" || entries[0].WorkerID != w.ID {
+		t.Fatalf("expected created event, got %+v", entries[0])
+	}
+	seenCompleted := false
+	for _, e := range entries {
+		if e.Event == "status" && e.Status == StatusCompleted && e.WorkerID == w.ID {
+			seenCompleted = true
+		}
+	}
+	if !seenCompleted {
+		t.Fatalf("expected completed status event in audit log, got %+v", entries)
+	}
+}
+
+func TestPoolRemoveWorker(t *testing.T) {
+	pool := NewPool()
+	w, err := pool.SpawnWithOptions("remove test", "code", nil, toolset.NewRegistry(), SpawnOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pool.Remove(w.ID) {
+		t.Fatal("expected Remove to return true for existing worker")
+	}
+	if pool.Remove("nonexistent") {
+		t.Fatal("expected Remove to return false for nonexistent worker")
+	}
+	if pool.Get(w.ID) != nil {
+		t.Fatal("expected worker to be removed")
+	}
+}
+
+func TestPoolStatusReturnsWorker(t *testing.T) {
+	pool := NewPool()
+	w, err := pool.SpawnWithOptions("status test", "code", nil, toolset.NewRegistry(), SpawnOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := pool.Status(w.ID); got != w {
+		t.Fatal("expected Status to return the same worker")
+	}
+	if pool.Status("nonexistent") != nil {
+		t.Fatal("expected Status to return nil for nonexistent")
+	}
+}
+
 func waitForStatus(t *testing.T, w *Worker, status Status) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)

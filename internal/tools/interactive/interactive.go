@@ -145,7 +145,7 @@ func (t *Write) Execute(args map[string]any) (string, error) {
 		submit = raw
 	}
 	if submit && !strings.HasSuffix(input, "\n") && !strings.HasSuffix(input, "\r") {
-		input += "\n"
+		input += "\r"
 	}
 	sensitive, _ := args["sensitive"].(bool)
 	observeOpts, err := observeOptions(args, !sensitive)

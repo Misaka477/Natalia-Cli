@@ -398,7 +398,7 @@ func TestFetchMarkdownAndPlainTextFormats(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plain != "<b>literal text</b>" {
+	if !strings.Contains(plain, "<b>literal text</b>") {
 		t.Fatalf("expected text/plain to be returned without HTML stripping, got %q", plain)
 	}
 }
@@ -451,6 +451,42 @@ func TestFetchUnknownContentTypeWithNulIsBinary(t *testing.T) {
 	}
 	if !strings.Contains(result, "Binary response not included") || strings.Contains(result, "a\x00b") {
 		t.Fatalf("expected unknown content type with NUL to be treated as binary, got %q", result)
+	}
+}
+
+func TestFetchIncludesMetadata(t *testing.T) {
+	allowLocalNetworkForTest(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<html><body><p>Hello</p></body></html>`))
+	}))
+	defer server.Close()
+
+	result, err := (&Fetch{}).Execute(map[string]any{"url": server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"URL:", "Status: 200", "Content-Type:", "Bytes:", "Truncated:"} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("expected metadata field %q in fetch result, got %q", want, result)
+		}
+	}
+}
+
+func TestFetchFallsBackToRawBodyOnEmptyExtraction(t *testing.T) {
+	allowLocalNetworkForTest(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<html><body><div id="app"></div></body></html>`))
+	}))
+	defer server.Close()
+
+	result, err := (&Fetch{}).Execute(map[string]any{"url": server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "No content extracted") || !strings.Contains(result, "Raw body:") || !strings.Contains(result, "<div id=\"app\">") {
+		t.Fatalf("expected fallback raw body on empty extraction, got %q", result)
 	}
 }
 

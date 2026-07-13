@@ -49,7 +49,7 @@ func (t *AskUser) Parameters() map[string]llm.Property {
 		"multiple":     {Type: "boolean", Description: "可选，是否允许多选"},
 		"allow_custom": {Type: "boolean", Description: "可选，是否允许自定义输入"},
 		"fallback":     {Type: "string", Description: "可选，timeout/AFK 时使用的默认答案"},
-		"timeout":      {Type: "string", Description: "可选，等待用户秒数，默认不超时"},
+		"timeout":      {Type: "integer", Description: "可选，等待用户秒数，默认不超时，范围 1-3600"},
 		"questions":    {Type: "array", Description: "可选，结构化问题数组，每项包含 name/question/options/multiple/allow_custom/fallback"},
 	}
 }
@@ -67,11 +67,12 @@ func (t *AskUser) Execute(args map[string]any) (string, error) {
 	resp, err := ask(ctx, req)
 	if err != nil {
 		if req.TimeoutMS > 0 || ctx.Err() != nil {
-			return formatAnswers(applyQuestionFallbacks(req, wire.QuestionResponse{RequestID: req.ID})), nil
+			return formatAnswers(applyQuestionFallbacks(req, wire.QuestionResponse{RequestID: req.ID}), "timeout"), nil
 		}
 		return "", err
 	}
-	return formatAnswers(applyQuestionFallbacks(req, resp)), nil
+	source := answerSource(req, resp)
+	return formatAnswers(applyQuestionFallbacks(req, resp), source), nil
 }
 
 func BuildQuestionRequest(args map[string]any) (wire.QuestionRequest, error) {
@@ -308,6 +309,15 @@ func optionByInput(options []string, raw string) (string, bool) {
 	return "", false
 }
 
+func answerSource(req wire.QuestionRequest, resp wire.QuestionResponse) string {
+	for _, q := range req.Questions {
+		if strings.TrimSpace(resp.Answers[q.Name]) == "" && q.Fallback != "" {
+			return "fallback"
+		}
+	}
+	return "user"
+}
+
 func applyQuestionFallbacks(req wire.QuestionRequest, resp wire.QuestionResponse) wire.QuestionResponse {
 	if resp.RequestID == "" {
 		resp.RequestID = req.ID
@@ -323,12 +333,15 @@ func applyQuestionFallbacks(req wire.QuestionRequest, resp wire.QuestionResponse
 	return resp
 }
 
-func formatAnswers(resp wire.QuestionResponse) string {
+func formatAnswers(resp wire.QuestionResponse, source string) string {
 	if len(resp.Answers) == 0 {
 		return "未收到用户回答"
 	}
 	if len(resp.Answers) == 1 {
 		for _, answer := range resp.Answers {
+			if source != "" && source != "user" {
+				return answer + "\n(answer source: " + source + ")"
+			}
 			return answer
 		}
 	}
@@ -343,6 +356,9 @@ func formatAnswers(resp wire.QuestionResponse) string {
 			b.WriteByte('\n')
 		}
 		fmt.Fprintf(&b, "%s: %s", key, resp.Answers[key])
+	}
+	if source != "" && source != "user" {
+		b.WriteString("\n(answer source: " + source + ")")
 	}
 	return b.String()
 }

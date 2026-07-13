@@ -198,6 +198,58 @@ func TestBackgroundEmptyListUnknownAndFormattingPaths(t *testing.T) {
 	}
 }
 
+func TestBackgroundCleanupDryRun(t *testing.T) {
+	resetManager()
+	result, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "args": []any{"-c", "true"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := extractBackgroundID(t, result)
+	waitForBackgroundStatus(t, id, "exited")
+	cleanup, err := (&Cleanup{}).Execute(map[string]any{"dry_run": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(cleanup, "removed:") {
+		t.Fatalf("expected dry-run cleanup report, got %q", cleanup)
+	}
+	if _, ok := processmgr.DefaultManager().Status(id); !ok {
+		t.Fatal("expected background task to remain after dry-run cleanup")
+	}
+}
+
+func TestBackgroundAuditJSONFormat(t *testing.T) {
+	resetManager()
+	_, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "args": []any{"-c", "true"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	audit, err := (&Audit{}).Execute(map[string]any{"format": "json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(audit, "[") || !strings.Contains(audit, "event_id") {
+		t.Fatalf("expected JSON audit output, got %q", audit)
+	}
+}
+
+func TestBackgroundSessionIncludesTimestamps(t *testing.T) {
+	resetManager()
+	result, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "args": []any{"-c", "printf 'ready\\n'"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := extractBackgroundID(t, result)
+	waitForBackgroundStatus(t, id, "exited")
+	output, err := (&Output{}).Execute(map[string]any{"id": id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output, "stdout: ready") {
+		t.Fatalf("expected background output, got %q", output)
+	}
+}
+
 func TestBackgroundRejectsInvalidArgsAndIntTypes(t *testing.T) {
 	resetManager()
 	if _, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "args": "bad"}); err == nil || !strings.Contains(err.Error(), "args") {
@@ -222,7 +274,7 @@ func TestBackgroundRejectsInvalidArgsAndIntTypes(t *testing.T) {
 
 func extractBackgroundID(t *testing.T, output string) string {
 	t.Helper()
-	re := regexp.MustCompile(`id: (proc_\d+)`)
+	re := regexp.MustCompile(`id: (bg_\d+)`)
 	m := re.FindStringSubmatch(output)
 	if len(m) != 2 {
 		t.Fatalf("could not extract background id from %q", output)
@@ -232,7 +284,7 @@ func extractBackgroundID(t *testing.T, output string) string {
 
 func extractRestartedBackgroundID(t *testing.T, output string) string {
 	t.Helper()
-	re := regexp.MustCompile(`new_id: (proc_\d+)`)
+	re := regexp.MustCompile(`new_id: (bg_\d+)`)
 	m := re.FindStringSubmatch(output)
 	if len(m) != 2 {
 		t.Fatalf("could not extract restarted background id from %q", output)

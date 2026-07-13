@@ -101,6 +101,7 @@ type Event struct {
 }
 
 type AuditEntry struct {
+	EventID    string
 	Action     string
 	SessionID  string
 	Kind       Kind
@@ -117,21 +118,24 @@ type SweepOptions struct {
 	IdleTimeout    time.Duration
 	MaxLifetime    time.Duration
 	DetectStale    bool
+	DryRun         bool
 }
 
 type SweepResult struct {
-	Removed int
-	Stopped int
-	Stale   int
+	Removed     int
+	Stopped     int
+	Stale       int
+	AffectedIDs []string
 }
 
 type Manager struct {
-	mu        sync.RWMutex
-	nextID    uint64
-	nextSubID uint64
-	sessions  map[string]*managedSession
-	callbacks map[uint64]func(Event)
-	audit     []AuditEntry
+	mu           sync.RWMutex
+	nextID       uint64
+	nextSubID    uint64
+	sessions     map[string]*managedSession
+	callbacks    map[uint64]func(Event)
+	audit        []AuditEntry
+	auditEventID uint64
 }
 
 var defaultManager = New()
@@ -227,7 +231,7 @@ func (m *Manager) Start(ctx context.Context, opts StartOptions) (*Session, error
 	}
 
 	now := time.Now()
-	id := fmt.Sprintf("proc_%d", atomic.AddUint64(&m.nextID, 1))
+	id := m.generateID(opts.Kind)
 	optsCopy := opts
 	optsCopy.Args = append([]string(nil), opts.Args...)
 	optsCopy.Env = append([]string(nil), opts.Env...)
@@ -247,6 +251,15 @@ func (m *Manager) Start(ctx context.Context, opts StartOptions) (*Session, error
 	go ms.capture("stderr", stderr)
 	go ms.wait()
 	return ms.snapshot(), nil
+}
+
+func (m *Manager) generateID(kind Kind) string {
+	prefix := "proc_"
+	if kind == KindBackground {
+		prefix = "bg_"
+	}
+	id := atomic.AddUint64(&m.nextID, 1)
+	return fmt.Sprintf("%s%d", prefix, id)
 }
 
 func (m *Manager) List() []Session {
@@ -391,11 +404,15 @@ func (m *Manager) Detach(id string) (*Session, error) {
 }
 
 func (m *Manager) CleanupFinished(maxAge time.Duration) int {
+	return m.CleanupFinishedResult(maxAge, false).Removed
+}
+
+func (m *Manager) CleanupFinishedResult(maxAge time.Duration, dryRun bool) SweepResult {
 	if maxAge < 0 {
 		maxAge = 0
 	}
 	cutoff := time.Now().Add(-maxAge)
-	removed := 0
+	var result SweepResult
 	var removedEvents []Event
 	m.mu.Lock()
 	for id, session := range m.sessions {
@@ -404,38 +421,45 @@ func (m *Manager) CleanupFinished(maxAge time.Duration) int {
 			continue
 		}
 		if !snapshot.ExitedAt.IsZero() && snapshot.ExitedAt.Before(cutoff) {
-			delete(m.sessions, id)
-			m.appendAuditLocked("cleanup", *snapshot)
-			removedEvents = append(removedEvents, Event{Type: EventCleanup, Session: *snapshot, Message: "removed completed session", Time: time.Now()})
-			removed++
+			result.AffectedIDs = append(result.AffectedIDs, id)
+			result.Removed++
+			if !dryRun {
+				removedEvents = append(removedEvents, Event{Type: EventCleanup, Session: *snapshot, Message: "removed completed session", Time: time.Now()})
+				delete(m.sessions, id)
+				m.appendAuditLocked("cleanup", *snapshot)
+			}
 		}
 	}
 	m.mu.Unlock()
 	for _, event := range removedEvents {
 		m.notify(event)
 	}
-	return removed
+	return result
 }
 
 func (m *Manager) Sweep(opts SweepOptions) SweepResult {
-	result := SweepResult{Removed: m.CleanupFinished(opts.FinishedMaxAge)}
+	cleanupResult := m.CleanupFinishedResult(opts.FinishedMaxAge, opts.DryRun)
+	result := SweepResult{Removed: cleanupResult.Removed, AffectedIDs: cleanupResult.AffectedIDs}
 	now := time.Now()
 	for _, sess := range m.List() {
 		if sess.Status != StatusRunning {
 			continue
 		}
 		if opts.DetectStale && !processAlive(sess.PID) {
-			if ms, ok := m.get(sess.ID); ok {
-				ms.mu.Lock()
-				ms.meta.Status = StatusFailed
-				ms.meta.ExitedAt = now
-				ms.meta.LastActivityAt = now
-				ms.meta.Error = "process is no longer alive"
-				ms.mu.Unlock()
-				snapshot := ms.snapshot()
-				m.recordAudit("stale", snapshot)
-				m.notify(Event{Type: EventStale, Session: *snapshot, Message: snapshot.Error, Time: now})
-				result.Stale++
+			result.AffectedIDs = append(result.AffectedIDs, sess.ID)
+			result.Stale++
+			if !opts.DryRun {
+				if ms, ok := m.get(sess.ID); ok {
+					ms.mu.Lock()
+					ms.meta.Status = StatusFailed
+					ms.meta.ExitedAt = now
+					ms.meta.LastActivityAt = now
+					ms.meta.Error = "process is no longer alive"
+					ms.mu.Unlock()
+					snapshot := ms.snapshot()
+					m.recordAudit("stale", snapshot)
+					m.notify(Event{Type: EventStale, Session: *snapshot, Message: snapshot.Error, Time: now})
+				}
 			}
 			continue
 		}
@@ -448,14 +472,18 @@ func (m *Manager) Sweep(opts SweepOptions) SweepResult {
 			maxLifetime = sess.MaxLifetime
 		}
 		if idleTimeout > 0 && now.Sub(sess.LastActivityAt) >= idleTimeout {
-			if err := m.Stop(sess.ID); err == nil {
-				result.Stopped++
+			result.AffectedIDs = append(result.AffectedIDs, sess.ID)
+			result.Stopped++
+			if !opts.DryRun {
+				m.Stop(sess.ID)
 			}
 			continue
 		}
 		if maxLifetime > 0 && now.Sub(sess.StartedAt) >= maxLifetime {
-			if err := m.Stop(sess.ID); err == nil {
-				result.Stopped++
+			result.AffectedIDs = append(result.AffectedIDs, sess.ID)
+			result.Stopped++
+			if !opts.DryRun {
+				m.Stop(sess.ID)
 			}
 		}
 	}
@@ -597,7 +625,9 @@ func (m *Manager) recordAudit(action string, sess *Session) {
 }
 
 func (m *Manager) appendAuditLocked(action string, sess Session) {
-	m.audit = append(m.audit, AuditEntry{Action: action, SessionID: sess.ID, Kind: sess.Kind, Status: sess.Status, Command: sess.Command, Args: append([]string(nil), sess.Args...), Cwd: sess.Cwd, EnvSummary: append([]string(nil), sess.EnvSummary...), Time: time.Now()})
+	m.auditEventID++
+	eventID := fmt.Sprintf("evt_%d", m.auditEventID)
+	m.audit = append(m.audit, AuditEntry{EventID: eventID, Action: action, SessionID: sess.ID, Kind: sess.Kind, Status: sess.Status, Command: sess.Command, Args: append([]string(nil), sess.Args...), Cwd: sess.Cwd, EnvSummary: append([]string(nil), sess.EnvSummary...), Time: time.Now()})
 }
 
 func processAlive(pid int) bool {

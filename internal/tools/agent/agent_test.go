@@ -449,3 +449,107 @@ func TestOutputMissingID(t *testing.T) {
 		t.Error("expected error for missing agent_id")
 	}
 }
+
+func TestAgentStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "content": "idle"}}}})
+	}))
+	defer server.Close()
+	pool := worker.NewPool()
+	wrk, err := pool.Spawn("status test", "code", llm.NewClient(llm.Config{BaseURL: server.URL, Model: "mock", APIKey: "test"}), toolset.NewRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := (&Status{Pool: pool}).Execute(map[string]any{"agent_id": wrk.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, wrk.ID) {
+		t.Fatalf("expected agent status output with ID, got %q", out)
+	}
+	_, err = (&Status{Pool: pool}).Execute(map[string]any{"agent_id": "missing"})
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected not-found error, got %v", err)
+	}
+	_, err = (&Status{Pool: nil}).Execute(map[string]any{"agent_id": wrk.ID})
+	if err == nil || !strings.Contains(err.Error(), "unavailable") {
+		t.Fatalf("expected pool unavailable error, got %v", err)
+	}
+}
+
+func TestAgentCleanup(t *testing.T) {
+	pool := worker.NewPool()
+	cleanup := &Cleanup{Pool: pool}
+	out, err := cleanup.Execute(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "no agents to clean up") {
+		t.Fatalf("expected no agents message, got %q", out)
+	}
+	_, err = (&Cleanup{Pool: nil}).Execute(nil)
+	if err == nil || !strings.Contains(err.Error(), "unavailable") {
+		t.Fatalf("expected pool unavailable error, got %v", err)
+	}
+}
+
+func TestAgentCleanupDryRun(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "content": "done"}}}})
+	}))
+	defer server.Close()
+	pool := worker.NewPool()
+	w, err := pool.Spawn("cleanup-dry", "code", llm.NewClient(llm.Config{BaseURL: server.URL, Model: "mock", APIKey: "test"}), toolset.NewRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForWorkerStatus(t, w, worker.StatusCompleted)
+	out, err := (&Cleanup{Pool: pool}).Execute(map[string]any{"dry_run": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "dry-run") || !strings.Contains(out, "would_remove: 1") {
+		t.Fatalf("expected dry-run output, got %q", out)
+	}
+	if pool.Get(w.ID) == nil {
+		t.Fatal("expected worker to remain after dry-run")
+	}
+}
+
+func TestAgentAudit(t *testing.T) {
+	pool := worker.NewPool()
+	audit := &Audit{Pool: pool}
+	out, err := audit.Execute(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "no agent audit entries") {
+		t.Fatalf("expected no entries message, got %q", out)
+	}
+	_, err = (&Audit{Pool: nil}).Execute(nil)
+	if err == nil || !strings.Contains(err.Error(), "unavailable") {
+		t.Fatalf("expected pool unavailable error, got %v", err)
+	}
+}
+
+func TestAgentAuditJSONFormat(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "content": "done"}}}})
+	}))
+	defer server.Close()
+	pool := worker.NewPool()
+	_, err := pool.Spawn("json-audit", "code", llm.NewClient(llm.Config{BaseURL: server.URL, Model: "mock", APIKey: "test"}), toolset.NewRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := (&Audit{Pool: pool}).Execute(map[string]any{"format": "json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out, "[") || !strings.Contains(out, "event_id") {
+		t.Fatalf("expected JSON audit output, got %q", out)
+	}
+}

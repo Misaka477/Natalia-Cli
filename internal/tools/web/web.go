@@ -665,9 +665,9 @@ func (t *Fetch) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"url":           {Type: "string", Description: "要获取的 URL"},
 		"format":        {Type: "string", Description: "可选，text|markdown|html，默认 text"},
-		"timeout":       {Type: "string", Description: "可选，超时秒数，默认 60，范围 1-120"},
-		"max_bytes":     {Type: "string", Description: "可选，最多读取响应字节数，默认 1048576，最大 5242880"},
-		"include_links": {Type: "string", Description: "可选，设为 true 时在 text/markdown 输出中包含页面链接引用"},
+		"timeout":       {Type: "integer", Description: "可选，超时秒数，默认 60，范围 1-120"},
+		"max_bytes":     {Type: "integer", Description: "可选，最多读取响应字节数，默认 1048576，最大 5242880"},
+		"include_links": {Type: "boolean", Description: "可选，设为 true 时在 text/markdown 输出中包含页面链接引用"},
 	}
 }
 func (t *Fetch) Execute(args map[string]any) (string, error) {
@@ -707,6 +707,11 @@ func (t *Fetch) Execute(args map[string]any) (string, error) {
 		return "", fmt.Errorf("HTTP %d: 页面无法访问", resp.StatusCode)
 	}
 
+	finalURL := u
+	if resp.Request != nil && resp.Request.URL != nil {
+		finalURL = resp.Request.URL.String()
+	}
+
 	bodyReader, err := decodedResponseBody(resp)
 	if err != nil {
 		return "", fmt.Errorf("解码响应失败: %w", err)
@@ -717,31 +722,48 @@ func (t *Fetch) Execute(args map[string]any) (string, error) {
 	}
 
 	contentType := resp.Header.Get("Content-Type")
+	metadata := formatFetchMetadata(finalURL, resp.StatusCode, contentType, len(body), truncated)
+
 	if isBinaryResponse(contentType, body) {
-		return fmt.Sprintf("Binary response not included. URL: %s\nContent-Type: %s\nRead: %d bytes\nTruncated: %t", u, contentType, len(body), truncated), nil
+		return metadata + "\nBinary response not included.", nil
 	}
 	bodyText, err := decodeTextBody(body, contentType)
 	if err != nil {
 		return "", fmt.Errorf("字符集解码失败: %w", err)
 	}
 	if format == "html" {
-		return appendTruncationMarker(bodyText, truncated, maxBytes), nil
+		return metadata + "\n" + appendTruncationMarker(bodyText, truncated, maxBytes), nil
 	}
 	if strings.Contains(contentType, "text/plain") || strings.Contains(contentType, "text/markdown") {
-		return appendTruncationMarker(bodyText, truncated, maxBytes), nil
+		return metadata + "\n" + appendTruncationMarker(bodyText, truncated, maxBytes), nil
 	}
 	if strings.Contains(contentType, "application/json") {
-		return appendTruncationMarker(bodyText, truncated, maxBytes), nil
+		return metadata + "\n" + appendTruncationMarker(bodyText, truncated, maxBytes), nil
 	}
 
-	text, err := renderHTMLBody(bodyText, u, format, includeLinks)
+	text, err := renderHTMLBody(bodyText, finalURL, format, includeLinks)
 	if err != nil {
-		return "", fmt.Errorf("HTML 解析失败: %w", err)
+		return metadata + "\nHTML parse error: " + err.Error() + "\n\nRaw body:\n" + truncateString(bodyText, 4000), nil
 	}
 	if text == "" {
-		return fmt.Sprintf("no content extracted from page (may require JavaScript rendering)\nURL: %s\nContent-Type: %s\nStatus: %d\nRead: %d bytes", u, contentType, resp.StatusCode, len(body)), nil
+		fallback := bodyText
+		if len(fallback) > 4000 {
+			fallback = fallback[:4000] + "\n[body truncated at 4000 chars]"
+		}
+		return metadata + "\nNo content extracted.\n\nRaw body:\n" + fallback, nil
 	}
-	return appendTruncationMarker(text, truncated, maxBytes), nil
+	return metadata + "\n" + appendTruncationMarker(text, truncated, maxBytes), nil
+}
+
+func formatFetchMetadata(urlStr string, status int, contentType string, bytes int, truncated bool) string {
+	return fmt.Sprintf("URL: %s\nStatus: %d\nContent-Type: %s\nBytes: %d\nTruncated: %t", urlStr, status, contentType, bytes, truncated)
+}
+
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "\n[truncated]"
 }
 
 func parseFetchFormat(args map[string]any) (string, error) {

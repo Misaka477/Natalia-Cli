@@ -78,7 +78,7 @@ func TestDefaultToolsetExecutesModelStyleToolFlowEndToEnd(t *testing.T) {
 	mustExecTool(t, r, "glob", map[string]any{"pattern": "*.txt", "path": dir}, "flow.txt")
 	mustExecTool(t, r, "run_shell", map[string]any{"command": "printf shell-ok", "cwd": dir, "timeout": "5"}, "shell-ok")
 	mustExecTool(t, r, "todo_set", map[string]any{"items": []any{"one", "two"}}, "2")
-	mustExecTool(t, r, "todo_done", map[string]any{"index": float64(2)}, "完成")
+	mustExecTool(t, r, "todo_done", map[string]any{"index": float64(2)}, "completed")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "text/html")

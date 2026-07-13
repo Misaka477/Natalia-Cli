@@ -230,7 +230,7 @@ func TestInteractiveWriteSubmitsSingleLineByDefault(t *testing.T) {
 	if _, err := (&Write{}).Execute(map[string]any{"id": "tty_fake", "input": "echo ready"}); err != nil {
 		t.Fatal(err)
 	}
-	if fake.lastInput != "echo ready\n" {
+	if fake.lastInput != "echo ready\r" {
 		t.Fatalf("expected default write to submit line, got %q", fake.lastInput)
 	}
 	if _, err := (&Write{}).Execute(map[string]any{"id": "tty_fake", "input": "partial", "submit": false}); err != nil {

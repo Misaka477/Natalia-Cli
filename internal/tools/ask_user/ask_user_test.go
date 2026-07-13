@@ -129,7 +129,7 @@ func TestAskUserTimeoutUsesFallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if time.Since(started) > 2*time.Second || result != "default answer" {
-		t.Fatalf("expected quick fallback answer, result=%q elapsed=%s", result, time.Since(started))
+	if time.Since(started) > 2*time.Second || !strings.HasPrefix(result, "default answer") || !strings.Contains(result, "timeout") {
+		t.Fatalf("expected quick fallback answer with timeout source, result=%q elapsed=%s", result, time.Since(started))
 	}
 }

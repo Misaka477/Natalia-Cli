@@ -33,6 +33,7 @@ var builtInToolFactories = map[string]func() Tool{
 	"natalia/tools/todo:Add":               func() Tool { return &todo.Add{} },
 	"natalia/tools/todo:Done":              func() Tool { return &todo.Done{} },
 	"natalia/tools/todo:List":              func() Tool { return &todo.List{} },
+	"natalia/tools/todo:Update":            func() Tool { return &todo.Update{} },
 	"natalia/tools/ask_user:AskUser":       func() Tool { return &ask_user.AskUser{} },
 	"natalia/tools/browser:Visit":          func() Tool { return &browser.Visit{} },
 	"natalia/tools/browser:Screenshot":     func() Tool { return &browser.Screenshot{} },

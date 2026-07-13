@@ -44,6 +44,7 @@ type HTTPServerOptions struct {
 }
 
 type HTTPServer struct {
+	mu        sync.Mutex
 	wire      *Wire
 	server    *Server
 	handler   ServerHandler
@@ -54,6 +55,7 @@ type HTTPServer struct {
 	detachLog func()
 	startedAt time.Time
 	unixPath  string
+	closed    bool
 }
 
 func NewHTTPServer(w *Wire, handler ServerHandler) *HTTPServer {
@@ -102,13 +104,19 @@ func (s *HTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *HTTPServer) ListenAndServe(addr string) error {
-	s.http = &http.Server{Addr: addr, Handler: s}
-	return s.http.ListenAndServe()
+	server, err := s.setHTTPServer(&http.Server{Addr: addr, Handler: s}, "")
+	if err != nil {
+		return err
+	}
+	return server.ListenAndServe()
 }
 
 func (s *HTTPServer) ListenAndServeTLS(addr, certFile, keyFile string) error {
-	s.http = &http.Server{Addr: addr, Handler: s}
-	return s.http.ListenAndServeTLS(certFile, keyFile)
+	server, err := s.setHTTPServer(&http.Server{Addr: addr, Handler: s}, "")
+	if err != nil {
+		return err
+	}
+	return server.ListenAndServeTLS(certFile, keyFile)
 }
 
 func (s *HTTPServer) ListenAndServeUnix(path string) error {
@@ -119,26 +127,52 @@ func (s *HTTPServer) ListenAndServeUnix(path string) error {
 	if err != nil {
 		return err
 	}
-	s.unixPath = path
-	s.http = &http.Server{Handler: s}
-	err = s.http.Serve(ln)
+	server, err := s.setHTTPServer(&http.Server{Handler: s}, path)
+	if err != nil {
+		_ = ln.Close()
+		_ = os.Remove(path)
+		return err
+	}
+	err = server.Serve(ln)
 	_ = os.Remove(path)
 	return err
 }
 
 func (s *HTTPServer) Shutdown(ctx context.Context) error {
-	if s == nil || s.http == nil {
+	if s == nil {
 		return nil
 	}
-	if s.detachLog != nil {
-		s.detachLog()
-		s.detachLog = nil
+	s.mu.Lock()
+	s.closed = true
+	server := s.http
+	s.http = nil
+	unixPath := s.unixPath
+	s.unixPath = ""
+	detachLog := s.detachLog
+	s.detachLog = nil
+	s.mu.Unlock()
+	if detachLog != nil {
+		detachLog()
 	}
-	err := s.http.Shutdown(ctx)
-	if s.unixPath != "" {
-		_ = os.Remove(s.unixPath)
+	if server == nil {
+		return nil
+	}
+	err := server.Shutdown(ctx)
+	if unixPath != "" {
+		_ = os.Remove(unixPath)
 	}
 	return err
+}
+
+func (s *HTTPServer) setHTTPServer(server *http.Server, unixPath string) (*http.Server, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return nil, http.ErrServerClosed
+	}
+	s.http = server
+	s.unixPath = unixPath
+	return server, nil
 }
 
 func (s *HTTPServer) authorized(r *http.Request) bool {
@@ -167,13 +201,16 @@ func (s *HTTPServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	s.mu.Lock()
+	unixPath := s.unixPath
+	s.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"status":       "ok",
 		"transport":    "wire-http",
 		"uptime_ms":    time.Since(s.startedAt).Milliseconds(),
 		"auth_enabled": s.options.AuthToken != "",
-		"unix_socket":  s.unixPath,
+		"unix_socket":  unixPath,
 	})
 }
 

@@ -276,3 +276,39 @@ func TestLimitOutput(t *testing.T) {
 		t.Fatalf("expected truncated output marker, got %q", result)
 	}
 }
+
+func TestRunDryRun(t *testing.T) {
+	result, err := (&Run{}).Execute(map[string]any{"command": "echo hello", "dry_run": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "[dry_run]") || !strings.Contains(result, "echo hello") {
+		t.Fatalf("expected dry_run marker with command, got %q", result)
+	}
+}
+
+func TestRunMaxOutputNumeric(t *testing.T) {
+	result, err := (&Run{}).Execute(map[string]any{"command": "printf xxxx", "max_output": float64(80)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "output_cached_id") || !strings.Contains(result, "xxxx") {
+		t.Fatalf("expected numeric max_output to work, got %q", result)
+	}
+}
+
+func TestRunSuccessMetadata(t *testing.T) {
+	result, err := (&Run{}).Execute(map[string]any{"command": "printf hello", "timeout": "5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "exit_code:") || !strings.Contains(result, "duration:") || !strings.Contains(result, "stdout_bytes:") || !strings.Contains(result, "stderr_bytes:") {
+		t.Fatalf("expected success metadata, got %q", result)
+	}
+	if !strings.Contains(result, "--- STDOUT ---") || !strings.Contains(result, "--- STDERR ---") {
+		t.Fatalf("expected stdout/stderr sections, got %q", result)
+	}
+	if !strings.Contains(result, "hello") {
+		t.Fatalf("expected stdout content, got %q", result)
+	}
+}

@@ -1183,6 +1183,215 @@ func TestGlobRejectsInvalidLimit(t *testing.T) {
 	}
 }
 
+func TestWriteFileFullPath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "out.txt")
+	result, err := (&Write{}).Execute(map[string]any{"path": path, "content": "data"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, path) {
+		t.Fatalf("expected full path in output, got %q", result)
+	}
+}
+
+func TestWriteFileCreateOnly(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "out.txt")
+	_, err := (&Write{}).Execute(map[string]any{"path": path, "content": "first"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = (&Write{}).Execute(map[string]any{"path": path, "content": "second", "create_only": true})
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("expected create_only error, got %v", err)
+	}
+}
+
+func TestWriteFileBackup(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "out.txt")
+	if err := os.WriteFile(path, []byte("original"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := (&Write{}).Execute(map[string]any{"path": path, "content": "modified", "backup": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, path) {
+		t.Fatalf("expected path in output, got %q", result)
+	}
+	backupData, err := os.ReadFile(path + ".bak")
+	if err != nil {
+		t.Fatalf("backup not created: %v", err)
+	}
+	if string(backupData) != "original" {
+		t.Fatalf("backup has wrong content: %q", backupData)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "modified" {
+		t.Fatalf("modified file has wrong content: %q", data)
+	}
+}
+
+func TestWriteFileBackupOnCreate(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "new.txt")
+	result, err := (&Write{}).Execute(map[string]any{"path": path, "content": "new", "backup": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, path) {
+		t.Fatalf("expected path in output, got %q", result)
+	}
+	// backup should not be created since file didn't exist
+	if _, statErr := os.Stat(path + ".bak"); !os.IsNotExist(statErr) {
+		t.Fatalf("backup should not exist for new file, stat=%v", statErr)
+	}
+}
+
+func TestWriteFileDryRun(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "out.txt")
+	result, err := (&Write{}).Execute(map[string]any{"path": path, "content": "should-not-write", "dry_run": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "[dry_run]") {
+		t.Fatalf("expected dry_run marker, got %q", result)
+	}
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Fatalf("dry_run should not create file, stat=%v", statErr)
+	}
+}
+
+func TestEditMultipleExactMatchWarning(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "multi.txt")
+	if err := os.WriteFile(path, []byte("foo foo foo"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := (&Edit{}).Execute(map[string]any{"path": path, "old_string": "foo", "new_string": "bar"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "warning") || !strings.Contains(result, "3 matches") {
+		t.Fatalf("expected warning about multiple matches, got %q", result)
+	}
+	data, _ := os.ReadFile(path)
+	if string(data) != "bar foo foo" {
+		t.Fatalf("expected only first replaced, got %q", data)
+	}
+}
+
+func TestEditReplaceAllNoWarning(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "allmulti.txt")
+	if err := os.WriteFile(path, []byte("foo foo foo"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := (&Edit{}).Execute(map[string]any{"path": path, "old_string": "foo", "new_string": "bar", "replace_all": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(result, "warning") {
+		t.Fatalf("expected no warning with replace_all, got %q", result)
+	}
+	data, _ := os.ReadFile(path)
+	if string(data) != "bar bar bar" {
+		t.Fatalf("expected all replaced, got %q", data)
+	}
+}
+
+func TestEditRegexAutoMultiline(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "multiline.txt")
+	if err := os.WriteFile(path, []byte("line1\nline2\nline3"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := (&Edit{}).Execute(map[string]any{"path": path, "old_string": "^line", "new_string": "LINE", "regex": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "1 regex replacements") || !strings.Contains(result, "warning") {
+		t.Fatalf("expected 1 regex replacement with warning, got %q", result)
+	}
+	data, _ := os.ReadFile(path)
+	if string(data) != "LINE1\nline2\nline3" {
+		t.Fatalf("expected only first line replaced, got %q", data)
+	}
+}
+
+func TestEditRegexRespectsReplaceAll(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "allregex.txt")
+	if err := os.WriteFile(path, []byte("line1\nline2\nline3"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := (&Edit{}).Execute(map[string]any{"path": path, "old_string": "^line", "new_string": "LINE", "regex": true, "replace_all": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "3 regex replacements") || strings.Contains(result, "warning") {
+		t.Fatalf("expected 3 regex replacements without warning, got %q", result)
+	}
+	data, _ := os.ReadFile(path)
+	if string(data) != "LINE1\nLINE2\nLINE3" {
+		t.Fatalf("expected all lines replaced, got %q", data)
+	}
+}
+
+func TestEditRegexNoAnchorsDoesNotAutoMultiline(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "simple.txt")
+	if err := os.WriteFile(path, []byte("foo\nfoo\nfoo"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := (&Edit{}).Execute(map[string]any{"path": path, "old_string": "foo", "new_string": "bar", "regex": true, "replace_all": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	if string(data) != "bar\nbar\nbar" {
+		t.Fatalf("expected all foos replaced, got %q", data)
+	}
+	if strings.Contains(result, "warning") {
+		t.Fatalf("unexpected warning, got %q", result)
+	}
+}
+
+func TestReadFileMetadataIncludesSize(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "meta.txt")
+	os.WriteFile(path, []byte("hello world"), 0644)
+	result, err := (&Read{}).Execute(map[string]any{"path": path, "limit": "all"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "bytes") || !strings.Contains(result, "11 bytes") {
+		t.Fatalf("expected file size in metadata, got %q", result)
+	}
+}
+
+func TestGlobMetadataCount(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"a.go", "b.go", "c.go"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := (&Glob{}).Execute(map[string]any{"pattern": "*.go", "path": dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "[glob results: 3 files]") {
+		t.Fatalf("expected glob result count, got %q", result)
+	}
+}
+
 func TestGlobNoMatchAndOffsetBeyondTotal(t *testing.T) {
 	result, err := (&Glob{}).Execute(map[string]any{"pattern": "*.missing", "path": t.TempDir()})
 	if err != nil {
