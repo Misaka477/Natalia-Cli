@@ -41,7 +41,7 @@ func (s *Server) Run(ctx context.Context) error {
 	var handlers sync.WaitGroup
 	errCh := make(chan error, 1)
 
-	unsubscribe := s.wire.AddSink(func(msg WireMessage) {
+	unsubscribe, _ := s.wire.AddSink(func(msg WireMessage) {
 		_ = s.writeWireMessage(msg)
 	})
 	defer unsubscribe()

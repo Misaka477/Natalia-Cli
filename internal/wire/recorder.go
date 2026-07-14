@@ -50,9 +50,10 @@ func (r *Recorder) Attach(wire *Wire) func() {
 	if wire == nil {
 		return func() {}
 	}
-	return wire.AddSink(func(message WireMessage) {
+	detach, _ := wire.AddSink(func(message WireMessage) {
 		_ = r.Record(message)
 	})
+	return detach
 }
 
 func Replay(reader io.Reader) ([]WireMessage, error) {

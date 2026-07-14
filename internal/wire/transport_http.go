@@ -79,7 +79,8 @@ func NewHTTPServerWithOptions(w *Wire, handler ServerHandler, options HTTPServer
 	}
 	log := newTransportEventLog(maxTransportReplayEvents)
 	s := &HTTPServer{wire: w, server: NewServer(w, nil, io.Discard, handler), handler: handler, options: options, methods: methods, events: log, startedAt: time.Now()}
-	s.detachLog = w.AddSink(func(msg WireMessage) { log.append(msg) })
+	detach, _ := w.AddSink(func(msg WireMessage) { log.append(msg) })
+	s.detachLog = detach
 	return s
 }
 
@@ -329,16 +330,44 @@ func (s *HTTPServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	sessionID := strings.TrimSpace(r.URL.Query().Get("session_id"))
-	detach := s.wire.AddSink(func(msg WireMessage) {
-		if !messageMatchesSession(msg, sessionID) {
-			return
+	out := make(chan WireMessage, 64)
+	writerDone := make(chan struct{})
+	go func() {
+		defer close(writerDone)
+		for {
+			select {
+			case msg, ok := <-out:
+				if !ok {
+					return
+				}
+				if !messageMatchesSession(msg, sessionID) {
+					continue
+				}
+				data, err := MarshalWireMessage(msg)
+				if err == nil && len(data) > 0 {
+					_ = ws.writeText(data)
+				}
+			case <-ctx.Done():
+				return
+			}
 		}
-		data, err := MarshalWireMessage(msg)
-		if err == nil && len(data) > 0 {
-			_ = ws.writeText(data)
+	}()
+	detach, _ := s.wire.AddSink(func(msg WireMessage) {
+		select {
+		case out <- msg:
+		case <-writerDone:
+		case <-ctx.Done():
+		default:
+			if event, err := NewEvent(EventStatusUpdate, StatusUpdate{Diagnostics: []string{fmt.Sprintf("ws subscriber dropped events")}}); err == nil {
+				s.wire.SoulSide.PublishEvent(event)
+			}
 		}
 	})
-	defer detach()
+	defer func() {
+		close(out)
+		<-writerDone
+		detach()
+	}()
 	for {
 		payload, opcode, err := ws.readFrame()
 		if err != nil {

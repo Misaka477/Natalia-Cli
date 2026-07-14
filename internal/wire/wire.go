@@ -316,7 +316,7 @@ func (w *Wire) ResolveResponse(id string, result json.RawMessage) bool {
 	return w.pending.resolve(id, result)
 }
 
-func (w *Wire) AddSink(fn func(WireMessage)) func() {
+func (w *Wire) AddSink(fn func(WireMessage)) (func(), int) {
 	return w.sinks.add(fn)
 }
 
@@ -444,7 +444,7 @@ func newSyncSinks() *syncSinks {
 	return &syncSinks{sinks: make(map[int]func(WireMessage))}
 }
 
-func (s *syncSinks) add(fn func(WireMessage)) func() {
+func (s *syncSinks) add(fn func(WireMessage)) (func(), int) {
 	s.mu.Lock()
 	id := s.nextID
 	s.nextID++
@@ -454,7 +454,7 @@ func (s *syncSinks) add(fn func(WireMessage)) func() {
 		s.mu.Lock()
 		delete(s.sinks, id)
 		s.mu.Unlock()
-	}
+	}, id
 }
 
 func (s *syncSinks) publish(message WireMessage) {
