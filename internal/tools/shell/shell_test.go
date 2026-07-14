@@ -153,7 +153,7 @@ func TestRunBlocksDangerousCommand(t *testing.T) {
 	for _, command := range commands {
 		t.Run(command, func(t *testing.T) {
 			_, err := (&Run{}).Execute(map[string]any{"command": command})
-			if err == nil || !strings.Contains(err.Error(), "dangerous") || !strings.Contains(err.Error(), "confirmation") {
+			if err == nil || !strings.Contains(err.Error(), "dangerous") {
 				t.Fatalf("expected dangerous command rejection, got %v", err)
 			}
 		})

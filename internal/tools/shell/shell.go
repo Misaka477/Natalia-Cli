@@ -131,8 +131,13 @@ func (t *Run) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 	if params.Command == "" {
 		return toolreturn.Return{IsError: true}, fmt.Errorf("command is required")
 	}
-	if reason := DangerousCommandReason(params.Command); reason != "" && !dangerConfirmed(args) {
-		return toolreturn.Return{IsError: true}, fmt.Errorf("dangerous command requires explicit user confirmation: %s", reason)
+	d := commandpolicy.Evaluate("/bin/sh", []string{"-c", params.Command})
+	if d.Level != commandpolicy.LevelAllow && !dangerConfirmed(args) {
+		prefix := "dangerous command requires explicit user confirmation"
+		if d.Level == commandpolicy.LevelHardDeny {
+			prefix = "dangerous command is hard denied"
+		}
+		return toolreturn.Return{IsError: true}, fmt.Errorf("%s: %s", prefix, d.Reason)
 	}
 	shellPath, err := resolveShell(params.Shell)
 	if err != nil {
@@ -268,7 +273,11 @@ func (t *Run) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 }
 
 func DangerousCommandReason(command string) string {
-	return commandpolicy.Evaluate("/bin/sh", []string{"-c", command}).Reason
+	d := commandpolicy.Evaluate("/bin/sh", []string{"-c", command})
+	if d.Level == commandpolicy.LevelAllow {
+		return ""
+	}
+	return d.Reason
 }
 
 func MarkDangerConfirmed(args map[string]any) {

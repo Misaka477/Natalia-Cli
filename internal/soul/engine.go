@@ -533,10 +533,20 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 	dangerApproved := false
 	if command, commandArgs, ok := commandForTool(name, args); ok {
 		decision := commandpolicy.Evaluate(command, commandArgs)
-		if decision.RequiresConfirmation() {
-			desc := fmt.Sprintf("dangerous command requires explicit confirmation (%s): %s", decision.Reason, command)
-			blocks := approvalDisplayBlocks(name, args)
-			if e.Approver == nil || !e.Approver.RequestExplicitWithDisplay(name, desc, blocks) {
+		switch decision.Level {
+		case commandpolicy.LevelHardDeny:
+			result := fmt.Sprintf("dangerous command hard denied: %s", decision.Reason)
+			e.Context.Messages = append(e.Context.Messages, chat.Message{
+				Role:       chat.RoleTool,
+				ToolCallID: tc.ID,
+				Content:    e.budgetToolResult(name, result),
+				Name:       name,
+			})
+			e.emitToolResult(tc.ID, name, result, nil, "")
+			e.log("[ENGINE] dangerous command hard denied: %s", decision.Reason)
+			return nil
+		case commandpolicy.LevelExplicitApproval:
+			if e.Approver == nil || !e.Approver.RequestExplicitWithDisplay(name, fmt.Sprintf("dangerous command requires explicit confirmation (%s): %s", decision.Reason, command), approvalDisplayBlocks(name, args)) {
 				result := fmt.Sprintf("dangerous command rejected because explicit approval was not granted: %s", decision.Reason)
 				e.Context.Messages = append(e.Context.Messages, chat.Message{
 					Role:       chat.RoleTool,
