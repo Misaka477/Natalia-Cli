@@ -12,6 +12,7 @@ import (
 
 	"github.com/Misaka477/Natalia-Cli/internal/approval"
 	"github.com/Misaka477/Natalia-Cli/internal/chat"
+	"github.com/Misaka477/Natalia-Cli/internal/commandpolicy"
 	"github.com/Misaka477/Natalia-Cli/internal/compaction"
 	"github.com/Misaka477/Natalia-Cli/internal/contextbudget"
 	"github.com/Misaka477/Natalia-Cli/internal/display"
@@ -21,7 +22,6 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/prefetch"
 	"github.com/Misaka477/Natalia-Cli/internal/toolcache"
 	filetool "github.com/Misaka477/Natalia-Cli/internal/tools/file"
-	shelltool "github.com/Misaka477/Natalia-Cli/internal/tools/shell"
 	"github.com/Misaka477/Natalia-Cli/internal/toolset"
 )
 
@@ -34,14 +34,19 @@ func (e *BackToTheFuture) Error() string {
 }
 
 type SteerQueue struct {
+	mu    sync.Mutex
 	items []string
 }
 
 func (q *SteerQueue) Push(s string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	q.items = append(q.items, s)
 }
 
 func (q *SteerQueue) Pop() (string, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	if len(q.items) == 0 {
 		return "", false
 	}
@@ -455,6 +460,35 @@ func normalizeAssistantToolCalls(msg *chat.Message) {
 	}
 }
 
+func commandForTool(name string, args map[string]any) (string, []string, bool) {
+	command, _ := args["command"].(string)
+	if command == "" {
+		return "", nil, false
+	}
+	switch name {
+	case "run_shell":
+		return "/bin/sh", []string{"-c", command}, true
+	case "process_start", "background_start", "interactive_start":
+		return command, commandArgs(args["args"]), true
+	default:
+		return "", nil, false
+	}
+}
+
+func commandArgs(raw any) []string {
+	values, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	args := make([]string, 0, len(values))
+	for _, value := range values {
+		if arg, ok := value.(string); ok {
+			args = append(args, arg)
+		}
+	}
+	return args
+}
+
 func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 	name := tc.Function.Name
 	var args map[string]any
@@ -497,26 +531,25 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 	}
 
 	dangerApproved := false
-	if name == "run_shell" {
-		if command, _ := args["command"].(string); command != "" {
-			if reason := shelltool.DangerousCommandReason(command); reason != "" {
-				desc := fmt.Sprintf("危险命令需要二次确认 (%s): %s", reason, command)
-				blocks := approvalDisplayBlocks(name, args)
-				if e.Approver == nil || !e.Approver.RequestExplicitWithDisplay(name, desc, blocks) {
-					result := fmt.Sprintf("危险命令未获用户二次确认，已拒绝执行: %s", reason)
-					e.Context.Messages = append(e.Context.Messages, chat.Message{
-						Role:       chat.RoleTool,
-						ToolCallID: tc.ID,
-						Content:    e.budgetToolResult(name, result),
-						Name:       name,
-					})
-					e.emitToolResult(tc.ID, name, result, nil, "")
-					e.log("[ENGINE] dangerous shell rejected: %s", reason)
-					return nil
-				}
-				shelltool.MarkDangerConfirmed(args)
-				dangerApproved = true
+	if command, commandArgs, ok := commandForTool(name, args); ok {
+		decision := commandpolicy.Evaluate(command, commandArgs)
+		if decision.RequiresConfirmation() {
+			desc := fmt.Sprintf("dangerous command requires explicit confirmation (%s): %s", decision.Reason, command)
+			blocks := approvalDisplayBlocks(name, args)
+			if e.Approver == nil || !e.Approver.RequestExplicitWithDisplay(name, desc, blocks) {
+				result := fmt.Sprintf("dangerous command rejected because explicit approval was not granted: %s", decision.Reason)
+				e.Context.Messages = append(e.Context.Messages, chat.Message{
+					Role:       chat.RoleTool,
+					ToolCallID: tc.ID,
+					Content:    e.budgetToolResult(name, result),
+					Name:       name,
+				})
+				e.emitToolResult(tc.ID, name, result, nil, "")
+				e.log("[ENGINE] dangerous command rejected: %s", decision.Reason)
+				return nil
 			}
+			commandpolicy.MarkConfirmed(args)
+			dangerApproved = true
 		}
 	}
 

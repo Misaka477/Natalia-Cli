@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Misaka477/Natalia-Cli/internal/commandpolicy"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	"github.com/Misaka477/Natalia-Cli/internal/processmgr"
 )
@@ -35,6 +36,9 @@ func (t *Start) Execute(args map[string]any) (string, error) {
 	}
 	argv, err := parseArgs(args["args"])
 	if err != nil {
+		return "", err
+	}
+	if err := commandpolicy.RequireConfirmation(args, commandpolicy.Evaluate(command, argv)); err != nil {
 		return "", err
 	}
 	env, err := parseEnv(args["env"])

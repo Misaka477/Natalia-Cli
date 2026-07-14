@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Misaka477/Natalia-Cli/internal/commandpolicy"
 	"github.com/Misaka477/Natalia-Cli/internal/display"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	"github.com/Misaka477/Natalia-Cli/internal/secret"
@@ -267,26 +268,12 @@ func (t *Run) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 }
 
 func DangerousCommandReason(command string) string {
-	normalized := strings.ToLower(strings.Join(strings.Fields(command), " "))
-	blocked := []string{
-		"rm -rf /",
-		"rm -rf /*",
-		"sudo rm -rf /",
-		"sudo rm -rf /*",
-		"mkfs",
-		"dd if=/dev/zero of=/dev/",
-		":(){ :|:& };:",
-	}
-	for _, pattern := range blocked {
-		if strings.Contains(normalized, pattern) {
-			return pattern
-		}
-	}
-	return ""
+	return commandpolicy.Evaluate("/bin/sh", []string{"-c", command}).Reason
 }
 
 func MarkDangerConfirmed(args map[string]any) {
 	args[dangerConfirmedArg] = true
+	commandpolicy.MarkConfirmed(args)
 }
 
 func dangerConfirmed(args map[string]any) bool {
@@ -295,7 +282,7 @@ func dangerConfirmed(args map[string]any) bool {
 
 func IsDangerConfirmed(args map[string]any) bool {
 	confirmed, _ := args[dangerConfirmedArg].(bool)
-	return confirmed
+	return confirmed || commandpolicy.IsConfirmed(args)
 }
 
 func resolveShell(shell string) (string, error) {

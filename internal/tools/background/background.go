@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Misaka477/Natalia-Cli/internal/commandpolicy"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	"github.com/Misaka477/Natalia-Cli/internal/processmgr"
-	"github.com/Misaka477/Natalia-Cli/internal/tools/shell"
 )
 
 type Start struct{}
@@ -38,8 +38,8 @@ func (t *Start) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if reason := shell.DangerousCommandReason(strings.TrimSpace(command + " " + strings.Join(argv, " "))); reason != "" {
-		return "", fmt.Errorf("dangerous background command blocked: %s", reason)
+	if err := commandpolicy.RequireConfirmation(args, commandpolicy.Evaluate(command, argv)); err != nil {
+		return "", err
 	}
 	env, err := parseEnv(args["env"])
 	if err != nil {

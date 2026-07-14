@@ -307,6 +307,14 @@ func TestProcessListOnlyProcessKind(t *testing.T) {
 	}
 }
 
+func TestProcessStartRejectsUnconfirmedDangerousCommand(t *testing.T) {
+	resetManager()
+	_, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "args": []any{"-c", "shutdown now"}})
+	if err == nil || !strings.Contains(err.Error(), "explicit user confirmation") {
+		t.Fatalf("expected dangerous process rejection, got %v", err)
+	}
+}
+
 func waitForProcessStatus(t *testing.T, id, want string) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -51,6 +52,33 @@ func TestRollbackToRestoresContext(t *testing.T) {
 	}
 	if snapshotter.rolledBackTo != 1 || engine.Context.StepCount != 1 || len(engine.Context.Messages) != 1 {
 		t.Fatalf("rollback did not restore state: snapshot=%d step=%d messages=%v", snapshotter.rolledBackTo, engine.Context.StepCount, engine.Context.Messages)
+	}
+}
+
+func TestSteerQueueConcurrentPushPop(t *testing.T) {
+	q := &SteerQueue{}
+	const total = 1000
+	var producers sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		producers.Add(1)
+		go func() {
+			defer producers.Done()
+			for j := 0; j < total/4; j++ {
+				q.Push("steer")
+			}
+		}()
+	}
+	producers.Wait()
+	count := 0
+	for {
+		_, ok := q.Pop()
+		if !ok {
+			break
+		}
+		count++
+	}
+	if count != total {
+		t.Fatalf("expected %d queued steer messages, got %d", total, count)
 	}
 }
 
@@ -557,10 +585,41 @@ func TestExecuteToolCallDangerousShellRequiresExplicitApproval(t *testing.T) {
 	if !requested {
 		t.Fatal("expected explicit approval request")
 	}
-	if len(engine.Context.Messages) != 1 || !strings.Contains(engine.Context.Messages[0].Content, "未获用户二次确认") {
+	if len(engine.Context.Messages) != 1 || !strings.Contains(engine.Context.Messages[0].Content, "explicit approval was not granted") {
 		t.Fatalf("expected dangerous shell rejection in context, got %+v", engine.Context.Messages)
 	}
 }
+
+func TestExecuteToolCallDangerousProcessRequiresExplicitApproval(t *testing.T) {
+	tools := toolset.NewRegistry()
+	processTool := &commandToolForTest{name: "process_start"}
+	tools.Register(processTool)
+	engine := NewEngine(nil, tools)
+	engine.Approver = &approval.Approver{Mode: approval.ModeJustDoIt, RequestFunc: func(string, string) bool { return true }}
+	err := engine.executeToolCall(chat.ToolCall{ID: "tc_process", Type: "function", Function: chat.ToolCallFunc{Name: "process_start", Arguments: `{"command":"/bin/sh","args":["-c","shutdown now"]}`}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !processTool.executed || !processTool.confirmed {
+		t.Fatalf("expected confirmed process tool execution, got %+v", processTool)
+	}
+}
+
+type commandToolForTest struct {
+	name      string
+	executed  bool
+	confirmed bool
+}
+
+func (t *commandToolForTest) Name() string        { return t.name }
+func (t *commandToolForTest) Description() string { return t.name }
+func (t *commandToolForTest) Execute(args map[string]any) (string, error) {
+	t.executed = true
+	t.confirmed = args["__natalia_command_policy_confirmed"] == true
+	return "ok", nil
+}
+func (t *commandToolForTest) Parameters() map[string]llm.Property { return nil }
+func (t *commandToolForTest) Required() []string                  { return nil }
 
 func TestExecuteToolCallDangerousShellRunsAfterExplicitApproval(t *testing.T) {
 	tools := toolset.NewRegistry()
