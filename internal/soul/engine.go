@@ -120,6 +120,18 @@ func (e *Engine) log(format string, args ...any) {
 	}
 }
 
+func (e *Engine) appendMessage(msg chat.Message) {
+	e.Context.Messages = append(e.Context.Messages, msg)
+}
+
+func (e *Engine) replaceMessages(messages []chat.Message) {
+	e.Context.Messages = messages
+}
+
+func (e *Engine) restoreCheckpoint(cp *chat.Checkpoint) {
+	cp.Restore(e.Context)
+}
+
 type Outcome struct {
 	StopReason   string
 	FinalMessage string
@@ -164,7 +176,7 @@ func (e *Engine) Run(userInput string) (*Outcome, error) {
 	}
 	e.log("[ENGINE] Run: %s", userInput)
 	e.triggerHook(hook.EventUserPromptSubmit, "user_prompt", map[string]any{"user_input": userInput})
-	e.Context.Messages = append(e.Context.Messages, chat.Message{
+	e.appendMessage(chat.Message{
 		Role:    chat.RoleUser,
 		Content: userInput,
 	})
@@ -174,7 +186,7 @@ func (e *Engine) Run(userInput string) (*Outcome, error) {
 		return nil, err
 	}
 	if msg != "" {
-		e.Context.Messages = append(e.Context.Messages, chat.Message{
+		e.appendMessage(chat.Message{
 			Role:    chat.RoleUser,
 			Content: msg,
 		})
@@ -254,7 +266,7 @@ func (e *Engine) agentLoop() *Outcome {
 				result, err := e.Compactor.Compact(e.Context.Messages, e.LLM)
 				e.emitCompactEnd()
 				if err == nil {
-					e.Context.Messages = result.Messages
+					e.replaceMessages(result.Messages)
 					e.notifyContextCompacted()
 					e.notify("compaction", fmt.Sprintf("压缩完成，估计 %d tokens", result.EstimatedTokens))
 				}
@@ -267,7 +279,7 @@ func (e *Engine) agentLoop() *Outcome {
 			return outcome
 		}
 		if outcome.StopReason == "back_to_future" {
-			cp.Restore(e.Context)
+			e.restoreCheckpoint(cp)
 			continue
 		}
 		if outcome.StopReason == "error" {
@@ -279,7 +291,7 @@ func (e *Engine) agentLoop() *Outcome {
 			return &Outcome{StopReason: "error", FinalMessage: err.Error()}
 		}
 		if steerMsg != "" {
-			e.Context.Messages = append(e.Context.Messages, chat.Message{
+			e.appendMessage(chat.Message{
 				Role:    chat.RoleUser,
 				Content: steerMsg,
 			})
@@ -378,7 +390,7 @@ func (e *Engine) step() *Outcome {
 
 	hasContent := msg.Content != "" || len(msg.ToolCalls) > 0
 	if hasContent {
-		e.Context.Messages = append(e.Context.Messages, *msg)
+		e.appendMessage(*msg)
 	}
 
 	if usage != nil {
@@ -528,7 +540,7 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 	tool, ok := e.Tools.Get(name)
 	if !ok {
 		result := fmt.Sprintf("错误：工具 %s 不存在", name)
-		e.Context.Messages = append(e.Context.Messages, chat.Message{
+		e.appendMessage(chat.Message{
 			Role:       chat.RoleTool,
 			ToolCallID: tc.ID,
 			Content:    e.budgetToolResult(name, result),
@@ -541,7 +553,7 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 	// Mode check: tool not allowed in current mode
 	if e.Mode != nil && !e.Mode.ToolFilter(name, args) {
 		result := fmt.Sprintf("当前模式 %q 不允许使用工具 %s", e.Mode.Name, name)
-		e.Context.Messages = append(e.Context.Messages, chat.Message{
+		e.appendMessage(chat.Message{
 			Role:       chat.RoleTool,
 			ToolCallID: tc.ID,
 			Content:    e.budgetToolResult(name, result),
@@ -557,7 +569,7 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 		switch decision.Level {
 		case commandpolicy.LevelHardDeny:
 			result := fmt.Sprintf("dangerous command hard denied: %s", decision.Reason)
-			e.Context.Messages = append(e.Context.Messages, chat.Message{
+			e.appendMessage(chat.Message{
 				Role:       chat.RoleTool,
 				ToolCallID: tc.ID,
 				Content:    e.budgetToolResult(name, result),
@@ -572,7 +584,7 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 				if e.Approver != nil && e.Approver.DecisionRecorder != nil {
 					e.Approver.DecisionRecorder(name, "explicit_approval", "rejected", decision.Reason)
 				}
-				e.Context.Messages = append(e.Context.Messages, chat.Message{
+				e.appendMessage(chat.Message{
 					Role:       chat.RoleTool,
 					ToolCallID: tc.ID,
 					Content:    e.budgetToolResult(name, result),
@@ -597,7 +609,7 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 		desc, blocks := approvalPreview(name, args)
 		if !e.Approver.RequestWithDisplay(name, desc, blocks) {
 			result := fmt.Sprintf("操作被用户拒绝: %s %v", name, args)
-			e.Context.Messages = append(e.Context.Messages, chat.Message{
+			e.appendMessage(chat.Message{
 				Role:       chat.RoleTool,
 				ToolCallID: tc.ID,
 				Content:    e.budgetToolResult(name, result),
@@ -796,7 +808,7 @@ func (e *Engine) refreshReadFileCache(path string) {
 }
 
 func (e *Engine) appendToolResult(toolCallID, name, content string) {
-	e.Context.Messages = append(e.Context.Messages, chat.Message{
+	e.appendMessage(chat.Message{
 		Role:       chat.RoleTool,
 		ToolCallID: toolCallID,
 		Content:    e.budgetToolResult(name, content),
@@ -866,7 +878,7 @@ func (e *Engine) CompactNow() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("compaction failed: %w", err)
 	}
-	e.Context.Messages = result.Messages
+	e.replaceMessages(result.Messages)
 	return fmt.Sprintf("压缩完成，估计 %d tokens", result.EstimatedTokens), nil
 }
 
