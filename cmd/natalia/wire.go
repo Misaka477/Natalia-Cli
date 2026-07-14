@@ -97,6 +97,11 @@ func runWireWithOptions(cfg *config.Config, tools *toolset.Registry, in io.Reade
 
 func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug bool, opts wireRunOptions) (*wireRuntimeServer, error) {
 	w := wire.NewWire()
+	w.SetPendingOnExpired(func(requestID, reason string) {
+		if event, err := wire.NewEvent(wire.EventStatusUpdate, wire.StatusUpdate{Diagnostics: []string{fmt.Sprintf("pending %s expired: %s", requestID, reason)}}); err == nil {
+			w.SoulSide.PublishEvent(event)
+		}
+	})
 	engine := buildEngine(cfg, tools, debug)
 	registerAgentToolsForEngine(cfg, engine, tools)
 	var approvalCtxMu sync.RWMutex
@@ -269,6 +274,7 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 		return requestWireQuestion(activeCtx, w, req)
 	})
 	return &wireRuntimeServer{w: w, handler: handler, close: func() {
+		w.Close()
 		clearQuestionHandler()
 		closeRecorder()
 		detachRuntimeEvents()

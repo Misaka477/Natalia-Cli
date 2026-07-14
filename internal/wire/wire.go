@@ -75,6 +75,7 @@ type Wire struct {
 	raw      *broadcastQueue
 	pending  *pendingResponses
 	sinks    *syncSinks
+	stopSweep chan struct{}
 }
 
 type WireSoulSide struct {
@@ -261,17 +262,31 @@ func NewRequest(id string, requestType RequestType, payload any) (WireRequest, e
 
 func NewWire() *Wire {
 	w := &Wire{
-		raw:     newBroadcastQueue(),
-		pending: newPendingResponses(),
-		sinks:   newSyncSinks(),
+		raw:       newBroadcastQueue(),
+		pending:   newPendingResponses(),
+		sinks:     newSyncSinks(),
+		stopSweep: make(chan struct{}),
 	}
 	w.SoulSide = &WireSoulSide{wire: w}
 	w.uiSide = &WireUISide{wire: w}
+	go w.pending.startSweeper(w.stopSweep)
 	return w
 }
 
 func (w *Wire) UISide() *WireUISide {
 	return w.uiSide
+}
+
+func (w *Wire) Close() {
+	if w.stopSweep != nil {
+		close(w.stopSweep)
+	}
+}
+
+func (w *Wire) SetPendingOnExpired(fn func(string, string)) {
+	if w.pending != nil {
+		w.pending.SetOnExpired(fn)
+	}
 }
 
 func (s *WireSoulSide) PublishEvent(event WireEvent) {
@@ -411,8 +426,12 @@ type broadcastQueue struct {
 }
 
 type pendingResponses struct {
-	mu      sync.Mutex
-	pending map[string]chan json.RawMessage
+	mu         sync.Mutex
+	pending    map[string]chan json.RawMessage
+	deadline   map[string]time.Time
+	onExpired  func(string, string)
+	sweepTick  time.Duration
+	defaultTTL time.Duration
 }
 
 type syncSinks struct {
@@ -451,7 +470,7 @@ func (s *syncSinks) publish(message WireMessage) {
 }
 
 func newPendingResponses() *pendingResponses {
-	return &pendingResponses{pending: make(map[string]chan json.RawMessage)}
+	return &pendingResponses{pending: make(map[string]chan json.RawMessage), deadline: make(map[string]time.Time), sweepTick: 5 * time.Second, defaultTTL: 2 * time.Minute}
 }
 
 func (p *pendingResponses) register(id string) <-chan json.RawMessage {
@@ -459,6 +478,7 @@ func (p *pendingResponses) register(id string) <-chan json.RawMessage {
 	defer p.mu.Unlock()
 	ch := make(chan json.RawMessage, 1)
 	p.pending[id] = ch
+	p.deadline[id] = time.Now().Add(p.defaultTTL)
 	return ch
 }
 
@@ -467,12 +487,16 @@ func (p *pendingResponses) resolve(id string, result json.RawMessage) bool {
 	ch, ok := p.pending[id]
 	if ok {
 		delete(p.pending, id)
+		delete(p.deadline, id)
 	}
 	p.mu.Unlock()
 	if !ok {
 		return false
 	}
-	ch <- result
+	select {
+	case ch <- result:
+	default:
+	}
 	close(ch)
 	return true
 }
@@ -481,7 +505,14 @@ func (p *pendingResponses) cancel(id string) {
 	p.mu.Lock()
 	if ch, ok := p.pending[id]; ok {
 		delete(p.pending, id)
-		close(ch)
+		delete(p.deadline, id)
+		p.mu.Unlock()
+		select {
+		case <-ch:
+		default:
+			close(ch)
+		}
+		return
 	}
 	p.mu.Unlock()
 }
@@ -490,6 +521,55 @@ func (p *pendingResponses) len() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return len(p.pending)
+}
+
+func (p *pendingResponses) sweep() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	now := time.Now()
+	for id, deadline := range p.deadline {
+		if now.After(deadline) {
+			if ch, ok := p.pending[id]; ok {
+				delete(p.pending, id)
+				delete(p.deadline, id)
+				if ch != nil {
+					select {
+					case <-ch:
+					default:
+						close(ch)
+					}
+				}
+				if p.onExpired != nil {
+					reason := "pending request expired"
+					p.mu.Unlock()
+					p.onExpired(id, reason)
+					p.mu.Lock()
+				}
+			}
+		}
+	}
+}
+
+func (p *pendingResponses) SetOnExpired(fn func(string, string)) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.onExpired = fn
+}
+
+func (p *pendingResponses) startSweeper(stop <-chan struct{}) {
+	if p.sweepTick <= 0 {
+		return
+	}
+	ticker := time.NewTicker(p.sweepTick)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			p.sweep()
+		}
+	}
 }
 
 func newBroadcastQueue() *broadcastQueue {
