@@ -85,8 +85,10 @@ type Engine struct {
 	Mode *mode.Mode
 
 	// Cancellation
-	ctx    context.Context
-	cancel context.CancelFunc
+	engineCtx    context.Context
+	engineCancel context.CancelCauseFunc
+	stepCtx      context.Context
+	stepCancel   context.CancelCauseFunc
 
 	// Compaction
 	Compactor      *compaction.SimpleCompaction
@@ -140,15 +142,16 @@ type ToolResultEvent struct {
 }
 
 func NewEngine(llmClient *llm.Client, tools *toolset.Registry) *Engine {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancelCause(context.Background())
 	return &Engine{
 		Context:            chat.NewContext(128000, 50),
 		LLM:                llmClient,
 		Tools:              tools,
 		Dedup:              toolset.NewDedup(),
 		Steer:              &SteerQueue{},
-		ctx:                ctx,
-		cancel:             cancel,
+		engineCtx:          ctx,
+		engineCancel:       cancel,
+		stepCtx:            ctx,
 		ToolResultMaxChars: contextbudget.DefaultToolResultMaxChars,
 		ToolCache:          toolcache.New(),
 		PrefetchEnabled:    true,
@@ -199,7 +202,7 @@ func (e *Engine) prefetchReadOnly(input string) {
 		return
 	}
 	go func() {
-		result := prefetch.Warm(e.ctx, prefetch.Options{
+		result := prefetch.Warm(e.engineCtx, prefetch.Options{
 			Tools: e.Tools,
 			Cache: e.ToolCache,
 			Mode:  e.Mode,
@@ -307,7 +310,25 @@ func (e *Engine) getToolDefs() []llm.ToolDef {
 }
 
 func (e *Engine) Step(ctx context.Context) *Outcome {
-	e.ctx = ctx
+	if e.stepCancel != nil {
+		e.stepCancel(nil)
+	}
+	e.stepCtx, e.stepCancel = context.WithCancelCause(e.engineCtx)
+	if ctx != nil {
+		go func(cancel context.CancelCauseFunc) {
+			select {
+			case <-ctx.Done():
+				cancel(ctx.Err())
+			case <-e.stepCtx.Done():
+			}
+		}(e.stepCancel)
+	}
+	defer func() {
+		if e.stepCancel != nil {
+			e.stepCancel(nil)
+			e.stepCancel = nil
+		}
+	}()
 	return e.step()
 }
 
@@ -329,7 +350,7 @@ func (e *Engine) step() *Outcome {
 		if e.Stream && e.OnToken != nil {
 			msg, usage, err = e.streamStep()
 		} else {
-			msg, usage, err = e.LLM.Chat(e.ctx, e.Context, e.getToolDefs(), false)
+			msg, usage, err = e.LLM.Chat(e.stepCtx, e.Context, e.getToolDefs(), false)
 		}
 
 		if err == nil {
@@ -345,7 +366,7 @@ func (e *Engine) step() *Outcome {
 		e.log("[ENGINE] transient LLM error (attempt %d/%d): %v", attempt+1, maxRetries+1, err)
 		select {
 		case <-time.After(time.Duration(attempt+1) * time.Second):
-		case <-e.ctx.Done():
+		case <-e.stepCtx.Done():
 			return &Outcome{StopReason: "error", FinalMessage: "context canceled"}
 		}
 	}
@@ -386,7 +407,7 @@ func (e *Engine) step() *Outcome {
 }
 
 func (e *Engine) streamStep() (*chat.Message, *llm.Usage, error) {
-	ch := e.LLM.ChatStream(e.ctx, e.Context, e.getToolDefs())
+	ch := e.LLM.ChatStream(e.stepCtx, e.Context, e.getToolDefs())
 
 	var contentBuf strings.Builder
 	var toolCalls []chat.ToolCall
@@ -708,7 +729,7 @@ func (e *Engine) triggerHook(event hook.EventType, target string, inputData map[
 	if e.Hooks == nil {
 		return nil
 	}
-	results := e.Hooks.Trigger(e.ctx, event, target, inputData)
+	results := e.Hooks.Trigger(e.stepCtx, event, target, inputData)
 	for _, result := range results {
 		if result.Error != "" {
 			e.log("[HOOK] %s %s failed: %s", event, target, result.Error)
@@ -808,13 +829,20 @@ func (e *Engine) emitCompactEnd() {
 var debugWriter io.Writer = io.Discard
 
 func (e *Engine) Cancel() {
-	if e.cancel != nil {
-		e.cancel()
+	if e.stepCancel != nil {
+		e.stepCancel(nil)
+	}
+	if e.engineCancel != nil {
+		e.engineCancel(nil)
 	}
 }
 
 func (e *Engine) ResetCancel() {
-	e.ctx, e.cancel = context.WithCancel(context.Background())
+	if e.engineCancel != nil {
+		e.engineCancel(nil)
+	}
+	e.engineCtx, e.engineCancel = context.WithCancelCause(context.Background())
+	e.stepCtx, e.stepCancel = e.engineCtx, nil
 }
 
 func truncate(s string, n int) string {
