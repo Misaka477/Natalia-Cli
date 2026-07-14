@@ -51,9 +51,11 @@ type Worker struct {
 	OnStatus     func(Status)
 	mu           sync.RWMutex
 
-	ctx     context.Context
-	cancel  context.CancelFunc
-	stopped bool
+	ctx        context.Context
+	cancel     context.CancelFunc
+	stopped    bool
+	generation int
+	done       chan struct{}
 }
 
 type SpawnOptions struct {
@@ -113,64 +115,92 @@ func (w *Worker) Start() {
 		w.setStatus(StatusFailed)
 		return
 	}
+	w.mu.Lock()
+	if w.Status == StatusRunning {
+		w.mu.Unlock()
+		return
+	}
+	w.generation++
+	gen := w.generation
+	prevDone := w.done
+	w.done = make(chan struct{})
+	w.stopped = false
+	w.mu.Unlock()
 	w.setStatus(StatusRunning)
 
+	if prevDone != nil {
+		<-prevDone
+	}
+
 	go func() {
-		w.Engine.Dedup.ResetTurn()
-		for w.Engine.Context.StepCount < w.Engine.Context.MaxSteps {
-			if w.ctx.Err() != nil {
+		defer close(w.done)
+		w.runGeneration(gen)
+	}()
+}
+
+func (w *Worker) runGeneration(gen int) {
+	w.Engine.Dedup.ResetTurn()
+	for w.Engine.Context.StepCount < w.Engine.Context.MaxSteps {
+		w.mu.RLock()
+		currentGen := w.generation
+		stopped := w.stopped
+		w.mu.RUnlock()
+		if currentGen != gen {
+			w.setCancelledStatus()
+			return
+		}
+		if stopped || w.ctx.Err() != nil {
+			w.setCancelledStatus()
+			return
+		}
+
+		cp := w.Engine.Context.SaveCheckpoint()
+
+		outcome := w.Engine.Step(w.ctx)
+		if outcome.StopReason == "error" {
+			if outcome.FinalMessage == "context canceled" {
 				w.setCancelledStatus()
 				return
 			}
-
-			cp := w.Engine.Context.SaveCheckpoint()
-
-			outcome := w.Engine.Step(w.ctx)
-			if outcome.StopReason == "error" {
-				if outcome.FinalMessage == "context canceled" {
-					w.setCancelledStatus()
-					return
-				}
-				w.addLog(LogEntry{
-					Step:  w.Engine.Context.StepCount,
-					Error: outcome.FinalMessage,
-				})
-				if outcome.FinalMessage == "API error" {
-					cp.Restore(w.Engine.Context)
-					continue
-				}
-				w.setStatus(StatusFailed)
-				return
-			}
-
-			if outcome.StopReason == "tool_called" {
-				for i := len(w.Engine.Context.Messages) - 1; i >= 0; i-- {
-					msg := w.Engine.Context.Messages[i]
-					if msg.Role != chat.RoleAssistant || len(msg.ToolCalls) == 0 {
-						continue
-					}
-					for _, tc := range msg.ToolCalls {
-						w.addLog(LogEntry{Step: w.Engine.Context.StepCount, Tool: tc.Function.Name, Args: parseArgs(tc.Function.Arguments)})
-					}
-					break
-				}
-				continue
-			}
-			if outcome.StopReason == "back_to_future" {
+			w.addLog(LogEntry{
+				Step:  w.Engine.Context.StepCount,
+				Error: outcome.FinalMessage,
+			})
+			if outcome.FinalMessage == "API error" {
 				cp.Restore(w.Engine.Context)
 				continue
 			}
-			if outcome.StopReason == "no_tool_calls" {
-				w.setStatus(StatusCompleted)
-				w.addLog(LogEntry{
-					Step:   w.Engine.Context.StepCount,
-					Result: outcome.FinalMessage,
-				})
-				return
-			}
+			w.setStatus(StatusFailed)
+			return
 		}
-		w.setStatus(StatusCompleted)
-	}()
+
+		if outcome.StopReason == "tool_called" {
+			for i := len(w.Engine.Context.Messages) - 1; i >= 0; i-- {
+				msg := w.Engine.Context.Messages[i]
+				if msg.Role != chat.RoleAssistant || len(msg.ToolCalls) == 0 {
+					continue
+				}
+				for _, tc := range msg.ToolCalls {
+					w.addLog(LogEntry{Step: w.Engine.Context.StepCount, Tool: tc.Function.Name, Args: parseArgs(tc.Function.Arguments)})
+				}
+				break
+			}
+			continue
+		}
+		if outcome.StopReason == "back_to_future" {
+			cp.Restore(w.Engine.Context)
+			continue
+		}
+		if outcome.StopReason == "no_tool_calls" {
+			w.setStatus(StatusCompleted)
+			w.addLog(LogEntry{
+				Step:   w.Engine.Context.StepCount,
+				Result: outcome.FinalMessage,
+			})
+			return
+		}
+	}
+	w.setStatus(StatusCompleted)
 }
 
 func (w *Worker) Stop() {
@@ -194,6 +224,16 @@ func (w *Worker) Resume() error {
 		status := w.Status
 		w.mu.Unlock()
 		return fmt.Errorf("worker is %s; only paused workers can be resumed", status)
+	}
+	done := w.done
+	w.mu.Unlock()
+	if done != nil {
+		<-done
+	}
+	w.mu.Lock()
+	if w.Status != StatusPaused {
+		w.mu.Unlock()
+		return fmt.Errorf("worker is %s; only paused workers can be resumed", w.Status)
 	}
 	w.stopped = false
 	w.ctx, w.cancel = context.WithCancel(context.Background())
