@@ -42,6 +42,7 @@ type StartOptions struct {
 	MaxTail     int
 	IdleTimeout time.Duration
 	MaxLifetime time.Duration
+	DecisionID  string
 }
 
 type Session struct {
@@ -110,6 +111,7 @@ type AuditEntry struct {
 	Args       []string
 	Cwd        string
 	EnvSummary []string
+	DecisionID string
 	Time       time.Time
 }
 
@@ -149,15 +151,16 @@ func ResetDefaultManagerForTest() {
 }
 
 type managedSession struct {
-	manager *Manager
-	mu      sync.RWMutex
-	meta    Session
-	cmd     *exec.Cmd
-	cancel  context.CancelFunc
-	maxTail int
-	output  []OutputLine
-	done    chan struct{}
-	opts    StartOptions
+	manager     *Manager
+	mu          sync.RWMutex
+	meta        Session
+	cmd         *exec.Cmd
+	cancel      context.CancelFunc
+	maxTail     int
+	output      []OutputLine
+	done        chan struct{}
+	opts        StartOptions
+	decisionID  string
 }
 
 func New() *Manager {
@@ -236,14 +239,15 @@ func (m *Manager) Start(ctx context.Context, opts StartOptions) (*Session, error
 	optsCopy.Args = append([]string(nil), opts.Args...)
 	optsCopy.Env = append([]string(nil), opts.Env...)
 	ms := &managedSession{
-		manager: m,
-		meta:    Session{ID: id, Kind: opts.Kind, Command: opts.Command, Args: append([]string(nil), opts.Args...), Cwd: opts.Cwd, Status: StatusRunning, PID: cmd.Process.Pid, StartedAt: now, LastActivityAt: now, EnvSummary: summarizeEnv(opts.Env), Attached: true, IdleTimeout: opts.IdleTimeout, MaxLifetime: opts.MaxLifetime},
-		cmd:     cmd, cancel: cancel, maxTail: opts.MaxTail, done: make(chan struct{}),
-		opts: optsCopy,
+		manager:     m,
+		meta:        Session{ID: id, Kind: opts.Kind, Command: opts.Command, Args: append([]string(nil), opts.Args...), Cwd: opts.Cwd, Status: StatusRunning, PID: cmd.Process.Pid, StartedAt: now, LastActivityAt: now, EnvSummary: summarizeEnv(opts.Env), Attached: true, IdleTimeout: opts.IdleTimeout, MaxLifetime: opts.MaxLifetime},
+		cmd:         cmd, cancel: cancel, maxTail: opts.MaxTail, done: make(chan struct{}),
+		opts:        optsCopy,
+		decisionID:  opts.DecisionID,
 	}
 	m.mu.Lock()
 	m.sessions[id] = ms
-	m.appendAuditLocked("start", ms.meta)
+	m.appendAuditLocked("start", ms.meta, ms.decisionID)
 	m.mu.Unlock()
 	m.notify(Event{Type: EventStarted, Session: *ms.snapshot(), Time: now})
 
@@ -426,7 +430,7 @@ func (m *Manager) CleanupFinishedResult(maxAge time.Duration, dryRun bool) Sweep
 			if !dryRun {
 				removedEvents = append(removedEvents, Event{Type: EventCleanup, Session: *snapshot, Message: "removed completed session", Time: time.Now()})
 				delete(m.sessions, id)
-				m.appendAuditLocked("cleanup", *snapshot)
+				m.appendAuditLocked("cleanup", *snapshot, "")
 			}
 		}
 	}
@@ -620,14 +624,18 @@ func (m *Manager) recordAudit(action string, sess *Session) {
 		return
 	}
 	m.mu.Lock()
-	m.appendAuditLocked(action, *sess)
+	decisionID := ""
+	if ms, ok := m.sessions[sess.ID]; ok {
+		decisionID = ms.decisionID
+	}
+	m.appendAuditLocked(action, *sess, decisionID)
 	m.mu.Unlock()
 }
 
-func (m *Manager) appendAuditLocked(action string, sess Session) {
+func (m *Manager) appendAuditLocked(action string, sess Session, decisionID string) {
 	m.auditEventID++
 	eventID := fmt.Sprintf("evt_%d", m.auditEventID)
-	m.audit = append(m.audit, AuditEntry{EventID: eventID, Action: action, SessionID: sess.ID, Kind: sess.Kind, Status: sess.Status, Command: sess.Command, Args: append([]string(nil), sess.Args...), Cwd: sess.Cwd, EnvSummary: append([]string(nil), sess.EnvSummary...), Time: time.Now()})
+	m.audit = append(m.audit, AuditEntry{EventID: eventID, Action: action, SessionID: sess.ID, Kind: sess.Kind, Status: sess.Status, Command: sess.Command, Args: append([]string(nil), sess.Args...), Cwd: sess.Cwd, EnvSummary: append([]string(nil), sess.EnvSummary...), DecisionID: decisionID, Time: time.Now()})
 }
 
 func processAlive(pid int) bool {

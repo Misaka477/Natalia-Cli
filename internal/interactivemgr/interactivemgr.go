@@ -35,12 +35,13 @@ const (
 )
 
 type StartOptions struct {
-	Command string
-	Args    []string
-	Cwd     string
-	Rows    int
-	Cols    int
-	MaxTail int
+	Command    string
+	Args       []string
+	Cwd        string
+	Rows       int
+	Cols       int
+	MaxTail    int
+	DecisionID string
 }
 
 type TranscriptPage struct {
@@ -75,6 +76,7 @@ type Session struct {
 	Attached       bool
 	Rows           int
 	Cols           int
+	DecisionID     string
 }
 
 type Observation struct {
@@ -94,6 +96,8 @@ type Manager struct {
 	nextSubID   uint64
 	sessions    map[string]*managedSession
 	subscribers map[uint64]func(Event)
+	audit       []AuditEntry
+	auditEventID uint64
 }
 
 type EventType string
@@ -116,6 +120,16 @@ type Event struct {
 	Time    time.Time
 }
 
+type AuditEntry struct {
+	EventID    string
+	Action     string
+	SessionID  string
+	Command    string
+	Args       []string
+	DecisionID string
+	Time       time.Time
+}
+
 type managedSession struct {
 	manager    *Manager
 	mu         sync.RWMutex
@@ -130,12 +144,13 @@ type managedSession struct {
 	done       chan struct{}
 	stopped    bool
 	redacting  bool
+	decisionID string
 }
 
 var defaultManager = New()
 
 func New() *Manager {
-	return &Manager{sessions: make(map[string]*managedSession), subscribers: make(map[uint64]func(Event))}
+	return &Manager{sessions: make(map[string]*managedSession), subscribers: make(map[uint64]func(Event)), audit: make([]AuditEntry, 0)}
 }
 
 func DefaultManager() *Manager {
@@ -158,6 +173,25 @@ func (m *Manager) Subscribe(fn func(Event)) func() {
 		m.mu.Lock()
 		delete(m.subscribers, id)
 		m.mu.Unlock()
+	}
+}
+
+func (m *Manager) AuditLog() []AuditEntry {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]AuditEntry, 0, len(m.audit))
+	for i := range m.audit {
+		out = append(out, m.audit[i])
+	}
+	return out
+}
+
+func (m *Manager) recordAuditLocked(action string, sess Session) {
+	m.auditEventID++
+	eventID := fmt.Sprintf("evt_%d", m.auditEventID)
+	m.audit = append(m.audit, AuditEntry{EventID: eventID, Action: action, SessionID: sess.ID, Command: sess.Command, Args: append([]string(nil), sess.Args...), DecisionID: sess.DecisionID, Time: time.Now()})
+	if len(m.audit) > 200 {
+		m.audit = append([]AuditEntry(nil), m.audit[len(m.audit)-200:]...)
 	}
 }
 
@@ -200,15 +234,16 @@ func (m *Manager) Start(ctx context.Context, opts StartOptions) (*Session, error
 	now := time.Now()
 	id := fmt.Sprintf("tty_%d", atomic.AddUint64(&m.nextID, 1))
 	ms := &managedSession{
-		manager: m,
-		meta:    Session{ID: id, Command: opts.Command, Args: append([]string(nil), opts.Args...), Cwd: opts.Cwd, Status: StatusRunning, PID: cmd.Process.Pid, StartedAt: now, LastActivityAt: now, Attached: true, Rows: rows, Cols: cols},
-		cmd:     cmd, pty: f, cancel: cancel, maxTail: opts.MaxTail, done: make(chan struct{}),
+		manager:    m,
+		meta:       Session{ID: id, Command: opts.Command, Args: append([]string(nil), opts.Args...), Cwd: opts.Cwd, Status: StatusRunning, PID: cmd.Process.Pid, StartedAt: now, LastActivityAt: now, Attached: true, Rows: rows, Cols: cols, DecisionID: opts.DecisionID},
+		cmd:        cmd, pty: f, cancel: cancel, maxTail: opts.MaxTail, done: make(chan struct{}),
 	}
 	ms.outputCond = sync.NewCond(&ms.mu)
 	m.mu.Lock()
 	m.sessions[id] = ms
 	m.mu.Unlock()
 	m.emit(Event{Type: EventStarted, Session: *ms.snapshot(), Time: now})
+	m.recordAuditLocked("start", ms.meta)
 	go ms.capture()
 	go ms.wait()
 	return ms.snapshot(), nil

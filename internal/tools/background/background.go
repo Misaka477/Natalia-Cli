@@ -58,7 +58,7 @@ func (t *Start) Execute(args map[string]any) (string, error) {
 		return "", err
 	}
 	cwd, _ := args["cwd"].(string)
-	sess, err := processmgr.DefaultManager().Start(context.Background(), processmgr.StartOptions{Kind: processmgr.KindBackground, Command: command, Args: argv, Cwd: cwd, Env: env, MaxTail: maxTail, IdleTimeout: idleTimeout, MaxLifetime: maxLifetime})
+	sess, err := processmgr.DefaultManager().Start(context.Background(), processmgr.StartOptions{Kind: processmgr.KindBackground, Command: command, Args: argv, Cwd: cwd, Env: env, MaxTail: maxTail, IdleTimeout: idleTimeout, MaxLifetime: maxLifetime, DecisionID: decisionIDFromArgs(args)})
 	if err != nil {
 		return "", err
 	}
@@ -368,6 +368,18 @@ func boolArg(raw any) bool {
 	default:
 		return false
 	}
+}
+
+func decisionIDFromArgs(args map[string]any) string {
+	if args == nil {
+		return ""
+	}
+	raw, ok := args["__natalia_policy_decision_id"]
+	if !ok {
+		return ""
+	}
+	id, _ := raw.(string)
+	return id
 }
 
 func formatOutputPage(page processmgr.OutputPage) string {

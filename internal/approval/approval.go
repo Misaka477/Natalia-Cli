@@ -72,6 +72,7 @@ type Approver struct {
 	Mode               Mode
 	RequestFunc        func(toolName, description string) bool
 	RequestDisplayFunc func(toolName, description string, blocks []display.Block) bool
+	DecisionRecorder   func(string, string, string, string)
 }
 
 func New(mode Mode) *Approver {
@@ -107,13 +108,22 @@ func (a *Approver) RequestExplicitWithDisplay(toolName, description string, bloc
 	if a == nil || a.Mode == ModeReadOnly {
 		return false
 	}
+	approved := false
 	if a.RequestDisplayFunc != nil {
-		return a.RequestDisplayFunc(toolName, description, blocks)
+		approved = a.RequestDisplayFunc(toolName, description, blocks)
+	} else if a.RequestFunc != nil {
+		approved = a.RequestFunc(toolName, description)
+	} else {
+		approved = a.interactivePrompt(toolName, description, blocks)
 	}
-	if a.RequestFunc != nil {
-		return a.RequestFunc(toolName, description)
+	if a.DecisionRecorder != nil {
+		decision := "rejected"
+		if approved {
+			decision = "approved"
+		}
+		a.DecisionRecorder(toolName, string(a.Mode), decision, description)
 	}
-	return a.interactivePrompt(toolName, description, blocks)
+	return approved
 }
 
 func (a *Approver) interactivePrompt(tool, desc string, blocks []display.Block) bool {

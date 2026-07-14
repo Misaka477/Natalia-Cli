@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Misaka477/Natalia-Cli/internal/commandpolicy"
 	"github.com/Misaka477/Natalia-Cli/internal/networkpolicy"
 	"github.com/Misaka477/Natalia-Cli/internal/secret"
 )
@@ -87,6 +88,13 @@ func Start(ctx context.Context, cfg ServerConfig) (*Client, error) {
 	}
 	if cfg.Command == "" {
 		return nil, fmt.Errorf("mcp command is required")
+	}
+	cmdDecision := commandpolicy.Evaluate(cfg.Command, cfg.Args)
+	switch cmdDecision.Level {
+	case commandpolicy.LevelHardDeny:
+		return nil, fmt.Errorf("mcp server command hard denied: %s", cmdDecision.Reason)
+	case commandpolicy.LevelExplicitApproval:
+		return nil, fmt.Errorf("mcp server command requires explicit approval: %s", cmdDecision.Reason)
 	}
 	cmd := exec.CommandContext(ctx, cfg.Command, cfg.Args...)
 	cmd.Dir = cfg.Cwd

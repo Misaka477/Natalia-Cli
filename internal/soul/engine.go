@@ -548,6 +548,9 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 		case commandpolicy.LevelExplicitApproval:
 			if e.Approver == nil || !e.Approver.RequestExplicitWithDisplay(name, fmt.Sprintf("dangerous command requires explicit confirmation (%s): %s", decision.Reason, command), approvalDisplayBlocks(name, args)) {
 				result := fmt.Sprintf("dangerous command rejected because explicit approval was not granted: %s", decision.Reason)
+				if e.Approver != nil && e.Approver.DecisionRecorder != nil {
+					e.Approver.DecisionRecorder(name, "explicit_approval", "rejected", decision.Reason)
+				}
 				e.Context.Messages = append(e.Context.Messages, chat.Message{
 					Role:       chat.RoleTool,
 					ToolCallID: tc.ID,
@@ -558,8 +561,13 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 				e.log("[ENGINE] dangerous command rejected: %s", decision.Reason)
 				return nil
 			}
+			decisionID := fmt.Sprintf("pol_%d", time.Now().UnixNano())
+			args["__natalia_policy_decision_id"] = decisionID
 			commandpolicy.MarkConfirmed(args)
 			dangerApproved = true
+			if e.Approver != nil && e.Approver.DecisionRecorder != nil {
+				e.Approver.DecisionRecorder(name, "explicit_approval", "approved", decision.Reason)
+			}
 		}
 	}
 

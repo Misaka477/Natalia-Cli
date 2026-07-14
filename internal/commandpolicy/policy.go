@@ -73,6 +73,11 @@ func Evaluate(command string, args []string) Decision {
 				return Decision{Level: entry.level, Reason: fmt.Sprintf("matched dangerous command pattern %q", entry.text+" of=/dev/"), Rule: entry.text+" of=/dev/", Command: line}
 			}
 			continue
+		case "> /dev/", ">/dev/":
+			if safeDevNullRedirect(line, entry.text) {
+				continue
+			}
+			return Decision{Level: entry.level, Reason: fmt.Sprintf("matched dangerous command pattern %q", entry.text), Rule: entry.text, Command: line}
 		}
 		return Decision{Level: entry.level, Reason: fmt.Sprintf("matched dangerous command pattern %q", entry.text), Rule: entry.text, Command: line}
 	}
@@ -92,6 +97,15 @@ func matchesRootTarget(line, prefix string) bool {
 	}
 	rest := strings.TrimSpace(line[idx+len(prefix):])
 	return rest == "" || strings.HasPrefix(rest, "*") || strings.HasPrefix(rest, ";") || strings.HasPrefix(rest, "&&") || strings.HasPrefix(rest, "||")
+}
+
+func safeDevNullRedirect(line, pattern string) bool {
+	idx := strings.Index(line, pattern)
+	if idx < 0 {
+		return false
+	}
+	rest := strings.TrimSpace(line[idx+len(pattern):])
+	return strings.HasPrefix(rest, "null") || strings.HasPrefix(rest, "zero") || strings.HasPrefix(rest, "random") || strings.HasPrefix(rest, "urandom") || strings.HasPrefix(rest, "tty") || strings.HasPrefix(rest, "ptmx")
 }
 
 func MarkConfirmed(args map[string]any) { args[confirmationArg] = true }

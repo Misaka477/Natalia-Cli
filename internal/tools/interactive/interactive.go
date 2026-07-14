@@ -73,7 +73,7 @@ func (t *Start) Execute(args map[string]any) (string, error) {
 		return "", err
 	}
 	mgr := currentManager()
-	sess, err := mgr.Start(context.Background(), interactivemgr.StartOptions{Command: command, Args: argv, Cwd: cwd, Rows: rows, Cols: cols})
+	sess, err := mgr.Start(context.Background(), interactivemgr.StartOptions{Command: command, Args: argv, Cwd: cwd, Rows: rows, Cols: cols, DecisionID: decisionIDFromArgs(args)})
 	if err != nil {
 		return "", err
 	}
@@ -447,6 +447,18 @@ func intArg(raw any, defaultValue, minValue, maxValue int, name string) (int, er
 		return 0, fmt.Errorf("%s must be between %d and %d", name, minValue, maxValue)
 	}
 	return value, nil
+}
+
+func decisionIDFromArgs(args map[string]any) string {
+	if args == nil {
+		return ""
+	}
+	raw, ok := args["__natalia_policy_decision_id"]
+	if !ok {
+		return ""
+	}
+	id, _ := raw.(string)
+	return id
 }
 
 func formatSession(sess *interactivemgr.Session) string {

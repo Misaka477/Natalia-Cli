@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Misaka477/Natalia-Cli/internal/commandpolicy"
 	"github.com/Misaka477/Natalia-Cli/internal/secret"
 )
 
@@ -225,6 +226,15 @@ func runShellHook(parent context.Context, def HookDef, input TriggerInput) HookR
 	defer func() { result.Duration = time.Since(started) }()
 	if strings.TrimSpace(def.Command) == "" {
 		result.Error = "hook command is empty"
+		return result
+	}
+	cmdDecision := commandpolicy.Evaluate("/bin/sh", []string{"-c", def.Command})
+	switch cmdDecision.Level {
+	case commandpolicy.LevelHardDeny:
+		result.Error = fmt.Sprintf("hook %q blocked by command policy: %s", def.ID, cmdDecision.Reason)
+		return result
+	case commandpolicy.LevelExplicitApproval:
+		result.Error = fmt.Sprintf("hook %q blocked by command policy: %s", def.ID, cmdDecision.Reason)
 		return result
 	}
 	raw, err := json.Marshal(input)
