@@ -1088,6 +1088,9 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 				return "(空响应)"
 			}
 			return outcome.FinalMessage
+		}, func() string {
+			eff, _ := cfg.EffectiveProfile(runtime.Mode, runtime.ModelProfile, runtime.PermissionProfile)
+			return fmt.Sprintf("mode: %s | model: %s", runtime.Mode, eff.Profile.Model)
 		})
 		return
 	}

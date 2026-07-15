@@ -16,6 +16,7 @@ type Model struct {
 	viewport    viewport.Model
 	input       textinput.Model
 	submitFn    submitFunc
+	statusFn    func() string
 	history     []string
 	historyIdx  int
 	ready       bool
@@ -26,7 +27,7 @@ type Model struct {
 
 type outputMsg string
 
-func NewModel(submitFn submitFunc) Model {
+func NewModel(submitFn submitFunc, statusFn func() string) Model {
 	ti := textinput.New()
 	ti.Placeholder = "输入消息..."
 	ti.Focus()
@@ -42,6 +43,7 @@ func NewModel(submitFn submitFunc) Model {
 		viewport: vp,
 		input:    ti,
 		submitFn: submitFn,
+		statusFn: statusFn,
 	}
 }
 
@@ -123,8 +125,16 @@ func (m Model) View() string {
 		inputLine = m.input.Prompt + m.input.Placeholder
 	}
 	inputLine = theme.Detail(inputLine)
+
+	status := ""
+	if m.statusFn != nil {
+		status = m.statusFn()
+	}
+	statusBar := theme.Status(status)
+
 	return lipgloss.JoinVertical(lipgloss.Top,
 		m.viewport.View(),
+		statusBar,
 		inputLine,
 	)
 }
@@ -138,8 +148,8 @@ func (m Model) submitCmd(input string) tea.Cmd {
 	}
 }
 
-func Run(submitFn submitFunc) error {
-	p := tea.NewProgram(NewModel(submitFn), tea.WithAltScreen())
+func Run(submitFn submitFunc, statusFn func() string) error {
+	p := tea.NewProgram(NewModel(submitFn, statusFn), tea.WithAltScreen())
 	_, err := p.Run()
 	return err
 }
