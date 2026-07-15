@@ -98,6 +98,7 @@ func runWireWithOptions(cfg *config.Config, tools *toolset.Registry, in io.Reade
 func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug bool, opts wireRunOptions) (*wireRuntimeServer, error) {
 	w := wire.NewWire()
 	wireInstance = w
+	rt := DefaultAppRuntime()
 	w.SetPendingOnExpired(func(requestID, reason string) {
 		if event, err := wire.NewEvent(wire.EventStatusUpdate, wire.StatusUpdate{Diagnostics: []string{fmt.Sprintf("pending %s expired: %s", requestID, reason)}}); err == nil {
 			w.SoulSide.PublishEvent(event)
@@ -118,12 +119,12 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 	}
 	configureRuntimeEngine()
 	detachRuntimeEvents := bridgeRuntimeEvents(engine, w)
-	closeRecorder, wireSession, err := attachWireRecorder(w, cfg, opts.SessionStore)
+	closeRecorder, wireSession, err := attachWireRecorder(w, cfg, opts.SessionStore, rt)
 	if err != nil {
 		detachRuntimeEvents()
 		return nil, err
 	}
-	persistWireSessionState(cfg, opts.SessionStore, wireSession)
+	persistWireSessionState(cfg, opts.SessionStore, wireSession, rt)
 
 	handler := wire.ServerHandler{
 		Initialize: func(context.Context, wire.InitializeParams) (any, error) {
@@ -138,7 +139,7 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 				w.SoulSide.PublishEvent(event)
 			}
 			turnStarted := time.Now()
-			stopTurnStatus := startWireTurnStatusTicker(w, cfg, func() *soul.Engine { return engine }, turnStarted, time.Second)
+			stopTurnStatus := startWireTurnStatusTicker(w, cfg, func() *soul.Engine { return engine }, turnStarted, time.Second, rt)
 			engine.ResetCancel()
 			approvalCtxMu.Lock()
 			approvalCtx = ctx
@@ -157,7 +158,7 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 			if event, err := wire.NewEvent(wire.EventTurnEnd, wire.TurnEnd{}); err == nil {
 				w.SoulSide.PublishEvent(event)
 			}
-			status := runtimeStatusUpdate(cfg, engine)
+			status := runtimeStatusUpdate(cfg, engine, rt)
 			setTurnElapsed(&status, turnStarted, false)
 			if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
 				w.SoulSide.PublishEvent(event)
@@ -178,8 +179,8 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 			} else {
 				planManager.Exit()
 			}
-			persistWireSessionState(cfg, opts.SessionStore, wireSession)
-			status := runtimeStatusUpdate(cfg, engine)
+			persistWireSessionState(cfg, opts.SessionStore, wireSession, rt)
+			status := runtimeStatusUpdate(cfg, engine, rt)
 			status.PlanMode = &params.Enabled
 			if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
 				w.SoulSide.PublishEvent(event)
@@ -196,11 +197,14 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 			runtime.Mode = params.Mode
 			runtime.ModelProfile = params.ModelProfile
 			runtime.PermissionProfile = params.PermissionProfile
+			if rt != nil {
+				rt.SetOverrides(runtimeOverrides{Mode: params.Mode, ModelProfile: params.ModelProfile, PermissionProfile: params.PermissionProfile})
+			}
 			engine = rebuildEnginePreservingState(cfg, engine, tools, debug)
 			registerAgentToolsForEngine(cfg, engine, tools)
 			configureRuntimeEngine()
-			persistWireSessionState(cfg, opts.SessionStore, wireSession)
-			status := runtimeStatusUpdate(cfg, engine)
+			persistWireSessionState(cfg, opts.SessionStore, wireSession, rt)
+			status := runtimeStatusUpdate(cfg, engine, rt)
 			if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
 				w.SoulSide.PublishEvent(event)
 			}
@@ -227,6 +231,9 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 			}
 			restoredRuntime, warnings := validateRestoredRuntime(cfg, state)
 			runtime = restoredRuntime
+			if rt != nil {
+				rt.SetOverrides(restoredRuntime)
+			}
 			restorePlanMode(state)
 			warnings = append(warnings, restorePlanSession(state)...)
 			engine = buildEngine(cfg, tools, debug)
@@ -234,8 +241,8 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 			engine.Context.Messages = append(engine.Context.Messages, messages...)
 			attachSnapshotter(engine, sess)
 			configureRuntimeEngine()
-			persistWireSessionState(cfg, opts.SessionStore, wireSession)
-			status := runtimeStatusUpdate(cfg, engine)
+			persistWireSessionState(cfg, opts.SessionStore, wireSession, rt)
+			status := runtimeStatusUpdate(cfg, engine, rt)
 			if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
 				w.SoulSide.PublishEvent(event)
 			}
@@ -317,13 +324,20 @@ func marshalWireReplayMessage(message wire.WireMessage) ([]byte, error) {
 	return nil, fmt.Errorf("invalid replay message kind %q", message.Kind)
 }
 
-func attachWireRecorder(w *wire.Wire, cfg *config.Config, store *session.SessionStore) (func(), *session.Session, error) {
+func attachWireRecorder(w *wire.Wire, cfg *config.Config, store *session.SessionStore, rt *AppRuntime) (func(), *session.Session, error) {
 	if store == nil {
 		return func() {}, nil, nil
 	}
 	model := "wire"
+	o := runtimeOverrides{}
+	if rt != nil {
+		o = rt.GetOverrides()
+	}
+	if o == (runtimeOverrides{}) {
+		o = runtime
+	}
 	if cfg != nil {
-		if eff, err := cfg.EffectiveProfile(runtime.Mode, runtime.ModelProfile, runtime.PermissionProfile); err == nil && eff.Profile.Model != "" {
+		if eff, err := cfg.EffectiveProfile(o.Mode, o.ModelProfile, o.PermissionProfile); err == nil && eff.Profile.Model != "" {
 			model = eff.Profile.Model
 		}
 	}
@@ -342,25 +356,36 @@ func attachWireRecorder(w *wire.Wire, cfg *config.Config, store *session.Session
 	}, sess, nil
 }
 
-func persistWireSessionState(cfg *config.Config, store *session.SessionStore, sess *session.Session) {
+func persistWireSessionState(cfg *config.Config, store *session.SessionStore, sess *session.Session, rt *AppRuntime) {
 	if store == nil || sess == nil {
 		return
 	}
 	planState := planManager.Status()
+	o := runtimeOverrides{}
+	if rt != nil {
+		o = rt.GetOverrides()
+	}
+	if o == (runtimeOverrides{}) {
+		o = runtime
+	}
 	state := session.State{
-		Mode:              runtime.Mode,
-		ModelProfile:      runtime.ModelProfile,
-		PermissionProfile: runtime.PermissionProfile,
+		Mode:              o.Mode,
+		ModelProfile:      o.ModelProfile,
+		PermissionProfile: o.PermissionProfile,
 		PlanMode:          planState.Enabled,
 		PlanSessionID:     planState.Slug,
 		PlanSlug:          planState.Slug,
 		PlanPath:          planState.Path,
-		AdditionalDirs:    effectiveAdditionalDirs(cfg),
+		AdditionalDirs:    effectiveAdditionalDirs(cfg, o),
 	}
-	if currentPlan != nil {
-		state.PlanSlug = currentPlan.Slug
-		state.PlanPath = currentPlan.Path
-		state.PlanDoneLines = donePlanLines(currentPlan)
+	cp := currentPlan
+	if rt != nil {
+		cp = rt.GetCurrentPlan()
+	}
+	if cp != nil {
+		state.PlanSlug = cp.Slug
+		state.PlanPath = cp.Path
+		state.PlanDoneLines = donePlanLines(cp)
 	}
 	_ = store.SaveState(sess.ID, state)
 }
@@ -404,30 +429,37 @@ func wireSessionSummaries(store *session.SessionStore) []wireSessionSummary {
 	return out
 }
 
-func runtimeStatusUpdate(cfg *config.Config, engine *soul.Engine) wire.StatusUpdate {
+func runtimeStatusUpdate(cfg *config.Config, engine *soul.Engine, rt *AppRuntime) wire.StatusUpdate {
 	status := wire.StatusUpdate{}
-	planMode := planManager.Status().Enabled
-	status.PlanMode = &planMode
+	planState := planManager.Status()
+	status.PlanMode = &planState.Enabled
 	contextTokens, maxContextTokens, contextUsage := contextTokenStats(engine)
 	status.ContextTokens = &contextTokens
 	status.MaxContextTokens = &maxContextTokens
 	status.ContextUsage = &contextUsage
 	if cfg == nil {
-		status.Diagnostics = runtimeDiagnostics(engine)
+		status.Diagnostics = runtimeDiagnostics(engine, rt)
 		return status
 	}
-	if eff, err := cfg.EffectiveProfile(runtime.Mode, runtime.ModelProfile, runtime.PermissionProfile); err == nil {
+	o := runtimeOverrides{}
+	if rt != nil {
+		o = rt.GetOverrides()
+	}
+	if o == (runtimeOverrides{}) {
+		o = runtime
+	}
+	if eff, err := cfg.EffectiveProfile(o.Mode, o.ModelProfile, o.PermissionProfile); err == nil {
 		status.Mode = eff.Mode
 		status.ModelProfile = eff.ModelProfile
 		status.PermissionProfile = eff.PermissionProfile
 		status.Provider = eff.Profile.Provider
 		status.Model = eff.Profile.Model
 	}
-	status.Diagnostics = runtimeDiagnostics(engine)
+	status.Diagnostics = runtimeDiagnostics(engine, rt)
 	return status
 }
 
-func startWireTurnStatusTicker(w *wire.Wire, cfg *config.Config, engine func() *soul.Engine, started time.Time, interval time.Duration) func() {
+func startWireTurnStatusTicker(w *wire.Wire, cfg *config.Config, engine func() *soul.Engine, started time.Time, interval time.Duration, rt *AppRuntime) func() {
 	if w == nil || interval <= 0 {
 		return func() {}
 	}
@@ -439,7 +471,7 @@ func startWireTurnStatusTicker(w *wire.Wire, cfg *config.Config, engine func() *
 		for {
 			select {
 			case <-ticker.C:
-				status := runtimeStatusUpdate(cfg, engine())
+				status := runtimeStatusUpdate(cfg, engine(), rt)
 				setTurnElapsed(&status, started, true)
 				if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
 					w.SoulSide.PublishEvent(event)

@@ -184,7 +184,7 @@ func TestStatusLinesShowRuntimeRoutingDetails(t *testing.T) {
 	}
 	engine.Mode = m
 
-	lines, err := statusLines(cfg, engine)
+	lines, err := statusLines(cfg, engine, NewAppRuntimeForTest())
 	if err != nil {
 		t.Fatalf("statusLines failed: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestSlashCommandRoutesModelBeforeModeAndSupportsSpaces(t *testing.T) {
 	autoEnabled := true
 	escalator := &autoflow.Escalator{}
 
-	output := captureStdout(t, func() { handleSlashCommand("/model step ai", &cfg, &engine, tools, false, &autoEnabled, escalator) })
+	output := captureStdout(t, func() { handleSlashCommand("/model step ai", &cfg, &engine, tools, false, &autoEnabled, escalator, NewAppRuntimeForTest()) })
 	if runtime.ModelProfile != "step ai" || !strings.Contains(output, "已切换 model_profile: step ai") || strings.Contains(output, "未知模式") {
 		t.Fatalf("expected /model step ai to switch model profile, runtime=%+v output=%q", runtime, output)
 	}
@@ -488,8 +488,9 @@ func TestHandleAutoCommandStatusShowsPlan(t *testing.T) {
 	}
 	cfg := &config.Config{DefaultProfile: "default", Providers: map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}}, Profiles: map[string]config.Profile{"default": {Provider: "p", Model: "base"}}, PermissionProfiles: config.DefaultPermissionProfiles()}
 	engine := buildEngine(cfg, toolset.NewRegistry(), false)
-	captureStdout(t, func() { handleExecutePlan("/execute-plan "+planPath, cfg, &engine, toolset.NewRegistry(), false) })
+	captureStdout(t, func() { handleExecutePlan("/execute-plan "+planPath, cfg, &engine, toolset.NewRegistry(), false, NewAppRuntimeForTest()) })
 	output := captureStdout(t, func() { handleAuto("/auto", &enabled, escalator) })
+	_ = output
 	for _, want := range []string{"plan: plan", "plan_steps: 1/2 done", "next_step: line 2: next item"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("expected output to contain %q, got %q", want, output)
@@ -509,9 +510,9 @@ func TestHandlePlanCommandMarksNextDone(t *testing.T) {
 	}
 	cfg := &config.Config{DefaultProfile: "default", Providers: map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}}, Profiles: map[string]config.Profile{"default": {Provider: "p", Model: "base"}}, PermissionProfiles: config.DefaultPermissionProfiles()}
 	engine := buildEngine(cfg, toolset.NewRegistry(), false)
-	captureStdout(t, func() { handleExecutePlan("/execute-plan "+planPath, cfg, &engine, toolset.NewRegistry(), false) })
+	captureStdout(t, func() { handleExecutePlan("/execute-plan "+planPath, cfg, &engine, toolset.NewRegistry(), false, NewAppRuntimeForTest()) })
 
-	output := captureStdout(t, func() { handlePlan("/plan done") })
+	output := captureStdout(t, func() { handlePlan("/plan done", NewAppRuntimeForTest()) })
 	for _, want := range []string{"已标记完成: line 1: first", "已安全写回计划文件", "下一未完成项: line 2: second"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("expected output to contain %q, got %q", want, output)
@@ -524,7 +525,7 @@ func TestHandlePlanCommandMarksNextDone(t *testing.T) {
 	if !strings.Contains(string(data), "- [x] first") || !strings.Contains(string(data), "- [ ] second") {
 		t.Fatalf("expected plan file writeback, got %q", string(data))
 	}
-	output = captureStdout(t, func() { handlePlan("/plan status") })
+	output = captureStdout(t, func() { handlePlan("/plan status", NewAppRuntimeForTest()) })
 	if !strings.Contains(output, "plan_steps: 1/2 done") || !strings.Contains(output, "next_step: line 2: second") {
 		t.Fatalf("expected updated plan status, got %q", output)
 	}
@@ -543,13 +544,13 @@ func TestHandlePlanCommandRejectsConcurrentPlanWriteback(t *testing.T) {
 	}
 	cfg := &config.Config{DefaultProfile: "default", Providers: map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}}, Profiles: map[string]config.Profile{"default": {Provider: "p", Model: "base"}}, PermissionProfiles: config.DefaultPermissionProfiles()}
 	engine := buildEngine(cfg, toolset.NewRegistry(), false)
-	captureStdout(t, func() { handleExecutePlan("/execute-plan "+planPath, cfg, &engine, toolset.NewRegistry(), false) })
+	captureStdout(t, func() { handleExecutePlan("/execute-plan "+planPath, cfg, &engine, toolset.NewRegistry(), false, NewAppRuntimeForTest()) })
 
 	future := time.Now().Add(time.Hour).Round(0)
 	if err := os.Chtimes(planPath, future, future); err != nil {
 		t.Fatal(err)
 	}
-	output := captureStdout(t, func() { handlePlan("/plan done") })
+	output := captureStdout(t, func() { handlePlan("/plan done", NewAppRuntimeForTest()) })
 	if !strings.Contains(output, "写回计划失败") || !strings.Contains(output, "changed on disk") {
 		t.Fatalf("expected concurrent modification writeback failure, got %q", output)
 	}
@@ -595,7 +596,7 @@ func TestHandleExecutePlanResolvesSlugFromPlanDirectories(t *testing.T) {
 	}
 	cfg := &config.Config{DefaultProfile: "default", Providers: map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}}, Profiles: map[string]config.Profile{"default": {Provider: "p", Model: "base"}}, PermissionProfiles: config.DefaultPermissionProfiles()}
 	engine := buildEngine(cfg, toolset.NewRegistry(), false)
-	output := captureStdout(t, func() { handleExecutePlan("/execute-plan slug-plan", cfg, &engine, toolset.NewRegistry(), false) })
+	output := captureStdout(t, func() { handleExecutePlan("/execute-plan slug-plan", cfg, &engine, toolset.NewRegistry(), false, NewAppRuntimeForTest()) })
 	if currentPlan == nil || currentPlan.Path != planPath || !strings.Contains(output, "Slug Plan.md") {
 		t.Fatalf("expected slug-resolved plan, currentPlan=%+v output=%q", currentPlan, output)
 	}
@@ -605,25 +606,23 @@ func TestHandlePlanCommandClear(t *testing.T) {
 	oldPlan := currentPlan
 	currentPlan = planexec.Parse("plan.md", "- [ ] task")
 	t.Cleanup(func() { currentPlan = oldPlan })
-	output := captureStdout(t, func() { handlePlan("/plan clear") })
+	output := captureStdout(t, func() { handlePlan("/plan clear", NewAppRuntimeForTest()) })
 	if currentPlan != nil || !strings.Contains(output, "已清除当前计划") {
 		t.Fatalf("expected plan cleared, currentPlan=%+v output=%q", currentPlan, output)
 	}
 }
 
 func TestHandleWorkflowRunPushesSteerAndPersistsState(t *testing.T) {
-	oldReg := workflowReg
-	oldConfig := activeConfig
-	t.Cleanup(func() {
-		workflowReg = oldReg
-		activeConfig = oldConfig
-	})
-	workflowReg = &workflowcore.Registry{}
-	workflowReg.Add(workflowcore.Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []workflowcore.Step{{ID: "step-1", Title: "Inspect", Prompt: "Run git diff", Kind: "task"}}})
+	rt := NewAppRuntimeForTest()
+	reg := &workflowcore.Registry{}
+	reg.Add(workflowcore.Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []workflowcore.Step{{ID: "step-1", Title: "Inspect", Prompt: "Run git diff", Kind: "task"}}})
+	rt.SetWorkflowRegistry(reg)
 	engine := soul.NewEngine(nil, toolset.NewRegistry())
 	statePath := filepath.Join(t.TempDir(), "${profile}-${timestamp}.json")
+	oldActiveConfig := activeConfig
 	activeConfig = &config.Config{DefaultProfile: "default"}
-	output := captureStdout(t, func() { handleWorkflow("/workflow run review "+statePath, engine) })
+	t.Cleanup(func() { activeConfig = oldActiveConfig })
+	output := captureStdout(t, func() { handleWorkflow("/workflow run review "+statePath, engine, rt) })
 	instruction, ok := engine.Steer.Pop()
 	if !strings.Contains(output, "已载入 workflow: review") || !ok || !strings.Contains(instruction, "Run git diff") {
 		t.Fatalf("expected workflow run output and steer instruction, output=%q", output)
@@ -853,7 +852,7 @@ func TestHandleExecutePlanLoadsPlanAndQueuesSteer(t *testing.T) {
 	engine := buildEngine(cfg, tools, false)
 	oldContext := engine.Context
 
-	output := captureStdout(t, func() { handleExecutePlan("/execute-plan "+planPath, cfg, &engine, tools, false) })
+	output := captureStdout(t, func() { handleExecutePlan("/execute-plan "+planPath, cfg, &engine, tools, false, NewAppRuntimeForTest()) })
 	if !strings.Contains(output, "已载入计划") || !strings.Contains(output, "下一未完成项: line 3: next task") || runtime.Mode != "code" || runtime.ModelProfile != "" || runtime.PermissionProfile != "" {
 		t.Fatalf("expected plan loaded and runtime switched to code, output=%q runtime=%+v", output, runtime)
 	}
@@ -872,7 +871,7 @@ func TestHandleExecutePlanLoadsPlanAndQueuesSteer(t *testing.T) {
 func TestHandleExecutePlanRejectsNonMarkdown(t *testing.T) {
 	cfg := &config.Config{DefaultProfile: "default"}
 	engine := soul.NewEngine(nil, toolset.NewRegistry())
-	output := captureStdout(t, func() { handleExecutePlan("/execute-plan plan.txt", cfg, &engine, toolset.NewRegistry(), false) })
+	output := captureStdout(t, func() { handleExecutePlan("/execute-plan plan.txt", cfg, &engine, toolset.NewRegistry(), false, NewAppRuntimeForTest()) })
 	if !strings.Contains(output, "必须是 .md") {
 		t.Fatalf("expected markdown validation error, got %q", output)
 	}
@@ -1119,6 +1118,7 @@ func TestRunWireSteerAndCancel(t *testing.T) {
 }
 
 func TestRunWireRecordsWireJSONL(t *testing.T) {
+	ResetDefaultAppRuntime()
 	oldPlanManager := planManager
 	planManager = &plan.Manager{}
 	t.Cleanup(func() { planManager = oldPlanManager })
@@ -1270,7 +1270,9 @@ func TestRunWirePromptEmitsToolEvents(t *testing.T) {
 	activeConfig = cfg
 	t.Cleanup(func() { activeConfig = oldActiveConfig })
 	tools := toolset.NewRegistry()
-	registerTools(tools)
+	rt := NewAppRuntimeForTest()
+	rt.SetActiveConfig(cfg)
+	registerTools(tools, rt)
 	in := strings.NewReader(`{"jsonrpc":"2.0","method":"prompt","id":"prompt_1","params":{"user_input":"read fixture"}}` + "\n")
 	out := &bytes.Buffer{}
 
@@ -1348,7 +1350,9 @@ func TestRunWirePromptRoutesAskUserThroughQuestionRequest(t *testing.T) {
 	activeConfig = cfg
 	t.Cleanup(func() { activeConfig = oldActiveConfig })
 	tools := toolset.NewRegistry()
-	registerTools(tools)
+	rt := NewAppRuntimeForTest()
+	rt.SetActiveConfig(cfg)
+	registerTools(tools, rt)
 	inR, inW := io.Pipe()
 	out := &lockedBuffer{}
 	errCh := make(chan error, 1)
@@ -1602,7 +1606,9 @@ func TestRunWireApprovalWritesFileEndToEnd(t *testing.T) {
 	activeConfig = cfg
 	t.Cleanup(func() { activeConfig = oldActiveConfig })
 	tools := toolset.NewRegistry()
-	registerTools(tools)
+	rt := NewAppRuntimeForTest()
+	rt.SetActiveConfig(cfg)
+	registerTools(tools, rt)
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
 	runErr := make(chan error, 1)
@@ -1684,7 +1690,9 @@ func TestRunWirePromptWaitsForHookRequestResponseEndToEnd(t *testing.T) {
 		Hooks: []config.HookDef{{ID: "wire-prompt", Event: string(hook.EventUserPromptSubmit), Target: "user_prompt"}},
 	}
 	tools := toolset.NewRegistry()
-	registerTools(tools)
+	rt := NewAppRuntimeForTest()
+	rt.SetActiveConfig(cfg)
+	registerTools(tools, rt)
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
 	runErr := make(chan error, 1)

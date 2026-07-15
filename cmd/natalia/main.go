@@ -103,7 +103,7 @@ func main() {
 	activeConfig = cfg
 
 	tools := toolset.NewRegistry()
-	registerTools(tools)
+	registerTools(tools, DefaultAppRuntime())
 	if *wireReplay != "" {
 		if err := runWireReplay(*wireReplay, os.Stdout); err != nil {
 			fmt.Fprintf(os.Stderr, "wire replay error: %v\n", err)
@@ -156,26 +156,58 @@ func parseWireAllowedMethods(raw string) []string {
 	return out
 }
 
-func registerTools(r *toolset.Registry) {
-	configureWebBrowserTools(activeConfig)
-	skill.ConfigureInstructions(activeConfig)
+func registerTools(r *toolset.Registry, rt *AppRuntime) {
+	cfg := rt.GetActiveConfig()
+	configureWebBrowserTools(cfg)
+	skill.ConfigureInstructions(cfg)
 	wd, _ := os.Getwd()
-	workflowReg, _ = workflowcore.Discover(wd)
-	workflowtools.SetDefaultRegistry(workflowReg)
+	reg, _ := workflowcore.Discover(wd)
+	rt.SetWorkflowRegistry(reg)
+	workflowtools.SetDefaultRegistry(reg)
 	if err := toolset.RegisterDefaultTools(r); err != nil {
 		fmt.Fprintf(os.Stderr, "加载默认工具失败: %v\n", err)
 	}
-	registerRuntimePlanTools(r)
-	registerPolicyAwareFileTools(r, activeConfig)
+	registerRuntimePlanTools(r, rt)
+	registerPolicyAwareFileTools(r, rt)
 }
 
-func registerRuntimePlanTools(r *toolset.Registry) {
-	if r == nil {
+func registerRuntimePlanTools(r *toolset.Registry, rt *AppRuntime) {
+	if r == nil || rt == nil {
 		return
 	}
-	r.Register(&plantools.Enter{Manager: planManager})
-	r.Register(&plantools.Exit{Manager: planManager})
-	r.Register(&plantools.Status{Manager: planManager})
+	r.Register(&plantools.Enter{Manager: rt.GetPlanManager()})
+	r.Register(&plantools.Exit{Manager: rt.GetPlanManager()})
+	r.Register(&plantools.Status{Manager: rt.GetPlanManager()})
+}
+
+func registerPolicyAwareFileTools(r *toolset.Registry, rt *AppRuntime) {
+	cfg := rt.GetActiveConfig()
+	policy := runtimeFilePolicy(cfg, rt.GetOverrides())
+	pm := rt.GetPlanManager()
+	writeGuard := func(path string) error {
+		if err := policy.GuardWrite(path); err != nil {
+			return err
+		}
+		return pm.GuardWrite(path)
+	}
+	r.Register(&filetool.Read{Guard: policy.GuardRead})
+	r.Register(&filetool.Write{Guard: writeGuard})
+	r.Register(&filetool.Edit{Guard: writeGuard})
+	r.Register(&filetool.Grep{Guard: policy})
+	r.Register(&filetool.Glob{Guard: policy})
+}
+
+func runtimeFilePolicy(cfg *config.Config, o runtimeOverrides) filepolicy.Policy {
+	workDir := ""
+	if cfg != nil {
+		if eff, err := cfg.EffectiveProfile(o.Mode, o.ModelProfile, o.PermissionProfile); err == nil {
+			workDir = eff.Profile.WorkDir
+		}
+	}
+	if workDir == "" {
+		workDir, _ = os.Getwd()
+	}
+	return filepolicy.New(workDir, effectiveAdditionalDirs(cfg, o))
 }
 
 func configureWebBrowserTools(cfg *config.Config) {
@@ -220,34 +252,6 @@ func networkPolicyFromConfig(cfg *config.Config) (*networkpolicy.Policy, error) 
 		AllowLocalhost: cfg.NetworkPolicy.AllowLocalhost,
 		AllowPrivate:   cfg.NetworkPolicy.AllowPrivate,
 	})
-}
-
-func registerPolicyAwareFileTools(r *toolset.Registry, cfg *config.Config) {
-	policy := runtimeFilePolicy(cfg)
-	writeGuard := func(path string) error {
-		if err := policy.GuardWrite(path); err != nil {
-			return err
-		}
-		return planManager.GuardWrite(path)
-	}
-	r.Register(&filetool.Read{Guard: policy.GuardRead})
-	r.Register(&filetool.Write{Guard: writeGuard})
-	r.Register(&filetool.Edit{Guard: writeGuard})
-	r.Register(&filetool.Grep{Guard: policy})
-	r.Register(&filetool.Glob{Guard: policy})
-}
-
-func runtimeFilePolicy(cfg *config.Config) filepolicy.Policy {
-	workDir := ""
-	if cfg != nil {
-		if eff, err := cfg.EffectiveProfile(runtime.Mode, runtime.ModelProfile, runtime.PermissionProfile); err == nil {
-			workDir = eff.Profile.WorkDir
-		}
-	}
-	if workDir == "" {
-		workDir, _ = os.Getwd()
-	}
-	return filepolicy.New(workDir, effectiveAdditionalDirs(cfg))
 }
 
 func loadMCPServers(cfg *config.Config, r *toolset.Registry, modeConfig *config.ModeProfile) error {
@@ -651,7 +655,7 @@ func handleAuto(input string, enabled *bool, escalator *autoflow.Escalator) {
 	}
 }
 
-func handleExecutePlan(input string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool) {
+func handleExecutePlan(input string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool, rt *AppRuntime) {
 	parts := strings.Fields(input)
 	if len(parts) < 2 {
 		fmt.Println("用法: /execute-plan <plan.md>")
@@ -683,9 +687,11 @@ func handleExecutePlan(input string, cfg *config.Config, engine **soul.Engine, t
 	}
 	currentPlan = planexec.Parse(planPath, string(data))
 	currentPlanMTime = info.ModTime()
-	runtime.Mode = "code"
-	runtime.ModelProfile = ""
-	runtime.PermissionProfile = ""
+	o := runtimeOverrides{Mode: "code"}
+	if rt != nil {
+		rt.SetOverrides(o)
+	}
+	runtime = o
 	*engine = rebuildEnginePreservingState(cfg, *engine, tools, debug)
 	(*engine).Steer.Push(currentPlan.Instruction())
 	persistCurrentSessionState()
@@ -711,7 +717,7 @@ func resolvePlanArgument(arg string) (string, error) {
 	return plan.FindBySlug(wd, arg)
 }
 
-func handlePlan(input string) {
+func handlePlan(input string, rt *AppRuntime) {
 	parts := strings.Fields(input)
 	cmd := "status"
 	if len(parts) > 1 {
@@ -778,19 +784,20 @@ func markCurrentPlanDone(writeBack bool) bool {
 	return true
 }
 
-func handleWorkflow(input string, engine *soul.Engine) {
+func handleWorkflow(input string, engine *soul.Engine, rt *AppRuntime) {
 	parts := strings.Fields(input)
 	cmd := "list"
 	if len(parts) > 1 {
 		cmd = parts[1]
 	}
-	if workflowReg == nil {
+	reg := rt.GetWorkflowRegistry()
+	if reg == nil {
 		fmt.Println("没有可用的 workflow registry")
 		return
 	}
 	switch cmd {
 	case "list":
-		items := workflowReg.List()
+		items := reg.List()
 		if len(items) == 0 {
 			fmt.Println("没有可用的 workflow")
 			return
@@ -803,7 +810,7 @@ func handleWorkflow(input string, engine *soul.Engine) {
 			fmt.Println("用法: /workflow run <name> [state_path]")
 			return
 		}
-		state, instruction, err := workflowReg.Run(parts[2])
+		state, instruction, err := reg.Run(parts[2])
 		if err != nil {
 			fmt.Printf("启动 workflow 失败: %v\n", err)
 			return
@@ -822,7 +829,7 @@ func handleWorkflow(input string, engine *soul.Engine) {
 		fmt.Printf("✓ 已载入 workflow: %s (%d steps)\n", state.WorkflowName, state.TotalSteps)
 		fmt.Println("下一条普通输入将带着该 workflow 当前步骤继续执行。")
 	case "diagnostics":
-		diag := workflowReg.Diagnostics()
+		diag := reg.Diagnostics()
 		if len(diag) == 0 {
 			fmt.Println("workflow diagnostics: none")
 			return
@@ -1079,7 +1086,7 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 		history = append(history, input)
 
 		if strings.HasPrefix(input, "/") {
-			handleSlashCommand(input, &cfg, &engine, tools, debug, &autoEnabled, escalator)
+			handleSlashCommand(input, &cfg, &engine, tools, debug, &autoEnabled, escalator, DefaultAppRuntime())
 			configureInteractiveEngine()
 			continue
 		}
@@ -1095,7 +1102,7 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 			wireRuntime.SoulSide.PublishEvent(event)
 		}
 		turnStarted := time.Now()
-		stopTurnStatus := startWireTurnStatusTicker(wireRuntime, cfg, func() *soul.Engine { return engine }, turnStarted, time.Second)
+		stopTurnStatus := startWireTurnStatusTicker(wireRuntime, cfg, func() *soul.Engine { return engine }, turnStarted, time.Second, DefaultAppRuntime())
 
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, os.Interrupt)
@@ -1130,7 +1137,7 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 			if event, err := wire.NewEvent(wire.EventTurnEnd, wire.TurnEnd{}); err == nil {
 				wireRuntime.SoulSide.PublishEvent(event)
 			}
-			status := runtimeStatusUpdate(cfg, engine)
+			status := runtimeStatusUpdate(cfg, engine, DefaultAppRuntime())
 			setTurnElapsed(&status, turnStarted, false)
 			if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
 				wireRuntime.SoulSide.PublishEvent(event)
@@ -1239,7 +1246,7 @@ func handleRollback(input string, engine **soul.Engine) {
 	fmt.Println(msg)
 }
 
-func handleMode(input string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool) {
+func handleMode(input string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool, rt *AppRuntime) {
 	if input == "/mode" || input == "/mode " {
 		m := (*engine).Mode
 		if m == nil {
@@ -1264,9 +1271,11 @@ func handleMode(input string, cfg *config.Config, engine **soul.Engine, tools *t
 		fmt.Println(err)
 		return
 	}
-	runtime.Mode = m.Name
-	runtime.ModelProfile = ""
-	runtime.PermissionProfile = ""
+	o := runtimeOverrides{Mode: m.Name}
+	if rt != nil {
+		rt.SetOverrides(o)
+	}
+	runtime = o
 	*engine = rebuildEnginePreservingState(cfg, *engine, tools, debug)
 	registerAgentToolsForEngine(cfg, *engine, tools)
 	applyModePrompt(*engine, m)
@@ -1275,7 +1284,7 @@ func handleMode(input string, cfg *config.Config, engine **soul.Engine, tools *t
 	printRuntimeStatusSummary(cfg, *engine)
 }
 
-func handleModel(input string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool) {
+func handleModel(input string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool, rt *AppRuntime) {
 	parts := strings.Fields(input)
 	if len(parts) < 2 {
 		showModelProfiles(cfg)
@@ -1287,11 +1296,39 @@ func handleModel(input string, cfg *config.Config, engine **soul.Engine, tools *
 		showModelProfiles(cfg)
 		return
 	}
-	runtime.ModelProfile = name
+	o := runtimeOverrides{Mode: rt.GetOverrides().Mode, ModelProfile: name}
+	if rt != nil {
+		rt.SetOverrides(o)
+	}
+	runtime = o
 	*engine = rebuildEnginePreservingState(cfg, *engine, tools, debug)
 	registerAgentToolsForEngine(cfg, *engine, tools)
 	persistCurrentSessionState()
 	fmt.Printf("✓ 已切换 model_profile: %s\n", name)
+	printRuntimeStatusSummary(cfg, *engine)
+}
+
+func handlePermission(input string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool, rt *AppRuntime) {
+	parts := strings.Fields(input)
+	if len(parts) < 2 {
+		showPermissions(cfg)
+		return
+	}
+	name := parts[1]
+	if _, ok := cfg.PermissionProfiles[name]; !ok {
+		fmt.Printf("权限模式 %q 不存在\n", name)
+		showPermissions(cfg)
+		return
+	}
+	o := runtimeOverrides{Mode: rt.GetOverrides().Mode, PermissionProfile: name}
+	if rt != nil {
+		rt.SetOverrides(o)
+	}
+	runtime = o
+	*engine = rebuildEnginePreservingState(cfg, *engine, tools, debug)
+	registerAgentToolsForEngine(cfg, *engine, tools)
+	persistCurrentSessionState()
+	fmt.Printf("✓ 已切换 permission_profile: %s\n", name)
 	printRuntimeStatusSummary(cfg, *engine)
 }
 
@@ -1307,26 +1344,6 @@ func showModelProfiles(cfg *config.Config) {
 	}
 }
 
-func handlePermission(input string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool) {
-	parts := strings.Fields(input)
-	if len(parts) < 2 {
-		showPermissions(cfg)
-		return
-	}
-	name := parts[1]
-	if _, ok := cfg.PermissionProfiles[name]; !ok {
-		fmt.Printf("权限模式 %q 不存在\n", name)
-		showPermissions(cfg)
-		return
-	}
-	runtime.PermissionProfile = name
-	*engine = rebuildEnginePreservingState(cfg, *engine, tools, debug)
-	registerAgentToolsForEngine(cfg, *engine, tools)
-	persistCurrentSessionState()
-	fmt.Printf("✓ 已切换 permission_profile: %s\n", name)
-	printRuntimeStatusSummary(cfg, *engine)
-}
-
 func showPermissions(cfg *config.Config) {
 	fmt.Printf("当前 permission_profile: %s\n", currentPermissionProfile(cfg))
 	fmt.Println("可用 permission_profiles:")
@@ -1335,12 +1352,12 @@ func showPermissions(cfg *config.Config) {
 	}
 }
 
-func handleStatus(cfg *config.Config, engine *soul.Engine) {
+func handleStatus(cfg *config.Config, engine *soul.Engine, rt *AppRuntime) {
 	if cfg == nil {
 		fmt.Println("未配置")
 		return
 	}
-	lines, err := statusLines(cfg, engine)
+	lines, err := statusLines(cfg, engine, rt)
 	if err != nil {
 		fmt.Printf("读取状态失败: %v\n", err)
 		return
@@ -1350,8 +1367,15 @@ func handleStatus(cfg *config.Config, engine *soul.Engine) {
 	}
 }
 
-func statusLines(cfg *config.Config, engine *soul.Engine) ([]string, error) {
-	eff, err := cfg.EffectiveProfile(runtime.Mode, runtime.ModelProfile, runtime.PermissionProfile)
+func statusLines(cfg *config.Config, engine *soul.Engine, rt *AppRuntime) ([]string, error) {
+	o := runtimeOverrides{}
+	if rt != nil {
+		o = rt.GetOverrides()
+	}
+	if o == (runtimeOverrides{}) {
+		o = runtime
+	}
+	eff, err := cfg.EffectiveProfile(o.Mode, o.ModelProfile, o.PermissionProfile)
 	if err != nil {
 		return nil, err
 	}
@@ -1360,15 +1384,15 @@ func statusLines(cfg *config.Config, engine *soul.Engine) ([]string, error) {
 		modeName = engine.Mode.Name
 	}
 	modeSuffix := ""
-	if runtime.Mode != "" {
+	if o.Mode != "" {
 		modeSuffix = " (manual override)"
 	}
 	modelSuffix := ""
-	if runtime.ModelProfile != "" {
+	if o.ModelProfile != "" {
 		modelSuffix = " (manual override)"
 	}
 	permissionSuffix := ""
-	if runtime.PermissionProfile != "" {
+	if o.PermissionProfile != "" {
 		permissionSuffix = " (manual override)"
 	}
 	tools := "mode-filtered"
@@ -1392,11 +1416,11 @@ func statusLines(cfg *config.Config, engine *soul.Engine) ([]string, error) {
 		fmt.Sprintf("stream: %t", eff.Profile.Stream),
 		fmt.Sprintf("tools: %s", tools),
 	}
-	lines = append(lines, runtimeDiagnostics(engine)...)
+	lines = append(lines, runtimeDiagnostics(engine, rt)...)
 	return lines, nil
 }
 
-func runtimeDiagnostics(engine *soul.Engine) []string {
+func runtimeDiagnostics(engine *soul.Engine, rt *AppRuntime) []string {
 	lines := []string{"agent_spec_adapters: generic,kimi,kilo,openai,mcp_schema"}
 	if engine != nil && engine.Hooks != nil {
 		lines = append(lines, fmt.Sprintf("hooks: configured=%d audit_entries=%d", len(engine.Hooks.Hooks()), len(engine.Hooks.AuditLog())))
@@ -1426,8 +1450,12 @@ func runtimeDiagnostics(engine *soul.Engine) []string {
 			lines = append(lines, fmt.Sprintf("mcp.%s: %s", key, mcpDiag[key]))
 		}
 	}
-	if workflowReg != nil {
-		lines = append(lines, fmt.Sprintf("workflows: loaded=%d diagnostics=%d", len(workflowReg.List()), len(workflowReg.Diagnostics())))
+	reg := &workflowcore.Registry{}
+	if rt != nil {
+		reg = rt.GetWorkflowRegistry()
+	}
+	if reg != nil {
+		lines = append(lines, fmt.Sprintf("workflows: loaded=%d diagnostics=%d", len(reg.List()), len(reg.Diagnostics())))
 	}
 	if skillRegistry != nil {
 		lines = append(lines, fmt.Sprintf("instructions: diagnostics=%d", len(skillRegistry.Diagnostics())))
@@ -1667,7 +1695,7 @@ func handleWorkerCommand(input string) {
 	}
 }
 
-func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool, autoEnabled *bool, escalator *autoflow.Escalator) {
+func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool, autoEnabled *bool, escalator *autoflow.Escalator, rt *AppRuntime) {
 	if isSlashCommand(input, "/sessions") {
 		handleSessions(input, *cfg, engine, tools, debug)
 		return
@@ -1687,7 +1715,7 @@ func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine,
 			fmt.Println("请先配置。输入 /setup")
 			return
 		}
-		handleMode(input, *cfg, engine, tools, debug)
+		handleMode(input, *cfg, engine, tools, debug, rt)
 		return
 	}
 	if isSlashCommand(input, "/model") {
@@ -1695,7 +1723,7 @@ func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine,
 			fmt.Println("请先配置。输入 /setup")
 			return
 		}
-		handleModel(input, *cfg, engine, tools, debug)
+		handleModel(input, *cfg, engine, tools, debug, rt)
 		return
 	}
 	if isSlashCommand(input, "/permission") {
@@ -1703,11 +1731,11 @@ func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine,
 			fmt.Println("请先配置。输入 /setup")
 			return
 		}
-		handlePermission(input, *cfg, engine, tools, debug)
+		handlePermission(input, *cfg, engine, tools, debug, rt)
 		return
 	}
 	if input == "/status" {
-		handleStatus(*cfg, *engine)
+		handleStatus(*cfg, *engine, rt)
 		return
 	}
 	if isSlashCommand(input, "/auto") {
@@ -1719,15 +1747,15 @@ func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine,
 			fmt.Println("请先配置。输入 /setup")
 			return
 		}
-		handleExecutePlan(input, *cfg, engine, tools, debug)
+		handleExecutePlan(input, *cfg, engine, tools, debug, rt)
 		return
 	}
 	if isSlashCommand(input, "/plan") {
-		handlePlan(input)
+		handlePlan(input, rt)
 		return
 	}
 	if isSlashCommand(input, "/workflow") {
-		handleWorkflow(input, *engine)
+		handleWorkflow(input, *engine, rt)
 		return
 	}
 	if strings.HasPrefix(input, "/workers") || strings.HasPrefix(input, "/stop ") || strings.HasPrefix(input, "/go ") || strings.HasPrefix(input, "/attach ") || strings.HasPrefix(input, "/detach ") {
@@ -1815,7 +1843,7 @@ func persistCurrentSessionState() {
 		Mode:              runtime.Mode,
 		ModelProfile:      runtime.ModelProfile,
 		PermissionProfile: runtime.PermissionProfile,
-		AdditionalDirs:    effectiveAdditionalDirs(activeConfig),
+		AdditionalDirs:    effectiveAdditionalDirs(activeConfig, runtime),
 	}
 	planState := planManager.Status()
 	state.PlanMode = planState.Enabled
@@ -1945,11 +1973,11 @@ func validateRestoredRuntime(cfg *config.Config, state session.State) (runtimeOv
 	return restored, warnings
 }
 
-func effectiveAdditionalDirs(cfg *config.Config) []string {
+func effectiveAdditionalDirs(cfg *config.Config, o runtimeOverrides) []string {
 	if cfg == nil {
 		return nil
 	}
-	eff, err := cfg.EffectiveProfile(runtime.Mode, runtime.ModelProfile, runtime.PermissionProfile)
+	eff, err := cfg.EffectiveProfile(o.Mode, o.ModelProfile, o.PermissionProfile)
 	if err != nil || len(eff.Profile.AdditionalDirs) == 0 {
 		return nil
 	}

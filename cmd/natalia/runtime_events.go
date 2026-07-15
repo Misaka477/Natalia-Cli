@@ -20,33 +20,44 @@ import (
 )
 
 func registerAgentToolsForEngine(cfg *config.Config, engine *soul.Engine, tools *toolset.Registry) {
-	if cfg == nil || engine == nil || engine.LLM == nil || tools == nil {
+	registerAgentToolsForEngineWithRuntime(DefaultAppRuntime(), engine, tools)
+}
+
+func registerAgentToolsForEngineWithRuntime(rt *AppRuntime, engine *soul.Engine, tools *toolset.Registry) {
+	if rt == nil || engine == nil || engine.LLM == nil || tools == nil {
 		return
 	}
-	if workerPool == nil {
-		workerPool = worker.NewPool()
+	cfg := rt.GetActiveConfig()
+	if cfg == nil {
+		return
 	}
-	eff, err := cfg.EffectiveProfile(runtime.Mode, runtime.ModelProfile, runtime.PermissionProfile)
+	pool := rt.GetWorkerPool()
+	if pool == nil {
+		pool = worker.NewPool()
+		rt.SetWorkerPool(pool)
+	}
+	o := rt.GetOverrides()
+	eff, err := cfg.EffectiveProfile(o.Mode, o.ModelProfile, o.PermissionProfile)
 	if err != nil {
 		return
 	}
 	workerClient := newLLMClient(&eff.Profile, &eff.Provider)
-	tools.Register(&agent.Spawn{Pool: workerPool, Client: workerClient, Tools: tools, Approver: engine.Approver, ClientForModelProfile: func(modelProfile string) (*llm.Client, error) {
-		eff, err := cfg.EffectiveProfile(runtime.Mode, modelProfile, runtime.PermissionProfile)
+	tools.Register(&agent.Spawn{Pool: pool, Client: workerClient, Tools: tools, Approver: engine.Approver, ClientForModelProfile: func(modelProfile string) (*llm.Client, error) {
+		eff, err := cfg.EffectiveProfile(o.Mode, modelProfile, o.PermissionProfile)
 		if err != nil {
 			return nil, err
 		}
 		return newLLMClient(&eff.Profile, &eff.Provider), nil
 	}})
-	tools.Register(&agent.List{Pool: workerPool})
-	tools.Register(&agent.Output{Pool: workerPool})
-	tools.Register(&agent.Attach{Pool: workerPool})
-	tools.Register(&agent.Detach{Pool: workerPool})
-	tools.Register(&agent.Stop{Pool: workerPool})
-	tools.Register(&agent.Resume{Pool: workerPool})
-	tools.Register(&agent.Status{Pool: workerPool})
-	tools.Register(&agent.Cleanup{Pool: workerPool})
-	tools.Register(&agent.Audit{Pool: workerPool})
+	tools.Register(&agent.List{Pool: pool})
+	tools.Register(&agent.Output{Pool: pool})
+	tools.Register(&agent.Attach{Pool: pool})
+	tools.Register(&agent.Detach{Pool: pool})
+	tools.Register(&agent.Stop{Pool: pool})
+	tools.Register(&agent.Resume{Pool: pool})
+	tools.Register(&agent.Status{Pool: pool})
+	tools.Register(&agent.Cleanup{Pool: pool})
+	tools.Register(&agent.Audit{Pool: pool})
 }
 
 func bridgeRuntimeEvents(engine *soul.Engine, w *wire.Wire) func() {
