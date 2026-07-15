@@ -73,6 +73,9 @@ func Create(name, sandboxType, workDir string) (*Box, error) {
 		if err := os.MkdirAll(b.Overlay, 0755); err != nil {
 			return nil, err
 		}
+		if err := b.initGitRepo(); err != nil {
+			return nil, err
+		}
 	case "agent":
 		src := filepath.Join(dir, "source")
 		cmd := exec.Command("git", "clone", workDir, src)
@@ -141,6 +144,9 @@ func (b *Box) Merge() ([]string, error) {
 			return err
 		}
 		if d.IsDir() {
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		rel, _ := filepath.Rel(b.Overlay, path)
@@ -188,4 +194,53 @@ func (b *Box) Diff() (string, error) {
 
 func (b *Box) overlayPath(path string) string {
 	return filepath.Join(b.Overlay, filepath.Clean("/"+path))
+}
+
+func (b *Box) initGitRepo() error {
+	cmd := exec.Command("git", "init", b.Overlay)
+	cmd.Env = os.Environ()
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git init failed: %w\n%s", err, out)
+	}
+	return nil
+}
+
+func (b *Box) Run(cmd string, args []string) (string, int, error) {
+	workDir := b.Overlay
+	if b.Type == "agent" {
+		workDir = b.Source
+	}
+	c := exec.Command(cmd, args...)
+	c.Dir = workDir
+	c.Env = os.Environ()
+	out, err := c.CombinedOutput()
+	exitCode := 0
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else {
+			return "", 0, err
+		}
+	}
+	return string(out), exitCode, nil
+}
+
+func (b *Box) ApplyPatch(patch string) error {
+	workDir := b.Overlay
+	if b.Type == "agent" {
+		workDir = b.Source
+	}
+	gitDir := filepath.Join(workDir, ".git")
+	if _, err := os.Stat(gitDir); os.IsNotExist(err) {
+		return fmt.Errorf("not a git repository, cannot apply patch")
+	}
+	c := exec.Command("git", "apply", "--whitespace=nowarn")
+	c.Dir = workDir
+	c.Stdin = strings.NewReader(patch)
+	c.Env = os.Environ()
+	out, err := c.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git apply failed: %w\n%s", err, out)
+	}
+	return nil
 }

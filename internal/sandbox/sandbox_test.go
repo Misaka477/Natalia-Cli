@@ -144,3 +144,52 @@ func TestDiff(t *testing.T) {
 		t.Errorf("diff should show modified file, got: %s", diff)
 	}
 }
+
+func TestUserSandboxGitInit(t *testing.T) {
+	workDir := t.TempDir()
+
+	b, err := Create("git-sb", "user", workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = b.Run("git", []string{"status", "--short"})
+	if err != nil {
+		t.Fatalf("expected git status to work in user sandbox, got %v", err)
+	}
+}
+
+func TestSandboxRun(t *testing.T) {
+	workDir := t.TempDir()
+
+	b, _ := Create("run-sb", "user", workDir)
+	b.WriteFile("script.sh", []byte("#!/bin/sh\necho hello\n"), 0755)
+
+	out, code, err := b.Run("sh", []string{"script.sh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != 0 || !strings.Contains(out, "hello") {
+		t.Fatalf("expected script output, got code=%d out=%q", code, out)
+	}
+}
+
+func TestSandboxApplyPatch(t *testing.T) {
+	workDir := t.TempDir()
+
+	b, _ := Create("patch-sb", "user", workDir)
+	b.WriteFile("foo.txt", []byte("original\n"), 0644)
+
+	patch := `--- a/foo.txt
++++ b/foo.txt
+@@ -1 +1 @@
+-original
++patched
+`
+	if err := b.ApplyPatch(patch); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := b.ReadFile("foo.txt")
+	if string(data) != "patched\n" {
+		t.Fatalf("expected patched content, got %q", string(data))
+	}
+}
