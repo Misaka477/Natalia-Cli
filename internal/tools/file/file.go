@@ -31,13 +31,13 @@ type Read struct {
 }
 
 type ReadParams struct {
-	Path   string `json:"path" description:"文件绝对路径或相对路径"`
-	Offset string `json:"offset,omitempty" description:"可选，起始行号，从 1 开始；例如 '200'"`
-	Limit  string `json:"limit,omitempty" description:"可选，读取行数；数字、'start-end' 或 'all'；也接受纯数字"`
+	Path   string `json:"path" description:"absolute or relative file path"`
+	Offset string `json:"offset,omitempty" description:"optional, starting line number (1-based); e.g. '200'"`
+	Limit  string `json:"limit,omitempty" description:"optional, number of lines to read; number, 'start-end', or 'all'; plain numbers also accepted"`
 }
 
 func (t *Read) Name() string        { return "read_file" }
-func (t *Read) Description() string { return "读取文件内容" }
+func (t *Read) Description() string { return "read file content" }
 func (t *Read) Parameters() map[string]llm.Property {
 	props, _ := toolschema.FromStruct(ReadParams{})
 	return props
@@ -287,16 +287,16 @@ type Write struct {
 const maxWriteFileBytes = 1024 * 1024
 
 func (t *Write) Name() string        { return "write_file" }
-func (t *Write) Description() string { return "写入/覆盖文件" }
+func (t *Write) Description() string { return "write/overwrite a file" }
 func (t *Write) Required() []string  { return []string{"path", "content"} }
 func (t *Write) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"path":        {Type: "string", Description: "文件绝对路径"},
-		"content":     {Type: "string", Description: "文件内容"},
-		"create_dirs": {Type: "boolean", Description: "可选，true 时自动创建不存在的父目录；默认 false"},
-		"create_only": {Type: "boolean", Description: "可选，true 时若文件已存在则报错；默认 false"},
-		"backup":      {Type: "boolean", Description: "可选，true 时覆盖前备份原文件为 path.bak；默认 false"},
-		"dry_run":     {Type: "boolean", Description: "可选，true 时预览写入但不实际写入；默认 false"},
+		"path":        {Type: "string", Description: "absolute file path"},
+		"content":     {Type: "string", Description: "file content"},
+		"create_dirs": {Type: "boolean", Description: "optional, auto-create missing parent directories when true; default false"},
+		"create_only": {Type: "boolean", Description: "optional, error if file already exists when true; default false"},
+		"backup":      {Type: "boolean", Description: "optional, backup existing file to path.bak before overwriting when true; default false"},
+		"dry_run":     {Type: "boolean", Description: "optional, preview write without persisting when true; default false"},
 	}
 }
 func (t *Write) Execute(args map[string]any) (string, error) {
@@ -396,17 +396,17 @@ type Edit struct {
 
 func (t *Edit) Name() string { return "edit_file" }
 func (t *Edit) Description() string {
-	return "对文件做精确字符串替换编辑，支持正则匹配和追加"
+	return "perform exact/regex string replacement editing on a file, with append support"
 }
 func (t *Edit) Required() []string { return []string{"path", "old_string", "new_string"} }
 func (t *Edit) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"path":        {Type: "string", Description: "文件绝对路径"},
-		"old_string":  {Type: "string", Description: "要被替换的字符串；regex=true 时为正则模式；append=true 时忽略"},
-		"new_string":  {Type: "string", Description: "替换后的字符串；append=true 时追加此内容到文件末尾"},
-		"edits":       {Type: "array", Description: "可选，多编辑批处理数组；每项为 {old_string,new_string}，按顺序应用，全部成功后一次性写入"},
-		"replace_all": {Type: "boolean", Description: "可选，是否替换全部匹配；默认 false，只替换第一处"},
-		"regex":       {Type: "boolean", Description: "可选，true 时 old_string 为正则模式；默认 false，精确字符串匹配"},
+		"path":        {Type: "string", Description: "absolute file path"},
+		"old_string":  {Type: "string", Description: "string to replace; regex pattern when regex=true; ignored when append=true"},
+		"new_string":  {Type: "string", Description: "replacement string; appended to end of file when append=true"},
+		"edits":       {Type: "array", Description: "optional, batch edit array; each item is {old_string,new_string}, applied in order, written atomically on success"},
+		"replace_all": {Type: "boolean", Description: "optional, replace all matches when true; default false, replace first match only"},
+		"regex":       {Type: "boolean", Description: "optional, treat old_string as regex pattern when true; default false, exact string match"},
 		"append":      {Type: "boolean", Description: "可选，true 时将 new_string 追加到文件末尾，忽略 old_string 和 edits"},
 	}
 }
@@ -698,25 +698,25 @@ const maxGrepScannerFileBytes = 10 * 1024 * 1024
 
 func (t *Grep) Name() string { return "grep" }
 func (t *Grep) Description() string {
-	return "在文件中递归搜索文本（支持正则表达式）"
+	return "recursively search text in files (supports regex)"
 }
 func (t *Grep) Required() []string { return []string{"pattern"} }
 func (t *Grep) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"pattern":         {Type: "string", Description: "搜索模式（正则）"},
-		"path":            {Type: "string", Description: "可选，搜索目录，默认当前目录"},
-		"include":         {Type: "string", Description: "可选，文件 glob 过滤如 '*.go'"},
-		"glob":            {Type: "string", Description: "可选，ripgrep 风格文件 glob 过滤；当前作为 include 的别名"},
-		"type":            {Type: "string", Description: "可选，按 ripgrep 文件类型过滤，如 go、py、js、md"},
-		"multiline":       {Type: "boolean", Description: "可选，启用跨行正则搜索"},
-		"include_ignored": {Type: "boolean", Description: "可选，包含 .gitignore 忽略的文件"},
-		"hidden":          {Type: "boolean", Description: "可选，包含隐藏文件和隐藏目录"},
-		"head_limit":      {Type: "integer", Description: "可选，最多返回多少条匹配，默认 200，范围 1-10000"},
-		"ignore_case":     {Type: "boolean", Description: "可选，是否忽略大小写，默认 false"},
-		"before_context":  {Type: "integer", Description: "可选，每条匹配前显示多少行上下文，默认 0，范围 0-100"},
-		"after_context":   {Type: "integer", Description: "可选，每条匹配后显示多少行上下文，默认 0，范围 0-100"},
-		"context":         {Type: "integer", Description: "可选，同时设置 before_context 和 after_context，范围 0-100"},
-		"output_mode":     {Type: "string", Description: "可选，content|files|count|json；默认 content"},
+		"pattern":         {Type: "string", Description: "search pattern (regex)"},
+		"path":            {Type: "string", Description: "optional, directory to search; defaults to current"},
+		"include":         {Type: "string", Description: "optional, file glob filter like '*.go'"},
+		"glob":            {Type: "string", Description: "optional, ripgrep-style file glob filter; currently an alias for include"},
+		"type":            {Type: "string", Description: "optional, filter by ripgrep file type like go, py, js, md"},
+		"multiline":       {Type: "boolean", Description: "optional, enable multi-line regex search"},
+		"include_ignored": {Type: "boolean", Description: "optional, include .gitignore-ignored files"},
+		"hidden":          {Type: "boolean", Description: "optional, include hidden files and directories"},
+		"head_limit":      {Type: "integer", Description: "optional, maximum matches to return; default 200, range 1-10000"},
+		"ignore_case":     {Type: "boolean", Description: "optional, ignore case when true; default false"},
+		"before_context":  {Type: "integer", Description: "optional, lines of context before each match; default 0, range 0-100"},
+		"after_context":   {Type: "integer", Description: "optional, lines of context after each match; default 0, range 0-100"},
+		"context":         {Type: "integer", Description: "optional, set both before_context and after_context; range 0-100"},
+		"output_mode":     {Type: "string", Description: "optional, content|files|count|json; default content"},
 	}
 }
 func (t *Grep) Execute(args map[string]any) (string, error) {
@@ -1538,17 +1538,17 @@ type Glob struct {
 
 func (t *Glob) Name() string { return "glob" }
 func (t *Glob) Description() string {
-	return "按 glob 模式递归查找文件（支持 ** 匹配任意目录）"
+	return "recursively find files by glob pattern (** matches any directory)"
 }
 func (t *Glob) Required() []string { return []string{"pattern"} }
 func (t *Glob) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"pattern":         {Type: "string", Description: "glob 模式如 '**/*.go' 或 'src/**/*.ts'"},
-		"path":            {Type: "string", Description: "可选，搜索根目录，默认当前"},
-		"include_ignored": {Type: "boolean", Description: "可选，包含 .gitignore 忽略的文件"},
-		"hidden":          {Type: "boolean", Description: "可选，包含隐藏文件和隐藏目录"},
-		"limit":           {Type: "integer", Description: "可选，最多返回多少条结果；默认返回全部，范围 1-10000"},
-		"offset":          {Type: "integer", Description: "可选，从第几条结果开始返回，0-based，默认 0"},
+		"pattern":         {Type: "string", Description: "glob pattern like '**/*.go' or 'src/**/*.ts'"},
+		"path":            {Type: "string", Description: "optional, root directory to search; defaults to current"},
+		"include_ignored": {Type: "boolean", Description: "optional, include .gitignore-ignored files"},
+		"hidden":          {Type: "boolean", Description: "optional, include hidden files and directories"},
+		"limit":           {Type: "integer", Description: "optional, maximum results to return; default all, range 1-10000"},
+		"offset":          {Type: "integer", Description: "optional, skip first N results (0-based); default 0"},
 	}
 }
 func (t *Glob) Execute(args map[string]any) (string, error) {

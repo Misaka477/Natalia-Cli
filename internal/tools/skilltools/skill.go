@@ -12,7 +12,7 @@ type List struct {
 }
 
 func (t *List) Name() string        { return "skill_list" }
-func (t *List) Description() string { return "列出所有可用的技能" }
+func (t *List) Description() string { return "list all available skills" }
 func (t *List) Required() []string  { return []string{} }
 func (t *List) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{}
@@ -34,11 +34,11 @@ type Read struct {
 }
 
 func (t *Read) Name() string        { return "skill_read" }
-func (t *Read) Description() string { return "读取某个技能的详细内容" }
+func (t *Read) Description() string { return "read detailed content of a skill" }
 func (t *Read) Required() []string  { return []string{"name"} }
 func (t *Read) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"name": {Type: "string", Description: "技能名称"},
+		"name": {Type: "string", Description: "skill name"},
 	}
 }
 func (t *Read) Execute(args map[string]any) (string, error) {

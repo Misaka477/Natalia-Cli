@@ -70,15 +70,15 @@ type Search struct{}
 
 func (t *Search) Name() string { return "web_search" }
 func (t *Search) Description() string {
-	return "搜索网络，返回相关结果列表。支持 SEARCH_PROVIDER_PRIORITY 配置 provider 顺序，默认 bing -> google -> duckduckgo"
+	return "search the web and return relevant results. provider order is configured by SEARCH_PROVIDER_PRIORITY (default: bing -> google -> duckduckgo)"
 }
 func (t *Search) Required() []string { return []string{"query"} }
 func (t *Search) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"query":             {Type: "string", Description: "搜索关键词"},
-		"limit":             {Type: "integer", Description: "可选，返回结果数量，默认 5"},
-		"include_content":   {Type: "boolean", Description: "可选，true 时同时抓取页面内容（消耗更多 token）"},
-		"provider_priority": {Type: "string", Description: "可选，搜索 provider 顺序，如 bing,google,duckduckgo"},
+		"query":             {Type: "string", Description: "search query"},
+		"limit":             {Type: "integer", Description: "optional, number of results to return; default 5"},
+		"include_content":   {Type: "boolean", Description: "optional, also fetch page content when true (costs more tokens)"},
+		"provider_priority": {Type: "string", Description: "optional, search provider order like bing,google,duckduckgo"},
 	}
 }
 func (t *Search) Execute(args map[string]any) (string, error) {
@@ -695,15 +695,15 @@ func stripTags(s string) string {
 type Fetch struct{}
 
 func (t *Fetch) Name() string        { return "web_fetch" }
-func (t *Fetch) Description() string { return "获取指定 URL 的网页内容，提取正文文本" }
+func (t *Fetch) Description() string { return "fetch content from a URL and extract readable text" }
 func (t *Fetch) Required() []string  { return []string{"url"} }
 func (t *Fetch) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"url":           {Type: "string", Description: "要获取的 URL"},
-		"format":        {Type: "string", Description: "可选，text|markdown|html，默认 text"},
-		"timeout":       {Type: "integer", Description: "可选，超时秒数，默认 60，范围 1-120"},
-		"max_bytes":     {Type: "integer", Description: "可选，最多读取响应字节数，默认 1048576，最大 5242880"},
-		"include_links": {Type: "boolean", Description: "可选，设为 true 时在 text/markdown 输出中包含页面链接引用"},
+		"url":           {Type: "string", Description: "URL to fetch"},
+		"format":        {Type: "string", Description: "optional, text|markdown|html; default text"},
+		"timeout":       {Type: "integer", Description: "optional, timeout in seconds; default 60, range 1-120"},
+		"max_bytes":     {Type: "integer", Description: "optional, maximum response bytes to read; default 1048576, max 5242880"},
+		"include_links": {Type: "boolean", Description: "optional, include page link references in text/markdown output when true"},
 	}
 }
 func (t *Fetch) Execute(args map[string]any) (string, error) {
@@ -896,12 +896,12 @@ type MediaFile struct{}
 
 func (t *MediaFile) Name() string { return "read_media_file" }
 func (t *MediaFile) Description() string {
-	return "读取媒体文件信息（图片尺寸、格式、大小等）"
+	return "read media file metadata (image dimensions, format, size, etc.)"
 }
 func (t *MediaFile) Required() []string { return []string{"path"} }
 func (t *MediaFile) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"path": {Type: "string", Description: "媒体文件路径"},
+		"path": {Type: "string", Description: "media file path"},
 	}
 }
 func (t *MediaFile) Execute(args map[string]any) (string, error) {
@@ -912,7 +912,7 @@ type FileInfo struct{}
 
 func (t *FileInfo) Name() string { return "file_info" }
 func (t *FileInfo) Description() string {
-	return "读取文件信息（大小、MIME、图片尺寸、基础 EXIF metadata 等），read_media_file 的新名称"
+	return "read file metadata (size, MIME, image dimensions, basic EXIF metadata); newer name for read_media_file"
 }
 func (t *FileInfo) Required() []string { return []string{"path"} }
 func (t *FileInfo) Parameters() map[string]llm.Property {

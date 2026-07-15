@@ -29,14 +29,14 @@ type Run struct {
 
 func (t *Run) Name() string { return "workflow_run" }
 func (t *Run) Description() string {
-	return "开始执行 workflow，返回当前步骤指令并可持久化运行状态"
+	return "start executing a workflow, returning the current step instruction with optional state persistence"
 }
 func (t *Run) Required() []string { return []string{"name"} }
 func (t *Run) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"name":       {Type: "string", Description: "workflow 名称"},
-		"state_path": {Type: "string", Description: "可选，保存运行状态 JSON 的路径"},
-		"dry_run":    {Type: "boolean", Description: "可选，设为 true 时只预览不初始化状态"},
+		"name":       {Type: "string", Description: "workflow name"},
+		"state_path": {Type: "string", Description: "optional, path to save run state JSON"},
+		"dry_run":    {Type: "boolean", Description: "optional, preview without initializing state when true"},
 	}
 }
 
@@ -116,7 +116,7 @@ type List struct {
 }
 
 func (t *List) Name() string        { return "workflow_list" }
-func (t *List) Description() string { return "列出已导入的 Natalia workflow" }
+func (t *List) Description() string { return "list imported Natalia workflows" }
 func (t *List) Required() []string  { return []string{} }
 func (t *List) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{}
@@ -144,10 +144,10 @@ type Read struct {
 }
 
 func (t *Read) Name() string        { return "workflow_read" }
-func (t *Read) Description() string { return "读取某个 workflow 的 canonical Natalia 表示" }
+func (t *Read) Description() string { return "read the canonical Natalia representation of a workflow" }
 func (t *Read) Required() []string  { return []string{"name"} }
 func (t *Read) Parameters() map[string]llm.Property {
-	return map[string]llm.Property{"name": {Type: "string", Description: "workflow 名称"}}
+	return map[string]llm.Property{"name": {Type: "string", Description: "workflow name"}}
 }
 
 func (t *Read) Execute(args map[string]any) (string, error) {

@@ -32,19 +32,19 @@ type Start struct{}
 
 func (t *Start) Name() string { return "interactive_start" }
 func (t *Start) Description() string {
-	return "启动交互式 PTY session，用于 REPL、installer、脚手架或需要 prompt 的 CLI"
+	return "start an interactive PTY session for REPLs, installers, scaffolds, or prompt-driven CLIs"
 }
 func (t *Start) Required() []string { return []string{"command"} }
 func (t *Start) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"command":         {Type: "string", Description: "要启动的命令路径或可执行名"},
-		"args":            {Type: "array", Description: "可选，命令参数数组"},
-		"cwd":             {Type: "string", Description: "可选，工作目录，必须已存在"},
-		"rows":            {Type: "integer", Description: "可选，PTY 行数，默认 24，范围 10-200"},
-		"cols":            {Type: "integer", Description: "可选，PTY 列数，默认 80，范围 20-400"},
-		"wait_for":        {Type: "string", Description: "可选，启动后等待的 prompt 正则"},
-		"idle_timeout_ms": {Type: "integer", Description: "可选，输出静默多久视为等待输入，默认 200"},
-		"max_wait_ms":     {Type: "integer", Description: "可选，最长观察时间，默认 2000"},
+		"command":         {Type: "string", Description: "command path or executable name"},
+		"args":            {Type: "array", Description: "optional, command arguments array"},
+		"cwd":             {Type: "string", Description: "optional, working directory; must already exist"},
+		"rows":            {Type: "integer", Description: "optional, PTY rows; default 24, range 10-200"},
+		"cols":            {Type: "integer", Description: "optional, PTY columns; default 80, range 20-400"},
+		"wait_for":        {Type: "string", Description: "optional, prompt regex to wait for after startup"},
+		"idle_timeout_ms": {Type: "integer", Description: "optional, output silence duration before considering input needed; default 200"},
+		"max_wait_ms":     {Type: "integer", Description: "optional, max observation time; default 2000"},
 	}
 }
 func (t *Start) Execute(args map[string]any) (string, error) {
@@ -88,16 +88,16 @@ type Read struct{}
 
 func (t *Read) Name() string { return "interactive_read" }
 func (t *Read) Description() string {
-	return "观察交互式 PTY session，直到 prompt、静默或超时"
+	return "observe an interactive PTY session until prompt, silence, or timeout"
 }
 func (t *Read) Required() []string { return []string{"id"} }
 func (t *Read) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"id":              {Type: "string", Description: "interactive session id"},
-		"wait_for":        {Type: "string", Description: "可选，等待的 prompt 正则"},
-		"idle_timeout_ms": {Type: "integer", Description: "可选，输出静默多久视为等待输入，默认 200"},
-		"max_wait_ms":     {Type: "integer", Description: "可选，最长观察时间，默认 2000"},
-		"tail_bytes":      {Type: "integer", Description: "可选，仅用于显式请求 tail 切片；默认不截断"},
+		"wait_for":        {Type: "string", Description: "optional, prompt regex to wait for"},
+		"idle_timeout_ms": {Type: "integer", Description: "optional, output silence duration before considering input needed; default 200"},
+		"max_wait_ms":     {Type: "integer", Description: "optional, max observation time; default 2000"},
+		"tail_bytes":      {Type: "integer", Description: "optional, only used for explicit tail slice requests; default no truncation"},
 	}
 }
 func (t *Read) Execute(args map[string]any) (string, error) {
@@ -120,19 +120,19 @@ type Write struct{}
 
 func (t *Write) Name() string { return "interactive_write" }
 func (t *Write) Description() string {
-	return "向交互式 PTY session 写入输入并返回 observation；默认会为单行输入追加 Enter，部分输入可设置 submit=false"
+	return "write input to an interactive PTY session and return observation; single-line input appends Enter by default, set submit=false for partial input"
 }
 func (t *Write) Required() []string { return []string{"id", "input"} }
 func (t *Write) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"id":              {Type: "string", Description: "interactive session id"},
-		"input":           {Type: "string", Description: "要写入的输入；默认作为一行提交"},
-		"submit":          {Type: "boolean", Description: "可选，默认 true；false 表示只写入但不按 Enter，用于分段输入"},
-		"sensitive":       {Type: "boolean", Description: "可选，true 表示 secret 输入，不在返回中回显输入"},
-		"wait_for":        {Type: "string", Description: "可选，写入后等待的 prompt 正则"},
-		"idle_timeout_ms": {Type: "integer", Description: "可选，输出静默多久视为等待输入，默认 200"},
-		"max_wait_ms":     {Type: "integer", Description: "可选，最长观察时间，默认 2000"},
-		"tail_bytes":      {Type: "integer", Description: "可选，仅用于显式请求 tail 切片；默认不截断"},
+		"input":           {Type: "string", Description: "input to write; submitted as a line by default"},
+		"submit":          {Type: "boolean", Description: "optional, default true; false writes without Enter, for chunked input"},
+		"sensitive":       {Type: "boolean", Description: "optional, true marks secret input; the input is not echoed back"},
+		"wait_for":        {Type: "string", Description: "optional, prompt regex to wait for after write"},
+		"idle_timeout_ms": {Type: "integer", Description: "optional, output silence duration before considering input needed; default 200"},
+		"max_wait_ms":     {Type: "integer", Description: "optional, max observation time; default 2000"},
+		"tail_bytes":      {Type: "integer", Description: "optional, only used for explicit tail slice requests; default no truncation"},
 	}
 }
 func (t *Write) Execute(args map[string]any) (string, error) {
@@ -172,16 +172,16 @@ type Keys struct{}
 
 func (t *Keys) Name() string { return "interactive_keys" }
 func (t *Keys) Description() string {
-	return "向交互式 PTY session 发送 Enter、Ctrl-C、Ctrl-D、Tab、Esc 等特殊键"
+	return "send special keys (Enter, Ctrl-C, Ctrl-D, Tab, Esc, etc.) to an interactive PTY session"
 }
 func (t *Keys) Required() []string { return []string{"id", "key"} }
 func (t *Keys) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"id":              {Type: "string", Description: "interactive session id"},
 		"key":             {Type: "string", Description: "enter|ctrl-c|ctrl-d|tab|esc"},
-		"wait_for":        {Type: "string", Description: "可选，发送后等待的 prompt 正则"},
-		"idle_timeout_ms": {Type: "integer", Description: "可选，输出静默多久视为等待输入，默认 200"},
-		"max_wait_ms":     {Type: "integer", Description: "可选，最长观察时间，默认 2000"},
+		"wait_for":        {Type: "string", Description: "optional, prompt regex to wait for after sending key"},
+		"idle_timeout_ms": {Type: "integer", Description: "optional, output silence duration before considering input needed; default 200"},
+		"max_wait_ms":     {Type: "integer", Description: "optional, max observation time; default 2000"},
 	}
 }
 func (t *Keys) Execute(args map[string]any) (string, error) {
@@ -207,7 +207,7 @@ func (t *Keys) Execute(args map[string]any) (string, error) {
 type Stop struct{}
 
 func (t *Stop) Name() string        { return "interactive_stop" }
-func (t *Stop) Description() string { return "停止交互式 PTY session" }
+func (t *Stop) Description() string { return "stop an interactive PTY session" }
 func (t *Stop) Required() []string  { return []string{"id"} }
 func (t *Stop) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{"id": {Type: "string", Description: "interactive session id"}}
@@ -228,7 +228,7 @@ func (t *Stop) Execute(args map[string]any) (string, error) {
 type Attach struct{}
 
 func (t *Attach) Name() string        { return "interactive_attach" }
-func (t *Attach) Description() string { return "重新附加到交互式 PTY session" }
+func (t *Attach) Description() string { return "re-attach to an interactive PTY session" }
 func (t *Attach) Required() []string  { return []string{"id"} }
 func (t *Attach) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{"id": {Type: "string", Description: "interactive session id"}}
@@ -248,7 +248,7 @@ func (t *Attach) Execute(args map[string]any) (string, error) {
 type Detach struct{}
 
 func (t *Detach) Name() string        { return "interactive_detach" }
-func (t *Detach) Description() string { return "detach 交互式 PTY session；进程继续运行" }
+func (t *Detach) Description() string { return "detach an interactive PTY session; the process keeps running" }
 func (t *Detach) Required() []string  { return []string{"id"} }
 func (t *Detach) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{"id": {Type: "string", Description: "interactive session id"}}
@@ -268,13 +268,13 @@ func (t *Detach) Execute(args map[string]any) (string, error) {
 type Resize struct{}
 
 func (t *Resize) Name() string        { return "interactive_resize" }
-func (t *Resize) Description() string { return "调整交互式 PTY session 的窗口大小" }
+func (t *Resize) Description() string { return "resize an interactive PTY session window" }
 func (t *Resize) Required() []string  { return []string{"id", "rows", "cols"} }
 func (t *Resize) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"id":   {Type: "string", Description: "interactive session id"},
-		"rows": {Type: "integer", Description: "PTY 行数，范围 10-200"},
-		"cols": {Type: "integer", Description: "PTY 列数，范围 20-400"},
+		"rows": {Type: "integer", Description: "PTY rows, range 10-200"},
+		"cols": {Type: "integer", Description: "PTY columns, range 20-400"},
 	}
 }
 func (t *Resize) Execute(args map[string]any) (string, error) {
@@ -301,19 +301,19 @@ type Transcript struct{}
 
 func (t *Transcript) Name() string { return "interactive_transcript" }
 func (t *Transcript) Description() string {
-	return "分页读取交互式 PTY transcript；sensitive 输入会显示为 redacted"
+	return "page through an interactive PTY transcript; sensitive input is shown redacted"
 }
 
 type Cleanup struct{}
 
 func (t *Cleanup) Name() string { return "interactive_cleanup" }
 func (t *Cleanup) Description() string {
-	return "清理已停止、退出或失败的交互式 PTY sessions"
+	return "clean up stopped, exited, or failed interactive PTY sessions"
 }
 func (t *Cleanup) Required() []string { return nil }
 func (t *Cleanup) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"finished_max_age": {Type: "integer", Description: "可选，完成后保留秒数，默认 0"},
+		"finished_max_age": {Type: "integer", Description: "optional, retention seconds for finished sessions; default 0"},
 	}
 }
 func (t *Cleanup) Execute(args map[string]any) (string, error) {
@@ -355,7 +355,7 @@ func (t *Transcript) Execute(args map[string]any) (string, error) {
 type List struct{}
 
 func (t *List) Name() string                        { return "interactive_list" }
-func (t *List) Description() string                 { return "列出交互式 PTY sessions" }
+func (t *List) Description() string                 { return "list interactive PTY sessions" }
 func (t *List) Required() []string                  { return nil }
 func (t *List) Parameters() map[string]llm.Property { return map[string]llm.Property{} }
 func (t *List) Execute(args map[string]any) (string, error) {

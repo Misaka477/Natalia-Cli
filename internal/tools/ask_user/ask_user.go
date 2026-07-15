@@ -38,19 +38,19 @@ func SetHandler(fn Handler) func() {
 
 func (t *AskUser) Name() string { return "ask_user" }
 func (t *AskUser) Description() string {
-	return "向用户提问以获取更多信息。支持单问题或 questions 数组、选项、多选、自定义输入和 timeout fallback"
+	return "ask the user for additional input; supports single question or questions array, options, multi-select, custom input, and timeout fallback"
 }
 func (t *AskUser) Required() []string { return []string{} }
 func (t *AskUser) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"question":     {Type: "string", Description: "要问用户的问题。兼容单问题快捷参数"},
-		"name":         {Type: "string", Description: "可选，单问题答案键名，默认 answer"},
-		"options":      {Type: "array", Description: "可选，单问题选项数组"},
-		"multiple":     {Type: "boolean", Description: "可选，是否允许多选"},
-		"allow_custom": {Type: "boolean", Description: "可选，是否允许自定义输入"},
-		"fallback":     {Type: "string", Description: "可选，timeout/AFK 时使用的默认答案"},
-		"timeout":      {Type: "integer", Description: "可选，等待用户秒数，默认不超时，范围 1-3600"},
-		"questions":    {Type: "array", Description: "可选，结构化问题数组，每项包含 name/question/options/multiple/allow_custom/fallback"},
+		"question":     {Type: "string", Description: "question to ask the user; shorthand for single-question mode"},
+		"name":         {Type: "string", Description: "optional, answer key name for single question; default answer"},
+		"options":      {Type: "array", Description: "optional, option array for single question"},
+		"multiple":     {Type: "boolean", Description: "optional, allow multi-select"},
+		"allow_custom": {Type: "boolean", Description: "optional, allow custom input"},
+		"fallback":     {Type: "string", Description: "optional, default answer on timeout/AFK"},
+		"timeout":      {Type: "integer", Description: "optional, seconds to wait for user; default no timeout, range 1-3600"},
+		"questions":    {Type: "array", Description: "optional, structured question array; each item contains name/question/options/multiple/allow_custom/fallback"},
 	}
 }
 func (t *AskUser) Execute(args map[string]any) (string, error) {

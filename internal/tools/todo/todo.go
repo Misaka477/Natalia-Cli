@@ -28,11 +28,11 @@ var (
 type Set struct{}
 
 func (t *Set) Name() string        { return "todo_set" }
-func (t *Set) Description() string { return "设置任务清单，替换当前所有任务" }
+func (t *Set) Description() string { return "replace the current task list with a new one" }
 func (t *Set) Required() []string  { return []string{"items"} }
 func (t *Set) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"items": {Type: "array", Description: "任务列表，每个元素是一条任务"},
+		"items": {Type: "array", Description: "task list; each element is one task"},
 	}
 }
 func (t *Set) Execute(args map[string]any) (string, error) {
@@ -68,11 +68,11 @@ func normalizeItemsLocked(list []Item) []Item {
 type Add struct{}
 
 func (t *Add) Name() string        { return "todo_add" }
-func (t *Add) Description() string { return "添加新任务到清单" }
+func (t *Add) Description() string { return "add new tasks to the list" }
 func (t *Add) Required() []string  { return []string{"items"} }
 func (t *Add) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"items": {Type: "array", Description: "要添加的任务列表"},
+		"items": {Type: "array", Description: "tasks to add"},
 	}
 }
 func (t *Add) Execute(args map[string]any) (string, error) {
@@ -92,12 +92,12 @@ func (t *Add) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 type Done struct{}
 
 func (t *Done) Name() string        { return "todo_done" }
-func (t *Done) Description() string { return "标记任务为已完成" }
+func (t *Done) Description() string { return "mark a task as completed" }
 func (t *Done) Required() []string  { return nil }
 func (t *Done) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"index": {Type: "integer", Description: "任务编号（从 1 开始）"},
-		"id":    {Type: "string", Description: "可选，任务稳定 ID"},
+		"index": {Type: "integer", Description: "task number (1-based)"},
+		"id":    {Type: "string", Description: "optional, stable task ID"},
 	}
 }
 func (t *Done) Execute(args map[string]any) (string, error) {
@@ -135,16 +135,16 @@ func (t *Done) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 type Update struct{}
 
 func (t *Update) Name() string        { return "todo_update" }
-func (t *Update) Description() string { return "更新任务状态、备注或优先级" }
+func (t *Update) Description() string { return "update task status, notes, or priority" }
 func (t *Update) Required() []string  { return []string{} }
 func (t *Update) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"index":    {Type: "integer", Description: "可选，任务编号（从 1 开始），兼容标记"},
-		"id":       {Type: "string", Description: "可选，任务稳定 ID"},
-		"done":     {Type: "boolean", Description: "可选，true 标记完成，false 标记未完成"},
-		"status":   {Type: "string", Description: "可选，新状态：pending/in_progress/blocked/done/skipped"},
-		"notes":    {Type: "string", Description: "可选，简短备注（建议 60 字以内）"},
-		"priority": {Type: "integer", Description: "可选，优先级 1-5，越高越重要"},
+		"index":    {Type: "integer", Description: "optional, task number (1-based); kept for backward compatibility"},
+		"id":       {Type: "string", Description: "optional, stable task ID"},
+		"done":     {Type: "boolean", Description: "optional, true marks done, false marks undone"},
+		"status":   {Type: "string", Description: "optional, new status: pending/in_progress/blocked/done/skipped"},
+		"notes":    {Type: "string", Description: "optional, short notes (recommended under 60 chars)"},
+		"priority": {Type: "integer", Description: "optional, priority 1-5; higher is more important"},
 	}
 }
 func (t *Update) Execute(args map[string]any) (string, error) {
@@ -207,7 +207,7 @@ func (t *Update) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 type List struct{}
 
 func (t *List) Name() string        { return "todo_list" }
-func (t *List) Description() string { return "查看当前任务清单" }
+func (t *List) Description() string { return "view the current task list" }
 func (t *List) Required() []string  { return []string{} }
 func (t *List) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{}

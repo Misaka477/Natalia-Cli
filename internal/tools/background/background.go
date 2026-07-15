@@ -16,18 +16,18 @@ type Start struct{}
 
 func (t *Start) Name() string { return "background_start" }
 func (t *Start) Description() string {
-	return "启动由 Natalia 管理的后台任务，适合 dev server、watcher 或长时间命令"
+	return "start a long-running background task managed by Natalia, suitable for dev servers, watchers, or long commands"
 }
 func (t *Start) Required() []string { return []string{"command"} }
 func (t *Start) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"command":      {Type: "string", Description: "要启动的命令路径或可执行名"},
-		"args":         {Type: "array", Description: "可选，命令参数数组"},
-		"cwd":          {Type: "string", Description: "可选，工作目录，必须已存在"},
-		"env":          {Type: "object", Description: "可选，附加环境变量；secret/token/password/key 名称会在状态中 redacted"},
-		"max_tail":     {Type: "integer", Description: "可选，保留最近多少行输出，默认 1000，范围 1-10000"},
-		"idle_timeout": {Type: "integer", Description: "可选，空闲自动停止秒数，0 表示不限制"},
-		"max_lifetime": {Type: "integer", Description: "可选，最大运行秒数，0 表示不限制"},
+		"command":      {Type: "string", Description: "command path or executable name"},
+		"args":         {Type: "array", Description: "optional, command arguments array"},
+		"cwd":          {Type: "string", Description: "optional, working directory; must already exist"},
+		"env":          {Type: "object", Description: "optional, additional environment variables; secret/token/password/key names are redacted in status"},
+		"max_tail":     {Type: "integer", Description: "optional, recent output lines to retain; default 1000, range 1-10000"},
+		"idle_timeout": {Type: "integer", Description: "optional, idle auto-stop seconds; 0 means unlimited"},
+		"max_lifetime": {Type: "integer", Description: "optional, max runtime seconds; 0 means unlimited"},
 	}
 }
 func (t *Start) Execute(args map[string]any) (string, error) {
@@ -69,7 +69,7 @@ func (t *Start) Execute(args map[string]any) (string, error) {
 type List struct{}
 
 func (t *List) Name() string                        { return "background_list" }
-func (t *List) Description() string                 { return "列出 Natalia 管理的后台任务" }
+func (t *List) Description() string                 { return "list background tasks managed by Natalia" }
 func (t *List) Required() []string                  { return nil }
 func (t *List) Parameters() map[string]llm.Property { return map[string]llm.Property{} }
 func (t *List) Execute(args map[string]any) (string, error) {
@@ -86,14 +86,14 @@ func (t *List) Execute(args map[string]any) (string, error) {
 type Output struct{}
 
 func (t *Output) Name() string        { return "background_output" }
-func (t *Output) Description() string { return "读取后台任务的最近输出" }
+func (t *Output) Description() string { return "read recent output from a background task" }
 func (t *Output) Required() []string  { return []string{"id"} }
 func (t *Output) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"id":     {Type: "string", Description: "background task session id"},
-		"tail":   {Type: "integer", Description: "可选，最近多少行，默认全部 retained tail"},
-		"offset": {Type: "integer", Description: "可选，分页起始行，从 0 开始；设置后优先于 tail"},
-		"limit":  {Type: "integer", Description: "可选，分页读取行数；配合 offset 使用"},
+		"tail":   {Type: "integer", Description: "optional, recent lines to return; default all retained tail"},
+		"offset": {Type: "integer", Description: "optional, pagination start line (0-based); takes precedence over tail when set"},
+		"limit":  {Type: "integer", Description: "optional, pagination line count; use with offset"},
 	}
 }
 func (t *Output) Execute(args map[string]any) (string, error) {
@@ -141,7 +141,7 @@ type Restart struct{}
 
 func (t *Restart) Name() string { return "background_restart" }
 func (t *Restart) Description() string {
-	return "重启 Natalia 管理的后台任务，复用原 command/args/cwd/env/lifetime 设置"
+	return "restart a Natalia-managed background task, reusing the original command/args/cwd/env/lifetime settings"
 }
 func (t *Restart) Required() []string { return []string{"id"} }
 func (t *Restart) Parameters() map[string]llm.Property {
@@ -165,14 +165,14 @@ func (t *Restart) Execute(args map[string]any) (string, error) {
 type Stop struct{}
 
 func (t *Stop) Name() string        { return "background_stop" }
-func (t *Stop) Description() string { return "停止 Natalia 管理的后台任务" }
+func (t *Stop) Description() string { return "stop a Natalia-managed background task" }
 func (t *Stop) Required() []string  { return []string{"id"} }
 func (t *Stop) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"id":         {Type: "string", Description: "background task session id"},
-		"signal":     {Type: "string", Description: "可选，发送的信号：TERM、INT、KILL，默认 TERM"},
-		"grace":      {Type: "integer", Description: "可选，等待进程优雅结束的秒数，默认 2"},
-		"kill_after": {Type: "integer", Description: "可选，强杀进程的秒数，默认等于 grace"},
+		"signal":     {Type: "string", Description: "optional, signal to send: TERM, INT, KILL; default TERM"},
+		"grace":      {Type: "integer", Description: "optional, seconds to wait for graceful stop; default 2"},
+		"kill_after": {Type: "integer", Description: "optional, seconds after grace to force kill; default equals grace"},
 	}
 }
 func (t *Stop) Execute(args map[string]any) (string, error) {
@@ -208,16 +208,16 @@ type Cleanup struct{}
 
 func (t *Cleanup) Name() string { return "background_cleanup" }
 func (t *Cleanup) Description() string {
-	return "清理已完成后台任务，并可按 idle/max lifetime 停止运行中的后台任务；返回受影响 ID"
+	return "clean up finished background tasks and optionally stop running ones by idle/max lifetime; returns affected IDs"
 }
 func (t *Cleanup) Required() []string { return nil }
 func (t *Cleanup) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"finished_max_age": {Type: "integer", Description: "可选，完成后保留秒数，默认 0"},
-		"idle_timeout":     {Type: "integer", Description: "可选，运行中任务空闲秒数阈值，0 表示不检查"},
-		"max_lifetime":     {Type: "integer", Description: "可选，运行中任务最大运行秒数阈值，0 表示不检查"},
-		"detect_stale":     {Type: "boolean", Description: "可选，检查 PID 是否已失效"},
-		"dry_run":          {Type: "boolean", Description: "可选，仅预览即将清理的任务而不实际操作"},
+		"finished_max_age": {Type: "integer", Description: "optional, retention seconds for finished tasks; default 0"},
+		"idle_timeout":     {Type: "integer", Description: "optional, idle seconds threshold for running tasks; 0 means disabled"},
+		"max_lifetime":     {Type: "integer", Description: "optional, max runtime seconds threshold for running tasks; 0 means disabled"},
+		"detect_stale":     {Type: "boolean", Description: "optional, check if PID is no longer valid"},
+		"dry_run":          {Type: "boolean", Description: "optional, preview tasks to clean up without taking action"},
 	}
 }
 func (t *Cleanup) Execute(args map[string]any) (string, error) {
@@ -242,13 +242,13 @@ type Audit struct{}
 
 func (t *Audit) Name() string { return "background_audit" }
 func (t *Audit) Description() string {
-	return "查看后台任务审计日志，secret env 只显示 redacted 摘要"
+	return "view background task audit log; secret env values are shown redacted"
 }
 func (t *Audit) Required() []string { return nil }
 func (t *Audit) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"tail":   {Type: "integer", Description: "可选，最近多少条审计记录，默认全部"},
-		"format": {Type: "string", Description: "可选，输出格式：text 或 json，默认 text"},
+		"tail":   {Type: "integer", Description: "optional, recent audit entries to return; default all"},
+		"format": {Type: "string", Description: "optional, output format: text or json; default text"},
 	}
 }
 func (t *Audit) Execute(args map[string]any) (string, error) {

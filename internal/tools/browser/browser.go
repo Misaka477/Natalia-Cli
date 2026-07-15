@@ -111,16 +111,16 @@ var renderBrowserPage = renderPageWithRod
 
 func (t *Visit) Name() string { return "browser_visit" }
 func (t *Visit) Description() string {
-	return "用真实浏览器访问网页，支持 JS 渲染，规避反爬虫。返回页面标题和正文"
+	return "visit a webpage with a real browser, supporting JS rendering and anti-bot evasion; returns page title and body text"
 }
 func (t *Visit) Required() []string { return []string{"url"} }
 func (t *Visit) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"url":      {Type: "string", Description: "要访问的网页 URL"},
-		"wait":     {Type: "string", Description: "可选，等待秒数，默认 3"},
-		"timeout":  {Type: "string", Description: "可选，页面操作超时秒数，默认 30，最大 120"},
-		"viewport": {Type: "string", Description: "可选，视口大小，如 1280x720"},
-		"selector": {Type: "string", Description: "可选，等待并提取指定 CSS selector 的文本"},
+		"url":      {Type: "string", Description: "URL to visit"},
+		"wait":     {Type: "string", Description: "optional, wait seconds before extracting; default 3"},
+		"timeout":  {Type: "string", Description: "optional, page operation timeout seconds; default 30, max 120"},
+		"viewport": {Type: "string", Description: "optional, viewport size like 1280x720"},
+		"selector": {Type: "string", Description: "optional, wait for and extract text from this CSS selector"},
 	}
 }
 func (t *Visit) Execute(args map[string]any) (string, error) {
@@ -332,16 +332,16 @@ func parseViewport(raw string) (int, int, error) {
 type Screenshot struct{}
 
 func (t *Screenshot) Name() string        { return "browser_screenshot" }
-func (t *Screenshot) Description() string { return "用真实浏览器打开网页并截图保存" }
+func (t *Screenshot) Description() string { return "open a webpage with a real browser and save a screenshot" }
 func (t *Screenshot) Required() []string  { return []string{"url"} }
 func (t *Screenshot) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"url":      {Type: "string", Description: "要截图的网页 URL"},
-		"path":     {Type: "string", Description: "可选，保存路径，默认 ./screenshot.png"},
-		"wait":     {Type: "string", Description: "可选，等待秒数，默认 3"},
-		"timeout":  {Type: "string", Description: "可选，页面操作超时秒数，默认 30，最大 120"},
-		"viewport": {Type: "string", Description: "可选，视口大小，如 1280x720"},
-		"selector": {Type: "string", Description: "可选，等待指定 CSS selector 后截图"},
+		"url":      {Type: "string", Description: "URL to screenshot"},
+		"path":     {Type: "string", Description: "optional, save path; default ./screenshot.png"},
+		"wait":     {Type: "string", Description: "optional, wait seconds before capture; default 3"},
+		"timeout":  {Type: "string", Description: "optional, page operation timeout seconds; default 30, max 120"},
+		"viewport": {Type: "string", Description: "optional, viewport size like 1280x720"},
+		"selector": {Type: "string", Description: "optional, wait for this CSS selector before screenshot"},
 	}
 }
 func (t *Screenshot) Execute(args map[string]any) (string, error) {

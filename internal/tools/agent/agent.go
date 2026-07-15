@@ -21,17 +21,17 @@ type Spawn struct {
 }
 
 func (t *Spawn) Name() string        { return "agent_spawn" }
-func (t *Spawn) Description() string { return "创建一个子 agent 执行独立任务" }
+func (t *Spawn) Description() string { return "spawn a sub-agent to perform an independent task" }
 func (t *Spawn) Required() []string  { return []string{"task"} }
 func (t *Spawn) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"task":          {Type: "string", Description: "子 agent 要执行的任务描述"},
-		"mode":          {Type: "string", Description: "模式（code/ask/plan/debug/chat），默认 code"},
-		"foreground":    {Type: "boolean", Description: "可选，true 时等待子 agent 完成或超时后返回输出摘要"},
-		"timeout_sec":   {Type: "integer", Description: "可选，子 agent 超时秒数；foreground 默认 30，background 默认 0 不限制，最大 3600"},
-		"model_profile": {Type: "string", Description: "可选，覆盖子 agent 使用的 model profile；默认继承当前 runtime profile"},
-		"allowed_tools": {Type: "array", Description: "可选，子 agent 允许使用的工具名列表；为空表示继承当前工具集"},
-		"exclude_tools": {Type: "array", Description: "可选，子 agent 禁用的工具名列表"},
+		"task":          {Type: "string", Description: "task description for the sub-agent"},
+		"mode":          {Type: "string", Description: "mode (code/ask/plan/debug/chat); default code"},
+		"foreground":    {Type: "boolean", Description: "optional, wait for sub-agent completion or timeout and return summary when true"},
+		"timeout_sec":   {Type: "integer", Description: "optional, sub-agent timeout seconds; default 30 for foreground, 0 unlimited for background, max 3600"},
+		"model_profile": {Type: "string", Description: "optional, override the model profile for the sub-agent; defaults to current runtime profile"},
+		"allowed_tools": {Type: "array", Description: "optional, tool names the sub-agent may use; empty means inherit current toolset"},
+		"exclude_tools": {Type: "array", Description: "optional, tool names disabled for the sub-agent"},
 	}
 }
 func (t *Spawn) Execute(args map[string]any) (string, error) {
@@ -137,7 +137,7 @@ func parseStringList(raw any, name string) ([]string, error) {
 type List struct{ Pool *worker.Pool }
 
 func (t *List) Name() string                        { return "agent_list" }
-func (t *List) Description() string                 { return "列出所有子 agent 及其状态" }
+func (t *List) Description() string                 { return "list all sub-agents and their statuses" }
 func (t *List) Required() []string                  { return []string{} }
 func (t *List) Parameters() map[string]llm.Property { return map[string]llm.Property{} }
 func (t *List) Execute(args map[string]any) (string, error) {
@@ -174,11 +174,11 @@ func (t *List) Execute(args map[string]any) (string, error) {
 type Output struct{ Pool *worker.Pool }
 
 func (t *Output) Name() string        { return "agent_output" }
-func (t *Output) Description() string { return "查看子 agent 的完整输出日志" }
+func (t *Output) Description() string { return "view full output log of a sub-agent" }
 func (t *Output) Required() []string  { return []string{"agent_id"} }
 func (t *Output) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"agent_id": {Type: "string", Description: "子 agent ID（如 w1）"},
+		"agent_id": {Type: "string", Description: "sub-agent ID (e.g. w1)"},
 	}
 }
 func (t *Output) Execute(args map[string]any) (string, error) {
@@ -216,11 +216,11 @@ type Attach struct{ Pool *worker.Pool }
 
 func (t *Attach) Name() string { return "agent_attach" }
 func (t *Attach) Description() string {
-	return "attach 子 agent，使其事件继续转发到当前 Wire/runtime 视图"
+	return "attach a sub-agent so its events continue forwarding to the current Wire/runtime view"
 }
 func (t *Attach) Required() []string { return []string{"agent_id"} }
 func (t *Attach) Parameters() map[string]llm.Property {
-	return map[string]llm.Property{"agent_id": {Type: "string", Description: "子 agent ID（如 w1）"}}
+	return map[string]llm.Property{"agent_id": {Type: "string", Description: "sub-agent ID (e.g. w1)"}}
 }
 func (t *Attach) Execute(args map[string]any) (string, error) {
 	id, err := requireAgentID(args)
@@ -242,11 +242,11 @@ type Detach struct{ Pool *worker.Pool }
 
 func (t *Detach) Name() string { return "agent_detach" }
 func (t *Detach) Description() string {
-	return "detach 子 agent；agent 继续运行，但可在 UI 中隐藏实时事件"
+	return "detach a sub-agent; the agent keeps running but live events are hidden from the UI"
 }
 func (t *Detach) Required() []string { return []string{"agent_id"} }
 func (t *Detach) Parameters() map[string]llm.Property {
-	return map[string]llm.Property{"agent_id": {Type: "string", Description: "子 agent ID（如 w1）"}}
+	return map[string]llm.Property{"agent_id": {Type: "string", Description: "sub-agent ID (e.g. w1)"}}
 }
 func (t *Detach) Execute(args map[string]any) (string, error) {
 	id, err := requireAgentID(args)
@@ -267,10 +267,10 @@ func (t *Detach) Execute(args map[string]any) (string, error) {
 type Stop struct{ Pool *worker.Pool }
 
 func (t *Stop) Name() string        { return "agent_stop" }
-func (t *Stop) Description() string { return "停止正在运行的子 agent" }
+func (t *Stop) Description() string { return "stop a running sub-agent" }
 func (t *Stop) Required() []string  { return []string{"agent_id"} }
 func (t *Stop) Parameters() map[string]llm.Property {
-	return map[string]llm.Property{"agent_id": {Type: "string", Description: "子 agent ID（如 w1）"}}
+	return map[string]llm.Property{"agent_id": {Type: "string", Description: "sub-agent ID (e.g. w1)"}}
 }
 func (t *Stop) Execute(args map[string]any) (string, error) {
 	id, err := requireAgentID(args)
@@ -291,10 +291,10 @@ func (t *Stop) Execute(args map[string]any) (string, error) {
 type Resume struct{ Pool *worker.Pool }
 
 func (t *Resume) Name() string        { return "agent_resume" }
-func (t *Resume) Description() string { return "恢复已暂停的子 agent" }
+func (t *Resume) Description() string { return "resume a paused sub-agent" }
 func (t *Resume) Required() []string  { return []string{"agent_id"} }
 func (t *Resume) Parameters() map[string]llm.Property {
-	return map[string]llm.Property{"agent_id": {Type: "string", Description: "子 agent ID（如 w1）"}}
+	return map[string]llm.Property{"agent_id": {Type: "string", Description: "sub-agent ID (e.g. w1)"}}
 }
 func (t *Resume) Execute(args map[string]any) (string, error) {
 	id, err := requireAgentID(args)
@@ -325,11 +325,11 @@ func requireAgentID(args map[string]any) (string, error) {
 type Restart struct{ Pool *worker.Pool }
 
 func (t *Restart) Name() string        { return "agent_restart" }
-func (t *Restart) Description() string { return "重启已结束或失败的子 agent，创建新 worker ID" }
+func (t *Restart) Description() string { return "restart a finished or failed sub-agent, creating a new worker ID" }
 func (t *Restart) Required() []string  { return []string{"agent_id"} }
 func (t *Restart) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"agent_id": {Type: "string", Description: "要重启的子 agent ID（如 w1）"},
+		"agent_id": {Type: "string", Description: "sub-agent ID to restart (e.g. w1)"},
 	}
 }
 func (t *Restart) Execute(args map[string]any) (string, error) {
@@ -413,10 +413,10 @@ func formatWorkerDetail(w *worker.Worker) string {
 type Status struct{ Pool *worker.Pool }
 
 func (t *Status) Name() string        { return "agent_status" }
-func (t *Status) Description() string { return "查看单个子 agent 的详细状态" }
+func (t *Status) Description() string { return "view detailed status of a single sub-agent" }
 func (t *Status) Required() []string  { return []string{"agent_id"} }
 func (t *Status) Parameters() map[string]llm.Property {
-	return map[string]llm.Property{"agent_id": {Type: "string", Description: "子 agent ID（如 w1）"}}
+	return map[string]llm.Property{"agent_id": {Type: "string", Description: "sub-agent ID (e.g. w1)"}}
 }
 func (t *Status) Execute(args map[string]any) (string, error) {
 	id, err := requireAgentID(args)
@@ -436,10 +436,10 @@ func (t *Status) Execute(args map[string]any) (string, error) {
 type Cleanup struct{ Pool *worker.Pool }
 
 func (t *Cleanup) Name() string        { return "agent_cleanup" }
-func (t *Cleanup) Description() string { return "清理已完成的子 agent，释放资源" }
+func (t *Cleanup) Description() string { return "clean up finished sub-agents and free resources" }
 func (t *Cleanup) Required() []string  { return []string{} }
 func (t *Cleanup) Parameters() map[string]llm.Property {
-	return map[string]llm.Property{"dry_run": {Type: "boolean", Description: "可选，仅预览即将清理的 agent 而不实际操作"}}
+	return map[string]llm.Property{"dry_run": {Type: "boolean", Description: "optional, preview agents to clean up without taking action"}}
 }
 func (t *Cleanup) Execute(args map[string]any) (string, error) {
 	if t.Pool == nil {
@@ -473,12 +473,12 @@ func (t *Cleanup) Execute(args map[string]any) (string, error) {
 type Audit struct{ Pool *worker.Pool }
 
 func (t *Audit) Name() string        { return "agent_audit" }
-func (t *Audit) Description() string { return "查看子 agent 审计日志" }
+func (t *Audit) Description() string { return "view sub-agent audit log" }
 func (t *Audit) Required() []string  { return []string{} }
 func (t *Audit) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"tail":   {Type: "integer", Description: "可选，最近多少条审计记录，默认全部"},
-		"format": {Type: "string", Description: "可选，输出格式：text 或 json，默认 text"},
+		"tail":   {Type: "integer", Description: "optional, recent audit entries to return; default all"},
+		"format": {Type: "string", Description: "optional, output format: text or json; default text"},
 	}
 }
 func (t *Audit) Execute(args map[string]any) (string, error) {

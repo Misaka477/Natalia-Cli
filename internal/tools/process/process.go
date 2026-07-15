@@ -16,18 +16,18 @@ type Start struct{}
 
 func (t *Start) Name() string { return "process_start" }
 func (t *Start) Description() string {
-	return "启动由 Natalia 管理的后台进程，返回 process session id"
+	return "start a background process managed by Natalia, returns process session id"
 }
 func (t *Start) Required() []string { return []string{"command"} }
 func (t *Start) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"command":      {Type: "string", Description: "要启动的命令路径或可执行名"},
-		"args":         {Type: "array", Description: "可选，命令参数数组"},
-		"cwd":          {Type: "string", Description: "可选，工作目录，必须已存在"},
-		"env":          {Type: "object", Description: "可选，附加环境变量；secret/token/password/key 名称会在状态中 redacted"},
-		"kind":         {Type: "string", Description: "可选，process|background|interactive|mcp，默认 process"},
-		"idle_timeout": {Type: "integer", Description: "可选，空闲自动停止秒数，0 表示不限制"},
-		"max_lifetime": {Type: "integer", Description: "可选，最大运行秒数，0 表示不限制"},
+		"command":      {Type: "string", Description: "command path or executable name"},
+		"args":         {Type: "array", Description: "optional, command arguments array"},
+		"cwd":          {Type: "string", Description: "optional, working directory; must already exist"},
+		"env":          {Type: "object", Description: "optional, additional environment variables; secret/token/password/key names are redacted in status"},
+		"kind":         {Type: "string", Description: "optional, process|background|interactive|mcp; default process"},
+		"idle_timeout": {Type: "integer", Description: "optional, idle auto-stop seconds; 0 means unlimited"},
+		"max_lifetime": {Type: "integer", Description: "optional, max runtime seconds; 0 means unlimited"},
 	}
 }
 func (t *Start) Execute(args map[string]any) (string, error) {
@@ -66,7 +66,7 @@ func (t *Start) Execute(args map[string]any) (string, error) {
 type List struct{}
 
 func (t *List) Name() string                        { return "process_list" }
-func (t *List) Description() string                 { return "列出 Natalia 管理的进程" }
+func (t *List) Description() string                 { return "list processes managed by Natalia" }
 func (t *List) Required() []string                  { return nil }
 func (t *List) Parameters() map[string]llm.Property { return map[string]llm.Property{} }
 func (t *List) Execute(args map[string]any) (string, error) {
@@ -83,7 +83,7 @@ func (t *List) Execute(args map[string]any) (string, error) {
 type Status struct{}
 
 func (t *Status) Name() string        { return "process_status" }
-func (t *Status) Description() string { return "查看 Natalia 管理进程的状态" }
+func (t *Status) Description() string { return "check status of a Natalia-managed process" }
 func (t *Status) Required() []string  { return []string{"id"} }
 func (t *Status) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{"id": {Type: "string", Description: "process session id"}}
@@ -103,12 +103,12 @@ func (t *Status) Execute(args map[string]any) (string, error) {
 type Output struct{}
 
 func (t *Output) Name() string        { return "process_output" }
-func (t *Output) Description() string { return "读取 Natalia 管理进程的最近输出" }
+func (t *Output) Description() string { return "read recent output from a Natalia-managed process" }
 func (t *Output) Required() []string  { return []string{"id"} }
 func (t *Output) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"id":   {Type: "string", Description: "process session id"},
-		"tail": {Type: "integer", Description: "可选，最近多少行，默认全部 retained tail"},
+		"tail": {Type: "integer", Description: "optional, recent lines to return; default all retained tail"},
 	}
 }
 func (t *Output) Execute(args map[string]any) (string, error) {
@@ -134,14 +134,14 @@ func (t *Output) Execute(args map[string]any) (string, error) {
 type Stop struct{}
 
 func (t *Stop) Name() string        { return "process_stop" }
-func (t *Stop) Description() string { return "停止 Natalia 管理的进程" }
+func (t *Stop) Description() string { return "stop a Natalia-managed process" }
 func (t *Stop) Required() []string  { return []string{"id"} }
 func (t *Stop) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"id":         {Type: "string", Description: "process session id"},
-		"signal":     {Type: "string", Description: "可选，发送的信号：TERM、INT、KILL，默认 TERM"},
-		"grace":      {Type: "integer", Description: "可选，等待进程优雅结束的秒数，默认 2"},
-		"kill_after": {Type: "integer", Description: "可选，强杀进程的秒数，默认等于 grace"},
+		"signal":     {Type: "string", Description: "optional, signal to send: TERM, INT, KILL; default TERM"},
+		"grace":      {Type: "integer", Description: "optional, seconds to wait for graceful stop; default 2"},
+		"kill_after": {Type: "integer", Description: "optional, seconds after grace to force kill; default equals grace"},
 	}
 }
 
@@ -149,7 +149,7 @@ type Restart struct{}
 
 func (t *Restart) Name() string { return "process_restart" }
 func (t *Restart) Description() string {
-	return "重启 Natalia 管理的进程，复用原 command/args/cwd/env"
+	return "restart a Natalia-managed process, reusing the original command/args/cwd/env"
 }
 func (t *Restart) Required() []string { return []string{"id"} }
 func (t *Restart) Parameters() map[string]llm.Property {
@@ -171,7 +171,7 @@ type Attach struct{}
 
 func (t *Attach) Name() string { return "process_attach" }
 func (t *Attach) Description() string {
-	return "重新附加到 Natalia 管理的进程，恢复事件/状态关注"
+	return "re-attach to a Natalia-managed process and resume event/state observation"
 }
 func (t *Attach) Required() []string { return []string{"id"} }
 func (t *Attach) Parameters() map[string]llm.Property {
@@ -193,7 +193,7 @@ type Detach struct{}
 
 func (t *Detach) Name() string { return "process_detach" }
 func (t *Detach) Description() string {
-	return "从 Natalia 管理的进程 detach；进程继续运行但状态标记为 detached"
+	return "detach from a Natalia-managed process; the process continues running but state is marked detached"
 }
 func (t *Detach) Required() []string { return []string{"id"} }
 func (t *Detach) Parameters() map[string]llm.Property {
@@ -215,16 +215,16 @@ type Cleanup struct{}
 
 func (t *Cleanup) Name() string { return "process_cleanup" }
 func (t *Cleanup) Description() string {
-	return "清理已完成的进程，并可按 idle/max lifetime 停止运行中的进程；返回受影响 ID"
+	return "clean up finished processes and optionally stop running ones by idle/max lifetime; returns affected IDs"
 }
 func (t *Cleanup) Required() []string { return nil }
 func (t *Cleanup) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"finished_max_age": {Type: "integer", Description: "可选，完成后保留秒数，默认 0"},
-		"idle_timeout":     {Type: "integer", Description: "可选，运行中进程空闲秒数阈值，0 表示不检查"},
-		"max_lifetime":     {Type: "integer", Description: "可选，运行中进程最大运行秒数阈值，0 表示不检查"},
-		"detect_stale":     {Type: "boolean", Description: "可选，检查 PID 是否已失效"},
-		"dry_run":          {Type: "boolean", Description: "可选，仅预览即将清理的进程而不实际操作"},
+		"finished_max_age": {Type: "integer", Description: "optional, retention seconds for finished processes; default 0"},
+		"idle_timeout":     {Type: "integer", Description: "optional, idle seconds threshold for running processes; 0 means disabled"},
+		"max_lifetime":     {Type: "integer", Description: "optional, max runtime seconds threshold for running processes; 0 means disabled"},
+		"detect_stale":     {Type: "boolean", Description: "optional, check if PID is no longer valid"},
+		"dry_run":          {Type: "boolean", Description: "optional, preview processes to clean up without taking action"},
 	}
 }
 func (t *Cleanup) Execute(args map[string]any) (string, error) {
@@ -249,13 +249,13 @@ type Audit struct{}
 
 func (t *Audit) Name() string { return "process_audit" }
 func (t *Audit) Description() string {
-	return "查看 Natalia 进程管理审计日志，secret env 只显示 redacted 摘要"
+	return "view Natalia process management audit log; secret env values are shown redacted"
 }
 func (t *Audit) Required() []string { return nil }
 func (t *Audit) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"tail":   {Type: "integer", Description: "可选，最近多少条审计记录，默认全部"},
-		"format": {Type: "string", Description: "可选，输出格式：text 或 json，默认 text"},
+		"tail":   {Type: "integer", Description: "optional, recent audit entries to return; default all"},
+		"format": {Type: "string", Description: "optional, output format: text or json; default text"},
 	}
 }
 func (t *Audit) Execute(args map[string]any) (string, error) {
