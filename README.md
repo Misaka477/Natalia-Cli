@@ -311,6 +311,12 @@ go test ./...
 go vet ./... && go test ./...
 ```
 
+运行 race baseline（核心 runtime 包）：
+
+```bash
+go test -race ./internal/wire ./internal/soul ./internal/worker ./internal/processmgr ./internal/interactivemgr ./cmd/natalia
+```
+
 ## 许可
 
 本项目使用 Apache License 2.0，详见 [LICENSE](LICENSE)。

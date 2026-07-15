@@ -11,6 +11,7 @@ import (
 	coremcp "github.com/Misaka477/Natalia-Cli/internal/mcp"
 	workflowcore "github.com/Misaka477/Natalia-Cli/internal/workflow"
 	"github.com/Misaka477/Natalia-Cli/internal/worker"
+	"github.com/Misaka477/Natalia-Cli/internal/toolset"
 )
 
 func TestAppRuntimeIsolation(t *testing.T) {
@@ -140,5 +141,74 @@ func TestNewAppRuntimeForTestDefaults(t *testing.T) {
 	}
 	if r.WorkflowRegistry == nil {
 		t.Fatalf("expected test WorkflowRegistry to be initialized")
+	}
+}
+
+func TestTwoAppRuntimesCoexistWithDefaultSingleton(t *testing.T) {
+	ResetDefaultAppRuntime()
+	defaultRT := DefaultAppRuntime()
+	defaultRT.SetActiveConfig(&config.Config{DefaultProfile: "default"})
+	defaultRT.SetOverrides(runtimeOverrides{Mode: "code"})
+
+	isolated := NewAppRuntimeForTest()
+	isolated.SetActiveConfig(&config.Config{DefaultProfile: "isolated"})
+	isolated.SetOverrides(runtimeOverrides{Mode: "ask"})
+
+	if defaultRT.GetActiveConfig().DefaultProfile != "default" {
+		t.Fatalf("expected default runtime profile=default, got %s", defaultRT.GetActiveConfig().DefaultProfile)
+	}
+	if isolated.GetActiveConfig().DefaultProfile != "isolated" {
+		t.Fatalf("expected isolated runtime profile=isolated, got %s", isolated.GetActiveConfig().DefaultProfile)
+	}
+	if defaultRT.GetOverrides().Mode != "code" {
+		t.Fatalf("expected default runtime mode=code, got %s", defaultRT.GetOverrides().Mode)
+	}
+	if isolated.GetOverrides().Mode != "ask" {
+		t.Fatalf("expected isolated runtime mode=ask, got %s", isolated.GetOverrides().Mode)
+	}
+
+	_ = defaultRT
+	_ = isolated
+}
+
+func TestAppRuntimeWorkerPoolIsolation(t *testing.T) {
+	a := NewAppRuntimeForTest()
+	b := NewAppRuntimeForTest()
+
+	poolA := worker.NewPool()
+	poolB := worker.NewPool()
+	a.SetWorkerPool(poolA)
+	b.SetWorkerPool(poolB)
+
+	if a.GetWorkerPool() == b.GetWorkerPool() {
+		t.Fatalf("expected worker pools to be isolated")
+	}
+
+	w, _ := poolA.SpawnWithOptions("a-worker", "code", nil, toolset.NewRegistry(), worker.SpawnOptions{})
+	if w == nil {
+		t.Fatalf("expected worker a to spawn")
+	}
+	if b.GetWorkerPool().Get(w.ID) != nil {
+		t.Fatalf("expected worker a to be isolated from pool b")
+	}
+}
+
+func TestAppRuntimeSessionIsolation(t *testing.T) {
+	a := NewAppRuntimeForTest()
+	b := NewAppRuntimeForTest()
+
+	storeA := &session.SessionStore{}
+	storeB := &session.SessionStore{}
+	a.SetSessionStore(storeA)
+	b.SetSessionStore(storeB)
+
+	sessA := a.GetSessionStore().NewSession("model-a")
+	sessB := b.GetSessionStore().NewSession("model-b")
+
+	if sessA.ID == sessB.ID {
+		t.Fatalf("expected session IDs to differ, got %s and %s", sessA.ID, sessB.ID)
+	}
+	if a.GetCurrentSession() != nil || b.GetCurrentSession() != nil {
+		t.Fatalf("expected no current session set")
 	}
 }

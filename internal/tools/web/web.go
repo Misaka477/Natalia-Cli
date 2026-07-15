@@ -44,6 +44,18 @@ func ConfigureNetworkPolicy(policy *networkpolicy.Policy) {
 	webSearchHTTPClient = policy.HTTPClient(15 * time.Second)
 }
 
+func ResetWebConfigForTest() {
+	SearchAPIKey = os.Getenv("SEARCH_API_KEY")
+	SearchEngine = os.Getenv("SEARCH_ENGINE")
+	SearchProviderPriority = os.Getenv("SEARCH_PROVIDER_PRIORITY")
+	SearchBaseURL = os.Getenv("SEARCH_BASE_URL")
+	BingSearchBaseURL = "https://www.bing.com/search"
+	DDGAPIBaseURL = "https://api.duckduckgo.com/"
+	DDGHTMLBaseURL = "https://html.duckduckgo.com/html/"
+	NetworkPolicy = networkpolicy.Default()
+	webSearchHTTPClient = NetworkPolicy.HTTPClient(15 * time.Second)
+}
+
 type SearchResult struct {
 	Title   string
 	URL     string

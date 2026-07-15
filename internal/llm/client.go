@@ -275,7 +275,6 @@ func (c *Client) ChatStream(ctx context.Context, chatCtx *chat.Context, tools []
 		scanner := bufio.NewScanner(resp.Body)
 		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 		var toolCallAccum map[int]*ToolCall
-		var streamDone bool
 		for scanner.Scan() {
 			if err := ctx.Err(); err != nil {
 				ch <- StreamEvent{Error: err}
@@ -287,7 +286,6 @@ func (c *Client) ChatStream(ctx context.Context, chatCtx *chat.Context, tools []
 			}
 
 			if data == "[DONE]" {
-				streamDone = true
 				break
 			}
 
@@ -349,10 +347,6 @@ func (c *Client) ChatStream(ctx context.Context, chatCtx *chat.Context, tools []
 		}
 		if err := ctx.Err(); err != nil {
 			ch <- StreamEvent{Error: err}
-			return
-		}
-		if streamDone {
-			ch <- StreamEvent{Done: true}
 			return
 		}
 		ch <- StreamEvent{Done: true}
@@ -418,6 +412,7 @@ func (c *Client) chatStream(httpReq *http.Request) (*chat.Message, *Usage, error
 	var contentBuf strings.Builder
 	var currentToolCalls []chat.ToolCall
 	toolCallMap := make(map[int]*chat.ToolCall)
+	var finishReason string
 
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
@@ -446,6 +441,10 @@ func (c *Client) chatStream(httpReq *http.Request) (*chat.Message, *Usage, error
 		for _, choice := range chunk.Choices {
 			if choice.Delta.Content != "" {
 				contentBuf.WriteString(choice.Delta.Content)
+			}
+
+			if choice.FinishReason != "" {
+				finishReason = choice.FinishReason
 			}
 
 			for _, tc := range choice.Delta.ToolCalls {
@@ -487,7 +486,7 @@ func (c *Client) chatStream(httpReq *http.Request) (*chat.Message, *Usage, error
 		msg.ToolCalls = currentToolCalls
 	}
 
-	if msg.Content == "" && len(msg.ToolCalls) == 0 {
+	if msg.Content == "" && len(msg.ToolCalls) == 0 && finishReason == "" {
 		return nil, nil, fmt.Errorf("empty assistant response from model")
 	}
 

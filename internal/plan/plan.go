@@ -25,6 +25,8 @@ var defaultManager = &Manager{}
 
 func Default() *Manager { return defaultManager }
 
+func ResetDefaultManagerForTest() { defaultManager = &Manager{} }
+
 func Enter(slug, path, reason string) State {
 	return defaultManager.Enter(slug, path, reason)
 }

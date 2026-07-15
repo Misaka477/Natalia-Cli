@@ -167,3 +167,294 @@ func TestChatStreamMethodErrorsOnEmptyAssistantResponse(t *testing.T) {
 		t.Fatalf("expected empty assistant response error, msg=%+v err=%v", msg, err)
 	}
 }
+
+func TestChatStreamContentDeltasNoDuplicate(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"hel\"}}]}\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\" world\"}}]}\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"finish_reason\":\"stop\"}]}\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n"))
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{BaseURL: server.URL, Model: "test", Timeout: time.Second})
+	msg, _, err := client.Chat(context.Background(), chat.NewContext(100, 10), nil, true)
+	if err != nil {
+		t.Fatalf("Chat stream failed: %v", err)
+	}
+	if msg.Content != "hello world" {
+		t.Fatalf("expected concatenated content, got %q", msg.Content)
+	}
+}
+
+func TestChatStreamReasoningContentInterleaved(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"thinking\"}}]}\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"reasoning_content\":\" more\"}}]}\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\" there\"}}]}\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n"))
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{BaseURL: server.URL, Model: "test", Timeout: time.Second})
+	events := client.ChatStream(context.Background(), chat.NewContext(100, 10), nil)
+	var content, reasoning []string
+	for ev := range events {
+		if ev.Error != nil {
+			t.Fatalf("stream error: %v", ev.Error)
+		}
+		if ev.Content != "" {
+			content = append(content, ev.Content)
+		}
+		if ev.Reasoning != "" {
+			reasoning = append(reasoning, ev.Reasoning)
+		}
+	}
+	if strings.Join(content, "") != "hi there" {
+		t.Fatalf("expected interleaved content, got %v", content)
+	}
+	if strings.Join(reasoning, "") != "thinking more" {
+		t.Fatalf("expected interleaved reasoning, got %v", reasoning)
+	}
+}
+
+func TestChatStreamSingleToolCallFragmented(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"name\":\"read\"}}]}}]}\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"path\\\":\"}}]}}]}\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"x\"}}]}}]}\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n"))
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{BaseURL: server.URL, Model: "test", Timeout: time.Second})
+	events := client.ChatStream(context.Background(), chat.NewContext(100, 10), nil)
+	var toolCalls []ToolCall
+	for ev := range events {
+		if ev.Error != nil {
+			t.Fatalf("stream error: %v", ev)
+		}
+		toolCalls = append(toolCalls, ev.ToolCalls...)
+	}
+	if len(toolCalls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(toolCalls))
+	}
+	if toolCalls[0].Function.Name != "read" {
+		t.Fatalf("expected tool name read, got %s", toolCalls[0].Function.Name)
+	}
+	if toolCalls[0].Function.Arguments != `{"path":x` {
+		t.Fatalf("expected concatenated arguments, got %s", toolCalls[0].Function.Arguments)
+	}
+}
+
+func TestChatStreamMultipleToolCalls(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"name\":\"a\"}}]}}]}\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":1,\"function\":{\"name\":\"b\"}}]}}]}\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"1\"}}]}}]}\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":1,\"function\":{\"arguments\":\"2\"}}]}}]}\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n"))
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{BaseURL: server.URL, Model: "test", Timeout: time.Second})
+	events := client.ChatStream(context.Background(), chat.NewContext(100, 10), nil)
+	var toolCalls []ToolCall
+	for ev := range events {
+		if ev.Error != nil {
+			t.Fatalf("stream error: %v", ev.Error)
+		}
+		toolCalls = append(toolCalls, ev.ToolCalls...)
+	}
+	if len(toolCalls) != 2 {
+		t.Fatalf("expected 2 tool calls, got %d: %+v", len(toolCalls), toolCalls)
+	}
+	if toolCalls[0].Function.Name != "a" || toolCalls[1].Function.Name != "b" {
+		t.Fatalf("expected tool names a,b, got %s,%s", toolCalls[0].Function.Name, toolCalls[1].Function.Name)
+	}
+}
+
+func TestChatStreamOutOfOrderIndexStable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":1,\"function\":{\"name\":\"b\"}}]}}]}\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"name\":\"a\"}}]}}]}\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n"))
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{BaseURL: server.URL, Model: "test", Timeout: time.Second})
+	events := client.ChatStream(context.Background(), chat.NewContext(100, 10), nil)
+	var toolCalls []ToolCall
+	for ev := range events {
+		if ev.Error != nil {
+			t.Fatalf("stream error: %v", ev.Error)
+		}
+		toolCalls = append(toolCalls, ev.ToolCalls...)
+	}
+	if len(toolCalls) != 2 {
+		t.Fatalf("expected 2 tool calls, got %d", len(toolCalls))
+	}
+	if toolCalls[0].Function.Name != "a" || toolCalls[1].Function.Name != "b" {
+		t.Fatalf("expected sorted tool names a,b, got %s,%s", toolCalls[0].Function.Name, toolCalls[1].Function.Name)
+	}
+}
+
+func TestChatStreamFinishReasonVariants(t *testing.T) {
+	for _, reason := range []string{"stop", "length", "tool_calls"} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("data: {\"choices\":[{\"finish_reason\":\"" + reason + "\"}]}\n"))
+			_, _ = w.Write([]byte("data: [DONE]\n"))
+		}))
+		client := NewClient(Config{BaseURL: server.URL, Model: "test", Timeout: time.Second})
+		msg, usage, err := client.Chat(context.Background(), chat.NewContext(100, 10), nil, true)
+		server.Close()
+		if err != nil {
+			t.Fatalf("finish_reason=%s stream failed: %v", reason, err)
+		}
+		if msg == nil || usage == nil {
+			t.Fatalf("finish_reason=%s expected non-nil msg/usage", reason)
+		}
+	}
+}
+
+func TestChatStreamLastUsageChunkNonZero(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":1,\"total_tokens\":6}}\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n"))
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{BaseURL: server.URL, Model: "test", Timeout: time.Second})
+	_, usage, err := client.Chat(context.Background(), chat.NewContext(100, 10), nil, true)
+	if err != nil {
+		t.Fatalf("stream failed: %v", err)
+	}
+	if usage.TotalTokens == 0 {
+		t.Fatalf("expected non-zero usage from stream, got %+v", usage)
+	}
+}
+
+func TestChatStreamEmptyDeltaAndUnknownFields(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{}}]}\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"\",\"unknown\":123}}]}\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n"))
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{BaseURL: server.URL, Model: "test", Timeout: time.Second})
+	_, _, err := client.Chat(context.Background(), chat.NewContext(100, 10), nil, true)
+	if err == nil || !strings.Contains(err.Error(), "empty assistant response") {
+		t.Fatalf("expected empty assistant response error, got %v", err)
+	}
+}
+
+func TestChatStreamMalformedJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {invalid json}\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n"))
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{BaseURL: server.URL, Model: "test", Timeout: time.Second})
+	msg, _, err := client.Chat(context.Background(), chat.NewContext(100, 10), nil, true)
+	if err != nil {
+		t.Fatalf("stream should not fail on malformed JSON, got %v", err)
+	}
+	if msg == nil || msg.Content != "ok" {
+		t.Fatalf("expected ok content after malformed chunk, got %+v", msg)
+	}
+}
+
+func TestChatStreamCompactAndSpacedDataPrefix(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data:{\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"b\"}}]}\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n"))
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{BaseURL: server.URL, Model: "test", Timeout: time.Second})
+	msg, _, err := client.Chat(context.Background(), chat.NewContext(100, 10), nil, true)
+	if err != nil {
+		t.Fatalf("stream failed: %v", err)
+	}
+	if msg.Content != "ab" {
+		t.Fatalf("expected ab, got %s", msg.Content)
+	}
+}
+
+func TestChatStreamDoneWithoutContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: [DONE]\n"))
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{BaseURL: server.URL, Model: "test", Timeout: time.Second})
+	_, _, err := client.Chat(context.Background(), chat.NewContext(100, 10), nil, true)
+	if err == nil || !strings.Contains(err.Error(), "empty assistant response") {
+		t.Fatalf("expected empty assistant response error, got %v", err)
+	}
+}
+
+func TestChatStreamOversizedEvent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		payload := strings.Repeat("x", 2*1024*1024)
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"" + payload + "\"}}]}\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n"))
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{BaseURL: server.URL, Model: "test", Timeout: time.Second})
+	_, _, err := client.Chat(context.Background(), chat.NewContext(100, 10), nil, true)
+	if err == nil || !strings.Contains(err.Error(), "read stream") {
+		t.Fatalf("expected scanner error for oversized event, got %v", err)
+	}
+}
+
+func TestChatStreamCancellationClosesBody(t *testing.T) {
+	requestStarted := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		close(requestStarted)
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{BaseURL: server.URL, Model: "test", Timeout: time.Second})
+	ctx, cancel := context.WithCancel(context.Background())
+	events := client.ChatStream(ctx, chat.NewContext(100, 10), nil)
+	<-requestStarted
+	cancel()
+
+	select {
+	case event, ok := <-events:
+		if !ok {
+			t.Fatal("expected cancellation event")
+		}
+		if !errors.Is(event.Error, context.Canceled) {
+			t.Fatalf("expected context canceled, got %v", event.Error)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("stream did not stop after cancellation")
+	}
+}

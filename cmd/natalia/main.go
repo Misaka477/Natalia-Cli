@@ -56,6 +56,10 @@ import (
 	"github.com/peterh/liner"
 )
 
+// Legacy globals below are backward-compatible adapters.
+// New code must use AppRuntime directly. These will be removed in a future slice.
+// Legacy globals below are backward-compatible adapters for DefaultAppRuntime().
+// New code must use AppRuntime directly. These will be removed in a future slice.
 var (
 	sessStore        *session.SessionStore
 	currentSession   *session.Session
@@ -100,7 +104,7 @@ func main() {
 	if *profile != "" && cfg != nil {
 		cfg.DefaultProfile = *profile
 	}
-	activeConfig = cfg
+	DefaultAppRuntime().SetActiveConfig(cfg)
 
 	tools := toolset.NewRegistry()
 	registerTools(tools, DefaultAppRuntime())
@@ -323,7 +327,7 @@ func mcpClientForServer(serverName string, cfg config.MCPServerConfig) (*coremcp
 	if cfg.OAuthToken != "" {
 		headers["Authorization"] = "Bearer " + cfg.OAuthToken
 	}
-	policy, err := networkPolicyFromConfig(activeConfig)
+	policy, err := networkPolicyFromConfig(DefaultAppRuntime().GetActiveConfig())
 	if err != nil {
 		return nil, err
 	}
@@ -434,7 +438,7 @@ func buildEngine(cfg *config.Config, tools *toolset.Registry, debug bool) *soul.
 
 	engine := soul.NewEngine(llmClient, tools)
 	engine.InjectionProviders = []soul.InjectionProvider{
-		soul.PlanModeInjectionProvider{Manager: planManager},
+		soul.PlanModeInjectionProvider{Manager: DefaultAppRuntime().GetPlanManager()},
 		soul.SafetyInjectionProvider{},
 		soul.NotificationInjectionProvider{Store: notifications.DefaultStore()},
 		&soul.AFKInjectionProvider{},
@@ -1002,7 +1006,7 @@ func runOnce(cfg *config.Config, tools *toolset.Registry, input string) {
 
 func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, debug bool) {
 	defer term.Close()
-	activeConfig = cfg
+	DefaultAppRuntime().SetActiveConfig(cfg)
 	defer persistCurrentSessionState()
 
 	engine := buildEngine(cfg, tools, debug)

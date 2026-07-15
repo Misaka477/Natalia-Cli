@@ -24,6 +24,12 @@ func SetEnvAllowlist(names []string) {
 	envAllowlist.names = append([]string(nil), names...)
 }
 
+func ResetEnvAllowlistForTest() {
+	envAllowlist.Lock()
+	defer envAllowlist.Unlock()
+	envAllowlist.names = nil
+}
+
 func EnvAllowlist() []string {
 	envAllowlist.RLock()
 	defer envAllowlist.RUnlock()
