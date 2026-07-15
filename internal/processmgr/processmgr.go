@@ -121,6 +121,7 @@ type SweepOptions struct {
 	MaxLifetime    time.Duration
 	DetectStale    bool
 	DryRun         bool
+	Kind           Kind
 }
 
 type SweepResult struct {
@@ -128,6 +129,12 @@ type SweepResult struct {
 	Stopped     int
 	Stale       int
 	AffectedIDs []string
+}
+
+type StopOptions struct {
+	Signal   syscall.Signal
+	Grace    time.Duration
+	KillAfter time.Duration
 }
 
 type Manager struct {
@@ -321,6 +328,10 @@ func (m *Manager) OutputPage(id string, offset, limit int) (OutputPage, bool) {
 }
 
 func (m *Manager) Stop(id string) error {
+	return m.StopWithOptions(id, StopOptions{})
+}
+
+func (m *Manager) StopWithOptions(id string, opts StopOptions) error {
 	ms, ok := m.get(id)
 	if !ok {
 		return fmt.Errorf("unknown process session %q", id)
@@ -341,13 +352,25 @@ func (m *Manager) Stop(id string) error {
 	ms.mu.Unlock()
 	m.recordAudit("stop", ms.snapshot())
 	ms.cancel()
+	signal := opts.Signal
+	if signal == 0 {
+		signal = syscall.SIGTERM
+	}
+	grace := opts.Grace
+	if grace <= 0 {
+		grace = 2 * time.Second
+	}
+	killAfter := opts.KillAfter
+	if killAfter <= 0 {
+		killAfter = grace
+	}
 	if pid > 0 {
-		_ = syscall.Kill(-pid, syscall.SIGTERM)
+		_ = syscall.Kill(-pid, signal)
 	}
 	select {
 	case <-ms.done:
-	case <-time.After(2 * time.Second):
-		if pid > 0 {
+	case <-time.After(killAfter):
+		if pid > 0 && signal != syscall.SIGKILL {
 			_ = syscall.Kill(-pid, syscall.SIGKILL)
 		}
 		<-ms.done
@@ -408,7 +431,7 @@ func (m *Manager) Detach(id string) (*Session, error) {
 }
 
 func (m *Manager) CleanupFinished(maxAge time.Duration) int {
-	return m.CleanupFinishedResult(maxAge, false).Removed
+	return m.CleanupFinishedResult(SweepOptions{FinishedMaxAge: maxAge}).Removed
 }
 
 func (m *Manager) Shutdown() {
@@ -424,11 +447,11 @@ func (m *Manager) Shutdown() {
 	}
 }
 
-func (m *Manager) CleanupFinishedResult(maxAge time.Duration, dryRun bool) SweepResult {
-	if maxAge < 0 {
-		maxAge = 0
+func (m *Manager) CleanupFinishedResult(opts SweepOptions) SweepResult {
+	if opts.FinishedMaxAge < 0 {
+		opts.FinishedMaxAge = 0
 	}
-	cutoff := time.Now().Add(-maxAge)
+	cutoff := time.Now().Add(-opts.FinishedMaxAge)
 	var result SweepResult
 	var removedEvents []Event
 	m.mu.Lock()
@@ -437,10 +460,13 @@ func (m *Manager) CleanupFinishedResult(maxAge time.Duration, dryRun bool) Sweep
 		if snapshot.Status == StatusRunning {
 			continue
 		}
+		if opts.Kind != "" && snapshot.Kind != opts.Kind {
+			continue
+		}
 		if !snapshot.ExitedAt.IsZero() && snapshot.ExitedAt.Before(cutoff) {
 			result.AffectedIDs = append(result.AffectedIDs, id)
 			result.Removed++
-			if !dryRun {
+			if !opts.DryRun {
 				removedEvents = append(removedEvents, Event{Type: EventCleanup, Session: *snapshot, Message: "removed completed session", Time: time.Now()})
 				delete(m.sessions, id)
 				m.appendAuditLocked("cleanup", *snapshot, "")
@@ -455,11 +481,14 @@ func (m *Manager) CleanupFinishedResult(maxAge time.Duration, dryRun bool) Sweep
 }
 
 func (m *Manager) Sweep(opts SweepOptions) SweepResult {
-	cleanupResult := m.CleanupFinishedResult(opts.FinishedMaxAge, opts.DryRun)
+	cleanupResult := m.CleanupFinishedResult(opts)
 	result := SweepResult{Removed: cleanupResult.Removed, AffectedIDs: cleanupResult.AffectedIDs}
 	now := time.Now()
 	for _, sess := range m.List() {
 		if sess.Status != StatusRunning {
+			continue
+		}
+		if opts.Kind != "" && sess.Kind != opts.Kind {
 			continue
 		}
 		if opts.DetectStale && !processAlive(sess.PID) {

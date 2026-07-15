@@ -350,3 +350,39 @@ func formatAuditForTest(entries []AuditEntry) string {
 	}
 	return b.String()
 }
+
+func TestSweepKindIsolation(t *testing.T) {
+	m := New()
+	proc, err := m.Start(context.Background(), StartOptions{Kind: KindProcess, Command: "/bin/sh", Args: []string{"-c", "exit 0"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bg, err := m.Start(context.Background(), StartOptions{Kind: KindBackground, Command: "/bin/sh", Args: []string{"-c", "exit 0"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, m, proc.ID, StatusExited)
+	waitForStatus(t, m, bg.ID, StatusExited)
+
+	processSweep := m.Sweep(SweepOptions{FinishedMaxAge: 0, Kind: KindProcess})
+	if processSweep.Removed != 1 {
+		t.Fatalf("expected process sweep to remove 1, got %d", processSweep.Removed)
+	}
+	if len(processSweep.AffectedIDs) != 1 || processSweep.AffectedIDs[0] != proc.ID {
+		t.Fatalf("expected process sweep to affect %s, got %v", proc.ID, processSweep.AffectedIDs)
+	}
+	if _, ok := m.Status(bg.ID); !ok {
+		t.Fatalf("background session should not be removed by process sweep")
+	}
+
+	backgroundSweep := m.Sweep(SweepOptions{FinishedMaxAge: 0, Kind: KindBackground})
+	if backgroundSweep.Removed != 1 {
+		t.Fatalf("expected background sweep to remove 1, got %d", backgroundSweep.Removed)
+	}
+	if len(backgroundSweep.AffectedIDs) != 1 || backgroundSweep.AffectedIDs[0] != bg.ID {
+		t.Fatalf("expected background sweep to affect %s, got %v", bg.ID, backgroundSweep.AffectedIDs)
+	}
+	if _, ok := m.Status(proc.ID); ok {
+		t.Fatalf("process session should not be removed by background sweep")
+	}
+}

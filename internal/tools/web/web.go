@@ -63,6 +63,7 @@ type SearchResult struct {
 	Content string
 	Date    string
 	Source  string
+	Score   float64
 }
 
 type Search struct{}
@@ -159,12 +160,8 @@ func searchRelevanceWarning(query string, results []SearchResult) string {
 	}
 	relevant := 0
 	for _, result := range results {
-		haystack := strings.ToLower(result.Title + " " + result.Snippet + " " + result.URL)
-		for _, term := range terms {
-			if strings.Contains(haystack, term) {
-				relevant++
-				break
-			}
+		if result.Score >= 0.1 {
+			relevant++
 		}
 	}
 	if relevant == 0 || relevant*2 < len(results) {
@@ -186,9 +183,34 @@ func queryTerms(query string) []string {
 	return terms
 }
 
+func searchResultScore(result SearchResult, terms []string) float64 {
+	if len(terms) == 0 {
+		return 0
+	}
+	haystack := strings.ToLower(result.Title + " " + result.Snippet + " " + result.URL)
+	matched := 0
+	for _, term := range terms {
+		if strings.Contains(haystack, term) {
+			matched++
+		}
+	}
+	return float64(matched) / float64(len(terms))
+}
+
+func scoreResults(query string, results []SearchResult) []SearchResult {
+	terms := queryTerms(query)
+	if len(terms) == 0 {
+		return results
+	}
+	for i := range results {
+		results[i].Score = searchResultScore(results[i], terms)
+	}
+	return results
+}
+
 func searchDefault(query string, limit int) ([]SearchResult, error) {
 	results, _, err := searchByPriority(query, limit, defaultSearchProviderPriority())
-	return results, err
+	return scoreResults(query, results), err
 
 }
 
@@ -207,6 +229,7 @@ func searchByPriority(query string, limit int, providers []string) ([]SearchResu
 			diagnostics = append(diagnostics, fmt.Sprintf("%s: %s", provider, sanitizeSearchDiagnostic(err)))
 			continue
 		}
+		results = scoreResults(query, results)
 		if len(results) == 0 {
 			diagnostics = append(diagnostics, fmt.Sprintf("%s: no results", provider))
 			continue
@@ -346,7 +369,7 @@ func searchCustom(query string, limit int, includeContent bool) ([]SearchResult,
 			Content: r.Content, Date: r.Date,
 		})
 	}
-	return results, nil
+	return scoreResults(query, results), nil
 }
 
 func searchGoogle(query string, limit int) ([]SearchResult, error) {
@@ -464,11 +487,12 @@ func searchDuckDuckGoHTML(query string, limit int) ([]SearchResult, error) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	html := string(body)
+	return parseDuckDuckGoHTML(string(body), limit), nil
+}
 
+func parseDuckDuckGoHTML(html string, limit int) []SearchResult {
 	var results []SearchResult
 
-	// Simple extraction: find result links
 	for i := 0; i < len(html); {
 		idx := strings.Index(html[i:], `class="result__a"`)
 		if idx < 0 {
@@ -530,9 +554,9 @@ func searchDuckDuckGoHTML(query string, limit int) ([]SearchResult, error) {
 	}
 
 	if len(results) == 0 {
-		return nil, nil
+		return nil
 	}
-	return results, nil
+	return results
 }
 
 func searchBingHTML(query string, limit int) ([]SearchResult, error) {

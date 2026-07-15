@@ -137,6 +137,7 @@ type Outcome struct {
 	FinalMessage string
 	Steps        int
 	Transient    bool
+	Usage        *llm.Usage
 }
 
 type ToolCallEvent struct {
@@ -327,11 +328,12 @@ func (e *Engine) Step(ctx context.Context) *Outcome {
 	}
 	e.stepCtx, e.stepCancel = context.WithCancelCause(e.engineCtx)
 	if ctx != nil {
+		stepCtx := e.stepCtx
 		go func(cancel context.CancelCauseFunc) {
 			select {
 			case <-ctx.Done():
 				cancel(ctx.Err())
-			case <-e.stepCtx.Done():
+			case <-stepCtx.Done():
 			}
 		}(e.stepCancel)
 	}
@@ -402,6 +404,7 @@ func (e *Engine) step() *Outcome {
 			StopReason:   "no_tool_calls",
 			FinalMessage: msg.Content,
 			Steps:        e.Context.StepCount,
+			Usage:        usage,
 		}
 	}
 
@@ -409,13 +412,13 @@ func (e *Engine) step() *Outcome {
 		e.log("[ENGINE] executeToolCall: %s → %s", tc.Function.Name, tc.Function.Arguments)
 		if err := e.executeToolCall(tc); err != nil {
 			if _, ok := err.(*BackToTheFuture); ok {
-				return &Outcome{StopReason: "back_to_future"}
+				return &Outcome{StopReason: "back_to_the_future"}
 			}
 			return &Outcome{StopReason: "error", FinalMessage: err.Error()}
 		}
 	}
 
-	return &Outcome{StopReason: "tool_called"}
+	return &Outcome{StopReason: "tool_called", Usage: usage}
 }
 
 func (e *Engine) streamStep() (*chat.Message, *llm.Usage, error) {
@@ -423,6 +426,7 @@ func (e *Engine) streamStep() (*chat.Message, *llm.Usage, error) {
 
 	var contentBuf strings.Builder
 	var toolCalls []chat.ToolCall
+	var usage *llm.Usage
 
 	for evt := range ch {
 		if evt.Error != nil {
@@ -432,6 +436,7 @@ func (e *Engine) streamStep() (*chat.Message, *llm.Usage, error) {
 			return nil, nil, evt.Error
 		}
 		if evt.Done {
+			usage = evt.Usage
 			break
 		}
 		contentBuf.WriteString(evt.Content)
@@ -473,7 +478,11 @@ func (e *Engine) streamStep() (*chat.Message, *llm.Usage, error) {
 		ToolCalls: toolCalls,
 	}
 
-	return msg, &llm.Usage{}, nil
+	if usage == nil {
+		usage = &llm.Usage{}
+	}
+
+	return msg, usage, nil
 }
 
 func normalizeAssistantToolCalls(msg *chat.Message) {

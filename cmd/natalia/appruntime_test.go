@@ -197,8 +197,8 @@ func TestAppRuntimeSessionIsolation(t *testing.T) {
 	a := NewAppRuntimeForTest()
 	b := NewAppRuntimeForTest()
 
-	storeA := &session.SessionStore{}
-	storeB := &session.SessionStore{}
+	storeA := &session.SessionStore{BaseDir: t.TempDir()}
+	storeB := &session.SessionStore{BaseDir: t.TempDir()}
 	a.SetSessionStore(storeA)
 	b.SetSessionStore(storeB)
 

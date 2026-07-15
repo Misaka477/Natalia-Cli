@@ -30,6 +30,9 @@ Thumbs.db
 # natalia config/sessions
 .config/
 
+# Test session artifacts (numeric directories in cmd/natalia)
+/cmd/natalia/[0-9]*
+
 # Kilo local project state
 .kilo/
 

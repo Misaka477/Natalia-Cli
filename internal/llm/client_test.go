@@ -458,3 +458,27 @@ func TestChatStreamCancellationClosesBody(t *testing.T) {
 		t.Fatal("stream did not stop after cancellation")
 	}
 }
+
+func TestChatStreamPropagatesUsageOnDoneEvent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(`data: {"choices":[{"delta":{"content":"hi"}}],"usage":{"prompt_tokens":5,"completion_tokens":1,"total_tokens":6}}` + "\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n"))
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{BaseURL: server.URL, Model: "test", Timeout: time.Second})
+	events := client.ChatStream(context.Background(), chat.NewContext(100, 10), nil)
+	var doneEvent *StreamEvent
+	for event := range events {
+		if event.Error != nil {
+			t.Fatalf("unexpected stream error: %v", event.Error)
+		}
+		if event.Done {
+			doneEvent = &event
+		}
+	}
+	if doneEvent == nil || doneEvent.Usage == nil || doneEvent.Usage.TotalTokens != 6 {
+		t.Fatalf("expected done event with usage total_tokens=6, got done=%v usage=%+v", doneEvent != nil, doneEvent)
+	}
+}

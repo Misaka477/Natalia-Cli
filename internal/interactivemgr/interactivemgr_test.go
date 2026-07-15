@@ -6,7 +6,6 @@ import (
 	"io"
 	"regexp"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 )
 
 func TestInteractiveShellWriteReadAndStop(t *testing.T) {
+	t.Parallel()
 	m := New()
 	sess, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-i"}, MaxTail: 4096})
 	if err != nil {
@@ -53,6 +53,7 @@ func TestInteractiveShellWriteReadAndStop(t *testing.T) {
 }
 
 func TestInteractiveWaitForOnlyMatchesUnreadOutput(t *testing.T) {
+	t.Parallel()
 	m := New()
 	sess, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-i"}, MaxTail: 4096})
 	if err != nil {
@@ -81,6 +82,7 @@ func TestInteractiveWaitForOnlyMatchesUnreadOutput(t *testing.T) {
 }
 
 func TestInteractiveDefaultObservationDoesNotTruncateTail(t *testing.T) {
+	t.Parallel()
 	m := New()
 	sess, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-i"}})
 	if err != nil {
@@ -99,6 +101,7 @@ func TestInteractiveDefaultObservationDoesNotTruncateTail(t *testing.T) {
 }
 
 func TestInteractiveSensitiveWriteRedactsFutureReads(t *testing.T) {
+	t.Parallel()
 	m := New()
 	sess, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-i"}, MaxTail: 4096})
 	if err != nil {
@@ -150,6 +153,7 @@ func TestInteractiveStartStripsInheritedSensitiveEnv(t *testing.T) {
 }
 
 func TestInteractiveOutputRedactsSensitivePatterns(t *testing.T) {
+	t.Parallel()
 	m := New()
 	sess, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-i"}, MaxTail: 4096})
 	if err != nil {
@@ -167,13 +171,11 @@ func TestInteractiveOutputRedactsSensitivePatterns(t *testing.T) {
 }
 
 func TestInteractiveEventsAttachDetachResizeAndTranscript(t *testing.T) {
+	t.Parallel()
 	m := New()
-	var mu sync.Mutex
-	var events []Event
+	events := make(chan Event, 8)
 	detachSub := m.Subscribe(func(event Event) {
-		mu.Lock()
-		events = append(events, event)
-		mu.Unlock()
+		events <- event
 	})
 	defer detachSub()
 	sess, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-i"}, Rows: 24, Cols: 80})
@@ -213,22 +215,31 @@ func TestInteractiveEventsAttachDetachResizeAndTranscript(t *testing.T) {
 	if !strings.Contains(page.Text, "event_ready") || page.Total == 0 {
 		t.Fatalf("expected transcript page with command output, got %+v", page)
 	}
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		mu.Lock()
-		got := append([]Event(nil), events...)
-		mu.Unlock()
-		if hasInteractiveEvent(got, EventStarted, sess.ID) && hasInteractiveEvent(got, EventDetached, sess.ID) && hasInteractiveEvent(got, EventAttached, sess.ID) && hasInteractiveEvent(got, EventResized, sess.ID) && hasInteractiveOutput(got, sess.ID, "event_ready") {
-			return
+	seenStarted, seenDetached, seenAttached, seenResized, seenOutput := false, false, false, false, false
+	deadline := time.After(time.Second)
+	for !(seenStarted && seenDetached && seenAttached && seenResized && seenOutput) {
+		select {
+		case event := <-events:
+			switch {
+			case event.Type == EventStarted && event.Session.ID == sess.ID:
+				seenStarted = true
+			case event.Type == EventDetached && event.Session.ID == sess.ID:
+				seenDetached = true
+			case event.Type == EventAttached && event.Session.ID == sess.ID:
+				seenAttached = true
+			case event.Type == EventResized && event.Session.ID == sess.ID:
+				seenResized = true
+			case event.Type == EventOutput && event.Session.ID == sess.ID && strings.Contains(event.Output, "event_ready"):
+				seenOutput = true
+			}
+		case <-deadline:
+			t.Fatalf("expected lifecycle/output events, got started=%t detached=%t attached=%t resized=%t output=%t", seenStarted, seenDetached, seenAttached, seenResized, seenOutput)
 		}
-		time.Sleep(10 * time.Millisecond)
 	}
-	mu.Lock()
-	defer mu.Unlock()
-	t.Fatalf("expected lifecycle/output events, got %+v", events)
 }
 
 func TestInteractiveCleanupRemovesStoppedSessions(t *testing.T) {
+	t.Parallel()
 	m := New()
 	sess, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-i"}})
 	if err != nil {
@@ -247,6 +258,7 @@ func TestInteractiveCleanupRemovesStoppedSessions(t *testing.T) {
 }
 
 func TestInteractiveEnterKeyAndStop(t *testing.T) {
+	t.Parallel()
 	m := New()
 	sess, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-i"}})
 	if err != nil {
@@ -270,6 +282,7 @@ func TestInteractiveEnterKeyAndStop(t *testing.T) {
 }
 
 func TestInteractiveRejectsInvalidKey(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{"enter": "\r", "ctrl-c": "\x03", "ctrl_d": "\x04", "tab": "\t", "esc": "\x1b"}
 	for key, want := range cases {
 		got, err := keySequence(key)
@@ -283,6 +296,7 @@ func TestInteractiveRejectsInvalidKey(t *testing.T) {
 }
 
 func TestCleanTerminalStripsANSI(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"\x1b[31mred\x1b[0m\r\n": "red",
 		"plain":                  "plain",
@@ -311,6 +325,7 @@ func TestCleanTerminalStripsANSI(t *testing.T) {
 }
 
 func TestPTYClosedErrorsAreNormalEOF(t *testing.T) {
+	t.Parallel()
 	if !isPTYClosedError(io.EOF) {
 		t.Fatal("io.EOF should be treated as closed PTY")
 	}
@@ -323,6 +338,7 @@ func TestPTYClosedErrorsAreNormalEOF(t *testing.T) {
 }
 
 func TestDetectPromptCoversShellAndCustomWaitPatterns(t *testing.T) {
+	t.Parallel()
 	waitRe := regexp.MustCompile(`READY>`)
 	cases := []struct {
 		name string

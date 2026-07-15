@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/commandpolicy"
@@ -167,7 +168,12 @@ func (t *Stop) Name() string        { return "background_stop" }
 func (t *Stop) Description() string { return "停止 Natalia 管理的后台任务" }
 func (t *Stop) Required() []string  { return []string{"id"} }
 func (t *Stop) Parameters() map[string]llm.Property {
-	return map[string]llm.Property{"id": {Type: "string", Description: "background task session id"}}
+	return map[string]llm.Property{
+		"id":         {Type: "string", Description: "background task session id"},
+		"signal":     {Type: "string", Description: "可选，发送的信号：TERM、INT、KILL，默认 TERM"},
+		"grace":      {Type: "integer", Description: "可选，等待进程优雅结束的秒数，默认 2"},
+		"kill_after": {Type: "integer", Description: "可选，强杀进程的秒数，默认等于 grace"},
+	}
 }
 func (t *Stop) Execute(args map[string]any) (string, error) {
 	id, _ := args["id"].(string)
@@ -177,7 +183,21 @@ func (t *Stop) Execute(args map[string]any) (string, error) {
 	if err := requireBackground(id); err != nil {
 		return "", err
 	}
-	if err := processmgr.DefaultManager().Stop(id); err != nil {
+	opts := processmgr.StopOptions{}
+	if sig, _ := args["signal"].(string); sig != "" {
+		s, err := parseSignal(sig)
+		if err != nil {
+			return "", err
+		}
+		opts.Signal = s
+	}
+	if grace, _ := intArg(args["grace"], 0, 0, 3600); grace > 0 {
+		opts.Grace = time.Duration(grace) * time.Second
+	}
+	if killAfter, _ := intArg(args["kill_after"], 0, 0, 3600); killAfter > 0 {
+		opts.KillAfter = time.Duration(killAfter) * time.Second
+	}
+	if err := processmgr.DefaultManager().StopWithOptions(id, opts); err != nil {
 		return "", err
 	}
 	sess, _ := processmgr.DefaultManager().Status(id)
@@ -214,7 +234,7 @@ func (t *Cleanup) Execute(args map[string]any) (string, error) {
 		return "", err
 	}
 	dryRun := boolArg(args["dry_run"])
-	result := processmgr.DefaultManager().Sweep(processmgr.SweepOptions{FinishedMaxAge: finishedMaxAge, IdleTimeout: idleTimeout, MaxLifetime: maxLifetime, DetectStale: boolArg(args["detect_stale"]), DryRun: dryRun})
+	result := processmgr.DefaultManager().Sweep(processmgr.SweepOptions{FinishedMaxAge: finishedMaxAge, IdleTimeout: idleTimeout, MaxLifetime: maxLifetime, DetectStale: boolArg(args["detect_stale"]), DryRun: dryRun, Kind: processmgr.KindBackground})
 	return fmt.Sprintf("background cleanup complete\nremoved: %d\nstopped: %d\nstale: %d", result.Removed, result.Stopped, result.Stale), nil
 }
 
@@ -438,4 +458,17 @@ func formatSession(sess *processmgr.Session) string {
 		startedAt = "\nstarted_at: " + sess.StartedAt.Format(time.RFC3339)
 	}
 	return fmt.Sprintf("id: %s\nkind: %s\nstatus: %s\npid: %d\ncommand: %s %s\nattached: %t%s%s%s%s%s%s", sess.ID, sess.Kind, sess.Status, sess.PID, sess.Command, strings.Join(sess.Args, " "), sess.Attached, startedAt, duration, lifetimeLine, envLine, exitCode, errLine)
+}
+
+func parseSignal(raw string) (syscall.Signal, error) {
+	switch strings.ToUpper(raw) {
+	case "TERM":
+		return syscall.SIGTERM, nil
+	case "INT":
+		return syscall.SIGINT, nil
+	case "KILL":
+		return syscall.SIGKILL, nil
+	default:
+		return 0, fmt.Errorf("unsupported signal %q: only TERM, INT, KILL are allowed", raw)
+	}
 }

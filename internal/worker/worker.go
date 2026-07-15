@@ -279,6 +279,33 @@ func (w *Worker) GetStatus() Status {
 	return w.Status
 }
 
+func (w *Worker) GetLLM() *llm.Client {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	if w.Engine == nil {
+		return nil
+	}
+	return w.Engine.LLM
+}
+
+func (w *Worker) GetTools() *toolset.Registry {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	if w.Engine == nil {
+		return nil
+	}
+	return w.Engine.Tools
+}
+
+func (w *Worker) GetApprover() *approval.Approver {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	if w.Engine == nil {
+		return nil
+	}
+	return w.Engine.Approver
+}
+
 func (w *Worker) addLog(entry LogEntry) {
 	w.mu.Lock()
 	entry.Timestamp = time.Now()
@@ -484,6 +511,30 @@ func (p *Pool) Remove(id string) bool {
 		return true
 	}
 	return false
+}
+
+func (p *Pool) Restart(id string) (*Worker, error) {
+	p.mu.Lock()
+	old, ok := p.workers[id]
+	if !ok {
+		p.mu.Unlock()
+		return nil, fmt.Errorf("agent %s not found", id)
+	}
+	p.mu.Unlock()
+
+	old.Stop()
+
+	newW, err := NewWithOptions(fmt.Sprintf("w%d", p.nextID), old.Task, old.Mode, old.GetLLM(), old.GetTools(), SpawnOptions{Approver: old.GetApprover(), ModelProfile: old.ModelProfile})
+	if err != nil {
+		return nil, err
+	}
+	p.mu.Lock()
+	p.nextID++
+	p.workers[newW.ID] = newW
+	p.mu.Unlock()
+	p.emit(Event{WorkerID: newW.ID, Task: newW.Task, Mode: newW.Mode, ModelProfile: newW.ModelProfile, Event: "created", Status: newW.GetStatus(), Attached: newW.IsAttached(), Time: time.Now()})
+	newW.Start()
+	return newW, nil
 }
 
 func (p *Pool) Cleanup() []string {

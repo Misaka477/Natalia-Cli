@@ -23,6 +23,7 @@ import (
 )
 
 func TestHTTPServerRPCInitialize(t *testing.T) {
+	t.Parallel()
 	w := NewWire()
 	srv := httptest.NewServer(NewHTTPServer(w, ServerHandler{Initialize: func(context.Context, InitializeParams) (any, error) {
 		return map[string]any{"status": "ok", "server": "test"}, nil
@@ -47,6 +48,7 @@ func TestHTTPServerRPCInitialize(t *testing.T) {
 }
 
 func TestHTTPServerAuthAndMethodPolicy(t *testing.T) {
+	t.Parallel()
 	w := NewWire()
 	srv := httptest.NewServer(NewHTTPServerWithOptions(w, ServerHandler{Initialize: func(context.Context, InitializeParams) (any, error) {
 		return map[string]any{"status": "ok"}, nil
@@ -85,6 +87,7 @@ func TestHTTPServerAuthAndMethodPolicy(t *testing.T) {
 }
 
 func TestHTTPServerHealthAndTLSServeHTTP(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewTLSServer(NewHTTPServerWithOptions(NewWire(), ServerHandler{}, HTTPServerOptions{AuthToken: "secret"}))
 	defer srv.Close()
 
@@ -106,6 +109,7 @@ func TestHTTPServerHealthAndTLSServeHTTP(t *testing.T) {
 }
 
 func TestHTTPServerSSEStreamsEventsAndRequests(t *testing.T) {
+	t.Parallel()
 	w := NewWire()
 	srv := httptest.NewServer(NewHTTPServer(w, ServerHandler{}))
 	defer srv.Close()
@@ -137,6 +141,7 @@ func TestHTTPServerSSEStreamsEventsAndRequests(t *testing.T) {
 }
 
 func TestHTTPServerSSEReconnectLastEventIDAndSessionFilter(t *testing.T) {
+	t.Parallel()
 	w := NewWire()
 	h := NewHTTPServer(w, ServerHandler{})
 	srv := httptest.NewServer(h)
@@ -172,6 +177,7 @@ func TestHTTPServerSSEReconnectLastEventIDAndSessionFilter(t *testing.T) {
 }
 
 func TestHTTPServerRPCPromptPublishesSSEEvent(t *testing.T) {
+	t.Parallel()
 	w := NewWire()
 	srv := httptest.NewServer(NewHTTPServer(w, ServerHandler{Prompt: func(ctx context.Context, params PromptParams) (any, error) {
 		if params.UserInput != "hello" {
@@ -209,6 +215,7 @@ func TestHTTPServerRPCPromptPublishesSSEEvent(t *testing.T) {
 }
 
 func TestHTTPServerWebSocketRoundTripAndEvents(t *testing.T) {
+	t.Parallel()
 	w := NewWire()
 	srv := httptest.NewServer(NewHTTPServer(w, ServerHandler{Initialize: func(context.Context, InitializeParams) (any, error) {
 		publishTransportEvent(t, w, EventStatusUpdate, StatusUpdate{Mode: "code"})
@@ -228,6 +235,7 @@ func TestHTTPServerWebSocketRoundTripAndEvents(t *testing.T) {
 }
 
 func TestHTTPServerWebSocketFragmentSubprotocolAndDeflate(t *testing.T) {
+	t.Parallel()
 	w := NewWire()
 	srv := httptest.NewServer(NewHTTPServer(w, ServerHandler{Initialize: func(context.Context, InitializeParams) (any, error) {
 		return map[string]any{"status": "ok"}, nil
@@ -256,6 +264,7 @@ func TestHTTPServerWebSocketFragmentSubprotocolAndDeflate(t *testing.T) {
 }
 
 func TestHTTPServerUnixSocketRPCRoundTrip(t *testing.T) {
+	t.Parallel()
 	sock := filepath.Join(t.TempDir(), "natalia-wire.sock")
 	srv := NewHTTPServer(NewWire(), ServerHandler{Initialize: func(context.Context, InitializeParams) (any, error) {
 		return map[string]any{"status": "ok"}, nil
@@ -296,6 +305,7 @@ func TestHTTPServerUnixSocketRPCRoundTrip(t *testing.T) {
 }
 
 func TestHTTPServerUnixSocketStaleCleanup(t *testing.T) {
+	t.Parallel()
 	sock := filepath.Join(t.TempDir(), "natalia-wire.sock")
 	fd, err := syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
 	if err != nil {

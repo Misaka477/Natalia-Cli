@@ -83,10 +83,16 @@ func RenderReadFilePath(path, offset, limit string) (string, error) {
 	if fi, statErr := os.Stat(path); statErr == nil {
 		fileSize = fmt.Sprintf(" (%d bytes)", fi.Size())
 	}
-	if !limited && totalLines > defaultReadWindowLines {
-		return fmt.Sprintf("File: %s%s\nLines: %d total\nLarge file: choose a window with offset \"1\" and limit \"100\", request a larger range like offset \"1\" limit \"500\", use legacy limit \"1-500\", or use limit \"all\" to read the whole file.", path, fileSize, totalLines), nil
+	encoding := "utf-8"
+	if binary, berr := looksBinaryFile(path); berr != nil {
+		return "", fmt.Errorf("read failed: %w", berr)
+	} else if binary {
+		encoding = "binary"
 	}
-	return renderReadFileWindowWithSize(path, start, end, totalLines, trailingNewline, limited, fileSize)
+	if !limited && totalLines > defaultReadWindowLines {
+		return fmt.Sprintf("File: %s%s\nEncoding: %s\nLines: %d total\nLarge file: choose a window with offset \"1\" and limit \"100\", request a larger range like offset \"1\" limit \"500\", use legacy limit \"1-500\", or use limit \"all\" to read the whole file.", path, fileSize, encoding, totalLines), nil
+	}
+	return renderReadFileWindowWithSize(path, start, end, totalLines, trailingNewline, limited, fileSize, encoding)
 }
 
 const defaultReadWindowLines = 100
@@ -157,10 +163,10 @@ func countFileLines(path string) (int, bool, error) {
 }
 
 func renderReadFileWindow(path string, start, end, totalLines int, trailingNewline, limited bool) (string, error) {
-	return renderReadFileWindowWithSize(path, start, end, totalLines, trailingNewline, limited, "")
+	return renderReadFileWindowWithSize(path, start, end, totalLines, trailingNewline, limited, "", "utf-8")
 }
 
-func renderReadFileWindowWithSize(path string, start, end, totalLines int, trailingNewline, limited bool, fileSize string) (string, error) {
+func renderReadFileWindowWithSize(path string, start, end, totalLines int, trailingNewline, limited bool, fileSize, encoding string) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return "", fmt.Errorf("read failed: %w", err)
@@ -169,7 +175,7 @@ func renderReadFileWindowWithSize(path string, start, end, totalLines int, trail
 
 	var b strings.Builder
 	if limited {
-		fmt.Fprintf(&b, "File: %s%s\nLines: %d total, showing %d-%d\n", path, fileSize, totalLines, start, end)
+		fmt.Fprintf(&b, "File: %s%s\nEncoding: %s\nLines: %d total, showing %d-%d\n", path, fileSize, encoding, totalLines, start, end)
 		if end < totalLines {
 			fmt.Fprintf(&b, "Hint: continue with limit %d-%d or choose a nearby 100-line window.\n", end+1, min(totalLines, end+defaultReadWindowLines))
 		}
@@ -710,7 +716,7 @@ func (t *Grep) Parameters() map[string]llm.Property {
 		"before_context":  {Type: "integer", Description: "可选，每条匹配前显示多少行上下文，默认 0，范围 0-100"},
 		"after_context":   {Type: "integer", Description: "可选，每条匹配后显示多少行上下文，默认 0，范围 0-100"},
 		"context":         {Type: "integer", Description: "可选，同时设置 before_context 和 after_context，范围 0-100"},
-		"output_mode":     {Type: "string", Description: "可选，content|files|count；默认 content"},
+		"output_mode":     {Type: "string", Description: "可选，content|files|count|json；默认 content"},
 	}
 }
 func (t *Grep) Execute(args map[string]any) (string, error) {
@@ -722,6 +728,9 @@ func (t *Grep) Execute(args map[string]any) (string, error) {
 		if err := t.Guard.GuardRead(opts.SearchPath); err != nil {
 			return "", err
 		}
+	}
+	if opts.OutputMode == "json" {
+		return grepWithScannerJSON(opts)
 	}
 	if result, ok := grepWithRG(opts); ok {
 		return result, nil
@@ -1085,10 +1094,10 @@ func parseGrepOutputMode(args map[string]any) (string, error) {
 		return "content", nil
 	}
 	switch mode {
-	case "content", "files", "count":
+	case "content", "files", "count", "json":
 		return mode, nil
 	default:
-		return "", fmt.Errorf("output_mode must be one of content, files, count")
+		return "", fmt.Errorf("output_mode must be one of content, files, count, json")
 	}
 }
 
@@ -1126,6 +1135,110 @@ func formatGrepLine(path string, lineNo int, line string, match bool) string {
 		return fmt.Sprintf("%s:%d: %s", path, lineNo, strings.TrimSpace(line))
 	}
 	return fmt.Sprintf("%s-%d- %s", path, lineNo, strings.TrimSpace(line))
+}
+
+type grepMatchJSON struct {
+	File   string   `json:"file"`
+	Line   int      `json:"line"`
+	Column int      `json:"column"`
+	Text   string   `json:"text"`
+	Before []string `json:"before,omitempty"`
+	After  []string `json:"after,omitempty"`
+}
+
+func grepWithScannerJSON(opts grepOptions) (string, error) {
+	compilePattern := opts.Pattern
+	if opts.IgnoreCase {
+		compilePattern = "(?i)" + opts.Pattern
+	}
+	re, err := regexp.Compile(compilePattern)
+	if err != nil {
+		return "", fmt.Errorf("正则编译失败: %w", err)
+	}
+
+	var matches []grepMatchJSON
+	matchCount := 0
+	truncated := false
+	walkErr := walkSearchFiles(opts.SearchPath, searchWalkOptions{IncludeIgnored: opts.IncludeIgnored, Hidden: opts.Hidden}, func(path string, info os.FileInfo) error {
+		if truncated {
+			return filepath.SkipAll
+		}
+		if opts.Include != "" {
+			rel, _ := filepath.Rel(opts.SearchPath, path)
+			matched := matchGlobPattern(opts.Include, filepath.ToSlash(rel))
+			if !matched {
+				matched = matchGlobPattern(opts.Include, filepath.Base(path))
+			}
+			if !matched {
+				return nil
+			}
+		}
+		if opts.Type != "" && !fileMatchesType(path, opts.Type) {
+			return nil
+		}
+		if skip, _ := skipGrepScannerFile(path, info); skip {
+			return nil
+		}
+		lines, err := scanTextFileLines(path)
+		if err != nil {
+			return nil
+		}
+		if opts.Multiline {
+			joined := strings.Join(lines, "\n")
+			if re.MatchString(joined) {
+				matchCount++
+				if opts.HeadLimit > 0 && matchCount > opts.HeadLimit {
+					truncated = true
+					return nil
+				}
+				matches = append(matches, grepMatchJSON{File: path, Text: joined})
+			}
+			return nil
+		}
+		matchLines := make([]int, 0)
+		for i, line := range lines {
+			if !re.MatchString(line) {
+				continue
+			}
+			matchCount++
+			if opts.HeadLimit > 0 && matchCount > opts.HeadLimit {
+				truncated = true
+				break
+			}
+			matchLines = append(matchLines, i+1)
+		}
+		for _, lineNo := range matchLines {
+			start := max(1, lineNo-opts.BeforeContext)
+			end := min(len(lines), lineNo+opts.AfterContext)
+			var before, after []string
+			for n := start; n < lineNo; n++ {
+				before = append(before, lines[n-1])
+			}
+			for n := lineNo + 1; n <= end; n++ {
+				after = append(after, lines[n-1])
+			}
+			col := 0
+			if m := re.FindStringIndex(lines[lineNo-1]); m != nil {
+				col = m[0] + 1
+			}
+			matches = append(matches, grepMatchJSON{File: path, Line: lineNo, Column: col, Text: strings.TrimRight(lines[lineNo-1], "\r\n"), Before: before, After: after})
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return "", walkErr
+	}
+	if len(matches) == 0 {
+		return "no matches found", nil
+	}
+	out, err := json.Marshal(matches)
+	if err != nil {
+		return "", err
+	}
+	if truncated {
+		out = append(out, []byte(fmt.Sprintf("\n[grep results truncated at %d matches]", opts.HeadLimit))...)
+	}
+	return string(out), nil
 }
 
 func parseGrepContextArgs(args map[string]any) (int, int, error) {

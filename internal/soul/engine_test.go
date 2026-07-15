@@ -885,3 +885,25 @@ func TestStreamStepTreatsEmptyAssistantResponseAsError(t *testing.T) {
 		t.Fatalf("expected empty stream response error, got %+v", outcome)
 	}
 }
+
+func TestStreamStepCapturesUsageFromStream(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(`data: {"choices":[{"delta":{"content":"hi"}}],"usage":{"prompt_tokens":7,"completion_tokens":2,"total_tokens":9}}
+`))
+		_, _ = w.Write([]byte("data: [DONE]\n"))
+	}))
+	defer server.Close()
+
+	engine := NewEngine(llm.NewClient(llm.Config{BaseURL: server.URL, Model: "mock", Timeout: time.Second}), toolset.NewRegistry())
+	engine.Stream = true
+	engine.OnToken = func(string) {}
+	engine.Context.MaxSteps = 1
+	outcome, err := engine.Run("hello")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome == nil || outcome.Usage == nil || outcome.Usage.TotalTokens != 9 {
+		t.Fatalf("expected outcome with usage total_tokens=9, got outcome=%+v", outcome)
+	}
+}

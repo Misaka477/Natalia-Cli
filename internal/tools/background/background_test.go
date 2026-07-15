@@ -136,7 +136,7 @@ func TestBackgroundCleanupStopsIdleTaskAndDangerousCommandBlocked(t *testing.T) 
 		t.Fatal(err)
 	}
 	id := extractBackgroundID(t, result)
-	time.Sleep(1100 * time.Millisecond)
+	waitForIdleTimeout(t, id, time.Second)
 	cleanup, err := (&Cleanup{}).Execute(map[string]any{})
 	if err != nil {
 		t.Fatal(err)
@@ -300,8 +300,22 @@ func waitForBackgroundStatus(t *testing.T, id, want string) {
 		if ok && string(sess.Status) == want {
 			return
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}
 	sess, _ := processmgr.DefaultManager().Status(id)
 	t.Fatalf("timed out waiting for status %s, got %+v", want, sess)
+}
+
+func waitForIdleTimeout(t *testing.T, id string, idleTimeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		sess, ok := processmgr.DefaultManager().Status(id)
+		if ok && time.Since(sess.LastActivityAt) >= idleTimeout {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	sess, _ := processmgr.DefaultManager().Status(id)
+	t.Fatalf("timed out waiting for idle timeout on session %s, lastActivityAt=%v", id, sess.LastActivityAt)
 }

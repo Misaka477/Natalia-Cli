@@ -22,6 +22,7 @@ func (workerTool) Parameters() map[string]llm.Property         { return nil }
 func (workerTool) Required() []string                          { return nil }
 
 func TestPoolSpawnRunsToolCallAndCompletes(t *testing.T) {
+	t.Parallel()
 	requestCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
@@ -76,7 +77,7 @@ func TestPoolSpawnRunsToolCallAndCompletes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitForStatus(t, w, StatusCompleted)
+	waitForStatus(t, pool, w.ID, StatusCompleted)
 	if got := pool.Get(w.ID); got != w {
 		t.Fatalf("expected pool get to return spawned worker")
 	}
@@ -90,6 +91,7 @@ func TestPoolSpawnRunsToolCallAndCompletes(t *testing.T) {
 }
 
 func TestPoolSubscribeReceivesWorkerEvents(t *testing.T) {
+	t.Parallel()
 	requestCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
@@ -111,7 +113,7 @@ func TestPoolSubscribeReceivesWorkerEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitForStatus(t, w, StatusCompleted)
+	waitForStatus(t, pool, w.ID, StatusCompleted)
 	seenCreated, seenRunning, seenToolLog, seenCompleted := false, false, false, false
 	deadline := time.After(time.Second)
 	for !(seenCreated && seenRunning && seenToolLog && seenCompleted) {
@@ -137,6 +139,7 @@ func TestPoolSubscribeReceivesWorkerEvents(t *testing.T) {
 }
 
 func TestPoolSpawnWithTimeoutFailsBlockedWorker(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(200 * time.Millisecond)
 		w.Header().Set("Content-Type", "application/json")
@@ -149,7 +152,7 @@ func TestPoolSpawnWithTimeoutFailsBlockedWorker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitForStatus(t, w, StatusFailed)
+	waitForStatus(t, pool, w.ID, StatusFailed)
 	logs := w.GetLogs()
 	if len(logs) == 0 || !strings.Contains(logs[0].Error, "context deadline exceeded") {
 		t.Fatalf("expected timeout error log, got %+v", logs)
@@ -157,6 +160,7 @@ func TestPoolSpawnWithTimeoutFailsBlockedWorker(t *testing.T) {
 }
 
 func TestParseArgs(t *testing.T) {
+	t.Parallel()
 	m := parseArgs(`{"path": "test.txt", "count": 3}`)
 	if m["path"] != "test.txt" {
 		t.Fatalf("expected parsed path, got %v", m["path"])
@@ -170,6 +174,7 @@ func TestParseArgs(t *testing.T) {
 }
 
 func TestWorkerStopTransitionsToStopped(t *testing.T) {
+	t.Parallel()
 	release := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		<-release
@@ -181,15 +186,16 @@ func TestWorkerStopTransitionsToStopped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitForStatus(t, w, StatusRunning)
+	waitForStatus(t, pool, w.ID, StatusRunning)
 	w.Stop()
-	waitForStatus(t, w, StatusStopped)
+	waitForStatus(t, pool, w.ID, StatusStopped)
 	if err := w.Resume(); err == nil || !strings.Contains(err.Error(), "only paused workers") {
 		t.Fatalf("expected stopped worker resume rejection, got %v", err)
 	}
 }
 
 func TestPoolCleanupRemovesCompletedWorkers(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "content": "done"}}}})
@@ -200,7 +206,7 @@ func TestPoolCleanupRemovesCompletedWorkers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitForStatus(t, w, StatusCompleted)
+	waitForStatus(t, pool, w.ID, StatusCompleted)
 	affected := pool.Cleanup()
 	if len(affected) != 1 || affected[0] != w.ID {
 		t.Fatalf("expected cleanup to remove one worker, got %v", affected)
@@ -211,6 +217,7 @@ func TestPoolCleanupRemovesCompletedWorkers(t *testing.T) {
 }
 
 func TestPoolAuditLogStoresEvents(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "content": "done"}}}})
@@ -221,7 +228,7 @@ func TestPoolAuditLogStoresEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitForStatus(t, w, StatusCompleted)
+	waitForStatus(t, pool, w.ID, StatusCompleted)
 	entries := pool.AuditLog()
 	if len(entries) < 2 {
 		t.Fatalf("expected at least 2 audit entries, got %d", len(entries))
@@ -241,6 +248,7 @@ func TestPoolAuditLogStoresEvents(t *testing.T) {
 }
 
 func TestPoolRemoveWorker(t *testing.T) {
+	t.Parallel()
 	pool := NewPool()
 	w, err := pool.SpawnWithOptions("remove test", "code", nil, toolset.NewRegistry(), SpawnOptions{})
 	if err != nil {
@@ -258,6 +266,7 @@ func TestPoolRemoveWorker(t *testing.T) {
 }
 
 func TestPoolStatusReturnsWorker(t *testing.T) {
+	t.Parallel()
 	pool := NewPool()
 	w, err := pool.SpawnWithOptions("status test", "code", nil, toolset.NewRegistry(), SpawnOptions{})
 	if err != nil {
@@ -271,14 +280,29 @@ func TestPoolStatusReturnsWorker(t *testing.T) {
 	}
 }
 
-func waitForStatus(t *testing.T, w *Worker, status Status) {
+func waitForStatus(t *testing.T, pool *Pool, workerID string, status Status) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if w.GetStatus() == status {
-			return
+	events := make(chan Event, 1)
+	unsub := pool.Subscribe(func(event Event) {
+		if event.WorkerID == workerID && event.Event == "status" && event.Status == status {
+			select {
+			case events <- event:
+			default:
+			}
 		}
-		time.Sleep(10 * time.Millisecond)
+	})
+	defer unsub()
+	if w := pool.Status(workerID); w != nil && w.GetStatus() == status {
+		return
 	}
-	t.Fatalf("timed out waiting for %s, got %s", status, w.GetStatus())
+	deadline := time.After(2 * time.Second)
+	select {
+	case <-events:
+		return
+	case <-deadline:
+		if w := pool.Status(workerID); w != nil {
+			t.Fatalf("timed out waiting for %s, got %s", status, w.GetStatus())
+		}
+		t.Fatalf("timed out waiting for %s, worker %s not found", status, workerID)
+	}
 }

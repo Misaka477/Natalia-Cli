@@ -105,6 +105,7 @@ type StreamEvent struct {
 	ToolCalls []ToolCall
 	Done      bool
 	Error     error
+	Usage     *Usage
 }
 
 type Client struct {
@@ -275,6 +276,7 @@ func (c *Client) ChatStream(ctx context.Context, chatCtx *chat.Context, tools []
 		scanner := bufio.NewScanner(resp.Body)
 		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 		var toolCallAccum map[int]*ToolCall
+		var usage *Usage
 		for scanner.Scan() {
 			if err := ctx.Err(); err != nil {
 				ch <- StreamEvent{Error: err}
@@ -292,6 +294,10 @@ func (c *Client) ChatStream(ctx context.Context, chatCtx *chat.Context, tools []
 			var chunk Chunk
 			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 				continue
+			}
+
+			if chunk.Usage != nil {
+				usage = chunk.Usage
 			}
 
 			for _, choice := range chunk.Choices {
@@ -349,7 +355,7 @@ func (c *Client) ChatStream(ctx context.Context, chatCtx *chat.Context, tools []
 			ch <- StreamEvent{Error: err}
 			return
 		}
-		ch <- StreamEvent{Done: true}
+		ch <- StreamEvent{Done: true, Usage: usage}
 	}()
 
 	return ch
@@ -435,6 +441,7 @@ func (c *Client) chatStream(httpReq *http.Request) (*chat.Message, *Usage, error
 		}
 
 		if chunk.Usage != nil {
+			fmt.Fprintf(os.Stderr, "[DEBUG] setting usage=%+v\n", chunk.Usage)
 			usage = chunk.Usage
 		}
 

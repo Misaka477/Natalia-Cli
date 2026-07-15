@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"image"
@@ -167,6 +168,46 @@ func TestSearchFiltersStaticResourceURLs(t *testing.T) {
 	results := parseBingHTML(page, 5)
 	if len(results) != 1 || results[0].URL != "https://example.com/natalia" {
 		t.Fatalf("expected static resource to be filtered, got %+v", results)
+	}
+}
+
+func TestParseBingHTMLEmptySnippetAndMalformedCard(t *testing.T) {
+	page := `
+<li class="b_algo"><h2><a href="https://example.com/empty">Empty Snippet</a></h2></li>
+<li class="b_algo"><h2></h2><a href="https://example.com/malformed">Malformed</a></li>
+<li class="b_algo">incomplete block`
+	results := parseBingHTML(page, 5)
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d: %+v", len(results), results)
+	}
+	if results[0].Snippet != "" {
+		t.Fatalf("expected empty snippet for first result, got %q", results[0].Snippet)
+	}
+	if results[1].Title != "Malformed" {
+		t.Fatalf("expected malformed title, got %q", results[1].Title)
+	}
+}
+
+func TestParseDuckDuckGoHTMLEmptySnippet(t *testing.T) {
+	html := `<a href="https://example.com/ddg" class="result__a">DDG Title</a><div class="result__snippet"></div>`
+	results := parseDuckDuckGoHTML(html, 5)
+	if len(results) != 1 || results[0].Snippet != "" {
+		t.Fatalf("expected empty snippet, got %+v", results)
+	}
+}
+
+func TestSearchResultScore(t *testing.T) {
+	result := SearchResult{Title: "Natalia CLI", Snippet: "A tool for developers", URL: "https://example.com/natalia"}
+	terms := []string{"natalia", "cli"}
+	if score := searchResultScore(result, terms); score != 1.0 {
+		t.Fatalf("expected score 1.0, got %f", score)
+	}
+	terms = []string{"natalia", "missing"}
+	if score := searchResultScore(result, terms); score != 0.5 {
+		t.Fatalf("expected score 0.5, got %f", score)
+	}
+	if score := searchResultScore(result, nil); score != 0 {
+		t.Fatalf("expected score 0 for nil terms, got %f", score)
 	}
 }
 
@@ -643,4 +684,61 @@ func minimalJPEGWithEXIFOrientation(orientation uint16) []byte {
 	out = append(out, payload...)
 	out = append(out, 0xff, 0xd9)
 	return out
+}
+
+func TestSearchSmokeBingAndDDGParsers(t *testing.T) {
+	if os.Getenv("WEB_SEARCH_SMOKE") == "" {
+		t.Skip("opt-in smoke: set WEB_SEARCH_SMOKE=1 to run")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	bingHTML, err := fetchHTML(ctx, "https://www.bing.com/search?q=Natalia+CLI")
+	if err != nil {
+		t.Fatalf("fetch bing html: %v", err)
+	}
+	bingResults := parseBingHTML(bingHTML, 3)
+	if len(bingResults) == 0 {
+		t.Fatalf("expected at least one bing result from real HTML")
+	}
+	for _, r := range bingResults {
+		if r.URL == "" || r.Title == "" {
+			t.Fatalf("bing result missing title or url: %+v", r)
+		}
+	}
+
+	ddgHTML, err := fetchHTML(ctx, "https://html.duckduckgo.com/html/?q=Natalia+CLI")
+	if err != nil {
+		t.Fatalf("fetch ddg html: %v", err)
+	}
+	ddgResults := parseDuckDuckGoHTML(ddgHTML, 3)
+	if len(ddgResults) == 0 {
+		t.Fatalf("expected at least one ddg result from real HTML")
+	}
+	for _, r := range ddgResults {
+		if r.URL == "" || r.Title == "" {
+			t.Fatalf("ddg result missing title or url: %+v", r)
+		}
+	}
+}
+
+func fetchHTML(ctx context.Context, url string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+	resp, err := webSearchHTTPClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
 }
