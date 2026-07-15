@@ -101,6 +101,74 @@ func TestModelStatusBar(t *testing.T) {
 	}
 }
 
+func TestModelAskUserModalAppendsQuestionAndAcceptsAnswer(t *testing.T) {
+	m := NewModel(func(input string) string { return "" }, nil)
+	m.ready = true
+	m.viewport = viewport.New(80, 24)
+	m.input.Width = 80
+	m.content = "buffer start"
+	m.viewport.SetContent(m.content)
+
+	respondCh := make(chan string, 1)
+	updated, _ := m.Update(AskUserPromptMsg{
+		Question: "Continue?",
+		Respond:  respondCh,
+	})
+	m = updated.(Model)
+
+	if m.pendingAsk == nil {
+		t.Fatal("expected pendingAsk to be set")
+	}
+	if m.pendingAsk.Question != "Continue?" {
+		t.Fatalf("expected question 'Continue?', got %q", m.pendingAsk.Question)
+	}
+	if !strings.Contains(m.viewport.View(), "Continue?") {
+		t.Fatalf("expected viewport to show question, got %q", m.viewport.View())
+	}
+
+	m.input.SetValue("yes")
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+	if m.pendingAsk != nil {
+		t.Fatal("expected pendingAsk to be cleared after answer")
+	}
+	select {
+	case ans := <-respondCh:
+		if ans != "yes" {
+			t.Fatalf("expected answer 'yes', got %q", ans)
+		}
+	default:
+		t.Fatal("expected response channel to have answer")
+	}
+}
+
+func TestModelAskUserBlocksSubmitWhilePending(t *testing.T) {
+	m := NewModel(func(input string) string { return "" }, nil)
+	m.ready = true
+	m.viewport = viewport.New(80, 24)
+	m.input.Width = 80
+	m.content = "buffer"
+	m.viewport.SetContent(m.content)
+
+	respondCh := make(chan string, 1)
+	updated, _ := m.Update(AskUserPromptMsg{
+		Question: "Proceed?",
+		Respond:  respondCh,
+	})
+	m = updated.(Model)
+
+	if m.pendingAsk == nil {
+		t.Fatal("expected pendingAsk to be set")
+	}
+	// Submit should be blocked: pressing Enter should answer question, not submit
+	m.input.SetValue("new input")
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+	if m.pendingAsk != nil {
+		t.Fatal("expected pendingAsk to be cleared after answering")
+	}
+}
+
 func (m Model) updateWithOutput(text string) Model {
 	updated, _ := m.Update(outputMsg(text))
 	return updated.(Model)

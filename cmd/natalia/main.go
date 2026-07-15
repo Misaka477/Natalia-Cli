@@ -1073,6 +1073,30 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 	defer detachRuntimeEvents()
 
 	if tuiMode {
+		clearTUIAskUser := ask_user.SetHandler(func(ctx context.Context, req wire.QuestionRequest) (wire.QuestionResponse, error) {
+			answers := make(map[string]string)
+			for _, q := range req.Questions {
+				respondCh := make(chan string, 1)
+				if tui.DefaultProgram != nil {
+					tui.DefaultProgram.Send(tui.AskUserPromptMsg{
+						Question: q.Question,
+						Respond:  respondCh,
+					})
+					select {
+					case ans := <-respondCh:
+						answers[q.Name] = ans
+					case <-ctx.Done():
+						if q.Fallback != "" {
+							answers[q.Name] = q.Fallback
+						} else {
+							return wire.QuestionResponse{RequestID: req.ID, Answers: answers}, ctx.Err()
+						}
+					}
+				}
+			}
+			return wire.QuestionResponse{RequestID: req.ID, Answers: answers}, nil
+		})
+		defer clearTUIAskUser()
 		tui.Run(func(input string) string {
 			if engine.LLM == nil {
 				return "请先配置。输入 /setup"

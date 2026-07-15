@@ -12,6 +12,13 @@ import (
 
 type submitFunc func(string) string
 
+type askUserRequest struct {
+	Question string
+	Send     chan<- string
+}
+
+var DefaultProgram *tea.Program
+
 type Model struct {
 	viewport    viewport.Model
 	input       textinput.Model
@@ -24,9 +31,15 @@ type Model struct {
 	height      int
 	pending     bool
 	content     string
+	pendingAsk  *askUserRequest
 }
 
 type outputMsg string
+
+type AskUserPromptMsg struct {
+	Question string
+	Respond  chan<- string
+}
 
 func NewModel(submitFn submitFunc, statusFn func() string) Model {
 	ti := textinput.New()
@@ -61,6 +74,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlC:
 			return m, tea.Quit
 		case tea.KeyEnter:
+			if m.pendingAsk != nil {
+				ans := strings.TrimSpace(m.input.Value())
+				m.input.SetValue("")
+				m.content += "\n> " + ans + "\n"
+				m.viewport.SetContent(m.content)
+				m.viewport.GotoBottom()
+				m.pendingAsk.Send <- ans
+				close(m.pendingAsk.Send)
+				m.pendingAsk = nil
+				return m, nil
+			}
 			if m.pending {
 				return m, nil
 			}
@@ -97,6 +121,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.SetContent(m.content)
 		m.viewport.GotoBottom()
 		m.pending = false
+		return m, nil
+	case AskUserPromptMsg:
+		m.content += "\n" + msg.Question + "\n"
+		m.viewport.SetContent(m.content)
+		m.viewport.GotoBottom()
+		m.pendingAsk = &askUserRequest{Question: msg.Question, Send: msg.Respond}
+		m.input.SetValue("")
 		return m, nil
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -154,7 +185,10 @@ func (m Model) submitCmd(input string) tea.Cmd {
 }
 
 func Run(submitFn submitFunc, statusFn func() string) error {
-	p := tea.NewProgram(NewModel(submitFn, statusFn), tea.WithAltScreen())
+	m := NewModel(submitFn, statusFn)
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	DefaultProgram = p
+	defer func() { DefaultProgram = nil }()
 	_, err := p.Run()
 	return err
 }
