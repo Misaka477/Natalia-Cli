@@ -40,6 +40,7 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/snapshot"
 	"github.com/Misaka477/Natalia-Cli/internal/soul"
 	"github.com/Misaka477/Natalia-Cli/internal/term"
+	tui "github.com/Misaka477/Natalia-Cli/internal/terminalui/tui"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/ask_user"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/browser"
 	filetool "github.com/Misaka477/Natalia-Cli/internal/tools/file"
@@ -97,6 +98,7 @@ func main() {
 	wireTLSCert := flag.String("wire-tls-cert", "", "Wire HTTP TLS certificate file")
 	wireTLSKey := flag.String("wire-tls-key", "", "Wire HTTP TLS private key file")
 	wireReplay := flag.String("wire-replay", "", "重放 wire.jsonl 到 stdout")
+	tuiFlag := flag.Bool("tui", false, "启动 Bubble Tea TUI 模式（实验性）")
 	flag.Parse()
 
 	cfg, _ := config.Load()
@@ -142,7 +144,7 @@ func main() {
 		return
 	}
 
-	runInteractive(cfg, tools, *noSetupFlag, *debug)
+	runInteractive(cfg, tools, *noSetupFlag, *debug, *tuiFlag)
 }
 
 func parseWireAllowedMethods(raw string) []string {
@@ -1004,7 +1006,7 @@ func runOnce(cfg *config.Config, tools *toolset.Registry, input string) {
 	fmt.Println(outcome.FinalMessage)
 }
 
-func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, debug bool) {
+func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, debug bool, tuiMode bool) {
 	defer term.Close()
 	DefaultAppRuntime().SetActiveConfig(cfg)
 	defer persistCurrentSessionState()
@@ -1069,6 +1071,26 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 	registerAgentToolsForEngine(cfg, engine, tools)
 	detachRuntimeEvents := bridgeRuntimeEvents(engine, wireRuntime)
 	defer detachRuntimeEvents()
+
+	if tuiMode {
+		tui.Run(func(input string) string {
+			if engine.LLM == nil {
+				return "请先配置。输入 /setup"
+			}
+			outcome, err := engine.Run(input)
+			if err != nil {
+				if err.Error() == "context canceled" {
+					return "\n⏹ 已停止"
+				}
+				return "错误: " + err.Error()
+			}
+			if outcome.FinalMessage == "" {
+				return "(空响应)"
+			}
+			return outcome.FinalMessage
+		})
+		return
+	}
 
 	for {
 		input, err := term.ReadlineWithHistory("> ", history)
