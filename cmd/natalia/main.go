@@ -31,6 +31,8 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/notifications"
 	"github.com/Misaka477/Natalia-Cli/internal/plan"
 	"github.com/Misaka477/Natalia-Cli/internal/planexec"
+	"github.com/Misaka477/Natalia-Cli/internal/interactivemgr"
+	"github.com/Misaka477/Natalia-Cli/internal/processmgr"
 	"github.com/Misaka477/Natalia-Cli/internal/sandbox"
 	"github.com/Misaka477/Natalia-Cli/internal/secret"
 	"github.com/Misaka477/Natalia-Cli/internal/session"
@@ -68,6 +70,7 @@ var (
 	mcpDiagnostics   = map[string]string{}
 	workflowReg      *workflowcore.Registry
 	planManager      = &plan.Manager{}
+	wireInstance     *wire.Wire
 )
 
 type runtimeOverrides struct {
@@ -359,6 +362,16 @@ func closeMCPClients() {
 }
 
 func closeRuntimeResources() {
+	if wireInstance != nil {
+		wireInstance.Close()
+		wireInstance = nil
+	}
+	if workerPool != nil {
+		workerPool.Shutdown()
+	}
+	processmgr.DefaultManager().Shutdown()
+	interactivemgr.DefaultManager().Shutdown()
+	notifications.DefaultStore().Drain()
 	closeMCPClients()
 	_ = browser.Close()
 }

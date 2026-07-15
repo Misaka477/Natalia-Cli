@@ -509,6 +509,18 @@ func (p *Pool) Cleanup() []string {
 	return affected
 }
 
+func (p *Pool) Shutdown() {
+	p.mu.Lock()
+	workers := make([]*Worker, 0, len(p.workers))
+	for _, w := range p.workers {
+		workers = append(workers, w)
+	}
+	p.mu.Unlock()
+	for _, w := range workers {
+		w.Stop()
+	}
+}
+
 func (p *Pool) AuditLog() []AuditEntry {
 	p.mu.RLock()
 	defer p.mu.RUnlock()

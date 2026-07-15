@@ -281,6 +281,9 @@ func (w *Wire) Close() {
 	if w.stopSweep != nil {
 		close(w.stopSweep)
 	}
+	if w.raw != nil {
+		w.raw.close()
+	}
 }
 
 func (w *Wire) SetPendingOnExpired(fn func(string, string)) {
@@ -601,4 +604,13 @@ func (q *broadcastQueue) publish(message WireMessage) {
 		default:
 		}
 	}
+}
+
+func (q *broadcastQueue) close() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	for ch := range q.subscribers {
+		close(ch)
+	}
+	q.subscribers = make(map[chan WireMessage]struct{})
 }

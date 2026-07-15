@@ -331,6 +331,20 @@ func (m *Manager) CleanupFinished(maxAge time.Duration) int {
 	return removed
 }
 
+func (m *Manager) Shutdown() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, session := range m.sessions {
+		if session.meta.Status == StatusRunning || session.meta.Status == StatusWaitingForInput {
+			session.cancel()
+			_ = session.pty.Close()
+			if session.meta.PID > 0 {
+				_ = syscall.Kill(-session.meta.PID, syscall.SIGTERM)
+			}
+		}
+	}
+}
+
 func (m *Manager) Resize(id string, rows, cols int) (*Session, error) {
 	ms, ok := m.get(id)
 	if !ok {

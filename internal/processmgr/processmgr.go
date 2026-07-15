@@ -411,6 +411,19 @@ func (m *Manager) CleanupFinished(maxAge time.Duration) int {
 	return m.CleanupFinishedResult(maxAge, false).Removed
 }
 
+func (m *Manager) Shutdown() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, session := range m.sessions {
+		if session.meta.Status == StatusRunning {
+			session.cancel()
+			if session.meta.PID > 0 {
+				_ = syscall.Kill(-session.meta.PID, syscall.SIGTERM)
+			}
+		}
+	}
+}
+
 func (m *Manager) CleanupFinishedResult(maxAge time.Duration, dryRun bool) SweepResult {
 	if maxAge < 0 {
 		maxAge = 0

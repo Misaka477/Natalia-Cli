@@ -97,6 +97,7 @@ func runWireWithOptions(cfg *config.Config, tools *toolset.Registry, in io.Reade
 
 func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug bool, opts wireRunOptions) (*wireRuntimeServer, error) {
 	w := wire.NewWire()
+	wireInstance = w
 	w.SetPendingOnExpired(func(requestID, reason string) {
 		if event, err := wire.NewEvent(wire.EventStatusUpdate, wire.StatusUpdate{Diagnostics: []string{fmt.Sprintf("pending %s expired: %s", requestID, reason)}}); err == nil {
 			w.SoulSide.PublishEvent(event)
