@@ -145,7 +145,20 @@ func main() {
 		return
 	}
 
+	if *tuiFlag && !isTerminal(int(os.Stdout.Fd())) {
+		fmt.Fprintln(os.Stderr, "非 TTY 模式，禁用 --tui")
+		*tuiFlag = false
+	}
+
 	runInteractive(cfg, tools, *noSetupFlag, *debug, *tuiFlag)
+}
+
+func isTerminal(fd int) bool {
+	stat, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return (stat.Mode()&os.ModeCharDevice) != 0
 }
 
 func parseWireAllowedMethods(raw string) []string {
