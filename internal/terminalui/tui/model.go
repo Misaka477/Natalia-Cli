@@ -23,6 +23,7 @@ type Model struct {
 	width       int
 	height      int
 	pending     bool
+	content     string
 }
 
 type outputMsg string
@@ -34,16 +35,18 @@ func NewModel(submitFn submitFunc, statusFn func() string) Model {
 	ti.CharLimit = 4096
 	ti.Width = 80
 
-	vp := viewport.New(80, 24)
-	vp.SetContent(`欢迎使用 Natalia CLI TUI。
+	welcome := `欢迎使用 Natalia CLI TUI。
 输入 /help 查看可用命令，或直接输入消息开始对话。
-按 Ctrl+C 退出。`)
+按 Ctrl+C 退出。`
+	vp := viewport.New(80, 24)
+	vp.SetContent(welcome)
 
 	return Model{
 		viewport: vp,
 		input:    ti,
 		submitFn: submitFn,
 		statusFn: statusFn,
+		content:  welcome,
 	}
 }
 
@@ -68,7 +71,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.input.SetValue("")
 			m.history = append(m.history, val)
 			m.historyIdx = len(m.history)
-			m.viewport.SetContent(m.viewport.View() + "\n> " + val + "\n(thinking...)")
+			m.content += "\n> " + val + "\n(thinking...)"
+			m.viewport.SetContent(m.content)
 			m.viewport.GotoBottom()
 			m.pending = true
 			return m, m.submitCmd(val)
@@ -89,7 +93,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case outputMsg:
-		m.viewport.SetContent(m.viewport.View() + string(msg) + "\n")
+		m.content += string(msg) + "\n"
+		m.viewport.SetContent(m.content)
 		m.viewport.GotoBottom()
 		m.pending = false
 		return m, nil
@@ -105,7 +110,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.Height = msg.Height - 2
 			m.input.Width = msg.Width
 		}
-		m.viewport.SetContent(m.viewport.View())
+		m.viewport.SetContent(m.content)
 		return m, nil
 	}
 
