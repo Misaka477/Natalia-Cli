@@ -1,6 +1,8 @@
 package plantools
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -22,8 +24,8 @@ func TestPlanToolsEnterStatusAndExitThroughDefaultManager(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status != entered {
-		t.Fatalf("expected status to match entered state, status=%q entered=%q", status, entered)
+	if !strings.Contains(status, "plan_mode: enabled") || !strings.Contains(status, "feature-plan") || !strings.Contains(status, "prepare") {
+		t.Fatalf("expected status to contain entered state, status=%q entered=%q", status, entered)
 	}
 	exited, err := (&Exit{}).Execute(nil)
 	if err != nil {
@@ -59,5 +61,88 @@ func TestPlanToolSchemas(t *testing.T) {
 	}
 	if (&Enter{}).Parameters()["path"].Type != "string" {
 		t.Fatalf("expected enter path schema")
+	}
+}
+
+func TestPlanModeEnterCreateTemplate(t *testing.T) {
+	plan.Exit()
+	t.Cleanup(func() { plan.Exit() })
+
+	dir := t.TempDir()
+	planPath := filepath.Join(dir, "plans", "Test Plan.md")
+
+	_, err := (&Enter{}).Execute(map[string]any{"path": planPath, "create_template": true})
+	if err != nil {
+		t.Fatalf("expected enter with create_template to succeed, got %v", err)
+	}
+
+	if _, err := os.Stat(planPath); err != nil {
+		t.Fatalf("expected plan template to be created, got %v", err)
+	}
+
+	data, err := os.ReadFile(planPath)
+	if err != nil {
+		t.Fatalf("expected to read plan template, got %v", err)
+	}
+	if !strings.Contains(string(data), "- [ ] TODO") {
+		t.Fatalf("expected template to contain checklist item, got %s", string(data))
+	}
+}
+
+func TestPlanModeEnterCreateTemplateSkipsExisting(t *testing.T) {
+	plan.Exit()
+	t.Cleanup(func() { plan.Exit() })
+
+	dir := t.TempDir()
+	planPath := filepath.Join(dir, "plans", "Existing.md")
+	if err := os.MkdirAll(filepath.Dir(planPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(planPath, []byte("# Existing\n\ncustom content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := (&Enter{}).Execute(map[string]any{"path": planPath, "create_template": true})
+	if err != nil {
+		t.Fatalf("expected enter with create_template on existing file to succeed, got %v", err)
+	}
+
+	data, err := os.ReadFile(planPath)
+	if err != nil {
+		t.Fatalf("expected to read existing plan, got %v", err)
+	}
+	if !strings.Contains(string(data), "custom content") {
+		t.Fatalf("expected existing file to be preserved, got %s", string(data))
+	}
+}
+
+func TestPlanModeStatusShowsFileInfo(t *testing.T) {
+	plan.Exit()
+	t.Cleanup(func() { plan.Exit() })
+
+	dir := t.TempDir()
+	planPath := filepath.Join(dir, "plans", "Status.md")
+	content := "# Status\n\n- [x] done\n- [ ] todo\n"
+	if err := os.MkdirAll(filepath.Dir(planPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(planPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	(&Enter{}).Execute(map[string]any{"path": planPath})
+
+	out, err := (&Status{}).Execute(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "plan_exists: yes") {
+		t.Fatalf("expected plan_exists: yes, got %q", out)
+	}
+	if !strings.Contains(out, "checklist: 1/2 done") {
+		t.Fatalf("expected checklist summary, got %q", out)
+	}
+	if !strings.Contains(out, "next_step: todo") {
+		t.Fatalf("expected next_step, got %q", out)
 	}
 }

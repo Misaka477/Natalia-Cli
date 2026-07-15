@@ -692,7 +692,7 @@ func TestSessionsRestoreRestoresRuntimePlanAndMessages(t *testing.T) {
 	tools := toolset.NewRegistry()
 	engine := buildEngine(cfg, tools, false)
 
-	output := captureStdout(t, func() { handleSessions("/sessions restore 1", cfg, &engine, tools, false) })
+	output := captureStdout(t, func() { handleSessions("/sessions restore 1", cfg, &engine, tools, false, nil) })
 	if !strings.Contains(output, "已恢复会话") {
 		t.Fatalf("expected restore output, got %q", output)
 	}
@@ -734,7 +734,7 @@ func TestSessionsListShowsContextTokens(t *testing.T) {
 	if err := sessStore.AppendMessage(sess.ID, chat.Message{Role: chat.RoleUser, Content: "12345678"}); err != nil {
 		t.Fatal(err)
 	}
-	output := captureStdout(t, func() { handleSessions("/sessions", nil, nil, toolset.NewRegistry(), false) })
+	output := captureStdout(t, func() { handleSessions("/sessions", nil, nil, toolset.NewRegistry(), false, nil) })
 	if !strings.Contains(output, "context_tokens=6") || !strings.Contains(output, sess.ID) {
 		t.Fatalf("expected sessions list to show context token estimate and id, got %q", output)
 	}
@@ -805,7 +805,7 @@ func TestSessionsRestoreWarnsAndDropsStaleRuntimeOverrides(t *testing.T) {
 	}
 	engine := buildEngine(cfg, toolset.NewRegistry(), false)
 
-	output := captureStdout(t, func() { handleSessions("/sessions restore 1", cfg, &engine, toolset.NewRegistry(), false) })
+	output := captureStdout(t, func() { handleSessions("/sessions restore 1", cfg, &engine, toolset.NewRegistry(), false, nil) })
 	for _, want := range []string{"已恢复会话", "已忽略已失效 mode", "已忽略已失效 model_profile", "已忽略已失效 permission_profile", "additional_dir", "不是目录"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("expected restore output to contain %q, got %q", want, output)

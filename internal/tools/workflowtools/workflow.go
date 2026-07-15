@@ -55,7 +55,8 @@ func (t *Run) Execute(args map[string]any) (string, error) {
 	if dryRun {
 		wf := registryOrDefault(t.Registry).Get(name)
 		if wf == nil {
-			return "", fmt.Errorf("workflow %q not found. %s", name, workflowHint(registryOrDefault(t.Registry)))
+			candidates := registryOrDefault(t.Registry).Candidates(name)
+			return "", fmt.Errorf("workflow %q not found. %s", name, workflowHint(registryOrDefault(t.Registry), candidates))
 		}
 		return fmt.Sprintf("[dry-run] Workflow %q has %d steps.\n%s", wf.Name, len(wf.Steps), wf.Format()), nil
 	}
@@ -94,6 +95,9 @@ func refreshDefaultRegistry() {
 	}
 	r, err := workflowcore.Discover(wd)
 	if err == nil {
+		for _, wf := range workflowcore.Builtin() {
+			r.Add(wf)
+		}
 		defaultRegistry = r
 	}
 }
@@ -122,7 +126,7 @@ func (t *List) Execute(args map[string]any) (string, error) {
 	refreshDefaultRegistry()
 	items := registryOrDefault(t.Registry).List()
 	if len(items) == 0 {
-		return "no workflows available. " + workflowHint(registryOrDefault(t.Registry)), nil
+		return "no workflows available. " + workflowHint(registryOrDefault(t.Registry), nil), nil
 	}
 	var b strings.Builder
 	for _, wf := range items {
@@ -154,12 +158,20 @@ func (t *Read) Execute(args map[string]any) (string, error) {
 	}
 	wf := registryOrDefault(t.Registry).Get(name)
 	if wf == nil {
-		return "", fmt.Errorf("workflow %s not found. %s", name, workflowHint(registryOrDefault(t.Registry)))
+		candidates := registryOrDefault(t.Registry).Candidates(name)
+		return "", fmt.Errorf("workflow %s not found. %s", name, workflowHint(registryOrDefault(t.Registry), candidates))
 	}
 	return wf.Format(), nil
 }
 
-func workflowHint(r *workflowcore.Registry) string {
+func workflowHint(r *workflowcore.Registry, candidates []workflowcore.Workflow) string {
+	if len(candidates) > 0 {
+		names := make([]string, 0, len(candidates))
+		for _, c := range candidates {
+			names = append(names, c.Name)
+		}
+		return "did you mean: " + strings.Join(names, ", ") + "?"
+	}
 	items := r.List()
 	if len(items) > 0 {
 		names := make([]string, 0, len(items))

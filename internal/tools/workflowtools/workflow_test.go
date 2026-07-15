@@ -79,3 +79,23 @@ func TestWorkflowRunReturnsInstructionAndPersistsState(t *testing.T) {
 		t.Fatalf("unexpected persisted state: %+v", state)
 	}
 }
+
+func TestWorkflowReadShowsCandidatesOnUnknownName(t *testing.T) {
+	r := &workflowcore.Registry{}
+	r.Add(workflowcore.Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []workflowcore.Step{{Title: "Inspect diff"}}})
+	r.Add(workflowcore.Workflow{Name: "release", Source: ".natalia/workflows/release.yaml", Steps: []workflowcore.Step{{Title: "Test"}}})
+	r.Add(workflowcore.Workflow{Name: "releasenotes", Source: ".natalia/workflows/releasenotes.yaml", Steps: []workflowcore.Step{{Title: "Notes"}}})
+	_, err := (&Read{Registry: r}).Execute(map[string]any{"name": "rele"})
+	if err == nil || !strings.Contains(err.Error(), "did you mean") || !strings.Contains(err.Error(), "release") || !strings.Contains(err.Error(), "releasenotes") {
+		t.Fatalf("expected candidate hint, got %v", err)
+	}
+}
+
+func TestWorkflowRunShowsCandidatesOnUnknownName(t *testing.T) {
+	r := &workflowcore.Registry{}
+	r.Add(workflowcore.Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []workflowcore.Step{{Title: "Inspect diff"}}})
+	_, err := (&Run{Registry: r}).Execute(map[string]any{"name": "rev"})
+	if err == nil || !strings.Contains(err.Error(), "did you mean") || !strings.Contains(err.Error(), "review") {
+		t.Fatalf("expected candidate hint, got %v", err)
+	}
+}

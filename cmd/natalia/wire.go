@@ -234,8 +234,8 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 			if rt != nil {
 				rt.SetOverrides(restoredRuntime)
 			}
-			restorePlanMode(state)
-			warnings = append(warnings, restorePlanSession(state)...)
+		restorePlanMode(state, rt)
+		warnings = append(warnings, restorePlanSession(state, rt)...)
 			engine = buildEngine(cfg, tools, debug)
 			registerAgentToolsForEngine(cfg, engine, tools)
 			engine.Context.Messages = append(engine.Context.Messages, messages...)

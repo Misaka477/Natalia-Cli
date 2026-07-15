@@ -48,6 +48,9 @@ type RunState struct {
 
 func (wf Workflow) SourceCategory() string {
 	source := wf.Source
+	if source == "builtin" {
+		return "Built-in"
+	}
 	if strings.Contains(source, ".natalia/workflows/") {
 		return "Natalia workflow"
 	}
@@ -93,6 +96,50 @@ func (r *Registry) Get(name string) *Workflow {
 	return nil
 }
 
+func (r *Registry) Candidates(name string) []Workflow {
+	if r == nil || name == "" {
+		return nil
+	}
+	lowerName := strings.ToLower(name)
+	var candidates []Workflow
+	for i := range r.workflows {
+		wf := r.workflows[i]
+		lowerWfName := strings.ToLower(wf.Name)
+		if strings.HasPrefix(lowerWfName, lowerName) || strings.Contains(lowerWfName, lowerName) {
+			candidates = append(candidates, wf)
+		}
+	}
+	return candidates
+}
+
+var builtinWorkflows = []Workflow{
+	{
+		Name:        "builtin-demo",
+		Description: "Built-in dry-run demo workflow",
+		Source:      "builtin",
+		Steps: []Step{
+			{
+				ID:     "step-1",
+				Title:  "Inspect workspace",
+				Prompt: "Inspect the current workspace and report what you find. Do not make any changes.",
+				Kind:   "task",
+			},
+			{
+				ID:     "step-2",
+				Title:  "Dry-run summary",
+				Prompt: "Based on your inspection, summarize what a real workflow might do. This is a dry-run only.",
+				Kind:   "task",
+			},
+		},
+	},
+}
+
+func Builtin() []Workflow {
+	out := make([]Workflow, len(builtinWorkflows))
+	copy(out, builtinWorkflows)
+	return out
+}
+
 func (r *Registry) Add(wf Workflow) {
 	if r == nil {
 		return
@@ -106,7 +153,8 @@ func (r *Registry) Add(wf Workflow) {
 func (r *Registry) Run(name string) (*RunState, string, error) {
 	wf := r.Get(name)
 	if wf == nil {
-		return nil, "", fmt.Errorf("workflow %q not found", name)
+		hint := formatNotFoundHint(r.Candidates(name), r.List())
+		return nil, "", fmt.Errorf("workflow %q not found. %s", name, hint)
 	}
 	state := &RunState{WorkflowName: wf.Name, Source: wf.Source, CurrentStep: 1, TotalSteps: len(wf.Steps), Status: "running"}
 	return state, formatRunInstruction(*wf, *state), nil
@@ -508,4 +556,22 @@ func relativeSource(workDir, pathValue string) string {
 		return filepath.ToSlash(rel)
 	}
 	return filepath.ToSlash(pathValue)
+}
+
+func formatNotFoundHint(candidates []Workflow, all []Workflow) string {
+	if len(candidates) > 0 {
+		names := make([]string, 0, len(candidates))
+		for _, c := range candidates {
+			names = append(names, c.Name)
+		}
+		return "did you mean: " + strings.Join(names, ", ") + "?"
+	}
+	if len(all) > 0 {
+		names := make([]string, 0, len(all))
+		for _, item := range all {
+			names = append(names, item.Name)
+		}
+		return "available: " + strings.Join(names, ", ")
+	}
+	return "add .yaml files to .natalia/workflows/ or .md files to .natalia/commands/; package.json scripts and Makefile targets are also imported automatically."
 }

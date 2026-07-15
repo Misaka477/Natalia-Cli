@@ -228,6 +228,7 @@ func TestWorkflowSourceCategory(t *testing.T) {
 		{"Makefile", "Make target"},
 		{"makefile", "Make target"},
 		{"custom/path/workflow.yaml", "Custom"},
+		{"builtin", "Built-in"},
 	}
 	for _, tc := range tests {
 		wf := Workflow{Name: "test", Source: tc.source, Steps: []Step{{Title: "Step 1"}}}
@@ -257,5 +258,58 @@ func TestWorkflowRunAndStatePersistence(t *testing.T) {
 	}
 	if loaded.WorkflowName != "release" || loaded.Status != "running" {
 		t.Fatalf("unexpected loaded workflow state: %+v", loaded)
+	}
+}
+
+func TestRegistryCandidates(t *testing.T) {
+	r := &Registry{}
+	r.Add(Workflow{Name: "release", Source: ".natalia/workflows/release.yaml", Steps: []Step{{Title: "Test"}}})
+	r.Add(Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []Step{{Title: "Inspect"}}})
+	r.Add(Workflow{Name: "releasenotes", Source: ".natalia/workflows/releasenotes.yaml", Steps: []Step{{Title: "Notes"}}})
+
+	tests := []struct {
+		query      string
+		wantCount  int
+		wantNames  []string
+	}{
+		{"release", 2, []string{"release", "releasenotes"}},
+		{"relea", 2, []string{"release", "releasenotes"}},
+		{"view", 1, []string{"review"}},
+		{"missing", 0, nil},
+		{"", 0, nil},
+	}
+	for _, tc := range tests {
+		got := r.Candidates(tc.query)
+		if len(got) != tc.wantCount {
+			t.Fatalf("Candidates(%q) count = %d, want %d", tc.query, len(got), tc.wantCount)
+		}
+		for i, name := range tc.wantNames {
+			if got[i].Name != name {
+				t.Fatalf("Candidates(%q)[%d].Name = %q, want %q", tc.query, i, got[i].Name, name)
+			}
+		}
+	}
+}
+
+func TestBuiltinDemoWorkflow(t *testing.T) {
+	builtins := Builtin()
+	if len(builtins) != 1 {
+		t.Fatalf("expected 1 builtin workflow, got %d", len(builtins))
+	}
+	wf := builtins[0]
+	if wf.Name != "builtin-demo" {
+		t.Fatalf("expected builtin-demo, got %s", wf.Name)
+	}
+	if wf.Source != "builtin" {
+		t.Fatalf("expected source builtin, got %s", wf.Source)
+	}
+	if wf.SourceCategory() != "Built-in" {
+		t.Fatalf("expected Built-in category, got %s", wf.SourceCategory())
+	}
+	if len(wf.Steps) != 2 {
+		t.Fatalf("expected 2 steps, got %d", len(wf.Steps))
+	}
+	if wf.Steps[0].Kind != "task" || wf.Steps[1].Kind != "task" {
+		t.Fatalf("expected task steps")
 	}
 }

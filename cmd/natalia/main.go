@@ -1701,7 +1701,7 @@ func handleWorkerCommand(input string) {
 
 func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool, autoEnabled *bool, escalator *autoflow.Escalator, rt *AppRuntime) {
 	if isSlashCommand(input, "/sessions") {
-		handleSessions(input, *cfg, engine, tools, debug)
+		handleSessions(input, *cfg, engine, tools, debug, rt)
 		return
 	}
 	if isSlashCommand(input, "/rollback") {
@@ -1885,10 +1885,10 @@ func isSlashCommand(input, command string) bool {
 	return input == command || strings.HasPrefix(input, command+" ")
 }
 
-func handleSessions(input string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool) {
+func handleSessions(input string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool, rt *AppRuntime) {
 	parts := strings.Fields(input)
 	if len(parts) >= 2 && parts[1] == "restore" {
-		restoreSession(parts, cfg, engine, tools, debug)
+		restoreSession(parts, cfg, engine, tools, debug, rt)
 		return
 	}
 	if len(parts) > 1 {
@@ -1898,7 +1898,7 @@ func handleSessions(input string, cfg *config.Config, engine **soul.Engine, tool
 	listSessions()
 }
 
-func restoreSession(parts []string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool) {
+func restoreSession(parts []string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool, rt *AppRuntime) {
 	if sessStore == nil {
 		fmt.Println("会话存储不可用")
 		return
@@ -1928,9 +1928,15 @@ func restoreSession(parts []string, cfg *config.Config, engine **soul.Engine, to
 	}
 	restoredRuntime, warnings := validateRestoredRuntime(cfg, state)
 	runtime = restoredRuntime
-	restorePlanMode(state)
-	warnings = append(warnings, restorePlanSession(state)...)
+	if rt != nil {
+		rt.SetOverrides(restoredRuntime)
+	}
+	restorePlanMode(state, rt)
+	warnings = append(warnings, restorePlanSession(state, rt)...)
 	currentSession = sess
+	if rt != nil {
+		rt.SetCurrentSession(sess)
+	}
 	*engine = buildEngine(cfg, tools, debug)
 	(*engine).Context.Messages = append((*engine).Context.Messages, messages...)
 	attachSnapshotter(*engine, sess)
@@ -2040,17 +2046,27 @@ func resolveSessionRef(ref string) (*session.Session, error) {
 	return nil, fmt.Errorf("会话 %q 不存在", ref)
 }
 
-func restorePlanMode(state session.State) {
+func restorePlanMode(state session.State, rt *AppRuntime) {
 	if state.PlanMode {
 		planManager.Enter(state.PlanSlug, state.PlanPath, "restored session")
+		if rt != nil {
+			rt.GetPlanManager().Enter(state.PlanSlug, state.PlanPath, "restored session")
+		}
 		return
 	}
 	planManager.Exit()
+	if rt != nil {
+		rt.GetPlanManager().Exit()
+	}
 }
 
-func restorePlanSession(state session.State) []string {
+func restorePlanSession(state session.State, rt *AppRuntime) []string {
 	currentPlan = nil
 	currentPlanMTime = time.Time{}
+	if rt != nil {
+		rt.SetCurrentPlan(nil)
+		rt.SetCurrentPlanMTime(time.Time{})
+	}
 	if state.PlanPath == "" {
 		return nil
 	}
@@ -2064,6 +2080,10 @@ func restorePlanSession(state session.State) []string {
 	}
 	currentPlan = planexec.Parse(state.PlanPath, string(data))
 	currentPlanMTime = info.ModTime()
+	if rt != nil {
+		rt.SetCurrentPlan(currentPlan)
+		rt.SetCurrentPlanMTime(info.ModTime())
+	}
 	done := make(map[int]bool, len(state.PlanDoneLines))
 	for _, line := range state.PlanDoneLines {
 		done[line] = true
