@@ -20,18 +20,19 @@ type askUserRequest struct {
 var DefaultProgram *tea.Program
 
 type Model struct {
-	viewport    viewport.Model
-	input       textinput.Model
-	submitFn    submitFunc
-	statusFn    func() string
-	history     []string
-	historyIdx  int
-	ready       bool
-	width       int
-	height      int
-	pending     bool
-	content     string
-	pendingAsk  *askUserRequest
+	viewport         viewport.Model
+	input            textinput.Model
+	submitFn         submitFunc
+	statusFn         func() string
+	history          []string
+	historyIdx       int
+	ready            bool
+	width            int
+	height           int
+	pending          bool
+	content          string
+	pendingAsk       *askUserRequest
+	pendingApproval  chan<- bool
 }
 
 type outputMsg string
@@ -39,6 +40,12 @@ type outputMsg string
 type AskUserPromptMsg struct {
 	Question string
 	Respond  chan<- string
+}
+
+type ApprovalPromptMsg struct {
+	ToolName    string
+	Description string
+	Respond     chan<- bool
 }
 
 func NewModel(submitFn submitFunc, statusFn func() string) Model {
@@ -74,6 +81,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlC:
 			return m, tea.Quit
 		case tea.KeyEnter:
+			if m.pendingApproval != nil {
+				ans := strings.ToLower(strings.TrimSpace(m.input.Value()))
+				m.input.SetValue("")
+				approved := ans == "y" || ans == "yes"
+				label := "no"
+				if approved {
+					label = "yes"
+				}
+				m.content += "\n(approved: " + label + ")\n"
+				m.viewport.SetContent(m.content)
+				m.viewport.GotoBottom()
+				m.pendingApproval <- approved
+				close(m.pendingApproval)
+				m.pendingApproval = nil
+				return m, nil
+			}
 			if m.pendingAsk != nil {
 				ans := strings.TrimSpace(m.input.Value())
 				m.input.SetValue("")
@@ -127,6 +150,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.SetContent(m.content)
 		m.viewport.GotoBottom()
 		m.pendingAsk = &askUserRequest{Question: msg.Question, Send: msg.Respond}
+		m.input.SetValue("")
+		return m, nil
+	case ApprovalPromptMsg:
+		m.content += "\n[审批] " + msg.ToolName + ": " + msg.Description + "\n(y/N): "
+		m.viewport.SetContent(m.content)
+		m.viewport.GotoBottom()
+		m.pendingApproval = msg.Respond
 		m.input.SetValue("")
 		return m, nil
 	case tea.WindowSizeMsg:

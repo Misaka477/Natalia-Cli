@@ -169,6 +169,64 @@ func TestModelAskUserBlocksSubmitWhilePending(t *testing.T) {
 	}
 }
 
+func TestModelApprovalModalRespondsYesNo(t *testing.T) {
+	m := NewModel(func(input string) string { return "" }, nil)
+	m.ready = true
+	m.viewport = viewport.New(80, 24)
+	m.input.Width = 80
+	m.content = "buffer"
+	m.viewport.SetContent(m.content)
+
+	respondCh := make(chan bool, 1)
+	updated, _ := m.Update(ApprovalPromptMsg{
+		ToolName:    "write_file",
+		Description: "Write to /etc/passwd",
+		Respond:     respondCh,
+	})
+	m = updated.(Model)
+	if m.pendingApproval == nil {
+		t.Fatal("expected pendingApproval to be set")
+	}
+	if !strings.Contains(m.viewport.View(), "write_file") {
+		t.Fatalf("expected viewport to show tool name, got %q", m.viewport.View())
+	}
+
+	m.input.SetValue("y")
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+	if m.pendingApproval != nil {
+		t.Fatal("expected pendingApproval to be cleared")
+	}
+	select {
+	case approved := <-respondCh:
+		if !approved {
+			t.Fatal("expected approved to be true")
+		}
+	default:
+		t.Fatal("expected response channel to have value")
+	}
+
+	// Test rejection
+	respondCh2 := make(chan bool, 1)
+	updated, _ = m.Update(ApprovalPromptMsg{
+		ToolName:    "test",
+		Description: "test",
+		Respond:     respondCh2,
+	})
+	m = updated.(Model)
+	m.input.SetValue("n")
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+	select {
+	case approved := <-respondCh2:
+		if approved {
+			t.Fatal("expected approved to be false")
+		}
+	default:
+		t.Fatal("expected response channel to have value")
+	}
+}
+
 func (m Model) updateWithOutput(text string) Model {
 	updated, _ := m.Update(outputMsg(text))
 	return updated.(Model)

@@ -22,6 +22,7 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/chat"
 	"github.com/Misaka477/Natalia-Cli/internal/compaction"
 	"github.com/Misaka477/Natalia-Cli/internal/config"
+	"github.com/Misaka477/Natalia-Cli/internal/display"
 	"github.com/Misaka477/Natalia-Cli/internal/filepolicy"
 	"github.com/Misaka477/Natalia-Cli/internal/hook"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
@@ -1097,6 +1098,24 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 			return wire.QuestionResponse{RequestID: req.ID, Answers: answers}, nil
 		})
 		defer clearTUIAskUser()
+		if engine.Approver != nil {
+			origRequestDisplay := engine.Approver.RequestDisplayFunc
+			engine.Approver.RequestDisplayFunc = func(toolName, description string, blocks []display.Block) bool {
+				if tui.DefaultProgram == nil {
+					if origRequestDisplay != nil {
+						return origRequestDisplay(toolName, description, blocks)
+					}
+					return false
+				}
+				respCh := make(chan bool, 1)
+				tui.DefaultProgram.Send(tui.ApprovalPromptMsg{
+					ToolName:    toolName,
+					Description: description,
+					Respond:     respCh,
+				})
+				return <-respCh
+			}
+		}
 		tui.Run(func(input string) string {
 			if engine.LLM == nil {
 				return "请先配置。输入 /setup"
