@@ -130,6 +130,20 @@ type AuditEntry struct {
 	Time       time.Time
 }
 
+type TranscriptEventType string
+
+const (
+	TranscriptEventOutput  TranscriptEventType = "output"
+	TranscriptEventInput   TranscriptEventType = "input"
+	TranscriptEventControl TranscriptEventType = "control"
+)
+
+type TranscriptEvent struct {
+	Type TranscriptEventType
+	Data []byte
+	Time time.Time
+}
+
 type managedSession struct {
 	manager    *Manager
 	mu         sync.RWMutex
@@ -145,6 +159,7 @@ type managedSession struct {
 	stopped    bool
 	redacting  bool
 	decisionID string
+	events     []TranscriptEvent
 }
 
 var defaultManager = New()
@@ -391,6 +406,20 @@ func (m *Manager) Transcript(id string, offset, limit int) (TranscriptPage, erro
 	return TranscriptPage{Text: cleanTerminal(string(ms.buf[offset:end])), Total: total, Offset: offset, NextOffset: end, HasMore: end < total}, nil
 }
 
+func (m *Manager) Events(id string) ([]TranscriptEvent, error) {
+	ms, ok := m.get(id)
+	if !ok {
+		return nil, fmt.Errorf("unknown interactive session %q", id)
+	}
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+	out := make([]TranscriptEvent, 0, len(ms.events))
+	for _, evt := range ms.events {
+		out = append(out, TranscriptEvent{Type: evt.Type, Data: append([]byte(nil), evt.Data...), Time: evt.Time})
+	}
+	return out, nil
+}
+
 func (m *Manager) Write(id, input string, sensitive bool, opts ObserveOptions) (*Observation, error) {
 	ms, ok := m.get(id)
 	if !ok {
@@ -517,6 +546,7 @@ func (s *managedSession) appendOutput(chunk []byte) {
 	if s.meta.Status == StatusWaitingForInput {
 		s.meta.Status = StatusRunning
 	}
+	s.events = append(s.events, TranscriptEvent{Type: TranscriptEventOutput, Data: append([]byte(nil), chunk...), Time: now})
 	snapshot := s.meta
 	s.outputCond.Broadcast()
 	s.mu.Unlock()
@@ -539,7 +569,14 @@ func (s *managedSession) write(input string) error {
 		return fmt.Errorf("interactive session is %s", status)
 	}
 	_, err := s.pty.Write([]byte(input))
-	return err
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	now := time.Now()
+	s.events = append(s.events, TranscriptEvent{Type: TranscriptEventInput, Data: []byte(input), Time: now})
+	s.mu.Unlock()
+	return nil
 }
 
 func (s *managedSession) markReadBoundary() int {

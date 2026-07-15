@@ -220,6 +220,7 @@ type QuestionRequest struct {
 type QuestionResponse struct {
 	RequestID string            `json:"request_id"`
 	Answers   map[string]string `json:"answers"`
+	Sources   map[string]string `json:"sources,omitempty"`
 }
 
 type ToolCallRequest struct {

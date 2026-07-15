@@ -256,6 +256,42 @@ func TestProcessCleanupDryRun(t *testing.T) {
 	}
 }
 
+func TestProcessOutputJSONFormat(t *testing.T) {
+	resetManager()
+	result, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "args": []any{"-c", "printf 'hello\\nstdout\\n'"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := extractProcessID(t, result)
+	waitForProcessStatus(t, id, "exited")
+
+	output, err := (&Output{}).Execute(map[string]any{"id": id, "format": "json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(output), "[") {
+		t.Fatalf("expected JSON array output, got %q", output)
+	}
+	if !strings.Contains(output, `"stream":"stdout"`) || !strings.Contains(output, `"text":"hello"`) || !strings.Contains(output, `"time":`) {
+		t.Fatalf("expected JSON with stream/text/time fields, got %q", output)
+	}
+}
+
+func TestProcessOutputEmptyJSONFormat(t *testing.T) {
+	resetManager()
+	listed, err := (&List{}).Execute(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listed != "<no managed processes>" {
+		t.Fatalf("expected empty process list, got %q", listed)
+	}
+	_, err = (&Output{}).Execute(map[string]any{"id": "missing", "format": "json"})
+	if err == nil || !strings.Contains(err.Error(), "unknown process session") {
+		t.Fatalf("expected unknown session error, got %v", err)
+	}
+}
+
 func TestProcessAuditJSONFormat(t *testing.T) {
 	resetManager()
 	_, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "args": []any{"-c", "true"}})

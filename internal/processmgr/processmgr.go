@@ -66,9 +66,9 @@ type Session struct {
 }
 
 type OutputLine struct {
-	Stream string
-	Text   string
-	Time   time.Time
+	Stream string    `json:"stream"`
+	Text   string    `json:"text"`
+	Time   time.Time `json:"time"`
 }
 
 type OutputPage struct {

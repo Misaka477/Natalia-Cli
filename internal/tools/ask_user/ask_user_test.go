@@ -133,3 +133,43 @@ func TestAskUserTimeoutUsesFallback(t *testing.T) {
 		t.Fatalf("expected quick fallback answer with timeout source, result=%q elapsed=%s", result, time.Since(started))
 	}
 }
+
+func TestAskUserPerQuestionSource(t *testing.T) {
+	defer SetHandler(func(ctx context.Context, req wire.QuestionRequest) (wire.QuestionResponse, error) {
+		return wire.QuestionResponse{RequestID: req.ID, Answers: map[string]string{"choice": "red, blue", "note": ""}}, nil
+	})()
+
+	result, err := (&AskUser{}).Execute(map[string]any{"questions": []any{
+		map[string]any{"name": "choice", "question": "Pick colors", "options": []any{"red", "blue"}, "multiple": true},
+		map[string]any{"name": "note", "question": "Why?", "allow_custom": true, "fallback": "no reason"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "choice: red, blue") {
+		t.Fatalf("expected choice answer, got %q", result)
+	}
+	if !strings.Contains(result, "note: no reason (fallback)") {
+		t.Fatalf("expected fallback source for note, got %q", result)
+	}
+}
+
+func TestAskUserMultiQuestionTimeoutSource(t *testing.T) {
+	defer SetHandler(func(ctx context.Context, req wire.QuestionRequest) (wire.QuestionResponse, error) {
+		return wire.QuestionResponse{RequestID: req.ID, Answers: map[string]string{"answered": "yes"}}, nil
+	})()
+
+	result, err := (&AskUser{}).Execute(map[string]any{"questions": []any{
+		map[string]any{"name": "answered", "question": "Did you answer?"},
+		map[string]any{"name": "unanswered", "question": "Did you skip?", "fallback": "skipped"},
+	}, "timeout": "1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "answered: yes") {
+		t.Fatalf("expected answered question, got %q", result)
+	}
+	if !strings.Contains(result, "unanswered: skipped (fallback)") {
+		t.Fatalf("expected fallback source for unanswered, got %q", result)
+	}
+}

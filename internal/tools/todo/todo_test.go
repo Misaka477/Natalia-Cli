@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/display"
 )
@@ -155,4 +156,66 @@ func assertTodoDisplay(t *testing.T, blocks []display.Block, want []display.Todo
 			t.Fatalf("todo item %d: got %+v want %+v", i, payload.Items[i], want[i])
 		}
 	}
+}
+
+func TestTodoUpdatedAtSetOnCreation(t *testing.T) {
+	items = nil
+	nextID = 0
+
+	(&Set{}).ExecuteReturn(map[string]any{"items": []any{"task 1"}})
+	mu.Lock()
+	item := items[0]
+	mu.Unlock()
+	if item.UpdatedAt.IsZero() {
+		t.Fatal("expected updated_at to be set on creation")
+	}
+	listRet, _ := (&List{}).ExecuteReturn(map[string]any{})
+	if !strings.Contains(listRet.ModelText, "updated:") {
+		t.Fatalf("expected list output to contain updated_at, got %q", listRet.ModelText)
+	}
+}
+
+func TestNormalizeItemsLockedPreservesUpdatedAt(t *testing.T) {
+	existing := Item{ID: "todo-1", Content: "task 1", UpdatedAt: time.Now()}
+	list := []Item{{ID: "todo-1", Content: "task 1"}}
+	existingByID := map[string]Item{"todo-1": existing}
+	result := normalizeItemsLocked(list, existingByID)
+	if !result[0].UpdatedAt.Equal(existing.UpdatedAt) {
+		t.Fatalf("expected updated_at to be preserved")
+	}
+}
+
+func TestTodoUpdatedAtOnDoneAndUpdate(t *testing.T) {
+	items = nil
+	nextID = 0
+
+	(&Set{}).ExecuteReturn(map[string]any{"items": []any{"task 1"}})
+	mu.Lock()
+	originalUpdatedAt := items[0].UpdatedAt
+	mu.Unlock()
+
+	time.Sleep(10 * time.Millisecond)
+
+	_, err := (&Done{}).ExecuteReturn(map[string]any{"index": float64(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	if items[0].UpdatedAt.Equal(originalUpdatedAt) {
+		t.Fatal("expected updated_at to change after todo_done")
+	}
+	doneUpdatedAt := items[0].UpdatedAt
+	mu.Unlock()
+
+	time.Sleep(10 * time.Millisecond)
+
+	_, err = (&Update{}).ExecuteReturn(map[string]any{"index": float64(1), "notes": "updated"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	if items[0].UpdatedAt.Equal(doneUpdatedAt) {
+		t.Fatal("expected updated_at to change after todo_update notes")
+	}
+	mu.Unlock()
 }

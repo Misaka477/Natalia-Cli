@@ -2,6 +2,7 @@ package background
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"syscall"
@@ -94,6 +95,7 @@ func (t *Output) Parameters() map[string]llm.Property {
 		"tail":   {Type: "integer", Description: "optional, recent lines to return; default all retained tail"},
 		"offset": {Type: "integer", Description: "optional, pagination start line (0-based); takes precedence over tail when set"},
 		"limit":  {Type: "integer", Description: "optional, pagination line count; use with offset"},
+		"format": {Type: "string", Description: "optional, output format: text or json; default text"},
 	}
 }
 func (t *Output) Execute(args map[string]any) (string, error) {
@@ -129,6 +131,14 @@ func (t *Output) Execute(args map[string]any) (string, error) {
 	}
 	if len(lines) == 0 {
 		return "<no output>", nil
+	}
+	format, _ := args["format"].(string)
+	if format == "json" {
+		data, err := json.Marshal(lines)
+		if err != nil {
+			return "", err
+		}
+		return string(data), nil
 	}
 	var b strings.Builder
 	for _, line := range lines {

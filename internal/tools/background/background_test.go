@@ -319,3 +319,39 @@ func waitForIdleTimeout(t *testing.T, id string, idleTimeout time.Duration) {
 	sess, _ := processmgr.DefaultManager().Status(id)
 	t.Fatalf("timed out waiting for idle timeout on session %s, lastActivityAt=%v", id, sess.LastActivityAt)
 }
+
+func TestBackgroundOutputJSONFormat(t *testing.T) {
+	resetManager()
+	result, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "args": []any{"-c", "printf 'hello\\nstdout\\n'"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := extractBackgroundID(t, result)
+	waitForBackgroundStatus(t, id, "exited")
+
+	output, err := (&Output{}).Execute(map[string]any{"id": id, "format": "json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(output), "[") {
+		t.Fatalf("expected JSON array output, got %q", output)
+	}
+	if !strings.Contains(output, `"stream":"stdout"`) || !strings.Contains(output, `"text":"hello"`) || !strings.Contains(output, `"time":`) {
+		t.Fatalf("expected JSON with stream/text/time fields, got %q", output)
+	}
+}
+
+func TestBackgroundOutputEmptyJSONFormat(t *testing.T) {
+	resetManager()
+	listed, err := (&List{}).Execute(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listed != "<no background tasks>" {
+		t.Fatalf("expected empty background list, got %q", listed)
+	}
+	_, err = (&Output{}).Execute(map[string]any{"id": "missing", "format": "json"})
+	if err == nil || !strings.Contains(err.Error(), "unknown background task") {
+		t.Fatalf("expected unknown background error, got %v", err)
+	}
+}

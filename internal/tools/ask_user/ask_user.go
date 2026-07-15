@@ -67,12 +67,24 @@ func (t *AskUser) Execute(args map[string]any) (string, error) {
 	resp, err := ask(ctx, req)
 	if err != nil {
 		if req.TimeoutMS > 0 || ctx.Err() != nil {
-			return formatAnswers(applyQuestionFallbacks(req, wire.QuestionResponse{RequestID: req.ID}), "timeout"), nil
+			if resp.Sources == nil {
+				resp.Sources = make(map[string]string, len(req.Questions))
+			}
+			for _, q := range req.Questions {
+				if strings.TrimSpace(resp.Answers[q.Name]) == "" {
+					resp.Sources[q.Name] = "timeout"
+				} else {
+					resp.Sources[q.Name] = "user"
+				}
+			}
+			resp = applyQuestionFallbacks(req, resp)
+			return formatAnswers(resp), nil
 		}
 		return "", err
 	}
-	source := answerSource(req, resp)
-	return formatAnswers(applyQuestionFallbacks(req, resp), source), nil
+	resp.Sources = answerSource(req, resp)
+	resp = applyQuestionFallbacks(req, resp)
+	return formatAnswers(resp), nil
 }
 
 func BuildQuestionRequest(args map[string]any) (wire.QuestionRequest, error) {
@@ -240,6 +252,7 @@ func ask(ctx context.Context, req wire.QuestionRequest) (wire.QuestionResponse, 
 
 func askStdin(ctx context.Context, req wire.QuestionRequest) (wire.QuestionResponse, error) {
 	answers := make(map[string]string, len(req.Questions))
+	sources := make(map[string]string, len(req.Questions))
 	reader := bufio.NewReader(os.Stdin)
 	for _, question := range req.Questions {
 		fmt.Fprintf(os.Stderr, "\n[提问] %s\n", question.Question)
@@ -260,12 +273,14 @@ func askStdin(ctx context.Context, req wire.QuestionRequest) (wire.QuestionRespo
 		}()
 		select {
 		case <-ctx.Done():
-			return wire.QuestionResponse{RequestID: req.ID, Answers: answers}, ctx.Err()
+			sources[question.Name] = "timeout"
+			answers[question.Name] = ""
 		case answer := <-answerCh:
 			answers[question.Name] = normalizeAnswer(question, answer)
+			sources[question.Name] = "user"
 		}
 	}
-	return wire.QuestionResponse{RequestID: req.ID, Answers: answers}, nil
+	return wire.QuestionResponse{RequestID: req.ID, Answers: answers, Sources: sources}, nil
 }
 
 func normalizeAnswer(question wire.QuestionItem, answer string) string {
@@ -309,13 +324,20 @@ func optionByInput(options []string, raw string) (string, bool) {
 	return "", false
 }
 
-func answerSource(req wire.QuestionRequest, resp wire.QuestionResponse) string {
+func answerSource(req wire.QuestionRequest, resp wire.QuestionResponse) map[string]string {
+	sources := make(map[string]string, len(req.Questions))
 	for _, q := range req.Questions {
-		if strings.TrimSpace(resp.Answers[q.Name]) == "" && q.Fallback != "" {
-			return "fallback"
+		if src, ok := resp.Sources[q.Name]; ok {
+			sources[q.Name] = src
+		} else if strings.TrimSpace(resp.Answers[q.Name]) != "" {
+			sources[q.Name] = "user"
+		} else if q.Fallback != "" {
+			sources[q.Name] = "fallback"
+		} else {
+			sources[q.Name] = "timeout"
 		}
 	}
-	return "user"
+	return sources
 }
 
 func applyQuestionFallbacks(req wire.QuestionRequest, resp wire.QuestionResponse) wire.QuestionResponse {
@@ -333,13 +355,13 @@ func applyQuestionFallbacks(req wire.QuestionRequest, resp wire.QuestionResponse
 	return resp
 }
 
-func formatAnswers(resp wire.QuestionResponse, source string) string {
+func formatAnswers(resp wire.QuestionResponse) string {
 	if len(resp.Answers) == 0 {
 		return "未收到用户回答"
 	}
 	if len(resp.Answers) == 1 {
-		for _, answer := range resp.Answers {
-			if source != "" && source != "user" {
+		for name, answer := range resp.Answers {
+			if source := resp.Sources[name]; source != "" && source != "user" {
 				return answer + "\n(answer source: " + source + ")"
 			}
 			return answer
@@ -356,9 +378,9 @@ func formatAnswers(resp wire.QuestionResponse, source string) string {
 			b.WriteByte('\n')
 		}
 		fmt.Fprintf(&b, "%s: %s", key, resp.Answers[key])
-	}
-	if source != "" && source != "user" {
-		b.WriteString("\n(answer source: " + source + ")")
+		if source := resp.Sources[key]; source != "" && source != "user" {
+			fmt.Fprintf(&b, " (%s)", source)
+		}
 	}
 	return b.String()
 }

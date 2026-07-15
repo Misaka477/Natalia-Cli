@@ -389,3 +389,89 @@ func skipIfPTYUnsupported(t *testing.T, err error) {
 		t.Skipf("PTY not supported in this environment: %v", err)
 	}
 }
+
+func TestInteractiveTranscriptEventsCaptureInputAndOutput(t *testing.T) {
+	t.Parallel()
+	m := New()
+	sess, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-i"}, MaxTail: 4096})
+	if err != nil {
+		skipIfPTYUnsupported(t, err)
+		t.Fatal(err)
+	}
+	defer m.Stop(sess.ID)
+
+	if _, err := m.Write(sess.ID, "printf 'hello\\n'\n", false, ObserveOptions{WaitFor: "hello", IdleTimeout: 50 * time.Millisecond, MaxWait: time.Second, IncludeOutput: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := m.Events(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) == 0 {
+		t.Fatal("expected at least one transcript event")
+	}
+	hasInput := false
+	hasOutput := false
+	for _, evt := range events {
+		switch evt.Type {
+		case TranscriptEventInput:
+			hasInput = true
+			if !strings.Contains(string(evt.Data), "printf") {
+				t.Fatalf("expected input event to contain command, got %q", string(evt.Data))
+			}
+		case TranscriptEventOutput:
+			hasOutput = true
+		}
+	}
+	if !hasInput {
+		t.Fatal("expected at least one input event")
+	}
+	if !hasOutput {
+		t.Fatal("expected at least one output event")
+	}
+}
+
+func TestInteractiveTranscriptEventsOrder(t *testing.T) {
+	t.Parallel()
+	m := New()
+	sess, err := m.Start(context.Background(), StartOptions{Command: "/bin/sh", Args: []string{"-i"}, MaxTail: 4096})
+	if err != nil {
+		skipIfPTYUnsupported(t, err)
+		t.Fatal(err)
+	}
+	defer m.Stop(sess.ID)
+
+	if _, err := m.Write(sess.ID, "echo test\n", false, ObserveOptions{WaitFor: "test", IdleTimeout: 50 * time.Millisecond, MaxWait: time.Second, IncludeOutput: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := m.Events(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) < 2 {
+		t.Fatalf("expected at least 2 events, got %d", len(events))
+	}
+	hasInput := false
+	hasOutput := false
+	lastTime := time.Time{}
+	for _, evt := range events {
+		if evt.Type == TranscriptEventInput {
+			hasInput = true
+		}
+		if evt.Type == TranscriptEventOutput {
+			hasOutput = true
+		}
+		if evt.Time.Before(lastTime) {
+			t.Fatalf("expected events to be in chronological order, got %v before %v", lastTime, evt.Time)
+		}
+		lastTime = evt.Time
+	}
+	if !hasInput {
+		t.Fatal("expected at least one input event")
+	}
+	if !hasOutput {
+		t.Fatal("expected at least one output event")
+	}
+}

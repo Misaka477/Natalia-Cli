@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/display"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
@@ -11,12 +12,13 @@ import (
 )
 
 type Item struct {
-	ID       string `json:"id"`
-	Content  string `json:"content"`
-	Status   string `json:"status"`
-	Done     bool   `json:"done"`
-	Notes    string `json:"notes,omitempty"`
-	Priority int    `json:"priority,omitempty"`
+	ID         string    `json:"id"`
+	Content    string    `json:"content"`
+	Status     string    `json:"status"`
+	Done       bool      `json:"done"`
+	Notes      string    `json:"notes,omitempty"`
+	Priority   int       `json:"priority,omitempty"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 var (
@@ -43,16 +45,24 @@ func (t *Set) Execute(args map[string]any) (string, error) {
 func (t *Set) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 	list := parseItems(args)
 	mu.Lock()
-	items = normalizeItemsLocked(list)
+	existingByID := make(map[string]Item, len(items))
+	for _, item := range items {
+		existingByID[item.ID] = item
+	}
+	items = normalizeItemsLocked(list, existingByID)
 	snapshot := snapshotItemsLocked()
 	mu.Unlock()
 	return todoReturn(fmt.Sprintf("已设置 %d 个任务", len(list)), snapshot), nil
 }
 
-func normalizeItemsLocked(list []Item) []Item {
+func normalizeItemsLocked(list []Item, existingByID map[string]Item) []Item {
 	for i := range list {
 		if list[i].ID == "" {
 			assignID(&list[i])
+		} else if existing, ok := existingByID[list[i].ID]; ok {
+			list[i].UpdatedAt = existing.UpdatedAt
+		} else if list[i].UpdatedAt.IsZero() {
+			list[i].UpdatedAt = time.Now()
 		}
 		if list[i].Status == "" {
 			if list[i].Done {
@@ -83,7 +93,7 @@ func (t *Add) Execute(args map[string]any) (string, error) {
 func (t *Add) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 	list := parseItems(args)
 	mu.Lock()
-	items = append(items, normalizeItemsLocked(list)...)
+	items = append(items, normalizeItemsLocked(list, nil)...)
 	snapshot := snapshotItemsLocked()
 	mu.Unlock()
 	return todoReturn(fmt.Sprintf("已添加 %d 个任务", len(list)), snapshot), nil
@@ -129,6 +139,7 @@ func (t *Done) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 	}
 	items[target].Done = true
 	items[target].Status = "done"
+	items[target].UpdatedAt = time.Now()
 	return todoReturn(fmt.Sprintf("✓ task %s completed", items[target].ID), snapshotItemsLocked()), nil
 }
 
@@ -181,6 +192,7 @@ func (t *Update) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 		} else if target.Status == "done" {
 			target.Status = "pending"
 		}
+		target.UpdatedAt = time.Now()
 	}
 	if status, ok := args["status"].(string); ok && status != "" {
 		if !validStatus(status) {
@@ -192,12 +204,15 @@ func (t *Update) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 		} else if target.Done {
 			target.Done = false
 		}
+		target.UpdatedAt = time.Now()
 	}
 	if notes, ok := args["notes"].(string); ok {
 		target.Notes = notes
+		target.UpdatedAt = time.Now()
 	}
 	if priority, ok := args["priority"].(float64); ok {
 		target.Priority = int(priority)
+		target.UpdatedAt = time.Now()
 	}
 
 	msg := fmt.Sprintf("已更新任务 %s", target.ID)
@@ -236,6 +251,9 @@ func (t *List) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 		if item.Notes != "" && len(item.Notes) <= 60 {
 			extra += " note: " + item.Notes
 		}
+		if !item.UpdatedAt.IsZero() {
+			extra += " updated: " + item.UpdatedAt.Format(time.RFC3339)
+		}
 		b.WriteString(fmt.Sprintf("%d. [%s] %s%s\n", i+1, mark, item.Content, extra))
 	}
 	return todoReturn(b.String(), snapshotItemsLocked()), nil
@@ -259,6 +277,7 @@ func assignID(item *Item) {
 			item.Status = "pending"
 		}
 	}
+	item.UpdatedAt = time.Now()
 }
 
 func validStatus(status string) bool {
