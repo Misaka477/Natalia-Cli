@@ -239,6 +239,18 @@ func TestInteractiveWriteSubmitsSingleLineByDefault(t *testing.T) {
 	if fake.lastInput != "partial" {
 		t.Fatalf("expected submit=false to preserve partial input, got %q", fake.lastInput)
 	}
+	if _, err := (&Write{}).Execute(map[string]any{"id": "tty_fake", "input": ""}); err != nil {
+		t.Fatal(err)
+	}
+	if fake.lastInput != "\r" {
+		t.Fatalf("expected empty input with default submit to send Enter, got %q", fake.lastInput)
+	}
+	if _, err := (&Write{}).Execute(map[string]any{"id": "tty_fake", "input": "", "submit": false}); err != nil {
+		t.Fatal(err)
+	}
+	if fake.lastInput != "" {
+		t.Fatalf("expected empty input with submit=false to remain empty no-op write, got %q", fake.lastInput)
+	}
 }
 
 func TestInteractiveToolsStartWriteReadListStop(t *testing.T) {
@@ -350,6 +362,12 @@ func TestInteractivePureValidationAndFormattingPaths(t *testing.T) {
 	}
 	if _, err := (&Keys{}).Execute(map[string]any{"id": "tty_1"}); err == nil || !strings.Contains(err.Error(), "key") {
 		t.Fatalf("expected missing key error, got %v", err)
+	}
+	if _, err := (&Stop{}).Execute(map[string]any{"id": "proc_1"}); err == nil || !strings.Contains(err.Error(), "process_stop") {
+		t.Fatalf("expected process_stop cross-reference for proc id, got %v", err)
+	}
+	if _, err := (&Stop{}).Execute(map[string]any{"id": "bg_1"}); err == nil || !strings.Contains(err.Error(), "background_stop") {
+		t.Fatalf("expected background_stop cross-reference for bg id, got %v", err)
 	}
 	if _, err := parseArgs("bad"); err == nil || !strings.Contains(err.Error(), "array") {
 		t.Fatalf("expected parseArgs type error, got %v", err)

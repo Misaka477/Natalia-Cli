@@ -131,6 +131,76 @@ func TestAttachDetachWorkerThroughAgentTools(t *testing.T) {
 	}
 }
 
+func TestSpawnBackgroundAttachDetachOutputChain(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "content": "background-done"}}}})
+	}))
+	defer server.Close()
+	pool := worker.NewPool()
+	var requestedProfile string
+	spawn := &Spawn{Pool: pool, Client: llm.NewClient(llm.Config{BaseURL: server.URL, Model: "default-model", APIKey: "test"}), Tools: toolset.NewRegistry(), ClientForModelProfile: func(profile string) (*llm.Client, error) {
+		requestedProfile = profile
+		return llm.NewClient(llm.Config{BaseURL: server.URL, Model: "background-model", APIKey: "test"}), nil
+	}}
+
+	created, err := spawn.Execute(map[string]any{"task": "background chain", "model_profile": "background-profile"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := extractAgentIDFromSpawnOutput(t, created)
+	w := pool.Get(id)
+	if w == nil {
+		t.Fatalf("expected background worker %s to exist", id)
+	}
+	if requestedProfile != "background-profile" || !strings.Contains(created, "子 agent "+id+" 已创建") || !strings.Contains(created, "模型配置: background-profile") || !strings.Contains(created, "状态:") {
+		t.Fatalf("unexpected background spawn output/profile=%q output=%q", requestedProfile, created)
+	}
+
+	detached, err := (&Detach{Pool: pool}).Execute(map[string]any{"agent_id": id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.IsAttached() || !strings.Contains(detached, "attached=false") {
+		t.Fatalf("expected detached background worker, attached=%t output=%q", w.IsAttached(), detached)
+	}
+	attached, err := (&Attach{Pool: pool}).Execute(map[string]any{"agent_id": id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !w.IsAttached() || !strings.Contains(attached, "attached=true") {
+		t.Fatalf("expected attached background worker, attached=%t output=%q", w.IsAttached(), attached)
+	}
+	if _, err := (&Detach{Pool: pool}).Execute(map[string]any{"agent_id": id}); err != nil {
+		t.Fatal(err)
+	}
+	waitForWorkerStatus(t, w, worker.StatusCompleted)
+
+	listed, err := (&List{Pool: pool}).Execute(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(listed, id) || !strings.Contains(listed, "attached=false") || !strings.Contains(listed, "model_profile=background-profile") {
+		t.Fatalf("expected detached completed worker in list, got %q", listed)
+	}
+	output, err := (&Output{Pool: pool}).Execute(map[string]any{"agent_id": id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output, "background-done") {
+		t.Fatalf("expected output after detach, got %q", output)
+	}
+}
+
+func extractAgentIDFromSpawnOutput(t *testing.T, output string) string {
+	t.Helper()
+	var id string
+	if _, err := fmt.Sscanf(output, "子 agent %s 已创建", &id); err != nil || id == "" {
+		t.Fatalf("could not extract agent id from %q", output)
+	}
+	return id
+}
+
 func TestParseTimeoutSec(t *testing.T) {
 	if got, err := parseTimeoutSec(nil, true); err != nil || got != 30 {
 		t.Fatalf("expected foreground default 30, got %d err=%v", got, err)

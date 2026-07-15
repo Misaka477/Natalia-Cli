@@ -3,8 +3,10 @@ package web
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"image"
@@ -12,6 +14,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -70,7 +73,7 @@ type Search struct{}
 
 func (t *Search) Name() string { return "web_search" }
 func (t *Search) Description() string {
-	return "search the web and return relevant results. provider order is configured by SEARCH_PROVIDER_PRIORITY (default: bing -> google -> duckduckgo)"
+	return "search the web and return relevant results; provider configuration is internal and diagnostics are summarized for user safety"
 }
 func (t *Search) Required() []string { return []string{"query"} }
 func (t *Search) Parameters() map[string]llm.Property {
@@ -114,7 +117,7 @@ func (t *Search) Execute(args map[string]any) (string, error) {
 	}
 
 	if err != nil {
-		return "", fmt.Errorf("搜索失败: %w", err)
+		return "", fmt.Errorf("搜索失败: %s", sanitizeSearchDiagnostic(err))
 	}
 	if len(results) == 0 {
 		msg := fmt.Sprintf("no results found for %q", query)
@@ -165,7 +168,7 @@ func searchRelevanceWarning(query string, results []SearchResult) string {
 		}
 	}
 	if relevant == 0 || relevant*2 < len(results) {
-		return fmt.Sprintf("warning: low lexical relevance for query %q; verify provider results or fetch target pages", query)
+		return fmt.Sprintf("结果可能与查询 %q 不够相关，请验证来源或调整关键词", query)
 	}
 	return ""
 }
@@ -226,16 +229,16 @@ func searchByPriority(query string, limit int, providers []string) ([]SearchResu
 		}
 		results, err := searchByProvider(provider, query, limit)
 		if err != nil {
-			diagnostics = append(diagnostics, fmt.Sprintf("%s: %s", provider, sanitizeSearchDiagnostic(err)))
+			diagnostics = appendUniqueDiagnostic(diagnostics, sanitizeSearchDiagnostic(err))
 			continue
 		}
 		results = scoreResults(query, results)
 		if len(results) == 0 {
-			diagnostics = append(diagnostics, fmt.Sprintf("%s: no results", provider))
+			diagnostics = appendUniqueDiagnostic(diagnostics, "未找到可用搜索结果")
 			continue
 		}
 		if warning := searchRelevanceWarning(query, results); warning != "" && hasRemainingProvider(providers, provider) {
-			diagnostics = append(diagnostics, fmt.Sprintf("%s: %s; trying next provider", provider, warning))
+			diagnostics = appendUniqueDiagnostic(diagnostics, "部分搜索结果相关性较低，已继续尝试其他结果来源")
 			continue
 		}
 		return results, diagnostics, nil
@@ -314,11 +317,39 @@ func normalizeSearchProvider(provider string) string {
 }
 
 func sanitizeSearchDiagnostic(err error) string {
-	msg := err.Error()
-	if SearchAPIKey != "" {
-		msg = strings.ReplaceAll(msg, SearchAPIKey, "[redacted]")
+	if err == nil {
+		return "搜索服务暂时不可用，请稍后重试或调整关键词"
 	}
-	return msg
+	if strings.Contains(err.Error(), "network policy denied") {
+		return err.Error()
+	}
+	if isTimeoutError(err) {
+		return "搜索服务暂时无响应，请稍后重试"
+	}
+	lower := strings.ToLower(err.Error())
+	if strings.Contains(lower, "missing") || strings.Contains(lower, "api_key") || strings.Contains(lower, "key") || strings.Contains(lower, "cx") {
+		return "搜索服务尚未配置或暂时不可用，请尝试其他关键词或稍后重试"
+	}
+	if strings.Contains(lower, "rate limited") || strings.Contains(lower, "429") {
+		return "搜索服务请求过于频繁，请稍后重试"
+	}
+	if strings.Contains(lower, "status") || strings.Contains(lower, "unsupported provider") {
+		return "搜索服务暂时不可用，请稍后重试或调整关键词"
+	}
+	return "搜索服务暂时不可用，请稍后重试或调整关键词"
+}
+
+func appendUniqueDiagnostic(diagnostics []string, msg string) []string {
+	msg = strings.TrimSpace(msg)
+	if msg == "" {
+		return diagnostics
+	}
+	for _, existing := range diagnostics {
+		if existing == msg {
+			return diagnostics
+		}
+	}
+	return append(diagnostics, msg)
 }
 
 func searchCustom(query string, limit int, includeContent bool) ([]SearchResult, error) {
@@ -733,7 +764,7 @@ func (t *Fetch) Execute(args map[string]any) (string, error) {
 		return "", fmt.Errorf("获取失败: %w", err)
 	}
 
-	resp, err := client.Do(req)
+	resp, err := doFetchWithTimeoutRetry(client, req, 2)
 	if err != nil {
 		return "", fmt.Errorf("获取失败: %w", err)
 	}
@@ -789,6 +820,37 @@ func (t *Fetch) Execute(args map[string]any) (string, error) {
 		return metadata + "\nNo content extracted.\n\nRaw body:\n" + fallback, nil
 	}
 	return metadata + "\n" + appendTruncationMarker(text, truncated, maxBytes), nil
+}
+
+func doFetchWithTimeoutRetry(client *http.Client, req *http.Request, retries int) (*http.Response, error) {
+	if retries < 0 {
+		retries = 0
+	}
+	var lastErr error
+	for attempt := 0; attempt <= retries; attempt++ {
+		attemptReq := req.Clone(req.Context())
+		resp, err := client.Do(attemptReq)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		if !isTimeoutError(err) || attempt == retries {
+			break
+		}
+		time.Sleep(time.Duration(attempt+1) * 100 * time.Millisecond)
+	}
+	return nil, lastErr
+}
+
+func isTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 func formatFetchMetadata(urlStr string, status int, contentType string, bytes int, truncated bool) string {

@@ -352,7 +352,11 @@ func TestDetectPromptCoversShellAndCustomWaitPatterns(t *testing.T) {
 		{name: "root hash", tail: "root#", want: "root#"},
 		{name: "question", tail: "Continue?", want: "Continue?"},
 		{name: "password", tail: "Password:", want: "Password:"},
+		{name: "chinese password", tail: "输出\n请输入密码：", want: "请输入密码："},
+		{name: "mixed password", tail: "Enter password: 请输入密码:", want: "Enter password: 请输入密码:"},
 		{name: "select", tail: "Select project:", want: "Select project:"},
+		{name: "chinese select", tail: "请选择项目：", want: "请选择项目："},
+		{name: "chinese confirm", tail: "确认继续？[Y/n]", want: "确认继续？[Y/n]"},
 		{name: "yes no", tail: "Overwrite file? [y/N]", want: "Overwrite file? [y/N]"},
 		{name: "none", tail: "just output\nnext line", want: ""},
 	}
@@ -362,6 +366,25 @@ func TestDetectPromptCoversShellAndCustomWaitPatterns(t *testing.T) {
 				t.Fatalf("detectPrompt(%q)=%q want %q", tc.tail, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestMakeObservationDetectPromptFallbackAndLiteralWaitFor(t *testing.T) {
+	t.Parallel()
+	buf := []byte("history\n确认继续？[Y/n]")
+	sess := &managedSession{meta: Session{ID: "tty_test", Status: StatusWaitingForInput}, buf: buf, lastRead: len(buf)}
+	obs := sess.makeObservation(buf, ObserveOptions{IncludeOutput: true}, nil)
+	if obs.NewOutput != "" || obs.DetectedPrompt != "确认继续？[Y/n]" {
+		t.Fatalf("expected prompt fallback from tail when new output is empty, got %+v", obs)
+	}
+
+	waitLiteral := "选择项目 (1/2):"
+	waitRe := regexp.MustCompile(regexp.QuoteMeta(waitLiteral))
+	buf = []byte("noise\n" + waitLiteral)
+	sess = &managedSession{meta: Session{ID: "tty_test", Status: StatusWaitingForInput}, buf: buf, lastRead: 0}
+	obs = sess.makeObservation(buf, ObserveOptions{IncludeOutput: true}, waitRe)
+	if obs.DetectedPrompt != waitLiteral {
+		t.Fatalf("expected literal wait_for with regex-special characters to match exactly, got %+v", obs)
 	}
 }
 

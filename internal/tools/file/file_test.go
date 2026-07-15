@@ -186,7 +186,7 @@ func TestReadFileLimitRange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(result, "Lines: 4 total, showing 2-3") || !strings.Contains(result, "2: two\n3: three") || strings.Contains(result, "1: one") {
+	if !strings.Contains(result, "Lines: 4 total, showing 2-3") || !strings.Contains(result, "Next: continue with offset \"4\" and limit \"1\".") || !strings.Contains(result, "2: two\n3: three") || strings.Contains(result, "1: one") || strings.Contains(result, "Hint:") {
 		t.Fatalf("unexpected limited read result: %q", result)
 	}
 }

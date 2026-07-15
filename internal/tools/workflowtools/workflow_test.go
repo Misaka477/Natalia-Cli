@@ -60,6 +60,16 @@ func TestWorkflowRunDryRunDoesNotPersistState(t *testing.T) {
 	}
 }
 
+func TestWorkflowRunDescriptionWarnsAboutRealExecution(t *testing.T) {
+	run := &Run{}
+	if !strings.Contains(run.Description(), "dry_run=true") || !strings.Contains(run.Description(), "workspace") {
+		t.Fatalf("workflow_run description should distinguish dry-run from real execution: %q", run.Description())
+	}
+	if got := run.Parameters()["dry_run"].Description; !strings.Contains(got, "audits/automation") || !strings.Contains(got, "side effects") {
+		t.Fatalf("workflow_run dry_run schema should warn about automation safety, got %q", got)
+	}
+}
+
 func TestWorkflowRunReturnsInstructionAndPersistsState(t *testing.T) {
 	r := &workflowcore.Registry{}
 	r.Add(workflowcore.Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []workflowcore.Step{{ID: "step-1", Title: "Inspect diff", Prompt: "Run git diff", Kind: "task"}}})

@@ -70,6 +70,60 @@ func TestBackgroundOutputWithTailAndCWD(t *testing.T) {
 	}
 }
 
+func TestBackgroundSustainedOutputTailAndPaginationBoundaries(t *testing.T) {
+	resetManager()
+	result, err := (&Start{}).Execute(map[string]any{
+		"command":  "/bin/sh",
+		"args":     []any{"-c", `i=1; while [ "$i" -le 40 ]; do printf 'line%03d\n' "$i"; i=$((i+1)); done`},
+		"max_tail": float64(15),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := extractBackgroundID(t, result)
+	waitForBackgroundStatus(t, id, "exited")
+
+	all, err := (&Output{}).Execute(map[string]any{"id": id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(all, "line025") || !strings.Contains(all, "line026") || !strings.Contains(all, "line040") {
+		t.Fatalf("expected max_tail to retain only the last 15 lines, got %q", all)
+	}
+
+	first, err := (&Output{}).Execute(map[string]any{"id": id, "offset": float64(0), "limit": float64(5)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(first, "line026") || !strings.Contains(first, "line030") || strings.Contains(first, "line031") || !strings.Contains(first, "page: offset=0 next_offset=5 total=15 has_more=true") {
+		t.Fatalf("unexpected first page: %q", first)
+	}
+
+	second, err := (&Output{}).Execute(map[string]any{"id": id, "offset": float64(5), "limit": float64(5)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(second, "line031") || !strings.Contains(second, "line035") || strings.Contains(second, "line030") || !strings.Contains(second, "page: offset=5 next_offset=10 total=15 has_more=true") {
+		t.Fatalf("unexpected second page: %q", second)
+	}
+
+	end, err := (&Output{}).Execute(map[string]any{"id": id, "offset": float64(15), "limit": float64(5)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(end, "<no output>") || !strings.Contains(end, "page: offset=15 next_offset=15 total=15 has_more=false") {
+		t.Fatalf("expected empty page at end boundary, got %q", end)
+	}
+
+	pastEnd, err := (&Output{}).Execute(map[string]any{"id": id, "offset": float64(999), "limit": float64(5)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(pastEnd, "page: offset=15 next_offset=15 total=15 has_more=false") {
+		t.Fatalf("expected offset past end to clamp to total, got %q", pastEnd)
+	}
+}
+
 func TestBackgroundStop(t *testing.T) {
 	resetManager()
 	result, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "args": []any{"-c", "while true; do sleep 1; done"}})

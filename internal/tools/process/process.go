@@ -304,6 +304,12 @@ func (t *Stop) Execute(args map[string]any) (string, error) {
 	if id == "" {
 		return "", fmt.Errorf("id required")
 	}
+	if strings.HasPrefix(id, "tty_") {
+		return "", fmt.Errorf("%q looks like an interactive PTY session id; use interactive_stop for tty_* sessions", id)
+	}
+	if strings.HasPrefix(id, "bg_") {
+		return "", fmt.Errorf("%q looks like a background task id; use background_stop for bg_* sessions", id)
+	}
 	opts := processmgr.StopOptions{}
 	if sig, _ := args["signal"].(string); sig != "" {
 		s, err := parseSignal(sig)

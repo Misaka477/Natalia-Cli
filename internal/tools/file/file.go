@@ -115,7 +115,7 @@ func RenderReadFile(path, content, offset, limit string) (string, error) {
 	if limited {
 		fmt.Fprintf(&b, "File: %s\nLines: %d total, showing %d-%d\n", path, len(lines), start, end)
 		if end < len(lines) {
-			fmt.Fprintf(&b, "Hint: continue with limit %d-%d or choose a nearby 100-line window.\n", end+1, min(len(lines), end+defaultReadWindowLines))
+			fmt.Fprintf(&b, "Next: continue with offset \"%d\" and limit \"%d\".\n", end+1, min(defaultReadWindowLines, len(lines)-end))
 		}
 		b.WriteString("\n")
 	}
@@ -177,7 +177,7 @@ func renderReadFileWindowWithSize(path string, start, end, totalLines int, trail
 	if limited {
 		fmt.Fprintf(&b, "File: %s%s\nEncoding: %s\nLines: %d total, showing %d-%d\n", path, fileSize, encoding, totalLines, start, end)
 		if end < totalLines {
-			fmt.Fprintf(&b, "Hint: continue with limit %d-%d or choose a nearby 100-line window.\n", end+1, min(totalLines, end+defaultReadWindowLines))
+			fmt.Fprintf(&b, "Next: continue with offset \"%d\" and limit \"%d\".\n", end+1, min(defaultReadWindowLines, totalLines-end))
 		}
 		b.WriteString("\n")
 	}

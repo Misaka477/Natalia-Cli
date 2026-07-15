@@ -120,14 +120,14 @@ type Write struct{}
 
 func (t *Write) Name() string { return "interactive_write" }
 func (t *Write) Description() string {
-	return "write input to an interactive PTY session and return observation; single-line input appends Enter by default, set submit=false for partial input"
+	return "write input to an interactive PTY session and return observation; single-line input appends Enter by default, input=\"\" with submit=true sends an empty Enter, set submit=false for partial input"
 }
 func (t *Write) Required() []string { return []string{"id", "input"} }
 func (t *Write) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"id":              {Type: "string", Description: "interactive session id"},
-		"input":           {Type: "string", Description: "input to write; submitted as a line by default"},
-		"submit":          {Type: "boolean", Description: "optional, default true; false writes without Enter, for chunked input"},
+		"input":           {Type: "string", Description: "input to write; submitted as a line by default; empty string is valid with submit=true to send Enter"},
+		"submit":          {Type: "boolean", Description: "optional, default true; false writes without Enter, for chunked input; submit=false with empty input is a no-op observation"},
 		"sensitive":       {Type: "boolean", Description: "optional, true marks secret input; the input is not echoed back"},
 		"wait_for":        {Type: "string", Description: "optional, prompt regex to wait for after write"},
 		"idle_timeout_ms": {Type: "integer", Description: "optional, output silence duration before considering input needed; default 200"},
@@ -140,9 +140,13 @@ func (t *Write) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	input, _ := args["input"].(string)
-	if input == "" {
+	rawInput, ok := args["input"]
+	if !ok {
 		return "", fmt.Errorf("input required")
+	}
+	input, ok := rawInput.(string)
+	if !ok {
+		return "", fmt.Errorf("input must be a string")
 	}
 	submit := true
 	if raw, ok := args["submit"].(bool); ok {
@@ -217,6 +221,12 @@ func (t *Stop) Execute(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if strings.HasPrefix(id, "proc_") {
+		return "", fmt.Errorf("%q looks like a process session id; use process_stop for proc_* sessions", id)
+	}
+	if strings.HasPrefix(id, "bg_") {
+		return "", fmt.Errorf("%q looks like a background task id; use background_stop for bg_* sessions", id)
+	}
 	mgr := currentManager()
 	if err := mgr.Stop(id); err != nil {
 		return "", err
@@ -247,9 +257,11 @@ func (t *Attach) Execute(args map[string]any) (string, error) {
 
 type Detach struct{}
 
-func (t *Detach) Name() string        { return "interactive_detach" }
-func (t *Detach) Description() string { return "detach an interactive PTY session; the process keeps running" }
-func (t *Detach) Required() []string  { return []string{"id"} }
+func (t *Detach) Name() string { return "interactive_detach" }
+func (t *Detach) Description() string {
+	return "detach an interactive PTY session; the process keeps running"
+}
+func (t *Detach) Required() []string { return []string{"id"} }
 func (t *Detach) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{"id": {Type: "string", Description: "interactive session id"}}
 }

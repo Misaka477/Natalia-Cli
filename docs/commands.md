@@ -343,6 +343,16 @@ run_shell(command="go test ./...", timeout="120", cwd="/project", max_output="50
 
 ### 6.3 进程管理
 
+process、background、interactive PTY 使用不同的 ID 空间和 stop 工具：
+
+| 类型 | ID 示例 | 适用场景 | 停止工具 |
+|------|---------|----------|----------|
+| process session | `proc_1` | 普通托管进程 | `process_stop(id="proc_1")` |
+| background task | `bg_1` | dev server、watcher、长期后台任务 | `background_stop(id="bg_1")` |
+| interactive PTY | `tty_1` | REPL、安装器、需要 prompt 的 CLI | `interactive_stop(id="tty_1")` |
+
+不要混用 stop 工具。例如 `interactive_stop(id="proc_1")` 不能停止 process session，应改用 `process_stop(id="proc_1")`；`process_stop(id="tty_1")` 应改用 `interactive_stop(id="tty_1")`。
+
 #### process_start — 启动进程
 
 ```
@@ -405,11 +415,11 @@ process_audit(id="proc_1")
 ```
 background_start(command="npm", args=["run", "dev"], cwd="/project", max_tail=1000, idle_timeout=0, max_lifetime=0)
 background_list()
-background_output(id="proc_1", offset=0, limit=100)
-background_restart(id="proc_1")
-background_stop(id="proc_1")
+background_output(id="bg_1", offset=0, limit=100)
+background_restart(id="bg_1")
+background_stop(id="bg_1")
 background_cleanup(finished_max_age=60, idle_timeout=300)
-background_audit(id="proc_1")
+background_audit(id="bg_1")
 ```
 
 ### 6.5 交互式 PTY
@@ -459,6 +469,8 @@ interactive_keys(id="tty_1", key="ctrl-c")
 ```
 interactive_stop(id="tty_1")
 ```
+
+`interactive_stop` 只接受 `tty_*` 交互式 PTY session。若要停止 `proc_*` process session，请使用 `process_stop`；若要停止 `bg_*` background task，请使用 `background_stop`。
 
 #### 更多
 
@@ -535,10 +547,13 @@ plan_mode_status()
 ```
 workflow_list()
 workflow_read(name="review")
-workflow_run(name="review", state_path="/tmp/state.json")
+workflow_run(name="review", dry_run=true)
+workflow_run(name="review", dry_run=false, state_path="/tmp/state.json")
 ```
 
 Workflow 文件位于 `.natalia/workflows/*.yaml`、`.natalia/commands/*.md`；`package.json` 中的 scripts 和 `Makefile` 中的 targets 也会自动导入。
+
+`workflow_run(dry_run=true)` 只预览步骤和规范化内容，不初始化执行状态，适合审计、CI 和自动化验证。`dry_run=false` 是真实执行入口：它会创建/推进 workflow run state，并把当前步骤指令交给 agent 执行；后续步骤是否读写 workspace、运行命令或修改文件取决于 workflow 内容。内置 demo workflow 也按真实 workflow 语义处理，自动化测试应优先使用 `dry_run=true` 或专用无副作用测试 workflow。
 
 ### 6.11 Todo 工具
 

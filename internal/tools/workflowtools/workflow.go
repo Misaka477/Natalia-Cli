@@ -29,14 +29,14 @@ type Run struct {
 
 func (t *Run) Name() string { return "workflow_run" }
 func (t *Run) Description() string {
-	return "start executing a workflow, returning the current step instruction with optional state persistence"
+	return "start executing a workflow and return the current step instruction; dry_run=true previews safely, dry_run=false initializes real execution state and may lead to workspace reads/writes or commands depending on workflow steps"
 }
 func (t *Run) Required() []string { return []string{"name"} }
 func (t *Run) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"name":       {Type: "string", Description: "workflow name"},
 		"state_path": {Type: "string", Description: "optional, path to save run state JSON"},
-		"dry_run":    {Type: "boolean", Description: "optional, preview without initializing state when true"},
+		"dry_run":    {Type: "boolean", Description: "optional, preview without initializing real execution state when true; use true for audits/automation unless side effects are intended"},
 	}
 }
 

@@ -193,6 +193,12 @@ func TestProcessEmptyUnknownAndFormattingPaths(t *testing.T) {
 	if got := formatSession(nil); got != "<nil process session>" {
 		t.Fatalf("unexpected nil process session formatting: %q", got)
 	}
+	if _, err := (&Stop{}).Execute(map[string]any{"id": "tty_1"}); err == nil || !strings.Contains(err.Error(), "interactive_stop") {
+		t.Fatalf("expected interactive_stop cross-reference for tty id, got %v", err)
+	}
+	if _, err := (&Stop{}).Execute(map[string]any{"id": "bg_1"}); err == nil || !strings.Contains(err.Error(), "background_stop") {
+		t.Fatalf("expected background_stop cross-reference for bg id, got %v", err)
+	}
 }
 
 func TestProcessParseKindAndIntArg(t *testing.T) {

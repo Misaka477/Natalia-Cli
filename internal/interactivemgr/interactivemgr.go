@@ -91,12 +91,12 @@ type Observation struct {
 }
 
 type Manager struct {
-	mu          sync.RWMutex
-	nextID      uint64
-	nextSubID   uint64
-	sessions    map[string]*managedSession
-	subscribers map[uint64]func(Event)
-	audit       []AuditEntry
+	mu           sync.RWMutex
+	nextID       uint64
+	nextSubID    uint64
+	sessions     map[string]*managedSession
+	subscribers  map[uint64]func(Event)
+	audit        []AuditEntry
 	auditEventID uint64
 }
 
@@ -249,9 +249,9 @@ func (m *Manager) Start(ctx context.Context, opts StartOptions) (*Session, error
 	now := time.Now()
 	id := fmt.Sprintf("tty_%d", atomic.AddUint64(&m.nextID, 1))
 	ms := &managedSession{
-		manager:    m,
-		meta:       Session{ID: id, Command: opts.Command, Args: append([]string(nil), opts.Args...), Cwd: opts.Cwd, Status: StatusRunning, PID: cmd.Process.Pid, StartedAt: now, LastActivityAt: now, Attached: true, Rows: rows, Cols: cols, DecisionID: opts.DecisionID},
-		cmd:        cmd, pty: f, cancel: cancel, maxTail: opts.MaxTail, done: make(chan struct{}),
+		manager: m,
+		meta:    Session{ID: id, Command: opts.Command, Args: append([]string(nil), opts.Args...), Cwd: opts.Cwd, Status: StatusRunning, PID: cmd.Process.Pid, StartedAt: now, LastActivityAt: now, Attached: true, Rows: rows, Cols: cols, DecisionID: opts.DecisionID},
+		cmd:     cmd, pty: f, cancel: cancel, maxTail: opts.MaxTail, done: make(chan struct{}),
 	}
 	ms.outputCond = sync.NewCond(&ms.mu)
 	m.mu.Lock()
@@ -749,9 +749,9 @@ func detectPrompt(tail string, waitRe *regexp.Regexp) string {
 	}
 	lines := strings.Split(strings.TrimRight(tail, "\r\n"), "\n")
 	patterns := []string{
-		`(?i)(password|passphrase|token|api key)\s*:?\s*$`,
-		`(?i)(continue|proceed|confirm|overwrite|are you sure).*\?\s*(\[[^\]]+\])?\s*$`,
-		`(?i)(select|choose|pick).*(option|item|project|profile)\s*:?\s*$`,
+		`(?i)(password|passphrase|token|api key|密码|口令|令牌|密钥)\s*[:：]?\s*$`,
+		`(?i)(continue|proceed|confirm|overwrite|are you sure|继续|确认|覆盖|确定).*([?？]\s*)?(\[[^\]]+\])?\s*$`,
+		`(?i)(select|choose|pick|选择|请选择).*(option|item|project|profile|选项|项目|配置)?\s*[:：]?\s*$`,
 		`(?i)(yes/no|y/n|\[y/n\]|\[Y/n\]|\[y/N\])\s*$`,
 		`[>$#:]\s*$`,
 	}

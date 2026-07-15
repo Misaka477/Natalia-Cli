@@ -87,8 +87,13 @@ func TestSearchProviderPriorityAndDiagnostics(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if ddgHits != 1 || bingHits != 1 || !strings.Contains(result, "搜索诊断") || !strings.Contains(result, "429") || !strings.Contains(result, "Bing After DDG") || !strings.Contains(result, "来源: bing") {
+		if ddgHits != 1 || bingHits != 1 || !strings.Contains(result, "搜索诊断") || !strings.Contains(result, "搜索服务请求过于频繁") || !strings.Contains(result, "Bing After DDG") || !strings.Contains(result, "来源: bing") {
 			t.Fatalf("expected priority fallback with diagnostic, bing=%d ddg=%d result=%q", bingHits, ddgHits, result)
+		}
+		for _, leaked := range []string{"429", "duckduckgo", "rate limited"} {
+			if strings.Contains(strings.ToLower(result), leaked) {
+				t.Fatalf("search diagnostics leaked provider detail %q in %q", leaked, result)
+			}
 		}
 	})
 }
@@ -134,8 +139,11 @@ func TestSearchWarnsOnLowLexicalRelevance(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(result, "low lexical relevance") || !strings.Contains(result, "Crude Futures") {
+		if !strings.Contains(result, "结果可能与查询") || !strings.Contains(result, "Crude Futures") {
 			t.Fatalf("expected low relevance diagnostic with result, got %q", result)
+		}
+		if strings.Contains(result, "low lexical relevance") || strings.Contains(result, "provider") {
+			t.Fatalf("low relevance warning leaked internal diagnostics: %q", result)
 		}
 	})
 }
@@ -157,8 +165,29 @@ func TestSearchFallsBackOnLowRelevance(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(result, "Natalia CLI result") || strings.Contains(result, "Crude Futures\n") || !strings.Contains(result, "trying next provider") {
+		if !strings.Contains(result, "Natalia CLI result") || strings.Contains(result, "Crude Futures\n") || !strings.Contains(result, "部分搜索结果相关性较低") {
 			t.Fatalf("expected relevance fallback result, got %q", result)
+		}
+		if strings.Contains(result, "trying next provider") || strings.Contains(result, "low lexical") || strings.Contains(result, "bing:") {
+			t.Fatalf("relevance fallback leaked internal diagnostics: %q", result)
+		}
+	})
+}
+
+func TestSearchMissingAPIKeyDoesNotExposeProviderDiagnostics(t *testing.T) {
+	withSearchGlobals(t, func() {
+		SearchAPIKey = ""
+		result, err := (&Search{}).Execute(map[string]any{"query": "Natalia CLI", "provider_priority": "google"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, leaked := range []string{"SEARCH_API_KEY", "GOOGLE_CX", "google", "missing"} {
+			if strings.Contains(result, leaked) {
+				t.Fatalf("missing-key diagnostic leaked %q in %q", leaked, result)
+			}
+		}
+		if !strings.Contains(result, "搜索服务尚未配置") {
+			t.Fatalf("expected generic setup diagnostic, got %q", result)
 		}
 	})
 }
@@ -540,6 +569,117 @@ func TestFetchRejectsInvalidOptions(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "timeout") {
 		t.Fatalf("expected invalid timeout error, got %v", err)
 	}
+}
+
+type timeoutErrorForTest struct{}
+
+func (timeoutErrorForTest) Error() string   { return "timeout" }
+func (timeoutErrorForTest) Timeout() bool   { return true }
+func (timeoutErrorForTest) Temporary() bool { return true }
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return fn(req) }
+
+func TestFetchRetryRetriesTimeoutOnly(t *testing.T) {
+	attempts := 0
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		attempts++
+		if attempts == 1 {
+			return nil, timeoutErrorForTest{}
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader("ok")),
+			Request:    req,
+		}, nil
+	})}
+	req, err := http.NewRequest("GET", "https://example.com", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := doFetchWithTimeoutRetry(client, req, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if attempts != 2 || resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected one timeout retry and success, attempts=%d status=%d", attempts, resp.StatusCode)
+	}
+
+	attempts = 0
+	client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		attempts++
+		return &http.Response{
+			StatusCode: http.StatusNotFound,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader("not found")),
+			Request:    req,
+		}, nil
+	})}
+	resp, err = doFetchWithTimeoutRetry(client, req, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if attempts != 1 || resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected HTTP status response without retry, attempts=%d status=%d", attempts, resp.StatusCode)
+	}
+}
+
+func TestSearchDuckDuckGoAPITimeoutFallsBackToHTML(t *testing.T) {
+	withSearchGlobals(t, func() {
+		SearchEngine = "duckduckgo"
+		DDGAPIBaseURL = "https://duckduckgo.test/api"
+		DDGHTMLBaseURL = "https://duckduckgo.test/html"
+		var apiHits, htmlHits int
+		webSearchHTTPClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Host + req.URL.Path {
+			case "duckduckgo.test/api":
+				apiHits++
+				return nil, timeoutErrorForTest{}
+			case "duckduckgo.test/html":
+				htmlHits++
+				return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`<a href="https://example.com/natalia" class="result__a">Natalia CLI</a><div class="result__snippet">Natalia result</div>`)), Request: req}, nil
+			default:
+				t.Fatalf("unexpected request URL: %s", req.URL.String())
+				return nil, nil
+			}
+		})}
+
+		result, err := (&Search{}).Execute(map[string]any{"query": "Natalia CLI"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if apiHits != 1 || htmlHits != 1 || !strings.Contains(result, "Natalia CLI") || strings.Contains(result, "timeout") {
+			t.Fatalf("expected API timeout to fall back to sanitized HTML result, api=%d html=%d result=%q", apiHits, htmlHits, result)
+		}
+	})
+}
+
+func TestSearchDuckDuckGoTimeoutDiagnosticIsSanitized(t *testing.T) {
+	withSearchGlobals(t, func() {
+		SearchEngine = "duckduckgo"
+		DDGAPIBaseURL = "https://duckduckgo.test/api"
+		DDGHTMLBaseURL = "https://duckduckgo.test/html"
+		webSearchHTTPClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return nil, timeoutErrorForTest{}
+		})}
+
+		result, err := (&Search{}).Execute(map[string]any{"query": "Natalia CLI"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(result, "搜索服务暂时无响应") {
+			t.Fatalf("expected generic timeout diagnostic, got %q", result)
+		}
+		for _, leaked := range []string{"timeout", "deadline", "duckduckgo", "provider"} {
+			if strings.Contains(strings.ToLower(result), leaked) {
+				t.Fatalf("timeout diagnostic leaked %q in %q", leaked, result)
+			}
+		}
+	})
 }
 
 func TestFetchDefaultPolicyRejectsLocalhost(t *testing.T) {
