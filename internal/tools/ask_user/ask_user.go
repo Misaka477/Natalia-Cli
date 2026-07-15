@@ -19,6 +19,8 @@ type AskUser struct{}
 
 type Handler func(context.Context, wire.QuestionRequest) (wire.QuestionResponse, error)
 
+const maxOptionsPerQuestion = 20
+
 var (
 	handlerMu sync.RWMutex
 	handler   Handler
@@ -38,7 +40,7 @@ func SetHandler(fn Handler) func() {
 
 func (t *AskUser) Name() string { return "ask_user" }
 func (t *AskUser) Description() string {
-	return "ask the user for additional input; supports single question or questions array, options, multi-select, custom input, and timeout fallback"
+	return "ask the user for additional input; supports single question or questions array, options, multi-select, free-form custom input, and explicit timeout fallback"
 }
 func (t *AskUser) Required() []string { return []string{} }
 func (t *AskUser) Parameters() map[string]llm.Property {
@@ -47,10 +49,10 @@ func (t *AskUser) Parameters() map[string]llm.Property {
 		"name":         {Type: "string", Description: "optional, answer key name for single question; default answer"},
 		"options":      {Type: "array", Description: "optional, option array for single question"},
 		"multiple":     {Type: "boolean", Description: "optional, allow multi-select"},
-		"allow_custom": {Type: "boolean", Description: "optional, allow custom input"},
-		"fallback":     {Type: "string", Description: "optional, default answer on timeout/AFK"},
+		"allow_custom": {Type: "boolean", Description: "deprecated compatibility flag; free-form custom input is always allowed"},
+		"fallback":     {Type: "string", Description: "optional, answer used only when an explicit timeout/fallback path is triggered"},
 		"timeout":      {Type: "integer", Description: "optional, seconds to wait for user; default no timeout, range 1-3600"},
-		"questions":    {Type: "array", Description: "optional, structured question array; each item contains name/question/options/multiple/allow_custom/fallback"},
+		"questions":    {Type: "array", Description: "optional, structured question array; each item contains name/question/options/multiple/allow_custom/fallback; options supports up to 20 values"},
 	}
 }
 func (t *AskUser) Execute(args map[string]any) (string, error) {
@@ -105,8 +107,8 @@ func BuildQuestionRequest(args map[string]any) (wire.QuestionRequest, error) {
 		if questions[i].Question == "" {
 			return wire.QuestionRequest{}, fmt.Errorf("questions[%d].question 是必填参数", i)
 		}
-		if len(questions[i].Options) > 4 {
-			return wire.QuestionRequest{}, fmt.Errorf("questions[%d].options 最多支持 4 个选项", i)
+		if len(questions[i].Options) > maxOptionsPerQuestion {
+			return wire.QuestionRequest{}, fmt.Errorf("questions[%d].options 最多支持 %d 个选项", i, maxOptionsPerQuestion)
 		}
 	}
 	timeout, err := parseTimeoutMS(args["timeout"])
@@ -262,7 +264,7 @@ func askStdin(ctx context.Context, req wire.QuestionRequest) (wire.QuestionRespo
 		if question.Multiple {
 			fmt.Fprintln(os.Stderr, "可多选，请用逗号分隔")
 		}
-		if question.AllowCustom {
+		if len(question.Options) > 0 || question.AllowCustom {
 			fmt.Fprintln(os.Stderr, "可输入自定义答案")
 		}
 		fmt.Fprint(os.Stderr, "> ")
@@ -293,7 +295,7 @@ func normalizeAnswer(question wire.QuestionItem, answer string) string {
 		for _, part := range parts {
 			if option, ok := optionByInput(question.Options, part); ok {
 				selected = append(selected, option)
-			} else if question.AllowCustom && strings.TrimSpace(part) != "" {
+			} else if strings.TrimSpace(part) != "" {
 				selected = append(selected, strings.TrimSpace(part))
 			}
 		}
@@ -302,7 +304,7 @@ func normalizeAnswer(question wire.QuestionItem, answer string) string {
 	if option, ok := optionByInput(question.Options, answer); ok {
 		return option
 	}
-	if question.AllowCustom {
+	if answer != "" {
 		return answer
 	}
 	return ""

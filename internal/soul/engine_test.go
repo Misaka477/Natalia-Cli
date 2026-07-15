@@ -341,6 +341,68 @@ func TestExecuteToolCallRunsRealFileToolEndToEnd(t *testing.T) {
 	}
 }
 
+func TestExecuteWriteFileFirstCallSucceedsWithoutApprover(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "first-write.txt")
+	tools := toolset.NewRegistry()
+	tools.Register(&filetool.Write{})
+	engine := NewEngine(nil, tools)
+	var results []ToolResultEvent
+	engine.OnToolResult = func(event ToolResultEvent) { results = append(results, event) }
+
+	err := engine.executeToolCall(chat.ToolCall{ID: "tc_write_first", Type: "function", Function: chat.ToolCallFunc{Name: "write_file", Arguments: fmt.Sprintf(`{"path":%q,"content":"first"}`, path)}})
+	if err != nil {
+		t.Fatalf("executeToolCall write_file failed: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "first" {
+		t.Fatalf("expected file content to be written, got %q", data)
+	}
+	if len(results) != 1 || results[0].Error != "" || !strings.Contains(results[0].Content, "wrote ") {
+		t.Fatalf("expected successful write_file result event, got %+v", results)
+	}
+}
+
+func TestExecuteWriteFileApprovalDenialIsExplicit(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "denied.txt")
+	tools := toolset.NewRegistry()
+	tools.Register(&filetool.Write{})
+	engine := NewEngine(nil, tools)
+	engine.Approver = &approval.Approver{Mode: approval.ModeAsk, RequestFunc: func(toolName, description string) bool {
+		if toolName != "write_file" || !strings.Contains(description, "write_file create") {
+			t.Fatalf("unexpected approval request: %s %s", toolName, description)
+		}
+		return false
+	}}
+	var results []ToolResultEvent
+	engine.OnToolResult = func(event ToolResultEvent) { results = append(results, event) }
+
+	err := engine.executeToolCall(chat.ToolCall{ID: "tc_write_denied", Type: "function", Function: chat.ToolCallFunc{Name: "write_file", Arguments: fmt.Sprintf(`{"path":%q,"content":"denied"}`, path)}})
+	if err != nil {
+		t.Fatalf("executeToolCall write_file failed: %v", err)
+	}
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Fatalf("denied write should not create file, stat=%v", statErr)
+	}
+	if len(results) != 1 || !strings.Contains(results[0].Content, "操作被用户拒绝") || !strings.Contains(results[0].Content, "write_file") {
+		t.Fatalf("expected explicit denial result, got %+v", results)
+	}
+}
+
+func TestApprovalPreviewReportsWriteFilePreviewErrors(t *testing.T) {
+	desc, blocks := approvalPreview("write_file", map[string]any{"path": filepath.Join(t.TempDir(), "binary.txt"), "content": "bad\x00content"})
+	if !strings.Contains(desc, "preview unavailable") || !strings.Contains(desc, "NUL") {
+		t.Fatalf("expected actionable preview error, got %q", desc)
+	}
+	if len(blocks) != 0 {
+		t.Fatalf("expected no diff blocks on preview error, got %+v", blocks)
+	}
+}
+
 func TestStreamToolCallNormalizesMissingIDAndType(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

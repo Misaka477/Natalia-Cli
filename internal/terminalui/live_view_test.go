@@ -57,6 +57,38 @@ func TestLiveViewRendersKimiStyleContentToolAndStatus(t *testing.T) {
 	}
 }
 
+func TestLiveViewRedactsAndTruncatesToolFeedback(t *testing.T) {
+	view := NewLiveView()
+	got := joinFrames(dispatchEvent(t, view, wire.EventToolCall, wire.ToolCall{ID: "tc_secret", Name: "web_fetch", Arguments: json.RawMessage(`{"api_key":"secret-value","url":"https://example.com"}`)}))
+	if strings.Contains(got, "secret-value") {
+		t.Fatalf("tool call summary leaked secret argument: %q", got)
+	}
+	if !strings.Contains(got, "Using web_fetch") {
+		t.Fatalf("expected tool call headline, got %q", got)
+	}
+
+	view = NewLiveView()
+	got = joinFrames(dispatchEvent(t, view, wire.EventToolCall, wire.ToolCall{ID: "tc_token", Name: "custom_tool", Arguments: json.RawMessage(`{"token":"secret-token"}`)}))
+	if strings.Contains(got, "secret-token") || !strings.Contains(got, "[redacted]") {
+		t.Fatalf("tool call fallback summary should redact sensitive values, got %q", got)
+	}
+
+	longResult := "Bearer secret-token " + strings.Repeat("x", 2400)
+	got = joinFrames(dispatchEvent(t, view, wire.EventToolResult, wire.ToolResult{ToolCallID: "tc_token", Name: "custom_tool", Content: longResult}))
+	if strings.Contains(got, "secret-token") {
+		t.Fatalf("tool result leaked secret content: %q", got)
+	}
+	if !strings.Contains(got, "Bearer [redacted]") {
+		t.Fatalf("tool result should include redacted bearer token, got %q", got)
+	}
+	if len([]rune(got)) > 2300 {
+		t.Fatalf("tool result should be truncated, got %d runes", len([]rune(got)))
+	}
+	if !strings.Contains(got, "...") {
+		t.Fatalf("truncated tool result should indicate truncation, got %q", got)
+	}
+}
+
 func TestLiveViewReasoningDisplayModes(t *testing.T) {
 	summary := NewLiveViewWithOptions(LiveViewOptions{ReasoningDisplay: ReasoningSummary})
 	got := joinFrames(dispatchEvent(t, summary, wire.EventContentPart, wire.ContentPart{Type: wire.ContentThink, Text: "hidden reasoning"}))

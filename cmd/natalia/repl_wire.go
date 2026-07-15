@@ -14,6 +14,7 @@ import (
 
 	"github.com/Misaka477/Natalia-Cli/internal/display"
 	"github.com/Misaka477/Natalia-Cli/internal/terminalui"
+	tui "github.com/Misaka477/Natalia-Cli/internal/terminalui/tui"
 	"github.com/Misaka477/Natalia-Cli/internal/wire"
 )
 
@@ -146,6 +147,49 @@ func renderInteractiveWireMessage(state *wireTerminalRenderState, msg wire.WireM
 			}
 		}
 	}
+}
+
+func startTUIWireRenderer(w *wire.Wire) func() {
+	if w == nil {
+		return func() {}
+	}
+	ch, cancel := w.UISide().SubscribeRaw()
+	done := make(chan struct{})
+	var once sync.Once
+	go func() {
+		defer close(done)
+		state := &wireTerminalRenderState{}
+		for msg := range ch {
+			text := renderTUIWireMessage(state, msg)
+			if strings.TrimSpace(text) == "" || tui.DefaultProgram == nil {
+				continue
+			}
+			tui.DefaultProgram.Send(tui.WireOutputMsg(text))
+		}
+	}()
+	return func() {
+		once.Do(func() {
+			cancel()
+			<-done
+		})
+	}
+}
+
+func renderTUIWireMessage(state *wireTerminalRenderState, msg wire.WireMessage) string {
+	if state == nil {
+		state = &wireTerminalRenderState{}
+	}
+	var b strings.Builder
+	for _, frame := range state.liveView().Dispatch(msg) {
+		if strings.TrimSpace(frame.Text) == "" {
+			continue
+		}
+		b.WriteString(frame.Text)
+		if !strings.HasSuffix(frame.Text, "\n") {
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
 }
 
 func formatSubagentPayload(raw json.RawMessage) string {
@@ -357,7 +401,7 @@ func normalizeTerminalQuestionAnswer(item wire.QuestionItem, answer string) stri
 		for _, part := range parts {
 			if option, ok := terminalOptionByInput(item.Options, part); ok {
 				selected = append(selected, option)
-			} else if item.AllowCustom && strings.TrimSpace(part) != "" {
+			} else if strings.TrimSpace(part) != "" {
 				selected = append(selected, strings.TrimSpace(part))
 			}
 		}
@@ -369,7 +413,7 @@ func normalizeTerminalQuestionAnswer(item wire.QuestionItem, answer string) stri
 	if option, ok := terminalOptionByInput(item.Options, answer); ok {
 		return option
 	}
-	if item.AllowCustom && answer != "" {
+	if answer != "" {
 		return answer
 	}
 	return item.Fallback

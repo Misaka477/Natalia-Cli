@@ -356,6 +356,11 @@ func (t *Write) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 		return toolreturn.Return{ModelText: fmt.Sprintf("[dry_run] would write %s (%d bytes, %d lines)", path, len(content), countLines(content))}, nil
 	}
 
+	preview, err := PreviewWrite(args)
+	if err != nil {
+		return toolreturn.Return{IsError: true}, err
+	}
+
 	backup, _ := args["backup"].(bool)
 	if backup {
 		if _, statErr := os.Stat(path); statErr == nil {
@@ -366,10 +371,6 @@ func (t *Write) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 		}
 	}
 
-	preview, err := PreviewWrite(args)
-	if err != nil {
-		return toolreturn.Return{IsError: true}, err
-	}
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		return toolreturn.Return{IsError: true}, fmt.Errorf("write failed: %w", err)
 	}
@@ -1564,6 +1565,11 @@ func (t *Glob) Execute(args map[string]any) (string, error) {
 		if err := t.Guard.GuardRead(searchPath); err != nil {
 			return "", err
 		}
+		if filepath.IsAbs(pattern) {
+			if err := t.Guard.GuardRead(pattern); err != nil {
+				return "", err
+			}
+		}
 	}
 	limit, err := parseIntArg(args, "limit", 0, 0, 10000)
 	if err != nil {
@@ -1583,7 +1589,14 @@ func (t *Glob) Execute(args map[string]any) (string, error) {
 			return nil
 		}
 		rel = filepath.ToSlash(rel)
-		if matchGlobPattern(pattern, rel) || matchGlobPattern(pattern, filepath.Base(path)) {
+		matched := matchGlobPattern(pattern, rel) || matchGlobPattern(pattern, filepath.Base(path))
+		if !matched && filepath.IsAbs(pattern) {
+			absPath, absErr := filepath.Abs(path)
+			if absErr == nil {
+				matched = matchGlobPattern(pattern, absPath)
+			}
+		}
+		if matched {
 			results = append(results, path)
 		}
 		return nil

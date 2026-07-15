@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Misaka477/Natalia-Cli/internal/display"
+	"github.com/Misaka477/Natalia-Cli/internal/secret"
 	"github.com/Misaka477/Natalia-Cli/internal/wire"
 )
 
@@ -230,7 +231,7 @@ func (v *LiveView) RenderRequest(req wire.WireRequest) string {
 			if len(item.Options) > 0 {
 				lines = append(lines, "  "+numberedOptions(item.Options))
 			}
-			if item.Multiple || item.AllowCustom || item.Fallback != "" {
+			if item.Multiple || item.AllowCustom || len(item.Options) > 0 || item.Fallback != "" {
 				lines = append(lines, questionHints(item))
 			}
 		}
@@ -366,16 +367,17 @@ func (v *LiveView) renderToolResult(result wire.ToolResult) string {
 	argument := ""
 	if block != nil {
 		block.finished = true
-		block.errorText = result.Error
+		block.errorText = secret.RedactString(result.Error)
 		name = block.name
 		argument = block.argument
 	}
 	var parts []string
 	parts = append(parts, v.theme.ToolHeadline(true, name, argument, result.Error != ""))
-	content := strings.TrimSpace(result.Content)
+	content := strings.TrimSpace(secret.RedactString(result.Content))
 	if result.Error != "" {
-		content = result.Error
+		content = secret.RedactString(result.Error)
 	}
+	content = trimLine(content, 2000)
 	if content != "" {
 		parts = append(parts, v.theme.Detail(indent(content, "  ")))
 	}
@@ -556,17 +558,17 @@ func summarizeJSON(raw json.RawMessage) string {
 func keyArgument(toolName, raw string) string {
 	var args map[string]any
 	if json.Unmarshal([]byte(raw), &args) != nil {
-		return trimLine(raw, 120)
+		return trimLine(secret.RedactString(raw), 120)
 	}
 	preferred := []string{"path", "file_path", "command", "cmd", "query", "pattern", "url", "task", "prompt", "id"}
 	for _, key := range preferred {
 		if value, ok := args[key]; ok && fmt.Sprint(value) != "" {
-			return trimLine(fmt.Sprint(value), 140)
+			return trimLine(secret.RedactString(fmt.Sprint(value)), 140)
 		}
 	}
 	for key, value := range args {
 		if fmt.Sprint(value) != "" {
-			return trimLine(key+"="+fmt.Sprint(value), 140)
+			return trimLine(secret.RedactString(key+"="+fmt.Sprint(value)), 140)
 		}
 	}
 	return ""
@@ -585,7 +587,7 @@ func questionHints(item wire.QuestionItem) string {
 	if item.Multiple {
 		hints = append(hints, "multi-select")
 	}
-	if item.AllowCustom {
+	if item.AllowCustom || len(item.Options) > 0 {
 		hints = append(hints, "custom text allowed")
 	}
 	if item.Fallback != "" {

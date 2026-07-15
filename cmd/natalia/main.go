@@ -25,6 +25,7 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/display"
 	"github.com/Misaka477/Natalia-Cli/internal/filepolicy"
 	"github.com/Misaka477/Natalia-Cli/internal/hook"
+	"github.com/Misaka477/Natalia-Cli/internal/interactivemgr"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	coremcp "github.com/Misaka477/Natalia-Cli/internal/mcp"
 	"github.com/Misaka477/Natalia-Cli/internal/mode"
@@ -32,7 +33,6 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/notifications"
 	"github.com/Misaka477/Natalia-Cli/internal/plan"
 	"github.com/Misaka477/Natalia-Cli/internal/planexec"
-	"github.com/Misaka477/Natalia-Cli/internal/interactivemgr"
 	"github.com/Misaka477/Natalia-Cli/internal/processmgr"
 	"github.com/Misaka477/Natalia-Cli/internal/sandbox"
 	"github.com/Misaka477/Natalia-Cli/internal/secret"
@@ -158,7 +158,7 @@ func isTerminal(fd int) bool {
 	if err != nil {
 		return false
 	}
-	return (stat.Mode()&os.ModeCharDevice) != 0
+	return (stat.Mode() & os.ModeCharDevice) != 0
 }
 
 func parseWireAllowedMethods(raw string) []string {
@@ -1026,7 +1026,14 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 	defer persistCurrentSessionState()
 
 	engine := buildEngine(cfg, tools, debug)
-	wireRuntime, stopWireRenderer := startInteractiveWireRenderer(os.Stdout, os.Stderr)
+	var wireRuntime *wire.Wire
+	var stopWireRenderer func()
+	if tuiMode {
+		wireRuntime = wire.NewWire()
+		stopWireRenderer = startTUIWireRenderer(wireRuntime)
+	} else {
+		wireRuntime, stopWireRenderer = startInteractiveWireRenderer(os.Stdout, os.Stderr)
+	}
 	defer stopWireRenderer()
 	clearAskUserHandler := ask_user.SetHandler(func(ctx context.Context, req wire.QuestionRequest) (wire.QuestionResponse, error) {
 		return requestWireQuestion(ctx, wireRuntime, req)
@@ -1093,18 +1100,18 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 				respondCh := make(chan string, 1)
 				if tui.DefaultProgram != nil {
 					tui.DefaultProgram.Send(tui.AskUserPromptMsg{
-						Question: q.Question,
-						Respond:  respondCh,
+						Question:    q.Question,
+						Options:     q.Options,
+						Multiple:    q.Multiple,
+						AllowCustom: q.AllowCustom,
+						Fallback:    q.Fallback,
+						Respond:     respondCh,
 					})
 					select {
 					case ans := <-respondCh:
 						answers[q.Name] = ans
 					case <-ctx.Done():
-						if q.Fallback != "" {
-							answers[q.Name] = q.Fallback
-						} else {
-							return wire.QuestionResponse{RequestID: req.ID, Answers: answers}, ctx.Err()
-						}
+						return wire.QuestionResponse{RequestID: req.ID, Answers: answers}, ctx.Err()
 					}
 				}
 			}
@@ -1133,17 +1140,34 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 			if engine.LLM == nil {
 				return "请先配置。输入 /setup"
 			}
+			engine.ResetCancel()
+			inputPayload, _ := json.Marshal(input)
+			if event, err := wire.NewEvent(wire.EventTurnBegin, wire.TurnBegin{UserInput: inputPayload}); err == nil {
+				wireRuntime.SoulSide.PublishEvent(event)
+			}
+			turnStarted := time.Now()
+			stopTurnStatus := startWireTurnStatusTicker(wireRuntime, cfg, func() *soul.Engine { return engine }, turnStarted, time.Second, DefaultAppRuntime())
 			outcome, err := engine.Run(input)
+			stopTurnStatus()
 			if err != nil {
 				if err.Error() == "context canceled" {
 					return "\n⏹ 已停止"
 				}
 				return "错误: " + err.Error()
 			}
+			publishOutcomeFinalMessage(wireRuntime, outcome, engine.Stream)
+			if event, err := wire.NewEvent(wire.EventTurnEnd, wire.TurnEnd{}); err == nil {
+				wireRuntime.SoulSide.PublishEvent(event)
+			}
+			status := runtimeStatusUpdate(cfg, engine, DefaultAppRuntime())
+			setTurnElapsed(&status, turnStarted, false)
+			if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
+				wireRuntime.SoulSide.PublishEvent(event)
+			}
 			if outcome.FinalMessage == "" {
 				return "(空响应)"
 			}
-			return outcome.FinalMessage
+			return ""
 		}, func() string {
 			eff, _ := cfg.EffectiveProfile(runtime.Mode, runtime.ModelProfile, runtime.PermissionProfile)
 			return fmt.Sprintf("mode: %s | model: %s", runtime.Mode, eff.Profile.Model)

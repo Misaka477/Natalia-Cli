@@ -687,10 +687,16 @@ func approvalPreview(name string, args map[string]any) (string, []display.Block)
 	case "write_file":
 		if preview, err := filetool.PreviewWrite(args); err == nil {
 			return preview.Summary, diffApprovalBlock(preview)
+		} else {
+			path, _ := args["path"].(string)
+			return fmt.Sprintf("write_file preview unavailable for %s: %v", path, err), nil
 		}
 	case "edit_file":
 		if preview, err := filetool.PreviewEdit(args); err == nil {
 			return preview.Summary, diffApprovalBlock(preview)
+		} else {
+			path, _ := args["path"].(string)
+			return fmt.Sprintf("edit_file preview unavailable for %s: %v", path, err), nil
 		}
 	case "run_shell":
 		command, _ := args["command"].(string)

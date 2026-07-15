@@ -1024,6 +1024,62 @@ func TestGlobBasic(t *testing.T) {
 	}
 }
 
+func TestGlobAbsolutePattern(t *testing.T) {
+	dir := t.TempDir()
+	outsideDir := t.TempDir()
+	for _, rel := range []string{"a.go", "b.go", "sub/c.go"} {
+		path := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(rel), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(outsideDir, "outside.go"), []byte("outside"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	guard := PathGuardFunc(func(path string) error {
+		clean := filepath.Clean(path)
+		rel, err := filepath.Rel(dir, clean)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("path is outside allowed workspace roots: %s", path)
+		}
+		return nil
+	})
+	g := &Glob{Guard: guard}
+
+	result, err := g.Execute(map[string]any{"pattern": filepath.Join(dir, "*.go"), "path": dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "a.go") || !strings.Contains(result, "b.go") || strings.Contains(result, "sub") || strings.Contains(result, "c.go") {
+		t.Fatalf("expected absolute pattern to match root go files only, got %q", result)
+	}
+
+	result, err = g.Execute(map[string]any{"pattern": "*.go", "path": dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "a.go") || !strings.Contains(result, "b.go") || !strings.Contains(result, "sub") || !strings.Contains(result, "c.go") {
+		t.Fatalf("expected relative pattern to preserve basename matching behavior, got %q", result)
+	}
+
+	result, err = g.Execute(map[string]any{"pattern": "*.missing", "path": dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != "no matching files found" {
+		t.Fatalf("expected no-match message, got %q", result)
+	}
+
+	_, err = g.Execute(map[string]any{"pattern": filepath.Join(outsideDir, "*.go"), "path": dir})
+	if err == nil || !strings.Contains(err.Error(), "outside allowed workspace") {
+		t.Fatalf("expected guarded absolute pattern outside workspace to fail clearly, got %v", err)
+	}
+}
+
 func TestGlobRecursive(t *testing.T) {
 	dir := t.TempDir()
 	sub := filepath.Join(dir, "sub")
@@ -1234,6 +1290,28 @@ func TestWriteFileBackup(t *testing.T) {
 	}
 	if string(data) != "modified" {
 		t.Fatalf("modified file has wrong content: %q", data)
+	}
+}
+
+func TestWriteFileBackupKeepsOverwriteDiff(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "out.txt")
+	if err := os.WriteFile(path, []byte("original\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	ret, err := (&Write{}).ExecuteReturn(map[string]any{"path": path, "content": "modified\n", "backup": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ret.Display) != 1 || ret.Display[0].Type != display.BlockDiff {
+		t.Fatalf("expected diff display block, got %+v", ret.Display)
+	}
+	var diff display.DiffBlock
+	if err := json.Unmarshal(ret.Display[0].Data, &diff); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(diff.Diff, "-original") || !strings.Contains(diff.Diff, "+modified") {
+		t.Fatalf("expected backup write diff to compare against original content, got %q", diff.Diff)
 	}
 }
 

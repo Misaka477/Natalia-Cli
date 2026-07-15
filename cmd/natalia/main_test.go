@@ -227,7 +227,9 @@ func TestSlashCommandRoutesModelBeforeModeAndSupportsSpaces(t *testing.T) {
 	autoEnabled := true
 	escalator := &autoflow.Escalator{}
 
-	output := captureStdout(t, func() { handleSlashCommand("/model step ai", &cfg, &engine, tools, false, &autoEnabled, escalator, NewAppRuntimeForTest()) })
+	output := captureStdout(t, func() {
+		handleSlashCommand("/model step ai", &cfg, &engine, tools, false, &autoEnabled, escalator, NewAppRuntimeForTest())
+	})
 	if runtime.ModelProfile != "step ai" || !strings.Contains(output, "已切换 model_profile: step ai") || strings.Contains(output, "未知模式") {
 		t.Fatalf("expected /model step ai to switch model profile, runtime=%+v output=%q", runtime, output)
 	}
@@ -488,7 +490,9 @@ func TestHandleAutoCommandStatusShowsPlan(t *testing.T) {
 	}
 	cfg := &config.Config{DefaultProfile: "default", Providers: map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}}, Profiles: map[string]config.Profile{"default": {Provider: "p", Model: "base"}}, PermissionProfiles: config.DefaultPermissionProfiles()}
 	engine := buildEngine(cfg, toolset.NewRegistry(), false)
-	captureStdout(t, func() { handleExecutePlan("/execute-plan "+planPath, cfg, &engine, toolset.NewRegistry(), false, NewAppRuntimeForTest()) })
+	captureStdout(t, func() {
+		handleExecutePlan("/execute-plan "+planPath, cfg, &engine, toolset.NewRegistry(), false, NewAppRuntimeForTest())
+	})
 	output := captureStdout(t, func() { handleAuto("/auto", &enabled, escalator) })
 	_ = output
 	for _, want := range []string{"plan: plan", "plan_steps: 1/2 done", "next_step: line 2: next item"} {
@@ -510,7 +514,9 @@ func TestHandlePlanCommandMarksNextDone(t *testing.T) {
 	}
 	cfg := &config.Config{DefaultProfile: "default", Providers: map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}}, Profiles: map[string]config.Profile{"default": {Provider: "p", Model: "base"}}, PermissionProfiles: config.DefaultPermissionProfiles()}
 	engine := buildEngine(cfg, toolset.NewRegistry(), false)
-	captureStdout(t, func() { handleExecutePlan("/execute-plan "+planPath, cfg, &engine, toolset.NewRegistry(), false, NewAppRuntimeForTest()) })
+	captureStdout(t, func() {
+		handleExecutePlan("/execute-plan "+planPath, cfg, &engine, toolset.NewRegistry(), false, NewAppRuntimeForTest())
+	})
 
 	output := captureStdout(t, func() { handlePlan("/plan done", NewAppRuntimeForTest()) })
 	for _, want := range []string{"已标记完成: line 1: first", "已安全写回计划文件", "下一未完成项: line 2: second"} {
@@ -544,7 +550,9 @@ func TestHandlePlanCommandRejectsConcurrentPlanWriteback(t *testing.T) {
 	}
 	cfg := &config.Config{DefaultProfile: "default", Providers: map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}}, Profiles: map[string]config.Profile{"default": {Provider: "p", Model: "base"}}, PermissionProfiles: config.DefaultPermissionProfiles()}
 	engine := buildEngine(cfg, toolset.NewRegistry(), false)
-	captureStdout(t, func() { handleExecutePlan("/execute-plan "+planPath, cfg, &engine, toolset.NewRegistry(), false, NewAppRuntimeForTest()) })
+	captureStdout(t, func() {
+		handleExecutePlan("/execute-plan "+planPath, cfg, &engine, toolset.NewRegistry(), false, NewAppRuntimeForTest())
+	})
 
 	future := time.Now().Add(time.Hour).Round(0)
 	if err := os.Chtimes(planPath, future, future); err != nil {
@@ -596,7 +604,9 @@ func TestHandleExecutePlanResolvesSlugFromPlanDirectories(t *testing.T) {
 	}
 	cfg := &config.Config{DefaultProfile: "default", Providers: map[string]config.Provider{"p": {BaseURL: "https://example", APIKey: "key"}}, Profiles: map[string]config.Profile{"default": {Provider: "p", Model: "base"}}, PermissionProfiles: config.DefaultPermissionProfiles()}
 	engine := buildEngine(cfg, toolset.NewRegistry(), false)
-	output := captureStdout(t, func() { handleExecutePlan("/execute-plan slug-plan", cfg, &engine, toolset.NewRegistry(), false, NewAppRuntimeForTest()) })
+	output := captureStdout(t, func() {
+		handleExecutePlan("/execute-plan slug-plan", cfg, &engine, toolset.NewRegistry(), false, NewAppRuntimeForTest())
+	})
 	if currentPlan == nil || currentPlan.Path != planPath || !strings.Contains(output, "Slug Plan.md") {
 		t.Fatalf("expected slug-resolved plan, currentPlan=%+v output=%q", currentPlan, output)
 	}
@@ -852,7 +862,9 @@ func TestHandleExecutePlanLoadsPlanAndQueuesSteer(t *testing.T) {
 	engine := buildEngine(cfg, tools, false)
 	oldContext := engine.Context
 
-	output := captureStdout(t, func() { handleExecutePlan("/execute-plan "+planPath, cfg, &engine, tools, false, NewAppRuntimeForTest()) })
+	output := captureStdout(t, func() {
+		handleExecutePlan("/execute-plan "+planPath, cfg, &engine, tools, false, NewAppRuntimeForTest())
+	})
 	if !strings.Contains(output, "已载入计划") || !strings.Contains(output, "下一未完成项: line 3: next task") || runtime.Mode != "code" || runtime.ModelProfile != "" || runtime.PermissionProfile != "" {
 		t.Fatalf("expected plan loaded and runtime switched to code, output=%q runtime=%+v", output, runtime)
 	}
@@ -871,7 +883,9 @@ func TestHandleExecutePlanLoadsPlanAndQueuesSteer(t *testing.T) {
 func TestHandleExecutePlanRejectsNonMarkdown(t *testing.T) {
 	cfg := &config.Config{DefaultProfile: "default"}
 	engine := soul.NewEngine(nil, toolset.NewRegistry())
-	output := captureStdout(t, func() { handleExecutePlan("/execute-plan plan.txt", cfg, &engine, toolset.NewRegistry(), false, NewAppRuntimeForTest()) })
+	output := captureStdout(t, func() {
+		handleExecutePlan("/execute-plan plan.txt", cfg, &engine, toolset.NewRegistry(), false, NewAppRuntimeForTest())
+	})
 	if !strings.Contains(output, "必须是 .md") {
 		t.Fatalf("expected markdown validation error, got %q", output)
 	}
@@ -2126,6 +2140,34 @@ func TestInteractiveWireRendererHandlesRuntimeEventsAndRequests(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected renderer stderr to contain %q, got %q", want, got)
 		}
+	}
+}
+
+func TestTUIWireRendererShowsToolFeedbackSafely(t *testing.T) {
+	state := &wireTerminalRenderState{}
+	renderEvent := func(typ wire.EventType, payload any) string {
+		t.Helper()
+		event, err := wire.NewEvent(typ, payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return renderTUIWireMessage(state, wire.WireMessage{Kind: wire.MessageEvent, Event: &event})
+	}
+
+	got := renderEvent(wire.EventToolCall, wire.ToolCall{ID: "tc_1", Name: "run_shell", Arguments: json.RawMessage(`{"command":"go test ./...","authorization":"Bearer secret-token"}`)})
+	if !strings.Contains(got, "Using run_shell") || !strings.Contains(got, "go test ./...") {
+		t.Fatalf("expected TUI tool call feedback, got %q", got)
+	}
+	if strings.Contains(got, "secret-token") {
+		t.Fatalf("TUI tool call feedback leaked secret: %q", got)
+	}
+
+	got = renderEvent(wire.EventToolResult, wire.ToolResult{ToolCallID: "tc_1", Name: "run_shell", Content: "done with token=secret-token"})
+	if !strings.Contains(got, "Used run_shell") || !strings.Contains(got, "done") {
+		t.Fatalf("expected TUI tool result feedback, got %q", got)
+	}
+	if strings.Contains(got, "secret-token") {
+		t.Fatalf("TUI tool result feedback leaked secret: %q", got)
 	}
 }
 

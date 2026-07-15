@@ -13,33 +13,43 @@ import (
 type submitFunc func(string) string
 
 type askUserRequest struct {
-	Question string
-	Send     chan<- string
+	Question    string
+	Options     []string
+	Multiple    bool
+	AllowCustom bool
+	Fallback    string
+	Send        chan<- string
 }
 
 var DefaultProgram *tea.Program
 
 type Model struct {
-	viewport         viewport.Model
-	input            textinput.Model
-	submitFn         submitFunc
-	statusFn         func() string
-	history          []string
-	historyIdx       int
-	ready            bool
-	width            int
-	height           int
-	pending          bool
-	content          string
-	pendingAsk       *askUserRequest
-	pendingApproval  chan<- bool
+	viewport        viewport.Model
+	input           textinput.Model
+	submitFn        submitFunc
+	statusFn        func() string
+	history         []string
+	historyIdx      int
+	ready           bool
+	width           int
+	height          int
+	pending         bool
+	content         string
+	pendingAsk      *askUserRequest
+	pendingApproval chan<- bool
 }
 
 type outputMsg string
 
+type WireOutputMsg string
+
 type AskUserPromptMsg struct {
-	Question string
-	Respond  chan<- string
+	Question    string
+	Options     []string
+	Multiple    bool
+	AllowCustom bool
+	Fallback    string
+	Respond     chan<- string
 }
 
 type ApprovalPromptMsg struct {
@@ -98,7 +108,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if m.pendingAsk != nil {
-				ans := strings.TrimSpace(m.input.Value())
+				ans := normalizeAskUserAnswer(*m.pendingAsk, m.input.Value())
 				m.input.SetValue("")
 				m.content += "\n> " + ans + "\n"
 				m.viewport.SetContent(m.content)
@@ -140,16 +150,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case outputMsg:
-		m.content += string(msg) + "\n"
+		m.content = appendContent(m.content, string(msg)+"\n")
 		m.viewport.SetContent(m.content)
 		m.viewport.GotoBottom()
 		m.pending = false
 		return m, nil
-	case AskUserPromptMsg:
-		m.content += "\n" + msg.Question + "\n"
+	case WireOutputMsg:
+		m.content = appendContent(m.content, string(msg))
 		m.viewport.SetContent(m.content)
 		m.viewport.GotoBottom()
-		m.pendingAsk = &askUserRequest{Question: msg.Question, Send: msg.Respond}
+		return m, nil
+	case AskUserPromptMsg:
+		m.content = appendContent(m.content, renderAskUserPrompt(msg))
+		m.viewport.SetContent(m.content)
+		m.viewport.GotoBottom()
+		m.pendingAsk = &askUserRequest{Question: msg.Question, Options: msg.Options, Multiple: msg.Multiple, AllowCustom: msg.AllowCustom, Fallback: msg.Fallback, Send: msg.Respond}
 		m.input.SetValue("")
 		return m, nil
 	case ApprovalPromptMsg:
@@ -179,6 +194,105 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.input, cmd = m.input.Update(msg)
 	m.viewport, _ = m.viewport.Update(msg)
 	return m, cmd
+}
+
+func appendContent(content, text string) string {
+	if strings.TrimSpace(text) == "" {
+		return content
+	}
+	if content != "" && !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	return content + text
+}
+
+func renderAskUserPrompt(msg AskUserPromptMsg) string {
+	var b strings.Builder
+	b.WriteString(msg.Question)
+	b.WriteByte('\n')
+	for i, option := range msg.Options {
+		b.WriteString("  ")
+		b.WriteString(intString(i + 1))
+		b.WriteString(". ")
+		b.WriteString(option)
+		b.WriteByte('\n')
+	}
+	hints := make([]string, 0, 3)
+	if msg.Multiple {
+		hints = append(hints, "multi-select with commas")
+	}
+	if len(msg.Options) > 0 || msg.AllowCustom {
+		hints = append(hints, "custom text allowed")
+	}
+	if msg.Fallback != "" {
+		hints = append(hints, "fallback: "+msg.Fallback)
+	}
+	if len(hints) > 0 {
+		b.WriteString("  ")
+		b.WriteString(strings.Join(hints, " · "))
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+func normalizeAskUserAnswer(req askUserRequest, raw string) string {
+	answer := strings.TrimSpace(raw)
+	if len(req.Options) == 0 {
+		if answer == "" {
+			return req.Fallback
+		}
+		return answer
+	}
+	if req.Multiple {
+		parts := strings.Split(answer, ",")
+		selected := make([]string, 0, len(parts))
+		for _, part := range parts {
+			if option, ok := askUserOptionByInput(req.Options, part); ok {
+				selected = append(selected, option)
+			} else if text := strings.TrimSpace(part); text != "" {
+				selected = append(selected, text)
+			}
+		}
+		if len(selected) == 0 {
+			return req.Fallback
+		}
+		return strings.Join(selected, ", ")
+	}
+	if option, ok := askUserOptionByInput(req.Options, answer); ok {
+		return option
+	}
+	if answer != "" {
+		return answer
+	}
+	return req.Fallback
+}
+
+func askUserOptionByInput(options []string, raw string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", false
+	}
+	for i, option := range options {
+		if raw == intString(i+1) || strings.EqualFold(raw, strings.TrimSpace(option)) {
+			return option, true
+		}
+	}
+	return "", false
+}
+
+func intString(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	digits := make([]byte, 0, 3)
+	for n > 0 {
+		digits = append(digits, byte('0'+n%10))
+		n /= 10
+	}
+	for i, j := 0, len(digits)-1; i < j; i, j = i+1, j-1 {
+		digits[i], digits[j] = digits[j], digits[i]
+	}
+	return string(digits)
 }
 
 func (m Model) View() string {

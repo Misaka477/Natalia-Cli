@@ -54,6 +54,25 @@ func TestModelEnterSubmitsInput(t *testing.T) {
 	}
 }
 
+func TestModelWireOutputDoesNotCompletePendingSubmit(t *testing.T) {
+	m := NewModel(func(input string) string { return "" }, nil)
+	m.ready = true
+	m.viewport = viewport.New(80, 24)
+	m.input.Width = 80
+	m.content = "buffer"
+	m.viewport.SetContent(m.content)
+	m.pending = true
+
+	updated, _ := m.Update(WireOutputMsg("Using read_file (README.md)\n"))
+	m = updated.(Model)
+	if !m.pending {
+		t.Fatal("wire output should not clear the pending submit state")
+	}
+	if !strings.Contains(m.viewport.View(), "Using read_file") {
+		t.Fatalf("expected viewport to contain wire output, got %q", m.viewport.View())
+	}
+}
+
 func TestModelHistoryNavigation(t *testing.T) {
 	m := NewModel(func(input string) string { return "" }, nil)
 	m.history = []string{"first", "second", "third"}
@@ -112,6 +131,8 @@ func TestModelAskUserModalAppendsQuestionAndAcceptsAnswer(t *testing.T) {
 	respondCh := make(chan string, 1)
 	updated, _ := m.Update(AskUserPromptMsg{
 		Question: "Continue?",
+		Options:  []string{"yes", "no", "later", "never", "custom"},
+		Fallback: "no",
 		Respond:  respondCh,
 	})
 	m = updated.(Model)
@@ -122,11 +143,11 @@ func TestModelAskUserModalAppendsQuestionAndAcceptsAnswer(t *testing.T) {
 	if m.pendingAsk.Question != "Continue?" {
 		t.Fatalf("expected question 'Continue?', got %q", m.pendingAsk.Question)
 	}
-	if !strings.Contains(m.viewport.View(), "Continue?") {
+	if !strings.Contains(m.viewport.View(), "Continue?") || !strings.Contains(m.viewport.View(), "5. custom") || !strings.Contains(m.viewport.View(), "custom text allowed") || !strings.Contains(m.viewport.View(), "fallback: no") {
 		t.Fatalf("expected viewport to show question, got %q", m.viewport.View())
 	}
 
-	m.input.SetValue("yes")
+	m.input.SetValue("my own answer")
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
 	if m.pendingAsk != nil {
@@ -134,11 +155,29 @@ func TestModelAskUserModalAppendsQuestionAndAcceptsAnswer(t *testing.T) {
 	}
 	select {
 	case ans := <-respondCh:
-		if ans != "yes" {
-			t.Fatalf("expected answer 'yes', got %q", ans)
+		if ans != "my own answer" {
+			t.Fatalf("expected custom answer, got %q", ans)
 		}
 	default:
 		t.Fatal("expected response channel to have answer")
+	}
+}
+
+func TestModelAskUserInputIsVisible(t *testing.T) {
+	m := NewModel(func(input string) string { return "" }, nil)
+	m.ready = true
+	m.viewport = viewport.New(80, 24)
+	m.input.Width = 80
+	m.content = "buffer"
+	m.viewport.SetContent(m.content)
+
+	respondCh := make(chan string, 1)
+	updated, _ := m.Update(AskUserPromptMsg{Question: "Describe the issue", Respond: respondCh})
+	m = updated.(Model)
+	m.input.SetValue("visible draft answer")
+
+	if !strings.Contains(m.View(), "visible draft answer") {
+		t.Fatalf("expected ask_user input to be visible in TUI view, got %q", m.View())
 	}
 }
 
