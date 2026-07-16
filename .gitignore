@@ -37,3 +37,6 @@ Thumbs.db
 # Kilo local project state
 .kilo/
 
+# Reference libraries for architecture/TUI research
+/devref/
+
