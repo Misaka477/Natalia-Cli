@@ -10,7 +10,7 @@ import (
 
 func TestWorkflowToolsListAndReadCanonicalRegistry(t *testing.T) {
 	r := &workflowcore.Registry{}
-	r.Add(workflowcore.Workflow{Name: "review", Description: "Review changes", Source: ".natalia/commands/review.md", Steps: []workflowcore.Step{{ID: "step-1", Title: "Inspect diff", Kind: "task"}}})
+	r.Add(workflowcore.Workflow{Name: "review", Description: "Review changes", Source: ".natalia/commands/review.md", Steps: []workflowcore.LegacyStep{{ID: "step-1", Title: "Inspect diff", Kind: "task"}}})
 
 	list, err := (&List{Registry: r}).Execute(nil)
 	if err != nil {
@@ -50,7 +50,7 @@ func TestWorkflowListEmptyShowsDiscoveryHint(t *testing.T) {
 
 func TestWorkflowRunDryRunDoesNotPersistState(t *testing.T) {
 	r := &workflowcore.Registry{}
-	r.Add(workflowcore.Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []workflowcore.Step{{ID: "step-1", Title: "Inspect diff", Prompt: "Run git diff", Kind: "task"}}})
+	r.Add(workflowcore.Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []workflowcore.LegacyStep{{ID: "step-1", Title: "Inspect diff", Prompt: "Run git diff", Kind: "task"}}})
 	out, err := (&Run{Registry: r}).Execute(map[string]any{"name": "review", "dry_run": true})
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +72,7 @@ func TestWorkflowRunDescriptionWarnsAboutRealExecution(t *testing.T) {
 
 func TestWorkflowRunReturnsInstructionAndPersistsState(t *testing.T) {
 	r := &workflowcore.Registry{}
-	r.Add(workflowcore.Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []workflowcore.Step{{ID: "step-1", Title: "Inspect diff", Prompt: "Run git diff", Kind: "task"}}})
+	r.Add(workflowcore.Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []workflowcore.LegacyStep{{ID: "step-1", Title: "Inspect diff", Prompt: "Run git diff", Kind: "task"}}})
 	statePath := filepath.Join(t.TempDir(), "workflow-state.json")
 	out, err := (&Run{Registry: r}).Execute(map[string]any{"name": "review", "state_path": statePath})
 	if err != nil {
@@ -92,7 +92,7 @@ func TestWorkflowRunReturnsInstructionAndPersistsState(t *testing.T) {
 
 func TestWorkflowRunStateMachineCanAdvanceAndComplete(t *testing.T) {
 	r := &workflowcore.Registry{}
-	r.Add(workflowcore.Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []workflowcore.Step{
+	r.Add(workflowcore.Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []workflowcore.LegacyStep{
 		{ID: "step-1", Title: "Inspect diff", Prompt: "Run git diff", Kind: "task"},
 		{ID: "step-2", Title: "Report", Prompt: "Write summary", Kind: "task"},
 	}})
@@ -148,8 +148,8 @@ func TestWorkflowRunStateMachineCanAdvanceAndComplete(t *testing.T) {
 
 func TestWorkflowRunRestartAndInvalidAction(t *testing.T) {
 	r := &workflowcore.Registry{}
-	r.Add(workflowcore.Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []workflowcore.Step{{Title: "Inspect"}}})
-	r.Add(workflowcore.Workflow{Name: "release", Source: ".natalia/workflows/release.yaml", Steps: []workflowcore.Step{{Title: "Ship"}}})
+	r.Add(workflowcore.Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []workflowcore.LegacyStep{{Title: "Inspect"}}})
+	r.Add(workflowcore.Workflow{Name: "release", Source: ".natalia/workflows/release.yaml", Steps: []workflowcore.LegacyStep{{Title: "Ship"}}})
 	statePath := filepath.Join(t.TempDir(), "workflow-state.json")
 	if err := workflowcore.SaveRunState(statePath, workflowcore.RunState{WorkflowName: "release", CurrentStep: 1, TotalSteps: 1, Status: "running"}); err != nil {
 		t.Fatal(err)
@@ -172,9 +172,9 @@ func TestWorkflowRunRestartAndInvalidAction(t *testing.T) {
 
 func TestWorkflowReadShowsCandidatesOnUnknownName(t *testing.T) {
 	r := &workflowcore.Registry{}
-	r.Add(workflowcore.Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []workflowcore.Step{{Title: "Inspect diff"}}})
-	r.Add(workflowcore.Workflow{Name: "release", Source: ".natalia/workflows/release.yaml", Steps: []workflowcore.Step{{Title: "Test"}}})
-	r.Add(workflowcore.Workflow{Name: "releasenotes", Source: ".natalia/workflows/releasenotes.yaml", Steps: []workflowcore.Step{{Title: "Notes"}}})
+	r.Add(workflowcore.Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []workflowcore.LegacyStep{{Title: "Inspect diff"}}})
+	r.Add(workflowcore.Workflow{Name: "release", Source: ".natalia/workflows/release.yaml", Steps: []workflowcore.LegacyStep{{Title: "Test"}}})
+	r.Add(workflowcore.Workflow{Name: "releasenotes", Source: ".natalia/workflows/releasenotes.yaml", Steps: []workflowcore.LegacyStep{{Title: "Notes"}}})
 	_, err := (&Read{Registry: r}).Execute(map[string]any{"name": "rele"})
 	if err == nil || !strings.Contains(err.Error(), "did you mean") || !strings.Contains(err.Error(), "release") || !strings.Contains(err.Error(), "releasenotes") {
 		t.Fatalf("expected candidate hint, got %v", err)
@@ -183,7 +183,7 @@ func TestWorkflowReadShowsCandidatesOnUnknownName(t *testing.T) {
 
 func TestWorkflowRunShowsCandidatesOnUnknownName(t *testing.T) {
 	r := &workflowcore.Registry{}
-	r.Add(workflowcore.Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []workflowcore.Step{{Title: "Inspect diff"}}})
+	r.Add(workflowcore.Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []workflowcore.LegacyStep{{Title: "Inspect diff"}}})
 	_, err := (&Run{Registry: r}).Execute(map[string]any{"name": "rev"})
 	if err == nil || !strings.Contains(err.Error(), "did you mean") || !strings.Contains(err.Error(), "review") {
 		t.Fatalf("expected candidate hint, got %v", err)

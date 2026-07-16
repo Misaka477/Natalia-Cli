@@ -625,7 +625,7 @@ func TestHandlePlanCommandClear(t *testing.T) {
 func TestHandleWorkflowRunPushesSteerAndPersistsState(t *testing.T) {
 	rt := NewAppRuntimeForTest()
 	reg := &workflowcore.Registry{}
-	reg.Add(workflowcore.Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []workflowcore.Step{{ID: "step-1", Title: "Inspect", Prompt: "Run git diff", Kind: "task"}}})
+	reg.Add(workflowcore.Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []workflowcore.LegacyStep{{ID: "step-1", Title: "Inspect", Prompt: "Run git diff", Kind: "task"}}})
 	rt.SetWorkflowRegistry(reg)
 	engine := orchestrator.NewEngine(nil, toolset.NewRegistry())
 	statePath := filepath.Join(t.TempDir(), "${profile}-${timestamp}.json")

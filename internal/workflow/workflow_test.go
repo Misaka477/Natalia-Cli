@@ -29,38 +29,10 @@ steps:
 	}
 }
 
-func TestImportMarkdownCommandConvertsChecklistToCanonicalWorkflow(t *testing.T) {
-	wf, err := ImportMarkdownCommand(".tool/commands/review.md", `---
-name: review
-description: Review code
----
-
-# Review Command
-
-- [ ] Inspect diff
-Use git diff and identify risky changes.
-
-- [ ] Report findings
-List bugs first.
-`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if wf.Name != "review" || wf.Description != "Review code" || wf.Source != ".tool/commands/review.md" || len(wf.Steps) != 2 {
-		t.Fatalf("unexpected imported workflow: %+v", wf)
-	}
-	if wf.Steps[0].Title != "Inspect diff" || !strings.Contains(wf.Steps[0].Prompt, "git diff") || wf.Steps[1].Title != "Report findings" {
-		t.Fatalf("unexpected imported steps: %+v", wf.Steps)
-	}
-}
-
-func TestImportMarkdownCommandFallsBackToSinglePromptStep(t *testing.T) {
-	wf, err := ImportMarkdownCommand("commands/explain.md", "Explain the selected code clearly.")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if wf.Name != "explain" || len(wf.Steps) != 1 || wf.Steps[0].Title != "Explain the selected code clearly." || wf.Steps[0].Kind != "prompt" {
-		t.Fatalf("unexpected fallback workflow: %+v", wf)
+func TestImportMarkdownCommandStubReturnsMigrationError(t *testing.T) {
+	_, err := ImportMarkdownCommand("commands/review.md", "# old content")
+	if err == nil || !strings.Contains(err.Error(), "legacy") {
+		t.Fatalf("expected legacy migration error, got %v", err)
 	}
 }
 
@@ -73,7 +45,7 @@ func TestWorkflowValidationRejectsMissingRequiredFields(t *testing.T) {
 	}
 }
 
-func TestDiscoverLoadsNataliaYAMLAndMarkdownCommandWorkflows(t *testing.T) {
+func TestDiscoverLoadsNataliaYAMLAndReportsMarkdownCommandMigration(t *testing.T) {
 	workDir := t.TempDir()
 	workflowDir := filepath.Join(workDir, ".natalia", "workflows")
 	commandDir := filepath.Join(workDir, ".natalia", "commands")
@@ -103,50 +75,40 @@ description: Review changes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(r.List()) != 2 {
-		t.Fatalf("expected two workflows, got %+v", r.List())
+	if len(r.List()) != 1 {
+		t.Fatalf("expected one workflow, got %+v", r.List())
 	}
 	release := r.Get("release")
 	if release == nil || release.Source != ".natalia/workflows/release.yaml" || release.Steps[0].Title != "Run tests" {
 		t.Fatalf("unexpected release workflow: %+v", release)
 	}
-	review := r.Get("review")
-	if review == nil || review.Source != ".natalia/commands/review.md" || len(review.Steps) != 2 || review.Steps[0].Title != "Inspect diff" {
-		t.Fatalf("unexpected review workflow: %+v", review)
+	foundMigration := false
+	for _, diag := range r.Diagnostics() {
+		if strings.Contains(diag.Source, "review.md") && strings.Contains(diag.Reason, "legacy") {
+			foundMigration = true
+			break
+		}
 	}
-	formatted := review.Format()
-	if !strings.Contains(formatted, "# review") || !strings.Contains(formatted, "Inspect diff") || !strings.Contains(formatted, "Source: .natalia/commands/review.md") {
-		t.Fatalf("unexpected formatted workflow: %q", formatted)
-	}
-}
-
-func TestImportPackageJSONScriptsBuildsShellWorkflows(t *testing.T) {
-	workflows, err := ImportPackageJSONScripts("package.json", []byte(`{"scripts":{"test":"go test ./...","lint":"go vet ./...","empty":""}}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(workflows) != 2 || workflows[0].Name != "npm-lint" || workflows[1].Name != "npm-test" {
-		t.Fatalf("unexpected package workflows: %+v", workflows)
-	}
-	if workflows[1].Steps[0].Kind != "shell" || !strings.Contains(workflows[1].Steps[0].Prompt, "npm run test") || !strings.Contains(workflows[1].Steps[0].Prompt, "go test ./...") {
-		t.Fatalf("unexpected package workflow step: %+v", workflows[1].Steps)
+	if !foundMigration {
+		t.Fatalf("expected migration diagnostic for legacy command, got %+v", r.Diagnostics())
 	}
 }
 
-func TestImportMakefileTargetsBuildsShellWorkflows(t *testing.T) {
-	workflows, err := ImportMakefileTargets("Makefile", []byte("# comment\nbuild: deps\n\tgo build ./...\n.PHONY: test\ntest:\n\tgo test ./...\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(workflows) != 2 || workflows[0].Name != "make-build" || workflows[1].Name != "make-test" {
-		t.Fatalf("unexpected Makefile workflows: %+v", workflows)
-	}
-	if workflows[0].Steps[0].Kind != "shell" || !strings.Contains(workflows[0].Steps[0].Prompt, "make build") {
-		t.Fatalf("unexpected Makefile workflow step: %+v", workflows[0].Steps)
+func TestImportPackageJSONScriptsStubReturnsMigrationError(t *testing.T) {
+	_, err := ImportPackageJSONScripts("package.json", []byte(`{"scripts":{"test":"go test ./..."}}`))
+	if err == nil || !strings.Contains(err.Error(), "legacy") {
+		t.Fatalf("expected legacy migration error, got %v", err)
 	}
 }
 
-func TestDiscoverIncludesPackageScriptsAndMakefileTargets(t *testing.T) {
+func TestImportMakefileTargetsStubReturnsMigrationError(t *testing.T) {
+	_, err := ImportMakefileTargets("Makefile", []byte("build:\n\tgo build ./...\n"))
+	if err == nil || !strings.Contains(err.Error(), "legacy") {
+		t.Fatalf("expected legacy migration error, got %v", err)
+	}
+}
+
+func TestDiscoverReportsPackageScriptAndMakefileMigrationDiagnostics(t *testing.T) {
 	workDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(workDir, "package.json"), []byte(`{"scripts":{"test":"go test ./..."}}`), 0644); err != nil {
 		t.Fatal(err)
@@ -158,32 +120,35 @@ func TestDiscoverIncludesPackageScriptsAndMakefileTargets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Get("npm-test") == nil || r.Get("make-build") == nil {
-		t.Fatalf("expected generated workflows from package scripts and Makefile, got %+v", r.List())
+	if len(r.List()) != 0 {
+		t.Fatalf("expected no workflows from legacy imports, got %d", len(r.List()))
+	}
+	foundPkg := false
+	foundMake := false
+	for _, diag := range r.Diagnostics() {
+		if diag.Source == "package.json" && strings.Contains(diag.Reason, "legacy") {
+			foundPkg = true
+		}
+		if diag.Source == "Makefile" && strings.Contains(diag.Reason, "legacy") {
+			foundMake = true
+		}
+	}
+	if !foundPkg {
+		t.Fatalf("expected migration diagnostic for package.json, got %+v", r.Diagnostics())
+	}
+	if !foundMake {
+		t.Fatalf("expected migration diagnostic for Makefile, got %+v", r.Diagnostics())
 	}
 }
 
-func TestImportGitHubActionsWorkflowBuildsCanonicalShellSteps(t *testing.T) {
-	wf, err := ImportGitHubActionsWorkflow(".github/workflows/ci.yml", []byte(`name: CI
-jobs:
-  test:
-    steps:
-      - uses: actions/checkout@v4
-      - name: Run tests
-        run: go test ./...
-`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if wf.Name != "github-ci" || wf.Source != ".github/workflows/ci.yml" || len(wf.Steps) != 2 {
-		t.Fatalf("unexpected GitHub workflow: %+v", wf)
-	}
-	if wf.Steps[0].Kind != "action" || !strings.Contains(wf.Steps[0].Prompt, "actions/checkout") || wf.Steps[1].Kind != "shell" || !strings.Contains(wf.Steps[1].Prompt, "go test") {
-		t.Fatalf("unexpected GitHub workflow steps: %+v", wf.Steps)
+func TestImportGitHubActionsWorkflowStubReturnsMigrationError(t *testing.T) {
+	_, err := ImportGitHubActionsWorkflow(".github/workflows/ci.yml", []byte("name: CI\njobs:\n  test:\n    steps:\n      - run: go test ./...\n"))
+	if err == nil || !strings.Contains(err.Error(), "legacy") {
+		t.Fatalf("expected legacy migration error, got %v", err)
 	}
 }
 
-func TestDiscoverIncludesGitHubActionsAndDiagnostics(t *testing.T) {
+func TestDiscoverReportsGitHubActionsMigrationAndNativeDiagnostics(t *testing.T) {
 	workDir := t.TempDir()
 	dir := filepath.Join(workDir, ".github", "workflows")
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -202,17 +167,24 @@ func TestDiscoverIncludesGitHubActionsAndDiagnostics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Get("github-ci") == nil {
-		t.Fatalf("expected GitHub Actions workflow, got %+v", r.List())
+	if r.Get("github-ci") != nil {
+		t.Fatalf("expected no GitHub Actions workflow, got %+v", r.List())
 	}
 	foundBad := false
+	foundGHA := false
 	for _, diag := range r.Diagnostics() {
 		if diag.Source == ".natalia/workflows/bad.yaml" && !diag.Loaded && strings.Contains(diag.Reason, "parse") {
 			foundBad = true
 		}
+		if strings.Contains(diag.Source, ".github/workflows/ci.yml") && strings.Contains(diag.Reason, "legacy") {
+			foundGHA = true
+		}
 	}
 	if !foundBad {
 		t.Fatalf("expected bad workflow diagnostic, got %+v", r.Diagnostics())
+	}
+	if !foundGHA {
+		t.Fatalf("expected GitHub Actions migration diagnostic, got %+v", r.Diagnostics())
 	}
 }
 
@@ -231,7 +203,7 @@ func TestWorkflowSourceCategory(t *testing.T) {
 		{"builtin", "Built-in"},
 	}
 	for _, tc := range tests {
-		wf := Workflow{Name: "test", Source: tc.source, Steps: []Step{{Title: "Step 1"}}}
+		wf := Workflow{Name: "test", Source: tc.source, Steps: []LegacyStep{{Title: "Step 1"}}}
 		if got := wf.SourceCategory(); got != tc.expected {
 			t.Errorf("SourceCategory(%q) = %q, want %q", tc.source, got, tc.expected)
 		}
@@ -240,7 +212,7 @@ func TestWorkflowSourceCategory(t *testing.T) {
 
 func TestWorkflowRunAndStatePersistence(t *testing.T) {
 	r := &Registry{}
-	r.Add(Workflow{Name: "release", Source: ".natalia/workflows/release.yaml", Steps: []Step{{ID: "step-1", Title: "Test", Prompt: "Run tests", Kind: "shell"}}})
+	r.Add(Workflow{Name: "release", Source: ".natalia/workflows/release.yaml", Steps: []LegacyStep{{ID: "step-1", Title: "Test", Prompt: "Run tests", Kind: "shell"}}})
 	state, instruction, err := r.Run("release")
 	if err != nil {
 		t.Fatal(err)
@@ -262,7 +234,7 @@ func TestWorkflowRunAndStatePersistence(t *testing.T) {
 }
 
 func TestAdvanceRunState(t *testing.T) {
-	wf := Workflow{Name: "release", Source: ".natalia/workflows/release.yaml", Steps: []Step{{ID: "step-1", Title: "Test"}, {ID: "step-2", Title: "Ship"}}}
+	wf := Workflow{Name: "release", Source: ".natalia/workflows/release.yaml", Steps: []LegacyStep{{ID: "step-1", Title: "Test"}, {ID: "step-2", Title: "Ship"}}}
 	state := NewRunState(wf)
 	if state.CurrentStep != 1 || state.TotalSteps != 2 || state.Status != "running" {
 		t.Fatalf("unexpected initial state: %+v", state)
@@ -279,16 +251,16 @@ func TestAdvanceRunState(t *testing.T) {
 	if state.CurrentStep != 2 || state.Status != "completed" {
 		t.Fatalf("expected completed at final step, got %+v", state)
 	}
-	if err := AdvanceRunState(Workflow{Name: "other", Steps: []Step{{Title: "x"}}}, state); err == nil || !strings.Contains(err.Error(), "does not match") {
+	if err := AdvanceRunState(Workflow{Name: "other", Steps: []LegacyStep{{Title: "x"}}}, state); err == nil || !strings.Contains(err.Error(), "does not match") {
 		t.Fatalf("expected workflow mismatch error, got %v", err)
 	}
 }
 
 func TestRegistryCandidates(t *testing.T) {
 	r := &Registry{}
-	r.Add(Workflow{Name: "release", Source: ".natalia/workflows/release.yaml", Steps: []Step{{Title: "Test"}}})
-	r.Add(Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []Step{{Title: "Inspect"}}})
-	r.Add(Workflow{Name: "releasenotes", Source: ".natalia/workflows/releasenotes.yaml", Steps: []Step{{Title: "Notes"}}})
+	r.Add(Workflow{Name: "release", Source: ".natalia/workflows/release.yaml", Steps: []LegacyStep{{Title: "Test"}}})
+	r.Add(Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []LegacyStep{{Title: "Inspect"}}})
+	r.Add(Workflow{Name: "releasenotes", Source: ".natalia/workflows/releasenotes.yaml", Steps: []LegacyStep{{Title: "Notes"}}})
 
 	tests := []struct {
 		query     string
@@ -311,6 +283,17 @@ func TestRegistryCandidates(t *testing.T) {
 				t.Fatalf("Candidates(%q)[%d].Name = %q, want %q", tc.query, i, got[i].Name, name)
 			}
 		}
+	}
+}
+
+func TestImportDiagnosticStructHoldsMigrationMetadata(t *testing.T) {
+	d := ImportDiagnostic{
+		Source:      "markdown_checklist",
+		Description: "legacy markdown checklist import",
+		Suggestion:  "use a native workflow YAML in .natalia/workflows/",
+	}
+	if d.Source != "markdown_checklist" || d.Description != "legacy markdown checklist import" || d.Suggestion != "use a native workflow YAML in .natalia/workflows/" {
+		t.Fatalf("unexpected ImportDiagnostic fields: %+v", d)
 	}
 }
 
