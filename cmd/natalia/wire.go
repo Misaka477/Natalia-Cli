@@ -14,9 +14,9 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/config"
 	"github.com/Misaka477/Natalia-Cli/internal/display"
 	"github.com/Misaka477/Natalia-Cli/internal/hook"
+	"github.com/Misaka477/Natalia-Cli/internal/orchestrator"
 	"github.com/Misaka477/Natalia-Cli/internal/securefs"
 	"github.com/Misaka477/Natalia-Cli/internal/session"
-	"github.com/Misaka477/Natalia-Cli/internal/orchestrator"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/ask_user"
 	"github.com/Misaka477/Natalia-Cli/internal/toolset"
 	"github.com/Misaka477/Natalia-Cli/internal/wire"
@@ -234,8 +234,8 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 			if rt != nil {
 				rt.SetOverrides(restoredRuntime)
 			}
-		restorePlanMode(state, rt)
-		warnings = append(warnings, restorePlanSession(state, rt)...)
+			restorePlanMode(state, rt)
+			warnings = append(warnings, restorePlanSession(state, rt)...)
 			engine = buildEngine(cfg, tools, debug)
 			registerAgentToolsForEngine(cfg, engine, tools)
 			engine.Context.Messages = append(engine.Context.Messages, messages...)

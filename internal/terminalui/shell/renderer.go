@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Misaka477/Natalia-Cli/internal/presentation"
 	"golang.org/x/term"
 )
 
@@ -16,6 +17,7 @@ type Renderer struct {
 	in           io.Reader
 	out          io.Writer
 	editor       *Editor
+	history      *History
 	theme        Theme
 	width        int
 	height       int
@@ -24,6 +26,12 @@ type Renderer struct {
 	committed    int
 	welcomeLines []string
 	metrics      []Sample
+	cancelled    bool
+	processing   bool
+	eventCh      chan presentation.Event
+	streamBuf    string
+	toolName     string
+	statusText   string
 }
 
 type Sample struct {
@@ -34,12 +42,14 @@ type Sample struct {
 func NewRenderer(in io.Reader, out io.Writer, theme Theme) *Renderer {
 	width, height := terminalSize(in, out)
 	return &Renderer{
-		in:     in,
-		out:    out,
-		theme:  theme,
-		width:  width,
-		height: height,
-		editor: NewEditor(width-4, 8),
+		in:      in,
+		out:     out,
+		history: NewHistory(50),
+		theme:   theme,
+		width:   width,
+		height:  height,
+		editor:  NewEditor(width-4, 8),
+		eventCh: make(chan presentation.Event, 64),
 	}
 }
 
@@ -83,6 +93,10 @@ func (r *Renderer) loop() error {
 		r.checkResize()
 		changed := false
 		switch b {
+		case 0x03:
+			r.cancelled = true
+			r.dirty = true
+			r.renderLive("cancelled", "")
 		case 0x04:
 			return r.finish()
 		case 0x01:
@@ -154,9 +168,17 @@ func (r *Renderer) handleEscape(reader *bufio.Reader) error {
 	case "C":
 		r.sample("right", r.editor.Right)
 	case "A":
-		r.sample("up", r.editor.Up)
+		if r.editor.CursorPos() == 0 {
+			r.sample("history_up", r.Up)
+		} else {
+			r.sample("up", r.editor.Up)
+		}
 	case "B":
-		r.sample("down", r.editor.Down)
+		if r.editor.CursorPos() >= r.editor.Len() {
+			r.sample("history_down", r.Down)
+		} else {
+			r.sample("down", r.editor.Down)
+		}
 	case "H", "1~":
 		r.sample("home", r.editor.Home)
 	case "F", "4~":
@@ -238,6 +260,19 @@ func (r *Renderer) sample(name string, fn func()) {
 	start := time.Now()
 	fn()
 	r.metrics = append(r.metrics, Sample{Name: name, Duration: time.Since(start)})
+}
+
+func (r *Renderer) Up() {
+	r.history.SaveDraft(r.editor.Text())
+	text := r.history.Up()
+	r.editor.SetText(text)
+	r.dirty = true
+}
+
+func (r *Renderer) Down() {
+	text := r.history.Down()
+	r.editor.SetText(text)
+	r.dirty = true
 }
 
 func (r *Renderer) finish() error {

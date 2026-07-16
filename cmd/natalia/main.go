@@ -42,6 +42,7 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/skill"
 	"github.com/Misaka477/Natalia-Cli/internal/snapshot"
 	"github.com/Misaka477/Natalia-Cli/internal/term"
+	shell "github.com/Misaka477/Natalia-Cli/internal/terminalui/shell"
 	tui "github.com/Misaka477/Natalia-Cli/internal/terminalui/tui"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/ask_user"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/browser"
@@ -101,6 +102,7 @@ func main() {
 	wireTLSKey := flag.String("wire-tls-key", "", "Wire HTTP TLS private key file")
 	wireReplay := flag.String("wire-replay", "", "重放 wire.jsonl 到 stdout")
 	tuiFlag := flag.Bool("tui", false, "启动 Bubble Tea TUI 模式（实验性）")
+	shellFlag := flag.Bool("shell", false, "启动 shell UI 模式（实验性）")
 	flag.Parse()
 
 	cfg, _ := config.Load()
@@ -150,8 +152,12 @@ func main() {
 		fmt.Fprintln(os.Stderr, "非 TTY 模式，禁用 --tui")
 		*tuiFlag = false
 	}
+	if *shellFlag && !isTerminal(int(os.Stdout.Fd())) {
+		fmt.Fprintln(os.Stderr, "非 TTY 模式，禁用 --shell")
+		*shellFlag = false
+	}
 
-	runInteractive(cfg, tools, *noSetupFlag, *debug, *tuiFlag)
+	runInteractive(cfg, tools, *noSetupFlag, *debug, *tuiFlag, *shellFlag)
 }
 
 func isTerminal(fd int) bool {
@@ -480,9 +486,18 @@ func buildEngine(cfg *config.Config, tools *toolset.Registry, debug bool) *orche
 	})
 
 	engine.Stream = pr.Stream
-	engine.OnToken = func(s string) { fmt.Print(s) }
+	engine.OnToken = func(s string) {
+		if presentation.DefaultDispatch != nil {
+			presentation.DefaultDispatch.Send(presentation.Event{Type: presentation.EvtContentPart, Data: presentation.ContentPartPayload{Content: s}})
+			return
+		}
+		fmt.Print(s)
+	}
 	inReasoning := false
 	engine.OnReasoning = func(s string) {
+		if presentation.DefaultDispatch != nil {
+			return
+		}
 		if !inReasoning {
 			fmt.Print("\n\033[38;5;245m")
 			inReasoning = true
@@ -490,6 +505,10 @@ func buildEngine(cfg *config.Config, tools *toolset.Registry, debug bool) *orche
 		fmt.Print(s)
 	}
 	engine.OnToken = func(s string) {
+		if presentation.DefaultDispatch != nil {
+			presentation.DefaultDispatch.Send(presentation.Event{Type: presentation.EvtContentPart, Data: presentation.ContentPartPayload{Content: s}})
+			return
+		}
 		if inReasoning {
 			fmt.Print("\033[0m\n\n")
 			inReasoning = false
@@ -497,6 +516,10 @@ func buildEngine(cfg *config.Config, tools *toolset.Registry, debug bool) *orche
 		fmt.Print(s)
 	}
 	engine.OnStreamEnd = func() {
+		if presentation.DefaultDispatch != nil {
+			presentation.DefaultDispatch.Send(presentation.Event{Type: presentation.EvtContentEnd})
+			return
+		}
 		if inReasoning {
 			fmt.Print("\033[0m\n\n")
 			inReasoning = false
@@ -1021,17 +1044,23 @@ func runOnce(cfg *config.Config, tools *toolset.Registry, input string) {
 	fmt.Println(outcome.FinalMessage)
 }
 
-func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, debug bool, tuiMode bool) {
+func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, debug bool, tuiMode bool, shellMode bool) {
 	defer term.Close()
 	DefaultAppRuntime().SetActiveConfig(cfg)
 	defer persistCurrentSessionState()
 
 	engine := buildEngine(cfg, tools, debug)
+	if shellMode && engine.LLM != nil {
+		engine.LLM.DebugOutput = func(string, ...any) {}
+	}
 	var wireRuntime *wire.Wire
 	var stopWireRenderer func()
 	if tuiMode {
 		wireRuntime = wire.NewWire()
 		stopWireRenderer = startTUIWireRenderer(wireRuntime)
+	} else if shellMode {
+		wireRuntime = wire.NewWire()
+		stopWireRenderer = func() {}
 	} else {
 		wireRuntime, stopWireRenderer = startInteractiveWireRenderer(os.Stdout, os.Stderr)
 	}
@@ -1165,6 +1194,99 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 			eff, _ := cfg.EffectiveProfile(runtime.Mode, runtime.ModelProfile, runtime.PermissionProfile)
 			return fmt.Sprintf("mode: %s | model: %s", runtime.Mode, eff.Profile.Model)
 		})
+		return
+	}
+
+	if shellMode {
+		shellRenderer := shell.NewRenderer(os.Stdin, os.Stdout, shell.DarkTheme())
+		shellDisp := &shell.ShellDispatch{Renderer: shellRenderer}
+		presentation.DefaultDispatch = shellDisp
+
+		clearShellAskUser := ask_user.SetHandler(func(ctx context.Context, qReq wire.QuestionRequest) (wire.QuestionResponse, error) {
+			answers := make(map[string]string)
+			for _, q := range qReq.Questions {
+				if presentation.DefaultDispatch != nil {
+					ans := presentation.DefaultDispatch.ShowQuestion(presentation.QuestionRequestPayload{
+						ID: qReq.ID, Prompt: q.Question, Options: q.Options, Multi: q.Multiple,
+					})
+					answers[q.Name] = ans
+				}
+			}
+			return wire.QuestionResponse{RequestID: qReq.ID, Answers: answers}, nil
+		})
+		defer clearShellAskUser()
+
+		if engine.Approver != nil {
+			origDisplay := engine.Approver.RequestDisplayFunc
+			engine.Approver.RequestDisplayFunc = func(toolName, description string, blocks []display.Block) bool {
+				if presentation.DefaultDispatch == nil {
+					if origDisplay != nil {
+						return origDisplay(toolName, description, blocks)
+					}
+					return false
+				}
+				presentation.DefaultDispatch.Send(presentation.Event{
+					Type: presentation.EvtApprovalRequest,
+					Data: presentation.ApprovalRequestPayload{ToolName: toolName},
+				})
+				apr := presentation.DefaultDispatch.ShowApproval(presentation.ApprovalRequestPayload{ID: toolName, ToolName: toolName})
+				return apr.Approved
+			}
+		}
+
+		steerCh := make(chan shell.SteerCommand, 8)
+		engineCtx, cancelEngine := context.WithCancel(context.Background())
+		defer cancelEngine()
+
+		go func() {
+			for {
+				select {
+				case cmd, ok := <-steerCh:
+					if !ok {
+						return
+					}
+					switch cmd.Type {
+					case "submit":
+						engine.ResetCancel()
+						inputPayload, _ := json.Marshal(cmd.Text)
+						if event, err := wire.NewEvent(wire.EventTurnBegin, wire.TurnBegin{UserInput: inputPayload}); err == nil {
+							wireRuntime.RuntimeSide.PublishEvent(event)
+						}
+						turnStarted := time.Now()
+						outcome, err := engine.Run(cmd.Text)
+						if err != nil {
+							if err.Error() == "context canceled" {
+								continue
+							}
+							if presentation.DefaultDispatch != nil {
+								presentation.DefaultDispatch.Send(presentation.Event{
+									Type: presentation.EvtNotification,
+									Data: presentation.NotificationPayload{Severity: "error", Message: err.Error()},
+								})
+							}
+							continue
+						}
+						publishOutcomeFinalMessage(wireRuntime, outcome, engine.Stream)
+						if event, err := wire.NewEvent(wire.EventTurnEnd, wire.TurnEnd{}); err == nil {
+							wireRuntime.RuntimeSide.PublishEvent(event)
+						}
+						status := runtimeStatusUpdate(cfg, engine, DefaultAppRuntime())
+						setTurnElapsed(&status, turnStarted, false)
+						if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
+							wireRuntime.RuntimeSide.PublishEvent(event)
+						}
+					case "cancel":
+						engine.Cancel()
+					}
+				case <-engineCtx.Done():
+					return
+				}
+			}
+		}()
+
+		if err := shellRenderer.RunWithOrchestrator(engineCtx, steerCh); err != nil {
+			fmt.Fprintf(os.Stderr, "shell error: %v\n", err)
+		}
 		return
 	}
 

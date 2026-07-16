@@ -123,6 +123,24 @@ func (e *Editor) Clear() {
 	e.colGoal = -1
 }
 
+func (e *Editor) SetText(text string) {
+	if text == "" {
+		e.clusters = nil
+	} else {
+		e.clusters = splitGraphemes(text)
+	}
+	e.cursor = len(e.clusters)
+	e.colGoal = -1
+}
+
+func (e *Editor) CursorPos() int {
+	return e.cursor
+}
+
+func (e *Editor) Len() int {
+	return len(e.clusters)
+}
+
 type visualLine struct {
 	Start int
 	End   int

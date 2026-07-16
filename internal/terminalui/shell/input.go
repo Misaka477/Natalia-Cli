@@ -3,7 +3,7 @@ package shell
 import "errors"
 
 var (
-	ErrInvalidUTF8      = errors.New("invalid utf-8")
+	ErrInvalidUTF8       = errors.New("invalid utf-8")
 	ErrUnsupportedEscape = errors.New("unsupported escape sequence")
 )
 

@@ -5,13 +5,13 @@ import (
 	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/config"
+	coremcp "github.com/Misaka477/Natalia-Cli/internal/mcp"
 	"github.com/Misaka477/Natalia-Cli/internal/plan"
 	"github.com/Misaka477/Natalia-Cli/internal/planexec"
 	"github.com/Misaka477/Natalia-Cli/internal/session"
-	coremcp "github.com/Misaka477/Natalia-Cli/internal/mcp"
-	workflowcore "github.com/Misaka477/Natalia-Cli/internal/workflow"
-	"github.com/Misaka477/Natalia-Cli/internal/worker"
 	"github.com/Misaka477/Natalia-Cli/internal/toolset"
+	"github.com/Misaka477/Natalia-Cli/internal/worker"
+	workflowcore "github.com/Misaka477/Natalia-Cli/internal/workflow"
 )
 
 func TestAppRuntimeIsolation(t *testing.T) {

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -121,6 +120,7 @@ type Client struct {
 	authHeader      string
 	customHeaders   map[string]string
 	http            *http.Client
+	DebugOutput     func(string, ...any)
 }
 
 type Config struct {
@@ -251,7 +251,9 @@ func (c *Client) ChatStream(ctx context.Context, chatCtx *chat.Context, tools []
 			httpReq.Header.Set(k, v)
 		}
 
-		fmt.Fprintf(os.Stderr, "[natalia] POST %s model=%s stream=%t\n", c.baseURL, c.model, true)
+		if c.DebugOutput != nil {
+			c.DebugOutput("[natalia] POST %s model=%s stream=%t\n", c.baseURL, c.model, true)
+		}
 		resp, err := c.http.Do(httpReq)
 		if err != nil {
 			ch <- StreamEvent{Error: fmt.Errorf("request failed: %w", err)}
@@ -375,7 +377,9 @@ func (c *Client) ChatStream(ctx context.Context, chatCtx *chat.Context, tools []
 }
 
 func (c *Client) chatSync(httpReq *http.Request) (*chat.Message, *Usage, error) {
-	fmt.Fprintf(os.Stderr, "[natalia] POST %s model=%s stream=false\n", c.baseURL, c.model)
+	if c.DebugOutput != nil {
+		c.DebugOutput("[natalia] POST %s model=%s stream=false\n", c.baseURL, c.model)
+	}
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
 		return nil, nil, fmt.Errorf("request failed: %w", err)
@@ -404,7 +408,9 @@ func (c *Client) chatSync(httpReq *http.Request) (*chat.Message, *Usage, error) 
 }
 
 func (c *Client) chatStream(httpReq *http.Request) (*chat.Message, *Usage, error) {
-	fmt.Fprintf(os.Stderr, "[natalia] POST %s model=%s stream=true\n", c.baseURL, c.model)
+	if c.DebugOutput != nil {
+		c.DebugOutput("[natalia] POST %s model=%s stream=true\n", c.baseURL, c.model)
+	}
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
 		return nil, nil, fmt.Errorf("request failed: %w", err)
@@ -454,7 +460,9 @@ func (c *Client) chatStream(httpReq *http.Request) (*chat.Message, *Usage, error
 		}
 
 		if chunk.Usage != nil {
-			fmt.Fprintf(os.Stderr, "[DEBUG] setting usage=%+v\n", chunk.Usage)
+			if c.DebugOutput != nil {
+				c.DebugOutput("[DEBUG] setting usage=%+v\n", chunk.Usage)
+			}
 			usage = chunk.Usage
 		}
 

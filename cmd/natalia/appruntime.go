@@ -5,13 +5,13 @@ import (
 	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/config"
+	coremcp "github.com/Misaka477/Natalia-Cli/internal/mcp"
 	"github.com/Misaka477/Natalia-Cli/internal/plan"
 	"github.com/Misaka477/Natalia-Cli/internal/planexec"
 	"github.com/Misaka477/Natalia-Cli/internal/session"
-	coremcp "github.com/Misaka477/Natalia-Cli/internal/mcp"
 	"github.com/Misaka477/Natalia-Cli/internal/skill"
-	workflowcore "github.com/Misaka477/Natalia-Cli/internal/workflow"
 	"github.com/Misaka477/Natalia-Cli/internal/worker"
+	workflowcore "github.com/Misaka477/Natalia-Cli/internal/workflow"
 )
 
 var defaultApp *AppRuntime
@@ -201,13 +201,13 @@ func (r *AppRuntime) SetSkillRegistry(reg *skill.Registry) {
 	r.SkillRegistry = reg
 }
 
-func getSessionStore() *session.SessionStore { return DefaultAppRuntime().GetSessionStore() }
-func getCurrentSession() *session.Session     { return DefaultAppRuntime().GetCurrentSession() }
-func getWorkerPool() *worker.Pool             { return DefaultAppRuntime().GetWorkerPool() }
-func getSkillRegistry() *skill.Registry       { return DefaultAppRuntime().GetSkillRegistry() }
-func getRuntimeOverrides() runtimeOverrides   { return DefaultAppRuntime().GetOverrides() }
-func getCurrentPlan() *planexec.Session       { return DefaultAppRuntime().GetCurrentPlan() }
-func getCurrentPlanMTime() time.Time          { return DefaultAppRuntime().GetCurrentPlanMTime() }
-func getActiveConfig() *config.Config         { return DefaultAppRuntime().GetActiveConfig() }
+func getSessionStore() *session.SessionStore      { return DefaultAppRuntime().GetSessionStore() }
+func getCurrentSession() *session.Session         { return DefaultAppRuntime().GetCurrentSession() }
+func getWorkerPool() *worker.Pool                 { return DefaultAppRuntime().GetWorkerPool() }
+func getSkillRegistry() *skill.Registry           { return DefaultAppRuntime().GetSkillRegistry() }
+func getRuntimeOverrides() runtimeOverrides       { return DefaultAppRuntime().GetOverrides() }
+func getCurrentPlan() *planexec.Session           { return DefaultAppRuntime().GetCurrentPlan() }
+func getCurrentPlanMTime() time.Time              { return DefaultAppRuntime().GetCurrentPlanMTime() }
+func getActiveConfig() *config.Config             { return DefaultAppRuntime().GetActiveConfig() }
 func getWorkflowRegistry() *workflowcore.Registry { return DefaultAppRuntime().GetWorkflowRegistry() }
-func getPlanManager() *plan.Manager           { return DefaultAppRuntime().GetPlanManager() }
+func getPlanManager() *plan.Manager               { return DefaultAppRuntime().GetPlanManager() }
