@@ -3,12 +3,19 @@ package shell
 import (
 	"bufio"
 	"context"
+	"fmt"
+	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/presentation"
 	"golang.org/x/term"
 )
+
+const MaxEditorBytes = 8 * 1024 * 1024
 
 type SteerCommand struct {
 	Text string `json:"text"`
@@ -17,10 +24,13 @@ type SteerCommand struct {
 
 type ShellDispatch struct {
 	Renderer *Renderer
+	Managed  *ManagedRenderer
 }
 
 func (d *ShellDispatch) Send(ev presentation.Event) {
-	if d.Renderer != nil {
+	if d.Managed != nil {
+		d.Managed.AcceptPresentationEvent(ev)
+	} else if d.Renderer != nil {
 		d.Renderer.AcceptPresentationEvent(ev)
 	}
 }
@@ -49,99 +59,325 @@ func (r *Renderer) AcceptPresentationEvent(ev presentation.Event) {
 	if r.eventCh == nil {
 		return
 	}
-	select {
-	case r.eventCh <- ev:
-	default:
-	}
+	r.eventCh <- ev
 }
 
 func (r *Renderer) orchestratorLoop(ctx context.Context, steerCh chan<- SteerCommand) error {
-	inputCh := make(chan rune, 256)
-	go readInput(ctx, inputCh)
+	inputCh := make(chan inputEvent, 256)
+	resizeCh := make(chan os.Signal, 1)
+	signal.Notify(resizeCh, syscall.SIGWINCH)
+	defer signal.Stop(resizeCh)
+	go readInput(ctx, r.in, inputCh)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-resizeCh:
+			r.checkResize()
+			r.dirty = true
+			r.renderLive(r.lastStatus, r.lastLive)
 		case ev, ok := <-r.eventCh:
 			if ok {
 				r.handlePresentationEvent(ev)
+				if ev.Type == presentation.EvtTurnEnd && len(r.queued) > 0 {
+					next := r.queued[0]
+					r.queued = r.queued[1:]
+					r.processing = true
+					r.dirty = true
+					r.renderLive("submitted", fmt.Sprintf("queued turns remaining: %d", len(r.queued)))
+					select {
+					case steerCh <- SteerCommand{Text: next, Type: "submit"}:
+					default:
+						r.queued = append([]string{next}, r.queued...)
+					}
+				}
 			}
-		case rn, ok := <-inputCh:
+		case ev, ok := <-inputCh:
 			if !ok {
 				return nil
 			}
-			if rn == 0x04 {
+			r.checkResize()
+			changed, exit := r.handleInputEvent(ev, steerCh)
+			if exit {
 				return nil
 			}
-			r.checkResize()
-			if r.handleRune(rn, steerCh) {
+			if changed {
 				r.dirty = true
-				r.renderLive("editing", "")
+				r.renderLive("editing", r.lastLive)
 			}
 		}
 	}
 }
 
-func readInput(ctx context.Context, ch chan<- rune) {
-	reader := bufio.NewReader(os.Stdin)
+type inputKind int
+
+const (
+	inputRune inputKind = iota
+	inputSubmit
+	inputNewline
+	inputExit
+	inputCancel
+	inputLeft
+	inputRight
+	inputUp
+	inputDown
+	inputHome
+	inputEnd
+	inputDelete
+	inputWordLeft
+	inputWordRight
+	inputDeleteWordBack
+	inputDeleteWordForward
+	inputClear
+	inputPaste
+)
+
+type inputEvent struct {
+	kind inputKind
+	rn   rune
+	text string
+}
+
+func readInput(ctx context.Context, in io.Reader, ch chan<- inputEvent) {
+	reader := bufio.NewReader(in)
 	for {
-		r, _, err := reader.ReadRune()
+		ev, err := readInputEvent(reader)
 		if err != nil {
 			close(ch)
 			return
 		}
 		select {
-		case ch <- r:
+		case ch <- ev:
 		case <-ctx.Done():
 			return
 		}
 	}
 }
 
-func (r *Renderer) handleRune(rn rune, steerCh chan<- SteerCommand) bool {
-	switch {
-	case rn == 0x03:
-		// Ctrl+C
+func readInputEvent(reader *bufio.Reader) (inputEvent, error) {
+	rn, _, err := reader.ReadRune()
+	if err != nil {
+		return inputEvent{}, err
+	}
+	switch rn {
+	case 0x03:
+		return inputEvent{kind: inputCancel}, nil
+	case 0x04:
+		return inputEvent{kind: inputExit}, nil
+	case 0x01:
+		return inputEvent{kind: inputHome}, nil
+	case 0x05:
+		return inputEvent{kind: inputEnd}, nil
+	case 0x0a:
+		return inputEvent{kind: inputNewline}, nil
+	case 0x0b:
+		return inputEvent{kind: inputDeleteWordForward}, nil
+	case 0x15:
+		return inputEvent{kind: inputClear}, nil
+	case 0x17:
+		return inputEvent{kind: inputDeleteWordBack}, nil
+	case 0x7f, 0x08:
+		return inputEvent{kind: inputRune, rn: rn}, nil
+	case '\r':
+		return inputEvent{kind: inputSubmit}, nil
+	case 0x1b:
+		return readEscapeEvent(reader)
+	default:
+		return inputEvent{kind: inputRune, rn: rn}, nil
+	}
+}
+
+func readEscapeEvent(reader *bufio.Reader) (inputEvent, error) {
+	next, err := reader.ReadByte()
+	if err != nil {
+		return inputEvent{}, err
+	}
+	if next == '\r' || next == '\n' {
+		return inputEvent{kind: inputNewline}, nil
+	}
+	if next != '[' && next != 'b' && next != 'f' && next != 0x7f && next != 0x08 {
+		return inputEvent{}, nil
+	}
+	if next == 'b' {
+		return inputEvent{kind: inputWordLeft}, nil
+	}
+	if next == 'f' {
+		return inputEvent{kind: inputWordRight}, nil
+	}
+	if next == 0x7f || next == 0x08 {
+		return inputEvent{kind: inputDeleteWordBack}, nil
+	}
+	seq, err := readCSI(reader)
+	if err != nil {
+		return inputEvent{}, err
+	}
+	switch seq {
+	case "A":
+		return inputEvent{kind: inputUp}, nil
+	case "B":
+		return inputEvent{kind: inputDown}, nil
+	case "C":
+		return inputEvent{kind: inputRight}, nil
+	case "D":
+		return inputEvent{kind: inputLeft}, nil
+	case "H", "1~":
+		return inputEvent{kind: inputHome}, nil
+	case "F", "4~", "8~":
+		return inputEvent{kind: inputEnd}, nil
+	case "3~":
+		return inputEvent{kind: inputDelete}, nil
+	case "1;5D", "5D":
+		return inputEvent{kind: inputWordLeft}, nil
+	case "1;5C", "5C":
+		return inputEvent{kind: inputWordRight}, nil
+	case "3;5~":
+		return inputEvent{kind: inputDeleteWordForward}, nil
+	case "200~":
+		paste, err := readBracketedPaste(reader)
+		if err != nil {
+			return inputEvent{}, err
+		}
+		return inputEvent{kind: inputPaste, text: paste}, nil
+	default:
+		return inputEvent{}, nil
+	}
+}
+
+func (r *Renderer) handleInputEvent(ev inputEvent, steerCh chan<- SteerCommand) (bool, bool) {
+	switch ev.kind {
+	case inputCancel:
 		if r.processing {
 			r.cancelled = true
-			r.renderLive("cancelled", "")
+			r.dirty = true
+			r.renderLive("cancelled", r.lastLive)
 			select {
 			case steerCh <- SteerCommand{Type: "cancel"}:
 			default:
 			}
+			return false, false
 		}
-		return false
-	case rn == 0x01:
-		r.editor.BufferStart()
-	case rn == 0x05:
-		r.editor.BufferEnd()
-	case rn == 0x15:
-		r.editor.Clear()
-	case rn == 0x7f || rn == 0x08:
-		r.editor.Backspace()
-	case rn == 0x1b:
-		r.handleRawEscape()
-	case rn == '\r' || rn == '\n':
-		text := r.editor.Text()
-		if strings.TrimSpace(text) != "" {
+		if r.editor.Len() > 0 {
 			r.editor.Clear()
-			r.processing = true
-			r.cancelled = false
-			r.dirty = true
-			r.renderLive("submitted", "")
-			select {
-			case steerCh <- SteerCommand{Text: text, Type: "submit"}:
-			default:
+			return true, false
+		}
+		return false, true
+	case inputExit:
+		if r.editor.Len() == 0 {
+			return false, true
+		}
+		r.editor.Delete()
+	case inputHome:
+		r.editor.BufferStart()
+	case inputEnd:
+		r.editor.BufferEnd()
+	case inputRune:
+		if ev.rn == 0x7f || ev.rn == 0x08 {
+			r.editor.Backspace()
+		} else if ev.rn >= 0x20 {
+			if !r.insertWithLimit(string(ev.rn), false) {
+				return false, false
 			}
 		}
-		return false
-	default:
-		if rn >= 0x20 {
-			r.editor.Insert(string(rn))
+	case inputLeft:
+		r.editor.Left()
+	case inputRight:
+		r.editor.Right()
+	case inputUp:
+		if r.editor.CursorPos() == 0 {
+			r.Up()
+		} else {
+			r.editor.Up()
 		}
+	case inputDown:
+		if r.editor.CursorPos() >= r.editor.Len() {
+			r.Down()
+		} else {
+			r.editor.Down()
+		}
+	case inputDelete:
+		r.editor.Delete()
+	case inputWordLeft:
+		r.editor.WordLeft()
+	case inputWordRight:
+		r.editor.WordRight()
+	case inputDeleteWordBack:
+		r.editor.DeleteWordBackward()
+	case inputDeleteWordForward:
+		r.editor.DeleteWordForward()
+	case inputClear:
+		r.editor.Clear()
+	case inputNewline:
+		if !r.insertWithLimit("\n", false) {
+			return false, false
+		}
+	case inputPaste:
+		start := time.Now()
+		if !r.insertWithLimit(ev.text, true) {
+			return false, false
+		}
+		r.metrics = append(r.metrics, Sample{Name: "paste", Duration: time.Since(start)})
+	case inputSubmit:
+		text := r.editor.Text()
+		if strings.TrimSpace(text) == "" {
+			return false, false
+		}
+		r.history.AddEntry(text)
+		r.editor.Clear()
+		cmd := SteerCommand{Text: text, Type: "submit"}
+		if r.processing {
+			r.queued = append(r.queued, text)
+			r.dirty = true
+			r.renderLive("queued", fmt.Sprintf("queued turns: %d", len(r.queued)))
+			return false, false
+		}
+		r.processing = true
+		r.cancelled = false
+		r.dirty = true
+		r.renderLive("submitted", r.lastLive)
+		select {
+		case steerCh <- cmd:
+		default:
+			r.queued = append(r.queued, text)
+		}
+		return false, false
+	}
+	return true, false
+}
+
+func (r *Renderer) insertWithLimit(text string, paste bool) bool {
+	if r.editor.ByteLen()+len(text) > MaxEditorBytes {
+		r.dirty = true
+		r.renderLive("input_limit", fmt.Sprintf("paste/input rejected: bytes=%d add=%d limit=%d", r.editor.ByteLen(), len(text), MaxEditorBytes))
+		return false
+	}
+	r.editor.Insert(text)
+	if paste && len(text) >= 1024*1024 {
+		r.lastLive = fmt.Sprintf("paste folded preview: bytes=%d lines=%d sha256=%s", len(text), strings.Count(text, "\n")+1, sha256hex(text))
 	}
 	return true
+}
+
+func (r *Renderer) handleRune(rn rune, steerCh chan<- SteerCommand) bool {
+	var changed bool
+	if rn == 0x03 {
+		changed, _ = r.handleInputEvent(inputEvent{kind: inputCancel}, steerCh)
+	} else if rn == 0x04 {
+		changed, _ = r.handleInputEvent(inputEvent{kind: inputExit}, steerCh)
+	} else if rn == 0x01 {
+		changed, _ = r.handleInputEvent(inputEvent{kind: inputHome}, steerCh)
+	} else if rn == 0x05 {
+		changed, _ = r.handleInputEvent(inputEvent{kind: inputEnd}, steerCh)
+	} else if rn == 0x15 {
+		changed, _ = r.handleInputEvent(inputEvent{kind: inputClear}, steerCh)
+	} else if rn == '\n' {
+		changed, _ = r.handleInputEvent(inputEvent{kind: inputNewline}, steerCh)
+	} else if rn == '\r' {
+		changed, _ = r.handleInputEvent(inputEvent{kind: inputSubmit}, steerCh)
+	} else {
+		changed, _ = r.handleInputEvent(inputEvent{kind: inputRune, rn: rn}, steerCh)
+	}
+	return changed
 }
 
 func (r *Renderer) handleRawEscape() {
@@ -177,16 +413,23 @@ func (r *Renderer) handlePresentationEvent(ev presentation.Event) {
 		if p, ok := ev.Data.(presentation.ContentPartPayload); ok {
 			r.streamBuf += p.Content
 		}
+		if r.lastStatus == "streaming" {
+			return
+		}
 		status = "streaming"
-		live = truncateContent(r.streamBuf, 120)
+		live = "receiving response"
 
 	case presentation.EvtContentEnd:
 		if p, ok := ev.Data.(presentation.ContentEndPayload); ok {
-			r.streamBuf = p.FullContent
+			if p.FullContent != "" {
+				r.streamBuf = p.FullContent
+			}
 		}
+		r.commitMessage(r.streamBuf)
+		r.streamBuf = ""
 		r.processing = false
 		status = "done"
-		live = truncateContent(r.streamBuf, 120)
+		live = ""
 
 	case presentation.EvtThinkingBegin:
 		status = "thinking"
@@ -226,6 +469,9 @@ func (r *Renderer) handlePresentationEvent(ev presentation.Event) {
 	case presentation.EvtTurnEnd:
 		r.processing = false
 		status = "ready"
+		if len(r.queued) > 0 {
+			status = "queued"
+		}
 
 	case presentation.EvtStatusUpdate:
 		if p, ok := ev.Data.(presentation.StatusUpdatePayload); ok {
@@ -271,11 +517,12 @@ func (r *Renderer) handlePresentationEvent(ev presentation.Event) {
 }
 
 func truncateContent(s string, max int) string {
-	if len(s) <= max {
+	if len([]rune(s)) <= max {
 		return s
 	}
-	if max > 3 {
-		return "..." + s[len(s)-max+3:]
+	runes := []rune(s)
+	if max > 3 && len(runes) > max-3 {
+		return "..." + string(runes[len(runes)-max+3:])
 	}
-	return s[len(s)-max:]
+	return string(runes[len(runes)-max:])
 }

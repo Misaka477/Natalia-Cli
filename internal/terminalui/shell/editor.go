@@ -3,6 +3,7 @@ package shell
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/rivo/uniseg"
 )
@@ -13,6 +14,11 @@ type Editor struct {
 	colGoal  int
 	width    int
 	maxRows  int
+	byteLen  int
+	revision int64
+	cacheRev int64
+	cacheW   int
+	cache    []visualLine
 }
 
 func NewEditor(width, maxRows int) *Editor {
@@ -29,7 +35,11 @@ func (e *Editor) SetWidth(width int) {
 	if width < 1 {
 		width = 1
 	}
+	if e.width == width {
+		return
+	}
 	e.width = width
+	e.revision++
 }
 
 func (e *Editor) Insert(text string) {
@@ -43,24 +53,85 @@ func (e *Editor) Insert(text string) {
 	merged = append(merged, e.clusters[e.cursor:]...)
 	e.clusters = merged
 	e.cursor += len(items)
+	e.byteLen += len(text)
 	e.colGoal = -1
+	e.revision++
 }
 
 func (e *Editor) Backspace() {
 	if e.cursor == 0 {
 		return
 	}
+	removed := e.clusters[e.cursor-1]
 	e.clusters = append(e.clusters[:e.cursor-1], e.clusters[e.cursor:]...)
 	e.cursor--
+	e.byteLen -= len(removed)
 	e.colGoal = -1
+	e.revision++
 }
 
 func (e *Editor) Delete() {
 	if e.cursor >= len(e.clusters) {
 		return
 	}
+	removed := e.clusters[e.cursor]
 	e.clusters = append(e.clusters[:e.cursor], e.clusters[e.cursor+1:]...)
+	e.byteLen -= len(removed)
 	e.colGoal = -1
+	e.revision++
+}
+
+func (e *Editor) WordLeft() {
+	i := e.cursor
+	for i > 0 && isWordSeparator(e.clusters[i-1]) {
+		i--
+	}
+	for i > 0 && !isWordSeparator(e.clusters[i-1]) {
+		i--
+	}
+	e.cursor = i
+	e.colGoal = -1
+}
+
+func (e *Editor) WordRight() {
+	i := e.cursor
+	for i < len(e.clusters) && isWordSeparator(e.clusters[i]) {
+		i++
+	}
+	for i < len(e.clusters) && !isWordSeparator(e.clusters[i]) {
+		i++
+	}
+	e.cursor = i
+	e.colGoal = -1
+}
+
+func (e *Editor) DeleteWordBackward() {
+	old := e.cursor
+	e.WordLeft()
+	if e.cursor == old {
+		return
+	}
+	removed := e.clusters[e.cursor:old]
+	e.clusters = append(e.clusters[:e.cursor], e.clusters[old:]...)
+	for _, cluster := range removed {
+		e.byteLen -= len(cluster)
+	}
+	e.revision++
+}
+
+func (e *Editor) DeleteWordForward() {
+	old := e.cursor
+	e.WordRight()
+	if e.cursor == old {
+		return
+	}
+	removed := e.clusters[old:e.cursor]
+	e.clusters = append(e.clusters[:old], e.clusters[e.cursor:]...)
+	e.cursor = old
+	for _, cluster := range removed {
+		e.byteLen -= len(cluster)
+	}
+	e.revision++
 }
 
 func (e *Editor) Left() {
@@ -120,7 +191,9 @@ func (e *Editor) Text() string {
 func (e *Editor) Clear() {
 	e.clusters = nil
 	e.cursor = 0
+	e.byteLen = 0
 	e.colGoal = -1
+	e.revision++
 }
 
 func (e *Editor) SetText(text string) {
@@ -130,7 +203,9 @@ func (e *Editor) SetText(text string) {
 		e.clusters = splitGraphemes(text)
 	}
 	e.cursor = len(e.clusters)
+	e.byteLen = len(text)
 	e.colGoal = -1
+	e.revision++
 }
 
 func (e *Editor) CursorPos() int {
@@ -141,6 +216,10 @@ func (e *Editor) Len() int {
 	return len(e.clusters)
 }
 
+func (e *Editor) ByteLen() int {
+	return e.byteLen
+}
+
 type visualLine struct {
 	Start int
 	End   int
@@ -148,8 +227,14 @@ type visualLine struct {
 }
 
 func (e *Editor) visualLines() []visualLine {
+	if e.cacheRev == e.revision && e.cacheW == e.width && e.cache != nil {
+		return e.cache
+	}
 	if len(e.clusters) == 0 {
-		return []visualLine{{Start: 0, End: 0}}
+		e.cache = []visualLine{{Start: 0, End: 0}}
+		e.cacheRev = e.revision
+		e.cacheW = e.width
+		return e.cache
 	}
 	lines := make([]visualLine, 0, len(e.clusters)/e.width+1)
 	start := 0
@@ -170,7 +255,10 @@ func (e *Editor) visualLines() []visualLine {
 		col += w
 	}
 	lines = append(lines, visualLine{Start: start, End: len(e.clusters), Width: col})
-	return lines
+	e.cache = lines
+	e.cacheRev = e.revision
+	e.cacheW = e.width
+	return e.cache
 }
 
 func (e *Editor) cursorVisual(lines []visualLine) (int, int) {
@@ -288,6 +376,16 @@ func splitGraphemes(text string) []string {
 		items = append(items, gr.Str())
 	}
 	return items
+}
+
+func isWordSeparator(cluster string) bool {
+	if cluster == "" || cluster == "\n" {
+		return true
+	}
+	for _, r := range cluster {
+		return !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_')
+	}
+	return true
 }
 
 func clusterWidth(cluster string) int {

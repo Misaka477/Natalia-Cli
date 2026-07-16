@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/display"
 	"github.com/Misaka477/Natalia-Cli/internal/hook"
 	"github.com/Misaka477/Natalia-Cli/internal/orchestrator"
+	"github.com/Misaka477/Natalia-Cli/internal/presentation"
 	"github.com/Misaka477/Natalia-Cli/internal/securefs"
 	"github.com/Misaka477/Natalia-Cli/internal/session"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/ask_user"
@@ -567,6 +569,76 @@ func publishOutcomeFinalMessage(w *wire.Wire, outcome *orchestrator.Outcome, str
 	if !stream || outcome.StopReason == "error" || outcome.StopReason == "max_steps" {
 		publishWireContent(w, wire.ContentText, outcome.FinalMessage)
 	}
+}
+
+func configureEngineForPresentation(engine *orchestrator.Engine) {
+	if engine == nil {
+		return
+	}
+	engine.OnToken = func(s string) {
+		publishPresentationEvent(presentation.EvtContentPart, presentation.ContentPartPayload{Content: s})
+	}
+	engine.OnReasoning = func(s string) {
+		publishPresentationEvent(presentation.EvtContentPart, presentation.ContentPartPayload{Content: s, IsThinking: true})
+	}
+	engine.OnStreamEnd = func() {
+		publishPresentationEvent(presentation.EvtContentEnd, presentation.ContentEndPayload{})
+	}
+	engine.OnStepBegin = func(n int) {
+		publishPresentationEvent(presentation.EvtStepBegin, nil)
+	}
+	engine.OnCompactBegin = func() {
+		publishPresentationEvent(presentation.EvtCompactBegin, presentation.CompactionBeginPayload{Trigger: "auto_or_manual"})
+	}
+	engine.OnCompactEnd = func() {
+		publishPresentationEvent(presentation.EvtCompactEnd, nil)
+	}
+	engine.OnCompact = func(message string) {
+		publishPresentationEvent(presentation.EvtNotification, presentation.NotificationPayload{Severity: "info", Message: message})
+	}
+	engine.OnToolCall = func(event orchestrator.ToolCallEvent) {
+		publishPresentationEvent(presentation.EvtToolBegin, presentation.ToolBeginPayload{Name: event.Name, Arguments: event.Arguments})
+	}
+	engine.OnToolResult = func(event orchestrator.ToolResultEvent) {
+		publishPresentationEvent(presentation.EvtToolEnd, presentation.ToolEndPayload{Result: event.Content, Error: event.Error})
+	}
+}
+
+func publishOutcomeFinalMessagePresentation(outcome *orchestrator.Outcome, stream bool) {
+	if outcome == nil || outcome.FinalMessage == "" {
+		publishPresentationEvent(presentation.EvtContentEnd, presentation.ContentEndPayload{})
+		return
+	}
+	if !stream || outcome.StopReason == "error" || outcome.StopReason == "max_steps" {
+		publishPresentationEvent(presentation.EvtContentPart, presentation.ContentPartPayload{Content: outcome.FinalMessage})
+		publishPresentationEvent(presentation.EvtContentEnd, presentation.ContentEndPayload{FullContent: outcome.FinalMessage})
+		return
+	}
+	publishPresentationEvent(presentation.EvtContentEnd, presentation.ContentEndPayload{})
+}
+
+func publishPresentationStatus(status wire.StatusUpdate) {
+	parts := make([]string, 0, 6)
+	if status.Mode != "" {
+		parts = append(parts, "mode="+status.Mode)
+	}
+	if status.Model != "" {
+		parts = append(parts, "model="+status.Model)
+	}
+	if status.ContextTokens != nil && status.MaxContextTokens != nil {
+		parts = append(parts, fmt.Sprintf("context=%d/%d", *status.ContextTokens, *status.MaxContextTokens))
+	}
+	if status.TurnElapsedMS != nil {
+		parts = append(parts, fmt.Sprintf("turn_ms=%d", *status.TurnElapsedMS))
+	}
+	publishPresentationEvent(presentation.EvtStatusUpdate, presentation.StatusUpdatePayload{Key: "runtime", Value: strings.Join(parts, " ")})
+}
+
+func publishPresentationEvent(eventType presentation.EventType, payload any) {
+	if presentation.DefaultDispatch == nil {
+		return
+	}
+	presentation.DefaultDispatch.Send(presentation.Event{Type: eventType, Timestamp: time.Now(), Data: payload})
 }
 
 func publishWireContent(w *wire.Wire, typ wire.ContentType, text string) {

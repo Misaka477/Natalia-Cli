@@ -24,6 +24,7 @@ type Renderer struct {
 	dirty        bool
 	resized      bool
 	committed    int
+	cursorRow    int
 	welcomeLines []string
 	metrics      []Sample
 	cancelled    bool
@@ -32,6 +33,9 @@ type Renderer struct {
 	streamBuf    string
 	toolName     string
 	statusText   string
+	lastStatus   string
+	lastLive     string
+	queued       []string
 }
 
 type Sample struct {
@@ -44,12 +48,12 @@ func NewRenderer(in io.Reader, out io.Writer, theme Theme) *Renderer {
 	return &Renderer{
 		in:      in,
 		out:     out,
-		history: NewHistory(50),
+		history: NewWorkspaceHistory(50),
 		theme:   theme,
 		width:   width,
 		height:  height,
-		editor:  NewEditor(width-4, 8),
-		eventCh: make(chan presentation.Event, 64),
+		editor:  NewEditor(safeRenderWidth(width)-3, 8),
+		eventCh: make(chan presentation.Event, 4096),
 	}
 }
 
@@ -66,6 +70,7 @@ func (r *Renderer) Run() error {
 
 func (r *Renderer) renderWelcome() {
 	width := r.width
+	renderWidth := safeRenderWidth(width)
 	lines := []string{
 		"Natalia shell renderer",
 		fmt.Sprintf("detected-width: %d", width),
@@ -75,11 +80,10 @@ func (r *Renderer) renderWelcome() {
 	r.welcomeLines = lines
 	for _, line := range lines {
 		clearLine(r.out)
-		fmt.Fprintln(r.out, trimCells(line, width))
+		fmt.Fprintln(r.out, trimCells(line, renderWidth))
 	}
 	r.committed = 0
 	r.dirty = true
-	fmt.Fprint(r.out, "\x1b[s")
 	r.renderLive("ready", "")
 }
 
@@ -134,7 +138,7 @@ func (r *Renderer) loop() error {
 		}
 		if changed {
 			r.dirty = true
-			r.renderLive("editing", "")
+			r.renderLive("editing", r.lastLive)
 		}
 	}
 }
@@ -144,7 +148,7 @@ func (r *Renderer) checkResize() {
 		w, _, err := term.GetSize(int(f.Fd()))
 		if err == nil && w > 0 && w != r.width {
 			r.width = w
-			r.editor.SetWidth(w - 4)
+			r.editor.SetWidth(safeRenderWidth(w) - 3)
 			r.resized = true
 		}
 	}
@@ -200,14 +204,16 @@ func (r *Renderer) handleEscape(reader *bufio.Reader) error {
 }
 
 func (r *Renderer) renderLive(status, live string) {
+	r.lastStatus = status
+	r.lastLive = live
 	if !r.dirty {
 		return
 	}
 	r.dirty = false
 	start := time.Now()
-	spinnerLine := "spinner: - " + status
-	streamLine := "stream: " + livePreview(live)
-	statusLine := "status: bytes=" + fmt.Sprint(len([]byte(r.editor.Text())))
+	spinnerLine := onePhysicalLine("spinner: - " + status)
+	streamLine := onePhysicalLine("stream: " + livePreview(live))
+	statusLine := onePhysicalLine("status: bytes=" + fmt.Sprint(len([]byte(r.editor.Text()))))
 	editorLines := r.editor.Render()
 
 	allLines := make([]string, 0, 3+len(editorLines))
@@ -216,44 +222,66 @@ func (r *Renderer) renderLive(status, live string) {
 		allLines = append(allLines, "> "+line)
 	}
 
-	fmt.Fprint(r.out, "\x1b[u")
 	if r.resized {
 		r.resized = false
 		fmt.Fprint(r.out, "\x1b[2J\x1b[H")
+		renderWidth := safeRenderWidth(r.width)
 		for _, line := range r.welcomeLines {
 			clearLine(r.out)
-			fmt.Fprintln(r.out, trimCells(line, r.width))
+			fmt.Fprintln(r.out, trimCells(line, renderWidth))
 		}
-		fmt.Fprint(r.out, "\x1b[s")
-	} else if r.committed > 0 {
-		moveUp(r.out, r.committed)
+		r.cursorRow = 0
+	} else {
+		moveUp(r.out, r.cursorRow)
 	}
 	fmt.Fprint(r.out, "\x1b[J")
+	renderWidth := safeRenderWidth(r.width)
 	for _, line := range allLines {
 		clearLine(r.out)
-		fmt.Fprintln(r.out, trimCells(line, r.width))
+		fmt.Fprintln(r.out, trimCells(line, renderWidth))
 	}
-	fmt.Fprint(r.out, "\x1b[s")
 	for i := len(allLines); i < r.committed; i++ {
 		clearLine(r.out)
 		fmt.Fprintln(r.out, "")
 	}
 	if len(allLines) > 0 {
 		cursorRow, cursorCol := r.editor.CursorRenderedPosition()
-		total := r.committed
-		if len(allLines) > total {
-			total = len(allLines)
-		}
 		targetRow := 3 + cursorRow
-		if up := total - targetRow; up > 0 {
+		if up := len(allLines) - targetRow; up > 0 {
 			moveUp(r.out, up)
 		}
 		if targetCol := cursorCol + 3; targetCol > 0 {
 			fmt.Fprintf(r.out, "\x1b[%dG", targetCol)
 		}
+		r.cursorRow = targetRow
 	}
 	r.committed = len(allLines)
 	r.metrics = append(r.metrics, Sample{Name: "render", Duration: time.Since(start)})
+}
+
+func (r *Renderer) commitMessage(text string) {
+	text = strings.TrimRight(text, "\n")
+	if text == "" {
+		return
+	}
+	if r.committed > 0 {
+		moveUp(r.out, r.cursorRow)
+		fmt.Fprint(r.out, "\x1b[J")
+	}
+	for _, line := range strings.Split(text, "\n") {
+		clearLine(r.out)
+		fmt.Fprintln(r.out, trimCells(line, safeRenderWidth(r.width)))
+	}
+	r.committed = 0
+	r.cursorRow = 0
+	r.dirty = true
+}
+
+func safeRenderWidth(width int) int {
+	if width <= 1 {
+		return 1
+	}
+	return width - 1
 }
 
 func (r *Renderer) sample(name string, fn func()) {
@@ -277,12 +305,8 @@ func (r *Renderer) Down() {
 
 func (r *Renderer) finish() error {
 	if r.committed > 0 {
-		fmt.Fprint(r.out, "\x1b[u")
-		moveUp(r.out, r.committed)
-		for i := 0; i < r.committed; i++ {
-			clearLine(r.out)
-			fmt.Fprintln(r.out, "")
-		}
+		moveUp(r.out, r.cursorRow)
+		fmt.Fprint(r.out, "\x1b[J")
 	}
 	text := r.editor.Text()
 	fmt.Fprintf(r.out, "\rRESULT bytes=%d lines=%d sha256=%s\n", len([]byte(text)), strings.Count(text, "\n")+1, sha256hex(text))
@@ -324,14 +348,20 @@ func readCSI(r *bufio.Reader) (string, error) {
 func readBracketedPaste(r *bufio.Reader) (string, error) {
 	const end = "\x1b[201~"
 	var b strings.Builder
+	suffix := make([]byte, 0, len(end))
 	for {
 		c, err := r.ReadByte()
 		if err != nil {
 			return "", err
 		}
 		b.WriteByte(c)
-		if strings.HasSuffix(b.String(), end) {
-			return strings.TrimSuffix(b.String(), end), nil
+		suffix = append(suffix, c)
+		if len(suffix) > len(end) {
+			suffix = suffix[1:]
+		}
+		if len(suffix) == len(end) && string(suffix) == end {
+			text := b.String()
+			return text[:len(text)-len(end)], nil
 		}
 	}
 }
@@ -340,6 +370,13 @@ func livePreview(s string) string {
 	if s == "" {
 		return "streaming text tail"
 	}
+	return s
+}
+
+func onePhysicalLine(s string) string {
+	s = strings.ReplaceAll(s, "\r", "\\r")
+	s = strings.ReplaceAll(s, "\n", "\\n")
+	s = strings.ReplaceAll(s, "\t", "    ")
 	return s
 }
 

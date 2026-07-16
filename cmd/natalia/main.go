@@ -1059,7 +1059,7 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 		wireRuntime = wire.NewWire()
 		stopWireRenderer = startTUIWireRenderer(wireRuntime)
 	} else if shellMode {
-		wireRuntime = wire.NewWire()
+		wireRuntime = nil
 		stopWireRenderer = func() {}
 	} else {
 		wireRuntime, stopWireRenderer = startInteractiveWireRenderer(os.Stdout, os.Stderr)
@@ -1070,6 +1070,10 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 	})
 	defer clearAskUserHandler()
 	configureInteractiveEngine := func() {
+		if shellMode {
+			configureEngineForPresentation(engine)
+			return
+		}
 		configureEngineForWire(engine, wireRuntime)
 		configureEngineApprovalForWire(engine, wireRuntime, nil)
 	}
@@ -1198,9 +1202,11 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 	}
 
 	if shellMode {
-		shellRenderer := shell.NewRenderer(os.Stdin, os.Stdout, shell.DarkTheme())
-		shellDisp := &shell.ShellDispatch{Renderer: shellRenderer}
+		shellRenderer := shell.NewManagedRenderer(os.Stdin, os.Stdout, shell.DarkTheme())
+		shellDisp := &shell.ShellDispatch{Managed: shellRenderer}
 		presentation.DefaultDispatch = shellDisp
+		defer func() { presentation.DefaultDispatch = nil }()
+		configureEngineForPresentation(engine)
 
 		clearShellAskUser := ask_user.SetHandler(func(ctx context.Context, qReq wire.QuestionRequest) (wire.QuestionResponse, error) {
 			answers := make(map[string]string)
@@ -1216,7 +1222,10 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 		})
 		defer clearShellAskUser()
 
-		if engine.Approver != nil {
+		configureShellApproval := func() {
+			if engine == nil || engine.Approver == nil {
+				return
+			}
 			origDisplay := engine.Approver.RequestDisplayFunc
 			engine.Approver.RequestDisplayFunc = func(toolName, description string, blocks []display.Block) bool {
 				if presentation.DefaultDispatch == nil {
@@ -1233,6 +1242,7 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 				return apr.Approved
 			}
 		}
+		configureShellApproval()
 
 		steerCh := make(chan shell.SteerCommand, 8)
 		engineCtx, cancelEngine := context.WithCancel(context.Background())
@@ -1247,15 +1257,26 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 					}
 					switch cmd.Type {
 					case "submit":
-						engine.ResetCancel()
-						inputPayload, _ := json.Marshal(cmd.Text)
-						if event, err := wire.NewEvent(wire.EventTurnBegin, wire.TurnBegin{UserInput: inputPayload}); err == nil {
-							wireRuntime.RuntimeSide.PublishEvent(event)
+						if strings.HasPrefix(strings.TrimSpace(cmd.Text), "/") {
+							shellHandled := handleShellSlashCommand(cmd.Text, &cfg, &engine, tools, debug, DefaultAppRuntime())
+							if shellHandled {
+								configureEngineForPresentation(engine)
+								configureShellApproval()
+								continue
+							}
 						}
+						if engine.LLM == nil {
+							presentation.DefaultDispatch.Send(presentation.Event{Type: presentation.EvtNotification, Timestamp: time.Now(), Data: presentation.NotificationPayload{Severity: "error", Message: "请先配置。输入 /setup 或使用 --profile。"}})
+							presentation.DefaultDispatch.Send(presentation.Event{Type: presentation.EvtTurnEnd, Timestamp: time.Now()})
+							continue
+						}
+						engine.ResetCancel()
+						presentation.DefaultDispatch.Send(presentation.Event{Type: presentation.EvtTurnBegin, Timestamp: time.Now(), Data: presentation.TurnBeginPayload{Input: cmd.Text}})
 						turnStarted := time.Now()
 						outcome, err := engine.Run(cmd.Text)
 						if err != nil {
 							if err.Error() == "context canceled" {
+								presentation.DefaultDispatch.Send(presentation.Event{Type: presentation.EvtTurnEnd, Timestamp: time.Now(), Data: presentation.TurnEndPayload{StopReason: "cancelled"}})
 								continue
 							}
 							if presentation.DefaultDispatch != nil {
@@ -1264,17 +1285,14 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 									Data: presentation.NotificationPayload{Severity: "error", Message: err.Error()},
 								})
 							}
+							presentation.DefaultDispatch.Send(presentation.Event{Type: presentation.EvtTurnEnd, Timestamp: time.Now(), Data: presentation.TurnEndPayload{StopReason: "error"}})
 							continue
 						}
-						publishOutcomeFinalMessage(wireRuntime, outcome, engine.Stream)
-						if event, err := wire.NewEvent(wire.EventTurnEnd, wire.TurnEnd{}); err == nil {
-							wireRuntime.RuntimeSide.PublishEvent(event)
-						}
+						publishOutcomeFinalMessagePresentation(outcome, engine.Stream)
+						presentation.DefaultDispatch.Send(presentation.Event{Type: presentation.EvtTurnEnd, Timestamp: time.Now(), Data: presentation.TurnEndPayload{StopReason: outcome.StopReason}})
 						status := runtimeStatusUpdate(cfg, engine, DefaultAppRuntime())
 						setTurnElapsed(&status, turnStarted, false)
-						if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
-							wireRuntime.RuntimeSide.PublishEvent(event)
-						}
+						publishPresentationStatus(status)
 					case "cancel":
 						engine.Cancel()
 					}
@@ -2056,6 +2074,77 @@ func handleSlashCommand(input string, cfg **config.Config, engine **orchestrator
 		showHelp()
 	default:
 		fmt.Printf("未知命令: %s\n", input)
+	}
+}
+
+func handleShellSlashCommand(input string, cfg **config.Config, engine **orchestrator.Engine, tools *toolset.Registry, debug bool, rt *AppRuntime) bool {
+	parts := strings.Fields(input)
+	if len(parts) == 0 || !strings.HasPrefix(parts[0], "/") {
+		return false
+	}
+	send := func(severity, message string) {
+		publishPresentationEvent(presentation.EvtNotification, presentation.NotificationPayload{Severity: severity, Message: message})
+		publishPresentationEvent(presentation.EvtTurnEnd, presentation.TurnEndPayload{StopReason: "command"})
+	}
+	switch parts[0] {
+	case "/profile":
+		if *cfg == nil {
+			send("error", "请先配置。")
+			return true
+		}
+		if len(parts) == 1 {
+			names := make([]string, 0, len((*cfg).Profiles))
+			for name := range (*cfg).Profiles {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			send("info", "当前 profile: "+(*cfg).DefaultProfile+"; 可用: "+strings.Join(names, ", "))
+			return true
+		}
+		name := parts[1]
+		if _, ok := (*cfg).Profiles[name]; !ok {
+			send("error", "未知 profile: "+name)
+			return true
+		}
+		(*cfg).DefaultProfile = name
+		activeConfig = *cfg
+		runtime = runtimeOverrides{}
+		if err := (*cfg).Save(); err != nil {
+			send("error", "保存配置失败: "+err.Error())
+			return true
+		}
+		*engine = buildEngine(*cfg, tools, debug)
+		if (*engine).LLM != nil {
+			(*engine).LLM.DebugOutput = func(string, ...any) {}
+		}
+		registerAgentToolsForEngine(*cfg, *engine, tools)
+		if rt != nil {
+			rt.SetActiveConfig(*cfg)
+		}
+		persistCurrentSessionState()
+		send("info", "已切换 profile: "+name)
+		return true
+	case "/status":
+		if *cfg == nil || *engine == nil {
+			send("info", "未配置")
+			return true
+		}
+		status := runtimeStatusUpdate(*cfg, *engine, rt)
+		publishPresentationStatus(status)
+		publishPresentationEvent(presentation.EvtTurnEnd, presentation.TurnEndPayload{StopReason: "command"})
+		return true
+	case "/help":
+		send("info", "shell commands: /profile [name], /status, /help, /exit")
+		return true
+	case "/exit", "/quit":
+		send("info", "Use Ctrl+D on an empty editor to exit shell mode.")
+		return true
+	case "/setup":
+		send("error", "/setup is not available inside shell UI yet; run setup outside shell mode.")
+		return true
+	default:
+		send("error", "未知命令: "+parts[0])
+		return true
 	}
 }
 
