@@ -71,11 +71,11 @@ type WireMessage struct {
 
 type Wire struct {
 	RuntimeSide *WireRuntimeSide
-	uiSide   *WireUISide
-	raw      *broadcastQueue
-	pending  *pendingResponses
-	sinks    *syncSinks
-	stopSweep chan struct{}
+	uiSide      *WireUISide
+	raw         *broadcastQueue
+	pending     *pendingResponses
+	sinks       *syncSinks
+	stopSweep   chan struct{}
 }
 
 type WireRuntimeSide struct {

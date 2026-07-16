@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/Misaka477/Natalia-Cli/internal/display"
+	presentation "github.com/Misaka477/Natalia-Cli/internal/presentation"
 	"github.com/Misaka477/Natalia-Cli/internal/terminalui"
-	tui "github.com/Misaka477/Natalia-Cli/internal/terminalui/tui"
 	"github.com/Misaka477/Natalia-Cli/internal/wire"
 )
 
@@ -161,10 +161,10 @@ func startTUIWireRenderer(w *wire.Wire) func() {
 		state := &wireTerminalRenderState{}
 		for msg := range ch {
 			text := renderTUIWireMessage(state, msg)
-			if strings.TrimSpace(text) == "" || tui.DefaultProgram == nil {
+			if strings.TrimSpace(text) == "" || presentation.DefaultDispatch == nil {
 				continue
 			}
-			tui.DefaultProgram.Send(tui.WireOutputMsg(text))
+			presentation.DefaultDispatch.Send(presentation.Event{Type: presentation.EvtExternalMessage, Data: presentation.ContentPartPayload{Content: text}})
 		}
 	}()
 	return func() {

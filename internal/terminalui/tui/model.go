@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 
+	"github.com/Misaka477/Natalia-Cli/internal/presentation"
 	"github.com/Misaka477/Natalia-Cli/internal/terminalui"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -21,7 +22,34 @@ type askUserRequest struct {
 	Send        chan<- string
 }
 
-var DefaultProgram *tea.Program
+type tuiDispatch struct {
+	program *tea.Program
+}
+
+func (d *tuiDispatch) Send(event presentation.Event) {
+	d.program.Send(event)
+}
+
+func (d *tuiDispatch) ShowApproval(req presentation.ApprovalRequestPayload) presentation.ApprovalResultPayload {
+	ch := make(chan bool, 1)
+	d.program.Send(ApprovalPromptMsg{
+		ToolName: req.ToolName,
+		Respond:  ch,
+	})
+	approved := <-ch
+	return presentation.ApprovalResultPayload{ID: req.ID, Approved: approved}
+}
+
+func (d *tuiDispatch) ShowQuestion(req presentation.QuestionRequestPayload) string {
+	ch := make(chan string, 1)
+	d.program.Send(AskUserPromptMsg{
+		Question: req.Prompt,
+		Options:  req.Options,
+		Multiple: req.Multi,
+		Respond:  ch,
+	})
+	return <-ch
+}
 
 type Model struct {
 	viewport        viewport.Model
@@ -331,8 +359,9 @@ func (m Model) submitCmd(input string) tea.Cmd {
 func Run(submitFn submitFunc, statusFn func() string) error {
 	m := NewModel(submitFn, statusFn)
 	p := tea.NewProgram(m, tea.WithAltScreen())
-	DefaultProgram = p
-	defer func() { DefaultProgram = nil }()
+	dispatch := &tuiDispatch{program: p}
+	presentation.DefaultDispatch = dispatch
+	defer func() { presentation.DefaultDispatch = nil }()
 	_, err := p.Run()
 	return err
 }

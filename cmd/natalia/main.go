@@ -31,15 +31,16 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/mode"
 	"github.com/Misaka477/Natalia-Cli/internal/networkpolicy"
 	"github.com/Misaka477/Natalia-Cli/internal/notifications"
+	"github.com/Misaka477/Natalia-Cli/internal/orchestrator"
 	"github.com/Misaka477/Natalia-Cli/internal/plan"
 	"github.com/Misaka477/Natalia-Cli/internal/planexec"
+	presentation "github.com/Misaka477/Natalia-Cli/internal/presentation"
 	"github.com/Misaka477/Natalia-Cli/internal/processmgr"
 	"github.com/Misaka477/Natalia-Cli/internal/sandbox"
 	"github.com/Misaka477/Natalia-Cli/internal/secret"
 	"github.com/Misaka477/Natalia-Cli/internal/session"
 	"github.com/Misaka477/Natalia-Cli/internal/skill"
 	"github.com/Misaka477/Natalia-Cli/internal/snapshot"
-	"github.com/Misaka477/Natalia-Cli/internal/orchestrator"
 	"github.com/Misaka477/Natalia-Cli/internal/term"
 	tui "github.com/Misaka477/Natalia-Cli/internal/terminalui/tui"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/ask_user"
@@ -1097,22 +1098,15 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 		clearTUIAskUser := ask_user.SetHandler(func(ctx context.Context, req wire.QuestionRequest) (wire.QuestionResponse, error) {
 			answers := make(map[string]string)
 			for _, q := range req.Questions {
-				respondCh := make(chan string, 1)
-				if tui.DefaultProgram != nil {
-					tui.DefaultProgram.Send(tui.AskUserPromptMsg{
-						Question:    q.Question,
-						Options:     q.Options,
-						Multiple:    q.Multiple,
-						AllowCustom: q.AllowCustom,
-						Fallback:    q.Fallback,
-						Respond:     respondCh,
-					})
-					select {
-					case ans := <-respondCh:
-						answers[q.Name] = ans
-					case <-ctx.Done():
-						return wire.QuestionResponse{RequestID: req.ID, Answers: answers}, ctx.Err()
+				if presentation.DefaultDispatch != nil {
+					prompt := presentation.QuestionRequestPayload{
+						ID:      req.ID,
+						Prompt:  q.Question,
+						Options: q.Options,
+						Multi:   q.Multiple,
 					}
+					ans := presentation.DefaultDispatch.ShowQuestion(prompt)
+					answers[q.Name] = ans
 				}
 			}
 			return wire.QuestionResponse{RequestID: req.ID, Answers: answers}, nil
@@ -1121,19 +1115,18 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 		if engine.Approver != nil {
 			origRequestDisplay := engine.Approver.RequestDisplayFunc
 			engine.Approver.RequestDisplayFunc = func(toolName, description string, blocks []display.Block) bool {
-				if tui.DefaultProgram == nil {
+				if presentation.DefaultDispatch == nil {
 					if origRequestDisplay != nil {
 						return origRequestDisplay(toolName, description, blocks)
 					}
 					return false
 				}
-				respCh := make(chan bool, 1)
-				tui.DefaultProgram.Send(tui.ApprovalPromptMsg{
-					ToolName:    toolName,
-					Description: description,
-					Respond:     respCh,
+				presentation.DefaultDispatch.Send(presentation.Event{
+					Type: presentation.EvtApprovalRequest,
+					Data: presentation.ApprovalRequestPayload{ToolName: toolName},
 				})
-				return <-respCh
+				apr := presentation.DefaultDispatch.ShowApproval(presentation.ApprovalRequestPayload{ID: toolName, ToolName: toolName})
+				return apr.Approved
 			}
 		}
 		tui.Run(func(input string) string {
