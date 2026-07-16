@@ -562,7 +562,7 @@ func TestAgentCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "no agents to clean up") {
+	if !strings.Contains(out, "no agents to clean up") || !strings.Contains(out, "remaining_resources:") || !strings.Contains(out, "next_action:") {
 		t.Fatalf("expected no agents message, got %q", out)
 	}
 	_, err = (&Cleanup{Pool: nil}).Execute(nil)
@@ -587,7 +587,7 @@ func TestAgentCleanupDryRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "dry-run") || !strings.Contains(out, "would_remove: 1") {
+	if !strings.Contains(out, "dry-run") || !strings.Contains(out, "would_remove: 1") || !strings.Contains(out, "remaining_resources:") || !strings.Contains(out, "next_action:") {
 		t.Fatalf("expected dry-run output, got %q", out)
 	}
 	if pool.Get(w.ID) == nil {
@@ -626,7 +626,12 @@ func TestAgentAuditJSONFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(out, "[") || !strings.Contains(out, "event_id") {
+	for _, want := range []string{"event_id", "resource_type", "resource_id", "agent_id", "action", "status", "time"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected JSON audit field %q in %q", want, out)
+		}
+	}
+	if !strings.HasPrefix(out, "[") {
 		t.Fatalf("expected JSON audit output, got %q", out)
 	}
 }

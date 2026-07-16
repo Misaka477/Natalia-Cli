@@ -95,7 +95,7 @@ func TestBackgroundSustainedOutputTailAndPaginationBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(first, "line026") || !strings.Contains(first, "line030") || strings.Contains(first, "line031") || !strings.Contains(first, "page: offset=0 next_offset=5 total=15 has_more=true") {
+	if !strings.Contains(first, "line026") || !strings.Contains(first, "line030") || strings.Contains(first, "line031") || !strings.Contains(first, "offset=0 next_offset=5 has_more=true") || !strings.Contains(first, "retained_lines=15") {
 		t.Fatalf("unexpected first page: %q", first)
 	}
 
@@ -103,7 +103,7 @@ func TestBackgroundSustainedOutputTailAndPaginationBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(second, "line031") || !strings.Contains(second, "line035") || strings.Contains(second, "line030") || !strings.Contains(second, "page: offset=5 next_offset=10 total=15 has_more=true") {
+	if !strings.Contains(second, "line031") || !strings.Contains(second, "line035") || strings.Contains(second, "line030") || !strings.Contains(second, "offset=5 next_offset=10 has_more=true") {
 		t.Fatalf("unexpected second page: %q", second)
 	}
 
@@ -111,7 +111,7 @@ func TestBackgroundSustainedOutputTailAndPaginationBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(end, "<no output>") || !strings.Contains(end, "page: offset=15 next_offset=15 total=15 has_more=false") {
+	if !strings.Contains(end, "<no output>") || !strings.Contains(end, "offset=15 next_offset=15 has_more=false") || !strings.Contains(end, "retained_lines=15") {
 		t.Fatalf("expected empty page at end boundary, got %q", end)
 	}
 
@@ -119,7 +119,7 @@ func TestBackgroundSustainedOutputTailAndPaginationBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(pastEnd, "page: offset=15 next_offset=15 total=15 has_more=false") {
+	if !strings.Contains(pastEnd, "offset=15 next_offset=15 has_more=false") {
 		t.Fatalf("expected offset past end to clamp to total, got %q", pastEnd)
 	}
 }
@@ -281,7 +281,7 @@ func TestBackgroundCleanupDryRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(cleanup, "removed:") {
+	if !strings.Contains(cleanup, "removed:") || !strings.Contains(cleanup, "would_remove:") || !strings.Contains(cleanup, "remaining_resources:") || !strings.Contains(cleanup, "next_action:") {
 		t.Fatalf("expected dry-run cleanup report, got %q", cleanup)
 	}
 	if _, ok := processmgr.DefaultManager().Status(id); !ok {
@@ -299,7 +299,12 @@ func TestBackgroundAuditJSONFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(audit, "[") || !strings.Contains(audit, "event_id") {
+	for _, want := range []string{"event_id", "resource_type", "resource_id", "action", "event", "status", "time"} {
+		if !strings.Contains(audit, want) {
+			t.Fatalf("expected JSON audit field %q in %q", want, audit)
+		}
+	}
+	if !strings.HasPrefix(audit, "[") {
 		t.Fatalf("expected JSON audit output, got %q", audit)
 	}
 }
@@ -424,5 +429,37 @@ func TestBackgroundOutputEmptyJSONFormat(t *testing.T) {
 	_, err = (&Output{}).Execute(map[string]any{"id": "missing", "format": "json"})
 	if err == nil || !strings.Contains(err.Error(), "unknown background task") {
 		t.Fatalf("expected unknown background error, got %v", err)
+	}
+}
+
+func TestBackgroundOutputNoOutputAndDroppedMetadata(t *testing.T) {
+	resetManager()
+	running, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "args": []any{"-c", "sleep 1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runningID := extractBackgroundID(t, running)
+	output, err := (&Output{}).Execute(map[string]any{"id": runningID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"<no output>", "no_output_reason:", "status=running", "retained_lines=0", "last_activity="} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected no-output metadata %q in %q", want, output)
+		}
+	}
+	_ = processmgr.DefaultManager().Stop(runningID)
+
+	limited, err := processmgr.DefaultManager().Start(context.Background(), processmgr.StartOptions{Kind: processmgr.KindBackground, Command: "/bin/sh", Args: []string{"-c", "printf 'a\\nb\\nc\\n'"}, MaxTail: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForBackgroundStatus(t, limited.ID, "exited")
+	output, err = (&Output{}).Execute(map[string]any{"id": limited.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output, "dropped_lines=1") || !strings.Contains(output, "retained_lines=2") || strings.Contains(output, "stdout: a") {
+		t.Fatalf("expected dropped output metadata and retained tail only, got %q", output)
 	}
 }

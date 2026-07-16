@@ -115,36 +115,45 @@ func (t *Output) Execute(args map[string]any) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		sess, _ := processmgr.DefaultManager().Status(id)
 		page, ok := processmgr.DefaultManager().OutputPage(id, offset, limit)
 		if !ok {
 			return "", fmt.Errorf("unknown background task %q", id)
 		}
-		return formatOutputPage(page), nil
+		return formatOutputPage(page, sess), nil
 	}
 	tail, err := intArg(args["tail"], 0, 0, 10000)
 	if err != nil {
 		return "", err
 	}
-	lines, ok := processmgr.DefaultManager().Output(id, tail)
+	sess, _ := processmgr.DefaultManager().Status(id)
+	page, ok := backgroundOutputPage(id, tail)
 	if !ok {
 		return "", fmt.Errorf("unknown background task %q", id)
 	}
-	if len(lines) == 0 {
-		return "<no output>", nil
-	}
 	format, _ := args["format"].(string)
 	if format == "json" {
-		data, err := json.Marshal(lines)
+		data, err := json.Marshal(page.Lines)
 		if err != nil {
 			return "", err
 		}
 		return string(data), nil
 	}
-	var b strings.Builder
-	for _, line := range lines {
-		fmt.Fprintf(&b, "%s: %s\n", line.Stream, line.Text)
+	return formatOutputPage(page, sess), nil
+}
+
+func backgroundOutputPage(id string, tail int) (processmgr.OutputPage, bool) {
+	page, ok := processmgr.DefaultManager().OutputPage(id, 0, 0)
+	if !ok {
+		return processmgr.OutputPage{}, false
 	}
-	return strings.TrimRight(b.String(), "\n"), nil
+	if tail > 0 && tail < len(page.Lines) {
+		page.Offset = len(page.Lines) - tail
+		page.Lines = append([]processmgr.OutputLine(nil), page.Lines[page.Offset:]...)
+		page.NextOffset = page.Offset + len(page.Lines)
+		page.HasMore = false
+	}
+	return page, true
 }
 
 type Restart struct{}
@@ -225,7 +234,7 @@ type Cleanup struct{}
 
 func (t *Cleanup) Name() string { return "background_cleanup" }
 func (t *Cleanup) Description() string {
-	return "clean up finished background tasks and optionally stop running ones by idle/max lifetime; returns affected IDs"
+	return "clean up finished background tasks and optionally stop running ones by idle/max lifetime; returns affected IDs, remaining status summary, and next_action"
 }
 func (t *Cleanup) Required() []string { return nil }
 func (t *Cleanup) Parameters() map[string]llm.Property {
@@ -252,14 +261,51 @@ func (t *Cleanup) Execute(args map[string]any) (string, error) {
 	}
 	dryRun := boolArg(args["dry_run"])
 	result := processmgr.DefaultManager().Sweep(processmgr.SweepOptions{FinishedMaxAge: finishedMaxAge, IdleTimeout: idleTimeout, MaxLifetime: maxLifetime, DetectStale: boolArg(args["detect_stale"]), DryRun: dryRun, Kind: processmgr.KindBackground})
-	return fmt.Sprintf("background cleanup complete\nremoved: %d\nstopped: %d\nstale: %d", result.Removed, result.Stopped, result.Stale), nil
+	return formatCleanupResult(result, dryRun), nil
+}
+
+func formatCleanupResult(result processmgr.SweepResult, dryRun bool) string {
+	var b strings.Builder
+	b.WriteString("background cleanup")
+	if dryRun {
+		b.WriteString(" dry-run")
+	}
+	fmt.Fprintf(&b, " complete\nremoved: %d\nstopped: %d\nstale: %d", result.Removed, result.Stopped, result.Stale)
+	if dryRun {
+		fmt.Fprintf(&b, "\nwould_remove: %d\nwould_stop: %d", result.Removed, result.Stopped+result.Stale)
+	}
+	if len(result.AffectedIDs) > 0 {
+		b.WriteString("\naffected_ids: " + strings.Join(result.AffectedIDs, ", "))
+	}
+	b.WriteString("\n" + cleanupStatusLine())
+	if dryRun {
+		b.WriteString("\nnext_action: rerun without dry_run to remove/stop affected background resources, or inspect status/output first")
+	} else if result.Removed == 0 && result.Stopped == 0 && result.Stale == 0 {
+		b.WriteString("\nnext_action: no background cleanup needed")
+	} else {
+		b.WriteString("\nnext_action: inspect background_list/background_status to confirm remaining resources")
+	}
+	return b.String()
+}
+
+func cleanupStatusLine() string {
+	counts := map[processmgr.Status]int{}
+	total := 0
+	for _, sess := range processmgr.DefaultManager().List() {
+		if sess.Kind != processmgr.KindBackground {
+			continue
+		}
+		total++
+		counts[sess.Status]++
+	}
+	return fmt.Sprintf("remaining_resources: resource_type=%s total=%d running=%d exited=%d stopped=%d failed=%d", processmgr.KindBackground, total, counts[processmgr.StatusRunning], counts[processmgr.StatusExited], counts[processmgr.StatusStopped], counts[processmgr.StatusFailed])
 }
 
 type Audit struct{}
 
 func (t *Audit) Name() string { return "background_audit" }
 func (t *Audit) Description() string {
-	return "view background task audit log; secret env values are shown redacted"
+	return "view background task audit log; secret env values are redacted; JSON includes event_id/resource_type/resource_id/action/status/time"
 }
 func (t *Audit) Required() []string { return nil }
 func (t *Audit) Parameters() map[string]llm.Property {
@@ -292,7 +338,7 @@ func (t *Audit) Execute(args map[string]any) (string, error) {
 	}
 	var b strings.Builder
 	for _, entry := range filtered {
-		fmt.Fprintf(&b, "%s %s id=%s status=%s command=%s %s", entry.Time.Format(time.RFC3339), entry.Action, entry.SessionID, entry.Status, entry.Command, strings.Join(entry.Args, " "))
+		fmt.Fprintf(&b, "%s event_id=%s resource_type=%s resource_id=%s background_id=%s action=%s status=%s command=%s %s", entry.Time.Format(time.RFC3339), entry.EventID, entry.Kind, entry.SessionID, entry.SessionID, entry.Action, entry.Status, entry.Command, strings.Join(entry.Args, " "))
 		if len(entry.EnvSummary) > 0 {
 			fmt.Fprintf(&b, " env=%s", strings.Join(entry.EnvSummary, ","))
 		}
@@ -308,7 +354,7 @@ func auditEntriesJSON(entries []processmgr.AuditEntry) string {
 		if i > 0 {
 			b.WriteString(",\n ")
 		}
-		fmt.Fprintf(&b, `{"event_id":%q,"action":%q,"session_id":%q,"kind":%q,"status":%q,"command":%q,"time":%q}`, entry.EventID, entry.Action, entry.SessionID, entry.Kind, entry.Status, entry.Command, entry.Time.Format(time.RFC3339))
+		fmt.Fprintf(&b, `{"event_id":%q,"resource_type":%q,"resource_id":%q,"session_id":%q,"action":%q,"event":%q,"kind":%q,"status":%q,"command":%q,"time":%q}`, entry.EventID, entry.Kind, entry.SessionID, entry.SessionID, entry.Action, entry.Action, entry.Kind, entry.Status, entry.Command, entry.Time.Format(time.RFC3339))
 	}
 	b.WriteByte(']')
 	return b.String()
@@ -419,16 +465,45 @@ func decisionIDFromArgs(args map[string]any) string {
 	return id
 }
 
-func formatOutputPage(page processmgr.OutputPage) string {
+func formatOutputPage(page processmgr.OutputPage, sess *processmgr.Session) string {
 	if len(page.Lines) == 0 {
-		return fmt.Sprintf("<no output>\npage: offset=%d next_offset=%d total=%d has_more=%t", page.Offset, page.NextOffset, page.Total, page.HasMore)
+		return fmt.Sprintf("<no output>\n%s\n%s", backgroundNoOutputHint(sess), backgroundOutputMetadataLine(page, sess))
 	}
 	var b strings.Builder
 	for _, line := range page.Lines {
 		fmt.Fprintf(&b, "%s: %s\n", line.Stream, line.Text)
 	}
-	fmt.Fprintf(&b, "page: offset=%d next_offset=%d total=%d has_more=%t", page.Offset, page.NextOffset, page.Total, page.HasMore)
+	b.WriteString(backgroundOutputMetadataLine(page, sess))
 	return strings.TrimRight(b.String(), "\n")
+}
+
+func backgroundOutputMetadataLine(page processmgr.OutputPage, sess *processmgr.Session) string {
+	status := page.Status
+	started := page.StartedAt
+	lastActive := page.LastActive
+	if sess != nil {
+		status = sess.Status
+		started = sess.StartedAt
+		lastActive = sess.LastActivityAt
+	}
+	return fmt.Sprintf("output_status: status=%s retained_lines=%d max_tail=%d dropped_lines=%d offset=%d next_offset=%d has_more=%t runtime=%s last_activity=%s", status, page.Retained, page.MaxTail, page.Dropped, page.Offset, page.NextOffset, page.HasMore, backgroundDurationSince(started), backgroundDurationSince(lastActive))
+}
+
+func backgroundNoOutputHint(sess *processmgr.Session) string {
+	if sess == nil {
+		return "no_output_reason: session metadata unavailable"
+	}
+	if sess.Status == processmgr.StatusRunning {
+		return "no_output_reason: background task is still running but no stdout/stderr lines are currently retained; command may be silent or output may not have arrived yet; retry later or inspect status"
+	}
+	return fmt.Sprintf("no_output_reason: background task is %s and no stdout/stderr lines are currently retained", sess.Status)
+}
+
+func backgroundDurationSince(t time.Time) string {
+	if t.IsZero() {
+		return "unknown"
+	}
+	return time.Since(t).Round(time.Millisecond).String() + " ago"
 }
 
 func formatSessions(sessions []processmgr.Session) string {

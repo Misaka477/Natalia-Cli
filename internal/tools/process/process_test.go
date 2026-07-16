@@ -271,7 +271,7 @@ func TestProcessCleanupDryRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(cleanup, "dry-run") || !strings.Contains(cleanup, "removed: 1") {
+	if !strings.Contains(cleanup, "dry-run") || !strings.Contains(cleanup, "removed: 1") || !strings.Contains(cleanup, "would_remove: 1") || !strings.Contains(cleanup, "remaining_resources:") || !strings.Contains(cleanup, "next_action:") {
 		t.Fatalf("expected dry-run cleanup report, got %q", cleanup)
 	}
 	if _, ok := processmgr.DefaultManager().Status(id); !ok {
@@ -315,6 +315,25 @@ func TestProcessOutputEmptyJSONFormat(t *testing.T) {
 	}
 }
 
+func TestProcessOutputNoOutputIncludesLifecycleMetadata(t *testing.T) {
+	resetManager()
+	result, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "args": []any{"-c", "sleep 1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := extractProcessID(t, result)
+	output, err := (&Output{}).Execute(map[string]any{"id": id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"<no output>", "no_output_reason:", "status=running", "retained_lines=0", "max_tail=", "last_activity="} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected no-output metadata %q in %q", want, output)
+		}
+	}
+	_ = processmgr.DefaultManager().Stop(id)
+}
+
 func TestProcessAuditJSONFormat(t *testing.T) {
 	resetManager()
 	_, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "args": []any{"-c", "true"}})
@@ -325,7 +344,12 @@ func TestProcessAuditJSONFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(audit, "[") || !strings.Contains(audit, "event_id") || !strings.Contains(audit, "action") {
+	for _, want := range []string{"event_id", "resource_type", "resource_id", "action", "event", "status", "time"} {
+		if !strings.Contains(audit, want) {
+			t.Fatalf("expected JSON audit field %q in %q", want, audit)
+		}
+	}
+	if !strings.HasPrefix(audit, "[") {
 		t.Fatalf("expected JSON audit output, got %q", audit)
 	}
 }

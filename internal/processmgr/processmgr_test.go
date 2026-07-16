@@ -138,6 +138,10 @@ func TestListAndTail(t *testing.T) {
 	if !ok || len(output) != 2 || output[0].Text != "b" || output[1].Text != "c" {
 		t.Fatalf("expected retained tail b/c, ok=%v output=%+v", ok, output)
 	}
+	page, ok := m.OutputPage(sess.ID, 0, 10)
+	if !ok || page.Retained != 2 || page.Dropped != 1 || page.MaxTail != 2 || page.Status != StatusExited {
+		t.Fatalf("expected output retention metadata, ok=%v page=%+v", ok, page)
+	}
 }
 
 func TestStopTerminatesProcessGroup(t *testing.T) {

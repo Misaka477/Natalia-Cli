@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	"github.com/Misaka477/Natalia-Cli/internal/networkpolicy"
@@ -120,11 +121,7 @@ func (t *Search) Execute(args map[string]any) (string, error) {
 		return "", fmt.Errorf("搜索失败: %s", sanitizeSearchDiagnostic(err))
 	}
 	if len(results) == 0 {
-		msg := fmt.Sprintf("no results found for %q", query)
-		if len(diagnostics) > 0 {
-			msg += "\n搜索诊断:\n- " + strings.Join(diagnostics, "\n- ")
-		}
-		return msg, nil
+		return formatNoSearchResults(query, diagnostics), nil
 	}
 	if warning := searchRelevanceWarning(query, results); warning != "" {
 		diagnostics = append(diagnostics, warning)
@@ -174,16 +171,76 @@ func searchRelevanceWarning(query string, results []SearchResult) string {
 }
 
 func queryTerms(query string) []string {
-	fields := strings.FieldsFunc(strings.ToLower(query), func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9')
-	})
-	terms := make([]string, 0, len(fields))
-	for _, field := range fields {
-		if len(field) >= 3 {
-			terms = append(terms, field)
+	var fields []string
+	var current strings.Builder
+	currentASCII := false
+	hasCurrent := false
+	flush := func() {
+		if current.Len() == 0 {
+			return
 		}
+		fields = append(fields, current.String())
+		current.Reset()
+		hasCurrent = false
+		currentASCII = false
+	}
+	for _, r := range strings.ToLower(query) {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			flush()
+			continue
+		}
+		ascii := r <= unicode.MaxASCII
+		if hasCurrent && ascii != currentASCII {
+			flush()
+		}
+		current.WriteRune(r)
+		currentASCII = ascii
+		hasCurrent = true
+	}
+	flush()
+
+	terms := make([]string, 0, len(fields))
+	seen := make(map[string]bool, len(fields))
+	for _, field := range fields {
+		if !validSearchTerm(field) || seen[field] {
+			continue
+		}
+		seen[field] = true
+		terms = append(terms, field)
 	}
 	return terms
+}
+
+func validSearchTerm(term string) bool {
+	if term == "" {
+		return false
+	}
+	ascii := true
+	runeCount := 0
+	for _, r := range term {
+		runeCount++
+		if r > unicode.MaxASCII {
+			ascii = false
+		}
+	}
+	if ascii {
+		return runeCount >= 3
+	}
+	return runeCount >= 2
+}
+
+func formatNoSearchResults(query string, diagnostics []string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "no results found for %q\n", query)
+	b.WriteString("下一步建议:\n")
+	b.WriteString("- 缩短查询，只保留关键实体、项目名或错误信息\n")
+	b.WriteString("- 尝试英文改写，或同时保留原文关键词和英文关键词\n")
+	b.WriteString("- 如果已有明确网址，改用 web_fetch 直接读取该 URL")
+	if len(diagnostics) > 0 {
+		b.WriteString("\n搜索诊断:\n- ")
+		b.WriteString(strings.Join(diagnostics, "\n- "))
+	}
+	return b.String()
 }
 
 func searchResultScore(result SearchResult, terms []string) float64 {

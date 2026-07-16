@@ -77,6 +77,12 @@ type OutputPage struct {
 	Offset     int
 	NextOffset int
 	HasMore    bool
+	Retained   int
+	Dropped    int
+	MaxTail    int
+	Status     Status
+	StartedAt  time.Time
+	LastActive time.Time
 }
 
 type EventType string
@@ -132,8 +138,8 @@ type SweepResult struct {
 }
 
 type StopOptions struct {
-	Signal   syscall.Signal
-	Grace    time.Duration
+	Signal    syscall.Signal
+	Grace     time.Duration
 	KillAfter time.Duration
 }
 
@@ -164,6 +170,7 @@ type managedSession struct {
 	cmd         *exec.Cmd
 	cancel      context.CancelFunc
 	maxTail     int
+	outputTotal int
 	output      []OutputLine
 	done        chan struct{}
 	opts        StartOptions
@@ -246,11 +253,11 @@ func (m *Manager) Start(ctx context.Context, opts StartOptions) (*Session, error
 	optsCopy.Args = append([]string(nil), opts.Args...)
 	optsCopy.Env = append([]string(nil), opts.Env...)
 	ms := &managedSession{
-		manager:     m,
-		meta:        Session{ID: id, Kind: opts.Kind, Command: opts.Command, Args: append([]string(nil), opts.Args...), Cwd: opts.Cwd, Status: StatusRunning, PID: cmd.Process.Pid, StartedAt: now, LastActivityAt: now, EnvSummary: summarizeEnv(opts.Env), Attached: true, IdleTimeout: opts.IdleTimeout, MaxLifetime: opts.MaxLifetime},
-		cmd:         cmd, cancel: cancel, maxTail: opts.MaxTail, done: make(chan struct{}),
-		opts:        optsCopy,
-		decisionID:  opts.DecisionID,
+		manager: m,
+		meta:    Session{ID: id, Kind: opts.Kind, Command: opts.Command, Args: append([]string(nil), opts.Args...), Cwd: opts.Cwd, Status: StatusRunning, PID: cmd.Process.Pid, StartedAt: now, LastActivityAt: now, EnvSummary: summarizeEnv(opts.Env), Attached: true, IdleTimeout: opts.IdleTimeout, MaxLifetime: opts.MaxLifetime},
+		cmd:     cmd, cancel: cancel, maxTail: opts.MaxTail, done: make(chan struct{}),
+		opts:       optsCopy,
+		decisionID: opts.DecisionID,
 	}
 	m.mu.Lock()
 	m.sessions[id] = ms
@@ -324,7 +331,11 @@ func (m *Manager) OutputPage(id string, offset, limit int) (OutputPage, bool) {
 		end = offset + limit
 	}
 	lines := append([]OutputLine(nil), ms.output[offset:end]...)
-	return OutputPage{Lines: lines, Total: total, Offset: offset, NextOffset: end, HasMore: end < total}, true
+	dropped := ms.outputTotal - total
+	if dropped < 0 {
+		dropped = 0
+	}
+	return OutputPage{Lines: lines, Total: total, Offset: offset, NextOffset: end, HasMore: end < total, Retained: total, Dropped: dropped, MaxTail: ms.maxTail, Status: ms.meta.Status, StartedAt: ms.meta.StartedAt, LastActive: ms.meta.LastActivityAt}, true
 }
 
 func (m *Manager) Stop(id string) error {
@@ -594,6 +605,7 @@ func (s *managedSession) appendOutput(stream, text string) {
 	text = secret.RedactString(text)
 	line := OutputLine{Stream: stream, Text: text, Time: now}
 	s.output = append(s.output, line)
+	s.outputTotal++
 	if len(s.output) > s.maxTail {
 		s.output = append([]OutputLine(nil), s.output[len(s.output)-s.maxTail:]...)
 	}

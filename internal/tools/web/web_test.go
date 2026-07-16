@@ -240,6 +240,54 @@ func TestSearchResultScore(t *testing.T) {
 	}
 }
 
+func TestSearchQueryTermsHandleMultilingualText(t *testing.T) {
+	terms := queryTerms("ナタリア CLI 도구 测试")
+	for _, want := range []string{"ナタリア", "cli", "도구", "测试"} {
+		if !containsTerm(terms, want) {
+			t.Fatalf("expected multilingual term %q in %+v", want, terms)
+		}
+	}
+	result := SearchResult{Title: "ナタリア CLI 도구", Snippet: "多语言 测试", URL: "https://example.com/natalia"}
+	if score := searchResultScore(result, terms); score < 0.75 {
+		t.Fatalf("expected multilingual result to score as relevant, got %f terms=%+v", score, terms)
+	}
+}
+
+func TestSearchNoResultsGuidanceIsActionableAndSanitized(t *testing.T) {
+	withSearchGlobals(t, func() {
+		SearchEngine = "duckduckgo"
+		DDGAPIBaseURL = "https://duckduckgo.test/api"
+		DDGHTMLBaseURL = "https://duckduckgo.test/html"
+		webSearchHTTPClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`<html></html>`)), Request: req}, nil
+		})}
+
+		result, err := (&Search{}).Execute(map[string]any{"query": "ナタリア CLI 도구 테스트"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"下一步建议", "尝试英文改写", "web_fetch", "搜索诊断"} {
+			if !strings.Contains(result, want) {
+				t.Fatalf("expected no-result guidance %q in %q", want, result)
+			}
+		}
+		for _, leaked := range []string{"duckduckgo", "provider", "api", "html"} {
+			if strings.Contains(strings.ToLower(result), leaked) {
+				t.Fatalf("no-result diagnostic leaked internal detail %q in %q", leaked, result)
+			}
+		}
+	})
+}
+
+func containsTerm(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
 func TestSearchSchemaUsesBooleanIncludeContent(t *testing.T) {
 	if got := (&Search{}).Parameters()["include_content"].Type; got != "boolean" {
 		t.Fatalf("expected boolean include_content schema, got %q", got)

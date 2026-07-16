@@ -441,9 +441,11 @@ func (t *Status) Execute(args map[string]any) (string, error) {
 
 type Cleanup struct{ Pool *worker.Pool }
 
-func (t *Cleanup) Name() string        { return "agent_cleanup" }
-func (t *Cleanup) Description() string { return "clean up finished sub-agents and free resources" }
-func (t *Cleanup) Required() []string  { return []string{} }
+func (t *Cleanup) Name() string { return "agent_cleanup" }
+func (t *Cleanup) Description() string {
+	return "clean up finished sub-agents and free resources; returns affected IDs, remaining status summary, and next_action"
+}
+func (t *Cleanup) Required() []string { return []string{} }
 func (t *Cleanup) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{"dry_run": {Type: "boolean", Description: "optional, preview agents to clean up without taking action"}}
 }
@@ -465,22 +467,36 @@ func (t *Cleanup) Execute(args map[string]any) (string, error) {
 			}
 		}
 		if len(affected) == 0 {
-			return "agent cleanup dry-run: no agents to clean up", nil
+			return "agent cleanup dry-run: no agents to clean up\n" + agentCleanupStatusLine(t.Pool) + "\nnext_action: no agent cleanup needed", nil
 		}
-		return fmt.Sprintf("agent cleanup dry-run\nwould_remove: %d\naffected_ids: %s", len(affected), strings.Join(affected, ", ")), nil
+		return fmt.Sprintf("agent cleanup dry-run\nwould_remove: %d\naffected_ids: %s\n%s\nnext_action: rerun without dry_run to remove affected agent resources, or inspect agent_status/agent_output first", len(affected), strings.Join(affected, ", "), agentCleanupStatusLine(t.Pool)), nil
 	}
 	affected := t.Pool.Cleanup()
 	if len(affected) == 0 {
-		return "agent cleanup complete: no agents to clean up", nil
+		return "agent cleanup complete: no agents to clean up\n" + agentCleanupStatusLine(t.Pool) + "\nnext_action: no agent cleanup needed", nil
 	}
-	return fmt.Sprintf("agent cleanup complete\nremoved: %d\naffected_ids: %s", len(affected), strings.Join(affected, ", ")), nil
+	return fmt.Sprintf("agent cleanup complete\nremoved: %d\naffected_ids: %s\n%s\nnext_action: inspect agent_list/agent_status to confirm remaining resources", len(affected), strings.Join(affected, ", "), agentCleanupStatusLine(t.Pool)), nil
+}
+
+func agentCleanupStatusLine(pool *worker.Pool) string {
+	counts := map[worker.Status]int{}
+	total := 0
+	if pool != nil {
+		for _, w := range pool.List() {
+			total++
+			counts[w.GetStatus()]++
+		}
+	}
+	return fmt.Sprintf("remaining_resources: resource_type=agent total=%d running=%d completed=%d stopped=%d failed=%d paused=%d idle=%d", total, counts[worker.StatusRunning], counts[worker.StatusCompleted], counts[worker.StatusStopped], counts[worker.StatusFailed], counts[worker.StatusPaused], counts[worker.StatusIdle])
 }
 
 type Audit struct{ Pool *worker.Pool }
 
-func (t *Audit) Name() string        { return "agent_audit" }
-func (t *Audit) Description() string { return "view sub-agent audit log" }
-func (t *Audit) Required() []string  { return []string{} }
+func (t *Audit) Name() string { return "agent_audit" }
+func (t *Audit) Description() string {
+	return "view sub-agent audit log; text output distinguishes agent_id from event_id, JSON includes event_id/resource_type/resource_id/action/status/time"
+}
+func (t *Audit) Required() []string { return []string{} }
 func (t *Audit) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"tail":   {Type: "integer", Description: "optional, recent audit entries to return; default all"},
@@ -515,14 +531,14 @@ func (t *Audit) Execute(args map[string]any) (string, error) {
 			if i > 0 {
 				b.WriteString(",\n ")
 			}
-			fmt.Fprintf(&b, `{"event_id":%q,"worker_id":%q,"event":%q,"status":%q,"time":%q}`, entry.EventID, entry.WorkerID, entry.Event, entry.Status, entry.Time.Format(time.RFC3339))
+			fmt.Fprintf(&b, `{"event_id":%q,"resource_type":"agent","resource_id":%q,"agent_id":%q,"worker_id":%q,"action":%q,"event":%q,"status":%q,"time":%q}`, entry.EventID, entry.WorkerID, entry.WorkerID, entry.WorkerID, entry.Event, entry.Event, entry.Status, entry.Time.Format(time.RFC3339))
 		}
 		b.WriteByte(']')
 		return b.String(), nil
 	}
 	var b strings.Builder
 	for _, entry := range entries {
-		fmt.Fprintf(&b, "%s %s id=%s event=%s status=%s attached=%t\n", entry.Time.Format(time.RFC3339), entry.EventID, entry.WorkerID, entry.Event, entry.Status, entry.Attached)
+		fmt.Fprintf(&b, "%s event_id=%s agent_id=%s resource_type=agent action=%s status=%s attached=%t\n", entry.Time.Format(time.RFC3339), entry.EventID, entry.WorkerID, entry.Event, entry.Status, entry.Attached)
 	}
 	return strings.TrimSpace(b.String()), nil
 }

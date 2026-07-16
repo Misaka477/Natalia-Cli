@@ -933,8 +933,24 @@ func TestGrepFallbackSkipsBinaryAndLargeFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(result, "small.txt") || strings.Contains(result, "binary.txt") || strings.Contains(result, "large.txt:1") || !strings.Contains(result, "[skipped") {
+	if !strings.Contains(result, "small.txt") || !strings.Contains(result, "[skipped") || !strings.Contains(result, "binary file skipped") || strings.Contains(result, "binary.txt:1") || strings.Contains(result, "large.txt:1") {
 		t.Fatalf("expected fallback grep to skip binary/large files, got %q", result)
+	}
+}
+
+func TestGrepRGJSONSkipsBinaryMatchContent(t *testing.T) {
+	result, err := parseRGJSONContent(strings.Join([]string{
+		`{"type":"match","data":{"path":{"text":"binary.bin"},"lines":{"text":"needle\u0000raw\n"},"line_number":1}}`,
+		`{"type":"match","data":{"path":{"text":"text.txt"},"lines":{"text":"needle text\n"},"line_number":2}}`,
+	}, "\n"), 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "text.txt:2: needle text") || !strings.Contains(result, "[skipped binary.bin: binary file skipped]") {
+		t.Fatalf("expected text match and binary skip marker, got %q", result)
+	}
+	if strings.Contains(result, "needle\x00raw") || strings.Contains(result, "binary.bin:1:") {
+		t.Fatalf("expected raw binary match content to be omitted, got %q", result)
 	}
 }
 
@@ -1070,7 +1086,7 @@ func TestGlobAbsolutePattern(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result != "no matching files found" {
+	if !strings.Contains(result, "no matching files found") || !strings.Contains(result, "total=0") || !strings.Contains(result, "has_more=false") {
 		t.Fatalf("expected no-match message, got %q", result)
 	}
 
@@ -1227,8 +1243,24 @@ func TestGlobLimitOffsetAndSort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(result, "b.go") || strings.Contains(result, "a.go") || strings.Contains(result, "c.go") || !strings.Contains(result, "[glob results showing 2-2 of 3]") {
+	if !strings.Contains(result, "b.go") || strings.Contains(result, "a.go") || strings.Contains(result, "c.go") || !strings.Contains(result, "total=3") || !strings.Contains(result, "offset=1") || !strings.Contains(result, "next_offset=2") || !strings.Contains(result, "has_more=true") {
 		t.Fatalf("unexpected paginated glob result: %q", result)
+	}
+
+	result, err = (&Glob{}).Execute(map[string]any{"pattern": "*.go", "path": dir, "limit": float64(2), "offset": float64(2)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "c.go") || !strings.Contains(result, "total=3") || !strings.Contains(result, "next_offset=3") || !strings.Contains(result, "has_more=false") {
+		t.Fatalf("unexpected final glob page: %q", result)
+	}
+
+	result, err = (&Glob{}).Execute(map[string]any{"pattern": "*.go", "path": dir, "offset": float64(10)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "no matching files found") || !strings.Contains(result, "total=3") || !strings.Contains(result, "offset=10") || !strings.Contains(result, "has_more=false") {
+		t.Fatalf("unexpected out-of-range glob page: %q", result)
 	}
 }
 
@@ -1465,7 +1497,7 @@ func TestGlobMetadataCount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(result, "[glob results: 3 files]") {
+	if !strings.Contains(result, "total=3") || !strings.Contains(result, "returned=3") || !strings.Contains(result, "has_more=false") {
 		t.Fatalf("expected glob result count, got %q", result)
 	}
 }

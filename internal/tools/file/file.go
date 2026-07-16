@@ -699,7 +699,7 @@ const maxGrepScannerFileBytes = 10 * 1024 * 1024
 
 func (t *Grep) Name() string { return "grep" }
 func (t *Grep) Description() string {
-	return "recursively search text in files (supports regex)"
+	return "recursively search text in files (supports regex); binary files are skipped by default and reported as skipped instead of returning raw binary content"
 }
 func (t *Grep) Required() []string { return []string{"pattern"} }
 func (t *Grep) Parameters() map[string]llm.Property {
@@ -819,7 +819,7 @@ func grepWithScanner(opts grepOptions) (string, error) {
 			return nil
 		}
 		if skip, reason := skipGrepScannerFile(path, info); skip {
-			if opts.OutputMode == "content" && reason != "binary" {
+			if opts.OutputMode == "content" {
 				results = append(results, fmt.Sprintf("[skipped %s: %s]", path, reason))
 			}
 			return nil
@@ -986,6 +986,7 @@ type rgJSONText struct {
 
 func parseRGJSONContent(text string, headLimit int) (string, error) {
 	var lines []string
+	skippedBinary := make(map[string]bool)
 	matchCount := 0
 	truncated := false
 	for _, raw := range strings.Split(strings.TrimSpace(text), "\n") {
@@ -1000,6 +1001,15 @@ func parseRGJSONContent(text string, headLimit int) (string, error) {
 		if event.Type != "match" && event.Type != "context" {
 			continue
 		}
+		line := strings.TrimRight(event.Data.Lines.Text, "\r\n")
+		if strings.ContainsRune(line, '\x00') {
+			path := event.Data.Path.Text
+			if path == "" {
+				path = "<unknown>"
+			}
+			skippedBinary[path] = true
+			continue
+		}
 		if event.Type == "match" {
 			matchCount++
 			if headLimit > 0 && matchCount > headLimit {
@@ -1011,8 +1021,17 @@ func parseRGJSONContent(text string, headLimit int) (string, error) {
 		if event.Type == "match" {
 			sep = ":"
 		}
-		line := strings.TrimRight(event.Data.Lines.Text, "\r\n")
 		lines = append(lines, fmt.Sprintf("%s%s%d%s %s", event.Data.Path.Text, sep, event.Data.LineNumber, sep, line))
+	}
+	if len(skippedBinary) > 0 {
+		paths := make([]string, 0, len(skippedBinary))
+		for path := range skippedBinary {
+			paths = append(paths, path)
+		}
+		sort.Strings(paths)
+		for _, path := range paths {
+			lines = append(lines, fmt.Sprintf("[skipped %s: binary file skipped]", path))
+		}
 	}
 	if len(lines) == 0 {
 		return "no matches found", nil
@@ -1108,7 +1127,7 @@ func skipGrepScannerFile(path string, info os.FileInfo) (bool, string) {
 	}
 	binary, err := looksBinaryFile(path)
 	if err == nil && binary {
-		return true, "binary"
+		return true, "binary file skipped"
 	}
 	return false, ""
 }
@@ -1539,7 +1558,7 @@ type Glob struct {
 
 func (t *Glob) Name() string { return "glob" }
 func (t *Glob) Description() string {
-	return "recursively find files by glob pattern (** matches any directory)"
+	return "recursively find files by glob pattern (** matches any directory); paginated output includes total, offset, next_offset, and has_more"
 }
 func (t *Glob) Required() []string { return []string{"pattern"} }
 func (t *Glob) Parameters() map[string]llm.Property {
@@ -1606,19 +1625,22 @@ func (t *Glob) Execute(args map[string]any) (string, error) {
 	sort.Strings(results)
 
 	if len(results) == 0 {
-		return "no matching files found", nil
+		return formatGlobPage(nil, len(results), offset, limit), nil
 	}
 	total := len(results)
-	results, marker := paginateResults(results, offset, limit)
+	page, _ := paginateResults(results, offset, limit)
+	return formatGlobPage(page, total, offset, limit), nil
+}
+
+func formatGlobPage(results []string, total, offset, limit int) string {
+	end := offset + len(results)
+	nextOffset := end
+	hasMore := end < total
 	if len(results) == 0 {
-		return "no matching files found", nil
+		return fmt.Sprintf("no matching files found\n[glob pagination: total=%d offset=%d returned=0 limit=%d next_offset=%d has_more=false]", total, offset, limit, offset)
 	}
-	if marker != "" {
-		results = append(results, marker)
-	} else if total > 0 {
-		results = append(results, fmt.Sprintf("[glob results: %d files]", total))
-	}
-	return strings.Join(results, "\n"), nil
+	results = append(results, fmt.Sprintf("[glob pagination: total=%d offset=%d returned=%d limit=%d next_offset=%d has_more=%t]", total, offset, len(results), limit, nextOffset, hasMore))
+	return strings.Join(results, "\n")
 }
 
 func paginateResults(results []string, offset, limit int) ([]string, string) {
