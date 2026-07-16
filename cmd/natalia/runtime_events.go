@@ -12,18 +12,18 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	"github.com/Misaka477/Natalia-Cli/internal/notifications"
 	"github.com/Misaka477/Natalia-Cli/internal/processmgr"
-	"github.com/Misaka477/Natalia-Cli/internal/soul"
+	"github.com/Misaka477/Natalia-Cli/internal/orchestrator"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/agent"
 	"github.com/Misaka477/Natalia-Cli/internal/toolset"
 	"github.com/Misaka477/Natalia-Cli/internal/wire"
 	"github.com/Misaka477/Natalia-Cli/internal/worker"
 )
 
-func registerAgentToolsForEngine(cfg *config.Config, engine *soul.Engine, tools *toolset.Registry) {
+func registerAgentToolsForEngine(cfg *config.Config, engine *orchestrator.Engine, tools *toolset.Registry) {
 	registerAgentToolsForEngineWithRuntime(DefaultAppRuntime(), engine, tools)
 }
 
-func registerAgentToolsForEngineWithRuntime(rt *AppRuntime, engine *soul.Engine, tools *toolset.Registry) {
+func registerAgentToolsForEngineWithRuntime(rt *AppRuntime, engine *orchestrator.Engine, tools *toolset.Registry) {
 	if rt == nil || engine == nil || engine.LLM == nil || tools == nil {
 		return
 	}
@@ -60,7 +60,7 @@ func registerAgentToolsForEngineWithRuntime(rt *AppRuntime, engine *soul.Engine,
 	tools.Register(&agent.Audit{Pool: pool})
 }
 
-func bridgeRuntimeEvents(engine *soul.Engine, w *wire.Wire) func() {
+func bridgeRuntimeEvents(engine *orchestrator.Engine, w *wire.Wire) func() {
 	detachProcess := bridgeProcessNotifications(engine, w)
 	detachProcessWire := bridgeProcessWireEvents(w)
 	detachInteractiveWire := bridgeInteractiveWireEvents(w)
@@ -73,7 +73,7 @@ func bridgeRuntimeEvents(engine *soul.Engine, w *wire.Wire) func() {
 	}
 }
 
-func bridgeProcessNotifications(engine *soul.Engine, w *wire.Wire) func() {
+func bridgeProcessNotifications(engine *orchestrator.Engine, w *wire.Wire) func() {
 	return processmgr.DefaultManager().SubscribeComplete(func(sess processmgr.Session) {
 		if sess.Kind != processmgr.KindBackground {
 			return
@@ -117,7 +117,7 @@ func bridgeProcessWireEvents(w *wire.Wire) func() {
 		if err != nil {
 			return
 		}
-		w.SoulSide.PublishEvent(wireEvent)
+		w.RuntimeSide.PublishEvent(wireEvent)
 	})
 }
 
@@ -131,7 +131,7 @@ func bridgeInteractiveWireEvents(w *wire.Wire) func() {
 		if err != nil {
 			return
 		}
-		w.SoulSide.PublishEvent(wireEvent)
+		w.RuntimeSide.PublishEvent(wireEvent)
 	})
 }
 
@@ -169,7 +169,7 @@ func bridgeWorkerEvents(w *wire.Wire) func() {
 		if err != nil {
 			return
 		}
-		w.SoulSide.PublishEvent(wireEvent)
+		w.RuntimeSide.PublishEvent(wireEvent)
 	})
 }
 
@@ -181,5 +181,5 @@ func publishWireNotification(w *wire.Wire, notification wire.Notification) {
 	if err != nil {
 		return
 	}
-	w.SoulSide.PublishEvent(event)
+	w.RuntimeSide.PublishEvent(event)
 }

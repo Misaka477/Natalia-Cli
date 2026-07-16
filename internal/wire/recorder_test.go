@@ -65,7 +65,7 @@ func TestRecorderAttachRecordsPublishedWireMessages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.SoulSide.PublishEvent(event)
+	w.RuntimeSide.PublishEvent(event)
 
 	messages, err := Replay(strings.NewReader(buf.String()))
 	if err != nil {

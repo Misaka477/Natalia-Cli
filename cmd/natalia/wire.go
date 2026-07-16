@@ -16,7 +16,7 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/hook"
 	"github.com/Misaka477/Natalia-Cli/internal/securefs"
 	"github.com/Misaka477/Natalia-Cli/internal/session"
-	"github.com/Misaka477/Natalia-Cli/internal/soul"
+	"github.com/Misaka477/Natalia-Cli/internal/orchestrator"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/ask_user"
 	"github.com/Misaka477/Natalia-Cli/internal/toolset"
 	"github.com/Misaka477/Natalia-Cli/internal/wire"
@@ -101,7 +101,7 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 	rt := DefaultAppRuntime()
 	w.SetPendingOnExpired(func(requestID, reason string) {
 		if event, err := wire.NewEvent(wire.EventStatusUpdate, wire.StatusUpdate{Diagnostics: []string{fmt.Sprintf("pending %s expired: %s", requestID, reason)}}); err == nil {
-			w.SoulSide.PublishEvent(event)
+			w.RuntimeSide.PublishEvent(event)
 		}
 	})
 	engine := buildEngine(cfg, tools, debug)
@@ -136,10 +136,10 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 			}
 			input, _ := json.Marshal(params.UserInput)
 			if event, err := wire.NewEvent(wire.EventTurnBegin, wire.TurnBegin{UserInput: input}); err == nil {
-				w.SoulSide.PublishEvent(event)
+				w.RuntimeSide.PublishEvent(event)
 			}
 			turnStarted := time.Now()
-			stopTurnStatus := startWireTurnStatusTicker(w, cfg, func() *soul.Engine { return engine }, turnStarted, time.Second, rt)
+			stopTurnStatus := startWireTurnStatusTicker(w, cfg, func() *orchestrator.Engine { return engine }, turnStarted, time.Second, rt)
 			engine.ResetCancel()
 			approvalCtxMu.Lock()
 			approvalCtx = ctx
@@ -156,12 +156,12 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 			}
 			publishOutcomeFinalMessage(w, outcome, engine.Stream)
 			if event, err := wire.NewEvent(wire.EventTurnEnd, wire.TurnEnd{}); err == nil {
-				w.SoulSide.PublishEvent(event)
+				w.RuntimeSide.PublishEvent(event)
 			}
 			status := runtimeStatusUpdate(cfg, engine, rt)
 			setTurnElapsed(&status, turnStarted, false)
 			if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
-				w.SoulSide.PublishEvent(event)
+				w.RuntimeSide.PublishEvent(event)
 			}
 			return map[string]any{"status": "completed", "stop_reason": outcome.StopReason}, nil
 		},
@@ -183,7 +183,7 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 			status := runtimeStatusUpdate(cfg, engine, rt)
 			status.PlanMode = &params.Enabled
 			if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
-				w.SoulSide.PublishEvent(event)
+				w.RuntimeSide.PublishEvent(event)
 			}
 			return map[string]any{"status": "ok"}, nil
 		},
@@ -206,7 +206,7 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 			persistWireSessionState(cfg, opts.SessionStore, wireSession, rt)
 			status := runtimeStatusUpdate(cfg, engine, rt)
 			if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
-				w.SoulSide.PublishEvent(event)
+				w.RuntimeSide.PublishEvent(event)
 			}
 			return map[string]any{"status": "ok"}, nil
 		},
@@ -244,7 +244,7 @@ func newWireRuntimeServer(cfg *config.Config, tools *toolset.Registry, debug boo
 			persistWireSessionState(cfg, opts.SessionStore, wireSession, rt)
 			status := runtimeStatusUpdate(cfg, engine, rt)
 			if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
-				w.SoulSide.PublishEvent(event)
+				w.RuntimeSide.PublishEvent(event)
 			}
 			return map[string]any{"status": "restored", "session_id": sess.ID, "messages_restored": len(messages), "warnings": warnings}, nil
 		},
@@ -429,7 +429,7 @@ func wireSessionSummaries(store *session.SessionStore) []wireSessionSummary {
 	return out
 }
 
-func runtimeStatusUpdate(cfg *config.Config, engine *soul.Engine, rt *AppRuntime) wire.StatusUpdate {
+func runtimeStatusUpdate(cfg *config.Config, engine *orchestrator.Engine, rt *AppRuntime) wire.StatusUpdate {
 	status := wire.StatusUpdate{}
 	planState := planManager.Status()
 	status.PlanMode = &planState.Enabled
@@ -459,7 +459,7 @@ func runtimeStatusUpdate(cfg *config.Config, engine *soul.Engine, rt *AppRuntime
 	return status
 }
 
-func startWireTurnStatusTicker(w *wire.Wire, cfg *config.Config, engine func() *soul.Engine, started time.Time, interval time.Duration, rt *AppRuntime) func() {
+func startWireTurnStatusTicker(w *wire.Wire, cfg *config.Config, engine func() *orchestrator.Engine, started time.Time, interval time.Duration, rt *AppRuntime) func() {
 	if w == nil || interval <= 0 {
 		return func() {}
 	}
@@ -474,7 +474,7 @@ func startWireTurnStatusTicker(w *wire.Wire, cfg *config.Config, engine func() *
 				status := runtimeStatusUpdate(cfg, engine(), rt)
 				setTurnElapsed(&status, started, true)
 				if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
-					w.SoulSide.PublishEvent(event)
+					w.RuntimeSide.PublishEvent(event)
 				}
 			case <-done:
 				return
@@ -496,23 +496,23 @@ func setTurnElapsed(status *wire.StatusUpdate, started time.Time, running bool) 
 	status.TurnRunning = &running
 }
 
-func configureEngineForWire(engine *soul.Engine, w *wire.Wire) {
+func configureEngineForWire(engine *orchestrator.Engine, w *wire.Wire) {
 	engine.OnToken = func(s string) { publishWireContent(w, wire.ContentText, s) }
 	engine.OnReasoning = func(s string) { publishWireContent(w, wire.ContentThink, s) }
 	engine.OnStreamEnd = nil
 	engine.OnStepBegin = func(n int) {
 		if event, err := wire.NewEvent(wire.EventStepBegin, wire.StepBegin{N: n}); err == nil {
-			w.SoulSide.PublishEvent(event)
+			w.RuntimeSide.PublishEvent(event)
 		}
 	}
 	engine.OnCompactBegin = func() {
 		if event, err := wire.NewEvent(wire.EventCompactionBegin, wire.CompactionBegin{}); err == nil {
-			w.SoulSide.PublishEvent(event)
+			w.RuntimeSide.PublishEvent(event)
 		}
 	}
 	engine.OnCompactEnd = func() {
 		if event, err := wire.NewEvent(wire.EventCompactionEnd, wire.CompactionEnd{}); err == nil {
-			w.SoulSide.PublishEvent(event)
+			w.RuntimeSide.PublishEvent(event)
 		}
 	}
 	engine.OnCompact = func(message string) {
@@ -523,25 +523,25 @@ func configureEngineForWire(engine *soul.Engine, w *wire.Wire) {
 		status.MaxContextTokens = &maxContextTokens
 		status.ContextUsage = &contextUsage
 		if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
-			w.SoulSide.PublishEvent(event)
+			w.RuntimeSide.PublishEvent(event)
 		}
 	}
-	engine.OnToolCall = func(event soul.ToolCallEvent) {
+	engine.OnToolCall = func(event orchestrator.ToolCallEvent) {
 		args, _ := json.Marshal(event.Arguments)
 		wireEvent, err := wire.NewEvent(wire.EventToolCall, wire.ToolCall{ID: event.ID, Name: event.Name, Arguments: args})
 		if err == nil {
-			w.SoulSide.PublishEvent(wireEvent)
+			w.RuntimeSide.PublishEvent(wireEvent)
 		}
 	}
-	engine.OnToolResult = func(event soul.ToolResultEvent) {
+	engine.OnToolResult = func(event orchestrator.ToolResultEvent) {
 		wireEvent, err := wire.NewEvent(wire.EventToolResult, wire.ToolResult{ToolCallID: event.ToolCallID, Name: event.Name, Content: event.Content, Display: event.Display, Error: event.Error})
 		if err == nil {
-			w.SoulSide.PublishEvent(wireEvent)
+			w.RuntimeSide.PublishEvent(wireEvent)
 		}
 	}
 }
 
-func configureEngineApprovalForWire(engine *soul.Engine, w *wire.Wire, ctxProvider func() context.Context) {
+func configureEngineApprovalForWire(engine *orchestrator.Engine, w *wire.Wire, ctxProvider func() context.Context) {
 	if engine == nil || engine.Approver == nil || w == nil {
 		return
 	}
@@ -560,7 +560,7 @@ func configureEngineApprovalForWire(engine *soul.Engine, w *wire.Wire, ctxProvid
 	}
 }
 
-func publishOutcomeFinalMessage(w *wire.Wire, outcome *soul.Outcome, stream bool) {
+func publishOutcomeFinalMessage(w *wire.Wire, outcome *orchestrator.Outcome, stream bool) {
 	if outcome == nil || outcome.FinalMessage == "" {
 		return
 	}
@@ -571,7 +571,7 @@ func publishOutcomeFinalMessage(w *wire.Wire, outcome *soul.Outcome, stream bool
 
 func publishWireContent(w *wire.Wire, typ wire.ContentType, text string) {
 	if event, err := wire.NewEvent(wire.EventContentPart, wire.ContentPart{Type: typ, Text: text}); err == nil {
-		w.SoulSide.PublishEvent(event)
+		w.RuntimeSide.PublishEvent(event)
 	}
 }
 
@@ -587,7 +587,7 @@ func requestWireApproval(ctx context.Context, w *wire.Wire, toolName, descriptio
 	if err != nil {
 		return false
 	}
-	result, err := w.SoulSide.Request(ctx, req)
+	result, err := w.RuntimeSide.Request(ctx, req)
 	if err != nil {
 		return false
 	}
@@ -605,7 +605,7 @@ func requestWireQuestion(ctx context.Context, w *wire.Wire, question wire.Questi
 	if err != nil {
 		return wire.QuestionResponse{}, err
 	}
-	result, err := w.SoulSide.Request(ctx, req)
+	result, err := w.RuntimeSide.Request(ctx, req)
 	if err != nil {
 		return wire.QuestionResponse{}, err
 	}
@@ -627,7 +627,7 @@ func requestWireHook(ctx context.Context, w *wire.Wire, hookReq hook.WireHookReq
 		result.Error = err.Error()
 		return result
 	}
-	raw, err := w.SoulSide.Request(ctx, req)
+	raw, err := w.RuntimeSide.Request(ctx, req)
 	if err != nil {
 		result.Error = err.Error()
 		return result

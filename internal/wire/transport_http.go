@@ -359,7 +359,7 @@ func (s *HTTPServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		case <-ctx.Done():
 		default:
 			if event, err := NewEvent(EventStatusUpdate, StatusUpdate{Diagnostics: []string{fmt.Sprintf("ws subscriber dropped events")}}); err == nil {
-				s.wire.SoulSide.PublishEvent(event)
+				s.wire.RuntimeSide.PublishEvent(event)
 			}
 		}
 	})

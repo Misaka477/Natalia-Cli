@@ -30,7 +30,7 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/secret"
 	"github.com/Misaka477/Natalia-Cli/internal/securefs"
 	"github.com/Misaka477/Natalia-Cli/internal/session"
-	"github.com/Misaka477/Natalia-Cli/internal/soul"
+	"github.com/Misaka477/Natalia-Cli/internal/orchestrator"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/browser"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/web"
 	"github.com/Misaka477/Natalia-Cli/internal/toolset"
@@ -176,7 +176,7 @@ func TestStatusLinesShowRuntimeRoutingDetails(t *testing.T) {
 			},
 		},
 	}
-	engine := soul.NewEngine(nil, toolset.NewRegistry())
+	engine := orchestrator.NewEngine(nil, toolset.NewRegistry())
 	engine.Context.Messages = append(engine.Context.Messages, chat.Message{Role: chat.RoleUser, Content: "12345678"})
 	m, err := modeFromEffective(&config.EffectiveProfile{Mode: "debug", ModeConfig: cfg.Profiles["default"].Modes["debug"]})
 	if err != nil {
@@ -441,7 +441,7 @@ func TestApplyAutoflowDecisionRecoversPreviousModePreservingState(t *testing.T) 
 
 func TestMaybeRecordAutoflowDisabledSkipsEscalator(t *testing.T) {
 	escalator := &autoflow.Escalator{Threshold: 1}
-	decision := maybeRecordAutoflow(false, escalator, &soul.Outcome{StopReason: "error"}, nil)
+	decision := maybeRecordAutoflow(false, escalator, &orchestrator.Outcome{StopReason: "error"}, nil)
 	if decision.Action != autoflow.ActionNone || escalator.Consecutive != 0 {
 		t.Fatalf("expected disabled auto to skip state changes, decision=%+v escalator=%+v", decision, escalator)
 	}
@@ -450,7 +450,7 @@ func TestMaybeRecordAutoflowDisabledSkipsEscalator(t *testing.T) {
 func TestHandleAutoCommandTogglesAndResets(t *testing.T) {
 	enabled := true
 	escalator := &autoflow.Escalator{Threshold: 1}
-	escalator.Record(&soul.Outcome{StopReason: "error"}, "code")
+	escalator.Record(&orchestrator.Outcome{StopReason: "error"}, "code")
 
 	output := captureStdout(t, func() { handleAuto("/auto off", &enabled, escalator) })
 	if enabled || escalator.AutoDebug || escalator.PreviousMode != "" || !strings.Contains(output, "auto 已关闭") {
@@ -627,7 +627,7 @@ func TestHandleWorkflowRunPushesSteerAndPersistsState(t *testing.T) {
 	reg := &workflowcore.Registry{}
 	reg.Add(workflowcore.Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []workflowcore.Step{{ID: "step-1", Title: "Inspect", Prompt: "Run git diff", Kind: "task"}}})
 	rt.SetWorkflowRegistry(reg)
-	engine := soul.NewEngine(nil, toolset.NewRegistry())
+	engine := orchestrator.NewEngine(nil, toolset.NewRegistry())
 	statePath := filepath.Join(t.TempDir(), "${profile}-${timestamp}.json")
 	oldActiveConfig := activeConfig
 	activeConfig = &config.Config{DefaultProfile: "default"}
@@ -882,7 +882,7 @@ func TestHandleExecutePlanLoadsPlanAndQueuesSteer(t *testing.T) {
 
 func TestHandleExecutePlanRejectsNonMarkdown(t *testing.T) {
 	cfg := &config.Config{DefaultProfile: "default"}
-	engine := soul.NewEngine(nil, toolset.NewRegistry())
+	engine := orchestrator.NewEngine(nil, toolset.NewRegistry())
 	output := captureStdout(t, func() {
 		handleExecutePlan("/execute-plan plan.txt", cfg, &engine, toolset.NewRegistry(), false, NewAppRuntimeForTest())
 	})
@@ -1436,7 +1436,7 @@ func TestConfigureEngineApprovalForWireRoutesInteractiveStart(t *testing.T) {
 		return wire.ApprovalResponse{RequestID: req.ID, Response: "approve"}, nil
 	})
 	defer stop()
-	engine := soul.NewEngine(nil, toolset.NewRegistry())
+	engine := orchestrator.NewEngine(nil, toolset.NewRegistry())
 	engine.Approver = approval.New(approval.ModeAsk)
 	configureEngineApprovalForWire(engine, w, nil)
 
@@ -1529,7 +1529,7 @@ func TestConfigureEngineForWirePublishesCompactionEvents(t *testing.T) {
 	w := wire.NewWire()
 	msgs, cancel := w.UISide().SubscribeRaw()
 	defer cancel()
-	engine := soul.NewEngine(nil, toolset.NewRegistry())
+	engine := orchestrator.NewEngine(nil, toolset.NewRegistry())
 	configureEngineForWire(engine, w)
 
 	engine.OnCompactBegin()
@@ -1777,7 +1777,7 @@ func TestBridgeProcessNotificationsPublishesWireAndInjection(t *testing.T) {
 	w := wire.NewWire()
 	msgs, cancel := w.UISide().SubscribeRaw()
 	defer cancel()
-	engine := soul.NewEngine(nil, toolset.NewRegistry())
+	engine := orchestrator.NewEngine(nil, toolset.NewRegistry())
 	detach := bridgeProcessNotifications(engine, w)
 	defer detach()
 	sess, err := processmgr.DefaultManager().Start(context.Background(), processmgr.StartOptions{Kind: processmgr.KindBackground, Command: "/bin/sh", Args: []string{"-c", "exit 0"}})
@@ -1802,7 +1802,7 @@ func TestBridgeProcessNotificationsPublishesWireAndInjection(t *testing.T) {
 	if notification.Title != "Background task completed" || !strings.Contains(notification.Message, sess.ID) || !strings.Contains(notification.Message, "exit_code=0") {
 		t.Fatalf("unexpected wire notification: %+v", notification)
 	}
-	provider := soul.NotificationInjectionProvider{Store: notifications.DefaultStore()}
+	provider := orchestrator.NotificationInjectionProvider{Store: notifications.DefaultStore()}
 	injections, err := provider.GetInjections(nil, engine)
 	if err != nil {
 		t.Fatalf("GetInjections failed: %v", err)
@@ -2002,7 +2002,7 @@ func TestInteractiveWireRendererRendersContentStatusAndNotification(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.SoulSide.PublishEvent(status)
+	w.RuntimeSide.PublishEvent(status)
 	completed := false
 	finalElapsed := int64(2200)
 	finalStatus, err := wire.NewEvent(wire.EventStatusUpdate, wire.StatusUpdate{TurnRunning: &completed, TurnElapsedMS: &finalElapsed})
@@ -2013,13 +2013,13 @@ func TestInteractiveWireRendererRendersContentStatusAndNotification(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.SoulSide.PublishEvent(notification)
+	w.RuntimeSide.PublishEvent(notification)
 	end, err := wire.NewEvent(wire.EventTurnEnd, wire.TurnEnd{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.SoulSide.PublishEvent(end)
-	w.SoulSide.PublishEvent(finalStatus)
+	w.RuntimeSide.PublishEvent(end)
+	w.RuntimeSide.PublishEvent(finalStatus)
 	stop()
 
 	if strings.Contains(out.String(), "thinking") || !strings.Contains(out.String(), "answer") || !strings.Contains(errOut.String(), "Thinking") || !strings.Contains(errOut.String(), "thinking") || !strings.Contains(errOut.String(), "Thought for") {
@@ -2049,7 +2049,7 @@ func TestConfigureEngineForWireFeedsInteractiveRenderer(t *testing.T) {
 	var out bytes.Buffer
 	var errOut bytes.Buffer
 	w, stop := startInteractiveWireRenderer(&out, &errOut)
-	engine := soul.NewEngine(nil, toolset.NewRegistry())
+	engine := orchestrator.NewEngine(nil, toolset.NewRegistry())
 	configureEngineForWire(engine, w)
 
 	engine.OnReasoning("reason")
@@ -2058,7 +2058,7 @@ func TestConfigureEngineForWireFeedsInteractiveRenderer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.SoulSide.PublishEvent(end)
+	w.RuntimeSide.PublishEvent(end)
 	stop()
 
 	if strings.Contains(out.String(), "reason") || !strings.Contains(out.String(), "final") || !strings.Contains(errOut.String(), "reason") || !strings.Contains(errOut.String(), "Thought for") {
@@ -2071,10 +2071,10 @@ func TestPublishOutcomeFinalMessageShowsStreamingFailuresOnly(t *testing.T) {
 	var errOut bytes.Buffer
 	w, stop := startInteractiveWireRenderer(&out, &errOut)
 
-	publishOutcomeFinalMessage(w, &soul.Outcome{StopReason: "no_tool_calls", FinalMessage: "already streamed"}, true)
-	publishOutcomeFinalMessage(w, &soul.Outcome{StopReason: "error", FinalMessage: "API error 400"}, true)
-	publishOutcomeFinalMessage(w, &soul.Outcome{StopReason: "max_steps", FinalMessage: "达到最大步骤数"}, true)
-	publishOutcomeFinalMessage(w, &soul.Outcome{StopReason: "no_tool_calls", FinalMessage: "non-stream final"}, false)
+	publishOutcomeFinalMessage(w, &orchestrator.Outcome{StopReason: "no_tool_calls", FinalMessage: "already streamed"}, true)
+	publishOutcomeFinalMessage(w, &orchestrator.Outcome{StopReason: "error", FinalMessage: "API error 400"}, true)
+	publishOutcomeFinalMessage(w, &orchestrator.Outcome{StopReason: "max_steps", FinalMessage: "达到最大步骤数"}, true)
+	publishOutcomeFinalMessage(w, &orchestrator.Outcome{StopReason: "no_tool_calls", FinalMessage: "non-stream final"}, false)
 	stop()
 
 	got := out.String()
@@ -2188,7 +2188,7 @@ func TestInteractiveWireRendererRespondsToQuestionRequest(t *testing.T) {
 	resultCh := make(chan json.RawMessage, 1)
 	errCh := make(chan error, 1)
 	go func() {
-		result, err := w.SoulSide.Request(context.Background(), req)
+		result, err := w.RuntimeSide.Request(context.Background(), req)
 		if err != nil {
 			errCh <- err
 			return
@@ -2231,7 +2231,7 @@ func TestInteractiveWireRendererRespondsToApprovalRequest(t *testing.T) {
 	resultCh := make(chan json.RawMessage, 1)
 	errCh := make(chan error, 1)
 	go func() {
-		result, err := w.SoulSide.Request(context.Background(), req)
+		result, err := w.RuntimeSide.Request(context.Background(), req)
 		if err != nil {
 			errCh <- err
 			return

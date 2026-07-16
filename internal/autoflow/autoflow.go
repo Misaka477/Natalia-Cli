@@ -3,7 +3,7 @@ package autoflow
 import (
 	"strings"
 
-	"github.com/Misaka477/Natalia-Cli/internal/soul"
+	"github.com/Misaka477/Natalia-Cli/internal/orchestrator"
 )
 
 const DefaultFailureThreshold = 2
@@ -45,7 +45,7 @@ func (e *Escalator) Reset() {
 	e.PreviousMode = ""
 }
 
-func (e *Escalator) Record(outcome *soul.Outcome, currentMode string) Decision {
+func (e *Escalator) Record(outcome *orchestrator.Outcome, currentMode string) Decision {
 	if e == nil || outcome == nil {
 		return Decision{}
 	}
@@ -84,11 +84,11 @@ func (e *Escalator) Record(outcome *soul.Outcome, currentMode string) Decision {
 	return Decision{Action: ActionDebug, TargetMode: "debug", FailureKind: failure}
 }
 
-func isSuccessfulOutcome(outcome *soul.Outcome) bool {
+func isSuccessfulOutcome(outcome *orchestrator.Outcome) bool {
 	return outcome.StopReason == "no_tool_calls" && outcome.FinalMessage != ""
 }
 
-func ClassifyFailure(outcome *soul.Outcome) FailureKind {
+func ClassifyFailure(outcome *orchestrator.Outcome) FailureKind {
 	if outcome == nil {
 		return FailureNone
 	}

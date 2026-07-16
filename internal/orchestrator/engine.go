@@ -1,4 +1,4 @@
-package soul
+package orchestrator
 
 import (
 	"context"
@@ -25,11 +25,11 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/toolset"
 )
 
-type BackToTheFuture struct {
+type CheckpointRewind struct {
 	Message string
 }
 
-func (e *BackToTheFuture) Error() string {
+func (e *CheckpointRewind) Error() string {
 	return e.Message
 }
 
@@ -280,7 +280,7 @@ func (e *Engine) agentLoop() *Outcome {
 		if outcome.StopReason == "no_tool_calls" {
 			return outcome
 		}
-		if outcome.StopReason == "back_to_future" {
+		if outcome.StopReason == "checkpoint_rewind" {
 			e.restoreCheckpoint(cp)
 			continue
 		}
@@ -414,7 +414,7 @@ func (e *Engine) step() *Outcome {
 	for _, tc := range msg.ToolCalls {
 		e.log("[ENGINE] executeToolCall: %s → %s", tc.Function.Name, tc.Function.Arguments)
 		if err := e.executeToolCallWithEmitted(tc, e.streamToolCallStarts); err != nil {
-			if _, ok := err.(*BackToTheFuture); ok {
+			if _, ok := err.(*CheckpointRewind); ok {
 				return &Outcome{StopReason: "back_to_the_future"}
 			}
 			return &Outcome{StopReason: "error", FinalMessage: err.Error()}
@@ -566,7 +566,7 @@ func (e *Engine) executeToolCallWithEmitted(tc chat.ToolCall, emitted map[string
 
 	warn, stop := e.Dedup.Check(name, args)
 	if stop {
-		return &BackToTheFuture{Message: warn}
+		return &CheckpointRewind{Message: warn}
 	}
 
 	tool, ok := e.Tools.Get(name)

@@ -11,7 +11,7 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/chat"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	"github.com/Misaka477/Natalia-Cli/internal/mode"
-	"github.com/Misaka477/Natalia-Cli/internal/soul"
+	"github.com/Misaka477/Natalia-Cli/internal/orchestrator"
 	"github.com/Misaka477/Natalia-Cli/internal/toolset"
 )
 
@@ -43,7 +43,7 @@ type Worker struct {
 	Task         string
 	Status       Status
 	Attached     bool
-	Engine       *soul.Engine
+	Engine       *orchestrator.Engine
 	Logs         []LogEntry
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
@@ -79,7 +79,7 @@ func NewWithOptions(id, task, modeName string, llmClient *llm.Client, tools *too
 		ctx, cancel = context.WithTimeout(context.Background(), opts.Timeout)
 	}
 
-	eng := soul.NewEngine(llmClient, tools)
+	eng := orchestrator.NewEngine(llmClient, tools)
 	w := &Worker{
 		ID:           id,
 		Mode:         modeName,
@@ -187,7 +187,7 @@ func (w *Worker) runGeneration(gen int) {
 			}
 			continue
 		}
-		if outcome.StopReason == "back_to_future" {
+		if outcome.StopReason == "checkpoint_rewind" {
 			cp.Restore(w.Engine.Context)
 			continue
 		}

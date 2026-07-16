@@ -46,7 +46,7 @@ func TestServerPromptHandlerPublishesEvents(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			w.SoulSide.PublishEvent(event)
+			w.RuntimeSide.PublishEvent(event)
 			return map[string]any{"status": "accepted"}, nil
 		},
 	})

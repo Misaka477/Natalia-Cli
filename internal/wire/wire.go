@@ -70,7 +70,7 @@ type WireMessage struct {
 }
 
 type Wire struct {
-	SoulSide *WireSoulSide
+	RuntimeSide *WireRuntimeSide
 	uiSide   *WireUISide
 	raw      *broadcastQueue
 	pending  *pendingResponses
@@ -78,7 +78,7 @@ type Wire struct {
 	stopSweep chan struct{}
 }
 
-type WireSoulSide struct {
+type WireRuntimeSide struct {
 	wire *Wire
 }
 
@@ -268,7 +268,7 @@ func NewWire() *Wire {
 		sinks:     newSyncSinks(),
 		stopSweep: make(chan struct{}),
 	}
-	w.SoulSide = &WireSoulSide{wire: w}
+	w.RuntimeSide = &WireRuntimeSide{wire: w}
 	w.uiSide = &WireUISide{wire: w}
 	go w.pending.startSweeper(w.stopSweep)
 	return w
@@ -293,15 +293,15 @@ func (w *Wire) SetPendingOnExpired(fn func(string, string)) {
 	}
 }
 
-func (s *WireSoulSide) PublishEvent(event WireEvent) {
+func (s *WireRuntimeSide) PublishEvent(event WireEvent) {
 	s.publish(WireMessage{Kind: MessageEvent, Event: &event})
 }
 
-func (s *WireSoulSide) PublishRequest(request WireRequest) {
+func (s *WireRuntimeSide) PublishRequest(request WireRequest) {
 	s.publish(WireMessage{Kind: MessageRequest, Request: &request})
 }
 
-func (s *WireSoulSide) Request(ctx context.Context, request WireRequest) (json.RawMessage, error) {
+func (s *WireRuntimeSide) Request(ctx context.Context, request WireRequest) (json.RawMessage, error) {
 	if request.ID == "" {
 		return nil, fmt.Errorf("wire request id is required")
 	}
@@ -324,7 +324,7 @@ func (w *Wire) AddSink(fn func(WireMessage)) (func(), int) {
 	return w.sinks.add(fn)
 }
 
-func (s *WireSoulSide) publish(message WireMessage) {
+func (s *WireRuntimeSide) publish(message WireMessage) {
 	s.wire.raw.publish(message)
 	s.wire.sinks.publish(message)
 }

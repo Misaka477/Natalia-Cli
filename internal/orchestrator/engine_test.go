@@ -1,4 +1,4 @@
-package soul
+package orchestrator
 
 import (
 	"encoding/json"

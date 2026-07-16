@@ -39,7 +39,7 @@ import (
 	"github.com/Misaka477/Natalia-Cli/internal/session"
 	"github.com/Misaka477/Natalia-Cli/internal/skill"
 	"github.com/Misaka477/Natalia-Cli/internal/snapshot"
-	"github.com/Misaka477/Natalia-Cli/internal/soul"
+	"github.com/Misaka477/Natalia-Cli/internal/orchestrator"
 	"github.com/Misaka477/Natalia-Cli/internal/term"
 	tui "github.com/Misaka477/Natalia-Cli/internal/terminalui/tui"
 	"github.com/Misaka477/Natalia-Cli/internal/tools/ask_user"
@@ -433,14 +433,14 @@ func matchesAnyToolPattern(patterns []string, names ...string) bool {
 	return false
 }
 
-func buildEngine(cfg *config.Config, tools *toolset.Registry, debug bool) *soul.Engine {
+func buildEngine(cfg *config.Config, tools *toolset.Registry, debug bool) *orchestrator.Engine {
 	if cfg == nil {
-		return soul.NewEngine(nil, tools)
+		return orchestrator.NewEngine(nil, tools)
 	}
 	pr, p, err := cfg.ActiveProfile()
 	eff, effErr := cfg.EffectiveProfile(runtime.Mode, runtime.ModelProfile, runtime.PermissionProfile)
 	if err != nil && effErr != nil {
-		return soul.NewEngine(nil, tools)
+		return orchestrator.NewEngine(nil, tools)
 	}
 	if effErr == nil {
 		pr = &eff.Profile
@@ -452,12 +452,12 @@ func buildEngine(cfg *config.Config, tools *toolset.Registry, debug bool) *soul.
 
 	llmClient := newLLMClient(pr, p)
 
-	engine := soul.NewEngine(llmClient, tools)
-	engine.InjectionProviders = []soul.InjectionProvider{
-		soul.PlanModeInjectionProvider{Manager: DefaultAppRuntime().GetPlanManager()},
-		soul.SafetyInjectionProvider{},
-		soul.NotificationInjectionProvider{Store: notifications.DefaultStore()},
-		&soul.AFKInjectionProvider{},
+	engine := orchestrator.NewEngine(llmClient, tools)
+	engine.InjectionProviders = []orchestrator.InjectionProvider{
+		orchestrator.PlanModeInjectionProvider{Manager: DefaultAppRuntime().GetPlanManager()},
+		orchestrator.SafetyInjectionProvider{},
+		orchestrator.NotificationInjectionProvider{Store: notifications.DefaultStore()},
+		&orchestrator.AFKInjectionProvider{},
 	}
 	engine.Context.MaxSteps = pr.MaxSteps
 	if engine.Context.MaxSteps == 0 {
@@ -567,7 +567,7 @@ func buildHookEngine(cfg *config.Config) *hook.Engine {
 	return hook.NewEngine(hooks)
 }
 
-func rebuildEnginePreservingState(cfg *config.Config, old *soul.Engine, tools *toolset.Registry, debug bool) *soul.Engine {
+func rebuildEnginePreservingState(cfg *config.Config, old *orchestrator.Engine, tools *toolset.Registry, debug bool) *orchestrator.Engine {
 	engine := buildEngine(cfg, tools, debug)
 	if old == nil {
 		return engine
@@ -581,7 +581,7 @@ func rebuildEnginePreservingState(cfg *config.Config, old *soul.Engine, tools *t
 	return engine
 }
 
-func applyModePrompt(engine *soul.Engine, m *mode.Mode) {
+func applyModePrompt(engine *orchestrator.Engine, m *mode.Mode) {
 	if engine == nil || m == nil || len(engine.Context.Messages) == 0 || engine.Context.Messages[0].Role != chat.RoleSystem {
 		return
 	}
@@ -604,7 +604,7 @@ func currentModeName(cfg *config.Config) string {
 	return eff.Mode
 }
 
-func applyAutoflowDecision(decision autoflow.Decision, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool) {
+func applyAutoflowDecision(decision autoflow.Decision, cfg *config.Config, engine **orchestrator.Engine, tools *toolset.Registry, debug bool) {
 	if decision.Action == autoflow.ActionNone || decision.TargetMode == "" {
 		return
 	}
@@ -614,7 +614,7 @@ func applyAutoflowDecision(decision autoflow.Decision, cfg *config.Config, engin
 	*engine = rebuildEnginePreservingState(cfg, *engine, tools, debug)
 }
 
-func maybeRecordAutoflow(enabled bool, escalator *autoflow.Escalator, outcome *soul.Outcome, cfg *config.Config) autoflow.Decision {
+func maybeRecordAutoflow(enabled bool, escalator *autoflow.Escalator, outcome *orchestrator.Outcome, cfg *config.Config) autoflow.Decision {
 	if !enabled || escalator == nil {
 		return autoflow.Decision{}
 	}
@@ -675,7 +675,7 @@ func handleAuto(input string, enabled *bool, escalator *autoflow.Escalator) {
 	}
 }
 
-func handleExecutePlan(input string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool, rt *AppRuntime) {
+func handleExecutePlan(input string, cfg *config.Config, engine **orchestrator.Engine, tools *toolset.Registry, debug bool, rt *AppRuntime) {
 	parts := strings.Fields(input)
 	if len(parts) < 2 {
 		fmt.Println("用法: /execute-plan <plan.md>")
@@ -804,7 +804,7 @@ func markCurrentPlanDone(writeBack bool) bool {
 	return true
 }
 
-func handleWorkflow(input string, engine *soul.Engine, rt *AppRuntime) {
+func handleWorkflow(input string, engine *orchestrator.Engine, rt *AppRuntime) {
 	parts := strings.Fields(input)
 	cmd := "list"
 	if len(parts) > 1 {
@@ -1143,10 +1143,10 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 			engine.ResetCancel()
 			inputPayload, _ := json.Marshal(input)
 			if event, err := wire.NewEvent(wire.EventTurnBegin, wire.TurnBegin{UserInput: inputPayload}); err == nil {
-				wireRuntime.SoulSide.PublishEvent(event)
+				wireRuntime.RuntimeSide.PublishEvent(event)
 			}
 			turnStarted := time.Now()
-			stopTurnStatus := startWireTurnStatusTicker(wireRuntime, cfg, func() *soul.Engine { return engine }, turnStarted, time.Second, DefaultAppRuntime())
+			stopTurnStatus := startWireTurnStatusTicker(wireRuntime, cfg, func() *orchestrator.Engine { return engine }, turnStarted, time.Second, DefaultAppRuntime())
 			outcome, err := engine.Run(input)
 			stopTurnStatus()
 			if err != nil {
@@ -1157,12 +1157,12 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 			}
 			publishOutcomeFinalMessage(wireRuntime, outcome, engine.Stream)
 			if event, err := wire.NewEvent(wire.EventTurnEnd, wire.TurnEnd{}); err == nil {
-				wireRuntime.SoulSide.PublishEvent(event)
+				wireRuntime.RuntimeSide.PublishEvent(event)
 			}
 			status := runtimeStatusUpdate(cfg, engine, DefaultAppRuntime())
 			setTurnElapsed(&status, turnStarted, false)
 			if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
-				wireRuntime.SoulSide.PublishEvent(event)
+				wireRuntime.RuntimeSide.PublishEvent(event)
 			}
 			if outcome.FinalMessage == "" {
 				return "(空响应)"
@@ -1208,16 +1208,16 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 		engine.ResetCancel()
 		inputPayload, _ := json.Marshal(input)
 		if event, err := wire.NewEvent(wire.EventTurnBegin, wire.TurnBegin{UserInput: inputPayload}); err == nil {
-			wireRuntime.SoulSide.PublishEvent(event)
+			wireRuntime.RuntimeSide.PublishEvent(event)
 		}
 		turnStarted := time.Now()
-		stopTurnStatus := startWireTurnStatusTicker(wireRuntime, cfg, func() *soul.Engine { return engine }, turnStarted, time.Second, DefaultAppRuntime())
+		stopTurnStatus := startWireTurnStatusTicker(wireRuntime, cfg, func() *orchestrator.Engine { return engine }, turnStarted, time.Second, DefaultAppRuntime())
 
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, os.Interrupt)
 
 		type result struct {
-			out *soul.Outcome
+			out *orchestrator.Outcome
 			err error
 		}
 		done := make(chan result, 1)
@@ -1244,12 +1244,12 @@ func runInteractive(cfg *config.Config, tools *toolset.Registry, noSetup bool, d
 				fmt.Fprintln(os.Stderr, "\n错误: unknown error")
 			}
 			if event, err := wire.NewEvent(wire.EventTurnEnd, wire.TurnEnd{}); err == nil {
-				wireRuntime.SoulSide.PublishEvent(event)
+				wireRuntime.RuntimeSide.PublishEvent(event)
 			}
 			status := runtimeStatusUpdate(cfg, engine, DefaultAppRuntime())
 			setTurnElapsed(&status, turnStarted, false)
 			if event, err := wire.NewEvent(wire.EventStatusUpdate, status); err == nil {
-				wireRuntime.SoulSide.PublishEvent(event)
+				wireRuntime.RuntimeSide.PublishEvent(event)
 			}
 			if currentSession != nil {
 				sessStore.AppendMessage(currentSession.ID, chat.Message{Role: chat.RoleUser, Content: input})
@@ -1323,7 +1323,7 @@ func formatElapsed(d time.Duration) string {
 	return d.Truncate(time.Second).String()
 }
 
-func handleRollback(input string, engine **soul.Engine) {
+func handleRollback(input string, engine **orchestrator.Engine) {
 	if input == "/rollback" {
 		fmt.Println("用法: /rollback <step 编号>")
 		fmt.Printf("当前 step: %d\n", (*engine).Context.StepCount)
@@ -1355,7 +1355,7 @@ func handleRollback(input string, engine **soul.Engine) {
 	fmt.Println(msg)
 }
 
-func handleMode(input string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool, rt *AppRuntime) {
+func handleMode(input string, cfg *config.Config, engine **orchestrator.Engine, tools *toolset.Registry, debug bool, rt *AppRuntime) {
 	if input == "/mode" || input == "/mode " {
 		m := (*engine).Mode
 		if m == nil {
@@ -1393,7 +1393,7 @@ func handleMode(input string, cfg *config.Config, engine **soul.Engine, tools *t
 	printRuntimeStatusSummary(cfg, *engine)
 }
 
-func handleModel(input string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool, rt *AppRuntime) {
+func handleModel(input string, cfg *config.Config, engine **orchestrator.Engine, tools *toolset.Registry, debug bool, rt *AppRuntime) {
 	parts := strings.Fields(input)
 	if len(parts) < 2 {
 		showModelProfiles(cfg)
@@ -1417,7 +1417,7 @@ func handleModel(input string, cfg *config.Config, engine **soul.Engine, tools *
 	printRuntimeStatusSummary(cfg, *engine)
 }
 
-func handlePermission(input string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool, rt *AppRuntime) {
+func handlePermission(input string, cfg *config.Config, engine **orchestrator.Engine, tools *toolset.Registry, debug bool, rt *AppRuntime) {
 	parts := strings.Fields(input)
 	if len(parts) < 2 {
 		showPermissions(cfg)
@@ -1461,7 +1461,7 @@ func showPermissions(cfg *config.Config) {
 	}
 }
 
-func handleStatus(cfg *config.Config, engine *soul.Engine, rt *AppRuntime) {
+func handleStatus(cfg *config.Config, engine *orchestrator.Engine, rt *AppRuntime) {
 	if cfg == nil {
 		fmt.Println("未配置")
 		return
@@ -1476,7 +1476,7 @@ func handleStatus(cfg *config.Config, engine *soul.Engine, rt *AppRuntime) {
 	}
 }
 
-func statusLines(cfg *config.Config, engine *soul.Engine, rt *AppRuntime) ([]string, error) {
+func statusLines(cfg *config.Config, engine *orchestrator.Engine, rt *AppRuntime) ([]string, error) {
 	o := runtimeOverrides{}
 	if rt != nil {
 		o = rt.GetOverrides()
@@ -1529,7 +1529,7 @@ func statusLines(cfg *config.Config, engine *soul.Engine, rt *AppRuntime) ([]str
 	return lines, nil
 }
 
-func runtimeDiagnostics(engine *soul.Engine, rt *AppRuntime) []string {
+func runtimeDiagnostics(engine *orchestrator.Engine, rt *AppRuntime) []string {
 	lines := []string{"agent_spec_adapters: generic,kimi,kilo,openai,mcp_schema"}
 	if engine != nil && engine.Hooks != nil {
 		lines = append(lines, fmt.Sprintf("hooks: configured=%d audit_entries=%d", len(engine.Hooks.Hooks()), len(engine.Hooks.AuditLog())))
@@ -1572,7 +1572,7 @@ func runtimeDiagnostics(engine *soul.Engine, rt *AppRuntime) []string {
 	return lines
 }
 
-func printRuntimeStatusSummary(cfg *config.Config, engine *soul.Engine) {
+func printRuntimeStatusSummary(cfg *config.Config, engine *orchestrator.Engine) {
 	if cfg == nil {
 		return
 	}
@@ -1584,7 +1584,7 @@ func printRuntimeStatusSummary(cfg *config.Config, engine *soul.Engine) {
 	fmt.Printf("runtime_status: mode=%s model_profile=%s permission_profile=%s model=%s context_tokens=%d/%d (%.1f%% estimated)\n", eff.Mode, displayEmpty(eff.ModelProfile, "<profile>"), eff.PermissionProfile, eff.Profile.Model, contextTokens, maxContextTokens, contextUsage*100)
 }
 
-func contextTokenStats(engine *soul.Engine) (int, int, float64) {
+func contextTokenStats(engine *orchestrator.Engine) (int, int, float64) {
 	if engine == nil || engine.Context == nil {
 		return 0, 0, 0
 	}
@@ -1804,7 +1804,7 @@ func handleWorkerCommand(input string) {
 	}
 }
 
-func handleSlashCommand(input string, cfg **config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool, autoEnabled *bool, escalator *autoflow.Escalator, rt *AppRuntime) {
+func handleSlashCommand(input string, cfg **config.Config, engine **orchestrator.Engine, tools *toolset.Registry, debug bool, autoEnabled *bool, escalator *autoflow.Escalator, rt *AppRuntime) {
 	if isSlashCommand(input, "/sessions") {
 		handleSessions(input, *cfg, engine, tools, debug, rt)
 		return
@@ -1990,7 +1990,7 @@ func isSlashCommand(input, command string) bool {
 	return input == command || strings.HasPrefix(input, command+" ")
 }
 
-func handleSessions(input string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool, rt *AppRuntime) {
+func handleSessions(input string, cfg *config.Config, engine **orchestrator.Engine, tools *toolset.Registry, debug bool, rt *AppRuntime) {
 	parts := strings.Fields(input)
 	if len(parts) >= 2 && parts[1] == "restore" {
 		restoreSession(parts, cfg, engine, tools, debug, rt)
@@ -2003,7 +2003,7 @@ func handleSessions(input string, cfg *config.Config, engine **soul.Engine, tool
 	listSessions()
 }
 
-func restoreSession(parts []string, cfg *config.Config, engine **soul.Engine, tools *toolset.Registry, debug bool, rt *AppRuntime) {
+func restoreSession(parts []string, cfg *config.Config, engine **orchestrator.Engine, tools *toolset.Registry, debug bool, rt *AppRuntime) {
 	if sessStore == nil {
 		fmt.Println("会话存储不可用")
 		return
@@ -2201,7 +2201,7 @@ func restorePlanSession(state session.State, rt *AppRuntime) []string {
 	return nil
 }
 
-func attachSnapshotter(engine *soul.Engine, sess *session.Session) {
+func attachSnapshotter(engine *orchestrator.Engine, sess *session.Session) {
 	if engine == nil || sess == nil {
 		return
 	}

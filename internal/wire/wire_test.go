@@ -197,7 +197,7 @@ func TestWireBroadcastsSoulMessagesToSubscribers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.SoulSide.PublishEvent(event)
+	w.RuntimeSide.PublishEvent(event)
 
 	for name, ch := range map[string]<-chan WireMessage{"rawA": rawA, "rawB": rawB, "merged": merged} {
 		msg := receiveWireMessage(t, name, ch)
@@ -259,7 +259,7 @@ func TestSubscribeMergedPassesRequestsAfterFlushingContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.SoulSide.PublishRequest(req)
+	w.RuntimeSide.PublishRequest(req)
 
 	part := receiveContentPart(t, "flushed content", ch)
 	if part.Text != "before approval" {
@@ -280,7 +280,7 @@ func TestWireBroadcastsRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.SoulSide.PublishRequest(req)
+	w.RuntimeSide.PublishRequest(req)
 
 	msg := receiveWireMessage(t, "raw", ch)
 	if msg.Kind != MessageRequest || msg.Request == nil || msg.Request.ID != "req_1" || msg.Request.Type != RequestApproval {
@@ -288,7 +288,7 @@ func TestWireBroadcastsRequests(t *testing.T) {
 	}
 }
 
-func TestWireSoulSideRequestWaitsForResponse(t *testing.T) {
+func TestWireRuntimeSideRequestWaitsForResponse(t *testing.T) {
 	w := NewWire()
 	requests, cancel := w.UISide().SubscribeRaw()
 	defer cancel()
@@ -299,7 +299,7 @@ func TestWireSoulSideRequestWaitsForResponse(t *testing.T) {
 	resultCh := make(chan json.RawMessage, 1)
 	errCh := make(chan error, 1)
 	go func() {
-		result, err := w.SoulSide.Request(context.Background(), req)
+		result, err := w.RuntimeSide.Request(context.Background(), req)
 		if err != nil {
 			errCh <- err
 			return
@@ -329,7 +329,7 @@ func TestWireSoulSideRequestWaitsForResponse(t *testing.T) {
 	}
 }
 
-func TestWireSoulSideConcurrentRequestsResolveIndependently(t *testing.T) {
+func TestWireRuntimeSideConcurrentRequestsResolveIndependently(t *testing.T) {
 	w := NewWire()
 	requests, cancel := w.UISide().SubscribeRaw()
 	defer cancel()
@@ -346,7 +346,7 @@ func TestWireSoulSideConcurrentRequestsResolveIndependently(t *testing.T) {
 			t.Fatal(err)
 		}
 		go func() {
-			body, err := w.SoulSide.Request(context.Background(), req)
+			body, err := w.RuntimeSide.Request(context.Background(), req)
 			resultCh <- result{id: id, body: body, err: err}
 		}()
 	}
@@ -386,7 +386,7 @@ func TestWireSoulSideConcurrentRequestsResolveIndependently(t *testing.T) {
 	}
 }
 
-func TestWireSoulSideRequestContextCancelCleansPendingResponse(t *testing.T) {
+func TestWireRuntimeSideRequestContextCancelCleansPendingResponse(t *testing.T) {
 	w := NewWire()
 	requests, cancel := w.UISide().SubscribeRaw()
 	defer cancel()
@@ -397,7 +397,7 @@ func TestWireSoulSideRequestContextCancelCleansPendingResponse(t *testing.T) {
 	ctx, cancelRequest := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := w.SoulSide.Request(ctx, req)
+		_, err := w.RuntimeSide.Request(ctx, req)
 		errCh <- err
 	}()
 	msg := receiveWireMessage(t, "cancel request", requests)
@@ -456,5 +456,5 @@ func publishEventForTest(t *testing.T, w *Wire, typ EventType, payload any) {
 	if err != nil {
 		t.Fatalf("NewEvent(%s) failed: %v", typ, err)
 	}
-	w.SoulSide.PublishEvent(event)
+	w.RuntimeSide.PublishEvent(event)
 }

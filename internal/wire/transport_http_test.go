@@ -127,7 +127,7 @@ func TestHTTPServerSSEStreamsEventsAndRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.SoulSide.PublishRequest(req)
+	w.RuntimeSide.PublishRequest(req)
 
 	messages := readSSEDataLines(t, resp.Body, 2)
 	first := messages[0]
@@ -412,7 +412,7 @@ func publishTransportEvent(t *testing.T, w *Wire, typ EventType, payload any) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.SoulSide.PublishEvent(event)
+	w.RuntimeSide.PublishEvent(event)
 }
 
 func dialWebSocketForTest(t *testing.T, rawURL string) net.Conn {
