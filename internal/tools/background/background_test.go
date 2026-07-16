@@ -135,8 +135,25 @@ func TestBackgroundStop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stopped, "status: stopped") {
+	if !strings.Contains(stopped, "status: stopped") || !strings.Contains(stopped, "stop_result: stopped_now") {
 		t.Fatalf("expected stopped output, got %q", stopped)
+	}
+}
+
+func TestBackgroundStopAlreadyExited(t *testing.T) {
+	resetManager()
+	result, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "args": []any{"-c", "exit 0"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := extractBackgroundID(t, result)
+	waitForBackgroundStatus(t, id, "exited")
+	stopped, err := (&Stop{}).Execute(map[string]any{"id": id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stopped, "already exited before stop") || !strings.Contains(stopped, "stop_result: already_exited") || !strings.Contains(stopped, "no stop signal was sent") {
+		t.Fatalf("expected already exited stop semantics, got %q", stopped)
 	}
 }
 

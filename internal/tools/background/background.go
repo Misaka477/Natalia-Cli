@@ -207,11 +207,18 @@ func (t *Stop) Execute(args map[string]any) (string, error) {
 	if killAfter, _ := intArg(args["kill_after"], 0, 0, 3600); killAfter > 0 {
 		opts.KillAfter = time.Duration(killAfter) * time.Second
 	}
+	before, ok := processmgr.DefaultManager().Status(id)
+	if !ok {
+		return "", fmt.Errorf("unknown background task %q", id)
+	}
+	if before.Status != processmgr.StatusRunning {
+		return fmt.Sprintf("background task was already %s before stop\nstop_result: already_%s\nnext_action: no stop signal was sent; inspect output/status or cleanup if no longer needed\n%s", before.Status, before.Status, formatSession(before)), nil
+	}
 	if err := processmgr.DefaultManager().StopWithOptions(id, opts); err != nil {
 		return "", err
 	}
 	sess, _ := processmgr.DefaultManager().Status(id)
-	return "background task stopped\n" + formatSession(sess), nil
+	return "background task stopped\nstop_result: stopped_now\nnext_action: confirm status/output, then cleanup if no longer needed\n" + formatSession(sess), nil
 }
 
 type Cleanup struct{}

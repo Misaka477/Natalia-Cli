@@ -284,8 +284,12 @@ func (t *Stop) Execute(args map[string]any) (string, error) {
 	if w == nil {
 		return "", fmt.Errorf("agent %s not found", id)
 	}
+	before := w.GetStatus()
+	if before != worker.StatusRunning {
+		return fmt.Sprintf("agent was already %s before stop\nstop_result: already_%s\nnext_action: no cancellation was sent; inspect output/status or cleanup if no longer needed\n%s", before, before, formatWorkerDetail(w)), nil
+	}
 	w.Stop()
-	return fmt.Sprintf("stopped agent %s\nstatus: %s", id, w.GetStatus()), nil
+	return fmt.Sprintf("stopped agent %s\nstop_result: stopped_now\nnext_action: confirm status/output, then cleanup if no longer needed\nstatus: %s", id, w.GetStatus()), nil
 }
 
 type Resume struct{ Pool *worker.Pool }
@@ -324,9 +328,11 @@ func requireAgentID(args map[string]any) (string, error) {
 
 type Restart struct{ Pool *worker.Pool }
 
-func (t *Restart) Name() string        { return "agent_restart" }
-func (t *Restart) Description() string { return "restart a finished or failed sub-agent, creating a new worker ID" }
-func (t *Restart) Required() []string  { return []string{"agent_id"} }
+func (t *Restart) Name() string { return "agent_restart" }
+func (t *Restart) Description() string {
+	return "restart a finished or failed sub-agent, creating a new worker ID"
+}
+func (t *Restart) Required() []string { return []string{"agent_id"} }
 func (t *Restart) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"agent_id": {Type: "string", Description: "sub-agent ID to restart (e.g. w1)"},

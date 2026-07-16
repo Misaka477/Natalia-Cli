@@ -120,14 +120,14 @@ type Write struct{}
 
 func (t *Write) Name() string { return "interactive_write" }
 func (t *Write) Description() string {
-	return "write input to an interactive PTY session and return observation; single-line input appends Enter by default, input=\"\" with submit=true sends an empty Enter, set submit=false for partial input"
+	return "write literal text to an interactive PTY session and return observation. Default submit=true appends Enter; set submit=false for partial/no-newline/chunked input. Use input=\"\" with submit=true to send an empty Enter. Do not use interactive_write for Ctrl-C, Tab, Esc, or other special keys; use interactive_keys instead."
 }
 func (t *Write) Required() []string { return []string{"id", "input"} }
 func (t *Write) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"id":              {Type: "string", Description: "interactive session id"},
-		"input":           {Type: "string", Description: "input to write; submitted as a line by default; empty string is valid with submit=true to send Enter"},
-		"submit":          {Type: "boolean", Description: "optional, default true; false writes without Enter, for chunked input; submit=false with empty input is a no-op observation"},
+		"input":           {Type: "string", Description: "literal text to write; required and may be empty. input=\"\" with submit=true sends an empty Enter; use interactive_keys for Ctrl-C, Tab, Esc, or other special keys."},
+		"submit":          {Type: "boolean", Description: "optional, default true appends Enter; set false to write without Enter for partial/no-newline/chunked input. submit=false with empty input is a no-op observation."},
 		"sensitive":       {Type: "boolean", Description: "optional, true marks secret input; the input is not echoed back"},
 		"wait_for":        {Type: "string", Description: "optional, prompt regex to wait for after write"},
 		"idle_timeout_ms": {Type: "integer", Description: "optional, output silence duration before considering input needed; default 200"},
@@ -142,11 +142,11 @@ func (t *Write) Execute(args map[string]any) (string, error) {
 	}
 	rawInput, ok := args["input"]
 	if !ok {
-		return "", fmt.Errorf("input required")
+		return "", fmt.Errorf("input required; use input=\"\" with submit=true to send an empty Enter, submit=false for partial/no-newline input, or interactive_keys for Ctrl-C/Tab/Esc")
 	}
 	input, ok := rawInput.(string)
 	if !ok {
-		return "", fmt.Errorf("input must be a string")
+		return "", fmt.Errorf("input must be a string; use interactive_write for literal text and interactive_keys for special keys")
 	}
 	submit := true
 	if raw, ok := args["submit"].(bool); ok {
@@ -176,13 +176,13 @@ type Keys struct{}
 
 func (t *Keys) Name() string { return "interactive_keys" }
 func (t *Keys) Description() string {
-	return "send special keys (Enter, Ctrl-C, Ctrl-D, Tab, Esc, etc.) to an interactive PTY session"
+	return "send special keys to an interactive PTY session. Use this for enter, ctrl-c, ctrl-d, tab, or esc. Use interactive_write for normal literal text, submit=false partial input, or input=\"\" submit=true empty Enter."
 }
 func (t *Keys) Required() []string { return []string{"id", "key"} }
 func (t *Keys) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"id":              {Type: "string", Description: "interactive session id"},
-		"key":             {Type: "string", Description: "enter|ctrl-c|ctrl-d|tab|esc"},
+		"key":             {Type: "string", Enum: []string{"enter", "ctrl-c", "ctrl-d", "tab", "esc"}, Description: "special key to send: enter, ctrl-c, ctrl-d, tab, or esc. Use interactive_write for normal text."},
 		"wait_for":        {Type: "string", Description: "optional, prompt regex to wait for after sending key"},
 		"idle_timeout_ms": {Type: "integer", Description: "optional, output silence duration before considering input needed; default 200"},
 		"max_wait_ms":     {Type: "integer", Description: "optional, max observation time; default 2000"},
@@ -195,7 +195,7 @@ func (t *Keys) Execute(args map[string]any) (string, error) {
 	}
 	key, _ := args["key"].(string)
 	if key == "" {
-		return "", fmt.Errorf("key required")
+		return "", fmt.Errorf("key required; supported keys: enter, ctrl-c, ctrl-d, tab, esc; use interactive_write for normal literal text")
 	}
 	observeOpts, err := observeOptions(args, true)
 	if err != nil {
@@ -203,6 +203,9 @@ func (t *Keys) Execute(args map[string]any) (string, error) {
 	}
 	obs, err := currentManager().SendKey(id, key, observeOpts)
 	if err != nil {
+		if strings.Contains(err.Error(), "unsupported key") {
+			return "", fmt.Errorf("%v; supported keys: enter, ctrl-c, ctrl-d, tab, esc; use interactive_write for normal literal text", err)
+		}
 		return "", err
 	}
 	return formatObservation(obs, explicitTail(args)), nil

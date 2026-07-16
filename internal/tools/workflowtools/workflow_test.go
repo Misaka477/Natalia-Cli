@@ -78,7 +78,7 @@ func TestWorkflowRunReturnsInstructionAndPersistsState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "Execute workflow") || !strings.Contains(out, "Run git diff") || !strings.Contains(out, statePath) {
+	if !strings.Contains(out, "Execute workflow") || !strings.Contains(out, "Run git diff") || !strings.Contains(out, statePath) || !strings.Contains(out, "current_step: 1") || !strings.Contains(out, "next_action:") {
 		t.Fatalf("unexpected workflow_run output: %q", out)
 	}
 	state, err := workflowcore.LoadRunState(statePath)
@@ -87,6 +87,86 @@ func TestWorkflowRunReturnsInstructionAndPersistsState(t *testing.T) {
 	}
 	if state.WorkflowName != "review" || state.CurrentStep != 1 || state.TotalSteps != 1 {
 		t.Fatalf("unexpected persisted state: %+v", state)
+	}
+}
+
+func TestWorkflowRunStateMachineCanAdvanceAndComplete(t *testing.T) {
+	r := &workflowcore.Registry{}
+	r.Add(workflowcore.Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []workflowcore.Step{
+		{ID: "step-1", Title: "Inspect diff", Prompt: "Run git diff", Kind: "task"},
+		{ID: "step-2", Title: "Report", Prompt: "Write summary", Kind: "task"},
+	}})
+	statePath := filepath.Join(t.TempDir(), "workflow-state.json")
+	runner := &Run{Registry: r}
+
+	out, err := runner.Execute(map[string]any{"name": "review", "state_path": statePath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "status: running") || !strings.Contains(out, "current_step: 1") || !strings.Contains(out, "total_steps: 2") || !strings.Contains(out, "action=complete_step") {
+		t.Fatalf("unexpected start output: %q", out)
+	}
+
+	out, err = runner.Execute(map[string]any{"name": "review", "state_path": statePath, "action": "status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "action: status") || !strings.Contains(out, "current_step: 1") || !strings.Contains(out, "state_loaded: true") {
+		t.Fatalf("unexpected status output: %q", out)
+	}
+
+	out, err = runner.Execute(map[string]any{"name": "review", "state_path": statePath, "action": "complete_step"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "action: complete_step") || !strings.Contains(out, "current_step: 2") || !strings.Contains(out, "Write summary") {
+		t.Fatalf("expected workflow to advance to step 2, got %q", out)
+	}
+	state, err := workflowcore.LoadRunState(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.CurrentStep != 2 || state.Status != "running" {
+		t.Fatalf("expected persisted step 2 running state, got %+v", state)
+	}
+
+	out, err = runner.Execute(map[string]any{"name": "review", "state_path": statePath, "action": "complete_step"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "status: completed") || !strings.Contains(out, "current_step: 2") || !strings.Contains(out, "workflow complete") {
+		t.Fatalf("expected completed workflow output, got %q", out)
+	}
+	state, err = workflowcore.LoadRunState(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Status != "completed" || state.CurrentStep != 2 {
+		t.Fatalf("expected completed persisted state, got %+v", state)
+	}
+}
+
+func TestWorkflowRunRestartAndInvalidAction(t *testing.T) {
+	r := &workflowcore.Registry{}
+	r.Add(workflowcore.Workflow{Name: "review", Source: ".natalia/commands/review.md", Steps: []workflowcore.Step{{Title: "Inspect"}}})
+	r.Add(workflowcore.Workflow{Name: "release", Source: ".natalia/workflows/release.yaml", Steps: []workflowcore.Step{{Title: "Ship"}}})
+	statePath := filepath.Join(t.TempDir(), "workflow-state.json")
+	if err := workflowcore.SaveRunState(statePath, workflowcore.RunState{WorkflowName: "release", CurrentStep: 1, TotalSteps: 1, Status: "running"}); err != nil {
+		t.Fatal(err)
+	}
+	runner := &Run{Registry: r}
+	if _, err := runner.Execute(map[string]any{"name": "review", "state_path": statePath}); err == nil || !strings.Contains(err.Error(), "belongs to workflow") {
+		t.Fatalf("expected mismatched state error, got %v", err)
+	}
+	out, err := runner.Execute(map[string]any{"name": "review", "state_path": statePath, "action": "restart"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "action: restart") || !strings.Contains(out, "current_step: 1") {
+		t.Fatalf("unexpected restart output: %q", out)
+	}
+	if _, err := runner.Execute(map[string]any{"name": "review", "action": "skip"}); err == nil || !strings.Contains(err.Error(), "valid actions") {
+		t.Fatalf("expected invalid action error, got %v", err)
 	}
 }
 

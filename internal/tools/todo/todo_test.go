@@ -134,8 +134,87 @@ func TestTodoEmptyListAndInvalidItems(t *testing.T) {
 	if !strings.Contains(listed, "空") {
 		t.Fatalf("expected empty list message, got %q", listed)
 	}
-	if parsed := parseItems(map[string]any{"items": []any{"valid", 1, "also valid"}}); len(parsed) != 2 || parsed[0].Content != "valid" || parsed[1].Content != "also valid" || parsed[0].ID == "" || parsed[1].ID == "" {
-		t.Fatalf("expected parseItems to keep only string tasks with IDs, got %+v", parsed)
+	parsed, err := parseItems(map[string]any{"items": []any{"valid", map[string]any{"content": "also valid", "status": "in_progress", "priority": float64(3)}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed) != 2 || parsed[0].Content != "valid" || parsed[1].Content != "also valid" || parsed[0].ID == "" || parsed[1].ID == "" || parsed[1].Status != "in_progress" || parsed[1].Priority != 3 {
+		t.Fatalf("expected parseItems to parse string and object tasks with IDs, got %+v", parsed)
+	}
+	if _, err := parseItems(map[string]any{"items": []any{"valid", 1, "also valid"}}); err == nil || !strings.Contains(err.Error(), "items[1]") {
+		t.Fatalf("expected parseItems to reject invalid mixed task list, got %v", err)
+	}
+}
+
+func TestTodoSetObjectItemsAndListPersistence(t *testing.T) {
+	items = nil
+	nextID = 0
+
+	ret, err := (&Set{}).ExecuteReturn(map[string]any{"items": []any{
+		map[string]any{"content": "write implementation", "status": "in_progress", "notes": "started", "priority": float64(4)},
+		map[string]any{"text": "add tests", "done": true},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ret.ModelText, "已设置 2 个任务") || !strings.Contains(ret.ModelText, "write implementation") || !strings.Contains(ret.ModelText, "add tests") {
+		t.Fatalf("expected set summary with task names, got %q", ret.ModelText)
+	}
+	listed, err := (&List{}).Execute(map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(listed, "1. [ ] write implementation") || !strings.Contains(listed, "[p4]") || !strings.Contains(listed, "2. [✓] add tests") {
+		t.Fatalf("expected todo_list to persist object tasks, got %q", listed)
+	}
+	assertTodoDisplay(t, ret.Display, []display.TodoItem{{Text: "write implementation", Status: "in_progress", Notes: "started", Priority: 4}, {Text: "add tests", Done: true, Status: "done"}})
+}
+
+func TestTodoSetInvalidItemsDoesNotClearExistingList(t *testing.T) {
+	items = nil
+	nextID = 0
+
+	if _, err := (&Set{}).ExecuteReturn(map[string]any{"items": []any{"keep me"}}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := (&Set{}).ExecuteReturn(map[string]any{"items": []any{map[string]any{"status": "pending"}}})
+	if err == nil || !strings.Contains(err.Error(), "content") {
+		t.Fatalf("expected invalid object error, got %v", err)
+	}
+	listed, err := (&List{}).Execute(map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(listed, "keep me") || strings.Contains(listed, "任务清单为空") {
+		t.Fatalf("expected invalid set not to clear existing list, got %q", listed)
+	}
+	_, err = (&Set{}).ExecuteReturn(map[string]any{"items": "bad"})
+	if err == nil || !strings.Contains(err.Error(), "items must be an array") {
+		t.Fatalf("expected items type error, got %v", err)
+	}
+	listed, _ = (&List{}).Execute(map[string]any{})
+	if !strings.Contains(listed, "keep me") {
+		t.Fatalf("expected type error not to clear existing list, got %q", listed)
+	}
+}
+
+func TestTodoSetEmptyArrayExplicitlyClears(t *testing.T) {
+	items = nil
+	nextID = 0
+
+	if _, err := (&Set{}).ExecuteReturn(map[string]any{"items": []any{"clear me"}}); err != nil {
+		t.Fatal(err)
+	}
+	ret, err := (&Set{}).ExecuteReturn(map[string]any{"items": []any{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ret.ModelText, "已设置 0 个任务") || !strings.Contains(ret.ModelText, "当前任务清单为空") {
+		t.Fatalf("expected explicit clear summary, got %q", ret.ModelText)
+	}
+	listed, _ := (&List{}).Execute(map[string]any{})
+	if !strings.Contains(listed, "任务清单为空") {
+		t.Fatalf("expected empty list after explicit clear, got %q", listed)
 	}
 }
 

@@ -261,6 +261,29 @@ func TestWorkflowRunAndStatePersistence(t *testing.T) {
 	}
 }
 
+func TestAdvanceRunState(t *testing.T) {
+	wf := Workflow{Name: "release", Source: ".natalia/workflows/release.yaml", Steps: []Step{{ID: "step-1", Title: "Test"}, {ID: "step-2", Title: "Ship"}}}
+	state := NewRunState(wf)
+	if state.CurrentStep != 1 || state.TotalSteps != 2 || state.Status != "running" {
+		t.Fatalf("unexpected initial state: %+v", state)
+	}
+	if err := AdvanceRunState(wf, state); err != nil {
+		t.Fatal(err)
+	}
+	if state.CurrentStep != 2 || state.Status != "running" {
+		t.Fatalf("expected step 2 running, got %+v", state)
+	}
+	if err := AdvanceRunState(wf, state); err != nil {
+		t.Fatal(err)
+	}
+	if state.CurrentStep != 2 || state.Status != "completed" {
+		t.Fatalf("expected completed at final step, got %+v", state)
+	}
+	if err := AdvanceRunState(Workflow{Name: "other", Steps: []Step{{Title: "x"}}}, state); err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("expected workflow mismatch error, got %v", err)
+	}
+}
+
 func TestRegistryCandidates(t *testing.T) {
 	r := &Registry{}
 	r.Add(Workflow{Name: "release", Source: ".natalia/workflows/release.yaml", Steps: []Step{{Title: "Test"}}})
@@ -268,9 +291,9 @@ func TestRegistryCandidates(t *testing.T) {
 	r.Add(Workflow{Name: "releasenotes", Source: ".natalia/workflows/releasenotes.yaml", Steps: []Step{{Title: "Notes"}}})
 
 	tests := []struct {
-		query      string
-		wantCount  int
-		wantNames  []string
+		query     string
+		wantCount int
+		wantNames []string
 	}{
 		{"release", 2, []string{"release", "releasenotes"}},
 		{"relea", 2, []string{"release", "releasenotes"}},

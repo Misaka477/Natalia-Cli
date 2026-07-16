@@ -56,18 +56,19 @@ func (q *SteerQueue) Pop() (string, bool) {
 }
 
 type Engine struct {
-	Context      *chat.Context
-	LLM          *llm.Client
-	Tools        *toolset.Registry
-	Dedup        *toolset.Dedup
-	Steer        *SteerQueue
-	Stream       bool
-	OnToken      func(string)
-	OnReasoning  func(string)
-	OnStreamEnd  func()
-	OnStepBegin  func(int)
-	OnToolCall   func(ToolCallEvent)
-	OnToolResult func(ToolResultEvent)
+	Context              *chat.Context
+	LLM                  *llm.Client
+	Tools                *toolset.Registry
+	Dedup                *toolset.Dedup
+	Steer                *SteerQueue
+	Stream               bool
+	OnToken              func(string)
+	OnReasoning          func(string)
+	OnStreamEnd          func()
+	OnStepBegin          func(int)
+	OnToolCall           func(ToolCallEvent)
+	OnToolResult         func(ToolResultEvent)
+	streamToolCallStarts map[string]bool
 
 	Debug bool
 	Log   func(format string, args ...any)
@@ -347,6 +348,8 @@ func (e *Engine) Step(ctx context.Context) *Outcome {
 }
 
 func (e *Engine) step() *Outcome {
+	e.streamToolCallStarts = nil
+	defer func() { e.streamToolCallStarts = nil }()
 	e.Context.StepCount++
 	e.log("[ENGINE] step %d: %d messages in context", e.Context.StepCount, len(e.Context.Messages))
 	if e.OnStepBegin != nil {
@@ -410,7 +413,7 @@ func (e *Engine) step() *Outcome {
 
 	for _, tc := range msg.ToolCalls {
 		e.log("[ENGINE] executeToolCall: %s → %s", tc.Function.Name, tc.Function.Arguments)
-		if err := e.executeToolCall(tc); err != nil {
+		if err := e.executeToolCallWithEmitted(tc, e.streamToolCallStarts); err != nil {
 			if _, ok := err.(*BackToTheFuture); ok {
 				return &Outcome{StopReason: "back_to_the_future"}
 			}
@@ -426,6 +429,8 @@ func (e *Engine) streamStep() (*chat.Message, *llm.Usage, error) {
 
 	var contentBuf strings.Builder
 	var toolCalls []chat.ToolCall
+	emittedToolCalls := make(map[string]bool)
+	e.streamToolCallStarts = emittedToolCalls
 	var usage *llm.Usage
 
 	for evt := range ch {
@@ -444,7 +449,7 @@ func (e *Engine) streamStep() (*chat.Message, *llm.Usage, error) {
 			for _, tc := range evt.ToolCalls {
 				id := strings.TrimSpace(tc.ID)
 				if id == "" {
-					id = fmt.Sprintf("call_%d", len(toolCalls))
+					id = streamToolCallID(tc, len(toolCalls))
 				}
 				typ := strings.TrimSpace(tc.Type)
 				if typ == "" {
@@ -458,6 +463,11 @@ func (e *Engine) streamStep() (*chat.Message, *llm.Usage, error) {
 						Arguments: tc.Function.Arguments,
 					},
 				})
+			}
+		}
+		if len(evt.ToolCallDeltas) > 0 {
+			for _, tc := range evt.ToolCallDeltas {
+				e.emitStreamingToolCallStartOnce(emittedToolCalls, tc, len(toolCalls))
 			}
 		}
 		if evt.Content != "" && e.OnToken != nil {
@@ -483,6 +493,17 @@ func (e *Engine) streamStep() (*chat.Message, *llm.Usage, error) {
 	}
 
 	return msg, usage, nil
+}
+
+func streamToolCallID(tc llm.ToolCall, fallback int) string {
+	id := strings.TrimSpace(tc.ID)
+	if id != "" {
+		return id
+	}
+	if tc.Index >= 0 {
+		return fmt.Sprintf("call_%d", tc.Index)
+	}
+	return fmt.Sprintf("call_%d", fallback)
 }
 
 func normalizeAssistantToolCalls(msg *chat.Message) {
@@ -532,14 +553,16 @@ func commandArgs(raw any) []string {
 }
 
 func (e *Engine) executeToolCall(tc chat.ToolCall) error {
+	return e.executeToolCallWithEmitted(tc, nil)
+}
+
+func (e *Engine) executeToolCallWithEmitted(tc chat.ToolCall, emitted map[string]bool) error {
 	name := tc.Function.Name
 	var args map[string]any
 	if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
 		args = map[string]any{}
 	}
-	if e.OnToolCall != nil {
-		e.OnToolCall(ToolCallEvent{ID: tc.ID, Name: name, Arguments: args})
-	}
+	e.emitToolCallStartMap(emitted, tc.ID, name, args)
 
 	warn, stop := e.Dedup.Check(name, args)
 	if stop {
@@ -680,6 +703,55 @@ func (e *Engine) executeToolCall(tc chat.ToolCall) error {
 	e.triggerHook(hook.EventPostToolUse, name, map[string]any{"tool_call_id": tc.ID, "tool_name": name, "arguments": args, "result": finalResult, "error": errMsg})
 
 	return nil
+}
+
+func (e *Engine) emitStreamingToolCallStartOnce(emitted map[string]bool, tc llm.ToolCall, fallback int) {
+	fallbackID := fmt.Sprintf("call_%d", fallback)
+	if tc.Index >= 0 {
+		fallbackID = fmt.Sprintf("call_%d", tc.Index)
+	}
+	id := strings.TrimSpace(tc.ID)
+	if id == "" {
+		id = fallbackID
+	}
+	if emitted != nil && emitted[fallbackID] {
+		emitted[id] = true
+		return
+	}
+	if strings.TrimSpace(tc.Function.Name) == "" {
+		return
+	}
+	e.emitToolCallStartOnce(emitted, id, tc.Function.Name, tc.Function.Arguments)
+	if emitted != nil {
+		emitted[fallbackID] = true
+	}
+}
+
+func (e *Engine) emitToolCallStartOnce(emitted map[string]bool, id, name, arguments string) {
+	if strings.TrimSpace(name) == "" {
+		return
+	}
+	args := map[string]any{"_status": "receiving_arguments"}
+	if strings.TrimSpace(arguments) != "" && json.Unmarshal([]byte(arguments), &args) != nil {
+		args = map[string]any{"_status": "receiving_arguments"}
+	}
+	e.emitToolCallStartMap(emitted, id, name, args)
+}
+
+func (e *Engine) emitToolCallStartMap(emitted map[string]bool, id, name string, args map[string]any) {
+	if e.OnToolCall == nil {
+		return
+	}
+	if strings.TrimSpace(id) == "" {
+		id = name
+	}
+	if emitted != nil {
+		if emitted[id] {
+			return
+		}
+		emitted[id] = true
+	}
+	e.OnToolCall(ToolCallEvent{ID: id, Name: name, Arguments: args})
 }
 
 func approvalPreview(name string, args map[string]any) (string, []display.Block) {

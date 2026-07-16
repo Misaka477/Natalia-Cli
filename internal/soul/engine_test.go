@@ -154,6 +154,21 @@ func (noOpWriteTool) Execute(args map[string]any) (string, error) { return "writ
 func (noOpWriteTool) Parameters() map[string]llm.Property         { return nil }
 func (noOpWriteTool) Required() []string                          { return nil }
 
+type blockingWriteTool struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (t *blockingWriteTool) Name() string        { return "write_file" }
+func (t *blockingWriteTool) Description() string { return "blocking write test tool" }
+func (t *blockingWriteTool) Execute(args map[string]any) (string, error) {
+	close(t.started)
+	<-t.release
+	return "written", nil
+}
+func (t *blockingWriteTool) Parameters() map[string]llm.Property { return nil }
+func (t *blockingWriteTool) Required() []string                  { return nil }
+
 type noOpShellTool struct{}
 
 func (noOpShellTool) Name() string                                { return "run_shell" }
@@ -434,6 +449,95 @@ func TestStreamToolCallNormalizesMissingIDAndType(t *testing.T) {
 	}
 	if toolResult.Role != chat.RoleTool || toolResult.ToolCallID != assistant.ToolCalls[0].ID {
 		t.Fatalf("expected tool result to reference normalized tool call ID, assistant=%+v tool=%+v", assistant, toolResult)
+	}
+}
+
+func TestStreamToolCallStartEmitsBeforeToolExecutes(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		_, _ = w.Write([]byte(`data: {"choices":[{"delta":{"reasoning_content":"thinking"}}]}` + "\n"))
+		_, _ = w.Write([]byte(`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"tc_write","type":"function","function":{"name":"write_file"}}]}}]}` + "\n"))
+		if flusher != nil {
+			flusher.Flush()
+		}
+		_, _ = w.Write([]byte(`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"path\":"}}]}}]}` + "\n"))
+		_, _ = w.Write([]byte(`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"tmp.txt\",\"content\":\"ok\"}"}}]}}]}` + "\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n"))
+	}))
+	defer server.Close()
+
+	tool := &blockingWriteTool{started: make(chan struct{}), release: make(chan struct{})}
+	tools := toolset.NewRegistry()
+	tools.Register(tool)
+	engine := NewEngine(llm.NewClient(llm.Config{BaseURL: server.URL, Model: "mock", Timeout: time.Second}), tools)
+	engine.Stream = true
+	engine.OnToken = func(string) {}
+	engine.Context.MaxSteps = 1
+
+	toolCallStarted := make(chan ToolCallEvent, 1)
+	toolResult := make(chan ToolResultEvent, 1)
+	engine.OnToolCall = func(event ToolCallEvent) { toolCallStarted <- event }
+	engine.OnToolResult = func(event ToolResultEvent) { toolResult <- event }
+
+	runDone := make(chan *Outcome, 1)
+	runErr := make(chan error, 1)
+	go func() {
+		outcome, err := engine.Run("write a file")
+		if err != nil {
+			runErr <- err
+			return
+		}
+		runDone <- outcome
+	}()
+
+	var callEvent ToolCallEvent
+	select {
+	case callEvent = <-toolCallStarted:
+	case <-tool.started:
+		t.Fatal("tool execution started before tool call start event was emitted")
+	case err := <-runErr:
+		t.Fatalf("engine run failed before tool call start: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for early tool call start event")
+	}
+	if callEvent.ID != "tc_write" || callEvent.Name != "write_file" {
+		t.Fatalf("unexpected early tool call event: %+v", callEvent)
+	}
+	if callEvent.Arguments["_status"] != "receiving_arguments" {
+		t.Fatalf("expected argument receiving status without partial payload, got %+v", callEvent.Arguments)
+	}
+
+	select {
+	case <-tool.started:
+	case err := <-runErr:
+		t.Fatalf("engine run failed before tool execution: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for tool execution")
+	}
+	close(tool.release)
+
+	select {
+	case result := <-toolResult:
+		if result.ToolCallID != "tc_write" || result.Name != "write_file" {
+			t.Fatalf("unexpected tool result event: %+v", result)
+		}
+	case err := <-runErr:
+		t.Fatalf("engine run failed before tool result: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for tool result")
+	}
+	select {
+	case event := <-toolCallStarted:
+		t.Fatalf("tool call start emitted more than once: %+v", event)
+	case err := <-runErr:
+		t.Fatalf("engine run failed: %v", err)
+	case outcome := <-runDone:
+		if outcome == nil || outcome.StopReason != "max_steps" {
+			t.Fatalf("expected max_steps after one tool step, got %+v", outcome)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for engine run")
 	}
 }
 

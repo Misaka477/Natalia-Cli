@@ -109,6 +109,9 @@ func (m *fakeManager) Write(id, input string, sensitive bool, opts interactivemg
 }
 
 func (m *fakeManager) SendKey(id, key string, opts interactivemgr.ObserveOptions) (*interactivemgr.Observation, error) {
+	if key == "unsupported" {
+		return nil, fmt.Errorf("unsupported key %q", key)
+	}
 	m.lastInput = key
 	m.lastOpts = opts
 	return &interactivemgr.Observation{SessionID: id, Status: interactivemgr.StatusWaitingForInput, NewOutput: "key:" + key, Tail: "key:" + key, Suggestion: "continue"}, nil
@@ -253,6 +256,65 @@ func TestInteractiveWriteSubmitsSingleLineByDefault(t *testing.T) {
 	}
 }
 
+func TestInteractiveToolDescriptionsExposeModelUsabilityContract(t *testing.T) {
+	write := &Write{}
+	writeDesc := write.Description()
+	for _, want := range []string{"submit=false", "partial/no-newline/chunked", "input=\"\"", "empty Enter", "interactive_keys"} {
+		if !strings.Contains(writeDesc, want) {
+			t.Fatalf("interactive_write description missing %q: %s", want, writeDesc)
+		}
+	}
+	writeParams := write.Parameters()
+	for _, want := range []string{"submit=false", "partial/no-newline/chunked"} {
+		if !strings.Contains(writeParams["submit"].Description, want) {
+			t.Fatalf("interactive_write submit schema missing %q: %s", want, writeParams["submit"].Description)
+		}
+	}
+	for _, want := range []string{"input=\"\"", "interactive_keys"} {
+		if !strings.Contains(writeParams["input"].Description, want) {
+			t.Fatalf("interactive_write input schema missing %q: %s", want, writeParams["input"].Description)
+		}
+	}
+
+	keys := &Keys{}
+	keysDesc := keys.Description()
+	for _, want := range []string{"ctrl-c", "tab", "esc", "interactive_write", "submit=false", "input=\"\""} {
+		if !strings.Contains(keysDesc, want) {
+			t.Fatalf("interactive_keys description missing %q: %s", want, keysDesc)
+		}
+	}
+	keyParam := keys.Parameters()["key"]
+	for _, want := range []string{"enter", "ctrl-c", "ctrl-d", "tab", "esc"} {
+		if !containsString(keyParam.Enum, want) {
+			t.Fatalf("interactive_keys enum missing %q: %+v", want, keyParam.Enum)
+		}
+	}
+}
+
+func TestInteractiveValidationErrorsGuideCorrectToolChoice(t *testing.T) {
+	resetManager()
+	fake := &fakeManager{}
+	currentManager = func() manager { return fake }
+	t.Cleanup(resetManager)
+
+	_, err := (&Write{}).Execute(map[string]any{"id": "tty_fake"})
+	if err == nil || !strings.Contains(err.Error(), `input=""`) || !strings.Contains(err.Error(), "submit=false") || !strings.Contains(err.Error(), "interactive_keys") {
+		t.Fatalf("expected missing input guidance, got %v", err)
+	}
+	_, err = (&Write{}).Execute(map[string]any{"id": "tty_fake", "input": float64(1)})
+	if err == nil || !strings.Contains(err.Error(), "literal text") || !strings.Contains(err.Error(), "interactive_keys") {
+		t.Fatalf("expected input type guidance, got %v", err)
+	}
+	_, err = (&Keys{}).Execute(map[string]any{"id": "tty_fake"})
+	if err == nil || !strings.Contains(err.Error(), "supported keys") || !strings.Contains(err.Error(), "interactive_write") {
+		t.Fatalf("expected missing key guidance, got %v", err)
+	}
+	_, err = (&Keys{}).Execute(map[string]any{"id": "tty_fake", "key": "unsupported"})
+	if err == nil || !strings.Contains(err.Error(), "supported keys") || !strings.Contains(err.Error(), "interactive_write") {
+		t.Fatalf("expected unsupported key guidance, got %v", err)
+	}
+}
+
 func TestInteractiveToolsStartWriteReadListStop(t *testing.T) {
 	resetManager()
 	start, err := (&Start{}).Execute(map[string]any{"command": "/bin/sh", "args": []any{"-i"}, "idle_timeout_ms": float64(50), "max_wait_ms": float64(500)})
@@ -286,6 +348,15 @@ func TestInteractiveToolsStartWriteReadListStop(t *testing.T) {
 	if !strings.Contains(stopped, "status: stopped") {
 		t.Fatalf("expected stopped output, got %q", stopped)
 	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestInteractiveSensitiveWriteRedactsObservation(t *testing.T) {

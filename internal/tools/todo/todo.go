@@ -12,13 +12,13 @@ import (
 )
 
 type Item struct {
-	ID         string    `json:"id"`
-	Content    string    `json:"content"`
-	Status     string    `json:"status"`
-	Done       bool      `json:"done"`
-	Notes      string    `json:"notes,omitempty"`
-	Priority   int       `json:"priority,omitempty"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID        string    `json:"id"`
+	Content   string    `json:"content"`
+	Status    string    `json:"status"`
+	Done      bool      `json:"done"`
+	Notes     string    `json:"notes,omitempty"`
+	Priority  int       `json:"priority,omitempty"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 var (
@@ -29,12 +29,14 @@ var (
 
 type Set struct{}
 
-func (t *Set) Name() string        { return "todo_set" }
-func (t *Set) Description() string { return "replace the current task list with a new one" }
-func (t *Set) Required() []string  { return []string{"items"} }
+func (t *Set) Name() string { return "todo_set" }
+func (t *Set) Description() string {
+	return "replace the current task list with a new one; items may be strings or objects with content/text, status, done, notes, priority, and id"
+}
+func (t *Set) Required() []string { return []string{"items"} }
 func (t *Set) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"items": {Type: "array", Description: "task list; each element is one task"},
+		"items": {Type: "array", Description: "task list. [] intentionally clears tasks. Each element may be a string task or an object with content/text, status, done, notes, priority, and id. Invalid shapes return an error and do not clear existing tasks."},
 	}
 }
 func (t *Set) Execute(args map[string]any) (string, error) {
@@ -43,7 +45,10 @@ func (t *Set) Execute(args map[string]any) (string, error) {
 }
 
 func (t *Set) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
-	list := parseItems(args)
+	list, err := parseItems(args)
+	if err != nil {
+		return toolreturn.Return{IsError: true}, err
+	}
 	mu.Lock()
 	existingByID := make(map[string]Item, len(items))
 	for _, item := range items {
@@ -52,7 +57,7 @@ func (t *Set) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
 	items = normalizeItemsLocked(list, existingByID)
 	snapshot := snapshotItemsLocked()
 	mu.Unlock()
-	return todoReturn(fmt.Sprintf("已设置 %d 个任务", len(list)), snapshot), nil
+	return todoReturn(todoSummary(fmt.Sprintf("已设置 %d 个任务", len(list)), snapshot), snapshot), nil
 }
 
 func normalizeItemsLocked(list []Item, existingByID map[string]Item) []Item {
@@ -77,12 +82,14 @@ func normalizeItemsLocked(list []Item, existingByID map[string]Item) []Item {
 
 type Add struct{}
 
-func (t *Add) Name() string        { return "todo_add" }
-func (t *Add) Description() string { return "add new tasks to the list" }
-func (t *Add) Required() []string  { return []string{"items"} }
+func (t *Add) Name() string { return "todo_add" }
+func (t *Add) Description() string {
+	return "add new tasks to the list; items may be strings or objects with content/text, status, done, notes, priority, and id"
+}
+func (t *Add) Required() []string { return []string{"items"} }
 func (t *Add) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
-		"items": {Type: "array", Description: "tasks to add"},
+		"items": {Type: "array", Description: "tasks to add; each element may be a string task or an object with content/text, status, done, notes, priority, and id"},
 	}
 }
 func (t *Add) Execute(args map[string]any) (string, error) {
@@ -91,12 +98,15 @@ func (t *Add) Execute(args map[string]any) (string, error) {
 }
 
 func (t *Add) ExecuteReturn(args map[string]any) (toolreturn.Return, error) {
-	list := parseItems(args)
+	list, err := parseItems(args)
+	if err != nil {
+		return toolreturn.Return{IsError: true}, err
+	}
 	mu.Lock()
 	items = append(items, normalizeItemsLocked(list, nil)...)
 	snapshot := snapshotItemsLocked()
 	mu.Unlock()
-	return todoReturn(fmt.Sprintf("已添加 %d 个任务", len(list)), snapshot), nil
+	return todoReturn(todoSummary(fmt.Sprintf("已添加 %d 个任务", len(list)), snapshot), snapshot), nil
 }
 
 type Done struct{}
@@ -289,24 +299,115 @@ func validStatus(status string) bool {
 	}
 }
 
-func parseItems(args map[string]any) []Item {
+func parseItems(args map[string]any) ([]Item, error) {
 	raw, ok := args["items"]
 	if !ok {
-		return nil
+		return nil, fmt.Errorf("items required; provide [] to intentionally clear tasks or a non-empty array of strings/objects to set tasks")
 	}
 	list, ok := raw.([]any)
 	if !ok {
-		return nil
+		return nil, fmt.Errorf("items must be an array; use [] to intentionally clear tasks or [{content: ...}] / [\"task\"] to set tasks")
 	}
 	result := make([]Item, 0, len(list))
-	for _, item := range list {
-		if s, ok := item.(string); ok {
-			it := Item{Content: s}
-			assignID(&it)
-			result = append(result, it)
+	for i, item := range list {
+		parsed, err := parseItem(item)
+		if err != nil {
+			return nil, fmt.Errorf("items[%d]: %w", i, err)
+		}
+		assignID(&parsed)
+		result = append(result, parsed)
+	}
+	return result, nil
+}
+
+func parseItem(raw any) (Item, error) {
+	if s, ok := raw.(string); ok {
+		content := strings.TrimSpace(s)
+		if content == "" {
+			return Item{}, fmt.Errorf("task string cannot be empty")
+		}
+		return Item{Content: content}, nil
+	}
+	obj, ok := raw.(map[string]any)
+	if !ok {
+		return Item{}, fmt.Errorf("task must be a string or object with content/text")
+	}
+	content := firstString(obj, "content", "text", "task", "title")
+	if strings.TrimSpace(content) == "" {
+		return Item{}, fmt.Errorf("object task requires non-empty content or text")
+	}
+	item := Item{Content: strings.TrimSpace(content)}
+	item.ID = strings.TrimSpace(firstString(obj, "id"))
+	item.Notes = strings.TrimSpace(firstString(obj, "notes", "note"))
+	if status := strings.TrimSpace(firstString(obj, "status")); status != "" {
+		if !validStatus(status) {
+			return Item{}, fmt.Errorf("invalid status %q; valid statuses: pending, in_progress, blocked, done, skipped", status)
+		}
+		item.Status = status
+	}
+	if done, ok := obj["done"].(bool); ok {
+		item.Done = done
+	}
+	if item.Status == "done" {
+		item.Done = true
+	} else if item.Done && item.Status == "" {
+		item.Status = "done"
+	} else if item.Done && item.Status != "done" {
+		return Item{}, fmt.Errorf("done=true conflicts with status %q", item.Status)
+	}
+	if priority, ok, err := optionalInt(obj["priority"], "priority"); err != nil {
+		return Item{}, err
+	} else if ok {
+		item.Priority = priority
+	}
+	return item, nil
+}
+
+func firstString(obj map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := obj[key].(string); ok {
+			return value
 		}
 	}
-	return result
+	return ""
+}
+
+func optionalInt(raw any, name string) (int, bool, error) {
+	if raw == nil {
+		return 0, false, nil
+	}
+	switch v := raw.(type) {
+	case int:
+		return v, true, nil
+	case float64:
+		if v != float64(int(v)) {
+			return 0, false, fmt.Errorf("%s must be an integer", name)
+		}
+		return int(v), true, nil
+	default:
+		return 0, false, fmt.Errorf("%s must be an integer", name)
+	}
+}
+
+func todoSummary(prefix string, snapshot []Item) string {
+	if len(snapshot) == 0 {
+		return prefix + "\n当前任务清单为空"
+	}
+	var b strings.Builder
+	b.WriteString(prefix)
+	b.WriteString("\n当前任务：\n")
+	for i, item := range snapshot {
+		status := item.Status
+		if status == "" {
+			status = "pending"
+		}
+		fmt.Fprintf(&b, "%d. [%s] %s", i+1, status, item.Content)
+		if item.ID != "" {
+			fmt.Fprintf(&b, " (id: %s)", item.ID)
+		}
+		b.WriteByte('\n')
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func todoReturn(modelText string, snapshot []Item) toolreturn.Return {

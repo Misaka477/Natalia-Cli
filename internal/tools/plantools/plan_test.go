@@ -69,6 +69,7 @@ func TestPlanModeEnterCreateTemplate(t *testing.T) {
 	t.Cleanup(func() { plan.Exit() })
 
 	dir := t.TempDir()
+	chdir(t, dir)
 	planPath := filepath.Join(dir, "plans", "Test Plan.md")
 
 	_, err := (&Enter{}).Execute(map[string]any{"path": planPath, "create_template": true})
@@ -94,6 +95,7 @@ func TestPlanModeEnterCreateTemplateSkipsExisting(t *testing.T) {
 	t.Cleanup(func() { plan.Exit() })
 
 	dir := t.TempDir()
+	chdir(t, dir)
 	planPath := filepath.Join(dir, "plans", "Existing.md")
 	if err := os.MkdirAll(filepath.Dir(planPath), 0755); err != nil {
 		t.Fatal(err)
@@ -121,6 +123,7 @@ func TestPlanModeStatusShowsFileInfo(t *testing.T) {
 	t.Cleanup(func() { plan.Exit() })
 
 	dir := t.TempDir()
+	chdir(t, dir)
 	planPath := filepath.Join(dir, "plans", "Status.md")
 	content := "# Status\n\n- [x] done\n- [ ] todo\n"
 	if err := os.MkdirAll(filepath.Dir(planPath), 0755); err != nil {
@@ -145,4 +148,71 @@ func TestPlanModeStatusShowsFileInfo(t *testing.T) {
 	if !strings.Contains(out, "next_step: todo") {
 		t.Fatalf("expected next_step, got %q", out)
 	}
+}
+
+func TestPlanModeEnterRejectsWorkspaceExternalPath(t *testing.T) {
+	plan.Exit()
+	t.Cleanup(func() { plan.Exit() })
+
+	dir := t.TempDir()
+	chdir(t, dir)
+	outside := filepath.Join(filepath.Dir(dir), "outside-workspace", "plans", "Plan.md")
+	_, err := (&Enter{}).Execute(map[string]any{"path": outside, "create_template": true})
+	if err == nil || !strings.Contains(err.Error(), "workspace policy") {
+		t.Fatalf("expected workspace policy rejection, got %v", err)
+	}
+	if plan.Status().Enabled {
+		t.Fatalf("plan mode should not be enabled after rejected path, got %+v", plan.Status())
+	}
+	if _, statErr := os.Stat(outside); !os.IsNotExist(statErr) {
+		t.Fatalf("outside plan should not have been created, stat err=%v", statErr)
+	}
+}
+
+func TestPlanModeEnterRejectsNonPlanPath(t *testing.T) {
+	plan.Exit()
+	t.Cleanup(func() { plan.Exit() })
+
+	dir := t.TempDir()
+	chdir(t, dir)
+	path := filepath.Join(dir, "notes", "Plan.md")
+	_, err := (&Enter{}).Execute(map[string]any{"path": path, "create_template": true})
+	if err == nil || !strings.Contains(err.Error(), "plans directory") {
+		t.Fatalf("expected plan directory rejection, got %v", err)
+	}
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Fatalf("non-plan template should not have been created, stat err=%v", statErr)
+	}
+}
+
+func TestPlanModeEnterOutputUsesResolvedPath(t *testing.T) {
+	plan.Exit()
+	t.Cleanup(func() { plan.Exit() })
+
+	dir := t.TempDir()
+	chdir(t, dir)
+	out, err := (&Enter{}).Execute(map[string]any{"path": "plans/Resolved.md", "create_template": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(dir, "plans", "Resolved.md")
+	if !strings.Contains(out, "plan_path: "+want) {
+		t.Fatalf("expected resolved path %q in output, got %q", want, out)
+	}
+}
+
+func chdir(t *testing.T, dir string) {
+	t.Helper()
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(old); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	})
 }

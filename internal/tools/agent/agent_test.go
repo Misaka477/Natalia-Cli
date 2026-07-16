@@ -190,6 +190,13 @@ func TestSpawnBackgroundAttachDetachOutputChain(t *testing.T) {
 	if !strings.Contains(output, "background-done") {
 		t.Fatalf("expected output after detach, got %q", output)
 	}
+	stopped, err := (&Stop{Pool: pool}).Execute(map[string]any{"agent_id": id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stopped, "already completed before stop") || !strings.Contains(stopped, "stop_result: already_completed") || !strings.Contains(stopped, "no cancellation was sent") {
+		t.Fatalf("expected already completed stop semantics, got %q", stopped)
+	}
 }
 
 func extractAgentIDFromSpawnOutput(t *testing.T, output string) string {
@@ -325,7 +332,7 @@ func TestAgentStopReportsStoppedWorker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if w.GetStatus() != worker.StatusStopped || !strings.Contains(out, "status: stopped") {
+	if w.GetStatus() != worker.StatusStopped || !strings.Contains(out, "status: stopped") || !strings.Contains(out, "stop_result: stopped_now") {
 		t.Fatalf("expected stopped worker, status=%s out=%q", w.GetStatus(), out)
 	}
 }

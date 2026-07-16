@@ -100,12 +100,13 @@ type Usage struct {
 }
 
 type StreamEvent struct {
-	Content   string
-	Reasoning string // reasoning/thinking content
-	ToolCalls []ToolCall
-	Done      bool
-	Error     error
-	Usage     *Usage
+	Content        string
+	Reasoning      string // reasoning/thinking content
+	ToolCalls      []ToolCall
+	ToolCallDeltas []ToolCall
+	Done           bool
+	Error          error
+	Usage          *Usage
 }
 
 type Client struct {
@@ -315,19 +316,31 @@ func (c *Client) ChatStream(ctx context.Context, chatCtx *chat.Context, tools []
 					if toolCallAccum == nil {
 						toolCallAccum = make(map[int]*ToolCall)
 					}
+					deltas := make([]ToolCall, 0, len(choice.Delta.ToolCalls))
 					for _, tc := range choice.Delta.ToolCalls {
 						idx := tc.Index
 						if existing, ok := toolCallAccum[idx]; ok {
+							if tc.ID != "" {
+								existing.ID = tc.ID
+							}
+							if tc.Type != "" {
+								existing.Type = tc.Type
+							}
 							if tc.Function.Name != "" {
 								existing.Function.Name = tc.Function.Name
 							}
 							if tc.Function.Arguments != "" {
 								existing.Function.Arguments += tc.Function.Arguments
 							}
+							deltas = append(deltas, *existing)
 						} else {
 							tcCopy := tc
 							toolCallAccum[idx] = &tcCopy
+							deltas = append(deltas, tcCopy)
 						}
+					}
+					if len(deltas) > 0 {
+						ch <- StreamEvent{ToolCallDeltas: deltas}
 					}
 				}
 			}

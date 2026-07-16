@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Misaka477/Natalia-Cli/internal/filepolicy"
 	"github.com/Misaka477/Natalia-Cli/internal/llm"
 	"github.com/Misaka477/Natalia-Cli/internal/plan"
 )
@@ -15,13 +16,15 @@ type Enter struct {
 	Manager *plan.Manager
 }
 
-func (t *Enter) Name() string        { return "plan_mode_enter" }
-func (t *Enter) Description() string { return "进入 Plan Mode，记录计划会话状态" }
-func (t *Enter) Required() []string  { return []string{} }
+func (t *Enter) Name() string { return "plan_mode_enter" }
+func (t *Enter) Description() string {
+	return "进入 Plan Mode，记录计划会话状态；path 必须位于当前 workspace 的 plans/.natalia/plans/.kilo/plans 目录内，create_template=true 会在允许路径创建模板"
+}
+func (t *Enter) Required() []string { return []string{} }
 func (t *Enter) Parameters() map[string]llm.Property {
 	return map[string]llm.Property{
 		"slug":            {Type: "string", Description: "可选，计划 slug"},
-		"path":            {Type: "string", Description: "可选，计划文件路径"},
+		"path":            {Type: "string", Description: "可选，计划文件路径；必须位于当前 workspace 的 plans/.natalia/plans/.kilo/plans 目录内，输出会显示 resolved path"},
 		"reason":          {Type: "string", Description: "可选，进入 Plan Mode 的原因"},
 		"create_template": {Type: "boolean", Description: "可选，路径不存在时是否创建模板文件；默认 false"},
 	}
@@ -37,22 +40,54 @@ func (t *Enter) Execute(args map[string]any) (string, error) {
 
 	manager := managerOrDefault(t.Manager)
 
-	if path != "" && createTemplate {
-		cleanPath := filepath.Clean(path)
-		if _, err := os.Stat(cleanPath); os.IsNotExist(err) {
-			dir := filepath.Dir(cleanPath)
-			if err := os.MkdirAll(dir, 0755); err != nil {
-				return "", fmt.Errorf("failed to create plan directory: %w", err)
-			}
-			template := "# Plan\n\n- [ ] TODO\n"
-			if err := os.WriteFile(cleanPath, []byte(template), 0644); err != nil {
-				return "", fmt.Errorf("failed to create plan template: %w", err)
+	if strings.TrimSpace(path) != "" {
+		resolved, err := resolvePlanPath(path)
+		if err != nil {
+			return "", err
+		}
+		path = resolved
+		if createTemplate {
+			if _, err := os.Stat(path); os.IsNotExist(err) {
+				dir := filepath.Dir(path)
+				if err := os.MkdirAll(dir, 0755); err != nil {
+					return "", fmt.Errorf("failed to create plan directory %s: %w", dir, err)
+				}
+				template := "# Plan\n\n- [ ] TODO\n"
+				if err := os.WriteFile(path, []byte(template), 0644); err != nil {
+					return "", fmt.Errorf("failed to create plan template %s: %w", path, err)
+				}
+			} else if err != nil {
+				return "", fmt.Errorf("failed to inspect plan path %s: %w", path, err)
 			}
 		}
 	}
 
 	state := manager.Enter(slug, path, reason)
 	return strings.Join(state.Lines(), "\n"), nil
+}
+
+func resolvePlanPath(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", fmt.Errorf("plan path required")
+	}
+	clean, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	clean = filepath.Clean(clean)
+	if resolved, err := filepath.EvalSymlinks(clean); err == nil {
+		clean = filepath.Clean(resolved)
+	} else if parent, err := filepath.EvalSymlinks(filepath.Dir(clean)); err == nil {
+		clean = filepath.Join(parent, filepath.Base(clean))
+	}
+	if !plan.IsPlanPath(clean) {
+		return "", fmt.Errorf("plan path must be inside a plans directory in the workspace: %s", clean)
+	}
+	if err := filepolicy.New("", nil).GuardWrite(clean); err != nil {
+		return "", fmt.Errorf("plan path rejected by workspace policy: %w", err)
+	}
+	return clean, nil
 }
 
 type Exit struct {

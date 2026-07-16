@@ -156,8 +156,48 @@ func (r *Registry) Run(name string) (*RunState, string, error) {
 		hint := formatNotFoundHint(r.Candidates(name), r.List())
 		return nil, "", fmt.Errorf("workflow %q not found. %s", name, hint)
 	}
-	state := &RunState{WorkflowName: wf.Name, Source: wf.Source, CurrentStep: 1, TotalSteps: len(wf.Steps), Status: "running"}
+	state := NewRunState(*wf)
 	return state, formatRunInstruction(*wf, *state), nil
+}
+
+func NewRunState(wf Workflow) *RunState {
+	status := "running"
+	currentStep := 1
+	if len(wf.Steps) == 0 {
+		status = "completed"
+		currentStep = 0
+	}
+	return &RunState{WorkflowName: wf.Name, Source: wf.Source, CurrentStep: currentStep, TotalSteps: len(wf.Steps), Status: status}
+}
+
+func AdvanceRunState(wf Workflow, state *RunState) error {
+	if state == nil {
+		return fmt.Errorf("workflow state is required")
+	}
+	if !strings.EqualFold(state.WorkflowName, wf.Name) {
+		return fmt.Errorf("state workflow %q does not match workflow %q", state.WorkflowName, wf.Name)
+	}
+	if state.Status == "completed" {
+		return nil
+	}
+	if state.TotalSteps == 0 {
+		state.TotalSteps = len(wf.Steps)
+	}
+	if state.CurrentStep <= 0 {
+		state.CurrentStep = 1
+	}
+	if state.CurrentStep >= state.TotalSteps {
+		state.CurrentStep = state.TotalSteps
+		state.Status = "completed"
+		return nil
+	}
+	state.CurrentStep++
+	state.Status = "running"
+	return nil
+}
+
+func FormatRunInstruction(wf Workflow, state RunState) string {
+	return formatRunInstruction(wf, state)
 }
 
 func SaveRunState(path string, state RunState) error {
@@ -422,7 +462,17 @@ func ImportGitHubActionsWorkflow(source string, data []byte) (*Workflow, error) 
 }
 
 func formatRunInstruction(wf Workflow, state RunState) string {
-	step := wf.Steps[0]
+	if len(wf.Steps) == 0 {
+		return fmt.Sprintf("Workflow %q has no steps.\ncurrent_step: 0\ntotal_steps: 0\nstatus: completed\nnext_action: no workflow steps remain", wf.Name)
+	}
+	idx := state.CurrentStep - 1
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(wf.Steps) {
+		idx = len(wf.Steps) - 1
+	}
+	step := wf.Steps[idx]
 	var b strings.Builder
 	fmt.Fprintf(&b, "Execute workflow %q from %s.\n", wf.Name, displaySource(wf.Source))
 	fmt.Fprintf(&b, "Progress: step %d/%d.\n\n", state.CurrentStep, state.TotalSteps)
