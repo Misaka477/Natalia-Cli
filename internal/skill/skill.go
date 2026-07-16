@@ -292,36 +292,25 @@ func slugify(value string) string {
 
 func loadSkill(dir string, scope string) (*Skill, error) {
 	mdPath := filepath.Join(dir, "SKILL.md")
-	data, err := os.ReadFile(mdPath)
+	fm, body, err := ParseSKILL(mdPath)
 	if err != nil {
-		return nil, err
-	}
-	content := string(data)
-
-	name := filepath.Base(dir)
-	description := name
-
-	// Parse YAML frontmatter: ---\nname: ...\ndescription: ...\n---
-	lines := strings.SplitN(content, "---", 3)
-	if len(lines) >= 3 {
-		frontmatter := strings.TrimSpace(lines[1])
-		for _, line := range strings.Split(frontmatter, "\n") {
-			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "name:") {
-				name = strings.TrimSpace(strings.TrimPrefix(line, "name:"))
-			}
-			if strings.HasPrefix(line, "description:") {
-				description = strings.TrimSpace(strings.TrimPrefix(line, "description:"))
-			}
+		data, readErr := os.ReadFile(mdPath)
+		if readErr != nil {
+			return nil, readErr
 		}
-		content = strings.TrimSpace(lines[2])
+		name := filepath.Base(dir)
+		return &Skill{
+			Name:    name,
+			Dir:     dir,
+			Content: strings.TrimSpace(string(data)),
+			Scope:   scope,
+		}, nil
 	}
-
 	return &Skill{
-		Name:        name,
-		Description: description,
+		Name:        fm.Name,
+		Description: fm.Description,
 		Dir:         dir,
-		Content:     content,
+		Content:     body,
 		Scope:       scope,
 	}, nil
 }
