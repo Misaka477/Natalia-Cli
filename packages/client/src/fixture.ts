@@ -403,6 +403,97 @@ export function createFakeBackend(): FakeBackend {
     publish({ type: "content.done", id });
   }
 
+  async function ptyResponse(id: string) {
+    const target = {
+      kind: "sandbox" as const,
+      sandboxID: "box_m11",
+      root: "/tmp/kilo/m11-box",
+      isolationLevel: "workspace" as const,
+    };
+    publish({ type: "pty.action", id: "pty_m11", action: "attach", target });
+    publish({
+      type: "pty.update",
+      id: "pty_m11",
+      command: "bash --noprofile --norc",
+      cwd: "/tmp/kilo/m11-box",
+      status: "running",
+      attached: true,
+      rows: 24,
+      cols: 80,
+      prompt: "$",
+      activity: "waiting",
+      tail: "Natalia PTY smoke\n$",
+      lastAction: "attach",
+      target,
+    });
+    publish({
+      type: "pty.action",
+      id: "pty_m11",
+      action: "write",
+      redacted: true,
+      target,
+    });
+    publish({
+      type: "pty.update",
+      id: "pty_m11",
+      command: "bash --noprofile --norc",
+      cwd: "/tmp/kilo/m11-box",
+      status: "running",
+      attached: true,
+      rows: 40,
+      cols: 120,
+      prompt: "$",
+      activity: "waiting",
+      tail: "Natalia PTY smoke\n[redacted]\n$",
+      lastAction: "resize",
+      target,
+    });
+    publish({ type: "content.delta", id, text: "PTY fixture complete.\n" });
+    publish({ type: "content.done", id });
+  }
+
+  async function sandboxResponse(id: string) {
+    const target = {
+      kind: "sandbox" as const,
+      sandboxID: "box_m11",
+      root: "/tmp/kilo/m11-box",
+      isolationLevel: "workspace" as const,
+    };
+    publish({
+      type: "sandbox.update",
+      id: "box_m11",
+      status: "changed",
+      root: "/tmp/kilo/m11-box",
+      isolationLevel: "workspace",
+      changedFiles: 5,
+      runningResources: 1,
+      target,
+      resourcePolicy: "workspace isolation only; not container/VM security",
+    });
+    publish({
+      type: "sandbox.diff",
+      id: "box_m11",
+      changes: [
+        { kind: "add", path: "new.ts" },
+        { kind: "modify", path: "src/app.ts" },
+        { kind: "delete", path: "old.ts" },
+        { kind: "rename", oldPath: "a.ts", path: "b.ts" },
+        { kind: "mode", path: "script.sh", mode: "100755" },
+      ],
+    });
+    publish({
+      type: "sandbox.audit",
+      id: "box_m11",
+      action: "skill-script",
+      target,
+      approvalRequired: true,
+      checkpointPolicy: "sandbox_manifest",
+      message: "Skill/workflow activity in sandbox still requires approval.",
+    });
+    publish({ type: "content.delta", id, text: "Sandbox fixture complete.\n" });
+    publish({ type: "content.done", id });
+  }
+
   async function modalResponse(id: string) {
     publish({
       type: "status.update",
@@ -480,6 +571,10 @@ export function createFakeBackend(): FakeBackend {
       publish(submission);
       if (text.trim().toLowerCase().startsWith("/modal")) {
         await modalResponse(id);
+      } else if (text.trim().toLowerCase().startsWith("/pty")) {
+        await ptyResponse(id);
+      } else if (text.trim().toLowerCase().startsWith("/sandbox")) {
+        await sandboxResponse(id);
       } else if (text.trim().toLowerCase().startsWith("/compact")) {
         await compactResponse(id, text);
       } else if (text.trim().toLowerCase().startsWith("/retry")) {

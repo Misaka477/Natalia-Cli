@@ -32,6 +32,47 @@ export type CompactionTrigger =
   | "manual"
   | "context_limit";
 
+export type ExecutionTarget =
+  | { kind: "host"; cwd: string }
+  | {
+      kind: "sandbox";
+      sandboxID: string;
+      root: string;
+      isolationLevel: "workspace" | "container" | "vm";
+    };
+
+export type PTYStatus =
+  | "starting"
+  | "running"
+  | "waiting"
+  | "exited"
+  | "failed";
+export type PTYAction =
+  | "write"
+  | "submit"
+  | "special_key"
+  | "resize"
+  | "exit"
+  | "attach"
+  | "detach";
+export type SandboxStatus =
+  | "created"
+  | "running"
+  | "changed"
+  | "merge_previewed"
+  | "merged"
+  | "conflicted"
+  | "stopped"
+  | "deleted"
+  | "failed";
+export type SandboxDiffKind =
+  | "add"
+  | "modify"
+  | "delete"
+  | "rename"
+  | "mode"
+  | "conflict";
+
 export type ToolStatus =
   | "receiving_arguments"
   | "queued"
@@ -169,6 +210,61 @@ export type RuntimeEvent =
       attempted: boolean;
       compacted: boolean;
       reason: "context_limit";
+    }
+  | {
+      type: "pty.update";
+      id: string;
+      command: string;
+      cwd: string;
+      status: PTYStatus;
+      attached: boolean;
+      rows: number;
+      cols: number;
+      prompt?: string;
+      activity: "waiting" | "running";
+      tail: string;
+      lastAction?: PTYAction;
+      target: ExecutionTarget;
+    }
+  | {
+      type: "pty.action";
+      id: string;
+      action: PTYAction;
+      redacted?: boolean;
+      target: ExecutionTarget;
+    }
+  | {
+      type: "sandbox.update";
+      id: string;
+      status: SandboxStatus;
+      root: string;
+      isolationLevel: "workspace" | "container" | "vm";
+      changedFiles: number;
+      runningResources: number;
+      target: ExecutionTarget;
+      resourcePolicy: string;
+    }
+  | {
+      type: "sandbox.diff";
+      id: string;
+      changes: Array<{
+        kind: SandboxDiffKind;
+        path: string;
+        oldPath?: string;
+        mode?: string;
+      }>;
+    }
+  | {
+      type: "sandbox.audit";
+      id: string;
+      action: string;
+      target: ExecutionTarget;
+      approvalRequired: boolean;
+      checkpointPolicy:
+        | "sandbox_manifest"
+        | "host_checkpoint"
+        | "not_available";
+      message: string;
     }
   | { type: "diagnostic"; level: "info" | "warning" | "error"; message: string }
   | { type: "dialog.open"; dialog: "palette" | "approval" | "question" }

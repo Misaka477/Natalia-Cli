@@ -66,6 +66,13 @@
         "zod": "3.25.76",
       },
     },
+    "packages/pty": {
+      "name": "@natalia/pty",
+      "version": "0.0.0-m11",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+      },
+    },
     "packages/runtime": {
       "name": "@natalia/runtime",
       "version": "0.0.0-m8",
@@ -77,6 +84,13 @@
       },
       "devDependencies": {
         "@natalia/testing": "workspace:*",
+      },
+    },
+    "packages/sandbox": {
+      "name": "@natalia/sandbox",
+      "version": "0.0.0-m11",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
       },
     },
     "packages/session": {
@@ -180,7 +194,11 @@
 
     "@natalia/contracts": ["@natalia/contracts@workspace:packages/contracts"],
 
+    "@natalia/pty": ["@natalia/pty@workspace:packages/pty"],
+
     "@natalia/runtime": ["@natalia/runtime@workspace:packages/runtime"],
+
+    "@natalia/sandbox": ["@natalia/sandbox@workspace:packages/sandbox"],
 
     "@natalia/session": ["@natalia/session@workspace:packages/session"],
 

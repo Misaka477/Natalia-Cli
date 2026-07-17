@@ -92,6 +92,8 @@ export type AppState = {
   tools: Record<string, ToolBlockState>;
   retryBanner?: string;
   compactionBanner?: string;
+  pty: Record<string, Extract<RuntimeEvent, { type: "pty.update" }>>;
+  sandboxes: Record<string, Extract<RuntimeEvent, { type: "sandbox.update" }>>;
 };
 
 export const initialState: AppState = {
@@ -102,6 +104,8 @@ export const initialState: AppState = {
   modal: structuredClone(initialModalState),
   streams: {},
   tools: {},
+  pty: {},
+  sandboxes: {},
   messages: [
     {
       id: "welcome",
@@ -212,6 +216,53 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
           ? "context-limit recovery compacted once; retrying original step"
           : "context-limit recovery requested",
         "context_limit",
+      );
+      return;
+    case "pty.update":
+      state.pty[event.id] = event;
+      upsertBlock(
+        state,
+        `pty:${event.id}`,
+        "system",
+        `PTY ${event.id} ${event.status} ${event.activity} ${targetLabel(event.target)} ${event.rows}x${event.cols}\ncmd: ${event.command}\nprompt: ${event.prompt ?? "-"}\nlast: ${event.lastAction ?? "-"}\ntail: ${event.tail}`,
+        event.status,
+      );
+      return;
+    case "pty.action":
+      state.footer =
+        `pty ${event.id} ${event.action} ${event.redacted ? "[redacted]" : ""}`.trim();
+      return;
+    case "sandbox.update":
+      state.sandboxes[event.id] = event;
+      upsertBlock(
+        state,
+        `sandbox:${event.id}`,
+        "system",
+        `Sandbox ${event.id} ${event.status} isolation=${event.isolationLevel}\nroot: ${event.root}\nchanged: ${event.changedFiles} running: ${event.runningResources}\ntarget: ${targetLabel(event.target)}\npolicy: ${event.resourcePolicy}`,
+        event.status,
+      );
+      return;
+    case "sandbox.diff":
+      upsertBlock(
+        state,
+        `sandbox:${event.id}:diff`,
+        "system",
+        event.changes
+          .map(
+            (change) =>
+              `${change.kind}: ${change.oldPath ? `${change.oldPath} -> ` : ""}${change.path}${change.mode ? ` mode=${change.mode}` : ""}`,
+          )
+          .join("\n"),
+        "diff",
+      );
+      return;
+    case "sandbox.audit":
+      upsertBlock(
+        state,
+        `sandbox:${event.id}:audit:${event.action}`,
+        "system",
+        `audit ${event.action}: ${event.message}\ntarget: ${targetLabel(event.target)}\napproval: ${event.approvalRequired ? "required" : "not required"}\ncheckpoint: ${event.checkpointPolicy}`,
+        "audit",
       );
       return;
     case "diagnostic":
@@ -520,6 +571,13 @@ function retryBlockID(turnID: string) {
 function formatWait(ms: number) {
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function targetLabel(
+  target: Extract<RuntimeEvent, { type: "pty.update" }>["target"],
+) {
+  if (target.kind === "host") return `host:${target.cwd}`;
+  return `sandbox:${target.sandboxID}:${target.isolationLevel}`;
 }
 
 function removeBlock(state: AppState, id: string) {

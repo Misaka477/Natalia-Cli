@@ -179,6 +179,71 @@ test("retry exhausted summary redacts provider detail", () => {
   expect(text).not.toContain("sk-");
 });
 
+test("PTY and Sandbox dedicated presentation events render stable blocks", () => {
+  let state = structuredClone(initialState);
+  const target = {
+    kind: "sandbox" as const,
+    sandboxID: "box_m11",
+    root: "/tmp/box",
+    isolationLevel: "workspace" as const,
+  };
+  state = reduceState(state, {
+    type: "pty.update",
+    id: "pty_1",
+    command: "bash",
+    cwd: "/tmp/box",
+    status: "running",
+    attached: true,
+    rows: 24,
+    cols: 80,
+    prompt: "$",
+    activity: "waiting",
+    tail: "ready\n$",
+    lastAction: "submit",
+    target,
+  });
+  state = reduceState(state, {
+    type: "sandbox.update",
+    id: "box_m11",
+    status: "changed",
+    root: "/tmp/box",
+    isolationLevel: "workspace",
+    changedFiles: 2,
+    runningResources: 1,
+    target,
+    resourcePolicy: "workspace isolation only",
+  });
+  state = reduceState(state, {
+    type: "sandbox.diff",
+    id: "box_m11",
+    changes: [
+      { kind: "rename", oldPath: "a.ts", path: "b.ts" },
+      { kind: "mode", path: "script.sh", mode: "100755" },
+    ],
+  });
+  state = reduceState(state, {
+    type: "sandbox.audit",
+    id: "box_m11",
+    action: "skill-script",
+    target,
+    approvalRequired: true,
+    checkpointPolicy: "sandbox_manifest",
+    message: "sandbox is not container security",
+  });
+  expect(
+    state.messages.find((item) => item.id === "pty:pty_1")?.text,
+  ).toContain("PTY pty_1");
+  expect(
+    state.messages.find((item) => item.id === "sandbox:box_m11")?.text,
+  ).toContain("isolation=workspace");
+  expect(
+    state.messages.find((item) => item.id === "sandbox:box_m11:diff")?.text,
+  ).toContain("a.ts -> b.ts");
+  expect(
+    state.messages.find((item) => item.id.includes("audit"))?.text,
+  ).toContain("approval: required");
+});
+
 test("partial tool arguments are hidden until complete and sensitive keys redact", () => {
   expect(parseToolArguments('{"path":"a",').complete).toBe(false);
   const parsed = parseToolArguments(

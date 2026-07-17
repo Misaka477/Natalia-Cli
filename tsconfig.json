@@ -11,6 +11,8 @@
     { "path": "packages/session" },
     { "path": "packages/config" },
     { "path": "packages/tools" },
+    { "path": "packages/pty" },
+    { "path": "packages/sandbox" },
     { "path": "packages/testing" }
   ]
 }

@@ -1,0 +1,82 @@
+import { expect, test } from "bun:test";
+import { mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { WorkspaceSandboxManager, containPath, isSecretEnvKey } from "../src";
+
+test("sandbox containment blocks absolute and parent escape", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-sandbox-"));
+  await expect(containPath(root, "/etc/passwd")).rejects.toThrow("absolute");
+  await expect(containPath(root, "../escape")).rejects.toThrow("escape");
+  await expect(containPath(root, "safe/file.txt")).resolves.toContain(root);
+});
+
+test("sandbox containment blocks symlink escape", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-sandbox-"));
+  await symlink("/tmp", join(root, "out"));
+  await expect(containPath(root, "out/file.txt")).rejects.toThrow(
+    "symlink escape",
+  );
+});
+
+test("sandbox diff covers delete rename mode and env allowlist redacts secrets", async () => {
+  const base = await mkdtemp(join(tmpdir(), "natalia-sandbox-base-"));
+  const manager = new WorkspaceSandboxManager(base);
+  await manager.create("box");
+  await manager.write("box", "new.ts", "new");
+  await manager.write("box", "old.ts", "old");
+  await manager.renamePath("box", "old.ts", "renamed.ts");
+  await manager.modePath("box", "script.sh", "100755");
+  await manager.deletePath("box", "gone.ts");
+  const changes = await manager.previewMerge("box");
+  expect(changes.map((change) => change.kind)).toEqual([
+    "modify",
+    "modify",
+    "rename",
+    "mode",
+    "delete",
+  ]);
+  expect(
+    manager.environment(["PATH", "API_KEY"], {
+      PATH: "/bin",
+      API_KEY: "secret",
+    }),
+  ).toEqual({ PATH: "/bin" });
+  expect(isSecretEnvKey("GITHUB_TOKEN")).toBe(true);
+});
+
+test("sandbox merge is atomic on failure", async () => {
+  const base = await mkdtemp(join(tmpdir(), "natalia-sandbox-base-"));
+  const host = await mkdtemp(join(tmpdir(), "natalia-host-"));
+  const manager = new WorkspaceSandboxManager(base);
+  await manager.create("box");
+  await writeFile(join(host, "keep.txt"), "original");
+  await manager.write("box", "keep.txt", "changed");
+  await manager.write("box", "bad/child.txt", "bad");
+  await writeFile(join(host, "bad"), "not a dir");
+  await expect(manager.merge("box", host)).rejects.toThrow();
+  expect(await readFile(join(host, "keep.txt"), "utf8")).toBe("original");
+});
+
+test("sandbox target/audit/checkpoint contract exposes isolation level", async () => {
+  const base = await mkdtemp(join(tmpdir(), "natalia-sandbox-base-"));
+  const manager = new WorkspaceSandboxManager(base);
+  await manager.create("box");
+  expect(manager.target("box")).toMatchObject({
+    kind: "sandbox",
+    isolationLevel: "workspace",
+  });
+  expect(manager.updateEvent("box")).toMatchObject({
+    type: "sandbox.update",
+    isolationLevel: "workspace",
+  });
+  expect(manager.auditEvent("box", "workflow")).toMatchObject({
+    type: "sandbox.audit",
+    approvalRequired: true,
+    checkpointPolicy: "sandbox_manifest",
+  });
+  expect(await manager.delete("box")).toMatchObject({
+    pendingChanges: [],
+    runningResources: [],
+  });
+});
