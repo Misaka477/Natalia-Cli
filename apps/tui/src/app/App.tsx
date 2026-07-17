@@ -1,0 +1,306 @@
+import {
+  TextareaRenderable,
+  TextAttributes,
+  type PasteEvent,
+} from "@opentui/core";
+import { useRenderer } from "@opentui/solid";
+import { createEffect, createSignal, onMount } from "solid-js";
+import { PromptRefProvider, usePromptRef } from "../context/prompt";
+import { RuntimeProvider } from "../context/runtime";
+import { StateProvider, useAppState } from "../context/state";
+import { DialogLayer } from "../dialog/DialogLayer";
+import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
+import { composerKeyAction, keymapBoundary } from "../keymap";
+import { dispatchModalKey } from "../modal/key-handler";
+import { decidePaste } from "../prompt/paste";
+import { PromptHistory, shouldUseHistory } from "../prompt/history";
+import { SessionRoute } from "../routes/session/SessionRoute";
+import { darkTheme } from "../theme/theme";
+
+export function App(props: {
+  backend: RuntimeClient;
+  onDispatch?: (event: RuntimeEvent) => void;
+  initialPrompt?: string;
+}) {
+  return (
+    <RuntimeProvider>
+      <PromptRefProvider>
+        <StateProvider
+          onReady={(dispatch) => {
+            props.backend.start((event: RuntimeEvent) => {
+              dispatch(event);
+              props.onDispatch?.(event);
+            });
+            if (props.initialPrompt)
+              setTimeout(
+                () => void props.backend.submit(props.initialPrompt!),
+                20,
+              );
+          }}
+        >
+          <Shell backend={props.backend} />
+        </StateProvider>
+      </PromptRefProvider>
+    </RuntimeProvider>
+  );
+}
+
+function Shell(props: { backend: RuntimeClient }) {
+  const renderer = useRenderer();
+  const promptRef = usePromptRef();
+  const { state, dispatch } = useAppState();
+  const [composer, setComposer] = createSignal<TextareaRenderable>();
+  const [pastePreview, setPastePreview] = createSignal("");
+  const [followBottom, setFollowBottom] = createSignal(true);
+  const history = new PromptHistory();
+  const scrollRef: { current?: any } = {};
+  let submitting = false;
+
+  onMount(() => setTimeout(() => composer()?.focus(), 1));
+
+  async function submit() {
+    if (submitting) return;
+    const input = composer();
+    const text = (input?.plainText ?? "").replace(/\n$/, "");
+    if (!text.trim()) return;
+    submitting = true;
+    const shouldFollow = isNearBottom(scrollRef.current);
+    setFollowMode(shouldFollow);
+    if (shouldFollow) toBottom(0);
+    try {
+      input?.clear();
+      setPastePreview("");
+      history.add(text);
+      await props.backend.submit(text);
+    } finally {
+      submitting = false;
+      if (followBottom()) toBottom(50);
+      setTimeout(() => composer()?.focus(), 1);
+    }
+  }
+
+  function handlePaste(event: PasteEvent) {
+    const decision = decidePaste(event.bytes, composer()?.plainText ?? "");
+    if (!decision.ok) {
+      event.preventDefault();
+      setPastePreview(decision.message);
+      props.backend.diagnostic(decision.message);
+      return;
+    }
+    if (decision.preview) setPastePreview(decision.preview);
+  }
+
+  function restoreHistory(direction: -1 | 1) {
+    const input = composer();
+    if (!input) return false;
+    if (!shouldUseHistory(input.plainText, input.cursorOffset)) return false;
+    input.setText(
+      direction === -1
+        ? history.previous(input.plainText)
+        : history.next(input.plainText),
+    );
+    input.gotoBufferEnd();
+    return true;
+  }
+
+  function exitOrCancel() {
+    if (state.activeTurn) {
+      props.backend.cancel();
+    } else if (composer()?.plainText) {
+      composer()?.clear();
+    } else {
+      renderer.destroy();
+    }
+  }
+
+  createEffect(() => {
+    if (state.dialog === undefined) setTimeout(() => composer()?.focus(), 1);
+  });
+
+  function toBottom(delay = 50) {
+    setTimeout(() => scrollToBottom(scrollRef.current), delay);
+  }
+
+  function setFollowMode(value: boolean) {
+    setFollowBottom(value);
+    const scrollbox = scrollRef.current;
+    if (!scrollbox || scrollbox.isDestroyed) return;
+    scrollbox.stickyScroll = value;
+  }
+
+  return (
+    <box
+      flexDirection="column"
+      width="100%"
+      height="100%"
+      backgroundColor={darkTheme.background}
+    >
+      <SessionRoute scrollRef={scrollRef} followBottom={followBottom()} />
+      <box
+        flexShrink={0}
+        border
+        borderColor={state.dialog ? darkTheme.muted : darkTheme.accent}
+        paddingLeft={1}
+        paddingRight={1}
+        paddingTop={1}
+        paddingBottom={1}
+        backgroundColor={darkTheme.panel}
+      >
+        <text
+          attributes={TextAttributes.BOLD}
+          fg={state.dialog ? darkTheme.muted : darkTheme.accent}
+        >
+          {state.dialog
+            ? `Dialog: ${state.dialog} (Escape to close)`
+            : "Message"}
+        </text>
+        <textarea
+          ref={(value: TextareaRenderable) => {
+            setComposer(value);
+            promptRef.set(value);
+          }}
+          minHeight={1}
+          maxHeight={8}
+          width="100%"
+          placeholder={
+            state.dialog
+              ? "Dialog open – press Escape to return"
+              : "Ask Natalia fake backend... (/long tools, /retry rollback)"
+          }
+          placeholderColor={darkTheme.muted}
+          textColor={state.dialog ? darkTheme.muted : darkTheme.text}
+          focusedTextColor={darkTheme.text}
+          cursorColor={darkTheme.accent}
+          onPaste={handlePaste}
+          onKeyDown={(event: {
+            ctrl?: boolean;
+            alt?: boolean;
+            meta?: boolean;
+            option?: boolean;
+            shift?: boolean;
+            name?: string;
+            key?: string;
+            preventDefault(): void;
+          }) => {
+            const key = normalizeKey(event.name ?? event.key);
+            if (key === "escape" && state.dialog === "palette") {
+              event.preventDefault();
+              dispatch({ type: "dialog.close" });
+              return;
+            }
+            if (event.ctrl && key === "p") {
+              event.preventDefault();
+              if (state.dialog === "palette") {
+                dispatch({ type: "dialog.close" });
+              } else if (!state.dialog) {
+                dispatch({ type: "dialog.open", dialog: "palette" });
+              }
+              return;
+            }
+            if (event.ctrl && key === "s") {
+              event.preventDefault();
+              props.backend.snapshot();
+              return;
+            }
+            if (event.ctrl && key === "c") {
+              event.preventDefault();
+              exitOrCancel();
+              return;
+            }
+            if (event.ctrl && key === "d") {
+              event.preventDefault();
+              if (!composer()?.plainText) renderer.destroy();
+              return;
+            }
+            if (state.dialog) {
+              event.preventDefault();
+              dispatchModalKey(key ?? "");
+              return;
+            }
+            const composerAction = composerKeyAction(event);
+            if (composerAction === "newline") {
+              event.preventDefault();
+              composer()?.insertText("\n");
+              return;
+            }
+            if (composerAction === "submit") {
+              event.preventDefault();
+              void submit();
+              return;
+            }
+            if (composerAction === "buffer-home") {
+              event.preventDefault();
+              composer()?.gotoBufferHome();
+              return;
+            }
+            if (composerAction === "buffer-end") {
+              event.preventDefault();
+              composer()?.gotoBufferEnd();
+              return;
+            }
+            if ((key === "up" || key === "down") && composer()?.plainText) {
+              if (restoreHistory(key === "up" ? -1 : 1)) {
+                event.preventDefault();
+                return;
+              }
+            }
+            const sb = scrollRef.current;
+            if (!sb) return;
+            if (key === "pageup") {
+              event.preventDefault();
+              setFollowMode(false);
+              sb.scrollBy(-(sb.viewport?.height ?? 10) * 0.8);
+              return;
+            }
+            if (key === "pagedown") {
+              event.preventDefault();
+              sb.scrollBy((sb.viewport?.height ?? 10) * 0.8);
+              return;
+            }
+            if (key === "home") {
+              event.preventDefault();
+              setFollowMode(false);
+              sb.scrollTo(0);
+              return;
+            }
+            if (key === "end") {
+              event.preventDefault();
+              setFollowMode(true);
+              toBottom(0);
+              return;
+            }
+          }}
+        />
+        <text
+          fg={
+            pastePreview().startsWith("paste rejected")
+              ? darkTheme.danger
+              : darkTheme.muted
+          }
+        >
+          {pastePreview() || `${state.footer} · ${keymapBoundary.composer}`}
+        </text>
+      </box>
+      <DialogLayer backend={props.backend} onExit={exitOrCancel} />
+    </box>
+  );
+}
+
+function scrollToBottom(scrollbox: any) {
+  if (!scrollbox || scrollbox.isDestroyed) return;
+  scrollbox.scrollTo(scrollbox.scrollHeight ?? 0);
+}
+
+function isNearBottom(scrollbox: any, threshold = 10) {
+  if (!scrollbox || scrollbox.isDestroyed) return true;
+  const scrollTop = scrollbox.scrollTop ?? scrollbox.y ?? 0;
+  const viewportHeight = scrollbox.viewport?.height ?? scrollbox.height ?? 0;
+  const scrollHeight = scrollbox.scrollHeight ?? 0;
+  if (scrollHeight <= viewportHeight + 1) return true;
+  return scrollHeight - viewportHeight - scrollTop <= threshold;
+}
+
+function normalizeKey(key: string | undefined) {
+  if (key === "enter") return "return";
+  return key;
+}

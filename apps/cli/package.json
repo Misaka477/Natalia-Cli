@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@natalia/cli",
+  "version": "0.0.0-m8",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "natalia-ts": "./src/main.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@natalia/config": "workspace:*",
+    "@natalia/contracts": "workspace:*",
+    "@natalia/runtime": "workspace:*"
+  }
+}

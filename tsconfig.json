@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "files": [],
+  "references": [
+    { "path": "apps/tui" },
+    { "path": "apps/cli" },
+    { "path": "packages/contracts" },
+    { "path": "packages/client" },
+    { "path": "packages/ui-model" },
+    { "path": "packages/runtime" },
+    { "path": "packages/session" },
+    { "path": "packages/config" },
+    { "path": "packages/tools" },
+    { "path": "packages/testing" }
+  ]
+}

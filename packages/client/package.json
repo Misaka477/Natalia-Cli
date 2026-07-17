@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@natalia/client",
+  "version": "0.0.0-m8",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@natalia/contracts": "workspace:*",
+    "@natalia/testing": "workspace:*",
+    "@natalia/ui-model": "workspace:*"
+  }
+}

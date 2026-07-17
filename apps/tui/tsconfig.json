@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "jsx": "preserve",
+    "jsxImportSource": "@opentui/solid",
+    "rootDir": "../.."
+  },
+  "include": ["src", "test", "bin"],
+  "references": [
+    { "path": "../../packages/contracts" },
+    { "path": "../../packages/client" },
+    { "path": "../../packages/ui-model" },
+    { "path": "../../packages/testing" }
+  ]
+}

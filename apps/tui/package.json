@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@natalia/tui",
+  "version": "0.0.0-m8",
+  "private": true,
+  "type": "module",
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev": "npx bun run src/main.tsx",
+    "format": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "test": "npx bun test --timeout 60000",
+    "smoke:ime": "npx bun run bin/ime-smoke.ts",
+    "smoke:pty": "npx bun run bin/pty-smoke.ts",
+    "smoke:snapshot": "npx bun run bin/screen-snapshot.ts",
+    "smoke:long-modal": "npx bun run bin/long-modal-smoke.ts"
+  },
+  "dependencies": {
+    "@natalia/client": "workspace:*",
+    "@natalia/contracts": "workspace:*",
+    "@natalia/testing": "workspace:*",
+    "@natalia/ui-model": "workspace:*",
+    "@opentui/core": "0.4.3",
+    "@opentui/keymap": "0.4.3",
+    "@opentui/solid": "0.4.3",
+    "solid-js": "1.9.12"
+  }
+}

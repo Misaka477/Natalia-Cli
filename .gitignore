@@ -41,4 +41,20 @@ Thumbs.db
 /devref/
 
 # JavaScript frontend dependencies
+/node_modules/
 /frontend/tui/node_modules/
+/apps/*/node_modules/
+/packages/*/node_modules/
+
+# TypeScript/Bun build and cache outputs
+/apps/*/dist/
+/apps/*/.turbo/
+/apps/*/.vite/
+/apps/*/tsconfig.tsbuildinfo
+/packages/*/dist/
+/packages/*/tsconfig.tsbuildinfo
+/dist/
+/packages/*/.turbo/
+/packages/*/.vite/
+/.turbo/
+/.bun/
