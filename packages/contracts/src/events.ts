@@ -20,6 +20,18 @@ export type ErrorKind =
 
 export type StepRetryOperation = "llm_step" | "compaction" | "metadata_probe";
 
+export type ContextStatusSource =
+  | "exact_checkpoint"
+  | "pending_estimate"
+  | "compaction_estimate"
+  | "restored";
+
+export type CompactionTrigger =
+  | "ratio"
+  | "reserved"
+  | "manual"
+  | "context_limit";
+
 export type ToolStatus =
   | "receiving_arguments"
   | "queued"
@@ -117,6 +129,46 @@ export type RuntimeEvent =
       permissions: string;
       cwd: string;
       background: string;
+    }
+  | {
+      type: "context.status";
+      used: number;
+      max: number;
+      source: ContextStatusSource;
+      thresholdPercent: number;
+      reserved: number;
+      trigger?: CompactionTrigger;
+    }
+  | {
+      type: "compaction.begin";
+      id: string;
+      trigger: CompactionTrigger;
+      beforeTokens: number;
+      maxTokens: number;
+      thresholdPercent: number;
+      reservedTokens: number;
+      instruction?: string;
+      attempt: number;
+      startedAt: string;
+    }
+  | {
+      type: "compaction.end";
+      id: string;
+      trigger: CompactionTrigger;
+      success: boolean;
+      beforeTokens: number;
+      afterTokens?: number;
+      durationMs: number;
+      attempts: number;
+      error?: string;
+    }
+  | {
+      type: "context.limit.recovery";
+      id: string;
+      step: number;
+      attempted: boolean;
+      compacted: boolean;
+      reason: "context_limit";
     }
   | { type: "diagnostic"; level: "info" | "warning" | "error"; message: string }
   | { type: "dialog.open"; dialog: "palette" | "approval" | "question" }

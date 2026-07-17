@@ -16,6 +16,7 @@
     "smoke:tui:pty": "npm --workspace @natalia/tui run smoke:pty",
     "smoke:tui:snapshot": "npm --workspace @natalia/tui run smoke:snapshot",
     "smoke:tui:long-modal": "npm --workspace @natalia/tui run smoke:long-modal",
+    "smoke:tui:compact": "npm --workspace @natalia/tui run smoke:compact",
     "smoke:tui:retry": "npm --workspace @natalia/tui run smoke:retry",
     "guard:imports": "npx bun run packages/testing/bin/import-guard.ts",
     "verify": "npm run format && npm run typecheck && npm run test && npm run guard:imports"

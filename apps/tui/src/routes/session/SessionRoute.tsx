@@ -64,6 +64,13 @@ export function SessionRoute(props: {
           </box>
         )}
       </Show>
+      <Show when={state.compactionBanner}>
+        {(banner) => (
+          <box flexShrink={0} paddingLeft={1} backgroundColor={darkTheme.panel}>
+            <text fg={darkTheme.accent}>{banner()}</text>
+          </box>
+        )}
+      </Show>
       <box
         flexShrink={0}
         flexDirection="row"

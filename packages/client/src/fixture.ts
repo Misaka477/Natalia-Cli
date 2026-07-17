@@ -335,6 +335,74 @@ export function createFakeBackend(): FakeBackend {
     });
   }
 
+  async function compactResponse(id: string, text: string) {
+    const instruction = text.replace(/^\/compact\s*/i, "").trim() || undefined;
+    publish({
+      type: "context.status",
+      used: 172000,
+      max: 200000,
+      source: "pending_estimate",
+      thresholdPercent: 85,
+      reserved: 50000,
+      trigger: instruction ? "manual" : "ratio",
+    });
+    publish({
+      type: "compaction.begin",
+      id: `cmp_${id}`,
+      trigger: "manual",
+      beforeTokens: 172000,
+      maxTokens: 200000,
+      thresholdPercent: 85,
+      reservedTokens: 50000,
+      instruction,
+      attempt: 1,
+      startedAt: new Date().toISOString(),
+    });
+    await Bun.sleep(100);
+    publish({
+      type: "step.retry",
+      id: `cmp_${id}`,
+      operation: "compaction",
+      step: 0,
+      attempt: 2,
+      maxAttempts: 3,
+      waitMs: 300,
+      reason: "timeout",
+    });
+    await Bun.sleep(300);
+    publish({
+      type: "step.retry.cleared",
+      id: `cmp_${id}`,
+      operation: "compaction",
+      step: 0,
+      attempts: 2,
+    });
+    publish({
+      type: "compaction.end",
+      id: `cmp_${id}`,
+      trigger: "manual",
+      success: true,
+      beforeTokens: 172000,
+      afterTokens: 43000,
+      durationMs: 400,
+      attempts: 2,
+    });
+    publish({
+      type: "context.status",
+      used: 43000,
+      max: 200000,
+      source: "compaction_estimate",
+      thresholdPercent: 85,
+      reserved: 50000,
+    });
+    publish({
+      type: "content.delta",
+      id,
+      text: "Compaction fixture complete.\n",
+    });
+    publish({ type: "content.done", id });
+  }
+
   async function modalResponse(id: string) {
     publish({
       type: "status.update",
@@ -412,6 +480,8 @@ export function createFakeBackend(): FakeBackend {
       publish(submission);
       if (text.trim().toLowerCase().startsWith("/modal")) {
         await modalResponse(id);
+      } else if (text.trim().toLowerCase().startsWith("/compact")) {
+        await compactResponse(id, text);
       } else if (text.trim().toLowerCase().startsWith("/retry")) {
         await retryResponse(id);
       } else if (text.trim().toLowerCase().startsWith("/long")) {

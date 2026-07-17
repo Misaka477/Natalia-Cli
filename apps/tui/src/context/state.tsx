@@ -91,6 +91,7 @@ export type AppState = {
   streams: Record<string, StreamState>;
   tools: Record<string, ToolBlockState>;
   retryBanner?: string;
+  compactionBanner?: string;
 };
 
 export const initialState: AppState = {
@@ -160,6 +161,58 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
         event.permissions,
         `bg:${event.background}`,
       ];
+      return;
+    case "context.status":
+      state.statusSegments = [
+        "mode:fixture",
+        ...state.statusSegments.filter(
+          (segment) =>
+            !segment.startsWith("ctx:") &&
+            !segment.startsWith("threshold:") &&
+            !segment.startsWith("reserved:"),
+        ),
+        `ctx:${event.used}/${event.max} ${Math.round((event.used / event.max) * 100)}%`,
+        `threshold:${event.thresholdPercent}%`,
+        `reserved:${event.reserved}`,
+      ].slice(0, 7);
+      state.footer = `context ${event.used}/${event.max} source=${event.source}${event.trigger ? ` trigger=${event.trigger}` : ""}`;
+      return;
+    case "compaction.begin":
+      state.compactionBanner = `Compacting after ${event.trigger} · before ${event.beforeTokens}/${event.maxTokens} · reserved ${event.reservedTokens}`;
+      state.footer = state.compactionBanner;
+      upsertBlock(
+        state,
+        event.id,
+        "system",
+        state.compactionBanner,
+        "compacting",
+      );
+      return;
+    case "compaction.end":
+      state.compactionBanner = undefined;
+      upsertBlock(
+        state,
+        event.id,
+        "system",
+        event.success
+          ? `compaction complete: ${event.beforeTokens} -> ${event.afterTokens} tokens in ${event.durationMs}ms`
+          : `compaction failed atomically: ${event.error ?? "unknown"}`,
+        event.success ? "compacted" : "failed",
+      );
+      state.footer = event.success
+        ? "compaction complete"
+        : "compaction failed";
+      return;
+    case "context.limit.recovery":
+      upsertBlock(
+        state,
+        `${event.id}:context-limit`,
+        "system",
+        event.compacted
+          ? "context-limit recovery compacted once; retrying original step"
+          : "context-limit recovery requested",
+        "context_limit",
+      );
       return;
     case "diagnostic":
       upsertBlock(

@@ -14,6 +14,7 @@
     "smoke:pty": "npx bun run bin/pty-smoke.ts",
     "smoke:snapshot": "npx bun run bin/screen-snapshot.ts",
     "smoke:long-modal": "npx bun run bin/long-modal-smoke.ts",
+    "smoke:compact": "npx bun run bin/compact-smoke.ts",
     "smoke:retry": "npx bun run bin/retry-smoke.ts"
   },
   "dependencies": {
