@@ -1,3 +1,4 @@
+export { checkpointDisplayLine } from "./checkpoint-display";
 export { compactionDisplayLine } from "./compaction-display";
 export { createFakeBackend } from "./fixture";
 export { retryDisplayLine } from "./retry-display";

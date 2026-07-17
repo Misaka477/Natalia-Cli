@@ -15,6 +15,7 @@
     "smoke:snapshot": "npx bun run bin/screen-snapshot.ts",
     "smoke:long-modal": "npx bun run bin/long-modal-smoke.ts",
     "smoke:compact": "npx bun run bin/compact-smoke.ts",
+    "smoke:checkpoint": "npx bun run bin/checkpoint-smoke.ts",
     "smoke:pty-sandbox": "npx bun run bin/pty-sandbox-smoke.ts",
     "smoke:pty-model": "npx bun run bin/pty-model-smoke.ts",
     "smoke:retry": "npx bun run bin/retry-smoke.ts"

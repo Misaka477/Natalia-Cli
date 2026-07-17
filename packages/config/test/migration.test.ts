@@ -29,6 +29,8 @@ test("config v2 migration keeps zero/null/omitted semantics and new defaults", (
   expect(migrated.config.context.compactionEnabled).toBe(true);
   expect(migrated.config.context.compactionThresholdPercent).toBe(85);
   expect(migrated.config.context.reservedOutputTokens).toBe("auto");
+  expect(migrated.config.checkpoint.enabled).toBe(true);
+  expect(migrated.config.checkpoint.additionalDirs).toEqual([]);
 });
 
 test("migration summary redacts secrets and preserves explicit 8192", () => {

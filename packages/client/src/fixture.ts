@@ -406,6 +406,104 @@ export function createFakeBackend(): FakeBackend {
     publish({ type: "content.done", id });
   }
 
+  async function checkpointResponse(id: string, text: string) {
+    const command = text.trim().toLowerCase();
+    if (command.startsWith("/checkpoints")) {
+      publish({
+        type: "content.delta",
+        id,
+        text: "checkpoint_0 step=0 reason=baseline files=3 changes=0 tokens=128 complete\ncheckpoint_1 step=2 reason=manual files=4 changes=1 tokens=512 complete",
+      });
+      publish({ type: "content.done", id });
+      return;
+    }
+    if (command.startsWith("/checkpoint")) {
+      publish({
+        type: "checkpoint.created",
+        id: "checkpoint_1",
+        reason: "manual",
+        sequence: 1,
+        complete: true,
+        files: 4,
+        changes: 1,
+        contextJournalOffset: 6,
+        step: 2,
+        tokenEstimate: 512,
+        diskUsageBytes: 4096,
+      });
+      publish({
+        type: "content.delta",
+        id,
+        text: "Created checkpoint_1 with durable workspace + context snapshot.",
+      });
+      publish({ type: "content.done", id });
+      return;
+    }
+    if (command.startsWith("/rollback")) {
+      const dryRun = command.includes("--dry-run");
+      const checkpointID = command.includes("last")
+        ? "checkpoint_1"
+        : "checkpoint_0";
+      publish({
+        type: "rollback.previewed",
+        preview: {
+          checkpointID,
+          dryRun,
+          changes: [{ kind: "delete", path: "test_example.py" }],
+          context: {
+            truncateMessages: 3,
+            targetJournalOffset: 1,
+            targetStep: 0,
+            targetTokens: 128,
+            compactionGeneration: 0,
+          },
+          resources: [
+            {
+              kind: "pty",
+              id: "pty_m11",
+              action: "stop",
+              summary: "running PTY cannot time travel",
+            },
+            {
+              kind: "workflow",
+              id: "wf_fixture",
+              action: "invalidate",
+              summary: "pending workflow modal invalidated",
+            },
+          ],
+          ignoredFiles: 1,
+          diskUsageBytes: 4096,
+          complete: true,
+          warnings: [],
+        },
+      });
+      if (!dryRun) {
+        publish({
+          type: "rollback.begin",
+          checkpointID,
+          safetyCheckpointID: "checkpoint_2",
+        });
+        publish({
+          type: "rollback.end",
+          checkpointID,
+          safetyCheckpointID: "checkpoint_2",
+          restoredFiles: 3,
+          deletedFiles: 1,
+          contextJournalOffset: 1,
+          step: 0,
+        });
+      }
+      publish({
+        type: "content.delta",
+        id,
+        text: dryRun
+          ? "Rollback dry-run preview rendered. No files changed."
+          : "Rollback applied atomically with safety checkpoint checkpoint_2.",
+      });
+      publish({ type: "content.done", id });
+    }
+  }
+
   async function ptyResponse(id: string) {
     const target = {
       kind: "sandbox" as const,
@@ -656,6 +754,12 @@ export function createFakeBackend(): FakeBackend {
         await sandboxResponse(id);
       } else if (text.trim().toLowerCase().startsWith("/compact")) {
         await compactResponse(id, text);
+      } else if (text.trim().toLowerCase().startsWith("/checkpoint")) {
+        await checkpointResponse(id, text);
+      } else if (text.trim().toLowerCase().startsWith("/checkpoints")) {
+        await checkpointResponse(id, text);
+      } else if (text.trim().toLowerCase().startsWith("/rollback")) {
+        await checkpointResponse(id, text);
       } else if (text.trim().toLowerCase().startsWith("/retry")) {
         await retryResponse(id);
       } else if (text.trim().toLowerCase().startsWith("/long")) {

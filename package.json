@@ -17,6 +17,7 @@
     "smoke:tui:snapshot": "npm --workspace @natalia/tui run smoke:snapshot",
     "smoke:tui:long-modal": "npm --workspace @natalia/tui run smoke:long-modal",
     "smoke:tui:compact": "npm --workspace @natalia/tui run smoke:compact",
+    "smoke:tui:checkpoint": "npm --workspace @natalia/tui run smoke:checkpoint",
     "smoke:tui:pty-sandbox": "npm --workspace @natalia/tui run smoke:pty-sandbox",
     "smoke:tui:pty-model": "npm --workspace @natalia/tui run smoke:pty-model",
     "smoke:tui:retry": "npm --workspace @natalia/tui run smoke:retry",

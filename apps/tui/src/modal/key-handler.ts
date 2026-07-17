@@ -4,6 +4,9 @@ let current: ModalKeyHandler | undefined;
 
 export function setModalKeyHandler(handler: ModalKeyHandler | undefined) {
   current = handler;
+  return () => {
+    if (current === handler) current = undefined;
+  };
 }
 
 export function dispatchModalKey(key: string) {

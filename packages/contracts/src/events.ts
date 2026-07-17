@@ -75,6 +75,53 @@ export type SandboxDiffKind =
   | "mode"
   | "conflict";
 
+export type CheckpointChangeKind =
+  | "add"
+  | "modify"
+  | "delete"
+  | "rename"
+  | "mode"
+  | "symlink";
+
+export type CheckpointResourcePolicy = {
+  kind:
+    | "subagent"
+    | "process"
+    | "background"
+    | "pty"
+    | "sandbox"
+    | "workflow"
+    | "tool"
+    | "pending_modal";
+  id: string;
+  action: "stop" | "preserve_dirty" | "cancel" | "invalidate" | "none";
+  summary: string;
+};
+
+export type CheckpointPreview = {
+  checkpointID: string;
+  safetyCheckpointID?: string;
+  dryRun: boolean;
+  changes: Array<{
+    kind: CheckpointChangeKind;
+    path: string;
+    oldPath?: string;
+    mode?: string;
+  }>;
+  context: {
+    truncateMessages: number;
+    targetJournalOffset: number;
+    targetStep: number;
+    targetTokens: number;
+    compactionGeneration: number;
+  };
+  resources: CheckpointResourcePolicy[];
+  ignoredFiles: number;
+  diskUsageBytes: number;
+  complete: boolean;
+  warnings: string[];
+};
+
 export type ToolStatus =
   | "receiving_arguments"
   | "queued"
@@ -295,6 +342,55 @@ export type RuntimeEvent =
         | "host_checkpoint"
         | "not_available";
       message: string;
+    }
+  | {
+      type: "checkpoint.created";
+      id: string;
+      reason: string;
+      sequence: number;
+      complete: boolean;
+      files: number;
+      changes: number;
+      contextJournalOffset: number;
+      step: number;
+      tokenEstimate: number;
+      diskUsageBytes: number;
+    }
+  | {
+      type: "checkpoint.failed";
+      reason: string;
+      message: string;
+      incomplete?: boolean;
+      errors?: string[];
+    }
+  | {
+      type: "checkpoint.unavailable";
+      reason: string;
+      suggestion: string;
+      disabledByConfig?: boolean;
+    }
+  | { type: "rollback.previewed"; preview: CheckpointPreview }
+  | {
+      type: "rollback.begin";
+      checkpointID: string;
+      safetyCheckpointID: string;
+      dryRun?: boolean;
+    }
+  | {
+      type: "rollback.end";
+      checkpointID: string;
+      safetyCheckpointID: string;
+      restoredFiles: number;
+      deletedFiles: number;
+      contextJournalOffset: number;
+      step: number;
+    }
+  | {
+      type: "rollback.failed";
+      checkpointID: string;
+      safetyCheckpointID?: string;
+      message: string;
+      recovered: boolean;
     }
   | { type: "diagnostic"; level: "info" | "warning" | "error"; message: string }
   | { type: "dialog.open"; dialog: "palette" | "approval" | "question" }

@@ -272,7 +272,11 @@ function Shell(props: { backend: RuntimeClient }) {
             }
             if (state.dialog) {
               event.preventDefault();
-              dispatchModalKey(key ?? "");
+              const handled = dispatchModalKey(key ?? "");
+              if (!handled && key === "escape")
+                dispatch({ type: "dialog.close" });
+              if (!handled && event.ctrl && (key === "c" || key === "d"))
+                exitOrCancel();
               return;
             }
             const composerAction = composerKeyAction(event);

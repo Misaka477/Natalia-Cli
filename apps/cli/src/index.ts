@@ -1,4 +1,8 @@
-import { compactionDisplayLine, retryDisplayLine } from "@natalia/client";
+import {
+  checkpointDisplayLine,
+  compactionDisplayLine,
+  retryDisplayLine,
+} from "@natalia/client";
 import { loadConfigFile, migrationSummaryText } from "@natalia/config";
 import type { RuntimeEvent } from "@natalia/contracts";
 import { ContextWindowResolver } from "@natalia/runtime";
@@ -43,5 +47,10 @@ export async function plainStatus(configPath: string) {
 }
 
 export function plainEventLine(event: RuntimeEvent) {
-  return retryDisplayLine(event) ?? compactionDisplayLine(event) ?? event.type;
+  return (
+    checkpointDisplayLine(event) ??
+    retryDisplayLine(event) ??
+    compactionDisplayLine(event) ??
+    event.type
+  );
 }

@@ -37,6 +37,13 @@ export type ContextLedgerSnapshot = {
   resources: ResourceSnapshot[];
 };
 
+export type DurableContextCheckpoint = ContextLedgerSnapshot & {
+  journalOffset: number;
+  step: number;
+  tokenEstimate: number;
+  compactionGeneration: number;
+};
+
 export type ContextStatus = {
   used: number;
   max: number;
@@ -82,12 +89,15 @@ export class ContextLedger {
   private entries: ContextEntry[] = [];
   private checkpoint?: ExactUsageCheckpoint;
   private resources: ResourceSnapshot[] = [];
+  private journalOffset = 0;
+  private compactionGeneration = 0;
 
   add(entry: ContextEntry) {
     this.entries.push({
       ...entry,
       tokens: entry.tokens ?? estimateTokens(entry.content),
     });
+    this.journalOffset += 1;
   }
 
   addMany(entries: ContextEntry[]) {
@@ -112,6 +122,7 @@ export class ContextLedger {
       outputTokens,
       source: "provider_usage",
     };
+    this.journalOffset += 1;
   }
 
   effectiveTokens() {
@@ -156,12 +167,48 @@ export class ContextLedger {
     };
   }
 
+  durableCheckpoint(step: number): DurableContextCheckpoint {
+    return {
+      ...this.snapshot(),
+      journalOffset: this.journalOffset,
+      step,
+      tokenEstimate: this.effectiveTokens(),
+      compactionGeneration: this.compactionGeneration,
+    };
+  }
+
   restore(snapshot: ContextLedgerSnapshot) {
     this.entries = snapshot.entries.map((entry) => ({ ...entry }));
     this.checkpoint = snapshot.checkpoint
       ? { ...snapshot.checkpoint }
       : undefined;
     this.resources = snapshot.resources.map((resource) => ({ ...resource }));
+    if (
+      "journalOffset" in snapshot &&
+      typeof snapshot.journalOffset === "number"
+    )
+      this.journalOffset = snapshot.journalOffset;
+    else this.journalOffset = this.entries.length;
+    if (
+      "compactionGeneration" in snapshot &&
+      typeof snapshot.compactionGeneration === "number"
+    )
+      this.compactionGeneration = snapshot.compactionGeneration;
+  }
+
+  restoreDurableCheckpoint(checkpoint: DurableContextCheckpoint) {
+    this.restore(checkpoint);
+    this.journalOffset = checkpoint.journalOffset;
+    this.compactionGeneration = checkpoint.compactionGeneration;
+  }
+
+  journalStatus() {
+    return {
+      journalOffset: this.journalOffset,
+      messageCount: this.entries.length,
+      tokenEstimate: this.effectiveTokens(),
+      compactionGeneration: this.compactionGeneration,
+    };
   }
 
   replaceAfterCompaction(
@@ -181,6 +228,8 @@ export class ContextLedger {
         this.entries.reduce((sum, entry) => sum + (entry.tokens ?? 0), 0),
       source: "provider_usage",
     };
+    this.compactionGeneration += 1;
+    this.journalOffset += 1;
   }
 }
 

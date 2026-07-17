@@ -11,6 +11,7 @@ import { TextareaRenderable, TextAttributes } from "@opentui/core";
 import type { RuntimeClient } from "@natalia/contracts";
 import { activeModal, type ModalRequest } from "@natalia/ui-model";
 import { useAppState } from "../context/state";
+import { usePromptRef } from "../context/prompt";
 import { darkTheme } from "../theme/theme";
 import { setModalKeyHandler } from "../modal/key-handler";
 
@@ -90,6 +91,7 @@ function ApprovalDialog(props: {
   const [stage, setStage] = createSignal<"decision" | "feedback">("decision");
   const [feedback, setFeedback] = createSignal("");
   const [expanded, setExpanded] = createSignal(false);
+  const promptRef = usePromptRef();
   const actions = ["once", "session", "reject"] as const;
   let input: TextareaRenderable | undefined;
 
@@ -102,7 +104,7 @@ function ApprovalDialog(props: {
       queueMicrotask(() => input?.focus());
       return;
     }
-    queueMicrotask(() =>
+    queueMicrotask(() => {
       props.backend.respondApproval({
         requestID: props.request.id,
         decision,
@@ -110,22 +112,24 @@ function ApprovalDialog(props: {
           decision === "reject"
             ? feedbackOverride.trim() || undefined
             : undefined,
-      }),
-    );
+      });
+      queueMicrotask(() => promptRef.focus());
+    });
   }
 
   function rejectImmediately() {
-    queueMicrotask(() =>
+    queueMicrotask(() => {
       props.backend.respondApproval({
         requestID: props.request.id,
         decision: "reject",
         feedback: feedback().trim() || "rejected from modal",
-      }),
-    );
+      });
+      queueMicrotask(() => promptRef.focus());
+    });
   }
 
   createEffect(() => {
-    setModalKeyHandler((key) => {
+    const dispose = setModalKeyHandler((key) => {
       if (stage() === "feedback") {
         if (key === "escape") {
           setStage("decision");
@@ -161,7 +165,7 @@ function ApprovalDialog(props: {
       }
       return false;
     });
-    onCleanup(() => setModalKeyHandler(undefined));
+    onCleanup(dispose);
   });
 
   return (
@@ -273,6 +277,7 @@ function QuestionDialog(props: {
   const [editing, setEditing] = createSignal(false);
   const [custom, setCustom] = createSignal<string[]>([]);
   const [answers, setAnswers] = createSignal<string[][]>([]);
+  const promptRef = usePromptRef();
   let input: TextareaRenderable | undefined;
   const questions = () => questionItems;
   const single = () => questions().length === 1 && !questions()[0]?.multiple;
@@ -284,7 +289,7 @@ function QuestionDialog(props: {
   const currentAnswers = () => answers()[tab()] ?? [];
 
   createEffect(() => {
-    setModalKeyHandler((key) => {
+    const dispose = setModalKeyHandler((key) => {
       if (editing()) {
         if (key === "escape") {
           setEditing(false);
@@ -323,7 +328,7 @@ function QuestionDialog(props: {
       }
       return false;
     });
-    onCleanup(() => setModalKeyHandler(undefined));
+    onCleanup(dispose);
   });
 
   function setAnswer(index: number, value: string[]) {
@@ -356,12 +361,14 @@ function QuestionDialog(props: {
       setCustom(next);
       setAnswer(tab(), []);
       setEditing(false);
+      queueMicrotask(() => promptRef.focus());
       return;
     }
     next[tab()] = text;
     setCustom(next);
     pick(text);
     setEditing(false);
+    queueMicrotask(() => promptRef.focus());
   }
 
   function selectCurrent() {
@@ -399,22 +406,24 @@ function QuestionDialog(props: {
     const submittedAnswers = questions().map(
       (_, index) => answers()[index] ?? [],
     );
-    queueMicrotask(() =>
+    queueMicrotask(() => {
       props.backend.respondQuestion({
         requestID,
         answers: submittedAnswers,
-      }),
-    );
+      });
+      queueMicrotask(() => promptRef.focus());
+    });
   }
 
   function reject() {
-    queueMicrotask(() =>
+    queueMicrotask(() => {
       props.backend.respondQuestion({
         requestID,
         answers: [],
         rejected: true,
-      }),
-    );
+      });
+      queueMicrotask(() => promptRef.focus());
+    });
   }
 
   return (
@@ -710,33 +719,11 @@ function ModalKeyCapture(props: {
   onKey(key: string): void;
   onExit?: () => void;
 }) {
-  let capture: TextareaRenderable | undefined;
-  createEffect(() => {
-    if (props.enabled === false) return;
-    queueMicrotask(() => capture?.focus());
-  });
+  void props.enabled;
+  void props.onKey;
+  void props.onExit;
   return (
     <box flexDirection="column" gap={1}>
-      <textarea
-        ref={(value: TextareaRenderable) => {
-          capture = value;
-          queueMicrotask(() => value.focus());
-        }}
-        minHeight={0}
-        maxHeight={0}
-        focused={props.enabled !== false}
-        onKeyDown={(event: ModalKeyEvent) => {
-          if (isExitChord(event)) {
-            consumeModalKey(event);
-            props.onExit?.();
-            return;
-          }
-          const key = normalizeModalKey(event.name ?? event.key ?? "");
-          if (!key) return;
-          consumeModalKey(event);
-          props.onKey(key);
-        }}
-      />
       {props.children}
     </box>
   );

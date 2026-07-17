@@ -38,6 +38,20 @@ export const contextConfigSchema = z.object({
   preservedRecentMessages: z.number().int().min(0).default(2),
 });
 
+export const checkpointConfigSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+    maxFiles: z.number().int().positive().default(20000),
+    maxBytes: z
+      .number()
+      .int()
+      .positive()
+      .default(512 * 1024 * 1024),
+    ignore: z.array(z.string()).default([]),
+    additionalDirs: z.array(z.string()).default([]),
+  })
+  .default({});
+
 export const modelConfigSchema = z.object({
   provider: z.string().min(1),
   model: z.string().min(1),
@@ -58,6 +72,7 @@ export const configV2Schema = z.object({
   version: z.literal(2),
   runtime: runtimeConfigSchema.default({}),
   context: contextConfigSchema.default({}),
+  checkpoint: checkpointConfigSchema,
   models: z.record(modelConfigSchema).default({}),
   defaultModel: z.string().default("default"),
   providers: z.record(providerConfigSchema).default({}),

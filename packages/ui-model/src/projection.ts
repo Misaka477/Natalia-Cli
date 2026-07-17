@@ -91,3 +91,81 @@ export class EventBatcher<T> {
 export function shouldLazyRenderDetail(detail: string, thresholdChars = 4000) {
   return Array.from(detail).length > thresholdChars;
 }
+
+export type CheckpointProgressView = {
+  title: string;
+  detail: string;
+  severity: "info" | "warning" | "error";
+};
+
+export function checkpointProgressView(event: {
+  type: string;
+}): CheckpointProgressView | undefined {
+  switch (event.type) {
+    case "checkpoint.created":
+      const created = event as unknown as {
+        id: string;
+        files: number;
+        changes: number;
+        step: number;
+        tokenEstimate: number;
+        complete: boolean;
+      };
+      return {
+        title: `Checkpoint ${created.id}`,
+        detail: `${created.files} tracked files, ${created.changes} changes, step ${created.step}, ${created.tokenEstimate} tokens`,
+        severity: created.complete ? "info" : "warning",
+      };
+    case "checkpoint.unavailable":
+      const unavailable = event as unknown as {
+        reason: string;
+        suggestion: string;
+        disabledByConfig?: boolean;
+      };
+      return {
+        title: "Checkpoint unavailable",
+        detail: `${unavailable.reason}. ${unavailable.suggestion}`,
+        severity: unavailable.disabledByConfig ? "warning" : "error",
+      };
+    case "rollback.previewed":
+      const previewed = event as unknown as {
+        preview: {
+          checkpointID: string;
+          changes: unknown[];
+          context: { truncateMessages: number };
+          resources: unknown[];
+          complete: boolean;
+        };
+      };
+      return {
+        title: `Rollback preview ${previewed.preview.checkpointID}`,
+        detail: `${previewed.preview.changes.length} file changes, ${previewed.preview.context.truncateMessages} context messages truncated, ${previewed.preview.resources.length} resources affected`,
+        severity: previewed.preview.complete ? "info" : "warning",
+      };
+    case "rollback.end":
+      const ended = event as unknown as {
+        checkpointID: string;
+        restoredFiles: number;
+        deletedFiles: number;
+        step: number;
+      };
+      return {
+        title: `Rollback ${ended.checkpointID}`,
+        detail: `${ended.restoredFiles} files restored, ${ended.deletedFiles} files deleted, context step ${ended.step}`,
+        severity: "info",
+      };
+    case "rollback.failed":
+      const failed = event as unknown as {
+        checkpointID: string;
+        message: string;
+        recovered: boolean;
+      };
+      return {
+        title: `Rollback failed ${failed.checkpointID}`,
+        detail: `${failed.message}. ${failed.recovered ? "Safety checkpoint restored." : "Safety checkpoint restore failed."}`,
+        severity: "error",
+      };
+    default:
+      return undefined;
+  }
+}

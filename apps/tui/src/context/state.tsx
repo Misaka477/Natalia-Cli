@@ -8,6 +8,7 @@ import type {
 } from "@natalia/contracts";
 import {
   appendWithRetrySkip,
+  checkpointProgressView,
   flushMarkdown,
   splitMarkdownAtSafeBoundary,
 } from "@natalia/ui-model";
@@ -224,6 +225,15 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
           : "context-limit recovery requested",
         "context_limit",
       );
+      return;
+    case "checkpoint.created":
+    case "checkpoint.failed":
+    case "checkpoint.unavailable":
+    case "rollback.previewed":
+    case "rollback.begin":
+    case "rollback.end":
+    case "rollback.failed":
+      handleCheckpointEvent(state, event);
       return;
     case "pty.update":
       const isNewPTY = !state.pty[event.id];
@@ -470,6 +480,80 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
       state.status = event.stopReason === "done" ? "ready" : event.stopReason;
       return;
   }
+}
+
+function handleCheckpointEvent(
+  state: AppState,
+  event: Extract<
+    RuntimeEvent,
+    {
+      type:
+        | "checkpoint.created"
+        | "checkpoint.failed"
+        | "checkpoint.unavailable"
+        | "rollback.previewed"
+        | "rollback.begin"
+        | "rollback.end"
+        | "rollback.failed";
+    }
+  >,
+) {
+  const view = checkpointProgressView(event);
+  const sequence = state.messages.length;
+  const id =
+    event.type === "checkpoint.created"
+      ? `checkpoint:${event.id}:${sequence}`
+      : event.type === "rollback.previewed"
+        ? `rollback:${event.preview.checkpointID}:preview:${sequence}`
+        : event.type === "rollback.begin" ||
+            event.type === "rollback.end" ||
+            event.type === "rollback.failed"
+          ? `rollback:${event.checkpointID}:${event.type}:${sequence}`
+          : `checkpoint:${event.type}:${sequence}`;
+  const detail = checkpointEventDetail(event, view?.detail ?? event.type);
+  upsertBlock(
+    state,
+    id,
+    "system",
+    `${view?.title ?? event.type}\n${detail}`,
+    view?.severity ?? "info",
+  );
+  state.footer = view?.detail ?? event.type;
+  if (event.type === "checkpoint.created") {
+    state.statusSegments = [
+      ...state.statusSegments.filter((segment) => !segment.startsWith("chk:")),
+      `chk:${event.id}`,
+    ].slice(-7);
+  }
+}
+
+function checkpointEventDetail(
+  event: Extract<
+    RuntimeEvent,
+    {
+      type:
+        | "checkpoint.created"
+        | "checkpoint.failed"
+        | "checkpoint.unavailable"
+        | "rollback.previewed"
+        | "rollback.begin"
+        | "rollback.end"
+        | "rollback.failed";
+    }
+  >,
+  fallback: string,
+) {
+  if (event.type !== "rollback.previewed") return fallback;
+  const changes = event.preview.changes
+    .map(
+      (change) =>
+        `${change.kind}: ${change.oldPath ? `${change.oldPath} -> ` : ""}${change.path}${change.mode ? ` mode=${change.mode}` : ""}`,
+    )
+    .join("\n");
+  const resources = event.preview.resources
+    .map((resource) => `${resource.kind}:${resource.id} ${resource.action}`)
+    .join("\n");
+  return [fallback, changes, resources].filter(Boolean).join("\n");
 }
 
 function approvalResponseText(decision: string, feedback?: string) {
