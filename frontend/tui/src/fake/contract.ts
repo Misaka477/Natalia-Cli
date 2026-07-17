@@ -1,5 +1,15 @@
 export type SessionID = `ses_${string}`;
 
+export type ToolStatus =
+  | "receiving_arguments"
+  | "queued"
+  | "awaiting_approval"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "rejected"
+  | "cancelled";
+
 export type RuntimeEvent =
   | { type: "session.created"; sessionID: SessionID; title: string }
   | { type: "session.ready"; sessionID: SessionID }
@@ -12,14 +22,41 @@ export type RuntimeEvent =
       sha256: string;
     }
   | { type: "turn.cancelled"; id: string; reason: string }
-  | { type: "thinking.delta"; id: string; text: string }
-  | { type: "content.delta"; id: string; text: string }
+  | {
+      type: "thinking.delta";
+      id: string;
+      text: string;
+      visible?: boolean;
+      attempt?: number;
+    }
+  | {
+      type: "thinking.done";
+      id: string;
+      visible?: boolean;
+      attempt?: number;
+    }
+  | { type: "content.delta"; id: string; text: string; attempt?: number }
+  | { type: "content.done"; id: string; attempt?: number }
+  | {
+      type: "turn.retry";
+      id: string;
+      attempt: number;
+      maxAttempts: number;
+      reason: string;
+      retryAfterMs: number;
+    }
   | {
       type: "tool.update";
       id: string;
       name: string;
-      status: "queued" | "running" | "succeeded" | "failed";
+      callID?: string;
+      status: ToolStatus;
       summary: string;
+      argumentsDelta?: string;
+      result?: string;
+      metadata?: Record<string, unknown>;
+      startedAt?: number;
+      endedAt?: number;
     }
   | { type: "status.update"; status: string; detail?: string }
   | {

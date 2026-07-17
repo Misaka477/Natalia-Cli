@@ -8,7 +8,7 @@ const marker = path.join("/tmp/kilo", `natalia-tui-pty-${Date.now()}.done`);
 const script = existsSync("/usr/bin/script")
   ? "/usr/bin/script"
   : "/bin/script";
-const command = `NATALIA_TUI_SMOKE=1 NATALIA_TUI_SMOKE_MARKER=${JSON.stringify(marker)} ${JSON.stringify(process.execPath)} run src/main.tsx; sleep 1`;
+const command = `NATALIA_TUI_SMOKE=1 NATALIA_TUI_SMOKE_PROMPT=${JSON.stringify("short PTY smoke")} NATALIA_TUI_SMOKE_MARKER=${JSON.stringify(marker)} ${JSON.stringify(process.execPath)} run src/main.tsx; sleep 1`;
 const code = existsSync(script)
   ? await runScript(command, log)
   : await runTmux(command, log);
@@ -27,10 +27,13 @@ await writeFile(
 );
 await rm(marker, { force: true });
 
-if (!transcript.includes("M5 Natalia TUI shell"))
+if (!transcript.includes("M6 Natalia TUI blocks"))
   throw new Error("PTY transcript missed app title");
-if (!transcript.includes("fake_snapshot"))
-  throw new Error("PTY transcript missed tool placeholder");
+if (
+  !transcript.includes("Streaming final") &&
+  !transcript.includes("apiToken=[REDACTED]")
+)
+  throw new Error("PTY transcript missed streamed content or tool block");
 if (!transcript.includes("mode:") || !transcript.includes("fixture"))
   throw new Error("PTY transcript missed status snapshot");
 

@@ -50,6 +50,7 @@ function Shell(props: { backend: FakeBackend }) {
   const { state, dispatch } = useAppState();
   const [composer, setComposer] = createSignal<TextareaRenderable>();
   const [pastePreview, setPastePreview] = createSignal("");
+  const [followBottom, setFollowBottom] = createSignal(true);
   const history = new PromptHistory();
   const scrollRef: { current?: any } = {};
   let submitting = false;
@@ -62,6 +63,9 @@ function Shell(props: { backend: FakeBackend }) {
     const text = (input?.plainText ?? "").replace(/\n$/, "");
     if (!text.trim()) return;
     submitting = true;
+    const shouldFollow = isNearBottom(scrollRef.current);
+    setFollowMode(shouldFollow);
+    if (shouldFollow) toBottom(0);
     try {
       input?.clear();
       setPastePreview("");
@@ -69,6 +73,7 @@ function Shell(props: { backend: FakeBackend }) {
       await props.backend.submit(text);
     } finally {
       submitting = false;
+      if (followBottom()) toBottom(50);
       setTimeout(() => composer()?.focus(), 1);
     }
   }
@@ -100,16 +105,17 @@ function Shell(props: { backend: FakeBackend }) {
   createEffect(() => {
     if (state.dialog === undefined) setTimeout(() => composer()?.focus(), 1);
   });
-  createEffect(() => {
-    const msgs = state.messages;
-    const last = msgs[msgs.length - 1];
-    const text = last?.text ?? "";
-    const sb = scrollRef.current;
-    if (!sb) return;
-    const scrollBottom = sb.scrollHeight - sb.scrollTop;
-    const threshold = (sb.viewport?.height ?? 10) * 3;
-    if (scrollBottom <= threshold) sb.scrollTo(sb.scrollHeight);
-  });
+
+  function toBottom(delay = 50) {
+    setTimeout(() => scrollToBottom(scrollRef.current), delay);
+  }
+
+  function setFollowMode(value: boolean) {
+    setFollowBottom(value);
+    const scrollbox = scrollRef.current;
+    if (!scrollbox || scrollbox.isDestroyed) return;
+    scrollbox.stickyScroll = value;
+  }
 
   return (
     <box
@@ -118,7 +124,7 @@ function Shell(props: { backend: FakeBackend }) {
       height="100%"
       backgroundColor={darkTheme.background}
     >
-      <SessionRoute scrollRef={scrollRef} />
+      <SessionRoute scrollRef={scrollRef} followBottom={followBottom()} />
       <box
         flexShrink={0}
         border
@@ -148,7 +154,7 @@ function Shell(props: { backend: FakeBackend }) {
           placeholder={
             state.dialog
               ? "Dialog open – press Escape to return"
-              : "Ask Natalia fake backend... (/long for long output test)"
+              : "Ask Natalia fake backend... (/long tools, /retry rollback)"
           }
           placeholderColor={darkTheme.muted}
           textColor={state.dialog ? darkTheme.muted : darkTheme.text}
@@ -232,6 +238,7 @@ function Shell(props: { backend: FakeBackend }) {
             if (!sb) return;
             if (key === "pageup") {
               event.preventDefault();
+              setFollowMode(false);
               sb.scrollBy(-(sb.viewport?.height ?? 10) * 0.8);
               return;
             }
@@ -242,12 +249,14 @@ function Shell(props: { backend: FakeBackend }) {
             }
             if (key === "home") {
               event.preventDefault();
+              setFollowMode(false);
               sb.scrollTo(0);
               return;
             }
             if (key === "end") {
               event.preventDefault();
-              sb.scrollTo(sb.scrollHeight);
+              setFollowMode(true);
+              toBottom(0);
               return;
             }
           }}
@@ -265,4 +274,18 @@ function Shell(props: { backend: FakeBackend }) {
       <DialogLayer />
     </box>
   );
+}
+
+function scrollToBottom(scrollbox: any) {
+  if (!scrollbox || scrollbox.isDestroyed) return;
+  scrollbox.scrollTo(scrollbox.scrollHeight ?? 0);
+}
+
+function isNearBottom(scrollbox: any, threshold = 10) {
+  if (!scrollbox || scrollbox.isDestroyed) return true;
+  const scrollTop = scrollbox.scrollTop ?? scrollbox.y ?? 0;
+  const viewportHeight = scrollbox.viewport?.height ?? scrollbox.height ?? 0;
+  const scrollHeight = scrollbox.scrollHeight ?? 0;
+  if (scrollHeight <= viewportHeight + 1) return true;
+  return scrollHeight - viewportHeight - scrollTop <= threshold;
 }

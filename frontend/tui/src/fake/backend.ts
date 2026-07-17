@@ -27,6 +27,7 @@ export function createFakeBackend(): FakeBackend {
     });
 
   async function shortResponse(id: string) {
+    const startedAt = Date.now();
     publish({
       type: "status.update",
       status: "thinking",
@@ -39,17 +40,44 @@ export function createFakeBackend(): FakeBackend {
     ]) {
       await Bun.sleep(15);
       if (!checkActive(id)) return;
-      publish({ type: "thinking.delta", id, text: chunk });
+      publish({ type: "thinking.delta", id, text: chunk, visible: true });
     }
+    publish({ type: "thinking.done", id });
     publishStatusSnapshot("thinking complete");
     publish({
       type: "tool.update",
       id,
       name: "fake_snapshot",
-      status: "running",
-      summary: "collecting workspace snapshot",
+      callID: "snapshot_1",
+      status: "receiving_arguments",
+      summary: "collecting arguments",
+      argumentsDelta: '{"path":"frontend/tui","apiToken":"secret-value",',
+      metadata: { kind: "generic" },
+      startedAt,
+    });
+    await Bun.sleep(5);
+    publish({
+      type: "tool.update",
+      id,
+      name: "fake_snapshot",
+      callID: "snapshot_1",
+      status: "queued",
+      summary: "queued after complete arguments",
+      argumentsDelta: '"limit":20}',
+      metadata: { kind: "generic" },
+      startedAt,
     });
     await Bun.sleep(15);
+    publish({
+      type: "tool.update",
+      id,
+      name: "fake_snapshot",
+      callID: "snapshot_1",
+      status: "awaiting_approval",
+      summary: "waiting for M7 approval modal",
+      metadata: { kind: "generic" },
+      startedAt,
+    });
     publish({
       type: "approval.request",
       id: "apr_m0",
@@ -66,17 +94,36 @@ export function createFakeBackend(): FakeBackend {
       type: "tool.update",
       id,
       name: "fake_snapshot",
+      callID: "snapshot_1",
+      status: "running",
+      summary: "running after placeholder approval",
+      metadata: { kind: "generic" },
+      startedAt,
+    });
+    publish({
+      type: "tool.update",
+      id,
+      name: "fake_snapshot",
+      callID: "snapshot_1",
       status: "succeeded",
       summary: "snapshot fixture ready",
+      result:
+        "workspace: frontend/tui\nfiles: src/context/state.tsx, src/routes/session/SessionRoute.tsx\n安全字段已脱敏。\n".repeat(
+          12,
+        ),
+      metadata: { kind: "generic" },
+      startedAt,
+      endedAt: Date.now(),
     });
     for (const chunk of [
-      "收到 ",
+      "# Streaming final\n\n- 收到 ",
       `${submission!.byteLength} bytes`,
-      "，SHA-256 已验证，",
-      "这是 final content。",
+      "，SHA-256 已验证。\n\n```ts\nconst ok = ",
+      "true;\n```\n\n这是 final content，包含 CJK、emoji 🙂 和 e\u0301。",
     ]) {
       publish({ type: "content.delta", id, text: chunk });
     }
+    publish({ type: "content.done", id });
     publishStatusSnapshot("final streamed");
   }
 
@@ -100,26 +147,58 @@ export function createFakeBackend(): FakeBackend {
       publish({ type: "thinking.delta", id, text: para + "\n\n" });
       await Bun.sleep(40);
     }
+    publish({ type: "thinking.done", id });
 
-    for (let toolIndex = 0; toolIndex < 3; toolIndex++) {
+    for (let toolIndex = 0; toolIndex < 8; toolIndex++) {
       if (!checkActive(id)) return;
-      const toolName = ["read_file", "grep_search", "list_directory"][
-        toolIndex
-      ];
+      const toolName = [
+        "apply_patch",
+        "todowrite",
+        "workflow_run",
+        "background_process",
+        "task",
+        "pty_session",
+        "sandbox_diff",
+        "skill",
+      ][toolIndex];
+      const startedAt = Date.now();
       publish({
         type: "tool.update",
         id,
         name: toolName,
+        callID: `${toolName}_${toolIndex}`,
+        status: "receiving_arguments",
+        summary: `receiving ${toolName} arguments`,
+        argumentsDelta: JSON.stringify({
+          target: "frontend/tui",
+          index: toolIndex,
+        }),
+        metadata: { kind: toolName },
+        startedAt,
+      });
+      await Bun.sleep(10);
+      publish({
+        type: "tool.update",
+        id,
+        name: toolName,
+        callID: `${toolName}_${toolIndex}`,
         status: "running",
         summary: `executing ${toolName} on workspace`,
+        metadata: { kind: toolName },
+        startedAt,
       });
       await Bun.sleep(30);
       publish({
         type: "tool.update",
         id,
         name: toolName,
+        callID: `${toolName}_${toolIndex}`,
         status: "succeeded",
         summary: `${toolName} completed (${Math.floor(Math.random() * 50) + 10} results)`,
+        result: `${toolName} result summary\n`.repeat(18),
+        metadata: { kind: toolName },
+        startedAt,
+        endedAt: Date.now(),
       });
       await Bun.sleep(20);
     }
@@ -146,17 +225,18 @@ export function createFakeBackend(): FakeBackend {
     const line =
       "这是超长输出测试内容。OpenTUI 需要稳定处理持续流式内容，包含中文、English、emoji 🙂 和组合字符 e\u0301。";
     const paragraph = Array.from(
-      { length: 20 },
+      { length: 8 },
       (_, i) => `第 ${i + 1} 段：${line}`,
     ).join("\n\n");
-    const totalLines = 200;
+    const totalLines = 160;
 
     for (let lineIndex = 0; lineIndex < totalLines; lineIndex++) {
       if (!checkActive(id)) return;
       const chunk = `[${lineIndex + 1}/${totalLines}] ${paragraph}\n\n`;
       publish({ type: "content.delta", id, text: chunk });
-      if (lineIndex % 20 === 0) await Bun.sleep(15);
+      await Bun.sleep(lineIndex % 16 === 0 ? 12 : 2);
     }
+    publish({ type: "content.done", id });
 
     publishStatusSnapshot("long final streamed");
 
@@ -177,13 +257,55 @@ export function createFakeBackend(): FakeBackend {
     });
   }
 
+  async function retryResponse(id: string) {
+    publish({
+      type: "status.update",
+      status: "thinking",
+      detail: "retry fixture first attempt",
+    });
+    publish({
+      type: "content.delta",
+      id,
+      attempt: 1,
+      text: "# Retry demo\n\npartial duplicate",
+    });
+    publish({
+      type: "content.delta",
+      id,
+      attempt: 1,
+      text: " tail that must disappear",
+    });
+    publish({
+      type: "turn.retry",
+      id,
+      attempt: 2,
+      maxAttempts: 3,
+      reason: "fixture timeout",
+      retryAfterMs: 25,
+    });
+    await Bun.sleep(25);
+    publish({
+      type: "content.delta",
+      id,
+      attempt: 2,
+      text: "# Retry demo\n\npartial duplicate",
+    });
+    publish({
+      type: "content.delta",
+      id,
+      attempt: 2,
+      text: " content committed once.\n",
+    });
+    publish({ type: "content.done", id, attempt: 2 });
+  }
+
   return {
     start(onEvent) {
       sink = onEvent;
       publish({
         type: "session.created",
         sessionID,
-        title: "M5 Natalia TUI shell",
+        title: "M6 Natalia TUI blocks",
       });
       publish({
         type: "status.update",
@@ -205,7 +327,9 @@ export function createFakeBackend(): FakeBackend {
         sha256: makeDigest(text),
       };
       publish(submission);
-      if (text.trim().toLowerCase().startsWith("/long")) {
+      if (text.trim().toLowerCase().startsWith("/retry")) {
+        await retryResponse(id);
+      } else if (text.trim().toLowerCase().startsWith("/long")) {
         await longResponse(id);
       } else {
         await shortResponse(id);

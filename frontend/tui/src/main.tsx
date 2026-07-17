@@ -4,7 +4,9 @@ import { runTuiShell } from "./app/runtime";
 const smoke =
   process.env.NATALIA_TUI_SMOKE === "1" || process.argv.includes("--smoke");
 const handle = await runTuiShell({
-  initialPrompt: smoke ? paste100KiB() : undefined,
+  initialPrompt: smoke
+    ? process.env.NATALIA_TUI_SMOKE_PROMPT || paste100KiB()
+    : undefined,
 });
 
 process.once("SIGINT", () => handle.stop());
