@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@natalia/contracts": "workspace:*",
+    "@natalia/pty": "workspace:*",
     "@natalia/testing": "workspace:*",
     "@natalia/ui-model": "workspace:*"
   }

@@ -45,8 +45,10 @@ export type PTYStatus =
   | "starting"
   | "running"
   | "waiting"
+  | "awaiting_approval"
   | "exited"
   | "failed";
+export type PTYOwnership = "model" | "user" | "shared" | "detached";
 export type PTYAction =
   | "write"
   | "submit"
@@ -223,8 +225,11 @@ export type RuntimeEvent =
       prompt?: string;
       activity: "waiting" | "running";
       tail: string;
+      transcript?: string;
       lastAction?: PTYAction;
       target: ExecutionTarget;
+      ownership?: PTYOwnership;
+      approvalID?: string;
     }
   | {
       type: "pty.action";
@@ -233,6 +238,31 @@ export type RuntimeEvent =
       redacted?: boolean;
       target: ExecutionTarget;
     }
+  | {
+      type: "pty.timeline";
+      id: string;
+      actor: "model" | "user" | "system";
+      action: PTYAction | "created" | "approval";
+      status:
+        | "requested"
+        | "awaiting_approval"
+        | "approved"
+        | "executed"
+        | "rejected";
+      summary: string;
+      at: string;
+    }
+  | {
+      type: "pty.approval";
+      id: string;
+      approvalID: string;
+      state: "awaiting" | "approved" | "rejected";
+      action: PTYAction;
+      reason: string;
+      target: ExecutionTarget;
+    }
+  | { type: "pty.pane.select"; id: string }
+  | { type: "pty.pane.focus"; focus: "chat" | "pty" }
   | {
       type: "sandbox.update";
       id: string;

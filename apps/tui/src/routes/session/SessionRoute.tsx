@@ -14,9 +14,10 @@ const markdownSyntax = SyntaxStyle.fromStyles({
 
 export function SessionRoute(props: {
   scrollRef?: { current?: any };
+  ptyScrollRef?: { current?: any };
   followBottom?: boolean;
 }) {
-  const { state } = useAppState();
+  const { state, dispatch } = useAppState();
   const runtime = useRuntimeContext();
   return (
     <box flexGrow={1} minHeight={0} flexDirection="column" width="100%">
@@ -57,6 +58,31 @@ export function SessionRoute(props: {
           </box>
         </Show>
       </scrollbox>
+      <Show when={state.ptyPane.selectedID}>
+        {(selectedID) => {
+          const pty = () => state.pty[selectedID()];
+          return (
+            <Show when={pty()}>
+              <ModelPTyPane
+                pty={pty()!}
+                timeline={state.ptyTimeline[selectedID()] ?? []}
+                sessions={Object.values(state.pty).filter(
+                  (item) =>
+                    item.ownership === "model" &&
+                    item.status !== "exited" &&
+                    item.status !== "failed",
+                )}
+                onSelect={(id) => dispatch({ type: "pty.pane.select", id })}
+                focus={state.ptyPane.focus}
+                onFocus={() =>
+                  dispatch({ type: "pty.pane.focus", focus: "pty" })
+                }
+                scrollRef={props.ptyScrollRef}
+              />
+            </Show>
+          );
+        }}
+      </Show>
       <Show when={state.retryBanner}>
         {(retry) => (
           <box flexShrink={0} paddingLeft={1} backgroundColor={darkTheme.panel}>
@@ -86,6 +112,118 @@ export function SessionRoute(props: {
         <text fg={darkTheme.muted}>{keymapBoundary.submit} submit</text>
         <text fg={darkTheme.muted}>{keymapBoundary.palette} palette</text>
       </box>
+    </box>
+  );
+}
+
+function ModelPTyPane(props: {
+  pty: Extract<
+    ReturnType<typeof useAppState>["state"]["pty"][string],
+    { type: "pty.update" }
+  >;
+  timeline: Extract<
+    ReturnType<typeof useAppState>["state"]["ptyTimeline"][string][number],
+    { type: "pty.timeline" }
+  >[];
+  sessions: Extract<
+    ReturnType<typeof useAppState>["state"]["pty"][string],
+    { type: "pty.update" }
+  >[];
+  onSelect(id: string): void;
+  focus: "chat" | "pty";
+  onFocus(): void;
+  scrollRef?: { current?: any };
+}) {
+  const target = () =>
+    props.pty.target.kind === "host"
+      ? `host:${props.pty.target.cwd}`
+      : `sandbox:${props.pty.target.sandboxID}:${props.pty.target.isolationLevel}`;
+  return (
+    <box
+      flexShrink={0}
+      flexDirection="column"
+      border
+      borderColor={props.focus === "pty" ? darkTheme.accent : darkTheme.muted}
+      paddingLeft={1}
+      paddingRight={1}
+      paddingTop={1}
+      paddingBottom={1}
+      marginTop={1}
+      marginBottom={1}
+      backgroundColor={darkTheme.panel}
+    >
+      <box flexDirection="row" justifyContent="space-between">
+        <text
+          fg={props.focus === "pty" ? darkTheme.accent : darkTheme.muted}
+          attributes={TextAttributes.BOLD}
+        >
+          PTY Pane · model control · {props.pty.status}
+        </text>
+        <text fg={darkTheme.muted} onMouseUp={props.onFocus}>
+          {props.focus === "pty"
+            ? "PTY focus · Ctrl+T chat"
+            : "chat focus · Ctrl+T PTY"}
+        </text>
+      </box>
+      <Show when={props.sessions.length > 1}>
+        <box flexDirection="row" gap={1}>
+          <For each={props.sessions}>
+            {(session, index) => (
+              <text
+                fg={
+                  session.id === props.pty.id
+                    ? darkTheme.accent
+                    : darkTheme.muted
+                }
+                attributes={
+                  session.id === props.pty.id ? TextAttributes.BOLD : undefined
+                }
+                onMouseUp={() => props.onSelect(session.id)}
+              >
+                {index() + 1}:{session.id} {session.status}
+              </text>
+            )}
+          </For>
+        </box>
+      </Show>
+      <text fg={darkTheme.muted}>
+        {props.pty.id} · {target()} · {props.pty.cwd} · {props.pty.rows}x
+        {props.pty.cols} · prompt {props.pty.prompt ?? "-"}
+      </text>
+      <Show when={props.pty.approvalID}>
+        <text fg={darkTheme.warning}>
+          Awaiting user approval: {props.pty.approvalID}. Model writes are
+          paused.
+        </text>
+      </Show>
+      <text fg={darkTheme.muted}>TRANSCRIPT</text>
+      <scrollbox
+        ref={(value: any) => {
+          if (props.scrollRef) props.scrollRef.current = value;
+        }}
+        maxHeight={10}
+        border={["left"]}
+        borderColor={darkTheme.muted}
+        paddingLeft={1}
+        stickyScroll={props.focus === "pty"}
+        stickyStart="bottom"
+      >
+        <text fg={darkTheme.text} wrapMode="word">
+          {(props.pty.transcript ?? props.pty.tail) ||
+            "(waiting for terminal output)"}
+        </text>
+      </scrollbox>
+      <text fg={darkTheme.muted}>MODEL TIMELINE</text>
+      <For each={props.timeline.slice(-4)}>
+        {(item) => (
+          <text fg={darkTheme.muted}>
+            [{item.actor}] {item.action} · {item.status} · {item.summary}
+          </text>
+        )}
+      </For>
+      <text fg={darkTheme.muted}>
+        User writes are not enabled in this version.
+      </text>
     </box>
   );
 }

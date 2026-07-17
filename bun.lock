@@ -46,6 +46,7 @@
       "version": "0.0.0-m8",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
+        "@natalia/pty": "workspace:*",
         "@natalia/testing": "workspace:*",
         "@natalia/ui-model": "workspace:*",
       },

@@ -54,6 +54,7 @@ function Shell(props: { backend: RuntimeClient }) {
   const [followBottom, setFollowBottom] = createSignal(true);
   const history = new PromptHistory();
   const scrollRef: { current?: any } = {};
+  const ptyScrollRef: { current?: any } = {};
   let submitting = false;
 
   onMount(() => setTimeout(() => composer()?.focus(), 1));
@@ -114,7 +115,9 @@ function Shell(props: { backend: RuntimeClient }) {
   }
 
   createEffect(() => {
-    if (state.dialog === undefined) setTimeout(() => composer()?.focus(), 1);
+    if (state.dialog === undefined && state.ptyPane.focus === "chat") {
+      setTimeout(() => composer()?.focus(), 1);
+    }
   });
 
   function toBottom(delay = 50) {
@@ -135,7 +138,11 @@ function Shell(props: { backend: RuntimeClient }) {
       height="100%"
       backgroundColor={darkTheme.background}
     >
-      <SessionRoute scrollRef={scrollRef} followBottom={followBottom()} />
+      <SessionRoute
+        scrollRef={scrollRef}
+        ptyScrollRef={ptyScrollRef}
+        followBottom={followBottom()}
+      />
       <box
         flexShrink={0}
         border
@@ -210,6 +217,57 @@ function Shell(props: { backend: RuntimeClient }) {
             if (event.ctrl && key === "d") {
               event.preventDefault();
               if (!composer()?.plainText) renderer.destroy();
+              return;
+            }
+            if (event.ctrl && key === "t" && state.ptyPane.selectedID) {
+              event.preventDefault();
+              dispatch({
+                type: "pty.pane.focus",
+                focus: state.ptyPane.focus === "chat" ? "pty" : "chat",
+              });
+              return;
+            }
+            if (state.ptyPane.focus === "pty") {
+              event.preventDefault();
+              const ptyScrollbox = ptyScrollRef.current;
+              if (
+                ptyScrollbox &&
+                ["pageup", "pagedown", "home", "end"].includes(key ?? "")
+              ) {
+                if (key === "pageup")
+                  ptyScrollbox.scrollBy(
+                    -(ptyScrollbox.viewport?.height ?? 8) * 0.8,
+                  );
+                if (key === "pagedown")
+                  ptyScrollbox.scrollBy(
+                    (ptyScrollbox.viewport?.height ?? 8) * 0.8,
+                  );
+                if (key === "home") ptyScrollbox.scrollTo(0);
+                if (key === "end")
+                  ptyScrollbox.scrollTo(ptyScrollbox.scrollHeight ?? 0);
+                return;
+              }
+              const sessions = Object.values(state.pty).filter(
+                (pty) =>
+                  pty.ownership === "model" &&
+                  pty.status !== "exited" &&
+                  pty.status !== "failed",
+              );
+              if (
+                sessions.length > 1 &&
+                (key === "tab" || key === "left" || key === "right")
+              ) {
+                const current = sessions.findIndex(
+                  (pty) => pty.id === state.ptyPane.selectedID,
+                );
+                const direction =
+                  key === "left" || (key === "tab" && event.shift) ? -1 : 1;
+                const next =
+                  sessions[
+                    (current + direction + sessions.length) % sessions.length
+                  ];
+                if (next) dispatch({ type: "pty.pane.select", id: next.id });
+              }
               return;
             }
             if (state.dialog) {

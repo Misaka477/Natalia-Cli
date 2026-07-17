@@ -244,6 +244,93 @@ test("PTY and Sandbox dedicated presentation events render stable blocks", () =>
   ).toContain("approval: required");
 });
 
+test("model-owned PTY persists approval wait and action timeline for fixed pane", () => {
+  let state = structuredClone(initialState);
+  const target = { kind: "host" as const, cwd: "/workspace" };
+  state = reduceState(state, {
+    type: "pty.update",
+    id: "pty_model",
+    command: "bash",
+    cwd: "/workspace",
+    status: "awaiting_approval",
+    attached: true,
+    rows: 32,
+    cols: 120,
+    prompt: "$",
+    activity: "waiting",
+    tail: "Natalia model PTY\n$",
+    target,
+    ownership: "model",
+    approvalID: "apr_pty_model_1",
+  });
+  state = reduceState(state, {
+    type: "pty.timeline",
+    id: "pty_model",
+    actor: "model",
+    action: "submit",
+    status: "awaiting_approval",
+    summary: "package installation requires approval",
+    at: "2026-07-17T12:00:00Z",
+  });
+  state = reduceState(state, {
+    type: "pty.approval",
+    id: "pty_model",
+    approvalID: "apr_pty_model_1",
+    state: "awaiting",
+    action: "submit",
+    reason: "install requires approval",
+    target,
+  });
+  expect(state.pty.pty_model.ownership).toBe("model");
+  expect(state.pty.pty_model.approvalID).toBe("apr_pty_model_1");
+  expect(state.ptyTimeline.pty_model[0]?.status).toBe("awaiting_approval");
+  expect(state.footer).toContain("awaiting");
+});
+
+test("PTY pane selects among unlimited sessions and closes active view after model exit", () => {
+  let state = structuredClone(initialState);
+  const target = { kind: "host" as const, cwd: "/workspace" };
+  for (const id of ["pty_a", "pty_b"]) {
+    state = reduceState(state, {
+      type: "pty.update",
+      id,
+      command: "bash",
+      cwd: "/workspace",
+      status: "waiting",
+      attached: true,
+      rows: 24,
+      cols: 80,
+      activity: "waiting",
+      tail: "$",
+      target,
+      ownership: "model",
+    });
+  }
+  expect(state.ptyPane.selectedID).toBe("pty_b");
+  state = reduceState(state, { type: "pty.pane.select", id: "pty_a" });
+  expect(state.ptyPane.selectedID).toBe("pty_a");
+  state = reduceState(state, { type: "pty.pane.focus", focus: "chat" });
+  expect(state.ptyPane.focus).toBe("chat");
+  state = reduceState(state, { type: "pty.pane.focus", focus: "pty" });
+  expect(state.ptyPane.focus).toBe("pty");
+  state = reduceState(state, {
+    type: "pty.update",
+    id: "pty_a",
+    command: "bash",
+    cwd: "/workspace",
+    status: "exited",
+    attached: false,
+    rows: 24,
+    cols: 80,
+    activity: "waiting",
+    tail: "exit 0",
+    lastAction: "exit",
+    target,
+    ownership: "model",
+  });
+  expect(state.ptyPane.selectedID).toBe("pty_b");
+});
+
 test("partial tool arguments are hidden until complete and sensitive keys redact", () => {
   expect(parseToolArguments('{"path":"a",').complete).toBe(false);
   const parsed = parseToolArguments(

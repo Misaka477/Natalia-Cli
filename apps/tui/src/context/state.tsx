@@ -93,6 +93,11 @@ export type AppState = {
   retryBanner?: string;
   compactionBanner?: string;
   pty: Record<string, Extract<RuntimeEvent, { type: "pty.update" }>>;
+  ptyTimeline: Record<
+    string,
+    Extract<RuntimeEvent, { type: "pty.timeline" }>[]
+  >;
+  ptyPane: { selectedID?: string; focus: "chat" | "pty" };
   sandboxes: Record<string, Extract<RuntimeEvent, { type: "sandbox.update" }>>;
 };
 
@@ -105,6 +110,8 @@ export const initialState: AppState = {
   streams: {},
   tools: {},
   pty: {},
+  ptyTimeline: {},
+  ptyPane: { focus: "chat" },
   sandboxes: {},
   messages: [
     {
@@ -219,7 +226,23 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
       );
       return;
     case "pty.update":
+      const isNewPTY = !state.pty[event.id];
       state.pty[event.id] = event;
+      if (
+        event.ownership === "model" &&
+        (isNewPTY || !state.ptyPane.selectedID) &&
+        event.status !== "exited" &&
+        event.status !== "failed"
+      ) {
+        state.ptyPane.selectedID = event.id;
+      }
+      if (
+        state.ptyPane.selectedID === event.id &&
+        (event.status === "exited" || event.status === "failed")
+      ) {
+        state.ptyPane.selectedID = nextActivePTY(state, event.id);
+        if (!state.ptyPane.selectedID) state.ptyPane.focus = "chat";
+      }
       upsertBlock(
         state,
         `pty:${event.id}`,
@@ -227,6 +250,34 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
         `PTY ${event.id} ${event.status} ${event.activity} ${targetLabel(event.target)} ${event.rows}x${event.cols}\ncmd: ${event.command}\nprompt: ${event.prompt ?? "-"}\nlast: ${event.lastAction ?? "-"}\ntail: ${event.tail}`,
         event.status,
       );
+      return;
+    case "pty.pane.select":
+      if (activePTYIDs(state).includes(event.id)) {
+        state.ptyPane.selectedID = event.id;
+        state.ptyPane.focus = "pty";
+      }
+      return;
+    case "pty.pane.focus":
+      state.ptyPane.focus = event.focus;
+      state.ptyPane.selectedID ??= nextActivePTY(state);
+      return;
+    case "pty.timeline":
+      const timeline = (state.ptyTimeline[event.id] ??= []);
+      if (
+        !timeline.some(
+          (item) =>
+            item.at === event.at &&
+            item.action === event.action &&
+            item.status === event.status &&
+            item.actor === event.actor,
+        )
+      ) {
+        timeline.push(event);
+        state.ptyTimeline[event.id] = timeline.slice(-40);
+      }
+      return;
+    case "pty.approval":
+      state.footer = `PTY ${event.id} ${event.state}: ${event.reason}`;
       return;
     case "pty.action":
       state.footer =
@@ -578,6 +629,21 @@ function targetLabel(
 ) {
   if (target.kind === "host") return `host:${target.cwd}`;
   return `sandbox:${target.sandboxID}:${target.isolationLevel}`;
+}
+
+function activePTYIDs(state: AppState) {
+  return Object.values(state.pty)
+    .filter(
+      (pty) =>
+        pty.ownership === "model" &&
+        pty.status !== "exited" &&
+        pty.status !== "failed",
+    )
+    .map((pty) => pty.id);
+}
+
+function nextActivePTY(state: AppState, excludedID?: string) {
+  return activePTYIDs(state).find((id) => id !== excludedID);
 }
 
 function removeBlock(state: AppState, id: string) {
