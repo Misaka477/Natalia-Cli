@@ -40,3 +40,5 @@ Thumbs.db
 # Reference libraries for architecture/TUI research
 /devref/
 
+# JavaScript frontend dependencies
+/frontend/tui/node_modules/
