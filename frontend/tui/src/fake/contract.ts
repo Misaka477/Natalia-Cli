@@ -22,6 +22,17 @@ export type RuntimeEvent =
       summary: string;
     }
   | { type: "status.update"; status: string; detail?: string }
+  | {
+      type: "status.snapshot";
+      model: string;
+      provider: string;
+      context: string;
+      step: string;
+      permissions: string;
+      cwd: string;
+      background: string;
+    }
+  | { type: "diagnostic"; level: "info" | "warning" | "error"; message: string }
   | { type: "dialog.open"; dialog: "palette" | "approval" | "question" }
   | { type: "dialog.close" }
   | { type: "approval.request"; id: string; title: string; preview: string }
@@ -40,5 +51,6 @@ export type FakeBackend = {
   submit(text: string): Promise<SubmittedTurn>;
   cancel(reason?: string): void;
   snapshot(): RuntimeEvent;
+  diagnostic(message: string, level?: "info" | "warning" | "error"): void;
   lastSubmission(): SubmittedTurn | undefined;
 };

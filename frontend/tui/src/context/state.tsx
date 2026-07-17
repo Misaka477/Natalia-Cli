@@ -22,6 +22,7 @@ export type AppState = {
   title: string;
   status: string;
   footer: string;
+  statusSegments: string[];
   messages: MessageBlock[];
   activeTurn?: string;
   lastSubmission?: SubmittedTurn;
@@ -29,14 +30,15 @@ export type AppState = {
 };
 
 export const initialState: AppState = {
-  title: "Natalia M0 TUI Spike",
+  title: "Natalia M5 TUI Shell",
   status: "booting",
   footer: "TypeScript/Bun + Solid/OpenTUI fake backend",
+  statusSegments: ["mode:fixture", "model:gpt-5.5", "provider:fake"],
   messages: [
     {
       id: "welcome",
       role: "system",
-      text: "M0 spike: legacy Go fallback frozen; fake backend only.",
+      text: "M5 shell: legacy Go fallback frozen; fake backend only; runtime rebuild waits for M8.",
     },
   ],
 };
@@ -80,6 +82,26 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
     case "status.update":
       state.status = event.status;
       state.footer = [event.status, event.detail].filter(Boolean).join(" - ");
+      return;
+    case "status.snapshot":
+      state.statusSegments = [
+        "mode:fixture",
+        `model:${event.model}`,
+        `provider:${event.provider}`,
+        `ctx:${event.context}`,
+        `step:${event.step}`,
+        event.permissions,
+        `bg:${event.background}`,
+      ];
+      return;
+    case "diagnostic":
+      upsertBlock(
+        state,
+        `diagnostic:${Date.now()}`,
+        "system",
+        `${event.level}: ${event.message}`,
+      );
+      state.footer = event.message;
       return;
     case "dialog.open":
       state.dialog = event.dialog;

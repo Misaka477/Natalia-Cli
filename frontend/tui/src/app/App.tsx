@@ -5,10 +5,14 @@ import {
 } from "@opentui/core";
 import { useRenderer } from "@opentui/solid";
 import { createEffect, createSignal, onMount } from "solid-js";
+import { PromptRefProvider, usePromptRef } from "../context/prompt";
+import { RuntimeProvider } from "../context/runtime";
 import { StateProvider, useAppState } from "../context/state";
 import { DialogLayer } from "../dialog/DialogLayer";
 import type { FakeBackend, RuntimeEvent } from "../fake/contract";
-import { EditorBuffer } from "../prompt/editor";
+import { composerKeyAction, keymapBoundary } from "../keymap";
+import { decidePaste } from "../prompt/paste";
+import { PromptHistory, shouldUseHistory } from "../prompt/history";
 import { SessionRoute } from "../routes/session/SessionRoute";
 import { darkTheme } from "../theme/theme";
 
@@ -18,26 +22,35 @@ export function App(props: {
   initialPrompt?: string;
 }) {
   return (
-    <StateProvider
-      onReady={(dispatch) => {
-        props.backend.start((event) => {
-          dispatch(event);
-          props.onDispatch?.(event);
-        });
-        if (props.initialPrompt)
-          setTimeout(() => void props.backend.submit(props.initialPrompt!), 20);
-      }}
-    >
-      <Shell backend={props.backend} />
-    </StateProvider>
+    <RuntimeProvider>
+      <PromptRefProvider>
+        <StateProvider
+          onReady={(dispatch) => {
+            props.backend.start((event) => {
+              dispatch(event);
+              props.onDispatch?.(event);
+            });
+            if (props.initialPrompt)
+              setTimeout(
+                () => void props.backend.submit(props.initialPrompt!),
+                20,
+              );
+          }}
+        >
+          <Shell backend={props.backend} />
+        </StateProvider>
+      </PromptRefProvider>
+    </RuntimeProvider>
   );
 }
 
 function Shell(props: { backend: FakeBackend }) {
   const renderer = useRenderer();
+  const promptRef = usePromptRef();
   const { state, dispatch } = useAppState();
   const [composer, setComposer] = createSignal<TextareaRenderable>();
   const [pastePreview, setPastePreview] = createSignal("");
+  const history = new PromptHistory();
   const scrollRef: { current?: any } = {};
   let submitting = false;
 
@@ -52,6 +65,7 @@ function Shell(props: { backend: FakeBackend }) {
     try {
       input?.clear();
       setPastePreview("");
+      history.add(text);
       await props.backend.submit(text);
     } finally {
       submitting = false;
@@ -60,18 +74,27 @@ function Shell(props: { backend: FakeBackend }) {
   }
 
   function handlePaste(event: PasteEvent) {
-    const text = new TextDecoder()
-      .decode(event.bytes)
-      .replace(/\r\n/g, "\n")
-      .replace(/\r/g, "\n");
-    if (new TextEncoder().encode(text).byteLength >= 100 * 1024) {
-      const buffer = new EditorBuffer();
-      buffer.setValue(text);
-      setPastePreview(
-        buffer.snapshot().foldedPreview ??
-          `paste bytes=${buffer.snapshot().byteLength}`,
-      );
+    const decision = decidePaste(event.bytes, composer()?.plainText ?? "");
+    if (!decision.ok) {
+      event.preventDefault();
+      setPastePreview(decision.message);
+      props.backend.diagnostic(decision.message);
+      return;
     }
+    if (decision.preview) setPastePreview(decision.preview);
+  }
+
+  function restoreHistory(direction: -1 | 1) {
+    const input = composer();
+    if (!input) return false;
+    if (!shouldUseHistory(input.plainText, input.cursorOffset)) return false;
+    input.setText(
+      direction === -1
+        ? history.previous(input.plainText)
+        : history.next(input.plainText),
+    );
+    input.gotoBufferEnd();
+    return true;
   }
 
   createEffect(() => {
@@ -115,7 +138,10 @@ function Shell(props: { backend: FakeBackend }) {
             : "Message"}
         </text>
         <textarea
-          ref={(value: TextareaRenderable) => setComposer(value)}
+          ref={(value: TextareaRenderable) => {
+            setComposer(value);
+            promptRef.set(value);
+          }}
           minHeight={1}
           maxHeight={8}
           width="100%"
@@ -131,6 +157,8 @@ function Shell(props: { backend: FakeBackend }) {
           onPaste={handlePaste}
           onKeyDown={(event: {
             ctrl?: boolean;
+            alt?: boolean;
+            meta?: boolean;
             option?: boolean;
             shift?: boolean;
             name?: string;
@@ -152,14 +180,31 @@ function Shell(props: { backend: FakeBackend }) {
               }
               return;
             }
-            if (state.dialog) return;
-            if (key === "return" || key === "enter") {
+            if (event.ctrl && key === "s") {
               event.preventDefault();
-              if (event.option || event.shift) {
-                composer()?.insertText("\n");
-              } else {
-                submit();
-              }
+              props.backend.snapshot();
+              return;
+            }
+            if (state.dialog) return;
+            const composerAction = composerKeyAction(event);
+            if (composerAction === "newline") {
+              event.preventDefault();
+              composer()?.insertText("\n");
+              return;
+            }
+            if (composerAction === "submit") {
+              event.preventDefault();
+              void submit();
+              return;
+            }
+            if (composerAction === "buffer-home") {
+              event.preventDefault();
+              composer()?.gotoBufferHome();
+              return;
+            }
+            if (composerAction === "buffer-end") {
+              event.preventDefault();
+              composer()?.gotoBufferEnd();
               return;
             }
             if (event.ctrl && key === "c") {
@@ -173,10 +218,11 @@ function Shell(props: { backend: FakeBackend }) {
               }
               return;
             }
-            if (event.ctrl && key === "s") {
-              event.preventDefault();
-              props.backend.snapshot();
-              return;
+            if ((key === "up" || key === "down") && composer()?.plainText) {
+              if (restoreHistory(key === "up" ? -1 : 1)) {
+                event.preventDefault();
+                return;
+              }
             }
             if (event.ctrl && key === "d") {
               event.preventDefault();
@@ -206,7 +252,15 @@ function Shell(props: { backend: FakeBackend }) {
             }
           }}
         />
-        <text fg={darkTheme.muted}>{pastePreview() || state.footer}</text>
+        <text
+          fg={
+            pastePreview().startsWith("paste rejected")
+              ? darkTheme.danger
+              : darkTheme.muted
+          }
+        >
+          {pastePreview() || `${state.footer} · ${keymapBoundary.composer}`}
+        </text>
       </box>
       <DialogLayer />
     </box>

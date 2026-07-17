@@ -1,4 +1,6 @@
 import { createCliRenderer, type CliRenderer } from "@opentui/core";
+import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
+import { KeymapProvider } from "@opentui/keymap/solid";
 import { render } from "@opentui/solid";
 import { App } from "./App";
 import { createFakeBackend } from "../fake/backend";
@@ -10,7 +12,7 @@ export type RuntimeHandle = {
   stop(): void;
 };
 
-export async function runSpike(
+export async function runTuiShell(
   input: {
     onEvent?: (event: RuntimeEvent) => void;
     initialPrompt?: string;
@@ -24,23 +26,26 @@ export async function runSpike(
   });
   const backend = createFakeBackend();
   const events: RuntimeEvent[] = [];
+  const keymap = createDefaultOpenTuiKeymap(renderer);
   await render(
     () => (
-      <App
-        backend={backend}
-        onDispatch={(event) => {
-          events.push(event);
-          input.onEvent?.(event);
-          if (input.initialPrompt && event.type === "turn.finished") {
-            if (process.env.NATALIA_TUI_SMOKE_MARKER)
-              void Bun.write(process.env.NATALIA_TUI_SMOKE_MARKER, "done");
-            setTimeout(
-              () => renderer.destroy(),
-              process.env.NATALIA_TUI_SMOKE_MARKER ? 1000 : 50,
-            );
-          }
-        }}
-      />
+      <KeymapProvider keymap={keymap}>
+        <App
+          backend={backend}
+          onDispatch={(event) => {
+            events.push(event);
+            input.onEvent?.(event);
+            if (input.initialPrompt && event.type === "turn.finished") {
+              if (process.env.NATALIA_TUI_SMOKE_MARKER)
+                void Bun.write(process.env.NATALIA_TUI_SMOKE_MARKER, "done");
+              setTimeout(
+                () => renderer.destroy(),
+                process.env.NATALIA_TUI_SMOKE_MARKER ? 1000 : 50,
+              );
+            }
+          }}
+        />
+      </KeymapProvider>
     ),
     renderer,
   );
@@ -48,3 +53,5 @@ export async function runSpike(
     setTimeout(() => void backend.submit(input.initialPrompt!), 100);
   return { renderer, events, stop: () => renderer.destroy() };
 }
+
+export const runSpike = runTuiShell;

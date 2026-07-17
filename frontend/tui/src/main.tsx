@@ -1,9 +1,9 @@
 import { paste100KiB } from "./testing/data";
-import { runSpike } from "./app/runtime";
+import { runTuiShell } from "./app/runtime";
 
 const smoke =
   process.env.NATALIA_TUI_SMOKE === "1" || process.argv.includes("--smoke");
-const handle = await runSpike({
+const handle = await runTuiShell({
   initialPrompt: smoke ? paste100KiB() : undefined,
 });
 

@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { EditorBuffer, splitGraphemes } from "../src/prompt/editor";
+import { PromptHistory } from "../src/prompt/history";
+import { ABSOLUTE_INPUT_LIMIT_BYTES, decidePaste } from "../src/prompt/paste";
 import {
   chinese10000,
   chinese300,
@@ -38,6 +40,20 @@ describe("EditorBuffer M0 regressions", () => {
     );
   });
 
+  test("supports buffer and word movement with word delete", () => {
+    const buffer = new EditorBuffer();
+    buffer.setValue("alpha beta 中文，gamma");
+    buffer.bufferHome();
+    buffer.wordForward();
+    expect(buffer.position()).toBeGreaterThan(0);
+    buffer.wordForward();
+    buffer.deleteWordForward();
+    expect(buffer.snapshot().text).not.toContain("中文");
+    buffer.bufferEnd();
+    buffer.deleteWordBackward();
+    expect(buffer.snapshot().text).not.toContain("gamma");
+  });
+
   test("handles at least 20000 mixed graphemes", () => {
     const input = mixedGraphemes();
     expect(splitGraphemes(input).length).toBeGreaterThanOrEqual(20_000);
@@ -60,5 +76,26 @@ describe("EditorBuffer M0 regressions", () => {
       if (snapshot.byteLength >= 1024 * 1024)
         expect(snapshot.foldedPreview).toContain("folded paste");
     }
+  });
+
+  test("rejects paste atomically above 8 MiB defensive limit", () => {
+    const existing = "保留草稿";
+    const tooLarge = new TextEncoder().encode(
+      "界".repeat(Math.ceil(ABSOLUTE_INPUT_LIMIT_BYTES / 3) + 10),
+    );
+    const decision = decidePaste(tooLarge, existing);
+    expect(decision.ok).toBe(false);
+    expect(decision.byteLength).toBeGreaterThan(ABSOLUTE_INPUT_LIMIT_BYTES);
+    expect(decision.ok ? decision.text : existing).toBe(existing);
+  });
+
+  test("keeps multiline history separate from draft", () => {
+    const history = new PromptHistory();
+    history.add("第一条\n第二行");
+    history.add("第三条");
+    expect(history.previous("draft")).toBe("第三条");
+    expect(history.previous("第三条")).toBe("第一条\n第二行");
+    expect(history.next("第一条\n第二行")).toBe("第三条");
+    expect(history.next("第三条")).toBe("draft");
   });
 });

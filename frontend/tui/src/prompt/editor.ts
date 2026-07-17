@@ -1,4 +1,5 @@
 import { lineCount, makeDigest } from "../testing/data";
+import { ABSOLUTE_INPUT_LIMIT_BYTES, pastePreview } from "./paste";
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
@@ -29,20 +30,25 @@ export class EditorBuffer {
   }
 
   setValue(text: string) {
+    ensureWithinLimit(text);
     this.clusters = splitGraphemes(text);
     this.cursor = this.clusters.length;
     this.foldedPreview =
       new TextEncoder().encode(text).byteLength >= 1024 * 1024
-        ? previewForPaste(text)
+        ? pastePreview(text, new TextEncoder().encode(text).byteLength)
         : undefined;
   }
 
   insert(text: string) {
+    ensureWithinLimit(this.value() + text);
     const next = splitGraphemes(text);
     this.clusters.splice(this.cursor, 0, ...next);
     this.cursor += next.length;
     if (new TextEncoder().encode(text).byteLength >= 1024 * 1024)
-      this.foldedPreview = previewForPaste(text);
+      this.foldedPreview = pastePreview(
+        text,
+        new TextEncoder().encode(text).byteLength,
+      );
   }
 
   deleteBackward() {
@@ -75,6 +81,47 @@ export class EditorBuffer {
       this.clusters[this.cursor] !== "\n"
     )
       this.cursor++;
+  }
+
+  bufferHome() {
+    this.cursor = 0;
+  }
+
+  bufferEnd() {
+    this.cursor = this.clusters.length;
+  }
+
+  wordBackward() {
+    while (this.cursor > 0 && isWordBoundary(this.clusters[this.cursor - 1]!))
+      this.cursor--;
+    while (this.cursor > 0 && !isWordBoundary(this.clusters[this.cursor - 1]!))
+      this.cursor--;
+  }
+
+  wordForward() {
+    while (
+      this.cursor < this.clusters.length &&
+      isWordBoundary(this.clusters[this.cursor]!)
+    )
+      this.cursor++;
+    while (
+      this.cursor < this.clusters.length &&
+      !isWordBoundary(this.clusters[this.cursor]!)
+    )
+      this.cursor++;
+  }
+
+  deleteWordBackward() {
+    const end = this.cursor;
+    this.wordBackward();
+    this.clusters.splice(this.cursor, end - this.cursor);
+  }
+
+  deleteWordForward() {
+    const start = this.cursor;
+    this.wordForward();
+    this.clusters.splice(start, this.cursor - start);
+    this.cursor = start;
   }
 
   moveVisual(delta: -1 | 1, width: number) {
@@ -147,6 +194,14 @@ export function cellWidth(cluster: string) {
   return 1;
 }
 
-function previewForPaste(text: string) {
-  return `folded paste: bytes=${new TextEncoder().encode(text).byteLength} lines=${lineCount(text)} sha256=${makeDigest(text)}`;
+function isWordBoundary(cluster: string) {
+  return /\s|[，。！？；：、,.!?;:()[\]{}<>]/u.test(cluster);
+}
+
+function ensureWithinLimit(text: string) {
+  const bytes = new TextEncoder().encode(text).byteLength;
+  if (bytes > ABSOLUTE_INPUT_LIMIT_BYTES)
+    throw new Error(
+      `editor input exceeds ${ABSOLUTE_INPUT_LIMIT_BYTES} bytes: ${bytes}`,
+    );
 }

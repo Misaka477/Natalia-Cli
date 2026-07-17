@@ -11,8 +11,20 @@ export function createFakeBackend(): FakeBackend {
   let sink: ((event: RuntimeEvent) => void) | undefined;
   let activeTurn: string | undefined;
   let submission: SubmittedTurn | undefined;
+  const cancelled = new Set<string>();
   const publish = (event: RuntimeEvent) => sink?.(event);
   const checkActive = (id: string) => activeTurn === id;
+  const publishStatusSnapshot = (detail = "fixture") =>
+    publish({
+      type: "status.snapshot",
+      model: "gpt-5.5 fixture",
+      provider: "fake",
+      context: "12.5k/200k 6%",
+      step: activeTurn ? "1/1000" : "idle",
+      permissions: "read-only placeholder",
+      cwd: process.cwd(),
+      background: detail,
+    });
 
   async function shortResponse(id: string) {
     publish({
@@ -29,6 +41,7 @@ export function createFakeBackend(): FakeBackend {
       if (!checkActive(id)) return;
       publish({ type: "thinking.delta", id, text: chunk });
     }
+    publishStatusSnapshot("thinking complete");
     publish({
       type: "tool.update",
       id,
@@ -41,7 +54,7 @@ export function createFakeBackend(): FakeBackend {
       type: "approval.request",
       id: "apr_m0",
       title: "Approval placeholder",
-      preview: "fake tool would inspect workspace state",
+      preview: "fake_snapshot would inspect workspace state",
     });
     publish({
       type: "question.request",
@@ -64,6 +77,7 @@ export function createFakeBackend(): FakeBackend {
     ]) {
       publish({ type: "content.delta", id, text: chunk });
     }
+    publishStatusSnapshot("final streamed");
   }
 
   async function longResponse(id: string) {
@@ -144,13 +158,15 @@ export function createFakeBackend(): FakeBackend {
       if (lineIndex % 20 === 0) await Bun.sleep(15);
     }
 
+    publishStatusSnapshot("long final streamed");
+
     publish({
       type: "snapshot.created",
       id: "snap_long",
       files: [
         "frontend/tui/src",
         "frontend/tui/test",
-        ".kilo/plans/execution/m00-terminal-spike.zh-CN.md",
+        ".kilo/plans/execution/m05-shell-editor.zh-CN.md",
       ],
     });
 
@@ -167,7 +183,7 @@ export function createFakeBackend(): FakeBackend {
       publish({
         type: "session.created",
         sessionID,
-        title: "M0 OpenTUI spike",
+        title: "M5 Natalia TUI shell",
       });
       publish({
         type: "status.update",
@@ -175,6 +191,7 @@ export function createFakeBackend(): FakeBackend {
         detail: "fake backend connected",
       });
       publish({ type: "session.ready", sessionID });
+      publishStatusSnapshot("boot ready");
     },
     async submit(text) {
       const id = `turn_${Date.now().toString(36)}`;
@@ -193,12 +210,13 @@ export function createFakeBackend(): FakeBackend {
       } else {
         await shortResponse(id);
       }
+      if (!checkActive(id) || cancelled.has(id)) return submission;
       publish({
         type: "snapshot.created",
         id: "snap_m0",
         files: [
           "frontend/tui",
-          ".kilo/plans/execution/m00-terminal-spike.zh-CN.md",
+          ".kilo/plans/execution/m05-shell-editor.zh-CN.md",
         ],
       });
       publish({
@@ -214,6 +232,7 @@ export function createFakeBackend(): FakeBackend {
       if (!activeTurn) return;
       const id = activeTurn;
       activeTurn = undefined;
+      cancelled.add(id);
       publish({ type: "turn.cancelled", id, reason });
       publish({ type: "turn.finished", id, stopReason: "cancelled" });
       publish({ type: "status.update", status: "ready", detail: "cancelled" });
@@ -226,6 +245,9 @@ export function createFakeBackend(): FakeBackend {
       };
       publish(event);
       return event;
+    },
+    diagnostic(message, level = "warning") {
+      publish({ type: "diagnostic", level, message });
     },
     lastSubmission() {
       return submission;

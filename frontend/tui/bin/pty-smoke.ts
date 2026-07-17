@@ -27,12 +27,12 @@ await writeFile(
 );
 await rm(marker, { force: true });
 
-if (!transcript.includes("M0 OpenTUI spike"))
+if (!transcript.includes("M5 Natalia TUI shell"))
   throw new Error("PTY transcript missed app title");
 if (!transcript.includes("fake_snapshot"))
   throw new Error("PTY transcript missed tool placeholder");
-if (!transcript.includes("Approval placeholder"))
-  throw new Error("PTY transcript missed approval placeholder");
+if (!transcript.includes("mode:") || !transcript.includes("fixture"))
+  throw new Error("PTY transcript missed status snapshot");
 
 console.log(`PTY smoke transcript: ${log}`);
 

@@ -29,8 +29,10 @@ export function DialogLayer() {
         </text>
         <text fg={darkTheme.text}>
           {state.dialog === "palette"
-            ? "Type in the editor below and press Enter to run"
-            : "Placeholder – full routing in M5-M7"}
+            ? "Command palette placeholder: /long, snapshot, cancel, future completions"
+            : state.dialog === "approval"
+              ? "Approval placeholder: approve once/session, reject, feedback arrive in M7"
+              : "Question placeholder: options, multi-select and Other arrive in M7"}
         </text>
         <text fg={darkTheme.muted}>
           Escape to close dialog and resume normal input

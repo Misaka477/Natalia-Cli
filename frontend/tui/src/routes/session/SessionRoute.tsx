@@ -3,11 +3,29 @@ import { TextAttributes } from "@opentui/core";
 import { useAppState } from "../../context/state";
 import { keymapBoundary, moduleBoundaries } from "../../keymap";
 import { darkTheme } from "../../theme/theme";
+import { useRuntimeContext } from "../../context/runtime";
 
 export function SessionRoute(props: { scrollRef?: { current?: any } }) {
   const { state } = useAppState();
+  const runtime = useRuntimeContext();
   return (
     <box flexGrow={1} minHeight={0} flexDirection="column" width="100%">
+      <box
+        flexShrink={0}
+        flexDirection="row"
+        justifyContent="space-between"
+        paddingLeft={1}
+        paddingRight={1}
+        backgroundColor={darkTheme.panel}
+      >
+        <text attributes={TextAttributes.BOLD} fg={darkTheme.accent}>
+          {state.title}
+        </text>
+        <text fg={darkTheme.muted}>
+          {runtime.platform} {runtime.multiplexer ?? "direct"}{" "}
+          {runtime.displayServer ?? "headless"}
+        </text>
+      </box>
       <scrollbox
         ref={(r: any) => {
           if (props.scrollRef) props.scrollRef.current = r;
@@ -37,9 +55,11 @@ export function SessionRoute(props: { scrollRef?: { current?: any } }) {
         paddingRight={1}
         backgroundColor={darkTheme.panel}
       >
-        <text fg={darkTheme.success}>status: {state.status}</text>
+        <For each={state.statusSegments.slice(0, 5)}>
+          {(segment) => <text fg={darkTheme.muted}>{segment}</text>}
+        </For>
+        <text fg={darkTheme.success}>status:{state.status}</text>
         <text fg={darkTheme.muted}>{keymapBoundary.submit} submit</text>
-        <text fg={darkTheme.muted}>{keymapBoundary.newline} newline</text>
         <text fg={darkTheme.muted}>{keymapBoundary.palette} palette</text>
       </box>
     </box>
