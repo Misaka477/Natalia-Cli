@@ -301,21 +301,18 @@ export function createFakeBackend(): FakeBackend {
       attempt: 1,
       text: "# Retry demo\n\npartial duplicate",
     });
+    const waitMs = 1200;
     publish({
-      type: "content.delta",
+      type: "step.retry",
       id,
-      attempt: 1,
-      text: " tail that must disappear",
-    });
-    publish({
-      type: "turn.retry",
-      id,
+      operation: "llm_step",
+      step: 1,
       attempt: 2,
       maxAttempts: 3,
-      reason: "fixture timeout",
-      retryAfterMs: 25,
+      reason: "timeout",
+      waitMs,
     });
-    await Bun.sleep(25);
+    await Bun.sleep(waitMs);
     publish({
       type: "content.delta",
       id,
@@ -329,6 +326,13 @@ export function createFakeBackend(): FakeBackend {
       text: " content committed once.\n",
     });
     publish({ type: "content.done", id, attempt: 2 });
+    publish({
+      type: "step.retry.cleared",
+      id,
+      operation: "llm_step",
+      step: 1,
+      attempts: 2,
+    });
   }
 
   async function modalResponse(id: string) {

@@ -4,6 +4,7 @@
   "compilerOptions": { "rootDir": "../.." },
   "include": ["src", "test"],
   "references": [
+    { "path": "../../packages/client" },
     { "path": "../../packages/config" },
     { "path": "../../packages/contracts" },
     { "path": "../../packages/runtime" }

@@ -57,6 +57,13 @@ export function SessionRoute(props: {
           </box>
         </Show>
       </scrollbox>
+      <Show when={state.retryBanner}>
+        {(retry) => (
+          <box flexShrink={0} paddingLeft={1} backgroundColor={darkTheme.panel}>
+            <text fg={darkTheme.warning}>{retry()}</text>
+          </box>
+        )}
+      </Show>
       <box
         flexShrink={0}
         flexDirection="row"

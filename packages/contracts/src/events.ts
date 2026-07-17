@@ -7,6 +7,19 @@ export type { ApprovalResponse, QuestionResponse } from "@natalia/ui-model";
 
 export type SessionID = `ses_${string}`;
 
+export type ErrorKind =
+  | "timeout"
+  | "connection"
+  | "rate_limit"
+  | "server"
+  | "auth"
+  | "invalid_request"
+  | "empty_response"
+  | "context_limit"
+  | "cancel";
+
+export type StepRetryOperation = "llm_step" | "compaction" | "metadata_probe";
+
 export type ToolStatus =
   | "receiving_arguments"
   | "queued"
@@ -51,6 +64,35 @@ export type RuntimeEvent =
       maxAttempts: number;
       reason: string;
       retryAfterMs: number;
+    }
+  | {
+      type: "step.retry";
+      id: string;
+      operation: StepRetryOperation;
+      step: number;
+      attempt: number;
+      maxAttempts: number;
+      waitMs: number;
+      reason: ErrorKind;
+      statusCode?: number;
+    }
+  | {
+      type: "step.retry.cleared";
+      id: string;
+      operation: StepRetryOperation;
+      step: number;
+      attempts: number;
+    }
+  | {
+      type: "step.retry.exhausted";
+      id: string;
+      operation: StepRetryOperation;
+      step: number;
+      attempts: number;
+      maxAttempts: number;
+      reason: ErrorKind;
+      statusCode?: number;
+      message: string;
     }
   | {
       type: "tool.update";

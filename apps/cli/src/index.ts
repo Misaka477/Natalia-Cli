@@ -1,4 +1,6 @@
+import { retryDisplayLine } from "@natalia/client";
 import { loadConfigFile, migrationSummaryText } from "@natalia/config";
+import type { RuntimeEvent } from "@natalia/contracts";
 import { ContextWindowResolver } from "@natalia/runtime";
 
 export type StartupDiagnostics = {
@@ -38,4 +40,8 @@ export async function plainStatus(configPath: string) {
     provider: model.provider,
     contextWindow: resolved,
   };
+}
+
+export function plainEventLine(event: RuntimeEvent) {
+  return retryDisplayLine(event) ?? event.type;
 }

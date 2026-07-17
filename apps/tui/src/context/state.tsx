@@ -90,6 +90,7 @@ export type AppState = {
   modal: ModalControllerState;
   streams: Record<string, StreamState>;
   tools: Record<string, ToolBlockState>;
+  retryBanner?: string;
 };
 
 export const initialState: AppState = {
@@ -188,6 +189,26 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
       return;
     case "turn.retry":
       handleRetry(state, event);
+      return;
+    case "step.retry":
+      handleStepRetry(state, event);
+      return;
+    case "step.retry.cleared":
+      removeBlock(state, retryBlockID(event.id));
+      state.retryBanner = undefined;
+      state.footer = `retry recovered after ${event.attempts} attempts`;
+      return;
+    case "step.retry.exhausted":
+      removeBlock(state, retryBlockID(event.id));
+      state.retryBanner = undefined;
+      upsertBlock(
+        state,
+        `${event.id}:retry:exhausted`,
+        "system",
+        `retry exhausted after ${event.attempts}/${event.maxAttempts}: ${event.message}`,
+        "retry_exhausted",
+      );
+      state.footer = `retry exhausted: ${event.reason}`;
       return;
     case "thinking.delta":
       appendStreamBlock(state, {
@@ -415,6 +436,41 @@ function handleRetry(
     `retry ${event.attempt}/${event.maxAttempts}: ${event.reason}; waiting ${event.retryAfterMs}ms`,
     "retry",
   );
+}
+
+function handleStepRetry(
+  state: AppState,
+  event: Extract<RuntimeEvent, { type: "step.retry" }>,
+) {
+  removeStreamTail(state, event.id);
+  for (const role of ["thinking", "assistant"] as const) {
+    const id = streamID(event.id, role);
+    const stream = (state.streams[id] ??= newStream());
+    stream.retrySkip = stream.committed;
+    stream.tail = "";
+    stream.attempt = event.attempt;
+    const segment = state.messages.find(
+      (item) => item.id === segmentID(id, stream.segmentIndex),
+    );
+    if (segment) segment.pendingText = "";
+  }
+  const text = `Retrying after ${event.reason}${event.statusCode ? ` (${event.statusCode})` : ""} · attempt ${event.attempt}/${event.maxAttempts} · waiting ${formatWait(event.waitMs)}`;
+  state.retryBanner = text;
+  state.footer = text;
+  upsertBlock(state, retryBlockID(event.id), "system", text, "retry");
+}
+
+function retryBlockID(turnID: string) {
+  return `${turnID}:retry:live`;
+}
+
+function formatWait(ms: number) {
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function removeBlock(state: AppState, id: string) {
+  state.messages = state.messages.filter((item) => item.id !== id);
 }
 
 function removeStreamTail(state: AppState, turnID: string) {

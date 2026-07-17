@@ -21,6 +21,7 @@
         "natalia-ts": "./src/main.ts",
       },
       "dependencies": {
+        "@natalia/client": "workspace:*",
         "@natalia/config": "workspace:*",
         "@natalia/contracts": "workspace:*",
         "@natalia/runtime": "workspace:*",
@@ -74,6 +75,9 @@
         "@natalia/session": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
+      "devDependencies": {
+        "@natalia/testing": "workspace:*",
+      },
     },
     "packages/session": {
       "name": "@natalia/session",
@@ -85,6 +89,9 @@
     "packages/testing": {
       "name": "@natalia/testing",
       "version": "0.0.0-m8",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+      },
     },
     "packages/tools": {
       "name": "@natalia/tools",

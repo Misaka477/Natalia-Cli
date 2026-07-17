@@ -1,4 +1,5 @@
 export { createFakeBackend } from "./fixture";
+export { retryDisplayLine } from "./retry-display";
 export type {
   RuntimeClient,
   RuntimeEvent,

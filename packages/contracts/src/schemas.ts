@@ -18,6 +18,14 @@ export const runtimeConfigSchema = z.object({
   maxStepsPerTurn: z.number().int().positive().default(1000),
   timeouts: timeoutSchema.default({}),
   maxAttemptsPerStep: z.number().int().positive().default(3),
+  retry: z
+    .object({
+      maxAttemptsPerStep: z.number().int().positive().default(3),
+      initialBackoffMs: z.number().int().positive().default(300),
+      maxBackoffMs: z.number().int().positive().default(5000),
+      jitterMs: z.number().int().min(0).default(500),
+    })
+    .default({}),
 });
 
 export const contextConfigSchema = z.object({

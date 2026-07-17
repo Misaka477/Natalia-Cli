@@ -11,6 +11,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@natalia/client": "workspace:*",
     "@natalia/config": "workspace:*",
     "@natalia/contracts": "workspace:*",
     "@natalia/runtime": "workspace:*"

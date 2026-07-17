@@ -12,5 +12,8 @@
     "@natalia/config": "workspace:*",
     "@natalia/session": "workspace:*",
     "@natalia/tools": "workspace:*"
+  },
+  "devDependencies": {
+    "@natalia/testing": "workspace:*"
   }
 }
