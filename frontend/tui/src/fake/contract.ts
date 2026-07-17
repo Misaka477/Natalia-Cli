@@ -1,3 +1,10 @@
+import type {
+  ApprovalResponse,
+  QuestionItem,
+  QuestionResponse,
+} from "../modal/controller";
+export type { ApprovalResponse, QuestionResponse } from "../modal/controller";
+
 export type SessionID = `ses_${string}`;
 
 export type ToolStatus =
@@ -72,8 +79,34 @@ export type RuntimeEvent =
   | { type: "diagnostic"; level: "info" | "warning" | "error"; message: string }
   | { type: "dialog.open"; dialog: "palette" | "approval" | "question" }
   | { type: "dialog.close" }
-  | { type: "approval.request"; id: string; title: string; preview: string }
-  | { type: "question.request"; id: string; title: string; options: string[] }
+  | {
+      type: "approval.request";
+      id: string;
+      title: string;
+      preview: string;
+      detail?: string;
+      keyArguments?: string[];
+      sensitive?: boolean;
+    }
+  | {
+      type: "approval.response";
+      id: string;
+      decision: ApprovalResponse["decision"];
+      feedback?: string;
+    }
+  | {
+      type: "question.request";
+      id: string;
+      title: string;
+      options?: string[];
+      questions?: QuestionItem[];
+    }
+  | {
+      type: "question.response";
+      id: string;
+      answers: string[][];
+      rejected?: boolean;
+    }
   | { type: "snapshot.created"; id: string; files: string[] }
   | {
       type: "turn.finished";
@@ -90,4 +123,6 @@ export type FakeBackend = {
   snapshot(): RuntimeEvent;
   diagnostic(message: string, level?: "info" | "warning" | "error"): void;
   lastSubmission(): SubmittedTurn | undefined;
+  respondApproval(response: ApprovalResponse): void;
+  respondQuestion(response: QuestionResponse): void;
 };

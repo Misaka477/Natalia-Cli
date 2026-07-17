@@ -11,6 +11,7 @@ import { StateProvider, useAppState } from "../context/state";
 import { DialogLayer } from "../dialog/DialogLayer";
 import type { FakeBackend, RuntimeEvent } from "../fake/contract";
 import { composerKeyAction, keymapBoundary } from "../keymap";
+import { dispatchModalKey } from "../modal/key-handler";
 import { decidePaste } from "../prompt/paste";
 import { PromptHistory, shouldUseHistory } from "../prompt/history";
 import { SessionRoute } from "../routes/session/SessionRoute";
@@ -171,17 +172,17 @@ function Shell(props: { backend: FakeBackend }) {
             key?: string;
             preventDefault(): void;
           }) => {
-            const key = event.name ?? event.key;
-            if (key === "escape" && state.dialog) {
+            const key = normalizeKey(event.name ?? event.key);
+            if (key === "escape" && state.dialog === "palette") {
               event.preventDefault();
               dispatch({ type: "dialog.close" });
               return;
             }
             if (event.ctrl && key === "p") {
               event.preventDefault();
-              if (state.dialog) {
+              if (state.dialog === "palette") {
                 dispatch({ type: "dialog.close" });
-              } else {
+              } else if (!state.dialog) {
                 dispatch({ type: "dialog.open", dialog: "palette" });
               }
               return;
@@ -191,7 +192,11 @@ function Shell(props: { backend: FakeBackend }) {
               props.backend.snapshot();
               return;
             }
-            if (state.dialog) return;
+            if (state.dialog) {
+              event.preventDefault();
+              dispatchModalKey(key ?? "");
+              return;
+            }
             const composerAction = composerKeyAction(event);
             if (composerAction === "newline") {
               event.preventDefault();
@@ -271,7 +276,7 @@ function Shell(props: { backend: FakeBackend }) {
           {pastePreview() || `${state.footer} · ${keymapBoundary.composer}`}
         </text>
       </box>
-      <DialogLayer />
+      <DialogLayer backend={props.backend} />
     </box>
   );
 }
@@ -288,4 +293,9 @@ function isNearBottom(scrollbox: any, threshold = 10) {
   const scrollHeight = scrollbox.scrollHeight ?? 0;
   if (scrollHeight <= viewportHeight + 1) return true;
   return scrollHeight - viewportHeight - scrollTop <= threshold;
+}
+
+function normalizeKey(key: string | undefined) {
+  if (key === "enter") return "return";
+  return key;
 }

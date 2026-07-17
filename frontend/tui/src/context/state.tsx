@@ -20,6 +20,17 @@ import {
   type ToolKind,
   type ToolResultView,
 } from "../tools/display";
+import {
+  activeModal,
+  cancelPendingModals,
+  enqueueApproval,
+  enqueueQuestion,
+  initialModalState,
+  normalizeQuestionRequest,
+  resolveApproval,
+  resolveQuestion,
+  type ModalControllerState,
+} from "../modal/controller";
 
 export type MessageBlock = {
   id: string;
@@ -76,22 +87,24 @@ export type AppState = {
   activeTurn?: string;
   lastSubmission?: SubmittedTurn;
   dialog?: "palette" | "approval" | "question";
+  modal: ModalControllerState;
   streams: Record<string, StreamState>;
   tools: Record<string, ToolBlockState>;
 };
 
 export const initialState: AppState = {
-  title: "Natalia M6 TUI Blocks",
+  title: "Natalia M7 TUI Modals",
   status: "booting",
   footer: "TypeScript/Bun + Solid/OpenTUI fake backend",
   statusSegments: ["mode:fixture", "model:gpt-5.5", "provider:fake"],
+  modal: structuredClone(initialModalState),
   streams: {},
   tools: {},
   messages: [
     {
       id: "welcome",
       role: "system",
-      text: "M6 shell: streaming markdown/thinking and structured tool blocks; legacy Go fallback frozen.",
+      text: "M7 shell: approval/question modal framework; legacy Go fallback frozen.",
     },
   ],
 };
@@ -204,7 +217,8 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
       upsertTool(state, event);
       return;
     case "approval.request":
-      state.dialog = "approval";
+      enqueueApproval(state.modal, event);
+      state.dialog = activeModal(state.modal)?.kind;
       upsertBlock(
         state,
         event.id,
@@ -213,14 +227,45 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
         "awaiting_approval",
       );
       return;
+    case "approval.response":
+      resolveApproval(state.modal, {
+        requestID: event.id,
+        decision: event.decision,
+        feedback: event.feedback,
+      });
+      state.dialog = activeModal(state.modal)?.kind;
+      upsertBlock(
+        state,
+        event.id,
+        "approval",
+        approvalResponseText(event.decision, event.feedback),
+        event.decision,
+      );
+      return;
     case "question.request":
-      state.dialog = "question";
+      enqueueQuestion(state.modal, normalizeQuestionRequest(event));
+      state.dialog = activeModal(state.modal)?.kind;
       upsertBlock(
         state,
         event.id,
         "question",
-        `${event.title}: ${event.options.join(" / ")}`,
+        questionRequestText(normalizeQuestionRequest(event)),
         "awaiting",
+      );
+      return;
+    case "question.response":
+      resolveQuestion(state.modal, {
+        requestID: event.id,
+        answers: event.answers,
+        rejected: event.rejected,
+      });
+      state.dialog = activeModal(state.modal)?.kind;
+      upsertBlock(
+        state,
+        event.id,
+        "question",
+        questionResponseText(event.answers, event.rejected),
+        event.rejected ? "rejected" : "answered",
       );
       return;
     case "snapshot.created":
@@ -233,6 +278,8 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
       return;
     case "turn.cancelled":
       removeStreamTail(state, event.id);
+      cancelPendingModals(state.modal, event.reason);
+      state.dialog = undefined;
       upsertBlock(
         state,
         `${event.id}:cancelled`,
@@ -247,6 +294,25 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
       state.status = event.stopReason === "done" ? "ready" : event.stopReason;
       return;
   }
+}
+
+function approvalResponseText(decision: string, feedback?: string) {
+  if (decision === "once") return "approved once";
+  if (decision === "session") return "approved for session";
+  return ["rejected", feedback].filter(Boolean).join(": ");
+}
+
+function questionRequestText(
+  request: ReturnType<typeof normalizeQuestionRequest>,
+) {
+  return `${request.title}: ${request.questions
+    .map((question) => question.header)
+    .join(" / ")}`;
+}
+
+function questionResponseText(answers: string[][], rejected?: boolean) {
+  if (rejected) return "question rejected";
+  return `answered: ${answers.map((answer) => answer.join(", ") || "(empty)").join("; ")}`;
 }
 
 function appendStreamBlock(

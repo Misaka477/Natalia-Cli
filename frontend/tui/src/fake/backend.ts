@@ -1,6 +1,8 @@
 import { lineCount, makeDigest } from "../testing/data";
 import type {
+  ApprovalResponse,
   FakeBackend,
+  QuestionResponse,
   RuntimeEvent,
   SessionID,
   SubmittedTurn,
@@ -81,14 +83,41 @@ export function createFakeBackend(): FakeBackend {
     publish({
       type: "approval.request",
       id: "apr_m0",
-      title: "Approval placeholder",
+      title: "Approve workspace snapshot?",
       preview: "fake_snapshot would inspect workspace state",
+      detail:
+        "fake_snapshot\n- reads frontend/tui/src\n- collects test metadata\n- never sends secrets\n\nThis is a M7 fixture detail pager.",
+      keyArguments: ["path=frontend/tui", "limit=20"],
+      sensitive: false,
     });
     publish({
       type: "question.request",
       id: "q_m0",
-      title: "Question placeholder",
-      options: ["继续", "取消"],
+      title: "Question fixture",
+      questions: [
+        {
+          id: "format",
+          header: "Format",
+          question: "Choose response format",
+          options: [
+            { label: "继续", description: "Continue with markdown output" },
+            { label: "取消", description: "Stop the fake fixture" },
+          ],
+          custom: true,
+        },
+        {
+          id: "checks",
+          header: "Checks",
+          question: "Select validation checks",
+          multiple: true,
+          options: [
+            { label: "format", description: "Run format check" },
+            { label: "typecheck", description: "Run TypeScript check" },
+            { label: "smoke", description: "Run PTY smoke" },
+          ],
+          custom: true,
+        },
+      ],
     });
     publish({
       type: "tool.update",
@@ -208,6 +237,9 @@ export function createFakeBackend(): FakeBackend {
       id: "apr_long",
       title: "Approve batch file edit?",
       preview: "This would modify 3 files in the workspace.",
+      detail:
+        "diff -- fake\n--- a/frontend/tui/src/dialog/DialogLayer.tsx\n+++ b/frontend/tui/src/dialog/DialogLayer.tsx\n@@\n+ modal framework fixture\n",
+      keyArguments: ["files=3", "risk=medium"],
     });
     publish({
       type: "question.request",
@@ -299,13 +331,60 @@ export function createFakeBackend(): FakeBackend {
     publish({ type: "content.done", id, attempt: 2 });
   }
 
+  async function modalResponse(id: string) {
+    publish({
+      type: "status.update",
+      status: "awaiting input",
+      detail: "modal queue fixture",
+    });
+    publish({
+      type: "question.request",
+      id: "q_modal_first",
+      title: "Queued question",
+      options: ["alpha", "beta"],
+    });
+    publish({
+      type: "approval.request",
+      id: "apr_modal_priority",
+      title: "Priority approval",
+      preview: "Approval should appear before queued question.",
+      detail:
+        "This request has higher priority than questions and should be active first.",
+      keyArguments: ["priority=approval", "queue=stable"],
+    });
+    publish({
+      type: "question.request",
+      id: "q_modal_multi",
+      title: "Multi question",
+      questions: [
+        {
+          id: "one",
+          header: "One",
+          question: "Pick one option",
+          options: [{ label: "A" }, { label: "B" }],
+          custom: true,
+        },
+        {
+          id: "many",
+          header: "Many",
+          question: "Pick multiple options",
+          options: [{ label: "X" }, { label: "Y" }],
+          multiple: true,
+          custom: true,
+        },
+      ],
+    });
+    publish({ type: "content.delta", id, text: "Modal fixture queued.\n" });
+    publish({ type: "content.done", id });
+  }
+
   return {
     start(onEvent) {
       sink = onEvent;
       publish({
         type: "session.created",
         sessionID,
-        title: "M6 Natalia TUI blocks",
+        title: "M7 Natalia TUI modals",
       });
       publish({
         type: "status.update",
@@ -327,7 +406,9 @@ export function createFakeBackend(): FakeBackend {
         sha256: makeDigest(text),
       };
       publish(submission);
-      if (text.trim().toLowerCase().startsWith("/retry")) {
+      if (text.trim().toLowerCase().startsWith("/modal")) {
+        await modalResponse(id);
+      } else if (text.trim().toLowerCase().startsWith("/retry")) {
         await retryResponse(id);
       } else if (text.trim().toLowerCase().startsWith("/long")) {
         await longResponse(id);
@@ -375,6 +456,22 @@ export function createFakeBackend(): FakeBackend {
     },
     lastSubmission() {
       return submission;
+    },
+    respondApproval(response: ApprovalResponse) {
+      publish({
+        type: "approval.response",
+        id: response.requestID,
+        decision: response.decision,
+        feedback: response.feedback,
+      });
+    },
+    respondQuestion(response: QuestionResponse) {
+      publish({
+        type: "question.response",
+        id: response.requestID,
+        answers: response.answers,
+        rejected: response.rejected,
+      });
     },
   };
 }

@@ -27,15 +27,18 @@ await writeFile(
 );
 await rm(marker, { force: true });
 
-if (!transcript.includes("M6 Natalia TUI blocks"))
+if (!transcript.includes("M7 Natalia TUI modals"))
   throw new Error("PTY transcript missed app title");
 if (
   !transcript.includes("Streaming final") &&
   !transcript.includes("apiToken=[REDACTED]")
 )
   throw new Error("PTY transcript missed streamed content or tool block");
-if (!transcript.includes("mode:") || !transcript.includes("fixture"))
-  throw new Error("PTY transcript missed status snapshot");
+if (
+  !transcript.includes("Approval required") ||
+  !transcript.includes("M7 modal queue")
+)
+  throw new Error("PTY transcript missed modal framework");
 
 console.log(`PTY smoke transcript: ${log}`);
 
