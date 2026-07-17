@@ -77,6 +77,16 @@ function Shell(props: { backend: FakeBackend }) {
   createEffect(() => {
     if (state.dialog === undefined) setTimeout(() => composer()?.focus(), 1);
   });
+  createEffect(() => {
+    const msgs = state.messages;
+    const last = msgs[msgs.length - 1];
+    const text = last?.text ?? "";
+    const sb = scrollRef.current;
+    if (!sb) return;
+    const scrollBottom = sb.scrollHeight - sb.scrollTop;
+    const threshold = (sb.viewport?.height ?? 10) * 3;
+    if (scrollBottom <= threshold) sb.scrollTo(sb.scrollHeight);
+  });
 
   return (
     <box
