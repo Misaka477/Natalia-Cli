@@ -38,15 +38,8 @@ export function defaultConfigV2(): ConfigV2 {
     version: 2,
     runtime: {},
     context: {},
-    defaultModel: "default",
-    models: {
-      default: {
-        provider: "openai",
-        model: "gpt-5.5",
-        contextWindow: "auto",
-        maxOutputTokens: null,
-      },
-    },
+    defaultModel: "",
+    models: {},
     providers: {},
   });
 }
@@ -78,6 +71,7 @@ export function migrateConfig(input: unknown): MigrationResult {
       type: provider.type ?? name,
       baseURL: provider.base_url,
       apiKey: provider.api_key,
+      customHeaders: {},
     };
   }
   if (Object.keys(providers).length) summary.changed.push("providers migrated");

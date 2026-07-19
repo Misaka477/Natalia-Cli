@@ -1,14 +1,19 @@
 export type ModalKeyHandler = (key: string) => boolean | void;
 
-let current: ModalKeyHandler | undefined;
+const handlers: ModalKeyHandler[] = [];
 
 export function setModalKeyHandler(handler: ModalKeyHandler | undefined) {
-  current = handler;
+  if (!handler) return () => {};
+  handlers.push(handler);
   return () => {
-    if (current === handler) current = undefined;
+    const index = handlers.lastIndexOf(handler);
+    if (index >= 0) handlers.splice(index, 1);
   };
 }
 
 export function dispatchModalKey(key: string) {
-  return current?.(key) === true;
+  for (let index = handlers.length - 1; index >= 0; index--) {
+    if (handlers[index]?.(key) === true) return true;
+  }
+  return false;
 }

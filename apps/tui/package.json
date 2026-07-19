@@ -7,6 +7,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "dev": "npx bun run src/main.tsx",
+    "doctor": "npx bun run src/main.tsx --doctor",
     "format": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "test": "npx bun test --timeout 60000",
@@ -18,11 +19,20 @@
     "smoke:checkpoint": "npx bun run bin/checkpoint-smoke.ts",
     "smoke:pty-sandbox": "npx bun run bin/pty-sandbox-smoke.ts",
     "smoke:pty-model": "npx bun run bin/pty-model-smoke.ts",
-    "smoke:retry": "npx bun run bin/retry-smoke.ts"
+    "smoke:retry": "npx bun run bin/retry-smoke.ts",
+    "smoke:real-runtime": "npx bun run bin/real-runtime-smoke.ts",
+    "smoke:resize": "npx bun run bin/resize-smoke.ts",
+    "smoke:keyboard": "npx bun run bin/keyboard-smoke.ts",
+    "demo:diff": "npx bun run bin/diff-screen-demo.ts",
+    "demo:shell": "npx bun run bin/shell-screen-demo.ts",
+    "demo:files": "npx bun run bin/file-tools-screen-demo.ts",
+    "demo:interactions": "npx bun run bin/interaction-tools-screen-demo.ts"
   },
   "dependencies": {
     "@natalia/client": "workspace:*",
+    "@natalia/config": "workspace:*",
     "@natalia/contracts": "workspace:*",
+    "@natalia/session": "workspace:*",
     "@natalia/testing": "workspace:*",
     "@natalia/ui-model": "workspace:*",
     "@opentui/core": "0.4.3",

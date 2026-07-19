@@ -13,6 +13,12 @@
     { "path": "packages/tools" },
     { "path": "packages/pty" },
     { "path": "packages/sandbox" },
-    { "path": "packages/testing" }
+    { "path": "packages/skills" },
+    { "path": "packages/workflow" },
+    { "path": "packages/transport" },
+    { "path": "packages/mcp" },
+    { "path": "packages/sdk" },
+    { "path": "packages/testing" },
+    { "path": "packages/subagent" }
   ]
 }

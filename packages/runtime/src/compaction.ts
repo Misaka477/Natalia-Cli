@@ -8,6 +8,7 @@ import {
   type ContextEntry,
 } from "./context";
 import { runWithRetry, type RetryRunnerOptions } from "./retry";
+import type { StreamingProvider } from "./provider";
 
 export type CompactionInput = {
   entries: ContextEntry[];
@@ -23,6 +24,48 @@ export type CompactionResult = {
 export type Compactor = {
   compact(input: CompactionInput): Promise<CompactionResult>;
 };
+
+export function providerCompactor(provider: StreamingProvider): Compactor {
+  return {
+    async compact(input) {
+      const prompt = [
+        "Summarize this Natalia agent session for durable context compaction.",
+        "Keep user goals, decisions, file/tool facts, unresolved tasks, and rollback-relevant state.",
+        input.instruction
+          ? `Extra instruction: ${input.instruction}`
+          : undefined,
+        input.resources.length
+          ? `Active resources:\n${input.resources.join("\n")}`
+          : undefined,
+        "Session entries:",
+        input.entries
+          .map((entry) => `${entry.role}: ${entry.content}`)
+          .join("\n\n"),
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+      let summary = "";
+      let tokens: number | undefined;
+      for await (const chunk of provider.stream({
+        messages: [
+          {
+            role: "system",
+            content:
+              "You compact long coding-agent context into a faithful, concise operational summary. Do not invent facts.",
+          },
+          { role: "user", content: prompt },
+        ],
+      })) {
+        if (chunk.type === "content") summary += chunk.text;
+        if (chunk.type === "usage")
+          tokens = chunk.inputTokens + chunk.outputTokens;
+      }
+      if (!summary.trim())
+        throw new Error("provider compactor returned empty summary");
+      return { summary: summary.trim(), tokens };
+    },
+  };
+}
 
 export type CompactionOptions = {
   id: string;

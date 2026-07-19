@@ -9,6 +9,12 @@
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "baseUrl": ".",
+    "paths": {
+      "@natalia/config": ["packages/config/src/index.ts"],
+      "@natalia/mcp": ["packages/mcp/src/index.ts"],
+      "@natalia/session": ["packages/session/src/index.ts"]
+    },
     "noUncheckedIndexedAccess": false,
     "noEmit": false,
     "outDir": "dist",

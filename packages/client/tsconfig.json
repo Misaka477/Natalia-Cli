@@ -4,9 +4,17 @@
   "compilerOptions": { "rootDir": "../.." },
   "include": ["src", "test"],
   "references": [
+    { "path": "../config" },
     { "path": "../contracts" },
+    { "path": "../mcp" },
     { "path": "../pty" },
+    { "path": "../runtime" },
+    { "path": "../session" },
+    { "path": "../sandbox" },
+    { "path": "../skills" },
+    { "path": "../subagent" },
     { "path": "../testing" },
+    { "path": "../tools" },
     { "path": "../ui-model" }
   ]
 }

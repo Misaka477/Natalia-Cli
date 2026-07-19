@@ -2,8 +2,8 @@ import { createCliRenderer, type CliRenderer } from "@opentui/core";
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
 import { KeymapProvider } from "@opentui/keymap/solid";
 import { render } from "@opentui/solid";
-import { createFakeBackend } from "@natalia/client";
-import type { RuntimeEvent } from "@natalia/contracts";
+import { createFakeBackend, createRealRuntimeClient } from "@natalia/client";
+import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
 import { App } from "./App";
 
 export type RuntimeHandle = {
@@ -16,15 +16,28 @@ export async function runTuiShell(
   input: {
     onEvent?: (event: RuntimeEvent) => void;
     initialPrompt?: string;
+    backend?: RuntimeClient;
+    createBackend?: (sessionID?: string) => RuntimeClient;
+    workspaceRoot?: string;
+    onSessionChange?: (sessionID?: string) => void;
+    fixture?: boolean;
+    closeAfterInitialTurn?: boolean;
+    rendererSize?: { width: number; height: number };
   } = {},
 ): Promise<RuntimeHandle> {
   const renderer = await createCliRenderer({
-    targetFps: 30,
+    width: input.rendererSize?.width,
+    height: input.rendererSize?.height,
+    targetFps: 60,
     exitOnCtrlC: false,
     useKittyKeyboard: {},
     autoFocus: true,
   });
-  const backend = createFakeBackend();
+  const backend =
+    input.backend ??
+    (input.fixture
+      ? createFakeBackend()
+      : createRealRuntimeClient({ workspaceRoot: input.workspaceRoot }));
   const events: RuntimeEvent[] = [];
   const keymap = createDefaultOpenTuiKeymap(renderer);
   await render(
@@ -32,10 +45,17 @@ export async function runTuiShell(
       <KeymapProvider keymap={keymap}>
         <App
           backend={backend}
+          createBackend={input.createBackend}
+          workspaceRoot={input.workspaceRoot}
+          onSessionChange={input.onSessionChange}
           onDispatch={(event) => {
             events.push(event);
             input.onEvent?.(event);
-            if (input.initialPrompt && event.type === "turn.finished") {
+            if (
+              input.initialPrompt &&
+              input.closeAfterInitialTurn !== false &&
+              event.type === "turn.finished"
+            ) {
               if (process.env.NATALIA_TUI_SMOKE_MARKER)
                 void Bun.write(process.env.NATALIA_TUI_SMOKE_MARKER, "done");
               setTimeout(

@@ -1,7 +1,18 @@
 export { checkpointDisplayLine } from "./checkpoint-display";
 export { compactionDisplayLine } from "./compaction-display";
 export { createFakeBackend } from "./fixture";
+export { createRealRuntimeClient } from "./real-runtime";
+export type { RealRuntimeClientOptions } from "./real-runtime";
 export { retryDisplayLine } from "./retry-display";
+export { attachRuntimeClientWorker, createWorkerRuntimeClient } from "./worker";
+export {
+  createToolPolicyHookLayer,
+  type ToolPolicy,
+  type ToolPolicyHookLayer,
+  type ToolHooks,
+  type ToolHookEvent,
+  type ToolHookResult,
+} from "./tool-policy";
 export type {
   RuntimeClient,
   RuntimeEvent,
@@ -29,8 +40,9 @@ export const runtimeTransports: RuntimeTransportDescriptor[] = [
   },
   {
     kind: "worker",
-    description: "future Bun worker runtime transport",
-    stable: false,
+    description:
+      "MessagePort/Worker runtime transport through RuntimeClient contracts",
+    stable: true,
   },
   {
     kind: "rpc",

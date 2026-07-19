@@ -2,7 +2,10 @@ import { writeFile } from "node:fs/promises";
 import { runTuiShell } from "../src/app/runtime";
 import { initialState, reduceState } from "../src/context/state";
 
-const handle = await runTuiShell({ initialPrompt: "/retry M9 smoke" });
+const handle = await runTuiShell({
+  initialPrompt: "/retry M9 smoke",
+  fixture: true,
+});
 let finished = false;
 for (let index = 0; index < 100; index++) {
   if (handle.events.some((event) => event.type === "turn.finished")) {

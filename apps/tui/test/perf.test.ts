@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { EditorBuffer } from "../src/prompt/editor";
+import { initialState, reduceState } from "../src/context/state";
 import { chinese10000, paste100KiB, paste1MiB } from "@natalia/testing";
 
 function p95(samples: number[]) {
@@ -35,4 +36,26 @@ test("M0 editor operations stay within local performance budget", () => {
   const start = performance.now();
   oneMiB.setValue(paste1MiB());
   expect(performance.now() - start).toBeLessThan(1000);
+});
+
+test("stream projection stays within a frame budget for a long response", () => {
+  let state = structuredClone(initialState);
+  state = reduceState(state, {
+    type: "turn.submitted",
+    id: "turn_perf_stream",
+    text: "stream test",
+    byteLength: 11,
+    lineCount: 1,
+    sha256: "test",
+  });
+  const samples = Array.from({ length: 120 }, (_, index) => {
+    const start = performance.now();
+    state = reduceState(state, {
+      type: "content.delta",
+      id: "turn_perf_stream",
+      text: `token ${index}\n`,
+    });
+    return performance.now() - start;
+  });
+  expect(p95(samples)).toBeLessThan(16);
 });

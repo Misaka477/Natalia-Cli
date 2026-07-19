@@ -4,7 +4,7 @@ console.error("Natalia TUI IME manual smoke");
 console.error("1. Switch to a Chinese IME and type: 你好，输入法预编辑测试🙂é");
 console.error("2. Move left/right across CJK, emoji and combining characters.");
 console.error(
-  "3. Press Ctrl+J and Alt+Enter for newlines, then Enter to submit.",
+  "3. Press Ctrl+J for a newline, then Enter to submit. Shift+Enter is optional when the terminal supports Kitty keyboard events.",
 );
 console.error(
   "4. Record terminal, IME engine, OS/session, Bun/OpenTUI versions and screenshot/recording path.",

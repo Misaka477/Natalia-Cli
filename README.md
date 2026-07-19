@@ -1,5 +1,152 @@
 # Natalia CLI
 
+## TypeScript/Bun Runtime Preview
+
+The TypeScript/Bun runtime is the active TS7 replacement path. The legacy Go CLI remains available as a fallback until M13 and must not be deleted yet.
+
+Run the real TypeScript/OpenTUI client with an OpenAI-compatible provider:
+
+```bash
+export NATALIA_OPENAI_API_KEY="..."
+export NATALIA_MODEL="gpt-4o-mini"
+npm run ts:tui
+```
+
+Anthropic and Gemini adapters are also available through the same TS runtime boundary:
+
+```bash
+NATALIA_PROVIDER=anthropic NATALIA_API_KEY="..." NATALIA_MODEL="claude-3-5-sonnet-latest" npm run ts:tui
+NATALIA_PROVIDER=gemini NATALIA_API_KEY="..." NATALIA_MODEL="gemini-1.5-pro" npm run ts:tui
+```
+
+The TUI is an operational TS7 agent shell, not a fixture demo. Before using a provider, run the provider-independent doctor screen:
+
+```bash
+npm --workspace @natalia/tui run doctor
+# or start normally, then enter /doctor and /help in the composer
+```
+
+The interactive TUI path is `npm run ts:tui`. It uses `createRealRuntimeClient` through `@natalia/client`; it does not launch or proxy the Go runtime. Useful in-TUI controls: `/doctor`, `/help`, `/status`, `/skills`, `/checkpoint`, `/checkpoints`, `/rollback <id> --dry-run`, `/pause`, `/resume`, `Ctrl-C` cancel, and `Ctrl-D` on an empty composer to exit.
+
+The TUI is a Bun source process, not a hot-reloading dev server. After updating the workspace, exit every existing Natalia TS7 TUI instance and start a fresh `npm run ts:tui`; the header must show `TS7 UI r20260718.7`. This revision marker confirms the current stream batching/card-boundary renderer is running.
+
+### TUI Conversations And Settings
+
+The TS7 TUI persists conversations under `.natalia/sessions/` and preferences under `.natalia/tui-preferences.json` in the active workspace.
+
+- `Ctrl+N`: start a new conversation in the same workspace.
+- `Ctrl+L`: open Session History; use Up/Down and Enter to reopen a saved conversation, or `N` to create one.
+- `Ctrl+,`: open TUI Settings; toggle tool-detail default, comfortable/compact density, and follow-newest-output behavior.
+- `Ctrl+P`: show the command and interaction palette.
+
+Session switching restarts only the TypeScript/Bun TUI process with the selected `--session` ID. It does not invoke the Go launcher or modify legacy session files.
+
+Settings Center sections are `Provider & Model`, `Runtime`, `Context`, `Checkpoint`, `TUI`, and `Legacy`. Use Left/Right to change section and Enter to change a high-frequency value. Press `E` to open the full schema-validated TS `ConfigV2` editor; `Ctrl+S` atomically saves `.natalia/config.json`. A new TS session loads this file before legacy Go config discovery. API key values are never rendered in the summary and must be reviewed carefully in the full editor.
+
+The `Legacy` section deliberately diagnoses unsupported Go-only settings such as hooks, browser/network policy, and MCP OAuth rather than pretending they are native TS runtime settings.
+
+By default, the TUI resolves the nearest parent Git project as its workspace, so starting it inside `apps/tui` targets the repository root rather than the TUI source directory. To target another workspace, use `NATALIA_WORKSPACE=/absolute/path npm run dev` or `npm run dev -- --workspace /absolute/path`.
+
+If no TS provider environment variable is set, the TS runtime also performs a **read-only, in-memory** lookup of the active Go profile at `~/.config/natalia-cli/config.yaml`: `default_profile -> profiles.<name> -> providers.<name>`. Its API key is never written to TS config, session events, diagnostics, or the TUI. Environment variables remain higher priority. Set `NATALIA_LEGACY_CONFIG_PATH=/absolute/path/config.yaml` to test a different legacy config file.
+
+Run one non-TTY prompt, structured JSON events, stdio JSONL automation, or the local HTTP/SSE transport:
+
+```bash
+npm run ts:cli -- --once "Reply exactly: pong"
+npm run ts:cli -- --once --json "Reply exactly: pong"
+printf '%s\n' '{"prompt":"Reply exactly: pong"}' | npm run ts:cli -- --stdio
+printf '%s\n' '{"pause":"operator hold"}' '{"resume":true}' | npm run ts:cli -- --stdio
+NATALIA_TRANSPORT_TOKEN="local-token" npm run ts:cli -- --serve 8787
+```
+
+Run an opt-in TS daemon with a private registration/token under the state directory:
+
+```bash
+npm run ts:cli -- --daemon-serve 8787
+npm run ts:cli -- --daemon-status
+npm run ts:cli -- --daemon-stop
+```
+
+Use `--daemon-dir /absolute/state/dir` to isolate test or multi-user registrations. The daemon lifecycle is TypeScript/Bun only and does not launch the Go runtime. Unix socket and TLS server options are available from `@natalia/transport`; production certificate/socket lifecycle still requires the TS7.5 manual smoke gate.
+
+The TS TUI uses real provider streaming and real native file/shell/process/background/checkpoint tools. HTTP RPC and the SDK expose `prompt`, `cancel`, `pause`, `resume`, `snapshot`, and replayable runtime events through the `packages/contracts`/`packages/client` boundary. It requires an API key for a live LLM turn; without one, `/doctor` and local durable commands remain available and a submitted prompt emits a visible diagnostic rather than silently falling back to fixture behavior.
+
+Until M13, fallback remains the legacy Go launcher and install path shown below. Do not delete the Go CLI/runtime/TUI until the TS7 feature parity matrix, migration proof, rollback guide, and real smoke evidence are complete and the user explicitly approves M13. The TS7 feature parity matrix and known gaps are tracked in `.kilo/plans/execution/ts07-parity-cutover.zh-CN.md`.
+
+TS7 installer/launcher evidence is intentionally non-destructive:
+
+```bash
+npm run ts:cli -- --diagnostics
+npm run ts:cli -- --once "Reply exactly: pong"
+go build ./cmd/natalia
+./natalia --wire
+```
+
+The TS launcher is currently opt-in via `npm run ts:cli` and `npm run ts:tui`; the Go launcher remains the fallback and default legacy install path until M13. If TS diagnostics, migration, or provider setup fails, keep using the Go commands below while preserving TS `.natalia/` state for inspection.
+
+TS release preflight and build artifacts are intentionally non-destructive until M13:
+
+```bash
+npm run ts:release-check
+npm run ts:build
+```
+
+They validate and build the TS/Bun launcher only. They do not publish, replace the default launcher, or remove the Go fallback.
+
+The TS workspace also provides contracts-only worker transport and a redacted HTTP cassette recorder/replay utility for deterministic transport testing. Real provider recordings require an explicit credential and redaction review; no API credential is stored by default.
+
+### Web Search Setup
+
+`web_search` uses DuckDuckGo's public HTML endpoint by default and does not require a bundled credential. Configure a compatible internal/provider endpoint when a controlled search backend is required:
+
+```bash
+export NATALIA_WEB_SEARCH_URL="https://search.example.internal/search"
+```
+
+Natalia sends the user query as the `q` query parameter. A configured endpoint overrides the default; a failed endpoint returns an explicit HTTP diagnostic and never falls back to Go.
+
+### Workflow Example
+
+`workflow_run` accepts one JSON or YAML workflow document. Every workflow needs `version: 1`, a non-empty `name`, and `steps`; each step needs an `id` and one supported `kind` (`set`, `tool`, `wait`, `script`, `branch`, `retry`, `timeout`, `parallel`, or `each`).
+
+```json
+{
+  "version": 1,
+  "name": "write-note",
+  "steps": [
+    {
+      "id": "write",
+      "kind": "tool",
+      "tool": "write_file",
+      "arguments": {
+        "path": "note.txt",
+        "content": "hello"
+      }
+    }
+  ]
+}
+```
+
+The TUI presents successful structured tool results as concise human-readable summaries. Click a tool result only when the raw diagnostic JSON detail is needed.
+
+`edit_file` replaces one exact `oldText` occurrence and fails with `oldText not found` when the source text is absent. This prevents silent no-op edits; use `read_file` or `grep` first when the expected source is uncertain.
+
+### Interactive PTY Notes
+
+`interactive_read` supports bounded incremental transcript reads: pass `offset` and `maxChars`, then continue from the returned `nextOffset`. This avoids repeatedly returning the complete terminal history to an agent context.
+
+Natalia strips terminal control traffic such as OSC shell-integration metadata from the displayed transcript. Interactive bash commands run in their own PTY session; job control depends on the host terminal and remains unsuitable for nested job-control workflows such as `fg`/`bg` orchestration.
+
+Non-destructive legacy workspace audit bundle commands:
+
+```bash
+npm run ts:cli -- --export-legacy ~/.config/natalia-cli --out /tmp/natalia-legacy-bundle.json
+npm run ts:cli -- --import-legacy-bundle /tmp/natalia-legacy-bundle.json --target /absolute/ts-workspace
+npm run ts:cli -- --rollback-legacy-bundle /absolute/ts-workspace
+```
+
+The bundle records config/session/checkpoint/skill/workflow artifacts and diagnostics for TS migration review. Import records an idempotent private TS migration receipt; rollback removes only that receipt. Neither operation deletes, rewrites, or silently replays Go state.
+
 Natalia CLI is a local-first AI agent runtime for coding, tools, browser automation, process management, and interactive CLI workflows.
 
 It is designed to run as a Go single-binary backend that can serve terminal clients, external frontends, and future Natalia UI processes through a Wire-style runtime protocol.

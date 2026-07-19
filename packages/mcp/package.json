@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@natalia/mcp",
+  "version": "0.0.0-ts7",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@natalia/config": "workspace:*",
+    "@natalia/tools": "workspace:*"
+  }
+}

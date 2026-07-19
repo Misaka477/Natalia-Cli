@@ -25,6 +25,7 @@
         "@natalia/config": "workspace:*",
         "@natalia/contracts": "workspace:*",
         "@natalia/runtime": "workspace:*",
+        "@natalia/transport": "workspace:*",
       },
     },
     "apps/tui": {
@@ -46,8 +47,15 @@
       "version": "0.0.0-m8",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
+        "@natalia/mcp": "workspace:*",
         "@natalia/pty": "workspace:*",
+        "@natalia/runtime": "workspace:*",
+        "@natalia/sandbox": "workspace:*",
+        "@natalia/session": "workspace:*",
+        "@natalia/skills": "workspace:*",
+        "@natalia/subagent": "workspace:*",
         "@natalia/testing": "workspace:*",
+        "@natalia/tools": "workspace:*",
         "@natalia/ui-model": "workspace:*",
       },
     },
@@ -65,6 +73,14 @@
       "dependencies": {
         "@natalia/ui-model": "workspace:*",
         "zod": "3.25.76",
+      },
+    },
+    "packages/mcp": {
+      "name": "@natalia/mcp",
+      "version": "0.0.0-ts7",
+      "dependencies": {
+        "@natalia/config": "workspace:*",
+        "@natalia/tools": "workspace:*",
       },
     },
     "packages/pty": {
@@ -94,12 +110,28 @@
         "@natalia/contracts": "workspace:*",
       },
     },
+    "packages/sdk": {
+      "name": "@natalia/sdk",
+      "version": "0.0.0-ts7",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+        "@natalia/transport": "workspace:*",
+      },
+    },
     "packages/session": {
       "name": "@natalia/session",
       "version": "0.0.0-m8",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
       },
+    },
+    "packages/skills": {
+      "name": "@natalia/skills",
+      "version": "0.0.0-ts7",
+    },
+    "packages/subagent": {
+      "name": "@natalia/subagent",
+      "version": "0.0.0-m8",
     },
     "packages/testing": {
       "name": "@natalia/testing",
@@ -113,11 +145,29 @@
       "version": "0.0.0-m8",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
+        "@natalia/pty": "workspace:*",
+        "@natalia/sandbox": "workspace:*",
+        "@natalia/subagent": "workspace:*",
+        "@natalia/workflow": "workspace:*",
+      },
+    },
+    "packages/transport": {
+      "name": "@natalia/transport",
+      "version": "0.0.0-ts7",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
       },
     },
     "packages/ui-model": {
       "name": "@natalia/ui-model",
       "version": "0.0.0-m8",
+    },
+    "packages/workflow": {
+      "name": "@natalia/workflow",
+      "version": "0.0.0-ts7",
+      "dependencies": {
+        "@natalia/tools": "workspace:*",
+      },
     },
   },
   "packages": {
@@ -195,21 +245,33 @@
 
     "@natalia/contracts": ["@natalia/contracts@workspace:packages/contracts"],
 
+    "@natalia/mcp": ["@natalia/mcp@workspace:packages/mcp"],
+
     "@natalia/pty": ["@natalia/pty@workspace:packages/pty"],
 
     "@natalia/runtime": ["@natalia/runtime@workspace:packages/runtime"],
 
     "@natalia/sandbox": ["@natalia/sandbox@workspace:packages/sandbox"],
 
+    "@natalia/sdk": ["@natalia/sdk@workspace:packages/sdk"],
+
     "@natalia/session": ["@natalia/session@workspace:packages/session"],
+
+    "@natalia/skills": ["@natalia/skills@workspace:packages/skills"],
+
+    "@natalia/subagent": ["@natalia/subagent@workspace:packages/subagent"],
 
     "@natalia/testing": ["@natalia/testing@workspace:packages/testing"],
 
     "@natalia/tools": ["@natalia/tools@workspace:packages/tools"],
 
+    "@natalia/transport": ["@natalia/transport@workspace:packages/transport"],
+
     "@natalia/tui": ["@natalia/tui@workspace:apps/tui"],
 
     "@natalia/ui-model": ["@natalia/ui-model@workspace:packages/ui-model"],
+
+    "@natalia/workflow": ["@natalia/workflow@workspace:packages/workflow"],
 
     "@opentui/core": ["@opentui/core@0.4.3", "", { "dependencies": { "bun-ffi-structs": "0.2.4", "diff": "9.0.0", "marked": "17.0.1", "string-width": "7.2.0", "strip-ansi": "7.1.2" }, "optionalDependencies": { "@opentui/core-darwin-arm64": "0.4.3", "@opentui/core-darwin-x64": "0.4.3", "@opentui/core-linux-arm64": "0.4.3", "@opentui/core-linux-arm64-musl": "0.4.3", "@opentui/core-linux-x64": "0.4.3", "@opentui/core-linux-x64-musl": "0.4.3", "@opentui/core-win32-arm64": "0.4.3", "@opentui/core-win32-x64": "0.4.3" }, "peerDependencies": { "web-tree-sitter": "0.25.10" } }, "sha512-rrJfAk13tALDqldYjhc78eWQ+aKq1iknJgffIOg3OwyZoqQo+p6gtuqyhmWvXIfQzlNUbpgpCPcxbXlhMnlaHQ=="],
 

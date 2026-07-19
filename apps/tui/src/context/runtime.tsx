@@ -5,7 +5,7 @@ export type TuiRuntimeContext = Readonly<{
   platform: NodeJS.Platform;
   multiplexer?: "tmux" | "screen";
   displayServer?: "wayland" | "x11";
-  mode: "fixture";
+  mode: "runtime";
 }>;
 
 const RuntimeContext = createContext<TuiRuntimeContext>();
@@ -29,7 +29,7 @@ export function RuntimeProvider(props: {
             : process.env.DISPLAY
               ? "x11"
               : undefined),
-        mode: "fixture",
+        mode: "runtime",
       })}
     >
       {props.children}

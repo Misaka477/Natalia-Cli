@@ -4,5 +4,6 @@ export * from "./checkpoint";
 export * from "./errors";
 export * from "./loop";
 export * from "./modelmeta";
+export * from "./provider";
 export * from "./request";
 export * from "./retry";

@@ -59,13 +59,94 @@ export const modelConfigSchema = z.object({
     .union([z.literal("auto"), z.number().int().positive()])
     .default("auto"),
   maxOutputTokens: outputTokenLimitSchema,
+  temperature: z.number().min(0).max(2).nullable().default(null),
+  topP: z.number().min(0).max(1).nullable().default(null),
+  reasoningEffort: z
+    .enum(["minimal", "low", "medium", "high", "xhigh"])
+    .nullable()
+    .default(null),
+  thinkingEnabled: z.boolean().default(true),
+  stream: z.boolean().default(true),
+  requestTimeoutSec: z.number().int().positive().nullable().default(null),
 });
 
 export const providerConfigSchema = z.object({
   type: z.string().min(1),
   baseURL: z.string().url().optional(),
   apiKey: z.string().min(1).optional(),
+  authHeader: z.string().min(1).optional(),
+  customHeaders: z.record(z.string()).default({}),
   requireOutputLimit: z.boolean().optional(),
+});
+
+export const permissionProfileSchema = z.object({
+  approval: z.enum(["ask", "auto", "read_only"]),
+  description: z.string().default(""),
+});
+
+export const modeConfigSchema = z.object({
+  description: z.string().default(""),
+  model: z.string().optional(),
+  permission: z.string().optional(),
+  systemPrompt: z.string().default(""),
+  allowedTools: z.array(z.string()).default([]),
+  excludedTools: z.array(z.string()).default([]),
+  mcpServers: z.array(z.string()).default([]),
+});
+
+export const mcpServerConfigSchema = z.object({
+  type: z.enum(["stdio", "http"]),
+  command: z.string().optional(),
+  args: z.array(z.string()).default([]),
+  url: z.string().url().optional(),
+  headers: z.record(z.string()).default({}),
+  environment: z.record(z.string()).default({}),
+  cwd: z.string().optional(),
+  timeoutSec: z.number().int().positive().default(30),
+  allowedTools: z.array(z.string()).default([]),
+  excludedTools: z.array(z.string()).default([]),
+  readOnly: z.boolean().default(false),
+  enabled: z.boolean().default(true),
+});
+
+export const workspaceConfigSchema = z.object({
+  root: z.string().default(""),
+  additionalDirs: z.array(z.string()).default([]),
+});
+
+export const instructionConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  includeReadme: z.boolean().default(true),
+  includeDocs: z.boolean().default(false),
+  extraFiles: z.array(z.string()).default([]),
+});
+
+export const webSearchConfigSchema = z.object({
+  endpoint: z.string().url().nullable().default(null),
+  providerPriority: z.array(z.string()).default(["duckduckgo"]),
+});
+
+export const browserConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  binary: z.string().default(""),
+  persistentProfile: z.boolean().default(false),
+  profileDir: z.string().default(""),
+  userAgent: z.string().default(""),
+  locale: z.string().default(""),
+  timezone: z.string().default(""),
+  headers: z.record(z.string()).default({}),
+});
+
+export const networkConfigSchema = z.object({
+  allowedHosts: z.array(z.string()).default([]),
+  allowedSchemes: z.array(z.string()).default(["https", "http"]),
+  allowLocalhost: z.boolean().default(false),
+  allowPrivate: z.boolean().default(false),
+});
+
+export const securityConfigSchema = z.object({
+  envAllowlist: z.array(z.string()).default([]),
+  redactToolOutput: z.boolean().default(true),
 });
 
 export const configV2Schema = z.object({
@@ -74,10 +155,34 @@ export const configV2Schema = z.object({
   context: contextConfigSchema.default({}),
   checkpoint: checkpointConfigSchema,
   models: z.record(modelConfigSchema).default({}),
-  defaultModel: z.string().default("default"),
+  defaultModel: z.string().default(""),
   providers: z.record(providerConfigSchema).default({}),
+  permissionProfiles: z.record(permissionProfileSchema).default({
+    ask: {
+      approval: "ask",
+      description: "Ask before write, process, or shell actions",
+    },
+    auto: { approval: "auto", description: "Automatically approve actions" },
+    read_only: {
+      approval: "read_only",
+      description: "Reject write and execution actions",
+    },
+  }),
+  defaultPermission: z.string().default("ask"),
+  modes: z.record(modeConfigSchema).default({}),
+  defaultMode: z.string().default("code"),
+  mcpServers: z.record(mcpServerConfigSchema).default({}),
+  workspace: workspaceConfigSchema.default({}),
+  instructions: instructionConfigSchema.default({}),
+  webSearch: webSearchConfigSchema.default({}),
+  browser: browserConfigSchema.default({}),
+  network: networkConfigSchema.default({}),
+  security: securityConfigSchema.default({}),
 });
 
 export type ConfigV2 = z.infer<typeof configV2Schema>;
 export type ModelConfig = z.infer<typeof modelConfigSchema>;
 export type ProviderConfig = z.infer<typeof providerConfigSchema>;
+export type PermissionProfile = z.infer<typeof permissionProfileSchema>;
+export type ModeConfig = z.infer<typeof modeConfigSchema>;
+export type MCPServerConfig = z.infer<typeof mcpServerConfigSchema>;

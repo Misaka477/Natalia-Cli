@@ -144,6 +144,8 @@ export type RuntimeEvent =
       sha256: string;
     }
   | { type: "turn.cancelled"; id: string; reason: string }
+  | { type: "turn.paused"; id: string; reason: string }
+  | { type: "turn.resumed"; id: string }
   | {
       type: "thinking.delta";
       id: string;
@@ -208,6 +210,29 @@ export type RuntimeEvent =
       metadata?: Record<string, unknown>;
       startedAt?: number;
       endedAt?: number;
+    }
+  | {
+      type: "subagent.update";
+      id: string;
+      status:
+        | "idle"
+        | "running"
+        | "paused"
+        | "stopped"
+        | "completed"
+        | "failed";
+      attached: boolean;
+      event:
+        | "created"
+        | "status"
+        | "log"
+        | "done"
+        | "stopped"
+        | "resumed"
+        | "attached"
+        | "detached";
+      task?: string;
+      text?: string;
     }
   | { type: "status.update"; status: string; detail?: string }
   | {
@@ -393,7 +418,16 @@ export type RuntimeEvent =
       recovered: boolean;
     }
   | { type: "diagnostic"; level: "info" | "warning" | "error"; message: string }
-  | { type: "dialog.open"; dialog: "palette" | "approval" | "question" }
+  | {
+      type: "dialog.open";
+      dialog:
+        | "palette"
+        | "approval"
+        | "question"
+        | "sessions"
+        | "settings"
+        | "status";
+    }
   | { type: "dialog.close" }
   | {
       type: "approval.request";
@@ -436,6 +470,8 @@ export type RuntimeClient = {
   start(onEvent: (event: RuntimeEvent) => void): void;
   submit(text: string): Promise<SubmittedTurn>;
   cancel(reason?: string): void;
+  pause?(reason?: string): void;
+  resume?(): void;
   snapshot(): RuntimeEvent;
   diagnostic(message: string, level?: "info" | "warning" | "error"): void;
   lastSubmission(): SubmittedTurn | undefined;

@@ -4,6 +4,7 @@ import { initialState, reduceState } from "../src/context/state";
 
 const handle = await runTuiShell({
   initialPrompt: "/compact preserve current task",
+  fixture: true,
 });
 let finished = false;
 for (let index = 0; index < 100; index++) {

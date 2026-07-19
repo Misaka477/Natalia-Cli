@@ -8,6 +8,10 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@natalia/contracts": "workspace:*"
+    "@natalia/contracts": "workspace:*",
+    "@natalia/pty": "workspace:*",
+    "@natalia/sandbox": "workspace:*",
+    "@natalia/subagent": "workspace:*",
+    "@natalia/workflow": "workspace:*"
   }
 }

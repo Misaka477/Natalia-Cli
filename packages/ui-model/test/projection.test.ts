@@ -1,5 +1,57 @@
 import { expect, test } from "bun:test";
-import { EventBatcher, ProjectionCache, shouldLazyRenderDetail } from "../src";
+import {
+  EventBatcher,
+  ProjectionCache,
+  classifyTool,
+  collapseToolOutput,
+  resultView,
+  shouldLazyRenderDetail,
+  stripAnsiOutput,
+} from "../src";
+
+test("shell tools classify separately from PTY and generic tools", () => {
+  expect(classifyTool("run_shell")).toBe("shell");
+  expect(classifyTool("bash")).toBe("shell");
+  expect(classifyTool("pty_create")).toBe("pty");
+});
+
+test("file tools classify into dedicated presentation kinds", () => {
+  expect(classifyTool("read_file")).toBe("read");
+  expect(classifyTool("write_file")).toBe("write");
+  expect(classifyTool("grep")).toBe("grep");
+  expect(classifyTool("glob")).toBe("glob");
+});
+
+test("interaction tools classify into dedicated presentation kinds", () => {
+  expect(classifyTool("web_fetch")).toBe("webfetch");
+  expect(classifyTool("web_search")).toBe("websearch");
+  expect(classifyTool("ask_user")).toBe("question");
+  expect(classifyTool("agent_spawn")).toBe("subagent");
+  expect(classifyTool("todo_write")).toBe("todo");
+  expect(classifyTool("skill_load")).toBe("skill");
+});
+
+test("tool output collapse follows line and character budgets", () => {
+  expect(collapseToolOutput("one\ntwo", 2, 20)).toEqual({
+    output: "one\ntwo",
+    overflow: false,
+  });
+  expect(collapseToolOutput("one\ntwo\nthree", 2, 20)).toEqual({
+    output: "one\ntwo\n…",
+    overflow: true,
+  });
+  expect(collapseToolOutput("abcdefgh", 2, 5)).toEqual({
+    output: "abcd…",
+    overflow: true,
+  });
+});
+
+test("shell output projection strips CSI and OSC control sequences", () => {
+  expect(stripAnsiOutput("\u001b[32mok\u001b[0m")).toBe("ok");
+  expect(stripAnsiOutput("before\u001b]0;title\u0007after")).toBe(
+    "beforeafter",
+  );
+});
 
 test("projection cache reuses long markdown and tool projections", () => {
   const cache = new ProjectionCache();
@@ -23,4 +75,62 @@ test("event batcher throttles background projection while modal is active", () =
   batcher.push("b");
   expect(batcher.shouldFlush({ now: 50, modalActive: true })).toBe(false);
   expect(batcher.shouldFlush({ now: 120, modalActive: true })).toBe(true);
+});
+
+test("tool result projection turns sandbox JSON into readable change summaries", () => {
+  const result = resultView(
+    JSON.stringify([
+      {
+        kind: "modify",
+        path: "sandbox-file.txt",
+        content: "sandbox write test content",
+      },
+    ]),
+    8,
+    1200,
+    { kind: "diff", name: "sandbox_diff" },
+  );
+  expect(result.summary).toBe("1 sandbox change");
+  expect(result.preview).toBe(
+    "Modified sandbox-file.txt\n  sandbox write test content",
+  );
+  expect(result.detail).toContain('"kind":"modify"');
+});
+
+test("generic structured result projects scalar fields without raw JSON", () => {
+  const result = resultView(
+    JSON.stringify({ id: "proc_1", status: "running", pid: 1234 }),
+    8,
+    1200,
+    { name: "process_start" },
+  );
+  expect(result.preview).toBe("id: proc_1\nstatus: running\npid: 1234");
+  expect(result.preview).not.toContain("{");
+});
+
+test("browser and question JSON results project as human-readable summaries", () => {
+  const browser = resultView(
+    JSON.stringify({
+      url: "https://example.com/",
+      status: 200,
+      title: "Example Domain",
+      contentType: "text/html",
+      textPreview: "Example Domain documentation preview",
+    }),
+    8,
+    1200,
+    { name: "browser_visit" },
+  );
+  expect(browser.summary).toBe("Visited Example Domain · HTTP 200");
+  expect(browser.preview).toContain("Preview: Example Domain");
+  const question = resultView(
+    JSON.stringify({ answers: [["选项1"]] }),
+    8,
+    1200,
+    {
+      name: "ask_user",
+    },
+  );
+  expect(question.summary).toBe("User answered");
+  expect(question.preview).toBe("Answer: 选项1");
 });

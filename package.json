@@ -10,18 +10,25 @@
     "packages/*"
   ],
   "scripts": {
-    "format": "prettier --check package.json tsconfig.json tsconfig.base.json 'apps/**/*.{ts,tsx,json,toml}' 'packages/**/*.{ts,tsx,json}' --ignore-path .gitignore --ignore-unknown",
-    "typecheck": "tsc -b apps/tui apps/cli packages/contracts packages/client packages/ui-model packages/runtime packages/session packages/config packages/tools packages/pty packages/sandbox packages/testing",
-    "test": "npx bun test packages/config/test/*.test.ts packages/runtime/test/*.test.ts packages/ui-model/test/*.test.ts packages/client/test/*.test.ts packages/pty/test/*.test.ts packages/sandbox/test/*.test.ts --timeout 60000 && npm --workspace @natalia/tui run test",
+    "format": "prettier --check package.json tsconfig.json tsconfig.base.json 'apps/**/*.{ts,tsx,json,toml}' 'packages/**/*.{ts,tsx,json}' 'scripts/**/*.{ts,json}' --ignore-path .gitignore --ignore-unknown",
+    "typecheck": "tsc -b apps/tui apps/cli packages/contracts packages/client packages/ui-model packages/runtime packages/session packages/config packages/tools packages/pty packages/sandbox packages/skills packages/workflow packages/transport packages/mcp packages/sdk packages/testing packages/subagent",
+    "test": "npx bun test packages/config/test/*.test.ts packages/runtime/test/*.test.ts packages/session/test/*.test.ts packages/ui-model/test/*.test.ts packages/client/test/*.test.ts packages/tools/test/*.test.ts packages/pty/test/*.test.ts packages/sandbox/test/*.test.ts packages/skills/test/*.test.ts packages/workflow/test/*.test.ts packages/transport/test/*.test.ts packages/mcp/test/*.test.ts packages/sdk/test/*.test.ts packages/subagent/test/*.test.ts --timeout 60000 && npm --workspace @natalia/tui run test",
     "smoke:tui:pty": "npm --workspace @natalia/tui run smoke:pty",
     "smoke:tui:snapshot": "npm --workspace @natalia/tui run smoke:snapshot",
     "smoke:tui:long-modal": "npm --workspace @natalia/tui run smoke:long-modal",
     "smoke:tui:compact": "npm --workspace @natalia/tui run smoke:compact",
     "smoke:tui:checkpoint": "npm --workspace @natalia/tui run smoke:checkpoint",
+    "smoke:tui:real-runtime": "npm --workspace @natalia/tui run smoke:real-runtime",
+    "smoke:tui:resize": "npm --workspace @natalia/tui run smoke:resize",
+    "smoke:tui:keyboard": "npm --workspace @natalia/tui run smoke:keyboard",
     "smoke:tui:pty-sandbox": "npm --workspace @natalia/tui run smoke:pty-sandbox",
     "smoke:tui:pty-model": "npm --workspace @natalia/tui run smoke:pty-model",
     "smoke:tui:retry": "npm --workspace @natalia/tui run smoke:retry",
     "guard:imports": "npx bun run packages/testing/bin/import-guard.ts",
+    "ts:tui": "npm --workspace @natalia/tui run dev",
+    "ts:cli": "npx bun apps/cli/src/main.ts",
+    "ts:release-check": "npx bun scripts/ts-release-check.ts",
+    "ts:build": "npx bun scripts/ts-build.ts",
     "verify": "npm run format && npm run typecheck && npm run test && npm run guard:imports"
   },
   "dependencies": {

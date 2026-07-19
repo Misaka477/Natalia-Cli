@@ -4,7 +4,10 @@ import { runTuiShell } from "../src/app/runtime";
 import { paste100KiB } from "@natalia/testing";
 
 const output = path.join("/tmp/kilo", `natalia-tui-screen-${Date.now()}.log`);
-const handle = await runTuiShell({ initialPrompt: paste100KiB() });
+const handle = await runTuiShell({
+  initialPrompt: paste100KiB(),
+  fixture: true,
+});
 
 await new Promise<void>((resolve, reject) => {
   const timer = setTimeout(

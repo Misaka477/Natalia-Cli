@@ -8,9 +8,17 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@natalia/config": "workspace:*",
     "@natalia/contracts": "workspace:*",
+    "@natalia/mcp": "workspace:*",
     "@natalia/pty": "workspace:*",
+    "@natalia/runtime": "workspace:*",
+    "@natalia/session": "workspace:*",
+    "@natalia/sandbox": "workspace:*",
+    "@natalia/skills": "workspace:*",
+    "@natalia/subagent": "workspace:*",
     "@natalia/testing": "workspace:*",
+    "@natalia/tools": "workspace:*",
     "@natalia/ui-model": "workspace:*"
   }
 }

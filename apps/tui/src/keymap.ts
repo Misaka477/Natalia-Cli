@@ -1,11 +1,17 @@
 export const keymapBoundary = {
   submit: "return",
-  newline: "ctrl+j / option+enter / shift+enter",
+  newline: "ctrl+j",
   cancel: "ctrl+c",
   exit: "ctrl+d on empty composer",
   palette: "ctrl+p",
-  composer:
-    "history up/down · word move/delete via OpenTUI textarea · paste limit 8 MiB",
+  newSession: "ctrl+n",
+  sessions: "ctrl+l",
+  settings: "ctrl+,",
+  status: "ctrl+i",
+  help: "ctrl+h",
+  sidebar: "ctrl+b",
+  copy: "ctrl+shift+c",
+  composer: "history up/down · word move/delete · paste limit 8 MiB",
   scrollUp: "pgup",
   scrollDown: "pgdn",
   scrollTop: "home",
@@ -13,12 +19,12 @@ export const keymapBoundary = {
 };
 
 export const moduleBoundaries = [
-  "app/runtime: OpenTUI renderer lifecycle and fake backend wiring",
-  "context/state: local reducer for typed frontend events",
-  "prompt/editor: grapheme, paste, byte/hash integrity helpers",
-  "routes/session: managed full-screen message viewport",
-  "dialog: command palette, approval, question placeholders",
-  "theme/keymap: local presentation constants only",
+  "real runtime: TypeScript/Bun provider, session, tools, approvals, checkpoints",
+  "start here: /doctor verifies provider and workspace without calling an LLM",
+  "live smoke: submit a short prompt, then approve any write/shell/process tool action",
+  "durability: /checkpoint, /checkpoints, /rollback <id> --dry-run",
+  "control: /pause, /resume, Ctrl-C cancel, Ctrl-D exit on an empty composer",
+  "legacy Go remains a fallback only; it is not used by this TS7 TUI",
 ];
 
 export type ComposerKeyEvent = {
@@ -28,7 +34,7 @@ export type ComposerKeyEvent = {
   option?: boolean;
   shift?: boolean;
   name?: string;
-  key?: string;
+  source?: "raw" | "kitty";
 };
 
 export type ComposerKeyAction =
@@ -39,8 +45,8 @@ export type ComposerKeyAction =
   | undefined;
 
 export function composerKeyAction(event: ComposerKeyEvent): ComposerKeyAction {
-  const key = event.name ?? event.key;
-  if (event.ctrl && key === "j") return "newline";
+  const key = event.name;
+  if ((event.ctrl && key === "j") || key === "linefeed") return "newline";
   if (key === "return" || key === "enter") {
     if (event.option || event.alt || event.meta || event.shift)
       return "newline";
@@ -49,4 +55,288 @@ export function composerKeyAction(event: ComposerKeyEvent): ComposerKeyAction {
   if (event.ctrl && key === "home") return "buffer-home";
   if (event.ctrl && key === "end") return "buffer-end";
   return undefined;
+}
+
+export function keybindForEvent(event: ComposerKeyEvent): string {
+  const key = event.name;
+  const normalized = key === "enter" ? "return" : key?.toLowerCase();
+  return [
+    event.ctrl ? "ctrl" : "",
+    event.alt || event.option ? "alt" : "",
+    event.meta ? "meta" : "",
+    event.shift ? "shift" : "",
+    normalized ?? "",
+  ]
+    .filter(Boolean)
+    .join("+");
+}
+
+export interface CommandDef {
+  id: string;
+  keys: string;
+  desc: string;
+}
+
+export const commands: Record<string, CommandDef> = {
+  "palette.toggle": {
+    id: "palette.toggle",
+    keys: "ctrl+p",
+    desc: "Toggle command palette",
+  },
+  "session.new": { id: "session.new", keys: "ctrl+n", desc: "New session" },
+  "session.list": { id: "session.list", keys: "ctrl+l", desc: "List sessions" },
+  "settings.open": {
+    id: "settings.open",
+    keys: "ctrl+,",
+    desc: "Open settings",
+  },
+  "help.open": {
+    id: "help.open",
+    keys: "ctrl+h",
+    desc: "Show keyboard shortcuts",
+  },
+  "session.sidebar.toggle": {
+    id: "session.sidebar.toggle",
+    keys: "ctrl+b",
+    desc: "Toggle session sidebar",
+  },
+  "message.copy.last": {
+    id: "message.copy.last",
+    keys: "ctrl+shift+c",
+    desc: "Copy last assistant or tool message",
+  },
+  snapshot: { id: "snapshot", keys: "ctrl+s", desc: "Create snapshot" },
+  "pty.focus-toggle": {
+    id: "pty.focus-toggle",
+    keys: "ctrl+t",
+    desc: "Toggle PTY/chat focus",
+  },
+  cancel: { id: "cancel", keys: "ctrl+c", desc: "Cancel current turn" },
+  exit: { id: "exit", keys: "ctrl+d", desc: "Exit on empty composer" },
+  "dialog.close": {
+    id: "dialog.close",
+    keys: "escape",
+    desc: "Close current dialog",
+  },
+  "scroll.up": { id: "scroll.up", keys: "pageup", desc: "Scroll up" },
+  "scroll.down": { id: "scroll.down", keys: "pagedown", desc: "Scroll down" },
+  "scroll.top": { id: "scroll.top", keys: "home", desc: "Scroll to top" },
+  "scroll.bottom": {
+    id: "scroll.bottom",
+    keys: "end",
+    desc: "Scroll to bottom",
+  },
+  "composer.submit": {
+    id: "composer.submit",
+    keys: "return",
+    desc: "Submit prompt",
+  },
+  "composer.newline": {
+    id: "composer.newline",
+    keys: "shift+return",
+    desc: "Insert newline",
+  },
+  "composer.buffer-home": {
+    id: "composer.buffer-home",
+    keys: "ctrl+home",
+    desc: "Go to buffer start",
+  },
+  "composer.buffer-end": {
+    id: "composer.buffer-end",
+    keys: "ctrl+end",
+    desc: "Go to buffer end",
+  },
+};
+
+export interface ParsedKey {
+  ctrl: boolean;
+  alt: boolean;
+  meta: boolean;
+  shift: boolean;
+  super: boolean;
+  hyper: boolean;
+  key: string;
+}
+
+export function parseKeybindKey(keyStr: string): ParsedKey {
+  const parts = keyStr.toLowerCase().split("+");
+  const result: ParsedKey = {
+    ctrl: false,
+    alt: false,
+    meta: false,
+    shift: false,
+    super: false,
+    hyper: false,
+    key: "",
+  };
+  const keyParts: string[] = [];
+  for (const part of parts) {
+    if (!part) continue;
+    switch (part) {
+      case "ctrl":
+      case "control":
+        result.ctrl = true;
+        break;
+      case "alt":
+      case "option":
+        result.alt = true;
+        break;
+      case "meta":
+        result.meta = true;
+        break;
+      case "shift":
+        result.shift = true;
+        break;
+      case "super":
+      case "cmd":
+      case "win":
+        result.super = true;
+        break;
+      case "hyper":
+        result.hyper = true;
+        break;
+      default:
+        keyParts.push(part);
+        break;
+    }
+  }
+  result.key = keyParts.join("+");
+  return result;
+}
+
+export function formatKeybindKey(keyStr: string): string {
+  const parsed = parseKeybindKey(keyStr);
+  const parts: string[] = [];
+  if (parsed.ctrl) parts.push("Ctrl");
+  if (parsed.alt) parts.push("Alt");
+  if (parsed.meta) parts.push("Meta");
+  if (parsed.shift) parts.push("Shift");
+  if (parsed.super) parts.push("Super");
+  if (parsed.hyper) parts.push("Hyper");
+  const k = parsed.key;
+  parts.push(k ? k.charAt(0).toUpperCase() + k.slice(1) : "");
+  return parts.join("+");
+}
+
+export type UserKeybindOverrides = Record<string, string | string[] | false>;
+
+export interface OverrideDiagnostic {
+  code: "unknown-command" | "invalid-key" | "conflict";
+  command: string;
+  message: string;
+}
+
+export interface ResolvedKeybind {
+  command: string;
+  keys: string;
+  source: "default" | "override";
+  disabled: boolean;
+}
+
+export interface ParseOverridesResult {
+  diagnostics: OverrideDiagnostic[];
+  resolved: ResolvedKeybind[];
+}
+
+export function parseKeybindOverrides(
+  overrides: UserKeybindOverrides,
+): ParseOverridesResult {
+  const diagnostics: OverrideDiagnostic[] = [];
+  const resolved: ResolvedKeybind[] = [];
+
+  for (const [command, value] of Object.entries(overrides)) {
+    if (!commands[command]) {
+      diagnostics.push({
+        code: "unknown-command",
+        command,
+        message: `Unknown command "${command}" in keybind overrides`,
+      });
+      continue;
+    }
+    if (value === false) {
+      resolved.push({ command, keys: "", source: "override", disabled: true });
+      continue;
+    }
+    const keysArray = Array.isArray(value) ? value : [value];
+    for (const k of keysArray) {
+      if (typeof k !== "string") {
+        diagnostics.push({
+          code: "invalid-key",
+          command,
+          message: `Invalid key value for "${command}": expected string, got ${typeof k}`,
+        });
+        continue;
+      }
+      const parsed = parseKeybindKey(k);
+      if (!parsed.key) {
+        diagnostics.push({
+          code: "invalid-key",
+          command,
+          message: `Invalid key "${k}" for command "${command}": could not parse`,
+        });
+        continue;
+      }
+      resolved.push({ command, keys: k, source: "override", disabled: false });
+    }
+  }
+  return { diagnostics, resolved };
+}
+
+export function detectKeybindConflicts(
+  resolved: ResolvedKeybind[],
+): OverrideDiagnostic[] {
+  const diagnostics: OverrideDiagnostic[] = [];
+  const keyToCommands = new Map<string, string[]>();
+
+  for (const r of resolved) {
+    if (r.disabled || !r.keys) continue;
+    const prev = keyToCommands.get(r.keys);
+    if (prev) {
+      diagnostics.push({
+        code: "conflict",
+        command: r.command,
+        message: `Key "${r.keys}" conflicts: assigned to both "${prev[0]}" and "${r.command}"`,
+      });
+    }
+    keyToCommands.set(r.keys, [...(prev ?? []), r.command]);
+  }
+  return diagnostics;
+}
+
+export function buildKeybindMap(overrides?: UserKeybindOverrides | null): {
+  map: Record<string, string>;
+  diagnostics: OverrideDiagnostic[];
+} {
+  const map: Record<string, string> = {};
+  const diagnostics: OverrideDiagnostic[] = [];
+
+  for (const [id, cmd] of Object.entries(commands)) {
+    map[id] = cmd.keys;
+  }
+
+  if (!overrides) return { map, diagnostics };
+
+  const { resolved, diagnostics: parseDiags } =
+    parseKeybindOverrides(overrides);
+  diagnostics.push(...parseDiags);
+
+  for (const r of resolved) {
+    if (r.disabled) {
+      delete map[r.command];
+    } else {
+      map[r.command] = r.keys;
+    }
+  }
+
+  const conflictDiags = detectKeybindConflicts(
+    Object.entries(map).map(([command, keys]) => ({
+      command,
+      keys,
+      source: "default" as const,
+      disabled: false,
+    })),
+  );
+  diagnostics.push(...conflictDiags);
+
+  return { map, diagnostics };
 }

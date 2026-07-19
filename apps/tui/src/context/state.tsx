@@ -1,4 +1,11 @@
-import { createContext, onMount, useContext, type JSX } from "solid-js";
+import {
+  batch,
+  createContext,
+  onCleanup,
+  onMount,
+  useContext,
+  type JSX,
+} from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import type {
   RuntimeEvent,
@@ -16,9 +23,11 @@ import {
   classifyTool,
   elapsedLabel,
   parseToolArguments,
+  parseTodoItems,
   providerSafeThinkingSummary,
   resultView,
   type ToolKind,
+  type TodoView,
   type ToolResultView,
 } from "@natalia/ui-model";
 import {
@@ -43,6 +52,7 @@ export type MessageBlock = {
     | "tool"
     | "approval"
     | "question"
+    | "subagent"
     | "snapshot";
   text: string;
   status?: string;
@@ -64,8 +74,11 @@ export type ToolBlockState = {
   redactedArguments?: string;
   elapsed: string;
   result?: ToolResultView;
+  metadata: Record<string, unknown>;
   detailAvailable: boolean;
 };
+
+export type SubagentView = Extract<RuntimeEvent, { type: "subagent.update" }>;
 
 type StreamState = {
   committed: string;
@@ -74,9 +87,12 @@ type StreamState = {
   attempt: number;
   segmentIndex: number;
   segmentText: string;
+  deferVisible: boolean;
 };
 
 const streamSegmentChars = 6000;
+const eventBatchMs = 16;
+const maxPTYTranscriptChars = 12000;
 
 export type AppState = {
   sessionID?: SessionID;
@@ -87,10 +103,19 @@ export type AppState = {
   messages: MessageBlock[];
   activeTurn?: string;
   lastSubmission?: SubmittedTurn;
-  dialog?: "palette" | "approval" | "question";
+  dialog?:
+    | "palette"
+    | "approval"
+    | "question"
+    | "sessions"
+    | "settings"
+    | "status";
   modal: ModalControllerState;
   streams: Record<string, StreamState>;
   tools: Record<string, ToolBlockState>;
+  subagents: Record<string, SubagentView>;
+  subagentHistory: Record<string, SubagentView[]>;
+  todos: TodoView[];
   retryBanner?: string;
   compactionBanner?: string;
   pty: Record<string, Extract<RuntimeEvent, { type: "pty.update" }>>;
@@ -103,24 +128,25 @@ export type AppState = {
 };
 
 export const initialState: AppState = {
-  title: "Natalia M7 TUI Modals",
+  title: "New session",
   status: "booting",
-  footer: "TypeScript/Bun + Solid/OpenTUI fake backend",
-  statusSegments: ["mode:fixture", "model:gpt-5.5", "provider:fake"],
+  footer: "Ready",
+  statusSegments: [
+    "mode:runtime",
+    "model:not-connected",
+    "provider:not-connected",
+  ],
   modal: structuredClone(initialModalState),
   streams: {},
   tools: {},
+  subagents: {},
+  subagentHistory: {},
+  todos: [],
   pty: {},
   ptyTimeline: {},
   ptyPane: { focus: "chat" },
   sandboxes: {},
-  messages: [
-    {
-      id: "welcome",
-      role: "system",
-      text: "M7 shell: approval/question modal framework; legacy Go fallback frozen.",
-    },
-  ],
+  messages: [],
 };
 
 export function reduceState(state: AppState, event: RuntimeEvent): AppState {
@@ -134,8 +160,36 @@ export function StateProvider(props: {
   onReady?: (dispatch: (event: RuntimeEvent) => void) => void;
 }) {
   const [state, setState] = createStore<AppState>(initialState);
-  const dispatch = (event: RuntimeEvent) =>
-    setState(produce((draft) => applyEvent(draft, event)));
+  const pendingEvents: RuntimeEvent[] = [];
+  let flushTimer: ReturnType<typeof setTimeout> | undefined;
+  let lastFlush = 0;
+  const flush = () => {
+    if (flushTimer) clearTimeout(flushTimer);
+    flushTimer = undefined;
+    if (!pendingEvents.length) return;
+    const events = pendingEvents.splice(0);
+    lastFlush = performance.now();
+    batch(() => {
+      setState(
+        produce((draft) => {
+          for (const event of events) applyEvent(draft, event);
+        }),
+      );
+    });
+  };
+  const dispatch = (event: RuntimeEvent) => {
+    pendingEvents.push(event);
+    const elapsed = performance.now() - lastFlush;
+    if (elapsed >= eventBatchMs || isUrgentEvent(event)) {
+      flush();
+      return;
+    }
+    if (!flushTimer) flushTimer = setTimeout(flush, eventBatchMs - elapsed);
+  };
+  onCleanup(() => {
+    if (flushTimer) clearTimeout(flushTimer);
+    flush();
+  });
   onMount(() => props.onReady?.(dispatch));
   return (
     <StateContext.Provider value={{ state, dispatch }}>
@@ -165,7 +219,7 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
       return;
     case "status.snapshot":
       state.statusSegments = [
-        "mode:fixture",
+        "mode:runtime",
         `model:${event.model}`,
         `provider:${event.provider}`,
         `ctx:${event.context}`,
@@ -176,7 +230,7 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
       return;
     case "context.status":
       state.statusSegments = [
-        "mode:fixture",
+        "mode:runtime",
         ...state.statusSegments.filter(
           (segment) =>
             !segment.startsWith("ctx:") &&
@@ -236,29 +290,30 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
       handleCheckpointEvent(state, event);
       return;
     case "pty.update":
-      const isNewPTY = !state.pty[event.id];
-      state.pty[event.id] = event;
+      const ptyEvent = compactPTYEvent(event);
+      const isNewPTY = !state.pty[ptyEvent.id];
+      state.pty[ptyEvent.id] = ptyEvent;
       if (
-        event.ownership === "model" &&
+        ptyEvent.ownership === "model" &&
         (isNewPTY || !state.ptyPane.selectedID) &&
-        event.status !== "exited" &&
-        event.status !== "failed"
+        ptyEvent.status !== "exited" &&
+        ptyEvent.status !== "failed"
       ) {
-        state.ptyPane.selectedID = event.id;
+        state.ptyPane.selectedID = ptyEvent.id;
       }
       if (
-        state.ptyPane.selectedID === event.id &&
-        (event.status === "exited" || event.status === "failed")
+        state.ptyPane.selectedID === ptyEvent.id &&
+        (ptyEvent.status === "exited" || ptyEvent.status === "failed")
       ) {
-        state.ptyPane.selectedID = nextActivePTY(state, event.id);
+        state.ptyPane.selectedID = nextActivePTY(state, ptyEvent.id);
         if (!state.ptyPane.selectedID) state.ptyPane.focus = "chat";
       }
       upsertBlock(
         state,
-        `pty:${event.id}`,
+        `pty:${ptyEvent.id}`,
         "system",
-        `PTY ${event.id} ${event.status} ${event.activity} ${targetLabel(event.target)} ${event.rows}x${event.cols}\ncmd: ${event.command}\nprompt: ${event.prompt ?? "-"}\nlast: ${event.lastAction ?? "-"}\ntail: ${event.tail}`,
-        event.status,
+        `PTY ${ptyEvent.id} ${ptyEvent.status} ${ptyEvent.activity} ${targetLabel(ptyEvent.target)} ${ptyEvent.rows}x${ptyEvent.cols}\ncmd: ${ptyEvent.command}\nprompt: ${ptyEvent.prompt ?? "-"}\nlast: ${ptyEvent.lastAction ?? "-"}\ntail: ${ptyEvent.tail}`,
+        ptyEvent.status,
       );
       return;
     case "pty.pane.select":
@@ -382,10 +437,11 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
         text: event.text,
         attempt: event.attempt,
         reasoningVisible: event.visible !== false,
+        deferVisible: event.visible !== false,
       });
       return;
     case "thinking.done":
-      flushStreamBlock(state, streamID(event.id, "thinking"));
+      revealDeferredStreamBlock(state, streamID(event.id, "thinking"));
       return;
     case "content.delta":
       appendStreamBlock(state, {
@@ -400,7 +456,32 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
       flushStreamBlock(state, streamID(event.id, "assistant"));
       return;
     case "tool.update":
+      // Reasoning is step-atomic: reveal the fully collected reasoning before
+      // its tool card, never as token-by-token text behind that tool.
+      revealDeferredStreamBlock(state, streamID(event.id, "thinking"));
+      flushStreamBlock(state, streamID(event.id, "assistant"));
+      beginPostToolStreamSegment(state, event.id);
       upsertTool(state, event);
+      return;
+    case "subagent.update":
+      state.subagents[event.id] = event;
+      state.subagentHistory[event.id] = [
+        ...(state.subagentHistory[event.id] ?? []),
+        event,
+      ].slice(-100);
+      upsertBlock(
+        state,
+        `subagent:${event.id}`,
+        "subagent",
+        [
+          `${event.id} · ${event.status} · ${event.attached ? "attached" : "detached"}`,
+          event.task ?? "",
+          event.text ?? "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        event.event,
+      );
       return;
     case "approval.request":
       enqueueApproval(state.modal, event);
@@ -474,7 +555,7 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
       );
       return;
     case "turn.finished":
-      flushStreamBlock(state, streamID(event.id, "thinking"));
+      revealDeferredStreamBlock(state, streamID(event.id, "thinking"));
       flushStreamBlock(state, streamID(event.id, "assistant"));
       state.activeTurn = undefined;
       state.status = event.stopReason === "done" ? "ready" : event.stopReason;
@@ -583,9 +664,11 @@ function appendStreamBlock(
     text: string;
     attempt?: number;
     reasoningVisible: boolean;
+    deferVisible?: boolean;
   },
 ) {
   const stream = (state.streams[input.id] ??= newStream());
+  stream.deferVisible = input.deferVisible === true;
   stream.attempt = input.attempt ?? stream.attempt;
   const retryApplied = appendWithRetrySkip(input.text, stream.retrySkip);
   stream.retrySkip = retryApplied.retrySkip;
@@ -595,6 +678,7 @@ function appendStreamBlock(
   stream.tail = split.tail;
   if (split.committed)
     appendCommittedSegment(state, input, stream, split.committed);
+  if (stream.deferVisible) return;
   const pendingText = input.reasoningVisible ? stream.tail : "";
   if (!stream.segmentText && !pendingText) return;
   const visibleText =
@@ -613,6 +697,41 @@ function appendStreamBlock(
       providerPolicy: input.reasoningVisible ? "visible" : "hidden",
     },
   );
+}
+
+function revealDeferredStreamBlock(state: AppState, id: string) {
+  const stream = state.streams[id];
+  if (!stream) return;
+  const flushed = flushMarkdown(stream.tail);
+  if (flushed.committed)
+    appendCommittedSegment(
+      state,
+      {
+        id,
+        role: "thinking",
+        text: flushed.committed,
+        reasoningVisible: true,
+      },
+      stream,
+      flushed.committed,
+      true,
+    );
+  stream.tail = flushed.tail;
+  if (stream.tail) {
+    stream.committed += stream.tail;
+    stream.segmentText += stream.tail;
+    stream.tail = "";
+  }
+  if (!stream.segmentText) return;
+  upsertBlock(
+    state,
+    segmentID(id, stream.segmentIndex),
+    "thinking",
+    stream.segmentText,
+    "completed",
+    { pendingText: "", reasoningVisible: true, providerPolicy: "visible" },
+  );
+  stream.deferVisible = false;
 }
 
 function flushStreamBlock(state: AppState, id: string) {
@@ -643,8 +762,18 @@ function flushStreamBlock(state: AppState, id: string) {
   block.text =
     block.role === "thinking" && block.providerPolicy === "hidden"
       ? providerSafeThinkingSummary(false, stream.committed)
-      : stream.committed;
+      : stream.segmentText;
   block.pendingText = "";
+}
+
+function beginPostToolStreamSegment(state: AppState, turnID: string) {
+  for (const role of ["thinking", "assistant"] as const) {
+    const stream = state.streams[streamID(turnID, role)];
+    if (!stream || (!stream.segmentText && !stream.tail)) continue;
+    stream.segmentIndex += 1;
+    stream.segmentText = "";
+    stream.tail = "";
+  }
 }
 
 function handleRetry(
@@ -756,16 +885,19 @@ function upsertTool(
   state: AppState,
   event: Extract<RuntimeEvent, { type: "tool.update" }>,
 ) {
-  const id = `${event.id}:tool:${event.callID ?? event.name}`;
+  const id = toolStateID(event);
   const current = state.tools[id];
   const raw = (current?.argumentsRaw ?? "") + (event.argumentsDelta ?? "");
   const args = parseToolArguments(raw);
+  const kind = classifyTool(event.name, event.metadata);
   const result =
-    event.result === undefined ? current?.result : resultView(event.result);
+    event.result === undefined
+      ? current?.result
+      : resultView(event.result, 8, 1200, { kind, name: event.name });
   const tool: ToolBlockState = {
     id,
     name: event.name,
-    kind: classifyTool(event.name, event.metadata),
+    kind,
     status: event.status,
     summary: event.summary,
     argumentsRaw: raw,
@@ -774,10 +906,24 @@ function upsertTool(
     redactedArguments: args.redactedJson,
     elapsed: elapsedLabel(event.startedAt, event.endedAt),
     result,
+    metadata: event.metadata ?? current?.metadata ?? {},
     detailAvailable: Boolean(args.redactedJson || result?.detail),
   };
   state.tools[id] = tool;
+  if (kind === "todo" && args.redactedJson) {
+    try {
+      const input = JSON.parse(args.redactedJson) as Record<string, unknown>;
+      const todos = parseTodoItems(input.items ?? input.todos);
+      if (todos.length) state.todos = todos;
+    } catch {
+      // Partial arguments stay hidden until valid JSON is available.
+    }
+  }
   upsertBlock(state, id, "tool", toolText(tool), event.status, { tool });
+}
+
+function toolStateID(event: Extract<RuntimeEvent, { type: "tool.update" }>) {
+  return `${event.id}:tool:${event.callID ?? event.name}`;
 }
 
 function toolText(tool: ToolBlockState) {
@@ -785,8 +931,8 @@ function toolText(tool: ToolBlockState) {
     ? tool.keyArguments.join(" ") || "arguments ready"
     : "receiving arguments";
   const elapsed = tool.elapsed ? ` · ${tool.elapsed}` : "";
-  const result = tool.result ? ` · ${tool.result.summary}` : "";
-  return `${tool.kind}:${tool.name} ${args} · ${tool.summary}${elapsed}${result}`;
+  const summary = tool.result ? tool.result.summary : tool.summary;
+  return `${tool.kind}:${tool.name} ${args} · ${summary}${elapsed}`;
 }
 
 function newStream(): StreamState {
@@ -797,6 +943,7 @@ function newStream(): StreamState {
     attempt: 1,
     segmentIndex: 0,
     segmentText: "",
+    deferVisible: false,
   };
 }
 
@@ -819,10 +966,12 @@ function appendCommittedSegment(
   },
   stream: StreamState,
   text: string,
+  forceVisible = false,
 ) {
   stream.committed += text;
   stream.segmentText += text;
   const hiddenThinking = input.role === "thinking" && !input.reasoningVisible;
+  if (stream.deferVisible && !forceVisible) return;
   upsertBlock(
     state,
     segmentID(input.id, stream.segmentIndex),
@@ -852,15 +1001,36 @@ function upsertBlock(
 ) {
   const block = state.messages.find((item) => item.id === id);
   if (block) {
-    block.text = text;
-    block.status = status;
-    block.pendingText = extra.pendingText;
-    block.reasoningVisible = extra.reasoningVisible;
-    block.providerPolicy = extra.providerPolicy;
-    block.tool = extra.tool;
+    if (block.text !== text) block.text = text;
+    if (block.status !== status) block.status = status;
+    if (block.pendingText !== extra.pendingText)
+      block.pendingText = extra.pendingText;
+    if (block.reasoningVisible !== extra.reasoningVisible)
+      block.reasoningVisible = extra.reasoningVisible;
+    if (block.providerPolicy !== extra.providerPolicy)
+      block.providerPolicy = extra.providerPolicy;
+    if (block.tool !== extra.tool) block.tool = extra.tool;
     return;
   }
   state.messages.push({ id, role, text, status, ...extra });
+}
+
+function isUrgentEvent(event: RuntimeEvent) {
+  return (
+    event.type === "approval.request" ||
+    event.type === "question.request" ||
+    event.type === "turn.finished" ||
+    event.type === "turn.cancelled"
+  );
+}
+
+function compactPTYEvent(event: Extract<RuntimeEvent, { type: "pty.update" }>) {
+  const transcript = event.transcript;
+  if (!transcript || transcript.length <= maxPTYTranscriptChars) return event;
+  return {
+    ...event,
+    transcript: `... ${transcript.length - maxPTYTranscriptChars} earlier chars omitted from live pane ...\n${transcript.slice(-maxPTYTranscriptChars)}`,
+  };
 }
 
 function upsertBlockBefore(

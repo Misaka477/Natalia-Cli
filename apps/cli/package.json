@@ -14,6 +14,7 @@
     "@natalia/client": "workspace:*",
     "@natalia/config": "workspace:*",
     "@natalia/contracts": "workspace:*",
-    "@natalia/runtime": "workspace:*"
+    "@natalia/runtime": "workspace:*",
+    "@natalia/transport": "workspace:*"
   }
 }

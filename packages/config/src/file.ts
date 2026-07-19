@@ -7,6 +7,7 @@ import {
   type MigrationResult,
 } from "./migration";
 import { defaultConfigPath } from "./path";
+import { defaultConfigV2 } from "./migration";
 
 export async function loadConfigFile(
   path = defaultConfigPath(),
@@ -14,6 +15,25 @@ export async function loadConfigFile(
   const raw = await readFile(path, "utf8");
   const data = parseConfigText(raw);
   return migrateConfig(data);
+}
+
+export async function loadOrCreateConfigFile(path = defaultConfigPath()) {
+  try {
+    return await loadConfigFile(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    const config = defaultConfigV2();
+    await saveConfigFile(config, path);
+    return {
+      config,
+      summary: {
+        fromVersion: "legacy" as const,
+        toVersion: 2 as const,
+        changed: ["created default TS config"],
+        warnings: [],
+      },
+    };
+  }
 }
 
 export async function saveConfigFile(

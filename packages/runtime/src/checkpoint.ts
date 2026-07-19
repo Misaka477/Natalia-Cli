@@ -181,6 +181,10 @@ export class CheckpointStore {
     return store;
   }
 
+  isEnabled() {
+    return this.enabled;
+  }
+
   async initialize() {
     if (!this.enabled) {
       this.unavailableReason = "disabled_by_config";

@@ -10,6 +10,41 @@ import {
   resolveQuestion,
 } from "@natalia/ui-model";
 import { reduceState, initialState } from "../src/context/state";
+import { dispatchModalKey, setModalKeyHandler } from "../src/modal/key-handler";
+import { hasUnsavedPromptChanges } from "../src/dialog/PromptDialog";
+
+test("prompt dialog only asks before discarding changed input", () => {
+  expect(hasUnsavedPromptChanges("", undefined)).toBe(false);
+  expect(hasUnsavedPromptChanges("same", "same")).toBe(false);
+  expect(hasUnsavedPromptChanges("edited", "same")).toBe(true);
+});
+
+test("modal key handlers use a stack and restore the outer modal", () => {
+  const seen: string[] = [];
+  const disposeOuter = setModalKeyHandler((key) => {
+    seen.push(`outer:${key}`);
+    return true;
+  });
+  const disposeInner = setModalKeyHandler((key) => {
+    seen.push(`inner:${key}`);
+    return true;
+  });
+  expect(dispatchModalKey("d")).toBe(true);
+  expect(seen).toEqual(["inner:d"]);
+  disposeInner();
+  expect(dispatchModalKey("d")).toBe(true);
+  expect(seen).toEqual(["inner:d", "outer:d"]);
+  disposeOuter();
+  expect(dispatchModalKey("d")).toBe(false);
+});
+
+test("state reducer opens session history and settings dialogs", () => {
+  let state = structuredClone(initialState);
+  state = reduceState(state, { type: "dialog.open", dialog: "sessions" });
+  expect(state.dialog).toBe("sessions");
+  state = reduceState(state, { type: "dialog.open", dialog: "settings" });
+  expect(state.dialog).toBe("settings");
+});
 
 test("modal queue prioritizes approval while preserving stable request order", () => {
   const state = structuredClone(initialModalState);

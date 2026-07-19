@@ -2,6 +2,11 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "rootDir": "../.." },
-  "include": ["src"],
-  "references": [{ "path": "../contracts" }]
+  "include": ["src", "test"],
+  "references": [
+    { "path": "../contracts" },
+    { "path": "../pty" },
+    { "path": "../sandbox" },
+    { "path": "../subagent" }
+  ]
 }

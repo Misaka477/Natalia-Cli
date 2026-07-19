@@ -80,3 +80,41 @@ test("sandbox target/audit/checkpoint contract exposes isolation level", async (
     runningResources: [],
   });
 });
+
+test("sandbox executes a real command inside its workspace target", async () => {
+  const base = await mkdtemp(join(tmpdir(), "natalia-sandbox-base-"));
+  const manager = new WorkspaceSandboxManager(base);
+  await manager.create("box");
+  const result = await manager.execute("box", "pwd; printf sandbox-ok");
+  expect(result.exitCode).toBe(0);
+  expect(result.output).toContain("sandbox-ok");
+  expect(result.output).toContain(join(base, "box"));
+  expect(result.target).toMatchObject({ kind: "sandbox", sandboxID: "box" });
+});
+
+test("sandbox tracks running resources with output and stop lifecycle", async () => {
+  const base = await mkdtemp(join(tmpdir(), "natalia-sandbox-resource-"));
+  const manager = new WorkspaceSandboxManager(base);
+  await manager.create("box");
+  const resource = await manager.startResource(
+    "box",
+    "printf resource-ok; sleep 30",
+    "res_1",
+  );
+  expect(resource).toMatchObject({ id: "res_1", status: "running" });
+  expect(manager.updateEvent("box")).toMatchObject({ runningResources: 1 });
+  await waitFor(async () => await manager.resourceOutput("box", "res_1"));
+  expect(await manager.resourceOutput("box", "res_1")).toContain("resource-ok");
+  expect(await manager.stopResource("box", "res_1")).toMatchObject({
+    status: "stopped",
+  });
+  expect(manager.updateEvent("box")).toMatchObject({ runningResources: 0 });
+});
+
+async function waitFor(read: () => Promise<string>) {
+  for (let index = 0; index < 100; index++) {
+    if ((await read()).includes("resource-ok")) return;
+    await Bun.sleep(20);
+  }
+  throw new Error("timed out waiting for sandbox resource output");
+}

@@ -35,7 +35,7 @@ if (summary.ptyBlock?.includes("secret"))
 console.log(JSON.stringify(summary, null, 2));
 
 async function runPrompt(initialPrompt: string) {
-  const handle = await runTuiShell({ initialPrompt });
+  const handle = await runTuiShell({ initialPrompt, fixture: true });
   for (let index = 0; index < 100; index++) {
     if (handle.events.some((event) => event.type === "turn.finished")) break;
     await Bun.sleep(50);

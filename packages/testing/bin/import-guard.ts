@@ -49,7 +49,8 @@ for (const dir of dependencyGuarded)
 for (const dir of productionRoots)
   await scan(join(root, dir), sourceExtensions, (full, text) => {
     for (const pattern of forbiddenTraceNames) {
-      if (pattern.test(text)) failures.push(`${full}: upstream trace name found`);
+      if (pattern.test(text))
+        failures.push(`${full}: upstream trace name found`);
     }
     for (const pattern of forbiddenAccountFlowNames) {
       if (pattern.test(text))

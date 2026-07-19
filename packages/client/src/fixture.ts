@@ -227,7 +227,10 @@ export function createFakeBackend(): FakeBackend {
         callID: `${toolName}_${toolIndex}`,
         status: "succeeded",
         summary: `${toolName} completed (${Math.floor(Math.random() * 50) + 10} results)`,
-        result: `${toolName} result summary\n`.repeat(18),
+        result:
+          toolName === "apply_patch"
+            ? `--- a/apps/tui/src/routes/session/SessionRoute.tsx\n+++ b/apps/tui/src/routes/session/SessionRoute.tsx\n@@ -339,6 +339,10 @@\n function ToolBlockView(props: {\n   block: MessageBlock;\n-  toolDetails: TuiPreferences["toolDetails"];\n+  toolDetails: TuiPreferences["toolDetails"];\n+  diffStyle: TuiPreferences["diffStyle"];\n+  terminalWidth: number;\n }) {\n+  // Native split diff rendering follows terminal width.\n   const tool = () => props.block.tool!;\n`
+            : `${toolName} result summary\n`.repeat(18),
         metadata: { kind: toolName },
         startedAt,
         endedAt: Date.now(),

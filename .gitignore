@@ -29,6 +29,8 @@ Thumbs.db
 
 # natalia config/sessions
 .config/
+/.natalia/
+/apps/tui/.natalia/
 
 # Test session artifacts (numeric directories in cmd/natalia)
 /cmd/natalia/[0-9]*

@@ -376,3 +376,168 @@ test("tool result truncation keeps full detail separate from UI preview", () => 
   expect(result.preview).not.toContain("line 19");
   expect(result.detail).toContain("line 19");
 });
+
+test("tool boundary flushes buffered thinking and content before tool projection", () => {
+  let state = structuredClone(initialState);
+  state = reduceState(state, {
+    type: "thinking.delta",
+    id: "turn_tool_order",
+    text: "reasoning before tool",
+  });
+  state = reduceState(state, {
+    type: "content.delta",
+    id: "turn_tool_order",
+    text: "assistant preface",
+  });
+  state = reduceState(state, {
+    type: "tool.update",
+    id: "turn_tool_order",
+    name: "read_file",
+    callID: "call_order",
+    status: "queued",
+    summary: "queued",
+  });
+  const thinking = state.messages.find(
+    (item) => item.id === "turn_tool_order:thinking",
+  );
+  const content = state.messages.find(
+    (item) => item.id === "turn_tool_order:assistant",
+  );
+  const toolIndex = state.messages.findIndex(
+    (item) => item.id === "turn_tool_order:tool:call_order",
+  );
+  expect(thinking?.text).toBe("reasoning before tool");
+  expect(content?.text).toBe("assistant preface");
+  expect(state.messages.indexOf(thinking!)).toBeLessThan(toolIndex);
+  expect(state.messages.indexOf(content!)).toBeLessThan(toolIndex);
+});
+
+test("provider text after a tool starts a new stream segment below that tool", () => {
+  let state = structuredClone(initialState);
+  state = reduceState(state, {
+    type: "thinking.delta",
+    id: "turn_post_tool",
+    text: "first reasoning\n",
+  });
+  state = reduceState(state, {
+    type: "tool.update",
+    id: "turn_post_tool",
+    name: "read_file",
+    callID: "call_post_tool",
+    status: "succeeded",
+    summary: "done",
+    result: "file content",
+  });
+  state = reduceState(state, {
+    type: "thinking.delta",
+    id: "turn_post_tool",
+    text: "next reasoning\n",
+  });
+  state = reduceState(state, { type: "thinking.done", id: "turn_post_tool" });
+  const first = state.messages.find(
+    (item) => item.id === "turn_post_tool:thinking",
+  );
+  const second = state.messages.find(
+    (item) => item.id === "turn_post_tool:thinking:segment:1",
+  );
+  const toolIndex = state.messages.findIndex(
+    (item) => item.id === "turn_post_tool:tool:call_post_tool",
+  );
+  expect(first?.text).toBe("first reasoning\n");
+  expect(second?.text).toBe("next reasoning\n");
+  expect(state.messages.indexOf(second!)).toBeGreaterThan(toolIndex);
+});
+
+test("visible reasoning is committed atomically at a provider step boundary", () => {
+  let state = structuredClone(initialState);
+  state = reduceState(state, {
+    type: "turn.submitted",
+    id: "turn_atomic_reasoning",
+    text: "run a tool",
+    byteLength: 10,
+    lineCount: 1,
+    sha256: "test",
+  });
+  state = reduceState(state, {
+    type: "thinking.delta",
+    id: "turn_atomic_reasoning",
+    text: "reasoning before tool",
+    visible: true,
+  });
+  expect(
+    state.messages.find((item) => item.id === "turn_atomic_reasoning:thinking"),
+  ).toBeUndefined();
+  state = reduceState(state, {
+    type: "tool.update",
+    id: "turn_atomic_reasoning",
+    name: "read_file",
+    callID: "call_atomic_reasoning",
+    status: "queued",
+    summary: "queued",
+  });
+  const thinkingIndex = state.messages.findIndex(
+    (item) => item.id === "turn_atomic_reasoning:thinking",
+  );
+  const toolIndex = state.messages.findIndex(
+    (item) => item.id === "turn_atomic_reasoning:tool:call_atomic_reasoning",
+  );
+  expect(state.messages[thinkingIndex]?.text).toBe("reasoning before tool");
+  expect(thinkingIndex).toBeLessThan(toolIndex);
+});
+
+test("typed subagent updates remain available outside transcript text", () => {
+  const state = reduceState(structuredClone(initialState), {
+    type: "subagent.update",
+    id: "agent_a",
+    status: "running",
+    attached: true,
+    event: "status",
+    task: "Audit stream ownership",
+    text: "Inspecting the local adapter",
+  });
+  expect(state.subagents.agent_a).toMatchObject({
+    status: "running",
+    attached: true,
+    task: "Audit stream ownership",
+  });
+});
+
+test("todo tool arguments project into shared sidebar state", () => {
+  const state = reduceState(structuredClone(initialState), {
+    type: "tool.update",
+    id: "turn_todo",
+    name: "todo_write",
+    callID: "todo_a",
+    status: "succeeded",
+    summary: "saved",
+    argumentsDelta: JSON.stringify({
+      items: [
+        { content: "Patch ownership", status: "in_progress" },
+        { content: "Run smoke", status: "pending" },
+      ],
+    }),
+    result: "saved 2 todo items",
+  });
+  expect(state.todos).toEqual([
+    { content: "Patch ownership", status: "in_progress" },
+    { content: "Run smoke", status: "pending" },
+  ]);
+});
+
+test("turn finished returns the TUI to idle so Ctrl+C can exit demos", () => {
+  let state = reduceState(structuredClone(initialState), {
+    type: "turn.submitted",
+    id: "turn_demo",
+    text: "demo",
+    byteLength: 4,
+    lineCount: 1,
+    sha256: "sha",
+  });
+  expect(state.activeTurn).toBe("turn_demo");
+  state = reduceState(state, {
+    type: "turn.finished",
+    id: "turn_demo",
+    stopReason: "done",
+  });
+  expect(state.activeTurn).toBeUndefined();
+});

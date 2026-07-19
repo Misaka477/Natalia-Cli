@@ -1,0 +1,850 @@
+import type { ContextEntry } from "./context";
+import { providerErrorFromHttp } from "./errors";
+import { discoverLegacyProviderConfig } from "@natalia/config";
+
+export type ProviderMessage = {
+  role: "system" | "user" | "assistant" | "tool";
+  content: string;
+  toolCallID?: string;
+  toolCalls?: ProviderToolCall[];
+};
+
+export type ProviderTool = {
+  name: string;
+  description: string;
+  parameters: unknown;
+};
+
+export type ProviderToolCall = {
+  id: string;
+  name: string;
+  arguments: string;
+};
+
+export type ProviderStreamChunk =
+  | { type: "content"; text: string }
+  | { type: "thinking"; text: string }
+  | { type: "tool_call"; calls: ProviderToolCall[] }
+  | { type: "usage"; inputTokens: number; outputTokens: number }
+  | { type: "done" };
+
+export type ProviderStreamRequest = {
+  messages: ProviderMessage[];
+  tools?: ProviderTool[];
+  signal?: AbortSignal;
+};
+
+export type StreamingProvider = {
+  provider: string;
+  model: string;
+  stream(request: ProviderStreamRequest): AsyncIterable<ProviderStreamChunk>;
+};
+
+export type OpenAICompatibleProviderOptions = {
+  apiKey: string;
+  model: string;
+  baseURL?: string;
+  provider?: string;
+  fetch?: typeof fetch;
+  authHeader?: string;
+  customHeaders?: Record<string, string>;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  reasoningEffort?: string;
+  thinkingEnabled?: boolean;
+  timeoutMs?: number;
+};
+
+export type AnthropicProviderOptions = {
+  apiKey: string;
+  model: string;
+  baseURL?: string;
+  provider?: string;
+  fetch?: typeof fetch;
+  version?: string;
+  timeoutMs?: number;
+  maxTokens?: number;
+  temperature?: number;
+};
+
+export type GeminiProviderOptions = {
+  apiKey: string;
+  model: string;
+  baseURL?: string;
+  provider?: string;
+  fetch?: typeof fetch;
+  timeoutMs?: number;
+  temperature?: number;
+  maxTokens?: number;
+};
+
+export class OpenAICompatibleProvider implements StreamingProvider {
+  readonly provider: string;
+  readonly model: string;
+  private readonly apiKey: string;
+  private readonly baseURL: string;
+  private readonly fetchImpl: typeof fetch;
+  private readonly authHeader: string;
+  private readonly customHeaders: Record<string, string>;
+  private readonly temperature?: number;
+  private readonly maxTokens?: number;
+  private readonly topP?: number;
+  private readonly reasoningEffort?: string;
+  private readonly thinkingEnabled?: boolean;
+  private readonly timeoutMs?: number;
+
+  constructor(options: OpenAICompatibleProviderOptions) {
+    this.apiKey = options.apiKey;
+    this.model = options.model;
+    this.provider = options.provider ?? "openai-compatible";
+    this.baseURL = (options.baseURL ?? "https://api.openai.com/v1").replace(
+      /\/+$/u,
+      "",
+    );
+    this.fetchImpl = options.fetch ?? fetch;
+    this.authHeader = options.authHeader ?? "authorization";
+    this.customHeaders = options.customHeaders ?? {};
+    this.temperature = options.temperature;
+    this.maxTokens = options.maxTokens;
+    this.topP = options.topP;
+    this.reasoningEffort = options.reasoningEffort;
+    this.thinkingEnabled = options.thinkingEnabled;
+    this.timeoutMs = options.timeoutMs;
+  }
+
+  async *stream(
+    request: ProviderStreamRequest,
+  ): AsyncIterable<ProviderStreamChunk> {
+    const timeout = this.timeoutMs
+      ? AbortSignal.timeout(this.timeoutMs)
+      : undefined;
+    const signal = timeout
+      ? request.signal
+        ? AbortSignal.any([request.signal, timeout])
+        : timeout
+      : request.signal;
+    const response = await this.fetchImpl(chatCompletionsURL(this.baseURL), {
+      method: "POST",
+      headers: {
+        [this.authHeader]: `Bearer ${this.apiKey}`,
+        "content-type": "application/json",
+        ...this.customHeaders,
+      },
+      body: JSON.stringify({
+        model: this.model,
+        messages: request.messages.map(toOpenAIMessage),
+        tools: request.tools?.map((tool) => ({
+          type: "function",
+          function: {
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.parameters,
+          },
+        })),
+        stream: true,
+        stream_options: { include_usage: true },
+        ...(this.temperature === undefined
+          ? {}
+          : { temperature: this.temperature }),
+        ...(this.maxTokens === undefined ? {} : { max_tokens: this.maxTokens }),
+        ...(this.topP === undefined ? {} : { top_p: this.topP }),
+        ...(this.reasoningEffort
+          ? { reasoning_effort: this.reasoningEffort }
+          : {}),
+        ...(this.thinkingEnabled === undefined
+          ? {}
+          : { thinking_enabled: this.thinkingEnabled }),
+      }),
+      signal,
+    });
+    if (!response.ok)
+      throw providerErrorFromHttp({
+        statusCode: response.status,
+        statusText: response.statusText,
+        retryAfter: response.headers.get("retry-after"),
+        message: await safeResponseText(response),
+      });
+    if (!response.body) {
+      const data = (await response.json()) as OpenAIChatCompletion;
+      const text = data.choices?.[0]?.message?.content;
+      if (text) yield { type: "content", text };
+      const toolCalls = data.choices?.[0]?.message?.tool_calls?.map((call) => ({
+        id: call.id,
+        name: call.function.name,
+        arguments: call.function.arguments,
+      }));
+      if (toolCalls?.length) yield { type: "tool_call", calls: toolCalls };
+      if (data.usage)
+        yield {
+          type: "usage",
+          inputTokens: data.usage.prompt_tokens,
+          outputTokens: data.usage.completion_tokens,
+        };
+      yield { type: "done" };
+      return;
+    }
+    yield* streamOpenAISSE(response.body);
+  }
+}
+
+export class AnthropicProvider implements StreamingProvider {
+  readonly provider: string;
+  readonly model: string;
+  private readonly apiKey: string;
+  private readonly baseURL: string;
+  private readonly fetchImpl: typeof fetch;
+  private readonly version: string;
+  private readonly timeoutMs?: number;
+  private readonly maxTokens?: number;
+  private readonly temperature?: number;
+
+  constructor(options: AnthropicProviderOptions) {
+    this.apiKey = options.apiKey;
+    this.model = options.model;
+    this.provider = options.provider ?? "anthropic";
+    this.baseURL = (options.baseURL ?? "https://api.anthropic.com/v1").replace(
+      /\/+$/u,
+      "",
+    );
+    this.fetchImpl = options.fetch ?? fetch;
+    this.version = options.version ?? "2023-06-01";
+    this.timeoutMs = options.timeoutMs;
+    this.maxTokens = options.maxTokens;
+    this.temperature = options.temperature;
+  }
+
+  async *stream(
+    request: ProviderStreamRequest,
+  ): AsyncIterable<ProviderStreamChunk> {
+    const timeout = this.timeoutMs
+      ? AbortSignal.timeout(this.timeoutMs)
+      : undefined;
+    const signal = timeout
+      ? request.signal
+        ? AbortSignal.any([request.signal, timeout])
+        : timeout
+      : request.signal;
+    const response = await this.fetchImpl(`${this.baseURL}/messages`, {
+      method: "POST",
+      headers: {
+        "x-api-key": this.apiKey,
+        "anthropic-version": this.version,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: this.model,
+        messages: request.messages
+          .filter((message) => message.role !== "system")
+          .map(toAnthropicMessage),
+        system: request.messages
+          .filter((message) => message.role === "system")
+          .map((message) => message.content)
+          .join("\n\n"),
+        tools: request.tools?.map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          input_schema: tool.parameters,
+        })),
+        max_tokens: this.maxTokens ?? 4096,
+        stream: true,
+        ...(this.temperature === undefined
+          ? {}
+          : { temperature: this.temperature }),
+      }),
+      signal,
+    });
+    if (!response.ok)
+      throw providerErrorFromHttp({
+        statusCode: response.status,
+        statusText: response.statusText,
+        retryAfter: response.headers.get("retry-after"),
+        message: await safeResponseText(response),
+      });
+    if (!response.body) throw new Error("Anthropic response body unavailable");
+    yield* streamAnthropicSSE(response.body);
+  }
+}
+
+export class GeminiProvider implements StreamingProvider {
+  readonly provider: string;
+  readonly model: string;
+  private readonly apiKey: string;
+  private readonly baseURL: string;
+  private readonly fetchImpl: typeof fetch;
+  private readonly timeoutMs?: number;
+  private readonly temperature?: number;
+  private readonly maxTokens?: number;
+
+  constructor(options: GeminiProviderOptions) {
+    this.apiKey = options.apiKey;
+    this.model = options.model;
+    this.provider = options.provider ?? "gemini";
+    this.baseURL = (
+      options.baseURL ?? "https://generativelanguage.googleapis.com/v1beta"
+    ).replace(/\/+$/u, "");
+    this.fetchImpl = options.fetch ?? fetch;
+    this.timeoutMs = options.timeoutMs;
+    this.temperature = options.temperature;
+    this.maxTokens = options.maxTokens;
+  }
+
+  async *stream(
+    request: ProviderStreamRequest,
+  ): AsyncIterable<ProviderStreamChunk> {
+    const timeout = this.timeoutMs
+      ? AbortSignal.timeout(this.timeoutMs)
+      : undefined;
+    const signal = timeout
+      ? request.signal
+        ? AbortSignal.any([request.signal, timeout])
+        : timeout
+      : request.signal;
+    const response = await this.fetchImpl(
+      `${this.baseURL}/models/${encodeURIComponent(this.model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(this.apiKey)}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          contents: request.messages.map(toGeminiContent),
+          tools: request.tools?.length
+            ? [
+                {
+                  functionDeclarations: request.tools.map((tool) => ({
+                    name: tool.name,
+                    description: tool.description,
+                    parameters: tool.parameters,
+                  })),
+                },
+              ]
+            : undefined,
+          generationConfig: {
+            ...(this.temperature === undefined
+              ? {}
+              : { temperature: this.temperature }),
+            ...(this.maxTokens === undefined
+              ? {}
+              : { maxOutputTokens: this.maxTokens }),
+          },
+        }),
+        signal,
+      },
+    );
+    if (!response.ok)
+      throw providerErrorFromHttp({
+        statusCode: response.status,
+        statusText: response.statusText,
+        retryAfter: response.headers.get("retry-after"),
+        message: await safeResponseText(response),
+      });
+    if (!response.body) throw new Error("Gemini response body unavailable");
+    yield* streamGeminiSSE(response.body);
+  }
+}
+
+export function contextEntriesToProviderMessages(
+  entries: ContextEntry[],
+): ProviderMessage[] {
+  return entries
+    .map((entry) => contextEntryToProviderMessage(entry))
+    .filter((entry): entry is ProviderMessage => entry !== undefined);
+}
+
+function contextEntryToProviderMessage(
+  entry: ContextEntry,
+): ProviderMessage | undefined {
+  if (
+    entry.role === "system" ||
+    entry.role === "user" ||
+    entry.role === "assistant"
+  )
+    return { role: entry.role, content: entry.content };
+  if (entry.role === "summary")
+    return { role: "system", content: entry.content };
+  if (entry.role === "tool_call") {
+    const call = parseDurableToolCall(entry);
+    if (!call) return undefined;
+    return { role: "assistant", content: "", toolCalls: [call] };
+  }
+  if (entry.role === "tool_result")
+    return {
+      role: "tool",
+      toolCallID: entry.pairID,
+      content: entry.content,
+    };
+  return undefined;
+}
+
+function parseDurableToolCall(
+  entry: ContextEntry,
+): ProviderToolCall | undefined {
+  const separator = entry.content.indexOf(" ");
+  if (separator < 1 || !entry.pairID) return undefined;
+  return {
+    id: entry.pairID,
+    name: entry.content.slice(0, separator),
+    arguments: entry.content.slice(separator + 1),
+  };
+}
+
+export function providerFromEnvironment(env = process.env) {
+  const apiKey =
+    env.NATALIA_API_KEY ??
+    env.NATALIA_OPENAI_API_KEY ??
+    env.OPENAI_API_KEY ??
+    env.ANTHROPIC_API_KEY ??
+    env.GEMINI_API_KEY;
+  const model =
+    env.NATALIA_MODEL ??
+    env.OPENAI_MODEL ??
+    env.ANTHROPIC_MODEL ??
+    env.GEMINI_MODEL ??
+    "gpt-4o-mini";
+  if (!apiKey) return undefined;
+  return providerFromKind({
+    apiKey,
+    model,
+    baseURL:
+      env.NATALIA_BASE_URL ??
+      env.NATALIA_OPENAI_BASE_URL ??
+      env.OPENAI_BASE_URL,
+    provider: env.NATALIA_PROVIDER ?? "openai-compatible",
+  });
+}
+
+export async function providerFromLegacyGoConfig(
+  input: {
+    configPath?: string;
+    home?: string;
+  } = {},
+) {
+  const discovery = await discoverLegacyProviderConfig(input);
+  if (discovery.status !== "found") return discovery;
+  return {
+    status: "found" as const,
+    configPath: discovery.config.configPath,
+    profile: {
+      workDir: discovery.config.workDir,
+      autoApprove: discovery.config.autoApprove,
+      maxSteps: discovery.config.maxSteps,
+    },
+    provider: providerFromKind({
+      providerName: discovery.config.providerName,
+      apiKey: discovery.config.apiKey,
+      model: discovery.config.model,
+      baseURL: discovery.config.baseURL,
+      authHeader: discovery.config.authHeader,
+      customHeaders: discovery.config.customHeaders,
+      temperature: discovery.config.temperature,
+      maxTokens: discovery.config.maxTokens,
+      topP: discovery.config.topP,
+      reasoningEffort: discovery.config.reasoningEffort,
+      thinkingEnabled: discovery.config.thinkingEnabled,
+      timeoutMs: discovery.config.timeoutSec
+        ? discovery.config.timeoutSec * 1000
+        : undefined,
+    }),
+  };
+}
+
+export function providerFromKind(
+  input: OpenAICompatibleProviderOptions & {
+    providerName?: string;
+  },
+) {
+  const kind = (input.providerName ?? input.provider ?? "").toLowerCase();
+  if (kind.includes("anthropic") || kind.includes("claude"))
+    return new AnthropicProvider({
+      apiKey: input.apiKey,
+      model: input.model,
+      baseURL: input.baseURL,
+      provider: input.providerName ?? input.provider,
+      fetch: input.fetch,
+      timeoutMs: input.timeoutMs,
+      maxTokens: input.maxTokens,
+      temperature: input.temperature,
+    });
+  if (kind.includes("gemini") || kind.includes("google"))
+    return new GeminiProvider({
+      apiKey: input.apiKey,
+      model: input.model,
+      baseURL: input.baseURL,
+      provider: input.providerName ?? input.provider,
+      fetch: input.fetch,
+      timeoutMs: input.timeoutMs,
+      maxTokens: input.maxTokens,
+      temperature: input.temperature,
+    });
+  return new OpenAICompatibleProvider({
+    ...input,
+    provider: input.providerName,
+  });
+}
+
+function chatCompletionsURL(baseURL: string) {
+  return baseURL.endsWith("/chat/completions")
+    ? baseURL
+    : `${baseURL}/chat/completions`;
+}
+
+type AnthropicStreamChunk = {
+  type?: string;
+  delta?: { text?: string; partial_json?: string };
+  content_block?: { id?: string; name?: string; type?: string };
+  usage?: { input_tokens?: number; output_tokens?: number };
+  message?: { usage?: { input_tokens?: number; output_tokens?: number } };
+};
+
+type GeminiStreamChunk = {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{
+        text?: string;
+        functionCall?: { name?: string; args?: Record<string, unknown> };
+      }>;
+    };
+  }>;
+  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+};
+
+type OpenAIChatCompletion = {
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+  };
+  choices?: Array<{
+    message?: {
+      content?: string;
+      tool_calls?: Array<{
+        id: string;
+        function: { name: string; arguments: string };
+      }>;
+    };
+  }>;
+};
+
+type OpenAIStreamChunk = {
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+  } | null;
+  choices?: Array<{
+    delta?: {
+      content?: string;
+      reasoning_content?: string;
+      tool_calls?: Array<{
+        index: number;
+        id?: string;
+        function?: { name?: string; arguments?: string };
+      }>;
+    };
+    finish_reason?: string | null;
+  }>;
+};
+
+async function* streamOpenAISSE(
+  body: ReadableStream<Uint8Array>,
+): AsyncIterable<ProviderStreamChunk> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  const toolCalls = new Map<number, ProviderToolCall>();
+  let buffer = "";
+  while (true) {
+    const next = await reader.read();
+    if (next.done) break;
+    buffer += decoder.decode(next.value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() ?? "";
+    for (const part of parts) {
+      yield* parseSSEChunks(part, toolCalls);
+    }
+  }
+  if (buffer) {
+    yield* parseSSEChunks(buffer, toolCalls);
+  }
+  if (toolCalls.size)
+    yield { type: "tool_call", calls: [...toolCalls.values()] };
+  yield { type: "done" };
+}
+
+async function* streamAnthropicSSE(
+  body: ReadableStream<Uint8Array>,
+): AsyncIterable<ProviderStreamChunk> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  const toolCalls = new Map<number, ProviderToolCall>();
+  let currentToolIndex = -1;
+  let buffer = "";
+  while (true) {
+    const next = await reader.read();
+    if (next.done) break;
+    buffer += decoder.decode(next.value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() ?? "";
+    for (const part of parts) {
+      for (const line of part.split("\n")) {
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice("data:".length).trim();
+        if (!data || data === "[DONE]") continue;
+        const parsed = JSON.parse(data) as AnthropicStreamChunk;
+        if (parsed.type === "content_block_start") {
+          currentToolIndex += 1;
+          if (parsed.content_block?.type === "tool_use")
+            toolCalls.set(currentToolIndex, {
+              id: parsed.content_block.id ?? `tool_${currentToolIndex}`,
+              name: parsed.content_block.name ?? "",
+              arguments: "",
+            });
+        }
+        if (parsed.delta?.text)
+          yield { type: "content", text: parsed.delta.text };
+        if (parsed.delta?.partial_json && toolCalls.has(currentToolIndex)) {
+          const current = toolCalls.get(currentToolIndex)!;
+          toolCalls.set(currentToolIndex, {
+            ...current,
+            arguments: `${current.arguments}${parsed.delta.partial_json}`,
+          });
+        }
+        const usage = parsed.usage ?? parsed.message?.usage;
+        if (
+          usage?.input_tokens !== undefined ||
+          usage?.output_tokens !== undefined
+        )
+          yield {
+            type: "usage",
+            inputTokens: usage.input_tokens ?? 0,
+            outputTokens: usage.output_tokens ?? 0,
+          };
+      }
+    }
+  }
+  if (buffer) {
+    for (const line of buffer.split("\n")) {
+      if (!line.startsWith("data:")) continue;
+      const data = line.slice("data:".length).trim();
+      if (!data || data === "[DONE]") continue;
+      const parsed = JSON.parse(data) as AnthropicStreamChunk;
+      if (parsed.delta?.text)
+        yield { type: "content", text: parsed.delta.text };
+      const usage = parsed.usage ?? parsed.message?.usage;
+      if (
+        usage?.input_tokens !== undefined ||
+        usage?.output_tokens !== undefined
+      )
+        yield {
+          type: "usage",
+          inputTokens: usage.input_tokens ?? 0,
+          outputTokens: usage.output_tokens ?? 0,
+        };
+    }
+  }
+  if (toolCalls.size)
+    yield { type: "tool_call", calls: [...toolCalls.values()] };
+  yield { type: "done" };
+}
+
+async function* streamGeminiSSE(
+  body: ReadableStream<Uint8Array>,
+): AsyncIterable<ProviderStreamChunk> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const next = await reader.read();
+    if (next.done) break;
+    buffer += decoder.decode(next.value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() ?? "";
+    for (const part of parts) {
+      for (const line of part.split("\n")) {
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice("data:".length).trim();
+        if (!data || data === "[DONE]") continue;
+        const parsed = JSON.parse(data) as GeminiStreamChunk;
+        const calls: ProviderToolCall[] = [];
+        for (const part of parsed.candidates?.[0]?.content?.parts ?? []) {
+          if (part.text) yield { type: "content", text: part.text };
+          if (part.functionCall?.name)
+            calls.push({
+              id: `gemini_${calls.length}`,
+              name: part.functionCall.name,
+              arguments: JSON.stringify(part.functionCall.args ?? {}),
+            });
+        }
+        if (calls.length) yield { type: "tool_call", calls };
+        if (parsed.usageMetadata)
+          yield {
+            type: "usage",
+            inputTokens: parsed.usageMetadata.promptTokenCount ?? 0,
+            outputTokens: parsed.usageMetadata.candidatesTokenCount ?? 0,
+          };
+      }
+    }
+  }
+  if (buffer) yield* parseGeminiSSEPart(buffer);
+  yield { type: "done" };
+}
+
+function* parseGeminiSSEPart(part: string): Iterable<ProviderStreamChunk> {
+  for (const line of part.split("\n")) {
+    if (!line.startsWith("data:")) continue;
+    const data = line.slice("data:".length).trim();
+    if (!data || data === "[DONE]") continue;
+    const parsed = JSON.parse(data) as GeminiStreamChunk;
+    const calls: ProviderToolCall[] = [];
+    for (const part of parsed.candidates?.[0]?.content?.parts ?? []) {
+      if (part.text) yield { type: "content", text: part.text };
+      if (part.functionCall?.name)
+        calls.push({
+          id: `gemini_${calls.length}`,
+          name: part.functionCall.name,
+          arguments: JSON.stringify(part.functionCall.args ?? {}),
+        });
+    }
+    if (calls.length) yield { type: "tool_call", calls };
+    if (parsed.usageMetadata)
+      yield {
+        type: "usage",
+        inputTokens: parsed.usageMetadata.promptTokenCount ?? 0,
+        outputTokens: parsed.usageMetadata.candidatesTokenCount ?? 0,
+      };
+  }
+}
+
+function parseSSEChunks(
+  part: string,
+  toolCalls: Map<number, ProviderToolCall>,
+): ProviderStreamChunk[] {
+  const chunks: ProviderStreamChunk[] = [];
+  for (const line of part.split("\n")) {
+    if (!line.startsWith("data:")) continue;
+    const data = line.slice("data:".length).trim();
+    if (!data || data === "[DONE]") continue;
+    const parsed = JSON.parse(data) as OpenAIStreamChunk;
+    if (parsed.usage)
+      chunks.push({
+        type: "usage",
+        inputTokens: parsed.usage.prompt_tokens,
+        outputTokens: parsed.usage.completion_tokens,
+      });
+    const choice = parsed.choices?.[0];
+    const delta = choice?.delta;
+    if (delta?.tool_calls) {
+      for (const call of delta.tool_calls) {
+        const current = toolCalls.get(call.index) ?? {
+          id: call.id ?? `tool_${call.index}`,
+          name: "",
+          arguments: "",
+        };
+        toolCalls.set(call.index, {
+          id: call.id ?? current.id,
+          name: call.function?.name ?? current.name,
+          arguments: `${current.arguments}${call.function?.arguments ?? ""}`,
+        });
+      }
+      if (choice?.finish_reason === "tool_calls" && toolCalls.size) {
+        const calls = [...toolCalls.values()];
+        toolCalls.clear();
+        chunks.push({ type: "tool_call", calls });
+      }
+      continue;
+    }
+    if (delta?.reasoning_content)
+      chunks.push({ type: "thinking", text: delta.reasoning_content });
+    if (delta?.content) chunks.push({ type: "content", text: delta.content });
+  }
+  return chunks;
+}
+
+function toOpenAIMessage(message: ProviderMessage) {
+  if (message.role === "tool") {
+    return {
+      role: "tool",
+      tool_call_id: message.toolCallID,
+      content: message.content,
+    };
+  }
+  if (message.toolCalls?.length) {
+    return {
+      role: "assistant",
+      content: message.content || null,
+      tool_calls: message.toolCalls.map((call) => ({
+        id: call.id,
+        type: "function",
+        function: { name: call.name, arguments: call.arguments },
+      })),
+    };
+  }
+  return { role: message.role, content: message.content };
+}
+
+function toAnthropicMessage(message: ProviderMessage) {
+  if (message.role === "tool")
+    return {
+      role: "user",
+      content: [
+        {
+          type: "tool_result",
+          tool_use_id: message.toolCallID,
+          content: message.content,
+        },
+      ],
+    };
+  if (message.toolCalls?.length)
+    return {
+      role: "assistant",
+      content: [
+        ...(message.content ? [{ type: "text", text: message.content }] : []),
+        ...message.toolCalls.map((call) => ({
+          type: "tool_use",
+          id: call.id,
+          name: call.name,
+          input: safeJSON(call.arguments),
+        })),
+      ],
+    };
+  return {
+    role: message.role === "assistant" ? "assistant" : "user",
+    content: message.content,
+  };
+}
+
+function toGeminiContent(message: ProviderMessage) {
+  const role = message.role === "assistant" ? "model" : "user";
+  if (message.toolCalls?.length)
+    return {
+      role: "model",
+      parts: message.toolCalls.map((call) => ({
+        functionCall: { name: call.name, args: safeJSON(call.arguments) },
+      })),
+    };
+  if (message.role === "tool")
+    return {
+      role: "user",
+      parts: [
+        {
+          functionResponse: {
+            name: message.toolCallID,
+            response: { content: message.content },
+          },
+        },
+      ],
+    };
+  return { role, parts: [{ text: message.content }] };
+}
+
+function safeJSON(input: string) {
+  try {
+    return JSON.parse(input) as Record<string, unknown>;
+  } catch {
+    return { value: input };
+  }
+}
+
+async function safeResponseText(response: Response) {
+  try {
+    return (await response.text()).slice(0, 500);
+  } catch {
+    return "<unavailable>";
+  }
+}

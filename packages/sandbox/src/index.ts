@@ -25,6 +25,16 @@ export type SandboxManifest = {
   envAllowlist: string[];
 };
 
+export type SandboxResourceInfo = {
+  id: string;
+  command: string;
+  pid: number;
+  status: "running" | "exited" | "failed" | "stopped";
+  outputPath: string;
+  startedAt: string;
+  endedAt?: string;
+};
+
 export type SandboxChange = {
   kind: SandboxDiffKind;
   path: string;
@@ -48,12 +58,18 @@ export type SandboxExecutor = {
     allowlist: string[],
     source?: NodeJS.ProcessEnv,
   ): Record<string, string>;
+  execute(
+    id: string,
+    command: string,
+    options?: { signal?: AbortSignal; env?: NodeJS.ProcessEnv },
+  ): Promise<{ exitCode: number; output: string; target: ExecutionTarget }>;
 };
 
 export class WorkspaceSandboxManager
   implements SandboxManager, SandboxExecutor
 {
   private sandboxes = new Map<string, SandboxManifest>();
+  private resources = new Map<string, SandboxResourceInfo>();
 
   constructor(private readonly baseRoot: string) {}
 
@@ -89,6 +105,105 @@ export class WorkspaceSandboxManager
       if (value !== undefined && !isSecretEnvKey(key)) env[key] = value;
     }
     return env;
+  }
+
+  async execute(
+    id: string,
+    command: string,
+    options: { signal?: AbortSignal; env?: NodeJS.ProcessEnv } = {},
+  ) {
+    const manifest = this.mustGet(id);
+    const process = Bun.spawn(["bash", "-lc", command], {
+      cwd: manifest.root,
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+      env: this.environment(manifest.envAllowlist, options.env),
+    });
+    const abort = () => process.kill("SIGTERM");
+    options.signal?.addEventListener("abort", abort, { once: true });
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(process.stdout).text(),
+      new Response(process.stderr).text(),
+      process.exited,
+    ]);
+    options.signal?.removeEventListener("abort", abort);
+    return { exitCode, output: `${stdout}${stderr}`, target: this.target(id) };
+  }
+
+  async startResource(id: string, command: string, resourceID?: string) {
+    const manifest = this.mustGet(id);
+    const finalID =
+      resourceID ?? `sbx_${id}_${manifest.runningResources.length + 1}`;
+    if (this.resources.has(finalID))
+      throw new Error(`sandbox resource already exists: ${finalID}`);
+    const outputPath = resolve(
+      manifest.root,
+      ".natalia",
+      "resources",
+      `${finalID}.log`,
+    );
+    await mkdir(dirname(outputPath), { recursive: true, mode: 0o700 });
+    const launcher = Bun.spawn(
+      [
+        "bash",
+        "-lc",
+        `bash -c ${shellQuote(command)} > ${shellQuote(outputPath)} 2>&1 & echo $!`,
+      ],
+      {
+        cwd: manifest.root,
+        stdout: "pipe",
+        stderr: "pipe",
+        env: this.environment(manifest.envAllowlist),
+      },
+    );
+    const pid = Number((await new Response(launcher.stdout).text()).trim());
+    const stderr = await new Response(launcher.stderr).text();
+    if ((await launcher.exited) !== 0 || !Number.isFinite(pid))
+      throw new Error(`failed to start sandbox resource: ${stderr}`);
+    const resource: SandboxResourceInfo = {
+      id: finalID,
+      command,
+      pid,
+      status: "running",
+      outputPath,
+      startedAt: new Date().toISOString(),
+    };
+    this.resources.set(finalID, resource);
+    manifest.runningResources.push(finalID);
+    return { ...resource };
+  }
+
+  resourcesFor(id: string) {
+    const manifest = this.mustGet(id);
+    return manifest.runningResources
+      .map((resourceID) => this.refreshResource(this.resources.get(resourceID)))
+      .filter(
+        (resource): resource is SandboxResourceInfo => resource !== undefined,
+      );
+  }
+
+  async resourceOutput(id: string, resourceID: string, maxBytes = 20000) {
+    this.mustGet(id);
+    const resource = this.mustResource(resourceID);
+    try {
+      return (await readFile(resource.outputPath, "utf8")).slice(-maxBytes);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
+      throw error;
+    }
+  }
+
+  async stopResource(id: string, resourceID: string) {
+    const manifest = this.mustGet(id);
+    const resource = this.mustResource(resourceID);
+    if (resource.status === "running") process.kill(resource.pid, "SIGTERM");
+    resource.status = "stopped";
+    resource.endedAt = new Date().toISOString();
+    manifest.runningResources = manifest.runningResources.filter(
+      (item) => item !== resourceID,
+    );
+    return { ...resource };
   }
 
   async write(id: string, path: string, content: string, mode?: string) {
@@ -214,6 +329,23 @@ export class WorkspaceSandboxManager
     if (!manifest) throw new Error(`unknown sandbox: ${id}`);
     return manifest;
   }
+
+  private mustResource(id: string) {
+    const resource = this.refreshResource(this.resources.get(id));
+    if (!resource) throw new Error(`unknown sandbox resource: ${id}`);
+    return resource;
+  }
+
+  private refreshResource(resource: SandboxResourceInfo | undefined) {
+    if (!resource || resource.status !== "running") return resource;
+    try {
+      process.kill(resource.pid, 0);
+    } catch {
+      resource.status = "exited";
+      resource.endedAt = new Date().toISOString();
+    }
+    return resource;
+  }
 }
 
 export async function containPath(root: string, requested: string) {
@@ -262,4 +394,8 @@ async function readOptional(path: string) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
   }
+}
+
+function shellQuote(value: string) {
+  return `'${value.replace(/'/gu, `'\''`)}'`;
 }

@@ -2,7 +2,10 @@ import { writeFile } from "node:fs/promises";
 import { runTuiShell } from "../src/app/runtime";
 import { initialState, reduceState } from "../src/context/state";
 
-const handle = await runTuiShell({ initialPrompt: "/pty-model" });
+const handle = await runTuiShell({
+  initialPrompt: "/pty-model",
+  fixture: true,
+});
 for (let index = 0; index < 100; index++) {
   if (handle.events.some((event) => event.type === "approval.request")) break;
   await Bun.sleep(50);

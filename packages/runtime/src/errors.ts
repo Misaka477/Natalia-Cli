@@ -62,10 +62,9 @@ export function providerErrorFromHttp(input: {
   message?: string;
   bodyCode?: string;
 }) {
-  const kind =
-    input.bodyCode === "context_length_exceeded"
-      ? "context_limit"
-      : mapHttpStatusToErrorKind(input.statusCode);
+  const kind = isContextLimitError(input.bodyCode, input.message)
+    ? "context_limit"
+    : mapHttpStatusToErrorKind(input.statusCode);
   return providerError({
     kind,
     statusCode: input.statusCode,
@@ -73,6 +72,13 @@ export function providerErrorFromHttp(input: {
     message:
       input.message ?? input.statusText ?? `provider HTTP ${input.statusCode}`,
   });
+}
+
+function isContextLimitError(bodyCode?: string, message?: string) {
+  if (bodyCode === "context_length_exceeded") return true;
+  return /context[_ -]?(length|limit)|maximum context|too many tokens/iu.test(
+    message ?? "",
+  );
 }
 
 export function parseRetryAfterMs(value?: string | null, now = Date.now()) {
