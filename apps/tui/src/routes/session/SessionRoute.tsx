@@ -7,7 +7,8 @@ import {
   Show,
 } from "solid-js";
 import { SyntaxStyle, TextAttributes } from "@opentui/core";
-import { useKeyboard, useRenderer } from "@opentui/solid";
+import { useRenderer } from "@opentui/solid";
+import { useBindings } from "@opentui/keymap/solid";
 import {
   collapseToolOutput,
   parseTodoItems,
@@ -1032,9 +1033,17 @@ export function SubagentRoute(props: { agentID: string; onBack(): void }) {
   const { state } = useAppState();
   const agent = () => state.subagents[props.agentID];
   const history = () => state.subagentHistory[props.agentID] ?? [];
-  useKeyboard((event) => {
-    if (event.name === "escape") props.onBack();
-  });
+  useBindings(() => ({
+    mode: "base",
+    bindings: [
+      {
+        key: "escape",
+        desc: "Return from subagent detail",
+        group: "Subagent",
+        cmd: props.onBack,
+      },
+    ],
+  }));
   return (
     <box flexGrow={1} minHeight={0} flexDirection="column">
       <scrollbox flexGrow={1} paddingLeft={3} paddingRight={3} paddingTop={1}>

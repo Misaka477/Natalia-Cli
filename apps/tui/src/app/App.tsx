@@ -4,7 +4,9 @@ import {
   TextAttributes,
   type PasteEvent,
 } from "@opentui/core";
-import { useKeyboard, useRenderer } from "@opentui/solid";
+import { useRenderer } from "@opentui/solid";
+import { useBindings, useKeymap, useKeymapSelector } from "@opentui/keymap/solid";
+import { stringifyKeySequence } from "@opentui/keymap";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { PromptRefProvider, usePromptRef } from "../context/prompt";
 import { RuntimeProvider } from "../context/runtime";
@@ -16,12 +18,15 @@ import { DialogLayer } from "../dialog/DialogLayer";
 import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
 import {
   buildKeybindMap,
+  commands,
   composerKeyAction,
-  keybindForEvent,
   keymapBoundary,
-  type UserKeybindOverrides,
 } from "../keymap";
-import { dispatchModalKey } from "../modal/key-handler";
+import { useDialog } from "../dialog/provider";
+import { DialogConfirm } from "../dialog/DialogConfirm";
+import { DialogPrompt } from "../dialog/DialogPrompt";
+import { DialogSelect } from "../dialog/DialogSelect";
+import { useModeStack } from "../modal/mode-stack";
 import { decidePaste } from "../prompt/paste";
 import { PromptHistory, shouldUseHistory } from "../prompt/history";
 import {
@@ -104,6 +109,8 @@ function Shell(props: {
   const route = useRouteController();
   const clipboard = useClipboard();
   const toast = useToast();
+  const dialog = useDialog();
+  const modeStack = useModeStack();
   const [composer, setComposer] = createSignal<TextareaRenderable>();
   const [pastePreview, setPastePreview] = createSignal("");
   const [followBottom, setFollowBottom] = createSignal(true);
@@ -278,8 +285,7 @@ function Shell(props: {
 
   function runCommand(command: string) {
     if (command === "palette.toggle") {
-      if (route.route().kind === "palette") route.back();
-      else route.push({ kind: "palette" });
+      dialog.replace(() => <CommandPalette />);
       return;
     }
     if (command === "session.new") {
@@ -302,6 +308,20 @@ function Shell(props: {
     }
     if (command === "help.open") {
       route.push({ kind: "help" });
+      return;
+    }
+    if (command === "dialog.test") {
+      try {
+        void (async () => {
+          const confirmed = await DialogConfirm.show(dialog, "Dialog Stack Test", "Press left/right to switch focus, Enter to confirm, Escape to cancel.");
+          if (confirmed === undefined) return;
+          const name = await DialogPrompt.show(dialog, "Enter name", { placeholder: "Type something..." });
+          if (name === null) return;
+          toast.show({ variant: "success", message: `Dialog test done: confirmed=${confirmed}, name="${name}"` });
+        })();
+      } catch (error) {
+        toast.show({ variant: "error", message: `dialog.test failed: ${error}` });
+      }
       return;
     }
     if (command === "session.sidebar.toggle") {
@@ -373,131 +393,187 @@ function Shell(props: {
     }
   }
 
-  useKeyboard((event) => {
-    const key = normalizeKey(event.name);
-    if (event.ctrl && key === "c") {
-      event.preventDefault();
-      event.stopPropagation();
-      const selected = renderer.getSelection()?.getSelectedText();
-      if (selected && clipboard.write) {
-        void clipboard.write(selected).then(
-          () => {
-            renderer.clearSelection();
-            toast.show({ variant: "info", message: "Copied selection" });
-          },
-          (error) => toast.error(error),
-        );
-        return;
-      }
-      exitOrCancel();
-      return;
-    }
-    if (key === "escape" && !state.dialog && route.route().kind !== "none") {
-      event.preventDefault();
-      event.stopPropagation();
-      route.back();
-      return;
-    }
-    const formattedKey = keybindForEvent(event);
-    const command = Object.entries(
-      buildKeybindMap(preferences().keybinds).map,
-    ).find(([, keys]) => keys === formattedKey)?.[0];
-    if (command) {
-      event.preventDefault();
-      event.stopPropagation();
-      runCommand(command);
-      return;
-    }
-    if (event.ctrl && key === "t" && state.ptyPane.selectedID) {
-      event.preventDefault();
-      event.stopPropagation();
-      dispatch({
-        type: "pty.pane.focus",
-        focus: state.ptyPane.focus === "chat" ? "pty" : "chat",
-      });
-      return;
-    }
-    if (state.ptyPane.focus === "pty") {
-      event.preventDefault();
-      event.stopPropagation();
-      const ptyScrollbox = ptyScrollRef.current;
-      if (
-        ptyScrollbox &&
-        ["pageup", "pagedown", "home", "end"].includes(key ?? "")
-      ) {
-        if (key === "pageup")
-          ptyScrollbox.scrollBy(-(ptyScrollbox.viewport?.height ?? 8) * 0.8);
-        if (key === "pagedown")
-          ptyScrollbox.scrollBy((ptyScrollbox.viewport?.height ?? 8) * 0.8);
-        if (key === "home") ptyScrollbox.scrollTo(0);
-        if (key === "end")
-          ptyScrollbox.scrollTo(ptyScrollbox.scrollHeight ?? 0);
-        return;
-      }
-      const sessions = Object.values(state.pty).filter(
-        (pty) =>
-          pty.ownership === "model" &&
-          pty.status !== "exited" &&
-          pty.status !== "failed",
-      );
-      if (
-        sessions.length > 1 &&
-        (key === "tab" || key === "left" || key === "right")
-      ) {
-        const current = sessions.findIndex(
-          (pty) => pty.id === state.ptyPane.selectedID,
-        );
-        const direction =
-          key === "left" || (key === "tab" && event.shift) ? -1 : 1;
-        const next =
-          sessions[(current + direction + sessions.length) % sessions.length];
-        if (next) dispatch({ type: "pty.pane.select", id: next.id });
-      }
-      return;
-    }
-    if (route.route().kind !== "none") {
-      event.preventDefault();
-      event.stopPropagation();
-      const handled = dispatchModalKey(key ?? "");
-      if (!handled && key === "escape") route.back();
-      if (!handled && event.ctrl && key === "d") exitOrCancel();
-      return;
-    }
-    if (event.ctrl && key === "d") {
-      event.preventDefault();
-      event.stopPropagation();
-      if (!composer()?.plainText) renderer.destroy();
-      return;
-    }
-    const scrollbox = scrollRef.current;
-    if (!scrollbox) return;
-    if (key === "pageup") {
-      event.preventDefault();
-      event.stopPropagation();
-      setFollowMode(false);
-      scrollbox.scrollBy(-(scrollbox.viewport?.height ?? 10) * 0.8);
-      return;
-    }
-    if (key === "pagedown") {
-      event.preventDefault();
-      event.stopPropagation();
-      scrollbox.scrollBy((scrollbox.viewport?.height ?? 10) * 0.8);
-      return;
-    }
-    if (key === "home") {
-      event.preventDefault();
-      event.stopPropagation();
-      setFollowMode(false);
-      scrollbox.scrollTo(0);
-      return;
-    }
-    if (key === "end") {
-      event.preventDefault();
-      event.stopPropagation();
-      setFollowMode(true);
-      toBottom(0);
-    }
+  useBindings(() => ({
+    commands: [
+      ...Object.values(commands).map((command) => ({
+        name: command.id,
+        title: command.desc,
+        category: command.id.split(".")[0],
+        namespace: "palette",
+        run: () => runCommand(command.id),
+      })),
+    ],
+  }));
+
+  useBindings(() => ({
+    mode: "base",
+    bindings: Object.entries(buildKeybindMap(preferences().keybinds).map).map(
+      ([id, key]) => ({
+        key,
+        desc: commands[id]!.desc,
+        group: "Natalia",
+        cmd: () => runCommand(id),
+      }),
+    ),
+  }));
+
+  useBindings(() => ({
+    mode: "base",
+    priority: 1,
+    enabled: () => state.ptyPane.focus === "pty",
+    bindings: [
+      {
+        key: "ctrl+t",
+        desc: "Return focus to chat",
+        group: "PTY",
+        cmd: () =>
+          dispatch({
+            type: "pty.pane.focus",
+            focus: "chat",
+          }),
+      },
+      {
+        key: "pageup",
+        desc: "Scroll PTY up",
+        group: "PTY",
+        cmd: () =>
+          ptyScrollRef.current?.scrollBy(
+            -(ptyScrollRef.current.viewport?.height ?? 8) * 0.8,
+          ),
+      },
+      {
+        key: "pagedown",
+        desc: "Scroll PTY down",
+        group: "PTY",
+        cmd: () =>
+          ptyScrollRef.current?.scrollBy(
+            (ptyScrollRef.current.viewport?.height ?? 8) * 0.8,
+          ),
+      },
+      {
+        key: "home",
+        desc: "Scroll PTY to start",
+        group: "PTY",
+        cmd: () => ptyScrollRef.current?.scrollTo(0),
+      },
+      {
+        key: "end",
+        desc: "Scroll PTY to end",
+        group: "PTY",
+        cmd: () =>
+          ptyScrollRef.current?.scrollTo(
+            ptyScrollRef.current.scrollHeight ?? 0,
+          ),
+      },
+      {
+        key: "left",
+        desc: "Previous PTY session",
+        group: "PTY",
+        cmd: () => movePtySelection(-1),
+      },
+      {
+        key: "right",
+        desc: "Next PTY session",
+        group: "PTY",
+        cmd: () => movePtySelection(1),
+      },
+      {
+        key: "tab",
+        desc: "Next PTY session",
+        group: "PTY",
+        cmd: () => movePtySelection(1),
+      },
+      {
+        key: "shift+tab",
+        desc: "Previous PTY session",
+        group: "PTY",
+        cmd: () => movePtySelection(-1),
+      },
+    ],
+  }));
+
+  createEffect(() => {
+    if (!state.dialog && route.route().kind === "none") return;
+    const popMode = modeStack.push("modal");
+    onCleanup(popMode);
   });
+
+  useBindings(() => ({
+    mode: "base",
+    enabled: () => !composer()?.plainText,
+    bindings: [
+      {
+        key: "ctrl+d",
+        desc: "Exit on empty composer",
+        group: "Natalia",
+        cmd: () => renderer.destroy(),
+      },
+    ],
+  }));
+
+  useBindings(() => ({
+    mode: "base",
+    bindings: [
+      {
+        key: "ctrl+c",
+        desc: "Cancel turn or clear composer",
+        group: "Natalia",
+        cmd: () => {
+          const selected = renderer.getSelection()?.getSelectedText();
+          if (selected && clipboard.write) {
+            void clipboard.write(selected).then(
+              () => {
+                renderer.clearSelection();
+                toast.show({ variant: "info", message: "Copied selection" });
+              },
+              (error) => toast.error(error),
+            );
+            return;
+          }
+          exitOrCancel();
+        },
+      },
+      {
+        key: "pageup",
+        desc: "Scroll up",
+        group: "Natalia",
+        cmd: () => {
+          const scrollbox = scrollRef.current;
+          if (!scrollbox) return;
+          setFollowMode(false);
+          scrollbox.scrollBy(-(scrollbox.viewport?.height ?? 10) * 0.8);
+        },
+      },
+      {
+        key: "pagedown",
+        desc: "Scroll down",
+        group: "Natalia",
+        cmd: () => {
+          const scrollbox = scrollRef.current;
+          if (!scrollbox) return;
+          scrollbox.scrollBy((scrollbox.viewport?.height ?? 10) * 0.8);
+        },
+      },
+      {
+        key: "home",
+        desc: "Scroll to top",
+        group: "Natalia",
+        cmd: () => {
+          setFollowMode(false);
+          scrollRef.current?.scrollTo(0);
+        },
+      },
+      {
+        key: "end",
+        desc: "Scroll to bottom",
+        group: "Natalia",
+        cmd: () => {
+          setFollowMode(true);
+          toBottom(0);
+        },
+      },
+    ],
+  }));
 
   createEffect(() => {
     if (route.route().kind === "none" && state.ptyPane.focus === "chat") {
@@ -507,6 +583,21 @@ function Shell(props: {
 
   function toBottom(delay = 50) {
     setTimeout(() => scrollToBottom(scrollRef.current), delay);
+  }
+
+  function movePtySelection(direction: -1 | 1) {
+    const sessions = Object.values(state.pty).filter(
+      (pty) =>
+        pty.ownership === "model" &&
+        pty.status !== "exited" &&
+        pty.status !== "failed",
+    );
+    if (sessions.length < 2) return;
+    const current = sessions.findIndex(
+      (pty) => pty.id === state.ptyPane.selectedID,
+    );
+    const next = sessions[(current + direction + sessions.length) % sessions.length];
+    if (next) dispatch({ type: "pty.pane.select", id: next.id });
   }
 
   function setFollowMode(value: boolean) {
@@ -700,6 +791,54 @@ function isNearBottom(scrollbox: any, threshold = 10) {
   const scrollHeight = scrollbox.scrollHeight ?? 0;
   if (scrollHeight <= viewportHeight + 1) return true;
   return scrollHeight - viewportHeight - scrollTop <= threshold;
+}
+
+
+function CommandPalette() {
+  const dialog = useDialog();
+  const keymap = useKeymap();
+  const entries = useKeymapSelector((current) => {
+    const commands = current.getCommandEntries({
+      namespace: "palette",
+      visibility: "reachable",
+      filter: (command) => command.name !== "palette.toggle",
+    });
+    const bindings = current.getCommandBindings({
+      commands: commands.map((entry) => entry.command.name),
+      visibility: "registered",
+    });
+    return commands.map((entry) => ({ entry, bindings: bindings.get(entry.command.name) ?? entry.bindings }));
+  });
+
+  return (
+    <DialogSelect
+      title="Commands"
+      options={entries().map(({ entry, bindings }) => ({
+          title:
+            typeof entry.command.title === "string"
+              ? entry.command.title
+              : entry.command.name,
+          description:
+            typeof entry.command.desc === "string"
+              ? entry.command.desc
+              : undefined,
+          value: entry.command.name,
+          category:
+            typeof entry.command.category === "string"
+              ? entry.command.category
+              : undefined,
+          footer: bindings
+            .map((binding) =>
+              stringifyKeySequence(binding.sequence, { preferDisplay: true }),
+            )
+            .join(" / "),
+        }))}
+      onSelect={(option) => {
+        dialog.clear();
+        keymap.dispatchCommand(option.value);
+      }}
+    />
+  );
 }
 
 function normalizeKey(key: string | undefined) {

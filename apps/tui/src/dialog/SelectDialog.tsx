@@ -3,12 +3,11 @@ import {
   createMemo,
   createSignal,
   For,
-  onCleanup,
   Show,
 } from "solid-js";
-import { TextAttributes } from "@opentui/core";
+import { ScrollBoxRenderable, TextAttributes } from "@opentui/core";
 import { darkTheme } from "../theme/theme";
-import { setModalKeyHandler } from "../modal/key-handler";
+import { useBindings } from "@opentui/keymap/solid";
 
 export type SelectOption<T> = {
   value: T;
@@ -39,36 +38,76 @@ export function SelectDialog<T>(props: {
       ),
     );
   });
+  let scrollRef: ScrollBoxRenderable | undefined;
+
+  function scrollToSelected() {
+    const box = scrollRef;
+    if (!box) return;
+    const children = box.getChildren();
+    const idx = selected();
+    if (idx < children.length) {
+      const child = children[idx];
+      const y = child.y - box.y;
+      if (y >= box.height) box.scrollBy(y - box.height + 1);
+      if (y < 0) box.scrollBy(y);
+    }
+  }
+
   createEffect(() => {
     if (!props.open) return;
     setQuery("");
     setSelected(0);
-    const dispose = setModalKeyHandler((key) => {
-      if (key === "escape") {
-        props.onClose();
-        return true;
-      }
-      if (key === "up") {
-        setSelected((value) => Math.max(0, value - 1));
-        return true;
-      }
-      if (key === "down") {
-        setSelected((value) => Math.min(filtered().length - 1, value + 1));
-        return true;
-      }
-      if (key === "return") {
-        const option = filtered()[selected()];
-        if (option && !option.disabled) props.onSelect(option.value);
-        return true;
-      }
-      if (props.onExtraKey) {
-        const option = filtered()[selected()];
-        if (option && props.onExtraKey(key, option.value)) return true;
-      }
-      return false;
-    });
-    onCleanup(dispose);
+    scrollToSelected();
   });
+
+  useBindings(() => ({
+    enabled: props.open,
+    bindings: [
+      {
+        key: "escape",
+        desc: "Close dialog",
+        group: "Dialog",
+        cmd: props.onClose,
+      },
+      {
+        key: "up",
+        desc: "Previous item",
+        group: "Dialog",
+        cmd: () => {
+          setSelected((value) => Math.max(0, value - 1));
+          queueMicrotask(scrollToSelected);
+        },
+      },
+      {
+        key: "down",
+        desc: "Next item",
+        group: "Dialog",
+        cmd: () => {
+          setSelected((value) => Math.min(filtered().length - 1, value + 1));
+          queueMicrotask(scrollToSelected);
+        },
+      },
+      {
+        key: "return",
+        desc: "Select item",
+        group: "Dialog",
+        cmd: () => {
+          const option = filtered()[selected()];
+          if (option && !option.disabled) props.onSelect(option.value);
+        },
+      },
+      {
+        key: "f",
+        desc: "Extra action",
+        group: "Dialog",
+        cmd: () => {
+          if (!props.onExtraKey) return;
+          const option = filtered()[selected()];
+          if (option) props.onExtraKey("f", option.value);
+        },
+      },
+    ],
+  }));
   return (
     <Show when={props.open}>
       <box
@@ -95,7 +134,8 @@ export function SelectDialog<T>(props: {
             setSelected(0);
           }}
         />
-        <scrollbox height={14} border={["left"]} borderColor={darkTheme.muted}>
+        <scrollbox height={14} border={["left"]} borderColor={darkTheme.muted}
+          ref={(r: ScrollBoxRenderable) => { scrollRef = r; }}>
           <For each={filtered()}>
             {(option, index) => (
               <box flexDirection="column">

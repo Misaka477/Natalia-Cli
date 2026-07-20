@@ -1,7 +1,7 @@
-import { createEffect, onCleanup, Show } from "solid-js";
+import { Show } from "solid-js";
 import { TextAttributes } from "@opentui/core";
 import { darkTheme } from "../theme/theme";
-import { setModalKeyHandler } from "../modal/key-handler";
+import { useBindings } from "@opentui/keymap/solid";
 
 export function AlertDialog(props: {
   open: boolean;
@@ -10,17 +10,23 @@ export function AlertDialog(props: {
   confirmLabel?: string;
   onClose(): void;
 }) {
-  createEffect(() => {
-    if (!props.open) return;
-    const dispose = setModalKeyHandler((key) => {
-      if (key === "escape" || key === "return" || key === "enter") {
-        props.onClose();
-        return true;
-      }
-      return false;
-    });
-    onCleanup(dispose);
-  });
+  useBindings(() => ({
+    enabled: props.open,
+    bindings: [
+      {
+        key: "escape",
+        desc: "Dismiss alert",
+        group: "Dialog",
+        cmd: props.onClose,
+      },
+      {
+        key: "return",
+        desc: "Dismiss alert",
+        group: "Dialog",
+        cmd: props.onClose,
+      },
+    ],
+  }));
   return (
     <Show when={props.open}>
       <box

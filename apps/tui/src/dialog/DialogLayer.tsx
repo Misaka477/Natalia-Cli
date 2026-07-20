@@ -3,7 +3,6 @@ import {
   createMemo,
   createSignal,
   For,
-  onCleanup,
   Show,
   type JSX,
 } from "solid-js";
@@ -14,7 +13,7 @@ import { useAppState } from "../context/state";
 import { usePromptRef } from "../context/prompt";
 import { useRouteController } from "../context/route";
 import { darkTheme } from "../theme/theme";
-import { setModalKeyHandler } from "../modal/key-handler";
+import { useBindings } from "@opentui/keymap/solid";
 import { JsonSessionStore, type SessionRecord } from "@natalia/session";
 import type { TuiConfig, TuiConfigWriteScope } from "../config";
 import { SettingsDialog } from "./SettingsDialog";
@@ -44,11 +43,6 @@ export function DialogLayer(props: {
       keyed
       fallback={
         <>
-          <PaletteDialog
-            open={route.route().kind === "palette"}
-            onClose={() => route.back()}
-            onCommand={props.onCommand}
-          />
           <SessionListDialog
             open={route.route().kind === "sessions"}
             workspaceRoot={props.workspaceRoot}
@@ -115,30 +109,6 @@ function HelpDialog(props: {
         </text>
       </DialogFrame>
     </Show>
-  );
-}
-
-function PaletteDialog(props: {
-  open: boolean;
-  onClose: () => void;
-  onCommand?: (command: string) => void;
-}) {
-  return (
-    <SelectDialog
-      open={props.open}
-      title="Command Palette"
-      options={Object.values(commands).map((command) => ({
-        value: command.id,
-        label: command.desc,
-        description: formatKeybindKey(command.keys),
-        group: command.id.split(".")[0] ?? "general",
-      }))}
-      onClose={props.onClose}
-      onSelect={(command) => {
-        props.onClose();
-        props.onCommand?.(command);
-      }}
-    />
   );
 }
 
@@ -264,74 +234,111 @@ function SessionListDialog(props: {
     void refresh();
   });
 
-  createEffect(() => {
-    if (!props.open) return;
-    const dispose = setModalKeyHandler((key) => {
-      if (key === "escape") {
-        if (mode() === "confirm-delete" || mode() === "confirm-rename") {
-          setMode("list");
-          return true;
-        }
-        props.onClose();
-        return true;
-      }
-      if (mode() === "confirm-delete") {
-        if (key === "y" || key === "return") {
-          void confirmDelete();
-        }
-        return true;
-      }
-      if (mode() === "confirm-rename") return false;
-      if (key === "up") {
-        setSelected((value) => Math.max(0, value - 1));
-        return true;
-      }
-      if (key === "down") {
-        setSelected((value) => Math.min(filtered().length - 1, value + 1));
-        return true;
-      }
-      if (key === "return") {
-        const session = filtered()[selected()];
-        if (session) void selectSession(session);
-        return true;
-      }
-      if (key === "n") {
-        props.onSelect?.(
-          `ses_${crypto.randomUUID().replace(/-/gu, "").slice(0, 16)}`,
-        );
-        return true;
-      }
-      if (key === "p") {
-        const session = filtered()[selected()];
-        if (session) {
-          void store()
-            .updateMetadata(session.id, { pinned: !session.metadata?.pinned })
-            .then(() => refresh());
-        }
-        return true;
-      }
-      if (key === "r") {
-        const session = filtered()[selected()];
-        if (session) {
-          setRenameText(session.title);
-          setMode("confirm-rename");
-          queueMicrotask(() => renameInput?.focus());
-        }
-        return true;
-      }
-      if (key === "d") {
-        const session = filtered()[selected()];
-        if (session) setMode("confirm-delete");
-        return true;
-      }
-      if (key === "c") {
-        void duplicateSession();
-        return true;
-      }
-      return false;
-    });
-    onCleanup(dispose);
-  });
+  useBindings(() => ({
+    enabled: props.open,
+    bindings: [
+      {
+        key: "escape",
+        desc: "Close or go back",
+        group: "Dialog",
+        cmd: () => {
+          if (mode() === "confirm-delete" || mode() === "confirm-rename") {
+            setMode("list");
+          } else {
+            props.onClose();
+          }
+        },
+      },
+    ],
+  }));
+
+  useBindings(() => ({
+    enabled: props.open && mode() === "list",
+    bindings: [
+      {
+        key: "up",
+        desc: "Previous session",
+        group: "Dialog",
+        cmd: () => {
+          setSelected((value) => Math.max(0, value - 1));
+        },
+      },
+      {
+        key: "down",
+        desc: "Next session",
+        group: "Dialog",
+        cmd: () => {
+          setSelected((value) =>
+            Math.min(filtered().length - 1, value + 1),
+          );
+        },
+      },
+      {
+        key: "return",
+        desc: "Open session",
+        group: "Dialog",
+        cmd: () => {
+          const session = filtered()[selected()];
+          if (session) void selectSession(session);
+        },
+      },
+      {
+        key: "n",
+        desc: "New session",
+        group: "Dialog",
+        cmd: () => {
+          props.onSelect?.(
+            `ses_${crypto.randomUUID().replace(/-/gu, "").slice(0, 16)}`,
+          );
+        },
+      },
+      {
+        key: "p",
+        desc: "Toggle pin",
+        group: "Dialog",
+        cmd: () => {
+          const session = filtered()[selected()];
+          if (session) {
+            void store()
+              .updateMetadata(session.id, {
+                pinned: !session.metadata?.pinned,
+              })
+              .then(() => refresh());
+          }
+        },
+      },
+      {
+        key: "r",
+        desc: "Rename session",
+        group: "Dialog",
+        cmd: () => {
+          const session = filtered()[selected()];
+          if (session) {
+            setRenameText(session.title);
+            setMode("confirm-rename");
+            queueMicrotask(() => renameInput?.focus());
+          }
+        },
+      },
+      {
+        key: "d",
+        desc: "Delete session",
+        group: "Dialog",
+        cmd: () => {
+          const session = filtered()[selected()];
+          if (session) setMode("confirm-delete");
+        },
+      },
+      {
+        key: "c",
+        desc: "Duplicate session",
+        group: "Dialog",
+        cmd: () => {
+          void duplicateSession();
+        },
+      },
+    ],
+  }));
 
   return (
     <Show when={props.open}>
@@ -515,45 +522,110 @@ function ApprovalDialog(props: {
     });
   }
 
-  createEffect(() => {
-    const dispose = setModalKeyHandler((key) => {
-      if (stage() === "feedback") {
-        if (key === "escape") {
-          setStage("decision");
-          return true;
-        }
-        return false;
-      }
-      if (key === "left" || key === "up") {
-        setSelected((selected() + actions.length - 1) % actions.length);
-        return true;
-      }
-      if (key === "right" || key === "down" || key === "tab") {
-        setSelected((selected() + 1) % actions.length);
-        return true;
-      }
-      if (/^[1-9]$/.test(key)) {
-        const index = Math.min(Number(key) - 1, actions.length - 1);
-        setSelected(index);
-        confirm(feedback(), actions[index]);
-        return true;
-      }
-      if (key === "return") {
-        confirm();
-        return true;
-      }
-      if (key === "escape") {
-        rejectImmediately();
-        return true;
-      }
-      if (key === "d") {
-        setExpanded((value) => !value);
-        return true;
-      }
-      return false;
-    });
-    onCleanup(dispose);
-  });
+  useBindings(() => ({
+    enabled: stage() === "feedback",
+    bindings: [
+      {
+        key: "escape",
+        desc: "Back to decision",
+        group: "Dialog",
+        cmd: () => setStage("decision"),
+      },
+    ],
+  }));
+
+  useBindings(() => ({
+    enabled: stage() === "decision",
+    bindings: [
+      {
+        key: "left",
+        desc: "Previous option",
+        group: "Dialog",
+        cmd: () =>
+          setSelected(
+            (selected() + actions.length - 1) % actions.length,
+          ),
+      },
+      {
+        key: "up",
+        desc: "Previous option",
+        group: "Dialog",
+        cmd: () =>
+          setSelected(
+            (selected() + actions.length - 1) % actions.length,
+          ),
+      },
+      {
+        key: "right",
+        desc: "Next option",
+        group: "Dialog",
+        cmd: () =>
+          setSelected((selected() + 1) % actions.length),
+      },
+      {
+        key: "down",
+        desc: "Next option",
+        group: "Dialog",
+        cmd: () =>
+          setSelected((selected() + 1) % actions.length),
+      },
+      {
+        key: "tab",
+        desc: "Next option",
+        group: "Dialog",
+        cmd: () =>
+          setSelected((selected() + 1) % actions.length),
+      },
+      {
+        key: "return",
+        desc: "Confirm",
+        group: "Dialog",
+        cmd: confirm,
+      },
+      {
+        key: "escape",
+        desc: "Reject",
+        group: "Dialog",
+        cmd: rejectImmediately,
+      },
+      {
+        key: "d",
+        desc: "Toggle detail",
+        group: "Dialog",
+        cmd: () => setExpanded((value) => !value),
+      },
+      {
+        key: "1",
+        desc: "Allow once",
+        group: "Dialog",
+        cmd: () => {
+          const index = Math.min(0, actions.length - 1);
+          setSelected(index);
+          confirm(feedback(), actions[index]);
+        },
+      },
+      {
+        key: "2",
+        desc: "Allow session",
+        group: "Dialog",
+        cmd: () => {
+          const index = Math.min(1, actions.length - 1);
+          setSelected(index);
+          confirm(feedback(), actions[index]);
+        },
+      },
+      {
+        key: "3",
+        desc: "Reject",
+        group: "Dialog",
+        cmd: () => {
+          const index = Math.min(2, actions.length - 1);
+          setSelected(index);
+          confirm(feedback(), actions[index]);
+        },
+      },
+    ],
+  }));
 
   return (
     <DialogFrame title="Approval required" tone="warning">
@@ -678,48 +750,78 @@ function QuestionDialog(props: {
   const customSelected = () => selected() === options().length;
   const currentAnswers = () => answers()[tab()] ?? [];
 
-  createEffect(() => {
-    const dispose = setModalKeyHandler((key) => {
-      if (editing()) {
-        if (key === "escape") {
-          setEditing(false);
-          return true;
-        }
-        return false;
-      }
-      if (key === "up") {
-        moveSelected(-1);
-        return true;
-      }
-      if (key === "down") {
-        moveSelected(1);
-        return true;
-      }
-      if (key === "left") {
-        moveTab(-1);
-        return true;
-      }
-      if (key === "right" || key === "tab") {
-        moveTab(1);
-        return true;
-      }
-      if (/^[1-9]$/.test(key)) {
+  useBindings(() => ({
+    enabled: editing(),
+    bindings: [
+      {
+        key: "escape",
+        desc: "Cancel editing",
+        group: "Dialog",
+        cmd: () => setEditing(false),
+      },
+    ],
+  }));
+
+  useBindings(() => ({
+    enabled: !editing(),
+    bindings: [
+      {
+        key: "up",
+        desc: "Previous option",
+        group: "Dialog",
+        cmd: () => moveSelected(-1),
+      },
+      {
+        key: "down",
+        desc: "Next option",
+        group: "Dialog",
+        cmd: () => moveSelected(1),
+      },
+      {
+        key: "left",
+        desc: "Previous tab",
+        group: "Dialog",
+        cmd: () => moveTab(-1),
+      },
+      {
+        key: "right",
+        desc: "Next tab",
+        group: "Dialog",
+        cmd: () => moveTab(1),
+      },
+      {
+        key: "tab",
+        desc: "Next tab",
+        group: "Dialog",
+        cmd: () => moveTab(1),
+      },
+      {
+        key: "return",
+        desc: "Select",
+        group: "Dialog",
+        cmd: selectCurrent,
+      },
+      {
+        key: "escape",
+        desc: "Reject",
+        group: "Dialog",
+        cmd: reject,
+      },
+    ],
+  }));
+
+  useBindings(() => ({
+    enabled: !editing(),
+    bindings: Array.from({ length: 9 }, (_, i) => ({
+      key: String(i + 1),
+      desc: `Quick select #${i + 1}`,
+      group: "Dialog",
+      cmd: () => {
         const max = options().length + (customEnabled() ? 1 : 0);
-        selectIndex(Math.min(Number(key) - 1, Math.max(0, max - 1)));
-        return true;
-      }
-      if (key === "return") {
-        selectCurrent();
-        return true;
-      }
-      if (key === "escape") {
-        reject();
-        return true;
-      }
-      return false;
-    });
-    onCleanup(dispose);
-  });
+        selectIndex(Math.min(i, Math.max(0, max - 1)));
+      },
+    })),
+  }));
 
   function setAnswer(index: number, value: string[]) {
     const next = [...answers()];

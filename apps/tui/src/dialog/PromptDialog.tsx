@@ -1,7 +1,7 @@
-import { createEffect, createSignal, onCleanup, Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import { TextareaRenderable, TextAttributes } from "@opentui/core";
 import { darkTheme } from "../theme/theme";
-import { setModalKeyHandler } from "../modal/key-handler";
+import { useBindings } from "@opentui/keymap/solid";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 export function PromptDialog(props: {
@@ -34,23 +34,23 @@ export function PromptDialog(props: {
     }
     props.onSubmit(value);
   }
-  createEffect(() => {
-    if (!props.open) return;
-    setError("");
-    const dispose = setModalKeyHandler((key) => {
-      if (key === "escape") {
-        closeOrConfirmDiscard();
-        return true;
-      }
-      if (key === "return") {
-        submit();
-        return true;
-      }
-      return false;
-    });
-    queueMicrotask(() => input?.focus());
-    onCleanup(dispose);
-  });
+  useBindings(() => ({
+    enabled: props.open,
+    bindings: [
+      {
+        key: "escape",
+        desc: "Cancel prompt",
+        group: "Dialog",
+        cmd: closeOrConfirmDiscard,
+      },
+      {
+        key: "return",
+        desc: "Submit prompt",
+        group: "Dialog",
+        cmd: submit,
+      },
+    ],
+  }));
   return (
     <Show when={props.open}>
       <box

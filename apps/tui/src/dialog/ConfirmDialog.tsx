@@ -1,7 +1,7 @@
-import { createEffect, onCleanup, Show } from "solid-js";
+import { Show } from "solid-js";
 import { TextAttributes } from "@opentui/core";
 import { darkTheme } from "../theme/theme";
-import { setModalKeyHandler } from "../modal/key-handler";
+import { useBindings } from "@opentui/keymap/solid";
 
 export function ConfirmDialog(props: {
   open: boolean;
@@ -13,25 +13,35 @@ export function ConfirmDialog(props: {
   onClose(): void;
   onConfirm(): void;
 }) {
-  createEffect(() => {
-    if (!props.open) return;
-    const dispose = setModalKeyHandler((key) => {
-      if (key === "escape") {
-        props.onClose();
-        return true;
-      }
-      if (key === "y" || key === "return" || key === "enter") {
-        props.onConfirm();
-        return true;
-      }
-      if (key === "n") {
-        props.onClose();
-        return true;
-      }
-      return false;
-    });
-    onCleanup(dispose);
-  });
+  useBindings(() => ({
+    enabled: props.open,
+    bindings: [
+      {
+        key: "escape",
+        desc: "Cancel",
+        group: "Dialog",
+        cmd: props.onClose,
+      },
+      {
+        key: "return",
+        desc: "Confirm",
+        group: "Dialog",
+        cmd: props.onConfirm,
+      },
+      {
+        key: "y",
+        desc: "Confirm",
+        group: "Dialog",
+        cmd: props.onConfirm,
+      },
+      {
+        key: "n",
+        desc: "Cancel",
+        group: "Dialog",
+        cmd: props.onClose,
+      },
+    ],
+  }));
   return (
     <Show when={props.open}>
       <box

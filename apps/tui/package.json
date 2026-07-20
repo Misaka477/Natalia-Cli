@@ -23,6 +23,8 @@
     "smoke:real-runtime": "npx bun run bin/real-runtime-smoke.ts",
     "smoke:resize": "npx bun run bin/resize-smoke.ts",
     "smoke:keyboard": "npx bun run bin/keyboard-smoke.ts",
+    "smoke:palette-keyboard": "npx bun run bin/palette-keyboard-smoke.ts",
+    "smoke:dialog-stack": "npx bun run bin/dialog-stack-smoke.tsx",
     "demo:diff": "npx bun run bin/diff-screen-demo.ts",
     "demo:shell": "npx bun run bin/shell-screen-demo.ts",
     "demo:files": "npx bun run bin/file-tools-screen-demo.ts",

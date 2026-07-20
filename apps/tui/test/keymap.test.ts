@@ -13,7 +13,6 @@ import {
   buildKeybindMap,
 } from "../src/keymap";
 import { resolveTuiConfig, tuiConfigSchema } from "../src/config";
-import { dispatchModalKey, setModalKeyHandler } from "../src/modal/key-handler";
 
 describe("composer key routing", () => {
   test("routes Enter to submit and modified Enter to newline", () => {
@@ -44,27 +43,6 @@ describe("keybind event normalization", () => {
     );
     expect(keybindForEvent({ name: "enter", alt: true })).toBe("alt+return");
     expect(keybindForEvent({ name: "k", meta: true })).toBe("meta+k");
-  });
-});
-
-describe("modal key routing", () => {
-  test("stale modal cleanup cannot clear the next modal handler", () => {
-    const seen: string[] = [];
-    const cleanupApproval = setModalKeyHandler((key) => {
-      seen.push(`approval:${key}`);
-      return true;
-    });
-    const cleanupQuestion = setModalKeyHandler((key) => {
-      seen.push(`question:${key}`);
-      return true;
-    });
-
-    cleanupApproval();
-    expect(dispatchModalKey("return")).toBe(true);
-    expect(seen).toEqual(["question:return"]);
-
-    cleanupQuestion();
-    expect(dispatchModalKey("return")).toBe(false);
   });
 });
 

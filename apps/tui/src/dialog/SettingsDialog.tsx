@@ -3,7 +3,6 @@ import {
   createMemo,
   createSignal,
   For,
-  onCleanup,
   Show,
 } from "solid-js";
 import { TextAttributes } from "@opentui/core";
@@ -12,7 +11,7 @@ import { resolveConfig, saveConfigFile } from "@natalia/config";
 import { useAppState } from "../context/state";
 import { useToast } from "../context/toast";
 import { darkTheme } from "../theme/theme";
-import { setModalKeyHandler } from "../modal/key-handler";
+import { useBindings } from "@opentui/keymap/solid";
 import { SelectDialog, type SelectOption } from "./SelectDialog";
 import { PromptDialog } from "./PromptDialog";
 import { ThemeService } from "../theme/service";
@@ -254,65 +253,140 @@ export function SettingsDialog(props: {
     setSection(0);
     setSelected(0);
     setNotice("");
-    const dispose = setModalKeyHandler((key) => {
-      if (key === "escape") {
-        if (subOpen()) {
-          closeSubDialog();
-          return true;
-        }
-        props.onClose();
-        return true;
-      }
-      if (subOpen()) return false;
-      if (key === "up") {
-        setSelected((v) => Math.max(0, v - 1));
-        return true;
-      }
-      if (key === "down") {
-        setSelected((v) => Math.min(rows().length - 1, v + 1));
-        return true;
-      }
-      if (key === "left" || key === "right" || key === "tab") {
-        const dir = key === "left" ? -1 : 1;
-        setSection((v) => (v + dir + sections.length) % sections.length);
-        setSelected(0);
-        return true;
-      }
-      if (key === "return" || key === "space") {
-        const row = rows()[selected()];
-        if (row?.kind === "action") {
-          if (row.label === "Switch model") openSubDialog("model");
-          else if (row.label === "Switch theme") openSubDialog("theme");
-          else if (row.label === "Switch permission")
-            openSubDialog("permission");
-          else if (row.label === "Switch mode") openSubDialog("mode");
-          else if (row.label === "TUI write scope") openSubDialog("tui-scope");
-          else if (row.label === "Edit provider")
-            openSubDialog("edit-provider");
-          else if (row.label === "Delete provider")
-            openSubDialog("delete-provider");
-          else if (row.label === "Add provider") {
-            setProviderDraft({
-              type: "openai",
-              name: "",
-              apiKey: "",
-              baseURL: "",
-              model: "",
-            });
-            openSubDialog("provider-kind");
-          } else row.onActivate();
-          return true;
-        }
-        if (row?.kind === "toggle") {
-          row.onChange(!row.value);
-          return true;
-        }
-        return true;
-      }
-      return false;
-    });
-    onCleanup(dispose);
   });
+
+  useBindings(() => ({
+    enabled: props.open,
+    bindings: [
+      {
+        key: "escape",
+        desc: "Close dialog or sub-dialog",
+        group: "Dialog",
+        cmd: () => {
+          if (subOpen()) {
+            closeSubDialog();
+          } else {
+            props.onClose();
+          }
+        },
+      },
+    ],
+  }));
+
+  useBindings(() => ({
+    enabled: props.open && !subOpen(),
+    bindings: [
+      {
+        key: "up",
+        desc: "Previous row",
+        group: "Dialog",
+        cmd: () => setSelected((v) => Math.max(0, v - 1)),
+      },
+      {
+        key: "down",
+        desc: "Next row",
+        group: "Dialog",
+        cmd: () => setSelected((v) => Math.min(rows().length - 1, v + 1)),
+      },
+      {
+        key: "left",
+        desc: "Previous section",
+        group: "Dialog",
+        cmd: () => {
+          setSection((v) => (v - 1 + sections.length) % sections.length);
+          setSelected(0);
+        },
+      },
+      {
+        key: "right",
+        desc: "Next section",
+        group: "Dialog",
+        cmd: () => {
+          setSection((v) => (v + 1) % sections.length);
+          setSelected(0);
+        },
+      },
+      {
+        key: "tab",
+        desc: "Next section",
+        group: "Dialog",
+        cmd: () => {
+          setSection((v) => (v + 1) % sections.length);
+          setSelected(0);
+        },
+      },
+      {
+        key: "return",
+        desc: "Activate row",
+        group: "Dialog",
+        cmd: () => {
+          const row = rows()[selected()];
+          if (row?.kind === "action") {
+            if (row.label === "Switch model") openSubDialog("model");
+            else if (row.label === "Switch theme") openSubDialog("theme");
+            else if (row.label === "Switch permission")
+              openSubDialog("permission");
+            else if (row.label === "Switch mode") openSubDialog("mode");
+            else if (row.label === "TUI write scope")
+              openSubDialog("tui-scope");
+            else if (row.label === "Edit provider")
+              openSubDialog("edit-provider");
+            else if (row.label === "Delete provider")
+              openSubDialog("delete-provider");
+            else if (row.label === "Add provider") {
+              setProviderDraft({
+                type: "openai",
+                name: "",
+                apiKey: "",
+                baseURL: "",
+                model: "",
+              });
+              openSubDialog("provider-kind");
+            } else row.onActivate();
+            return;
+          }
+          if (row?.kind === "toggle") {
+            row.onChange(!row.value);
+          }
+        },
+      },
+      {
+        key: "space",
+        desc: "Toggle row",
+        group: "Dialog",
+        cmd: () => {
+          const row = rows()[selected()];
+          if (row?.kind === "action") {
+            if (row.label === "Switch model") openSubDialog("model");
+            else if (row.label === "Switch theme") openSubDialog("theme");
+            else if (row.label === "Switch permission")
+              openSubDialog("permission");
+            else if (row.label === "Switch mode") openSubDialog("mode");
+            else if (row.label === "TUI write scope")
+              openSubDialog("tui-scope");
+            else if (row.label === "Edit provider")
+              openSubDialog("edit-provider");
+            else if (row.label === "Delete provider")
+              openSubDialog("delete-provider");
+            else if (row.label === "Add provider") {
+              setProviderDraft({
+                type: "openai",
+                name: "",
+                apiKey: "",
+                baseURL: "",
+                model: "",
+              });
+              openSubDialog("provider-kind");
+            } else row.onActivate();
+            return;
+          }
+          if (row?.kind === "toggle") {
+            row.onChange(!row.value);
+          }
+        },
+      },
+    ],
+  }));
 
   const modelOptions = createMemo<SelectOption<string>[]>(() => {
     const cfg = config();

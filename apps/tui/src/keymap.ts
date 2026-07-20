@@ -126,6 +126,11 @@ export const commands: Record<string, CommandDef> = {
     keys: "end",
     desc: "Scroll to bottom",
   },
+  "dialog.test": {
+    id: "dialog.test",
+    keys: "none",
+    desc: "Test dialog stack (confirm → prompt → select)",
+  },
   "composer.submit": {
     id: "composer.submit",
     keys: "return",

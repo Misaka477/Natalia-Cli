@@ -4,6 +4,8 @@ import { KeymapProvider } from "@opentui/keymap/solid";
 import { render } from "@opentui/solid";
 import { createFakeBackend, createRealRuntimeClient } from "@natalia/client";
 import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
+import { DialogProvider } from "../dialog/provider";
+import { registerNataliaKeymap } from "../modal/mode-stack";
 import { App } from "./App";
 
 export type RuntimeHandle = {
@@ -40,10 +42,19 @@ export async function runTuiShell(
       : createRealRuntimeClient({ workspaceRoot: input.workspaceRoot }));
   const events: RuntimeEvent[] = [];
   const keymap = createDefaultOpenTuiKeymap(renderer);
+  const disposeKeymap = registerNataliaKeymap(keymap, renderer);
+  let keymapDisposed = false;
+  const cleanupKeymap = () => {
+    if (keymapDisposed) return;
+    keymapDisposed = true;
+    disposeKeymap();
+  };
+  renderer.once("destroy", cleanupKeymap);
   await render(
     () => (
       <KeymapProvider keymap={keymap}>
-        <App
+        <DialogProvider>
+          <App
           backend={backend}
           createBackend={input.createBackend}
           workspaceRoot={input.workspaceRoot}
@@ -65,13 +76,21 @@ export async function runTuiShell(
             }
           }}
         />
+        </DialogProvider>
       </KeymapProvider>
     ),
     renderer,
   );
   if (input.initialPrompt)
     setTimeout(() => void backend.submit(input.initialPrompt!), 100);
-  return { renderer, events, stop: () => renderer.destroy() };
+  return {
+    renderer,
+    events,
+    stop: () => {
+      cleanupKeymap();
+      renderer.destroy();
+    },
+  };
 }
 
 export const runSpike = runTuiShell;
