@@ -26,6 +26,7 @@
     "smoke:tui:pty-model": "npm --workspace @natalia/tui run smoke:pty-model",
     "smoke:tui:retry": "npm --workspace @natalia/tui run smoke:retry",
     "smoke:tui:dialog-stack": "npm --workspace @natalia/tui run smoke:dialog-stack",
+    "smoke:cli:automation": "npx bun scripts/cli-automation-smoke.ts",
     "guard:imports": "npx bun run packages/testing/bin/import-guard.ts",
     "ts:tui": "npm --workspace @natalia/tui run dev",
     "ts:cli": "npx bun apps/cli/src/main.ts",
