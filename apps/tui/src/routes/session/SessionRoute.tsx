@@ -21,6 +21,7 @@ import { darkTheme, roleColor } from "../../theme/theme";
 import type { TuiPreferences } from "../../settings";
 import { timelineLayout } from "../../session-layout";
 import { useRouteController } from "../../context/route";
+import { useDialog } from "../../dialog/provider";
 import { PermissionPrompt } from "./permission";
 import { QuestionPrompt } from "./question";
 
@@ -595,6 +596,7 @@ function ToolBlockView(props: {
   terminalWidth: number;
   toolPreviewLines: number;
 }) {
+  const dialog = useDialog();
   if (props.block.tool?.kind === "shell")
     return (
       <ShellToolView
@@ -620,6 +622,8 @@ function ToolBlockView(props: {
   const [expanded, setExpanded] = createSignal(
     props.toolDetails === "expanded",
   );
+  const [argumentsExpanded, setArgumentsExpanded] = createSignal(false);
+  const [hover, setHover] = createSignal(false);
   const tool = () => props.block.tool!;
   const diff = () => tool().kind === "diff" && tool().result?.detail;
   const path = () => toolPath(tool().redactedArguments);
@@ -631,6 +635,33 @@ function ToolBlockView(props: {
     const operation = tool().name === "apply_patch" ? "Patched" : "Edit";
     return `← ${operation}${path() ? ` ${path()}` : ""}`;
   };
+  const openDetail = () => {
+    const content = tool().result?.detail || tool().redactedArguments;
+    if (!content) return;
+    dialog.replace(() => (
+      <ToolDetailDialog title={`${tool().name} details`} content={content} />
+    ));
+  };
+
+  useBindings(() => ({
+    mode: "base",
+    enabled: () => hover() && !diff(),
+    bindings: [
+      {
+        key: "a",
+        desc: "Toggle tool arguments",
+        group: "Tool",
+        cmd: () => setArgumentsExpanded((value) => !value),
+      },
+      {
+        key: "d",
+        desc: "Open tool details",
+        group: "Tool",
+        cmd: openDetail,
+      },
+    ],
+  }));
+
   return (
     <box
       flexDirection="column"
@@ -643,8 +674,11 @@ function ToolBlockView(props: {
       marginTop={1}
       marginBottom={1}
       gap={1}
+      onMouseOver={() => setHover(true)}
+      onMouseOut={() => setHover(false)}
       onMouseUp={() => {
-        if (!diff()) setExpanded((value) => !value);
+        if (diff()) return;
+        setExpanded((value) => !value);
       }}
     >
       <text paddingLeft={3} fg={darkTheme.muted}>
@@ -688,9 +722,17 @@ function ToolBlockView(props: {
           </text>
         </Show>
         <Show when={tool().argumentsComplete && tool().redactedArguments}>
-          <text fg={darkTheme.muted} wrapMode="word">
-            args: {tool().keyArguments.join(", ") || "{}"}
-          </text>
+          <box flexDirection="column">
+            <text fg={darkTheme.muted} wrapMode="word">
+              args: {tool().keyArguments.join(", ") || "{}"}
+              {" · a raw · d detail"}
+            </text>
+            <Show when={argumentsExpanded()}>
+              <text fg={darkTheme.text} wrapMode="word">
+                {tool().redactedArguments}
+              </text>
+            </Show>
+          </box>
         </Show>
         <Show when={tool().result}>
           {(result) => (
@@ -719,11 +761,50 @@ function ToolBlockView(props: {
           )}
         </Show>
         <Show when={tool().detailAvailable}>
-          <text fg={darkTheme.muted}>
-            {expanded() ? "collapse details" : "expand/full detail pager entry"}
+          <text fg={darkTheme.muted} onMouseUp={openDetail}>
+            {expanded()
+              ? "collapse details · d full pager"
+              : "expand · d full pager"}
+          </text>
+        </Show>
+        <Show when={tool().status === "failed"}>
+          <text fg={darkTheme.danger} wrapMode="word">
+            {tool().result?.detail || tool().result?.preview || tool().summary}
           </text>
         </Show>
       </Show>
+    </box>
+  );
+}
+
+function ToolDetailDialog(props: { title: string; content: string }) {
+  const dialog = useDialog();
+  return (
+    <box
+      flexDirection="column"
+      paddingLeft={2}
+      paddingRight={2}
+      paddingBottom={1}
+    >
+      <box flexDirection="row" justifyContent="space-between">
+        <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>
+          {props.title}
+        </text>
+        <text fg={darkTheme.muted} onMouseUp={() => dialog.clear()}>
+          esc
+        </text>
+      </box>
+      <scrollbox
+        maxHeight={18}
+        border={["left"]}
+        borderColor={darkTheme.muted}
+        paddingLeft={1}
+      >
+        <text fg={darkTheme.text} wrapMode="word">
+          {props.content}
+        </text>
+      </scrollbox>
+      <text fg={darkTheme.muted}>d opened full detail · escape close</text>
     </box>
   );
 }
