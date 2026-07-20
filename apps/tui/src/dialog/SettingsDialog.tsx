@@ -1,4 +1,11 @@
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Show,
+  type JSX,
+} from "solid-js";
 import { TextAttributes } from "@opentui/core";
 import type { ConfigV2 } from "@natalia/contracts";
 import { resolveConfig, saveConfigFile } from "@natalia/config";
@@ -7,8 +14,8 @@ import { useToast } from "../context/toast";
 import { darkTheme } from "../theme/theme";
 import { useBindings } from "@opentui/keymap/solid";
 import { useDialog } from "./provider";
-import { SelectDialog, type SelectOption } from "./SelectDialog";
-import { PromptDialog } from "./PromptDialog";
+import { DialogSelect, type DialogSelectOption } from "./DialogSelect";
+import { DialogPrompt } from "./DialogPrompt";
 import { ThemeService } from "../theme/service";
 import {
   loadLocalTuiState,
@@ -43,6 +50,20 @@ type Row =
       kind: "legacy";
       label: string;
     };
+
+type SettingsStep =
+  | "model"
+  | "theme"
+  | "permission"
+  | "mode"
+  | "provider-kind"
+  | "provider-name"
+  | "provider-key"
+  | "provider-url"
+  | "provider-model"
+  | "edit-provider"
+  | "delete-provider"
+  | "tui-scope";
 
 function scopeTag(scope?: string) {
   if (!scope) return "";
@@ -128,21 +149,6 @@ export function SettingsDialog(props: {
     createSignal<Awaited<ReturnType<typeof loadLocalTuiState>>>();
   const [projectConfigured, setProjectConfigured] = createSignal(false);
   const [notice, setNotice] = createSignal("");
-  const [subOpen, setSubOpen] = createSignal<
-    | "model"
-    | "theme"
-    | "permission"
-    | "mode"
-    | "provider-kind"
-    | "provider-name"
-    | "provider-key"
-    | "provider-url"
-    | "provider-model"
-    | "edit-provider"
-    | "delete-provider"
-    | "tui-scope"
-    | null
-  >(null);
   const [providerDraft, setProviderDraft] = createSignal({
     type: "openai",
     name: "",
@@ -150,7 +156,7 @@ export function SettingsDialog(props: {
     baseURL: "",
     model: "",
   });
-  const [providerEditTarget, setProviderEditTarget] = createSignal("");
+  const [childOpen, setChildOpen] = createSignal(false);
 
   const providerNames = createMemo(() =>
     Object.keys(config()?.providers ?? {}),
@@ -234,12 +240,270 @@ export function SettingsDialog(props: {
     }
   });
 
-  function openSubDialog(kind: NonNullable<ReturnType<typeof subOpen>>) {
-    setSubOpen(kind);
+  function openSubDialog(kind: SettingsStep) {
+    switch (kind) {
+      case "model":
+        pushChild(() => (
+          <DialogSelect
+            title="Select Model"
+            options={modelOptions()}
+            onExtraKey={(key, option) => {
+              if (key !== "f" || !props.workspaceRoot) return;
+              void toggleModelFavorite(props.workspaceRoot, option.value);
+              void loadLocalTuiState(props.workspaceRoot).then(setLocalState);
+            }}
+            onSelect={(option) => {
+              if (props.workspaceRoot)
+                void trackModelUsage(props.workspaceRoot, option.value);
+              const next = structuredClone(config());
+              if (next) {
+                next.defaultModel = option.value;
+                void persistConfig(next);
+              }
+              dialog.pop();
+            }}
+          />
+        ));
+        return;
+      case "provider-kind":
+        pushChild(() => (
+          <DialogSelect
+            title="Provider Type"
+            options={["openai", "anthropic", "gemini", "openai-compatible"].map(
+              (value) => ({
+                value,
+                title: value,
+                description: "Native TS provider",
+              }),
+            )}
+            onSelect={(option) => {
+              setProviderDraft((draft) => ({ ...draft, type: option.value }));
+              dialog.pop();
+              openSubDialog("provider-name");
+            }}
+          />
+        ));
+        return;
+      case "provider-name":
+        promptStep(
+          "Provider Name",
+          "Unique project provider/profile name.",
+          "provider-name",
+          (value) => {
+            setProviderDraft((draft) => ({ ...draft, name: value.trim() }));
+            openSubDialog("provider-key");
+          },
+          (value) => (value.trim() ? undefined : "Provider name is required"),
+        );
+        return;
+      case "provider-key":
+        promptStep(
+          "API Key",
+          "Stored in 0600 project config and redacted in all UI summaries.",
+          "provider-key",
+          (value) => {
+            setProviderDraft((draft) => ({ ...draft, apiKey: value.trim() }));
+            openSubDialog("provider-url");
+          },
+          (value) => (value.trim() ? undefined : "API key is required"),
+        );
+        return;
+      case "provider-url":
+        promptStep(
+          "Provider Endpoint",
+          "Optional. Submit blank for the native provider default.",
+          "provider-url",
+          (value) => {
+            setProviderDraft((draft) => ({ ...draft, baseURL: value.trim() }));
+            openSubDialog("provider-model");
+          },
+        );
+        return;
+      case "provider-model":
+        promptStep(
+          "Model ID",
+          "Provider model identifier.",
+          "provider-model",
+          (value) => {
+            const draft = { ...providerDraft(), model: value.trim() };
+            const next = structuredClone(config());
+            if (next) {
+              next.providers[draft.name] = {
+                type: draft.type,
+                apiKey: draft.apiKey,
+                ...(draft.baseURL ? { baseURL: draft.baseURL } : {}),
+                customHeaders: {},
+              };
+              next.models[draft.name] = {
+                provider: draft.name,
+                model: draft.model,
+                contextWindow: "auto",
+                maxOutputTokens: null,
+                temperature: null,
+                topP: null,
+                reasoningEffort: null,
+                thinkingEnabled: true,
+                stream: true,
+                requestTimeoutSec: null,
+              };
+              next.defaultModel = draft.name;
+              void persistConfig(next);
+            }
+            dialog.pop();
+          },
+          (value) => (value.trim() ? undefined : "Model ID is required"),
+        );
+        return;
+      case "permission":
+        selectConfig(
+          "Select Permission Profile",
+          permissionOptions(),
+          (next, value) => {
+            next.defaultPermission = value;
+          },
+        );
+        return;
+      case "mode":
+        selectConfig("Select Agent Mode", modeOptions(), (next, value) => {
+          next.defaultMode = value;
+        });
+        return;
+      case "theme":
+        pushChild(() => (
+          <DialogSelect
+            title="Select Theme"
+            options={themeOptions()}
+            onSelect={(option) => {
+              props.onTuiConfigChange?.(
+                { ...props.tuiConfig!, theme: option.value },
+                props.tuiWriteScope,
+              );
+              dialog.pop();
+            }}
+          />
+        ));
+        return;
+      case "tui-scope":
+        pushChild(() => (
+          <DialogSelect
+            title="TUI Write Scope"
+            options={[
+              {
+                value: "project" as const,
+                title: "Project",
+                description: ".natalia/tui.json for this workspace",
+              },
+              {
+                value: "global" as const,
+                title: "Global",
+                description:
+                  "~/.config/natalia-cli/tui.json for all workspaces",
+              },
+            ]}
+            onSelect={(option) => {
+              props.onTuiConfigScopeChange?.(option.value);
+              setNotice(
+                `TUI changes will save to ${option.value === "global" ? "global" : "project"} config.`,
+              );
+              dialog.pop();
+            }}
+          />
+        ));
+        return;
+      case "edit-provider":
+      case "delete-provider":
+        pushChild(() => (
+          <DialogSelect
+            title={
+              kind === "edit-provider" ? "Edit Provider" : "Delete Provider"
+            }
+            options={providerNames().map((name) => ({
+              value: name,
+              title: name,
+              description:
+                kind === "edit-provider"
+                  ? (config()?.providers[name]?.type ?? "")
+                  : "Delete provider and associated model",
+            }))}
+            onSelect={(option) => selectProvider(kind, option.value)}
+          />
+        ));
+    }
   }
 
-  function closeSubDialog() {
-    setSubOpen(null);
+  function promptStep(
+    title: string,
+    description: string,
+    placeholder: string,
+    next: (value: string) => void,
+    validate?: (value: string) => string | undefined,
+  ) {
+    pushChild(() => (
+      <DialogPrompt
+        title={title}
+        description={() => <text fg={darkTheme.muted}>{description}</text>}
+        placeholder={placeholder}
+        validate={validate}
+        onConfirm={(value) => {
+          dialog.pop();
+          next(value);
+        }}
+      />
+    ));
+  }
+
+  function selectConfig(
+    title: string,
+    options: DialogSelectOption<string>[],
+    update: (next: ConfigV2, value: string) => void,
+  ) {
+    pushChild(() => (
+      <DialogSelect
+        title={title}
+        options={options}
+        onSelect={(option) => {
+          const next = structuredClone(config());
+          if (next) {
+            update(next, option.value);
+            void persistConfig(next);
+          }
+          dialog.pop();
+        }}
+      />
+    ));
+  }
+
+  function selectProvider(
+    kind: "edit-provider" | "delete-provider",
+    name: string,
+  ) {
+    if (kind === "edit-provider") {
+      const provider = config()?.providers[name];
+      setProviderDraft({
+        type: provider?.type ?? "openai",
+        name,
+        apiKey: provider?.apiKey ?? "",
+        baseURL: provider?.baseURL ?? "",
+        model: "",
+      });
+      dialog.pop();
+      openSubDialog("provider-key");
+      return;
+    }
+    const next = structuredClone(config());
+    if (!next) return;
+    delete next.providers[name];
+    delete next.models[name];
+    if (next.defaultModel === name) next.defaultModel = "";
+    void persistConfig(next);
+    setNotice(`Provider "${name}" deleted.`);
+    toast.show({ variant: "success", message: `Provider "${name}" deleted` });
+    dialog.pop();
+  }
+
+  function pushChild(element: () => JSX.Element) {
+    setChildOpen(true);
+    dialog.push(element, () => setChildOpen(false));
   }
 
   createEffect(() => {
@@ -250,18 +514,14 @@ export function SettingsDialog(props: {
 
   useBindings(() => ({
     mode: "modal",
-    enabled: true,
+    enabled: !childOpen(),
     bindings: [
       {
         key: "escape",
         desc: "Close dialog or sub-dialog",
         group: "Dialog",
         cmd: () => {
-          if (subOpen()) {
-            closeSubDialog();
-          } else {
-            dialog.clear();
-          }
+          dialog.clear();
         },
       },
     ],
@@ -269,7 +529,7 @@ export function SettingsDialog(props: {
 
   useBindings(() => ({
     mode: "modal",
-    enabled: !subOpen(),
+    enabled: !childOpen(),
     bindings: [
       {
         key: "up",
@@ -383,7 +643,7 @@ export function SettingsDialog(props: {
     ],
   }));
 
-  const modelOptions = createMemo<SelectOption<string>[]>(() => {
+  const modelOptions = createMemo<DialogSelectOption<string>[]>(() => {
     const cfg = config();
     if (!cfg) return [];
     const local = localState();
@@ -399,324 +659,83 @@ export function SettingsDialog(props: {
       if (local?.recentModels.includes(name)) tags.push("recent");
       return {
         value: name,
-        label: name,
+        title: name,
         description: `${m.model} @ ${m.provider}${tags.length ? ` · ${tags.join(" ")}` : ""}`,
       };
     });
   });
 
-  const themeOptions = createMemo<SelectOption<string>[]>(() => {
+  const themeOptions = createMemo<DialogSelectOption<string>[]>(() => {
     const names = themeService.getBuiltinThemeNames();
     return names.map((name) => ({
       value: name,
-      label: name,
+      title: name,
       description: name === props.tuiConfig?.theme ? "current" : undefined,
     }));
   });
-  const permissionOptions = createMemo<SelectOption<string>[]>(() =>
+  const permissionOptions = createMemo<DialogSelectOption<string>[]>(() =>
     Object.entries(config()?.permissionProfiles ?? {}).map(
       ([name, profile]) => ({
         value: name,
-        label: name,
+        title: name,
         description: `${profile.approval} · ${profile.description}`,
       }),
     ),
   );
-  const modeOptions = createMemo<SelectOption<string>[]>(() =>
+  const modeOptions = createMemo<DialogSelectOption<string>[]>(() =>
     Object.entries(config()?.modes ?? {}).map(([name, mode]) => ({
       value: name,
-      label: name,
+      title: name,
       description:
         mode.description || `${mode.allowedTools.length} allowed tools`,
     })),
   );
 
   return (
-    <>
-      <Show when={!subOpen()}>
-        <box
-          position="absolute"
-          left={3}
-          right={3}
-          bottom={2}
-          maxHeight="85%"
-          border
-          borderColor={darkTheme.accent}
-          backgroundColor={darkTheme.panel}
-          paddingLeft={2}
-          paddingRight={2}
-          paddingTop={1}
-          paddingBottom={1}
-          flexDirection="column"
-          gap={1}
-        >
-          <box flexDirection="row" justifyContent="space-between">
-            <text attributes={TextAttributes.BOLD} fg={darkTheme.accent}>
-              Settings Center
+    <box
+      flexDirection="column"
+      gap={1}
+      paddingLeft={2}
+      paddingRight={2}
+      paddingTop={1}
+      paddingBottom={1}
+    >
+      <box flexDirection="row" justifyContent="space-between">
+        <text attributes={TextAttributes.BOLD} fg={darkTheme.accent}>
+          Settings Center
+        </text>
+        <text fg={darkTheme.muted}>runtime · project · tui config</text>
+      </box>
+      <text fg={darkTheme.muted}>
+        Left/right section · Up/down row · Enter toggle/select · Escape close
+      </text>
+      <box flexDirection="row" gap={1}>
+        <For each={sections}>
+          {(sec, idx) => (
+            <text
+              fg={idx() === section() ? darkTheme.accent : darkTheme.muted}
+              attributes={idx() === section() ? TextAttributes.BOLD : undefined}
+            >
+              {idx() === section() ? ">" : ""}
+              {sec.label}
             </text>
-            <text fg={darkTheme.muted}>runtime · project · tui config</text>
-          </box>
-          <text fg={darkTheme.muted}>
-            Left/right section · Up/down row · Enter toggle/select · Escape
-            close
-          </text>
-          <box flexDirection="row" gap={1}>
-            <For each={sections}>
-              {(sec, idx) => (
-                <text
-                  fg={idx() === section() ? darkTheme.accent : darkTheme.muted}
-                  attributes={
-                    idx() === section() ? TextAttributes.BOLD : undefined
-                  }
-                >
-                  {idx() === section() ? ">" : ""}
-                  {sec.label}
-                </text>
-              )}
-            </For>
-          </box>
-          <scrollbox
-            height={16}
-            border={["left"]}
-            borderColor={darkTheme.muted}
-            flexDirection="column"
-          >
-            <For each={rows()}>
-              {(row, idx) => (
-                <RowItem row={row} selected={idx() === selected()} />
-              )}
-            </For>
-          </scrollbox>
-          <Show when={notice()}>
-            <text fg={darkTheme.success}>{notice()}</text>
-          </Show>
-        </box>
+          )}
+        </For>
+      </box>
+      <scrollbox
+        height={16}
+        border={["left"]}
+        borderColor={darkTheme.muted}
+        flexDirection="column"
+      >
+        <For each={rows()}>
+          {(row, idx) => <RowItem row={row} selected={idx() === selected()} />}
+        </For>
+      </scrollbox>
+      <Show when={notice()}>
+        <text fg={darkTheme.success}>{notice()}</text>
       </Show>
-      <SelectDialog
-        open={subOpen() === "model"}
-        title="Select Model"
-        options={modelOptions()}
-        hint="F toggle favorite"
-        onExtraKey={(key, value) => {
-          if (key === "f" && props.workspaceRoot) {
-            void toggleModelFavorite(props.workspaceRoot, value);
-            void loadLocalTuiState(props.workspaceRoot).then(setLocalState);
-            return true;
-          }
-          return false;
-        }}
-        onClose={closeSubDialog}
-        onSelect={(value) => {
-          if (!props.workspaceRoot) return;
-          void trackModelUsage(props.workspaceRoot, value);
-          const next = structuredClone(config());
-          if (next) {
-            next.defaultModel = value;
-            void persistConfig(next);
-          }
-          closeSubDialog();
-        }}
-      />
-      <SelectDialog
-        open={subOpen() === "provider-kind"}
-        title="Provider Type"
-        options={["openai", "anthropic", "gemini", "openai-compatible"].map(
-          (value) => ({
-            value,
-            label: value,
-            description: "Native TS provider",
-          }),
-        )}
-        onClose={closeSubDialog}
-        onSelect={(type) => {
-          setProviderDraft((draft) => ({ ...draft, type }));
-          openSubDialog("provider-name");
-        }}
-      />
-      <PromptDialog
-        open={subOpen() === "provider-name"}
-        title="Provider Name"
-        description="Unique project provider/profile name."
-        validate={(value) =>
-          value.trim() ? undefined : "Provider name is required"
-        }
-        onClose={closeSubDialog}
-        onSubmit={(name) => {
-          setProviderDraft((draft) => ({ ...draft, name: name.trim() }));
-          openSubDialog("provider-key");
-        }}
-      />
-      <PromptDialog
-        open={subOpen() === "provider-key"}
-        title="API Key"
-        description="Stored in 0600 project config and redacted in all UI summaries."
-        secret
-        validate={(value) => (value.trim() ? undefined : "API key is required")}
-        onClose={closeSubDialog}
-        onSubmit={(apiKey) => {
-          setProviderDraft((draft) => ({ ...draft, apiKey: apiKey.trim() }));
-          openSubDialog("provider-url");
-        }}
-      />
-      <PromptDialog
-        open={subOpen() === "provider-url"}
-        title="Provider Endpoint"
-        description="Optional. Submit blank for the native provider default."
-        onClose={closeSubDialog}
-        onSubmit={(baseURL) => {
-          setProviderDraft((draft) => ({ ...draft, baseURL: baseURL.trim() }));
-          openSubDialog("provider-model");
-        }}
-      />
-      <PromptDialog
-        open={subOpen() === "provider-model"}
-        title="Model ID"
-        description="Provider model identifier."
-        validate={(value) =>
-          value.trim() ? undefined : "Model ID is required"
-        }
-        onClose={closeSubDialog}
-        onSubmit={(model) => {
-          const draft = { ...providerDraft(), model: model.trim() };
-          const next = structuredClone(config());
-          if (next) {
-            next.providers[draft.name] = {
-              type: draft.type,
-              apiKey: draft.apiKey,
-              ...(draft.baseURL ? { baseURL: draft.baseURL } : {}),
-              customHeaders: {},
-            };
-            next.models[draft.name] = {
-              provider: draft.name,
-              model: draft.model,
-              contextWindow: "auto",
-              maxOutputTokens: null,
-              temperature: null,
-              topP: null,
-              reasoningEffort: null,
-              thinkingEnabled: true,
-              stream: true,
-              requestTimeoutSec: null,
-            };
-            next.defaultModel = draft.name;
-            void persistConfig(next);
-          }
-          closeSubDialog();
-        }}
-      />
-      <SelectDialog
-        open={subOpen() === "permission"}
-        title="Select Permission Profile"
-        options={permissionOptions()}
-        onClose={closeSubDialog}
-        onSelect={(value) => {
-          const next = structuredClone(config());
-          if (next) {
-            next.defaultPermission = value;
-            void persistConfig(next);
-          }
-          closeSubDialog();
-        }}
-      />
-      <SelectDialog
-        open={subOpen() === "mode"}
-        title="Select Agent Mode"
-        options={modeOptions()}
-        onClose={closeSubDialog}
-        onSelect={(value) => {
-          const next = structuredClone(config());
-          if (next) {
-            next.defaultMode = value;
-            void persistConfig(next);
-          }
-          closeSubDialog();
-        }}
-      />
-      <SelectDialog
-        open={subOpen() === "theme"}
-        title="Select Theme"
-        options={themeOptions()}
-        onClose={closeSubDialog}
-        onSelect={(value) => {
-          if (!props.tuiConfig || !props.onTuiConfigChange) return;
-          props.onTuiConfigChange(
-            { ...props.tuiConfig, theme: value },
-            props.tuiWriteScope,
-          );
-          closeSubDialog();
-        }}
-      />
-      <SelectDialog
-        open={subOpen() === "tui-scope"}
-        title="TUI Write Scope"
-        options={[
-          {
-            value: "project" as const,
-            label: "Project",
-            description: ".natalia/tui.json for this workspace",
-          },
-          {
-            value: "global" as const,
-            label: "Global",
-            description: "~/.config/natalia-cli/tui.json for all workspaces",
-          },
-        ]}
-        onClose={closeSubDialog}
-        onSelect={(scope) => {
-          props.onTuiConfigScopeChange?.(scope);
-          closeSubDialog();
-          setNotice(
-            `TUI changes will save to ${scope === "global" ? "global" : "project"} config.`,
-          );
-        }}
-      />
-      <SelectDialog
-        open={subOpen() === "edit-provider"}
-        title="Edit Provider"
-        options={providerNames().map((name) => ({
-          value: name,
-          label: name,
-          description: config()?.providers[name]?.type ?? "",
-        }))}
-        onClose={closeSubDialog}
-        onSelect={(name) => {
-          setProviderEditTarget(name);
-          const provider = config()?.providers[name];
-          setProviderDraft({
-            type: provider?.type ?? "openai",
-            name,
-            apiKey: provider?.apiKey ?? "",
-            baseURL: provider?.baseURL ?? "",
-            model: "",
-          });
-          openSubDialog("provider-key");
-        }}
-      />
-      <SelectDialog
-        open={subOpen() === "delete-provider"}
-        title="Delete Provider"
-        options={providerNames().map((name) => ({
-          value: name,
-          label: name,
-          description: "Delete provider and associated model",
-        }))}
-        onClose={closeSubDialog}
-        onSelect={(name) => {
-          const next = structuredClone(config());
-          if (!next) return;
-          delete next.providers[name];
-          delete next.models[name];
-          if (next.defaultModel === name) next.defaultModel = "";
-          void persistConfig(next);
-          closeSubDialog();
-          setNotice(`Provider "${name}" deleted.`);
-          toast.show({
-            variant: "success",
-            message: `Provider "${name}" deleted`,
-          });
-        }}
-      />
-    </>
+    </box>
   );
 }
 

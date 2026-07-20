@@ -9,6 +9,7 @@ export type DialogPromptProps = {
   description?: () => JSX.Element;
   placeholder?: string;
   value?: string;
+  validate?: (value: string) => string | undefined;
   busy?: boolean;
   busyText?: string;
   onConfirm?: (value: string) => void;
@@ -19,10 +20,16 @@ export function DialogPrompt(props: DialogPromptProps) {
   const dialog = useDialog();
   const [textareaTarget, setTextareaTarget] =
     createSignal<TextareaRenderable>();
+  const [error, setError] = createSignal<string>();
   let textarea: TextareaRenderable | undefined;
 
   function confirm() {
     if (props.busy || !textarea) return;
+    const validationError = props.validate?.(textarea.plainText);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
     props.onConfirm?.(textarea.plainText);
   }
 
@@ -78,7 +85,7 @@ export function DialogPrompt(props: DialogPromptProps) {
         <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>
           {props.title}
         </text>
-        <text fg={darkTheme.muted} onMouseUp={() => dialog.clear()}>
+        <text fg={darkTheme.muted} onMouseUp={() => dialog.pop()}>
           esc
         </text>
       </box>
@@ -106,6 +113,9 @@ export function DialogPrompt(props: DialogPromptProps) {
           <text fg={darkTheme.text}>
             return <span style={{ fg: darkTheme.muted }}>submit</span>
           </text>
+        </Show>
+        <Show when={error()}>
+          <text fg={darkTheme.danger}>{error()}</text>
         </Show>
       </box>
     </box>

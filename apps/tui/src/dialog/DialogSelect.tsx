@@ -38,6 +38,7 @@ export interface DialogSelectProps<T> {
   skipFilter?: boolean;
   onSelect?: (option: DialogSelectOption<T>) => void;
   onClose?: () => void;
+  onExtraKey?: (key: string, option: DialogSelectOption<T>) => void;
 }
 
 export function DialogSelect<T>(props: DialogSelectProps<T>) {
@@ -195,6 +196,19 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
         group: "Dialog",
         cmd: submit,
       },
+      ...(props.onExtraKey
+        ? [
+            {
+              key: "f",
+              desc: "Extra action",
+              group: "Dialog",
+              cmd: () => {
+                const option = selected();
+                if (option) props.onExtraKey?.("f", option);
+              },
+            },
+          ]
+        : []),
     ],
   }));
 
@@ -205,7 +219,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
           <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
             {props.title}
           </text>
-          <text fg={darkTheme.muted} onMouseUp={() => dialog.clear()}>
+          <text fg={darkTheme.muted} onMouseUp={() => dialog.pop()}>
             esc
           </text>
         </box>
