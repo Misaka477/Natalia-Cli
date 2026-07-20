@@ -3,81 +3,64 @@ import {
   createMemo,
   createSignal,
   For,
+  onCleanup,
+  onMount,
   Show,
   type JSX,
 } from "solid-js";
 import { TextareaRenderable, TextAttributes } from "@opentui/core";
 import type { RuntimeClient } from "@natalia/contracts";
-import { activeModal, type ModalRequest } from "@natalia/ui-model";
-import { useAppState } from "../context/state";
+import type { ModalRequest } from "@natalia/ui-model";
 import { usePromptRef } from "../context/prompt";
+import { useAppState } from "../context/state";
 import { useRouteController } from "../context/route";
 import { darkTheme } from "../theme/theme";
 import { useBindings } from "@opentui/keymap/solid";
+import { useModeStack } from "../modal/mode-stack";
 import { JsonSessionStore, type SessionRecord } from "@natalia/session";
 import type { TuiConfig, TuiConfigWriteScope } from "../config";
 import { SettingsDialog } from "./SettingsDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { SelectDialog } from "./SelectDialog";
 import { commands, formatKeybindKey } from "../keymap";
 import { buildKeybindMap, type UserKeybindOverrides } from "../keymap";
 
 export function DialogLayer(props: {
-  backend: RuntimeClient;
-  onExit: () => void;
   workspaceRoot?: string;
   onSessionChange?: (sessionID?: string) => void;
-  onCommand?: (command: string) => void;
   tuiConfig?: TuiConfig;
   tuiWriteScope?: TuiConfigWriteScope;
   onTuiConfigChange?: (config: TuiConfig, scope?: TuiConfigWriteScope) => void;
   onTuiConfigScopeChange?: (scope: TuiConfigWriteScope) => void;
   keybindOverrides?: UserKeybindOverrides;
 }) {
-  const { state, dispatch } = useAppState();
   const route = useRouteController();
-  const modal = createMemo(() => activeModal(state.modal));
   return (
-    <Show
-      when={modal()}
-      keyed
-      fallback={
-        <>
-          <SessionListDialog
-            open={route.route().kind === "sessions"}
-            workspaceRoot={props.workspaceRoot}
-            onClose={() => route.back()}
-            onSelect={props.onSessionChange}
-          />
-          <SettingsDialog
-            open={route.route().kind === "settings"}
-            tuiConfig={props.tuiConfig}
-            tuiWriteScope={props.tuiWriteScope}
-            workspaceRoot={props.workspaceRoot}
-            onClose={() => route.back()}
-            onTuiConfigChange={props.onTuiConfigChange}
-            onTuiConfigScopeChange={props.onTuiConfigScopeChange}
-          />
-          <StatusDialog
-            open={route.route().kind === "status"}
-            onClose={() => route.back()}
-          />
-          <HelpDialog
-            open={route.route().kind === "help"}
-            keybindOverrides={props.keybindOverrides}
-            onClose={() => route.back()}
-          />
-        </>
-      }
-    >
-      {(request) => (
-        <RuntimeModal
-          request={request}
-          backend={props.backend}
-          onExit={props.onExit}
-        />
-      )}
-    </Show>
+    <>
+      <SessionListDialog
+        open={route.route().kind === "sessions"}
+        workspaceRoot={props.workspaceRoot}
+        onClose={() => route.back()}
+        onSelect={props.onSessionChange}
+      />
+      <SettingsDialog
+        open={route.route().kind === "settings"}
+        tuiConfig={props.tuiConfig}
+        tuiWriteScope={props.tuiWriteScope}
+        workspaceRoot={props.workspaceRoot}
+        onClose={() => route.back()}
+        onTuiConfigChange={props.onTuiConfigChange}
+        onTuiConfigScopeChange={props.onTuiConfigScopeChange}
+      />
+      <StatusDialog
+        open={route.route().kind === "status"}
+        onClose={() => route.back()}
+      />
+      <HelpDialog
+        open={route.route().kind === "help"}
+        keybindOverrides={props.keybindOverrides}
+        onClose={() => route.back()}
+      />
+    </>
   );
 }
 
@@ -452,31 +435,7 @@ function SessionListDialog(props: {
   );
 }
 
-function RuntimeModal(props: {
-  request?: ModalRequest;
-  backend: RuntimeClient;
-  onExit: () => void;
-}) {
-  if (!props.request) return null;
-  if (props.request.kind === "approval") {
-    return (
-      <ApprovalDialog
-        request={props.request}
-        backend={props.backend}
-        onExit={props.onExit}
-      />
-    );
-  }
-  return (
-    <QuestionDialog
-      request={props.request}
-      backend={props.backend}
-      onExit={props.onExit}
-    />
-  );
-}
-
-function ApprovalDialog(props: {
+export function ApprovalPrompt(props: {
   request: Extract<ModalRequest, { kind: "approval" }>;
   backend: RuntimeClient;
   onExit: () => void;
@@ -486,8 +445,14 @@ function ApprovalDialog(props: {
   const [feedback, setFeedback] = createSignal("");
   const [expanded, setExpanded] = createSignal(false);
   const promptRef = usePromptRef();
+  const modeStack = useModeStack();
   const actions = ["once", "session", "reject"] as const;
   let input: TextareaRenderable | undefined;
+
+  onMount(() => {
+    const popMode = modeStack.push("approval");
+    onCleanup(popMode);
+  });
 
   function confirm(
     feedbackOverride = feedback(),
@@ -523,6 +488,7 @@ function ApprovalDialog(props: {
   }
 
   useBindings(() => ({
+    mode: "approval",
     enabled: stage() === "feedback",
     bindings: [
       {
@@ -535,6 +501,7 @@ function ApprovalDialog(props: {
   }));
 
   useBindings(() => ({
+    mode: "approval",
     enabled: stage() === "decision",
     bindings: [
       {
@@ -628,7 +595,7 @@ function ApprovalDialog(props: {
   }));
 
   return (
-    <DialogFrame title="Approval required" tone="warning">
+    <DialogFrame inline title="Approval required" tone="warning">
       <box flexDirection="column" gap={1}>
         <text
           attributes={TextAttributes.BOLD}
@@ -725,7 +692,7 @@ function ApprovalDialog(props: {
   );
 }
 
-function QuestionDialog(props: {
+export function QuestionPrompt(props: {
   request: Extract<ModalRequest, { kind: "question" }>;
   backend: RuntimeClient;
   onExit: () => void;
@@ -740,6 +707,7 @@ function QuestionDialog(props: {
   const [custom, setCustom] = createSignal<string[]>([]);
   const [answers, setAnswers] = createSignal<string[][]>([]);
   const promptRef = usePromptRef();
+  const modeStack = useModeStack();
   let input: TextareaRenderable | undefined;
   const questions = () => questionItems;
   const single = () => questions().length === 1 && !questions()[0]?.multiple;
@@ -750,7 +718,13 @@ function QuestionDialog(props: {
   const customSelected = () => selected() === options().length;
   const currentAnswers = () => answers()[tab()] ?? [];
 
+  onMount(() => {
+    const popMode = modeStack.push("question");
+    onCleanup(popMode);
+  });
+
   useBindings(() => ({
+    mode: "question",
     enabled: editing(),
     bindings: [
       {
@@ -763,6 +737,7 @@ function QuestionDialog(props: {
   }));
 
   useBindings(() => ({
+    mode: "question",
     enabled: !editing(),
     bindings: [
       {
@@ -811,6 +786,7 @@ function QuestionDialog(props: {
   }));
 
   useBindings(() => ({
+    mode: "question",
     enabled: !editing(),
     bindings: Array.from({ length: 9 }, (_, i) => ({
       key: String(i + 1),
@@ -919,7 +895,7 @@ function QuestionDialog(props: {
   }
 
   return (
-    <DialogFrame title={title} tone="accent">
+    <DialogFrame inline title={title} tone="accent">
       <box flexDirection="column" gap={1}>
         <Show when={!single()}>
           <box flexDirection="row" gap={1}>
@@ -1224,16 +1200,17 @@ function ModalKeyCapture(props: {
 function DialogFrame(props: {
   title: string;
   tone: "accent" | "warning";
+  inline?: boolean;
   children: JSX.Element;
 }) {
   const color = props.tone === "warning" ? darkTheme.warning : darkTheme.accent;
   return (
     <box
-      position="absolute"
-      left={4}
-      right={4}
-      bottom={3}
-      maxHeight="80%"
+      position={props.inline ? "relative" : "absolute"}
+      left={props.inline ? undefined : 4}
+      right={props.inline ? undefined : 4}
+      bottom={props.inline ? undefined : 3}
+      maxHeight={props.inline ? 16 : "80%"}
       border
       borderColor={color}
       backgroundColor={darkTheme.panel}

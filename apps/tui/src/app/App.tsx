@@ -493,7 +493,7 @@ function Shell(props: {
   }));
 
   createEffect(() => {
-    if (!state.dialog && route.route().kind === "none") return;
+    if (route.route().kind === "none") return;
     const popMode = modeStack.push("modal");
     onCleanup(popMode);
   });
@@ -638,6 +638,8 @@ function Shell(props: {
             toolPreviewLines={layout().toolPreviewLines}
             showJumpToBottom={jumpToBottomVisible()}
             onJumpToBottom={jumpToBottom}
+            backend={props.backend}
+            onExit={exitOrCancel}
           />
           <box
             flexShrink={0}
@@ -649,22 +651,6 @@ function Shell(props: {
             paddingLeft={2}
             paddingRight={2}
           >
-            <Show
-              when={state.dialog === "approval" || state.dialog === "question"}
-            >
-              <box
-                flexDirection="row"
-                justifyContent="space-between"
-                paddingBottom={1}
-              >
-                <text fg={darkTheme.warning}>
-                  {state.dialog === "approval"
-                    ? "Action requires your approval"
-                    : "Natalia needs your answer"}
-                </text>
-                <text fg={darkTheme.muted}>Respond in the active dialog</text>
-              </box>
-            </Show>
             <textarea
               ref={(value: TextareaRenderable) => {
                 setComposer(value);
@@ -763,11 +749,8 @@ function Shell(props: {
         />
       </Show>
       <DialogLayer
-        backend={props.backend}
-        onExit={exitOrCancel}
         workspaceRoot={props.workspaceRoot}
         onSessionChange={changeSession}
-        onCommand={runCommand}
         tuiConfig={preferences()}
         keybindOverrides={preferences().keybinds}
         tuiWriteScope={tuiWriteScope()}

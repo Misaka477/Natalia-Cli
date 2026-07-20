@@ -9,6 +9,8 @@ import {
 import { SyntaxStyle, TextAttributes } from "@opentui/core";
 import { useRenderer } from "@opentui/solid";
 import { useBindings } from "@opentui/keymap/solid";
+import type { RuntimeClient } from "@natalia/contracts";
+import { activeModal } from "@natalia/ui-model";
 import {
   collapseToolOutput,
   parseTodoItems,
@@ -19,6 +21,7 @@ import { darkTheme, roleColor } from "../../theme/theme";
 import type { TuiPreferences } from "../../settings";
 import { timelineLayout } from "../../session-layout";
 import { useRouteController } from "../../context/route";
+import { ApprovalPrompt, QuestionPrompt } from "../../dialog/DialogLayer";
 
 const markdownSyntax = SyntaxStyle.fromStyles({
   heading: { fg: darkTheme.accent, bold: true },
@@ -38,9 +41,12 @@ export function SessionRoute(props: {
   toolPreviewLines?: number;
   showJumpToBottom?: boolean;
   onJumpToBottom?: () => void;
+  backend?: RuntimeClient;
+  onExit?: () => void;
 }) {
   const { state, dispatch } = useAppState();
   const layout = () => timelineLayout(props.terminalWidth ?? 80);
+  const modal = createMemo(() => activeModal(state.modal));
   return (
     <box flexGrow={1} minHeight={0} flexDirection="column" width="100%">
       <scrollbox
@@ -80,6 +86,20 @@ export function SessionRoute(props: {
           </box>
         </Show>
       </scrollbox>
+      <Show when={props.backend && modal()?.kind === "approval"}>
+        <ApprovalPrompt
+          request={modal() as Extract<ReturnType<typeof modal>, { kind: "approval" }>}
+          backend={props.backend!}
+          onExit={props.onExit ?? (() => {})}
+        />
+      </Show>
+      <Show when={props.backend && modal()?.kind === "question"}>
+        <QuestionPrompt
+          request={modal() as Extract<ReturnType<typeof modal>, { kind: "question" }>}
+          backend={props.backend!}
+          onExit={props.onExit ?? (() => {})}
+        />
+      </Show>
       <Show when={props.showJumpToBottom}>
         <box
           position="absolute"
