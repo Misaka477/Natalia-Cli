@@ -120,34 +120,25 @@ await Bun.sleep(100);
 const selectResult = await selectPromise;
 if (selectResult !== "c") throw new Error(`Select test failed: expected "c", got ${JSON.stringify(selectResult)}`);
 
-// ---- Test 4: Nested dialogs ----
-async function testNestedDialogs() {
-  // Open confirm
-  const nestedConfirm = DialogConfirm.show(globalDialog!, "Nested", "Open prompt?");
-  await Bun.sleep(50);
-  keys.pressEnter();
-  await Bun.sleep(50);
-  const confirmOk = await nestedConfirm;
-  if (confirmOk !== true) throw new Error("Nested confirm failed");
-
-  // Now open another confirm (should push on stack)
-  const secondConfirm = DialogConfirm.show(globalDialog!, "Second level", "Go deeper?");
-  await Bun.sleep(50);
-  // Escape should close this one
-  keys.pressEscape();
-  await Bun.sleep(50);
-  const secondResult = await secondConfirm;
-  if (secondResult !== undefined) throw new Error("Escape should return undefined");
-
-  // The first dialog should be back? Actually after escape, the stack is cleared
-  // because DialogConfirm calls dialog.clear() on escape via the binding.
-  // Actually, onClose is called with resolve(undefined), and clear() pops everything.
-  // So after escape, the stack is empty.
-  // Let's verify by checking there are no dialogs.
-  if (globalDialog!.stack.length !== 0) throw new Error("Stack should be empty after escape on nested dialog");
-}
-
-await testNestedDialogs();
+// ---- Test 4: Nested dialogs preserve the parent ----
+let parentClosed = false;
+let childClosed = false;
+globalDialog!.replace(() => <box><text>Parent</text></box>, () => {
+  parentClosed = true;
+});
+globalDialog!.push(() => <box><text>Child</text></box>, () => {
+  childClosed = true;
+});
+await Bun.sleep(50);
+keys.pressEscape();
+await Bun.sleep(50);
+if (!childClosed || parentClosed) throw new Error("Escape should close only the stack top");
+if (globalDialog!.stack.length !== 1) throw new Error("Parent dialog should remain after child closes");
+keys.pressEscape();
+await Bun.sleep(50);
+if (!parentClosed) throw new Error("Second escape should close the parent dialog");
+const finalStackLength = Array.from(globalDialog!.stack).length;
+if (finalStackLength !== 0) throw new Error("Second escape should empty the dialog stack");
 
 // ---- Test 5: Escape closes dialog ----
 const escPromise = DialogConfirm.show(globalDialog!, "Escape Test", "Press Escape to close");

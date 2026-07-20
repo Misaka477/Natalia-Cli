@@ -23,6 +23,7 @@ interface StackItem {
 
 export interface DialogContext {
   clear(): void;
+  pop(): void;
   push(element: any, onClose?: () => void): void;
   replace(element: any, onClose?: () => void): void;
   readonly stack: readonly StackItem[];
@@ -46,6 +47,7 @@ function init(): DialogContext {
   });
 
   let focus: Renderable | null = null;
+  let context: DialogContext;
 
   function refocus() {
     setTimeout(() => {
@@ -74,10 +76,7 @@ function init(): DialogContext {
           if (renderer.getSelection()) {
             renderer.clearSelection();
           }
-          const current = store.stack.at(-1);
-          current?.onClose?.();
-          setStore("stack", store.stack.slice(0, -1));
-          refocus();
+          context.pop();
         },
       },
       {
@@ -88,16 +87,19 @@ function init(): DialogContext {
           if (renderer.getSelection()) {
             renderer.clearSelection();
           }
-          const current = store.stack.at(-1);
-          current?.onClose?.();
-          setStore("stack", store.stack.slice(0, -1));
-          refocus();
+          context.pop();
         },
       },
     ],
   }));
 
-  return {
+  context = {
+    pop() {
+      const current = store.stack.at(-1);
+      current?.onClose?.();
+      setStore("stack", store.stack.slice(0, -1));
+      if (store.stack.length <= 1) refocus();
+    },
     clear() {
       for (const item of store.stack) {
         item.onClose?.();
@@ -136,6 +138,8 @@ function init(): DialogContext {
       setStore("size", size);
     },
   };
+
+  return context;
 }
 
 const DialogCtx = createContext<DialogContext>();

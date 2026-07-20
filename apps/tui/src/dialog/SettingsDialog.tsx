@@ -124,9 +124,9 @@ export function SettingsDialog(props: {
   onTuiConfigChange?: (config: TuiConfig, scope?: TuiConfigWriteScope) => void;
   onTuiConfigScopeChange?: (scope: TuiConfigWriteScope) => void;
 }) {
-  const dialog = useDialog();
   const { state } = useAppState();
   const toast = useToast();
+  const dialog = useDialog();
   const [section, setSection] = createSignal(0);
   const [selected, setSelected] = createSignal(0);
   const [config, setConfig] = createSignal<ConfigV2>();
