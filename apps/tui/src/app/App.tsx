@@ -26,6 +26,7 @@ import { useDialog } from "../dialog/provider";
 import { DialogConfirm } from "../dialog/DialogConfirm";
 import { DialogPrompt } from "../dialog/DialogPrompt";
 import { DialogSelect } from "../dialog/DialogSelect";
+import { DialogHelp, DialogSessionList, DialogStatus } from "../dialog/DialogLayer";
 import { useModeStack } from "../modal/mode-stack";
 import { decidePaste } from "../prompt/paste";
 import { PromptHistory, shouldUseHistory } from "../prompt/history";
@@ -295,7 +296,12 @@ function Shell(props: {
       return;
     }
     if (command === "session.list") {
-      route.push({ kind: "sessions" });
+      dialog.replace(() => (
+        <DialogSessionList
+          workspaceRoot={props.workspaceRoot}
+          onSelect={changeSession}
+        />
+      ));
       return;
     }
     if (command === "settings.open") {
@@ -303,11 +309,11 @@ function Shell(props: {
       return;
     }
     if (command === "status") {
-      route.push({ kind: "status" });
+      dialog.replace(() => <DialogStatus />);
       return;
     }
     if (command === "help.open") {
-      route.push({ kind: "help" });
+      dialog.replace(() => <DialogHelp keybindOverrides={preferences().keybinds} onClose={() => dialog.clear()} />);
       return;
     }
     if (command === "dialog.test") {

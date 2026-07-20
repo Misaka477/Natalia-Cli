@@ -15,6 +15,7 @@ import { JsonSessionStore, type SessionRecord } from "@natalia/session";
 import type { TuiConfig, TuiConfigWriteScope } from "../config";
 import { SettingsDialog } from "./SettingsDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { useDialog } from "./provider";
 import { commands, formatKeybindKey } from "../keymap";
 import { buildKeybindMap, type UserKeybindOverrides } from "../keymap";
 
@@ -30,12 +31,6 @@ export function DialogLayer(props: {
   const route = useRouteController();
   return (
     <>
-      <SessionListDialog
-        open={route.route().kind === "sessions"}
-        workspaceRoot={props.workspaceRoot}
-        onClose={() => route.back()}
-        onSelect={props.onSessionChange}
-      />
       <SettingsDialog
         open={route.route().kind === "settings"}
         tuiConfig={props.tuiConfig}
@@ -45,27 +40,16 @@ export function DialogLayer(props: {
         onTuiConfigChange={props.onTuiConfigChange}
         onTuiConfigScopeChange={props.onTuiConfigScopeChange}
       />
-      <StatusDialog
-        open={route.route().kind === "status"}
-        onClose={() => route.back()}
-      />
-      <HelpDialog
-        open={route.route().kind === "help"}
-        keybindOverrides={props.keybindOverrides}
-        onClose={() => route.back()}
-      />
     </>
   );
 }
 
-function HelpDialog(props: {
-  open: boolean;
+export function DialogHelp(props: {
   keybindOverrides?: UserKeybindOverrides;
   onClose(): void;
 }) {
   const bindings = () => buildKeybindMap(props.keybindOverrides).map;
   return (
-    <Show when={props.open}>
       <DialogFrame title="Keyboard Shortcuts" tone="accent">
         <scrollbox height={16} border={["left"]} borderColor={darkTheme.muted}>
           <For each={Object.values(commands)}>
@@ -85,11 +69,10 @@ function HelpDialog(props: {
           Current bindings include TUI config overrides · Escape returns
         </text>
       </DialogFrame>
-    </Show>
   );
 }
 
-function StatusDialog(props: { open: boolean; onClose: () => void }) {
+export function DialogStatus() {
   const { state } = useAppState();
   const segments = () => {
     const map: Record<string, string> = {};
@@ -101,7 +84,6 @@ function StatusDialog(props: { open: boolean; onClose: () => void }) {
     return map;
   };
   return (
-    <Show when={props.open}>
       <DialogFrame title="Runtime Status" tone="accent">
         <text fg={darkTheme.text}>Mode: {segments().mode ?? "runtime"}</text>
         <text fg={darkTheme.text}>
@@ -132,16 +114,14 @@ function StatusDialog(props: { open: boolean; onClose: () => void }) {
         </text>
         <text fg={darkTheme.muted}>Escape to close</text>
       </DialogFrame>
-    </Show>
   );
 }
 
-function SessionListDialog(props: {
-  open: boolean;
+export function DialogSessionList(props: {
   workspaceRoot?: string;
-  onClose(): void;
   onSelect?: (sessionID?: string) => void;
 }) {
+  const dialog = useDialog();
   const [sessions, setSessions] = createSignal<SessionRecord[]>([]);
   const [selected, setSelected] = createSignal(0);
   const [loading, setLoading] = createSignal(false);
@@ -206,13 +186,10 @@ function SessionListDialog(props: {
     props.onSelect?.(copy.id);
   }
 
-  createEffect(() => {
-    if (!props.open) return;
-    void refresh();
-  });
+  createEffect(() => void refresh());
 
   useBindings(() => ({
-    enabled: props.open,
+    enabled: true,
     bindings: [
       {
         key: "escape",
@@ -222,7 +199,7 @@ function SessionListDialog(props: {
           if (mode() === "confirm-delete" || mode() === "confirm-rename") {
             setMode("list");
           } else {
-            props.onClose();
+            dialog.clear();
           }
         },
       },
@@ -230,7 +207,7 @@ function SessionListDialog(props: {
   }));
 
   useBindings(() => ({
-    enabled: props.open && mode() === "list",
+    enabled: mode() === "list",
     bindings: [
       {
         key: "up",
@@ -318,7 +295,6 @@ function SessionListDialog(props: {
   }));
 
   return (
-    <Show when={props.open}>
       <DialogFrame title="Session History" tone="accent">
         <Show when={mode() === "list"}>
           <Show when={!loading()}>
@@ -395,7 +371,7 @@ function SessionListDialog(props: {
               const key = normalizeModalKey(event.name ?? event.key ?? "");
               if (isExitChord(event)) {
                 consumeModalKey(event);
-                props.onClose();
+                  dialog.clear();
                 return;
               }
               if (key === "escape") {
@@ -425,7 +401,6 @@ function SessionListDialog(props: {
           }}
         />
       </DialogFrame>
-    </Show>
   );
 }
 
