@@ -21,7 +21,8 @@ import { darkTheme, roleColor } from "../../theme/theme";
 import type { TuiPreferences } from "../../settings";
 import { timelineLayout } from "../../session-layout";
 import { useRouteController } from "../../context/route";
-import { ApprovalPrompt, QuestionPrompt } from "../../dialog/DialogLayer";
+import { PermissionPrompt } from "./permission";
+import { QuestionPrompt } from "./question";
 
 const markdownSyntax = SyntaxStyle.fromStyles({
   heading: { fg: darkTheme.accent, bold: true },
@@ -87,7 +88,7 @@ export function SessionRoute(props: {
         </Show>
       </scrollbox>
       <Show when={props.backend && modal()?.kind === "approval"}>
-        <ApprovalPrompt
+        <PermissionPrompt
           request={modal() as Extract<ReturnType<typeof modal>, { kind: "approval" }>}
           backend={props.backend!}
           onExit={props.onExit ?? (() => {})}
