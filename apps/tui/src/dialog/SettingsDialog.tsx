@@ -12,6 +12,7 @@ import { useAppState } from "../context/state";
 import { useToast } from "../context/toast";
 import { darkTheme } from "../theme/theme";
 import { useBindings } from "@opentui/keymap/solid";
+import { useDialog } from "./provider";
 import { SelectDialog, type SelectOption } from "./SelectDialog";
 import { PromptDialog } from "./PromptDialog";
 import { ThemeService } from "../theme/service";
@@ -117,14 +118,13 @@ function RowItem(props: { row: Row; selected: boolean }) {
 }
 
 export function SettingsDialog(props: {
-  open: boolean;
   tuiConfig?: TuiConfig;
   tuiWriteScope?: TuiConfigWriteScope;
   workspaceRoot?: string;
-  onClose(): void;
   onTuiConfigChange?: (config: TuiConfig, scope?: TuiConfigWriteScope) => void;
   onTuiConfigScopeChange?: (scope: TuiConfigWriteScope) => void;
 }) {
+  const dialog = useDialog();
   const { state } = useAppState();
   const toast = useToast();
   const [section, setSection] = createSignal(0);
@@ -177,7 +177,7 @@ export function SettingsDialog(props: {
   ] as const;
 
   createEffect(() => {
-    if (!props.open || !props.workspaceRoot) return;
+    if (!props.workspaceRoot) return;
     void Promise.all([
       resolveConfig({ workspaceRoot: props.workspaceRoot }),
       loadLocalTuiState(props.workspaceRoot),
@@ -249,14 +249,14 @@ export function SettingsDialog(props: {
   }
 
   createEffect(() => {
-    if (!props.open) return;
     setSection(0);
     setSelected(0);
     setNotice("");
   });
 
   useBindings(() => ({
-    enabled: props.open,
+    mode: "modal",
+    enabled: true,
     bindings: [
       {
         key: "escape",
@@ -266,7 +266,7 @@ export function SettingsDialog(props: {
           if (subOpen()) {
             closeSubDialog();
           } else {
-            props.onClose();
+            dialog.clear();
           }
         },
       },
@@ -274,7 +274,8 @@ export function SettingsDialog(props: {
   }));
 
   useBindings(() => ({
-    enabled: props.open && !subOpen(),
+    mode: "modal",
+    enabled: !subOpen(),
     bindings: [
       {
         key: "up",
@@ -438,7 +439,7 @@ export function SettingsDialog(props: {
 
   return (
     <>
-      <Show when={props.open && !subOpen()}>
+      <Show when={!subOpen()}>
         <box
           position="absolute"
           left={3}

@@ -8,41 +8,13 @@ import {
 } from "solid-js";
 import { TextareaRenderable, TextAttributes } from "@opentui/core";
 import { useAppState } from "../context/state";
-import { useRouteController } from "../context/route";
 import { darkTheme } from "../theme/theme";
 import { useBindings } from "@opentui/keymap/solid";
 import { JsonSessionStore, type SessionRecord } from "@natalia/session";
-import type { TuiConfig, TuiConfigWriteScope } from "../config";
-import { SettingsDialog } from "./SettingsDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { useDialog } from "./provider";
 import { commands, formatKeybindKey } from "../keymap";
 import { buildKeybindMap, type UserKeybindOverrides } from "../keymap";
-
-export function DialogLayer(props: {
-  workspaceRoot?: string;
-  onSessionChange?: (sessionID?: string) => void;
-  tuiConfig?: TuiConfig;
-  tuiWriteScope?: TuiConfigWriteScope;
-  onTuiConfigChange?: (config: TuiConfig, scope?: TuiConfigWriteScope) => void;
-  onTuiConfigScopeChange?: (scope: TuiConfigWriteScope) => void;
-  keybindOverrides?: UserKeybindOverrides;
-}) {
-  const route = useRouteController();
-  return (
-    <>
-      <SettingsDialog
-        open={route.route().kind === "settings"}
-        tuiConfig={props.tuiConfig}
-        tuiWriteScope={props.tuiWriteScope}
-        workspaceRoot={props.workspaceRoot}
-        onClose={() => route.back()}
-        onTuiConfigChange={props.onTuiConfigChange}
-        onTuiConfigScopeChange={props.onTuiConfigScopeChange}
-      />
-    </>
-  );
-}
 
 export function DialogHelp(props: {
   keybindOverrides?: UserKeybindOverrides;

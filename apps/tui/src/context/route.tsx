@@ -8,11 +8,6 @@ import {
 
 export type AppRoute =
   | { kind: "none" }
-  | { kind: "palette" }
-  | { kind: "sessions" }
-  | { kind: "settings" }
-  | { kind: "status" }
-  | { kind: "help" }
   | { kind: "subagent"; id: string };
 
 type NavigableRoute = Exclude<AppRoute, { kind: "none" }>;

@@ -14,7 +14,6 @@ import { RouteProvider, useRouteController } from "../context/route";
 import { StateProvider, useAppState } from "../context/state";
 import { ClipboardProvider, useClipboard } from "../context/clipboard";
 import { ToastProvider, ToastRegion, useToast } from "../context/toast";
-import { DialogLayer } from "../dialog/DialogLayer";
 import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
 import {
   buildKeybindMap,
@@ -27,6 +26,7 @@ import { DialogConfirm } from "../dialog/DialogConfirm";
 import { DialogPrompt } from "../dialog/DialogPrompt";
 import { DialogSelect } from "../dialog/DialogSelect";
 import { DialogHelp, DialogSessionList, DialogStatus } from "../dialog/DialogLayer";
+import { SettingsDialog } from "../dialog/SettingsDialog";
 import { useModeStack } from "../modal/mode-stack";
 import { decidePaste } from "../prompt/paste";
 import { PromptHistory, shouldUseHistory } from "../prompt/history";
@@ -305,7 +305,15 @@ function Shell(props: {
       return;
     }
     if (command === "settings.open") {
-      route.push({ kind: "settings" });
+      dialog.replace(() => (
+        <SettingsDialog
+          workspaceRoot={props.workspaceRoot}
+          tuiConfig={preferences()}
+          tuiWriteScope={tuiWriteScope()}
+          onTuiConfigScopeChange={setTuiWriteScope}
+          onTuiConfigChange={updatePreferences}
+        />
+      ));
       return;
     }
     if (command === "status") {
@@ -754,15 +762,6 @@ function Shell(props: {
           overlay
         />
       </Show>
-      <DialogLayer
-        workspaceRoot={props.workspaceRoot}
-        onSessionChange={changeSession}
-        tuiConfig={preferences()}
-        keybindOverrides={preferences().keybinds}
-        tuiWriteScope={tuiWriteScope()}
-        onTuiConfigScopeChange={setTuiWriteScope}
-        onTuiConfigChange={updatePreferences}
-      />
       <ToastRegion />
     </box>
   );
