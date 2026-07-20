@@ -21,6 +21,7 @@ const handle = await runTuiShell({
     : doctor
       ? "/doctor"
       : undefined,
+  fixture: smoke,
   backend: smoke ? undefined : createBackend(),
   createBackend: smoke ? undefined : createBackend,
   workspaceRoot,

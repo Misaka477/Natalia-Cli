@@ -26,8 +26,15 @@ console.log("palette keyboard smoke passed");
 function backend(): RuntimeClient {
   return {
     start(onEvent) {
-      onEvent({ type: "session.created", sessionID: "ses_palette_smoke" as never, title: "Palette smoke" });
-      onEvent({ type: "session.ready", sessionID: "ses_palette_smoke" as never });
+      onEvent({
+        type: "session.created",
+        sessionID: "ses_palette_smoke" as never,
+        title: "Palette smoke",
+      });
+      onEvent({
+        type: "session.ready",
+        sessionID: "ses_palette_smoke" as never,
+      });
     },
     async submit(text) {
       return {

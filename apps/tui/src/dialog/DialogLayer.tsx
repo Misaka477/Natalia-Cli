@@ -22,25 +22,25 @@ export function DialogHelp(props: {
 }) {
   const bindings = () => buildKeybindMap(props.keybindOverrides).map;
   return (
-      <DialogFrame title="Keyboard Shortcuts" tone="accent">
-        <scrollbox height={16} border={["left"]} borderColor={darkTheme.muted}>
-          <For each={Object.values(commands)}>
-            {(command) => (
-              <box flexDirection="row" justifyContent="space-between" gap={2}>
-                <text fg={darkTheme.text}>{command.desc}</text>
-                <text fg={darkTheme.accent}>
-                  {bindings()[command.id]
-                    ? formatKeybindKey(bindings()[command.id]!)
-                    : "disabled"}
-                </text>
-              </box>
-            )}
-          </For>
-        </scrollbox>
-        <text fg={darkTheme.muted}>
-          Current bindings include TUI config overrides · Escape returns
-        </text>
-      </DialogFrame>
+    <DialogFrame title="Keyboard Shortcuts" tone="accent">
+      <scrollbox height={16} border={["left"]} borderColor={darkTheme.muted}>
+        <For each={Object.values(commands)}>
+          {(command) => (
+            <box flexDirection="row" justifyContent="space-between" gap={2}>
+              <text fg={darkTheme.text}>{command.desc}</text>
+              <text fg={darkTheme.accent}>
+                {bindings()[command.id]
+                  ? formatKeybindKey(bindings()[command.id]!)
+                  : "disabled"}
+              </text>
+            </box>
+          )}
+        </For>
+      </scrollbox>
+      <text fg={darkTheme.muted}>
+        Current bindings include TUI config overrides · Escape returns
+      </text>
+    </DialogFrame>
   );
 }
 
@@ -56,36 +56,36 @@ export function DialogStatus() {
     return map;
   };
   return (
-      <DialogFrame title="Runtime Status" tone="accent">
-        <text fg={darkTheme.text}>Mode: {segments().mode ?? "runtime"}</text>
-        <text fg={darkTheme.text}>
-          Model: {segments().model ?? "not connected"}
-        </text>
-        <text fg={darkTheme.text}>
-          Provider: {segments().provider ?? "not connected"}
-        </text>
-        <text fg={darkTheme.text}>Context: {segments().ctx ?? "unknown"}</text>
-        <Show when={segments().threshold}>
-          <text fg={darkTheme.muted}>
-            Threshold: {segments().threshold} · Reserved:{" "}
-            {segments().reserved ?? "-"}
-          </text>
-        </Show>
-        <Show when={segments().step}>
-          <text fg={darkTheme.muted}>Step: {segments().step}</text>
-        </Show>
-        <Show when={segments().bg}>
-          <text fg={darkTheme.muted}>Background: {segments().bg}</text>
-        </Show>
-        <Show when={segments()._extra}>
-          <text fg={darkTheme.muted}>Permissions: {segments()._extra}</text>
-        </Show>
+    <DialogFrame title="Runtime Status" tone="accent">
+      <text fg={darkTheme.text}>Mode: {segments().mode ?? "runtime"}</text>
+      <text fg={darkTheme.text}>
+        Model: {segments().model ?? "not connected"}
+      </text>
+      <text fg={darkTheme.text}>
+        Provider: {segments().provider ?? "not connected"}
+      </text>
+      <text fg={darkTheme.text}>Context: {segments().ctx ?? "unknown"}</text>
+      <Show when={segments().threshold}>
         <text fg={darkTheme.muted}>
-          PTY sessions: {Object.keys(state.pty).length} · Messages:{" "}
-          {state.messages.length}
+          Threshold: {segments().threshold} · Reserved:{" "}
+          {segments().reserved ?? "-"}
         </text>
-        <text fg={darkTheme.muted}>Escape to close</text>
-      </DialogFrame>
+      </Show>
+      <Show when={segments().step}>
+        <text fg={darkTheme.muted}>Step: {segments().step}</text>
+      </Show>
+      <Show when={segments().bg}>
+        <text fg={darkTheme.muted}>Background: {segments().bg}</text>
+      </Show>
+      <Show when={segments()._extra}>
+        <text fg={darkTheme.muted}>Permissions: {segments()._extra}</text>
+      </Show>
+      <text fg={darkTheme.muted}>
+        PTY sessions: {Object.keys(state.pty).length} · Messages:{" "}
+        {state.messages.length}
+      </text>
+      <text fg={darkTheme.muted}>Escape to close</text>
+    </DialogFrame>
   );
 }
 
@@ -194,9 +194,7 @@ export function DialogSessionList(props: {
         desc: "Next session",
         group: "Dialog",
         cmd: () => {
-          setSelected((value) =>
-            Math.min(filtered().length - 1, value + 1),
-          );
+          setSelected((value) => Math.min(filtered().length - 1, value + 1));
         },
       },
       {
@@ -267,112 +265,104 @@ export function DialogSessionList(props: {
   }));
 
   return (
-      <DialogFrame title="Session History" tone="accent">
-        <Show when={mode() === "list"}>
-          <Show when={!loading()}>
-            <input
-              placeholder="Search sessions... (type to filter)"
-              placeholderColor={darkTheme.muted}
-              textColor={darkTheme.text}
-              focusedTextColor={darkTheme.text}
-              onInput={(value: string) => {
-                setQuery(value);
-                setSelected(0);
-              }}
-            />
-          </Show>
-          <text fg={darkTheme.muted}>
-            Enter open · N new · C copy · P pin · R rename · D delete · Escape
-            close
-          </text>
-          <Show when={loading()}>
-            <text fg={darkTheme.muted}>Loading sessions...</text>
-          </Show>
-          <Show when={!loading() && sessions().length === 0}>
-            <text fg={darkTheme.muted}>
-              No saved sessions yet. Press N to start one.
-            </text>
-          </Show>
-          <Show
-            when={
-              !loading() && sessions().length > 0 && filtered().length === 0
-            }
-          >
-            <text fg={darkTheme.muted}>No sessions match your search.</text>
-          </Show>
-          <scrollbox
-            height={12}
-            border={["left"]}
-            borderColor={darkTheme.muted}
-          >
-            <For each={filtered().slice(0, 100)}>
-              {(session, index) => (
-                <text
-                  fg={
-                    index() === selected() ? darkTheme.accent : darkTheme.text
-                  }
-                  attributes={
-                    index() === selected() ? TextAttributes.BOLD : undefined
-                  }
-                >
-                  {index() === selected() ? ">" : " "}
-                  {session.metadata?.pinned ? "* " : "  "}
-                  {session.title} · {session.id} · {session.events.length}
-                </text>
-              )}
-            </For>
-          </scrollbox>
-        </Show>
-        <Show when={mode() === "confirm-rename"}>
-          <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
-            Rename "{filtered()[selected()]?.title}"
-          </text>
-          <textarea
-            ref={(value: TextareaRenderable) => {
-              renameInput = value;
-            }}
-            initialValue={renameText()}
-            minHeight={1}
-            maxHeight={3}
-            placeholder="New session title"
+    <DialogFrame title="Session History" tone="accent">
+      <Show when={mode() === "list"}>
+        <Show when={!loading()}>
+          <input
+            placeholder="Search sessions... (type to filter)"
             placeholderColor={darkTheme.muted}
             textColor={darkTheme.text}
             focusedTextColor={darkTheme.text}
-            cursorColor={darkTheme.accent}
-            onKeyDown={(event: ModalKeyEvent) => {
-              const key = normalizeModalKey(event.name ?? event.key ?? "");
-              if (isExitChord(event)) {
-                consumeModalKey(event);
-                  dialog.clear();
-                return;
-              }
-              if (key === "escape") {
-                consumeModalKey(event);
-                setMode("list");
-                return;
-              }
-              if (key === "return") {
-                consumeModalKey(event);
-                const text = renameInput?.plainText ?? "";
-                setRenameText(text);
-                void confirmRename();
-                return;
-              }
+            onInput={(value: string) => {
+              setQuery(value);
+              setSelected(0);
             }}
           />
-          <text fg={darkTheme.muted}>Enter confirm · Escape cancel</text>
         </Show>
-        <ConfirmDialog
-          open={mode() === "confirm-delete"}
-          title="Delete Session"
-          message={`Remove "${filtered()[selected()]?.title ?? ""}" (${filtered()[selected()]?.id ?? ""})? This cannot be undone.`}
-          dangerous
-          onClose={() => setMode("list")}
-          onConfirm={() => {
-            void confirmDelete();
+        <text fg={darkTheme.muted}>
+          Enter open · N new · C copy · P pin · R rename · D delete · Escape
+          close
+        </text>
+        <Show when={loading()}>
+          <text fg={darkTheme.muted}>Loading sessions...</text>
+        </Show>
+        <Show when={!loading() && sessions().length === 0}>
+          <text fg={darkTheme.muted}>
+            No saved sessions yet. Press N to start one.
+          </text>
+        </Show>
+        <Show
+          when={!loading() && sessions().length > 0 && filtered().length === 0}
+        >
+          <text fg={darkTheme.muted}>No sessions match your search.</text>
+        </Show>
+        <scrollbox height={12} border={["left"]} borderColor={darkTheme.muted}>
+          <For each={filtered().slice(0, 100)}>
+            {(session, index) => (
+              <text
+                fg={index() === selected() ? darkTheme.accent : darkTheme.text}
+                attributes={
+                  index() === selected() ? TextAttributes.BOLD : undefined
+                }
+              >
+                {index() === selected() ? ">" : " "}
+                {session.metadata?.pinned ? "* " : "  "}
+                {session.title} · {session.id} · {session.events.length}
+              </text>
+            )}
+          </For>
+        </scrollbox>
+      </Show>
+      <Show when={mode() === "confirm-rename"}>
+        <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
+          Rename "{filtered()[selected()]?.title}"
+        </text>
+        <textarea
+          ref={(value: TextareaRenderable) => {
+            renameInput = value;
+          }}
+          initialValue={renameText()}
+          minHeight={1}
+          maxHeight={3}
+          placeholder="New session title"
+          placeholderColor={darkTheme.muted}
+          textColor={darkTheme.text}
+          focusedTextColor={darkTheme.text}
+          cursorColor={darkTheme.accent}
+          onKeyDown={(event: ModalKeyEvent) => {
+            const key = normalizeModalKey(event.name ?? event.key ?? "");
+            if (isExitChord(event)) {
+              consumeModalKey(event);
+              dialog.clear();
+              return;
+            }
+            if (key === "escape") {
+              consumeModalKey(event);
+              setMode("list");
+              return;
+            }
+            if (key === "return") {
+              consumeModalKey(event);
+              const text = renameInput?.plainText ?? "";
+              setRenameText(text);
+              void confirmRename();
+              return;
+            }
           }}
         />
-      </DialogFrame>
+        <text fg={darkTheme.muted}>Enter confirm · Escape cancel</text>
+      </Show>
+      <ConfirmDialog
+        open={mode() === "confirm-delete"}
+        title="Delete Session"
+        message={`Remove "${filtered()[selected()]?.title ?? ""}" (${filtered()[selected()]?.id ?? ""})? This cannot be undone.`}
+        dangerous
+        onClose={() => setMode("list")}
+        onConfirm={() => {
+          void confirmDelete();
+        }}
+      />
+    </DialogFrame>
   );
 }
 

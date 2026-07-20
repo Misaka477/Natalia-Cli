@@ -89,14 +89,18 @@ export function SessionRoute(props: {
       </scrollbox>
       <Show when={props.backend && modal()?.kind === "approval"}>
         <PermissionPrompt
-          request={modal() as Extract<ReturnType<typeof modal>, { kind: "approval" }>}
+          request={
+            modal() as Extract<ReturnType<typeof modal>, { kind: "approval" }>
+          }
           backend={props.backend!}
           onExit={props.onExit ?? (() => {})}
         />
       </Show>
       <Show when={props.backend && modal()?.kind === "question"}>
         <QuestionPrompt
-          request={modal() as Extract<ReturnType<typeof modal>, { kind: "question" }>}
+          request={
+            modal() as Extract<ReturnType<typeof modal>, { kind: "question" }>
+          }
           backend={props.backend!}
           onExit={props.onExit ?? (() => {})}
         />

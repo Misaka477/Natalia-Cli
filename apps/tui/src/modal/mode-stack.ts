@@ -102,7 +102,10 @@ export function registerNataliaKeymap(
   const offInputBindings = registerManagedTextareaLayer(keymap, renderer, {
     enabled: () => {
       const editor = renderer.currentFocusedEditor;
-      return editor instanceof TextareaRenderable && !(editor instanceof InputRenderable);
+      return (
+        editor instanceof TextareaRenderable &&
+        !(editor instanceof InputRenderable)
+      );
     },
   });
 

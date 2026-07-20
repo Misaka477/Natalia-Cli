@@ -83,14 +83,10 @@ export function DialogConfirm(props: DialogConfirmProps) {
             >
               <text
                 fg={
-                  key === store.active
-                    ? darkTheme.background
-                    : darkTheme.muted
+                  key === store.active ? darkTheme.background : darkTheme.muted
                 }
               >
-                {key === "cancel"
-                  ? props.label ?? "cancel"
-                  : key}
+                {key === "cancel" ? (props.label ?? "cancel") : key}
               </text>
             </box>
           )}

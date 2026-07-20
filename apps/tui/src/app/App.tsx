@@ -5,7 +5,11 @@ import {
   type PasteEvent,
 } from "@opentui/core";
 import { useRenderer } from "@opentui/solid";
-import { useBindings, useKeymap, useKeymapSelector } from "@opentui/keymap/solid";
+import {
+  useBindings,
+  useKeymap,
+  useKeymapSelector,
+} from "@opentui/keymap/solid";
 import { stringifyKeySequence } from "@opentui/keymap";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { PromptRefProvider, usePromptRef } from "../context/prompt";
@@ -25,7 +29,11 @@ import { useDialog } from "../dialog/provider";
 import { DialogConfirm } from "../dialog/DialogConfirm";
 import { DialogPrompt } from "../dialog/DialogPrompt";
 import { DialogSelect } from "../dialog/DialogSelect";
-import { DialogHelp, DialogSessionList, DialogStatus } from "../dialog/DialogLayer";
+import {
+  DialogHelp,
+  DialogSessionList,
+  DialogStatus,
+} from "../dialog/DialogLayer";
 import { SettingsDialog } from "../dialog/SettingsDialog";
 import { useModeStack } from "../modal/mode-stack";
 import { decidePaste } from "../prompt/paste";
@@ -321,20 +329,37 @@ function Shell(props: {
       return;
     }
     if (command === "help.open") {
-      dialog.replace(() => <DialogHelp keybindOverrides={preferences().keybinds} onClose={() => dialog.clear()} />);
+      dialog.replace(() => (
+        <DialogHelp
+          keybindOverrides={preferences().keybinds}
+          onClose={() => dialog.clear()}
+        />
+      ));
       return;
     }
     if (command === "dialog.test") {
       try {
         void (async () => {
-          const confirmed = await DialogConfirm.show(dialog, "Dialog Stack Test", "Press left/right to switch focus, Enter to confirm, Escape to cancel.");
+          const confirmed = await DialogConfirm.show(
+            dialog,
+            "Dialog Stack Test",
+            "Press left/right to switch focus, Enter to confirm, Escape to cancel.",
+          );
           if (confirmed === undefined) return;
-          const name = await DialogPrompt.show(dialog, "Enter name", { placeholder: "Type something..." });
+          const name = await DialogPrompt.show(dialog, "Enter name", {
+            placeholder: "Type something...",
+          });
           if (name === null) return;
-          toast.show({ variant: "success", message: `Dialog test done: confirmed=${confirmed}, name="${name}"` });
+          toast.show({
+            variant: "success",
+            message: `Dialog test done: confirmed=${confirmed}, name="${name}"`,
+          });
         })();
       } catch (error) {
-        toast.show({ variant: "error", message: `dialog.test failed: ${error}` });
+        toast.show({
+          variant: "error",
+          message: `dialog.test failed: ${error}`,
+        });
       }
       return;
     }
@@ -610,7 +635,8 @@ function Shell(props: {
     const current = sessions.findIndex(
       (pty) => pty.id === state.ptyPane.selectedID,
     );
-    const next = sessions[(current + direction + sessions.length) % sessions.length];
+    const next =
+      sessions[(current + direction + sessions.length) % sessions.length];
     if (next) dispatch({ type: "pty.pane.select", id: next.id });
   }
 
@@ -781,7 +807,6 @@ function isNearBottom(scrollbox: any, threshold = 10) {
   return scrollHeight - viewportHeight - scrollTop <= threshold;
 }
 
-
 function CommandPalette() {
   const dialog = useDialog();
   const keymap = useKeymap();
@@ -795,32 +820,35 @@ function CommandPalette() {
       commands: commands.map((entry) => entry.command.name),
       visibility: "registered",
     });
-    return commands.map((entry) => ({ entry, bindings: bindings.get(entry.command.name) ?? entry.bindings }));
+    return commands.map((entry) => ({
+      entry,
+      bindings: bindings.get(entry.command.name) ?? entry.bindings,
+    }));
   });
 
   return (
     <DialogSelect
       title="Commands"
       options={entries().map(({ entry, bindings }) => ({
-          title:
-            typeof entry.command.title === "string"
-              ? entry.command.title
-              : entry.command.name,
-          description:
-            typeof entry.command.desc === "string"
-              ? entry.command.desc
-              : undefined,
-          value: entry.command.name,
-          category:
-            typeof entry.command.category === "string"
-              ? entry.command.category
-              : undefined,
-          footer: bindings
-            .map((binding) =>
-              stringifyKeySequence(binding.sequence, { preferDisplay: true }),
-            )
-            .join(" / "),
-        }))}
+        title:
+          typeof entry.command.title === "string"
+            ? entry.command.title
+            : entry.command.name,
+        description:
+          typeof entry.command.desc === "string"
+            ? entry.command.desc
+            : undefined,
+        value: entry.command.name,
+        category:
+          typeof entry.command.category === "string"
+            ? entry.command.category
+            : undefined,
+        footer: bindings
+          .map((binding) =>
+            stringifyKeySequence(binding.sequence, { preferDisplay: true }),
+          )
+          .join(" / "),
+      }))}
       onSelect={(option) => {
         dialog.clear();
         keymap.dispatchCommand(option.value);

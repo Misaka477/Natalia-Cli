@@ -66,7 +66,8 @@ function init(): DialogContext {
 
   useBindings(() => ({
     mode: "modal",
-    enabled: store.stack.length > 0 && !renderer.getSelection()?.getSelectedText(),
+    enabled:
+      store.stack.length > 0 && !renderer.getSelection()?.getSelectedText(),
     bindings: [
       {
         key: "escape",

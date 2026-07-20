@@ -31,7 +31,8 @@ export function PermissionPrompt(props: {
     props.backend.respondApproval({
       requestID: props.request.id,
       decision,
-      feedback: decision === "reject" ? feedback?.trim() || undefined : undefined,
+      feedback:
+        decision === "reject" ? feedback?.trim() || undefined : undefined,
     });
     queueMicrotask(() => prompt.focus());
   }
@@ -40,8 +41,18 @@ export function PermissionPrompt(props: {
     mode: MODE,
     enabled: stage() === "reject",
     bindings: [
-      { key: "escape", desc: "Cancel permission rejection", group: "Permission", cmd: () => setStage("prompt") },
-      { key: "return", desc: "Confirm permission rejection", group: "Permission", cmd: () => reply("reject", input?.plainText) },
+      {
+        key: "escape",
+        desc: "Cancel permission rejection",
+        group: "Permission",
+        cmd: () => setStage("prompt"),
+      },
+      {
+        key: "return",
+        desc: "Confirm permission rejection",
+        group: "Permission",
+        cmd: () => reply("reject", input?.plainText),
+      },
     ],
   }));
 
@@ -49,14 +60,56 @@ export function PermissionPrompt(props: {
     mode: MODE,
     enabled: stage() === "prompt",
     bindings: [
-      { key: "left", desc: "Previous permission option", group: "Permission", cmd: () => setSelected((selected() + actions.length - 1) % actions.length) },
-      { key: "h", desc: "Previous permission option", group: "Permission", cmd: () => setSelected((selected() + actions.length - 1) % actions.length) },
-      { key: "right", desc: "Next permission option", group: "Permission", cmd: () => setSelected((selected() + 1) % actions.length) },
-      { key: "l", desc: "Next permission option", group: "Permission", cmd: () => setSelected((selected() + 1) % actions.length) },
-      { key: "return", desc: "Select permission option", group: "Permission", cmd: () => select() },
-      { key: "escape", desc: "Reject permission", group: "Permission", cmd: () => reply("reject") },
-      { key: "d", desc: "Toggle permission detail", group: "Permission", cmd: () => setExpanded((value) => !value) },
-      ...actions.map((action, index) => ({ key: String(index + 1), desc: `Select ${action}`, group: "Permission", cmd: () => select(index) })),
+      {
+        key: "left",
+        desc: "Previous permission option",
+        group: "Permission",
+        cmd: () =>
+          setSelected((selected() + actions.length - 1) % actions.length),
+      },
+      {
+        key: "h",
+        desc: "Previous permission option",
+        group: "Permission",
+        cmd: () =>
+          setSelected((selected() + actions.length - 1) % actions.length),
+      },
+      {
+        key: "right",
+        desc: "Next permission option",
+        group: "Permission",
+        cmd: () => setSelected((selected() + 1) % actions.length),
+      },
+      {
+        key: "l",
+        desc: "Next permission option",
+        group: "Permission",
+        cmd: () => setSelected((selected() + 1) % actions.length),
+      },
+      {
+        key: "return",
+        desc: "Select permission option",
+        group: "Permission",
+        cmd: () => select(),
+      },
+      {
+        key: "escape",
+        desc: "Reject permission",
+        group: "Permission",
+        cmd: () => reply("reject"),
+      },
+      {
+        key: "d",
+        desc: "Toggle permission detail",
+        group: "Permission",
+        cmd: () => setExpanded((value) => !value),
+      },
+      ...actions.map((action, index) => ({
+        key: String(index + 1),
+        desc: `Select ${action}`,
+        group: "Permission",
+        cmd: () => select(index),
+      })),
     ],
   }));
 
@@ -69,27 +122,75 @@ export function PermissionPrompt(props: {
   }
 
   return (
-    <box backgroundColor={darkTheme.panel} border={["left"]} borderColor={darkTheme.warning} flexDirection="column">
-      <box flexDirection="column" gap={1} paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1}>
+    <box
+      backgroundColor={darkTheme.panel}
+      border={["left"]}
+      borderColor={darkTheme.warning}
+      flexDirection="column"
+    >
+      <box
+        flexDirection="column"
+        gap={1}
+        paddingLeft={2}
+        paddingRight={2}
+        paddingTop={1}
+        paddingBottom={1}
+      >
         <box flexDirection="row" gap={1}>
           <text fg={darkTheme.warning}>△</text>
-          <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>Permission required</text>
+          <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>
+            Permission required
+          </text>
         </box>
-        <text fg={darkTheme.text} wrapMode="word">{props.request.title}</text>
-        <text fg={darkTheme.muted} wrapMode="word">{props.request.preview}</text>
+        <text fg={darkTheme.text} wrapMode="word">
+          {props.request.title}
+        </text>
+        <text fg={darkTheme.muted} wrapMode="word">
+          {props.request.preview}
+        </text>
         <Show when={props.request.keyArguments?.length}>
-          <text fg={darkTheme.muted}>args: {props.request.keyArguments?.join(", ")}</text>
+          <text fg={darkTheme.muted}>
+            args: {props.request.keyArguments?.join(", ")}
+          </text>
         </Show>
         <Show when={props.request.detail}>
-          <text fg={darkTheme.muted}>d {expanded() ? "hide" : "show"} detail</text>
+          <text fg={darkTheme.muted}>
+            d {expanded() ? "hide" : "show"} detail
+          </text>
           <Show when={expanded()}>
-            <scrollbox maxHeight={8}><text fg={darkTheme.text} wrapMode="word">{props.request.detail}</text></scrollbox>
+            <scrollbox maxHeight={8}>
+              <text fg={darkTheme.text} wrapMode="word">
+                {props.request.detail}
+              </text>
+            </scrollbox>
           </Show>
         </Show>
       </box>
-      <Show when={stage() === "reject"} fallback={<Actions selected={selected()} onSelect={select} />}>
-        <box flexDirection="row" gap={2} paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1} backgroundColor={darkTheme.background}>
-          <textarea ref={(value: TextareaRenderable) => { input = value; value.traits = { status: "REJECT" }; }} focused placeholder="Tell Natalia what to do differently" placeholderColor={darkTheme.muted} textColor={darkTheme.text} focusedTextColor={darkTheme.text} cursorColor={darkTheme.warning} />
+      <Show
+        when={stage() === "reject"}
+        fallback={<Actions selected={selected()} onSelect={select} />}
+      >
+        <box
+          flexDirection="row"
+          gap={2}
+          paddingLeft={2}
+          paddingRight={2}
+          paddingTop={1}
+          paddingBottom={1}
+          backgroundColor={darkTheme.background}
+        >
+          <textarea
+            ref={(value: TextareaRenderable) => {
+              input = value;
+              value.traits = { status: "REJECT" };
+            }}
+            focused
+            placeholder="Tell Natalia what to do differently"
+            placeholderColor={darkTheme.muted}
+            textColor={darkTheme.text}
+            focusedTextColor={darkTheme.text}
+            cursorColor={darkTheme.warning}
+          />
           <text fg={darkTheme.muted}>enter confirm · esc cancel</text>
         </box>
       </Show>
@@ -99,8 +200,37 @@ export function PermissionPrompt(props: {
 
 function Actions(props: { selected: number; onSelect(index: number): void }) {
   return (
-    <box flexDirection="row" gap={1} paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1} backgroundColor={darkTheme.background}>
-      <For each={["Allow once", "Allow session", "Reject"]}>{(label, index) => <box paddingLeft={1} paddingRight={1} backgroundColor={index() === props.selected ? darkTheme.warning : darkTheme.panel} onMouseUp={() => props.onSelect(index())}><text fg={index() === props.selected ? darkTheme.background : darkTheme.text}>{label}</text></box>}</For>
+    <box
+      flexDirection="row"
+      gap={1}
+      paddingLeft={2}
+      paddingRight={2}
+      paddingTop={1}
+      paddingBottom={1}
+      backgroundColor={darkTheme.background}
+    >
+      <For each={["Allow once", "Allow session", "Reject"]}>
+        {(label, index) => (
+          <box
+            paddingLeft={1}
+            paddingRight={1}
+            backgroundColor={
+              index() === props.selected ? darkTheme.warning : darkTheme.panel
+            }
+            onMouseUp={() => props.onSelect(index())}
+          >
+            <text
+              fg={
+                index() === props.selected
+                  ? darkTheme.background
+                  : darkTheme.text
+              }
+            >
+              {label}
+            </text>
+          </box>
+        )}
+      </For>
       <text fg={darkTheme.muted}>←→ select · enter confirm · esc reject</text>
     </box>
   );

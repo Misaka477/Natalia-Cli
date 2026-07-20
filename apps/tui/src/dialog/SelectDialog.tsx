@@ -1,10 +1,4 @@
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  Show,
-} from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { ScrollBoxRenderable, TextAttributes } from "@opentui/core";
 import { darkTheme } from "../theme/theme";
 import { useBindings } from "@opentui/keymap/solid";
@@ -134,8 +128,14 @@ export function SelectDialog<T>(props: {
             setSelected(0);
           }}
         />
-        <scrollbox height={14} border={["left"]} borderColor={darkTheme.muted}
-          ref={(r: ScrollBoxRenderable) => { scrollRef = r; }}>
+        <scrollbox
+          height={14}
+          border={["left"]}
+          borderColor={darkTheme.muted}
+          ref={(r: ScrollBoxRenderable) => {
+            scrollRef = r;
+          }}
+        >
           <For each={filtered()}>
             {(option, index) => (
               <box flexDirection="column">

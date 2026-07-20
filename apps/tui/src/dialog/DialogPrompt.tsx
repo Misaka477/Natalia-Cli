@@ -1,14 +1,5 @@
-import {
-  TextareaRenderable,
-  TextAttributes,
-} from "@opentui/core";
-import {
-  Show,
-  createEffect,
-  createSignal,
-  onMount,
-  type JSX,
-} from "solid-js";
+import { TextareaRenderable, TextAttributes } from "@opentui/core";
+import { Show, createEffect, createSignal, onMount, type JSX } from "solid-js";
 import { useBindings } from "@opentui/keymap/solid";
 import { darkTheme } from "../theme/theme";
 import { useDialog, type DialogContext } from "./provider";
@@ -102,27 +93,18 @@ export function DialogPrompt(props: DialogPromptProps) {
           initialValue={props.value}
           placeholder={props.placeholder ?? "Enter text"}
           placeholderColor={darkTheme.muted}
-          textColor={
-            props.busy ? darkTheme.muted : darkTheme.text
-          }
-          focusedTextColor={
-            props.busy ? darkTheme.muted : darkTheme.text
-          }
-          cursorColor={
-            props.busy ? darkTheme.panel : darkTheme.text
-          }
+          textColor={props.busy ? darkTheme.muted : darkTheme.text}
+          focusedTextColor={props.busy ? darkTheme.muted : darkTheme.text}
+          cursorColor={props.busy ? darkTheme.panel : darkTheme.text}
         />
       </box>
       <box paddingBottom={1} gap={1} flexDirection="row">
         <Show
           when={!props.busy}
-          fallback={
-            <text fg={darkTheme.muted}>processing...</text>
-          }
+          fallback={<text fg={darkTheme.muted}>processing...</text>}
         >
           <text fg={darkTheme.text}>
-            return{" "}
-            <span style={{ fg: darkTheme.muted }}>submit</span>
+            return <span style={{ fg: darkTheme.muted }}>submit</span>
           </text>
         </Show>
       </box>

@@ -55,27 +55,27 @@ export async function runTuiShell(
       <KeymapProvider keymap={keymap}>
         <DialogProvider>
           <App
-          backend={backend}
-          createBackend={input.createBackend}
-          workspaceRoot={input.workspaceRoot}
-          onSessionChange={input.onSessionChange}
-          onDispatch={(event) => {
-            events.push(event);
-            input.onEvent?.(event);
-            if (
-              input.initialPrompt &&
-              input.closeAfterInitialTurn !== false &&
-              event.type === "turn.finished"
-            ) {
-              if (process.env.NATALIA_TUI_SMOKE_MARKER)
-                void Bun.write(process.env.NATALIA_TUI_SMOKE_MARKER, "done");
-              setTimeout(
-                () => renderer.destroy(),
-                process.env.NATALIA_TUI_SMOKE_MARKER ? 1000 : 50,
-              );
-            }
-          }}
-        />
+            backend={backend}
+            createBackend={input.createBackend}
+            workspaceRoot={input.workspaceRoot}
+            onSessionChange={input.onSessionChange}
+            onDispatch={(event) => {
+              events.push(event);
+              input.onEvent?.(event);
+              if (
+                input.initialPrompt &&
+                input.closeAfterInitialTurn !== false &&
+                event.type === "turn.finished"
+              ) {
+                if (process.env.NATALIA_TUI_SMOKE_MARKER)
+                  void Bun.write(process.env.NATALIA_TUI_SMOKE_MARKER, "done");
+                setTimeout(
+                  () => renderer.destroy(),
+                  process.env.NATALIA_TUI_SMOKE_MARKER ? 1000 : 50,
+                );
+              }
+            }}
+          />
         </DialogProvider>
       </KeymapProvider>
     ),

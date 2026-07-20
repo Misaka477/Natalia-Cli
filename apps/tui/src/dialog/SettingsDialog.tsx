@@ -1,10 +1,4 @@
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  Show,
-} from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { TextAttributes } from "@opentui/core";
 import type { ConfigV2 } from "@natalia/contracts";
 import { resolveConfig, saveConfigFile } from "@natalia/config";

@@ -57,7 +57,8 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
     const terms = needle.split(/\s+/u);
     return props.options.filter((option) => {
       if (option.disabled) return false;
-      const text = `${option.title} ${option.description ?? ""} ${option.category ?? ""}`.toLowerCase();
+      const text =
+        `${option.title} ${option.description ?? ""} ${option.category ?? ""}`.toLowerCase();
       return terms.every((t) => text.includes(t));
     });
   });
@@ -253,19 +254,19 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
               {([category, options], index) => (
                 <>
                   <Show when={category}>
-                    <box
-                      paddingTop={index() > 0 ? 1 : 0}
-                      paddingLeft={3}
-                    >
-                      <text fg={darkTheme.accent} attributes={TextAttributes.BOLD}>
+                    <box paddingTop={index() > 0 ? 1 : 0} paddingLeft={3}>
+                      <text
+                        fg={darkTheme.accent}
+                        attributes={TextAttributes.BOLD}
+                      >
                         {category}
                       </text>
                     </box>
                   </Show>
                   <For each={options}>
                     {(option) => {
-                      const active = createMemo(() =>
-                        flat().indexOf(option) === store.selected,
+                      const active = createMemo(
+                        () => flat().indexOf(option) === store.selected,
                       );
                       return (
                         <box
@@ -274,9 +275,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                           paddingRight={3}
                           gap={1}
                           backgroundColor={
-                            active()
-                              ? darkTheme.accent
-                              : undefined
+                            active() ? darkTheme.accent : undefined
                           }
                           onMouseUp={() => {
                             props.onSelect?.(option);
@@ -289,14 +288,10 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                           <text
                             flexGrow={1}
                             fg={
-                              active()
-                                ? darkTheme.background
-                                : darkTheme.text
+                              active() ? darkTheme.background : darkTheme.text
                             }
                             attributes={
-                              active()
-                                ? TextAttributes.BOLD
-                                : undefined
+                              active() ? TextAttributes.BOLD : undefined
                             }
                             overflow="hidden"
                             wrapMode="none"
