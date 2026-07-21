@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { createSignal } from "solid-js";
 
 export type Theme = {
   name: string;
@@ -211,6 +212,22 @@ export const themes: Record<string, Theme> = {
 export const builtinThemeNames = Object.keys(themes);
 
 export const defaultTheme = darkTheme;
+
+const [activeTheme, setActiveTheme] = createSignal<Theme>(defaultTheme);
+
+/**
+ * Allows renderer leaves to consume live theme tokens without threading a
+ * context prop through every markdown, diff, and tool presentation component.
+ */
+export const themeTokens: Theme = new Proxy({} as Theme, {
+  get(_target, property: keyof Theme) {
+    return activeTheme()[property];
+  },
+});
+
+export function setThemeTokens(theme: Theme) {
+  setActiveTheme(theme);
+}
 
 export function isValidThemeName(name: string): boolean {
   return name in themes;

@@ -51,6 +51,9 @@ function init(): DialogContext {
 
   function refocus() {
     setTimeout(() => {
+      // A palette selection can clear then immediately replace the stack.
+      // Do not let the stale clear restore focus to the composer underneath.
+      if (store.stack.length > 0) return;
       if (!focus || focus.isDestroyed) return;
       function find(item: Renderable): boolean {
         for (const child of item.getChildren()) {
@@ -99,7 +102,7 @@ function init(): DialogContext {
       const current = store.stack.at(-1);
       current?.onClose?.();
       setStore("stack", store.stack.slice(0, -1));
-      if (store.stack.length <= 1) refocus();
+      if (store.stack.length === 1) refocus();
     },
     clear() {
       for (const item of store.stack) {
@@ -121,11 +124,14 @@ function init(): DialogContext {
     replace(element: JSX.Element, onClose?: () => void) {
       if (store.stack.length === 0) {
         focus = renderer.currentFocusedRenderable;
-        focus?.blur();
       }
-      for (const item of store.stack) {
-        item.onClose?.();
-      }
+      // The replaced dialog may own an InputRenderable. It must release focus
+      // before a non-editor dialog becomes the stack top, otherwise OpenTUI's
+      // managed input layer consumes the new dialog's navigation keys.
+      renderer.currentFocusedRenderable?.blur();
+      // Replacement discards the current route, so settle only the visible
+      // promise. Buried stack entries remain valid when a child is popped.
+      store.stack.at(-1)?.onClose?.();
       setStore("size", "medium");
       setStore("stack", [{ element, onClose }]);
     },

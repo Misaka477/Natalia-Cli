@@ -187,16 +187,21 @@ test("Anthropic provider streams text usage and tool calls", async () => {
   );
 });
 
-test("Gemini provider maps SSE content function calls and usage", async () => {
+test("Gemini provider maps SSE content function calls and usage without placing its key in the URL", async () => {
+  let requested: string | undefined;
+  let headers: Headers | undefined;
   const fetchImpl = Object.assign(
-    async () =>
-      new Response(
+    async (input: URL | RequestInfo, init?: RequestInit) => {
+      requested = String(input);
+      headers = new Headers(init?.headers);
+      return new Response(
         [
           'data: {"candidates":[{"content":{"parts":[{"text":"hi"},{"functionCall":{"name":"glob","args":{"pattern":"**/*.ts"}}}]}}],"usageMetadata":{"promptTokenCount":2,"candidatesTokenCount":3}}',
           "",
         ].join("\n"),
         { headers: { "content-type": "text/event-stream" } },
-      ),
+      );
+    },
     { preconnect: fetch.preconnect },
   ) as typeof fetch;
   const provider = new GeminiProvider({
@@ -209,6 +214,10 @@ test("Gemini provider maps SSE content function calls and usage", async () => {
     messages: [{ role: "user", content: "hi" }],
   }))
     chunks.push(chunk);
+  expect(requested).toBe(
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-test:streamGenerateContent?alt=sse",
+  );
+  expect(headers?.get("x-goog-api-key")).toBe("test-key");
   expect(chunks).toEqual(
     expect.arrayContaining([
       { type: "content", text: "hi" },

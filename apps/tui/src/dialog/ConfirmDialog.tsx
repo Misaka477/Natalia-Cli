@@ -14,6 +14,7 @@ export function ConfirmDialog(props: {
   onConfirm(): void;
 }) {
   useBindings(() => ({
+    mode: "modal",
     enabled: props.open,
     bindings: [
       {

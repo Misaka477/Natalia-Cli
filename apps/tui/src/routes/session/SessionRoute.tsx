@@ -17,7 +17,7 @@ import {
   stripAnsiOutput,
 } from "@natalia/ui-model";
 import { useAppState, type MessageBlock } from "../../context/state";
-import { darkTheme, roleColor } from "../../theme/theme";
+import { roleColor, themeTokens as darkTheme } from "../../theme/theme";
 import type { TuiPreferences } from "../../settings";
 import { timelineLayout } from "../../session-layout";
 import { useRouteController } from "../../context/route";
@@ -25,7 +25,7 @@ import { useDialog } from "../../dialog/provider";
 import { PermissionPrompt } from "./permission";
 import { QuestionPrompt } from "./question";
 
-const markdownSyntax = SyntaxStyle.fromStyles({
+const markdownSyntax = () => SyntaxStyle.fromStyles({
   heading: { fg: darkTheme.accent, bold: true },
   strong: { bold: true },
   code: { fg: darkTheme.warning },
@@ -557,7 +557,7 @@ function BlockBody(props: {
         <markdown
           content={props.block.text}
           streaming={true}
-          syntaxStyle={markdownSyntax}
+          syntaxStyle={markdownSyntax()}
           fg={darkTheme.text}
         />
         <Show when={props.block.pendingText}>
@@ -583,7 +583,7 @@ function BlockBody(props: {
     );
   }
   return (
-    <text fg={roleColor(props.block.role)} wrapMode="word" paddingLeft={1}>
+    <text fg={roleColor(props.block.role, darkTheme)} wrapMode="word" paddingLeft={1}>
       {props.block.text}
     </text>
   );
@@ -638,8 +638,12 @@ function ToolBlockView(props: {
   const openDetail = () => {
     const content = tool().result?.detail || tool().redactedArguments;
     if (!content) return;
-    dialog.replace(() => (
-      <ToolDetailDialog title={`${tool().name} details`} content={content} />
+    dialog.push(() => (
+      <ToolDetailDialog
+        title={`${tool().name} details`}
+        content={content}
+        argumentsRaw={tool().redactedArguments !== content ? tool().redactedArguments : undefined}
+      />
     ));
   };
 
@@ -692,7 +696,7 @@ function ToolBlockView(props: {
               diff={content()}
               view={diffView()}
               filetype={filetype(path())}
-              syntaxStyle={markdownSyntax}
+              syntaxStyle={markdownSyntax()}
               showLineNumbers={true}
               width="100%"
               wrapMode="word"
@@ -760,11 +764,11 @@ function ToolBlockView(props: {
             </box>
           )}
         </Show>
-        <Show when={tool().detailAvailable}>
+          <Show when={tool().detailAvailable}>
           <text fg={darkTheme.muted} onMouseUp={openDetail}>
             {expanded()
-              ? "collapse details · d full pager"
-              : "expand · d full pager"}
+              ? "collapse details · d detail with args/result tabs"
+              : "expand · d detail with args/result tabs"}
           </text>
         </Show>
         <Show when={tool().status === "failed"}>
@@ -777,8 +781,9 @@ function ToolBlockView(props: {
   );
 }
 
-function ToolDetailDialog(props: { title: string; content: string }) {
+function ToolDetailDialog(props: { title: string; content: string; argumentsRaw?: string }) {
   const dialog = useDialog();
+  const [tab, setTab] = createSignal<"result" | "arguments">("result");
   return (
     <box
       flexDirection="column"
@@ -790,9 +795,27 @@ function ToolDetailDialog(props: { title: string; content: string }) {
         <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>
           {props.title}
         </text>
-        <text fg={darkTheme.muted} onMouseUp={() => dialog.clear()}>
+        <text fg={darkTheme.muted} onMouseUp={() => dialog.pop()}>
           esc
         </text>
+      </box>
+      <box flexDirection="row" gap={1} paddingTop={1} paddingBottom={1}>
+        <text
+          fg={tab() === "result" ? darkTheme.accent : darkTheme.muted}
+          attributes={tab() === "result" ? TextAttributes.BOLD : undefined}
+          onMouseUp={() => setTab("result")}
+        >
+          result
+        </text>
+        <Show when={props.argumentsRaw}>
+          <text
+            fg={tab() === "arguments" ? darkTheme.accent : darkTheme.muted}
+            attributes={tab() === "arguments" ? TextAttributes.BOLD : undefined}
+            onMouseUp={() => setTab("arguments")}
+          >
+            arguments
+          </text>
+        </Show>
       </box>
       <scrollbox
         maxHeight={18}
@@ -800,11 +823,18 @@ function ToolDetailDialog(props: { title: string; content: string }) {
         borderColor={darkTheme.muted}
         paddingLeft={1}
       >
-        <text fg={darkTheme.text} wrapMode="word">
-          {props.content}
-        </text>
+        <Show when={tab() === "result"}>
+          <text fg={darkTheme.text} wrapMode="word">
+            {props.content}
+          </text>
+        </Show>
+        <Show when={tab() === "arguments" && props.argumentsRaw}>
+          <text fg={darkTheme.muted} wrapMode="word">
+            {props.argumentsRaw}
+          </text>
+        </Show>
       </scrollbox>
-      <text fg={darkTheme.muted}>d opened full detail · escape close</text>
+      <text fg={darkTheme.muted}>↑↓ result/arguments tab · escape close</text>
     </box>
   );
 }
@@ -1006,7 +1036,7 @@ function FileToolView(props: { block: MessageBlock }) {
             conceal={false}
             fg={darkTheme.text}
             filetype={filetype(path())}
-            syntaxStyle={markdownSyntax}
+            syntaxStyle={markdownSyntax()}
             content={stringField(input(), "content")}
           />
         </line_number>
@@ -1219,6 +1249,11 @@ function ToolPanel(props: {
 }) {
   const renderer = useRenderer();
   const [hover, setHover] = createSignal(false);
+  const [errorExpanded, setErrorExpanded] = createSignal(false);
+  const failed = () =>
+    props.tool.status === "failed" || props.tool.status === "cancelled";
+  const error = () =>
+    props.tool.result?.detail || props.tool.result?.preview || props.tool.summary;
   return (
     <box
       border={["left"]}
@@ -1233,6 +1268,7 @@ function ToolPanel(props: {
       onMouseOut={() => setHover(false)}
       onMouseUp={() => {
         if (renderer.getSelection()?.getSelectedText()) return;
+        if (failed()) setErrorExpanded((value) => !value);
       }}
     >
       <text paddingLeft={3} fg={darkTheme.muted}>
@@ -1240,8 +1276,22 @@ function ToolPanel(props: {
         {props.tool.elapsed ? ` · ${props.tool.elapsed}` : ""}
       </text>
       {props.children as never}
-      <Show when={props.tool.status === "failed"}>
-        <text fg={darkTheme.danger}>{props.tool.summary}</text>
+      <Show when={failed()}>
+        <box flexDirection="column" gap={1}>
+          <text fg={darkTheme.danger} wrapMode="word">
+            {props.tool.summary}
+          </text>
+          <Show when={errorExpanded() && error() !== props.tool.summary}>
+            <text fg={darkTheme.danger} wrapMode="word">
+              {error()}
+            </text>
+          </Show>
+          <Show when={error() !== props.tool.summary}>
+            <text fg={darkTheme.muted}>
+              {errorExpanded() ? "Click to hide error detail" : "Click to show error detail"}
+            </text>
+          </Show>
+        </box>
       </Show>
     </box>
   );

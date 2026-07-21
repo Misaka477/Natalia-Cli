@@ -301,10 +301,15 @@ export class GeminiProvider implements StreamingProvider {
         : timeout
       : request.signal;
     const response = await this.fetchImpl(
-      `${this.baseURL}/models/${encodeURIComponent(this.model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(this.apiKey)}`,
+      `${this.baseURL}/models/${encodeURIComponent(this.model)}:streamGenerateContent?alt=sse`,
       {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        // Keep credentials out of request URLs so they cannot leak through
+        // proxy, server, or diagnostic URL logging.
+        headers: {
+          "content-type": "application/json",
+          "x-goog-api-key": this.apiKey,
+        },
         body: JSON.stringify({
           contents: request.messages.map(toGeminiContent),
           tools: request.tools?.length

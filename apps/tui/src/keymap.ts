@@ -118,6 +118,26 @@ export const commands: Record<string, CommandDef> = {
     keys: "escape",
     desc: "Close current dialog",
   },
+  "provider.connect": {
+    id: "provider.connect",
+    keys: "unset",
+    desc: "Connect a new provider",
+  },
+  "model.list": {
+    id: "model.list",
+    keys: "unset",
+    desc: "List configured models",
+  },
+  "mcp.list": {
+    id: "mcp.list",
+    keys: "unset",
+    desc: "Manage MCP servers",
+  },
+  "model.edit": {
+    id: "model.edit",
+    keys: "unset",
+    desc: "Edit model parameters",
+  },
   "scroll.up": { id: "scroll.up", keys: "pageup", desc: "Scroll up" },
   "scroll.down": { id: "scroll.down", keys: "pagedown", desc: "Scroll down" },
   "scroll.top": { id: "scroll.top", keys: "home", desc: "Scroll to top" },
@@ -316,7 +336,7 @@ export function buildKeybindMap(overrides?: UserKeybindOverrides | null): {
   const diagnostics: OverrideDiagnostic[] = [];
 
   for (const [id, cmd] of Object.entries(commands)) {
-    map[id] = cmd.keys;
+    if (cmd.keys !== "unset") map[id] = cmd.keys;
   }
 
   if (!overrides) return { map, diagnostics };

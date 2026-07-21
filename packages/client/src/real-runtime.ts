@@ -5,6 +5,7 @@ import type {
   RuntimeClient,
   RuntimeEvent,
   SessionID,
+  SubmitInput,
   SubmittedTurn,
   QuestionResponse,
 } from "@natalia/contracts";
@@ -29,11 +30,22 @@ import { resolveConfig } from "@natalia/config";
 import {
   appendSessionEvent,
   JsonSessionStore,
+  SessionRunCoordinator,
+  SqliteSessionStore,
+  admitInput,
+  admittedInputs,
+  promoteNextQueued,
+  promoteSteers,
   type SessionRecord,
 } from "@natalia/session";
 import {
   createToolRegistry,
+  boundToolOutput,
+  cleanupToolOutput,
+  materializeTools,
+  validateToolParameters,
   type RuntimeTool,
+  type ToolMaterialization,
   type ToolRegistry,
 } from "@natalia/tools";
 import {
@@ -61,6 +73,7 @@ export type RealRuntimeClientOptions = {
   title?: string;
   workspaceRoot?: string;
   sessionDir?: string;
+  useSqliteStore?: boolean;
   provider?: StreamingProvider;
   tools?: ToolRegistry;
   permissionMode?: "ask" | "auto";
@@ -75,6 +88,7 @@ export function createRealRuntimeClient(
   let workspaceRoot = resolve(options.workspaceRoot ?? process.cwd());
   let sessionID: SessionID;
   let sessionStore: JsonSessionStore;
+  let sqliteStore: SqliteSessionStore | undefined;
   let provider = options.provider ?? providerFromEnvironment();
   let providerSource:
     | "explicit"
@@ -97,12 +111,15 @@ export function createRealRuntimeClient(
   const context = new ContextLedger();
   const pendingApprovals = new Map<string, ApprovalResponse>();
   const pendingApprovalRequests = new Set<string>();
+  const approvalWaiters = new Map<string, (response: ApprovalResponse) => void>();
   const pendingQuestions = new Map<string, QuestionResponse>();
+  const questionWaiters = new Map<string, (response: QuestionResponse) => void>();
   let sink: ((event: RuntimeEvent) => void) | undefined;
   let session: SessionRecord | undefined;
   let checkpointStore: CheckpointStore | undefined;
   let lastSubmitted: SubmittedTurn | undefined;
   let activeAbort: AbortController | undefined;
+  let activeTurnID: string | undefined;
   let paused = false;
   let pauseWaiters: Array<() => void> = [];
   let ready: Promise<void> | undefined;
@@ -117,6 +134,7 @@ export function createRealRuntimeClient(
     | undefined;
   let runtimeContextConfig = contextStatusConfig();
   let retryPolicy: NonNullable<Parameters<typeof runWithRetry>[2]>["policy"];
+  const turnCoordinator = new SessionRunCoordinator();
 
   async function initialize() {
     try {
@@ -184,7 +202,8 @@ export function createRealRuntimeClient(
         message: `TS config was not used: ${error instanceof Error ? error.message : String(error)}`,
       });
     }
-    if (!provider) {
+    if (!provider && process.env.NATALIA_LEGACY_FALLBACK) {
+      // Legacy Go config fallback: only when explicit env var is set
       const legacy = await providerFromLegacyGoConfig({
         configPath:
           options.legacyConfigPath ?? process.env.NATALIA_LEGACY_CONFIG_PATH,
@@ -219,6 +238,12 @@ export function createRealRuntimeClient(
     sessionStore = new JsonSessionStore(
       options.sessionDir ?? join(workspaceRoot, ".natalia", "sessions"),
     );
+    if (options.useSqliteStore) {
+      sqliteStore = new SqliteSessionStore(
+        join(workspaceRoot, ".natalia", "sessions.db"),
+      );
+      sqliteStore.create(sessionID, options.title ?? `Natalia TS session ${sessionID}`);
+    }
     subagents = new SubagentRegistry({
       workDir: workspaceRoot,
       runner: async (task, runner) => {
@@ -360,6 +385,13 @@ export function createRealRuntimeClient(
       sessionID,
       options.title ?? `Natalia TS session ${sessionID}`,
     );
+    await cleanupToolOutput(workspaceRoot).catch((error) =>
+      publish({
+        type: "diagnostic",
+        level: "warning",
+        message: `tool output cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+      }),
+    );
     restoreContextFromEvents(context, session.events);
     restoreResponsesFromEvents(session.events);
     skillRegistry = await discoverSkills({
@@ -402,9 +434,12 @@ export function createRealRuntimeClient(
       event.type !== "session.ready"
     ) {
       appendSessionEvent(session, event);
-      const sessionSnapshot = session;
+      const sessionSnapshot = structuredClone(session);
       sessionPersistence = sessionPersistence
-        .then(() => sessionStore.save(sessionSnapshot))
+        .then(async () => {
+          await sqliteStore?.appendEventAsync(sessionID, event);
+          await sessionStore.save(sessionSnapshot);
+        })
         .catch((error) => {
           sink?.({
             type: "diagnostic",
@@ -414,6 +449,80 @@ export function createRealRuntimeClient(
         });
     }
     sink?.(event);
+  }
+
+  async function submitInput(input: SubmitInput) {
+    await ready;
+    const text = input.text;
+    const id = input.id ?? `turn_${crypto.randomUUID().replace(/-/gu, "")}`;
+    const submitted: SubmittedTurn = {
+      type: "turn.submitted",
+      id,
+      text,
+      byteLength: new TextEncoder().encode(text).byteLength,
+      lineCount: lineCount(text),
+      sha256: createHash("sha256").update(text).digest("hex"),
+    };
+    if (!session) throw new Error("session initialization did not complete");
+    const delivery = input.delivery ?? "steer";
+    const existing = admittedInputs(session).find((item) => item.id === id);
+    admitInput(session, { id, text, delivery });
+    if (existing) {
+      if (!existing.promotedAt && delivery === "steer")
+        await turnCoordinator.run(() => drainAdmittedInput(id, text));
+      return submitted;
+    }
+    lastSubmitted = submitted;
+    publish(submitted);
+    // Persist admission before a command or provider can observe this turn.
+    await sessionPersistence;
+    if (delivery === "queue") {
+      if (!turnCoordinator.active)
+        void turnCoordinator.run(async () => {
+          if (!session) return;
+          const [next] = promoteNextQueued(session);
+          if (!next) return;
+          await persistInboxPromotion();
+          await drainAdmittedInput(next.id, next.text);
+        });
+      return submitted;
+    }
+    await turnCoordinator.run(() => drainAdmittedInput(id, text));
+    await sessionPersistence;
+    return submitted;
+  }
+
+  async function drainAdmittedInput(id: string, text: string) {
+    await runAdmittedInput(id, text);
+    while (session && !admittedInputs(session).some((item) => !item.promotedAt && item.delivery === "steer")) {
+      const [next] = promoteNextQueued(session);
+      if (!next) return;
+      await persistInboxPromotion();
+      await runAdmittedInput(next.id, next.text);
+    }
+  }
+
+  async function runAdmittedInput(id: string, text: string) {
+    if (await handleCommand(id, text)) {
+      await sessionPersistence;
+      return;
+    }
+    await runProviderTurn(id, text);
+  }
+
+  async function persistInboxPromotion() {
+    if (!session) return;
+    const snapshot = structuredClone(session);
+    sessionPersistence = sessionPersistence
+      .then(() => sessionStore.save(snapshot))
+      .catch((error) =>
+        publish({
+          type: "diagnostic",
+          level: "warning",
+          message: `session inbox promotion persistence failed: ${error instanceof Error ? error.message : String(error)}`,
+        }),
+      );
+    await sessionPersistence;
   }
 
   return {
@@ -428,35 +537,12 @@ export function createRealRuntimeClient(
       });
     },
     async submit(text) {
-      await ready;
-      const id = `turn_${Date.now().toString(36)}`;
-      const submitted: SubmittedTurn = {
-        type: "turn.submitted",
-        id,
-        text,
-        byteLength: new TextEncoder().encode(text).byteLength,
-        lineCount: lineCount(text),
-        sha256: createHash("sha256").update(text).digest("hex"),
-      };
-      lastSubmitted = submitted;
-      publish(submitted);
-      if (await handleCommand(id, text)) {
-        await sessionPersistence;
-        return submitted;
-      }
-      await runProviderTurn(id, text);
-      await sessionPersistence;
-      return submitted;
+      return await submitInput({ text });
     },
+    submitInput,
     cancel(reason = "user cancel") {
       activeAbort?.abort(reason);
-      if (!lastSubmitted) return;
-      publish({ type: "turn.cancelled", id: lastSubmitted.id, reason });
-      publish({
-        type: "turn.finished",
-        id: lastSubmitted.id,
-        stopReason: "cancelled",
-      });
+      if (activeTurnID) publish({ type: "turn.cancelled", id: activeTurnID, reason });
     },
     pause(reason = "user pause") {
       if (!lastSubmitted || paused) return;
@@ -497,6 +583,7 @@ export function createRealRuntimeClient(
       });
       pendingApprovals.set(response.requestID, response);
       pendingApprovalRequests.delete(response.requestID);
+      approvalWaiters.get(response.requestID)?.(response);
     },
     respondQuestion(response) {
       publish({
@@ -506,6 +593,7 @@ export function createRealRuntimeClient(
         rejected: response.rejected,
       });
       pendingQuestions.set(response.requestID, response);
+      questionWaiters.get(response.requestID)?.(response);
     },
   };
 
@@ -575,15 +663,18 @@ export function createRealRuntimeClient(
       return true;
     }
     if (trimmed === "/sessions") {
-      const sessions = await sessionStore.list();
+      const rows = sqliteStore
+        ? sqliteStore.list()
+        : await sessionStore.list();
+      const sessions = Array.isArray(rows) ? rows : rows;
       publish({
         type: "content.delta",
         id,
-        text: sessions.length
-          ? sessions
+        text: (sessions as Array<{ id: string; title: string; eventCount?: number }>).length
+          ? (sessions as Array<{ id: string; title: string; eventCount?: number }>)
               .map(
                 (item) =>
-                  `${item.id}  ${item.title}  ${item.events.length} events  ${item.createdAt}`,
+                  `${item.id}  ${item.title}  ${"eventCount" in item ? item.eventCount : 0} events`,
               )
               .join("\n")
           : "no TS sessions found in this workspace",
@@ -705,7 +796,10 @@ export function createRealRuntimeClient(
       publish({ type: "turn.finished", id, stopReason: "error" });
       return;
     }
-    activeAbort = new AbortController();
+    const controller = new AbortController();
+    activeAbort = controller;
+    activeTurnID = id;
+    if (session && promoteSteers(session).length) await persistInboxPromotion();
     lastProviderUsage = undefined;
     toolCalls.clear();
     context.add({ id: `${id}:user`, role: "user", content: text });
@@ -757,16 +851,17 @@ export function createRealRuntimeClient(
     } catch (error) {
       publish({
         type: "diagnostic",
-        level: activeAbort.signal.aborted ? "warning" : "error",
+        level: controller.signal.aborted ? "warning" : "error",
         message: error instanceof Error ? error.message : String(error),
       });
       publish({
         type: "turn.finished",
         id,
-        stopReason: activeAbort.signal.aborted ? "cancelled" : "error",
+        stopReason: controller.signal.aborted ? "cancelled" : "error",
       });
     } finally {
-      activeAbort = undefined;
+      if (activeAbort === controller) activeAbort = undefined;
+      if (activeTurnID === id) activeTurnID = undefined;
     }
   }
 
@@ -776,6 +871,14 @@ export function createRealRuntimeClient(
     step: number,
   ) {
     const toolMessages: ProviderMessage[] = [];
+    const advertised = new Map(
+      [...tools].filter(
+        ([name, tool]) =>
+          toolLayer.isToolAllowed(name) &&
+          (!activeSkill || authorizeSkillTool(activeSkill, tool.name, { mode: "default" })),
+      ),
+    );
+    const materialized = materializeTools(tools, advertised);
     const output = await runWithRetry(
       { id, operation: "llm_step", step },
       async () => {
@@ -790,17 +893,7 @@ export function createRealRuntimeClient(
         };
         for await (const chunk of provider!.stream({
           messages,
-          tools: [...toolLayer.filterTools([...tools.values()])]
-            .filter(
-              (tool) =>
-                !activeSkill ||
-                authorizeSkillTool(activeSkill, tool.name, { mode: "default" }),
-            )
-            .map((tool) => ({
-              name: tool.name,
-              description: tool.description,
-              parameters: tool.parameters,
-            })),
+          tools: materialized.definitions,
           signal: activeAbort?.signal,
         })) {
           if (chunk.type === "thinking") {
@@ -825,10 +918,11 @@ export function createRealRuntimeClient(
     if (output.calls.length) {
       if (output.thinking) publish({ type: "thinking.done", id });
       if (output.assistant) publish({ type: "content.done", id });
-      const produced = await executeToolCalls(
-        id,
-        output.calls,
-        output.assistant,
+        const produced = await executeToolCalls(
+          id,
+          output.calls,
+          output.assistant,
+          materialized,
       );
       toolMessages.push(...produced);
       messages.push(...produced);
@@ -901,6 +995,7 @@ export function createRealRuntimeClient(
     turnID: string,
     calls: ProviderToolCall[],
     assistant: string,
+    materialized: ToolMaterialization,
   ): Promise<ProviderMessage[]> {
     const assistantMessage: ProviderMessage = {
       role: "assistant",
@@ -917,11 +1012,9 @@ export function createRealRuntimeClient(
       });
     }
     for (const call of calls) {
-      const tool = tools.get(call.name);
-      if (!tool || !toolLayer.isToolAllowed(call.name)) {
-        const reason = tool
-          ? `blocked by policy: ${call.name}`
-          : `tool ${call.name} is not available`;
+      const resolved = materialized.resolve(call.name);
+      if (resolved.status !== "ready") {
+        const reason = resolved.error;
         publish({
           type: "tool.update",
           id: `${turnID}:${call.id}`,
@@ -939,7 +1032,7 @@ export function createRealRuntimeClient(
         });
         continue;
       }
-      const result = await executeOneTool(turnID, call, tool);
+      const result = await executeOneTool(turnID, call, resolved.tool);
       messages.push({ role: "tool", toolCallID: call.id, content: result });
       context.add({
         id: `${turnID}:${call.id}:result`,
@@ -1022,7 +1115,13 @@ export function createRealRuntimeClient(
       startedAt: Date.now(),
     });
     try {
-      const result = await tool.execute(parseToolArguments(call.arguments), {
+      const parsed = parseToolArguments(call.arguments);
+      const paramErrors = validateToolParameters(tool.parameters, parsed);
+      if (paramErrors.length) {
+        const detail = paramErrors.map((e) => `${e.path}: ${e.message}`).join("; ");
+        throw new Error(`tool "${tool.name}" parameter validation failed: ${detail}`);
+      }
+      const completeResult = await tool.execute(parsed, {
         workspaceRoot,
         signal: activeAbort?.signal,
         askQuestion: async (question) =>
@@ -1050,6 +1149,8 @@ export function createRealRuntimeClient(
         settings: toolSettings(),
         onSandboxEvent: (event) => publish(event as RuntimeEvent),
       });
+      const bounded = await boundToolOutput(workspaceRoot, completeResult);
+      const result = bounded.text;
       publish({
         type: "tool.update",
         id: toolID,
@@ -1058,6 +1159,7 @@ export function createRealRuntimeClient(
         status: "succeeded",
         summary: result.slice(0, 200),
         result,
+        metadata: bounded.outputPath ? { outputPath: bounded.outputPath } : undefined,
         endedAt: Date.now(),
       });
       await toolLayer.postExecute({ ...hookEvent, result });
@@ -1096,18 +1198,19 @@ export function createRealRuntimeClient(
       sensitive: presentation.sensitive,
     });
     pendingApprovalRequests.add(approvalID);
-    for (let index = 0; index < 6000; index++) {
-      const response = pendingApprovals.get(approvalID);
-      if (response?.decision === "reject")
+    try {
+      const response = await waitForResponse(
+        approvalID,
+        pendingApprovals,
+        approvalWaiters,
+        activeAbort?.signal,
+        `approval timed out: ${tool.name}`,
+      );
+      if (response.decision === "reject")
         throw new Error(`tool rejected: ${response.feedback ?? tool.name}`);
-      if (response) {
-        pendingApprovalRequests.delete(approvalID);
-        return;
-      }
-      await Bun.sleep(50);
+    } finally {
+      pendingApprovalRequests.delete(approvalID);
     }
-    pendingApprovalRequests.delete(approvalID);
-    throw new Error(`approval timed out: ${tool.name}`);
   }
 
   async function requireQuestion(
@@ -1125,13 +1228,15 @@ export function createRealRuntimeClient(
     },
   ) {
     publish({ type: "question.request", id: requestID, ...request });
-    for (let index = 0; index < 6000; index++) {
-      const response = pendingQuestions.get(requestID);
-      if (response?.rejected) throw new Error("user rejected question");
-      if (response) return response.answers;
-      await Bun.sleep(50);
-    }
-    throw new Error("question timed out");
+    const response = await waitForResponse(
+      requestID,
+      pendingQuestions,
+      questionWaiters,
+      activeAbort?.signal,
+      "question timed out",
+    );
+    if (response.rejected) throw new Error("user rejected question");
+    return response.answers;
   }
 
   async function waitIfPaused() {
@@ -1233,6 +1338,35 @@ function extractiveCompactor() {
       };
     },
   };
+}
+
+function waitForResponse<T>(
+  id: string,
+  responses: Map<string, T>,
+  waiters: Map<string, (response: T) => void>,
+  signal: AbortSignal | undefined,
+  timeoutMessage: string,
+) {
+  const existing = responses.get(id);
+  if (existing) return Promise.resolve(existing);
+  return new Promise<T>((resolve, reject) => {
+    const timeout = setTimeout(() => finish(() => reject(new Error(timeoutMessage))), 5 * 60_000);
+    const abort = () => finish(() => reject(signal?.reason ?? new Error("request cancelled")));
+    const finish = (settle: () => void) => {
+      clearTimeout(timeout);
+      waiters.delete(id);
+      signal?.removeEventListener("abort", abort);
+      settle();
+    };
+    waiters.set(id, (response) => finish(() => resolve(response)));
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) {
+      abort();
+      return;
+    }
+    const raced = responses.get(id);
+    if (raced) waiters.get(id)?.(raced);
+  });
 }
 
 function parseToolArguments(input: string) {

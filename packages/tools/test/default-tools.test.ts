@@ -88,6 +88,9 @@ test("default shell and process tools execute real commands", async () => {
   expect(
     audit.processes.some((item) => item.id === "proc_test" && item.persistent),
   ).toBe(true);
+  await tools
+    .get("process_stop")!
+    .execute({ id: "proc_test" }, { workspaceRoot: root });
 });
 
 test("managed process registry persists state for restart and background aliases", async () => {
@@ -115,6 +118,9 @@ test("managed process registry persists state for restart and background aliases
       .get("background_output")!
       .execute({ id: "proc_persist" }, { workspaceRoot: root }),
   ).toContain("persisted");
+  await second
+    .get("background_stop")!
+    .execute({ id: "proc_persist" }, { workspaceRoot: root });
 });
 
 test("native glob grep and durable todo tools operate inside the workspace", async () => {

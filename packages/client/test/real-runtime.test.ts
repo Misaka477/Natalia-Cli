@@ -44,7 +44,7 @@ test("real runtime client streams provider output and persists replayable sessio
       join(root, ".natalia", "sessions", "ses_ts7_real.json"),
       "utf8",
     ),
-  ) as { events: RuntimeEvent[] };
+  ) as { events: RuntimeEvent[]; inbox?: Array<Record<string, unknown>> };
   expect(
     persisted.events.some((event) => event.type === "turn.submitted"),
   ).toBe(true);
@@ -206,6 +206,146 @@ test("write approval uses a compact preview and preserves raw request detail", a
   expect(approval.detail).toContain('"content"');
 });
 
+test("cancelling a pending approval settles the active turn without polling", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-approval-cancel-"));
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_approval_cancel",
+    provider: approvalWriteProvider(),
+  });
+  let cancelled = false;
+  client.start((event) => {
+    events.push(event);
+    if (event.type === "approval.request" && !cancelled) {
+      cancelled = true;
+      client.cancel("approval cancelled");
+    }
+  });
+
+  await client.submit("write then cancel");
+  expect(events.some((event) => event.type === "turn.cancelled")).toBe(true);
+  expect(
+    events.some(
+      (event) => event.type === "turn.finished" && event.stopReason === "cancelled",
+    ),
+  ).toBe(true);
+  expect(
+    events.filter(
+      (event) => event.type === "turn.finished" && event.stopReason === "cancelled",
+    ),
+  ).toHaveLength(1);
+});
+
+test("provider admission is persisted before the provider turn begins", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-admission-"));
+  let started = false;
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_admission",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        started = true;
+        yield { type: "content" as const, text: "done" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  const submitted = await client.submit("persist me first");
+  expect(started).toBe(true);
+  const stored = JSON.parse(
+    await readFile(join(root, ".natalia", "sessions", "ses_ts7_admission.json"), "utf8"),
+  ) as { events: RuntimeEvent[]; inbox?: Array<Record<string, unknown>> };
+  expect(stored.events.some((event) => event.type === "turn.submitted" && event.id === submitted.id)).toBe(true);
+  expect(stored.inbox).toMatchObject([
+    { id: submitted.id, text: "persist me first", delivery: "steer", promotedAt: expect.any(String) },
+  ]);
+});
+
+test("queued input wakes an idle session after durable admission", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-queued-input-"));
+  let started = false;
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_queued_input",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        started = true;
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  const submitted = await client.submitInput!({ text: "wait for idle", delivery: "queue" });
+  for (let index = 0; index < 50 && !started; index++) await Bun.sleep(1);
+  expect(started).toBe(true);
+  const stored = JSON.parse(
+    await readFile(join(root, ".natalia", "sessions", "ses_ts7_queued_input.json"), "utf8"),
+  ) as { inbox?: Array<Record<string, unknown>> };
+  expect(stored.inbox).toMatchObject([{ id: submitted.id, text: "wait for idle", delivery: "queue" }]);
+  expect(stored.inbox?.[0]?.promotedAt).toEqual(expect.any(String));
+});
+
+test("queued input promotes after the active steer turn becomes idle", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-queued-promotion-"));
+  const requests: string[] = [];
+  let release: (() => void) | undefined;
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_queued_promotion",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        requests.push(request.messages.at(-1)?.content ?? "");
+        if (requests.length === 1) await new Promise<void>((resolve) => (release = resolve));
+        yield { type: "content" as const, text: "done" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  const first = client.submit("first");
+  while (!release) await Bun.sleep(1);
+  const queued = await client.submitInput!({ text: "queued", delivery: "queue" });
+  release();
+  await first;
+  expect(requests).toEqual(["first", "queued"]);
+  const stored = JSON.parse(
+    await readFile(join(root, ".natalia", "sessions", "ses_ts7_queued_promotion.json"), "utf8"),
+  ) as { inbox?: Array<{ id: string; promotedAt?: string }> };
+  expect(stored.inbox?.find((item) => item.id === queued.id)?.promotedAt).toEqual(expect.any(String));
+});
+
+test("exact input retry does not duplicate a completed provider turn", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-input-retry-"));
+  let calls = 0;
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_input_retry",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        calls++;
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.submitInput!({ id: "turn_retry", text: "same", delivery: "steer" });
+  await client.submitInput!({ id: "turn_retry", text: "same", delivery: "steer" });
+  expect(calls).toBe(1);
+  await expect(
+    client.submitInput!({ id: "turn_retry", text: "different", delivery: "steer" }),
+  ).rejects.toThrow("session input conflicts");
+});
+
 test("real runtime client discovers and activates native Skills", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-skills-"));
   const skillRoot = join(root, ".natalia", "skills", "read-only");
@@ -280,6 +420,7 @@ test("real runtime client falls back to active legacy Go provider config without
     ].join("\n"),
   );
   const events: RuntimeEvent[] = [];
+  process.env.NATALIA_LEGACY_FALLBACK = "1";
   const client = createRealRuntimeClient({
     workspaceRoot: root,
     sessionID: "ses_ts7_legacy_provider",
@@ -288,6 +429,7 @@ test("real runtime client falls back to active legacy Go provider config without
   client.start((event) => events.push(event));
   await waitFor(() => events.some((event) => event.type === "session.ready"));
   await client.submit("/doctor");
+  delete process.env.NATALIA_LEGACY_FALLBACK;
 
   const serialized = JSON.stringify(events);
   expect(serialized).toContain("legacy_go_config");

@@ -3,6 +3,34 @@ export type ToolPolicy = {
   exclude?: string[];
 };
 
+export type ResourceRule = {
+  pattern: string;
+  allow?: boolean;
+  reason?: string;
+};
+
+export type PermissionRules = {
+  tools?: ToolPolicy;
+  files?: {
+    readPaths?: ResourceRule[];
+    writePaths?: ResourceRule[];
+  };
+  commands?: {
+    allowPatterns?: string[];
+    denyPatterns?: string[];
+  };
+  network?: {
+    allowHosts?: string[];
+    denyHosts?: string[];
+    allowLocalhost?: boolean;
+    allowPrivate?: boolean;
+  };
+  env?: {
+    allowlist?: string[];
+  };
+  redactOutput?: boolean;
+};
+
 export type ToolHookEvent = {
   turnID: string;
   toolName: string;
@@ -79,6 +107,83 @@ export function createToolPolicyHookLayer(
   }
 
   return { isToolAllowed, filterTools, preExecute, postExecute };
+}
+
+export type PermissionCheck = {
+  allowed: boolean;
+  reason?: string;
+  diagnostics: string[];
+};
+
+export function evaluatePermissionRules(
+  rules: PermissionRules | undefined,
+  toolName: string,
+  args: Record<string, unknown>,
+): PermissionCheck {
+  const diags: string[] = [];
+  if (!rules) return { allowed: true, diagnostics: diags };
+
+  // Check tool allow/exclude
+  if (rules.tools) {
+    const allowP = compilePatterns(rules.tools.allow);
+    const excludeP = compilePatterns(rules.tools.exclude);
+    if (allowP.length && !allowP.some((p) => p.test(toolName))) {
+      diags.push(`tool "${toolName}" not in allow list`);
+      return { allowed: false, reason: "tool blocked by policy", diagnostics: diags };
+    }
+    if (excludeP.some((p) => p.test(toolName))) {
+      diags.push(`tool "${toolName}" in exclude list`);
+      return { allowed: false, reason: "tool blocked by policy", diagnostics: diags };
+    }
+  }
+
+  // Check file path rules for write/read tools
+  if (rules.files && (toolName === "write_file" || toolName === "read_file" || toolName === "edit_file")) {
+    const path = typeof args.path === "string" ? args.path : undefined;
+    if (path) {
+      if (toolName !== "read_file" && rules.files.writePaths) {
+        const denied = rules.files.writePaths.find(
+          (r) => !r.allow && pathMatch(path, r.pattern),
+        );
+        if (denied) {
+          diags.push(`write to "${path}" blocked: ${denied.reason ?? "path denied"}`);
+          return { allowed: false, reason: denied.reason, diagnostics: diags };
+        }
+      }
+      if (toolName === "read_file" && rules.files.readPaths) {
+        const denied = rules.files.readPaths.find(
+          (r) => !r.allow && pathMatch(path, r.pattern),
+        );
+        if (denied) {
+          diags.push(`read of "${path}" blocked: ${denied.reason ?? "path denied"}`);
+          return { allowed: false, reason: denied.reason, diagnostics: diags };
+        }
+      }
+    }
+  }
+
+  // Check command rules for shell tool
+  if (rules.commands && toolName === "run_shell") {
+    const cmd = typeof args.command === "string" ? args.command : undefined;
+    if (cmd) {
+      if (rules.commands.denyPatterns?.some((p) => new RegExp(p, "iu").test(cmd))) {
+        diags.push(`command matches deny pattern`);
+        return { allowed: false, reason: "command blocked by policy", diagnostics: diags };
+      }
+      if (rules.commands.allowPatterns?.length &&
+          !rules.commands.allowPatterns.some((p) => new RegExp(p, "iu").test(cmd))) {
+        diags.push(`command does not match any allow pattern`);
+        return { allowed: false, reason: "command blocked by policy", diagnostics: diags };
+      }
+    }
+  }
+
+  return { allowed: true, diagnostics: diags };
+}
+
+function pathMatch(path: string, pattern: string): boolean {
+  const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&").replace(/\\\*/gu, ".*");
+  return new RegExp(`^${escaped}$`, "u").test(path);
 }
 
 function compilePatterns(patterns?: string[]): RegExp[] {

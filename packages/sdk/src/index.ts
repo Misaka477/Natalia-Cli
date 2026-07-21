@@ -12,7 +12,7 @@ export type NataliaSDKOptions = {
 };
 
 export type NataliaSDK = {
-  prompt(text: string): Promise<SubmittedTurn>;
+  prompt(text: string, options?: { delivery?: "steer" | "queue" }): Promise<SubmittedTurn>;
   cancel(reason?: string): Promise<void>;
   pause(reason?: string): Promise<void>;
   resume(): Promise<void>;
@@ -56,7 +56,8 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     return body.result as T;
   }
   return {
-    prompt: async (text) => await call<SubmittedTurn>("prompt", { text }),
+    prompt: async (text, promptOptions = {}) =>
+      await call<SubmittedTurn>("prompt", { text, ...promptOptions }),
     cancel: async (reason) => {
       await call("cancel", reason ? { reason } : {});
     },

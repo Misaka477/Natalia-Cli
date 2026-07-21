@@ -149,6 +149,16 @@ export const securityConfigSchema = z.object({
   redactToolOutput: z.boolean().default(true),
 });
 
+export const policyStatementSchema = z.object({
+  effect: z.enum(["allow", "deny"]),
+  action: z.string().min(1),
+  resource: z.string().min(1),
+});
+
+export const experimentalConfigSchema = z.object({
+  policies: z.array(policyStatementSchema).default([]),
+});
+
 export const configV2Schema = z.object({
   version: z.literal(2),
   runtime: runtimeConfigSchema.default({}),
@@ -178,6 +188,7 @@ export const configV2Schema = z.object({
   browser: browserConfigSchema.default({}),
   network: networkConfigSchema.default({}),
   security: securityConfigSchema.default({}),
+  experimental: experimentalConfigSchema.default({}),
 });
 
 export type ConfigV2 = z.infer<typeof configV2Schema>;
@@ -186,3 +197,4 @@ export type ProviderConfig = z.infer<typeof providerConfigSchema>;
 export type PermissionProfile = z.infer<typeof permissionProfileSchema>;
 export type ModeConfig = z.infer<typeof modeConfigSchema>;
 export type MCPServerConfig = z.infer<typeof mcpServerConfigSchema>;
+export type PolicyStatement = z.infer<typeof policyStatementSchema>;

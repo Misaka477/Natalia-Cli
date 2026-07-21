@@ -22,6 +22,7 @@
     "smoke:tui:resize": "npm --workspace @natalia/tui run smoke:resize",
     "smoke:tui:keyboard": "npm --workspace @natalia/tui run smoke:keyboard",
     "smoke:tui:palette-keyboard": "npm --workspace @natalia/tui run smoke:palette-keyboard",
+    "smoke:tui:provider-config": "npm --workspace @natalia/tui run smoke:provider-config",
     "smoke:tui:pty-sandbox": "npm --workspace @natalia/tui run smoke:pty-sandbox",
     "smoke:tui:pty-model": "npm --workspace @natalia/tui run smoke:pty-model",
     "smoke:tui:retry": "npm --workspace @natalia/tui run smoke:retry",

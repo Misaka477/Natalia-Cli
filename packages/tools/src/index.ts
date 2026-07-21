@@ -8,6 +8,16 @@ import { WorkspaceSandboxManager } from "@natalia/sandbox";
 
 import { createWorkflowTools } from "./workflow-tools";
 export { createWorkflowTools };
+export { validateToolParameters, assertValidToolParameters } from "./validate";
+export {
+  boundToolOutput,
+  cleanupToolOutput,
+  MAX_TOOL_OUTPUT_BYTES,
+  MAX_TOOL_OUTPUT_LINES,
+  TOOL_OUTPUT_RETENTION_MS,
+} from "./output";
+export { materializeTools } from "./invocation";
+export type { ToolInvocation, ToolMaterialization, ToolSettlement } from "./invocation";
 export type ToolExecutionBoundary = {
   name: string;
   requiresApproval: boolean;
@@ -1835,25 +1845,34 @@ async function runShell(
   return await new Promise<string>((resolvePromise, reject) => {
     const child = spawn("bash", ["-lc", command], {
       cwd: context.workspaceRoot,
+      detached: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
+    let settled = false;
+    const finish = (result: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      context.signal?.removeEventListener("abort", abort);
+      result();
+    };
+    const abort = () => {
+      terminateChildProcessTree(child.pid);
+      finish(() => reject(context.signal?.reason ?? new Error("command cancelled")));
+    };
     const timer = setTimeout(() => {
-      child.kill("SIGTERM");
-      reject(new Error(`command timed out after ${timeoutSec}s`));
+      terminateChildProcessTree(child.pid);
+      finish(() => reject(new Error(`command timed out after ${timeoutSec}s`)));
     }, timeoutSec * 1000);
-    context.signal?.addEventListener("abort", () => child.kill("SIGTERM"), {
-      once: true,
-    });
+    context.signal?.addEventListener("abort", abort, { once: true });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk) => (stdout += String(chunk)));
     child.stderr.on("data", (chunk) => (stderr += String(chunk)));
     child.on("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
+      finish(() => reject(error));
     });
     child.on("close", (code) => {
-      clearTimeout(timer);
       const output = [
         `exit=${code}`,
         stdout && `stdout:\n${stdout}`,
@@ -1861,10 +1880,25 @@ async function runShell(
       ]
         .filter(Boolean)
         .join("\n");
-      if (code === 0) resolvePromise(output);
-      else reject(new Error(output));
+      if (code === 0) finish(() => resolvePromise(output));
+      else finish(() => reject(new Error(output)));
     });
   });
+}
+
+function terminateChildProcessTree(pid: number | undefined) {
+  if (!pid) return;
+  try {
+    process.kill(-pid, "SIGTERM");
+    return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") return;
+  }
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+  }
 }
 
 function workspacePath(root: string, inputPath: string) {

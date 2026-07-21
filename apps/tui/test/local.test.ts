@@ -8,6 +8,8 @@ import {
   trackModelUsage,
   sortModelOptions,
 } from "../src/local";
+import { buildModelOptions } from "../src/component/DialogModel";
+import { configV2Schema } from "@natalia/contracts";
 
 test("local TUI state persists model/session/MCP preferences", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-local-tui-"));
@@ -49,4 +51,29 @@ test("sortModelOptions places favorites then recents first", () => {
     "a",
     "d",
   ]);
+});
+
+test("model selector groups valid favorites and recents without duplicates", () => {
+  const config = configV2Schema.parse({
+    version: 2,
+    providers: {
+      primary: { type: "openai", apiKey: "test", baseURL: "https://example.test/v1" },
+    },
+    models: {
+      alpha: { provider: "primary", model: "alpha", contextWindow: "auto" },
+      beta: { provider: "primary", model: "beta", contextWindow: "auto" },
+      gamma: { provider: "primary", model: "gamma", contextWindow: "auto" },
+    },
+    defaultModel: "beta",
+  });
+  const options = buildModelOptions(config, {
+    favoriteModels: ["beta", "missing"],
+    recentModels: ["alpha", "beta"],
+  });
+  expect(options.map((option) => [option.value, option.category])).toEqual([
+    ["beta", "Favorites"],
+    ["alpha", "Recent"],
+    ["gamma", "primary"],
+  ]);
+  expect(options[0]?.footer).toBe("default");
 });

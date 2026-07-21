@@ -5,7 +5,7 @@ import type { ModalRequest } from "@natalia/ui-model";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { usePromptRef } from "../../context/prompt";
 import { useModeStack } from "../../modal/mode-stack";
-import { darkTheme } from "../../theme/theme";
+import { themeTokens as darkTheme } from "../../theme/theme";
 
 const MODE = "approval";
 

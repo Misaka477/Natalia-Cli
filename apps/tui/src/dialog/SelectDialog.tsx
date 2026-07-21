@@ -55,6 +55,7 @@ export function SelectDialog<T>(props: {
   });
 
   useBindings(() => ({
+    mode: "modal",
     enabled: props.open,
     bindings: [
       {

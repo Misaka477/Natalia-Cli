@@ -465,10 +465,16 @@ export type RuntimeEvent =
     };
 
 export type SubmittedTurn = Extract<RuntimeEvent, { type: "turn.submitted" }>;
+export type SubmitInput = {
+  text: string;
+  delivery?: "steer" | "queue";
+  id?: string;
+};
 
 export type RuntimeClient = {
   start(onEvent: (event: RuntimeEvent) => void): void;
   submit(text: string): Promise<SubmittedTurn>;
+  submitInput?(input: SubmitInput): Promise<SubmittedTurn>;
   cancel(reason?: string): void;
   pause?(reason?: string): void;
   resume?(): void;

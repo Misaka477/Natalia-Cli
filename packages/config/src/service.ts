@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { configV2Schema, type ConfigV2 } from "@natalia/contracts";
-import { parseConfigText } from "./file";
+import { parseConfigText, saveConfigFile } from "./file";
 import { readFile } from "node:fs/promises";
 
 export type ConfigScope =
@@ -91,5 +91,35 @@ function mergeConfig(base: ConfigV2, overlay: Partial<ConfigV2>): ConfigV2 {
     browser: { ...base.browser, ...overlay.browser },
     network: { ...base.network, ...overlay.network },
     security: { ...base.security, ...overlay.security },
+    experimental: { ...base.experimental, ...overlay.experimental },
   });
+}
+
+export async function updateConfig(
+  workspaceRoot: string,
+  patch: Partial<ConfigV2>,
+): Promise<ConfigV2> {
+  const { config, projectConfigPath } = await resolveConfig({ workspaceRoot });
+  const next = mergeConfig(config, patch);
+  await saveConfigFile(next, projectConfigPath);
+  return next;
+}
+
+export async function updateGlobalConfig(
+  patch: Partial<ConfigV2>,
+  globalPath?: string,
+): Promise<ConfigV2> {
+  const path =
+    globalPath ??
+    resolve(process.env.HOME ?? "", ".config", "natalia-cli", "config.json");
+  let base: ConfigV2;
+  try {
+    const raw = parseConfigText(await readFile(path, "utf8"));
+    base = configV2Schema.parse(raw);
+  } catch {
+    base = configV2Schema.parse({ version: 2 });
+  }
+  const next = mergeConfig(base, patch);
+  await saveConfigFile(next, path);
+  return next;
 }

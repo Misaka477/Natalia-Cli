@@ -12,13 +12,27 @@ const handle = await runTuiShell({
 const keys = createMockKeys(handle.renderer, { kittyKeyboard: true });
 
 await Bun.sleep(100);
+
+// Open palette, type "settings", press Enter
 keys.pressKey("p", { ctrl: true });
-await Bun.sleep(50);
+await Bun.sleep(80);
+await keys.typeText("settings");
+await Bun.sleep(80);
 keys.pressEnter();
-await Bun.sleep(50);
+await Bun.sleep(200);
+
+// Close Settings with Escape
+keys.pressEscape();
+await Bun.sleep(80);
+
+// Open palette again and create a new session
+keys.pressKey("p", { ctrl: true });
+await Bun.sleep(80);
+keys.pressEnter();
+await Bun.sleep(200);
 
 if (sessions.length !== 1)
-  throw new Error("Expected the initial palette option to select New session");
+  throw new Error(`expected 1 session, got ${sessions.length}`);
 
 handle.stop();
 console.log("palette keyboard smoke passed");

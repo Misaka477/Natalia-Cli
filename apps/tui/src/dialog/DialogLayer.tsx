@@ -161,6 +161,7 @@ export function DialogSessionList(props: {
   createEffect(() => void refresh());
 
   useBindings(() => ({
+    mode: "modal",
     enabled: true,
     bindings: [
       {
@@ -171,7 +172,7 @@ export function DialogSessionList(props: {
           if (mode() === "confirm-delete" || mode() === "confirm-rename") {
             setMode("list");
           } else {
-            dialog.clear();
+            dialog.pop();
           }
         },
       },
@@ -179,6 +180,7 @@ export function DialogSessionList(props: {
   }));
 
   useBindings(() => ({
+    mode: "modal",
     enabled: mode() === "list",
     bindings: [
       {
@@ -333,7 +335,7 @@ export function DialogSessionList(props: {
             const key = normalizeModalKey(event.name ?? event.key ?? "");
             if (isExitChord(event)) {
               consumeModalKey(event);
-              dialog.clear();
+              dialog.pop();
               return;
             }
             if (key === "escape") {

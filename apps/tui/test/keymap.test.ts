@@ -52,8 +52,9 @@ describe("command definitions", () => {
     expect(ids.length).toBeGreaterThan(10);
     for (const [id, def] of Object.entries(commands)) {
       expect(def.id).toBe(id);
-      expect(def.keys).toBeTruthy();
       expect(def.desc).toBeTruthy();
+      if (def.keys === "unset") continue;
+      expect(def.keys).toBeTruthy();
       const parsed = parseKeybindKey(def.keys);
       expect(parsed.key).toBeTruthy();
     }
@@ -300,7 +301,8 @@ describe("buildKeybindMap", () => {
     expect(diagnostics).toEqual([]);
     expect(map["palette.toggle"]).toBe("ctrl+p");
     expect(map["session.new"]).toBe("ctrl+n");
-    expect(Object.keys(map).length).toBe(Object.keys(commands).length);
+    const cmdBindings = Object.values(commands).filter((c) => c.keys !== "unset").length;
+    expect(Object.keys(map).length).toBe(cmdBindings);
   });
 
   test("applies overrides on top of defaults", () => {
@@ -317,7 +319,8 @@ describe("buildKeybindMap", () => {
     });
     expect(diagnostics).toEqual([]);
     expect(map["snapshot"]).toBeUndefined();
-    expect(Object.keys(map).length).toBe(Object.keys(commands).length - 1);
+    const cmdCount = Object.values(commands).filter((c) => c.keys !== "unset").length;
+    expect(Object.keys(map).length).toBe(cmdCount - 1);
   });
 
   test("propagates unknown command diagnostics", () => {
@@ -429,6 +432,7 @@ describe("buildKeybindMap null and undefined overrides", () => {
   test("handles empty overrides", () => {
     const { map, diagnostics } = buildKeybindMap({});
     expect(diagnostics).toEqual([]);
-    expect(Object.keys(map).length).toBe(Object.keys(commands).length);
+    const cmdCount = Object.values(commands).filter((c) => c.keys !== "unset").length;
+    expect(Object.keys(map).length).toBe(cmdCount);
   });
 });

@@ -22,6 +22,7 @@ export type SessionRecord = {
   cancelled: boolean;
   resumable: boolean;
   metadata?: SessionMetadata;
+  inbox?: import("./inbox").AdmittedSessionInput[];
 };
 
 export function createSessionRecord(
@@ -291,3 +292,15 @@ function stringField(value: Record<string, unknown> | undefined, key: string) {
 function basenameSafe(path: string) {
   return path.split("/").filter(Boolean).at(-1) ?? "legacy";
 }
+
+export { SqliteSessionStore } from "./sqlite-store";
+export type { SessionRow } from "./sqlite-store";
+export { SessionRunCoordinator } from "./run-coordinator";
+export {
+  admitInput,
+  admittedInputs,
+  promoteNextQueued,
+  promoteSteers,
+  SessionInputConflictError,
+} from "./inbox";
+export type { AdmittedSessionInput, SessionInputDelivery } from "./inbox";

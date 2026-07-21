@@ -31,7 +31,7 @@ export function DialogConfirm(props: DialogConfirmProps) {
         cmd: () => {
           if (store.active === "confirm") props.onConfirm?.();
           if (store.active === "cancel") props.onCancel?.();
-          dialog.clear();
+          dialog.pop();
         },
       },
       {
@@ -59,7 +59,7 @@ export function DialogConfirm(props: DialogConfirmProps) {
         <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>
           {props.title}
         </text>
-        <text fg={darkTheme.muted} onMouseUp={() => dialog.clear()}>
+        <text fg={darkTheme.muted} onMouseUp={() => dialog.pop()}>
           esc
         </text>
       </box>
@@ -78,7 +78,7 @@ export function DialogConfirm(props: DialogConfirmProps) {
               onMouseUp={() => {
                 if (key === "confirm") props.onConfirm?.();
                 if (key === "cancel") props.onCancel?.();
-                dialog.clear();
+                dialog.pop();
               }}
             >
               <text

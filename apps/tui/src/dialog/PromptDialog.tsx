@@ -35,6 +35,7 @@ export function PromptDialog(props: {
     props.onSubmit(value);
   }
   useBindings(() => ({
+    mode: "modal",
     enabled: props.open,
     bindings: [
       {

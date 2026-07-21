@@ -48,10 +48,15 @@ export async function handleRPCMessage(
       const text = body.params?.text;
       if (typeof text !== "string")
         throw new Error("prompt.params.text must be a string");
+      const delivery = body.params?.delivery;
+      if (delivery !== undefined && delivery !== "steer" && delivery !== "queue")
+        throw new Error("prompt.params.delivery must be steer or queue");
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.submit(text),
+        result: client.submitInput
+          ? await client.submitInput({ text, delivery })
+          : await client.submit(text),
       };
     }
     if (body.method === "cancel") {

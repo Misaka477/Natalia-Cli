@@ -1,7 +1,5 @@
 import {
-  type KeyEvent,
   TextareaRenderable,
-  TextAttributes,
   type PasteEvent,
 } from "@opentui/core";
 import { useRenderer } from "@opentui/solid";
@@ -11,31 +9,44 @@ import {
   useKeymapSelector,
 } from "@opentui/keymap/solid";
 import { stringifyKeySequence } from "@opentui/keymap";
-import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
-import { PromptRefProvider, usePromptRef } from "../context/prompt";
-import { RuntimeProvider } from "../context/runtime";
-import { RouteProvider, useRouteController } from "../context/route";
+import {
+  batch,
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  onMount,
+  Show,
+} from "solid-js";
+import { usePromptRef } from "../context/prompt";
+import { useRouteController } from "../context/route";
 import { StateProvider, useAppState } from "../context/state";
-import { ClipboardProvider, useClipboard } from "../context/clipboard";
-import { ToastProvider, ToastRegion, useToast } from "../context/toast";
+import { useClipboard } from "../context/clipboard";
+import { ToastRegion, useToast } from "../context/toast";
 import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
+import type { ConfigV2 } from "@natalia/contracts";
+import { getPluginCommands } from "@natalia/plugin";
 import {
   buildKeybindMap,
   commands,
   composerKeyAction,
   keymapBoundary,
 } from "../keymap";
-import { useDialog } from "../dialog/provider";
+import { useDialog, type DialogContext } from "../dialog/provider";
 import { DialogConfirm } from "../dialog/DialogConfirm";
 import { DialogPrompt } from "../dialog/DialogPrompt";
-import { DialogSelect } from "../dialog/DialogSelect";
+import { DialogSelect, type DialogSelectOption } from "../dialog/DialogSelect";
 import {
   DialogHelp,
   DialogSessionList,
   DialogStatus,
 } from "../dialog/DialogLayer";
-import { SettingsDialog } from "../dialog/SettingsDialog";
-import { useModeStack } from "../modal/mode-stack";
+import { DialogProviderSetup } from "../component/DialogProviderSetup";
+import { DialogMcp } from "../component/DialogMcp";
+import { DialogThemeList } from "../component/DialogThemeList";
+import { DialogModel } from "../component/DialogModel";
+import { resolveConfig, updateConfig } from "@natalia/config";
+import { discoverProviderModels } from "@natalia/config";
 import { decidePaste } from "../prompt/paste";
 import { PromptHistory, shouldUseHistory } from "../prompt/history";
 import {
@@ -45,8 +56,8 @@ import {
   SubagentRoute,
 } from "../routes/session/SessionRoute";
 import { darkTheme } from "../theme/theme";
+import { useTheme } from "../context/theme";
 import { sessionLayout, type SidebarMode } from "../session-layout";
-import { ThemeService } from "../theme/service";
 import {
   defaultTuiPreferences,
   loadTuiPreferences,
@@ -72,34 +83,24 @@ export function App(props: {
   }
 
   return (
-    <ClipboardProvider>
-      <ToastProvider>
-        <RuntimeProvider>
-          <PromptRefProvider>
-            <RouteProvider>
-              <Show when={backend()} keyed>
-                {(activeBackend) => (
-                  <StateProvider
-                    onReady={(dispatch) => {
-                      activeBackend.start((event: RuntimeEvent) => {
-                        dispatch(event);
-                        props.onDispatch?.(event);
-                      });
-                    }}
-                  >
-                    <Shell
-                      backend={activeBackend}
-                      workspaceRoot={props.workspaceRoot}
-                      onSessionChange={changeSession}
-                    />
-                  </StateProvider>
-                )}
-              </Show>
-            </RouteProvider>
-          </PromptRefProvider>
-        </RuntimeProvider>
-      </ToastProvider>
-    </ClipboardProvider>
+    <Show when={backend()} keyed>
+      {(activeBackend) => (
+        <StateProvider
+          onReady={(dispatch) => {
+            activeBackend.start((event: RuntimeEvent) => {
+              dispatch(event);
+              props.onDispatch?.(event);
+            });
+          }}
+        >
+          <Shell
+            backend={activeBackend}
+            workspaceRoot={props.workspaceRoot}
+            onSessionChange={changeSession}
+          />
+        </StateProvider>
+      )}
+    </Show>
   );
 }
 
@@ -119,7 +120,6 @@ function Shell(props: {
   const clipboard = useClipboard();
   const toast = useToast();
   const dialog = useDialog();
-  const modeStack = useModeStack();
   const [composer, setComposer] = createSignal<TextareaRenderable>();
   const [pastePreview, setPastePreview] = createSignal("");
   const [followBottom, setFollowBottom] = createSignal(true);
@@ -127,7 +127,7 @@ function Shell(props: {
   const [preferences, setPreferences] = createSignal<TuiPreferences>(
     defaultTuiPreferences,
   );
-  const [activeTheme, setActiveTheme] = createSignal(darkTheme);
+  const theme = useTheme();
   const [tuiWriteScope, setTuiWriteScope] =
     createSignal<TuiConfigWriteScope>("project");
   const layout = () =>
@@ -160,12 +160,6 @@ function Shell(props: {
       const loaded = await loadTuiPreferences(props.workspaceRoot);
       setPreferences(loaded);
       setFollowBottom(loaded.followBottom);
-      const available = await new ThemeService(
-        props.workspaceRoot,
-      ).getAllThemes();
-      setActiveTheme(
-        available.find((theme) => theme.name === loaded.theme) ?? darkTheme,
-      );
     }
     setTimeout(() => composer()?.focus(), 1);
   });
@@ -196,13 +190,7 @@ function Shell(props: {
     const patch = tuiPreferencePatch(preferences(), next);
     setPreferences(next);
     setFollowBottom(next.followBottom);
-    void new ThemeService(props.workspaceRoot)
-      .getAllThemes()
-      .then((available) =>
-        setActiveTheme(
-          available.find((theme) => theme.name === next.theme) ?? darkTheme,
-        ),
-      );
+    theme.preview(next.theme);
     if (props.workspaceRoot)
       void saveTuiPreferences(props.workspaceRoot, patch, scope).then(
         () =>
@@ -298,13 +286,14 @@ function Shell(props: {
       return;
     }
     if (command === "session.new") {
+      dialog.pop();
       changeSession(
         `ses_${crypto.randomUUID().replace(/-/gu, "").slice(0, 16)}`,
       );
       return;
     }
     if (command === "session.list") {
-      dialog.replace(() => (
+      dialog.push(() => (
         <DialogSessionList
           workspaceRoot={props.workspaceRoot}
           onSelect={changeSession}
@@ -312,27 +301,427 @@ function Shell(props: {
       ));
       return;
     }
+     if (command === "provider.connect") {
+      resolveConfig({ workspaceRoot: props.workspaceRoot ?? process.cwd() }).then(({ config: resolved }) => {
+        dialog.push(() => <DialogProviderSetup config={resolved} onPersist={(next) => void updateConfig(props.workspaceRoot ?? process.cwd(), next)} />);
+      });
+      return;
+    }
+    if (command === "model.list") {
+      dialog.push(() => <DialogModel workspaceRoot={props.workspaceRoot ?? process.cwd()} />);
+      return;
+    }
+    if (command === "model.edit") {
+      resolveConfig({ workspaceRoot: props.workspaceRoot ?? process.cwd() }).then(({ config: resolved }) => {
+        const mk = (mid: string, pvid: string) => {
+          const v = mid.trim();
+          if (!v) throw new Error("Model ID cannot be empty");
+          return `${pvid}_${v.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+        };
+        const save = (next: ConfigV2) => { void updateConfig(props.workspaceRoot ?? process.cwd(), next); };
+        const openModelDetail = (opt: { value: string }) => {
+          const m = resolved.models[opt.value];
+          if (!m) return;
+          const refresh = () => {
+            dialog.pop();
+            openModelDetail(opt);
+          };
+          dialog.push(() => (
+            <DialogSelect
+              title={`Edit ${opt.value}`}
+              options={[
+                { title: "Model ID", value: "mid", description: m.model },
+                { title: "Default", value: "def", description: resolved.defaultModel === opt.value ? "✓ current" : "Set as default" },
+                { title: "Context Window", value: "ctx", description: typeof m.contextWindow === "number" ? `${m.contextWindow.toLocaleString()}` : String(m.contextWindow) },
+                { title: "Max Output Tokens", value: "maxout", description: m.maxOutputTokens?.toString() ?? "(default)" },
+                { title: "Temperature", value: "temp", description: m.temperature?.toString() ?? "(default)" },
+                { title: "Top P", value: "topp", description: m.topP?.toString() ?? "(default)" },
+                { title: "Reasoning Effort", value: "reason", description: m.reasoningEffort ?? "none" },
+                { title: "Thinking", value: "think", description: m.thinkingEnabled ? "On" : "Off" },
+                { title: "Stream", value: "stream", description: m.stream ? "On" : "Off" },
+                { title: "Request Timeout", value: "timeout", description: m.requestTimeoutSec?.toString() ?? "(default)" },
+                { title: "Delete", value: "del", description: "Remove model" },
+              ]}
+              onSelect={async (o) => {
+                if (o.value === "def") { resolved.defaultModel = opt.value; save(resolved); return; }
+                if (o.value === "think") { m.thinkingEnabled = !m.thinkingEnabled; save(resolved); refresh(); return; }
+                if (o.value === "stream") { m.stream = !m.stream; save(resolved); refresh(); return; }
+                if (o.value === "reason") {
+                  dialog.push(() => (
+                    <DialogSelect
+                      title="Reasoning Effort"
+                      options={["minimal", "low", "medium", "high", "xhigh", "none"].map((v) => ({ title: v, value: v, description: v === (m.reasoningEffort ?? "none") ? "current" : undefined }))}
+                      onSelect={(r) => { m.reasoningEffort = r.value === "none" ? null : (r.value as any); save(resolved); dialog.pop(); }}
+                    />
+                  ));
+                  return;
+                }
+                if (o.value === "del") { delete (resolved.models as Record<string, unknown>)[opt.value]; save(resolved); dialog.pop(); return; }
+                const labels: Record<string, string> = { ctx: "Context Window", maxout: "Max Output Tokens", temp: "Temperature", topp: "Top P", mid: "Model ID", timeout: "Request Timeout (sec)" };
+                const defaults: Record<string, string> = { ctx: String(m.contextWindow), maxout: String(m.maxOutputTokens ?? ""), temp: String(m.temperature ?? ""), topp: String(m.topP ?? ""), mid: m.model, timeout: String(m.requestTimeoutSec ?? "") };
+                const v = await DialogPrompt.show(dialog, labels[o.value], { placeholder: defaults[o.value] });
+                if (v === null) return;
+                if (o.value === "ctx") m.contextWindow = v === "auto" ? ("auto" as any) : Number(v) || "auto";
+                if (o.value === "maxout") m.maxOutputTokens = v === "" ? null : (Number(v) || null);
+                if (o.value === "temp") m.temperature = v === "" ? null : Number(v);
+                if (o.value === "topp") m.topP = v === "" ? null : Number(v);
+                if (o.value === "mid") { if (v.trim()) m.model = v.trim(); }
+                if (o.value === "timeout") m.requestTimeoutSec = v === "" ? null : (Number(v) || null);
+                save(resolved);
+                refresh();
+              }}
+            />
+          ));
+        };
+        dialog.push(() => (
+          <DialogSelect
+            title="Edit Models"
+            options={[
+              ...Object.entries(resolved.models ?? {}).map(([key, m]) => ({
+                title: key,
+                value: key,
+                description: `${m.model} @ ${m.provider}`,
+              })),
+              { title: "+ Add model to provider", value: "$add", description: "Add a new model to an existing provider" },
+            ]}
+            onSelect={(opt) => {
+              if (opt.value === "$add") {
+                const providers = Object.entries(resolved.providers ?? {});
+                dialog.push(() => (
+                  <DialogSelect
+                    title="Select Provider"
+                    options={providers.map(([name, p]) => ({ title: name, value: name, description: `${p.type}${p.baseURL ? ` @ ${p.baseURL}` : ""}` }))}
+                    onSelect={async (p) => {
+                      const provider = resolved.providers[p.value];
+                      if (!provider?.apiKey || !provider?.baseURL) {
+                        const mid = await DialogPrompt.show(dialog, "Model ID", { placeholder: "gpt-4.1" });
+                        if (!mid || !mid.trim()) return;
+                        resolved.models[mk(mid, p.value)] = { model: mid.trim(), provider: p.value, contextWindow: "auto", temperature: null, topP: null, reasoningEffort: null, thinkingEnabled: true, stream: true, requestTimeoutSec: null };
+                        save(resolved);
+                        dialog.pop();
+                        return;
+                      }
+                      try {
+                        const models = await discoverProviderModels(provider.type, provider.baseURL, provider.apiKey);
+                        dialog.push(() => (
+                          <DialogSelect
+                            title={`Models: ${p.value}`}
+                            options={models.map((model: string) => ({ title: model, value: model }))}
+                            onSelect={(sel) => {
+                              resolved.models[mk(sel.value, p.value)] = { model: sel.value, provider: p.value, contextWindow: "auto", temperature: null, topP: null, reasoningEffort: null, thinkingEnabled: true, stream: true, requestTimeoutSec: null };
+                              save(resolved);
+                              dialog.pop();
+                            }}
+                          />
+                        ));
+                      } catch (e) {
+                        const mid = await DialogPrompt.show(dialog, "Discovery failed, enter Model ID manually", { placeholder: "gpt-4.1" });
+                        if (!mid || !mid.trim()) return;
+                        resolved.models[mk(mid, p.value)] = { model: mid.trim(), provider: p.value, contextWindow: "auto", temperature: null, topP: null, reasoningEffort: null, thinkingEnabled: true, stream: true, requestTimeoutSec: null };
+                        save(resolved);
+                        dialog.pop();
+                      }
+                    }}
+                  />
+                ));
+                return;
+              }
+              openModelDetail(opt);
+            }}
+          />
+        ));
+      });
+      return;
+    }
+    if (command === "mcp.list") {
+      resolveConfig({ workspaceRoot: props.workspaceRoot ?? process.cwd() }).then(({ config: resolved }) => {
+        dialog.push(() => <DialogMcp config={resolved} onPersist={(next) => void updateConfig(props.workspaceRoot ?? process.cwd(), next)} />);
+      });
+      return;
+    }
     if (command === "settings.open") {
-      dialog.replace(() => (
-        <SettingsDialog
-          workspaceRoot={props.workspaceRoot}
-          tuiConfig={preferences()}
-          tuiWriteScope={tuiWriteScope()}
-          onTuiConfigScopeChange={setTuiWriteScope}
-          onTuiConfigChange={updatePreferences}
-        />
+      async function saveConfig(next: any) { await updateConfig(props.workspaceRoot ?? process.cwd(), next); }
+      dialog.push(() => (
+        <DialogSelect
+          title="Settings"
+           options={[
+             { title: "Add Provider", value: "provider", description: "Configure a provider and model" },
+             { title: "Edit Provider", value: "edit-provider", description: "Modify key, URL, type" },
+             { title: "Delete Provider", value: "delete-provider", description: "Remove provider and models" },
+             { title: "Theme", value: "theme", description: preferences().theme || "natalia-dark" },
+             { title: "MCP Servers", value: "mcp", description: "Manage MCP servers" },
+             { title: "Permission Profile", value: "permission", description: "Select permission profile" },
+             { title: "Agent Mode", value: "mode", description: "Select agent mode" },
+             { title: "Select Model", value: "model", description: "Select default model" },
+             { title: "Models", value: "model.edit", description: "Add/edit/delete model configs" },
+             { title: "Web & Network", value: "web", description: "Search, browser, network rules" },
+             { title: "Workspace", value: "workspace", description: "Root, instructions, README, docs" },
+             { title: "Runtime Config", value: "runtime", description: "Max steps, retry, checkpoints" },
+             { title: "TUI Preferences", value: "tui", description: "Density, diff style, keybinds" },
+           ]}
+          onSelect={async (option) => {
+            const resolved = (await resolveConfig({ workspaceRoot: props.workspaceRoot ?? process.cwd() })).config;
+            switch (option.value) {
+               case "provider":
+                 dialog.push(() => <DialogProviderSetup config={resolved} onPersist={(next) => void saveConfig(next)} />);
+                 break;
+               case "edit-provider": {
+                 const providers = Object.entries(resolved.providers ?? {});
+                 dialog.push(() => (
+                   <DialogSelect
+                     title="Edit Provider"
+                     options={providers.map(([name, p]) => ({
+                       title: name,
+                       value: name,
+                       description: `${p.type}${p.baseURL ? ` @ ${p.baseURL}` : ""}`,
+                     }))}
+                     onSelect={async (opt) => {
+                       const p = resolved.providers[opt.value];
+                       if (!p) return;
+                       const newKey = await DialogPrompt.show(dialog, "API Key", { placeholder: p.apiKey ?? "" });
+                       if (newKey === null || newKey === undefined) return;
+                       const newURL = await DialogPrompt.show(dialog, "Base URL", { placeholder: p.baseURL ?? "" });
+                       if (newURL === null || newURL === undefined) return;
+                       const newHeaders = await DialogPrompt.show(dialog, "Custom Headers (JSON)", { placeholder: p.customHeaders && Object.keys(p.customHeaders).length ? JSON.stringify(p.customHeaders) : "{}" });
+                       if (newHeaders === null || newHeaders === undefined) return;
+                       p.apiKey = newKey.trim() || p.apiKey;
+                       p.baseURL = newURL.trim() || p.baseURL;
+                       try { p.customHeaders = JSON.parse(newHeaders.trim() || "{}"); } catch { /* keep existing */ }
+                       void saveConfig(resolved);
+                       dialog.pop();
+                     }}
+                   />
+                 ));
+                 break;
+               }
+               case "delete-provider": {
+                 const providers = Object.entries(resolved.providers ?? {});
+                 dialog.push(() => (
+                   <DialogSelect
+                     title="Delete Provider"
+                     options={providers.map(([name, p]) => ({
+                       title: name,
+                       value: name,
+                       description: `${p.type} — removes provider and its models`,
+                     }))}
+                     onSelect={(opt) => {
+                       delete (resolved.providers as Record<string, unknown>)[opt.value];
+                       for (const key of Object.keys(resolved.models ?? {})) {
+                         if (resolved.models[key]?.provider === opt.value)
+                           delete (resolved.models as Record<string, unknown>)[key];
+                       }
+                       if (!resolved.models[resolved.defaultModel])
+                         resolved.defaultModel = Object.keys(resolved.models)[0] ?? "";
+                       void saveConfig(resolved);
+                       dialog.pop();
+                     }}
+                   />
+                 ));
+                 break;
+               }
+              case "theme":
+                dialog.push(() => (
+                  <DialogThemeList
+                    onCommit={(name) =>
+                      setPreferences({ ...preferences(), theme: name, version: 1, themeMode: "dark" })
+                    }
+                  />
+                ));
+                break;
+              case "mcp":
+                dialog.push(() => <DialogMcp config={resolved} onPersist={(next) => void saveConfig(next)} />);
+                break;
+               case "model":
+                 dialog.push(() => <DialogModel workspaceRoot={props.workspaceRoot ?? process.cwd()} />);
+                 break;
+               case "permission":
+                 dialog.push(() => (
+                   <DialogSelect
+                     title="Permission Profiles"
+                     options={[
+                       ...Object.entries(resolved.permissionProfiles ?? {}).map(([name, p]) => ({
+                         title: name,
+                         value: name,
+                         description: (p as any).description ?? (p as any).approval ?? "-",
+                       })),
+                       { title: "+ Create new profile", value: "$new", description: "Add a permission profile" },
+                     ]}
+                     onSelect={(opt) => {
+                       if (opt.value === "$new") {
+                         const name = prompt("Profile name") ?? "";
+                         if (!name.trim()) return;
+                         resolved.permissionProfiles![name.trim()] = {
+                           description: "",
+                           approval: "ask",
+                           tools: [],
+                         } as any;
+                         resolved.defaultPermission = name.trim();
+                         void saveConfig(resolved);
+                         dialog.pop();
+                         return;
+                       }
+                       resolved.defaultPermission = opt.value;
+                       void saveConfig(resolved);
+                       dialog.pop();
+                     }}
+                     onExtraKey={(key, opt) => {
+                       if (key === "d" && opt.value !== "$new") {
+                         delete (resolved.permissionProfiles as Record<string, unknown>)[opt.value];
+                         void saveConfig(resolved);
+                       }
+                     }}
+                   />
+                 ));
+                 break;
+               case "mode":
+                 dialog.push(() => (
+                   <DialogSelect
+                     title="Agent Modes"
+                     options={[
+                       ...Object.entries(resolved.modes ?? {}).map(([name, m]) => ({
+                         title: name,
+                         value: name,
+                         description: (m as any).description ?? `${(m as any).allowedTools?.length ?? 0} tools`,
+                       })),
+                       { title: "+ Create new mode", value: "$new", description: "Add an agent mode" },
+                     ]}
+                     onSelect={(opt) => {
+                       if (opt.value === "$new") {
+                         const name = prompt("Mode name") ?? "";
+                         if (!name.trim()) return;
+                         resolved.modes![name.trim()] = {
+                           description: "",
+                           allowedTools: [],
+                         } as any;
+                         resolved.defaultMode = name.trim();
+                         void saveConfig(resolved);
+                         dialog.pop();
+                         return;
+                       }
+                       resolved.defaultMode = opt.value;
+                       void saveConfig(resolved);
+                       dialog.pop();
+                     }}
+                     onExtraKey={(key, opt) => {
+                       if (key === "d" && opt.value !== "$new") {
+                         delete (resolved.modes as Record<string, unknown>)[opt.value];
+                         void saveConfig(resolved);
+                       }
+                     }}
+                   />
+                 ));
+                 break;
+               case "model.edit":
+                  runCommand("model.edit");
+                  break;
+               case "web":
+                 dialog.push(() => (
+                   <DialogSelect
+                     title="Web & Network"
+                     options={[
+                       { title: "Web Search Endpoint", value: "ep", description: resolved.webSearch?.endpoint ?? "(not set)" },
+                       { title: "Browser", value: "browser", description: resolved.browser?.enabled ? "On" : "Off" },
+                       { title: "Allow Localhost", value: "localhost", description: resolved.network?.allowLocalhost ? "On" : "Off" },
+                       { title: "Allow Private IPs", value: "private", description: resolved.network?.allowPrivate ? "On" : "Off" },
+                       { title: "Redact Tool Output", value: "redact", description: resolved.security?.redactToolOutput ? "On" : "Off" },
+                       { title: "Env Allowlist", value: "env", description: `${resolved.security?.envAllowlist?.length ?? 0} vars allowed` },
+                       { title: "Browser Binary", value: "bbin", description: resolved.browser?.binary || "(default)" },
+                       { title: "Browser User Agent", value: "bua", description: resolved.browser?.userAgent || "(default)" },
+                     ]}
+                     onSelect={(opt) => {
+                       const next = structuredClone(resolved);
+                       if (opt.value === "browser") next.browser!.enabled = !next.browser!.enabled;
+                       if (opt.value === "localhost") next.network!.allowLocalhost = !next.network!.allowLocalhost;
+                       if (opt.value === "private") next.network!.allowPrivate = !next.network!.allowPrivate;
+                       if (opt.value === "redact") next.security!.redactToolOutput = !next.security!.redactToolOutput;
+                       void saveConfig(next);
+                     }}
+                   />
+                 ));
+                 break;
+               case "workspace":
+                 dialog.push(() => (
+                   <DialogSelect
+                     title="Workspace"
+                     options={[
+                       { title: "Root", value: "root", description: resolved.workspace?.root || "(project root)" },
+                       { title: "Instructions", value: "instr", description: resolved.instructions?.enabled ? "On" : "Off" },
+                       { title: "Include README", value: "readme", description: resolved.instructions?.includeReadme ? "On" : "Off" },
+                       { title: "Include Docs", value: "docs", description: resolved.instructions?.includeDocs ? "On" : "Off" },
+                       { title: "Extra Files", value: "extra", description: `${resolved.instructions?.extraFiles?.length ?? 0} files` },
+                     ]}
+                     onSelect={(opt) => {
+                       const next = structuredClone(resolved);
+                       if (opt.value === "instr") next.instructions!.enabled = !next.instructions!.enabled;
+                       if (opt.value === "readme") next.instructions!.includeReadme = !next.instructions!.includeReadme;
+                       if (opt.value === "docs") next.instructions!.includeDocs = !next.instructions!.includeDocs;
+                       void saveConfig(next);
+                     }}
+                   />
+                 ));
+                 break;
+               case "runtime":
+                 dialog.push(() => (
+                   <DialogSelect
+                     title="Runtime Config"
+                     options={[
+                       { title: "Max Steps", value: "steps", description: String(resolved.runtime?.maxStepsPerTurn ?? 25) },
+                       { title: "Max Retry", value: "retry", description: String(resolved.runtime?.maxAttemptsPerStep ?? 3) },
+                       { title: "Request Timeout", value: "timeout", description: `${resolved.runtime?.timeouts?.requestSec ?? 120}s` },
+                       { title: "Compaction", value: "compact", description: resolved.context?.compactionEnabled ? "On" : "Off" },
+                     ]}
+                     onSelect={async (opt) => {
+                       const next = structuredClone(resolved);
+                       if (opt.value === "compact") { next.context!.compactionEnabled = !next.context!.compactionEnabled; void saveConfig(next); return; }
+                       const v = await DialogPrompt.show(dialog, opt.value === "steps" ? "Max steps" : opt.value === "retry" ? "Max retry" : "Timeout (sec)", { placeholder: opt.value === "steps" ? String(next.runtime!.maxStepsPerTurn) : opt.value === "retry" ? String(next.runtime!.maxAttemptsPerStep) : String(next.runtime!.timeouts?.requestSec ?? 120) });
+                       if (v) {
+                         if (opt.value === "steps") next.runtime!.maxStepsPerTurn = Number(v) || 25;
+                         if (opt.value === "retry") next.runtime!.maxAttemptsPerStep = Number(v) || 3;
+                         if (opt.value === "timeout") next.runtime!.timeouts!.requestSec = Number(v) || 120;
+                         void saveConfig(next);
+                       }
+                     }}
+                   />
+                 ));
+                 break;
+               case "tui":
+                 dialog.push(() => (
+                   <DialogSelect
+                     title="TUI Preferences"
+                     options={[
+                       { title: "Tool Details", value: "detail", description: preferences().toolDetails ?? "expanded" },
+                       { title: "Density", value: "density", description: preferences().density ?? "compact" },
+                       { title: "Diff Style", value: "diff", description: preferences().diffStyle ?? "auto" },
+                       { title: "Theme", value: "theme", description: preferences().theme ?? "natalia-dark" },
+                       { title: "TUI Write Scope", value: "scope", description: tuiWriteScope() ?? "project" },
+                       { title: "Config Write Scope", value: "cscope", description: (state as any).configWriteScope ?? "project" },
+                       { title: "Keybinds", value: "keys", description: `${Object.keys(preferences().keybinds ?? {}).length} overrides` },
+                     ]}
+                     onSelect={(opt) => {
+                       if (opt.value === "detail") updatePreferences({ ...preferences(), toolDetails: preferences().toolDetails === "expanded" ? "collapsed" : "expanded" });
+                       if (opt.value === "density") updatePreferences({ ...preferences(), density: preferences().density === "compact" ? "comfortable" : "compact" });
+                       if (opt.value === "diff") updatePreferences({ ...preferences(), diffStyle: preferences().diffStyle === "auto" ? "stacked" : "auto" });
+                       if (opt.value === "scope") setTuiWriteScope(tuiWriteScope() === "project" ? "global" : "project");
+                       if (opt.value === "cscope") (state as any).configWriteScope = (state as any).configWriteScope === "project" ? "global" : "project";
+                     }}
+                   />
+                 ));
+                 break;
+             }
+           }}
+         />
       ));
       return;
     }
     if (command === "status") {
-      dialog.replace(() => <DialogStatus />);
+      dialog.push(() => <DialogStatus />);
       return;
     }
     if (command === "help.open") {
-      dialog.replace(() => (
+      dialog.push(() => (
         <DialogHelp
           keybindOverrides={preferences().keybinds}
-          onClose={() => dialog.clear()}
+          onClose={() => dialog.pop()}
         />
       ));
       return;
@@ -429,6 +818,13 @@ function Shell(props: {
           focus: state.ptyPane.focus === "chat" ? "pty" : "chat",
         });
       return;
+    }
+    // Plugin commands
+    for (const pluginCmd of getPluginCommands()) {
+      if (pluginCmd.name === command) {
+        pluginCmd.run();
+        return;
+      }
     }
   }
 
@@ -530,12 +926,6 @@ function Shell(props: {
       },
     ],
   }));
-
-  createEffect(() => {
-    if (route.route().kind === "none") return;
-    const popMode = modeStack.push("modal");
-    onCleanup(popMode);
-  });
 
   useBindings(() => ({
     mode: "base",
@@ -658,7 +1048,7 @@ function Shell(props: {
       flexDirection="row"
       width="100%"
       height="100%"
-      backgroundColor={activeTheme().background}
+      backgroundColor={theme.theme.background}
     >
       <box flexGrow={1} minWidth={0} height="100%" flexDirection="column">
         <Show when={activeSubagentRoute()} keyed>
@@ -685,7 +1075,7 @@ function Shell(props: {
             flexShrink={0}
             border={["top"]}
             borderColor={
-              route.route().kind !== "none" ? darkTheme.muted : darkTheme.accent
+              route.route().kind !== "none" ? theme.theme.muted : theme.theme.accent
             }
             paddingTop={1}
             paddingLeft={2}
@@ -707,12 +1097,12 @@ function Shell(props: {
                   ? "Press Escape to return"
                   : "Ask anything..."
               }
-              placeholderColor={darkTheme.muted}
+              placeholderColor={theme.theme.muted}
               textColor={
-                route.route().kind !== "none" ? darkTheme.muted : darkTheme.text
+                route.route().kind !== "none" ? theme.theme.muted : theme.theme.text
               }
-              focusedTextColor={darkTheme.text}
-              cursorColor={darkTheme.accent}
+              focusedTextColor={theme.theme.text}
+              cursorColor={theme.theme.accent}
               onPaste={handlePaste}
               onKeyDown={(event: {
                 name?: string;
@@ -757,8 +1147,8 @@ function Shell(props: {
               <text
                 fg={
                   pastePreview().startsWith("paste rejected")
-                    ? darkTheme.danger
-                    : darkTheme.muted
+                    ? theme.theme.danger
+                    : theme.theme.muted
                 }
               >
                 {pastePreview() ||
@@ -826,33 +1216,45 @@ function CommandPalette() {
     }));
   });
 
+  const options = createMemo(() => [
+    ...entries().map(({ entry, bindings }) => ({
+      title:
+        typeof entry.command.title === "string"
+          ? entry.command.title
+          : entry.command.name,
+      description:
+        typeof entry.command.desc === "string"
+          ? entry.command.desc
+          : undefined,
+      value: entry.command.name,
+      category:
+        typeof entry.command.category === "string"
+          ? entry.command.category
+          : undefined,
+      footer: bindings
+        .map((binding) =>
+          stringifyKeySequence(binding.sequence, { preferDisplay: true }),
+        )
+        .join(" / "),
+      onSelect: (dialog: DialogContext) => {
+        keymap.dispatchCommand(entry.command.name);
+      },
+    })),
+    ...getPluginCommands().map((cmd) => ({
+      title: cmd.title,
+      description: cmd.category ? `plugin · ${cmd.category}` : "plugin",
+      value: cmd.name,
+      category: cmd.category ?? "plugin",
+      onSelect: (_dialog: DialogContext) => {
+        cmd.run();
+      },
+    })),
+  ] as DialogSelectOption<string>[]);
+
   return (
     <DialogSelect
       title="Commands"
-      options={entries().map(({ entry, bindings }) => ({
-        title:
-          typeof entry.command.title === "string"
-            ? entry.command.title
-            : entry.command.name,
-        description:
-          typeof entry.command.desc === "string"
-            ? entry.command.desc
-            : undefined,
-        value: entry.command.name,
-        category:
-          typeof entry.command.category === "string"
-            ? entry.command.category
-            : undefined,
-        footer: bindings
-          .map((binding) =>
-            stringifyKeySequence(binding.sequence, { preferDisplay: true }),
-          )
-          .join(" / "),
-      }))}
-      onSelect={(option) => {
-        dialog.clear();
-        keymap.dispatchCommand(option.value);
-      }}
+      options={options()}
     />
   );
 }

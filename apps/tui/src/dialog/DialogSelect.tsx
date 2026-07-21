@@ -28,7 +28,14 @@ export interface DialogSelectOption<T = any> {
   footer?: JSX.Element | string;
   category?: string;
   disabled?: boolean;
+  onSelect?: (dialog: DialogContext) => void;
 }
+
+export type DialogSelectRef<T> = {
+  filter: string;
+  filtered: DialogSelectOption<T>[];
+  moveTo(value: T): void;
+};
 
 export interface DialogSelectProps<T> {
   title: string;
@@ -36,9 +43,15 @@ export interface DialogSelectProps<T> {
   placeholder?: string;
   emptyView?: JSX.Element;
   skipFilter?: boolean;
+  flat?: boolean;
+  current?: T;
+  locked?: boolean;
   onSelect?: (option: DialogSelectOption<T>) => void;
   onClose?: () => void;
   onExtraKey?: (key: string, option: DialogSelectOption<T>) => void;
+  onFilter?: (query: string) => void;
+  onMove?: (option: DialogSelectOption<T>) => void;
+  ref?: (ref: DialogSelectRef<T>) => void;
 }
 
 export function DialogSelect<T>(props: DialogSelectProps<T>) {
@@ -48,23 +61,42 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
     selected: 0,
     filter: "",
   });
+  const [inputTarget, setInputTarget] = createSignal<InputRenderable>();
   let input: InputRenderable | undefined;
   let scroll: ScrollBoxRenderable | undefined;
 
   const filtered = createMemo(() => {
-    if (props.skipFilter) return props.options.filter((x) => !x.disabled);
+    if (props.skipFilter || props.options.length === 0) return props.options.filter((x) => !x.disabled);
     const needle = store.filter.toLowerCase().trim();
     if (!needle) return props.options.filter((x) => !x.disabled);
     const terms = needle.split(/\s+/u);
-    return props.options.filter((option) => {
-      if (option.disabled) return false;
-      const text =
-        `${option.title} ${option.description ?? ""} ${option.category ?? ""}`.toLowerCase();
-      return terms.every((t) => text.includes(t));
-    });
+
+    // Simple fuzzy scoring: sort by match quality
+    const scored = props.options
+      .filter((x) => !x.disabled)
+      .map((option) => {
+        const text = `${option.title} ${option.description ?? ""} ${option.category ?? ""}`.toLowerCase();
+        let score = 0;
+        for (const term of terms) {
+          if (text.includes(term)) {
+            score += term.length;
+            if (option.title.toLowerCase().includes(term)) score += 5;
+            if (option.title.toLowerCase().startsWith(term)) score += 10;
+          } else {
+            score -= 20; // penalize missing terms
+          }
+        }
+        return { option, score };
+      })
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map((x) => x.option);
+
+    return scored;
   });
 
   const grouped = createMemo(() => {
+    if (props.flat) return [["", filtered()] as const];
     const groups = new Map<string, DialogSelectOption<T>[]>();
     for (const option of filtered()) {
       const category = option.category ?? "";
@@ -95,12 +127,15 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   const selected = createMemo(() => flat()[store.selected]);
 
   function move(direction: number) {
+    if (props.locked) return;
     if (flat().length === 0) return;
     let next = store.selected + direction;
     if (next < 0) next = flat().length - 1;
     if (next >= flat().length) next = 0;
     setStore("selected", next);
     scrollToSelection();
+    const option = selected();
+    if (option) props.onMove?.(option);
   }
 
   function scrollToSelection() {
@@ -127,8 +162,10 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   }
 
   function submit() {
+    if (props.locked) return;
     const option = selected();
     if (!option) return;
+    option.onSelect?.(dialog);
     props.onSelect?.(option);
   }
 
@@ -136,6 +173,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
     on([() => store.filter], () => {
       setStore("selected", 0);
       if (scroll) scroll.scrollTo(0);
+      props.onFilter?.(store.filter);
     }),
   );
 
@@ -147,7 +185,24 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
 
   useBindings(() => ({
     mode: "modal",
+    target: inputTarget,
+    enabled: inputTarget() !== undefined,
+    priority: 1,
+    commands: [
+      {
+        name: "dialog.select.submit",
+        title: "Select dialog item",
+        category: "Dialog",
+        run: submit,
+      },
+    ],
     bindings: [
+      {
+        key: "return",
+        desc: "Select item",
+        group: "Dialog",
+        cmd: "dialog.select.submit",
+      },
       {
         key: "up",
         desc: "Previous item",
@@ -190,12 +245,6 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
           if (scroll) scroll.scrollTo(scroll.scrollHeight ?? 0);
         },
       },
-      {
-        key: "return",
-        desc: "Select item",
-        group: "Dialog",
-        cmd: submit,
-      },
       ...(props.onExtraKey
         ? [
             {
@@ -211,6 +260,19 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
         : []),
     ],
   }));
+
+  const ref: DialogSelectRef<T> = {
+    get filter() { return store.filter; },
+    get filtered() { return filtered(); },
+    moveTo(value: T) {
+      const idx = flat().findIndex((opt) => opt.value === value);
+      if (idx >= 0) {
+        setStore("selected", idx);
+        scrollToSelection();
+      }
+    },
+  };
+  props.ref?.(ref);
 
   return (
     <box gap={1} paddingBottom={1} flexGrow={1}>
@@ -235,6 +297,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
             focusedTextColor={darkTheme.muted}
             ref={(r: InputRenderable) => {
               input = r;
+              setInputTarget(r);
               input.traits = { status: "FILTER" } as any;
               setTimeout(() => {
                 if (!input || input.isDestroyed) return;
@@ -292,6 +355,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                             active() ? darkTheme.accent : undefined
                           }
                           onMouseUp={() => {
+                            option.onSelect?.(dialog);
                             props.onSelect?.(option);
                           }}
                           onMouseDown={() => {

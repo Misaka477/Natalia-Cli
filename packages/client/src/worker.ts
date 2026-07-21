@@ -3,6 +3,7 @@ import type {
   QuestionResponse,
   RuntimeClient,
   RuntimeEvent,
+  SubmitInput,
   SubmittedTurn,
 } from "@natalia/contracts";
 
@@ -81,7 +82,10 @@ export function createWorkerRuntimeClient(
       sink = onEvent;
     },
     async submit(text) {
-      return (await request("submit", text)) as SubmittedTurn;
+      return (await request("submit", { text })) as SubmittedTurn;
+    },
+    async submitInput(input) {
+      return (await request("submit", input)) as SubmittedTurn;
     },
     cancel(reason) {
       void request("cancel", reason);
@@ -141,8 +145,15 @@ async function handleWorkerRequest(
   client: RuntimeClient,
   request: WorkerRequest,
 ) {
-  if (request.method === "submit")
-    return await client.submit(String(request.value ?? ""));
+  if (request.method === "submit") {
+    const input =
+      request.value && typeof request.value === "object"
+        ? (request.value as SubmitInput)
+        : { text: String(request.value ?? "") };
+    return client.submitInput
+      ? await client.submitInput(input)
+      : await client.submit(input.text);
+  }
   if (request.method === "cancel")
     return client.cancel(
       typeof request.value === "string" ? request.value : undefined,
