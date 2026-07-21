@@ -28,3 +28,13 @@ test("session inbox promotes all steers but one queued input at an idle boundary
   expect(promoteNextQueued(session).map((item) => item.id)).toEqual(["queue_b"]);
   expect(promoteNextQueued(session)).toEqual([]);
 });
+
+test("steer promotion honors a captured admission cutoff", () => {
+  const session = createSessionRecord("ses_cutoff", "Cutoff");
+  admitInput(session, { id: "before", text: "before", delivery: "steer" });
+  const cutoff = session.inbox![0]!.admittedSeq;
+  admitInput(session, { id: "after", text: "after", delivery: "steer" });
+
+  expect(promoteSteers(session, cutoff).map((item) => item.id)).toEqual(["before"]);
+  expect(session.inbox?.find((item) => item.id === "after")?.promotedAt).toBeUndefined();
+});

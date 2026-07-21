@@ -25,12 +25,13 @@ import { useDialog } from "../../dialog/provider";
 import { PermissionPrompt } from "./permission";
 import { QuestionPrompt } from "./question";
 
-const markdownSyntax = () => SyntaxStyle.fromStyles({
-  heading: { fg: darkTheme.accent, bold: true },
-  strong: { bold: true },
-  code: { fg: darkTheme.warning },
-  link: { fg: darkTheme.accent, underline: true },
-});
+const markdownSyntax = () =>
+  SyntaxStyle.fromStyles({
+    heading: { fg: darkTheme.accent, bold: true },
+    strong: { bold: true },
+    code: { fg: darkTheme.warning },
+    link: { fg: darkTheme.accent, underline: true },
+  });
 
 export function SessionRoute(props: {
   scrollRef?: { current?: any };
@@ -291,12 +292,22 @@ export function SessionSidebar(props: {
               </For>
             </box>
           </Show>
-          <Show when={Object.values(state.subagents).length > 0}>
+          <Show
+            when={
+              Object.values(state.subagents).filter(
+                (agent) => !agent.parentAgentID,
+              ).length > 0
+            }
+          >
             <box marginTop={1} flexDirection="column">
               <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
                 Agents
               </text>
-              <For each={Object.values(state.subagents)}>
+              <For
+                each={Object.values(state.subagents).filter(
+                  (agent) => !agent.parentAgentID,
+                )}
+              >
                 {(agent) => (
                   <box flexDirection="column">
                     <text
@@ -583,7 +594,11 @@ function BlockBody(props: {
     );
   }
   return (
-    <text fg={roleColor(props.block.role, darkTheme)} wrapMode="word" paddingLeft={1}>
+    <text
+      fg={roleColor(props.block.role, darkTheme)}
+      wrapMode="word"
+      paddingLeft={1}
+    >
       {props.block.text}
     </text>
   );
@@ -642,7 +657,11 @@ function ToolBlockView(props: {
       <ToolDetailDialog
         title={`${tool().name} details`}
         content={content}
-        argumentsRaw={tool().redactedArguments !== content ? tool().redactedArguments : undefined}
+        argumentsRaw={
+          tool().redactedArguments !== content
+            ? tool().redactedArguments
+            : undefined
+        }
       />
     ));
   };
@@ -764,7 +783,7 @@ function ToolBlockView(props: {
             </box>
           )}
         </Show>
-          <Show when={tool().detailAvailable}>
+        <Show when={tool().detailAvailable}>
           <text fg={darkTheme.muted} onMouseUp={openDetail}>
             {expanded()
               ? "collapse details · d detail with args/result tabs"
@@ -781,7 +800,11 @@ function ToolBlockView(props: {
   );
 }
 
-function ToolDetailDialog(props: { title: string; content: string; argumentsRaw?: string }) {
+function ToolDetailDialog(props: {
+  title: string;
+  content: string;
+  argumentsRaw?: string;
+}) {
   const dialog = useDialog();
   const [tab, setTab] = createSignal<"result" | "arguments">("result");
   return (
@@ -1169,6 +1192,11 @@ export function SubagentRoute(props: { agentID: string; onBack(): void }) {
   const { state } = useAppState();
   const agent = () => state.subagents[props.agentID];
   const history = () => state.subagentHistory[props.agentID] ?? [];
+  const children = () =>
+    Object.values(state.subagents).filter(
+      (candidate) => candidate.parentAgentID === props.agentID,
+    );
+  const route = useRouteController();
   useBindings(() => ({
     mode: "base",
     bindings: [
@@ -1200,6 +1228,29 @@ export function SubagentRoute(props: { agentID: string; onBack(): void }) {
                 </text>
               </box>
             )}
+          </Show>
+          <Show when={agent()?.parentAgentID}>
+            <text fg={darkTheme.muted}>Parent: {agent()!.parentAgentID}</text>
+          </Show>
+          <Show when={children().length > 0}>
+            <box marginTop={1} flexDirection="column" gap={1}>
+              <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
+                Child agents
+              </text>
+              <For each={children()}>
+                {(child) => (
+                  <text
+                    fg={subagentColor(child.status)}
+                    onMouseUp={() =>
+                      route.push({ kind: "subagent", id: child.id })
+                    }
+                  >
+                    {child.status === "completed" ? "✓" : "│"} {child.id} ·{" "}
+                    {child.status}
+                  </text>
+                )}
+              </For>
+            </box>
           </Show>
           <box marginTop={1} flexDirection="column" gap={1}>
             <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
@@ -1253,7 +1304,9 @@ function ToolPanel(props: {
   const failed = () =>
     props.tool.status === "failed" || props.tool.status === "cancelled";
   const error = () =>
-    props.tool.result?.detail || props.tool.result?.preview || props.tool.summary;
+    props.tool.result?.detail ||
+    props.tool.result?.preview ||
+    props.tool.summary;
   return (
     <box
       border={["left"]}
@@ -1288,7 +1341,9 @@ function ToolPanel(props: {
           </Show>
           <Show when={error() !== props.tool.summary}>
             <text fg={darkTheme.muted}>
-              {errorExpanded() ? "Click to hide error detail" : "Click to show error detail"}
+              {errorExpanded()
+                ? "Click to hide error detail"
+                : "Click to show error detail"}
             </text>
           </Show>
         </box>

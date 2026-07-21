@@ -367,6 +367,84 @@ test("load restores agents from store on construction", async () => {
   expect(reg.get("a1" as any)?.task).toBe("pre existing");
 });
 
+test("load marks process-local running agents stopped after runtime restart", async () => {
+  const dir = await tempDir();
+  const store = new SubagentStore(dir);
+  const now = Date.now();
+  await store.save([
+    {
+      id: "a1" as any,
+      task: "interrupted",
+      mode: "code",
+      status: "running",
+      attached: true,
+      modelProfile: "",
+      allowedTools: [],
+      excludeTools: [],
+      outputs: [],
+      createdAt: now,
+      updatedAt: now,
+    },
+  ]);
+  const registry = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: dir,
+  });
+  await registry.load();
+  expect(registry.status("a1" as any)).toBe("stopped");
+  expect(registry.output("a1" as any)?.at(-1)?.text).toContain(
+    "runtime restarted",
+  );
+  expect((await store.load())[0]?.status).toBe("stopped");
+});
+
+test("retry explicitly starts a new continuation for stopped subagents", async () => {
+  const root = await tempDir();
+  let calls = 0;
+  const registry = new SubagentRegistry({
+    workDir: root,
+    runner: async (_task, context) => {
+      calls++;
+      context.log(`run ${calls}`);
+      if (calls === 1) throw new Error("first run failed");
+    },
+  });
+  const record = await registry.spawn("retry task", {
+    parentSessionID: "ses_parent",
+  });
+  for (let attempt = 0; attempt < 20 && record.status !== "failed"; attempt++)
+    await Bun.sleep(5);
+  expect(record.status).toBe("failed");
+  const retried = await registry.retry(record.id);
+  for (
+    let attempt = 0;
+    attempt < 20 && record.status !== "completed";
+    attempt++
+  )
+    await Bun.sleep(5);
+  expect(retried?.continuation).toBe(1);
+  expect(record.status).toBe("completed");
+  expect(record.parentSessionID).toBe("ses_parent");
+  expect(
+    record.outputs.some((output) =>
+      output.text.includes("retrying continuation 1"),
+    ),
+  ).toBe(true);
+});
+
+test("spawn enforces configured nested subagent depth", async () => {
+  const registry = new SubagentRegistry({ runner: immediateRunner });
+  const root = await registry.spawn("root", { maxDepth: 2 });
+  const child = await registry.spawn("child", {
+    parentAgentID: root.id,
+    maxDepth: 2,
+  });
+  await expect(
+    registry.spawn("grandchild", { parentAgentID: child.id, maxDepth: 2 }),
+  ).rejects.toThrow("depth limit reached (2)");
+  expect(child.parentAgentID).toBe(root.id);
+});
+
 test("save persists to store", async () => {
   const dir = await tempDir();
   const reg = new SubagentRegistry({ runner: immediateRunner, workDir: dir });

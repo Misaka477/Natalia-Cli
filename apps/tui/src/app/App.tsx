@@ -1,7 +1,4 @@
-import {
-  TextareaRenderable,
-  type PasteEvent,
-} from "@opentui/core";
+import { TextareaRenderable, type PasteEvent } from "@opentui/core";
 import { useRenderer } from "@opentui/solid";
 import {
   useBindings,
@@ -45,6 +42,7 @@ import { DialogProviderSetup } from "../component/DialogProviderSetup";
 import { DialogMcp } from "../component/DialogMcp";
 import { DialogThemeList } from "../component/DialogThemeList";
 import { DialogModel } from "../component/DialogModel";
+import { DialogAgent } from "../component/DialogAgent";
 import { resolveConfig, updateConfig } from "@natalia/config";
 import { discoverProviderModels } from "@natalia/config";
 import { decidePaste } from "../prompt/paste";
@@ -57,6 +55,7 @@ import {
 } from "../routes/session/SessionRoute";
 import { darkTheme } from "../theme/theme";
 import { useTheme } from "../context/theme";
+import { useLocal } from "../context/local";
 import { sessionLayout, type SidebarMode } from "../session-layout";
 import {
   defaultTuiPreferences,
@@ -128,6 +127,7 @@ function Shell(props: {
     defaultTuiPreferences,
   );
   const theme = useTheme();
+  const local = useLocal();
   const [tuiWriteScope, setTuiWriteScope] =
     createSignal<TuiConfigWriteScope>("project");
   const layout = () =>
@@ -154,6 +154,14 @@ function Shell(props: {
   const scrollRef: { current?: any } = {};
   const ptyScrollRef: { current?: any } = {};
   let submitting = false;
+  let restoredAgent = false;
+
+  createEffect(() => {
+    if (restoredAgent || !local.ready) return;
+    restoredAgent = true;
+    if (local.state.activeAgent)
+      props.backend.selectAgent?.(local.state.activeAgent);
+  });
 
   onMount(async () => {
     if (props.workspaceRoot) {
@@ -301,24 +309,57 @@ function Shell(props: {
       ));
       return;
     }
-     if (command === "provider.connect") {
-      resolveConfig({ workspaceRoot: props.workspaceRoot ?? process.cwd() }).then(({ config: resolved }) => {
-        dialog.push(() => <DialogProviderSetup config={resolved} onPersist={(next) => void updateConfig(props.workspaceRoot ?? process.cwd(), next)} />);
+    if (command === "provider.connect") {
+      resolveConfig({
+        workspaceRoot: props.workspaceRoot ?? process.cwd(),
+      }).then(({ config: resolved }) => {
+        dialog.push(() => (
+          <DialogProviderSetup
+            config={resolved}
+            onPersist={(next) =>
+              void updateConfig(props.workspaceRoot ?? process.cwd(), next)
+            }
+          />
+        ));
       });
       return;
     }
     if (command === "model.list") {
-      dialog.push(() => <DialogModel workspaceRoot={props.workspaceRoot ?? process.cwd()} />);
+      dialog.push(() => (
+        <DialogModel workspaceRoot={props.workspaceRoot ?? process.cwd()} />
+      ));
+      return;
+    }
+    if (command === "agent.list") {
+      resolveConfig({
+        workspaceRoot: props.workspaceRoot ?? process.cwd(),
+      }).then(({ config }) =>
+        dialog.push(() => (
+          <DialogAgent
+            agents={Object.entries(config.agents).map(([name, agent]) => ({
+              name,
+              ...agent,
+            }))}
+            current={local.state.activeAgent}
+            selectAgent={(name) => props.backend.selectAgent?.(name)}
+            workspaceRoot={props.workspaceRoot ?? process.cwd()}
+          />
+        )),
+      );
       return;
     }
     if (command === "model.edit") {
-      resolveConfig({ workspaceRoot: props.workspaceRoot ?? process.cwd() }).then(({ config: resolved }) => {
+      resolveConfig({
+        workspaceRoot: props.workspaceRoot ?? process.cwd(),
+      }).then(({ config: resolved }) => {
         const mk = (mid: string, pvid: string) => {
           const v = mid.trim();
           if (!v) throw new Error("Model ID cannot be empty");
           return `${pvid}_${v.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
         };
-        const save = (next: ConfigV2) => { void updateConfig(props.workspaceRoot ?? process.cwd(), next); };
+        const save = (next: ConfigV2) => {
+          void updateConfig(props.workspaceRoot ?? process.cwd(), next);
+        };
         const openModelDetail = (opt: { value: string }) => {
           const m = resolved.models[opt.value];
           if (!m) return;
@@ -331,42 +372,147 @@ function Shell(props: {
               title={`Edit ${opt.value}`}
               options={[
                 { title: "Model ID", value: "mid", description: m.model },
-                { title: "Default", value: "def", description: resolved.defaultModel === opt.value ? "✓ current" : "Set as default" },
-                { title: "Context Window", value: "ctx", description: typeof m.contextWindow === "number" ? `${m.contextWindow.toLocaleString()}` : String(m.contextWindow) },
-                { title: "Max Output Tokens", value: "maxout", description: m.maxOutputTokens?.toString() ?? "(default)" },
-                { title: "Temperature", value: "temp", description: m.temperature?.toString() ?? "(default)" },
-                { title: "Top P", value: "topp", description: m.topP?.toString() ?? "(default)" },
-                { title: "Reasoning Effort", value: "reason", description: m.reasoningEffort ?? "none" },
-                { title: "Thinking", value: "think", description: m.thinkingEnabled ? "On" : "Off" },
-                { title: "Stream", value: "stream", description: m.stream ? "On" : "Off" },
-                { title: "Request Timeout", value: "timeout", description: m.requestTimeoutSec?.toString() ?? "(default)" },
+                {
+                  title: "Default",
+                  value: "def",
+                  description:
+                    resolved.defaultModel === opt.value
+                      ? "✓ current"
+                      : "Set as default",
+                },
+                {
+                  title: "Context Window",
+                  value: "ctx",
+                  description:
+                    typeof m.contextWindow === "number"
+                      ? `${m.contextWindow.toLocaleString()}`
+                      : String(m.contextWindow),
+                },
+                {
+                  title: "Max Output Tokens",
+                  value: "maxout",
+                  description: m.maxOutputTokens?.toString() ?? "(default)",
+                },
+                {
+                  title: "Temperature",
+                  value: "temp",
+                  description: m.temperature?.toString() ?? "(default)",
+                },
+                {
+                  title: "Top P",
+                  value: "topp",
+                  description: m.topP?.toString() ?? "(default)",
+                },
+                {
+                  title: "Reasoning Effort",
+                  value: "reason",
+                  description: m.reasoningEffort ?? "none",
+                },
+                {
+                  title: "Thinking",
+                  value: "think",
+                  description: m.thinkingEnabled ? "On" : "Off",
+                },
+                {
+                  title: "Stream",
+                  value: "stream",
+                  description: m.stream ? "On" : "Off",
+                },
+                {
+                  title: "Request Timeout",
+                  value: "timeout",
+                  description: m.requestTimeoutSec?.toString() ?? "(default)",
+                },
                 { title: "Delete", value: "del", description: "Remove model" },
               ]}
               onSelect={async (o) => {
-                if (o.value === "def") { resolved.defaultModel = opt.value; save(resolved); return; }
-                if (o.value === "think") { m.thinkingEnabled = !m.thinkingEnabled; save(resolved); refresh(); return; }
-                if (o.value === "stream") { m.stream = !m.stream; save(resolved); refresh(); return; }
+                if (o.value === "def") {
+                  resolved.defaultModel = opt.value;
+                  save(resolved);
+                  return;
+                }
+                if (o.value === "think") {
+                  m.thinkingEnabled = !m.thinkingEnabled;
+                  save(resolved);
+                  refresh();
+                  return;
+                }
+                if (o.value === "stream") {
+                  m.stream = !m.stream;
+                  save(resolved);
+                  refresh();
+                  return;
+                }
                 if (o.value === "reason") {
                   dialog.push(() => (
                     <DialogSelect
                       title="Reasoning Effort"
-                      options={["minimal", "low", "medium", "high", "xhigh", "none"].map((v) => ({ title: v, value: v, description: v === (m.reasoningEffort ?? "none") ? "current" : undefined }))}
-                      onSelect={(r) => { m.reasoningEffort = r.value === "none" ? null : (r.value as any); save(resolved); dialog.pop(); }}
+                      options={[
+                        "minimal",
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "none",
+                      ].map((v) => ({
+                        title: v,
+                        value: v,
+                        description:
+                          v === (m.reasoningEffort ?? "none")
+                            ? "current"
+                            : undefined,
+                      }))}
+                      onSelect={(r) => {
+                        m.reasoningEffort =
+                          r.value === "none" ? null : (r.value as any);
+                        save(resolved);
+                        dialog.pop();
+                      }}
                     />
                   ));
                   return;
                 }
-                if (o.value === "del") { delete (resolved.models as Record<string, unknown>)[opt.value]; save(resolved); dialog.pop(); return; }
-                const labels: Record<string, string> = { ctx: "Context Window", maxout: "Max Output Tokens", temp: "Temperature", topp: "Top P", mid: "Model ID", timeout: "Request Timeout (sec)" };
-                const defaults: Record<string, string> = { ctx: String(m.contextWindow), maxout: String(m.maxOutputTokens ?? ""), temp: String(m.temperature ?? ""), topp: String(m.topP ?? ""), mid: m.model, timeout: String(m.requestTimeoutSec ?? "") };
-                const v = await DialogPrompt.show(dialog, labels[o.value], { placeholder: defaults[o.value] });
+                if (o.value === "del") {
+                  delete (resolved.models as Record<string, unknown>)[
+                    opt.value
+                  ];
+                  save(resolved);
+                  dialog.pop();
+                  return;
+                }
+                const labels: Record<string, string> = {
+                  ctx: "Context Window",
+                  maxout: "Max Output Tokens",
+                  temp: "Temperature",
+                  topp: "Top P",
+                  mid: "Model ID",
+                  timeout: "Request Timeout (sec)",
+                };
+                const defaults: Record<string, string> = {
+                  ctx: String(m.contextWindow),
+                  maxout: String(m.maxOutputTokens ?? ""),
+                  temp: String(m.temperature ?? ""),
+                  topp: String(m.topP ?? ""),
+                  mid: m.model,
+                  timeout: String(m.requestTimeoutSec ?? ""),
+                };
+                const v = await DialogPrompt.show(dialog, labels[o.value], {
+                  placeholder: defaults[o.value],
+                });
                 if (v === null) return;
-                if (o.value === "ctx") m.contextWindow = v === "auto" ? ("auto" as any) : Number(v) || "auto";
-                if (o.value === "maxout") m.maxOutputTokens = v === "" ? null : (Number(v) || null);
-                if (o.value === "temp") m.temperature = v === "" ? null : Number(v);
+                if (o.value === "ctx")
+                  m.contextWindow =
+                    v === "auto" ? ("auto" as any) : Number(v) || "auto";
+                if (o.value === "maxout")
+                  m.maxOutputTokens = v === "" ? null : Number(v) || null;
+                if (o.value === "temp")
+                  m.temperature = v === "" ? null : Number(v);
                 if (o.value === "topp") m.topP = v === "" ? null : Number(v);
-                if (o.value === "mid") { if (v.trim()) m.model = v.trim(); }
-                if (o.value === "timeout") m.requestTimeoutSec = v === "" ? null : (Number(v) || null);
+                if (o.value === "mid") {
+                  if (v.trim()) m.model = v.trim();
+                }
+                if (o.value === "timeout")
+                  m.requestTimeoutSec = v === "" ? null : Number(v) || null;
                 save(resolved);
                 refresh();
               }}
@@ -382,7 +528,11 @@ function Shell(props: {
                 value: key,
                 description: `${m.model} @ ${m.provider}`,
               })),
-              { title: "+ Add model to provider", value: "$add", description: "Add a new model to an existing provider" },
+              {
+                title: "+ Add model to provider",
+                value: "$add",
+                description: "Add a new model to an existing provider",
+              },
             ]}
             onSelect={(opt) => {
               if (opt.value === "$add") {
@@ -390,34 +540,86 @@ function Shell(props: {
                 dialog.push(() => (
                   <DialogSelect
                     title="Select Provider"
-                    options={providers.map(([name, p]) => ({ title: name, value: name, description: `${p.type}${p.baseURL ? ` @ ${p.baseURL}` : ""}` }))}
+                    options={providers.map(([name, p]) => ({
+                      title: name,
+                      value: name,
+                      description: `${p.type}${p.baseURL ? ` @ ${p.baseURL}` : ""}`,
+                    }))}
                     onSelect={async (p) => {
                       const provider = resolved.providers[p.value];
                       if (!provider?.apiKey || !provider?.baseURL) {
-                        const mid = await DialogPrompt.show(dialog, "Model ID", { placeholder: "gpt-4.1" });
+                        const mid = await DialogPrompt.show(
+                          dialog,
+                          "Model ID",
+                          { placeholder: "gpt-4.1" },
+                        );
                         if (!mid || !mid.trim()) return;
-                        resolved.models[mk(mid, p.value)] = { model: mid.trim(), provider: p.value, contextWindow: "auto", temperature: null, topP: null, reasoningEffort: null, thinkingEnabled: true, stream: true, requestTimeoutSec: null };
+                        resolved.models[mk(mid, p.value)] = {
+                          model: mid.trim(),
+                          provider: p.value,
+                          contextWindow: "auto",
+                          temperature: null,
+                          topP: null,
+                          reasoningEffort: null,
+                          thinkingEnabled: true,
+                          stream: true,
+                          requestTimeoutSec: null,
+                          variants: {},
+                        };
                         save(resolved);
                         dialog.pop();
                         return;
                       }
                       try {
-                        const models = await discoverProviderModels(provider.type, provider.baseURL, provider.apiKey);
+                        const models = await discoverProviderModels(
+                          provider.type,
+                          provider.baseURL,
+                          provider.apiKey,
+                        );
                         dialog.push(() => (
                           <DialogSelect
                             title={`Models: ${p.value}`}
-                            options={models.map((model: string) => ({ title: model, value: model }))}
+                            options={models.map((model: string) => ({
+                              title: model,
+                              value: model,
+                            }))}
                             onSelect={(sel) => {
-                              resolved.models[mk(sel.value, p.value)] = { model: sel.value, provider: p.value, contextWindow: "auto", temperature: null, topP: null, reasoningEffort: null, thinkingEnabled: true, stream: true, requestTimeoutSec: null };
+                              resolved.models[mk(sel.value, p.value)] = {
+                                model: sel.value,
+                                provider: p.value,
+                                contextWindow: "auto",
+                                temperature: null,
+                                topP: null,
+                                reasoningEffort: null,
+                                thinkingEnabled: true,
+                                stream: true,
+                                requestTimeoutSec: null,
+                                variants: {},
+                              };
                               save(resolved);
                               dialog.pop();
                             }}
                           />
                         ));
                       } catch (e) {
-                        const mid = await DialogPrompt.show(dialog, "Discovery failed, enter Model ID manually", { placeholder: "gpt-4.1" });
+                        const mid = await DialogPrompt.show(
+                          dialog,
+                          "Discovery failed, enter Model ID manually",
+                          { placeholder: "gpt-4.1" },
+                        );
                         if (!mid || !mid.trim()) return;
-                        resolved.models[mk(mid, p.value)] = { model: mid.trim(), provider: p.value, contextWindow: "auto", temperature: null, topP: null, reasoningEffort: null, thinkingEnabled: true, stream: true, requestTimeoutSec: null };
+                        resolved.models[mk(mid, p.value)] = {
+                          model: mid.trim(),
+                          provider: p.value,
+                          contextWindow: "auto",
+                          temperature: null,
+                          topP: null,
+                          reasoningEffort: null,
+                          thinkingEnabled: true,
+                          stream: true,
+                          requestTimeoutSec: null,
+                          variants: {},
+                        };
                         save(resolved);
                         dialog.pop();
                       }
@@ -434,282 +636,600 @@ function Shell(props: {
       return;
     }
     if (command === "mcp.list") {
-      resolveConfig({ workspaceRoot: props.workspaceRoot ?? process.cwd() }).then(({ config: resolved }) => {
-        dialog.push(() => <DialogMcp config={resolved} onPersist={(next) => void updateConfig(props.workspaceRoot ?? process.cwd(), next)} />);
+      resolveConfig({
+        workspaceRoot: props.workspaceRoot ?? process.cwd(),
+      }).then(({ config: resolved }) => {
+        dialog.push(() => (
+          <DialogMcp
+            config={resolved}
+            onPersist={(next) =>
+              void updateConfig(props.workspaceRoot ?? process.cwd(), next)
+            }
+          />
+        ));
       });
       return;
     }
     if (command === "settings.open") {
-      async function saveConfig(next: any) { await updateConfig(props.workspaceRoot ?? process.cwd(), next); }
+      async function saveConfig(next: any) {
+        await updateConfig(props.workspaceRoot ?? process.cwd(), next);
+      }
       dialog.push(() => (
         <DialogSelect
           title="Settings"
-           options={[
-             { title: "Add Provider", value: "provider", description: "Configure a provider and model" },
-             { title: "Edit Provider", value: "edit-provider", description: "Modify key, URL, type" },
-             { title: "Delete Provider", value: "delete-provider", description: "Remove provider and models" },
-             { title: "Theme", value: "theme", description: preferences().theme || "natalia-dark" },
-             { title: "MCP Servers", value: "mcp", description: "Manage MCP servers" },
-             { title: "Permission Profile", value: "permission", description: "Select permission profile" },
-             { title: "Agent Mode", value: "mode", description: "Select agent mode" },
-             { title: "Select Model", value: "model", description: "Select default model" },
-             { title: "Models", value: "model.edit", description: "Add/edit/delete model configs" },
-             { title: "Web & Network", value: "web", description: "Search, browser, network rules" },
-             { title: "Workspace", value: "workspace", description: "Root, instructions, README, docs" },
-             { title: "Runtime Config", value: "runtime", description: "Max steps, retry, checkpoints" },
-             { title: "TUI Preferences", value: "tui", description: "Density, diff style, keybinds" },
-           ]}
+          options={[
+            {
+              title: "Add Provider",
+              value: "provider",
+              description: "Configure a provider and model",
+            },
+            {
+              title: "Edit Provider",
+              value: "edit-provider",
+              description: "Modify key, URL, type",
+            },
+            {
+              title: "Delete Provider",
+              value: "delete-provider",
+              description: "Remove provider and models",
+            },
+            {
+              title: "Theme",
+              value: "theme",
+              description: preferences().theme || "natalia-dark",
+            },
+            {
+              title: "MCP Servers",
+              value: "mcp",
+              description: "Manage MCP servers",
+            },
+            {
+              title: "Permission Profile",
+              value: "permission",
+              description: "Select permission profile",
+            },
+            {
+              title: "Agent Mode",
+              value: "mode",
+              description: "Select agent mode",
+            },
+            {
+              title: "Select Model",
+              value: "model",
+              description: "Select default model",
+            },
+            {
+              title: "Models",
+              value: "model.edit",
+              description: "Add/edit/delete model configs",
+            },
+            {
+              title: "Web & Network",
+              value: "web",
+              description: "Search, browser, network rules",
+            },
+            {
+              title: "Workspace",
+              value: "workspace",
+              description: "Root, instructions, README, docs",
+            },
+            {
+              title: "Runtime Config",
+              value: "runtime",
+              description: "Max steps, retry, checkpoints",
+            },
+            {
+              title: "TUI Preferences",
+              value: "tui",
+              description: "Density, diff style, keybinds",
+            },
+          ]}
           onSelect={async (option) => {
-            const resolved = (await resolveConfig({ workspaceRoot: props.workspaceRoot ?? process.cwd() })).config;
+            const resolved = (
+              await resolveConfig({
+                workspaceRoot: props.workspaceRoot ?? process.cwd(),
+              })
+            ).config;
             switch (option.value) {
-               case "provider":
-                 dialog.push(() => <DialogProviderSetup config={resolved} onPersist={(next) => void saveConfig(next)} />);
-                 break;
-               case "edit-provider": {
-                 const providers = Object.entries(resolved.providers ?? {});
-                 dialog.push(() => (
-                   <DialogSelect
-                     title="Edit Provider"
-                     options={providers.map(([name, p]) => ({
-                       title: name,
-                       value: name,
-                       description: `${p.type}${p.baseURL ? ` @ ${p.baseURL}` : ""}`,
-                     }))}
-                     onSelect={async (opt) => {
-                       const p = resolved.providers[opt.value];
-                       if (!p) return;
-                       const newKey = await DialogPrompt.show(dialog, "API Key", { placeholder: p.apiKey ?? "" });
-                       if (newKey === null || newKey === undefined) return;
-                       const newURL = await DialogPrompt.show(dialog, "Base URL", { placeholder: p.baseURL ?? "" });
-                       if (newURL === null || newURL === undefined) return;
-                       const newHeaders = await DialogPrompt.show(dialog, "Custom Headers (JSON)", { placeholder: p.customHeaders && Object.keys(p.customHeaders).length ? JSON.stringify(p.customHeaders) : "{}" });
-                       if (newHeaders === null || newHeaders === undefined) return;
-                       p.apiKey = newKey.trim() || p.apiKey;
-                       p.baseURL = newURL.trim() || p.baseURL;
-                       try { p.customHeaders = JSON.parse(newHeaders.trim() || "{}"); } catch { /* keep existing */ }
-                       void saveConfig(resolved);
-                       dialog.pop();
-                     }}
-                   />
-                 ));
-                 break;
-               }
-               case "delete-provider": {
-                 const providers = Object.entries(resolved.providers ?? {});
-                 dialog.push(() => (
-                   <DialogSelect
-                     title="Delete Provider"
-                     options={providers.map(([name, p]) => ({
-                       title: name,
-                       value: name,
-                       description: `${p.type} — removes provider and its models`,
-                     }))}
-                     onSelect={(opt) => {
-                       delete (resolved.providers as Record<string, unknown>)[opt.value];
-                       for (const key of Object.keys(resolved.models ?? {})) {
-                         if (resolved.models[key]?.provider === opt.value)
-                           delete (resolved.models as Record<string, unknown>)[key];
-                       }
-                       if (!resolved.models[resolved.defaultModel])
-                         resolved.defaultModel = Object.keys(resolved.models)[0] ?? "";
-                       void saveConfig(resolved);
-                       dialog.pop();
-                     }}
-                   />
-                 ));
-                 break;
-               }
+              case "provider":
+                dialog.push(() => (
+                  <DialogProviderSetup
+                    config={resolved}
+                    onPersist={(next) => void saveConfig(next)}
+                  />
+                ));
+                break;
+              case "edit-provider": {
+                const providers = Object.entries(resolved.providers ?? {});
+                dialog.push(() => (
+                  <DialogSelect
+                    title="Edit Provider"
+                    options={providers.map(([name, p]) => ({
+                      title: name,
+                      value: name,
+                      description: `${p.type}${p.baseURL ? ` @ ${p.baseURL}` : ""}`,
+                    }))}
+                    onSelect={async (opt) => {
+                      const p = resolved.providers[opt.value];
+                      if (!p) return;
+                      const newKey = await DialogPrompt.show(
+                        dialog,
+                        "API Key",
+                        { placeholder: p.apiKey ?? "" },
+                      );
+                      if (newKey === null || newKey === undefined) return;
+                      const newURL = await DialogPrompt.show(
+                        dialog,
+                        "Base URL",
+                        { placeholder: p.baseURL ?? "" },
+                      );
+                      if (newURL === null || newURL === undefined) return;
+                      const newHeaders = await DialogPrompt.show(
+                        dialog,
+                        "Custom Headers (JSON)",
+                        {
+                          placeholder:
+                            p.customHeaders &&
+                            Object.keys(p.customHeaders).length
+                              ? JSON.stringify(p.customHeaders)
+                              : "{}",
+                        },
+                      );
+                      if (newHeaders === null || newHeaders === undefined)
+                        return;
+                      p.apiKey = newKey.trim() || p.apiKey;
+                      p.baseURL = newURL.trim() || p.baseURL;
+                      try {
+                        p.customHeaders = JSON.parse(newHeaders.trim() || "{}");
+                      } catch {
+                        /* keep existing */
+                      }
+                      void saveConfig(resolved);
+                      dialog.pop();
+                    }}
+                  />
+                ));
+                break;
+              }
+              case "delete-provider": {
+                const providers = Object.entries(resolved.providers ?? {});
+                dialog.push(() => (
+                  <DialogSelect
+                    title="Delete Provider"
+                    options={providers.map(([name, p]) => ({
+                      title: name,
+                      value: name,
+                      description: `${p.type} — removes provider and its models`,
+                    }))}
+                    onSelect={(opt) => {
+                      delete (resolved.providers as Record<string, unknown>)[
+                        opt.value
+                      ];
+                      for (const key of Object.keys(resolved.models ?? {})) {
+                        if (resolved.models[key]?.provider === opt.value)
+                          delete (resolved.models as Record<string, unknown>)[
+                            key
+                          ];
+                      }
+                      if (!resolved.models[resolved.defaultModel])
+                        resolved.defaultModel =
+                          Object.keys(resolved.models)[0] ?? "";
+                      void saveConfig(resolved);
+                      dialog.pop();
+                    }}
+                  />
+                ));
+                break;
+              }
               case "theme":
                 dialog.push(() => (
                   <DialogThemeList
                     onCommit={(name) =>
-                      setPreferences({ ...preferences(), theme: name, version: 1, themeMode: "dark" })
+                      setPreferences({
+                        ...preferences(),
+                        theme: name,
+                        version: 1,
+                        themeMode: "dark",
+                      })
                     }
                   />
                 ));
                 break;
               case "mcp":
-                dialog.push(() => <DialogMcp config={resolved} onPersist={(next) => void saveConfig(next)} />);
+                dialog.push(() => (
+                  <DialogMcp
+                    config={resolved}
+                    onPersist={(next) => void saveConfig(next)}
+                  />
+                ));
                 break;
-               case "model":
-                 dialog.push(() => <DialogModel workspaceRoot={props.workspaceRoot ?? process.cwd()} />);
-                 break;
-               case "permission":
-                 dialog.push(() => (
-                   <DialogSelect
-                     title="Permission Profiles"
-                     options={[
-                       ...Object.entries(resolved.permissionProfiles ?? {}).map(([name, p]) => ({
-                         title: name,
-                         value: name,
-                         description: (p as any).description ?? (p as any).approval ?? "-",
-                       })),
-                       { title: "+ Create new profile", value: "$new", description: "Add a permission profile" },
-                     ]}
-                     onSelect={(opt) => {
-                       if (opt.value === "$new") {
-                         const name = prompt("Profile name") ?? "";
-                         if (!name.trim()) return;
-                         resolved.permissionProfiles![name.trim()] = {
-                           description: "",
-                           approval: "ask",
-                           tools: [],
-                         } as any;
-                         resolved.defaultPermission = name.trim();
-                         void saveConfig(resolved);
-                         dialog.pop();
-                         return;
-                       }
-                       resolved.defaultPermission = opt.value;
-                       void saveConfig(resolved);
-                       dialog.pop();
-                     }}
-                     onExtraKey={(key, opt) => {
-                       if (key === "d" && opt.value !== "$new") {
-                         delete (resolved.permissionProfiles as Record<string, unknown>)[opt.value];
-                         void saveConfig(resolved);
-                       }
-                     }}
-                   />
-                 ));
-                 break;
-               case "mode":
-                 dialog.push(() => (
-                   <DialogSelect
-                     title="Agent Modes"
-                     options={[
-                       ...Object.entries(resolved.modes ?? {}).map(([name, m]) => ({
-                         title: name,
-                         value: name,
-                         description: (m as any).description ?? `${(m as any).allowedTools?.length ?? 0} tools`,
-                       })),
-                       { title: "+ Create new mode", value: "$new", description: "Add an agent mode" },
-                     ]}
-                     onSelect={(opt) => {
-                       if (opt.value === "$new") {
-                         const name = prompt("Mode name") ?? "";
-                         if (!name.trim()) return;
-                         resolved.modes![name.trim()] = {
-                           description: "",
-                           allowedTools: [],
-                         } as any;
-                         resolved.defaultMode = name.trim();
-                         void saveConfig(resolved);
-                         dialog.pop();
-                         return;
-                       }
-                       resolved.defaultMode = opt.value;
-                       void saveConfig(resolved);
-                       dialog.pop();
-                     }}
-                     onExtraKey={(key, opt) => {
-                       if (key === "d" && opt.value !== "$new") {
-                         delete (resolved.modes as Record<string, unknown>)[opt.value];
-                         void saveConfig(resolved);
-                       }
-                     }}
-                   />
-                 ));
-                 break;
-               case "model.edit":
-                  runCommand("model.edit");
-                  break;
-               case "web":
-                 dialog.push(() => (
-                   <DialogSelect
-                     title="Web & Network"
-                     options={[
-                       { title: "Web Search Endpoint", value: "ep", description: resolved.webSearch?.endpoint ?? "(not set)" },
-                       { title: "Browser", value: "browser", description: resolved.browser?.enabled ? "On" : "Off" },
-                       { title: "Allow Localhost", value: "localhost", description: resolved.network?.allowLocalhost ? "On" : "Off" },
-                       { title: "Allow Private IPs", value: "private", description: resolved.network?.allowPrivate ? "On" : "Off" },
-                       { title: "Redact Tool Output", value: "redact", description: resolved.security?.redactToolOutput ? "On" : "Off" },
-                       { title: "Env Allowlist", value: "env", description: `${resolved.security?.envAllowlist?.length ?? 0} vars allowed` },
-                       { title: "Browser Binary", value: "bbin", description: resolved.browser?.binary || "(default)" },
-                       { title: "Browser User Agent", value: "bua", description: resolved.browser?.userAgent || "(default)" },
-                     ]}
-                     onSelect={(opt) => {
-                       const next = structuredClone(resolved);
-                       if (opt.value === "browser") next.browser!.enabled = !next.browser!.enabled;
-                       if (opt.value === "localhost") next.network!.allowLocalhost = !next.network!.allowLocalhost;
-                       if (opt.value === "private") next.network!.allowPrivate = !next.network!.allowPrivate;
-                       if (opt.value === "redact") next.security!.redactToolOutput = !next.security!.redactToolOutput;
-                       void saveConfig(next);
-                     }}
-                   />
-                 ));
-                 break;
-               case "workspace":
-                 dialog.push(() => (
-                   <DialogSelect
-                     title="Workspace"
-                     options={[
-                       { title: "Root", value: "root", description: resolved.workspace?.root || "(project root)" },
-                       { title: "Instructions", value: "instr", description: resolved.instructions?.enabled ? "On" : "Off" },
-                       { title: "Include README", value: "readme", description: resolved.instructions?.includeReadme ? "On" : "Off" },
-                       { title: "Include Docs", value: "docs", description: resolved.instructions?.includeDocs ? "On" : "Off" },
-                       { title: "Extra Files", value: "extra", description: `${resolved.instructions?.extraFiles?.length ?? 0} files` },
-                     ]}
-                     onSelect={(opt) => {
-                       const next = structuredClone(resolved);
-                       if (opt.value === "instr") next.instructions!.enabled = !next.instructions!.enabled;
-                       if (opt.value === "readme") next.instructions!.includeReadme = !next.instructions!.includeReadme;
-                       if (opt.value === "docs") next.instructions!.includeDocs = !next.instructions!.includeDocs;
-                       void saveConfig(next);
-                     }}
-                   />
-                 ));
-                 break;
-               case "runtime":
-                 dialog.push(() => (
-                   <DialogSelect
-                     title="Runtime Config"
-                     options={[
-                       { title: "Max Steps", value: "steps", description: String(resolved.runtime?.maxStepsPerTurn ?? 25) },
-                       { title: "Max Retry", value: "retry", description: String(resolved.runtime?.maxAttemptsPerStep ?? 3) },
-                       { title: "Request Timeout", value: "timeout", description: `${resolved.runtime?.timeouts?.requestSec ?? 120}s` },
-                       { title: "Compaction", value: "compact", description: resolved.context?.compactionEnabled ? "On" : "Off" },
-                     ]}
-                     onSelect={async (opt) => {
-                       const next = structuredClone(resolved);
-                       if (opt.value === "compact") { next.context!.compactionEnabled = !next.context!.compactionEnabled; void saveConfig(next); return; }
-                       const v = await DialogPrompt.show(dialog, opt.value === "steps" ? "Max steps" : opt.value === "retry" ? "Max retry" : "Timeout (sec)", { placeholder: opt.value === "steps" ? String(next.runtime!.maxStepsPerTurn) : opt.value === "retry" ? String(next.runtime!.maxAttemptsPerStep) : String(next.runtime!.timeouts?.requestSec ?? 120) });
-                       if (v) {
-                         if (opt.value === "steps") next.runtime!.maxStepsPerTurn = Number(v) || 25;
-                         if (opt.value === "retry") next.runtime!.maxAttemptsPerStep = Number(v) || 3;
-                         if (opt.value === "timeout") next.runtime!.timeouts!.requestSec = Number(v) || 120;
-                         void saveConfig(next);
-                       }
-                     }}
-                   />
-                 ));
-                 break;
-               case "tui":
-                 dialog.push(() => (
-                   <DialogSelect
-                     title="TUI Preferences"
-                     options={[
-                       { title: "Tool Details", value: "detail", description: preferences().toolDetails ?? "expanded" },
-                       { title: "Density", value: "density", description: preferences().density ?? "compact" },
-                       { title: "Diff Style", value: "diff", description: preferences().diffStyle ?? "auto" },
-                       { title: "Theme", value: "theme", description: preferences().theme ?? "natalia-dark" },
-                       { title: "TUI Write Scope", value: "scope", description: tuiWriteScope() ?? "project" },
-                       { title: "Config Write Scope", value: "cscope", description: (state as any).configWriteScope ?? "project" },
-                       { title: "Keybinds", value: "keys", description: `${Object.keys(preferences().keybinds ?? {}).length} overrides` },
-                     ]}
-                     onSelect={(opt) => {
-                       if (opt.value === "detail") updatePreferences({ ...preferences(), toolDetails: preferences().toolDetails === "expanded" ? "collapsed" : "expanded" });
-                       if (opt.value === "density") updatePreferences({ ...preferences(), density: preferences().density === "compact" ? "comfortable" : "compact" });
-                       if (opt.value === "diff") updatePreferences({ ...preferences(), diffStyle: preferences().diffStyle === "auto" ? "stacked" : "auto" });
-                       if (opt.value === "scope") setTuiWriteScope(tuiWriteScope() === "project" ? "global" : "project");
-                       if (opt.value === "cscope") (state as any).configWriteScope = (state as any).configWriteScope === "project" ? "global" : "project";
-                     }}
-                   />
-                 ));
-                 break;
-             }
-           }}
-         />
+              case "model":
+                dialog.push(() => (
+                  <DialogModel
+                    workspaceRoot={props.workspaceRoot ?? process.cwd()}
+                  />
+                ));
+                break;
+              case "permission":
+                dialog.push(() => (
+                  <DialogSelect
+                    title="Permission Profiles"
+                    options={[
+                      ...Object.entries(resolved.permissionProfiles ?? {}).map(
+                        ([name, p]) => ({
+                          title: name,
+                          value: name,
+                          description:
+                            (p as any).description ??
+                            (p as any).approval ??
+                            "-",
+                        }),
+                      ),
+                      {
+                        title: "+ Create new profile",
+                        value: "$new",
+                        description: "Add a permission profile",
+                      },
+                    ]}
+                    onSelect={(opt) => {
+                      if (opt.value === "$new") {
+                        const name = prompt("Profile name") ?? "";
+                        if (!name.trim()) return;
+                        resolved.permissionProfiles![name.trim()] = {
+                          description: "",
+                          approval: "ask",
+                          tools: [],
+                        } as any;
+                        resolved.defaultPermission = name.trim();
+                        void saveConfig(resolved);
+                        dialog.pop();
+                        return;
+                      }
+                      resolved.defaultPermission = opt.value;
+                      void saveConfig(resolved);
+                      dialog.pop();
+                    }}
+                    onExtraKey={(key, opt) => {
+                      if (key === "d" && opt.value !== "$new") {
+                        delete (
+                          resolved.permissionProfiles as Record<string, unknown>
+                        )[opt.value];
+                        void saveConfig(resolved);
+                      }
+                    }}
+                  />
+                ));
+                break;
+              case "mode":
+                dialog.push(() => (
+                  <DialogSelect
+                    title="Agent Modes"
+                    options={[
+                      ...Object.entries(resolved.modes ?? {}).map(
+                        ([name, m]) => ({
+                          title: name,
+                          value: name,
+                          description:
+                            (m as any).description ??
+                            `${(m as any).allowedTools?.length ?? 0} tools`,
+                        }),
+                      ),
+                      {
+                        title: "+ Create new mode",
+                        value: "$new",
+                        description: "Add an agent mode",
+                      },
+                    ]}
+                    onSelect={(opt) => {
+                      if (opt.value === "$new") {
+                        const name = prompt("Mode name") ?? "";
+                        if (!name.trim()) return;
+                        resolved.modes![name.trim()] = {
+                          description: "",
+                          allowedTools: [],
+                        } as any;
+                        resolved.defaultMode = name.trim();
+                        void saveConfig(resolved);
+                        dialog.pop();
+                        return;
+                      }
+                      resolved.defaultMode = opt.value;
+                      void saveConfig(resolved);
+                      dialog.pop();
+                    }}
+                    onExtraKey={(key, opt) => {
+                      if (key === "d" && opt.value !== "$new") {
+                        delete (resolved.modes as Record<string, unknown>)[
+                          opt.value
+                        ];
+                        void saveConfig(resolved);
+                      }
+                    }}
+                  />
+                ));
+                break;
+              case "model.edit":
+                runCommand("model.edit");
+                break;
+              case "web":
+                dialog.push(() => (
+                  <DialogSelect
+                    title="Web & Network"
+                    options={[
+                      {
+                        title: "Web Search Endpoint",
+                        value: "ep",
+                        description:
+                          resolved.webSearch?.endpoint ?? "(not set)",
+                      },
+                      {
+                        title: "Browser",
+                        value: "browser",
+                        description: resolved.browser?.enabled ? "On" : "Off",
+                      },
+                      {
+                        title: "Allow Localhost",
+                        value: "localhost",
+                        description: resolved.network?.allowLocalhost
+                          ? "On"
+                          : "Off",
+                      },
+                      {
+                        title: "Allow Private IPs",
+                        value: "private",
+                        description: resolved.network?.allowPrivate
+                          ? "On"
+                          : "Off",
+                      },
+                      {
+                        title: "Redact Tool Output",
+                        value: "redact",
+                        description: resolved.security?.redactToolOutput
+                          ? "On"
+                          : "Off",
+                      },
+                      {
+                        title: "Env Allowlist",
+                        value: "env",
+                        description: `${resolved.security?.envAllowlist?.length ?? 0} vars allowed`,
+                      },
+                      {
+                        title: "Browser Binary",
+                        value: "bbin",
+                        description: resolved.browser?.binary || "(default)",
+                      },
+                      {
+                        title: "Browser User Agent",
+                        value: "bua",
+                        description: resolved.browser?.userAgent || "(default)",
+                      },
+                    ]}
+                    onSelect={(opt) => {
+                      const next = structuredClone(resolved);
+                      if (opt.value === "browser")
+                        next.browser!.enabled = !next.browser!.enabled;
+                      if (opt.value === "localhost")
+                        next.network!.allowLocalhost =
+                          !next.network!.allowLocalhost;
+                      if (opt.value === "private")
+                        next.network!.allowPrivate =
+                          !next.network!.allowPrivate;
+                      if (opt.value === "redact")
+                        next.security!.redactToolOutput =
+                          !next.security!.redactToolOutput;
+                      void saveConfig(next);
+                    }}
+                  />
+                ));
+                break;
+              case "workspace":
+                dialog.push(() => (
+                  <DialogSelect
+                    title="Workspace"
+                    options={[
+                      {
+                        title: "Root",
+                        value: "root",
+                        description:
+                          resolved.workspace?.root || "(project root)",
+                      },
+                      {
+                        title: "Instructions",
+                        value: "instr",
+                        description: resolved.instructions?.enabled
+                          ? "On"
+                          : "Off",
+                      },
+                      {
+                        title: "Include README",
+                        value: "readme",
+                        description: resolved.instructions?.includeReadme
+                          ? "On"
+                          : "Off",
+                      },
+                      {
+                        title: "Include Docs",
+                        value: "docs",
+                        description: resolved.instructions?.includeDocs
+                          ? "On"
+                          : "Off",
+                      },
+                      {
+                        title: "Extra Files",
+                        value: "extra",
+                        description: `${resolved.instructions?.extraFiles?.length ?? 0} files`,
+                      },
+                    ]}
+                    onSelect={(opt) => {
+                      const next = structuredClone(resolved);
+                      if (opt.value === "instr")
+                        next.instructions!.enabled =
+                          !next.instructions!.enabled;
+                      if (opt.value === "readme")
+                        next.instructions!.includeReadme =
+                          !next.instructions!.includeReadme;
+                      if (opt.value === "docs")
+                        next.instructions!.includeDocs =
+                          !next.instructions!.includeDocs;
+                      void saveConfig(next);
+                    }}
+                  />
+                ));
+                break;
+              case "runtime":
+                dialog.push(() => (
+                  <DialogSelect
+                    title="Runtime Config"
+                    options={[
+                      {
+                        title: "Max Steps",
+                        value: "steps",
+                        description: String(
+                          resolved.runtime?.maxStepsPerTurn ?? 25,
+                        ),
+                      },
+                      {
+                        title: "Max Retry",
+                        value: "retry",
+                        description: String(
+                          resolved.runtime?.maxAttemptsPerStep ?? 3,
+                        ),
+                      },
+                      {
+                        title: "Request Timeout",
+                        value: "timeout",
+                        description: `${resolved.runtime?.timeouts?.requestSec ?? 120}s`,
+                      },
+                      {
+                        title: "Compaction",
+                        value: "compact",
+                        description: resolved.context?.compactionEnabled
+                          ? "On"
+                          : "Off",
+                      },
+                    ]}
+                    onSelect={async (opt) => {
+                      const next = structuredClone(resolved);
+                      if (opt.value === "compact") {
+                        next.context!.compactionEnabled =
+                          !next.context!.compactionEnabled;
+                        void saveConfig(next);
+                        return;
+                      }
+                      const v = await DialogPrompt.show(
+                        dialog,
+                        opt.value === "steps"
+                          ? "Max steps"
+                          : opt.value === "retry"
+                            ? "Max retry"
+                            : "Timeout (sec)",
+                        {
+                          placeholder:
+                            opt.value === "steps"
+                              ? String(next.runtime!.maxStepsPerTurn)
+                              : opt.value === "retry"
+                                ? String(next.runtime!.maxAttemptsPerStep)
+                                : String(
+                                    next.runtime!.timeouts?.requestSec ?? 120,
+                                  ),
+                        },
+                      );
+                      if (v) {
+                        if (opt.value === "steps")
+                          next.runtime!.maxStepsPerTurn = Number(v) || 25;
+                        if (opt.value === "retry")
+                          next.runtime!.maxAttemptsPerStep = Number(v) || 3;
+                        if (opt.value === "timeout")
+                          next.runtime!.timeouts!.requestSec = Number(v) || 120;
+                        void saveConfig(next);
+                      }
+                    }}
+                  />
+                ));
+                break;
+              case "tui":
+                dialog.push(() => (
+                  <DialogSelect
+                    title="TUI Preferences"
+                    options={[
+                      {
+                        title: "Tool Details",
+                        value: "detail",
+                        description: preferences().toolDetails ?? "expanded",
+                      },
+                      {
+                        title: "Density",
+                        value: "density",
+                        description: preferences().density ?? "compact",
+                      },
+                      {
+                        title: "Diff Style",
+                        value: "diff",
+                        description: preferences().diffStyle ?? "auto",
+                      },
+                      {
+                        title: "Theme",
+                        value: "theme",
+                        description: preferences().theme ?? "natalia-dark",
+                      },
+                      {
+                        title: "TUI Write Scope",
+                        value: "scope",
+                        description: tuiWriteScope() ?? "project",
+                      },
+                      {
+                        title: "Config Write Scope",
+                        value: "cscope",
+                        description:
+                          (state as any).configWriteScope ?? "project",
+                      },
+                      {
+                        title: "Keybinds",
+                        value: "keys",
+                        description: `${Object.keys(preferences().keybinds ?? {}).length} overrides`,
+                      },
+                    ]}
+                    onSelect={(opt) => {
+                      if (opt.value === "detail")
+                        updatePreferences({
+                          ...preferences(),
+                          toolDetails:
+                            preferences().toolDetails === "expanded"
+                              ? "collapsed"
+                              : "expanded",
+                        });
+                      if (opt.value === "density")
+                        updatePreferences({
+                          ...preferences(),
+                          density:
+                            preferences().density === "compact"
+                              ? "comfortable"
+                              : "compact",
+                        });
+                      if (opt.value === "diff")
+                        updatePreferences({
+                          ...preferences(),
+                          diffStyle:
+                            preferences().diffStyle === "auto"
+                              ? "stacked"
+                              : "auto",
+                        });
+                      if (opt.value === "scope")
+                        setTuiWriteScope(
+                          tuiWriteScope() === "project" ? "global" : "project",
+                        );
+                      if (opt.value === "cscope")
+                        (state as any).configWriteScope =
+                          (state as any).configWriteScope === "project"
+                            ? "global"
+                            : "project";
+                    }}
+                  />
+                ));
+                break;
+            }
+          }}
+        />
       ));
       return;
     }
@@ -1075,7 +1595,9 @@ function Shell(props: {
             flexShrink={0}
             border={["top"]}
             borderColor={
-              route.route().kind !== "none" ? theme.theme.muted : theme.theme.accent
+              route.route().kind !== "none"
+                ? theme.theme.muted
+                : theme.theme.accent
             }
             paddingTop={1}
             paddingLeft={2}
@@ -1099,7 +1621,9 @@ function Shell(props: {
               }
               placeholderColor={theme.theme.muted}
               textColor={
-                route.route().kind !== "none" ? theme.theme.muted : theme.theme.text
+                route.route().kind !== "none"
+                  ? theme.theme.muted
+                  : theme.theme.text
               }
               focusedTextColor={theme.theme.text}
               cursorColor={theme.theme.accent}
@@ -1216,47 +1740,45 @@ function CommandPalette() {
     }));
   });
 
-  const options = createMemo(() => [
-    ...entries().map(({ entry, bindings }) => ({
-      title:
-        typeof entry.command.title === "string"
-          ? entry.command.title
-          : entry.command.name,
-      description:
-        typeof entry.command.desc === "string"
-          ? entry.command.desc
-          : undefined,
-      value: entry.command.name,
-      category:
-        typeof entry.command.category === "string"
-          ? entry.command.category
-          : undefined,
-      footer: bindings
-        .map((binding) =>
-          stringifyKeySequence(binding.sequence, { preferDisplay: true }),
-        )
-        .join(" / "),
-      onSelect: (dialog: DialogContext) => {
-        keymap.dispatchCommand(entry.command.name);
-      },
-    })),
-    ...getPluginCommands().map((cmd) => ({
-      title: cmd.title,
-      description: cmd.category ? `plugin · ${cmd.category}` : "plugin",
-      value: cmd.name,
-      category: cmd.category ?? "plugin",
-      onSelect: (_dialog: DialogContext) => {
-        cmd.run();
-      },
-    })),
-  ] as DialogSelectOption<string>[]);
-
-  return (
-    <DialogSelect
-      title="Commands"
-      options={options()}
-    />
+  const options = createMemo(
+    () =>
+      [
+        ...entries().map(({ entry, bindings }) => ({
+          title:
+            typeof entry.command.title === "string"
+              ? entry.command.title
+              : entry.command.name,
+          description:
+            typeof entry.command.desc === "string"
+              ? entry.command.desc
+              : undefined,
+          value: entry.command.name,
+          category:
+            typeof entry.command.category === "string"
+              ? entry.command.category
+              : undefined,
+          footer: bindings
+            .map((binding) =>
+              stringifyKeySequence(binding.sequence, { preferDisplay: true }),
+            )
+            .join(" / "),
+          onSelect: (dialog: DialogContext) => {
+            keymap.dispatchCommand(entry.command.name);
+          },
+        })),
+        ...getPluginCommands().map((cmd) => ({
+          title: cmd.title,
+          description: cmd.category ? `plugin · ${cmd.category}` : "plugin",
+          value: cmd.name,
+          category: cmd.category ?? "plugin",
+          onSelect: (_dialog: DialogContext) => {
+            cmd.run();
+          },
+        })),
+      ] as DialogSelectOption<string>[],
   );
+
+  return <DialogSelect title="Commands" options={options()} />;
 }
 
 function normalizeKey(key: string | undefined) {

@@ -26,6 +26,30 @@ test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", as
       sink?.(event);
       return event;
     },
+    async history(options = {}) {
+      return {
+        events:
+          options.after === undefined || options.after < 7
+            ? [
+                {
+                  seq: 7,
+                  event: {
+                    type: "diagnostic" as const,
+                    level: "info" as const,
+                    message: "durable replay",
+                  },
+                },
+              ]
+            : [],
+        hasMore: false,
+      };
+    },
+    async pendingInteractive() {
+      return {
+        approvals: [{ type: "approval.request" as const, id: "approval_open", title: "Write", preview: "file" }],
+        questions: [],
+      };
+    },
     cancel() {},
     pause(reason) {
       sink?.({ type: "turn.paused", id: "turn_1", reason: reason ?? "test" });
@@ -59,6 +83,27 @@ test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", as
     { result: { text: "hello" } },
   );
   expect(events).toHaveLength(1);
+  const pending = await fetch(`${server.url}/rpc`, {
+    method: "POST",
+    headers: { authorization: "Bearer secret", "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 9, method: "interactive.pending", params: {} }),
+  });
+  expect((await pending.json()) as { result: { approvals: Array<{ id: string }> } }).toMatchObject({
+    result: { approvals: [{ id: "approval_open" }] },
+  });
+  const replay = await fetch(`${server.url}/events?since=0`, {
+    headers: { authorization: "Bearer secret" },
+  });
+  const reader = replay.body!.getReader();
+  const decoder = new TextDecoder();
+  let replayed = "";
+  for (let index = 0; index < 4 && !replayed.includes("durable replay"); index++) {
+    const next = await reader.read();
+    replayed += decoder.decode(next.value);
+  }
+  expect(replayed).toContain("id: 7");
+  expect(replayed).toContain("durable replay");
+  await reader.cancel();
   const pause = await fetch(`${server.url}/rpc`, {
     method: "POST",
     headers: {

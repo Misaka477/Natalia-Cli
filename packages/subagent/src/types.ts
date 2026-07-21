@@ -30,6 +30,9 @@ export interface SubagentEvent {
   attached: boolean;
   text?: string;
   timestamp: number;
+  parentSessionID?: string;
+  parentAgentID?: SubagentID;
+  continuation?: number;
 }
 
 export interface SubagentRecord {
@@ -44,6 +47,9 @@ export interface SubagentRecord {
   outputs: OutputEntry[];
   createdAt: number;
   updatedAt: number;
+  parentSessionID?: string;
+  parentAgentID?: SubagentID;
+  continuation?: number;
 }
 
 export interface SpawnOptions {
@@ -52,6 +58,9 @@ export interface SpawnOptions {
   allowedTools?: string[];
   excludeTools?: string[];
   signal?: AbortSignal;
+  parentSessionID?: string;
+  parentAgentID?: SubagentID;
+  maxDepth?: number;
 }
 
 export interface RunnerContext {

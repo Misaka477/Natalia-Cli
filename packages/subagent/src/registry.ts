@@ -31,11 +31,24 @@ export class SubagentRegistry {
 
   async load(): Promise<void> {
     const records = await this.store.load();
+    let recovered = false;
     for (const rec of records) {
+      // A runner is process-local. Never pretend a previous process still owns it.
+      if (rec.status === "running" || rec.status === "paused") {
+        rec.status = "stopped";
+        rec.updatedAt = Date.now();
+        rec.outputs.push({
+          step: rec.outputs.length + 1,
+          text: "subagent stopped because the owning runtime restarted; resubmit the task to continue",
+          timestamp: rec.updatedAt,
+        });
+        recovered = true;
+      }
       this.records.set(rec.id, rec);
       const n = parseInt(rec.id.slice(1), 10);
       if (n >= this.nextID) this.nextID = n + 1;
     }
+    if (recovered) await this.save();
   }
 
   async save(): Promise<void> {
@@ -47,6 +60,7 @@ export class SubagentRegistry {
     options: SpawnOptions = {},
   ): Promise<SubagentRecord> {
     if (!task) throw new Error("task is required");
+    this.assertDepth(options.parentAgentID, options.maxDepth);
 
     const id = `a${this.nextID++}` as SubagentID;
     const now = Date.now();
@@ -62,11 +76,36 @@ export class SubagentRegistry {
       outputs: [],
       createdAt: now,
       updatedAt: now,
+      parentSessionID: options.parentSessionID,
+      parentAgentID: options.parentAgentID,
+      continuation: 0,
     };
 
     this.records.set(id, record);
     await this.save();
 
+    await this.start(record, options.signal);
+    return record;
+  }
+
+  async retry(id: SubagentID): Promise<SubagentRecord | undefined> {
+    const record = this.records.get(id);
+    if (!record || !["stopped", "failed"].includes(record.status))
+      return undefined;
+    record.continuation = (record.continuation ?? 0) + 1;
+    record.updatedAt = Date.now();
+    record.outputs.push({
+      step: record.outputs.length + 1,
+      text: `retrying continuation ${record.continuation}`,
+      timestamp: record.updatedAt,
+    });
+    await this.save();
+    await this.start(record);
+    return record;
+  }
+
+  private async start(record: SubagentRecord, signal?: AbortSignal) {
+    const id = record.id;
     const abortController = new AbortController();
     this.running.set(id, abortController);
 
@@ -108,7 +147,7 @@ export class SubagentRegistry {
         });
       },
       get signal() {
-        return anySignal(abortController.signal, options.signal);
+        return anySignal(abortController.signal, signal);
       },
     };
 
@@ -130,7 +169,7 @@ export class SubagentRegistry {
     const runPromise = Promise.resolve().then(async () => {
       try {
         ctx.setStatus("running");
-        await this.runner(task, ctx);
+        await this.runner(record.task, ctx);
         (record as any).status = abortController.signal.aborted
           ? "stopped"
           : "completed";
@@ -170,8 +209,6 @@ export class SubagentRegistry {
     });
 
     runPromise.catch(() => {});
-
-    return record;
   }
 
   list(): SubagentRecord[] {
@@ -397,6 +434,10 @@ export class SubagentRegistry {
   }
 
   private emit(event: SubagentEvent) {
+    const record = this.records.get(event.agentId);
+    event.parentSessionID = record?.parentSessionID;
+    event.parentAgentID = record?.parentAgentID;
+    event.continuation = record?.continuation;
     for (const fn of this.subscribers) {
       try {
         fn(event);
@@ -404,6 +445,21 @@ export class SubagentRegistry {
         // subscriber error ignored
       }
     }
+  }
+
+  private assertDepth(parentID: SubagentID | undefined, maxDepth = 1) {
+    let depth = 1;
+    let parent = parentID ? this.records.get(parentID) : undefined;
+    while (parent) {
+      depth++;
+      parent = parent.parentAgentID
+        ? this.records.get(parent.parentAgentID)
+        : undefined;
+    }
+    if (depth > maxDepth)
+      throw new Error(
+        `subagent depth limit reached (${maxDepth}); increase runtime.subagentDepth to allow nested subagents`,
+      );
   }
 
   private addAudit(entry: {

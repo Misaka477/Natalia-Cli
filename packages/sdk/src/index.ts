@@ -12,12 +12,20 @@ export type NataliaSDKOptions = {
 };
 
 export type NataliaSDK = {
-  prompt(text: string, options?: { delivery?: "steer" | "queue" }): Promise<SubmittedTurn>;
+  prompt(
+    text: string,
+    options?: { delivery?: "steer" | "queue" },
+  ): Promise<SubmittedTurn>;
   cancel(reason?: string): Promise<void>;
   pause(reason?: string): Promise<void>;
   resume(): Promise<void>;
+  selectAgent(name?: string): Promise<void>;
   respondApproval(response: ApprovalResponse): Promise<void>;
   respondQuestion(response: QuestionResponse): Promise<void>;
+  pendingInteractive(): Promise<{
+    approvals: Array<Extract<RuntimeEvent, { type: "approval.request" }>>;
+    questions: Array<Extract<RuntimeEvent, { type: "question.request" }>>;
+  }>;
   checkpoint(): Promise<SubmittedTurn>;
   checkpoints(limit?: number): Promise<SubmittedTurn>;
   rollback(
@@ -25,6 +33,17 @@ export type NataliaSDK = {
     options?: { dryRun?: boolean },
   ): Promise<SubmittedTurn>;
   snapshot(): Promise<RuntimeEvent>;
+  history(options?: { after?: number; limit?: number }): Promise<{
+    events: Array<{ seq: number; event: RuntimeEvent }>;
+    hasMore: boolean;
+  }>;
+  mcpCatalog(): Promise<import("@natalia/contracts").MCPCatalogSnapshot>;
+  mcpPrompt(
+    server: string,
+    name: string,
+    arguments_?: Record<string, string>,
+  ): Promise<unknown>;
+  mcpResource(server: string, uri: string): Promise<unknown>;
   health(): Promise<{ ok: boolean }>;
   events(options?: {
     since?: number;
@@ -67,6 +86,9 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     resume: async () => {
       await call("resume", {});
     },
+    selectAgent: async (name) => {
+      await call("agent.select", name === undefined ? {} : { name });
+    },
     respondApproval: async (response) => {
       await call(
         "approval.respond",
@@ -79,6 +101,7 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         response as unknown as Record<string, unknown>,
       );
     },
+    pendingInteractive: async () => await call("interactive.pending", {}),
     checkpoint: async () =>
       await call<SubmittedTurn>("prompt", { text: "/checkpoint" }),
     checkpoints: async (limit) =>
@@ -90,6 +113,13 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         text: `/rollback ${checkpointID}${rollbackOptions.dryRun ? " --dry-run" : ""}`,
       }),
     snapshot: async () => await call<RuntimeEvent>("snapshot", {}),
+    history: async (historyOptions = {}) =>
+      await call("session.history", historyOptions),
+    mcpCatalog: async () => await call("mcp.catalog", {}),
+    mcpPrompt: async (server, name, arguments_ = {}) =>
+      await call("mcp.prompt", { server, name, arguments: arguments_ }),
+    mcpResource: async (server, uri) =>
+      await call("mcp.resource", { server, uri }),
     health: async () => {
       const response = await fetchImpl(`${baseURL}/healthz`);
       if (!response.ok) throw new Error(`health failed: ${response.status}`);

@@ -9,7 +9,9 @@ export type AdmittedSessionInput = {
   text: string;
   delivery: SessionInputDelivery;
   admittedAt: string;
+  admittedSeq: number;
   promotedAt?: string;
+  promotedSeq?: number;
 };
 
 export class SessionInputConflictError extends Error {
@@ -24,7 +26,10 @@ export function admittedInputs(session: SessionRecord) {
 
 export function admitInput(
   session: SessionRecord,
-  input: Omit<AdmittedSessionInput, "sessionID" | "admittedAt" | "promotedAt">,
+  input: Omit<
+    AdmittedSessionInput,
+    "sessionID" | "admittedAt" | "admittedSeq" | "promotedAt" | "promotedSeq"
+  >,
   now = new Date(),
 ) {
   const existing = admittedInputs(session).find((item) => item.id === input.id);
@@ -41,16 +46,32 @@ export function admitInput(
     ...input,
     sessionID: session.id,
     admittedAt: now.toISOString(),
+    admittedSeq: admittedInputs(session).reduce(
+      (latest, item, index) => Math.max(latest, item.admittedSeq ?? index + 1),
+      0,
+    ) + 1,
   };
   session.inbox = [...admittedInputs(session), admitted];
   return admitted;
 }
 
 /** Promotes every pending steer admitted before this provider-turn boundary. */
-export function promoteSteers(session: SessionRecord, now = new Date()) {
+export function admissionCutoff(session: SessionRecord) {
+  return admittedInputs(session).reduce(
+    (latest, item, index) => Math.max(latest, item.admittedSeq ?? index + 1),
+    0,
+  );
+}
+
+export function promoteSteers(session: SessionRecord, cutoff = admissionCutoff(session), now = new Date()) {
   return promote(
     session,
-    admittedInputs(session).filter((item) => !item.promotedAt && item.delivery === "steer"),
+    admittedInputs(session).filter(
+      (item, index) =>
+        !item.promotedAt &&
+        item.delivery === "steer" &&
+        (item.admittedSeq ?? index + 1) <= cutoff,
+    ),
     now,
   );
 }
@@ -67,8 +88,9 @@ function promote(session: SessionRecord, inputs: AdmittedSessionInput[], now: Da
   if (!inputs.length) return [];
   const promoted = new Set(inputs.map((item) => item.id));
   const promotedAt = now.toISOString();
+  const promotedSeq = admissionCutoff(session);
   session.inbox = admittedInputs(session).map((item) =>
-    promoted.has(item.id) ? { ...item, promotedAt } : item,
+    promoted.has(item.id) ? { ...item, promotedAt, promotedSeq } : item,
   );
   return session.inbox.filter((item) => promoted.has(item.id));
 }

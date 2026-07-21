@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
-import { join, resolve } from "node:path";
+import { mkdir } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { runtimeEventDurability } from "@natalia/contracts";
 import type {
   ApprovalResponse,
   RuntimeClient,
@@ -27,15 +29,25 @@ import {
   providerCompactor,
 } from "@natalia/runtime";
 import { resolveConfig } from "@natalia/config";
+import type { ConfigV2 } from "@natalia/contracts";
+import {
+  agentsFromConfig,
+  type AgentDefinition,
+  type AgentRegistry,
+} from "@natalia/agent";
 import {
   appendSessionEvent,
   JsonSessionStore,
-  SessionRunCoordinator,
   SqliteSessionStore,
   admitInput,
+  admissionCutoff,
   admittedInputs,
   promoteNextQueued,
   promoteSteers,
+  projectInteractiveRequests,
+  projectSession,
+  modelVisibleEvents,
+  sessionRunCoordinator,
   type SessionRecord,
 } from "@natalia/session";
 import {
@@ -50,6 +62,7 @@ import {
 } from "@natalia/tools";
 import {
   authorizeSkillTool,
+  createSkillLoadTool,
   discoverSkills,
   readSkillResource,
   runSkillScript,
@@ -62,11 +75,14 @@ import { WorkspaceSandboxManager } from "@natalia/sandbox";
 import { loadLegacyMCPTools, loadNativeMCPTools } from "@natalia/mcp";
 import {
   createToolPolicyHookLayer,
+  evaluatePermissionRules,
   type ToolHookEvent,
   type ToolHooks,
   type ToolPolicy,
   type ToolPolicyHookLayer,
 } from "./tool-policy";
+
+const sqliteStores = new Map<string, SqliteSessionStore>();
 
 export type RealRuntimeClientOptions = {
   sessionID?: SessionID;
@@ -107,13 +123,29 @@ export function createRealRuntimeClient(
   let subagents: SubagentRegistry | undefined;
   let interactivePTY: InteractivePTYRegistry | undefined;
   let sandboxes: WorkspaceSandboxManager | undefined;
+  const cleanupMCP: Array<() => Promise<void>> = [];
+  const mcpAccess: Array<{
+    catalog(): Promise<import("@natalia/contracts").MCPCatalogSnapshot>;
+    getPrompt(
+      server: string,
+      name: string,
+      arguments_?: Record<string, string>,
+    ): Promise<unknown>;
+    readResource(server: string, uri: string): Promise<unknown>;
+  }> = [];
   const toolCalls = new Map<string, number>();
   const context = new ContextLedger();
   const pendingApprovals = new Map<string, ApprovalResponse>();
   const pendingApprovalRequests = new Set<string>();
-  const approvalWaiters = new Map<string, (response: ApprovalResponse) => void>();
+  const approvalWaiters = new Map<
+    string,
+    (response: ApprovalResponse) => void
+  >();
   const pendingQuestions = new Map<string, QuestionResponse>();
-  const questionWaiters = new Map<string, (response: QuestionResponse) => void>();
+  const questionWaiters = new Map<
+    string,
+    (response: QuestionResponse) => void
+  >();
   let sink: ((event: RuntimeEvent) => void) | undefined;
   let session: SessionRecord | undefined;
   let checkpointStore: CheckpointStore | undefined;
@@ -125,6 +157,9 @@ export function createRealRuntimeClient(
   let ready: Promise<void> | undefined;
   let skillRegistry: SkillRegistry | undefined;
   let activeSkill: Skill | undefined;
+  let selectedAgent: AgentDefinition | undefined;
+  let pendingAgent: AgentDefinition | undefined;
+  let agentRegistry: AgentRegistry | undefined;
   let lastProviderUsage:
     | { inputTokens: number; outputTokens: number }
     | undefined;
@@ -134,7 +169,7 @@ export function createRealRuntimeClient(
     | undefined;
   let runtimeContextConfig = contextStatusConfig();
   let retryPolicy: NonNullable<Parameters<typeof runWithRetry>[2]>["policy"];
-  const turnCoordinator = new SessionRunCoordinator();
+  const turnCoordinator = () => sessionRunCoordinator(sessionID);
 
   async function initialize() {
     try {
@@ -160,20 +195,16 @@ export function createRealRuntimeClient(
             options.hooks,
           );
       }
+      agentRegistry = agentsFromConfig(tsConfig.config);
+      selectedAgent = agentRegistry.default();
       if (!options.provider) {
-        const model = tsConfig.config.models[tsConfig.config.defaultModel];
-        const providerConfig = model
-          ? tsConfig.config.providers[model.provider]
-          : undefined;
-        if (model && providerConfig?.apiKey) {
-          provider = providerFromKind({
-            providerName: providerConfig.type,
-            provider: providerConfig.type,
-            apiKey: providerConfig.apiKey,
-            model: model.model,
-            baseURL: providerConfig.baseURL,
-            maxTokens: model.maxOutputTokens ?? undefined,
-          });
+        const configured = providerForModel(
+          tsConfig.config,
+          selectedAgent?.model ?? tsConfig.config.defaultModel,
+          selectedAgent?.variant,
+        );
+        if (configured) {
+          provider = configured;
           providerSource = "ts_config";
           maxSteps = tsConfig.config.runtime.maxStepsPerTurn;
           publish({
@@ -195,6 +226,7 @@ export function createRealRuntimeClient(
           });
         }
       }
+      applyAgentPolicy();
     } catch (error) {
       publish({
         type: "diagnostic",
@@ -239,10 +271,17 @@ export function createRealRuntimeClient(
       options.sessionDir ?? join(workspaceRoot, ".natalia", "sessions"),
     );
     if (options.useSqliteStore) {
-      sqliteStore = new SqliteSessionStore(
-        join(workspaceRoot, ".natalia", "sessions.db"),
+      const databasePath = join(workspaceRoot, ".natalia", "sessions.db");
+      await mkdir(dirname(databasePath), { recursive: true });
+      sqliteStore = sqliteStores.get(databasePath);
+      if (!sqliteStore) {
+        sqliteStore = new SqliteSessionStore(databasePath);
+        sqliteStores.set(databasePath, sqliteStore);
+      }
+      sqliteStore.create(
+        sessionID,
+        options.title ?? `Natalia TS session ${sessionID}`,
       );
-      sqliteStore.create(sessionID, options.title ?? `Natalia TS session ${sessionID}`);
     }
     subagents = new SubagentRegistry({
       workDir: workspaceRoot,
@@ -314,6 +353,9 @@ export function createRealRuntimeClient(
                 interactivePTY,
                 sandboxes,
                 settings: toolSettings(),
+                parentSessionID: sessionID,
+                parentAgentID: runner.agentId,
+                maxSubagentDepth: tsRuntimeConfig?.runtime.subagentDepth,
               },
             );
             runner.log(`tool ${tool.name}: ${result.slice(0, 240)}`);
@@ -344,6 +386,9 @@ export function createRealRuntimeClient(
         attached: event.attached,
         task: record?.task,
         text: event.text,
+        parentSessionID: event.parentSessionID,
+        parentAgentID: event.parentAgentID,
+        continuation: event.continuation,
       });
     });
     if (tsRuntimeConfig) {
@@ -354,6 +399,10 @@ export function createRealRuntimeClient(
         onDiagnostic: (message) =>
           publish({ type: "diagnostic", level: "info", message }),
       });
+      cleanupMCP.push(nativeMCP.close);
+      mcpAccess.push(nativeMCP);
+      for (const [server, status] of Object.entries(nativeMCP.statuses))
+        publish({ type: "mcp.status", server, ...status });
       if (nativeMCP.loaded)
         publish({
           type: "diagnostic",
@@ -369,6 +418,10 @@ export function createRealRuntimeClient(
       onDiagnostic: (message: string) =>
         publish({ type: "diagnostic", level: "info", message }),
     });
+    cleanupMCP.push(mcp.close);
+    mcpAccess.push(mcp);
+    for (const [server, status] of Object.entries(mcp.statuses))
+      publish({ type: "mcp.status", server, ...status });
     if (mcp.loaded > 0)
       publish({
         type: "diagnostic",
@@ -385,6 +438,28 @@ export function createRealRuntimeClient(
       sessionID,
       options.title ?? `Natalia TS session ${sessionID}`,
     );
+    const projection = projectSession(session);
+    if (projection.selectedAgent) {
+      const restored = agentRegistry?.select(projection.selectedAgent);
+      if (restored) {
+        selectedAgent = restored;
+        applyAgentPolicy();
+        applyAgentProvider();
+      } else {
+        publish({
+          type: "diagnostic",
+          level: "warning",
+          message: `persisted agent is no longer configured: ${projection.selectedAgent}`,
+        });
+      }
+    }
+    if (projection.activeTurnIDs.length) {
+      publish({
+        type: "diagnostic",
+        level: "warning",
+        message: `previous process stopped during ${projection.activeTurnIDs.length} active turn(s); incomplete provider work was not replayed`,
+      });
+    }
     await cleanupToolOutput(workspaceRoot).catch((error) =>
       publish({
         type: "diagnostic",
@@ -392,21 +467,51 @@ export function createRealRuntimeClient(
         message: `tool output cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
       }),
     );
-    restoreContextFromEvents(context, session.events);
-    restoreResponsesFromEvents(session.events);
+    const latestContextCheckpoint = [...projection.replayableEvents]
+      .reverse()
+      .find((event) => event.type === "context.checkpoint");
+    const sqliteEpoch = sqliteStore?.loadContextEpoch(sessionID);
+    if (sqliteEpoch) context.restoreDurableCheckpoint(sqliteEpoch.snapshot);
+    else if (latestContextCheckpoint)
+      context.restoreDurableCheckpoint(latestContextCheckpoint.snapshot);
+    restoreContextFromEvents(
+      context,
+      sqliteEpoch
+        ? sqliteStore!.loadEventsAfter(sessionID, sqliteEpoch.baselineSeq)
+        : modelVisibleEvents(projection.replayableEvents),
+    );
+    const [queued] = projection.pendingInputs.filter(
+      (input) => input.delivery === "queue",
+    );
+    if (queued) void turnCoordinator().wake(drainSession);
     skillRegistry = await discoverSkills({
       workspaceRoot,
       userRoot: process.env.HOME
         ? join(process.env.HOME, ".config", "natalia-cli", "skills")
         : undefined,
+      remoteURLs: tsRuntimeConfig?.skills.urls,
     });
+    tools.set(
+      "skill_load",
+      createSkillLoadTool({
+        registry: () => skillRegistry,
+        onLoad: (skill, output) => {
+          activeSkill = skill;
+          context.add({
+            id: `skill:${skill.qualifiedName}:${context.journalStatus().journalOffset}`,
+            role: "system",
+            content: output,
+          });
+        },
+      }),
+    );
     publish({
       type: "session.created",
       sessionID,
       title: session.title,
     });
     for (const event of session.events) sink?.(event);
-    restoreApprovalStateFromEvents(session.events);
+    restoreInteractiveState(session.events);
     checkpointStore = await CheckpointStore.open({
       sessionID,
       workspaceRoot,
@@ -427,11 +532,68 @@ export function createRealRuntimeClient(
     publish(statusSnapshot(provider, context, workspaceRoot));
   }
 
+  function applyAgentPolicy() {
+    const mode = tsRuntimeConfig?.modes[tsRuntimeConfig.defaultMode];
+    const allow = [
+      ...(selectedAgent?.allowedTools ?? mode?.allowedTools ?? []),
+      ...(selectedAgent?.permissions?.tools?.allow ?? []),
+    ];
+    const exclude = [
+      ...(selectedAgent?.excludedTools ?? mode?.excludedTools ?? []),
+      ...(selectedAgent?.permissions?.tools?.exclude ?? []),
+    ];
+    if (!options.toolPolicy)
+      toolLayer = createToolPolicyHookLayer(
+        { allow, exclude },
+        {
+          preExecute: async (event) => {
+            const permission = evaluatePermissionRules(
+              selectedAgent?.permissions,
+              event.toolName,
+              tryParseToolArguments(event.arguments),
+            );
+            if (!permission.allowed) return permission;
+            return (
+              (await options.hooks?.preExecute?.(event)) ?? {
+                allowed: true,
+                diagnostics: [],
+              }
+            );
+          },
+          postExecute: options.hooks?.postExecute,
+        },
+      );
+  }
+
+  function applyAgentProvider() {
+    if (options.provider || providerSource !== "ts_config" || !tsRuntimeConfig)
+      return;
+    const next = providerForModel(
+      tsRuntimeConfig,
+      selectedAgent?.model ?? tsRuntimeConfig.defaultModel,
+      selectedAgent?.variant,
+    );
+    if (!next) {
+      publish({
+        type: "diagnostic",
+        level: "warning",
+        message: `agent ${selectedAgent?.name ?? "default"} model override is not configured; retaining current provider`,
+      });
+      return;
+    }
+    provider = next;
+  }
+
+  function effectiveMaxSteps() {
+    return selectedAgent?.maxSteps ?? maxSteps;
+  }
+
   function publish(event: RuntimeEvent) {
     if (
       session &&
       event.type !== "session.created" &&
-      event.type !== "session.ready"
+      event.type !== "session.ready" &&
+      runtimeEventDurability(event) === "durable"
     ) {
       appendSessionEvent(session, event);
       const sessionSnapshot = structuredClone(session);
@@ -468,8 +630,10 @@ export function createRealRuntimeClient(
     const existing = admittedInputs(session).find((item) => item.id === id);
     admitInput(session, { id, text, delivery });
     if (existing) {
-      if (!existing.promotedAt && delivery === "steer")
-        await turnCoordinator.run(() => drainAdmittedInput(id, text));
+      if (!existing.promotedAt && delivery === "steer") {
+        void turnCoordinator().wake(drainSession);
+        await turnCoordinator().run(drainSession);
+      }
       return submitted;
     }
     lastSubmitted = submitted;
@@ -477,29 +641,46 @@ export function createRealRuntimeClient(
     // Persist admission before a command or provider can observe this turn.
     await sessionPersistence;
     if (delivery === "queue") {
-      if (!turnCoordinator.active)
-        void turnCoordinator.run(async () => {
-          if (!session) return;
-          const [next] = promoteNextQueued(session);
-          if (!next) return;
-          await persistInboxPromotion();
-          await drainAdmittedInput(next.id, next.text);
-        });
+      void turnCoordinator().wake(drainSession);
       return submitted;
     }
-    await turnCoordinator.run(() => drainAdmittedInput(id, text));
+    void turnCoordinator().wake(drainSession);
+    await turnCoordinator().run(drainSession);
     await sessionPersistence;
     return submitted;
   }
 
-  async function drainAdmittedInput(id: string, text: string) {
-    await runAdmittedInput(id, text);
-    while (session && !admittedInputs(session).some((item) => !item.promotedAt && item.delivery === "steer")) {
-      const [next] = promoteNextQueued(session);
-      if (!next) return;
-      await persistInboxPromotion();
-      await runAdmittedInput(next.id, next.text);
+  async function drainSession(signal: AbortSignal) {
+    if (!session) return;
+    const abort = () => activeAbort?.abort(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    try {
+      if (signal.aborted) throw signal.reason;
+      // Inputs admitted after this boundary wake a single successor drain.
+      const inputs = promoteSteers(session, admissionCutoff(session));
+      if (inputs.length) await persistInboxPromotion();
+      for (const input of inputs) {
+        if (signal.aborted) throw signal.reason;
+        await runAdmittedInput(input.id, input.text);
+      }
+      if (
+        !admittedInputs(session).some(
+          (input) => !input.promotedAt && input.delivery === "steer",
+        )
+      )
+        await drainPendingQueue(signal);
+    } finally {
+      signal.removeEventListener("abort", abort);
     }
+  }
+
+  async function drainPendingQueue(signal?: AbortSignal) {
+    if (!session) return;
+    if (signal?.aborted) throw signal.reason;
+    const [next] = promoteNextQueued(session);
+    if (!next) return;
+    await persistInboxPromotion();
+    await runAdmittedInput(next.id, next.text);
   }
 
   async function runAdmittedInput(id: string, text: string) {
@@ -540,9 +721,38 @@ export function createRealRuntimeClient(
       return await submitInput({ text });
     },
     submitInput,
+    async history(options = {}) {
+      await ready;
+      const after = Math.max(0, options.after ?? 0);
+      const limit = Math.min(500, Math.max(1, options.limit ?? 100));
+      if (sqliteStore)
+        return sqliteStore.loadEventPage(sessionID, { after, limit });
+      const events = session?.events ?? [];
+      const page = events.slice(after, after + limit + 1);
+      return {
+        events: page
+          .slice(0, limit)
+          .map((event, index) => ({ seq: after + index + 1, event })),
+        hasMore: page.length > limit,
+      };
+    },
+    async pendingInteractive() {
+      await ready;
+      return projectInteractiveRequests(session?.events ?? []);
+    },
+    async dispose() {
+      activeAbort?.abort(new Error("runtime disposed"));
+      await turnCoordinator().interrupt();
+      // A committed selection and other durable controls must reach disk before
+      // a caller opens the same session in a replacement runtime.
+      await sessionPersistence;
+      await Promise.all(cleanupMCP.splice(0).map((close) => close()));
+    },
     cancel(reason = "user cancel") {
       activeAbort?.abort(reason);
-      if (activeTurnID) publish({ type: "turn.cancelled", id: activeTurnID, reason });
+      void turnCoordinator().interrupt();
+      if (activeTurnID)
+        publish({ type: "turn.cancelled", id: activeTurnID, reason });
     },
     pause(reason = "user pause") {
       if (!lastSubmitted || paused) return;
@@ -558,6 +768,61 @@ export function createRealRuntimeClient(
       for (const resolveWaiter of waiters) resolveWaiter();
       publish({ type: "turn.resumed", id: lastSubmitted.id });
       publish({ type: "status.update", status: "running", detail: "resumed" });
+    },
+    selectAgent(name) {
+      const agent = agentRegistry?.select(name);
+      if (name && !agent) {
+        publish({
+          type: "diagnostic",
+          level: "error",
+          message: `agent not found: ${name}`,
+        });
+        return;
+      }
+      if (activeAbort) {
+        pendingAgent = agent;
+        publish({ type: "agent.selection", name: agent?.name, pending: true });
+        return;
+      }
+      selectedAgent = agent;
+      applyAgentPolicy();
+      applyAgentProvider();
+      publish({ type: "agent.selection", name: agent?.name, pending: false });
+    },
+    async mcpCatalog() {
+      const catalogs = await Promise.all(
+        mcpAccess.map((access) => access.catalog()),
+      );
+      return {
+        prompts: catalogs.flatMap((catalog) => catalog.prompts),
+        resources: catalogs.flatMap((catalog) => catalog.resources),
+      };
+    },
+    async getMcpPrompt(server, name, arguments_) {
+      for (const access of mcpAccess)
+        try {
+          return await access.getPrompt(server, name, arguments_);
+        } catch (error) {
+          if (
+            !(error instanceof Error) ||
+            !error.message.includes("not connected")
+          )
+            throw error;
+        }
+      throw new Error(`MCP server is not connected: ${server}`);
+    },
+    async readMcpResource(server, uri) {
+      for (const access of mcpAccess)
+        try {
+          return await access.readResource(server, uri);
+        } catch (error) {
+          if (
+            !(error instanceof Error) ||
+            !error.message.includes("not connected")
+          )
+            throw error;
+        }
+      throw new Error(`MCP server is not connected: ${server}`);
     },
     snapshot() {
       const event: RuntimeEvent = {
@@ -609,6 +874,7 @@ export function createRealRuntimeClient(
           "/doctor - inspect provider, workspace, session, and native tools",
           "/status - show the current runtime status snapshot",
           "/sessions - list durable TS sessions in the current workspace",
+          "/agents and /agent <name> - inspect or select the next-turn agent",
           "/skills and /skill <name> - inspect or activate native skills",
           "/checkpoint, /checkpoints, /rollback <id> [--dry-run] - durable workspace/context controls",
           "/pause and /resume - pause at a safe runtime boundary",
@@ -632,6 +898,7 @@ export function createRealRuntimeClient(
           `workspace: ${workspaceRoot}`,
           `session: ${sessionID}`,
           `native tools: ${tools.size}`,
+          `agent: ${selectedAgent?.name ?? "default"}`,
           `skills: ${skillRegistry?.list().length ?? 0}`,
           provider
             ? "provider check: configured; submit a short prompt to verify live streaming"
@@ -663,15 +930,21 @@ export function createRealRuntimeClient(
       return true;
     }
     if (trimmed === "/sessions") {
-      const rows = sqliteStore
-        ? sqliteStore.list()
-        : await sessionStore.list();
+      const rows = sqliteStore ? sqliteStore.list() : await sessionStore.list();
       const sessions = Array.isArray(rows) ? rows : rows;
       publish({
         type: "content.delta",
         id,
-        text: (sessions as Array<{ id: string; title: string; eventCount?: number }>).length
-          ? (sessions as Array<{ id: string; title: string; eventCount?: number }>)
+        text: (
+          sessions as Array<{ id: string; title: string; eventCount?: number }>
+        ).length
+          ? (
+              sessions as Array<{
+                id: string;
+                title: string;
+                eventCount?: number;
+              }>
+            )
               .map(
                 (item) =>
                   `${item.id}  ${item.title}  ${"eventCount" in item ? item.eventCount : 0} events`,
@@ -711,6 +984,39 @@ export function createRealRuntimeClient(
               .map((skill) => `${skill.qualifiedName}: ${skill.description}`)
               .join("\n")
           : "no native skills discovered",
+      });
+      publish({ type: "content.done", id });
+      publish({ type: "turn.finished", id, stopReason: "done" });
+      return true;
+    }
+    if (trimmed === "/agents") {
+      const agents = agentRegistry?.selectable() ?? [];
+      publish({
+        type: "content.delta",
+        id,
+        text: agents.length
+          ? agents
+              .map((agent) => `${agent.name}: ${agent.description}`)
+              .join("\n")
+          : "no selectable agents configured",
+      });
+      publish({ type: "content.done", id });
+      publish({ type: "turn.finished", id, stopReason: "done" });
+      return true;
+    }
+    if (trimmed.startsWith("/agent ")) {
+      const name = trimmed.slice("/agent ".length).trim();
+      if (!name) throw new Error("agent name is required");
+      const agent = agentRegistry?.select(name);
+      if (!agent) throw new Error(`agent not found: ${name}`);
+      selectedAgent = agent;
+      applyAgentPolicy();
+      applyAgentProvider();
+      publish({ type: "agent.selection", name: agent.name, pending: false });
+      publish({
+        type: "content.delta",
+        id,
+        text: `selected agent ${agent.name}`,
       });
       publish({ type: "content.done", id });
       publish({ type: "turn.finished", id, stopReason: "done" });
@@ -797,6 +1103,17 @@ export function createRealRuntimeClient(
       return;
     }
     const controller = new AbortController();
+    if (pendingAgent) {
+      selectedAgent = pendingAgent;
+      pendingAgent = undefined;
+      applyAgentPolicy();
+      applyAgentProvider();
+      publish({
+        type: "agent.selection",
+        name: selectedAgent?.name,
+        pending: false,
+      });
+    }
     activeAbort = controller;
     activeTurnID = id;
     if (session && promoteSteers(session).length) await persistInboxPromotion();
@@ -815,13 +1132,15 @@ export function createRealRuntimeClient(
       context.snapshot().entries,
     );
     if (tsRuntimeConfig?.instructions.enabled) {
-      const mode = tsRuntimeConfig.modes[tsRuntimeConfig.defaultMode];
-      if (mode?.systemPrompt)
-        messages.unshift({ role: "system", content: mode.systemPrompt });
+      const systemPrompt =
+        selectedAgent?.systemPrompt ||
+        tsRuntimeConfig.modes[tsRuntimeConfig.defaultMode]?.systemPrompt;
+      if (systemPrompt)
+        messages.unshift({ role: "system", content: systemPrompt });
     }
     let assistant = "";
     try {
-      for (let step = 0; step < maxSteps; step++) {
+      for (let step = 0; step < effectiveMaxSteps(); step++) {
         await waitIfPaused();
         const result = await runProviderStepWithRecovery(
           id,
@@ -845,6 +1164,13 @@ export function createRealRuntimeClient(
         );
         publish(contextStatusEvent(context.status(runtimeContextConfig)));
       }
+      publish({
+        type: "context.checkpoint",
+        id: `${id}:context:${context.journalStatus().journalOffset}`,
+        snapshot: context.durableCheckpoint(
+          context.journalStatus().messageCount,
+        ),
+      });
       publish({ type: "content.done", id });
       publish({ type: "turn.finished", id, stopReason: "done" });
       publish(statusSnapshot(provider, context, workspaceRoot));
@@ -875,7 +1201,13 @@ export function createRealRuntimeClient(
       [...tools].filter(
         ([name, tool]) =>
           toolLayer.isToolAllowed(name) &&
-          (!activeSkill || authorizeSkillTool(activeSkill, tool.name, { mode: "default" })),
+          (!selectedAgent?.mcpServers.length ||
+            !name.startsWith("mcp_") ||
+            selectedAgent.mcpServers.some((server) =>
+              name.startsWith(`mcp_${server}_`),
+            )) &&
+          (!activeSkill ||
+            authorizeSkillTool(activeSkill, tool.name, { mode: "default" })),
       ),
     );
     const materialized = materializeTools(tools, advertised);
@@ -915,21 +1247,54 @@ export function createRealRuntimeClient(
       },
       { onEvent: publish, policy: retryPolicy },
     );
+    if (output.thinking)
+      publish({ type: "thinking.done", id, text: output.thinking });
+    if (output.assistant)
+      publish({ type: "content.done", id, text: output.assistant });
     if (output.calls.length) {
-      if (output.thinking) publish({ type: "thinking.done", id });
-      if (output.assistant) publish({ type: "content.done", id });
-        const produced = await executeToolCalls(
-          id,
-          output.calls,
-          output.assistant,
-          materialized,
+      const produced = await executeToolCalls(
+        id,
+        output.calls,
+        output.assistant,
+        materialized,
       );
       toolMessages.push(...produced);
       messages.push(...produced);
     }
-    if (output.assistant && !toolMessages.length)
+    if (output.assistant && !toolMessages.length) {
       messages.push({ role: "assistant", content: output.assistant });
+    }
     return { assistant: output.assistant, toolMessages };
+  }
+
+  function providerForModel(
+    config: ConfigV2,
+    modelID: string,
+    variantName?: string,
+  ): StreamingProvider | undefined {
+    const model = config.models[modelID];
+    const providerConfig = model && config.providers[model.provider];
+    if (!model || !providerConfig?.apiKey) return undefined;
+    const variant = variantName ? model.variants[variantName] : undefined;
+    if (variantName && !variant) return undefined;
+    return providerFromKind({
+      providerName: providerConfig.type,
+      provider: providerConfig.type,
+      apiKey: providerConfig.apiKey,
+      model: variant?.model ?? model.model,
+      baseURL: providerConfig.baseURL,
+      maxTokens: variant?.maxOutputTokens ?? model.maxOutputTokens ?? undefined,
+      temperature: variant?.temperature ?? model.temperature ?? undefined,
+      topP: variant?.topP ?? model.topP ?? undefined,
+      reasoningEffort:
+        variant?.reasoningEffort ?? model.reasoningEffort ?? undefined,
+      thinkingEnabled: variant?.thinkingEnabled ?? model.thinkingEnabled,
+      timeoutMs:
+        (variant?.requestTimeoutSec ?? model.requestTimeoutSec ?? undefined) ===
+        undefined
+          ? undefined
+          : (variant?.requestTimeoutSec ?? model.requestTimeoutSec)! * 1000,
+    });
   }
 
   async function runProviderStepWithRecovery(
@@ -950,7 +1315,7 @@ export function createRealRuntimeClient(
         reason: "context_limit",
       });
       const config = runtimeContextConfig;
-      await compactContext(
+      const compacted = await compactContext(
         context,
         provider ? providerCompactor(provider) : extractiveCompactor(),
         {
@@ -965,6 +1330,12 @@ export function createRealRuntimeClient(
           onEvent: publish,
         },
       );
+      if (compacted.compacted)
+        publish({
+          type: "context.checkpoint",
+          id: `${id}:context-limit:${context.journalStatus().journalOffset}`,
+          snapshot: context.durableCheckpoint(step),
+        });
       publish({
         type: "context.limit.recovery",
         id,
@@ -1118,8 +1489,12 @@ export function createRealRuntimeClient(
       const parsed = parseToolArguments(call.arguments);
       const paramErrors = validateToolParameters(tool.parameters, parsed);
       if (paramErrors.length) {
-        const detail = paramErrors.map((e) => `${e.path}: ${e.message}`).join("; ");
-        throw new Error(`tool "${tool.name}" parameter validation failed: ${detail}`);
+        const detail = paramErrors
+          .map((e) => `${e.path}: ${e.message}`)
+          .join("; ");
+        throw new Error(
+          `tool "${tool.name}" parameter validation failed: ${detail}`,
+        );
       }
       const completeResult = await tool.execute(parsed, {
         workspaceRoot,
@@ -1147,9 +1522,17 @@ export function createRealRuntimeClient(
           }),
         sandboxes,
         settings: toolSettings(),
+        parentSessionID: sessionID,
+        maxSubagentDepth: tsRuntimeConfig?.runtime.subagentDepth,
         onSandboxEvent: (event) => publish(event as RuntimeEvent),
       });
-      const bounded = await boundToolOutput(workspaceRoot, completeResult);
+      const bounded = await boundToolOutput(
+        workspaceRoot,
+        redactToolOutput(
+          completeResult,
+          selectedAgent?.permissions?.redactOutput,
+        ),
+      );
       const result = bounded.text;
       publish({
         type: "tool.update",
@@ -1159,7 +1542,9 @@ export function createRealRuntimeClient(
         status: "succeeded",
         summary: result.slice(0, 200),
         result,
-        metadata: bounded.outputPath ? { outputPath: bounded.outputPath } : undefined,
+        metadata: bounded.outputPath
+          ? { outputPath: bounded.outputPath }
+          : undefined,
         endedAt: Date.now(),
       });
       await toolLayer.postExecute({ ...hookEvent, result });
@@ -1247,40 +1632,22 @@ export function createRealRuntimeClient(
     }
   }
 
-  function restoreApprovalStateFromEvents(events: RuntimeEvent[]) {
-    const requested = new Set<string>();
-    const responded = new Set<string>();
-    for (const event of events) {
-      if (event.type === "approval.request") requested.add(event.id);
-      if (event.type === "approval.response") responded.add(event.id);
+  function restoreInteractiveState(events: RuntimeEvent[]) {
+    const pending = projectInteractiveRequests(events);
+    for (const request of pending.approvals) {
+      pendingApprovalRequests.add(request.id);
+      publish({
+        type: "diagnostic",
+        level: "warning",
+        message: `Recovered unresolved approval record ${request.id}; active tool execution was not replayed and must be resubmitted after a response.`,
+      });
     }
-    for (const id of requested) {
-      if (!responded.has(id)) {
-        pendingApprovalRequests.add(id);
-        publish({
-          type: "diagnostic",
-          level: "warning",
-          message: `Recovered unresolved approval record ${id}; approval can be answered through RuntimeClient/transport, but active tool execution must be resubmitted if the original turn was interrupted.`,
-        });
-      }
-    }
-  }
-
-  function restoreResponsesFromEvents(events: RuntimeEvent[]) {
-    for (const event of events) {
-      if (event.type === "approval.response")
-        pendingApprovals.set(event.id, {
-          requestID: event.id,
-          decision: event.decision,
-          feedback: event.feedback,
-        });
-      if (event.type === "question.response")
-        pendingQuestions.set(event.id, {
-          requestID: event.id,
-          answers: event.answers,
-          rejected: event.rejected,
-        });
-    }
+    for (const request of pending.questions)
+      publish({
+        type: "diagnostic",
+        level: "warning",
+        message: `Recovered unresolved question record ${request.id}; active tool execution was not replayed and must be resubmitted after an answer.`,
+      });
   }
 
   function lastProviderUsageSnapshot() {
@@ -1288,12 +1655,19 @@ export function createRealRuntimeClient(
   }
 
   function toolSettings() {
+    const network = selectedAgent?.permissions?.network;
     return {
       webSearchEndpoint: tsRuntimeConfig?.webSearch.endpoint ?? undefined,
       browserBinary: tsRuntimeConfig?.browser.binary || undefined,
-      allowedHosts: tsRuntimeConfig?.network.allowedHosts,
-      allowLocalhost: tsRuntimeConfig?.network.allowLocalhost,
-      allowPrivate: tsRuntimeConfig?.network.allowPrivate,
+      allowedHosts: network?.allowedHosts.length
+        ? network.allowedHosts
+        : tsRuntimeConfig?.network.allowedHosts,
+      deniedHosts: network?.denyHosts,
+      allowLocalhost:
+        network?.allowLocalhost ?? tsRuntimeConfig?.network.allowLocalhost,
+      allowPrivate:
+        network?.allowPrivate ?? tsRuntimeConfig?.network.allowPrivate,
+      envAllowlist: selectedAgent?.permissions?.env?.allowlist,
     };
   }
 }
@@ -1350,8 +1724,12 @@ function waitForResponse<T>(
   const existing = responses.get(id);
   if (existing) return Promise.resolve(existing);
   return new Promise<T>((resolve, reject) => {
-    const timeout = setTimeout(() => finish(() => reject(new Error(timeoutMessage))), 5 * 60_000);
-    const abort = () => finish(() => reject(signal?.reason ?? new Error("request cancelled")));
+    const timeout = setTimeout(
+      () => finish(() => reject(new Error(timeoutMessage))),
+      5 * 60_000,
+    );
+    const abort = () =>
+      finish(() => reject(signal?.reason ?? new Error("request cancelled")));
     const finish = (settle: () => void) => {
       clearTimeout(timeout);
       waiters.delete(id);
@@ -1372,6 +1750,26 @@ function waitForResponse<T>(
 function parseToolArguments(input: string) {
   if (!input.trim()) return {};
   return JSON.parse(input) as unknown;
+}
+
+function tryParseToolArguments(input: string) {
+  try {
+    const parsed = parseToolArguments(input);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+      return parsed as Record<string, unknown>;
+  } catch {
+    // Detailed malformed-input validation happens at the normal tool boundary.
+  }
+  return {};
+}
+
+function redactToolOutput(output: string, redact: boolean | undefined) {
+  if (!redact) return output;
+  return output.replace(
+    /\b(?:api[_-]?key|token|secret|password)\s*[:=]\s*[^\s]+/giu,
+    (match) =>
+      `${match.slice(0, match.indexOf("=") >= 0 ? match.indexOf("=") + 1 : match.indexOf(":") + 1)}[REDACTED]`,
+  );
 }
 
 function approvalPresentation(toolName: string, rawArguments: string) {
@@ -1452,6 +1850,10 @@ function restoreContextFromEvents(
         event.id,
         `${assistantByID.get(event.id) ?? ""}${event.text}`,
       );
+      continue;
+    }
+    if (event.type === "content.done" && event.text !== undefined) {
+      assistantByID.set(event.id, event.text);
       continue;
     }
     if (

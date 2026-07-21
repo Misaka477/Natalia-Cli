@@ -75,6 +75,48 @@ export type SandboxDiffKind =
   | "mode"
   | "conflict";
 
+export type DurableContextCheckpointRecord = {
+  entries: Array<{
+    id: string;
+    role:
+      | "system"
+      | "user"
+      | "assistant"
+      | "tool_call"
+      | "tool_result"
+      | "dynamic"
+      | "resource"
+      | "summary";
+    content: string;
+    tokens?: number;
+    pairID?: string;
+    artifactRef?: string;
+  }>;
+  checkpoint?: {
+    messageCount: number;
+    tokens: number;
+    inputTokens?: number;
+    outputTokens?: number;
+    source: "provider_usage";
+  };
+  resources: Array<{
+    kind:
+      | "background"
+      | "process"
+      | "agent"
+      | "pty"
+      | "sandbox"
+      | "workflow"
+      | "skill";
+    id: string;
+    summary: string;
+  }>;
+  journalOffset: number;
+  step: number;
+  tokenEstimate: number;
+  compactionGeneration: number;
+};
+
 export type CheckpointChangeKind =
   | "add"
   | "modify"
@@ -156,11 +198,12 @@ export type RuntimeEvent =
   | {
       type: "thinking.done";
       id: string;
+      text?: string;
       visible?: boolean;
       attempt?: number;
     }
   | { type: "content.delta"; id: string; text: string; attempt?: number }
-  | { type: "content.done"; id: string; attempt?: number }
+  | { type: "content.done"; id: string; text?: string; attempt?: number }
   | {
       type: "turn.retry";
       id: string;
@@ -233,7 +276,18 @@ export type RuntimeEvent =
         | "detached";
       task?: string;
       text?: string;
+      parentSessionID?: string;
+      parentAgentID?: string;
+      continuation?: number;
     }
+  | {
+      type: "mcp.status";
+      server: string;
+      status: "disabled" | "connected" | "failed" | "unsupported_auth_flow";
+      tools: number;
+      message?: string;
+    }
+  | { type: "agent.selection"; name?: string; pending: boolean }
   | { type: "status.update"; status: string; detail?: string }
   | {
       type: "status.snapshot";
@@ -284,6 +338,11 @@ export type RuntimeEvent =
       attempted: boolean;
       compacted: boolean;
       reason: "context_limit";
+    }
+  | {
+      type: "context.checkpoint";
+      id: string;
+      snapshot: DurableContextCheckpointRecord;
     }
   | {
       type: "pty.update";
@@ -470,14 +529,76 @@ export type SubmitInput = {
   delivery?: "steer" | "queue";
   id?: string;
 };
+export type RuntimeHistoryEvent = { seq: number; event: RuntimeEvent };
+export type RuntimeHistory = {
+  events: RuntimeHistoryEvent[];
+  hasMore: boolean;
+};
+export type PendingInteractiveRequests = {
+  approvals: Array<Extract<RuntimeEvent, { type: "approval.request" }>>;
+  questions: Array<Extract<RuntimeEvent, { type: "question.request" }>>;
+};
+export type MCPPromptCatalog = {
+  server: string;
+  name: string;
+  description?: string;
+  arguments?: Array<{ name: string; description?: string; required?: boolean }>;
+};
+export type MCPResourceCatalog = {
+  server: string;
+  uri: string;
+  name: string;
+  description?: string;
+  mimeType?: string;
+};
+export type MCPCatalogSnapshot = {
+  prompts: MCPPromptCatalog[];
+  resources: MCPResourceCatalog[];
+};
+
+/** Streaming fragments are transport-live; their completed settlements are durable. */
+export function runtimeEventDurability(
+  event: RuntimeEvent,
+): "durable" | "live" {
+  switch (event.type) {
+    case "content.delta":
+    case "thinking.delta":
+    case "context.status":
+    case "status.update":
+    case "pty.update":
+      return "live";
+    case "tool.update":
+      return ["succeeded", "failed", "rejected", "cancelled"].includes(
+        event.status,
+      )
+        ? "durable"
+        : "live";
+    default:
+      return "durable";
+  }
+}
 
 export type RuntimeClient = {
   start(onEvent: (event: RuntimeEvent) => void): void;
   submit(text: string): Promise<SubmittedTurn>;
   submitInput?(input: SubmitInput): Promise<SubmittedTurn>;
+  history?(options?: {
+    after?: number;
+    limit?: number;
+  }): Promise<RuntimeHistory>;
+  pendingInteractive?(): Promise<PendingInteractiveRequests>;
+  dispose?(): Promise<void>;
   cancel(reason?: string): void;
   pause?(reason?: string): void;
   resume?(): void;
+  selectAgent?(name?: string): void;
+  mcpCatalog?(): Promise<MCPCatalogSnapshot>;
+  getMcpPrompt?(
+    server: string,
+    name: string,
+    arguments_?: Record<string, string>,
+  ): Promise<unknown>;
+  readMcpResource?(server: string, uri: string): Promise<unknown>;
   snapshot(): RuntimeEvent;
   diagnostic(message: string, level?: "info" | "warning" | "error"): void;
   lastSubmission(): SubmittedTurn | undefined;

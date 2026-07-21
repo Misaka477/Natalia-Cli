@@ -17,7 +17,9 @@ type WorkerRequest = {
     | "resume"
     | "snapshot"
     | "approval"
-    | "question";
+    | "question"
+    | "interactive.pending"
+    | "dispose";
   value?: unknown;
 };
 
@@ -87,6 +89,11 @@ export function createWorkerRuntimeClient(
     async submitInput(input) {
       return (await request("submit", input)) as SubmittedTurn;
     },
+    async pendingInteractive() {
+      return (await request("interactive.pending")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["pendingInteractive"]>>
+      >;
+    },
     cancel(reason) {
       void request("cancel", reason);
     },
@@ -153,6 +160,11 @@ async function handleWorkerRequest(
     return client.submitInput
       ? await client.submitInput(input)
       : await client.submit(input.text);
+  }
+  if (request.method === "interactive.pending") {
+    if (!client.pendingInteractive)
+      throw new Error("RuntimeClient does not support interactive.pending");
+    return await client.pendingInteractive();
   }
   if (request.method === "cancel")
     return client.cancel(

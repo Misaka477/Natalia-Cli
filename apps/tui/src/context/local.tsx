@@ -1,4 +1,10 @@
-import { createContext, createSignal, onMount, useContext, type ParentProps } from "solid-js";
+import {
+  createContext,
+  createSignal,
+  onMount,
+  useContext,
+  type ParentProps,
+} from "solid-js";
 import { createStore } from "solid-js/store";
 import { useToast } from "./toast";
 import {
@@ -12,6 +18,7 @@ export type LocalTuiContext = {
   readonly ready: boolean;
   recordModel(model: string): void;
   toggleModelFavorite(model: string): void;
+  selectAgent(agent?: string): void;
 };
 
 const LocalContext = createContext<LocalTuiContext>();
@@ -57,10 +64,9 @@ export function LocalProvider(props: ParentProps<{ workspaceRoot?: string }>) {
       return ready();
     },
     recordModel(model) {
-      setState("recentModels", (recent) => [
-        model,
-        ...recent.filter((item) => item !== model),
-      ].slice(0, 10));
+      setState("recentModels", (recent) =>
+        [model, ...recent.filter((item) => item !== model)].slice(0, 10),
+      );
       persist();
     },
     toggleModelFavorite(model) {
@@ -71,9 +77,17 @@ export function LocalProvider(props: ParentProps<{ workspaceRoot?: string }>) {
       );
       persist();
     },
+    selectAgent(agent) {
+      setState("activeAgent", agent);
+      persist();
+    },
   };
 
-  return <LocalContext.Provider value={value}>{props.children}</LocalContext.Provider>;
+  return (
+    <LocalContext.Provider value={value}>
+      {props.children}
+    </LocalContext.Provider>
+  );
 }
 
 export function useLocal() {

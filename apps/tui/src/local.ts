@@ -66,6 +66,12 @@ export async function toggleModelFavorite(
   await saveLocalTuiState(workspaceRoot, state);
 }
 
+export async function selectActiveAgent(workspaceRoot: string, agent?: string) {
+  const state = await loadLocalTuiState(workspaceRoot);
+  state.activeAgent = agent;
+  await saveLocalTuiState(workspaceRoot, state);
+}
+
 export function sortModelOptions(
   names: string[],
   favorites: string[],

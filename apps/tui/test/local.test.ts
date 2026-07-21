@@ -7,6 +7,7 @@ import {
   saveLocalTuiState,
   trackModelUsage,
   sortModelOptions,
+  selectActiveAgent,
 } from "../src/local";
 import { buildModelOptions } from "../src/component/DialogModel";
 import { configV2Schema } from "@natalia/contracts";
@@ -24,6 +25,18 @@ test("local TUI state persists model/session/MCP preferences", async () => {
       favoriteModels: ["step/flash"],
       mcpEnabled: { server: false },
     });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("local TUI state persists the selected agent per workspace", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-local-agent-"));
+  try {
+    await selectActiveAgent(root, "reviewer");
+    expect((await loadLocalTuiState(root)).activeAgent).toBe("reviewer");
+    await selectActiveAgent(root);
+    expect((await loadLocalTuiState(root)).activeAgent).toBeUndefined();
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -57,7 +70,11 @@ test("model selector groups valid favorites and recents without duplicates", () 
   const config = configV2Schema.parse({
     version: 2,
     providers: {
-      primary: { type: "openai", apiKey: "test", baseURL: "https://example.test/v1" },
+      primary: {
+        type: "openai",
+        apiKey: "test",
+        baseURL: "https://example.test/v1",
+      },
     },
     models: {
       alpha: { provider: "primary", model: "alpha", contextWindow: "auto" },

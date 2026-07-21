@@ -16,6 +16,7 @@ export const timeoutSchema = z.object({
 
 export const runtimeConfigSchema = z.object({
   maxStepsPerTurn: z.number().int().positive().default(1000),
+  subagentDepth: z.number().int().min(1).max(8).default(1),
   timeouts: timeoutSchema.default({}),
   maxAttemptsPerStep: z.number().int().positive().default(3),
   retry: z
@@ -68,6 +69,22 @@ export const modelConfigSchema = z.object({
   thinkingEnabled: z.boolean().default(true),
   stream: z.boolean().default(true),
   requestTimeoutSec: z.number().int().positive().nullable().default(null),
+  variants: z
+    .record(
+      z.object({
+        model: z.string().min(1).optional(),
+        maxOutputTokens: outputTokenLimitSchema,
+        temperature: z.number().min(0).max(2).nullable().default(null),
+        topP: z.number().min(0).max(1).nullable().default(null),
+        reasoningEffort: z
+          .enum(["minimal", "low", "medium", "high", "xhigh"])
+          .nullable()
+          .default(null),
+        thinkingEnabled: z.boolean().optional(),
+        requestTimeoutSec: z.number().int().positive().nullable().default(null),
+      }),
+    )
+    .default({}),
 });
 
 export const providerConfigSchema = z.object({
@@ -94,6 +111,75 @@ export const modeConfigSchema = z.object({
   mcpServers: z.array(z.string()).default([]),
 });
 
+export const agentPermissionRulesSchema = z.object({
+  tools: z
+    .object({
+      allow: z.array(z.string()).default([]),
+      exclude: z.array(z.string()).default([]),
+    })
+    .optional(),
+  files: z
+    .object({
+      readPaths: z
+        .array(
+          z.object({
+            pattern: z.string(),
+            allow: z.boolean().optional(),
+            reason: z.string().optional(),
+          }),
+        )
+        .default([]),
+      writePaths: z
+        .array(
+          z.object({
+            pattern: z.string(),
+            allow: z.boolean().optional(),
+            reason: z.string().optional(),
+          }),
+        )
+        .default([]),
+    })
+    .optional(),
+  commands: z
+    .object({
+      allowPatterns: z.array(z.string()).default([]),
+      denyPatterns: z.array(z.string()).default([]),
+    })
+    .optional(),
+  network: z
+    .object({
+      allowedHosts: z.array(z.string()).default([]),
+      denyHosts: z.array(z.string()).default([]),
+      allowLocalhost: z.boolean().optional(),
+      allowPrivate: z.boolean().optional(),
+    })
+    .optional(),
+  env: z.object({ allowlist: z.array(z.string()).default([]) }).optional(),
+  redactOutput: z.boolean().optional(),
+});
+
+export const agentConfigSchema = z.object({
+  description: z.string().default(""),
+  systemPrompt: z.string().default(""),
+  mode: z.enum(["primary", "subagent", "all"]).default("primary"),
+  hidden: z.boolean().default(false),
+  color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/u)
+    .optional(),
+  model: z.string().optional(),
+  variant: z.string().optional(),
+  maxSteps: z.number().int().positive().optional(),
+  allowedTools: z.array(z.string()).default([]),
+  excludedTools: z.array(z.string()).default([]),
+  mcpServers: z.array(z.string()).default([]),
+  permissions: agentPermissionRulesSchema.optional(),
+});
+
+export const skillsConfigSchema = z.object({
+  urls: z.array(z.string().url()).default([]),
+});
+
 export const mcpServerConfigSchema = z.object({
   type: z.enum(["stdio", "http"]),
   command: z.string().optional(),
@@ -107,6 +193,8 @@ export const mcpServerConfigSchema = z.object({
   excludedTools: z.array(z.string()).default([]),
   readOnly: z.boolean().default(false),
   enabled: z.boolean().default(true),
+  // Interactive remote authentication is recognized only to emit a local unsupported diagnostic.
+  auth: z.union([z.literal(false), z.object({}).passthrough()]).optional(),
 });
 
 export const workspaceConfigSchema = z.object({
@@ -181,7 +269,10 @@ export const configV2Schema = z.object({
   defaultPermission: z.string().default("ask"),
   modes: z.record(modeConfigSchema).default({}),
   defaultMode: z.string().default("code"),
+  agents: z.record(agentConfigSchema).default({}),
+  defaultAgent: z.string().default(""),
   mcpServers: z.record(mcpServerConfigSchema).default({}),
+  skills: skillsConfigSchema.default({}),
   workspace: workspaceConfigSchema.default({}),
   instructions: instructionConfigSchema.default({}),
   webSearch: webSearchConfigSchema.default({}),
@@ -196,5 +287,7 @@ export type ModelConfig = z.infer<typeof modelConfigSchema>;
 export type ProviderConfig = z.infer<typeof providerConfigSchema>;
 export type PermissionProfile = z.infer<typeof permissionProfileSchema>;
 export type ModeConfig = z.infer<typeof modeConfigSchema>;
+export type AgentConfig = z.infer<typeof agentConfigSchema>;
+export type AgentPermissionRules = z.infer<typeof agentPermissionRulesSchema>;
 export type MCPServerConfig = z.infer<typeof mcpServerConfigSchema>;
 export type PolicyStatement = z.infer<typeof policyStatementSchema>;

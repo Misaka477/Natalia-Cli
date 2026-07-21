@@ -5,6 +5,7 @@
     { "path": "apps/tui" },
     { "path": "apps/cli" },
     { "path": "packages/contracts" },
+    { "path": "packages/agent" },
     { "path": "packages/client" },
     { "path": "packages/ui-model" },
     { "path": "packages/runtime" },

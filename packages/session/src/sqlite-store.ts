@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { Database } from "bun:sqlite";
-import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { DurableContextCheckpointRecord, RuntimeEvent, SessionID } from "@natalia/contracts";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS sessions (
@@ -22,6 +22,12 @@ CREATE TABLE IF NOT EXISTS events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id, seq);
+
+CREATE TABLE IF NOT EXISTS context_epochs (
+  session_id TEXT PRIMARY KEY REFERENCES sessions(id),
+  baseline_seq INTEGER NOT NULL,
+  snapshot TEXT NOT NULL
+);
 `;
 
 export type SessionRow = {
@@ -32,6 +38,12 @@ export type SessionRow = {
   resumable: boolean;
   pinned: boolean;
   metadata: Record<string, unknown>;
+};
+
+export type StoredSessionEvent = { seq: number; event: RuntimeEvent };
+export type StoredContextEpoch = {
+  baselineSeq: number;
+  snapshot: DurableContextCheckpointRecord;
 };
 
 export class SqliteSessionStore {
@@ -87,6 +99,7 @@ export class SqliteSessionStore {
   }
 
   delete(id: SessionID) {
+    this.run(`DELETE FROM context_epochs WHERE session_id = ?`, [id]);
     this.run(`DELETE FROM events WHERE session_id = ?`, [id]);
     this.run(`DELETE FROM sessions WHERE id = ?`, [id]);
   }
@@ -102,10 +115,16 @@ export class SqliteSessionStore {
   }
 
   appendEvent(sessionID: SessionID, event: RuntimeEvent) {
-    this.run(`INSERT INTO events(session_id, event) VALUES (?, ?)`, [
+    const inserted = this.db.prepare(`INSERT INTO events(session_id, event) VALUES (?, ?)`).run(
       sessionID,
       JSON.stringify(event),
-    ]);
+    );
+    if (event.type === "context.checkpoint")
+      this.run(
+        `INSERT INTO context_epochs(session_id, baseline_seq, snapshot) VALUES (?, ?, ?)
+         ON CONFLICT(session_id) DO UPDATE SET baseline_seq = excluded.baseline_seq, snapshot = excluded.snapshot`,
+        [sessionID, Number(inserted.lastInsertRowid), JSON.stringify(event.snapshot)],
+      );
     if (event.type === "session.created") {
       this.run(`UPDATE sessions SET title = ? WHERE id = ?`, [
         event.title,
@@ -136,6 +155,42 @@ export class SqliteSessionStore {
       )
       .all(sessionID) as { event: string }[];
     return rows.map((r) => JSON.parse(r.event) as RuntimeEvent);
+  }
+
+  loadEventsAfter(sessionID: SessionID, after: number): RuntimeEvent[] {
+    const rows = this.db
+      .query(`SELECT event FROM events WHERE session_id = ? AND seq > ? ORDER BY seq`)
+      .all(sessionID, after) as { event: string }[];
+    return rows.map((row) => JSON.parse(row.event) as RuntimeEvent);
+  }
+
+  loadEventPage(sessionID: SessionID, options: { after?: number; limit?: number } = {}) {
+    const after = Math.max(0, options.after ?? 0);
+    const limit = Math.min(500, Math.max(1, options.limit ?? 100));
+    const rows = this.db
+      .query(
+        `SELECT seq, event FROM events WHERE session_id = ? AND seq > ? ORDER BY seq LIMIT ?`,
+      )
+      .all(sessionID, after, limit + 1) as Array<{ seq: number; event: string }>;
+    const hasMore = rows.length > limit;
+    return {
+      events: rows.slice(0, limit).map((row) => ({
+        seq: row.seq,
+        event: JSON.parse(row.event) as RuntimeEvent,
+      })),
+      hasMore,
+    };
+  }
+
+  loadContextEpoch(sessionID: SessionID): StoredContextEpoch | undefined {
+    const row = this.db
+      .query(`SELECT baseline_seq, snapshot FROM context_epochs WHERE session_id = ?`)
+      .get(sessionID) as { baseline_seq: number; snapshot: string } | undefined;
+    if (!row) return undefined;
+    return {
+      baselineSeq: row.baseline_seq,
+      snapshot: JSON.parse(row.snapshot) as DurableContextCheckpointRecord,
+    };
   }
 
   eventCount(sessionID: SessionID): number {

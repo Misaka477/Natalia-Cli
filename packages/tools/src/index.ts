@@ -17,7 +17,11 @@ export {
   TOOL_OUTPUT_RETENTION_MS,
 } from "./output";
 export { materializeTools } from "./invocation";
-export type { ToolInvocation, ToolMaterialization, ToolSettlement } from "./invocation";
+export type {
+  ToolInvocation,
+  ToolMaterialization,
+  ToolSettlement,
+} from "./invocation";
 export type ToolExecutionBoundary = {
   name: string;
   requiresApproval: boolean;
@@ -62,7 +66,12 @@ export type ToolExecutionContext = {
     allowedHosts?: string[];
     allowLocalhost?: boolean;
     allowPrivate?: boolean;
+    deniedHosts?: string[];
+    envAllowlist?: string[];
   };
+  parentSessionID?: string;
+  parentAgentID?: string;
+  maxSubagentDepth?: number;
 };
 
 export type ToolRegistry = Map<string, RuntimeTool>;
@@ -131,6 +140,7 @@ export class ManagedProcessRegistry {
       ready: false,
       readyPattern: options.readyPattern,
       maxOutputBytes: options.maxOutputBytes ?? 20000,
+      ...(await processFingerprint(pid)),
     };
     this.processes.set(processID, info);
     await this.save(context);
@@ -179,7 +189,10 @@ export class ManagedProcessRegistry {
     const current = await this.get(id, context);
     if (current.status === "running") await this.stop(id, context);
     this.processes.delete(id);
-    return await this.start(current.command, context, id);
+    return await this.start(current.command, context, id, {
+      readyPattern: current.readyPattern,
+      maxOutputBytes: current.maxOutputBytes,
+    });
   }
 
   async attach(id: string, context: ToolExecutionContext) {
@@ -254,7 +267,7 @@ export class ManagedProcessRegistry {
       ) as { processes?: ManagedProcessRuntime[] };
       for (const info of parsed.processes ?? []) {
         if (!info.id || !info.command || !info.outputPath) continue;
-        this.processes.set(info.id, refreshProcessStatus(info));
+        this.processes.set(info.id, await refreshPersistedProcessStatus(info));
         const match = info.id.match(/^proc_([0-9a-z]+)$/u);
         if (match)
           this.sequence = Math.max(this.sequence, parseInt(match[1]!, 36));
@@ -306,6 +319,7 @@ export function defaultTools(): RuntimeTool[] {
     agentOutputTool(),
     agentStopTool(),
     agentResumeTool(),
+    agentRetryTool(),
     agentAttachTool(),
     agentDetachTool(),
     agentCleanupTool(),
@@ -877,6 +891,9 @@ function agentSpawnTool(): RuntimeTool {
           allowedTools: array(args.allowedTools),
           excludeTools: array(args.excludeTools),
           signal: context.signal,
+          parentSessionID: context.parentSessionID,
+          parentAgentID: context.parentAgentID,
+          maxDepth: context.maxSubagentDepth,
         },
       );
       return JSON.stringify(record, null, 2);
@@ -935,12 +952,27 @@ function agentStopTool(): RuntimeTool {
 function agentResumeTool(): RuntimeTool {
   return agentRegistryTool(
     "agent_resume",
-    "Resume a paused TS/Bun subagent.",
+    "Resume a paused subagent only while its owning runtime remains active.",
     false,
     async (registry, args) =>
       registry.resume(requireString(args.id, "id"))
         ? "resumed"
         : "subagent is not paused",
+    true,
+  );
+}
+
+function agentRetryTool(): RuntimeTool {
+  return agentRegistryTool(
+    "agent_retry",
+    "Retry a stopped or failed subagent as an explicit new continuation.",
+    true,
+    async (registry, args) => {
+      const record = await registry.retry(requireString(args.id, "id"));
+      return record
+        ? `started continuation ${record.continuation}`
+        : "subagent is not stopped or failed";
+    },
     true,
   );
 }
@@ -1610,6 +1642,7 @@ function webFetchTool(): RuntimeTool {
       const url = requireString(args.url, "url");
       if (!/^https?:\/\//iu.test(url))
         throw new Error("web_fetch requires http(s) URL");
+      assertNetworkURL(url, context);
       const response = await fetch(url);
       const text = await response.text();
       return [
@@ -1642,6 +1675,7 @@ function webSearchTool(): RuntimeTool {
         "https://html.duckduckgo.com/html/";
       const url = new URL(endpoint);
       url.searchParams.set("q", requireString(args.query, "query"));
+      assertNetworkURL(url.href, context);
       const response = await fetch(url, {
         headers: { "user-agent": "Natalia-TS7-Search/0.1" },
       });
@@ -1847,6 +1881,7 @@ async function runShell(
       cwd: context.workspaceRoot,
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
+      env: safeToolEnv(context.settings?.envAllowlist),
     });
     let settled = false;
     const finish = (result: () => void) => {
@@ -1858,7 +1893,9 @@ async function runShell(
     };
     const abort = () => {
       terminateChildProcessTree(child.pid);
-      finish(() => reject(context.signal?.reason ?? new Error("command cancelled")));
+      finish(() =>
+        reject(context.signal?.reason ?? new Error("command cancelled")),
+      );
     };
     const timer = setTimeout(() => {
       terminateChildProcessTree(child.pid);
@@ -1886,10 +1923,57 @@ async function runShell(
   });
 }
 
+function assertNetworkURL(input: string, context: ToolExecutionContext) {
+  const url = new URL(input);
+  const host = url.hostname.toLowerCase();
+  const allowed = context.settings?.allowedHosts ?? [];
+  const denied = context.settings?.deniedHosts ?? [];
+  if (denied.some((pattern) => hostMatches(host, pattern)))
+    throw new Error(`network host denied: ${host}`);
+  if (allowed.length && !allowed.some((pattern) => hostMatches(host, pattern)))
+    throw new Error(`network host is not allowed: ${host}`);
+  const localhost =
+    host === "localhost" || host === "::1" || host.startsWith("127.");
+  if (localhost && context.settings?.allowLocalhost === false)
+    throw new Error(`localhost network access is not allowed: ${host}`);
+  const privateAddress = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/u.test(
+    host,
+  );
+  if (privateAddress && context.settings?.allowPrivate === false)
+    throw new Error(`private network access is not allowed: ${host}`);
+}
+
+function hostMatches(host: string, pattern: string) {
+  const normalized = pattern.toLowerCase();
+  return normalized.startsWith("*.")
+    ? host.endsWith(normalized.slice(1))
+    : host === normalized;
+}
+
+function safeToolEnv(allowlist?: string[]) {
+  const defaults = ["PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "TERM"];
+  const allowed = new Set([...defaults, ...(allowlist ?? [])]);
+  return Object.fromEntries(
+    [...allowed]
+      .map((key) => [key, process.env[key]] as const)
+      .filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string",
+      ),
+  );
+}
+
 function terminateChildProcessTree(pid: number | undefined) {
   if (!pid) return;
   try {
     process.kill(-pid, "SIGTERM");
+    const escalation = setTimeout(() => {
+      try {
+        process.kill(-pid, "SIGKILL");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      }
+    }, 2_000);
+    escalation.unref();
     return;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ESRCH") return;
@@ -1937,7 +2021,39 @@ function truncateProcessOutput(output: string, maxBytes = 20000) {
 
 type ManagedProcessRuntime = ManagedProcessInfo & {
   outputPath: string;
+  pidStartTicks?: string;
+  commandLine?: string;
 };
+
+async function refreshPersistedProcessStatus(info: ManagedProcessRuntime) {
+  refreshProcessStatus(info);
+  if (info.status !== "running" || !info.pid || !info.pidStartTicks)
+    return info;
+  const current = await processFingerprint(info.pid);
+  if (current.pidStartTicks === info.pidStartTicks) return info;
+  info.status = "failed";
+  info.endedAt = new Date().toISOString();
+  info.output =
+    `${info.output}\nmanaged process ownership lost: PID ${info.pid} no longer matches its persisted process fingerprint`.trim();
+  return info;
+}
+
+async function processFingerprint(pid: number) {
+  if (process.platform !== "linux") return {};
+  try {
+    const [statLine, commandLine] = await Promise.all([
+      readFile(`/proc/${pid}/stat`, "utf8"),
+      readFile(`/proc/${pid}/cmdline`, "utf8"),
+    ]);
+    const fields = statLine.trim().split(/\s+/u);
+    return {
+      pidStartTicks: fields[21],
+      commandLine: commandLine.replace(/\0/gu, " ").trim(),
+    };
+  } catch {
+    return {};
+  }
+}
 
 function refreshProcessStatus(info: ManagedProcessRuntime) {
   if (info.status !== "running" || !info.pid) return info;

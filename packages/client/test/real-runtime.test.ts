@@ -9,6 +9,8 @@ import type {
   StreamingProvider,
 } from "@natalia/runtime";
 import { providerError } from "@natalia/runtime";
+import { createToolRegistry } from "@natalia/tools";
+import { resolveConfig } from "@natalia/config";
 
 test("real runtime client streams provider output and persists replayable session", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-real-"));
@@ -60,7 +62,7 @@ test("real runtime client streams provider output and persists replayable sessio
   expect(
     replay.some(
       (event) =>
-        event.type === "content.delta" && event.text === "hello from provider",
+        event.type === "content.done" && event.text === "hello from provider",
     ),
   ).toBe(true);
 });
@@ -115,6 +117,493 @@ test("TS config applies retry/context/checkpoint policy to an explicit provider"
         event.reserved === 4096,
     ),
   ).toBe(true);
+});
+
+test("configured agent selection supplies the provider system prompt and tool policy", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-agent-selection-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      agents: {
+        reviewer: {
+          description: "Review changes",
+          systemPrompt: "Review only with evidence.",
+          allowedTools: ["read_file"],
+        },
+      },
+      defaultAgent: "reviewer",
+    }),
+  );
+  const requests: ProviderStreamRequest[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_agent_selection",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        requests.push(request);
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.submit("review this");
+  const request = requests[0];
+  expect(request).toBeDefined();
+  expect(request!.messages[0]).toMatchObject({
+    role: "system",
+    content: "Review only with evidence.",
+  });
+  expect(request!.tools?.map((tool) => tool.name)).toEqual(["read_file"]);
+});
+
+test("runtime discovers configured remote skills through the local cache", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-remote-skill-runtime-"));
+  const server = Bun.serve({
+    port: 0,
+    fetch(request) {
+      const path = new URL(request.url).pathname;
+      if (path === "/skills/index.json")
+        return Response.json({
+          skills: [{ name: "remote", version: "1", files: ["SKILL.md"] }],
+        });
+      if (path === "/skills/remote/SKILL.md")
+        return new Response(
+          "---\nname: remote\ndescription: Remote\n---\nRemote guidance",
+        );
+      return new Response("missing", { status: 404 });
+    },
+  });
+  try {
+    await mkdir(join(root, ".natalia"), { recursive: true });
+    await writeFile(
+      join(root, ".natalia", "config.json"),
+      JSON.stringify({
+        version: 2,
+        skills: { urls: [`${server.url}skills/`] },
+      }),
+    );
+    expect(
+      (await resolveConfig({ workspaceRoot: root })).config.skills.urls,
+    ).toEqual([`${server.url}skills/`]);
+    const events: RuntimeEvent[] = [];
+    const client = createRealRuntimeClient({
+      workspaceRoot: root,
+      sessionID: "ses_remote_skill_runtime",
+      provider: scriptedProvider("done"),
+    });
+    client.start((event) => events.push(event));
+    await client.submit("/skills");
+    expect(
+      events
+        .filter((event) => event.type === "content.delta")
+        .map((event) => event.text)
+        .join("\n"),
+    ).toContain("remote: Remote");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("agent permissions block configured file and command execution at tool boundary", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-agent-permissions-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      agents: {
+        locked: {
+          description: "Locked",
+          permissions: {
+            files: {
+              writePaths: [
+                { pattern: "secret.txt", allow: false, reason: "protected" },
+              ],
+            },
+            commands: { denyPatterns: ["rm\\s"] },
+          },
+        },
+      },
+      defaultAgent: "locked",
+    }),
+  );
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_agent_permissions",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        if (!request.messages.some((message) => message.role === "tool")) {
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "write",
+                name: "write_file",
+                arguments: JSON.stringify({
+                  path: "secret.txt",
+                  content: "no",
+                }),
+              },
+              {
+                id: "shell",
+                name: "run_shell",
+                arguments: JSON.stringify({ command: "rm secret.txt" }),
+              },
+            ],
+          };
+        }
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("try protected actions");
+  const failures = events.filter(
+    (event): event is Extract<RuntimeEvent, { type: "tool.update" }> =>
+      event.type === "tool.update" && event.status === "failed",
+  );
+  expect(events.map((event) => event.type)).toContain("tool.update");
+  expect(JSON.stringify(failures)).toContain("protected");
+  expect(JSON.stringify(failures)).toContain("command matches deny pattern");
+});
+
+test("agent permissions apply network, environment, and output redaction boundaries", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-agent-boundary-permissions-"),
+  );
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      agents: {
+        guarded: {
+          description: "Guarded",
+          permissions: {
+            network: { allowLocalhost: false },
+            env: { allowlist: [] },
+            redactOutput: true,
+          },
+        },
+      },
+      defaultAgent: "guarded",
+    }),
+  );
+  process.env.NATALIA_AGENT_BOUNDARY_SECRET = "should-not-leak";
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_agent_boundary_permissions",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        if (!request.messages.some((message) => message.role === "tool")) {
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "web",
+                name: "web_fetch",
+                arguments: JSON.stringify({ url: "http://127.0.0.1:9" }),
+              },
+              {
+                id: "shell",
+                name: "run_shell",
+                arguments: JSON.stringify({
+                  command:
+                    "printf 'token=visible\\nsecret=$NATALIA_AGENT_BOUNDARY_SECRET'",
+                }),
+              },
+            ],
+          };
+        }
+        yield { type: "done" as const };
+      },
+    },
+  });
+  try {
+    client.start((event) => events.push(event));
+    await client.submit("check boundaries");
+    const results = events.filter(
+      (event): event is Extract<RuntimeEvent, { type: "tool.update" }> =>
+        event.type === "tool.update" && Boolean(event.result),
+    );
+    expect(results.map((event) => event.result).join(" ")).toContain(
+      "localhost network access is not allowed",
+    );
+    const shell =
+      results.find((event) => event.name === "run_shell")?.result ?? "";
+    expect(shell).toContain("token=[REDACTED]");
+    expect(shell).not.toContain("should-not-leak");
+  } finally {
+    delete process.env.NATALIA_AGENT_BOUNDARY_SECRET;
+  }
+});
+
+test("runtime agent selection applies only at the next provider turn boundary", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-agent-boundary-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      agents: {
+        first: { description: "First", systemPrompt: "first system" },
+        second: { description: "Second", systemPrompt: "second system" },
+      },
+      defaultAgent: "first",
+    }),
+  );
+  const requests: ProviderStreamRequest[] = [];
+  let release: (() => void) | undefined;
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_agent_boundary",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        requests.push(request);
+        if (requests.length === 1)
+          await new Promise<void>((resolve) => (release = resolve));
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  const first = client.submit("first");
+  while (!release) await Bun.sleep(1);
+  client.selectAgent?.("second");
+  expect(events).toContainEqual({
+    type: "agent.selection",
+    name: "second",
+    pending: true,
+  });
+  release();
+  await first;
+  await client.submit("second");
+  expect(requests[0]?.messages[0]).toMatchObject({ content: "first system" });
+  expect(requests[1]?.messages[0]).toMatchObject({ content: "second system" });
+  expect(events).toContainEqual({
+    type: "agent.selection",
+    name: "second",
+    pending: false,
+  });
+});
+
+test("committed agent selection restores when a session runtime is reopened", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-agent-replay-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      agents: {
+        first: { description: "First", systemPrompt: "first system" },
+        second: { description: "Second", systemPrompt: "second system" },
+      },
+      defaultAgent: "first",
+    }),
+  );
+  const sessionID = "ses_agent_replay";
+  const first = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    provider: scriptedProvider("first"),
+  });
+  first.start(() => undefined);
+  await first.submit("initialize runtime");
+  first.selectAgent?.("second");
+  await first.dispose?.();
+
+  const requests: ProviderStreamRequest[] = [];
+  const reopened = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        requests.push(request);
+        yield { type: "done" as const };
+      },
+    },
+  });
+  reopened.start(() => undefined);
+  await reopened.submit("after reopen");
+  expect(requests[0]?.messages[0]).toMatchObject({ content: "second system" });
+});
+
+test("agent model and variant overrides apply when the next provider turn starts", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-agent-model-override-"));
+  const requests: Array<Record<string, unknown>> = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      requests.push((await request.json()) as Record<string, unknown>);
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+  });
+  try {
+    await mkdir(join(root, ".natalia"), { recursive: true });
+    await writeFile(
+      join(root, ".natalia", "config.json"),
+      JSON.stringify({
+        version: 2,
+        providers: {
+          local: {
+            type: "openai",
+            apiKey: "local-key",
+            baseURL: server.url.toString(),
+          },
+        },
+        models: {
+          alpha: { provider: "local", model: "alpha" },
+          beta: {
+            provider: "local",
+            model: "beta",
+            variants: { careful: { model: "beta-careful", temperature: 0.2 } },
+          },
+        },
+        defaultModel: "alpha",
+        agents: {
+          first: { description: "First", model: "alpha" },
+          second: { description: "Second", model: "beta", variant: "careful" },
+        },
+        defaultAgent: "first",
+      }),
+    );
+    const client = createRealRuntimeClient({
+      workspaceRoot: root,
+      sessionID: "ses_agent_model_override",
+    });
+    client.start(() => undefined);
+    await client.submit("first");
+    client.selectAgent?.("second");
+    await client.submit("second");
+    expect(requests.map((request) => request.model)).toEqual([
+      "alpha",
+      "beta-careful",
+    ]);
+    expect(requests[1]?.temperature).toBe(0.2);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("agent MCP server scope limits provider-visible MCP tools", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-agent-mcp-scope-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      agents: { scoped: { description: "Scoped", mcpServers: ["one"] } },
+      defaultAgent: "scoped",
+    }),
+  );
+  const tools = createToolRegistry([]);
+  for (const name of ["mcp_one_echo", "mcp_two_echo"]) {
+    tools.set(name, {
+      name,
+      description: name,
+      requiresApproval: false,
+      parameters: { type: "object", properties: {} },
+      async execute() {
+        return "ok";
+      },
+    });
+  }
+  const requests: ProviderStreamRequest[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_agent_mcp_scope",
+    tools,
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        requests.push(request);
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.submit("scope MCP tools");
+  expect(requests[0]?.tools?.map((tool) => tool.name)).toContain(
+    "mcp_one_echo",
+  );
+  expect(requests[0]?.tools?.map((tool) => tool.name)).not.toContain(
+    "mcp_two_echo",
+  );
+});
+
+test("agent MCP scope includes only its server prompt and resource tools", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-agent-mcp-catalog-scope-"),
+  );
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      agents: { scoped: { description: "Scoped", mcpServers: ["one"] } },
+      defaultAgent: "scoped",
+    }),
+  );
+  const tools = createToolRegistry([]);
+  for (const name of [
+    "mcp_one_prompt_get",
+    "mcp_one_resource_read",
+    "mcp_two_prompt_get",
+    "mcp_two_resource_read",
+  ]) {
+    tools.set(name, {
+      name,
+      description: name,
+      requiresApproval: false,
+      parameters: { type: "object", properties: {} },
+      async execute() {
+        return "ok";
+      },
+    });
+  }
+  const requests: ProviderStreamRequest[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_agent_mcp_catalog_scope",
+    tools,
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        requests.push(request);
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.submit("scope MCP catalog tools");
+  const names = requests[0]?.tools?.map((tool) => tool.name) ?? [];
+  expect(names).toEqual(
+    expect.arrayContaining(["mcp_one_prompt_get", "mcp_one_resource_read"]),
+  );
+  expect(names).not.toEqual(
+    expect.arrayContaining(["mcp_two_prompt_get", "mcp_two_resource_read"]),
+  );
 });
 
 test("real runtime client routes checkpoint slash commands to real store", async () => {
@@ -227,12 +716,14 @@ test("cancelling a pending approval settles the active turn without polling", as
   expect(events.some((event) => event.type === "turn.cancelled")).toBe(true);
   expect(
     events.some(
-      (event) => event.type === "turn.finished" && event.stopReason === "cancelled",
+      (event) =>
+        event.type === "turn.finished" && event.stopReason === "cancelled",
     ),
   ).toBe(true);
   expect(
     events.filter(
-      (event) => event.type === "turn.finished" && event.stopReason === "cancelled",
+      (event) =>
+        event.type === "turn.finished" && event.stopReason === "cancelled",
     ),
   ).toHaveLength(1);
 });
@@ -257,11 +748,23 @@ test("provider admission is persisted before the provider turn begins", async ()
   const submitted = await client.submit("persist me first");
   expect(started).toBe(true);
   const stored = JSON.parse(
-    await readFile(join(root, ".natalia", "sessions", "ses_ts7_admission.json"), "utf8"),
+    await readFile(
+      join(root, ".natalia", "sessions", "ses_ts7_admission.json"),
+      "utf8",
+    ),
   ) as { events: RuntimeEvent[]; inbox?: Array<Record<string, unknown>> };
-  expect(stored.events.some((event) => event.type === "turn.submitted" && event.id === submitted.id)).toBe(true);
+  expect(
+    stored.events.some(
+      (event) => event.type === "turn.submitted" && event.id === submitted.id,
+    ),
+  ).toBe(true);
   expect(stored.inbox).toMatchObject([
-    { id: submitted.id, text: "persist me first", delivery: "steer", promotedAt: expect.any(String) },
+    {
+      id: submitted.id,
+      text: "persist me first",
+      delivery: "steer",
+      promotedAt: expect.any(String),
+    },
   ]);
 });
 
@@ -281,13 +784,21 @@ test("queued input wakes an idle session after durable admission", async () => {
     },
   });
   client.start(() => undefined);
-  const submitted = await client.submitInput!({ text: "wait for idle", delivery: "queue" });
+  const submitted = await client.submitInput!({
+    text: "wait for idle",
+    delivery: "queue",
+  });
   for (let index = 0; index < 50 && !started; index++) await Bun.sleep(1);
   expect(started).toBe(true);
   const stored = JSON.parse(
-    await readFile(join(root, ".natalia", "sessions", "ses_ts7_queued_input.json"), "utf8"),
+    await readFile(
+      join(root, ".natalia", "sessions", "ses_ts7_queued_input.json"),
+      "utf8",
+    ),
   ) as { inbox?: Array<Record<string, unknown>> };
-  expect(stored.inbox).toMatchObject([{ id: submitted.id, text: "wait for idle", delivery: "queue" }]);
+  expect(stored.inbox).toMatchObject([
+    { id: submitted.id, text: "wait for idle", delivery: "queue" },
+  ]);
   expect(stored.inbox?.[0]?.promotedAt).toEqual(expect.any(String));
 });
 
@@ -303,7 +814,8 @@ test("queued input promotes after the active steer turn becomes idle", async () 
       model: "test",
       async *stream(request) {
         requests.push(request.messages.at(-1)?.content ?? "");
-        if (requests.length === 1) await new Promise<void>((resolve) => (release = resolve));
+        if (requests.length === 1)
+          await new Promise<void>((resolve) => (release = resolve));
         yield { type: "content" as const, text: "done" };
         yield { type: "done" as const };
       },
@@ -312,14 +824,22 @@ test("queued input promotes after the active steer turn becomes idle", async () 
   client.start(() => undefined);
   const first = client.submit("first");
   while (!release) await Bun.sleep(1);
-  const queued = await client.submitInput!({ text: "queued", delivery: "queue" });
+  const queued = await client.submitInput!({
+    text: "queued",
+    delivery: "queue",
+  });
   release();
   await first;
   expect(requests).toEqual(["first", "queued"]);
   const stored = JSON.parse(
-    await readFile(join(root, ".natalia", "sessions", "ses_ts7_queued_promotion.json"), "utf8"),
+    await readFile(
+      join(root, ".natalia", "sessions", "ses_ts7_queued_promotion.json"),
+      "utf8",
+    ),
   ) as { inbox?: Array<{ id: string; promotedAt?: string }> };
-  expect(stored.inbox?.find((item) => item.id === queued.id)?.promotedAt).toEqual(expect.any(String));
+  expect(
+    stored.inbox?.find((item) => item.id === queued.id)?.promotedAt,
+  ).toEqual(expect.any(String));
 });
 
 test("exact input retry does not duplicate a completed provider turn", async () => {
@@ -338,12 +858,437 @@ test("exact input retry does not duplicate a completed provider turn", async () 
     },
   });
   client.start(() => undefined);
-  await client.submitInput!({ id: "turn_retry", text: "same", delivery: "steer" });
-  await client.submitInput!({ id: "turn_retry", text: "same", delivery: "steer" });
+  await client.submitInput!({
+    id: "turn_retry",
+    text: "same",
+    delivery: "steer",
+  });
+  await client.submitInput!({
+    id: "turn_retry",
+    text: "same",
+    delivery: "steer",
+  });
   expect(calls).toBe(1);
   await expect(
-    client.submitInput!({ id: "turn_retry", text: "different", delivery: "steer" }),
+    client.submitInput!({
+      id: "turn_retry",
+      text: "different",
+      delivery: "steer",
+    }),
   ).rejects.toThrow("session input conflicts");
+});
+
+test("restart resumes a pending queued input but does not replay interrupted provider work", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-restart-queue-"));
+  await mkdir(join(root, ".natalia", "sessions"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "sessions", "ses_ts7_restart_queue.json"),
+    JSON.stringify({
+      id: "ses_ts7_restart_queue",
+      title: "Interrupted",
+      createdAt: "2026-07-21T00:00:00.000Z",
+      cancelled: false,
+      resumable: true,
+      events: [
+        {
+          type: "turn.submitted",
+          id: "turn_interrupted",
+          text: "unsafe to replay",
+          byteLength: 16,
+          lineCount: 1,
+          sha256: "test",
+        },
+      ],
+      inbox: [
+        {
+          id: "turn_queued",
+          sessionID: "ses_ts7_restart_queue",
+          text: "safe queued",
+          delivery: "queue",
+          admittedAt: "2026-07-21T00:00:00.000Z",
+        },
+      ],
+    }),
+  );
+
+  const events: RuntimeEvent[] = [];
+  let calls = 0;
+  const reopened = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_restart_queue",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        calls++;
+        yield { type: "done" as const };
+      },
+    },
+  });
+  reopened.start((event) => events.push(event));
+  for (let index = 0; index < 50 && !calls; index++) await Bun.sleep(1);
+  expect(calls).toBe(1);
+  expect(
+    events.some(
+      (event) =>
+        event.type === "diagnostic" &&
+        event.message.includes("incomplete provider work"),
+    ),
+  ).toBe(true);
+});
+
+test("runtime history supplies a stable local cursor without SQLite", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-history-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_history",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.submit("one");
+  await client.submit("two");
+  const first = await client.history!({ limit: 1 });
+  expect(first.events).toHaveLength(1);
+  expect(first.hasMore).toBe(true);
+  const next = await client.history!({
+    after: first.events[0]!.seq,
+    limit: 100,
+  });
+  expect(next.events[0]!.seq).toBe(first.events[0]!.seq + 1);
+});
+
+test("durable history retains full assistant settlement without live fragments", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-durable-content-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_durable_content",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "content" as const, text: "hello " };
+        yield { type: "content" as const, text: "world" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.submit("greet");
+  const stored = JSON.parse(
+    await readFile(
+      join(root, ".natalia", "sessions", "ses_ts7_durable_content.json"),
+      "utf8",
+    ),
+  ) as { events: RuntimeEvent[] };
+  expect(stored.events.some((event) => event.type === "content.delta")).toBe(
+    false,
+  );
+  expect(
+    stored.events.find((event) => event.type === "content.done"),
+  ).toMatchObject({ text: "hello world" });
+});
+
+test("restart restores the latest durable context checkpoint before later events", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-context-epoch-"));
+  const requests: Array<{
+    messages: Array<{ role: string; content: string }>;
+  }> = [];
+  const first = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_context_epoch",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "content" as const, text: "first answer" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  first.start(() => undefined);
+  await first.submit("first question");
+  const persisted = JSON.parse(
+    await readFile(
+      join(root, ".natalia", "sessions", "ses_ts7_context_epoch.json"),
+      "utf8",
+    ),
+  ) as { events: RuntimeEvent[] };
+  expect(
+    persisted.events.some((event) => event.type === "context.checkpoint"),
+  ).toBe(true);
+
+  const reopened = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_context_epoch",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        requests.push({
+          messages: request.messages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+        });
+        yield { type: "done" as const };
+      },
+    },
+  });
+  const reopenedEvents: RuntimeEvent[] = [];
+  reopened.start((event) => reopenedEvents.push(event));
+  await Bun.sleep(5);
+  const initializationFailure = reopenedEvents.find(
+    (event) => event.type === "diagnostic" && event.level === "error",
+  );
+  expect(initializationFailure).toBeUndefined();
+  await reopened.submit("second question");
+  expect(requests[0]?.messages).toEqual(
+    expect.arrayContaining([
+      { role: "user", content: "first question" },
+      { role: "assistant", content: "first answer" },
+      { role: "user", content: "second question" },
+    ]),
+  );
+});
+
+test("context-limit compaction persists a durable context epoch", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-context-compaction-"));
+  let attempts = 0;
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_context_compaction",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        attempts++;
+        if (attempts === 1)
+          throw providerError({
+            kind: "context_limit",
+            message: "context limit",
+          });
+        yield { type: "content" as const, text: "recovered" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.submit("compact then retry");
+  const stored = JSON.parse(
+    await readFile(
+      join(root, ".natalia", "sessions", "ses_ts7_context_compaction.json"),
+      "utf8",
+    ),
+  ) as { events: RuntimeEvent[] };
+  expect(
+    stored.events.some((event) => event.type === "context.checkpoint"),
+  ).toBe(true);
+});
+
+test("SQLite restart restores context from epoch baseline without duplicate history", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-ts7-sqlite-context-epoch-"),
+  );
+  const first = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_sqlite_context_epoch",
+    useSqliteStore: true,
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "content" as const, text: "first answer" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  first.start(() => undefined);
+  await first.submit("first question");
+
+  const requests: Array<{
+    messages: Array<{ role: string; content: string }>;
+  }> = [];
+  const reopened = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_sqlite_context_epoch",
+    useSqliteStore: true,
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        requests.push({
+          messages: request.messages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+        });
+        yield { type: "done" as const };
+      },
+    },
+  });
+  reopened.start(() => undefined);
+  await reopened.submit("second question");
+  const restored = requests[0]!.messages;
+  expect(
+    restored.filter((message) => message.content === "first question"),
+  ).toHaveLength(1);
+  expect(
+    restored.filter((message) => message.content === "first answer"),
+  ).toHaveLength(1);
+  expect(
+    restored.filter((message) => message.content === "second question"),
+  ).toHaveLength(1);
+});
+
+test("restart projects unresolved interactive requests from durable events", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-ts7-interactive-restart-"),
+  );
+  await mkdir(join(root, ".natalia", "sessions"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "sessions", "ses_ts7_interactive_restart.json"),
+    JSON.stringify({
+      id: "ses_ts7_interactive_restart",
+      title: "Interactive",
+      createdAt: "2026-07-21T00:00:00.000Z",
+      cancelled: false,
+      resumable: true,
+      events: [
+        {
+          type: "approval.request",
+          id: "approval_open",
+          title: "Write",
+          preview: "file",
+        },
+        {
+          type: "approval.request",
+          id: "approval_closed",
+          title: "Shell",
+          preview: "pwd",
+        },
+        { type: "approval.response", id: "approval_closed", decision: "once" },
+        { type: "question.request", id: "question_open", title: "Choice" },
+      ],
+    }),
+  );
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_interactive_restart",
+    provider: toolCallingProvider(),
+  });
+  client.start(() => undefined);
+  expect(await client.pendingInteractive!()).toMatchObject({
+    approvals: [{ id: "approval_open" }],
+    questions: [{ id: "question_open" }],
+  });
+  client.respondApproval({ requestID: "approval_open", decision: "once" });
+  client.respondQuestion({ requestID: "question_open", answers: [["answer"]] });
+  expect(await client.pendingInteractive!()).toEqual({
+    approvals: [],
+    questions: [],
+  });
+});
+
+test("provider can load a discovered skill through the canonical tool path", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-skill-tool-"));
+  const skillRoot = join(root, ".natalia", "skills", "review");
+  await mkdir(join(skillRoot, "references"), { recursive: true });
+  await writeFile(
+    join(skillRoot, "SKILL.md"),
+    "---\nname: review\ndescription: Review\n---\nReview guidance",
+  );
+  await writeFile(join(skillRoot, "references", "guide.md"), "guide");
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_skill_tool",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        if (!request.messages.some((message) => message.role === "tool")) {
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "call_skill",
+                name: "skill_load",
+                arguments: JSON.stringify({ name: "review" }),
+              },
+            ],
+          };
+          yield { type: "done" as const };
+          return;
+        }
+        yield { type: "content" as const, text: "skill loaded" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("load review skill");
+  expect(
+    events.some(
+      (event) =>
+        event.type === "tool.update" &&
+        event.name === "skill_load" &&
+        event.status === "succeeded",
+    ),
+  ).toBe(true);
+  expect(
+    events.some(
+      (event) => event.type === "content.done" && event.text === "skill loaded",
+    ),
+  ).toBe(true);
+});
+
+test("two local clients serialize provider turns for one durable session", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-shared-session-"));
+  const order: string[] = [];
+  let releaseFirst: (() => void) | undefined;
+  const provider = (label: string) => ({
+    provider: "test",
+    model: "test",
+    async *stream() {
+      order.push(`${label}:start`);
+      if (label === "first")
+        await new Promise<void>((resolve) => (releaseFirst = resolve));
+      order.push(`${label}:end`);
+      yield { type: "done" as const };
+    },
+  });
+  const first = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_shared_session",
+    provider: provider("first"),
+  });
+  const second = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_shared_session",
+    provider: provider("second"),
+  });
+  first.start(() => undefined);
+  second.start(() => undefined);
+  const firstSubmit = first.submit("one");
+  while (!releaseFirst) await Bun.sleep(1);
+  const secondSubmit = second.submit("two");
+  await Bun.sleep(2);
+  expect(order).toEqual(["first:start"]);
+  releaseFirst?.();
+  await Promise.all([firstSubmit, secondSubmit]);
+  expect(order).toEqual([
+    "first:start",
+    "first:end",
+    "second:start",
+    "second:end",
+  ]);
 });
 
 test("real runtime client discovers and activates native Skills", async () => {
@@ -625,6 +1570,24 @@ test("real runtime client spawns and projects a TS/Bun subagent lifecycle", asyn
     events.some(
       (event) =>
         event.type === "content.delta" && event.text === "parent complete",
+    ),
+  ).toBe(true);
+  const lifecycle = events.filter(
+    (event): event is Extract<RuntimeEvent, { type: "subagent.update" }> =>
+      event.type === "subagent.update",
+  );
+  expect(
+    lifecycle.every(
+      (event) => event.parentSessionID === "ses_ts7_subagent_tool",
+    ),
+  ).toBe(true);
+  expect(lifecycle.every((event) => event.continuation === 0)).toBe(true);
+  const history = await client.history?.();
+  expect(
+    history?.events.some(
+      (item) =>
+        item.event.type === "subagent.update" &&
+        item.event.parentSessionID === "ses_ts7_subagent_tool",
     ),
   ).toBe(true);
 });

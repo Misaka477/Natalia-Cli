@@ -1,13 +1,13 @@
 {
-  "$schema": "https://json.schemastore.org/package.json",
-  "name": "@natalia/skills",
-  "version": "0.0.0-ts7",
+  "name": "@natalia/plugin",
+  "version": "0.0.0-m8",
   "private": true,
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@natalia/contracts": "workspace:*",
     "@natalia/tools": "workspace:*"
   }
 }

@@ -294,13 +294,34 @@ function basenameSafe(path: string) {
 }
 
 export { SqliteSessionStore } from "./sqlite-store";
-export type { SessionRow } from "./sqlite-store";
-export { SessionRunCoordinator } from "./run-coordinator";
+export type {
+  SessionRow,
+  StoredContextEpoch,
+  StoredSessionEvent,
+} from "./sqlite-store";
+export {
+  releaseSessionRunCoordinator,
+  SessionRunCoordinator,
+  sessionRunCoordinator,
+} from "./run-coordinator";
 export {
   admitInput,
+  admissionCutoff,
   admittedInputs,
   promoteNextQueued,
   promoteSteers,
   SessionInputConflictError,
 } from "./inbox";
 export type { AdmittedSessionInput, SessionInputDelivery } from "./inbox";
+export {
+  modelVisibleEvents,
+  projectSession,
+  selectedAgentFromEvents,
+} from "./projector";
+export type { SessionProjection } from "./projector";
+export { projectInteractiveRequests, requestsForSession } from "./interactive";
+export type {
+  InteractiveProjection,
+  PendingApproval,
+  PendingQuestion,
+} from "./interactive";

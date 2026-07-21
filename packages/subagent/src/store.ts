@@ -16,7 +16,12 @@ export class SubagentStore {
       const content = await readFile(this.path(), "utf8");
       const raw = JSON.parse(content);
       if (!Array.isArray(raw)) return [];
-      return raw.filter((r: unknown): r is SubagentRecord => isValidRecord(r));
+      return raw
+        .filter((r: unknown): r is SubagentRecord => isValidRecord(r))
+        .map((record) => ({
+          ...record,
+          continuation: record.continuation ?? 0,
+        }));
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
       const entries = await this.loadLegacy();

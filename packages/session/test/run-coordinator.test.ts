@@ -1,49 +1,81 @@
 import { expect, test } from "bun:test";
-import { SessionRunCoordinator } from "../src";
+import {
+  releaseSessionRunCoordinator,
+  SessionRunCoordinator,
+  sessionRunCoordinator,
+} from "../src";
 
-test("serializes work and preserves submission order", async () => {
-  const coordinator = new SessionRunCoordinator();
-  const events: string[] = [];
-  let releaseFirst: (() => void) | undefined;
-  const first = coordinator.run(async () => {
-    events.push("first:start");
-    await new Promise<void>((resolve) => (releaseFirst = resolve));
-    events.push("first:end");
-  });
-  const second = coordinator.run(async () => {
-    events.push("second:start");
-    events.push("second:end");
-  });
-
-  await Bun.sleep(1);
-  expect(events).toEqual(["first:start"]);
-  releaseFirst?.();
-  await Promise.all([first, second]);
-  expect(events).toEqual(["first:start", "first:end", "second:start", "second:end"]);
-});
-
-test("continues draining after a failed task", async () => {
-  const coordinator = new SessionRunCoordinator();
-  const failed = coordinator.run(async () => {
-    throw new Error("expected failure");
-  });
-  const recovered = coordinator.run(async () => "recovered");
-
-  await expect(failed).rejects.toThrow("expected failure");
-  expect(await recovered).toBe("recovered");
-  await coordinator.idle();
-});
-
-test("reports queued and active work until its final settlement", async () => {
+test("joins concurrent runs for one session", async () => {
   const coordinator = new SessionRunCoordinator();
   let release: (() => void) | undefined;
-  const running = coordinator.run(
-    () => new Promise<void>((resolve) => (release = resolve)),
-  );
-  expect(coordinator.active).toBe(true);
+  let runs = 0;
+  const drain = async () => {
+    runs++;
+    await new Promise<void>((resolve) => (release = resolve));
+  };
+  const first = coordinator.run(drain);
   while (!release) await Bun.sleep(1);
+  const second = coordinator.run(drain);
+  expect(runs).toBe(1);
   release?.();
-  await running;
-  await Bun.sleep(0);
-  expect(coordinator.active).toBe(false);
+  await Promise.all([first, second]);
+  expect(runs).toBe(1);
+});
+
+test("coalesces repeated wakes into one successor drain", async () => {
+  const coordinator = new SessionRunCoordinator();
+  let release: (() => void) | undefined;
+  let runs = 0;
+  const drain = async () => {
+    runs++;
+    if (runs === 1) await new Promise<void>((resolve) => (release = resolve));
+  };
+  const first = coordinator.run(drain);
+  while (!release) await Bun.sleep(1);
+  await Promise.all([coordinator.wake(drain), coordinator.wake(drain), coordinator.wake(drain)]);
+  release?.();
+  await first;
+  await coordinator.idle();
+  expect(runs).toBe(2);
+});
+
+test("waking while idle starts a non-blocking drain", async () => {
+  const coordinator = new SessionRunCoordinator();
+  let runs = 0;
+  await coordinator.wake(async () => {
+    runs++;
+  });
+  await coordinator.idle();
+  expect(runs).toBe(1);
+});
+
+test("wake during interruption cleanup starts one successor", async () => {
+  const coordinator = new SessionRunCoordinator();
+  let cleanup: (() => void) | undefined;
+  let second = false;
+  const first = async (signal: AbortSignal) => {
+    await new Promise<void>((resolve) => {
+      signal.addEventListener("abort", () => (cleanup = resolve), { once: true });
+    });
+  };
+  const successor = async () => {
+    second = true;
+  };
+  await coordinator.wake(first);
+  while (!coordinator.active) await Bun.sleep(1);
+  const interrupt = coordinator.interrupt();
+  while (!cleanup) await Bun.sleep(1);
+  await coordinator.wake(successor);
+  cleanup?.();
+  await interrupt;
+  await coordinator.idle();
+  expect(second).toBe(true);
+});
+
+test("same durable session ID shares a process-local coordinator", async () => {
+  const first = sessionRunCoordinator("ses_shared");
+  const second = sessionRunCoordinator("ses_shared");
+  expect(second).toBe(first);
+  await first.run(async () => undefined);
+  expect(releaseSessionRunCoordinator("ses_shared")).toBe(true);
 });

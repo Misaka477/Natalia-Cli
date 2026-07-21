@@ -12,6 +12,7 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
   const approvalResponses: unknown[] = [];
   const questionResponses: unknown[] = [];
   const prompts: string[] = [];
+  const selectedAgents: Array<string | undefined> = [];
   const client: RuntimeClient = {
     start(handler) {
       sink = handler;
@@ -32,6 +33,21 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
     cancel() {},
     pause() {},
     resume() {},
+    selectAgent(name) {
+      selectedAgents.push(name);
+    },
+    async mcpCatalog() {
+      return {
+        prompts: [{ server: "fixture", name: "review" }],
+        resources: [{ server: "fixture", uri: "file:///guide", name: "guide" }],
+      };
+    },
+    async getMcpPrompt(server, name, arguments_) {
+      return { server, name, arguments: arguments_ };
+    },
+    async readMcpResource(server, uri) {
+      return { server, uri };
+    },
     snapshot: () => ({ type: "snapshot.created", id: "snap_sdk", files: [] }),
     diagnostic() {},
     lastSubmission: () => undefined,
@@ -50,8 +66,21 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
     text: "sdk prompt",
   });
   expect(await sdk.snapshot()).toMatchObject({ id: "snap_sdk" });
+  expect(await sdk.mcpCatalog()).toMatchObject({
+    prompts: [{ server: "fixture", name: "review" }],
+  });
+  expect(await sdk.mcpPrompt("fixture", "review", { scope: "local" })).toEqual({
+    server: "fixture",
+    name: "review",
+    arguments: { scope: "local" },
+  });
+  expect(await sdk.mcpResource("fixture", "file:///guide")).toEqual({
+    server: "fixture",
+    uri: "file:///guide",
+  });
   await sdk.pause("sdk pause");
   await sdk.resume();
+  await sdk.selectAgent("reviewer");
   await sdk.respondApproval({ requestID: "approval_1", decision: "once" });
   await sdk.respondQuestion({ requestID: "question_1", answers: [["yes"]] });
   await sdk.checkpoint();
@@ -66,6 +95,7 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
     answers: [["yes"]],
     rejected: false,
   });
+  expect(selectedAgents).toEqual(["reviewer"]);
   expect(prompts).toEqual(
     expect.arrayContaining([
       "/checkpoint",

@@ -68,8 +68,23 @@ export function createRuntimeHttpServer(
             controller = nextController;
             subscribers.add(controller);
             controller.enqueue(encoder.encode(SSE_PREAMBLE));
-            for (const item of replayEvents(eventBuffer, request))
-              controller.enqueue(encodeSSE(encoder, item.id, item.event));
+            const marker = request.headers.get("last-event-id") ?? url.searchParams.get("since");
+            const since = marker === null ? undefined : Number(marker);
+            const replay = (items: Array<{ id: number; event: RuntimeEvent }> | Array<{ seq: number; event: RuntimeEvent }>) => {
+              for (const item of items)
+                controller?.enqueue(
+                  encodeSSE(
+                    encoder,
+                    "seq" in item ? item.seq : item.id,
+                    item.event,
+                  ),
+                );
+            };
+            if (typeof since === "number" && Number.isInteger(since) && since >= 0 && options.client.history) {
+              void options.client.history({ after: since, limit: 500 }).then((history) => replay(history.events));
+              return;
+            }
+            replay(replayEvents(eventBuffer, request));
           },
           cancel() {
             if (controller) subscribers.delete(controller);

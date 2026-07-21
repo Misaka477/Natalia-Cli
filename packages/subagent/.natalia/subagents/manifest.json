@@ -1,0 +1,22 @@
+[
+  {
+    "id": "a1",
+    "task": "fail test",
+    "mode": "code",
+    "status": "failed",
+    "attached": true,
+    "modelProfile": "",
+    "allowedTools": [],
+    "excludeTools": [],
+    "outputs": [
+      {
+        "step": 1,
+        "text": "Error: runner failed",
+        "timestamp": 1784651578828
+      }
+    ],
+    "createdAt": 1784651578827,
+    "updatedAt": 1784651578828,
+    "continuation": 0
+  }
+]

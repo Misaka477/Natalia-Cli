@@ -93,6 +93,12 @@ test("default shell and process tools execute real commands", async () => {
     .execute({ id: "proc_test" }, { workspaceRoot: root });
 });
 
+test("subagent retry is exposed as an explicit continuation tool", () => {
+  const tools = createToolRegistry();
+  expect(tools.get("agent_retry")?.requiresApproval).toBe(true);
+  expect(tools.get("agent_retry")?.description).toContain("continuation");
+});
+
 test("managed process registry persists state for restart and background aliases", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-persist-"));
   const first = createToolRegistry();
@@ -121,6 +127,34 @@ test("managed process registry persists state for restart and background aliases
   await second
     .get("background_stop")!
     .execute({ id: "proc_persist" }, { workspaceRoot: root });
+});
+
+test("managed process restart preserves readiness configuration", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-restart-"));
+  const tools = createToolRegistry();
+  await tools
+    .get("process_start")!
+    .execute(
+      {
+        id: "proc_restart",
+        command: "echo ready; sleep 1",
+        readyPattern: "ready",
+        maxOutputBytes: 91,
+      },
+      { workspaceRoot: root },
+    );
+  const restarted = JSON.parse(
+    await tools
+      .get("process_restart")!
+      .execute({ id: "proc_restart" }, { workspaceRoot: root }),
+  ) as { readyPattern?: string; maxOutputBytes?: number };
+  expect(restarted).toMatchObject({
+    readyPattern: "ready",
+    maxOutputBytes: 91,
+  });
+  await tools
+    .get("process_stop")!
+    .execute({ id: "proc_restart" }, { workspaceRoot: root });
 });
 
 test("native glob grep and durable todo tools operate inside the workspace", async () => {

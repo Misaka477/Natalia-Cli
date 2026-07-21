@@ -128,6 +128,11 @@ export const commands: Record<string, CommandDef> = {
     keys: "unset",
     desc: "List configured models",
   },
+  "agent.list": {
+    id: "agent.list",
+    keys: "unset",
+    desc: "Select configured agent",
+  },
   "mcp.list": {
     id: "mcp.list",
     keys: "unset",

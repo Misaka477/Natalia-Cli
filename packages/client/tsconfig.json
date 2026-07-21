@@ -5,6 +5,7 @@
   "include": ["src", "test"],
   "references": [
     { "path": "../config" },
+    { "path": "../agent" },
     { "path": "../contracts" },
     { "path": "../mcp" },
     { "path": "../pty" },
