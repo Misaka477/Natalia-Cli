@@ -76,6 +76,7 @@ export interface CommandDef {
   id: string;
   keys: string;
   desc: string;
+  scope?: "dialog";
 }
 
 export const commands: Record<string, CommandDef> = {
@@ -118,6 +119,48 @@ export const commands: Record<string, CommandDef> = {
     id: "dialog.close",
     keys: "escape",
     desc: "Close current dialog",
+  },
+  "dialog.select.submit": {
+    id: "dialog.select.submit",
+    keys: "unset",
+    desc: "Select dialog item",
+    scope: "dialog",
+  },
+  "dialog.select.prev": {
+    id: "dialog.select.prev",
+    keys: "unset",
+    desc: "Previous dialog item",
+    scope: "dialog",
+  },
+  "dialog.select.next": {
+    id: "dialog.select.next",
+    keys: "unset",
+    desc: "Next dialog item",
+    scope: "dialog",
+  },
+  "dialog.select.page-up": {
+    id: "dialog.select.page-up",
+    keys: "unset",
+    desc: "Previous dialog page",
+    scope: "dialog",
+  },
+  "dialog.select.page-down": {
+    id: "dialog.select.page-down",
+    keys: "unset",
+    desc: "Next dialog page",
+    scope: "dialog",
+  },
+  "dialog.select.first": {
+    id: "dialog.select.first",
+    keys: "unset",
+    desc: "First dialog item",
+    scope: "dialog",
+  },
+  "dialog.select.last": {
+    id: "dialog.select.last",
+    keys: "unset",
+    desc: "Last dialog item",
+    scope: "dialog",
   },
   "provider.connect": {
     id: "provider.connect",
@@ -247,6 +290,8 @@ export function parseKeybindKey(keyStr: string): ParsedKey {
 }
 
 export function formatKeybindKey(keyStr: string): string {
+  if (keyStr.startsWith("<leader>"))
+    return `Leader+${keyStr.slice("<leader>".length).toUpperCase()}`;
   const parsed = parseKeybindKey(keyStr);
   const parts: string[] = [];
   if (parsed.ctrl) parts.push("Ctrl");
@@ -258,6 +303,10 @@ export function formatKeybindKey(keyStr: string): string {
   const k = parsed.key;
   parts.push(k ? k.charAt(0).toUpperCase() + k.slice(1) : "");
   return parts.join("+");
+}
+
+export function formatKeybinds(keys: readonly string[]) {
+  return keys.map(formatKeybindKey).join(" / ");
 }
 
 export type UserKeybindOverrides = Record<string, string | string[] | false>;

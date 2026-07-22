@@ -9,6 +9,7 @@ import { ClipboardProvider } from "../context/clipboard";
 import { ToastProvider } from "../context/toast";
 import { RuntimeProvider } from "../context/runtime";
 import { PromptRefProvider } from "../context/prompt";
+import { KeybindProvider } from "../context/keybind";
 import { LocalProvider } from "../context/local";
 import { ThemeProvider } from "../context/theme";
 import { RouteProvider } from "../context/route";
@@ -71,11 +72,12 @@ export async function runTuiShell(
           <ToastProvider>
             <RuntimeProvider>
               <PromptRefProvider>
-                <RouteProvider>
-                  <ThemeProvider workspaceRoot={input.workspaceRoot}>
-                    <LocalProvider workspaceRoot={input.workspaceRoot}>
-                      <DialogProvider>
-                      <App
+                <KeybindProvider>
+                  <RouteProvider>
+                    <ThemeProvider workspaceRoot={input.workspaceRoot}>
+                      <LocalProvider workspaceRoot={input.workspaceRoot}>
+                        <DialogProvider>
+                        <App
                         backend={backend}
                         createBackend={input.createBackend}
                         workspaceRoot={input.workspaceRoot}
@@ -97,10 +99,11 @@ export async function runTuiShell(
                         }
                         }}
                       />
-                      </DialogProvider>
-                    </LocalProvider>
-                  </ThemeProvider>
-                </RouteProvider>
+                        </DialogProvider>
+                      </LocalProvider>
+                    </ThemeProvider>
+                  </RouteProvider>
+                </KeybindProvider>
               </PromptRefProvider>
             </RuntimeProvider>
           </ToastProvider>

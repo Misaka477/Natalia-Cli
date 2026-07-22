@@ -20,6 +20,7 @@ import { useTerminalDimensions } from "@opentui/solid";
 import { useBindings } from "@opentui/keymap/solid";
 import { darkTheme } from "../theme/theme";
 import { useDialog, type DialogContext } from "./provider";
+import { useKeybinds } from "../context/keybind";
 
 export interface DialogSelectOption<T = any> {
   title: string;
@@ -56,6 +57,7 @@ export interface DialogSelectProps<T> {
 
 export function DialogSelect<T>(props: DialogSelectProps<T>) {
   const dialog = useDialog();
+  const keybinds = useKeybinds();
   const dimensions = useTerminalDimensions();
   const [store, setStore] = createStore({
     selected: 0,
@@ -197,54 +199,54 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
       },
     ],
     bindings: [
-      {
-        key: "return",
+      ...keybinds.bindings("dialog.select.submit", ["return"]).map((key) => ({
+        key,
         desc: "Select item",
         group: "Dialog",
         cmd: "dialog.select.submit",
-      },
-      {
-        key: "up",
+      })),
+      ...keybinds.bindings("dialog.select.prev", ["up"]).map((key) => ({
+        key,
         desc: "Previous item",
         group: "Dialog",
         cmd: () => move(-1),
-      },
-      {
-        key: "down",
+      })),
+      ...keybinds.bindings("dialog.select.next", ["down"]).map((key) => ({
+        key,
         desc: "Next item",
         group: "Dialog",
         cmd: () => move(1),
-      },
-      {
-        key: "pageup",
+      })),
+      ...keybinds.bindings("dialog.select.page-up", ["pageup"]).map((key) => ({
+        key,
         desc: "Page up",
         group: "Dialog",
         cmd: () => move(-10),
-      },
-      {
-        key: "pagedown",
+      })),
+      ...keybinds.bindings("dialog.select.page-down", ["pagedown"]).map((key) => ({
+        key,
         desc: "Page down",
         group: "Dialog",
         cmd: () => move(10),
-      },
-      {
-        key: "home",
+      })),
+      ...keybinds.bindings("dialog.select.first", ["home"]).map((key) => ({
+        key,
         desc: "First item",
         group: "Dialog",
         cmd: () => {
           if (flat().length > 0) setStore("selected", 0);
           if (scroll) scroll.scrollTo(0);
         },
-      },
-      {
-        key: "end",
+      })),
+      ...keybinds.bindings("dialog.select.last", ["end"]).map((key) => ({
+        key,
         desc: "Last item",
         group: "Dialog",
         cmd: () => {
           if (flat().length > 0) setStore("selected", flat().length - 1);
           if (scroll) scroll.scrollTo(scroll.scrollHeight ?? 0);
         },
-      },
+      })),
       ...(props.onExtraKey
         ? [
             {

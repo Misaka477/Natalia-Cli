@@ -8,6 +8,7 @@ import {
   parseKeybindKey,
   normalizeKeybindKey,
   formatKeybindKey,
+  formatKeybinds,
   keybindForEvent,
   parseKeybindOverrides,
   detectKeybindConflicts,
@@ -88,6 +89,8 @@ describe("command definitions", () => {
     expect(commands["cancel"]).toBeDefined();
     expect(commands["exit"]).toBeDefined();
     expect(commands["dialog.close"]).toBeDefined();
+    expect(commands["dialog.select.submit"]).toBeDefined();
+    expect(commands["dialog.select.next"].scope).toBe("dialog");
     expect(commands["scroll.up"]).toBeDefined();
     expect(commands["scroll.down"]).toBeDefined();
     expect(commands["scroll.top"]).toBeDefined();
@@ -190,6 +193,13 @@ describe("formatKeybindKey", () => {
 
   test("formats comma key", () => {
     expect(formatKeybindKey("ctrl+,")).toBe("Ctrl+,");
+  });
+
+  test("formats leader and multiple shortcuts for user-facing views", () => {
+    expect(formatKeybindKey("<leader>n")).toBe("Leader+N");
+    expect(formatKeybinds(["ctrl+n", "<leader>n"])).toBe(
+      "Ctrl+N / Leader+N",
+    );
   });
 });
 

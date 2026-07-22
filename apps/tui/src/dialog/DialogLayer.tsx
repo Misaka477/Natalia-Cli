@@ -13,14 +13,12 @@ import { useBindings } from "@opentui/keymap/solid";
 import { JsonSessionStore, type SessionRecord } from "@natalia/session";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { useDialog } from "./provider";
-import { commands, formatKeybindKey } from "../keymap";
-import { buildKeybindMap, type UserKeybindOverrides } from "../keymap";
+import { commands, formatKeybinds } from "../keymap";
+import { useKeybinds } from "../context/keybind";
 
-export function DialogHelp(props: {
-  keybindOverrides?: UserKeybindOverrides;
-  onClose(): void;
-}) {
-  const bindings = () => buildKeybindMap(props.keybindOverrides).map;
+export function DialogHelp(props: { onClose(): void }) {
+  const keybinds = useKeybinds();
+  const bindings = () => keybinds.resolved().bindings;
   return (
     <DialogFrame title="Keyboard Shortcuts" tone="accent">
       <scrollbox height={16} border={["left"]} borderColor={darkTheme.muted}>
@@ -30,7 +28,7 @@ export function DialogHelp(props: {
               <text fg={darkTheme.text}>{command.desc}</text>
               <text fg={darkTheme.accent}>
                 {bindings()[command.id]
-                  ? formatKeybindKey(bindings()[command.id]!)
+                  ? formatKeybinds(bindings()[command.id]!)
                   : "disabled"}
               </text>
             </box>

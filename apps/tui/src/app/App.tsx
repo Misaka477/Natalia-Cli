@@ -29,6 +29,7 @@ import {
   composerKeyAction,
   keymapBoundary,
 } from "../keymap";
+import { useKeybinds } from "../context/keybind";
 import { useDialog, type DialogContext } from "../dialog/provider";
 import { DialogConfirm } from "../dialog/DialogConfirm";
 import { DialogPrompt } from "../dialog/DialogPrompt";
@@ -126,6 +127,7 @@ function Shell(props: {
   const [preferences, setPreferences] = createSignal<TuiPreferences>(
     defaultTuiPreferences,
   );
+  const keybinds = useKeybinds();
   const theme = useTheme();
   const local = useLocal();
   const [tuiWriteScope, setTuiWriteScope] =
@@ -167,6 +169,7 @@ function Shell(props: {
     if (props.workspaceRoot) {
       const loaded = await loadTuiPreferences(props.workspaceRoot);
       setPreferences(loaded);
+      keybinds.set(loaded.keybinds);
       setFollowBottom(loaded.followBottom);
     }
     setTimeout(() => composer()?.focus(), 1);
@@ -197,6 +200,7 @@ function Shell(props: {
   function updatePreferences(next: TuiPreferences, scope = tuiWriteScope()) {
     const patch = tuiPreferencePatch(preferences(), next);
     setPreferences(next);
+    keybinds.set(next.keybinds);
     setFollowBottom(next.followBottom);
     theme.preview(next.theme);
     if (props.workspaceRoot)
@@ -1263,10 +1267,7 @@ function Shell(props: {
     }
     if (command === "help.open") {
       dialog.push(() => (
-        <DialogHelp
-          keybindOverrides={preferences().keybinds}
-          onClose={() => dialog.pop()}
-        />
+        <DialogHelp onClose={() => dialog.pop()} />
       ));
       return;
     }
@@ -1374,19 +1375,22 @@ function Shell(props: {
 
   useBindings(() => ({
     commands: [
-      ...Object.values(commands).map((command) => ({
-        name: command.id,
-        title: command.desc,
-        category: command.id.split(".")[0],
-        namespace: "palette",
-        run: () => runCommand(command.id),
-      })),
+      ...Object.values(commands)
+        .filter((command) => command.scope !== "dialog")
+        .map((command) => ({
+          name: command.id,
+          title: command.desc,
+          category: command.id.split(".")[0],
+          namespace: "palette",
+          run: () => runCommand(command.id),
+        })),
     ],
   }));
 
   useBindings(() => ({
     mode: "base",
-    bindings: Object.entries(buildKeybindMap(preferences().keybinds).bindings)
+    bindings: Object.entries(keybinds.resolved().bindings)
+      .filter(([id]) => commands[id]?.scope !== "dialog")
       .flatMap(([id, keys]) =>
         keys.map((key) => ({
           key,
@@ -1765,11 +1769,14 @@ function isNearBottom(scrollbox: any, threshold = 10) {
 function CommandPalette() {
   const dialog = useDialog();
   const keymap = useKeymap();
+  const definitions = commands;
   const entries = useKeymapSelector((current) => {
     const commands = current.getCommandEntries({
       namespace: "palette",
       visibility: "reachable",
-      filter: (command) => command.name !== "palette.toggle",
+      filter: (command) =>
+        command.name !== "palette.toggle" &&
+        definitions[command.name]?.scope !== "dialog",
     });
     const bindings = current.getCommandBindings({
       commands: commands.map((entry) => entry.command.name),

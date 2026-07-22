@@ -28,10 +28,18 @@ await Bun.sleep(80);
 // Open palette again and create a new session
 keys.pressKey("p", { ctrl: true });
 await Bun.sleep(80);
+// Base-mode leader bindings must not escape through the modal input layer.
+keys.pressKey("x", { ctrl: true });
+await Bun.sleep(30);
+keys.pressKey("n");
+await Bun.sleep(80);
+if (sessions.length !== 0)
+  throw new Error("leader command escaped the command palette modal");
+const sessionCountBeforePaletteSubmit = sessions.length;
 keys.pressEnter();
 await Bun.sleep(200);
 
-if (sessions.length !== 1)
+if (sessions.length !== sessionCountBeforePaletteSubmit + 1)
   throw new Error(`expected 1 session, got ${sessions.length}`);
 
 handle.stop();
