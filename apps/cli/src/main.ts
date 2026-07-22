@@ -29,6 +29,7 @@ import {
   setLocalSessionPinned,
   sessionTable,
   promptArguments,
+  workspaceFilesystemCommand,
   showLocalSession,
   startupDiagnostics,
 } from "./index";
@@ -310,6 +311,41 @@ switch (subcommand) {
       break;
     }
     throw new Error(`unknown session action: ${action}`);
+  }
+
+  case "fs": {
+    const action = argv[1] as "list" | "read" | "glob" | "search" | undefined;
+    if (!action || !["list", "read", "glob", "search"].includes(action))
+      throw new Error("fs requires list, read, glob, or search");
+    const positional = argv.filter(
+      (value, index) =>
+        index > 1 &&
+        !value.startsWith("--") &&
+        argv[index - 1] !== "--workspace" &&
+        argv[index - 1] !== "--path" &&
+        argv[index - 1] !== "--include" &&
+        argv[index - 1] !== "--limit",
+    );
+    console.log(
+      JSON.stringify(
+        await workspaceFilesystemCommand({
+          action,
+          workspaceRoot: valueAfter(argv, "--workspace"),
+          path:
+            valueAfter(argv, "--path") ??
+            (action === "read" ? positional[0] : undefined),
+          pattern: action === "glob" ? positional[0] : undefined,
+          query: action === "search" ? positional[0] : undefined,
+          include: valueAfter(argv, "--include"),
+          limit: valueAfter(argv, "--limit")
+            ? Number(valueAfter(argv, "--limit"))
+            : undefined,
+        }),
+        null,
+        2,
+      ),
+    );
+    break;
   }
 
   case "export-legacy":

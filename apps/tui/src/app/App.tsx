@@ -45,6 +45,9 @@ import { DialogThemeList } from "../component/DialogThemeList";
 import { DialogModel } from "../component/DialogModel";
 import { DialogSkill } from "../component/DialogSkill";
 import { DialogStash } from "../component/DialogStash";
+import { DialogAttachment } from "../component/DialogAttachment";
+import { DialogWorkspaceSearch } from "../component/DialogWorkspaceSearch";
+import { PromptAutocomplete } from "../component/PromptAutocomplete";
 import { DialogAgent } from "../component/DialogAgent";
 import { resolveConfig, updateConfig } from "@natalia/config";
 import { discoverProviderModels } from "@natalia/config";
@@ -124,6 +127,8 @@ function Shell(props: {
   const dialog = useDialog();
   const [composer, setComposer] = createSignal<TextareaRenderable>();
   const [pastePreview, setPastePreview] = createSignal("");
+  const [attachmentPaths, setAttachmentPaths] = createSignal<string[]>([]);
+  const [composerText, setComposerText] = createSignal("");
   const [followBottom, setFollowBottom] = createSignal(true);
   const [jumpToBottomVisible, setJumpToBottomVisible] = createSignal(false);
   const [preferences, setPreferences] = createSignal<TuiPreferences>(
@@ -234,6 +239,14 @@ function Shell(props: {
       setTimeout(() => composer()?.focus(), 1);
       return;
     }
+    const attachments = attachmentPaths();
+    if (attachments.length && !props.backend.submitInput) {
+      toast.show({
+        variant: "warning",
+        message: "This runtime transport does not support attachments",
+      });
+      return;
+    }
     submitting = true;
     const shouldFollow = isNearBottom(scrollRef.current);
     setFollowMode(shouldFollow);
@@ -242,7 +255,10 @@ function Shell(props: {
       input?.clear();
       setPastePreview("");
       history.add(text);
-      await props.backend.submit(text);
+      if (attachments.length)
+        await props.backend.submitInput!({ text, attachments });
+      else await props.backend.submit(text);
+      setAttachmentPaths([]);
     } finally {
       submitting = false;
       if (followBottom()) toBottom(50);
@@ -377,6 +393,93 @@ function Shell(props: {
             composer()?.setText(input);
             composer()?.gotoBufferEnd();
             setTimeout(() => composer()?.focus(), 1);
+          }}
+        />
+      ));
+      return;
+    }
+    if (command === "prompt.attachment.add") {
+      dialog.push(() => (
+        <DialogPrompt
+          title="Queue attachment"
+          placeholder="workspace-relative path, e.g. assets/diagram.png"
+          validate={(value) => {
+            const path = value.trim();
+            if (!path) return "Attachment path is required";
+            if (path.startsWith("/") || path.split(/[\\/]/u).includes(".."))
+              return "Path must remain within the workspace";
+            return undefined;
+          }}
+          onConfirm={(value) => {
+            const path = value.trim();
+            setAttachmentPaths((current) =>
+              current.includes(path) ? current : [...current, path],
+            );
+            dialog.pop();
+            setTimeout(() => composer()?.focus(), 1);
+          }}
+        />
+      ));
+      return;
+    }
+    if (command === "prompt.attachment.list") {
+      dialog.push(() => (
+        <DialogAttachment
+          paths={attachmentPaths}
+          remove={(path) =>
+            setAttachmentPaths((current) =>
+              current.filter((item) => item !== path),
+            )
+          }
+        />
+      ));
+      return;
+    }
+    if (command === "workspace.search") {
+      dialog.push(() => (
+        <DialogPrompt
+          title="Search workspace"
+          placeholder="Regular expression"
+          validate={(value) => {
+            if (!value.trim()) return "Search query is required";
+            try {
+              new RegExp(value, "u");
+              return undefined;
+            } catch {
+              return "Search must be a valid regular expression";
+            }
+          }}
+          onConfirm={(query) => {
+            if (!props.backend.workspaceSearch) {
+              toast.show({
+                variant: "warning",
+                message:
+                  "This runtime transport does not support workspace search",
+              });
+              return;
+            }
+            dialog.pop();
+            void props.backend.workspaceSearch({ query, limit: 50 }).then(
+              (matches) => {
+                dialog.push(() => (
+                  <DialogWorkspaceSearch
+                    query={query}
+                    matches={matches}
+                    select={(match) => {
+                      const mention = `@${match.path}:${match.line}`;
+                      composer()?.insertText(`${mention} `);
+                      setAttachmentPaths((current) =>
+                        current.includes(match.path)
+                          ? current
+                          : [...current, match.path],
+                      );
+                      setTimeout(() => composer()?.focus(), 1);
+                    }}
+                  />
+                ));
+              },
+              (error) => toast.error(error),
+            );
           }}
         />
       ));
@@ -1438,7 +1541,7 @@ function Shell(props: {
   useBindings(() => ({
     mode: "base",
     bindings: Object.entries(keybinds.resolved().bindings)
-      .filter(([id]) => commands[id]?.scope !== "dialog")
+      .filter(([id]) => !commands[id]?.scope)
       .flatMap(([id, keys]) =>
         keys.map((key) => ({
           key,
@@ -1729,6 +1832,9 @@ function Shell(props: {
               focusedTextColor={theme.theme.text}
               cursorColor={theme.theme.accent}
               onPaste={handlePaste}
+              onContentChange={() =>
+                setComposerText(composer()?.plainText ?? "")
+              }
               onKeyDown={(event: {
                 name?: string;
                 ctrl?: boolean;
@@ -1762,6 +1868,25 @@ function Shell(props: {
                 }
               }}
             />
+            <PromptAutocomplete
+              input={composer}
+              text={composerText}
+              workspaceFiles={props.backend.workspaceFiles}
+              attach={(path) =>
+                setAttachmentPaths((current) =>
+                  current.includes(path) ? current : [...current, path],
+                )
+              }
+            />
+            <Show when={attachmentPaths().length > 0}>
+              <text fg={theme.theme.muted}>
+                Attachments:{" "}
+                {attachmentPaths()
+                  .map((path) => path.split("/").at(-1) ?? path)
+                  .join(", ")}
+                {" · Ctrl+Shift+O manage"}
+              </text>
+            </Show>
             <Show when={layout().showComposerHints}>
               <text
                 fg={
@@ -1825,8 +1950,7 @@ function CommandPalette() {
       namespace: "palette",
       visibility: "reachable",
       filter: (command) =>
-        command.name !== "palette.toggle" &&
-        definitions[command.name]?.scope !== "dialog",
+        command.name !== "palette.toggle" && !definitions[command.name]?.scope,
     });
     const bindings = current.getCommandBindings({
       commands: commands.map((entry) => entry.command.name),

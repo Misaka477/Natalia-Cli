@@ -859,6 +859,53 @@ test("runtime skill catalog exposes discovery metadata without skill body", asyn
   ]);
 });
 
+test("runtime exposes contained workspace filesystem APIs", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-workspace-api-"));
+  await mkdir(join(root, "src"), { recursive: true });
+  await writeFile(join(root, "src", "main.ts"), "const needle = true\n");
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_runtime_workspace_api",
+    provider: scriptedProvider("unused"),
+  });
+  client.start(() => undefined);
+  expect(await client.workspaceList?.()).toEqual([
+    { path: "src/", type: "directory" },
+  ]);
+  expect(await client.workspaceGlob?.({ pattern: "**/*.ts" })).toEqual([
+    { path: "src/main.ts", type: "file" },
+  ]);
+  expect(await client.workspaceRead?.({ path: "src/main.ts" })).toMatchObject({
+    content: "const needle = true\n",
+    encoding: "utf8",
+  });
+  expect(await client.workspaceSearch?.({ query: "needle" })).toEqual([
+    { path: "src/main.ts", line: 1, text: "const needle = true" },
+  ]);
+});
+
+test("runtime filesystem slash commands use the protected catalog", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-runtime-workspace-command-"),
+  );
+  await mkdir(join(root, "src"), { recursive: true });
+  await writeFile(join(root, "src", "main.ts"), "const needle = true\n");
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_runtime_workspace_command",
+    provider: scriptedProvider("unused"),
+  });
+  client.start((event) => events.push(event));
+  await client.submit("/files main");
+  await client.submit("/search needle");
+  expect(
+    events
+      .filter((event) => event.type === "content.delta")
+      .map((event) => event.text),
+  ).toEqual(["src/main.ts", "src/main.ts:1:const needle = true"]);
+});
+
 test("model slash commands share catalog and durable selection behavior", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-runtime-model-command-"));
   await mkdir(join(root, ".natalia"), { recursive: true });

@@ -17,6 +17,7 @@ import {
   setLocalSessionPinned,
   sessionTable,
   showLocalSession,
+  workspaceFilesystemCommand,
 } from "../src";
 
 test("CLI session helpers list and delete local durable sessions", async () => {
@@ -148,6 +149,33 @@ test("CLI run attachment flags preserve prompt text and validate values", () => 
   expect(() => parseAttachmentFlags(["--attach", "--json"])).toThrow(
     "--attach requires a workspace-relative path",
   );
+});
+
+test("CLI filesystem commands share protected workspace APIs", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-filesystem-"));
+  await mkdir(join(root, "src"), { recursive: true });
+  await writeFile(join(root, "src", "main.ts"), "const answer = 42\n");
+  expect(
+    await workspaceFilesystemCommand({
+      action: "glob",
+      workspaceRoot: root,
+      pattern: "**/*.ts",
+    }),
+  ).toEqual([{ path: "src/main.ts", type: "file" }]);
+  expect(
+    await workspaceFilesystemCommand({
+      action: "search",
+      workspaceRoot: root,
+      query: "answer",
+    }),
+  ).toEqual([{ path: "src/main.ts", line: 1, text: "const answer = 42" }]);
+  await expect(
+    workspaceFilesystemCommand({
+      action: "read",
+      workspaceRoot: root,
+      path: "../outside",
+    }),
+  ).rejects.toThrow("workspace path must remain inside workspace");
 });
 
 test("CLI session helpers expose safe metadata and local mutations", async () => {

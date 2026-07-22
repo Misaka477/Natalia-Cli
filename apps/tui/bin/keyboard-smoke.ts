@@ -8,6 +8,9 @@ import { lineCount, makeDigest } from "@natalia/testing";
 import { runTuiShell } from "../src/app/runtime";
 
 const submissions: string[] = [];
+const attachmentSubmissions: Array<{ text: string; attachments?: string[] }> =
+  [];
+const workspaceFiles = [{ path: "src/mentioned.ts", type: "file" as const }];
 const handle = await runTuiShell({
   backend: makeBackend(),
   closeAfterInitialTurn: false,
@@ -59,6 +62,76 @@ if (submissions[3] !== "stashed prompt")
     `Prompt stash restore failed: got ${JSON.stringify(submissions[3])}`,
   );
 
+keys.pressKey("a", { ctrl: true, shift: true });
+await Bun.sleep(80);
+await keys.typeText("fixtures/sample.png");
+keys.pressEnter();
+await Bun.sleep(150);
+await keys.pasteBracketedText("with attachment");
+await Bun.sleep(80);
+keys.pressEnter();
+await Bun.sleep(200);
+
+if (attachmentSubmissions[0]?.text !== "with attachment")
+  throw new Error(
+    `Attachment submit text failed: got ${JSON.stringify(attachmentSubmissions[0])}`,
+  );
+if (attachmentSubmissions[0]?.attachments?.[0] !== "fixtures/sample.png")
+  throw new Error(
+    `Attachment submit paths failed: got ${JSON.stringify(attachmentSubmissions[0])}`,
+  );
+
+await keys.typeText("/mod");
+await Bun.sleep(80);
+keys.pressEnter();
+await Bun.sleep(80);
+keys.pressEnter();
+await Bun.sleep(200);
+
+if (submissions[5] !== "/models")
+  throw new Error(
+    `Slash autocomplete submit failed: got ${JSON.stringify(submissions[4])}`,
+  );
+
+await keys.pasteBracketedText("review @ment");
+await Bun.sleep(200);
+keys.pressEnter();
+await Bun.sleep(100);
+await keys.pasteBracketedText("please inspect");
+keys.pressEnter();
+await Bun.sleep(200);
+
+if (
+  attachmentSubmissions[1]?.text !== "review @src/mentioned.ts please inspect"
+)
+  throw new Error(
+    `File mention text failed: got ${JSON.stringify(attachmentSubmissions[1])}`,
+  );
+if (attachmentSubmissions[1]?.attachments?.[0] !== "src/mentioned.ts")
+  throw new Error(
+    `File mention attachment failed: got ${JSON.stringify(attachmentSubmissions[1])}`,
+  );
+
+keys.pressKey("f", { ctrl: true, shift: true });
+await Bun.sleep(80);
+await keys.pasteBracketedText("needle");
+keys.pressEnter();
+await Bun.sleep(150);
+keys.pressEnter();
+await Bun.sleep(80);
+await keys.pasteBracketedText("search result");
+keys.pressEnter();
+await Bun.sleep(200);
+
+if (attachmentSubmissions[2]?.text !== "@src/mentioned.ts:4 search result")
+  throw new Error(
+    `Workspace search mention failed: got ${JSON.stringify(attachmentSubmissions[2])}`,
+  );
+if (attachmentSubmissions[2]?.attachments?.[0] !== "src/mentioned.ts")
+  throw new Error(
+    `Workspace search attachment failed: got ${JSON.stringify(attachmentSubmissions[2])}`,
+  );
+
 const destroyed = new Promise<void>((resolve) =>
   handle.renderer.once("destroy", resolve),
 );
@@ -99,6 +172,22 @@ function makeBackend(): RuntimeClient {
       sink?.(lastSubmission);
       sink?.({ type: "turn.finished", id, stopReason: "done" });
       return lastSubmission;
+    },
+    async submitInput(input) {
+      attachmentSubmissions.push({
+        text: input.text,
+        attachments: input.attachments,
+      });
+      return await this.submit(input.text);
+    },
+    async workspaceFiles(input) {
+      const query = input?.query?.toLowerCase() ?? "";
+      return workspaceFiles.filter((file) =>
+        file.path.toLowerCase().includes(query),
+      );
+    },
+    async workspaceSearch() {
+      return [{ path: "src/mentioned.ts", line: 4, text: "needle" }];
     },
     cancel() {},
     snapshot() {

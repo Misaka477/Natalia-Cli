@@ -1,7 +1,18 @@
 import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { runtimeEventDurability } from "@natalia/contracts";
+import {
+  runtimeEventDurability,
+  runtimeSlashCommands,
+} from "@natalia/contracts";
+import {
+  findWorkspaceFiles,
+  globWorkspaceFiles,
+  listWorkspaceFiles,
+  readWorkspaceFile,
+  searchWorkspaceFiles,
+  watchWorkspaceFiles,
+} from "./workspace-files";
 import type {
   ApprovalResponse,
   RuntimeClient,
@@ -188,6 +199,7 @@ export function createRealRuntimeClient(
     | undefined;
   let runtimeContextConfig = contextStatusConfig();
   let retryPolicy: NonNullable<Parameters<typeof runWithRetry>[2]>["policy"];
+  let cleanupWorkspaceFiles: (() => void) | undefined;
   const turnCoordinator = () => sessionRunCoordinator(sessionID);
 
   async function initialize() {
@@ -284,6 +296,10 @@ export function createRealRuntimeClient(
         });
       }
     }
+    cleanupWorkspaceFiles = await watchWorkspaceFiles(
+      workspaceRoot,
+      () => undefined,
+    ).catch(() => undefined);
     sessionID =
       options.sessionID ?? (`ses_${sessionSeed(workspaceRoot)}` as SessionID);
     sessionStore = new JsonSessionStore(
@@ -973,6 +989,8 @@ export function createRealRuntimeClient(
       // A committed selection and other durable controls must reach disk before
       // a caller opens the same session in a replacement runtime.
       await sessionPersistence;
+      cleanupWorkspaceFiles?.();
+      cleanupWorkspaceFiles = undefined;
       for (const plugin of plugins?.list() ?? [])
         await plugins!.unload(plugin.id);
       await Promise.all(cleanupMCP.splice(0).map((close) => close()));
@@ -1089,6 +1107,26 @@ export function createRealRuntimeClient(
         sandboxRequired: skill.sandboxRequired,
       }));
     },
+    async workspaceFiles(input) {
+      await ready;
+      return await findWorkspaceFiles({ workspaceRoot, ...input });
+    },
+    async workspaceSearch(input) {
+      await ready;
+      return await searchWorkspaceFiles({ workspaceRoot, ...input });
+    },
+    async workspaceList(input) {
+      await ready;
+      return await listWorkspaceFiles({ workspaceRoot, ...input });
+    },
+    async workspaceRead(input) {
+      await ready;
+      return await readWorkspaceFile({ workspaceRoot, ...input });
+    },
+    async workspaceGlob(input) {
+      await ready;
+      return await globWorkspaceFiles({ workspaceRoot, ...input });
+    },
     async runtimeStatus() {
       await ready;
       return latestStatus ?? statusSnapshot(provider, context, workspaceRoot);
@@ -1144,16 +1182,10 @@ export function createRealRuntimeClient(
         id,
         text: [
           "Natalia TS7 agent shell commands:",
-          "/doctor - inspect provider, workspace, session, and native tools",
-          "/status - show the current runtime status snapshot",
-          "/diagnostics [limit] - show recent durable runtime diagnostics",
-          "/sessions - list durable TS sessions in the current workspace",
-          "/agents and /agent <name> - inspect or select the next-turn agent",
-          "/models and /model <id> [variant] - inspect or select the next-turn model",
-          "/skills and /skill <name> - inspect or activate native skills",
-          "/attach <workspace-relative-image> <prompt> - submit a PNG/JPEG attachment",
-          "/checkpoint, /checkpoints, /rollback <id> [--dry-run] - durable workspace/context controls",
-          "/pause and /resume - pause at a safe runtime boundary",
+          ...runtimeSlashCommands.map(
+            (command) =>
+              `/${command.name}${command.acceptsArguments ? " <args>" : ""} - ${command.description}`,
+          ),
           "Use Ctrl-C to cancel an active turn and Ctrl-D on an empty composer to exit.",
         ].join("\n"),
       });
@@ -1315,6 +1347,44 @@ export function createRealRuntimeClient(
               )
               .join("\n")
           : "no selectable models configured",
+      });
+      publish({ type: "content.done", id });
+      publish({ type: "turn.finished", id, stopReason: "done" });
+      return true;
+    }
+    if (trimmed === "/files" || trimmed.startsWith("/files ")) {
+      const query = trimmed.slice("/files".length).trim();
+      const files = await findWorkspaceFiles({
+        workspaceRoot,
+        query: query || undefined,
+        limit: 50,
+      });
+      publish({
+        type: "content.delta",
+        id,
+        text: files.length
+          ? files.map((file) => file.path).join("\n")
+          : "no workspace files found",
+      });
+      publish({ type: "content.done", id });
+      publish({ type: "turn.finished", id, stopReason: "done" });
+      return true;
+    }
+    if (trimmed.startsWith("/search ")) {
+      const query = trimmed.slice("/search ".length).trim();
+      const matches = await searchWorkspaceFiles({
+        workspaceRoot,
+        query,
+        limit: 50,
+      });
+      publish({
+        type: "content.delta",
+        id,
+        text: matches.length
+          ? matches
+              .map((match) => `${match.path}:${match.line}:${match.text}`)
+              .join("\n")
+          : "no workspace matches found",
       });
       publish({ type: "content.done", id });
       publish({ type: "turn.finished", id, stopReason: "done" });

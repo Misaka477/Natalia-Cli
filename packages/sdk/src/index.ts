@@ -26,6 +26,26 @@ export type NataliaSDK = {
   modelSelection(): Promise<import("@natalia/contracts").RuntimeModelSelection>;
   selectModel(modelID?: string, variant?: string): Promise<void>;
   skills(): Promise<import("@natalia/contracts").RuntimeSkillCatalogEntry[]>;
+  workspaceFiles(input?: {
+    query?: string;
+    limit?: number;
+  }): Promise<import("@natalia/contracts").RuntimeWorkspaceFileEntry[]>;
+  workspaceSearch(input: {
+    query: string;
+    include?: string;
+    limit?: number;
+  }): Promise<import("@natalia/contracts").RuntimeWorkspaceMatch[]>;
+  workspaceList(input?: {
+    path?: string;
+  }): Promise<import("@natalia/contracts").RuntimeWorkspaceFileEntry[]>;
+  workspaceRead(input: {
+    path: string;
+  }): Promise<import("@natalia/contracts").RuntimeWorkspaceContent>;
+  workspaceGlob(input: {
+    pattern: string;
+    path?: string;
+    limit?: number;
+  }): Promise<import("@natalia/contracts").RuntimeWorkspaceFileEntry[]>;
   respondApproval(response: ApprovalResponse): Promise<void>;
   respondQuestion(response: QuestionResponse): Promise<void>;
   pendingInteractive(): Promise<{
@@ -109,6 +129,11 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       });
     },
     skills: async () => await call("skills.list", {}),
+    workspaceFiles: async (input = {}) => await call("workspace.files", input),
+    workspaceSearch: async (input) => await call("workspace.search", input),
+    workspaceList: async (input = {}) => await call("workspace.list", input),
+    workspaceRead: async (input) => await call("workspace.read", input),
+    workspaceGlob: async (input) => await call("workspace.glob", input),
     respondApproval: async (response) => {
       await call(
         "approval.respond",

@@ -1,7 +1,11 @@
 import {
   checkpointDisplayLine,
   compactionDisplayLine,
+  globWorkspaceFiles,
+  listWorkspaceFiles,
+  readWorkspaceFile,
   retryDisplayLine,
+  searchWorkspaceFiles,
 } from "@natalia/client";
 import {
   cleanupUnreferencedAttachments,
@@ -304,4 +308,38 @@ export function promptArguments(argv: string[]) {
     .join(" ")
     .trim();
   return { text, attachments };
+}
+
+export async function workspaceFilesystemCommand(input: {
+  action: "list" | "read" | "glob" | "search";
+  workspaceRoot?: string;
+  path?: string;
+  pattern?: string;
+  query?: string;
+  include?: string;
+  limit?: number;
+}) {
+  const workspaceRoot = input.workspaceRoot ?? process.cwd();
+  if (input.action === "list")
+    return await listWorkspaceFiles({ workspaceRoot, path: input.path });
+  if (input.action === "read") {
+    if (!input.path) throw new Error("fs read requires a path");
+    return await readWorkspaceFile({ workspaceRoot, path: input.path });
+  }
+  if (input.action === "glob") {
+    if (!input.pattern) throw new Error("fs glob requires a pattern");
+    return await globWorkspaceFiles({
+      workspaceRoot,
+      pattern: input.pattern,
+      path: input.path,
+      limit: input.limit,
+    });
+  }
+  if (!input.query) throw new Error("fs search requires a query");
+  return await searchWorkspaceFiles({
+    workspaceRoot,
+    query: input.query,
+    include: input.include,
+    limit: input.limit,
+  });
 }

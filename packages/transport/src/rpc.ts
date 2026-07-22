@@ -161,6 +161,107 @@ export async function handleRPCMessage(
         result: await client.skills(),
       };
     }
+    if (body.method === "workspace.files") {
+      optionsGuard(client.workspaceFiles, "workspace.files");
+      const query = body.params?.query;
+      const limit = body.params?.limit;
+      if (query !== undefined && typeof query !== "string")
+        throw new Error("workspace.files.params.query must be a string");
+      if (
+        limit !== undefined &&
+        (typeof limit !== "number" ||
+          !Number.isInteger(limit) ||
+          limit < 1 ||
+          limit > 200)
+      )
+        throw new Error(
+          "workspace.files.params.limit must be an integer between 1 and 200",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.workspaceFiles({
+          query: typeof query === "string" ? query : undefined,
+          limit: typeof limit === "number" ? limit : undefined,
+        }),
+      };
+    }
+    if (body.method === "workspace.search") {
+      optionsGuard(client.workspaceSearch, "workspace.search");
+      const query = stringParam(body.params, "query");
+      const include = body.params?.include;
+      const limit = body.params?.limit;
+      if (include !== undefined && typeof include !== "string")
+        throw new Error("workspace.search.params.include must be a string");
+      if (
+        limit !== undefined &&
+        (typeof limit !== "number" ||
+          !Number.isInteger(limit) ||
+          limit < 1 ||
+          limit > 200)
+      )
+        throw new Error(
+          "workspace.search.params.limit must be an integer between 1 and 200",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.workspaceSearch({
+          query,
+          include: typeof include === "string" ? include : undefined,
+          limit: typeof limit === "number" ? limit : undefined,
+        }),
+      };
+    }
+    if (body.method === "workspace.list") {
+      optionsGuard(client.workspaceList, "workspace.list");
+      const path = body.params?.path;
+      if (path !== undefined && typeof path !== "string")
+        throw new Error("workspace.list.params.path must be a string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.workspaceList({
+          path: typeof path === "string" ? path : undefined,
+        }),
+      };
+    }
+    if (body.method === "workspace.read") {
+      optionsGuard(client.workspaceRead, "workspace.read");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.workspaceRead({
+          path: stringParam(body.params, "path"),
+        }),
+      };
+    }
+    if (body.method === "workspace.glob") {
+      optionsGuard(client.workspaceGlob, "workspace.glob");
+      const path = body.params?.path;
+      const limit = body.params?.limit;
+      if (path !== undefined && typeof path !== "string")
+        throw new Error("workspace.glob.params.path must be a string");
+      if (
+        limit !== undefined &&
+        (typeof limit !== "number" ||
+          !Number.isInteger(limit) ||
+          limit < 1 ||
+          limit > 200)
+      )
+        throw new Error(
+          "workspace.glob.params.limit must be an integer between 1 and 200",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.workspaceGlob({
+          pattern: stringParam(body.params, "pattern"),
+          path: typeof path === "string" ? path : undefined,
+          limit: typeof limit === "number" ? limit : undefined,
+        }),
+      };
+    }
     if (body.method === "approval.respond") {
       const requestID = stringParam(body.params, "requestID");
       const decision = stringParam(body.params, "decision");

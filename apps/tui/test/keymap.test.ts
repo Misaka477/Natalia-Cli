@@ -95,6 +95,16 @@ describe("command definitions", () => {
     expect(commands["prompt.stash.save"]).toMatchObject({
       keys: "ctrl+shift+s",
     });
+    expect(commands["prompt.attachment.add"]).toMatchObject({
+      keys: "ctrl+shift+a",
+    });
+    expect(commands["prompt.autocomplete.select"]).toMatchObject({
+      keys: "return",
+      scope: "autocomplete",
+    });
+    expect(commands["workspace.search"]).toMatchObject({
+      keys: "ctrl+shift+f",
+    });
     expect(commands["scroll.up"]).toBeDefined();
     expect(commands["scroll.down"]).toBeDefined();
     expect(commands["scroll.top"]).toBeDefined();

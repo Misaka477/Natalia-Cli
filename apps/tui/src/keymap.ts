@@ -76,7 +76,7 @@ export interface CommandDef {
   id: string;
   keys: string;
   desc: string;
-  scope?: "dialog";
+  scope?: "dialog" | "autocomplete";
 }
 
 export const commands: Record<string, CommandDef> = {
@@ -206,6 +206,51 @@ export const commands: Record<string, CommandDef> = {
     keys: "d",
     desc: "Delete stashed prompt",
     scope: "dialog",
+  },
+  "prompt.attachment.add": {
+    id: "prompt.attachment.add",
+    keys: "ctrl+shift+a",
+    desc: "Queue workspace attachment",
+  },
+  "prompt.attachment.list": {
+    id: "prompt.attachment.list",
+    keys: "ctrl+shift+o",
+    desc: "List queued attachments",
+  },
+  "prompt.attachment.remove": {
+    id: "prompt.attachment.remove",
+    keys: "d",
+    desc: "Remove queued attachment",
+    scope: "dialog",
+  },
+  "prompt.autocomplete.prev": {
+    id: "prompt.autocomplete.prev",
+    keys: "up",
+    desc: "Previous autocomplete item",
+    scope: "autocomplete",
+  },
+  "prompt.autocomplete.next": {
+    id: "prompt.autocomplete.next",
+    keys: "down",
+    desc: "Next autocomplete item",
+    scope: "autocomplete",
+  },
+  "prompt.autocomplete.select": {
+    id: "prompt.autocomplete.select",
+    keys: "return",
+    desc: "Select autocomplete item",
+    scope: "autocomplete",
+  },
+  "prompt.autocomplete.hide": {
+    id: "prompt.autocomplete.hide",
+    keys: "escape",
+    desc: "Hide autocomplete",
+    scope: "autocomplete",
+  },
+  "workspace.search": {
+    id: "workspace.search",
+    keys: "ctrl+shift+f",
+    desc: "Search workspace files",
   },
   "provider.connect": {
     id: "provider.connect",
@@ -523,7 +568,7 @@ export function buildKeybindMap(
 
   const conflictDiags = detectKeybindConflicts(
     Object.entries(bindings)
-      .filter(([command]) => commands[command]?.scope !== "dialog")
+      .filter(([command]) => !commands[command]?.scope)
       .flatMap(([command, keys]) =>
         keys.map((key) => ({
           command,

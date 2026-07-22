@@ -8,6 +8,15 @@ export {
   cleanupUnreferencedAttachments,
   referencedAttachmentsForSessions,
 } from "./attachments";
+export {
+  findWorkspaceFiles,
+  globWorkspaceFiles,
+  invalidateWorkspaceFiles,
+  listWorkspaceFiles,
+  readWorkspaceFile,
+  searchWorkspaceFiles,
+  watchWorkspaceFiles,
+} from "./workspace-files";
 export { attachRuntimeClientWorker, createWorkerRuntimeClient } from "./worker";
 export {
   createToolPolicyHookLayer,

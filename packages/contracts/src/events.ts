@@ -641,6 +641,86 @@ export type RuntimeSkillCatalogEntry = {
   requireApproval: boolean;
   sandboxRequired: boolean;
 };
+export type RuntimeSlashCommand = {
+  name: string;
+  description: string;
+  acceptsArguments?: boolean;
+};
+export type RuntimeWorkspaceFileEntry = {
+  path: string;
+  type: "file" | "directory";
+};
+export type RuntimeWorkspaceMatch = {
+  path: string;
+  line: number;
+  text: string;
+};
+export type RuntimeWorkspaceContent = {
+  path: string;
+  content: string;
+  encoding: "utf8" | "base64";
+  mime: string;
+};
+// Keep TUI completion and runtime command handling on one local vocabulary.
+export const runtimeSlashCommands: RuntimeSlashCommand[] = [
+  { name: "help", description: "Show runtime command help" },
+  { name: "doctor", description: "Inspect runtime and provider health" },
+  { name: "status", description: "Show the runtime status snapshot" },
+  {
+    name: "diagnostics",
+    description: "Show durable runtime diagnostics",
+    acceptsArguments: true,
+  },
+  { name: "sessions", description: "List durable sessions" },
+  {
+    name: "files",
+    description: "Find workspace files",
+    acceptsArguments: true,
+  },
+  {
+    name: "search",
+    description: "Search workspace file content",
+    acceptsArguments: true,
+  },
+  { name: "agents", description: "List selectable agents" },
+  {
+    name: "agent",
+    description: "Select the next-turn agent",
+    acceptsArguments: true,
+  },
+  { name: "models", description: "List selectable models" },
+  {
+    name: "model",
+    description: "Select model and variant",
+    acceptsArguments: true,
+  },
+  { name: "skills", description: "List discovered skills" },
+  { name: "skill", description: "Activate a skill", acceptsArguments: true },
+  {
+    name: "skill-resource",
+    description: "Read an active skill resource",
+    acceptsArguments: true,
+  },
+  {
+    name: "skill-script",
+    description: "Run an active skill script",
+    acceptsArguments: true,
+  },
+  {
+    name: "attach",
+    description: "Submit a workspace attachment",
+    acceptsArguments: true,
+  },
+  { name: "checkpoint", description: "Create a workspace checkpoint" },
+  { name: "checkpoints", description: "List workspace checkpoints" },
+  {
+    name: "rollback",
+    description: "Restore a checkpoint",
+    acceptsArguments: true,
+  },
+  { name: "pause", description: "Pause at a safe runtime boundary" },
+  { name: "resume", description: "Resume runtime execution" },
+];
 
 /** Streaming fragments are transport-live; their completed settlements are durable. */
 export function runtimeEventDurability(
@@ -682,6 +762,24 @@ export type RuntimeClient = {
   modelSelection?(): Promise<RuntimeModelSelection>;
   selectModel?(modelID?: string, variant?: string): Promise<void>;
   skills?(): Promise<RuntimeSkillCatalogEntry[]>;
+  workspaceFiles?(input?: {
+    query?: string;
+    limit?: number;
+  }): Promise<RuntimeWorkspaceFileEntry[]>;
+  workspaceSearch?(input: {
+    query: string;
+    include?: string;
+    limit?: number;
+  }): Promise<RuntimeWorkspaceMatch[]>;
+  workspaceList?(input?: {
+    path?: string;
+  }): Promise<RuntimeWorkspaceFileEntry[]>;
+  workspaceRead?(input: { path: string }): Promise<RuntimeWorkspaceContent>;
+  workspaceGlob?(input: {
+    pattern: string;
+    path?: string;
+    limit?: number;
+  }): Promise<RuntimeWorkspaceFileEntry[]>;
   mcpCatalog?(): Promise<MCPCatalogSnapshot>;
   getMcpPrompt?(
     server: string,

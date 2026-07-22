@@ -60,6 +60,26 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
         },
       ];
     },
+    async workspaceFiles() {
+      return [{ path: "src/model.ts", type: "file" }];
+    },
+    async workspaceSearch() {
+      return [{ path: "src/model.ts", line: 2, text: "needle" }];
+    },
+    async workspaceList() {
+      return [{ path: "src/", type: "directory" }];
+    },
+    async workspaceRead() {
+      return {
+        path: "src/model.ts",
+        content: "export {}\n",
+        encoding: "utf8",
+        mime: "text/typescript",
+      };
+    },
+    async workspaceGlob() {
+      return [{ path: "src/model.ts", type: "file" }];
+    },
     async mcpCatalog() {
       return {
         prompts: [{ server: "fixture", name: "review" }],
@@ -153,6 +173,21 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
   await sdk.selectModel("alpha", "fast");
   expect(await sdk.skills()).toMatchObject([
     { qualifiedName: "project:release" },
+  ]);
+  expect(await sdk.workspaceFiles({ query: "model" })).toEqual([
+    { path: "src/model.ts", type: "file" },
+  ]);
+  expect(await sdk.workspaceSearch({ query: "needle" })).toEqual([
+    { path: "src/model.ts", line: 2, text: "needle" },
+  ]);
+  expect(await sdk.workspaceList()).toEqual([
+    { path: "src/", type: "directory" },
+  ]);
+  expect(await sdk.workspaceRead({ path: "src/model.ts" })).toMatchObject({
+    encoding: "utf8",
+  });
+  expect(await sdk.workspaceGlob({ pattern: "**/*.ts" })).toEqual([
+    { path: "src/model.ts", type: "file" },
   ]);
   await sdk.respondApproval({ requestID: "approval_1", decision: "once" });
   await sdk.respondQuestion({ requestID: "question_1", answers: [["yes"]] });
