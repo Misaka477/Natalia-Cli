@@ -125,9 +125,9 @@ export type ManagedProcessInfo = {
 };
 
 export class ManagedProcessRegistry {
-  private processes = new Map<string, ManagedProcessRuntime>();
+  private processes = new Map<string, Map<string, ManagedProcessRuntime>>();
   private deadlines = new Map<string, ReturnType<typeof setTimeout>>();
-  private sequence = 0;
+  private sequences = new Map<string, number>();
   private loadedRoots = new Set<string>();
 
   async start(
@@ -142,8 +142,9 @@ export class ManagedProcessRegistry {
     } = {},
   ) {
     await this.load(context);
-    const processID = id ?? `proc_${(++this.sequence).toString(36)}`;
-    if (this.processes.has(processID))
+    const processes = this.workspaceProcesses(context);
+    const processID = id ?? `proc_${this.nextSequence(context).toString(36)}`;
+    if (processes.has(processID))
       throw new Error(`process already exists: ${processID}`);
     const processDir = resolve(context.workspaceRoot, ".natalia", "processes");
     await mkdir(processDir, { recursive: true });
@@ -182,7 +183,7 @@ export class ManagedProcessRegistry {
         : undefined,
       ...(await processFingerprint(pid)),
     };
-    this.processes.set(processID, info);
+    processes.set(processID, info);
     await this.save(context);
     this.scheduleDeadline(info, context);
     return publicProcessInfo(info);
@@ -190,21 +191,21 @@ export class ManagedProcessRegistry {
 
   async list(context: ToolExecutionContext) {
     await this.load(context);
-    return [...this.processes.values()].map((info) =>
+    return [...this.workspaceProcesses(context).values()].map((info) =>
       publicProcessInfo(refreshProcessStatus(info)),
     );
   }
 
   async get(id: string, context: ToolExecutionContext) {
     await this.load(context);
-    const info = this.processes.get(id);
+    const info = this.workspaceProcesses(context).get(id);
     if (!info) throw new Error(`process not found: ${id}`);
     return publicProcessInfo(refreshProcessStatus(info));
   }
 
   async output(id: string, context: ToolExecutionContext) {
     await this.load(context);
-    const info = this.processes.get(id);
+    const info = this.workspaceProcesses(context).get(id);
     if (!info) throw new Error(`process not found: ${id}`);
     const rawOutput = await readOptionalFile(info.outputPath);
     info.output = truncateProcessOutput(rawOutput, info.maxOutputBytes);
@@ -216,11 +217,11 @@ export class ManagedProcessRegistry {
 
   async stop(id: string, context: ToolExecutionContext) {
     await this.load(context);
-    const info = this.processes.get(id);
+    const info = this.workspaceProcesses(context).get(id);
     if (!info) throw new Error(`process not found: ${id}`);
     if (info.status === "running" && info.pid)
       await stopProcessTree(info.pid, info.stopTimeoutMs ?? 1000);
-    this.clearDeadline(id);
+    this.clearDeadline(this.deadlineKey(context, id));
     info.status = "stopped";
     info.endedAt = new Date().toISOString();
     await this.save(context);
@@ -230,7 +231,7 @@ export class ManagedProcessRegistry {
   async restart(id: string, context: ToolExecutionContext) {
     const current = await this.get(id, context);
     if (current.status === "running") await this.stop(id, context);
-    this.processes.delete(id);
+    this.workspaceProcesses(context).delete(id);
     return await this.start(current.command, context, id, {
       readyPattern: current.readyPattern,
       maxOutputBytes: current.maxOutputBytes,
@@ -241,7 +242,7 @@ export class ManagedProcessRegistry {
 
   async attach(id: string, context: ToolExecutionContext) {
     await this.load(context);
-    const info = this.processes.get(id);
+    const info = this.workspaceProcesses(context).get(id);
     if (!info) throw new Error(`process not found: ${id}`);
     info.attached = true;
     await this.save(context);
@@ -250,7 +251,7 @@ export class ManagedProcessRegistry {
 
   async detach(id: string, context: ToolExecutionContext) {
     await this.load(context);
-    const info = this.processes.get(id);
+    const info = this.workspaceProcesses(context).get(id);
     if (!info) throw new Error(`process not found: ${id}`);
     info.attached = false;
     await this.save(context);
@@ -260,22 +261,24 @@ export class ManagedProcessRegistry {
   async cleanup(context: ToolExecutionContext) {
     await this.load(context);
     let removed = 0;
-    for (const [id, info] of this.processes) {
+    const processes = this.workspaceProcesses(context);
+    for (const [id, info] of processes) {
       refreshProcessStatus(info);
       if (info.status !== "running") {
-        this.processes.delete(id);
+        processes.delete(id);
+        this.clearDeadline(this.deadlineKey(context, id));
         removed++;
       }
     }
     await this.save(context);
-    return { removed, remaining: this.processes.size };
+    return { removed, remaining: processes.size };
   }
 
   async audit(context: ToolExecutionContext) {
     await this.load(context);
     return {
       root: resolve(context.workspaceRoot),
-      processes: [...this.processes.values()].map((info) =>
+      processes: [...this.workspaceProcesses(context).values()].map((info) =>
         publicProcessInfo(refreshProcessStatus(info)),
       ),
     };
@@ -289,7 +292,7 @@ export class ManagedProcessRegistry {
     const started = Date.now();
     while (Date.now() - started < timeoutMs) {
       await this.output(id, context);
-      const info = this.processes.get(id)!;
+      const info = this.workspaceProcesses(context).get(id)!;
       if (!info.readyPattern || info.ready) return publicProcessInfo(info);
       if (info.status !== "running")
         throw new Error(`process exited before ready: ${id}`);
@@ -312,11 +315,20 @@ export class ManagedProcessRegistry {
       for (const info of parsed.processes ?? []) {
         if (!info.id || !info.command || !info.outputPath) continue;
         const restored = await refreshPersistedProcessStatus(info);
-        this.processes.set(restored.id, restored);
-        this.scheduleDeadline(restored, context);
+        this.workspaceProcesses(context).set(restored.id, restored);
+        if (
+          restored.status === "running" &&
+          restored.deadlineAt &&
+          new Date(restored.deadlineAt).getTime() <= Date.now()
+        )
+          await this.stop(restored.id, context);
+        else this.scheduleDeadline(restored, context);
         const match = info.id.match(/^proc_([0-9a-z]+)$/u);
         if (match)
-          this.sequence = Math.max(this.sequence, parseInt(match[1]!, 36));
+          this.sequences.set(
+            root,
+            Math.max(this.sequences.get(root) ?? 0, parseInt(match[1]!, 36)),
+          );
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
@@ -328,25 +340,46 @@ export class ManagedProcessRegistry {
     await mkdir(processDir, { recursive: true, mode: 0o700 });
     await writeFile(
       resolve(processDir, "processes.json"),
-      `${JSON.stringify({ processes: [...this.processes.values()] }, null, 2)}\n`,
+      `${JSON.stringify({ processes: [...this.workspaceProcesses(context).values()] }, null, 2)}\n`,
       { mode: 0o600 },
     );
   }
 
   private scheduleDeadline(info: ManagedProcessRuntime, context: ToolExecutionContext) {
-    this.clearDeadline(info.id);
+    this.clearDeadline(this.deadlineKey(context, info.id));
     if (info.status !== "running" || !info.deadlineAt) return;
     const delay = new Date(info.deadlineAt).getTime() - Date.now();
     if (!Number.isFinite(delay)) return;
     const timer = setTimeout(() => void this.stop(info.id, context), Math.max(0, delay));
     timer.unref();
-    this.deadlines.set(info.id, timer);
+    this.deadlines.set(this.deadlineKey(context, info.id), timer);
   }
 
-  private clearDeadline(id: string) {
-    const timer = this.deadlines.get(id);
+  private clearDeadline(key: string) {
+    const timer = this.deadlines.get(key);
     if (timer) clearTimeout(timer);
-    this.deadlines.delete(id);
+    this.deadlines.delete(key);
+  }
+
+  private workspaceProcesses(context: ToolExecutionContext) {
+    const root = resolve(context.workspaceRoot);
+    let processes = this.processes.get(root);
+    if (!processes) {
+      processes = new Map();
+      this.processes.set(root, processes);
+    }
+    return processes;
+  }
+
+  private nextSequence(context: ToolExecutionContext) {
+    const root = resolve(context.workspaceRoot);
+    const next = (this.sequences.get(root) ?? 0) + 1;
+    this.sequences.set(root, next);
+    return next;
+  }
+
+  private deadlineKey(context: ToolExecutionContext, id: string) {
+    return `${resolve(context.workspaceRoot)}\0${id}`;
   }
 }
 
@@ -1516,8 +1549,8 @@ function processStartTool(registry: ManagedProcessRegistry): RuntimeTool {
           optionalString(args.id),
           {
             readyPattern: optionalString(args.readyPattern),
-            maxOutputBytes: numberOr(args.maxOutputBytes, 20000),
-            stopTimeoutMs: numberOr(args.stopTimeoutMs, 1000),
+            maxOutputBytes: positiveNumberOr(args.maxOutputBytes, 20000),
+            stopTimeoutMs: positiveNumberOr(args.stopTimeoutMs, 1000),
             maxRuntimeMs: positiveNumberOrUndefined(args.maxRuntimeMs),
           },
         ),
@@ -2141,6 +2174,11 @@ function positiveNumberOrUndefined(value: unknown) {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0)
     throw new Error("value must be a positive number");
   return value;
+}
+
+function positiveNumberOr(value: unknown, fallback: number) {
+  if (value === undefined) return fallback;
+  return positiveNumberOrUndefined(value) ?? fallback;
 }
 
 function truncateProcessOutput(output: string, maxBytes = 20000) {

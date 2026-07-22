@@ -236,6 +236,100 @@ test("managed process max runtime stops the owned process group", async () => {
   expect(processAlive(childPID)).toBe(false);
 });
 
+test("reopened managed process registry restores a durable deadline", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-process-reopen-deadline-"));
+  const first = createToolRegistry();
+  await first.get("process_start")!.execute(
+    {
+      id: "proc_reopen_deadline",
+      command: "sleep 30",
+      maxRuntimeMs: 150,
+    },
+    { workspaceRoot: root },
+  );
+  const reopened = createToolRegistry();
+  await reopened.get("process_list")!.execute({}, { workspaceRoot: root });
+  await Bun.sleep(300);
+  const status = JSON.parse(
+    await reopened
+      .get("process_status")!
+      .execute({ id: "proc_reopen_deadline" }, { workspaceRoot: root }),
+  ) as { status: string };
+  expect(status.status).toBe("stopped");
+});
+
+test("reopened registry immediately stops an overdue durable deadline", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-process-overdue-"));
+  const first = createToolRegistry();
+  const started = JSON.parse(
+    await first.get("process_start")!.execute(
+      { id: "proc_overdue", command: "sleep 30", maxRuntimeMs: 10_000 },
+      { workspaceRoot: root },
+    ),
+  ) as { pid?: number };
+  const manifest = join(root, ".natalia", "processes", "processes.json");
+  const parsed = JSON.parse(await readFile(manifest, "utf8")) as {
+    processes: Array<{ deadlineAt?: string }>;
+  };
+  parsed.processes[0]!.deadlineAt = new Date(Date.now() - 1).toISOString();
+  await writeFile(manifest, `${JSON.stringify(parsed)}\n`);
+  const reopened = createToolRegistry();
+  const status = JSON.parse(
+    await reopened
+      .get("process_status")!
+      .execute({ id: "proc_overdue" }, { workspaceRoot: root }),
+  ) as { status: string };
+  expect(status.status).toBe("stopped");
+  expect(processAlive(started.pid!)).toBe(false);
+});
+
+test("managed process resource limits require positive values", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-process-limits-"));
+  const tools = createToolRegistry();
+  await expect(
+    tools.get("process_start")!.execute(
+      { command: "sleep 1", maxOutputBytes: 0 },
+      { workspaceRoot: root },
+    ),
+  ).rejects.toThrow("value must be a positive number");
+  await expect(
+    tools.get("process_start")!.execute(
+      { command: "sleep 1", stopTimeoutMs: -1 },
+      { workspaceRoot: root },
+    ),
+  ).rejects.toThrow("value must be a positive number");
+});
+
+test("managed process IDs and deadlines are isolated by workspace", async () => {
+  const firstRoot = await mkdtemp(join(tmpdir(), "natalia-tools-process-first-"));
+  const secondRoot = await mkdtemp(join(tmpdir(), "natalia-tools-process-second-"));
+  const tools = createToolRegistry();
+  await tools.get("process_start")!.execute(
+    { id: "proc_same", command: "sleep 30", maxRuntimeMs: 100 },
+    { workspaceRoot: firstRoot },
+  );
+  await tools.get("process_start")!.execute(
+    { id: "proc_same", command: "sleep 30" },
+    { workspaceRoot: secondRoot },
+  );
+  await Bun.sleep(250);
+  const first = JSON.parse(
+    await tools
+      .get("process_status")!
+      .execute({ id: "proc_same" }, { workspaceRoot: firstRoot }),
+  ) as { status: string };
+  const second = JSON.parse(
+    await tools
+      .get("process_status")!
+      .execute({ id: "proc_same" }, { workspaceRoot: secondRoot }),
+  ) as { status: string };
+  expect(first.status).toBe("stopped");
+  expect(second.status).toBe("running");
+  await tools
+    .get("process_stop")!
+    .execute({ id: "proc_same" }, { workspaceRoot: secondRoot });
+});
+
 test("native glob grep and durable todo tools operate inside the workspace", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-discovery-"));
   await writeFile(join(root, "needle.ts"), "export const needle = 'found';\n");
