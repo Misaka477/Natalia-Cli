@@ -22,6 +22,15 @@ test("session projector separates completed, active, and unpromoted durable inpu
     sha256: "test",
   });
   appendSessionEvent(session, {
+    type: "tool.update",
+    id: "turn_interrupted:call_1",
+    name: "read_file",
+    callID: "call_1",
+    status: "succeeded",
+    summary: "read",
+    result: "orphaned output",
+  });
+  appendSessionEvent(session, {
     type: "turn.finished",
     id: "turn_done",
     stopReason: "done",
@@ -47,6 +56,12 @@ test("session projector separates completed, active, and unpromoted durable inpu
     projection.replayableEvents.some(
       (event) =>
         event.type === "turn.submitted" && event.id === "turn_interrupted",
+    ),
+  ).toBe(false);
+  expect(
+    projection.replayableEvents.some(
+      (event) =>
+        event.type === "tool.update" && event.id === "turn_interrupted:call_1",
     ),
   ).toBe(false);
 });

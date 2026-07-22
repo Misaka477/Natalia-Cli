@@ -42,10 +42,7 @@ export function projectSession(session: SessionRecord): SessionProjection {
   // A crashed turn may contain partial model/tool state. Keep its durable
   // audit events on disk, but do not feed its input back into a new model turn.
   const replayable = session.events.filter(
-    (event) =>
-      !(event.type === "turn.submitted" && active.has(event.id)) &&
-      !(event.type === "content.delta" && active.has(event.id)) &&
-      !(event.type === "thinking.delta" && active.has(event.id)),
+    (event) => !belongsToInterruptedTurn(event, active),
   );
   return {
     activeTurnIDs: [...active],
@@ -55,6 +52,13 @@ export function projectSession(session: SessionRecord): SessionProjection {
     selectedAgent: selectedAgentFromEvents(replayable),
     selectedModel: selectedModelFromEvents(replayable),
   };
+}
+
+function belongsToInterruptedTurn(event: RuntimeEvent, active: Set<string>) {
+  if (!("id" in event) || typeof event.id !== "string") return false;
+  return [...active].some(
+    (turnID) => event.id === turnID || event.id.startsWith(`${turnID}:`),
+  );
 }
 
 export function selectedModelFromEvents(events: RuntimeEvent[]) {

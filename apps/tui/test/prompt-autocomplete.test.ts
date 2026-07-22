@@ -26,4 +26,7 @@ test("slash autocomplete filters the shared runtime command vocabulary", () => {
   expect(
     slashAutocompleteOptions("/skill-r").map((command) => command.name),
   ).toContain("skill-resource");
+  expect(
+    slashAutocompleteOptions("/edi").map((command) => command.name),
+  ).toContain("editor");
 });

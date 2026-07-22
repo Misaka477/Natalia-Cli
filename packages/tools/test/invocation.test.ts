@@ -27,14 +27,24 @@ const invocation = {
 
 test("materialized tools validate input and preserve invocation identity", async () => {
   const materialized = materializeTools(createToolRegistry([echo()]));
-  expect(materialized.definitions).toMatchObject([{ name: "echo", description: "Echo one string" }]);
-  await expect(materialized.settle(invocation, { workspaceRoot: "/tmp" })).resolves.toEqual({
+  expect(materialized.definitions).toMatchObject([
+    { name: "echo", description: "Echo one string" },
+  ]);
+  await expect(
+    materialized.settle(invocation, { workspaceRoot: "/tmp" }),
+  ).resolves.toEqual({
     status: "succeeded",
     output: "echo:hello",
   });
   await expect(
-    materialized.settle({ ...invocation, arguments: { unexpected: true } }, { workspaceRoot: "/tmp" }),
-  ).resolves.toMatchObject({ status: "failed", error: expect.stringContaining("Invalid tool input") });
+    materialized.settle(
+      { ...invocation, arguments: { unexpected: true } },
+      { workspaceRoot: "/tmp" },
+    ),
+  ).resolves.toMatchObject({
+    status: "failed",
+    error: expect.stringContaining("Invalid tool input"),
+  });
 });
 
 test("materialized tools reject removed and replaced registrations as stale", async () => {
@@ -45,12 +55,16 @@ test("materialized tools reject removed and replaced registrations as stale", as
     status: "stale",
     error: "Stale tool call: echo",
   });
-  await expect(materialized.settle(invocation, { workspaceRoot: "/tmp" })).resolves.toEqual({
+  await expect(
+    materialized.settle(invocation, { workspaceRoot: "/tmp" }),
+  ).resolves.toEqual({
     status: "stale",
     error: "Stale tool call: echo",
   });
   registry.delete("echo");
-  await expect(materialized.settle(invocation, { workspaceRoot: "/tmp" })).resolves.toEqual({
+  await expect(
+    materialized.settle(invocation, { workspaceRoot: "/tmp" }),
+  ).resolves.toEqual({
     status: "stale",
     error: "Stale tool call: echo",
   });
@@ -64,7 +78,9 @@ test("materialized tools report names absent at provider turn creation as unknow
     status: "unknown",
     error: "Unknown tool: echo",
   });
-  await expect(materialized.settle(invocation, { workspaceRoot: "/tmp" })).resolves.toEqual({
+  await expect(
+    materialized.settle(invocation, { workspaceRoot: "/tmp" }),
+  ).resolves.toEqual({
     status: "unknown",
     error: "Unknown tool: echo",
   });

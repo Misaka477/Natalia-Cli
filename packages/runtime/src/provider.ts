@@ -8,6 +8,7 @@ export type ProviderMessage = {
   images?: Array<{ mediaType: "image/png" | "image/jpeg"; dataURL: string }>;
   pdfs?: Array<{ mediaType: "application/pdf"; dataURL: string }>;
   toolCallID?: string;
+  toolName?: string;
   toolCalls?: ProviderToolCall[];
 };
 
@@ -944,7 +945,7 @@ function toGeminiContent(message: ProviderMessage) {
       parts: [
         {
           functionResponse: {
-            name: message.toolCallID,
+            name: message.toolName ?? message.toolCallID,
             response: { content: message.content },
           },
         },

@@ -11,6 +11,7 @@ import { useAppState } from "../context/state";
 import { darkTheme } from "../theme/theme";
 import { useBindings } from "@opentui/keymap/solid";
 import type { RuntimeSessionSummary } from "@natalia/contracts";
+import type { RuntimeDiagnostic } from "@natalia/contracts";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { DialogPrompt } from "./DialogPrompt";
 import { useDialog } from "./provider";
@@ -84,6 +85,83 @@ export function DialogStatus() {
         {state.messages.length}
       </text>
       <text fg={darkTheme.muted}>Escape to close</text>
+    </DialogFrame>
+  );
+}
+
+export function DialogDiagnostics(props: {
+  load(): Promise<RuntimeDiagnostic[]>;
+  copy(text: string): Promise<void> | void;
+}) {
+  const dialog = useDialog();
+  const [items, setItems] = createSignal<RuntimeDiagnostic[]>([]);
+  const [loading, setLoading] = createSignal(false);
+  const [copied, setCopied] = createSignal(false);
+  const report = () =>
+    items()
+      .map((item) => `${item.at} ${item.level.toUpperCase()} ${item.message}`)
+      .join("\n");
+  const refresh = async () => {
+    setLoading(true);
+    try {
+      setItems(await props.load());
+    } finally {
+      setLoading(false);
+    }
+  };
+  const copy = async () => {
+    await props.copy(report());
+    setCopied(true);
+  };
+  createEffect(() => void refresh());
+  useBindings(() => ({
+    mode: "modal",
+    enabled: true,
+    bindings: [
+      {
+        key: "r",
+        desc: "Refresh diagnostics",
+        group: "Dialog",
+        cmd: () => void refresh(),
+      },
+      {
+        key: "return",
+        desc: "Copy diagnostics",
+        group: "Dialog",
+        cmd: () => void copy(),
+      },
+      {
+        key: "escape",
+        desc: "Close diagnostics",
+        group: "Dialog",
+        cmd: () => dialog.pop(),
+      },
+    ],
+  }));
+  return (
+    <DialogFrame title="Runtime Diagnostics" tone="accent">
+      <scrollbox height={16} border={["left"]} borderColor={darkTheme.muted}>
+        <Show
+          when={!loading()}
+          fallback={<text fg={darkTheme.muted}>Loading diagnostics...</text>}
+        >
+          <For
+            each={items()}
+            fallback={<text fg={darkTheme.muted}>No runtime diagnostics</text>}
+          >
+            {(item) => (
+              <text
+                fg={item.level === "error" ? darkTheme.danger : darkTheme.text}
+              >
+                {item.at} {item.level.toUpperCase()} {item.message}
+              </text>
+            )}
+          </For>
+        </Show>
+      </scrollbox>
+      <text fg={darkTheme.muted}>
+        Enter {copied() ? "copied" : "copy"} · R refresh · Escape close
+      </text>
     </DialogFrame>
   );
 }

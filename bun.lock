@@ -25,6 +25,7 @@
         "@natalia/config": "workspace:*",
         "@natalia/contracts": "workspace:*",
         "@natalia/runtime": "workspace:*",
+        "@natalia/session": "workspace:*",
         "@natalia/transport": "workspace:*",
       },
     },
@@ -33,7 +34,10 @@
       "version": "0.0.0-m8",
       "dependencies": {
         "@natalia/client": "workspace:*",
+        "@natalia/config": "workspace:*",
         "@natalia/contracts": "workspace:*",
+        "@natalia/plugin": "workspace:*",
+        "@natalia/session": "workspace:*",
         "@natalia/testing": "workspace:*",
         "@natalia/ui-model": "workspace:*",
         "@opentui/core": "0.4.3",
@@ -42,12 +46,22 @@
         "solid-js": "1.9.12",
       },
     },
+    "packages/agent": {
+      "name": "@natalia/agent",
+      "version": "0.0.0-m8",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+      },
+    },
     "packages/client": {
       "name": "@natalia/client",
       "version": "0.0.0-m8",
       "dependencies": {
+        "@natalia/agent": "workspace:*",
+        "@natalia/config": "workspace:*",
         "@natalia/contracts": "workspace:*",
         "@natalia/mcp": "workspace:*",
+        "@natalia/plugin": "workspace:*",
         "@natalia/pty": "workspace:*",
         "@natalia/runtime": "workspace:*",
         "@natalia/sandbox": "workspace:*",
@@ -57,6 +71,7 @@
         "@natalia/testing": "workspace:*",
         "@natalia/tools": "workspace:*",
         "@natalia/ui-model": "workspace:*",
+        "fuzzysort": "3.1.0",
       },
     },
     "packages/config": {
@@ -80,6 +95,14 @@
       "version": "0.0.0-ts7",
       "dependencies": {
         "@natalia/config": "workspace:*",
+        "@natalia/tools": "workspace:*",
+      },
+    },
+    "packages/plugin": {
+      "name": "@natalia/plugin",
+      "version": "0.0.0-m8",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
     },
@@ -128,6 +151,9 @@
     "packages/skills": {
       "name": "@natalia/skills",
       "version": "0.0.0-ts7",
+      "dependencies": {
+        "@natalia/tools": "workspace:*",
+      },
     },
     "packages/subagent": {
       "name": "@natalia/subagent",
@@ -237,6 +263,8 @@
 
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
 
+    "@natalia/agent": ["@natalia/agent@workspace:packages/agent"],
+
     "@natalia/cli": ["@natalia/cli@workspace:apps/cli"],
 
     "@natalia/client": ["@natalia/client@workspace:packages/client"],
@@ -246,6 +274,8 @@
     "@natalia/contracts": ["@natalia/contracts@workspace:packages/contracts"],
 
     "@natalia/mcp": ["@natalia/mcp@workspace:packages/mcp"],
+
+    "@natalia/plugin": ["@natalia/plugin@workspace:packages/plugin"],
 
     "@natalia/pty": ["@natalia/pty@workspace:packages/pty"],
 
@@ -348,6 +378,8 @@
     "fs.realpath": ["fs.realpath@1.0.0", "", {}, "sha512-OO0pH2lK6a0hZnAdau5ItzHPI6pUlvI7jMVnxUQRtw4owF2wk8lOSabtGDCTP4Ggrg2MbGnWO9X8K1t4+fGMDw=="],
 
     "function-bind": ["function-bind@1.1.2", "", {}, "sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA=="],
+
+    "fuzzysort": ["fuzzysort@3.1.0", "", {}, "sha512-sR9BNCjBg6LNgwvxlBd0sBABvQitkLzoVY9MYYROQVX/FvfJ4Mai9LsGhDgd8qYdds0bY77VzYd5iuB+v5rwQQ=="],
 
     "gensync": ["gensync@1.0.0-beta.2", "", {}, "sha512-3hN7NaskYvMDLQY55gnW3NQ+mesEAepTqlg+VEbj7zzqEMBVNhzcGYYeqFo/TlYz6eQiFcp1HcsCZO+nGgS8zg=="],
 

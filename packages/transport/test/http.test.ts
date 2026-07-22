@@ -208,3 +208,43 @@ test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", as
   );
   server.stop(true);
 });
+
+test("HTTP transport returns JSON-RPC errors for malformed request bodies", async () => {
+  const client: RuntimeClient = {
+    start() {},
+    async submit(text) {
+      return {
+        type: "turn.submitted",
+        id: "turn_invalid",
+        text,
+        byteLength: text.length,
+        lineCount: 1,
+        sha256: "test",
+      };
+    },
+    cancel() {},
+    snapshot: () => ({ type: "snapshot.created", id: "snap", files: [] }),
+    diagnostic() {},
+    lastSubmission: () => undefined,
+    respondApproval() {},
+    respondQuestion() {},
+  };
+  const server = createRuntimeHttpServer({ client });
+  try {
+    for (const body of ["", "null"]) {
+      const response = await fetch(`${server.url}/rpc`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        jsonrpc: "2.0",
+        id: null,
+        error: expect.any(Object),
+      });
+    }
+  } finally {
+    server.stop(true);
+  }
+});

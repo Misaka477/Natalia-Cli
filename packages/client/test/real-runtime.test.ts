@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, test } from "bun:test";
 import { createRealRuntimeClient } from "../src";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type {
   ProviderStreamRequest,
   StreamingProvider,
@@ -11,6 +11,7 @@ import type {
 import { providerError } from "@natalia/runtime";
 import { createToolRegistry } from "@natalia/tools";
 import { resolveConfig } from "@natalia/config";
+import { SqliteSessionStore } from "@natalia/session";
 
 test("real runtime client streams provider output and persists replayable session", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-real-"));
@@ -869,9 +870,10 @@ test("runtime exposes contained workspace filesystem APIs", async () => {
     provider: scriptedProvider("unused"),
   });
   client.start(() => undefined);
-  expect(await client.workspaceList?.()).toEqual([
-    { path: "src/", type: "directory" },
-  ]);
+  expect(await client.workspaceList?.()).toEqual({
+    entries: [{ path: "src/", type: "directory" }],
+    truncated: false,
+  });
   expect(await client.workspaceGlob?.({ pattern: "**/*.ts" })).toEqual([
     { path: "src/main.ts", type: "file" },
   ]);
@@ -885,7 +887,9 @@ test("runtime exposes contained workspace filesystem APIs", async () => {
 });
 
 test("runtime session management uses durable metadata and protects the active session", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-session-management-"));
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-runtime-session-management-"),
+  );
   const activeID = "ses_runtime_session_active" as const;
   const client = createRealRuntimeClient({
     workspaceRoot: root,
@@ -901,7 +905,11 @@ test("runtime session management uses durable metadata and protects the active s
   await client.sessionTouch?.(duplicated!.id);
   expect(await client.sessionList?.()).toEqual(
     expect.arrayContaining([
-      expect.objectContaining({ id: duplicated!.id, title: "Renamed copy", pinned: true }),
+      expect.objectContaining({
+        id: duplicated!.id,
+        title: "Renamed copy",
+        pinned: true,
+      }),
     ]),
   );
   await expect(client.sessionDelete?.(activeID)).rejects.toThrow(
@@ -910,6 +918,68 @@ test("runtime session management uses durable metadata and protects the active s
   expect(await client.sessionDelete?.(duplicated!.id)).toMatchObject({
     id: duplicated!.id,
   });
+});
+
+test("runtime session management keeps SQLite projection synchronized", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-runtime-sqlite-management-"),
+  );
+  const activeID = "ses_runtime_sqlite_active" as const;
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: activeID,
+    provider: scriptedProvider("unused"),
+    useSqliteStore: true,
+  });
+  client.start(() => undefined);
+  await client.submit("active session");
+  await Bun.sleep(20);
+  const duplicated = await client.sessionDuplicate?.(activeID, "Copy");
+  await client.sessionPin?.(duplicated!.id, true);
+  await client.sessionRename?.(duplicated!.id, "Renamed copy");
+  await client.sessionTouch?.(duplicated!.id);
+  const copyID = duplicated!.id as SessionID;
+  const store = new SqliteSessionStore(join(root, ".natalia", "sessions.db"));
+  expect(store.get(copyID)).toMatchObject({
+    title: "Renamed copy",
+    pinned: true,
+  });
+  expect(store.eventCount(copyID)).toBeGreaterThan(0);
+  await client.sessionDelete?.(duplicated!.id);
+  expect(store.get(copyID)).toBeUndefined();
+  expect(store.loadEvents(copyID)).toEqual([]);
+  store.close();
+});
+
+test("runtime rebuilds a missing JSON session from SQLite history", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-sqlite-rebuild-"));
+  const sessionID = "ses_runtime_sqlite_rebuild" as const;
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  const database = new SqliteSessionStore(
+    join(root, ".natalia", "sessions.db"),
+  );
+  database.create(sessionID, "Recovered SQLite session");
+  database.appendEvent(sessionID, {
+    type: "agent.selection",
+    name: "recovered",
+    pending: false,
+  });
+  database.close();
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    provider: scriptedProvider("unused"),
+    useSqliteStore: true,
+  });
+  client.start(() => undefined);
+  await Bun.sleep(30);
+  const sessions = await client.sessionList?.();
+  expect(sessions?.find((item) => item.id === sessionID)).toMatchObject({
+    title: "Recovered SQLite session",
+  });
+  expect(
+    sessions?.find((item) => item.id === sessionID)?.events,
+  ).toBeGreaterThanOrEqual(1);
 });
 
 test("runtime filesystem slash commands use the protected catalog", async () => {
@@ -932,6 +1002,28 @@ test("runtime filesystem slash commands use the protected catalog", async () => 
       .filter((event) => event.type === "content.delta")
       .map((event) => event.text),
   ).toEqual(["src/main.ts", "src/main.ts:1:const needle = true"]);
+});
+
+test("sessions slash command reports durable event counts", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-runtime-sessions-command-"),
+  );
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_runtime_sessions_command",
+    provider: scriptedProvider("unused"),
+    useSqliteStore: true,
+  });
+  client.start((event) => events.push(event));
+  await client.submit("first event");
+  await client.submit("/sessions");
+  const output = events
+    .filter((event) => event.type === "content.delta")
+    .at(-1);
+  expect(output?.type).toBe("content.delta");
+  expect(output?.text).toContain("ses_runtime_sessions_command");
+  expect(output?.text).toMatch(/\s[1-9]\d* events$/u);
 });
 
 test("model slash commands share catalog and durable selection behavior", async () => {
@@ -1367,6 +1459,42 @@ test("agent MCP scope includes only its server prompt and resource tools", async
   expect(names).not.toEqual(
     expect.arrayContaining(["mcp_two_prompt_get", "mcp_two_resource_read"]),
   );
+});
+
+test("runtime persists and lowers structured agent resource mentions", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-mentions-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      agents: { review: { description: "Review" } },
+    }),
+  );
+  const requests: ProviderStreamRequest[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_runtime_mentions",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        requests.push(request);
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.submitInput?.({
+    text: "inspect this",
+    resources: [{ server: "missing", uri: "docs://guide", name: "Guide" }],
+    agents: [{ name: "review" }],
+  });
+  expect(requests).toHaveLength(0);
+  expect(client.lastSubmission?.()).toMatchObject({
+    resources: [{ server: "missing", uri: "docs://guide", name: "Guide" }],
+    agents: [{ name: "review" }],
+  });
 });
 
 test("real runtime client routes checkpoint slash commands to real store", async () => {

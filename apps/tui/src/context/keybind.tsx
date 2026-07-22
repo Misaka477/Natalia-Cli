@@ -1,4 +1,10 @@
-import { createContext, createMemo, createSignal, useContext, type JSX } from "solid-js";
+import {
+  createContext,
+  createMemo,
+  createSignal,
+  useContext,
+  type JSX,
+} from "solid-js";
 import {
   buildKeybindMap,
   type ResolvedKeybindMap,

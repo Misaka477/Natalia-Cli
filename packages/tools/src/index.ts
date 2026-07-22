@@ -122,6 +122,7 @@ export type ManagedProcessInfo = {
   maxOutputBytes?: number;
   stopTimeoutMs?: number;
   maxRuntimeMs?: number;
+  deadlineAt?: string;
 };
 
 export class ManagedProcessRegistry {
@@ -155,7 +156,12 @@ export class ManagedProcessRegistry {
         "-lc",
         `setsid bash -c ${shellQuote(command)} > ${shellQuote(outputPath)} 2>&1 & echo $!`,
       ],
-      { cwd: context.workspaceRoot, stdout: "pipe", stderr: "pipe" },
+      {
+        cwd: context.workspaceRoot,
+        env: safeToolEnv(context.settings?.envAllowlist),
+        stdout: "pipe",
+        stderr: "pipe",
+      },
     );
     const pid = Number((await new Response(launcher.stdout).text()).trim());
     const stderr = await new Response(launcher.stderr).text();
@@ -219,9 +225,13 @@ export class ManagedProcessRegistry {
     await this.load(context);
     const info = this.workspaceProcesses(context).get(id);
     if (!info) throw new Error(`process not found: ${id}`);
-    if (info.status === "running" && info.pid)
-      await stopProcessTree(info.pid, info.stopTimeoutMs ?? 1000);
     this.clearDeadline(this.deadlineKey(context, id));
+    if (info.status === "running" && info.pid)
+      await stopProcessTree(
+        info.pid,
+        info.stopTimeoutMs ?? 1000,
+        info.pidStartTicks,
+      );
     info.status = "stopped";
     info.endedAt = new Date().toISOString();
     await this.save(context);
@@ -345,12 +355,18 @@ export class ManagedProcessRegistry {
     );
   }
 
-  private scheduleDeadline(info: ManagedProcessRuntime, context: ToolExecutionContext) {
+  private scheduleDeadline(
+    info: ManagedProcessRuntime,
+    context: ToolExecutionContext,
+  ) {
     this.clearDeadline(this.deadlineKey(context, info.id));
     if (info.status !== "running" || !info.deadlineAt) return;
     const delay = new Date(info.deadlineAt).getTime() - Date.now();
     if (!Number.isFinite(delay)) return;
-    const timer = setTimeout(() => void this.stop(info.id, context), Math.max(0, delay));
+    const timer = setTimeout(
+      () => void this.stop(info.id, context),
+      Math.max(0, delay),
+    );
     timer.unref();
     this.deadlines.set(this.deadlineKey(context, info.id), timer);
   }
@@ -1105,7 +1121,7 @@ function agentResumeTool(): RuntimeTool {
     "Resume a paused subagent only while its owning runtime remains active.",
     false,
     async (registry, args) =>
-      registry.resume(requireString(args.id, "id"))
+      (await registry.resume(requireString(args.id, "id")))
         ? "resumed"
         : "subagent is not paused",
     true,
@@ -2237,14 +2253,19 @@ function refreshProcessStatus(info: ManagedProcessRuntime) {
   return info;
 }
 
-async function stopProcessTree(pid: number, timeoutMs: number) {
+async function stopProcessTree(
+  pid: number,
+  timeoutMs: number,
+  pidStartTicks?: string,
+) {
+  if (!(await ownsProcess(pid, pidStartTicks))) return;
   sendProcessSignal(pid, "SIGTERM");
   const deadline = Date.now() + Math.max(0, timeoutMs);
   while (Date.now() < deadline) {
-    if (!isProcessRunning(pid)) return;
+    if (!(await ownsProcess(pid, pidStartTicks))) return;
     await Bun.sleep(25);
   }
-  if (isProcessRunning(pid)) sendProcessSignal(pid, "SIGKILL");
+  if (await ownsProcess(pid, pidStartTicks)) sendProcessSignal(pid, "SIGKILL");
 }
 
 function sendProcessSignal(pid: number, signal: NodeJS.Signals) {
@@ -2253,10 +2274,14 @@ function sendProcessSignal(pid: number, signal: NodeJS.Signals) {
     // their owned process group and includes background children.
     if (process.platform !== "win32") process.kill(-pid, signal);
     else process.kill(pid, signal);
-  } catch {
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
     try {
       process.kill(pid, signal);
-    } catch {}
+    } catch (fallbackError) {
+      if ((fallbackError as NodeJS.ErrnoException).code !== "ESRCH")
+        throw fallbackError;
+    }
   }
 }
 
@@ -2267,6 +2292,11 @@ function isProcessRunning(pid: number) {
   } catch {
     return false;
   }
+}
+
+async function ownsProcess(pid: number, pidStartTicks?: string) {
+  if (!pidStartTicks) return isProcessRunning(pid);
+  return (await processFingerprint(pid)).pidStartTicks === pidStartTicks;
 }
 
 async function readOptionalFile(path: string) {
@@ -2326,5 +2356,6 @@ function publicProcessInfo(info: ManagedProcessRuntime): ManagedProcessInfo {
     maxOutputBytes: info.maxOutputBytes,
     stopTimeoutMs: info.stopTimeoutMs,
     maxRuntimeMs: info.maxRuntimeMs,
+    deadlineAt: info.deadlineAt,
   };
 }

@@ -2,6 +2,8 @@ import type { TextareaRenderable } from "@opentui/core";
 import { useBindings } from "@opentui/keymap/solid";
 import {
   runtimeSlashCommands,
+  type MCPResourceCatalog,
+  type RuntimeAgentCatalogEntry,
   type RuntimeWorkspaceFileEntry,
 } from "@natalia/contracts";
 import {
@@ -16,6 +18,12 @@ import {
 import { useModeStack } from "../modal/mode-stack";
 import { useKeybinds } from "../context/keybind";
 import { darkTheme } from "../theme/theme";
+
+type AutocompleteOption =
+  | { kind: "slash"; command: (typeof runtimeSlashCommands)[number] }
+  | { kind: "mention"; file: RuntimeWorkspaceFileEntry }
+  | { kind: "agent"; agent: RuntimeAgentCatalogEntry }
+  | { kind: "resource"; resource: MCPResourceCatalog };
 
 export function slashAutocompleteQuery(text: string) {
   if (!/^\/\S*$/u.test(text)) return undefined;
@@ -43,7 +51,11 @@ export function PromptAutocomplete(props: {
     query?: string;
     limit?: number;
   }): Promise<RuntimeWorkspaceFileEntry[]>;
+  agents?(): Promise<RuntimeAgentCatalogEntry[]>;
+  mcpCatalog?(): Promise<{ resources: MCPResourceCatalog[] }>;
   attach(path: string): void;
+  mentionAgent(name: string): void;
+  mentionResource(resource: MCPResourceCatalog): void;
 }) {
   const modeStack = useModeStack();
   const keybinds = useKeybinds();
@@ -57,13 +69,44 @@ export function PromptAutocomplete(props: {
       (entry) => entry.type === "file",
     );
   });
-  const options = createMemo(() =>
+  const [agents] = createResource(mentionQuery, async (query) => {
+    if (query === undefined || !props.agents) return [];
+    return (await props.agents()).filter(
+      (agent) =>
+        !agent.hidden &&
+        agent.mode !== "primary" &&
+        (agent.name.toLowerCase().includes(query) ||
+          agent.description.toLowerCase().includes(query)),
+    );
+  });
+  const [resources] = createResource(mentionQuery, async (query) => {
+    if (query === undefined || !props.mcpCatalog) return [];
+    return (await props.mcpCatalog()).resources.filter(
+      (resource) =>
+        resource.name.toLowerCase().includes(query) ||
+        resource.uri.toLowerCase().includes(query),
+    );
+  });
+  const options = createMemo<AutocompleteOption[]>(() =>
     slashQuery() !== undefined
       ? slashAutocompleteOptions(props.text()).map((command) => ({
           kind: "slash" as const,
           command,
         }))
-      : (files() ?? []).map((file) => ({ kind: "mention" as const, file })),
+      : [
+          ...(agents() ?? []).map((agent) => ({
+            kind: "agent" as const,
+            agent,
+          })),
+          ...(files() ?? []).map((file) => ({
+            kind: "mention" as const,
+            file,
+          })),
+          ...(resources() ?? []).map((resource) => ({
+            kind: "resource" as const,
+            resource,
+          })),
+        ],
   );
   const visible = createMemo(
     () =>
@@ -80,6 +123,9 @@ export function PromptAutocomplete(props: {
     options();
     setSelected(0);
   });
+  createEffect(() => {
+    if (!props.text()) setDismissed();
+  });
 
   function move(direction: -1 | 1) {
     const items = options();
@@ -89,6 +135,20 @@ export function PromptAutocomplete(props: {
     );
   }
 
+  function mentionLabel(item: AutocompleteOption) {
+    if (item.kind === "mention") return `@${item.file.path}`;
+    if (item.kind === "agent") return `@${item.agent.name}`;
+    if (item.kind === "resource") return `@${item.resource.name}`;
+    return `/${item.command.name}`;
+  }
+
+  function optionDescription(item: AutocompleteOption) {
+    if (item.kind === "slash") return item.command.description;
+    if (item.kind === "mention") return "workspace file";
+    if (item.kind === "agent") return item.agent.description || "agent";
+    return item.resource.uri;
+  }
+
   function select() {
     const item = options()[selected()];
     const input = props.input();
@@ -96,9 +156,16 @@ export function PromptAutocomplete(props: {
     const text =
       item.kind === "slash"
         ? `/${item.command.name}${item.command.acceptsArguments ? " " : ""}`
-        : props.text().replace(/@(\S*)$/u, `@${item.file.path} `);
+        : props
+            .text()
+            .replace(
+              /@(\S*)$/u,
+              `@${item.kind === "mention" ? item.file.path : item.kind === "agent" ? item.agent.name : item.resource.name} `,
+            );
     setDismissed(text);
     if (item.kind === "mention") props.attach(item.file.path);
+    if (item.kind === "agent") props.mentionAgent(item.agent.name);
+    if (item.kind === "resource") props.mentionResource(item.resource);
     input.setText(text);
     input.gotoBufferEnd();
   }
@@ -135,7 +202,7 @@ export function PromptAutocomplete(props: {
           key,
           desc: "Hide completions",
           group: "Autocomplete",
-          cmd: () => props.input()?.clear(),
+          cmd: () => setDismissed(props.text()),
         })),
     ],
   }));
@@ -164,13 +231,9 @@ export function PromptAutocomplete(props: {
                   index() === selected() ? darkTheme.background : darkTheme.text
                 }
               >
-                {item.kind === "slash"
-                  ? `/${item.command.name}`
-                  : `@${item.file.path}`}{" "}
+                {mentionLabel(item)}{" "}
                 <span style={{ fg: darkTheme.muted }}>
-                  {item.kind === "slash"
-                    ? item.command.description
-                    : "workspace file"}
+                  {optionDescription(item)}
                 </span>
               </text>
             </box>

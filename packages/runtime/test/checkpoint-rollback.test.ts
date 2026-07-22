@@ -152,6 +152,47 @@ test("manifest tracks modify delete rename mode symlink and reuses objects", asy
   expect(new Set(hashes).size).toBe(hashes.length);
 });
 
+test("concurrent checkpoint creation assigns unique durable sequences", async () => {
+  const root = await tempWorkspace();
+  const ledger = new ContextLedger();
+  const store = await CheckpointStore.open({
+    sessionID: "ses_checkpoint_concurrent",
+    workspaceRoot: root,
+  });
+  const records = await Promise.all(
+    [1, 2, 3].map((step) =>
+      store.createCheckpoint({ reason: "manual", context: ledger, step }),
+    ),
+  );
+  expect(records.map((record) => record.sequence)).toEqual([0, 1, 2]);
+  expect((await store.list()).map((record) => record.id)).toEqual([
+    "checkpoint_0",
+    "checkpoint_1",
+    "checkpoint_2",
+  ]);
+});
+
+test("rollback refuses to mutate when its safety checkpoint is incomplete", async () => {
+  const root = await tempWorkspace();
+  const ledger = new ContextLedger();
+  const store = await CheckpointStore.open({
+    sessionID: "ses_checkpoint_safety",
+    workspaceRoot: root,
+    maxFiles: 1,
+  });
+  await store.createCheckpoint({
+    reason: "baseline",
+    context: ledger,
+    step: 0,
+  });
+  await writeFile(join(root, "first.txt"), "first\n");
+  await writeFile(join(root, "second.txt"), "second\n");
+  await expect(
+    store.rollbackTo("checkpoint_0", { context: ledger }),
+  ).rejects.toThrow("rollback safety checkpoint is incomplete");
+  expect(await readFile(join(root, "second.txt"), "utf8")).toBe("second\n");
+});
+
 test("incomplete checkpoint and ignored files are visible and guarded", async () => {
   const root = await tempWorkspace();
   const ledger = new ContextLedger();

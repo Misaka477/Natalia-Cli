@@ -40,22 +40,28 @@ function optionsGuard<T>(
 }
 
 export async function handleRPCMessage(
-  body: RPCRequest,
+  raw: unknown,
   client: RuntimeClient,
 ): Promise<RPCResponse> {
+  const request =
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw as RPCRequest)
+      : undefined;
   try {
-    if (body.method === "prompt") {
-      const text = body.params?.text;
+    if (!request) throw new Error("Invalid Request");
+    const body = request;
+    if (request.method === "prompt") {
+      const text = request.params?.text;
       if (typeof text !== "string")
         throw new Error("prompt.params.text must be a string");
-      const delivery = body.params?.delivery;
+      const delivery = request.params?.delivery;
       if (
         delivery !== undefined &&
         delivery !== "steer" &&
         delivery !== "queue"
       )
         throw new Error("prompt.params.delivery must be steer or queue");
-      const attachments = body.params?.attachments;
+      const attachments = request.params?.attachments;
       if (
         attachments !== undefined &&
         (!Array.isArray(attachments) ||
@@ -64,27 +70,60 @@ export async function handleRPCMessage(
         throw new Error(
           "prompt.params.attachments must be an array of strings",
         );
+      const resources = request.params?.resources;
+      if (
+        resources !== undefined &&
+        (!Array.isArray(resources) ||
+          !resources.every(
+            (resource) =>
+              resource &&
+              typeof resource === "object" &&
+              typeof (resource as Record<string, unknown>).server ===
+                "string" &&
+              typeof (resource as Record<string, unknown>).uri === "string" &&
+              typeof (resource as Record<string, unknown>).name === "string",
+          ))
+      )
+        throw new Error("prompt.params.resources must be resource mentions");
+      const agents = request.params?.agents;
+      if (
+        agents !== undefined &&
+        (!Array.isArray(agents) ||
+          !agents.every(
+            (agent) =>
+              agent &&
+              typeof agent === "object" &&
+              typeof (agent as Record<string, unknown>).name === "string",
+          ))
+      )
+        throw new Error("prompt.params.agents must be agent mentions");
       return {
         jsonrpc: "2.0",
-        id: body.id ?? null,
+        id: request.id ?? null,
         result: client.submitInput
           ? await client.submitInput({
               text,
               delivery,
               attachments: attachments as string[] | undefined,
+              resources: resources as
+                | import("@natalia/contracts").PromptResourceMention[]
+                | undefined,
+              agents: agents as
+                | import("@natalia/contracts").PromptAgentMention[]
+                | undefined,
             })
           : await client.submit(text),
       };
     }
-    if (body.method === "cancel") {
+    if (request.method === "cancel") {
       client.cancel(
-        typeof body.params?.reason === "string"
-          ? body.params.reason
+        typeof request.params?.reason === "string"
+          ? request.params.reason
           : undefined,
       );
       return {
         jsonrpc: "2.0",
-        id: body.id ?? null,
+        id: request.id ?? null,
         result: { cancelled: true },
       };
     }
@@ -120,6 +159,14 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: { selected: name ?? null },
+      };
+    }
+    if (body.method === "agent.list") {
+      optionsGuard(client.agents, "agent.list");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.agents(),
       };
     }
     if (body.method === "model.catalog") {
@@ -164,9 +211,14 @@ export async function handleRPCMessage(
     if (body.method === "workspace.files") {
       optionsGuard(client.workspaceFiles, "workspace.files");
       const query = body.params?.query;
+      const type = body.params?.type;
       const limit = body.params?.limit;
       if (query !== undefined && typeof query !== "string")
         throw new Error("workspace.files.params.query must be a string");
+      if (type !== undefined && type !== "file" && type !== "directory")
+        throw new Error(
+          "workspace.files.params.type must be file or directory",
+        );
       if (
         limit !== undefined &&
         (typeof limit !== "number" ||
@@ -182,6 +234,7 @@ export async function handleRPCMessage(
         id: body.id ?? null,
         result: await client.workspaceFiles({
           query: typeof query === "string" ? query : undefined,
+          type: type as "file" | "directory" | undefined,
           limit: typeof limit === "number" ? limit : undefined,
         }),
       };
@@ -216,23 +269,65 @@ export async function handleRPCMessage(
     if (body.method === "workspace.list") {
       optionsGuard(client.workspaceList, "workspace.list");
       const path = body.params?.path;
+      const offset = body.params?.offset;
+      const limit = body.params?.limit;
       if (path !== undefined && typeof path !== "string")
         throw new Error("workspace.list.params.path must be a string");
+      if (
+        offset !== undefined &&
+        (typeof offset !== "number" || !Number.isInteger(offset) || offset < 1)
+      )
+        throw new Error(
+          "workspace.list.params.offset must be a positive integer",
+        );
+      if (
+        limit !== undefined &&
+        (typeof limit !== "number" ||
+          !Number.isInteger(limit) ||
+          limit < 1 ||
+          limit > 200)
+      )
+        throw new Error(
+          "workspace.list.params.limit must be an integer between 1 and 200",
+        );
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.workspaceList({
           path: typeof path === "string" ? path : undefined,
+          offset: typeof offset === "number" ? offset : undefined,
+          limit: typeof limit === "number" ? limit : undefined,
         }),
       };
     }
     if (body.method === "workspace.read") {
       optionsGuard(client.workspaceRead, "workspace.read");
+      const offset = body.params?.offset;
+      const limit = body.params?.limit;
+      if (
+        offset !== undefined &&
+        (typeof offset !== "number" || !Number.isInteger(offset) || offset < 1)
+      )
+        throw new Error(
+          "workspace.read.params.offset must be a positive integer",
+        );
+      if (
+        limit !== undefined &&
+        (typeof limit !== "number" ||
+          !Number.isInteger(limit) ||
+          limit < 1 ||
+          limit > 2000)
+      )
+        throw new Error(
+          "workspace.read.params.limit must be an integer between 1 and 2000",
+        );
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.workspaceRead({
           path: stringParam(body.params, "path"),
+          offset: typeof offset === "number" ? offset : undefined,
+          limit: typeof limit === "number" ? limit : undefined,
         }),
       };
     }
@@ -339,7 +434,11 @@ export async function handleRPCMessage(
     }
     if (body.method === "session.list") {
       optionsGuard(client.sessionList, "session.list");
-      return { jsonrpc: "2.0", id: body.id ?? null, result: await client.sessionList() };
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.sessionList(),
+      };
     }
     if (body.method === "session.touch") {
       optionsGuard(client.sessionTouch, "session.touch");
@@ -364,7 +463,10 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.sessionPin(stringParam(body.params, "id"), body.params.pinned),
+        result: await client.sessionPin(
+          stringParam(body.params, "id"),
+          body.params.pinned,
+        ),
       };
     }
     if (body.method === "session.duplicate") {
@@ -469,7 +571,7 @@ export async function handleRPCMessage(
   } catch (error) {
     return {
       jsonrpc: "2.0",
-      id: body.id ?? null,
+      id: request?.id ?? null,
       error: {
         code: -32602,
         message: error instanceof Error ? error.message : String(error),

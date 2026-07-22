@@ -60,6 +60,7 @@ export class StdioMCPClient {
     { resolve(value: unknown): void; reject(error: Error): void }
   >();
   private readonly toolChangeHandlers = new Set<() => void | Promise<void>>();
+  private closed = false;
 
   private constructor(process: ReturnType<typeof Bun.spawn>) {
     this.process = process;
@@ -67,6 +68,7 @@ export class StdioMCPClient {
       throw new Error("MCP process stdin is not writable");
     this.stdin = process.stdin;
     void this.readLoop();
+    void this.drainStderr();
   }
 
   static async connect(options: StdioMCPClientOptions) {
@@ -150,6 +152,7 @@ export class StdioMCPClient {
   }
 
   async close() {
+    this.failPending(new Error("MCP server closed"));
     this.stdin.end();
     this.process.kill("SIGTERM");
   }
@@ -183,33 +186,45 @@ export class StdioMCPClient {
   }
 
   private async readLoop() {
-    const stdout = this.process.stdout;
-    if (!stdout || typeof stdout === "number")
-      throw new Error("MCP process stdout is not readable");
-    const reader = stdout.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    while (true) {
-      const next = await reader.read();
-      if (next.done) break;
-      buffer += decoder.decode(next.value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) this.handleLine(line);
+    try {
+      const stdout = this.process.stdout;
+      if (!stdout || typeof stdout === "number")
+        throw new Error("MCP process stdout is not readable");
+      const reader = stdout.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const next = await reader.read();
+        if (next.done) break;
+        buffer += decoder.decode(next.value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) this.handleLine(line);
+      }
+      if (buffer.trim()) this.handleLine(buffer);
+      this.failPending(new Error("MCP server closed"));
+    } catch (error) {
+      this.failPending(
+        error instanceof Error ? error : new Error(String(error)),
+      );
     }
-    for (const pending of this.pending.values())
-      pending.reject(new Error("MCP server closed"));
-    this.pending.clear();
   }
 
   private handleLine(line: string) {
     if (!line.trim()) return;
-    const message = JSON.parse(line) as {
+    let message: {
       id?: number;
       method?: string;
       result?: unknown;
       error?: { message?: string };
     };
+    try {
+      message = JSON.parse(line) as typeof message;
+    } catch {
+      this.failPending(new Error("MCP server sent malformed JSON-RPC message"));
+      void this.close();
+      return;
+    }
     if (message.method === "notifications/tools/list_changed") {
       for (const handler of this.toolChangeHandlers) void handler();
       return;
@@ -221,6 +236,26 @@ export class StdioMCPClient {
     if (message.error)
       pending.reject(new Error(message.error.message ?? "MCP error"));
     else pending.resolve(message.result);
+  }
+
+  private async drainStderr() {
+    const stderr = this.process.stderr;
+    if (!stderr || typeof stderr === "number") return;
+    const reader = stderr.getReader();
+    try {
+      while (!(await reader.read()).done) {
+        // Consume diagnostics so server-side stderr cannot backpressure stdout.
+      }
+    } catch {
+      // stdout lifecycle owns the externally visible failure.
+    }
+  }
+
+  private failPending(error: Error) {
+    if (this.closed) return;
+    this.closed = true;
+    for (const pending of this.pending.values()) pending.reject(error);
+    this.pending.clear();
   }
 }
 
@@ -239,6 +274,7 @@ export class HttpMCPClient {
       capabilities: {},
       clientInfo: { name: "natalia-ts", version: "0.0.0-ts7" },
     });
+    await client.notify("notifications/initialized", {});
     return client;
   }
 
@@ -304,6 +340,26 @@ export class HttpMCPClient {
     if (message.error)
       throw new Error(message.error.message ?? "MCP HTTP error");
     return message.result;
+  }
+
+  private async notify(method: string, params: Record<string, unknown>) {
+    const response = await this.fetchImpl(this.options.url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...this.options.headers,
+        ...(this.options.token
+          ? { authorization: `Bearer ${this.options.token}` }
+          : {}),
+      },
+      signal:
+        this.options.timeoutMs === undefined
+          ? undefined
+          : AbortSignal.timeout(this.options.timeoutMs),
+      body: JSON.stringify({ jsonrpc: "2.0", method, params }),
+    });
+    if (!response.ok)
+      throw new Error(`MCP HTTP notification failed: ${response.status}`);
   }
 }
 

@@ -98,7 +98,7 @@ export type DurableContextCheckpointRecord = {
     tokens: number;
     inputTokens?: number;
     outputTokens?: number;
-    source: "provider_usage";
+    source: "provider_usage" | "estimate";
   };
   resources: Array<{
     kind:
@@ -186,6 +186,8 @@ export type RuntimeEvent =
       lineCount: number;
       sha256: string;
       attachments?: LocalAttachment[];
+      resources?: PromptResourceMention[];
+      agents?: PromptAgentMention[];
     }
   | { type: "turn.cancelled"; id: string; reason: string }
   | { type: "turn.paused"; id: string; reason: string }
@@ -569,11 +571,20 @@ export type LocalAttachment = {
   byteLength: number;
   sha256: string;
 };
+export type PromptResourceMention = {
+  server: string;
+  uri: string;
+  name: string;
+  mimeType?: string;
+};
+export type PromptAgentMention = { name: string };
 export type SubmitInput = {
   text: string;
   delivery?: "steer" | "queue";
   id?: string;
   attachments?: string[];
+  resources?: PromptResourceMention[];
+  agents?: PromptAgentMention[];
 };
 export type RuntimeHistoryEvent = { seq: number; event: RuntimeEvent };
 export type RuntimeHistory = {
@@ -633,6 +644,12 @@ export type RuntimeModelSelection = {
   modelID?: string;
   variant?: string;
 };
+export type RuntimeAgentCatalogEntry = {
+  name: string;
+  description: string;
+  mode: "primary" | "subagent" | "all";
+  hidden: boolean;
+};
 export type RuntimeSkillCatalogEntry = {
   name: string;
   qualifiedName: string;
@@ -650,6 +667,11 @@ export type RuntimeWorkspaceFileEntry = {
   path: string;
   type: "file" | "directory";
 };
+export type RuntimeWorkspaceListPage = {
+  entries: RuntimeWorkspaceFileEntry[];
+  truncated: boolean;
+  next?: number;
+};
 export type RuntimeWorkspaceMatch = {
   path: string;
   line: number;
@@ -660,6 +682,9 @@ export type RuntimeWorkspaceContent = {
   content: string;
   encoding: "utf8" | "base64";
   mime: string;
+  offset?: number;
+  truncated?: boolean;
+  next?: number;
 };
 export type RuntimeSessionSummary = {
   id: string;
@@ -722,6 +747,11 @@ export const runtimeSlashCommands: RuntimeSlashCommand[] = [
     description: "Submit a workspace attachment",
     acceptsArguments: true,
   },
+  {
+    name: "editor",
+    description: "Open the composer draft in an external editor",
+    acceptsArguments: true,
+  },
   { name: "checkpoint", description: "Create a workspace checkpoint" },
   { name: "checkpoints", description: "List workspace checkpoints" },
   {
@@ -769,12 +799,14 @@ export type RuntimeClient = {
   pause?(reason?: string): void;
   resume?(): void;
   selectAgent?(name?: string): void;
+  agents?(): Promise<RuntimeAgentCatalogEntry[]>;
   modelCatalog?(): Promise<RuntimeModelCatalogEntry[]>;
   modelSelection?(): Promise<RuntimeModelSelection>;
   selectModel?(modelID?: string, variant?: string): Promise<void>;
   skills?(): Promise<RuntimeSkillCatalogEntry[]>;
   workspaceFiles?(input?: {
     query?: string;
+    type?: "file" | "directory";
     limit?: number;
   }): Promise<RuntimeWorkspaceFileEntry[]>;
   workspaceSearch?(input: {
@@ -784,8 +816,14 @@ export type RuntimeClient = {
   }): Promise<RuntimeWorkspaceMatch[]>;
   workspaceList?(input?: {
     path?: string;
-  }): Promise<RuntimeWorkspaceFileEntry[]>;
-  workspaceRead?(input: { path: string }): Promise<RuntimeWorkspaceContent>;
+    offset?: number;
+    limit?: number;
+  }): Promise<RuntimeWorkspaceListPage>;
+  workspaceRead?(input: {
+    path: string;
+    offset?: number;
+    limit?: number;
+  }): Promise<RuntimeWorkspaceContent>;
   workspaceGlob?(input: {
     pattern: string;
     path?: string;
@@ -796,7 +834,9 @@ export type RuntimeClient = {
   sessionRename?(id: string, title: string): Promise<RuntimeSessionSummary>;
   sessionPin?(id: string, pinned: boolean): Promise<RuntimeSessionSummary>;
   sessionDuplicate?(id: string, title?: string): Promise<RuntimeSessionSummary>;
-  sessionDelete?(id: string): Promise<{ id: string; removedAttachments: number }>;
+  sessionDelete?(
+    id: string,
+  ): Promise<{ id: string; removedAttachments: number }>;
   mcpCatalog?(): Promise<MCPCatalogSnapshot>;
   getMcpPrompt?(
     server: string,

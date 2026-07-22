@@ -132,6 +132,10 @@ test("interactive PTY sensitive input is redacted and audited", async () => {
     action: "write",
     summary: expect.stringContaining("redacted"),
   });
+  await Bun.sleep(50);
+  expect(
+    await Bun.file(join(root, ".natalia", "pty", `${started.id}.log`)).text(),
+  ).not.toContain("super-secret");
   await registry.stop(started.id);
 });
 

@@ -36,6 +36,7 @@ import { DialogPrompt } from "../dialog/DialogPrompt";
 import { DialogSelect, type DialogSelectOption } from "../dialog/DialogSelect";
 import {
   DialogHelp,
+  DialogDiagnostics,
   DialogSessionList,
   DialogStatus,
 } from "../dialog/DialogLayer";
@@ -48,6 +49,10 @@ import { DialogStash } from "../component/DialogStash";
 import { DialogAttachment } from "../component/DialogAttachment";
 import { DialogWorkspaceSearch } from "../component/DialogWorkspaceSearch";
 import { PromptAutocomplete } from "../component/PromptAutocomplete";
+import {
+  editPromptExternally,
+  retainEditorMentions,
+} from "../prompt/external-editor";
 import { DialogAgent } from "../component/DialogAgent";
 import { resolveConfig, updateConfig } from "@natalia/config";
 import { discoverProviderModels } from "@natalia/config";
@@ -128,6 +133,10 @@ function Shell(props: {
   const [composer, setComposer] = createSignal<TextareaRenderable>();
   const [pastePreview, setPastePreview] = createSignal("");
   const [attachmentPaths, setAttachmentPaths] = createSignal<string[]>([]);
+  const [mentionAgents, setMentionAgents] = createSignal<string[]>([]);
+  const [mentionResources, setMentionResources] = createSignal<
+    import("@natalia/contracts").MCPResourceCatalog[]
+  >([]);
   const [composerText, setComposerText] = createSignal("");
   const [followBottom, setFollowBottom] = createSignal(true);
   const [jumpToBottomVisible, setJumpToBottomVisible] = createSignal(false);
@@ -226,6 +235,30 @@ function Shell(props: {
     const text = (input?.plainText ?? "").replace(/\n$/, "");
     if (!text.trim()) return;
     const control = text.trim();
+    if (control === "/editor" || control.startsWith("/editor ")) {
+      const draft = control === "/editor" ? "" : text.slice("/editor ".length);
+      try {
+        const edited = await editPromptExternally({
+          text: draft,
+          env: process.env,
+        });
+        input?.setText(edited);
+        setComposerText(edited);
+        const mentions = retainEditorMentions({
+          text: edited,
+          attachments: attachmentPaths(),
+          agents: mentionAgents(),
+          resources: mentionResources(),
+        });
+        setAttachmentPaths(mentions.attachments);
+        setMentionAgents(mentions.agents);
+        setMentionResources(mentions.resources);
+        input?.gotoBufferEnd();
+      } catch (error) {
+        toast.error(error);
+      }
+      return;
+    }
     if (submitting && control !== "/pause" && control !== "/resume") return;
     if (control === "/pause") {
       input?.clear();
@@ -240,7 +273,12 @@ function Shell(props: {
       return;
     }
     const attachments = attachmentPaths();
-    if (attachments.length && !props.backend.submitInput) {
+    if (
+      (attachments.length ||
+        mentionAgents().length ||
+        mentionResources().length) &&
+      !props.backend.submitInput
+    ) {
       toast.show({
         variant: "warning",
         message: "This runtime transport does not support attachments",
@@ -255,10 +293,26 @@ function Shell(props: {
       input?.clear();
       setPastePreview("");
       history.add(text);
-      if (attachments.length)
-        await props.backend.submitInput!({ text, attachments });
+      if (
+        attachments.length ||
+        mentionAgents().length ||
+        mentionResources().length
+      )
+        await props.backend.submitInput!({
+          text,
+          attachments,
+          agents: mentionAgents().map((name) => ({ name })),
+          resources: mentionResources().map((resource) => ({
+            server: resource.server,
+            uri: resource.uri,
+            name: resource.name,
+            mimeType: resource.mimeType,
+          })),
+        });
       else await props.backend.submit(text);
       setAttachmentPaths([]);
+      setMentionAgents([]);
+      setMentionResources([]);
     } finally {
       submitting = false;
       if (followBottom()) toBottom(50);
@@ -346,10 +400,7 @@ function Shell(props: {
         delete: props.backend.sessionDelete,
       };
       dialog.push(() => (
-        <DialogSessionList
-          backend={sessionBackend}
-          onSelect={changeSession}
-        />
+        <DialogSessionList backend={sessionBackend} onSelect={changeSession} />
       ));
       return;
     }
@@ -1440,6 +1491,22 @@ function Shell(props: {
       dialog.push(() => <DialogStatus />);
       return;
     }
+    if (command === "diagnostics") {
+      if (!props.backend.diagnostics) {
+        toast.show({
+          variant: "warning",
+          message: "Runtime diagnostics unavailable",
+        });
+        return;
+      }
+      dialog.push(() => (
+        <DialogDiagnostics
+          load={() => props.backend.diagnostics!()}
+          copy={(text) => clipboard.write?.(text) ?? Promise.resolve()}
+        />
+      ));
+      return;
+    }
     if (command === "help.open") {
       dialog.push(() => <DialogHelp onClose={() => dialog.pop()} />);
       return;
@@ -1894,9 +1961,27 @@ function Shell(props: {
               input={composer}
               text={composerText}
               workspaceFiles={props.backend.workspaceFiles}
+              agents={props.backend.agents}
+              mcpCatalog={props.backend.mcpCatalog}
               attach={(path) =>
                 setAttachmentPaths((current) =>
                   current.includes(path) ? current : [...current, path],
+                )
+              }
+              mentionAgent={(name) =>
+                setMentionAgents((current) =>
+                  current.includes(name) ? current : [...current, name],
+                )
+              }
+              mentionResource={(resource) =>
+                setMentionResources((current) =>
+                  current.some(
+                    (item) =>
+                      item.server === resource.server &&
+                      item.uri === resource.uri,
+                  )
+                    ? current
+                    : [...current, resource],
                 )
               }
             />
@@ -1970,7 +2055,7 @@ function CommandPalette() {
   const entries = useKeymapSelector((current) => {
     const commands = current.getCommandEntries({
       namespace: "palette",
-      visibility: "reachable",
+      visibility: "registered",
       filter: (command) =>
         command.name !== "palette.toggle" && !definitions[command.name]?.scope,
     });
@@ -2010,6 +2095,15 @@ function CommandPalette() {
             keymap.dispatchCommand(entry.command.name);
           },
         })),
+        {
+          title: "Runtime diagnostics",
+          description: "View and copy runtime diagnostics",
+          value: "diagnostics",
+          category: "runtime",
+          onSelect: (_dialog: DialogContext) => {
+            void runCommand("diagnostics");
+          },
+        },
         ...getPluginCommands().map((cmd) => ({
           title: cmd.title,
           description: cmd.category ? `plugin · ${cmd.category}` : "plugin",

@@ -337,6 +337,9 @@ switch (subcommand) {
           pattern: action === "glob" ? positional[0] : undefined,
           query: action === "search" ? positional[0] : undefined,
           include: valueAfter(argv, "--include"),
+          offset: valueAfter(argv, "--offset")
+            ? Number(valueAfter(argv, "--offset"))
+            : undefined,
           limit: valueAfter(argv, "--limit")
             ? Number(valueAfter(argv, "--limit"))
             : undefined,

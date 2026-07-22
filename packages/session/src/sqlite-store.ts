@@ -1,7 +1,12 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { Database } from "bun:sqlite";
-import type { DurableContextCheckpointRecord, RuntimeEvent, SessionID } from "@natalia/contracts";
+import type {
+  DurableContextCheckpointRecord,
+  RuntimeEvent,
+  SessionID,
+} from "@natalia/contracts";
+import type { SessionRecord } from "./index";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS sessions (
@@ -52,6 +57,7 @@ export class SqliteSessionStore {
 
   constructor(path: string) {
     this.db = new Database(path);
+    this.db.exec("PRAGMA foreign_keys=ON");
     this.db.exec("PRAGMA journal_mode=WAL");
     this.db.exec("PRAGMA synchronous=NORMAL");
     this.db.exec(SCHEMA);
@@ -86,7 +92,9 @@ export class SqliteSessionStore {
   list(): SessionRow[] {
     const rows = this.db
       .query(
-        `SELECT id, title, created_at, cancelled, resumable, pinned, metadata FROM sessions ORDER BY pinned DESC, created_at DESC`,
+        `SELECT id, title, created_at, cancelled, resumable, pinned, metadata
+         FROM sessions
+         ORDER BY pinned DESC, json_extract(metadata, '$.lastAccessedAt') DESC, created_at DESC`,
       )
       .all() as Record<string, unknown>[];
     return rows.map(rowToSession);
@@ -99,41 +107,70 @@ export class SqliteSessionStore {
   }
 
   delete(id: SessionID) {
-    this.run(`DELETE FROM context_epochs WHERE session_id = ?`, [id]);
-    this.run(`DELETE FROM events WHERE session_id = ?`, [id]);
-    this.run(`DELETE FROM sessions WHERE id = ?`, [id]);
+    this.db.transaction(() => {
+      this.run(`DELETE FROM context_epochs WHERE session_id = ?`, [id]);
+      this.run(`DELETE FROM events WHERE session_id = ?`, [id]);
+      this.run(`DELETE FROM sessions WHERE id = ?`, [id]);
+    })();
   }
 
   updateMetadata(id: SessionID, partial: Partial<SessionRow["metadata"]>) {
     const session = this.get(id);
     if (!session) throw new Error(`session not found: ${id}`);
     const next = { ...session.metadata, ...partial };
-    this.run(`UPDATE sessions SET metadata = ? WHERE id = ?`, [
+    this.run(`UPDATE sessions SET metadata = ?, pinned = ? WHERE id = ?`, [
       JSON.stringify(next),
+      next.pinned === true ? 1 : 0,
       id,
     ]);
   }
 
-  appendEvent(sessionID: SessionID, event: RuntimeEvent) {
-    const inserted = this.db.prepare(`INSERT INTO events(session_id, event) VALUES (?, ?)`).run(
-      sessionID,
-      JSON.stringify(event),
-    );
-    if (event.type === "context.checkpoint")
+  replace(session: SessionRecord) {
+    const write = this.db.transaction(() => {
+      this.run(`DELETE FROM context_epochs WHERE session_id = ?`, [session.id]);
+      this.run(`DELETE FROM events WHERE session_id = ?`, [session.id]);
+      this.run(`DELETE FROM sessions WHERE id = ?`, [session.id]);
       this.run(
-        `INSERT INTO context_epochs(session_id, baseline_seq, snapshot) VALUES (?, ?, ?)
-         ON CONFLICT(session_id) DO UPDATE SET baseline_seq = excluded.baseline_seq, snapshot = excluded.snapshot`,
-        [sessionID, Number(inserted.lastInsertRowid), JSON.stringify(event.snapshot)],
+        `INSERT INTO sessions(id, title, created_at, cancelled, resumable, pinned, metadata)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          session.id,
+          session.title,
+          session.createdAt,
+          session.cancelled ? 1 : 0,
+          session.resumable ? 1 : 0,
+          session.metadata?.pinned === true ? 1 : 0,
+          JSON.stringify(session.metadata ?? {}),
+        ],
       );
-    if (event.type === "session.created") {
-      this.run(`UPDATE sessions SET title = ? WHERE id = ?`, [
-        event.title,
-        sessionID,
-      ]);
-    }
-    if (event.type === "turn.cancelled") {
-      this.run(`UPDATE sessions SET cancelled = 1 WHERE id = ?`, [sessionID]);
-    }
+      for (const event of session.events) this.appendEvent(session.id, event);
+    });
+    write();
+  }
+
+  appendEvent(sessionID: SessionID, event: RuntimeEvent) {
+    this.db.transaction(() => {
+      const inserted = this.db
+        .prepare(`INSERT INTO events(session_id, event) VALUES (?, ?)`)
+        .run(sessionID, JSON.stringify(event));
+      if (event.type === "context.checkpoint")
+        this.run(
+          `INSERT INTO context_epochs(session_id, baseline_seq, snapshot) VALUES (?, ?, ?)
+           ON CONFLICT(session_id) DO UPDATE SET baseline_seq = excluded.baseline_seq, snapshot = excluded.snapshot`,
+          [
+            sessionID,
+            Number(inserted.lastInsertRowid),
+            JSON.stringify(event.snapshot),
+          ],
+        );
+      if (event.type === "session.created")
+        this.run(`UPDATE sessions SET title = ? WHERE id = ?`, [
+          event.title,
+          sessionID,
+        ]);
+      if (event.type === "turn.cancelled")
+        this.run(`UPDATE sessions SET cancelled = 1 WHERE id = ?`, [sessionID]);
+    })();
   }
 
   appendEvents(sessionID: SessionID, events: RuntimeEvent[]) {
@@ -150,28 +187,34 @@ export class SqliteSessionStore {
 
   loadEvents(sessionID: SessionID): RuntimeEvent[] {
     const rows = this.db
-      .query(
-        `SELECT event FROM events WHERE session_id = ? ORDER BY seq`,
-      )
+      .query(`SELECT event FROM events WHERE session_id = ? ORDER BY seq`)
       .all(sessionID) as { event: string }[];
     return rows.map((r) => JSON.parse(r.event) as RuntimeEvent);
   }
 
   loadEventsAfter(sessionID: SessionID, after: number): RuntimeEvent[] {
     const rows = this.db
-      .query(`SELECT event FROM events WHERE session_id = ? AND seq > ? ORDER BY seq`)
+      .query(
+        `SELECT event FROM events WHERE session_id = ? AND seq > ? ORDER BY seq`,
+      )
       .all(sessionID, after) as { event: string }[];
     return rows.map((row) => JSON.parse(row.event) as RuntimeEvent);
   }
 
-  loadEventPage(sessionID: SessionID, options: { after?: number; limit?: number } = {}) {
+  loadEventPage(
+    sessionID: SessionID,
+    options: { after?: number; limit?: number } = {},
+  ) {
     const after = Math.max(0, options.after ?? 0);
     const limit = Math.min(500, Math.max(1, options.limit ?? 100));
     const rows = this.db
       .query(
         `SELECT seq, event FROM events WHERE session_id = ? AND seq > ? ORDER BY seq LIMIT ?`,
       )
-      .all(sessionID, after, limit + 1) as Array<{ seq: number; event: string }>;
+      .all(sessionID, after, limit + 1) as Array<{
+      seq: number;
+      event: string;
+    }>;
     const hasMore = rows.length > limit;
     return {
       events: rows.slice(0, limit).map((row) => ({
@@ -184,7 +227,9 @@ export class SqliteSessionStore {
 
   loadContextEpoch(sessionID: SessionID): StoredContextEpoch | undefined {
     const row = this.db
-      .query(`SELECT baseline_seq, snapshot FROM context_epochs WHERE session_id = ?`)
+      .query(
+        `SELECT baseline_seq, snapshot FROM context_epochs WHERE session_id = ?`,
+      )
       .get(sessionID) as { baseline_seq: number; snapshot: string } | undefined;
     if (!row) return undefined;
     return {

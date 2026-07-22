@@ -19,7 +19,9 @@ export type ToolSettlement =
 
 export type ToolMaterialization = {
   definitions: Array<Pick<RuntimeTool, "name" | "description" | "parameters">>;
-  resolve(name: string):
+  resolve(
+    name: string,
+  ):
     | { status: "ready"; tool: RuntimeTool }
     | { status: "stale"; error: string }
     | { status: "unknown"; error: string };
@@ -36,11 +38,13 @@ export function materializeTools(
 ): ToolMaterialization {
   const entries = new Map(selected);
   return {
-    definitions: [...entries.values()].map(({ name, description, parameters }) => ({
-      name,
-      description,
-      parameters,
-    })),
+    definitions: [...entries.values()].map(
+      ({ name, description, parameters }) => ({
+        name,
+        description,
+        parameters,
+      }),
+    ),
     resolve(name) {
       const captured = entries.get(name);
       if (!captured)
@@ -53,9 +57,14 @@ export function materializeTools(
       const resolved = this.resolve(invocation.name);
       if (resolved.status !== "ready") return resolved;
       const captured = resolved.tool;
-      const errors = validateToolParameters(captured.parameters, invocation.arguments);
+      const errors = validateToolParameters(
+        captured.parameters,
+        invocation.arguments,
+      );
       if (errors.length) {
-        const detail = errors.map((error) => `${error.path || "(root)"}: ${error.message}`).join("; ");
+        const detail = errors
+          .map((error) => `${error.path || "(root)"}: ${error.message}`)
+          .join("; ");
         return { status: "failed", error: `Invalid tool input: ${detail}` };
       }
       try {

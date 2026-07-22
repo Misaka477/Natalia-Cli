@@ -130,24 +130,41 @@ test("stop aborts running agent", async () => {
   expect(reg.status("a1")).toBe("stopped");
 });
 
+test("stop persists a running agent status without waiting for completion", async () => {
+  const dir = await tempDir();
+  const reg = new SubagentRegistry({ runner: delayedRunner, workDir: dir });
+  await reg.spawn("persist stop");
+  expect(reg.stop("a1")).toBeTrue();
+  await Bun.sleep(20);
+  expect((await new SubagentStore(dir).load())[0]?.status).toBe("stopped");
+});
+
 test("stop returns false for unknown agent", async () => {
   const reg = new SubagentRegistry({ runner: immediateRunner });
   expect(reg.stop("missing" as any)).toBeFalse();
 });
 
-test("resume transitions paused to running", async () => {
-  const reg = new SubagentRegistry({ runner: immediateRunner });
+test("resume restarts a paused runner", async () => {
+  let runs = 0;
+  const reg = new SubagentRegistry({
+    runner: async () => {
+      runs++;
+    },
+  });
   await reg.spawn("resume test");
-  expect(reg.resume("a1")).toBeFalse();
+  await Bun.sleep(10);
+  expect(await reg.resume("a1")).toBeFalse();
   const rec = reg.get("a1")!;
   (rec as any).status = "paused";
-  expect(reg.resume("a1")).toBeTrue();
-  expect(rec.status).toBe("running");
+  expect(await reg.resume("a1")).toBeTrue();
+  await Bun.sleep(10);
+  expect(runs).toBe(2);
+  expect(rec.status).toBe("completed");
 });
 
 test("resume returns false for unknown agent", async () => {
   const reg = new SubagentRegistry({ runner: immediateRunner });
-  expect(reg.resume("missing" as any)).toBeFalse();
+  expect(await reg.resume("missing" as any)).toBeFalse();
 });
 
 test("attach/detach toggle attached flag", async () => {

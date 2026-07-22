@@ -129,16 +129,29 @@ export function evaluatePermissionRules(
     const excludeP = compilePatterns(rules.tools.exclude);
     if (allowP.length && !allowP.some((p) => p.test(toolName))) {
       diags.push(`tool "${toolName}" not in allow list`);
-      return { allowed: false, reason: "tool blocked by policy", diagnostics: diags };
+      return {
+        allowed: false,
+        reason: "tool blocked by policy",
+        diagnostics: diags,
+      };
     }
     if (excludeP.some((p) => p.test(toolName))) {
       diags.push(`tool "${toolName}" in exclude list`);
-      return { allowed: false, reason: "tool blocked by policy", diagnostics: diags };
+      return {
+        allowed: false,
+        reason: "tool blocked by policy",
+        diagnostics: diags,
+      };
     }
   }
 
   // Check file path rules for write/read tools
-  if (rules.files && (toolName === "write_file" || toolName === "read_file" || toolName === "edit_file")) {
+  if (
+    rules.files &&
+    (toolName === "write_file" ||
+      toolName === "read_file" ||
+      toolName === "edit_file")
+  ) {
     const path = typeof args.path === "string" ? args.path : undefined;
     if (path) {
       if (toolName !== "read_file" && rules.files.writePaths) {
@@ -146,7 +159,9 @@ export function evaluatePermissionRules(
           (r) => !r.allow && pathMatch(path, r.pattern),
         );
         if (denied) {
-          diags.push(`write to "${path}" blocked: ${denied.reason ?? "path denied"}`);
+          diags.push(
+            `write to "${path}" blocked: ${denied.reason ?? "path denied"}`,
+          );
           return { allowed: false, reason: denied.reason, diagnostics: diags };
         }
       }
@@ -155,7 +170,9 @@ export function evaluatePermissionRules(
           (r) => !r.allow && pathMatch(path, r.pattern),
         );
         if (denied) {
-          diags.push(`read of "${path}" blocked: ${denied.reason ?? "path denied"}`);
+          diags.push(
+            `read of "${path}" blocked: ${denied.reason ?? "path denied"}`,
+          );
           return { allowed: false, reason: denied.reason, diagnostics: diags };
         }
       }
@@ -166,14 +183,39 @@ export function evaluatePermissionRules(
   if (rules.commands && toolName === "run_shell") {
     const cmd = typeof args.command === "string" ? args.command : undefined;
     if (cmd) {
-      if (rules.commands.denyPatterns?.some((p) => new RegExp(p, "iu").test(cmd))) {
-        diags.push(`command matches deny pattern`);
-        return { allowed: false, reason: "command blocked by policy", diagnostics: diags };
+      const denied = matchesCommandPatterns(cmd, rules.commands.denyPatterns);
+      if (denied.error) {
+        diags.push(`invalid command deny pattern: ${denied.error}`);
+        return {
+          allowed: false,
+          reason: "command policy configuration is invalid",
+          diagnostics: diags,
+        };
       }
-      if (rules.commands.allowPatterns?.length &&
-          !rules.commands.allowPatterns.some((p) => new RegExp(p, "iu").test(cmd))) {
+      if (denied.matches) {
+        diags.push(`command matches deny pattern`);
+        return {
+          allowed: false,
+          reason: "command blocked by policy",
+          diagnostics: diags,
+        };
+      }
+      const allowed = matchesCommandPatterns(cmd, rules.commands.allowPatterns);
+      if (allowed.error) {
+        diags.push(`invalid command allow pattern: ${allowed.error}`);
+        return {
+          allowed: false,
+          reason: "command policy configuration is invalid",
+          diagnostics: diags,
+        };
+      }
+      if (rules.commands.allowPatterns?.length && !allowed.matches) {
         diags.push(`command does not match any allow pattern`);
-        return { allowed: false, reason: "command blocked by policy", diagnostics: diags };
+        return {
+          allowed: false,
+          reason: "command blocked by policy",
+          diagnostics: diags,
+        };
       }
     }
   }
@@ -182,8 +224,25 @@ export function evaluatePermissionRules(
 }
 
 function pathMatch(path: string, pattern: string): boolean {
-  const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&").replace(/\\\*/gu, ".*");
+  const escaped = pattern
+    .replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")
+    .replace(/\\\*/gu, ".*");
   return new RegExp(`^${escaped}$`, "u").test(path);
+}
+
+function matchesCommandPatterns(command: string, patterns?: string[]) {
+  try {
+    return {
+      matches:
+        patterns?.some((pattern) => new RegExp(pattern, "iu").test(command)) ??
+        false,
+    };
+  } catch (error) {
+    return {
+      matches: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 function compilePatterns(patterns?: string[]): RegExp[] {

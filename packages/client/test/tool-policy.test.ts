@@ -9,6 +9,7 @@ import {
   type ToolPolicy,
   type RuntimeEvent,
 } from "../src";
+import { evaluatePermissionRules } from "../src/tool-policy";
 import type {
   ProviderStreamRequest,
   StreamingProvider,
@@ -89,6 +90,18 @@ test("createToolPolicyHookLayer preExecute allows allowed tools", async () => {
   });
   expect(result.allowed).toBe(true);
   expect(result.diagnostics).toEqual([]);
+});
+
+test("invalid command policy regex fails closed with a diagnostic", async () => {
+  const result = evaluatePermissionRules(
+    { commands: { denyPatterns: ["["] } },
+    "run_shell",
+    { command: "echo safe" },
+  );
+  expect(result.allowed).toBe(false);
+  expect(result.diagnostics.join(" ")).toContain(
+    "invalid command deny pattern",
+  );
 });
 
 test("createToolPolicyHookLayer preExecute calls custom hook", async () => {

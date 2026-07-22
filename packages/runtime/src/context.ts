@@ -30,7 +30,7 @@ export type ExactUsageCheckpoint = {
   tokens: number;
   inputTokens?: number;
   outputTokens?: number;
-  source: "provider_usage";
+  source: "provider_usage" | "estimate";
 };
 
 export type ContextLedgerSnapshot = {
@@ -122,7 +122,7 @@ export class ContextLedger {
       tokens: inputTokens + outputTokens,
       inputTokens,
       outputTokens,
-      source: "provider_usage",
+      source: "estimate",
     };
     this.journalOffset += 1;
   }

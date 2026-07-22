@@ -1,4 +1,9 @@
-import type { LocalAttachment, SessionID } from "@natalia/contracts";
+import type {
+  LocalAttachment,
+  PromptAgentMention,
+  PromptResourceMention,
+  SessionID,
+} from "@natalia/contracts";
 import type { SessionRecord } from "./index";
 
 export type SessionInputDelivery = "steer" | "queue";
@@ -8,6 +13,8 @@ export type AdmittedSessionInput = {
   sessionID: SessionID;
   text: string;
   attachments?: LocalAttachment[];
+  resources?: PromptResourceMention[];
+  agents?: PromptAgentMention[];
   delivery: SessionInputDelivery;
   admittedAt: string;
   admittedSeq: number;
@@ -40,6 +47,10 @@ export function admitInput(
       existing.text === input.text &&
       JSON.stringify(existing.attachments ?? []) ===
         JSON.stringify(input.attachments ?? []) &&
+      JSON.stringify(existing.resources ?? []) ===
+        JSON.stringify(input.resources ?? []) &&
+      JSON.stringify(existing.agents ?? []) ===
+        JSON.stringify(input.agents ?? []) &&
       existing.delivery === input.delivery
     )
       return existing;

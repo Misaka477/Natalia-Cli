@@ -1,4 +1,10 @@
-import { createContext, createSignal, onMount, useContext, type ParentProps } from "solid-js";
+import {
+  createContext,
+  createSignal,
+  onMount,
+  useContext,
+  type ParentProps,
+} from "solid-js";
 import { loadTuiPreferences, saveTuiPreferences } from "../settings";
 import { ThemeService } from "../theme/service";
 import { defaultTheme, setThemeTokens, type Theme } from "../theme/theme";
@@ -22,11 +28,15 @@ export function ThemeProvider(props: ParentProps<{ workspaceRoot?: string }>) {
   onMount(() => {
     void Promise.all([
       service.getAllThemes(),
-      props.workspaceRoot ? loadTuiPreferences(props.workspaceRoot) : Promise.resolve(undefined),
+      props.workspaceRoot
+        ? loadTuiPreferences(props.workspaceRoot)
+        : Promise.resolve(undefined),
     ])
       .then(([available, preferences]) => {
         setThemes(available);
-        const selected = available.find((item) => item.name === preferences?.theme) ?? defaultTheme;
+        const selected =
+          available.find((item) => item.name === preferences?.theme) ??
+          defaultTheme;
         setTheme(selected);
         setThemeTokens(selected);
       })
@@ -53,7 +63,12 @@ export function ThemeProvider(props: ParentProps<{ workspaceRoot?: string }>) {
         preview,
         commit(name) {
           if (!preview(name)) return false;
-          if (props.workspaceRoot) void saveTuiPreferences(props.workspaceRoot, { theme: name }, "project").catch(toast.error);
+          if (props.workspaceRoot)
+            void saveTuiPreferences(
+              props.workspaceRoot,
+              { theme: name },
+              "project",
+            ).catch(toast.error);
           return true;
         },
       }}

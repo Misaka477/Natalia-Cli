@@ -297,10 +297,61 @@ test("timeout step fails on expiry", async () => {
   ).toBe(true);
 });
 
+test("timeout propagates abort to a cooperative tool", async () => {
+  const { root } = await makeRuntime();
+  const registry = createToolRegistry();
+  let aborted = false;
+  registry.set("cooperative", {
+    name: "cooperative",
+    description: "cooperative tool",
+    requiresApproval: false,
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+    async execute(_input, context) {
+      await new Promise<void>((resolve) =>
+        context.signal?.addEventListener(
+          "abort",
+          () => {
+            aborted = true;
+            resolve();
+          },
+          { once: true },
+        ),
+      );
+      throw context.signal?.reason ?? new Error("expected abort");
+    },
+  });
+  const runtime = new WorkflowRuntime(
+    registry,
+    new JsonlWorkflowStore(join(root, "runs")),
+  );
+  const run = await runtime.run(
+    {
+      version: 1,
+      name: "timeout-abort",
+      steps: [
+        {
+          id: "timeout",
+          kind: "timeout",
+          ms: 10,
+          step: {
+            id: "cooperative",
+            kind: "tool",
+            tool: "cooperative",
+            arguments: {},
+          },
+        },
+      ],
+    },
+    { workspaceRoot: root },
+  );
+  expect(run.status).toBe("failed");
+  expect(aborted).toBe(true);
+});
+
 // ── Parallel ────────────────────────────────────────────────────────────────
 
 test("parallel runs branches concurrently", async () => {
-  const { root, runtime } = await makeRuntime();
+  const { root, runtime, store } = await makeRuntime();
   const doc: WorkflowDocument = {
     version: 1,
     name: "parallel-test",
@@ -325,6 +376,9 @@ test("parallel runs branches concurrently", async () => {
   expect(run.status).toBe("completed");
   expect(run.values["a"]).toBe("1");
   expect(run.values["b"]).toBe("2");
+  expect(
+    (await store.events(run.id)).every((event) => event.runID === run.id),
+  ).toBe(true);
 });
 
 test("parallel branch resume skips completed", async () => {

@@ -53,7 +53,7 @@ export class SkillRegistry {
   }
 
   list() {
-    return [...this.selected.values()].sort((a, b) =>
+    return [...this.skills.values()].sort((a, b) =>
       a.qualifiedName.localeCompare(b.qualifiedName),
     );
   }
@@ -77,13 +77,13 @@ export async function discoverSkills(input: {
     });
     for (const root of roots) await discoverSkillRoot(registry, root, "remote");
   }
+  if (input.userRoot)
+    await discoverRoot(registry, resolve(input.userRoot), "user");
   await discoverRoot(
     registry,
     join(resolve(input.workspaceRoot), ".natalia", "skills"),
     "project",
   );
-  if (input.userRoot)
-    await discoverRoot(registry, resolve(input.userRoot), "user");
   return registry;
 }
 
@@ -139,7 +139,12 @@ export async function readSkillResource(skill: Skill, path: string) {
 }
 
 export async function formatSkillForModel(skill: Skill) {
-  const files = (await readdir(skill.root, { recursive: true }))
+  const files = (
+    await readdir(skill.root, { recursive: true }).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    })
+  )
     .filter((path) => path !== "SKILL.md")
     .sort()
     .slice(0, 10);

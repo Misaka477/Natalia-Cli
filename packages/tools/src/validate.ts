@@ -64,10 +64,16 @@ function checkType(
     if (typeof value !== "string") {
       return { path, message: `expected string, got ${typeof value}` };
     }
-    if (typeof schema.minLength === "number" && (value as string).length < schema.minLength) {
+    if (
+      typeof schema.minLength === "number" &&
+      (value as string).length < schema.minLength
+    ) {
       return { path, message: `string too short (min ${schema.minLength})` };
     }
-    if (typeof schema.maxLength === "number" && (value as string).length > schema.maxLength) {
+    if (
+      typeof schema.maxLength === "number" &&
+      (value as string).length > schema.maxLength
+    ) {
       return { path, message: `string too long (max ${schema.maxLength})` };
     }
     if (typeof schema.enum === "object" && Array.isArray(schema.enum)) {
@@ -82,7 +88,10 @@ function checkType(
   }
 
   if (type === "number" || type === "integer") {
-    if (typeof value !== "number" || (type === "integer" && !Number.isInteger(value))) {
+    if (
+      typeof value !== "number" ||
+      (type === "integer" && !Number.isInteger(value))
+    ) {
       return {
         path,
         message: `expected ${type}, got ${typeof value}${typeof value === "number" ? " (non-integer)" : ""}`,

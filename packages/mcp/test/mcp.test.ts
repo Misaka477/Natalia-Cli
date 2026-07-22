@@ -30,6 +30,12 @@ for line in sys.stdin:
   print(json.dumps({"jsonrpc":"2.0","id":message["id"],"result":result}), flush=True)
 `;
 
+const MALFORMED_SERVER = String.raw`
+import sys
+for line in sys.stdin:
+  print('{not-json', flush=True)
+`;
+
 test("native stdio MCP client initializes, lists and calls tools", async () => {
   const client = await StdioMCPClient.connect({
     command: "python3",
@@ -44,6 +50,16 @@ test("native stdio MCP client initializes, lists and calls tools", async () => {
     await tool.execute({ value: "wrapped" }, { workspaceRoot: process.cwd() }),
   ).toContain("wrapped");
   await client.close();
+});
+
+test("native stdio MCP rejects promptly on malformed server output", async () => {
+  await expect(
+    StdioMCPClient.connect({
+      command: "python3",
+      args: ["-u", "-c", MALFORMED_SERVER],
+      timeoutMs: 1_000,
+    }),
+  ).rejects.toThrow("malformed JSON-RPC");
 });
 
 test("MCP runtime tools surface server errors and preserve structured-only results", async () => {
@@ -120,6 +136,7 @@ test("loads active legacy Go mcp_servers into the native TS tool registry", asyn
 });
 
 test("native HTTP MCP client authenticates and calls a remote MCP endpoint", async () => {
+  const methods: string[] = [];
   const server = Bun.serve({
     port: 0,
     fetch: async (request) => {
@@ -129,6 +146,7 @@ test("native HTTP MCP client authenticates and calls a remote MCP endpoint", asy
         method: string;
         params: { arguments?: { value?: string } };
       };
+      methods.push(message.method);
       const result =
         message.method === "tools/list"
           ? {
@@ -155,6 +173,7 @@ test("native HTTP MCP client authenticates and calls a remote MCP endpoint", asy
     expect(await client.callTool("remote_echo", { value: "http-ok" })).toEqual({
       content: [{ type: "text", text: "http-ok" }],
     });
+    expect(methods).toContain("notifications/initialized");
   } finally {
     server.stop(true);
   }

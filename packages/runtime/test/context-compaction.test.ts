@@ -175,6 +175,29 @@ test("manual compaction works while disabled and preserves tool-call/result pair
   ]);
 });
 
+test("compaction estimates retained context instead of compactor API usage", async () => {
+  const ledger = new ContextLedger();
+  ledger.add({ id: "old", role: "user", content: "x".repeat(400_000) });
+  ledger.add({ id: "recent", role: "user", content: "recent", tokens: 2 });
+  await compactContext(
+    ledger,
+    new FakeCompactor([{ summary: "small summary" }]),
+    {
+      id: "cmp_usage",
+      trigger: "manual",
+      maxTokens: 10_000,
+      thresholdPercent: 85,
+      reservedTokens: 1_000,
+      preservedRecentMessages: 1,
+    },
+  );
+  expect(ledger.effectiveTokens()).toBeLessThan(200);
+  expect(
+    ledger.status({ max: 10_000, thresholdPercent: 85, reserved: 1_000 })
+      .trigger,
+  ).toBeUndefined();
+});
+
 test("compaction retains attachment metadata only for preserved user entries", async () => {
   const ledger = new ContextLedger();
   ledger.add({

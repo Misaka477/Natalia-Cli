@@ -24,12 +24,19 @@ export async function boundToolOutput(
   const directory = join(workspaceRoot, ".natalia", "tool-output");
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const outputPath = join(directory, `tool-${randomUUID()}.log`);
-  await writeFile(outputPath, output, { encoding: "utf8", mode: 0o600, flag: "wx" });
+  await writeFile(outputPath, output, {
+    encoding: "utf8",
+    mode: 0o600,
+    flag: "wx",
+  });
   const marker = `... output truncated; full content saved to ${outputPath} ...`;
   return { text: preview(output, marker), outputPath };
 }
 
-export async function cleanupToolOutput(workspaceRoot: string, now = Date.now()) {
+export async function cleanupToolOutput(
+  workspaceRoot: string,
+  now = Date.now(),
+) {
   const directory = join(workspaceRoot, ".natalia", "tool-output");
   let entries: string[];
   try {

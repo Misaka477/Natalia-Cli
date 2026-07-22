@@ -37,6 +37,16 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
     selectAgent(name) {
       selectedAgents.push(name);
     },
+    async agents() {
+      return [
+        {
+          name: "reviewer",
+          description: "Review changes",
+          mode: "subagent" as const,
+          hidden: false,
+        },
+      ];
+    },
     async modelCatalog() {
       return [
         { id: "alpha", name: "alpha", provider: "fixture", variants: ["fast"] },
@@ -67,7 +77,10 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
       return [{ path: "src/model.ts", line: 2, text: "needle" }];
     },
     async workspaceList() {
-      return [{ path: "src/", type: "directory" }];
+      return {
+        entries: [{ path: "src/", type: "directory" }],
+        truncated: false,
+      };
     },
     async workspaceRead() {
       return {
@@ -217,6 +230,7 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
   await sdk.pause("sdk pause");
   await sdk.resume();
   await sdk.selectAgent("reviewer");
+  expect(await sdk.agents()).toMatchObject([{ name: "reviewer" }]);
   expect(await sdk.modelCatalog()).toMatchObject([
     { id: "alpha", variants: ["fast"] },
   ]);
@@ -234,9 +248,10 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
   expect(await sdk.workspaceSearch({ query: "needle" })).toEqual([
     { path: "src/model.ts", line: 2, text: "needle" },
   ]);
-  expect(await sdk.workspaceList()).toEqual([
-    { path: "src/", type: "directory" },
-  ]);
+  expect(await sdk.workspaceList()).toEqual({
+    entries: [{ path: "src/", type: "directory" }],
+    truncated: false,
+  });
   expect(await sdk.workspaceRead({ path: "src/model.ts" })).toMatchObject({
     encoding: "utf8",
   });

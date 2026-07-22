@@ -108,6 +108,8 @@ export class SubagentRegistry {
     const id = record.id;
     const abortController = new AbortController();
     this.running.set(id, abortController);
+    record.status = "running";
+    record.updatedAt = Date.now();
 
     const ctx: RunnerContext = {
       agentId: id,
@@ -168,7 +170,6 @@ export class SubagentRegistry {
 
     const runPromise = Promise.resolve().then(async () => {
       try {
-        ctx.setStatus("running");
         await this.runner(record.task, ctx);
         (record as any).status = abortController.signal.aborted
           ? "stopped"
@@ -250,14 +251,16 @@ export class SubagentRegistry {
         attached: record.attached,
         timestamp: Date.now(),
       });
+      void this.save();
     }
     return true;
   }
 
-  resume(id: SubagentID): boolean {
+  async resume(id: SubagentID): Promise<boolean> {
     const record = this.records.get(id);
     if (!record) return false;
     if (record.status !== "paused") return false;
+    if (this.running.has(id)) return false;
     record.status = "running";
     record.updatedAt = Date.now();
     this.addAudit({
@@ -274,6 +277,8 @@ export class SubagentRegistry {
       attached: record.attached,
       timestamp: Date.now(),
     });
+    await this.save();
+    await this.start(record);
     return true;
   }
 

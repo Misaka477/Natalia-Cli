@@ -239,6 +239,7 @@ export class InteractivePTYRegistry {
       ],
       {
         cwd: runtime.cwd,
+        env: safePTYEnv(),
         stdin: "pipe",
         stdout: "pipe",
         stderr: "pipe",
@@ -706,7 +707,10 @@ function stripPendingTerminalEcho(
   const pending = session.pendingTerminalEcho;
   if (!pending) return output;
   const normalizedPending = pending.replace(/\n/gu, "\r\n");
-  if (output === normalizedPending || output === pending) return output;
+  if (output === normalizedPending || output === pending) {
+    session.pendingTerminalEcho = undefined;
+    return "";
+  }
   if (output.startsWith(normalizedPending)) {
     session.pendingTerminalEcho = undefined;
     return output.slice(normalizedPending.length);
@@ -716,6 +720,17 @@ function stripPendingTerminalEcho(
     return output.slice(pending.length);
   }
   return output;
+}
+
+function safePTYEnv() {
+  const allowed = ["PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "TERM"];
+  return Object.fromEntries(
+    allowed
+      .map((key) => [key, process.env[key]] as const)
+      .filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string",
+      ),
+  );
 }
 
 function publicInteractivePTY(

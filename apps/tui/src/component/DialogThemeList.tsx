@@ -3,7 +3,9 @@ import { useDialog } from "../dialog/provider";
 import { onCleanup } from "solid-js";
 import { useTheme } from "../context/theme";
 
-export function DialogThemeList(props: { onCommit?: (name: string) => void } = {}) {
+export function DialogThemeList(
+  props: { onCommit?: (name: string) => void } = {},
+) {
   const dialog = useDialog();
   const theme = useTheme();
   const initial = theme.theme.name;
@@ -13,11 +15,12 @@ export function DialogThemeList(props: { onCommit?: (name: string) => void } = {
     if (!confirmed) theme.preview(initial);
   });
 
-  const options = () => theme.themes.map((value) => ({
-    title: value.name,
-    value: value.name,
-    description: value.name === initial ? "current" : undefined,
-  }));
+  const options = () =>
+    theme.themes.map((value) => ({
+      title: value.name,
+      value: value.name,
+      description: value.name === initial ? "current" : undefined,
+    }));
 
   return (
     <DialogSelect

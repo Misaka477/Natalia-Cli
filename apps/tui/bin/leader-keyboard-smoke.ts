@@ -18,7 +18,9 @@ keys.pressKey("n");
 await Bun.sleep(150);
 
 if (sessions.length !== 1)
-  throw new Error(`expected leader new session command, got ${sessions.length}`);
+  throw new Error(
+    `expected leader new session command, got ${sessions.length}`,
+  );
 
 handle.stop();
 console.log("leader keyboard smoke passed");
@@ -31,7 +33,10 @@ function backend(): RuntimeClient {
         sessionID: "ses_leader_smoke" as never,
         title: "Leader smoke",
       });
-      onEvent({ type: "session.ready", sessionID: "ses_leader_smoke" as never });
+      onEvent({
+        type: "session.ready",
+        sessionID: "ses_leader_smoke" as never,
+      });
     },
     async submit() {
       throw new Error("leader smoke does not submit prompts");

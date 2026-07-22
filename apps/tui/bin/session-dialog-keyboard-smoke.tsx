@@ -53,7 +53,11 @@ const backend = {
   },
   async duplicate(id: string) {
     const source = requireSession(id);
-    const copy = { ...source, id: "ses_smoke_copy", title: `${source.title} (copy)` };
+    const copy = {
+      ...source,
+      id: "ses_smoke_copy",
+      title: `${source.title} (copy)`,
+    };
     sessions.push(copy);
     return copy;
   },
@@ -91,7 +95,8 @@ const keys = createMockKeys(renderer, { kittyKeyboard: true });
 await Bun.sleep(100);
 keys.pressKey("p");
 await Bun.sleep(80);
-if (!sessions[0]!.pinned) throw new Error("session pin action did not use backend");
+if (!sessions[0]!.pinned)
+  throw new Error("session pin action did not use backend");
 keys.pressKey("r");
 await Bun.sleep(80);
 for (let index = 0; index < "Smoke session".length; index++)

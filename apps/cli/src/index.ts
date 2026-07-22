@@ -317,14 +317,25 @@ export async function workspaceFilesystemCommand(input: {
   pattern?: string;
   query?: string;
   include?: string;
+  offset?: number;
   limit?: number;
 }) {
   const workspaceRoot = input.workspaceRoot ?? process.cwd();
   if (input.action === "list")
-    return await listWorkspaceFiles({ workspaceRoot, path: input.path });
+    return await listWorkspaceFiles({
+      workspaceRoot,
+      path: input.path,
+      offset: input.offset,
+      limit: input.limit,
+    });
   if (input.action === "read") {
     if (!input.path) throw new Error("fs read requires a path");
-    return await readWorkspaceFile({ workspaceRoot, path: input.path });
+    return await readWorkspaceFile({
+      workspaceRoot,
+      path: input.path,
+      offset: input.offset,
+      limit: input.limit,
+    });
   }
   if (input.action === "glob") {
     if (!input.pattern) throw new Error("fs glob requires a pattern");

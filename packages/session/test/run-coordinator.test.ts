@@ -32,7 +32,11 @@ test("coalesces repeated wakes into one successor drain", async () => {
   };
   const first = coordinator.run(drain);
   while (!release) await Bun.sleep(1);
-  await Promise.all([coordinator.wake(drain), coordinator.wake(drain), coordinator.wake(drain)]);
+  await Promise.all([
+    coordinator.wake(drain),
+    coordinator.wake(drain),
+    coordinator.wake(drain),
+  ]);
   release?.();
   await first;
   await coordinator.idle();
@@ -55,7 +59,9 @@ test("wake during interruption cleanup starts one successor", async () => {
   let second = false;
   const first = async (signal: AbortSignal) => {
     await new Promise<void>((resolve) => {
-      signal.addEventListener("abort", () => (cleanup = resolve), { once: true });
+      signal.addEventListener("abort", () => (cleanup = resolve), {
+        once: true,
+      });
     });
   };
   const successor = async () => {

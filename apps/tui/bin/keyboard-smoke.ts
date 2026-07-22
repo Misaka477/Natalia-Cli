@@ -8,8 +8,12 @@ import { lineCount, makeDigest } from "@natalia/testing";
 import { runTuiShell } from "../src/app/runtime";
 
 const submissions: string[] = [];
-const attachmentSubmissions: Array<{ text: string; attachments?: string[] }> =
-  [];
+const attachmentSubmissions: Array<{
+  text: string;
+  attachments?: string[];
+  agents?: Array<{ name: string }>;
+  resources?: Array<{ server: string; uri: string; name: string }>;
+}> = [];
 const workspaceFiles = [{ path: "src/mentioned.ts", type: "file" as const }];
 const handle = await runTuiShell({
   backend: makeBackend(),
@@ -90,7 +94,7 @@ await Bun.sleep(200);
 
 if (submissions[5] !== "/models")
   throw new Error(
-    `Slash autocomplete submit failed: got ${JSON.stringify(submissions[4])}`,
+    `Slash autocomplete submit failed: got ${JSON.stringify(submissions[5])}`,
   );
 
 await keys.pasteBracketedText("review @ment");
@@ -130,6 +134,30 @@ if (attachmentSubmissions[2]?.text !== "@src/mentioned.ts:4 search result")
 if (attachmentSubmissions[2]?.attachments?.[0] !== "src/mentioned.ts")
   throw new Error(
     `Workspace search attachment failed: got ${JSON.stringify(attachmentSubmissions[2])}`,
+  );
+
+await keys.typeText("@rev");
+await Bun.sleep(100);
+keys.pressEnter();
+await Bun.sleep(80);
+keys.pressEnter();
+await Bun.sleep(200);
+
+if (attachmentSubmissions[3]?.agents?.[0]?.name !== "reviewer")
+  throw new Error(
+    `Agent mention metadata failed: got ${JSON.stringify(attachmentSubmissions[3])}`,
+  );
+
+await keys.typeText("@gui");
+await Bun.sleep(100);
+keys.pressEnter();
+await Bun.sleep(80);
+keys.pressEnter();
+await Bun.sleep(200);
+
+if (attachmentSubmissions[4]?.resources?.[0]?.uri !== "docs://guide")
+  throw new Error(
+    `Resource mention metadata failed: got ${JSON.stringify(attachmentSubmissions[4])}`,
   );
 
 const destroyed = new Promise<void>((resolve) =>
@@ -177,6 +205,8 @@ function makeBackend(): RuntimeClient {
       attachmentSubmissions.push({
         text: input.text,
         attachments: input.attachments,
+        agents: input.agents,
+        resources: input.resources,
       });
       return await this.submit(input.text);
     },
@@ -185,6 +215,29 @@ function makeBackend(): RuntimeClient {
       return workspaceFiles.filter((file) =>
         file.path.toLowerCase().includes(query),
       );
+    },
+    async agents() {
+      return [
+        {
+          name: "reviewer",
+          description: "Review changes",
+          mode: "subagent",
+          hidden: false,
+        },
+      ];
+    },
+    async mcpCatalog() {
+      return {
+        prompts: [],
+        resources: [
+          {
+            server: "docs",
+            uri: "docs://guide",
+            name: "Guide",
+            mimeType: "text/plain",
+          },
+        ],
+      };
     },
     async workspaceSearch() {
       return [{ path: "src/mentioned.ts", line: 4, text: "needle" }];

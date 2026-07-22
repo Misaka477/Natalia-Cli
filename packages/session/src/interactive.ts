@@ -1,7 +1,13 @@
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 
-export type PendingApproval = Extract<RuntimeEvent, { type: "approval.request" }>;
-export type PendingQuestion = Extract<RuntimeEvent, { type: "question.request" }>;
+export type PendingApproval = Extract<
+  RuntimeEvent,
+  { type: "approval.request" }
+>;
+export type PendingQuestion = Extract<
+  RuntimeEvent,
+  { type: "question.request" }
+>;
 
 export type InteractiveProjection = {
   approvals: PendingApproval[];
@@ -9,7 +15,9 @@ export type InteractiveProjection = {
 };
 
 /** Projects durable request/reply events; in-memory waiters are not replay state. */
-export function projectInteractiveRequests(events: RuntimeEvent[]): InteractiveProjection {
+export function projectInteractiveRequests(
+  events: RuntimeEvent[],
+): InteractiveProjection {
   const approvals = new Map<string, PendingApproval>();
   const questions = new Map<string, PendingQuestion>();
   for (const event of events) {
@@ -18,7 +26,10 @@ export function projectInteractiveRequests(events: RuntimeEvent[]): InteractiveP
     if (event.type === "question.request") questions.set(event.id, event);
     if (event.type === "question.response") questions.delete(event.id);
   }
-  return { approvals: [...approvals.values()], questions: [...questions.values()] };
+  return {
+    approvals: [...approvals.values()],
+    questions: [...questions.values()],
+  };
 }
 
 export function requestsForSession(

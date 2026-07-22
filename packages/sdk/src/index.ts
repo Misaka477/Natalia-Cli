@@ -14,12 +14,18 @@ export type NataliaSDKOptions = {
 export type NataliaSDK = {
   prompt(
     text: string,
-    options?: { delivery?: "steer" | "queue"; attachments?: string[] },
+    options?: {
+      delivery?: "steer" | "queue";
+      attachments?: string[];
+      resources?: import("@natalia/contracts").PromptResourceMention[];
+      agents?: import("@natalia/contracts").PromptAgentMention[];
+    },
   ): Promise<SubmittedTurn>;
   cancel(reason?: string): Promise<void>;
   pause(reason?: string): Promise<void>;
   resume(): Promise<void>;
   selectAgent(name?: string): Promise<void>;
+  agents(): Promise<import("@natalia/contracts").RuntimeAgentCatalogEntry[]>;
   modelCatalog(): Promise<
     import("@natalia/contracts").RuntimeModelCatalogEntry[]
   >;
@@ -28,6 +34,7 @@ export type NataliaSDK = {
   skills(): Promise<import("@natalia/contracts").RuntimeSkillCatalogEntry[]>;
   workspaceFiles(input?: {
     query?: string;
+    type?: "file" | "directory";
     limit?: number;
   }): Promise<import("@natalia/contracts").RuntimeWorkspaceFileEntry[]>;
   workspaceSearch(input: {
@@ -37,9 +44,13 @@ export type NataliaSDK = {
   }): Promise<import("@natalia/contracts").RuntimeWorkspaceMatch[]>;
   workspaceList(input?: {
     path?: string;
-  }): Promise<import("@natalia/contracts").RuntimeWorkspaceFileEntry[]>;
+    offset?: number;
+    limit?: number;
+  }): Promise<import("@natalia/contracts").RuntimeWorkspaceListPage>;
   workspaceRead(input: {
     path: string;
+    offset?: number;
+    limit?: number;
   }): Promise<import("@natalia/contracts").RuntimeWorkspaceContent>;
   workspaceGlob(input: {
     pattern: string;
@@ -48,10 +59,21 @@ export type NataliaSDK = {
   }): Promise<import("@natalia/contracts").RuntimeWorkspaceFileEntry[]>;
   sessions(): Promise<import("@natalia/contracts").RuntimeSessionSummary[]>;
   touchSession(id: string): Promise<void>;
-  renameSession(id: string, title: string): Promise<import("@natalia/contracts").RuntimeSessionSummary>;
-  pinSession(id: string, pinned: boolean): Promise<import("@natalia/contracts").RuntimeSessionSummary>;
-  duplicateSession(id: string, title?: string): Promise<import("@natalia/contracts").RuntimeSessionSummary>;
-  deleteSession(id: string): Promise<{ id: string; removedAttachments: number }>;
+  renameSession(
+    id: string,
+    title: string,
+  ): Promise<import("@natalia/contracts").RuntimeSessionSummary>;
+  pinSession(
+    id: string,
+    pinned: boolean,
+  ): Promise<import("@natalia/contracts").RuntimeSessionSummary>;
+  duplicateSession(
+    id: string,
+    title?: string,
+  ): Promise<import("@natalia/contracts").RuntimeSessionSummary>;
+  deleteSession(
+    id: string,
+  ): Promise<{ id: string; removedAttachments: number }>;
   respondApproval(response: ApprovalResponse): Promise<void>;
   respondQuestion(response: QuestionResponse): Promise<void>;
   pendingInteractive(): Promise<{
@@ -126,6 +148,7 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     selectAgent: async (name) => {
       await call("agent.select", name === undefined ? {} : { name });
     },
+    agents: async () => await call("agent.list", {}),
     modelCatalog: async () => await call("model.catalog", {}),
     modelSelection: async () => await call("model.selection", {}),
     selectModel: async (modelID, variant) => {
@@ -144,10 +167,14 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     touchSession: async (id) => {
       await call("session.touch", { id });
     },
-    renameSession: async (id, title) => await call("session.rename", { id, title }),
+    renameSession: async (id, title) =>
+      await call("session.rename", { id, title }),
     pinSession: async (id, pinned) => await call("session.pin", { id, pinned }),
     duplicateSession: async (id, title) =>
-      await call("session.duplicate", title === undefined ? { id } : { id, title }),
+      await call(
+        "session.duplicate",
+        title === undefined ? { id } : { id, title },
+      ),
     deleteSession: async (id) => await call("session.delete", { id }),
     respondApproval: async (response) => {
       await call(

@@ -32,18 +32,24 @@ export { evaluateCondition, interpolate } from "./eval";
 
 export class JsonlWorkflowStore {
   readonly dir: string;
+  private writeQueue = Promise.resolve();
 
   constructor(dir = ".natalia/workflow-runs") {
     this.dir = resolve(dir);
   }
 
   async append(event: WorkflowEvent) {
-    await mkdir(this.dir, { recursive: true, mode: 0o700 });
-    await appendFile(
-      join(this.dir, `${event.runID}.jsonl`),
-      `${JSON.stringify(event)}\n`,
-      { mode: 0o600 },
-    );
+    const write = async () => {
+      await mkdir(this.dir, { recursive: true, mode: 0o700 });
+      await appendFile(
+        join(this.dir, `${event.runID}.jsonl`),
+        `${JSON.stringify(event)}\n`,
+        { mode: 0o600 },
+      );
+    };
+    const queued = this.writeQueue.then(write, write);
+    this.writeQueue = queued.catch(() => undefined);
+    await queued;
   }
 
   async events(runID: string) {
@@ -405,15 +411,27 @@ export class WorkflowRuntime {
     run: WorkflowRun,
     context: WorkflowExecutionContext,
   ): Promise<string> {
+    const controller = new AbortController();
+    const signal = context.signal
+      ? AbortSignal.any([context.signal, controller.signal])
+      : controller.signal;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const nested = this.executeStep(step.step, run, { ...context, signal });
     const result = await Promise.race([
-      this.executeStep(step.step, run, context),
+      nested,
       new Promise<never>((_, reject) => {
-        const timer = setTimeout(() => {
+        timer = setTimeout(() => {
+          controller.abort(
+            new Error(`timeout ${step.id} exceeded ${step.ms}ms`),
+          );
           reject(new Error(`timeout ${step.id} exceeded ${step.ms}ms`));
         }, step.ms);
         if (timer.unref) timer.unref();
       }),
-    ]);
+    ]).finally(() => {
+      if (timer) clearTimeout(timer);
+      void nested.catch(() => undefined);
+    });
     if (!run.completedStepIDs.includes(step.step.id)) {
       run.completedStepIDs.push(step.step.id);
       await this.record(run, {

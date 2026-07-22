@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import {
   appendFile,
@@ -6,6 +6,7 @@ import {
   copyFile,
   lstat,
   mkdir,
+  open,
   readFile,
   readdir,
   readlink,
@@ -160,6 +161,7 @@ export class CheckpointStore {
   private readonly now: () => Date;
   private readonly onEvent?: (event: RuntimeEvent) => void;
   private unavailableReason: string | undefined;
+  private checkpointQueue = Promise.resolve();
 
   constructor(options: CheckpointStoreOptions) {
     this.sessionID = options.sessionID;
@@ -228,6 +230,18 @@ export class CheckpointStore {
   async createCheckpoint(
     input: CreateCheckpointInput,
   ): Promise<CheckpointRecord> {
+    const create = () => this.createCheckpointLocked(input);
+    const queued = this.checkpointQueue.then(create, create);
+    this.checkpointQueue = queued.then(
+      () => undefined,
+      () => undefined,
+    );
+    return await queued;
+  }
+
+  private async createCheckpointLocked(
+    input: CreateCheckpointInput,
+  ): Promise<CheckpointRecord> {
     this.assertAvailable();
     const existing = await this.list();
     const sequence =
@@ -264,9 +278,7 @@ export class CheckpointStore {
         },
         diskUsageBytes,
       };
-      await appendFile(this.journalPath(), `${JSON.stringify(record)}\n`, {
-        mode: 0o600,
-      });
+      await this.writeJournal([...existing, record]);
       this.emit({
         type: "checkpoint.created",
         id: record.id,
@@ -379,6 +391,10 @@ export class CheckpointStore {
       step: options.context.journalStatus().messageCount,
       status: "rollback_safety",
     });
+    if (!safety.complete)
+      throw new Error(
+        "rollback safety checkpoint is incomplete; refusing workspace mutation",
+      );
     preview.safetyCheckpointID = safety.id;
     this.emit({
       type: "rollback.begin",
@@ -617,11 +633,28 @@ export class CheckpointStore {
     const retained = records.filter(
       (record) => record.sequence <= target.sequence || record.id === safety.id,
     );
-    await writeFile(
-      this.journalPath(),
-      retained.map((record) => JSON.stringify(record)).join("\n") + "\n",
-      { mode: 0o600 },
-    );
+    await this.writeJournal(retained);
+  }
+
+  private async writeJournal(records: CheckpointRecord[]) {
+    const journal = this.journalPath();
+    const temporary = `${journal}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(
+        temporary,
+        records.map((record) => JSON.stringify(record)).join("\n") + "\n",
+        { mode: 0o600 },
+      );
+      const handle = await open(temporary, "r");
+      try {
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+      await rename(temporary, journal);
+    } finally {
+      await rm(temporary, { force: true }).catch(() => undefined);
+    }
   }
 
   private shouldIgnore(rel: string, full: string) {

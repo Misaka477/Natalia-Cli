@@ -10,10 +10,34 @@ import {
 test("session inbox exact retry is idempotent and conflicting reuse is rejected", () => {
   const session = createSessionRecord("ses_inbox", "Inbox");
   const input = { id: "turn_one", text: "hello", delivery: "steer" as const };
-  const first = admitInput(session, input, new Date("2026-07-21T00:00:00.000Z"));
+  const first = admitInput(
+    session,
+    input,
+    new Date("2026-07-21T00:00:00.000Z"),
+  );
   expect(admitInput(session, input)).toEqual(first);
-  expect(() => admitInput(session, { ...input, text: "different" })).toThrow(SessionInputConflictError);
-  expect(() => admitInput(session, { ...input, delivery: "queue" })).toThrow(SessionInputConflictError);
+  expect(() => admitInput(session, { ...input, text: "different" })).toThrow(
+    SessionInputConflictError,
+  );
+  expect(() => admitInput(session, { ...input, delivery: "queue" })).toThrow(
+    SessionInputConflictError,
+  );
+});
+
+test("session inbox treats structured mentions as part of admission identity", () => {
+  const session = createSessionRecord("ses_mentions", "Mentions");
+  const input = {
+    id: "turn_mentions",
+    text: "inspect",
+    delivery: "steer" as const,
+    resources: [{ server: "docs", uri: "docs://guide", name: "Guide" }],
+    agents: [{ name: "review" }],
+  };
+  const first = admitInput(session, input);
+  expect(admitInput(session, input)).toEqual(first);
+  expect(() =>
+    admitInput(session, { ...input, agents: [{ name: "build" }] }),
+  ).toThrow(SessionInputConflictError);
 });
 
 test("session inbox promotes all steers but one queued input at an idle boundary", () => {
@@ -23,9 +47,16 @@ test("session inbox promotes all steers but one queued input at an idle boundary
   admitInput(session, { id: "steer_b", text: "c", delivery: "steer" });
   admitInput(session, { id: "queue_b", text: "d", delivery: "queue" });
 
-  expect(promoteSteers(session).map((item) => item.id)).toEqual(["steer_a", "steer_b"]);
-  expect(promoteNextQueued(session).map((item) => item.id)).toEqual(["queue_a"]);
-  expect(promoteNextQueued(session).map((item) => item.id)).toEqual(["queue_b"]);
+  expect(promoteSteers(session).map((item) => item.id)).toEqual([
+    "steer_a",
+    "steer_b",
+  ]);
+  expect(promoteNextQueued(session).map((item) => item.id)).toEqual([
+    "queue_a",
+  ]);
+  expect(promoteNextQueued(session).map((item) => item.id)).toEqual([
+    "queue_b",
+  ]);
   expect(promoteNextQueued(session)).toEqual([]);
 });
 
@@ -35,6 +66,10 @@ test("steer promotion honors a captured admission cutoff", () => {
   const cutoff = session.inbox![0]!.admittedSeq;
   admitInput(session, { id: "after", text: "after", delivery: "steer" });
 
-  expect(promoteSteers(session, cutoff).map((item) => item.id)).toEqual(["before"]);
-  expect(session.inbox?.find((item) => item.id === "after")?.promotedAt).toBeUndefined();
+  expect(promoteSteers(session, cutoff).map((item) => item.id)).toEqual([
+    "before",
+  ]);
+  expect(
+    session.inbox?.find((item) => item.id === "after")?.promotedAt,
+  ).toBeUndefined();
 });

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   mkdir,
   readFile,
@@ -50,7 +51,7 @@ export async function saveConfigFile(
 ) {
   const parsed = configV2Schema.parse(config);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const temporary = `${path}.tmp-${crypto.randomUUID()}`;
+  const temporary = `${path}.tmp-${randomUUID()}`;
   try {
     await writeFile(temporary, `${JSON.stringify(parsed, null, 2)}\n`, {
       mode: 0o600,

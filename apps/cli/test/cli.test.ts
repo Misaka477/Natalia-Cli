@@ -156,6 +156,21 @@ test("CLI filesystem commands share protected workspace APIs", async () => {
   await mkdir(join(root, "src"), { recursive: true });
   await writeFile(join(root, "src", "main.ts"), "const answer = 42\n");
   expect(
+    await workspaceFilesystemCommand({ action: "list", workspaceRoot: root }),
+  ).toEqual({
+    entries: [{ path: "src/", type: "directory" }],
+    truncated: false,
+  });
+  expect(
+    await workspaceFilesystemCommand({
+      action: "read",
+      workspaceRoot: root,
+      path: "src/main.ts",
+      offset: 1,
+      limit: 1,
+    }),
+  ).toMatchObject({ offset: 1, truncated: false });
+  expect(
     await workspaceFilesystemCommand({
       action: "glob",
       workspaceRoot: root,

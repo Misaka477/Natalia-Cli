@@ -260,6 +260,45 @@ test("Anthropic and Gemini lower PDF documents while OpenAI-compatible declares 
   });
 });
 
+test("Gemini function responses retain the original function name", async () => {
+  let body: Record<string, unknown> | undefined;
+  const fetchImpl = Object.assign(
+    async (_input: URL | RequestInfo, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  const provider = new GeminiProvider({
+    apiKey: "key",
+    model: "model",
+    fetch: fetchImpl,
+  });
+  for await (const _chunk of provider.stream({
+    messages: [
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "call_1", name: "workspace_read", arguments: "{}" }],
+      },
+      {
+        role: "tool",
+        toolCallID: "call_1",
+        toolName: "workspace_read",
+        content: "result",
+      },
+    ],
+  })) {
+    // Drain.
+  }
+  const contents = body?.contents as Array<{
+    parts: Array<{ functionResponse?: { name?: string } }>;
+  }>;
+  expect(contents[1]?.parts[0]?.functionResponse?.name).toBe("workspace_read");
+});
+
 test("provider stream idle timeout cancels a stalled SSE reader with typed timeout", async () => {
   let cancelled = false;
   const reader = {

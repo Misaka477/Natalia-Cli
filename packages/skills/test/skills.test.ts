@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, test } from "bun:test";
@@ -125,7 +125,24 @@ test("formats selected skill content with a bounded local file sample", async ()
   expect(output).toContain("<file>references/guide.md</file>");
 });
 
-test("later user skill source overrides a project skill with the same name", async () => {
+test("formats a removed skill without failing the active tool invocation", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-skill-removed-"));
+  const skillRoot = join(root, ".natalia", "skills", "review");
+  await mkdir(skillRoot, { recursive: true });
+  await writeFile(
+    join(skillRoot, "SKILL.md"),
+    "---\nname: review\ndescription: Review\n---\nReview guidance",
+  );
+  const skill = (await discoverSkills({ workspaceRoot: root })).resolve(
+    "review",
+  );
+  await rm(skillRoot, { recursive: true });
+  await expect(formatSkillForModel(skill)).resolves.toContain(
+    "<skill_files>\n</skill_files>",
+  );
+});
+
+test("project skill source overrides a user skill with the same name", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-skill-precedence-"));
   const project = join(root, ".natalia", "skills", "review");
   const user = join(root, "user", "review");
@@ -143,6 +160,9 @@ test("later user skill source overrides a project skill with the same name", asy
     workspaceRoot: root,
     userRoot: join(root, "user"),
   });
-  expect(registry.resolve("review").body).toBe("User guidance");
-  expect(registry.list()).toHaveLength(1);
+  expect(registry.resolve("review").body).toBe("Project guidance");
+  expect(registry.list().map((skill) => skill.qualifiedName)).toEqual([
+    "project:review",
+    "user:review",
+  ]);
 });

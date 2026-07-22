@@ -92,6 +92,12 @@ export const commands: Record<string, CommandDef> = {
     keys: "ctrl+,",
     desc: "Open settings",
   },
+  status: { id: "status", keys: "ctrl+i", desc: "Show runtime status" },
+  diagnostics: {
+    id: "diagnostics",
+    keys: "unset",
+    desc: "Show runtime diagnostics",
+  },
   "help.open": {
     id: "help.open",
     keys: "ctrl+h",

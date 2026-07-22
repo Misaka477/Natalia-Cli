@@ -1,4 +1,5 @@
 import {
+  chmod,
   lstat,
   mkdir,
   readdir,
@@ -273,17 +274,35 @@ export class WorkspaceSandboxManager
     try {
       for (const change of changes) {
         const target = await containPath(hostRoot, change.path);
+        const oldTarget = change.oldPath
+          ? await containPath(hostRoot, change.oldPath)
+          : undefined;
         const existing = await readOptional(target);
         backups.push({
           path: target,
           content: existing,
           existed: existing !== undefined,
         });
+        if (oldTarget) {
+          const old = await readOptional(oldTarget);
+          backups.push({
+            path: oldTarget,
+            content: old,
+            existed: old !== undefined,
+          });
+        }
         if (change.kind === "delete") {
           await rm(target, { recursive: true, force: true });
+        } else if (change.kind === "mode") {
+          if (!change.mode)
+            throw new Error("sandbox mode change is missing mode");
+          await chmod(target, Number.parseInt(change.mode, 8));
         } else {
           await mkdir(dirname(target), { recursive: true });
-          await writeFile(target, change.content ?? "");
+          const source = await containPath(manifest.root, change.path);
+          await writeFile(target, await readFile(source));
+          if (change.mode) await chmod(target, Number.parseInt(change.mode, 8));
+          if (oldTarget) await rm(oldTarget, { recursive: true, force: true });
         }
       }
       manifest.changedFiles = [];
@@ -449,7 +468,21 @@ export function isSecretEnvKey(key: string) {
 }
 
 function classifyRenames(changes: SandboxChange[]) {
-  return changes.map((change) => ({ ...change }));
+  const normalized: SandboxChange[] = [];
+  for (const change of changes) {
+    if (change.kind === "rename" && change.oldPath)
+      removeChangesForPath(normalized, change.oldPath);
+    if (change.kind === "delete") removeChangesForPath(normalized, change.path);
+    normalized.push({ ...change });
+  }
+  return normalized;
+}
+
+function removeChangesForPath(changes: SandboxChange[], path: string) {
+  for (let index = changes.length - 1; index >= 0; index--) {
+    const change = changes[index]!;
+    if (change.path === path) changes.splice(index, 1);
+  }
 }
 
 async function rejectSymlinkEscape(root: string, target: string) {

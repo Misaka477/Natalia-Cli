@@ -3,6 +3,7 @@ import type { RuntimeClient, SubmittedTurn } from "@natalia/contracts";
 import { runTuiShell } from "../src/app/runtime";
 
 const sessions: Array<string | undefined> = [];
+let diagnosticsLoaded = 0;
 const handle = await runTuiShell({
   backend: backend(),
   closeAfterInitialTurn: false,
@@ -22,6 +23,20 @@ keys.pressEnter();
 await Bun.sleep(200);
 
 // Close Settings with Escape
+keys.pressEscape();
+await Bun.sleep(80);
+if (diagnosticsLoaded !== 1)
+  throw new Error(`expected diagnostics dialog load, got ${diagnosticsLoaded}`);
+
+// Open runtime diagnostics, copy the report, then close the dialog.
+keys.pressKey("p", { ctrl: true });
+await Bun.sleep(80);
+await keys.typeText("diagnostics");
+await Bun.sleep(80);
+keys.pressEnter();
+await Bun.sleep(160);
+keys.pressEnter();
+await Bun.sleep(80);
 keys.pressEscape();
 await Bun.sleep(80);
 
@@ -73,6 +88,17 @@ function backend(): RuntimeClient {
       return { type: "snapshot.created", id: "palette-smoke", files: [] };
     },
     diagnostic() {},
+    async diagnostics() {
+      diagnosticsLoaded++;
+      return [
+        {
+          type: "diagnostic",
+          level: "warning",
+          message: "palette diagnostic",
+          at: "2026-07-23T00:00:00.000Z",
+        },
+      ];
+    },
     lastSubmission: () => undefined,
     respondApproval() {},
     respondQuestion() {},

@@ -68,9 +68,15 @@ export function createRuntimeHttpServer(
             controller = nextController;
             subscribers.add(controller);
             controller.enqueue(encoder.encode(SSE_PREAMBLE));
-            const marker = request.headers.get("last-event-id") ?? url.searchParams.get("since");
+            const marker =
+              request.headers.get("last-event-id") ??
+              url.searchParams.get("since");
             const since = marker === null ? undefined : Number(marker);
-            const replay = (items: Array<{ id: number; event: RuntimeEvent }> | Array<{ seq: number; event: RuntimeEvent }>) => {
+            const replay = (
+              items:
+                | Array<{ id: number; event: RuntimeEvent }>
+                | Array<{ seq: number; event: RuntimeEvent }>,
+            ) => {
               for (const item of items)
                 controller?.enqueue(
                   encodeSSE(
@@ -80,8 +86,24 @@ export function createRuntimeHttpServer(
                   ),
                 );
             };
-            if (typeof since === "number" && Number.isInteger(since) && since >= 0 && options.client.history) {
-              void options.client.history({ after: since, limit: 500 }).then((history) => replay(history.events));
+            if (
+              typeof since === "number" &&
+              Number.isInteger(since) &&
+              since >= 0 &&
+              options.client.history
+            ) {
+              void options.client
+                .history({ after: since, limit: 500 })
+                .then((history) => replay(history.events))
+                .catch((error) => {
+                  controller?.enqueue(
+                    encodeSSE(encoder, 0, {
+                      type: "diagnostic",
+                      level: "warning",
+                      message: `event history replay failed: ${error instanceof Error ? error.message : String(error)}`,
+                    }),
+                  );
+                });
               return;
             }
             replay(replayEvents(eventBuffer, request));
@@ -100,7 +122,19 @@ export function createRuntimeHttpServer(
     }
     if (url.pathname !== "/rpc" || request.method !== "POST")
       return Response.json({ error: "not found" }, { status: 404 });
-    const body = await request.json();
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return Response.json(
+        {
+          jsonrpc: "2.0",
+          id: null,
+          error: { code: -32700, message: "Parse error" },
+        },
+        { status: 400 },
+      );
+    }
     const result = await handleRPCMessage(body, options.client);
     if (result.error) return Response.json(result, { status: 400 });
     return Response.json(result);

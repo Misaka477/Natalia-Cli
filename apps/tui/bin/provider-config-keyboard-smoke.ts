@@ -50,7 +50,8 @@ try {
   keys.pressEnter();
   for (let attempts = 0; attempts < 40 && requests.length === 0; attempts++)
     await Bun.sleep(50);
-  if (!requests.length) throw new Error("Provider model discovery request was not sent");
+  if (!requests.length)
+    throw new Error("Provider model discovery request was not sent");
   await Bun.sleep(250);
   keys.pressEnter();
 
@@ -58,7 +59,9 @@ try {
   let persisted: ReturnType<typeof configV2Schema.parse> | undefined;
   for (let attempts = 0; attempts < 20; attempts++) {
     try {
-      persisted = configV2Schema.parse(JSON.parse(await readFile(path, "utf8")));
+      persisted = configV2Schema.parse(
+        JSON.parse(await readFile(path, "utf8")),
+      );
       break;
     } catch {
       await Bun.sleep(50);
@@ -74,11 +77,11 @@ try {
     throw new Error("Discovered model was not selected and persisted");
   if (
     JSON.stringify(requests) !==
-    JSON.stringify([
-      { path: "/v1/models", authorization: "Bearer secret-key" },
-    ])
+    JSON.stringify([{ path: "/v1/models", authorization: "Bearer secret-key" }])
   )
-    throw new Error(`Unexpected provider discovery request: ${JSON.stringify(requests)}`);
+    throw new Error(
+      `Unexpected provider discovery request: ${JSON.stringify(requests)}`,
+    );
 
   console.log("provider config keyboard smoke passed");
 } finally {
@@ -90,7 +93,11 @@ try {
 function backend(): RuntimeClient {
   return {
     start(onEvent) {
-      onEvent({ type: "session.created", sessionID: "ses_provider_ui", title: "Provider UI" });
+      onEvent({
+        type: "session.created",
+        sessionID: "ses_provider_ui",
+        title: "Provider UI",
+      });
       onEvent({ type: "session.ready", sessionID: "ses_provider_ui" });
     },
     async submit(text) {

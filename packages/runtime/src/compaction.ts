@@ -18,6 +18,7 @@ export type CompactionInput = {
 
 export type CompactionResult = {
   summary: string;
+  /** Optional estimate of the compacted summary itself, never API request usage. */
   tokens?: number;
 };
 
@@ -45,7 +46,6 @@ export function providerCompactor(provider: StreamingProvider): Compactor {
         .filter(Boolean)
         .join("\n\n");
       let summary = "";
-      let tokens: number | undefined;
       for await (const chunk of provider.stream({
         messages: [
           {
@@ -57,12 +57,10 @@ export function providerCompactor(provider: StreamingProvider): Compactor {
         ],
       })) {
         if (chunk.type === "content") summary += chunk.text;
-        if (chunk.type === "usage")
-          tokens = chunk.inputTokens + chunk.outputTokens;
       }
       if (!summary.trim())
         throw new Error("provider compactor returned empty summary");
-      return { summary: summary.trim(), tokens };
+      return { summary: summary.trim() };
     },
   };
 }
@@ -140,14 +138,7 @@ export async function compactContext(
       content: buildCompactionPrompt(result.summary, options.instruction),
       tokens: result.tokens ?? estimateTokens(result.summary),
     };
-    ledger.replaceAfterCompaction(
-      summary,
-      preserved,
-      result.tokens
-        ? result.tokens +
-            estimateTokens(preserved.map((entry) => entry.content).join("\n"))
-        : undefined,
-    );
+    ledger.replaceAfterCompaction(summary, preserved, undefined);
     const afterTokens = ledger.effectiveTokens();
     options.onEvent?.({
       type: "compaction.end",

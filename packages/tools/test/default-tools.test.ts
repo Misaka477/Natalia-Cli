@@ -223,9 +223,10 @@ test("managed process max runtime stops the owned process group", async () => {
       },
       { workspaceRoot: root },
     ),
-  ) as { pid?: number; maxRuntimeMs?: number };
+  ) as { pid?: number; maxRuntimeMs?: number; deadlineAt?: string };
   const childPID = Number(await waitForFile(join(root, "child.pid")));
   expect(started.maxRuntimeMs).toBe(100);
+  expect(started.deadlineAt).toBeString();
   await Bun.sleep(250);
   const status = JSON.parse(
     await tools
@@ -237,7 +238,9 @@ test("managed process max runtime stops the owned process group", async () => {
 });
 
 test("reopened managed process registry restores a durable deadline", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-tools-process-reopen-deadline-"));
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-tools-process-reopen-deadline-"),
+  );
   const first = createToolRegistry();
   await first.get("process_start")!.execute(
     {
@@ -262,10 +265,12 @@ test("reopened registry immediately stops an overdue durable deadline", async ()
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-process-overdue-"));
   const first = createToolRegistry();
   const started = JSON.parse(
-    await first.get("process_start")!.execute(
-      { id: "proc_overdue", command: "sleep 30", maxRuntimeMs: 10_000 },
-      { workspaceRoot: root },
-    ),
+    await first
+      .get("process_start")!
+      .execute(
+        { id: "proc_overdue", command: "sleep 30", maxRuntimeMs: 10_000 },
+        { workspaceRoot: root },
+      ),
   ) as { pid?: number };
   const manifest = join(root, ".natalia", "processes", "processes.json");
   const parsed = JSON.parse(await readFile(manifest, "utf8")) as {
@@ -287,31 +292,43 @@ test("managed process resource limits require positive values", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-process-limits-"));
   const tools = createToolRegistry();
   await expect(
-    tools.get("process_start")!.execute(
-      { command: "sleep 1", maxOutputBytes: 0 },
-      { workspaceRoot: root },
-    ),
+    tools
+      .get("process_start")!
+      .execute(
+        { command: "sleep 1", maxOutputBytes: 0 },
+        { workspaceRoot: root },
+      ),
   ).rejects.toThrow("value must be a positive number");
   await expect(
-    tools.get("process_start")!.execute(
-      { command: "sleep 1", stopTimeoutMs: -1 },
-      { workspaceRoot: root },
-    ),
+    tools
+      .get("process_start")!
+      .execute(
+        { command: "sleep 1", stopTimeoutMs: -1 },
+        { workspaceRoot: root },
+      ),
   ).rejects.toThrow("value must be a positive number");
 });
 
 test("managed process IDs and deadlines are isolated by workspace", async () => {
-  const firstRoot = await mkdtemp(join(tmpdir(), "natalia-tools-process-first-"));
-  const secondRoot = await mkdtemp(join(tmpdir(), "natalia-tools-process-second-"));
+  const firstRoot = await mkdtemp(
+    join(tmpdir(), "natalia-tools-process-first-"),
+  );
+  const secondRoot = await mkdtemp(
+    join(tmpdir(), "natalia-tools-process-second-"),
+  );
   const tools = createToolRegistry();
-  await tools.get("process_start")!.execute(
-    { id: "proc_same", command: "sleep 30", maxRuntimeMs: 100 },
-    { workspaceRoot: firstRoot },
-  );
-  await tools.get("process_start")!.execute(
-    { id: "proc_same", command: "sleep 30" },
-    { workspaceRoot: secondRoot },
-  );
+  await tools
+    .get("process_start")!
+    .execute(
+      { id: "proc_same", command: "sleep 30", maxRuntimeMs: 100 },
+      { workspaceRoot: firstRoot },
+    );
+  await tools
+    .get("process_start")!
+    .execute(
+      { id: "proc_same", command: "sleep 30" },
+      { workspaceRoot: secondRoot },
+    );
   await Bun.sleep(250);
   const first = JSON.parse(
     await tools

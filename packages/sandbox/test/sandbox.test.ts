@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { WorkspaceSandboxManager, containPath, isSecretEnvKey } from "../src";
@@ -31,7 +31,6 @@ test("sandbox diff covers delete rename mode and env allowlist redacts secrets",
   const changes = await manager.previewMerge("box");
   expect(changes.map((change) => change.kind)).toEqual([
     "modify",
-    "modify",
     "rename",
     "mode",
     "delete",
@@ -56,6 +55,27 @@ test("sandbox merge is atomic on failure", async () => {
   await writeFile(join(host, "bad"), "not a dir");
   await expect(manager.merge("box", host)).rejects.toThrow();
   expect(await readFile(join(host, "keep.txt"), "utf8")).toBe("original");
+});
+
+test("sandbox merge applies rename content and mode without orphaning host files", async () => {
+  const base = await mkdtemp(join(tmpdir(), "natalia-sandbox-merge-base-"));
+  const host = await mkdtemp(join(tmpdir(), "natalia-sandbox-merge-host-"));
+  const manager = new WorkspaceSandboxManager(base);
+  await manager.create("box");
+  await writeFile(join(host, "old.ts"), "old host\n");
+  await manager.write("box", "old.ts", "sandbox content\n");
+  await manager.renamePath("box", "old.ts", "new.ts");
+  await manager.write("box", "script.sh", "#!/bin/sh\n");
+  await manager.modePath("box", "script.sh", "100755");
+  await manager.merge("box", host);
+  await expect(readFile(join(host, "old.ts"), "utf8")).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+  expect(await readFile(join(host, "new.ts"), "utf8")).toBe(
+    "sandbox content\n",
+  );
+  expect((await stat(join(host, "script.sh"))).mode & 0o111).not.toBe(0);
+  expect(await readFile(join(host, "script.sh"), "utf8")).toBe("#!/bin/sh\n");
 });
 
 test("sandbox target/audit/checkpoint contract exposes isolation level", async () => {
