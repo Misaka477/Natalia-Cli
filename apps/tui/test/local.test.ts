@@ -9,7 +9,10 @@ import {
   sortModelOptions,
   selectActiveAgent,
 } from "../src/local";
-import { buildModelOptions } from "../src/component/DialogModel";
+import {
+  buildModelOptions,
+  unavailableModelSummary,
+} from "../src/component/DialogModel";
 import { configV2Schema } from "@natalia/contracts";
 
 test("local TUI state persists model/session/MCP preferences", async () => {
@@ -28,6 +31,30 @@ test("local TUI state persists model/session/MCP preferences", async () => {
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("model selector excludes unavailable policy and credential configurations", () => {
+  const config = configV2Schema.parse({
+    version: 2,
+    providers: {
+      usable: { type: "openai", apiKey: "test" },
+      missing: { type: "openai" },
+    },
+    models: {
+      valid: { provider: "usable", model: "valid" },
+      disabled: { provider: "usable", model: "disabled", enabled: false },
+      unavailable: { provider: "missing", model: "unavailable" },
+    },
+  });
+  expect(
+    buildModelOptions(config, { favoriteModels: [], recentModels: [] }).map(
+      (option) => option.value,
+    ),
+  ).toEqual(["valid"]);
+  expect(unavailableModelSummary(config)).toContain("disabled: model_disabled");
+  expect(unavailableModelSummary(config)).toContain(
+    "unavailable: provider_credentials_unavailable",
+  );
 });
 
 test("local TUI state persists the selected agent per workspace", async () => {

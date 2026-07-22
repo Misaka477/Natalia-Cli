@@ -175,6 +175,58 @@ test("manual compaction works while disabled and preserves tool-call/result pair
   ]);
 });
 
+test("compaction retains attachment metadata only for preserved user entries", async () => {
+  const ledger = new ContextLedger();
+  ledger.add({
+    id: "old-user",
+    role: "user",
+    content: "old image",
+    attachments: [
+      {
+        id: "att_old",
+        path: ".natalia/attachments/att_old-image.png",
+        filename: "old.png",
+        mediaType: "image/png",
+        byteLength: 8,
+        sha256: "old",
+      },
+    ],
+  });
+  ledger.add({
+    id: "recent-user",
+    role: "user",
+    content: "recent image",
+    attachments: [
+      {
+        id: "att_recent",
+        path: ".natalia/attachments/att_recent-image.png",
+        filename: "recent.png",
+        mediaType: "image/png",
+        byteLength: 8,
+        sha256: "recent",
+      },
+    ],
+  });
+  await compactContext(
+    ledger,
+    new FakeCompactor([{ summary: "summary", tokens: 10 }]),
+    {
+      id: "cmp_attachment",
+      trigger: "manual",
+      maxTokens: 1000,
+      thresholdPercent: 85,
+      reservedTokens: 100,
+      preservedRecentMessages: 1,
+    },
+  );
+  expect(
+    ledger
+      .snapshot()
+      .entries.flatMap((entry) => entry.attachments ?? [])
+      .map((attachment) => attachment.id),
+  ).toEqual(["att_recent"]);
+});
+
 test("compaction failure is atomic and retry events use M9 policy", async () => {
   const ledger = ledgerWithMessages(5);
   const before = ledger.snapshot();

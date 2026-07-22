@@ -1,10 +1,12 @@
 import type { ContextEntry } from "./context";
-import { providerErrorFromHttp } from "./errors";
+import { providerError, providerErrorFromHttp } from "./errors";
 import { discoverLegacyProviderConfig } from "@natalia/config";
 
 export type ProviderMessage = {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
+  images?: Array<{ mediaType: "image/png" | "image/jpeg"; dataURL: string }>;
+  pdfs?: Array<{ mediaType: "application/pdf"; dataURL: string }>;
   toolCallID?: string;
   toolCalls?: ProviderToolCall[];
 };
@@ -37,6 +39,8 @@ export type ProviderStreamRequest = {
 export type StreamingProvider = {
   provider: string;
   model: string;
+  imageInput?: boolean;
+  pdfInput?: boolean;
   stream(request: ProviderStreamRequest): AsyncIterable<ProviderStreamChunk>;
 };
 
@@ -54,6 +58,7 @@ export type OpenAICompatibleProviderOptions = {
   reasoningEffort?: string;
   thinkingEnabled?: boolean;
   timeoutMs?: number;
+  streamIdleTimeoutMs?: number;
 };
 
 export type AnthropicProviderOptions = {
@@ -64,6 +69,7 @@ export type AnthropicProviderOptions = {
   fetch?: typeof fetch;
   version?: string;
   timeoutMs?: number;
+  streamIdleTimeoutMs?: number;
   maxTokens?: number;
   temperature?: number;
 };
@@ -75,6 +81,7 @@ export type GeminiProviderOptions = {
   provider?: string;
   fetch?: typeof fetch;
   timeoutMs?: number;
+  streamIdleTimeoutMs?: number;
   temperature?: number;
   maxTokens?: number;
 };
@@ -82,6 +89,8 @@ export type GeminiProviderOptions = {
 export class OpenAICompatibleProvider implements StreamingProvider {
   readonly provider: string;
   readonly model: string;
+  readonly imageInput = true;
+  readonly pdfInput = false;
   private readonly apiKey: string;
   private readonly baseURL: string;
   private readonly fetchImpl: typeof fetch;
@@ -93,6 +102,7 @@ export class OpenAICompatibleProvider implements StreamingProvider {
   private readonly reasoningEffort?: string;
   private readonly thinkingEnabled?: boolean;
   private readonly timeoutMs?: number;
+  private readonly streamIdleTimeoutMs?: number;
 
   constructor(options: OpenAICompatibleProviderOptions) {
     this.apiKey = options.apiKey;
@@ -111,6 +121,7 @@ export class OpenAICompatibleProvider implements StreamingProvider {
     this.reasoningEffort = options.reasoningEffort;
     this.thinkingEnabled = options.thinkingEnabled;
     this.timeoutMs = options.timeoutMs;
+    this.streamIdleTimeoutMs = options.streamIdleTimeoutMs;
   }
 
   async *stream(
@@ -184,13 +195,60 @@ export class OpenAICompatibleProvider implements StreamingProvider {
       yield { type: "done" };
       return;
     }
-    yield* streamOpenAISSE(response.body);
+    yield* streamOpenAISSE(response.body, this.streamIdleTimeoutMs);
+  }
+
+  async listModels(): Promise<
+    Array<{ id: string; contextWindow?: number; inputTokenLimit?: number }>
+  > {
+    const response = await this.fetchImpl(modelsURL(this.baseURL), {
+      headers: {
+        [this.authHeader]: `Bearer ${this.apiKey}`,
+        ...this.customHeaders,
+      },
+    });
+    if (!response.ok)
+      throw providerErrorFromHttp({
+        statusCode: response.status,
+        statusText: response.statusText,
+        retryAfter: response.headers.get("retry-after"),
+        message: await safeResponseText(response),
+      });
+    const data = (await response.json()) as {
+      data?: Array<{
+        id?: unknown;
+        context_window?: unknown;
+        contextWindow?: unknown;
+        input_token_limit?: unknown;
+      }>;
+    };
+    return (data.data ?? []).flatMap((model) =>
+      typeof model.id === "string"
+        ? [
+            {
+              id: model.id,
+              contextWindow:
+                typeof model.context_window === "number"
+                  ? model.context_window
+                  : typeof model.contextWindow === "number"
+                    ? model.contextWindow
+                    : undefined,
+              inputTokenLimit:
+                typeof model.input_token_limit === "number"
+                  ? model.input_token_limit
+                  : undefined,
+            },
+          ]
+        : [],
+    );
   }
 }
 
 export class AnthropicProvider implements StreamingProvider {
   readonly provider: string;
   readonly model: string;
+  readonly imageInput = true;
+  readonly pdfInput = true;
   private readonly apiKey: string;
   private readonly baseURL: string;
   private readonly fetchImpl: typeof fetch;
@@ -198,6 +256,7 @@ export class AnthropicProvider implements StreamingProvider {
   private readonly timeoutMs?: number;
   private readonly maxTokens?: number;
   private readonly temperature?: number;
+  private readonly streamIdleTimeoutMs?: number;
 
   constructor(options: AnthropicProviderOptions) {
     this.apiKey = options.apiKey;
@@ -212,6 +271,7 @@ export class AnthropicProvider implements StreamingProvider {
     this.timeoutMs = options.timeoutMs;
     this.maxTokens = options.maxTokens;
     this.temperature = options.temperature;
+    this.streamIdleTimeoutMs = options.streamIdleTimeoutMs;
   }
 
   async *stream(
@@ -262,19 +322,22 @@ export class AnthropicProvider implements StreamingProvider {
         message: await safeResponseText(response),
       });
     if (!response.body) throw new Error("Anthropic response body unavailable");
-    yield* streamAnthropicSSE(response.body);
+    yield* streamAnthropicSSE(response.body, this.streamIdleTimeoutMs);
   }
 }
 
 export class GeminiProvider implements StreamingProvider {
   readonly provider: string;
   readonly model: string;
+  readonly imageInput = true;
+  readonly pdfInput = true;
   private readonly apiKey: string;
   private readonly baseURL: string;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs?: number;
   private readonly temperature?: number;
   private readonly maxTokens?: number;
+  private readonly streamIdleTimeoutMs?: number;
 
   constructor(options: GeminiProviderOptions) {
     this.apiKey = options.apiKey;
@@ -287,6 +350,7 @@ export class GeminiProvider implements StreamingProvider {
     this.timeoutMs = options.timeoutMs;
     this.temperature = options.temperature;
     this.maxTokens = options.maxTokens;
+    this.streamIdleTimeoutMs = options.streamIdleTimeoutMs;
   }
 
   async *stream(
@@ -343,7 +407,7 @@ export class GeminiProvider implements StreamingProvider {
         message: await safeResponseText(response),
       });
     if (!response.body) throw new Error("Gemini response body unavailable");
-    yield* streamGeminiSSE(response.body);
+    yield* streamGeminiSSE(response.body, this.streamIdleTimeoutMs);
   }
 }
 
@@ -466,6 +530,7 @@ export function providerFromKind(
       provider: input.providerName ?? input.provider,
       fetch: input.fetch,
       timeoutMs: input.timeoutMs,
+      streamIdleTimeoutMs: input.streamIdleTimeoutMs,
       maxTokens: input.maxTokens,
       temperature: input.temperature,
     });
@@ -477,6 +542,7 @@ export function providerFromKind(
       provider: input.providerName ?? input.provider,
       fetch: input.fetch,
       timeoutMs: input.timeoutMs,
+      streamIdleTimeoutMs: input.streamIdleTimeoutMs,
       maxTokens: input.maxTokens,
       temperature: input.temperature,
     });
@@ -490,6 +556,14 @@ function chatCompletionsURL(baseURL: string) {
   return baseURL.endsWith("/chat/completions")
     ? baseURL
     : `${baseURL}/chat/completions`;
+}
+
+function modelsURL(baseURL: string) {
+  const url = new URL(baseURL);
+  url.pathname =
+    url.pathname.replace(/\/chat\/completions$/u, "").replace(/\/$/u, "") +
+    "/models";
+  return url.toString();
 }
 
 type AnthropicStreamChunk = {
@@ -549,13 +623,14 @@ type OpenAIStreamChunk = {
 
 async function* streamOpenAISSE(
   body: ReadableStream<Uint8Array>,
+  streamIdleTimeoutMs?: number,
 ): AsyncIterable<ProviderStreamChunk> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   const toolCalls = new Map<number, ProviderToolCall>();
   let buffer = "";
   while (true) {
-    const next = await reader.read();
+    const next = await readWithIdleTimeout(reader, streamIdleTimeoutMs);
     if (next.done) break;
     buffer += decoder.decode(next.value, { stream: true });
     const parts = buffer.split("\n\n");
@@ -574,6 +649,7 @@ async function* streamOpenAISSE(
 
 async function* streamAnthropicSSE(
   body: ReadableStream<Uint8Array>,
+  streamIdleTimeoutMs?: number,
 ): AsyncIterable<ProviderStreamChunk> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -581,7 +657,7 @@ async function* streamAnthropicSSE(
   let currentToolIndex = -1;
   let buffer = "";
   while (true) {
-    const next = await reader.read();
+    const next = await readWithIdleTimeout(reader, streamIdleTimeoutMs);
     if (next.done) break;
     buffer += decoder.decode(next.value, { stream: true });
     const parts = buffer.split("\n\n");
@@ -650,12 +726,13 @@ async function* streamAnthropicSSE(
 
 async function* streamGeminiSSE(
   body: ReadableStream<Uint8Array>,
+  streamIdleTimeoutMs?: number,
 ): AsyncIterable<ProviderStreamChunk> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   while (true) {
-    const next = await reader.read();
+    const next = await readWithIdleTimeout(reader, streamIdleTimeoutMs);
     if (next.done) break;
     buffer += decoder.decode(next.value, { stream: true });
     const parts = buffer.split("\n\n");
@@ -780,6 +857,21 @@ function toOpenAIMessage(message: ProviderMessage) {
       })),
     };
   }
+  if (message.images?.length || message.pdfs?.length)
+    return {
+      role: message.role,
+      content: [
+        ...(message.content ? [{ type: "text", text: message.content }] : []),
+        ...(message.images ?? []).map((image) => ({
+          type: "image_url",
+          image_url: { url: image.dataURL },
+        })),
+        ...(message.pdfs ?? []).map((pdf) => ({
+          type: "file",
+          file: { file_data: pdf.dataURL },
+        })),
+      ],
+    };
   return { role: message.role, content: message.content };
 }
 
@@ -810,7 +902,30 @@ function toAnthropicMessage(message: ProviderMessage) {
     };
   return {
     role: message.role === "assistant" ? "assistant" : "user",
-    content: message.content,
+    content:
+      message.images?.length || message.pdfs?.length
+        ? [
+            ...(message.content
+              ? [{ type: "text", text: message.content }]
+              : []),
+            ...(message.images ?? []).map((image) => ({
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: image.mediaType,
+                data: dataURLPayload(image.dataURL),
+              },
+            })),
+            ...(message.pdfs ?? []).map((pdf) => ({
+              type: "document",
+              source: {
+                type: "base64",
+                media_type: pdf.mediaType,
+                data: dataURLPayload(pdf.dataURL),
+              },
+            })),
+          ]
+        : message.content,
   };
 }
 
@@ -835,7 +950,31 @@ function toGeminiContent(message: ProviderMessage) {
         },
       ],
     };
-  return { role, parts: [{ text: message.content }] };
+  return {
+    role,
+    parts: [
+      ...(message.content ? [{ text: message.content }] : []),
+      ...(message.images?.map((image) => ({
+        inlineData: {
+          mimeType: image.mediaType,
+          data: dataURLPayload(image.dataURL),
+        },
+      })) ?? []),
+      ...(message.pdfs?.map((pdf) => ({
+        inlineData: {
+          mimeType: pdf.mediaType,
+          data: dataURLPayload(pdf.dataURL),
+        },
+      })) ?? []),
+    ],
+  };
+}
+
+function dataURLPayload(value: string) {
+  const marker = ";base64,";
+  const index = value.indexOf(marker);
+  if (index < 0) throw new Error("attachment data URL is not base64 encoded");
+  return value.slice(index + marker.length);
 }
 
 function safeJSON(input: string) {
@@ -843,6 +982,32 @@ function safeJSON(input: string) {
     return JSON.parse(input) as Record<string, unknown>;
   } catch {
     return { value: input };
+  }
+}
+
+export async function readWithIdleTimeout(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  timeoutMs?: number,
+) {
+  if (!timeoutMs) return await reader.read();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      reader.read(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          void reader.cancel().catch(() => undefined);
+          reject(
+            providerError({
+              kind: "timeout",
+              message: `provider stream idle timeout after ${timeoutMs}ms`,
+            }),
+          );
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 

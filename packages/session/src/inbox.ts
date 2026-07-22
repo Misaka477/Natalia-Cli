@@ -1,4 +1,4 @@
-import type { SessionID } from "@natalia/contracts";
+import type { LocalAttachment, SessionID } from "@natalia/contracts";
 import type { SessionRecord } from "./index";
 
 export type SessionInputDelivery = "steer" | "queue";
@@ -7,6 +7,7 @@ export type AdmittedSessionInput = {
   id: string;
   sessionID: SessionID;
   text: string;
+  attachments?: LocalAttachment[];
   delivery: SessionInputDelivery;
   admittedAt: string;
   admittedSeq: number;
@@ -37,6 +38,8 @@ export function admitInput(
     if (
       existing.sessionID === session.id &&
       existing.text === input.text &&
+      JSON.stringify(existing.attachments ?? []) ===
+        JSON.stringify(input.attachments ?? []) &&
       existing.delivery === input.delivery
     )
       return existing;
@@ -46,10 +49,12 @@ export function admitInput(
     ...input,
     sessionID: session.id,
     admittedAt: now.toISOString(),
-    admittedSeq: admittedInputs(session).reduce(
-      (latest, item, index) => Math.max(latest, item.admittedSeq ?? index + 1),
-      0,
-    ) + 1,
+    admittedSeq:
+      admittedInputs(session).reduce(
+        (latest, item, index) =>
+          Math.max(latest, item.admittedSeq ?? index + 1),
+        0,
+      ) + 1,
   };
   session.inbox = [...admittedInputs(session), admitted];
   return admitted;
@@ -63,7 +68,11 @@ export function admissionCutoff(session: SessionRecord) {
   );
 }
 
-export function promoteSteers(session: SessionRecord, cutoff = admissionCutoff(session), now = new Date()) {
+export function promoteSteers(
+  session: SessionRecord,
+  cutoff = admissionCutoff(session),
+  now = new Date(),
+) {
   return promote(
     session,
     admittedInputs(session).filter(
@@ -84,7 +93,11 @@ export function promoteNextQueued(session: SessionRecord, now = new Date()) {
   return next ? promote(session, [next], now) : [];
 }
 
-function promote(session: SessionRecord, inputs: AdmittedSessionInput[], now: Date) {
+function promote(
+  session: SessionRecord,
+  inputs: AdmittedSessionInput[],
+  now: Date,
+) {
   if (!inputs.length) return [];
   const promoted = new Set(inputs.map((item) => item.id));
   const promotedAt = now.toISOString();

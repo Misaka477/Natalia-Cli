@@ -24,7 +24,9 @@ test("discovers models from configured provider URL and persists selected model"
       });
     },
   });
-  const workspaceRoot = await mkdtemp(join(tmpdir(), "natalia-provider-config-"));
+  const workspaceRoot = await mkdtemp(
+    join(tmpdir(), "natalia-provider-config-"),
+  );
 
   try {
     const models = await discoverProviderModels(
@@ -103,7 +105,47 @@ test("catalog excludes providers denied by the configured policy", () => {
       name: "approved",
       type: "openai-compatible",
       configured: true,
-      models: [{ id: "approved-model", provider: "approved" }],
+      models: [
+        {
+          id: "approved-model",
+          provider: "approved",
+          capabilities: {
+            toolCall: true,
+            reasoning: true,
+            thinking: true,
+            imageInput: false,
+            pdfInput: false,
+          },
+        },
+      ],
+    },
+  ]);
+});
+
+test("catalog filters disabled and policy-denied models while preserving capabilities", () => {
+  const config = configV2Schema.parse({
+    version: 2,
+    providers: { local: { type: "openai-compatible", apiKey: "key" } },
+    models: {
+      capable: {
+        provider: "local",
+        model: "capable",
+        capabilities: { toolCall: false, reasoning: false, thinking: false },
+      },
+      disabled: { provider: "local", model: "disabled", enabled: false },
+    },
+  });
+  expect(buildModelCatalog(config)[0]?.models).toEqual([
+    {
+      id: "capable",
+      provider: "local",
+      capabilities: {
+        toolCall: false,
+        reasoning: false,
+        thinking: false,
+        imageInput: false,
+        pdfInput: false,
+      },
     },
   ]);
 });

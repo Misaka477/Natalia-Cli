@@ -56,6 +56,16 @@ export const checkpointConfigSchema = z
 export const modelConfigSchema = z.object({
   provider: z.string().min(1),
   model: z.string().min(1),
+  enabled: z.boolean().default(true),
+  capabilities: z
+    .object({
+      toolCall: z.boolean().default(true),
+      reasoning: z.boolean().default(true),
+      thinking: z.boolean().default(true),
+      imageInput: z.boolean().default(false),
+      pdfInput: z.boolean().default(false),
+    })
+    .default({}),
   contextWindow: z
     .union([z.literal("auto"), z.number().int().positive()])
     .default("auto"),
@@ -89,6 +99,7 @@ export const modelConfigSchema = z.object({
 
 export const providerConfigSchema = z.object({
   type: z.string().min(1),
+  enabled: z.boolean().default(true),
   baseURL: z.string().url().optional(),
   apiKey: z.string().min(1).optional(),
   authHeader: z.string().min(1).optional(),
@@ -178,6 +189,12 @@ export const agentConfigSchema = z.object({
 
 export const skillsConfigSchema = z.object({
   urls: z.array(z.string().url()).default([]),
+});
+
+export const pluginConfigSchema = z.object({
+  enabled: z.record(z.boolean()).default({}),
+  paths: z.array(z.string()).default([]),
+  capabilities: z.record(z.array(z.enum(["tools", "events"]))).default({}),
 });
 
 export const mcpServerConfigSchema = z.object({
@@ -273,6 +290,7 @@ export const configV2Schema = z.object({
   defaultAgent: z.string().default(""),
   mcpServers: z.record(mcpServerConfigSchema).default({}),
   skills: skillsConfigSchema.default({}),
+  plugins: pluginConfigSchema.default({}),
   workspace: workspaceConfigSchema.default({}),
   instructions: instructionConfigSchema.default({}),
   webSearch: webSearchConfigSchema.default({}),

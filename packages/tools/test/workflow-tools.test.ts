@@ -30,6 +30,37 @@ test("workflow_run executes a valid JSON workflow", async () => {
   expect(await readFile(join(root, "out.txt"), "utf8")).toBe("hello");
 });
 
+test("workflow_run projects every durable workflow lifecycle event", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-workflow-events-"));
+  const events: Array<{ event: string; status: string; stepID?: string }> = [];
+  const tools = createToolRegistry();
+  await tools.get("workflow_run")!.execute(
+    {
+      workflow: JSON.stringify({
+        version: 1,
+        name: "events",
+        steps: [{ id: "set", kind: "set", key: "a", value: "b" }],
+      }),
+    },
+    {
+      workspaceRoot: root,
+      onWorkflowEvent(event) {
+        events.push({
+          event: event.event,
+          status: event.status,
+          stepID: event.stepID,
+        });
+      },
+    },
+  );
+  expect(events).toEqual([
+    { event: "run_started", status: "running", stepID: undefined },
+    { event: "step_started", status: "running", stepID: "set" },
+    { event: "step_completed", status: "running", stepID: "set" },
+    { event: "run_completed", status: "completed", stepID: undefined },
+  ]);
+});
+
 test("workflow_run executes a valid YAML workflow", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-wf-yaml-"));
   const tools = createToolRegistry();

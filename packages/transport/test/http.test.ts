@@ -46,9 +46,49 @@ test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", as
     },
     async pendingInteractive() {
       return {
-        approvals: [{ type: "approval.request" as const, id: "approval_open", title: "Write", preview: "file" }],
+        approvals: [
+          {
+            type: "approval.request" as const,
+            id: "approval_open",
+            title: "Write",
+            preview: "file",
+          },
+        ],
         questions: [],
       };
+    },
+    async plugins() {
+      return [
+        {
+          id: "demo.plugin",
+          version: "1.0.0",
+          name: "Demo",
+          description: "",
+          capabilities: ["tools"],
+        },
+      ];
+    },
+    async runtimeStatus() {
+      return {
+        type: "status.snapshot",
+        model: "test",
+        provider: "fixture",
+        context: "0 tokens",
+        step: "0",
+        permissions: "ask",
+        cwd: "/tmp",
+        background: "0 running",
+      };
+    },
+    async diagnostics() {
+      return [
+        {
+          type: "diagnostic",
+          level: "info",
+          message: "safe",
+          at: "2026-07-22T00:00:00.000Z",
+        },
+      ];
     },
     cancel() {},
     pause(reason) {
@@ -83,12 +123,54 @@ test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", as
     { result: { text: "hello" } },
   );
   expect(events).toHaveLength(1);
+  const plugins = await fetch(`${server.url}/rpc`, {
+    method: "POST",
+    headers: {
+      authorization: "Bearer secret",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 8,
+      method: "plugin.list",
+      params: {},
+    }),
+  });
+  expect(
+    (await plugins.json()) as { result: Array<{ id: string }> },
+  ).toMatchObject({ result: [{ id: "demo.plugin" }] });
+  const diagnostics = await fetch(`${server.url}/rpc`, {
+    method: "POST",
+    headers: {
+      authorization: "Bearer secret",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 10,
+      method: "diagnostics.list",
+      params: { limit: 1 },
+    }),
+  });
+  expect(
+    (await diagnostics.json()) as { result: Array<{ message: string }> },
+  ).toMatchObject({ result: [{ message: "safe" }] });
   const pending = await fetch(`${server.url}/rpc`, {
     method: "POST",
-    headers: { authorization: "Bearer secret", "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 9, method: "interactive.pending", params: {} }),
+    headers: {
+      authorization: "Bearer secret",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 9,
+      method: "interactive.pending",
+      params: {},
+    }),
   });
-  expect((await pending.json()) as { result: { approvals: Array<{ id: string }> } }).toMatchObject({
+  expect(
+    (await pending.json()) as { result: { approvals: Array<{ id: string }> } },
+  ).toMatchObject({
     result: { approvals: [{ id: "approval_open" }] },
   });
   const replay = await fetch(`${server.url}/events?since=0`, {
@@ -97,7 +179,11 @@ test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", as
   const reader = replay.body!.getReader();
   const decoder = new TextDecoder();
   let replayed = "";
-  for (let index = 0; index < 4 && !replayed.includes("durable replay"); index++) {
+  for (
+    let index = 0;
+    index < 4 && !replayed.includes("durable replay");
+    index++
+  ) {
     const next = await reader.read();
     replayed += decoder.decode(next.value);
   }

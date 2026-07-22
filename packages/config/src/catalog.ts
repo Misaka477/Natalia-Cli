@@ -1,9 +1,16 @@
 import { configV2Schema, type ConfigV2 } from "@natalia/contracts";
-import { evaluatePolicy } from "./policy";
+import { evaluateModelPolicy, evaluatePolicy } from "./policy";
 
 export interface CatalogModel {
   id: string;
   provider: string;
+  capabilities: {
+    toolCall: boolean;
+    reasoning: boolean;
+    thinking: boolean;
+    imageInput: boolean;
+    pdfInput: boolean;
+  };
 }
 
 export interface CatalogProvider {
@@ -16,8 +23,15 @@ export interface CatalogProvider {
 
 export function buildModelCatalog(config: ConfigV2): CatalogProvider[] {
   return Object.entries(config.providers ?? {})
-    .filter(([id]) =>
-      evaluatePolicy(config.experimental.policies, "provider.use", id, "allow") === "allow",
+    .filter(
+      ([id, provider]) =>
+        provider.enabled &&
+        evaluatePolicy(
+          config.experimental.policies,
+          "provider.use",
+          id,
+          "allow",
+        ) === "allow",
     )
     .map(([id, cfg]) => ({
       id,
@@ -25,10 +39,20 @@ export function buildModelCatalog(config: ConfigV2): CatalogProvider[] {
       type: cfg.type,
       configured: Boolean(cfg.apiKey),
       models: Object.entries(config.models ?? {})
-        .filter(([, model]) => model.provider === id)
+        .filter(
+          ([, model]) =>
+            model.provider === id &&
+            model.enabled &&
+            evaluateModelPolicy(
+              config.experimental.policies,
+              id,
+              model.model,
+            ) === "allow",
+        )
         .map(([, model]) => ({
           id: model.model,
           provider: id,
+          capabilities: model.capabilities,
         })),
     }));
 }
@@ -39,8 +63,10 @@ export async function discoverProviderModels(
   apiKey: string,
 ): Promise<string[]> {
   const base = baseURL.trim().replace(/\/+$/u, "");
-  if (!base) throw new Error("Provider base URL is required for model discovery");
-  if (!apiKey.trim()) throw new Error("Provider API key is required for model discovery");
+  if (!base)
+    throw new Error("Provider base URL is required for model discovery");
+  if (!apiKey.trim())
+    throw new Error("Provider API key is required for model discovery");
 
   const anthropic = type === "anthropic";
   const gemini = type === "gemini";
@@ -73,7 +99,14 @@ export async function discoverProviderModels(
     : payload.data
       ? payload.data.map((model) => model.id)
       : (payload.models ?? []).map((model) => model.id ?? model.name);
-  return [...new Set(values.filter((value): value is string => typeof value === "string" && value.length > 0))]
+  return [
+    ...new Set(
+      values.filter(
+        (value): value is string =>
+          typeof value === "string" && value.length > 0,
+      ),
+    ),
+  ]
     .map((value) => (gemini ? value.replace(/^models\//u, "") : value))
     .sort((left, right) => left.localeCompare(right));
 }
@@ -106,6 +139,7 @@ export function configureDiscoveredProviderModel(
       ...config.providers,
       [providerID]: {
         type: input.providerType,
+        enabled: true,
         apiKey: input.apiKey.trim(),
         baseURL,
         customHeaders: {},
@@ -116,6 +150,7 @@ export function configureDiscoveredProviderModel(
       [modelKey]: {
         model: modelID,
         provider: providerID,
+        enabled: true,
         contextWindow: "auto",
         temperature: null,
         topP: null,

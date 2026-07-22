@@ -6,6 +6,7 @@ import { resolveTuiWorkspaceRoot } from "./workspace";
 const smoke =
   process.env.NATALIA_TUI_SMOKE === "1" || process.argv.includes("--smoke");
 const doctor = process.argv.includes("--doctor");
+const diagnostics = process.argv.includes("--diagnostics");
 const workspaceRoot = await resolveTuiWorkspaceRoot({
   override: process.env.NATALIA_WORKSPACE ?? argumentValue("--workspace"),
 });
@@ -20,12 +21,14 @@ const handle = await runTuiShell({
     ? process.env.NATALIA_TUI_SMOKE_PROMPT || paste100KiB()
     : doctor
       ? "/doctor"
-      : undefined,
+      : diagnostics
+        ? "/diagnostics"
+        : undefined,
   fixture: smoke,
   backend: smoke ? undefined : createBackend(),
   createBackend: smoke ? undefined : createBackend,
   workspaceRoot,
-  closeAfterInitialTurn: doctor ? false : undefined,
+  closeAfterInitialTurn: doctor || diagnostics ? false : undefined,
 });
 
 process.once("SIGINT", () => handle.stop());

@@ -10,6 +10,29 @@ async function loadWorkflow(): Promise<typeof import("@natalia/workflow")> {
   return wfPromise;
 }
 
+type WorkflowModule = typeof import("@natalia/workflow") & {
+  createWorkflowRuntime(
+    tools: {
+      get(
+        name: string,
+      ): { execute(input: unknown): Promise<string> } | undefined;
+    },
+    store: InstanceType<
+      (typeof import("@natalia/workflow"))["JsonlWorkflowStore"]
+    >,
+    onEvent: (
+      event: import("@natalia/workflow").WorkflowEvent,
+      run: import("@natalia/workflow").WorkflowRun,
+    ) => void,
+  ): {
+    run(
+      document: import("@natalia/workflow").WorkflowDocument,
+      context: { workspaceRoot: string; signal?: AbortSignal },
+      runID?: string,
+    ): Promise<import("@natalia/workflow").WorkflowRun>;
+  };
+};
+
 function detectAndParse(
   input: string,
   mod: typeof import("@natalia/workflow"),
@@ -88,7 +111,40 @@ function workflowRunTool(getRegistry: () => ToolRegistry): RuntimeTool {
         );
       }
       const store = new mod.JsonlWorkflowStore(storeDir(context.workspaceRoot));
-      const runtime = new mod.WorkflowRuntime(getRegistry(), store);
+      const runtime = (mod as WorkflowModule).createWorkflowRuntime(
+        {
+          get(name) {
+            const tool = getRegistry().get(name);
+            return tool
+              ? {
+                  execute: async (toolInput) =>
+                    await tool.execute(toolInput, context),
+                }
+              : undefined;
+          },
+        },
+        store,
+        (event, run) =>
+          context.onWorkflowEvent?.({
+            runID: run.id,
+            workflow: run.workflow,
+            status: run.status as
+              | "running"
+              | "completed"
+              | "failed"
+              | "cancelled",
+            event: event.type as
+              | "run_started"
+              | "run_completed"
+              | "run_cancelled"
+              | "step_started"
+              | "step_completed"
+              | "step_failed",
+            stepID: event.stepID,
+            result: event.result,
+            error: event.error,
+          }),
+      );
       const runID = optionalString(args.runID);
       const run = await runtime.run(document, context, runID);
       return JSON.stringify(

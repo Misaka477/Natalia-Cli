@@ -132,17 +132,15 @@ test("managed process registry persists state for restart and background aliases
 test("managed process restart preserves readiness configuration", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-restart-"));
   const tools = createToolRegistry();
-  await tools
-    .get("process_start")!
-    .execute(
-      {
-        id: "proc_restart",
-        command: "echo ready; sleep 1",
-        readyPattern: "ready",
-        maxOutputBytes: 91,
-      },
-      { workspaceRoot: root },
-    );
+  await tools.get("process_start")!.execute(
+    {
+      id: "proc_restart",
+      command: "echo ready; sleep 1",
+      readyPattern: "ready",
+      maxOutputBytes: 91,
+    },
+    { workspaceRoot: root },
+  );
   const restarted = JSON.parse(
     await tools
       .get("process_restart")!
@@ -347,6 +345,8 @@ test("sandbox tools create execute diff and merge through the registry", async (
   await tools
     .get("sandbox_resource_stop")!
     .execute({ id: "box", resourceID: resource.id }, context);
+  await tools.get("sandbox_delete")!.execute({ id: "box" }, context);
+  expect(events).toContain("sandbox.audit");
 });
 
 async function waitForOutput(read: () => Promise<string>, expected = "ready") {

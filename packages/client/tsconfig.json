@@ -6,6 +6,7 @@
   "references": [
     { "path": "../config" },
     { "path": "../agent" },
+    { "path": "../plugin" },
     { "path": "../contracts" },
     { "path": "../mcp" },
     { "path": "../pty" },

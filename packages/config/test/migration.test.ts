@@ -1,5 +1,12 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { loadConfigFile, saveConfigFile } from "../src/file";
@@ -81,6 +88,28 @@ test("config v2 save/load roundtrip preserves omitted output limit", async () =>
     expect(loaded.config.version).toBe(2);
     expect(loaded.config.models.default.maxOutputTokens).toBeNull();
     expect(loaded.summary.changed).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("config save atomically replaces the target without leaving temporary files", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "natalia-config-atomic-"));
+  try {
+    const path = join(dir, "config.json");
+    await writeFile(path, '{"old":true}\n');
+    await saveConfigFile(
+      migrateConfig({
+        profiles: { default: { provider: "openai", model: "x" } },
+      }).config,
+      path,
+    );
+    expect(JSON.parse(await readFile(path, "utf8"))).toMatchObject({
+      version: 2,
+    });
+    expect(
+      (await readdir(dir)).filter((name) => name.includes(".tmp-")).length,
+    ).toBe(0);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -236,6 +265,32 @@ test("layered config preserves defaults and gives project precedence", async () 
     expect(resolved.config.context.compactionEnabled).toBe(true);
     expect(resolved.config.context.compactionThresholdPercent).toBe(90);
     expect(resolved.sources.filter((source) => source.applied)).toHaveLength(3);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("layered config isolates an invalid source and retains valid sources", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-config-invalid-source-"));
+  const globalPath = join(root, "global.json");
+  try {
+    await mkdir(join(root, ".natalia"), { recursive: true });
+    await writeFile(globalPath, "{ not json");
+    await writeFile(
+      join(root, ".natalia", "config.json"),
+      JSON.stringify({
+        version: 2,
+        context: { compactionThresholdPercent: 91 },
+      }),
+    );
+    const resolved = await resolveConfig({ workspaceRoot: root, globalPath });
+    expect(resolved.config.context.compactionThresholdPercent).toBe(91);
+    expect(resolved.sources).toContainEqual({
+      scope: "global",
+      path: globalPath,
+      applied: false,
+      diagnostic: "invalid_config: SyntaxError",
+    });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

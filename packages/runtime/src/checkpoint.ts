@@ -126,6 +126,8 @@ export type RollbackOptions = {
   context: ContextLedger;
   dryRun?: boolean;
   resources?: CheckpointRuntimeResource[];
+  onResourcePolicy?: (policy: CheckpointResourcePolicy) => Promise<void>;
+  onContextRestored?: (checkpoint: DurableContextCheckpoint) => Promise<void>;
   failAfterWorkspaceApply?: boolean;
   failContextRestore?: boolean;
 };
@@ -384,12 +386,16 @@ export class CheckpointStore {
       safetyCheckpointID: safety.id,
     });
     try {
+      for (const policy of preview.resources)
+        if (policy.action !== "none" && policy.action !== "preserve_dirty")
+          await options.onResourcePolicy?.(policy);
       const applied = await this.applyManifest(target.manifest);
       if (options.failAfterWorkspaceApply)
         throw new Error("injected workspace rollback failure");
       if (options.failContextRestore)
         throw new Error("injected context rollback failure");
       options.context.restoreDurableCheckpoint(target.context);
+      await options.onContextRestored?.(target.context);
       await this.truncateFutureCheckpoints(target, safety);
       this.emit({
         type: "rollback.end",
@@ -406,6 +412,7 @@ export class CheckpointStore {
       try {
         await this.applyManifest(safety.manifest);
         options.context.restoreDurableCheckpoint(safety.context);
+        await options.onContextRestored?.(safety.context);
         recovered = true;
       } finally {
         this.emit({
@@ -657,6 +664,7 @@ export async function runCheckpointCommand(
   store: CheckpointStore,
   context: ContextLedger,
   command: string,
+  options: Omit<RollbackOptions, "context" | "dryRun"> = {},
 ): Promise<CheckpointCommandResult> {
   const parts = command.trim().split(/\s+/u);
   const name = parts[0];
@@ -684,7 +692,11 @@ export async function runCheckpointCommand(
   if (name === "/rollback") {
     const target = parts[1] ?? "last";
     const dryRun = parts.includes("--dry-run");
-    const preview = await store.rollbackTo(target, { context, dryRun });
+    const preview = await store.rollbackTo(target, {
+      context,
+      dryRun,
+      ...options,
+    });
     return { ok: true, output: formatRollbackPreview(preview) };
   }
   return { ok: false, output: `unknown checkpoint command: ${name}` };

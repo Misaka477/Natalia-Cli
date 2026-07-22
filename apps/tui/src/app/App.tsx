@@ -555,6 +555,14 @@ function Shell(props: {
                         );
                         if (!mid || !mid.trim()) return;
                         resolved.models[mk(mid, p.value)] = {
+                          enabled: true,
+                          capabilities: {
+                            toolCall: true,
+                            reasoning: true,
+                            thinking: true,
+                            imageInput: false,
+                            pdfInput: false,
+                          },
                           model: mid.trim(),
                           provider: p.value,
                           contextWindow: "auto",
@@ -585,6 +593,14 @@ function Shell(props: {
                             }))}
                             onSelect={(sel) => {
                               resolved.models[mk(sel.value, p.value)] = {
+                                enabled: true,
+                                capabilities: {
+                                  toolCall: true,
+                                  reasoning: true,
+                                  thinking: true,
+                                  imageInput: false,
+                                  pdfInput: false,
+                                },
                                 model: sel.value,
                                 provider: p.value,
                                 contextWindow: "auto",
@@ -609,6 +625,14 @@ function Shell(props: {
                         );
                         if (!mid || !mid.trim()) return;
                         resolved.models[mk(mid, p.value)] = {
+                          enabled: true,
+                          capabilities: {
+                            toolCall: true,
+                            reasoning: true,
+                            thinking: true,
+                            imageInput: false,
+                            pdfInput: false,
+                          },
                           model: mid.trim(),
                           provider: p.value,
                           contextWindow: "auto",

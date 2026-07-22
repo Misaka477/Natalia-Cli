@@ -48,6 +48,39 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
     async readMcpResource(server, uri) {
       return { server, uri };
     },
+    async plugins() {
+      return [
+        {
+          id: "demo.plugin",
+          version: "1.0.0",
+          name: "Demo",
+          description: "",
+          capabilities: ["tools"],
+        },
+      ];
+    },
+    async runtimeStatus() {
+      return {
+        type: "status.snapshot",
+        model: "test",
+        provider: "fixture",
+        context: "0 tokens",
+        step: "0",
+        permissions: "ask",
+        cwd: "/tmp",
+        background: "0 running",
+      };
+    },
+    async diagnostics() {
+      return [
+        {
+          type: "diagnostic",
+          level: "info",
+          message: "safe",
+          at: "2026-07-22T00:00:00.000Z",
+        },
+      ];
+    },
     snapshot: () => ({ type: "snapshot.created", id: "snap_sdk", files: [] }),
     diagnostic() {},
     lastSubmission: () => undefined,
@@ -78,6 +111,11 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
     server: "fixture",
     uri: "file:///guide",
   });
+  expect(await sdk.plugins()).toMatchObject([
+    { id: "demo.plugin", capabilities: ["tools"] },
+  ]);
+  expect(await sdk.runtimeStatus()).toMatchObject({ provider: "fixture" });
+  expect(await sdk.diagnostics(1)).toMatchObject([{ message: "safe" }]);
   await sdk.pause("sdk pause");
   await sdk.resume();
   await sdk.selectAgent("reviewer");

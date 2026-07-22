@@ -1,6 +1,7 @@
 import {
   lstat,
   mkdir,
+  readdir,
   readFile,
   realpath,
   rename,
@@ -27,6 +28,7 @@ export type SandboxManifest = {
 
 export type SandboxResourceInfo = {
   id: string;
+  sandboxID: string;
   command: string;
   pid: number;
   status: "running" | "exited" | "failed" | "stopped";
@@ -70,10 +72,17 @@ export class WorkspaceSandboxManager
 {
   private sandboxes = new Map<string, SandboxManifest>();
   private resources = new Map<string, SandboxResourceInfo>();
+  private initialized?: Promise<void>;
 
   constructor(private readonly baseRoot: string) {}
 
+  async initialize() {
+    if (!this.initialized) this.initialized = this.load();
+    await this.initialized;
+  }
+
   async create(id: string) {
+    await this.initialize();
     const root = resolve(this.baseRoot, id);
     await mkdir(root, { recursive: true });
     const manifest: SandboxManifest = {
@@ -85,6 +94,7 @@ export class WorkspaceSandboxManager
       envAllowlist: ["PATH", "HOME", "LANG", "TERM"],
     };
     this.sandboxes.set(id, manifest);
+    await this.persist(manifest);
     return manifest;
   }
 
@@ -132,6 +142,7 @@ export class WorkspaceSandboxManager
   }
 
   async startResource(id: string, command: string, resourceID?: string) {
+    await this.initialize();
     const manifest = this.mustGet(id);
     const finalID =
       resourceID ?? `sbx_${id}_${manifest.runningResources.length + 1}`;
@@ -163,6 +174,7 @@ export class WorkspaceSandboxManager
       throw new Error(`failed to start sandbox resource: ${stderr}`);
     const resource: SandboxResourceInfo = {
       id: finalID,
+      sandboxID: id,
       command,
       pid,
       status: "running",
@@ -171,6 +183,7 @@ export class WorkspaceSandboxManager
     };
     this.resources.set(finalID, resource);
     manifest.runningResources.push(finalID);
+    await this.persist(manifest);
     return { ...resource };
   }
 
@@ -195,6 +208,7 @@ export class WorkspaceSandboxManager
   }
 
   async stopResource(id: string, resourceID: string) {
+    await this.initialize();
     const manifest = this.mustGet(id);
     const resource = this.mustResource(resourceID);
     if (resource.status === "running") process.kill(resource.pid, "SIGTERM");
@@ -203,36 +217,45 @@ export class WorkspaceSandboxManager
     manifest.runningResources = manifest.runningResources.filter(
       (item) => item !== resourceID,
     );
+    await this.persist(manifest);
     return { ...resource };
   }
 
   async write(id: string, path: string, content: string, mode?: string) {
+    await this.initialize();
     const manifest = this.mustGet(id);
     const full = await containPath(manifest.root, path);
     await mkdir(dirname(full), { recursive: true });
     await writeFile(full, content);
     this.record(id, { kind: "modify", path, mode, content });
+    await this.persist(manifest);
   }
 
   async deletePath(id: string, path: string) {
+    await this.initialize();
     const manifest = this.mustGet(id);
     const full = await containPath(manifest.root, path);
     await rm(full, { recursive: true, force: true });
     this.record(id, { kind: "delete", path });
+    await this.persist(manifest);
   }
 
   async renamePath(id: string, oldPath: string, path: string) {
+    await this.initialize();
     const manifest = this.mustGet(id);
     const oldFull = await containPath(manifest.root, oldPath);
     const newFull = await containPath(manifest.root, path);
     await mkdir(dirname(newFull), { recursive: true });
     await rename(oldFull, newFull);
     this.record(id, { kind: "rename", oldPath, path });
+    await this.persist(manifest);
   }
 
   async modePath(id: string, path: string, mode: string) {
+    await this.initialize();
     await containPath(this.mustGet(id).root, path);
     this.record(id, { kind: "mode", path, mode });
+    await this.persist(this.mustGet(id));
   }
 
   async previewMerge(id: string) {
@@ -242,6 +265,7 @@ export class WorkspaceSandboxManager
   }
 
   async merge(id: string, hostRoot: string) {
+    await this.initialize();
     const manifest = this.mustGet(id);
     const changes = await this.previewMerge(id);
     const backups: Array<{ path: string; content?: Buffer; existed: boolean }> =
@@ -263,6 +287,7 @@ export class WorkspaceSandboxManager
         }
       }
       manifest.changedFiles = [];
+      await this.persist(manifest);
       return changes;
     } catch (error) {
       for (const backup of backups.reverse()) {
@@ -274,12 +299,16 @@ export class WorkspaceSandboxManager
   }
 
   async delete(id: string) {
+    await this.initialize();
     const manifest = this.mustGet(id);
     const result = {
       pendingChanges: manifest.changedFiles.map((change) => ({ ...change })),
       runningResources: [...manifest.runningResources],
     };
+    for (const resourceID of manifest.runningResources)
+      await this.stopResource(id, resourceID).catch(() => undefined);
     this.sandboxes.delete(id);
+    await rm(manifest.root, { recursive: true, force: true });
     return result;
   }
 
@@ -322,6 +351,61 @@ export class WorkspaceSandboxManager
   private record(id: string, change: SandboxChange) {
     const manifest = this.mustGet(id);
     manifest.changedFiles.push(change);
+  }
+
+  private async load() {
+    const entries = await readdir(this.baseRoot, { withFileTypes: true }).catch(
+      () => [],
+    );
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      try {
+        const state = JSON.parse(
+          await readFile(
+            join(this.baseRoot, entry.name, ".natalia-manifest.json"),
+            "utf8",
+          ),
+        ) as { manifest?: SandboxManifest; resources?: SandboxResourceInfo[] };
+        if (!state.manifest || state.manifest.id !== entry.name) continue;
+        const manifest = {
+          ...state.manifest,
+          root: resolve(this.baseRoot, entry.name),
+        };
+        manifest.runningResources = [];
+        this.sandboxes.set(manifest.id, manifest);
+        for (const resource of state.resources ?? [])
+          this.resources.set(resource.id, {
+            ...resource,
+            sandboxID: resource.sandboxID ?? manifest.id,
+            status: resource.status === "running" ? "stopped" : resource.status,
+            endedAt:
+              resource.status === "running"
+                ? new Date().toISOString()
+                : resource.endedAt,
+          });
+        await this.persist(manifest);
+      } catch {
+        // An invalid sandbox manifest is ignored rather than granting access.
+      }
+    }
+  }
+
+  private async persist(manifest: SandboxManifest) {
+    await mkdir(manifest.root, { recursive: true, mode: 0o700 });
+    await writeFile(
+      join(manifest.root, ".natalia-manifest.json"),
+      `${JSON.stringify(
+        {
+          manifest,
+          resources: [...this.resources.values()].filter(
+            (resource) => resource.sandboxID === manifest.id,
+          ),
+        },
+        null,
+        2,
+      )}\n`,
+      { mode: 0o600 },
+    );
   }
 
   private mustGet(id: string) {

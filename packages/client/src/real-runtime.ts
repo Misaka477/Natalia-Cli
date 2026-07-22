@@ -28,7 +28,7 @@ import {
   type StreamingProvider,
   providerCompactor,
 } from "@natalia/runtime";
-import { resolveConfig } from "@natalia/config";
+import { modelSelectionStatus, resolveConfig } from "@natalia/config";
 import type { ConfigV2 } from "@natalia/contracts";
 import {
   agentsFromConfig,
@@ -73,6 +73,7 @@ import { SubagentRegistry } from "@natalia/subagent";
 import { InteractivePTYRegistry } from "@natalia/pty";
 import { WorkspaceSandboxManager } from "@natalia/sandbox";
 import { loadLegacyMCPTools, loadNativeMCPTools } from "@natalia/mcp";
+import { createPluginRegistry, loadLocalPlugins } from "@natalia/plugin";
 import {
   createToolPolicyHookLayer,
   evaluatePermissionRules,
@@ -81,6 +82,14 @@ import {
   type ToolPolicy,
   type ToolPolicyHookLayer,
 } from "./tool-policy";
+import {
+  attachmentDataURL,
+  attachmentText,
+  cleanupUnreferencedAttachments,
+  isTextAttachment,
+  referencedAttachmentsForSessions,
+  storeLocalAttachments,
+} from "./attachments";
 
 const sqliteStores = new Map<string, SqliteSessionStore>();
 
@@ -123,6 +132,7 @@ export function createRealRuntimeClient(
   let subagents: SubagentRegistry | undefined;
   let interactivePTY: InteractivePTYRegistry | undefined;
   let sandboxes: WorkspaceSandboxManager | undefined;
+  let plugins: ReturnType<typeof createPluginRegistry> | undefined;
   const cleanupMCP: Array<() => Promise<void>> = [];
   const mcpAccess: Array<{
     catalog(): Promise<import("@natalia/contracts").MCPCatalogSnapshot>;
@@ -157,6 +167,14 @@ export function createRealRuntimeClient(
   let ready: Promise<void> | undefined;
   let skillRegistry: SkillRegistry | undefined;
   let activeSkill: Skill | undefined;
+  const attachmentReferences = new Map<
+    string,
+    import("@natalia/contracts").LocalAttachment[]
+  >();
+  let latestStatus: Extract<RuntimeEvent, { type: "status.snapshot" }>;
+  const runtimeDiagnostics: Array<
+    Extract<RuntimeEvent, { type: "diagnostic" }> & { at: string }
+  > = [];
   let selectedAgent: AgentDefinition | undefined;
   let pendingAgent: AgentDefinition | undefined;
   let agentRegistry: AgentRegistry | undefined;
@@ -356,6 +374,8 @@ export function createRealRuntimeClient(
                 parentSessionID: sessionID,
                 parentAgentID: runner.agentId,
                 maxSubagentDepth: tsRuntimeConfig?.runtime.subagentDepth,
+                onWorkflowEvent: (event) =>
+                  publish({ type: "workflow.update", ...event }),
               },
             );
             runner.log(`tool ${tool.name}: ${result.slice(0, 240)}`);
@@ -428,17 +448,65 @@ export function createRealRuntimeClient(
         level: "info",
         message: `Loaded ${mcp.loaded} native MCP tool(s) from legacy Go config without launching Go runtime.`,
       });
+    plugins = createPluginRegistry({
+      tools,
+      onAudit: (entry) =>
+        publish({
+          type: "plugin.update",
+          id: entry.pluginID,
+          status: entry.action,
+          detail: entry.detail,
+        }),
+    });
+    await loadLocalPlugins({
+      roots: [
+        join(workspaceRoot, ".natalia", "plugins"),
+        ...(tsRuntimeConfig?.plugins.paths.map((path) =>
+          resolve(workspaceRoot, path),
+        ) ?? []),
+      ],
+      registry: plugins,
+      enabled: tsRuntimeConfig?.plugins.enabled,
+      capabilities: tsRuntimeConfig?.plugins.capabilities,
+      onError: (id, error) =>
+        publish({
+          type: "diagnostic",
+          level: "warning",
+          message: `plugin ${id} failed to load: ${error instanceof Error ? error.message : String(error)}`,
+        }),
+    });
     interactivePTY = new InteractivePTYRegistry(
       join(workspaceRoot, ".natalia", "pty", "interactive"),
     );
     sandboxes = new WorkspaceSandboxManager(
       join(workspaceRoot, ".natalia", "sandboxes"),
     );
+    await sandboxes.initialize();
     session = await sessionStore.loadOrCreate(
       sessionID,
       options.title ?? `Natalia TS session ${sessionID}`,
     );
+    const attachmentSessions = await sessionStore.list();
+    await cleanupUnreferencedAttachments({
+      workspaceRoot,
+      attachments: referencedAttachmentsForSessions(attachmentSessions),
+    }).catch((error) =>
+      publish({
+        type: "diagnostic",
+        level: "warning",
+        message: `attachment cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+      }),
+    );
     const projection = projectSession(session);
+    for (const event of projection.replayableEvents)
+      if (event.type === "diagnostic")
+        runtimeDiagnostics.push({
+          ...event,
+          at: event.at ?? session.createdAt,
+        });
+    for (const event of projection.replayableEvents)
+      if (event.type === "turn.submitted" && event.attachments?.length)
+        attachmentReferences.set(`${event.id}:user`, event.attachments);
     if (projection.selectedAgent) {
       const restored = agentRegistry?.select(projection.selectedAgent);
       if (restored) {
@@ -565,6 +633,104 @@ export function createRealRuntimeClient(
       );
   }
 
+  function checkpointResources() {
+    return [
+      ...(subagents?.list().map((agent) => ({
+        kind: "subagent" as const,
+        id: agent.id,
+        status:
+          agent.status === "running"
+            ? ("running" as const)
+            : agent.status === "paused"
+              ? ("waiting" as const)
+              : ("stopped" as const),
+        summary: agent.task,
+      })) ?? []),
+      ...(interactivePTY?.list().map((pty) => ({
+        kind: "pty" as const,
+        id: pty.id,
+        status:
+          pty.status === "running"
+            ? ("running" as const)
+            : ("stopped" as const),
+        summary: pty.command,
+      })) ?? []),
+      ...(activeAbort
+        ? [
+            {
+              kind: "tool" as const,
+              id: "active_turn",
+              status: "running" as const,
+              summary: "active provider turn",
+            },
+          ]
+        : []),
+    ];
+  }
+
+  async function lowerContextAttachments(
+    messages: import("@natalia/runtime").ProviderMessage[],
+    entries: import("@natalia/runtime").ContextEntry[],
+  ) {
+    let cursor = 0;
+    for (const entry of entries) {
+      const attachments = attachmentReferences.get(entry.id);
+      if (!attachments?.length || entry.role !== "user") continue;
+      const index = messages.findIndex(
+        (message, messageIndex) =>
+          messageIndex >= cursor &&
+          message.role === "user" &&
+          message.content === entry.content,
+      );
+      if (index < 0) continue;
+      cursor = index + 1;
+      const user = messages[index]!;
+      const textAttachments = attachments.filter(isTextAttachment);
+      const imageAttachments = attachments.filter(
+        (attachment) =>
+          !isTextAttachment(attachment) &&
+          attachment.mediaType !== "application/pdf",
+      );
+      const pdfAttachments = attachments.filter(
+        (attachment) => attachment.mediaType === "application/pdf",
+      );
+      if (textAttachments.length)
+        user.content = `${user.content}\n\n${(
+          await Promise.all(
+            textAttachments.map(
+              async (attachment) =>
+                `[Attachment: ${attachment.filename}]\n${await attachmentText(workspaceRoot, attachment)}`,
+            ),
+          )
+        ).join("\n\n")}`;
+      const capabilities = activeModelCapabilities();
+      if (imageAttachments.length && !capabilities.imageInput)
+        throw new Error("selected model does not support image attachments");
+      if (pdfAttachments.length && !capabilities.pdfInput)
+        throw new Error("selected model does not support PDF attachments");
+      if (imageAttachments.length && !provider?.imageInput)
+        throw new Error(
+          "selected provider adapter does not support image attachment lowering",
+        );
+      if (pdfAttachments.length && !provider?.pdfInput)
+        throw new Error(
+          "selected provider adapter does not support PDF attachment lowering",
+        );
+      user.images = await Promise.all(
+        imageAttachments.map(async (attachment) => ({
+          mediaType: attachment.mediaType as "image/png" | "image/jpeg",
+          dataURL: await attachmentDataURL(workspaceRoot, attachment),
+        })),
+      );
+      user.pdfs = await Promise.all(
+        pdfAttachments.map(async (attachment) => ({
+          mediaType: "application/pdf" as const,
+          dataURL: await attachmentDataURL(workspaceRoot, attachment),
+        })),
+      );
+    }
+  }
+
   function applyAgentProvider() {
     if (options.provider || providerSource !== "ts_config" || !tsRuntimeConfig)
       return;
@@ -574,10 +740,12 @@ export function createRealRuntimeClient(
       selectedAgent?.variant,
     );
     if (!next) {
+      const modelID = selectedAgent?.model ?? tsRuntimeConfig.defaultModel;
+      const status = modelSelectionStatus(tsRuntimeConfig, modelID);
       publish({
         type: "diagnostic",
         level: "warning",
-        message: `agent ${selectedAgent?.name ?? "default"} model override is not configured; retaining current provider`,
+        message: `agent ${selectedAgent?.name ?? "default"} model override is unavailable: ${status.reason ?? "provider_not_configured"}; retaining current provider`,
       });
       return;
     }
@@ -589,6 +757,16 @@ export function createRealRuntimeClient(
   }
 
   function publish(event: RuntimeEvent) {
+    if (event.type === "diagnostic")
+      event = { ...event, at: event.at ?? new Date().toISOString() };
+    if (event.type === "status.snapshot") latestStatus = event;
+    if (event.type === "diagnostic") {
+      runtimeDiagnostics.push({
+        ...event,
+        at: event.at ?? new Date().toISOString(),
+      });
+      if (runtimeDiagnostics.length > 500) runtimeDiagnostics.splice(0, 1);
+    }
     if (
       session &&
       event.type !== "session.created" &&
@@ -610,12 +788,16 @@ export function createRealRuntimeClient(
           });
         });
     }
+    plugins?.dispatch(event);
     sink?.(event);
   }
 
   async function submitInput(input: SubmitInput) {
     await ready;
     const text = input.text;
+    const attachments = input.attachments?.length
+      ? await storeLocalAttachments({ workspaceRoot, paths: input.attachments })
+      : [];
     const id = input.id ?? `turn_${crypto.randomUUID().replace(/-/gu, "")}`;
     const submitted: SubmittedTurn = {
       type: "turn.submitted",
@@ -624,11 +806,13 @@ export function createRealRuntimeClient(
       byteLength: new TextEncoder().encode(text).byteLength,
       lineCount: lineCount(text),
       sha256: createHash("sha256").update(text).digest("hex"),
+      attachments: attachments.length ? attachments : undefined,
     };
+    if (attachments.length) attachmentReferences.set(`${id}:user`, attachments);
     if (!session) throw new Error("session initialization did not complete");
     const delivery = input.delivery ?? "steer";
     const existing = admittedInputs(session).find((item) => item.id === id);
-    admitInput(session, { id, text, delivery });
+    admitInput(session, { id, text, delivery, attachments });
     if (existing) {
       if (!existing.promotedAt && delivery === "steer") {
         void turnCoordinator().wake(drainSession);
@@ -661,7 +845,7 @@ export function createRealRuntimeClient(
       if (inputs.length) await persistInboxPromotion();
       for (const input of inputs) {
         if (signal.aborted) throw signal.reason;
-        await runAdmittedInput(input.id, input.text);
+        await runAdmittedInput(input.id, input.text, input.attachments);
       }
       if (
         !admittedInputs(session).some(
@@ -680,15 +864,19 @@ export function createRealRuntimeClient(
     const [next] = promoteNextQueued(session);
     if (!next) return;
     await persistInboxPromotion();
-    await runAdmittedInput(next.id, next.text);
+    await runAdmittedInput(next.id, next.text, next.attachments);
   }
 
-  async function runAdmittedInput(id: string, text: string) {
+  async function runAdmittedInput(
+    id: string,
+    text: string,
+    attachments: import("@natalia/contracts").LocalAttachment[] = [],
+  ) {
     if (await handleCommand(id, text)) {
       await sessionPersistence;
       return;
     }
-    await runProviderTurn(id, text);
+    await runProviderTurn(id, text, attachments);
   }
 
   async function persistInboxPromotion() {
@@ -746,6 +934,8 @@ export function createRealRuntimeClient(
       // A committed selection and other durable controls must reach disk before
       // a caller opens the same session in a replacement runtime.
       await sessionPersistence;
+      for (const plugin of plugins?.list() ?? [])
+        await plugins!.unload(plugin.id);
       await Promise.all(cleanupMCP.splice(0).map((close) => close()));
     },
     cancel(reason = "user cancel") {
@@ -824,6 +1014,23 @@ export function createRealRuntimeClient(
         }
       throw new Error(`MCP server is not connected: ${server}`);
     },
+    async plugins() {
+      return (plugins?.list() ?? []).map((plugin) => ({
+        id: plugin.id,
+        version: plugin.version,
+        name: plugin.name,
+        description: plugin.description,
+        capabilities: plugin.capabilities,
+      }));
+    },
+    async runtimeStatus() {
+      await ready;
+      return latestStatus ?? statusSnapshot(provider, context, workspaceRoot);
+    },
+    async diagnostics(limit = 100) {
+      await ready;
+      return runtimeDiagnostics.slice(-Math.min(500, Math.max(1, limit)));
+    },
     snapshot() {
       const event: RuntimeEvent = {
         type: "snapshot.created",
@@ -873,9 +1080,11 @@ export function createRealRuntimeClient(
           "Natalia TS7 agent shell commands:",
           "/doctor - inspect provider, workspace, session, and native tools",
           "/status - show the current runtime status snapshot",
+          "/diagnostics [limit] - show recent durable runtime diagnostics",
           "/sessions - list durable TS sessions in the current workspace",
           "/agents and /agent <name> - inspect or select the next-turn agent",
           "/skills and /skill <name> - inspect or activate native skills",
+          "/attach <workspace-relative-image> <prompt> - submit a PNG/JPEG attachment",
           "/checkpoint, /checkpoints, /rollback <id> [--dry-run] - durable workspace/context controls",
           "/pause and /resume - pause at a safe runtime boundary",
           "Use Ctrl-C to cancel an active turn and Ctrl-D on an empty composer to exit.",
@@ -929,6 +1138,27 @@ export function createRealRuntimeClient(
       publish({ type: "turn.finished", id, stopReason: "done" });
       return true;
     }
+    if (trimmed === "/diagnostics" || trimmed.startsWith("/diagnostics ")) {
+      const value = trimmed.slice("/diagnostics".length).trim();
+      const limit = value ? Number(value) : 20;
+      if (!Number.isInteger(limit) || limit < 1 || limit > 500)
+        throw new Error(
+          "diagnostics limit must be an integer between 1 and 500",
+        );
+      const entries = runtimeDiagnostics.slice(-limit);
+      publish({
+        type: "content.delta",
+        id,
+        text: entries.length
+          ? entries
+              .map((entry) => `${entry.at} ${entry.level}: ${entry.message}`)
+              .join("\n")
+          : "no runtime diagnostics",
+      });
+      publish({ type: "content.done", id });
+      publish({ type: "turn.finished", id, stopReason: "done" });
+      return true;
+    }
     if (trimmed === "/sessions") {
       const rows = sqliteStore ? sqliteStore.list() : await sessionStore.list();
       const sessions = Array.isArray(rows) ? rows : rows;
@@ -963,6 +1193,22 @@ export function createRealRuntimeClient(
         checkpointStore,
         context,
         trimmed,
+        {
+          resources: checkpointResources(),
+          onResourcePolicy: async (policy) => {
+            if (policy.action !== "stop" && policy.action !== "cancel") return;
+            if (policy.kind === "subagent") await subagents?.stop(policy.id);
+            if (policy.kind === "pty") await interactivePTY?.stop(policy.id);
+            if (policy.kind === "tool")
+              activeAbort?.abort(new Error("checkpoint rollback"));
+          },
+          onContextRestored: async (snapshot) =>
+            publish({
+              type: "context.checkpoint",
+              id: `rollback:${snapshot.journalOffset}`,
+              snapshot,
+            }),
+        },
       );
       publish({ type: "content.delta", id, text: result.output });
       publish({ type: "content.done", id });
@@ -987,6 +1233,16 @@ export function createRealRuntimeClient(
       });
       publish({ type: "content.done", id });
       publish({ type: "turn.finished", id, stopReason: "done" });
+      return true;
+    }
+    if (trimmed.startsWith("/attach ")) {
+      const [path, ...rest] = trimmed
+        .slice("/attach ".length)
+        .trim()
+        .split(/\s+/u);
+      if (!path || !rest.length)
+        throw new Error("usage: /attach <workspace-relative-image> <prompt>");
+      await submitInput({ text: rest.join(" "), attachments: [path] });
       return true;
     }
     if (trimmed === "/agents") {
@@ -1091,7 +1347,11 @@ export function createRealRuntimeClient(
     return false;
   }
 
-  async function runProviderTurn(id: string, text: string) {
+  async function runProviderTurn(
+    id: string,
+    text: string,
+    attachments: import("@natalia/contracts").LocalAttachment[] = [],
+  ) {
     if (!provider) {
       publish({
         type: "diagnostic",
@@ -1131,6 +1391,7 @@ export function createRealRuntimeClient(
     const messages = contextEntriesToProviderMessages(
       context.snapshot().entries,
     );
+    await lowerContextAttachments(messages, context.snapshot().entries);
     if (tsRuntimeConfig?.instructions.enabled) {
       const systemPrompt =
         selectedAgent?.systemPrompt ||
@@ -1211,6 +1472,7 @@ export function createRealRuntimeClient(
       ),
     );
     const materialized = materializeTools(tools, advertised);
+    const capabilities = activeModelCapabilities();
     const output = await runWithRetry(
       { id, operation: "llm_step", step },
       async () => {
@@ -1225,7 +1487,7 @@ export function createRealRuntimeClient(
         };
         for await (const chunk of provider!.stream({
           messages,
-          tools: materialized.definitions,
+          tools: capabilities.toolCall ? materialized.definitions : undefined,
           signal: activeAbort?.signal,
         })) {
           if (chunk.type === "thinking") {
@@ -1272,6 +1534,8 @@ export function createRealRuntimeClient(
     modelID: string,
     variantName?: string,
   ): StreamingProvider | undefined {
+    const status = modelSelectionStatus(config, modelID);
+    if (!status.selected) return undefined;
     const model = config.models[modelID];
     const providerConfig = model && config.providers[model.provider];
     if (!model || !providerConfig?.apiKey) return undefined;
@@ -1286,15 +1550,32 @@ export function createRealRuntimeClient(
       maxTokens: variant?.maxOutputTokens ?? model.maxOutputTokens ?? undefined,
       temperature: variant?.temperature ?? model.temperature ?? undefined,
       topP: variant?.topP ?? model.topP ?? undefined,
-      reasoningEffort:
-        variant?.reasoningEffort ?? model.reasoningEffort ?? undefined,
-      thinkingEnabled: variant?.thinkingEnabled ?? model.thinkingEnabled,
+      reasoningEffort: model.capabilities.reasoning
+        ? (variant?.reasoningEffort ?? model.reasoningEffort ?? undefined)
+        : undefined,
+      thinkingEnabled: model.capabilities.thinking
+        ? (variant?.thinkingEnabled ?? model.thinkingEnabled)
+        : undefined,
       timeoutMs:
         (variant?.requestTimeoutSec ?? model.requestTimeoutSec ?? undefined) ===
         undefined
           ? undefined
           : (variant?.requestTimeoutSec ?? model.requestTimeoutSec)! * 1000,
+      streamIdleTimeoutMs: config.runtime.timeouts.streamIdleSec * 1000,
     });
+  }
+
+  function activeModelCapabilities() {
+    const modelID = selectedAgent?.model ?? tsRuntimeConfig?.defaultModel;
+    return modelID && tsRuntimeConfig?.models[modelID]
+      ? tsRuntimeConfig.models[modelID].capabilities
+      : {
+          toolCall: true,
+          reasoning: true,
+          thinking: true,
+          imageInput: false,
+          pdfInput: false,
+        };
   }
 
   async function runProviderStepWithRecovery(
@@ -1520,10 +1801,32 @@ export function createRealRuntimeClient(
             target: { kind: "host", cwd: pty.cwd },
             ownership: "model",
           }),
+        onPTYAction: (pty, action, redacted) => {
+          publish({
+            type: "pty.action",
+            id: pty.id,
+            action,
+            redacted,
+            target: { kind: "host", cwd: pty.cwd },
+          });
+          publish({
+            type: "pty.timeline",
+            id: pty.id,
+            actor: "model",
+            action,
+            status: "executed",
+            summary: redacted
+              ? "sensitive input supplied"
+              : `${action} executed`,
+            at: new Date().toISOString(),
+          });
+        },
         sandboxes,
         settings: toolSettings(),
         parentSessionID: sessionID,
         maxSubagentDepth: tsRuntimeConfig?.runtime.subagentDepth,
+        onWorkflowEvent: (event) =>
+          publish({ type: "workflow.update", ...event }),
         onSandboxEvent: (event) => publish(event as RuntimeEvent),
       });
       const bounded = await boundToolOutput(
@@ -1842,6 +2145,7 @@ function restoreContextFromEvents(
         id: `${event.id}:user`,
         role: "user",
         content: event.text,
+        attachments: event.attachments,
       });
       continue;
     }
@@ -1904,6 +2208,29 @@ function restoreContextFromEvents(
       }
     }
   }
+}
+
+function referencedAttachments(
+  sessions: Array<import("@natalia/session").SessionRecord>,
+) {
+  return sessions.flatMap((record) => {
+    const checkpoint = [...record.events]
+      .reverse()
+      .find((event) => event.type === "context.checkpoint");
+    const checkpointAttachments =
+      checkpoint?.type === "context.checkpoint"
+        ? checkpoint.snapshot.entries.flatMap(
+            (entry) => entry.attachments ?? [],
+          )
+        : [];
+    return [
+      ...checkpointAttachments,
+      ...modelVisibleEvents(record.events).flatMap((event) =>
+        event.type === "turn.submitted" ? (event.attachments ?? []) : [],
+      ),
+      ...(record.inbox?.flatMap((input) => input.attachments ?? []) ?? []),
+    ];
+  });
 }
 
 function sessionSeed(workspaceRoot: string) {

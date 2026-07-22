@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, test } from "bun:test";
@@ -65,6 +65,65 @@ test("real runtime client streams provider output and persists replayable sessio
         event.type === "content.done" && event.text === "hello from provider",
     ),
   ).toBe(true);
+});
+
+test("runtime status and diagnostics expose only published safe state", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-status-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_runtime_status",
+    provider: scriptedProvider("ready"),
+  });
+  client.start(() => undefined);
+  client.diagnostic("provider key is configured", "info");
+  const status = await client.runtimeStatus?.();
+  const diagnostics = await client.diagnostics?.(1);
+  expect(status).toMatchObject({
+    type: "status.snapshot",
+    model: "scripted-model",
+  });
+  expect(diagnostics).toMatchObject([
+    {
+      level: "info",
+      message: "provider key is configured",
+      at: expect.any(String),
+    },
+  ]);
+});
+
+test("durable diagnostics restore on runtime reopen and render through the command", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-diagnostic-replay-"));
+  const sessionID = "ses_diagnostic_replay";
+  const first = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    provider: scriptedProvider("first"),
+  });
+  first.start(() => undefined);
+  await first.runtimeStatus?.();
+  first.diagnostic("persisted safe warning", "warning");
+  await first.dispose?.();
+  const events: RuntimeEvent[] = [];
+  const reopened = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    provider: scriptedProvider("reopened"),
+  });
+  reopened.start((event) => events.push(event));
+  expect(await reopened.diagnostics?.()).toMatchObject([
+    {
+      level: "warning",
+      message: "persisted safe warning",
+      at: expect.any(String),
+    },
+  ]);
+  await reopened.submit("/diagnostics 1");
+  expect(
+    events
+      .filter((event) => event.type === "content.delta")
+      .map((event) => event.text)
+      .join("\n"),
+  ).toContain("warning: persisted safe warning");
 });
 
 test("TS config applies retry/context/checkpoint policy to an explicit provider", async () => {
@@ -206,6 +265,205 @@ test("runtime discovers configured remote skills through the local cache", async
   } finally {
     server.stop(true);
   }
+});
+
+test("runtime loads a local manifest plugin and exposes its owned tool", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-plugin-runtime-"));
+  const pluginRoot = join(root, ".natalia", "plugins", "demo");
+  await mkdir(pluginRoot, { recursive: true });
+  await writeFile(
+    join(pluginRoot, "natalia.plugin.json"),
+    JSON.stringify({
+      apiVersion: 1,
+      id: "demo.plugin",
+      version: "1.0.0",
+      name: "Demo",
+      description: "",
+      entry: "index.ts",
+      capabilities: ["tools"],
+    }),
+  );
+  await writeFile(
+    join(pluginRoot, "index.ts"),
+    "export default { setup(api) { api.tools.register({ name: 'echo', description: 'Echo', requiresApproval: false, parameters: { type: 'object', properties: {} }, async execute() { return 'plugin ok'; } }) } }",
+  );
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_plugin_runtime",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        if (!request.messages.some((message) => message.role === "tool"))
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "plugin",
+                name: "plugin_demo_plugin_echo",
+                arguments: "{}",
+              },
+            ],
+          };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("run plugin");
+  expect(events).toContainEqual({
+    type: "plugin.update",
+    id: "demo.plugin",
+    status: "loaded",
+    detail: undefined,
+  });
+  expect(
+    events.some(
+      (event) =>
+        event.type === "tool.update" &&
+        event.name === "plugin_demo_plugin_echo" &&
+        event.status === "succeeded",
+    ),
+  ).toBe(true);
+  await client.dispose?.();
+  expect(events).toContainEqual({
+    type: "plugin.update",
+    id: "demo.plugin",
+    status: "unloaded",
+    detail: undefined,
+  });
+});
+
+test("runtime persists workflow lifecycle events from workflow_run", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-workflow-runtime-"));
+  const workflow = JSON.stringify({
+    version: 1,
+    name: "runtime-workflow",
+    steps: [{ id: "set", kind: "set", key: "result", value: "ok" }],
+  });
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_workflow_runtime",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        if (!request.messages.some((message) => message.role === "tool"))
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "workflow",
+                name: "workflow_run",
+                arguments: JSON.stringify({ workflow, runID: "wf_runtime" }),
+              },
+            ],
+          };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("run workflow");
+  const lifecycle = events.filter(
+    (event): event is Extract<RuntimeEvent, { type: "workflow.update" }> =>
+      event.type === "workflow.update",
+  );
+  expect(lifecycle.map((event) => event.event)).toEqual([
+    "run_started",
+    "step_started",
+    "step_completed",
+    "run_completed",
+  ]);
+  expect(lifecycle.at(-1)).toMatchObject({
+    runID: "wf_runtime",
+    workflow: "runtime-workflow",
+    status: "completed",
+  });
+  const history = await client.history?.();
+  expect(
+    history?.events.some(
+      (item) =>
+        item.event.type === "workflow.update" &&
+        item.event.runID === "wf_runtime",
+    ),
+  ).toBe(true);
+});
+
+test("runtime projects exact durable interactive PTY actions", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-pty-runtime-"));
+  const events: RuntimeEvent[] = [];
+  const handled = new Set<string>();
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_pty_runtime",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        const text = [...request.messages]
+          .reverse()
+          .find((message) => message.role === "user")?.content;
+        if (typeof text === "string" && !handled.has(text)) {
+          handled.add(text);
+          const call =
+            text === "start pty"
+              ? {
+                  id: "start",
+                  name: "interactive_start",
+                  arguments: JSON.stringify({
+                    id: "tty_runtime",
+                    command: "cat",
+                  }),
+                }
+              : text === "write pty"
+                ? {
+                    id: "write",
+                    name: "interactive_write",
+                    arguments: JSON.stringify({
+                      id: "tty_runtime",
+                      input: "secret",
+                      sensitive: true,
+                    }),
+                  }
+                : {
+                    id: "stop",
+                    name: "interactive_stop",
+                    arguments: JSON.stringify({ id: "tty_runtime" }),
+                  };
+          yield { type: "tool_call" as const, calls: [call] };
+        }
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("start pty");
+  await client.submit("write pty");
+  await client.submit("stop pty");
+  const actions = events.filter(
+    (event): event is Extract<RuntimeEvent, { type: "pty.action" }> =>
+      event.type === "pty.action",
+  );
+  expect(actions).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ action: "submit", redacted: true }),
+      expect.objectContaining({ action: "exit", redacted: false }),
+    ]),
+  );
+  const history = await client.history?.();
+  expect(
+    history?.events.some(
+      (item) =>
+        item.event.type === "pty.timeline" &&
+        item.event.summary === "sensitive input supplied",
+    ),
+  ).toBe(true);
+  await client.dispose?.();
 });
 
 test("agent permissions block configured file and command execution at tool boundary", async () => {
@@ -499,6 +757,294 @@ test("agent model and variant overrides apply when the next provider turn starts
       "beta-careful",
     ]);
     expect(requests[1]?.temperature).toBe(0.2);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("configured provider policy denies a selected model without starting a provider request", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-provider-policy-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      providers: {
+        local: {
+          type: "openai",
+          apiKey: "local-key",
+          baseURL: "http://127.0.0.1:9",
+        },
+      },
+      models: { blocked: { provider: "local", model: "blocked" } },
+      defaultModel: "blocked",
+      experimental: {
+        policies: [
+          { effect: "deny", action: "provider.use", resource: "local/blocked" },
+        ],
+      },
+    }),
+  );
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_provider_policy",
+  });
+  client.start((event) => events.push(event));
+  await client.submit("policy blocked");
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "diagnostic",
+      level: "error",
+      message: expect.stringContaining("No real provider configured"),
+    }),
+  );
+});
+
+test("model capability disables provider-visible tools", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-model-capabilities-"));
+  const requests: ProviderStreamRequest[] = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      requests.push((await request.json()) as ProviderStreamRequest);
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+  });
+  try {
+    await mkdir(join(root, ".natalia"), { recursive: true });
+    await writeFile(
+      join(root, ".natalia", "config.json"),
+      JSON.stringify({
+        version: 2,
+        providers: {
+          local: {
+            type: "openai",
+            apiKey: "key",
+            baseURL: server.url.toString(),
+          },
+        },
+        models: {
+          text: {
+            provider: "local",
+            model: "text",
+            capabilities: {
+              toolCall: false,
+              reasoning: false,
+              thinking: false,
+            },
+          },
+        },
+        defaultModel: "text",
+      }),
+    );
+    const client = createRealRuntimeClient({
+      workspaceRoot: root,
+      sessionID: "ses_model_capabilities",
+    });
+    client.start(() => undefined);
+    await client.submit("no tools");
+    expect(requests[0]?.tools).toBeUndefined();
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("workspace image attachment is stored privately and lowered for OpenAI-compatible provider", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-image-attachment-"));
+  const requests: Array<Record<string, unknown>> = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      requests.push((await request.json()) as Record<string, unknown>);
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+  });
+  try {
+    await mkdir(join(root, ".natalia"), { recursive: true });
+    await writeFile(
+      join(root, "image.png"),
+      Buffer.from("89504e470d0a1a0a", "hex"),
+    );
+    await writeFile(
+      join(root, ".natalia", "config.json"),
+      JSON.stringify({
+        version: 2,
+        providers: {
+          local: {
+            type: "openai",
+            apiKey: "key",
+            baseURL: server.url.toString(),
+          },
+        },
+        models: {
+          vision: {
+            provider: "local",
+            model: "vision",
+            capabilities: { imageInput: true },
+          },
+        },
+        defaultModel: "vision",
+      }),
+    );
+    const client = createRealRuntimeClient({
+      workspaceRoot: root,
+      sessionID: "ses_image_attachment",
+    });
+    client.start(() => undefined);
+    await client.submitInput?.({ text: "inspect", attachments: ["image.png"] });
+    const history = await client.history?.();
+    expect(
+      history?.events.find((item) => item.event.type === "turn.submitted")
+        ?.event,
+    ).toMatchObject({ attachments: [{ mediaType: "image/png" }] });
+    const messages = requests[0]?.messages as Array<{
+      role: string;
+      content: unknown;
+    }>;
+    const user = messages.find((message) => message.role === "user");
+    expect(user?.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "image_url",
+          image_url: expect.objectContaining({
+            url: expect.stringMatching(/^data:image\/png;base64,/u),
+          }),
+        }),
+      ]),
+    );
+    expect(await readdir(join(root, ".natalia", "attachments"))).toHaveLength(
+      1,
+    );
+    await client.dispose?.();
+    const reopened = createRealRuntimeClient({
+      workspaceRoot: root,
+      sessionID: "ses_image_attachment",
+    });
+    reopened.start(() => undefined);
+    await reopened.submit("follow up");
+    const followUpMessages = requests[1]?.messages as Array<{
+      role: string;
+      content: unknown;
+    }>;
+    expect(
+      followUpMessages.find((message) => message.role === "user")?.content,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "image_url",
+          image_url: expect.objectContaining({
+            url: expect.stringMatching(/^data:image\/png;base64,/u),
+          }),
+        }),
+      ]),
+    );
+    await reopened.dispose?.();
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("runtime injects a UTF-8 text attachment into the active provider turn", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-text-attachment-"));
+  const requests: Array<Record<string, unknown>> = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      requests.push((await request.json()) as Record<string, unknown>);
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+  });
+  try {
+    await mkdir(join(root, ".natalia"), { recursive: true });
+    await writeFile(join(root, "notes.md"), "evidence");
+    await writeFile(
+      join(root, ".natalia", "config.json"),
+      JSON.stringify({
+        version: 2,
+        providers: {
+          local: {
+            type: "openai",
+            apiKey: "key",
+            baseURL: server.url.toString(),
+          },
+        },
+        models: { text: { provider: "local", model: "text" } },
+        defaultModel: "text",
+      }),
+    );
+    const client = createRealRuntimeClient({
+      workspaceRoot: root,
+      sessionID: "ses_text_attachment",
+    });
+    client.start(() => undefined);
+    await client.submitInput?.({ text: "review", attachments: ["notes.md"] });
+    const messages = requests[0]?.messages as Array<{
+      role: string;
+      content: string;
+    }>;
+    expect(
+      messages.find((message) => message.role === "user")?.content,
+    ).toContain("[Attachment: notes.md]\nevidence");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("runtime lowers a PDF attachment through the Anthropic adapter", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-pdf-attachment-"));
+  const requests: Array<Record<string, unknown>> = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      requests.push((await request.json()) as Record<string, unknown>);
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+  });
+  try {
+    await mkdir(join(root, ".natalia"), { recursive: true });
+    await writeFile(join(root, "report.pdf"), "%PDF-1.7\n");
+    await writeFile(
+      join(root, ".natalia", "config.json"),
+      JSON.stringify({
+        version: 2,
+        providers: {
+          local: {
+            type: "anthropic",
+            apiKey: "key",
+            baseURL: server.url.toString(),
+          },
+        },
+        models: {
+          pdf: {
+            provider: "local",
+            model: "pdf",
+            capabilities: { pdfInput: true },
+          },
+        },
+        defaultModel: "pdf",
+      }),
+    );
+    const client = createRealRuntimeClient({
+      workspaceRoot: root,
+      sessionID: "ses_pdf_attachment",
+    });
+    client.start(() => undefined);
+    await client.submitInput?.({ text: "read", attachments: ["report.pdf"] });
+    const messages = requests[0]?.messages as Array<{
+      content: Array<{ type?: string; source?: { media_type?: string } }>;
+    }>;
+    expect(
+      messages[0]?.content.find((part) => part.type === "document"),
+    ).toMatchObject({ source: { media_type: "application/pdf" } });
   } finally {
     server.stop(true);
   }

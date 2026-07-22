@@ -55,11 +55,24 @@ export async function handleRPCMessage(
         delivery !== "queue"
       )
         throw new Error("prompt.params.delivery must be steer or queue");
+      const attachments = body.params?.attachments;
+      if (
+        attachments !== undefined &&
+        (!Array.isArray(attachments) ||
+          !attachments.every((attachment) => typeof attachment === "string"))
+      )
+        throw new Error(
+          "prompt.params.attachments must be an array of strings",
+        );
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: client.submitInput
-          ? await client.submitInput({ text, delivery })
+          ? await client.submitInput({
+              text,
+              delivery,
+              attachments: attachments as string[] | undefined,
+            })
           : await client.submit(text),
       };
     }
@@ -190,6 +203,43 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.mcpCatalog(),
+      };
+    }
+    if (body.method === "plugin.list") {
+      optionsGuard(client.plugins, "plugin.list");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.plugins(),
+      };
+    }
+    if (body.method === "runtime.status") {
+      optionsGuard(client.runtimeStatus, "runtime.status");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.runtimeStatus(),
+      };
+    }
+    if (body.method === "diagnostics.list") {
+      optionsGuard(client.diagnostics, "diagnostics.list");
+      const limit = body.params?.limit;
+      if (
+        limit !== undefined &&
+        (typeof limit !== "number" ||
+          !Number.isInteger(limit) ||
+          limit < 1 ||
+          limit > 500)
+      )
+        throw new Error(
+          "diagnostics.list.params.limit must be an integer between 1 and 500",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.diagnostics(
+          typeof limit === "number" ? limit : undefined,
+        ),
       };
     }
     if (body.method === "mcp.prompt") {

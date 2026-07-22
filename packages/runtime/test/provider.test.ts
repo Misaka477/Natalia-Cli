@@ -4,7 +4,9 @@ import {
   contextEntriesToProviderMessages,
   GeminiProvider,
   OpenAICompatibleProvider,
+  readWithIdleTimeout,
 } from "../src/provider";
+import { ContextWindowResolver } from "../src/modelmeta";
 
 test("OpenAI-compatible provider accepts both base and complete chat endpoint URLs", async () => {
   const requested: string[] = [];
@@ -105,6 +107,208 @@ test("OpenAI-compatible provider sends active profile request parameters safely"
     reasoning_effort: "high",
     thinking_enabled: true,
   });
+});
+
+test("OpenAI-compatible provider omits unsupported reasoning and thinking request options", async () => {
+  let body: Record<string, unknown> | undefined;
+  const fetchImpl = Object.assign(
+    async (_input: URL | RequestInfo, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  const provider = new OpenAICompatibleProvider({
+    apiKey: "test-key",
+    model: "test-model",
+    reasoningEffort: undefined,
+    thinkingEnabled: undefined,
+    fetch: fetchImpl,
+  });
+  for await (const _chunk of provider.stream({ messages: [] })) {
+    // Drain the stream.
+  }
+  expect(body).not.toHaveProperty("reasoning_effort");
+  expect(body).not.toHaveProperty("thinking_enabled");
+});
+
+test("providers lower image parts to their native request formats", async () => {
+  const request = {
+    messages: [
+      {
+        role: "user" as const,
+        content: "inspect",
+        images: [
+          {
+            mediaType: "image/png" as const,
+            dataURL: "data:image/png;base64,cG5n",
+          },
+        ],
+      },
+    ],
+  };
+  const bodies: Record<string, Record<string, unknown>> = {};
+  const fetchFor = (name: string) =>
+    Object.assign(
+      async (_input: URL | RequestInfo, init?: RequestInit) => {
+        bodies[name] = JSON.parse(String(init?.body)) as Record<
+          string,
+          unknown
+        >;
+        return new Response("data: [DONE]\n\n", {
+          headers: { "content-type": "text/event-stream" },
+        });
+      },
+      { preconnect: fetch.preconnect },
+    ) as typeof fetch;
+  for await (const _chunk of new AnthropicProvider({
+    apiKey: "key",
+    model: "model",
+    fetch: fetchFor("anthropic"),
+  }).stream(request)) {
+    // Drain.
+  }
+  for await (const _chunk of new GeminiProvider({
+    apiKey: "key",
+    model: "model",
+    fetch: fetchFor("gemini"),
+  }).stream(request)) {
+    // Drain.
+  }
+  const anthropic = bodies.anthropic.messages as Array<{
+    content: Array<{ type?: string; source?: { data?: string } }>;
+  }>;
+  const gemini = bodies.gemini.contents as Array<{
+    parts: Array<{ inlineData?: { mimeType?: string; data?: string } }>;
+  }>;
+  expect(
+    anthropic[0]?.content.find((part) => part.type === "image"),
+  ).toMatchObject({
+    source: { type: "base64", media_type: "image/png", data: "cG5n" },
+  });
+  expect(gemini[0]?.parts.find((part) => part.inlineData)).toMatchObject({
+    inlineData: { mimeType: "image/png", data: "cG5n" },
+  });
+});
+
+test("Anthropic and Gemini lower PDF documents while OpenAI-compatible declares no PDF support", async () => {
+  const request = {
+    messages: [
+      {
+        role: "user" as const,
+        content: "read",
+        pdfs: [
+          {
+            mediaType: "application/pdf" as const,
+            dataURL: "data:application/pdf;base64,cGRm",
+          },
+        ],
+      },
+    ],
+  };
+  const bodies: Record<string, Record<string, unknown>> = {};
+  const fetchFor = (name: string) =>
+    Object.assign(
+      async (_input: URL | RequestInfo, init?: RequestInit) => {
+        bodies[name] = JSON.parse(String(init?.body)) as Record<
+          string,
+          unknown
+        >;
+        return new Response("data: [DONE]\n\n", {
+          headers: { "content-type": "text/event-stream" },
+        });
+      },
+      { preconnect: fetch.preconnect },
+    ) as typeof fetch;
+  const openai = new OpenAICompatibleProvider({
+    apiKey: "key",
+    model: "model",
+  });
+  expect(openai.pdfInput).toBe(false);
+  for await (const _chunk of new AnthropicProvider({
+    apiKey: "key",
+    model: "model",
+    fetch: fetchFor("anthropic"),
+  }).stream(request)) {
+    // Drain.
+  }
+  for await (const _chunk of new GeminiProvider({
+    apiKey: "key",
+    model: "model",
+    fetch: fetchFor("gemini"),
+  }).stream(request)) {
+    // Drain.
+  }
+  const anthropic = bodies.anthropic.messages as Array<{
+    content: Array<{
+      type?: string;
+      source?: { data?: string; media_type?: string };
+    }>;
+  }>;
+  const gemini = bodies.gemini.contents as Array<{
+    parts: Array<{ inlineData?: { mimeType?: string; data?: string } }>;
+  }>;
+  expect(
+    anthropic[0]?.content.find((part) => part.type === "document"),
+  ).toMatchObject({
+    source: { type: "base64", media_type: "application/pdf", data: "cGRm" },
+  });
+  expect(gemini[0]?.parts.find((part) => part.inlineData)).toMatchObject({
+    inlineData: { mimeType: "application/pdf", data: "cGRm" },
+  });
+});
+
+test("provider stream idle timeout cancels a stalled SSE reader with typed timeout", async () => {
+  let cancelled = false;
+  const reader = {
+    read: async () => await new Promise<never>(() => undefined),
+    cancel: async () => {
+      cancelled = true;
+    },
+  } as unknown as ReadableStreamDefaultReader<Uint8Array>;
+  await expect(readWithIdleTimeout(reader, 5)).rejects.toMatchObject({
+    kind: "timeout",
+    message: expect.stringContaining("stream idle timeout"),
+  });
+  expect(cancelled).toBe(true);
+});
+
+test("OpenAI-compatible catalog discovery keeps credentials out of URLs and feeds context resolution", async () => {
+  let requested = "";
+  let authorization = "";
+  const fetchImpl = Object.assign(
+    async (input: URL | RequestInfo, init?: RequestInit) => {
+      requested = String(input);
+      authorization = new Headers(init?.headers).get("authorization") ?? "";
+      return Response.json({
+        data: [{ id: "catalog-model", context_window: 123456 }],
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  const provider = new OpenAICompatibleProvider({
+    apiKey: "catalog-secret",
+    model: "catalog-model",
+    baseURL: "https://gateway.example/v1",
+    fetch: fetchImpl,
+  });
+  expect(await provider.listModels()).toEqual([
+    { id: "catalog-model", contextWindow: 123456, inputTokenLimit: undefined },
+  ]);
+  expect(requested).toBe("https://gateway.example/v1/models");
+  expect(requested).not.toContain("catalog-secret");
+  expect(authorization).toBe("Bearer catalog-secret");
+  expect(
+    (
+      await new ContextWindowResolver().resolve({
+        provider: provider.provider,
+        model: provider.model,
+        providerAdapter: provider,
+      })
+    ).tokens,
+  ).toBe(123456);
 });
 
 test("durable tool result context preserves its tool_call_id for the next turn", () => {

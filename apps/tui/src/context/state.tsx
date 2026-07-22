@@ -404,7 +404,16 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
       state.messages.push({
         id: `${event.id}:user`,
         role: "user",
-        text: event.text,
+        text: `${event.text}${
+          event.attachments?.length
+            ? `\n\nAttachments: ${event.attachments
+                .map(
+                  (attachment) =>
+                    `${attachment.filename} (${attachment.mediaType}, ${attachment.byteLength} bytes)`,
+                )
+                .join(", ")}`
+            : ""
+        }`,
       });
       return;
     case "turn.retry":
@@ -481,6 +490,21 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
           .filter(Boolean)
           .join("\n"),
         event.event,
+      );
+      return;
+    case "workflow.update":
+      upsertBlock(
+        state,
+        `workflow:${event.runID}`,
+        "tool",
+        [
+          `Workflow ${event.workflow} · ${event.status}`,
+          event.stepID ? `${event.event}: ${event.stepID}` : event.event,
+          event.error ?? event.result ?? "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        event.status,
       );
       return;
     case "approval.request":

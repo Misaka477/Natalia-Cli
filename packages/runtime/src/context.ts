@@ -1,5 +1,6 @@
 import type {
   CompactionTrigger,
+  LocalAttachment,
   ContextStatusSource,
   RuntimeEvent,
 } from "@natalia/contracts";
@@ -21,6 +22,7 @@ export type ContextEntry = {
   tokens?: number;
   pairID?: string;
   artifactRef?: string;
+  attachments?: LocalAttachment[];
 };
 
 export type ExactUsageCheckpoint = {

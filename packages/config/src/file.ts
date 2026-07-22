@@ -1,4 +1,12 @@
-import { mkdir, readFile, writeFile, copyFile } from "node:fs/promises";
+import {
+  mkdir,
+  readFile,
+  writeFile,
+  copyFile,
+  open,
+  rename,
+  rm,
+} from "node:fs/promises";
 import { dirname } from "node:path";
 import { configV2Schema, type ConfigV2 } from "@natalia/contracts";
 import {
@@ -42,9 +50,21 @@ export async function saveConfigFile(
 ) {
   const parsed = configV2Schema.parse(config);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  await writeFile(path, `${JSON.stringify(parsed, null, 2)}\n`, {
-    mode: 0o600,
-  });
+  const temporary = `${path}.tmp-${crypto.randomUUID()}`;
+  try {
+    await writeFile(temporary, `${JSON.stringify(parsed, null, 2)}\n`, {
+      mode: 0o600,
+    });
+    const handle = await open(temporary, "r");
+    try {
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await rename(temporary, path);
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined);
+  }
 }
 
 export async function migrateConfigFile(
@@ -66,7 +86,8 @@ export async function migrateConfigFile(
 export function parseConfigText(raw: string) {
   try {
     return JSON.parse(raw) as unknown;
-  } catch {
+  } catch (error) {
+    if (/^\s*[\[{]/u.test(raw)) throw error;
     return parseLegacyYamlSubset(raw);
   }
 }

@@ -69,6 +69,7 @@ export function migrateConfig(input: unknown): MigrationResult {
   for (const [name, provider] of Object.entries(legacy.providers ?? {})) {
     providers[name] = {
       type: provider.type ?? name,
+      enabled: true,
       baseURL: provider.base_url,
       apiKey: provider.api_key,
       customHeaders: {},

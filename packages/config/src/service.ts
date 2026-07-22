@@ -44,9 +44,18 @@ export async function resolveConfig(input: {
       sources.push({ scope, path, applied: false, diagnostic: "missing" });
       continue;
     }
-    const raw = parseConfigText(await readFile(path, "utf8"));
-    config = mergeConfig(config, raw as Partial<ConfigV2>);
-    sources.push({ scope, path, applied: true });
+    try {
+      const raw = parseConfigText(await readFile(path, "utf8"));
+      config = mergeConfig(config, raw as Partial<ConfigV2>);
+      sources.push({ scope, path, applied: true });
+    } catch (error) {
+      sources.push({
+        scope,
+        path,
+        applied: false,
+        diagnostic: `invalid_config: ${error instanceof Error ? error.name : "parse_error"}`,
+      });
+    }
   }
   const environment = input.environment ?? process.env;
   const model = environment.NATALIA_MODEL;
@@ -87,6 +96,14 @@ function mergeConfig(base: ConfigV2, overlay: Partial<ConfigV2>): ConfigV2 {
     agents: { ...base.agents, ...overlay.agents },
     mcpServers: { ...base.mcpServers, ...overlay.mcpServers },
     skills: { ...base.skills, ...overlay.skills },
+    plugins: {
+      enabled: { ...base.plugins.enabled, ...overlay.plugins?.enabled },
+      paths: overlay.plugins?.paths ?? base.plugins.paths,
+      capabilities: {
+        ...base.plugins.capabilities,
+        ...overlay.plugins?.capabilities,
+      },
+    },
     workspace: { ...base.workspace, ...overlay.workspace },
     instructions: { ...base.instructions, ...overlay.instructions },
     webSearch: { ...base.webSearch, ...overlay.webSearch },

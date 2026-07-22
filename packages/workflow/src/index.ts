@@ -1,7 +1,6 @@
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { join, resolve } from "node:path";
-import type { ToolExecutionContext, ToolRegistry } from "@natalia/tools";
 import type {
   WorkflowDocument,
   WorkflowEvent,
@@ -10,6 +9,22 @@ import type {
 } from "./types";
 import { checkUniqueIDs } from "./parser";
 import { evaluateCondition, walkValues } from "./eval";
+
+export type WorkflowExecutionContext = {
+  workspaceRoot: string;
+  signal?: AbortSignal;
+};
+
+export type WorkflowToolRegistry = {
+  get(name: string):
+    | {
+        execute(
+          input: unknown,
+          context: WorkflowExecutionContext,
+        ): Promise<string>;
+      }
+    | undefined;
+};
 
 export type * from "./types";
 export { parseWorkflowJSON, parseWorkflowYAML } from "./parser";
@@ -86,13 +101,14 @@ function rebuildValues(
 
 export class WorkflowRuntime {
   constructor(
-    private readonly tools: ToolRegistry,
+    private readonly tools: WorkflowToolRegistry,
     private readonly store: JsonlWorkflowStore,
+    private readonly onEvent?: (event: WorkflowEvent, run: WorkflowRun) => void,
   ) {}
 
   async run(
     document: WorkflowDocument,
-    context: ToolExecutionContext,
+    context: WorkflowExecutionContext,
     runID = `wf_${Date.now().toString(36)}`,
   ) {
     checkUniqueIDs(document.steps);
@@ -135,7 +151,7 @@ export class WorkflowRuntime {
   private async executeSteps(
     steps: WorkflowStep[],
     run: WorkflowRun,
-    context: ToolExecutionContext,
+    context: WorkflowExecutionContext,
   ): Promise<void> {
     if (context.signal?.aborted) {
       if (run.status === "running") {
@@ -207,7 +223,7 @@ export class WorkflowRuntime {
   private async executeStep(
     step: WorkflowStep,
     run: WorkflowRun,
-    context: ToolExecutionContext,
+    context: WorkflowExecutionContext,
   ): Promise<string> {
     switch (step.kind) {
       case "set":
@@ -255,7 +271,7 @@ export class WorkflowRuntime {
       branches: Array<{ condition?: string; steps: WorkflowStep[] }>;
     },
     run: WorkflowRun,
-    context: ToolExecutionContext,
+    context: WorkflowExecutionContext,
   ): Promise<string> {
     for (const branch of step.branches) {
       if (branch.condition === undefined) {
@@ -279,7 +295,7 @@ export class WorkflowRuntime {
 
   private async executeScript(
     step: { id: string; kind: "script"; command: string; timeoutMs?: number },
-    context: ToolExecutionContext,
+    context: WorkflowExecutionContext,
   ) {
     return await new Promise<string>((resolvePromise, reject) => {
       const child = spawn(
@@ -323,7 +339,7 @@ export class WorkflowRuntime {
       step: WorkflowStep;
     },
     run: WorkflowRun,
-    context: ToolExecutionContext,
+    context: WorkflowExecutionContext,
   ): Promise<string> {
     let lastError: Error | undefined;
 
@@ -387,7 +403,7 @@ export class WorkflowRuntime {
   private async executeTimeout(
     step: { id: string; kind: "timeout"; ms: number; step: WorkflowStep },
     run: WorkflowRun,
-    context: ToolExecutionContext,
+    context: WorkflowExecutionContext,
   ): Promise<string> {
     const result = await Promise.race([
       this.executeStep(step.step, run, context),
@@ -418,7 +434,7 @@ export class WorkflowRuntime {
       branches: Array<{ id: string; steps: WorkflowStep[] }>;
     },
     run: WorkflowRun,
-    context: ToolExecutionContext,
+    context: WorkflowExecutionContext,
   ): Promise<string> {
     const results = await Promise.allSettled(
       step.branches.map(async (branch) => {
@@ -458,7 +474,7 @@ export class WorkflowRuntime {
       steps: WorkflowStep[];
     },
     run: WorkflowRun,
-    context: ToolExecutionContext,
+    context: WorkflowExecutionContext,
   ): Promise<string> {
     const overValue = run.values[step.over];
     if (overValue === undefined)
@@ -525,7 +541,16 @@ export class WorkflowRuntime {
   private async record(run: WorkflowRun, event: WorkflowEvent) {
     run.events.push(event);
     await this.store.append(event);
+    this.onEvent?.(event, run);
   }
+}
+
+export function createWorkflowRuntime(
+  tools: WorkflowToolRegistry,
+  store: JsonlWorkflowStore,
+  onEvent?: (event: WorkflowEvent, run: WorkflowRun) => void,
+) {
+  return new WorkflowRuntime(tools, store, onEvent);
 }
 
 function safeWorkflowEnv(env: NodeJS.ProcessEnv) {

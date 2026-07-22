@@ -259,6 +259,43 @@ test("dry-run preview includes running PTY Sandbox workflow modal policy", async
   expect(events).toContain("rollback.previewed");
 });
 
+test("rollback applies resource policies and projects restored context", async () => {
+  const root = await tempWorkspace();
+  const ledger = new ContextLedger();
+  ledger.add({ id: "baseline", role: "user", content: "baseline" });
+  const store = await initializeDefaultCheckpointStore({
+    sessionID: "ses_resource_apply",
+    workspaceRoot: root,
+    context: ledger,
+  });
+  ledger.add({ id: "later", role: "user", content: "later" });
+  const policies: string[] = [];
+  let restored = 0;
+  await store.rollbackTo("checkpoint_0", {
+    context: ledger,
+    resources: [
+      { kind: "pty", id: "pty_1", status: "running", summary: "shell" },
+      {
+        kind: "sandbox",
+        id: "box_1",
+        status: "preserve_dirty",
+        summary: "dirty",
+      },
+    ],
+    onResourcePolicy: async (policy) => {
+      policies.push(`${policy.kind}:${policy.action}`);
+    },
+    onContextRestored: async () => {
+      restored++;
+    },
+  });
+  expect(policies).toEqual(["pty:stop"]);
+  expect(restored).toBe(1);
+  expect(ledger.snapshot().entries.map((entry) => entry.id)).toEqual([
+    "baseline",
+  ]);
+});
+
 test("commands, typed events and session replay are stable", async () => {
   const root = await tempWorkspace();
   const ledger = new ContextLedger();

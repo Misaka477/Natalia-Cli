@@ -111,6 +111,23 @@ test("sandbox tracks running resources with output and stop lifecycle", async ()
   expect(manager.updateEvent("box")).toMatchObject({ runningResources: 0 });
 });
 
+test("sandbox manifests restore changes but never falsely recover processes", async () => {
+  const base = await mkdtemp(join(tmpdir(), "natalia-sandbox-restart-"));
+  const first = new WorkspaceSandboxManager(base);
+  await first.create("box");
+  await first.write("box", "draft.txt", "persisted");
+  await first.startResource("box", "sleep 0.1", "custom_resource");
+  await Bun.sleep(150);
+  const reopened = new WorkspaceSandboxManager(base);
+  await reopened.initialize();
+  expect(await reopened.previewMerge("box")).toMatchObject([
+    { path: "draft.txt", content: "persisted" },
+  ]);
+  expect(reopened.resourcesFor("box")).toEqual([]);
+  const result = await reopened.delete("box");
+  expect(result.runningResources).toEqual([]);
+});
+
 async function waitFor(read: () => Promise<string>) {
   for (let index = 0; index < 100; index++) {
     if ((await read()).includes("resource-ok")) return;

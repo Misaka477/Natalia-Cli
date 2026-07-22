@@ -10,11 +10,15 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "scripts": {
+    "test": "npx bun test test/*.test.ts --timeout 60000"
+  },
   "dependencies": {
     "@natalia/client": "workspace:*",
     "@natalia/config": "workspace:*",
     "@natalia/contracts": "workspace:*",
     "@natalia/runtime": "workspace:*",
+    "@natalia/session": "workspace:*",
     "@natalia/transport": "workspace:*"
   }
 }

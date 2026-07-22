@@ -58,6 +58,18 @@ export type ToolExecutionContext = {
   subagents?: SubagentRegistry;
   interactivePTY?: InteractivePTYRegistry;
   onPTYUpdate?: (session: InteractivePTYInfo) => void;
+  onPTYAction?: (
+    session: InteractivePTYInfo,
+    action:
+      | "write"
+      | "submit"
+      | "special_key"
+      | "resize"
+      | "attach"
+      | "detach"
+      | "exit",
+    redacted: boolean,
+  ) => void;
   sandboxes?: WorkspaceSandboxManager;
   onSandboxEvent?: (event: { type: string; [key: string]: unknown }) => void;
   settings?: {
@@ -72,6 +84,21 @@ export type ToolExecutionContext = {
   parentSessionID?: string;
   parentAgentID?: string;
   maxSubagentDepth?: number;
+  onWorkflowEvent?: (event: {
+    runID: string;
+    workflow: string;
+    status: "running" | "completed" | "failed" | "cancelled";
+    event:
+      | "run_started"
+      | "run_completed"
+      | "run_cancelled"
+      | "step_started"
+      | "step_completed"
+      | "step_failed";
+    stepID?: string;
+    result?: string;
+    error?: string;
+  }) => void;
 };
 
 export type ToolRegistry = Map<string, RuntimeTool>;
@@ -513,15 +540,43 @@ function sandboxMergeTool(): RuntimeTool {
 }
 
 function sandboxDeleteTool(): RuntimeTool {
-  return sandboxReadTool(
-    "sandbox_delete",
-    "Delete a TS workspace sandbox.",
-    async (manager, id) => {
+  return {
+    name: "sandbox_delete",
+    description: "Delete a TS workspace sandbox.",
+    requiresApproval: true,
+    parameters: {
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
+      additionalProperties: false,
+    },
+    async execute(input, context) {
+      const id = requireString(requireObject(input).id, "id");
+      const manager = requireSandboxes(context);
       const result = await manager.delete(id);
+      context.onSandboxEvent?.({
+        type: "sandbox.update",
+        id,
+        status: "deleted",
+        root: "",
+        isolationLevel: "workspace",
+        changedFiles: result.pendingChanges.length,
+        runningResources: result.runningResources.length,
+        target: { kind: "host", cwd: context.workspaceRoot },
+        resourcePolicy: "sandbox deleted after resource cleanup",
+      });
+      context.onSandboxEvent?.({
+        type: "sandbox.audit",
+        id,
+        action: "delete",
+        target: { kind: "host", cwd: context.workspaceRoot },
+        approvalRequired: true,
+        checkpointPolicy: "sandbox_manifest",
+        message: "Sandbox workspace directory deleted after resource cleanup.",
+      });
       return JSON.stringify(result, null, 2);
     },
-    true,
-  );
+  };
 }
 
 function sandboxResourceStartTool(): RuntimeTool {
@@ -667,8 +722,21 @@ function requireInteractivePTY(context: ToolExecutionContext) {
   return context.interactivePTY;
 }
 
-function notifyPTY(context: ToolExecutionContext, session: InteractivePTYInfo) {
+function notifyPTY(
+  context: ToolExecutionContext,
+  session: InteractivePTYInfo,
+  action?:
+    | "write"
+    | "submit"
+    | "special_key"
+    | "resize"
+    | "attach"
+    | "detach"
+    | "exit",
+  redacted = false,
+) {
   context.onPTYUpdate?.(session);
+  if (action) context.onPTYAction?.(session, action, redacted);
   return JSON.stringify(session, null, 2);
 }
 
@@ -848,11 +916,25 @@ function interactiveTool(
       additionalProperties: false,
     },
     async execute(input, context) {
-      const session = await action(
-        requireInteractivePTY(context),
-        requireObject(input),
-      );
-      return notifyPTY(context, session);
+      const args = requireObject(input);
+      const session = await action(requireInteractivePTY(context), args);
+      const ptyAction =
+        name === "interactive_write"
+          ? args.submit === false
+            ? "write"
+            : "submit"
+          : name === "interactive_keys"
+            ? "special_key"
+            : name === "interactive_resize"
+              ? "resize"
+              : name === "interactive_attach"
+                ? "attach"
+                : name === "interactive_detach"
+                  ? "detach"
+                  : name === "interactive_stop"
+                    ? "exit"
+                    : undefined;
+      return notifyPTY(context, session, ptyAction, args.sensitive === true);
     },
   };
 }

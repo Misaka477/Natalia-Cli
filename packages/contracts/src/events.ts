@@ -91,6 +91,7 @@ export type DurableContextCheckpointRecord = {
     tokens?: number;
     pairID?: string;
     artifactRef?: string;
+    attachments?: LocalAttachment[];
   }>;
   checkpoint?: {
     messageCount: number;
@@ -184,6 +185,7 @@ export type RuntimeEvent =
       byteLength: number;
       lineCount: number;
       sha256: string;
+      attachments?: LocalAttachment[];
     }
   | { type: "turn.cancelled"; id: string; reason: string }
   | { type: "turn.paused"; id: string; reason: string }
@@ -288,6 +290,28 @@ export type RuntimeEvent =
       message?: string;
     }
   | { type: "agent.selection"; name?: string; pending: boolean }
+  | {
+      type: "plugin.update";
+      id: string;
+      status: "loaded" | "unloaded" | "denied" | "failed";
+      detail?: string;
+    }
+  | {
+      type: "workflow.update";
+      runID: string;
+      workflow: string;
+      status: "running" | "completed" | "failed" | "cancelled";
+      event:
+        | "run_started"
+        | "run_completed"
+        | "run_cancelled"
+        | "step_started"
+        | "step_completed"
+        | "step_failed";
+      stepID?: string;
+      result?: string;
+      error?: string;
+    }
   | { type: "status.update"; status: string; detail?: string }
   | {
       type: "status.snapshot";
@@ -476,7 +500,12 @@ export type RuntimeEvent =
       message: string;
       recovered: boolean;
     }
-  | { type: "diagnostic"; level: "info" | "warning" | "error"; message: string }
+  | {
+      type: "diagnostic";
+      level: "info" | "warning" | "error";
+      message: string;
+      at?: string;
+    }
   | {
       type: "dialog.open";
       dialog:
@@ -524,10 +553,26 @@ export type RuntimeEvent =
     };
 
 export type SubmittedTurn = Extract<RuntimeEvent, { type: "turn.submitted" }>;
+export type LocalAttachment = {
+  id: string;
+  path: string;
+  filename: string;
+  mediaType:
+    | "image/png"
+    | "image/jpeg"
+    | "application/pdf"
+    | "text/plain"
+    | "text/markdown"
+    | "application/json"
+    | "text/csv";
+  byteLength: number;
+  sha256: string;
+};
 export type SubmitInput = {
   text: string;
   delivery?: "steer" | "queue";
   id?: string;
+  attachments?: string[];
 };
 export type RuntimeHistoryEvent = { seq: number; event: RuntimeEvent };
 export type RuntimeHistory = {
@@ -555,6 +600,28 @@ export type MCPCatalogSnapshot = {
   prompts: MCPPromptCatalog[];
   resources: MCPResourceCatalog[];
 };
+export type PluginStatus = {
+  id: string;
+  version: string;
+  name: string;
+  description: string;
+  capabilities: string[];
+};
+export type WorkflowSnapshot = {
+  id: string;
+  workflow: string;
+  status: "running" | "completed" | "failed" | "cancelled";
+  completedStepIDs: string[];
+  values: Record<string, string>;
+};
+export type RuntimeStatusSnapshot = Extract<
+  RuntimeEvent,
+  { type: "status.snapshot" }
+>;
+export type RuntimeDiagnostic = Extract<
+  RuntimeEvent,
+  { type: "diagnostic" }
+> & { at: string };
 
 /** Streaming fragments are transport-live; their completed settlements are durable. */
 export function runtimeEventDurability(
@@ -599,6 +666,14 @@ export type RuntimeClient = {
     arguments_?: Record<string, string>,
   ): Promise<unknown>;
   readMcpResource?(server: string, uri: string): Promise<unknown>;
+  plugins?(): Promise<PluginStatus[]>;
+  runWorkflow?(input: {
+    workflow: string;
+    runID?: string;
+  }): Promise<WorkflowSnapshot>;
+  workflowStatus?(runID: string): Promise<WorkflowSnapshot | undefined>;
+  runtimeStatus?(): Promise<RuntimeStatusSnapshot>;
+  diagnostics?(limit?: number): Promise<RuntimeDiagnostic[]>;
   snapshot(): RuntimeEvent;
   diagnostic(message: string, level?: "info" | "warning" | "error"): void;
   lastSubmission(): SubmittedTurn | undefined;

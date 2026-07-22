@@ -14,7 +14,7 @@ export type NataliaSDKOptions = {
 export type NataliaSDK = {
   prompt(
     text: string,
-    options?: { delivery?: "steer" | "queue" },
+    options?: { delivery?: "steer" | "queue"; attachments?: string[] },
   ): Promise<SubmittedTurn>;
   cancel(reason?: string): Promise<void>;
   pause(reason?: string): Promise<void>;
@@ -44,6 +44,11 @@ export type NataliaSDK = {
     arguments_?: Record<string, string>,
   ): Promise<unknown>;
   mcpResource(server: string, uri: string): Promise<unknown>;
+  plugins(): Promise<import("@natalia/contracts").PluginStatus[]>;
+  runtimeStatus(): Promise<import("@natalia/contracts").RuntimeStatusSnapshot>;
+  diagnostics(
+    limit?: number,
+  ): Promise<import("@natalia/contracts").RuntimeDiagnostic[]>;
   health(): Promise<{ ok: boolean }>;
   events(options?: {
     since?: number;
@@ -120,6 +125,10 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       await call("mcp.prompt", { server, name, arguments: arguments_ }),
     mcpResource: async (server, uri) =>
       await call("mcp.resource", { server, uri }),
+    plugins: async () => await call("plugin.list", {}),
+    runtimeStatus: async () => await call("runtime.status", {}),
+    diagnostics: async (limit) =>
+      await call("diagnostics.list", limit === undefined ? {} : { limit }),
     health: async () => {
       const response = await fetchImpl(`${baseURL}/healthz`);
       if (!response.ok) throw new Error(`health failed: ${response.status}`);
