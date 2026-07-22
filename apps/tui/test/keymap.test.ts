@@ -6,6 +6,7 @@ import {
   composerKeyAction,
   commands,
   parseKeybindKey,
+  normalizeKeybindKey,
   formatKeybindKey,
   keybindForEvent,
   parseKeybindOverrides,
@@ -43,6 +44,14 @@ describe("keybind event normalization", () => {
     );
     expect(keybindForEvent({ name: "enter", alt: true })).toBe("alt+return");
     expect(keybindForEvent({ name: "k", meta: true })).toBe("meta+k");
+  });
+});
+
+describe("keybind normalization", () => {
+  test("normalizes terminal aliases before conflict checks or registration", () => {
+    expect(normalizeKeybindKey("ctrl+enter")).toBe("ctrl+return");
+    expect(normalizeKeybindKey("ctrl+pgup")).toBe("ctrl+pageup");
+    expect(normalizeKeybindKey("esc")).toBe("escape");
   });
 });
 
@@ -223,6 +232,10 @@ describe("parseKeybindOverrides", () => {
     });
     expect(diagnostics).toEqual([]);
     expect(resolved).toHaveLength(2);
+    expect(resolved.map((item) => item.keys)).toEqual([
+      "ctrl+l",
+      "ctrl+shift+l",
+    ]);
   });
 
   test("flags key string with no actual key", () => {
@@ -337,6 +350,27 @@ describe("buildKeybindMap", () => {
     });
     expect(diagnostics).toHaveLength(1);
     expect(diagnostics[0].code).toBe("conflict");
+  });
+
+  test("keeps every configured alternative binding for keymap registration", () => {
+    const { bindings, map } = buildKeybindMap({
+      "session.list": ["ctrl+shift+l", "ctrl+alt+l"],
+    });
+    expect(bindings["session.list"]).toEqual([
+      "ctrl+shift+l",
+      "ctrl+alt+l",
+    ]);
+    expect(map["session.list"]).toBe("ctrl+shift+l");
+  });
+
+  test("treats terminal aliases as conflicting bindings", () => {
+    const { diagnostics } = buildKeybindMap({
+      "composer.newline": "ctrl+enter",
+      "composer.buffer-home": "ctrl+return",
+    });
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({ code: "conflict", command: "composer.buffer-home" }),
+    );
   });
 });
 

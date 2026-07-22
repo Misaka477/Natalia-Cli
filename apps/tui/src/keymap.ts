@@ -268,6 +268,37 @@ export interface ParseOverridesResult {
   resolved: ResolvedKeybind[];
 }
 
+export type ResolvedKeybindMap = {
+  bindings: Record<string, string[]>;
+  diagnostics: OverrideDiagnostic[];
+  // Kept for existing callers that display one primary shortcut.
+  map: Record<string, string>;
+};
+
+const keyAliases: Record<string, string> = {
+  enter: "return",
+  esc: "escape",
+  pgdown: "pagedown",
+  pgup: "pageup",
+};
+
+export function normalizeKeybindKey(value: string) {
+  const parsed = parseKeybindKey(value);
+  if (!parsed.key) return "";
+  const key = keyAliases[parsed.key] ?? parsed.key;
+  return [
+    parsed.ctrl ? "ctrl" : "",
+    parsed.alt ? "alt" : "",
+    parsed.meta ? "meta" : "",
+    parsed.shift ? "shift" : "",
+    parsed.super ? "super" : "",
+    parsed.hyper ? "hyper" : "",
+    key,
+  ]
+    .filter(Boolean)
+    .join("+");
+}
+
 export function parseKeybindOverrides(
   overrides: UserKeybindOverrides,
 ): ParseOverridesResult {
@@ -297,8 +328,8 @@ export function parseKeybindOverrides(
         });
         continue;
       }
-      const parsed = parseKeybindKey(k);
-      if (!parsed.key) {
+      const keys = normalizeKeybindKey(k);
+      if (!keys) {
         diagnostics.push({
           code: "invalid-key",
           command,
@@ -306,7 +337,12 @@ export function parseKeybindOverrides(
         });
         continue;
       }
-      resolved.push({ command, keys: k, source: "override", disabled: false });
+      resolved.push({
+        command,
+        keys,
+        source: "override",
+        disabled: false,
+      });
     }
   }
   return { diagnostics, resolved };
@@ -320,53 +356,67 @@ export function detectKeybindConflicts(
 
   for (const r of resolved) {
     if (r.disabled || !r.keys) continue;
-    const prev = keyToCommands.get(r.keys);
+    const keys = normalizeKeybindKey(r.keys);
+    if (!keys) continue;
+    const prev = keyToCommands.get(keys);
     if (prev) {
       diagnostics.push({
         code: "conflict",
         command: r.command,
-        message: `Key "${r.keys}" conflicts: assigned to both "${prev[0]}" and "${r.command}"`,
+        message: `Key "${keys}" conflicts: assigned to both "${prev[0]}" and "${r.command}"`,
       });
     }
-    keyToCommands.set(r.keys, [...(prev ?? []), r.command]);
+    keyToCommands.set(keys, [...(prev ?? []), r.command]);
   }
   return diagnostics;
 }
 
-export function buildKeybindMap(overrides?: UserKeybindOverrides | null): {
-  map: Record<string, string>;
-  diagnostics: OverrideDiagnostic[];
-} {
-  const map: Record<string, string> = {};
+export function buildKeybindMap(
+  overrides?: UserKeybindOverrides | null,
+): ResolvedKeybindMap {
+  const bindings: Record<string, string[]> = {};
   const diagnostics: OverrideDiagnostic[] = [];
 
   for (const [id, cmd] of Object.entries(commands)) {
-    if (cmd.keys !== "unset") map[id] = cmd.keys;
+    if (cmd.keys !== "unset") bindings[id] = [normalizeKeybindKey(cmd.keys)];
   }
 
-  if (!overrides) return { map, diagnostics };
+  if (overrides) {
+    const { resolved, diagnostics: parseDiags } =
+      parseKeybindOverrides(overrides);
+    diagnostics.push(...parseDiags);
+    const overridden = new Set<string>();
 
-  const { resolved, diagnostics: parseDiags } =
-    parseKeybindOverrides(overrides);
-  diagnostics.push(...parseDiags);
-
-  for (const r of resolved) {
-    if (r.disabled) {
-      delete map[r.command];
-    } else {
-      map[r.command] = r.keys;
+    for (const r of resolved) {
+      if (r.disabled) {
+        delete bindings[r.command];
+        overridden.add(r.command);
+        continue;
+      }
+      bindings[r.command] = overridden.has(r.command)
+        ? [...(bindings[r.command] ?? []), r.keys]
+        : [r.keys];
+      overridden.add(r.command);
     }
   }
 
   const conflictDiags = detectKeybindConflicts(
-    Object.entries(map).map(([command, keys]) => ({
-      command,
-      keys,
-      source: "default" as const,
-      disabled: false,
-    })),
+    Object.entries(bindings).flatMap(([command, keys]) =>
+      keys.map((key) => ({
+        command,
+        keys: key,
+        source: "default" as const,
+        disabled: false,
+      })),
+    ),
   );
   diagnostics.push(...conflictDiags);
 
-  return { map, diagnostics };
+  return {
+    bindings,
+    diagnostics,
+    map: Object.fromEntries(
+      Object.entries(bindings).map(([command, keys]) => [command, keys[0]!]),
+    ),
+  };
 }

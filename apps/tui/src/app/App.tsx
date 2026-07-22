@@ -1386,14 +1386,15 @@ function Shell(props: {
 
   useBindings(() => ({
     mode: "base",
-    bindings: Object.entries(buildKeybindMap(preferences().keybinds).map).map(
-      ([id, key]) => ({
-        key,
-        desc: commands[id]!.desc,
-        group: "Natalia",
-        cmd: () => runCommand(id),
-      }),
-    ),
+    bindings: Object.entries(buildKeybindMap(preferences().keybinds).bindings)
+      .flatMap(([id, keys]) =>
+        keys.map((key) => ({
+          key,
+          desc: commands[id]!.desc,
+          group: "Natalia",
+          cmd: () => runCommand(id),
+        })),
+      ),
   }));
 
   useBindings(() => ({
