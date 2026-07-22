@@ -98,4 +98,11 @@ describe("EditorBuffer M0 regressions", () => {
     expect(history.next("第一条\n第二行")).toBe("第三条");
     expect(history.next("第三条")).toBe("draft");
   });
+
+  test("restores history from an empty composer and returns its draft", () => {
+    const history = new PromptHistory();
+    history.add("first");
+    expect(history.previous("")).toBe("first");
+    expect(history.next("first")).toBe("");
+  });
 });

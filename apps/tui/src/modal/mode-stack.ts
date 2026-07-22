@@ -9,8 +9,10 @@ import type { Keymap } from "@opentui/keymap";
 import {
   registerBackspacePopsPendingSequence,
   registerBaseLayoutFallback,
+  registerCommaBindings,
   registerEscapeClearsPendingSequence,
   registerManagedTextareaLayer,
+  registerTimedLeader,
 } from "@opentui/keymap/addons/opentui";
 import { useKeymap } from "@opentui/keymap/solid";
 
@@ -94,9 +96,16 @@ export function useModeStack(): ModeStack {
 export function registerNataliaKeymap(
   keymap: TuiKeymap,
   renderer: CliRenderer,
+  options: { leaderKey?: string; leaderTimeoutMs?: number } = {},
 ) {
   const modeStack = getOrCreateModeStack(keymap);
+  const offCommaBindings = registerCommaBindings(keymap);
   const offBaseLayout = registerBaseLayoutFallback(keymap);
+  const offLeader = registerTimedLeader(keymap, {
+    trigger: options.leaderKey ?? "ctrl+x",
+    name: "leader",
+    timeoutMs: options.leaderTimeoutMs ?? 2000,
+  });
   const offEscape = registerEscapeClearsPendingSequence(keymap);
   const offBackspace = registerBackspacePopsPendingSequence(keymap);
   const offInputBindings = registerManagedTextareaLayer(keymap, renderer, {
@@ -113,7 +122,9 @@ export function registerNataliaKeymap(
     offInputBindings();
     offBackspace();
     offEscape();
+    offLeader();
     offBaseLayout();
+    offCommaBindings();
     modeStack.dispose();
   };
 }

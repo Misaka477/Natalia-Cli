@@ -1398,6 +1398,28 @@ function Shell(props: {
   }));
 
   useBindings(() => ({
+    target: composer,
+    enabled: () => {
+      const input = composer();
+      return Boolean(input && shouldUseHistory(input.plainText, input.cursorOffset));
+    },
+    bindings: [
+      {
+        key: "up",
+        desc: "Previous prompt history",
+        group: "Prompt",
+        cmd: () => restoreHistory(-1),
+      },
+      {
+        key: "down",
+        desc: "Next prompt history",
+        group: "Prompt",
+        cmd: () => restoreHistory(1),
+      },
+    ],
+  }));
+
+  useBindings(() => ({
     mode: "base",
     priority: 1,
     enabled: () => state.ptyPane.focus === "pty",
@@ -1683,12 +1705,6 @@ function Shell(props: {
                   event.preventDefault();
                   composer()?.gotoBufferEnd();
                   return;
-                }
-                if ((key === "up" || key === "down") && composer()?.plainText) {
-                  if (restoreHistory(key === "up" ? -1 : 1)) {
-                    event.preventDefault();
-                    return;
-                  }
                 }
               }}
             />

@@ -69,6 +69,14 @@ describe("command definitions", () => {
     }
   });
 
+  test("keymap includes leader alternatives for keyboard-first navigation", () => {
+    const { bindings } = buildKeybindMap();
+    expect(bindings["session.new"]).toContain("<leader>n");
+    expect(bindings["session.list"]).toContain("<leader>l");
+    expect(bindings["agent.list"]).toEqual(["<leader>a"]);
+    expect(bindings["model.list"]).toEqual(["<leader>m"]);
+  });
+
   test("known command IDs match documented set", () => {
     expect(commands["palette.toggle"]).toBeDefined();
     expect(commands["session.new"]).toBeDefined();
@@ -238,6 +246,19 @@ describe("parseKeybindOverrides", () => {
     ]);
   });
 
+  test("expands comma-separated alternatives while preserving comma keys", () => {
+    expect(
+      parseKeybindOverrides({
+        "session.list": "ctrl+l,ctrl+shift+l",
+        "settings.open": "ctrl+,",
+      }).resolved,
+    ).toMatchObject([
+      { command: "session.list", keys: "ctrl+l" },
+      { command: "session.list", keys: "ctrl+shift+l" },
+      { command: "settings.open", keys: "ctrl+," },
+    ]);
+  });
+
   test("flags key string with no actual key", () => {
     const { diagnostics } = parseKeybindOverrides({
       "settings.open": "++++",
@@ -314,7 +335,7 @@ describe("buildKeybindMap", () => {
     expect(diagnostics).toEqual([]);
     expect(map["palette.toggle"]).toBe("ctrl+p");
     expect(map["session.new"]).toBe("ctrl+n");
-    const cmdBindings = Object.values(commands).filter((c) => c.keys !== "unset").length;
+    const cmdBindings = Object.values(commands).filter((c) => c.keys !== "unset").length + 2;
     expect(Object.keys(map).length).toBe(cmdBindings);
   });
 
@@ -326,13 +347,20 @@ describe("buildKeybindMap", () => {
     expect(map["session.new"]).toBe("ctrl+n");
   });
 
+  test("an override replaces both direct and leader defaults", () => {
+    const { bindings } = buildKeybindMap({
+      "session.new": "ctrl+shift+n",
+    });
+    expect(bindings["session.new"]).toEqual(["ctrl+shift+n"]);
+  });
+
   test("removes binding when overridden with false", () => {
     const { map, diagnostics } = buildKeybindMap({
       snapshot: false,
     });
     expect(diagnostics).toEqual([]);
     expect(map["snapshot"]).toBeUndefined();
-    const cmdCount = Object.values(commands).filter((c) => c.keys !== "unset").length;
+    const cmdCount = Object.values(commands).filter((c) => c.keys !== "unset").length + 2;
     expect(Object.keys(map).length).toBe(cmdCount - 1);
   });
 
@@ -363,6 +391,16 @@ describe("buildKeybindMap", () => {
     expect(map["session.list"]).toBe("ctrl+shift+l");
   });
 
+  test("registers every comma-separated override alternative", () => {
+    const { bindings } = buildKeybindMap({
+      "session.list": "ctrl+shift+l,ctrl+alt+l",
+    });
+    expect(bindings["session.list"]).toEqual([
+      "ctrl+shift+l",
+      "ctrl+alt+l",
+    ]);
+  });
+
   test("treats terminal aliases as conflicting bindings", () => {
     const { diagnostics } = buildKeybindMap({
       "composer.newline": "ctrl+enter",
@@ -377,6 +415,7 @@ describe("buildKeybindMap", () => {
 describe("tui.json keybinds schema integration", () => {
   test("parses valid keybinds from raw JSON", () => {
     const config = tuiConfigSchema.parse({
+      leaderKey: "ctrl+space",
       keybinds: {
         "palette.toggle": "ctrl+shift+p",
         "session.new": ["ctrl+n", "ctrl+alt+n"],
@@ -387,6 +426,7 @@ describe("tui.json keybinds schema integration", () => {
     expect(config.keybinds["palette.toggle"]).toBe("ctrl+shift+p");
     expect(Array.isArray(config.keybinds["session.new"])).toBe(true);
     expect(config.keybinds["snapshot"]).toBe(false);
+    expect(config.leaderKey).toBe("ctrl+space");
   });
 
   test("parses empty keybinds object", () => {
@@ -397,6 +437,7 @@ describe("tui.json keybinds schema integration", () => {
   test("defaults to empty object when missing", () => {
     const config = tuiConfigSchema.parse({});
     expect(config.keybinds).toEqual({});
+    expect(config.leaderKey).toBe("ctrl+x");
   });
 
   test("rejects non-string keys", () => {
@@ -466,7 +507,7 @@ describe("buildKeybindMap null and undefined overrides", () => {
   test("handles empty overrides", () => {
     const { map, diagnostics } = buildKeybindMap({});
     expect(diagnostics).toEqual([]);
-    const cmdCount = Object.values(commands).filter((c) => c.keys !== "unset").length;
+    const cmdCount = Object.values(commands).filter((c) => c.keys !== "unset").length + 2;
     expect(Object.keys(map).length).toBe(cmdCount);
   });
 });

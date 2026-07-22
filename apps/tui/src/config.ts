@@ -15,6 +15,7 @@ export const tuiConfigSchema = z.object({
   theme: z.string().default("natalia-dark"),
   themeMode: z.enum(["dark", "light", "system"]).default("dark"),
   keybinds: keybindsSchema,
+  leaderKey: z.string().min(1).default("ctrl+x"),
   leaderTimeoutMs: z.number().int().positive().default(2000),
   toolDetails: z.enum(["collapsed", "expanded"]).default("collapsed"),
   reasoning: z.enum(["step", "hidden"]).default("step"),

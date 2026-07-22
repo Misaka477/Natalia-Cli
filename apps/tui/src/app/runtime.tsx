@@ -3,6 +3,7 @@ import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
 import { KeymapProvider } from "@opentui/keymap/solid";
 import { render } from "@opentui/solid";
 import { createFakeBackend, createRealRuntimeClient } from "@natalia/client";
+import { resolveTuiConfig } from "../config";
 import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
 import { ClipboardProvider } from "../context/clipboard";
 import { ToastProvider } from "../context/toast";
@@ -49,7 +50,13 @@ export async function runTuiShell(
       : createRealRuntimeClient({ workspaceRoot: input.workspaceRoot }));
   const events: RuntimeEvent[] = [];
   const keymap = createDefaultOpenTuiKeymap(renderer);
-  const disposeKeymap = registerNataliaKeymap(keymap, renderer);
+  const tuiConfig = input.workspaceRoot
+    ? (await resolveTuiConfig(input.workspaceRoot)).config
+    : undefined;
+  const disposeKeymap = registerNataliaKeymap(keymap, renderer, {
+    leaderKey: tuiConfig?.leaderKey,
+    leaderTimeoutMs: tuiConfig?.leaderTimeoutMs,
+  });
   let keymapDisposed = false;
   const cleanupKeymap = () => {
     if (keymapDisposed) return;

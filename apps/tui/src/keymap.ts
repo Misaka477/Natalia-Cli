@@ -1,4 +1,5 @@
 export const keymapBoundary = {
+  leader: "ctrl+x",
   submit: "return",
   newline: "ctrl+j",
   cancel: "ctrl+c",
@@ -178,6 +179,17 @@ export const commands: Record<string, CommandDef> = {
   },
 };
 
+const leaderBindings: Record<string, string> = {
+  "session.new": "<leader>n",
+  "session.list": "<leader>l",
+  "session.sidebar.toggle": "<leader>b",
+  "settings.open": "<leader>,",
+  "help.open": "<leader>h",
+  snapshot: "<leader>c",
+  "agent.list": "<leader>a",
+  "model.list": "<leader>m",
+};
+
 export interface ParsedKey {
   ctrl: boolean;
   alt: boolean;
@@ -299,6 +311,15 @@ export function normalizeKeybindKey(value: string) {
     .join("+");
 }
 
+function keybindAlternatives(value: string) {
+  return value
+    .split(
+      /,(?=(?:ctrl|control|alt|option|meta|shift|super|cmd|win|hyper)\+)/iu,
+    )
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 export function parseKeybindOverrides(
   overrides: UserKeybindOverrides,
 ): ParseOverridesResult {
@@ -318,7 +339,9 @@ export function parseKeybindOverrides(
       resolved.push({ command, keys: "", source: "override", disabled: true });
       continue;
     }
-    const keysArray = Array.isArray(value) ? value : [value];
+    const keysArray = (Array.isArray(value) ? value : [value]).flatMap((key) =>
+      typeof key === "string" ? keybindAlternatives(key) : [key],
+    );
     for (const k of keysArray) {
       if (typeof k !== "string") {
         diagnostics.push({
@@ -378,7 +401,11 @@ export function buildKeybindMap(
   const diagnostics: OverrideDiagnostic[] = [];
 
   for (const [id, cmd] of Object.entries(commands)) {
-    if (cmd.keys !== "unset") bindings[id] = [normalizeKeybindKey(cmd.keys)];
+    const defaults = [
+      ...(cmd.keys === "unset" ? [] : [normalizeKeybindKey(cmd.keys)]),
+      ...(leaderBindings[id] ? [leaderBindings[id]] : []),
+    ];
+    if (defaults.length) bindings[id] = defaults;
   }
 
   if (overrides) {

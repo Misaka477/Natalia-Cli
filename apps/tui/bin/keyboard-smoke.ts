@@ -34,6 +34,16 @@ if (submissions[1] !== "a\nb")
     `Ctrl+J newline failed: got ${JSON.stringify(submissions[1])}`,
   );
 
+keys.pressArrow("up");
+await Bun.sleep(40);
+keys.pressEnter();
+await Bun.sleep(200);
+
+if (submissions[2] !== "a\nb")
+  throw new Error(
+    `Empty composer history failed: got ${JSON.stringify(submissions[2])}`,
+  );
+
 const destroyed = new Promise<void>((resolve) =>
   handle.renderer.once("destroy", resolve),
 );
