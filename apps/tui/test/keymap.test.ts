@@ -91,6 +91,7 @@ describe("command definitions", () => {
     expect(commands["dialog.close"]).toBeDefined();
     expect(commands["dialog.select.submit"]).toBeDefined();
     expect(commands["dialog.select.next"].scope).toBe("dialog");
+    expect(commands["model.dialog.favorite"].scope).toBe("dialog");
     expect(commands["scroll.up"]).toBeDefined();
     expect(commands["scroll.down"]).toBeDefined();
     expect(commands["scroll.top"]).toBeDefined();

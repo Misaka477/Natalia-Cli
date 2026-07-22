@@ -162,6 +162,18 @@ export const commands: Record<string, CommandDef> = {
     desc: "Last dialog item",
     scope: "dialog",
   },
+  "model.dialog.favorite": {
+    id: "model.dialog.favorite",
+    keys: "f",
+    desc: "Toggle model favorite",
+    scope: "dialog",
+  },
+  "agent.dialog.edit": {
+    id: "agent.dialog.edit",
+    keys: "f",
+    desc: "Edit agent override",
+    scope: "dialog",
+  },
   "provider.connect": {
     id: "provider.connect",
     keys: "unset",
@@ -477,14 +489,16 @@ export function buildKeybindMap(
   }
 
   const conflictDiags = detectKeybindConflicts(
-    Object.entries(bindings).flatMap(([command, keys]) =>
+    Object.entries(bindings)
+      .filter(([command]) => commands[command]?.scope !== "dialog")
+      .flatMap(([command, keys]) =>
       keys.map((key) => ({
         command,
         keys: key,
         source: "default" as const,
         disabled: false,
       })),
-    ),
+      ),
   );
   diagnostics.push(...conflictDiags);
 

@@ -107,7 +107,14 @@ export function DialogModel(props: { workspaceRoot: string }) {
         </text>
       }
       onSelect={(option) => void select(option)}
-      onExtraKey={(_key, option) => local.toggleModelFavorite(option.value)}
+      preserveSelection
+      actions={[
+        {
+          command: "model.dialog.favorite",
+          title: "Favorite",
+          onTrigger: (option) => local.toggleModelFavorite(option.value),
+        },
+      ]}
     />
   );
 }

@@ -79,7 +79,14 @@ export function DialogAgent(props: {
       current={props.current}
       emptyView={<text>No selectable agents configured.</text>}
       onSelect={select}
-      onExtraKey={(_key, option) => edit(option)}
+      preserveSelection
+      actions={[
+        {
+          command: "agent.dialog.edit",
+          title: "Edit",
+          onTrigger: edit,
+        },
+      ]}
     />
   );
 }

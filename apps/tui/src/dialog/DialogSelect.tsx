@@ -44,9 +44,17 @@ export interface DialogSelectProps<T> {
   placeholder?: string;
   emptyView?: JSX.Element;
   skipFilter?: boolean;
+  renderFilter?: boolean;
   flat?: boolean;
   current?: T;
+  preserveSelection?: boolean;
   locked?: boolean;
+  actions?: Array<{
+    command: string;
+    title: string;
+    disabled?: boolean | ((option: DialogSelectOption<T> | undefined) => boolean);
+    onTrigger(option: DialogSelectOption<T>): void;
+  }>;
   onSelect?: (option: DialogSelectOption<T>) => void;
   onClose?: () => void;
   onExtraKey?: (key: string, option: DialogSelectOption<T>) => void;
@@ -128,6 +136,19 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
 
   const selected = createMemo(() => flat()[store.selected]);
 
+  createEffect(
+    on(
+      () => props.options,
+      () => {
+        if (!props.preserveSelection) return;
+        const current = selected();
+        if (!current) return;
+        const index = flat().findIndex((option) => option.value === current.value);
+        if (index >= 0) setStore("selected", index);
+      },
+    ),
+  );
+
   function move(direction: number) {
     if (props.locked) return;
     if (flat().length === 0) return;
@@ -197,6 +218,20 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
         category: "Dialog",
         run: submit,
       },
+      ...(props.actions ?? []).map((action) => ({
+        name: action.command,
+        title: action.title,
+        category: "Dialog",
+        run: () => {
+          const option = selected();
+          const disabled =
+            typeof action.disabled === "function"
+              ? action.disabled(option)
+              : action.disabled;
+          if (!option || disabled || props.locked) return;
+          action.onTrigger(option);
+        },
+      })),
     ],
     bindings: [
       ...keybinds.bindings("dialog.select.submit", ["return"]).map((key) => ({
@@ -247,6 +282,14 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
           if (scroll) scroll.scrollTo(scroll.scrollHeight ?? 0);
         },
       })),
+      ...(props.actions ?? []).flatMap((action) =>
+        keybinds.bindings(action.command, []).map((key) => ({
+          key,
+          desc: action.title,
+          group: "Dialog",
+          cmd: action.command,
+        })),
+      ),
       ...(props.onExtraKey
         ? [
             {
@@ -287,6 +330,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
             esc
           </text>
         </box>
+        <Show when={props.renderFilter !== false}>
         <box paddingTop={1}>
           <input
             onInput={(e: string) => {
@@ -310,6 +354,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
             placeholderColor={darkTheme.muted}
           />
         </box>
+        </Show>
       </box>
       <box flexGrow={1} flexShrink={1}>
         <Show
@@ -421,8 +466,19 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
         flexShrink={0}
       >
         <text fg={darkTheme.muted}>
-          Type to filter · ↑↓ select · Enter apply · Escape close
+          {props.renderFilter === false
+            ? "↑↓ select · Enter apply · Escape close"
+            : "Type to filter · ↑↓ select · Enter apply · Escape close"}
         </text>
+        <Show when={(props.actions?.length ?? 0) > 0}>
+          <box flexDirection="row" gap={1}>
+            <For each={props.actions}>
+              {(action) => (
+                <text fg={darkTheme.muted}>{action.title}</text>
+              )}
+            </For>
+          </box>
+        </Show>
       </box>
     </box>
   );
