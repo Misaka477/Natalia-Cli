@@ -105,13 +105,15 @@ if (promptResult !== "Natalia")
     `Prompt test failed: expected "Natalia", got ${JSON.stringify(promptResult)}`,
   );
 
-// ---- Test 3: Select dialog ----
+// ---- Test 3: Static select dialog and scoped action ----
+let actionTriggered = false;
 const selectPromise = new Promise<string>((resolve) => {
   const dialog = globalDialog!;
   dialog.replace(
     () => (
       <DialogSelect
         title="Choose option"
+        renderFilter={false}
         options={[
           { title: "Option A", value: "a", description: "First option" },
           {
@@ -133,6 +135,15 @@ const selectPromise = new Promise<string>((resolve) => {
             category: "Group 2",
           },
         ]}
+        actions={[
+          {
+            command: "model.dialog.favorite",
+            title: "Favorite",
+            onTrigger: () => {
+              actionTriggered = true;
+            },
+          },
+        ]}
         onSelect={(opt) => resolve(opt.value as string)}
       />
     ),
@@ -140,6 +151,12 @@ const selectPromise = new Promise<string>((resolve) => {
   );
 });
 await Bun.sleep(100);
+
+// No input target exists in this mode, but the modal selector must still own F.
+keys.pressKey("f");
+await Bun.sleep(30);
+if (!actionTriggered)
+  throw new Error("Static selector action binding did not trigger");
 
 // Navigate down twice to reach Option C
 keys.pressArrow("down");

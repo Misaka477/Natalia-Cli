@@ -8,7 +8,6 @@ import {
   batch,
   createEffect,
   createMemo,
-  createSignal,
   For,
   onCleanup,
   Show,
@@ -52,7 +51,9 @@ export interface DialogSelectProps<T> {
   actions?: Array<{
     command: string;
     title: string;
-    disabled?: boolean | ((option: DialogSelectOption<T> | undefined) => boolean);
+    disabled?:
+      | boolean
+      | ((option: DialogSelectOption<T> | undefined) => boolean);
     onTrigger(option: DialogSelectOption<T>): void;
   }>;
   onSelect?: (option: DialogSelectOption<T>) => void;
@@ -71,12 +72,12 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
     selected: 0,
     filter: "",
   });
-  const [inputTarget, setInputTarget] = createSignal<InputRenderable>();
   let input: InputRenderable | undefined;
   let scroll: ScrollBoxRenderable | undefined;
 
   const filtered = createMemo(() => {
-    if (props.skipFilter || props.options.length === 0) return props.options.filter((x) => !x.disabled);
+    if (props.skipFilter || props.options.length === 0)
+      return props.options.filter((x) => !x.disabled);
     const needle = store.filter.toLowerCase().trim();
     if (!needle) return props.options.filter((x) => !x.disabled);
     const terms = needle.split(/\s+/u);
@@ -85,7 +86,8 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
     const scored = props.options
       .filter((x) => !x.disabled)
       .map((option) => {
-        const text = `${option.title} ${option.description ?? ""} ${option.category ?? ""}`.toLowerCase();
+        const text =
+          `${option.title} ${option.description ?? ""} ${option.category ?? ""}`.toLowerCase();
         let score = 0;
         for (const term of terms) {
           if (text.includes(term)) {
@@ -143,7 +145,9 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
         if (!props.preserveSelection) return;
         const current = selected();
         if (!current) return;
-        const index = flat().findIndex((option) => option.value === current.value);
+        const index = flat().findIndex(
+          (option) => option.value === current.value,
+        );
         if (index >= 0) setStore("selected", index);
       },
     ),
@@ -208,8 +212,6 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
 
   useBindings(() => ({
     mode: "modal",
-    target: inputTarget,
-    enabled: inputTarget() !== undefined,
     priority: 1,
     commands: [
       {
@@ -258,12 +260,14 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
         group: "Dialog",
         cmd: () => move(-10),
       })),
-      ...keybinds.bindings("dialog.select.page-down", ["pagedown"]).map((key) => ({
-        key,
-        desc: "Page down",
-        group: "Dialog",
-        cmd: () => move(10),
-      })),
+      ...keybinds
+        .bindings("dialog.select.page-down", ["pagedown"])
+        .map((key) => ({
+          key,
+          desc: "Page down",
+          group: "Dialog",
+          cmd: () => move(10),
+        })),
       ...keybinds.bindings("dialog.select.first", ["home"]).map((key) => ({
         key,
         desc: "First item",
@@ -307,8 +311,12 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   }));
 
   const ref: DialogSelectRef<T> = {
-    get filter() { return store.filter; },
-    get filtered() { return filtered(); },
+    get filter() {
+      return store.filter;
+    },
+    get filtered() {
+      return filtered();
+    },
     moveTo(value: T) {
       const idx = flat().findIndex((opt) => opt.value === value);
       if (idx >= 0) {
@@ -331,29 +339,28 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
           </text>
         </box>
         <Show when={props.renderFilter !== false}>
-        <box paddingTop={1}>
-          <input
-            onInput={(e: string) => {
-              batch(() => {
-                setStore("filter", e);
-              });
-            }}
-            focusedBackgroundColor={darkTheme.panel}
-            cursorColor={darkTheme.accent}
-            focusedTextColor={darkTheme.muted}
-            ref={(r: InputRenderable) => {
-              input = r;
-              setInputTarget(r);
-              input.traits = { status: "FILTER" } as any;
-              setTimeout(() => {
-                if (!input || input.isDestroyed) return;
-                input.focus();
-              }, 1);
-            }}
-            placeholder={props.placeholder ?? "Search"}
-            placeholderColor={darkTheme.muted}
-          />
-        </box>
+          <box paddingTop={1}>
+            <input
+              onInput={(e: string) => {
+                batch(() => {
+                  setStore("filter", e);
+                });
+              }}
+              focusedBackgroundColor={darkTheme.panel}
+              cursorColor={darkTheme.accent}
+              focusedTextColor={darkTheme.muted}
+              ref={(r: InputRenderable) => {
+                input = r;
+                input.traits = { status: "FILTER" } as any;
+                setTimeout(() => {
+                  if (!input || input.isDestroyed) return;
+                  input.focus();
+                }, 1);
+              }}
+              placeholder={props.placeholder ?? "Search"}
+              placeholderColor={darkTheme.muted}
+            />
+          </box>
         </Show>
       </box>
       <box flexGrow={1} flexShrink={1}>
@@ -473,9 +480,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
         <Show when={(props.actions?.length ?? 0) > 0}>
           <box flexDirection="row" gap={1}>
             <For each={props.actions}>
-              {(action) => (
-                <text fg={darkTheme.muted}>{action.title}</text>
-              )}
+              {(action) => <text fg={darkTheme.muted}>{action.title}</text>}
             </For>
           </box>
         </Show>
