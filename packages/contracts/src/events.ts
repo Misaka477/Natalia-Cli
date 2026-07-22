@@ -661,6 +661,17 @@ export type RuntimeWorkspaceContent = {
   encoding: "utf8" | "base64";
   mime: string;
 };
+export type RuntimeSessionSummary = {
+  id: string;
+  title: string;
+  createdAt: string;
+  lastAccessedAt?: string;
+  pinned: boolean;
+  events: number;
+  pendingInputs: number;
+  cancelled: boolean;
+  resumable: boolean;
+};
 // Keep TUI completion and runtime command handling on one local vocabulary.
 export const runtimeSlashCommands: RuntimeSlashCommand[] = [
   { name: "help", description: "Show runtime command help" },
@@ -780,6 +791,12 @@ export type RuntimeClient = {
     path?: string;
     limit?: number;
   }): Promise<RuntimeWorkspaceFileEntry[]>;
+  sessionList?(): Promise<RuntimeSessionSummary[]>;
+  sessionTouch?(id: string): Promise<void>;
+  sessionRename?(id: string, title: string): Promise<RuntimeSessionSummary>;
+  sessionPin?(id: string, pinned: boolean): Promise<RuntimeSessionSummary>;
+  sessionDuplicate?(id: string, title?: string): Promise<RuntimeSessionSummary>;
+  sessionDelete?(id: string): Promise<{ id: string; removedAttachments: number }>;
   mcpCatalog?(): Promise<MCPCatalogSnapshot>;
   getMcpPrompt?(
     server: string,

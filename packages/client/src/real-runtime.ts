@@ -17,6 +17,7 @@ import type {
   ApprovalResponse,
   RuntimeClient,
   RuntimeEvent,
+  RuntimeSessionSummary,
   SessionID,
   SubmitInput,
   SubmittedTurn,
@@ -949,6 +950,26 @@ export function createRealRuntimeClient(
     await sessionPersistence;
   }
 
+  function sessionSummary(record: SessionRecord): RuntimeSessionSummary {
+    return {
+      id: record.id,
+      title: record.title,
+      createdAt: record.createdAt,
+      lastAccessedAt: record.metadata?.lastAccessedAt,
+      pinned: Boolean(record.metadata?.pinned),
+      events: record.events.length,
+      pendingInputs: record.inbox?.filter((input) => !input.promotedAt).length ?? 0,
+      cancelled: record.cancelled,
+      resumable: record.resumable,
+    };
+  }
+
+  async function sessionByID(id: string) {
+    const record = await sessionStore.load(id as SessionID);
+    if (!record) throw new Error(`session not found: ${id}`);
+    return record;
+  }
+
   return {
     start(onEvent) {
       sink = onEvent;
@@ -1126,6 +1147,43 @@ export function createRealRuntimeClient(
     async workspaceGlob(input) {
       await ready;
       return await globWorkspaceFiles({ workspaceRoot, ...input });
+    },
+    async sessionList() {
+      await ready;
+      return (await sessionStore.list()).map(sessionSummary);
+    },
+    async sessionTouch(id) {
+      await ready;
+      await sessionStore.updateMetadata(id as SessionID, {
+        lastAccessedAt: new Date().toISOString(),
+      });
+    },
+    async sessionRename(id, title) {
+      await ready;
+      return sessionSummary(await sessionStore.rename(id as SessionID, title));
+    },
+    async sessionPin(id, pinned) {
+      await ready;
+      return sessionSummary(
+        await sessionStore.updateMetadata(id as SessionID, { pinned }),
+      );
+    },
+    async sessionDuplicate(id, title) {
+      await ready;
+      return sessionSummary(
+        await sessionStore.duplicate(id as SessionID, undefined, title),
+      );
+    },
+    async sessionDelete(id) {
+      await ready;
+      if (id === sessionID) throw new Error("cannot delete the active runtime session");
+      await sessionByID(id);
+      await sessionStore.delete(id as SessionID);
+      const removedAttachments = await cleanupUnreferencedAttachments({
+        workspaceRoot,
+        attachments: referencedAttachmentsForSessions(await sessionStore.list()),
+      });
+      return { id, removedAttachments: removedAttachments.length };
     },
     async runtimeStatus() {
       await ready;

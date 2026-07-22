@@ -6,12 +6,13 @@ import {
   Show,
   type JSX,
 } from "solid-js";
-import { TextareaRenderable, TextAttributes } from "@opentui/core";
+import { TextAttributes } from "@opentui/core";
 import { useAppState } from "../context/state";
 import { darkTheme } from "../theme/theme";
 import { useBindings } from "@opentui/keymap/solid";
-import { JsonSessionStore, type SessionRecord } from "@natalia/session";
+import type { RuntimeSessionSummary } from "@natalia/contracts";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { DialogPrompt } from "./DialogPrompt";
 import { useDialog } from "./provider";
 import { commands, formatKeybinds } from "../keymap";
 import { useKeybinds } from "../context/keybind";
@@ -88,24 +89,22 @@ export function DialogStatus() {
 }
 
 export function DialogSessionList(props: {
-  workspaceRoot?: string;
+  backend: {
+    list(): Promise<RuntimeSessionSummary[]>;
+    touch(id: string): Promise<void>;
+    rename(id: string, title: string): Promise<RuntimeSessionSummary>;
+    pin(id: string, pinned: boolean): Promise<RuntimeSessionSummary>;
+    duplicate(id: string): Promise<RuntimeSessionSummary>;
+    delete(id: string): Promise<{ id: string; removedAttachments: number }>;
+  };
   onSelect?: (sessionID?: string) => void;
 }) {
   const dialog = useDialog();
-  const [sessions, setSessions] = createSignal<SessionRecord[]>([]);
+  const [sessions, setSessions] = createSignal<RuntimeSessionSummary[]>([]);
   const [selected, setSelected] = createSignal(0);
   const [loading, setLoading] = createSignal(false);
   const [query, setQuery] = createSignal("");
-  const [mode, setMode] = createSignal<
-    "list" | "confirm-delete" | "confirm-rename"
-  >("list");
-  const [renameText, setRenameText] = createSignal("");
-  let renameInput: TextareaRenderable | undefined;
-
-  const store = () =>
-    new JsonSessionStore(
-      `${props.workspaceRoot ?? process.cwd()}/.natalia/sessions`,
-    );
+  const [mode, setMode] = createSignal<"list" | "confirm-delete">("list");
 
   const filtered = createMemo(() => {
     const terms = query().toLowerCase().trim().split(/\s+/u).filter(Boolean);
@@ -118,7 +117,7 @@ export function DialogSessionList(props: {
   async function refresh() {
     setLoading(true);
     try {
-      const items = await store().list();
+      const items = await props.backend.list();
       setSessions(items);
       setSelected(0);
       setQuery("");
@@ -128,31 +127,22 @@ export function DialogSessionList(props: {
     }
   }
 
-  async function selectSession(session: SessionRecord) {
-    await store().updateMetadata(session.id, {
-      lastAccessedAt: new Date().toISOString(),
-    });
+  async function selectSession(session: RuntimeSessionSummary) {
+    await props.backend.touch(session.id);
     props.onSelect?.(session.id);
-  }
-
-  async function confirmRename() {
-    const session = filtered()[selected()];
-    if (!session || !renameText().trim()) return;
-    await store().rename(session.id, renameText());
-    void refresh();
   }
 
   async function confirmDelete() {
     const session = filtered()[selected()];
     if (!session) return;
-    await store().delete(session.id);
+    await props.backend.delete(session.id);
     void refresh();
   }
 
   async function duplicateSession() {
     const session = filtered()[selected()];
     if (!session) return;
-    const copy = await store().duplicate(session.id);
+    const copy = await props.backend.duplicate(session.id);
     props.onSelect?.(copy.id);
   }
 
@@ -167,7 +157,7 @@ export function DialogSessionList(props: {
         desc: "Close or go back",
         group: "Dialog",
         cmd: () => {
-          if (mode() === "confirm-delete" || mode() === "confirm-rename") {
+          if (mode() === "confirm-delete") {
             setMode("list");
           } else {
             dialog.pop();
@@ -223,10 +213,8 @@ export function DialogSessionList(props: {
         cmd: () => {
           const session = filtered()[selected()];
           if (session) {
-            void store()
-              .updateMetadata(session.id, {
-                pinned: !session.metadata?.pinned,
-              })
+            void props.backend
+              .pin(session.id, !session.pinned)
               .then(() => refresh());
           }
         },
@@ -238,9 +226,21 @@ export function DialogSessionList(props: {
         cmd: () => {
           const session = filtered()[selected()];
           if (session) {
-            setRenameText(session.title);
-            setMode("confirm-rename");
-            queueMicrotask(() => renameInput?.focus());
+            dialog.push(() => (
+              <DialogPrompt
+                title="Rename Session"
+                value={session.title}
+                validate={(value) =>
+                  value.trim() ? undefined : "Session title is required"
+                }
+                onConfirm={(title) => {
+                  void props.backend.rename(session.id, title).then(() => {
+                    dialog.pop();
+                    void refresh();
+                  });
+                }}
+              />
+            ));
           }
         },
       },
@@ -306,51 +306,12 @@ export function DialogSessionList(props: {
                 }
               >
                 {index() === selected() ? ">" : " "}
-                {session.metadata?.pinned ? "* " : "  "}
-                {session.title} · {session.id} · {session.events.length}
+                {session.pinned ? "* " : "  "}
+                {session.title} · {session.id} · {session.events}
               </text>
             )}
           </For>
         </scrollbox>
-      </Show>
-      <Show when={mode() === "confirm-rename"}>
-        <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
-          Rename "{filtered()[selected()]?.title}"
-        </text>
-        <textarea
-          ref={(value: TextareaRenderable) => {
-            renameInput = value;
-          }}
-          initialValue={renameText()}
-          minHeight={1}
-          maxHeight={3}
-          placeholder="New session title"
-          placeholderColor={darkTheme.muted}
-          textColor={darkTheme.text}
-          focusedTextColor={darkTheme.text}
-          cursorColor={darkTheme.accent}
-          onKeyDown={(event: ModalKeyEvent) => {
-            const key = normalizeModalKey(event.name ?? event.key ?? "");
-            if (isExitChord(event)) {
-              consumeModalKey(event);
-              dialog.pop();
-              return;
-            }
-            if (key === "escape") {
-              consumeModalKey(event);
-              setMode("list");
-              return;
-            }
-            if (key === "return") {
-              consumeModalKey(event);
-              const text = renameInput?.plainText ?? "";
-              setRenameText(text);
-              void confirmRename();
-              return;
-            }
-          }}
-        />
-        <text fg={darkTheme.muted}>Enter confirm · Escape cancel</text>
       </Show>
       <ConfirmDialog
         open={mode() === "confirm-delete"}
@@ -399,31 +360,4 @@ function DialogFrame(props: {
       {props.children}
     </box>
   );
-}
-
-type ModalKeyEvent = {
-  name?: string;
-  key?: string;
-  ctrl?: boolean;
-  control?: boolean;
-  meta?: boolean;
-  preventDefault(): void;
-  stopPropagation?(): void;
-};
-
-function isExitChord(event: ModalKeyEvent) {
-  const key = normalizeModalKey(event.name ?? event.key ?? "");
-  return (
-    (event.ctrl || event.control || event.meta) && (key === "c" || key === "d")
-  );
-}
-
-function consumeModalKey(event: ModalKeyEvent) {
-  event.preventDefault();
-  event.stopPropagation?.();
-}
-
-function normalizeModalKey(key: string) {
-  if (key === "enter") return "return";
-  return key;
 }

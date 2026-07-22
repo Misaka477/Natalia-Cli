@@ -46,6 +46,12 @@ export type NataliaSDK = {
     path?: string;
     limit?: number;
   }): Promise<import("@natalia/contracts").RuntimeWorkspaceFileEntry[]>;
+  sessions(): Promise<import("@natalia/contracts").RuntimeSessionSummary[]>;
+  touchSession(id: string): Promise<void>;
+  renameSession(id: string, title: string): Promise<import("@natalia/contracts").RuntimeSessionSummary>;
+  pinSession(id: string, pinned: boolean): Promise<import("@natalia/contracts").RuntimeSessionSummary>;
+  duplicateSession(id: string, title?: string): Promise<import("@natalia/contracts").RuntimeSessionSummary>;
+  deleteSession(id: string): Promise<{ id: string; removedAttachments: number }>;
   respondApproval(response: ApprovalResponse): Promise<void>;
   respondQuestion(response: QuestionResponse): Promise<void>;
   pendingInteractive(): Promise<{
@@ -134,6 +140,15 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     workspaceList: async (input = {}) => await call("workspace.list", input),
     workspaceRead: async (input) => await call("workspace.read", input),
     workspaceGlob: async (input) => await call("workspace.glob", input),
+    sessions: async () => await call("session.list", {}),
+    touchSession: async (id) => {
+      await call("session.touch", { id });
+    },
+    renameSession: async (id, title) => await call("session.rename", { id, title }),
+    pinSession: async (id, pinned) => await call("session.pin", { id, pinned }),
+    duplicateSession: async (id, title) =>
+      await call("session.duplicate", title === undefined ? { id } : { id, title }),
+    deleteSession: async (id) => await call("session.delete", { id }),
     respondApproval: async (response) => {
       await call(
         "approval.respond",

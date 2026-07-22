@@ -884,6 +884,34 @@ test("runtime exposes contained workspace filesystem APIs", async () => {
   ]);
 });
 
+test("runtime session management uses durable metadata and protects the active session", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-session-management-"));
+  const activeID = "ses_runtime_session_active" as const;
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: activeID,
+    provider: scriptedProvider("unused"),
+  });
+  client.start(() => undefined);
+  await client.submit("active session");
+  const duplicated = await client.sessionDuplicate?.(activeID, "Copy");
+  expect(duplicated).toMatchObject({ title: "Copy", pinned: false });
+  await client.sessionPin?.(duplicated!.id, true);
+  await client.sessionRename?.(duplicated!.id, "Renamed copy");
+  await client.sessionTouch?.(duplicated!.id);
+  expect(await client.sessionList?.()).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: duplicated!.id, title: "Renamed copy", pinned: true }),
+    ]),
+  );
+  await expect(client.sessionDelete?.(activeID)).rejects.toThrow(
+    "cannot delete the active runtime session",
+  );
+  expect(await client.sessionDelete?.(duplicated!.id)).toMatchObject({
+    id: duplicated!.id,
+  });
+});
+
 test("runtime filesystem slash commands use the protected catalog", async () => {
   const root = await mkdtemp(
     join(tmpdir(), "natalia-runtime-workspace-command-"),

@@ -323,9 +323,31 @@ function Shell(props: {
       return;
     }
     if (command === "session.list") {
+      if (
+        !props.backend.sessionList ||
+        !props.backend.sessionTouch ||
+        !props.backend.sessionRename ||
+        !props.backend.sessionPin ||
+        !props.backend.sessionDuplicate ||
+        !props.backend.sessionDelete
+      ) {
+        toast.show({
+          variant: "warning",
+          message: "This runtime transport does not support session management",
+        });
+        return;
+      }
+      const sessionBackend = {
+        list: props.backend.sessionList,
+        touch: props.backend.sessionTouch,
+        rename: props.backend.sessionRename,
+        pin: props.backend.sessionPin,
+        duplicate: props.backend.sessionDuplicate,
+        delete: props.backend.sessionDelete,
+      };
       dialog.push(() => (
         <DialogSessionList
-          workspaceRoot={props.workspaceRoot}
+          backend={sessionBackend}
           onSelect={changeSession}
         />
       ));

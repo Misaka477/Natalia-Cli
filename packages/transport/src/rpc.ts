@@ -337,6 +337,58 @@ export async function handleRPCMessage(
         }),
       };
     }
+    if (body.method === "session.list") {
+      optionsGuard(client.sessionList, "session.list");
+      return { jsonrpc: "2.0", id: body.id ?? null, result: await client.sessionList() };
+    }
+    if (body.method === "session.touch") {
+      optionsGuard(client.sessionTouch, "session.touch");
+      await client.sessionTouch(stringParam(body.params, "id"));
+      return { jsonrpc: "2.0", id: body.id ?? null, result: { touched: true } };
+    }
+    if (body.method === "session.rename") {
+      optionsGuard(client.sessionRename, "session.rename");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.sessionRename(
+          stringParam(body.params, "id"),
+          stringParam(body.params, "title"),
+        ),
+      };
+    }
+    if (body.method === "session.pin") {
+      optionsGuard(client.sessionPin, "session.pin");
+      if (typeof body.params?.pinned !== "boolean")
+        throw new Error("session.pin.params.pinned must be a boolean");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.sessionPin(stringParam(body.params, "id"), body.params.pinned),
+      };
+    }
+    if (body.method === "session.duplicate") {
+      optionsGuard(client.sessionDuplicate, "session.duplicate");
+      const title = body.params?.title;
+      if (title !== undefined && typeof title !== "string")
+        throw new Error("session.duplicate.params.title must be a string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.sessionDuplicate(
+          stringParam(body.params, "id"),
+          typeof title === "string" ? title : undefined,
+        ),
+      };
+    }
+    if (body.method === "session.delete") {
+      optionsGuard(client.sessionDelete, "session.delete");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.sessionDelete(stringParam(body.params, "id")),
+      };
+    }
     if (body.method === "mcp.catalog") {
       optionsGuard(client.mcpCatalog, "mcp.catalog");
       return {

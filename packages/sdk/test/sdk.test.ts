@@ -80,6 +80,60 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
     async workspaceGlob() {
       return [{ path: "src/model.ts", type: "file" }];
     },
+    async sessionList() {
+      return [
+        {
+          id: "ses_one",
+          title: "One",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          pinned: false,
+          events: 1,
+          pendingInputs: 0,
+          cancelled: false,
+          resumable: true,
+        },
+      ];
+    },
+    async sessionTouch() {},
+    async sessionRename(id, title) {
+      return {
+        id,
+        title,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        pinned: false,
+        events: 1,
+        pendingInputs: 0,
+        cancelled: false,
+        resumable: true,
+      };
+    },
+    async sessionPin(id, pinned) {
+      return {
+        id,
+        title: "One",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        pinned,
+        events: 1,
+        pendingInputs: 0,
+        cancelled: false,
+        resumable: true,
+      };
+    },
+    async sessionDuplicate(id) {
+      return {
+        id: `${id}_copy`,
+        title: "One (copy)",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        pinned: false,
+        events: 1,
+        pendingInputs: 0,
+        cancelled: false,
+        resumable: true,
+      };
+    },
+    async sessionDelete(id) {
+      return { id, removedAttachments: 0 };
+    },
     async mcpCatalog() {
       return {
         prompts: [{ server: "fixture", name: "review" }],
@@ -189,6 +243,19 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
   expect(await sdk.workspaceGlob({ pattern: "**/*.ts" })).toEqual([
     { path: "src/model.ts", type: "file" },
   ]);
+  expect(await sdk.sessions()).toMatchObject([{ id: "ses_one" }]);
+  await sdk.touchSession("ses_one");
+  expect(await sdk.renameSession("ses_one", "Renamed")).toMatchObject({
+    title: "Renamed",
+  });
+  expect(await sdk.pinSession("ses_one", true)).toMatchObject({ pinned: true });
+  expect(await sdk.duplicateSession("ses_one")).toMatchObject({
+    id: "ses_one_copy",
+  });
+  expect(await sdk.deleteSession("ses_one")).toEqual({
+    id: "ses_one",
+    removedAttachments: 0,
+  });
   await sdk.respondApproval({ requestID: "approval_1", decision: "once" });
   await sdk.respondQuestion({ requestID: "question_1", answers: [["yes"]] });
   await sdk.checkpoint();

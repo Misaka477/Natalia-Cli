@@ -28,6 +28,7 @@
     "smoke:provider-config": "npx bun run bin/provider-config-keyboard-smoke.ts",
     "smoke:dialog-stack": "npx bun run bin/dialog-stack-smoke.tsx",
     "smoke:model-variant": "npx bun run bin/model-variant-keyboard-smoke.tsx",
+    "smoke:session-dialog": "npx bun run bin/session-dialog-keyboard-smoke.tsx",
     "demo:diff": "npx bun run bin/diff-screen-demo.ts",
     "demo:shell": "npx bun run bin/shell-screen-demo.ts",
     "demo:files": "npx bun run bin/file-tools-screen-demo.ts",
