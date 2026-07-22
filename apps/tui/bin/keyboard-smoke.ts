@@ -44,6 +44,21 @@ if (submissions[2] !== "a\nb")
     `Empty composer history failed: got ${JSON.stringify(submissions[2])}`,
   );
 
+await keys.typeText("stashed prompt");
+keys.pressKey("s", { ctrl: true, shift: true });
+await Bun.sleep(80);
+keys.pressKey("p", { ctrl: true, shift: true });
+await Bun.sleep(80);
+keys.pressEnter();
+await Bun.sleep(80);
+keys.pressEnter();
+await Bun.sleep(200);
+
+if (submissions[3] !== "stashed prompt")
+  throw new Error(
+    `Prompt stash restore failed: got ${JSON.stringify(submissions[3])}`,
+  );
+
 const destroyed = new Promise<void>((resolve) =>
   handle.renderer.once("destroy", resolve),
 );

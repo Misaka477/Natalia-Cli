@@ -4,8 +4,9 @@ import {
   resolveConfig,
   updateConfig,
 } from "@natalia/config";
-import type { ConfigV2 } from "@natalia/contracts";
+import type { ConfigV2, RuntimeModelSelection } from "@natalia/contracts";
 import { DialogSelect, type DialogSelectOption } from "../dialog/DialogSelect";
+import { DialogVariant } from "./DialogVariant";
 import { useDialog } from "../dialog/provider";
 import { useLocal } from "../context/local";
 
@@ -65,15 +66,24 @@ export function unavailableModelSummary(config: ConfigV2) {
     .join("; ");
 }
 
-export function DialogModel(props: { workspaceRoot: string }) {
+export function DialogModel(props: {
+  workspaceRoot: string;
+  catalog?: () => Promise<
+    import("@natalia/contracts").RuntimeModelCatalogEntry[]
+  >;
+  selection?: () => Promise<RuntimeModelSelection>;
+  selectRuntimeModel?: (modelID?: string, variant?: string) => Promise<void>;
+}) {
   const dialog = useDialog();
   const local = useLocal();
   const [config, setConfig] = createSignal<ConfigV2>();
+  const [selection, setSelection] = createSignal<RuntimeModelSelection>();
 
   onMount(() => {
     void resolveConfig({ workspaceRoot: props.workspaceRoot }).then(
       ({ config }) => setConfig(config),
     );
+    void props.selection?.().then(setSelection);
   });
 
   const options = createMemo<DialogSelectOption<string>[]>(() => {
@@ -88,6 +98,8 @@ export function DialogModel(props: { workspaceRoot: string }) {
     const next = structuredClone(resolved);
     next.defaultModel = option.value;
     await updateConfig(props.workspaceRoot, next);
+    await props.selectRuntimeModel?.(option.value);
+    setSelection({ modelID: option.value });
     setConfig(next);
     local.recordModel(option.value);
     dialog.pop();
@@ -98,7 +110,7 @@ export function DialogModel(props: { workspaceRoot: string }) {
       title="Select model"
       placeholder="Search models"
       options={options()}
-      current={config()?.defaultModel}
+      current={selection()?.modelID ?? config()?.defaultModel}
       emptyView={
         <text>
           {config()
@@ -114,6 +126,38 @@ export function DialogModel(props: { workspaceRoot: string }) {
           title: "Favorite",
           onTrigger: (option) => local.toggleModelFavorite(option.value),
         },
+        ...(props.catalog && props.selectRuntimeModel
+          ? [
+              {
+                command: "model.dialog.variant",
+                title: "Variant",
+                disabled: (option: DialogSelectOption<string> | undefined) =>
+                  !option || !config()?.models[option.value]?.variants,
+                onTrigger: (option: DialogSelectOption<string>) => {
+                  void props.catalog!().then((catalog) => {
+                    const model = catalog.find(
+                      (item) => item.id === option.value,
+                    );
+                    if (!model || !model.variants.length) return;
+                    dialog.push(() => (
+                      <DialogVariant
+                        model={model}
+                        current={
+                          selection()?.modelID === model.id
+                            ? selection()?.variant
+                            : undefined
+                        }
+                        select={async (variant) => {
+                          await props.selectRuntimeModel!(model.id, variant);
+                          setSelection({ modelID: model.id, variant });
+                        }}
+                      />
+                    ));
+                  });
+                },
+              },
+            ]
+          : []),
       ]}
     />
   );

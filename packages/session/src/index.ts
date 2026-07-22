@@ -317,6 +317,7 @@ export {
   modelVisibleEvents,
   projectSession,
   selectedAgentFromEvents,
+  selectedModelFromEvents,
 } from "./projector";
 export type { SessionProjection } from "./projector";
 export { projectInteractiveRequests, requestsForSession } from "./interactive";

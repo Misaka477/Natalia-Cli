@@ -122,6 +122,45 @@ export async function handleRPCMessage(
         result: { selected: name ?? null },
       };
     }
+    if (body.method === "model.catalog") {
+      optionsGuard(client.modelCatalog, "model.catalog");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.modelCatalog(),
+      };
+    }
+    if (body.method === "model.selection") {
+      optionsGuard(client.modelSelection, "model.selection");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.modelSelection(),
+      };
+    }
+    if (body.method === "model.select") {
+      optionsGuard(client.selectModel, "model.select");
+      const modelID = body.params?.modelID;
+      const variant = body.params?.variant;
+      if (modelID !== undefined && typeof modelID !== "string")
+        throw new Error("model.select.params.modelID must be a string");
+      if (variant !== undefined && typeof variant !== "string")
+        throw new Error("model.select.params.variant must be a string");
+      await client.selectModel(modelID, variant);
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: { modelID: modelID ?? null, variant: variant ?? null },
+      };
+    }
+    if (body.method === "skills.list") {
+      optionsGuard(client.skills, "skills.list");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.skills(),
+      };
+    }
     if (body.method === "approval.respond") {
       const requestID = stringParam(body.params, "requestID");
       const decision = stringParam(body.params, "decision");

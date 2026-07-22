@@ -290,6 +290,7 @@ export type RuntimeEvent =
       message?: string;
     }
   | { type: "agent.selection"; name?: string; pending: boolean }
+  | { type: "model.selection"; modelID?: string; variant?: string }
   | {
       type: "plugin.update";
       id: string;
@@ -622,6 +623,24 @@ export type RuntimeDiagnostic = Extract<
   RuntimeEvent,
   { type: "diagnostic" }
 > & { at: string };
+export type RuntimeModelCatalogEntry = {
+  id: string;
+  name: string;
+  provider: string;
+  variants: string[];
+};
+export type RuntimeModelSelection = {
+  modelID?: string;
+  variant?: string;
+};
+export type RuntimeSkillCatalogEntry = {
+  name: string;
+  qualifiedName: string;
+  description: string;
+  source: "project" | "user" | "remote";
+  requireApproval: boolean;
+  sandboxRequired: boolean;
+};
 
 /** Streaming fragments are transport-live; their completed settlements are durable. */
 export function runtimeEventDurability(
@@ -659,6 +678,10 @@ export type RuntimeClient = {
   pause?(reason?: string): void;
   resume?(): void;
   selectAgent?(name?: string): void;
+  modelCatalog?(): Promise<RuntimeModelCatalogEntry[]>;
+  modelSelection?(): Promise<RuntimeModelSelection>;
+  selectModel?(modelID?: string, variant?: string): Promise<void>;
+  skills?(): Promise<RuntimeSkillCatalogEntry[]>;
   mcpCatalog?(): Promise<MCPCatalogSnapshot>;
   getMcpPrompt?(
     server: string,

@@ -8,7 +8,12 @@ export type LocalTuiState = {
   favoriteModels: string[];
   activeAgent?: string;
   mcpEnabled: Record<string, boolean>;
+  promptStash: PromptStashEntry[];
 };
+
+export type PromptStashEntry = { input: string; timestamp: number };
+export const MAX_PROMPT_STASH_ENTRIES = 50;
+export const MAX_PROMPT_STASH_BYTES = 64 * 1024;
 
 const defaults: LocalTuiState = {
   version: 1,
@@ -16,6 +21,7 @@ const defaults: LocalTuiState = {
   recentModels: [],
   favoriteModels: [],
   mcpEnabled: {},
+  promptStash: [],
 };
 
 export async function loadLocalTuiState(workspaceRoot: string) {
@@ -70,6 +76,27 @@ export async function selectActiveAgent(workspaceRoot: string, agent?: string) {
   const state = await loadLocalTuiState(workspaceRoot);
   state.activeAgent = agent;
   await saveLocalTuiState(workspaceRoot, state);
+}
+
+export function addPromptStash(
+  entries: PromptStashEntry[],
+  input: string,
+  timestamp = Date.now(),
+) {
+  const text = input.trimEnd();
+  if (
+    !text ||
+    new TextEncoder().encode(text).byteLength > MAX_PROMPT_STASH_BYTES
+  )
+    return entries;
+  return [...entries, { input: text, timestamp }].slice(
+    -MAX_PROMPT_STASH_ENTRIES,
+  );
+}
+
+export function removePromptStash(entries: PromptStashEntry[], index: number) {
+  if (index < 0 || index >= entries.length) return entries;
+  return entries.filter((_, current) => current !== index);
 }
 
 export function sortModelOptions(

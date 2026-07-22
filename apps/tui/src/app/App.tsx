@@ -43,6 +43,8 @@ import { DialogProviderSetup } from "../component/DialogProviderSetup";
 import { DialogMcp } from "../component/DialogMcp";
 import { DialogThemeList } from "../component/DialogThemeList";
 import { DialogModel } from "../component/DialogModel";
+import { DialogSkill } from "../component/DialogSkill";
+import { DialogStash } from "../component/DialogStash";
 import { DialogAgent } from "../component/DialogAgent";
 import { resolveConfig, updateConfig } from "@natalia/config";
 import { discoverProviderModels } from "@natalia/config";
@@ -330,7 +332,53 @@ function Shell(props: {
     }
     if (command === "model.list") {
       dialog.push(() => (
-        <DialogModel workspaceRoot={props.workspaceRoot ?? process.cwd()} />
+        <DialogModel
+          workspaceRoot={props.workspaceRoot ?? process.cwd()}
+          catalog={props.backend.modelCatalog}
+          selection={props.backend.modelSelection}
+          selectRuntimeModel={props.backend.selectModel}
+        />
+      ));
+      return;
+    }
+    if (command === "skill.list") {
+      void props.backend.skills?.().then(
+        (skills) =>
+          dialog.push(() => (
+            <DialogSkill
+              skills={skills}
+              select={(name) => {
+                composer()?.setText(`/skill ${name}`);
+                setTimeout(() => composer()?.focus(), 1);
+              }}
+            />
+          )),
+        (error) => toast.error(error),
+      );
+      return;
+    }
+    if (command === "prompt.stash.save") {
+      const input = composer()?.plainText ?? "";
+      if (!local.stashPrompt(input)) {
+        toast.show({
+          variant: "warning",
+          message: "Prompt is empty or too large to stash",
+        });
+        return;
+      }
+      composer()?.clear();
+      toast.show({ variant: "success", message: "Prompt stashed" });
+      return;
+    }
+    if (command === "prompt.stash.list") {
+      dialog.push(() => (
+        <DialogStash
+          select={(input) => {
+            composer()?.setText(input);
+            composer()?.gotoBufferEnd();
+            setTimeout(() => composer()?.focus(), 1);
+          }}
+        />
       ));
       return;
     }
@@ -670,6 +718,7 @@ function Shell(props: {
         dialog.push(() => (
           <DialogMcp
             config={resolved}
+            statuses={state.mcp}
             onPersist={(next) =>
               void updateConfig(props.workspaceRoot ?? process.cwd(), next)
             }
@@ -867,6 +916,7 @@ function Shell(props: {
                 dialog.push(() => (
                   <DialogMcp
                     config={resolved}
+                    statuses={state.mcp}
                     onPersist={(next) => void saveConfig(next)}
                   />
                 ));
@@ -1266,9 +1316,7 @@ function Shell(props: {
       return;
     }
     if (command === "help.open") {
-      dialog.push(() => (
-        <DialogHelp onClose={() => dialog.pop()} />
-      ));
+      dialog.push(() => <DialogHelp onClose={() => dialog.pop()} />);
       return;
     }
     if (command === "dialog.test") {
@@ -1405,7 +1453,9 @@ function Shell(props: {
     target: composer,
     enabled: () => {
       const input = composer();
-      return Boolean(input && shouldUseHistory(input.plainText, input.cursorOffset));
+      return Boolean(
+        input && shouldUseHistory(input.plainText, input.cursorOffset),
+      );
     },
     bindings: [
       {

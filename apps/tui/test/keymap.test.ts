@@ -92,6 +92,9 @@ describe("command definitions", () => {
     expect(commands["dialog.select.submit"]).toBeDefined();
     expect(commands["dialog.select.next"].scope).toBe("dialog");
     expect(commands["model.dialog.favorite"].scope).toBe("dialog");
+    expect(commands["prompt.stash.save"]).toMatchObject({
+      keys: "ctrl+shift+s",
+    });
     expect(commands["scroll.up"]).toBeDefined();
     expect(commands["scroll.down"]).toBeDefined();
     expect(commands["scroll.top"]).toBeDefined();
@@ -198,9 +201,7 @@ describe("formatKeybindKey", () => {
 
   test("formats leader and multiple shortcuts for user-facing views", () => {
     expect(formatKeybindKey("<leader>n")).toBe("Leader+N");
-    expect(formatKeybinds(["ctrl+n", "<leader>n"])).toBe(
-      "Ctrl+N / Leader+N",
-    );
+    expect(formatKeybinds(["ctrl+n", "<leader>n"])).toBe("Ctrl+N / Leader+N");
   });
 });
 
@@ -346,7 +347,8 @@ describe("buildKeybindMap", () => {
     expect(diagnostics).toEqual([]);
     expect(map["palette.toggle"]).toBe("ctrl+p");
     expect(map["session.new"]).toBe("ctrl+n");
-    const cmdBindings = Object.values(commands).filter((c) => c.keys !== "unset").length + 2;
+    const cmdBindings =
+      Object.values(commands).filter((c) => c.keys !== "unset").length + 2;
     expect(Object.keys(map).length).toBe(cmdBindings);
   });
 
@@ -371,7 +373,8 @@ describe("buildKeybindMap", () => {
     });
     expect(diagnostics).toEqual([]);
     expect(map["snapshot"]).toBeUndefined();
-    const cmdCount = Object.values(commands).filter((c) => c.keys !== "unset").length + 2;
+    const cmdCount =
+      Object.values(commands).filter((c) => c.keys !== "unset").length + 2;
     expect(Object.keys(map).length).toBe(cmdCount - 1);
   });
 
@@ -395,10 +398,7 @@ describe("buildKeybindMap", () => {
     const { bindings, map } = buildKeybindMap({
       "session.list": ["ctrl+shift+l", "ctrl+alt+l"],
     });
-    expect(bindings["session.list"]).toEqual([
-      "ctrl+shift+l",
-      "ctrl+alt+l",
-    ]);
+    expect(bindings["session.list"]).toEqual(["ctrl+shift+l", "ctrl+alt+l"]);
     expect(map["session.list"]).toBe("ctrl+shift+l");
   });
 
@@ -406,10 +406,7 @@ describe("buildKeybindMap", () => {
     const { bindings } = buildKeybindMap({
       "session.list": "ctrl+shift+l,ctrl+alt+l",
     });
-    expect(bindings["session.list"]).toEqual([
-      "ctrl+shift+l",
-      "ctrl+alt+l",
-    ]);
+    expect(bindings["session.list"]).toEqual(["ctrl+shift+l", "ctrl+alt+l"]);
   });
 
   test("treats terminal aliases as conflicting bindings", () => {
@@ -418,7 +415,10 @@ describe("buildKeybindMap", () => {
       "composer.buffer-home": "ctrl+return",
     });
     expect(diagnostics).toContainEqual(
-      expect.objectContaining({ code: "conflict", command: "composer.buffer-home" }),
+      expect.objectContaining({
+        code: "conflict",
+        command: "composer.buffer-home",
+      }),
     );
   });
 });
@@ -518,7 +518,8 @@ describe("buildKeybindMap null and undefined overrides", () => {
   test("handles empty overrides", () => {
     const { map, diagnostics } = buildKeybindMap({});
     expect(diagnostics).toEqual([]);
-    const cmdCount = Object.values(commands).filter((c) => c.keys !== "unset").length + 2;
+    const cmdCount =
+      Object.values(commands).filter((c) => c.keys !== "unset").length + 2;
     expect(Object.keys(map).length).toBe(cmdCount);
   });
 });

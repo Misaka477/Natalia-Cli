@@ -125,6 +125,7 @@ export type AppState = {
   >;
   ptyPane: { selectedID?: string; focus: "chat" | "pty" };
   sandboxes: Record<string, Extract<RuntimeEvent, { type: "sandbox.update" }>>;
+  mcp: Record<string, Extract<RuntimeEvent, { type: "mcp.status" }>>;
 };
 
 export const initialState: AppState = {
@@ -146,6 +147,7 @@ export const initialState: AppState = {
   ptyTimeline: {},
   ptyPane: { focus: "chat" },
   sandboxes: {},
+  mcp: {},
   messages: [],
 };
 
@@ -380,6 +382,10 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
         `audit ${event.action}: ${event.message}\ntarget: ${targetLabel(event.target)}\napproval: ${event.approvalRequired ? "required" : "not required"}\ncheckpoint: ${event.checkpointPolicy}`,
         "audit",
       );
+      return;
+    case "mcp.status":
+      state.mcp[event.server] = event;
+      state.footer = `MCP ${event.server}: ${event.status}`;
       return;
     case "diagnostic":
       upsertBlock(

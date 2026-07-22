@@ -6,6 +6,7 @@ import {
   modelVisibleEvents,
   projectSession,
   selectedAgentFromEvents,
+  selectedModelFromEvents,
 } from "../src";
 
 test("session projector separates completed, active, and unpromoted durable input", () => {
@@ -48,6 +49,17 @@ test("session projector separates completed, active, and unpromoted durable inpu
         event.type === "turn.submitted" && event.id === "turn_interrupted",
     ),
   ).toBe(false);
+});
+
+test("projects the last durable model and variant selection", () => {
+  const events = [
+    { type: "model.selection", modelID: "alpha", variant: "fast" },
+    { type: "model.selection", modelID: "beta", variant: "careful" },
+  ] as const;
+  expect(selectedModelFromEvents([...events])).toEqual({
+    modelID: "beta",
+    variant: "careful",
+  });
 });
 
 test("session projector replays only committed agent selection", () => {

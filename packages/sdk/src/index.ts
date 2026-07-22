@@ -20,6 +20,12 @@ export type NataliaSDK = {
   pause(reason?: string): Promise<void>;
   resume(): Promise<void>;
   selectAgent(name?: string): Promise<void>;
+  modelCatalog(): Promise<
+    import("@natalia/contracts").RuntimeModelCatalogEntry[]
+  >;
+  modelSelection(): Promise<import("@natalia/contracts").RuntimeModelSelection>;
+  selectModel(modelID?: string, variant?: string): Promise<void>;
+  skills(): Promise<import("@natalia/contracts").RuntimeSkillCatalogEntry[]>;
   respondApproval(response: ApprovalResponse): Promise<void>;
   respondQuestion(response: QuestionResponse): Promise<void>;
   pendingInteractive(): Promise<{
@@ -94,6 +100,15 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     selectAgent: async (name) => {
       await call("agent.select", name === undefined ? {} : { name });
     },
+    modelCatalog: async () => await call("model.catalog", {}),
+    modelSelection: async () => await call("model.selection", {}),
+    selectModel: async (modelID, variant) => {
+      await call("model.select", {
+        ...(modelID === undefined ? {} : { modelID }),
+        ...(variant === undefined ? {} : { variant }),
+      });
+    },
+    skills: async () => await call("skills.list", {}),
     respondApproval: async (response) => {
       await call(
         "approval.respond",

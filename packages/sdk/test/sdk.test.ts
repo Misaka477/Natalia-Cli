@@ -13,6 +13,7 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
   const questionResponses: unknown[] = [];
   const prompts: string[] = [];
   const selectedAgents: Array<string | undefined> = [];
+  const selectedModels: Array<{ modelID?: string; variant?: string }> = [];
   const client: RuntimeClient = {
     start(handler) {
       sink = handler;
@@ -35,6 +36,29 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
     resume() {},
     selectAgent(name) {
       selectedAgents.push(name);
+    },
+    async modelCatalog() {
+      return [
+        { id: "alpha", name: "alpha", provider: "fixture", variants: ["fast"] },
+      ];
+    },
+    async modelSelection() {
+      return { modelID: "alpha", variant: "fast" };
+    },
+    async selectModel(modelID, variant) {
+      selectedModels.push({ modelID, variant });
+    },
+    async skills() {
+      return [
+        {
+          name: "release",
+          qualifiedName: "project:release",
+          description: "Prepare release evidence",
+          source: "project",
+          requireApproval: true,
+          sandboxRequired: false,
+        },
+      ];
     },
     async mcpCatalog() {
       return {
@@ -119,6 +143,17 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
   await sdk.pause("sdk pause");
   await sdk.resume();
   await sdk.selectAgent("reviewer");
+  expect(await sdk.modelCatalog()).toMatchObject([
+    { id: "alpha", variants: ["fast"] },
+  ]);
+  expect(await sdk.modelSelection()).toEqual({
+    modelID: "alpha",
+    variant: "fast",
+  });
+  await sdk.selectModel("alpha", "fast");
+  expect(await sdk.skills()).toMatchObject([
+    { qualifiedName: "project:release" },
+  ]);
   await sdk.respondApproval({ requestID: "approval_1", decision: "once" });
   await sdk.respondQuestion({ requestID: "question_1", answers: [["yes"]] });
   await sdk.checkpoint();
@@ -134,6 +169,7 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
     rejected: false,
   });
   expect(selectedAgents).toEqual(["reviewer"]);
+  expect(selectedModels).toEqual([{ modelID: "alpha", variant: "fast" }]);
   expect(prompts).toEqual(
     expect.arrayContaining([
       "/checkpoint",

@@ -3,7 +3,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  addPromptStash,
   loadLocalTuiState,
+  MAX_PROMPT_STASH_BYTES,
+  removePromptStash,
   saveLocalTuiState,
   trackModelUsage,
   sortModelOptions,
@@ -22,15 +25,36 @@ test("local TUI state persists model/session/MCP preferences", async () => {
     state.pinnedSessions.push("ses_1");
     state.favoriteModels.push("step/flash");
     state.mcpEnabled.server = false;
+    state.promptStash.push({ input: "resume release notes", timestamp: 1 });
     await saveLocalTuiState(root, state);
     expect(await loadLocalTuiState(root)).toMatchObject({
       pinnedSessions: ["ses_1"],
       favoriteModels: ["step/flash"],
       mcpEnabled: { server: false },
+      promptStash: [{ input: "resume release notes", timestamp: 1 }],
     });
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("prompt stash trims, bounds, and removes workspace-local drafts", () => {
+  const entries = addPromptStash([], "first\n");
+  expect(entries).toHaveLength(1);
+  expect(entries[0]?.input).toBe("first");
+  expect(addPromptStash(entries, "x".repeat(MAX_PROMPT_STASH_BYTES + 1))).toBe(
+    entries,
+  );
+  expect(removePromptStash(entries, 0)).toEqual([]);
+});
+
+test("prompt stash keeps only the newest bounded entries", () => {
+  const entries = Array.from({ length: 51 }, (_, index) => index).reduce(
+    (stash, index) => addPromptStash(stash, `draft ${index}`, index),
+    [] as ReturnType<typeof addPromptStash>,
+  );
+  expect(entries).toHaveLength(50);
+  expect(entries[0]?.input).toBe("draft 1");
 });
 
 test("model selector excludes unavailable policy and credential configurations", () => {

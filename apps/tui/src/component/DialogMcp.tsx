@@ -1,27 +1,49 @@
 import { createMemo, createSignal, Show } from "solid-js";
 import { DialogSelect } from "../dialog/DialogSelect";
+import { DialogConfirm } from "../dialog/DialogConfirm";
 import { DialogPrompt } from "../dialog/DialogPrompt";
 import { useDialog } from "../dialog/provider";
 import { darkTheme } from "../theme/theme";
 import { TextAttributes } from "@opentui/core";
 import type { ConfigV2 } from "@natalia/contracts";
 
-function Status(props: { enabled: boolean }) {
-  if (props.enabled) {
+function Status(props: {
+  enabled: boolean;
+  runtime?: { status: string; tools: number; message?: string };
+}) {
+  if (!props.enabled) {
+    return <span style={{ fg: darkTheme.muted }}>○ Disabled</span>;
+  }
+  if (props.runtime?.status === "failed") {
+    return <span style={{ fg: darkTheme.warning }}>× Failed</span>;
+  }
+  if (props.runtime?.status === "unsupported_auth_flow") {
+    return <span style={{ fg: darkTheme.warning }}>! Auth unsupported</span>;
+  }
+  if (props.runtime?.status === "connected") {
     return (
       <span style={{ fg: darkTheme.success, attributes: TextAttributes.BOLD }}>
-        ✓ Enabled
+        ✓ {props.runtime.tools} tools
       </span>
     );
   }
-  return <span style={{ fg: darkTheme.muted }}>○ Disabled</span>;
+  return <span style={{ fg: darkTheme.muted }}>⋯ Starting</span>;
 }
 
 export function DialogMcp(props: {
   config: ConfigV2;
   onPersist: (next: ConfigV2) => void;
+  statuses?: Record<
+    string,
+    {
+      status: "disabled" | "connected" | "failed" | "unsupported_auth_flow";
+      tools: number;
+      message?: string;
+    }
+  >;
 }) {
   const dialog = useDialog();
+  const [config, setConfig] = createSignal(props.config);
   const [loading, setLoading] = createSignal<string | null>(null);
   const [mode, setMode] = createSignal<"list" | "detail" | "add">("list");
   const [selected, setSelected] = createSignal("");
@@ -29,12 +51,17 @@ export function DialogMcp(props: {
   const options = createMemo(() =>
     mode() === "list"
       ? [
-          ...Object.entries(props.config.mcpServers ?? {}).map(
+          ...Object.entries(config().mcpServers ?? {}).map(
             ([name, server]) => ({
               value: name,
               title: name,
               description: `${server.enabled ? "Enabled" : "Disabled"}${server.readOnly ? " · read-only" : ""}`,
-              footer: <Status enabled={server.enabled && loading() !== name} />,
+              footer: (
+                <Status
+                  enabled={server.enabled && loading() !== name}
+                  runtime={props.statuses?.[name]}
+                />
+              ),
             }),
           ),
           {
@@ -48,7 +75,7 @@ export function DialogMcp(props: {
 
   if (mode() === "detail") {
     const name = selected();
-    const srv = props.config.mcpServers[name];
+    const srv = config().mcpServers[name];
     if (!srv) {
       setMode("list");
       return <span />;
@@ -67,7 +94,11 @@ export function DialogMcp(props: {
             title: "Read-only",
             description: srv.readOnly ? "On" : "Off",
           },
-          { value: "timeout", title: "Timeout", description: `${srv.timeoutSec}s` },
+          {
+            value: "timeout",
+            title: "Timeout",
+            description: `${srv.timeoutSec}s`,
+          },
           {
             value: "command",
             title: "Command",
@@ -84,23 +115,34 @@ export function DialogMcp(props: {
             description: `${srv.allowedTools.length} tools`,
           },
           {
+            value: "status",
+            title: "Runtime status",
+            description:
+              props.statuses?.[name]?.message ??
+              props.statuses?.[name]?.status ??
+              "Not reported by current runtime",
+            footer: props.statuses?.[name]
+              ? `${props.statuses[name]!.tools} tools`
+              : undefined,
+          },
+          {
             value: "delete",
             title: "Delete server",
             description: "Remove this MCP server",
           },
         ]}
         onSelect={(option) => {
-          const next = structuredClone(props.config);
+          const next = structuredClone(config());
           const sv = next.mcpServers[name];
           if (!sv) return;
           switch (option.value) {
             case "toggle":
               sv.enabled = !sv.enabled;
-              props.onPersist(next);
+              persist(next);
               break;
             case "readonly":
               sv.readOnly = !sv.readOnly;
-              props.onPersist(next);
+              persist(next);
               break;
             case "timeout":
               dialog.push(() => (
@@ -109,10 +151,7 @@ export function DialogMcp(props: {
                   placeholder={String(sv.timeoutSec)}
                   onConfirm={(v) => {
                     sv.timeoutSec = Number(v) || 30;
-                    props.onPersist(next);
-                    dialog.push(() => (
-                      <DialogMcp config={next} onPersist={props.onPersist} />
-                    ));
+                    persist(next);
                   }}
                 />
               ));
@@ -124,10 +163,7 @@ export function DialogMcp(props: {
                   placeholder={sv.command ?? ""}
                   onConfirm={(v) => {
                     sv.command = v.trim() || undefined;
-                    props.onPersist(next);
-                    dialog.push(() => (
-                      <DialogMcp config={next} onPersist={props.onPersist} />
-                    ));
+                    persist(next);
                   }}
                 />
               ));
@@ -139,18 +175,15 @@ export function DialogMcp(props: {
                   placeholder={sv.url ?? ""}
                   onConfirm={(v) => {
                     sv.url = v.trim() || undefined;
-                    props.onPersist(next);
-                    dialog.push(() => (
-                      <DialogMcp config={next} onPersist={props.onPersist} />
-                    ));
+                    persist(next);
                   }}
                 />
               ));
               break;
             case "delete":
               dialog.pop();
-              delete (next.mcpServers as Record<string, unknown>)[name];
-              props.onPersist(next);
+              delete next.mcpServers[name];
+              persist(next);
               setMode("list");
               break;
           }
@@ -167,7 +200,7 @@ export function DialogMcp(props: {
         onConfirm={(name) => {
           const id = name.trim();
           if (!id) return;
-          const next = structuredClone(props.config);
+          const next = structuredClone(config());
           next.mcpServers = { ...next.mcpServers };
           next.mcpServers[id] = {
             type: "stdio",
@@ -180,7 +213,7 @@ export function DialogMcp(props: {
             readOnly: false,
             enabled: true,
           };
-          props.onPersist(next);
+          persist(next);
           setMode("list");
           dialog.push(() => (
             <DialogMcp config={next} onPersist={props.onPersist} />
@@ -194,6 +227,27 @@ export function DialogMcp(props: {
     <DialogSelect
       title="MCP Servers"
       options={options()}
+      preserveSelection
+      actions={[
+        {
+          command: "mcp.dialog.delete",
+          title: "Delete",
+          disabled: (option) => !option || option.value === "$add",
+          onTrigger: (option) => {
+            dialog.push(() => (
+              <DialogConfirm
+                title="Delete MCP server"
+                message={`Remove "${option.title}" from this workspace?`}
+                onConfirm={() => {
+                  const next = structuredClone(config());
+                  delete next.mcpServers[option.value];
+                  persist(next);
+                }}
+              />
+            ));
+          },
+        },
+      ]}
       onSelect={(option) => {
         if (option.value === "$add") {
           setMode("add");
@@ -203,13 +257,11 @@ export function DialogMcp(props: {
         setSelected(option.value);
         setMode("detail");
       }}
-      onExtraKey={(key, option) => {
-        if (key === "d" && option.value !== "$add") {
-          const next = structuredClone(props.config);
-          delete (next.mcpServers as Record<string, unknown>)[option.value];
-          props.onPersist(next);
-        }
-      }}
     />
   );
+
+  function persist(next: ConfigV2) {
+    setConfig(next);
+    props.onPersist(next);
+  }
 }

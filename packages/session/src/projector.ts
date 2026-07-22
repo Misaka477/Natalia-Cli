@@ -8,6 +8,7 @@ export type SessionProjection = {
   pendingInputs: AdmittedSessionInput[];
   replayableEvents: RuntimeEvent[];
   selectedAgent?: string;
+  selectedModel?: { modelID?: string; variant?: string };
 };
 
 /** Selects the model-visible durable context after the latest epoch baseline. */
@@ -52,7 +53,15 @@ export function projectSession(session: SessionRecord): SessionProjection {
     pendingInputs: admittedInputs(session).filter((input) => !input.promotedAt),
     replayableEvents: replayable,
     selectedAgent: selectedAgentFromEvents(replayable),
+    selectedModel: selectedModelFromEvents(replayable),
   };
+}
+
+export function selectedModelFromEvents(events: RuntimeEvent[]) {
+  for (const event of [...events].reverse())
+    if (event.type === "model.selection")
+      return { modelID: event.modelID, variant: event.variant };
+  return undefined;
 }
 
 /** Returns the last committed, rather than pending, runtime agent selection. */

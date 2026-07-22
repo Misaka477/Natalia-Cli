@@ -176,6 +176,7 @@ export function createRealRuntimeClient(
     Extract<RuntimeEvent, { type: "diagnostic" }> & { at: string }
   > = [];
   let selectedAgent: AgentDefinition | undefined;
+  let selectedModel: { modelID?: string; variant?: string } | undefined;
   let pendingAgent: AgentDefinition | undefined;
   let agentRegistry: AgentRegistry | undefined;
   let lastProviderUsage:
@@ -521,6 +522,10 @@ export function createRealRuntimeClient(
         });
       }
     }
+    if (projection.selectedModel) {
+      selectedModel = projection.selectedModel;
+      applyAgentProvider();
+    }
     if (projection.activeTurnIDs.length) {
       publish({
         type: "diagnostic",
@@ -736,11 +741,16 @@ export function createRealRuntimeClient(
       return;
     const next = providerForModel(
       tsRuntimeConfig,
-      selectedAgent?.model ?? tsRuntimeConfig.defaultModel,
-      selectedAgent?.variant,
+      selectedAgent?.model ??
+        selectedModel?.modelID ??
+        tsRuntimeConfig.defaultModel,
+      selectedAgent?.variant ?? selectedModel?.variant,
     );
     if (!next) {
-      const modelID = selectedAgent?.model ?? tsRuntimeConfig.defaultModel;
+      const modelID =
+        selectedAgent?.model ??
+        selectedModel?.modelID ??
+        tsRuntimeConfig.defaultModel;
       const status = modelSelectionStatus(tsRuntimeConfig, modelID);
       publish({
         type: "diagnostic",
@@ -754,6 +764,35 @@ export function createRealRuntimeClient(
 
   function effectiveMaxSteps() {
     return selectedAgent?.maxSteps ?? maxSteps;
+  }
+
+  async function selectRuntimeModel(modelID?: string, variant?: string) {
+    await ready;
+    if (!tsRuntimeConfig) throw new Error("runtime config is unavailable");
+    if (modelID) {
+      const status = modelSelectionStatus(tsRuntimeConfig, modelID);
+      if (!status.selected)
+        throw new Error(`model is unavailable: ${status.reason ?? modelID}`);
+      if (variant && !tsRuntimeConfig.models[modelID]?.variants[variant])
+        throw new Error(`variant not found: ${variant}`);
+    } else if (variant) {
+      throw new Error("a variant requires a selected model");
+    }
+    selectedModel = modelID ? { modelID, variant } : undefined;
+    applyAgentProvider();
+    publish({ type: "model.selection", modelID, variant });
+  }
+
+  async function clientModelCatalog() {
+    await ready;
+    return Object.entries(tsRuntimeConfig?.models ?? {})
+      .filter(([id]) => modelSelectionStatus(tsRuntimeConfig!, id).selected)
+      .map(([id, model]) => ({
+        id,
+        name: model.model,
+        provider: model.provider,
+        variants: Object.keys(model.variants),
+      }));
   }
 
   function publish(event: RuntimeEvent) {
@@ -1023,6 +1062,33 @@ export function createRealRuntimeClient(
         capabilities: plugin.capabilities,
       }));
     },
+    async modelCatalog() {
+      return await clientModelCatalog();
+    },
+    async modelSelection() {
+      await ready;
+      return {
+        modelID:
+          selectedAgent?.model ??
+          selectedModel?.modelID ??
+          tsRuntimeConfig?.defaultModel,
+        variant: selectedAgent?.variant ?? selectedModel?.variant,
+      };
+    },
+    async selectModel(modelID, variant) {
+      await selectRuntimeModel(modelID, variant);
+    },
+    async skills() {
+      await ready;
+      return (skillRegistry?.list() ?? []).map((skill) => ({
+        name: skill.name,
+        qualifiedName: skill.qualifiedName,
+        description: skill.description,
+        source: skill.source,
+        requireApproval: skill.requireApproval,
+        sandboxRequired: skill.sandboxRequired,
+      }));
+    },
     async runtimeStatus() {
       await ready;
       return latestStatus ?? statusSnapshot(provider, context, workspaceRoot);
@@ -1083,6 +1149,7 @@ export function createRealRuntimeClient(
           "/diagnostics [limit] - show recent durable runtime diagnostics",
           "/sessions - list durable TS sessions in the current workspace",
           "/agents and /agent <name> - inspect or select the next-turn agent",
+          "/models and /model <id> [variant] - inspect or select the next-turn model",
           "/skills and /skill <name> - inspect or activate native skills",
           "/attach <workspace-relative-image> <prompt> - submit a PNG/JPEG attachment",
           "/checkpoint, /checkpoints, /rollback <id> [--dry-run] - durable workspace/context controls",
@@ -1230,6 +1297,40 @@ export function createRealRuntimeClient(
               .map((skill) => `${skill.qualifiedName}: ${skill.description}`)
               .join("\n")
           : "no native skills discovered",
+      });
+      publish({ type: "content.done", id });
+      publish({ type: "turn.finished", id, stopReason: "done" });
+      return true;
+    }
+    if (trimmed === "/models") {
+      const models = await clientModelCatalog();
+      publish({
+        type: "content.delta",
+        id,
+        text: models.length
+          ? models
+              .map(
+                (model) =>
+                  `${model.id}: ${model.name} @ ${model.provider}${model.variants.length ? ` (${model.variants.join(", ")})` : ""}`,
+              )
+              .join("\n")
+          : "no selectable models configured",
+      });
+      publish({ type: "content.done", id });
+      publish({ type: "turn.finished", id, stopReason: "done" });
+      return true;
+    }
+    if (trimmed.startsWith("/model ")) {
+      const [modelID, variant] = trimmed
+        .slice("/model ".length)
+        .trim()
+        .split(/\s+/u);
+      if (!modelID) throw new Error("model ID is required");
+      await selectRuntimeModel(modelID, variant);
+      publish({
+        type: "content.delta",
+        id,
+        text: `selected model ${modelID}${variant ? ` (${variant})` : ""}`,
       });
       publish({ type: "content.done", id });
       publish({ type: "turn.finished", id, stopReason: "done" });
@@ -1566,7 +1667,10 @@ export function createRealRuntimeClient(
   }
 
   function activeModelCapabilities() {
-    const modelID = selectedAgent?.model ?? tsRuntimeConfig?.defaultModel;
+    const modelID =
+      selectedAgent?.model ??
+      selectedModel?.modelID ??
+      tsRuntimeConfig?.defaultModel;
     return modelID && tsRuntimeConfig?.models[modelID]
       ? tsRuntimeConfig.models[modelID].capabilities
       : {

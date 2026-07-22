@@ -8,6 +8,7 @@ import {
 import { createStore } from "solid-js/store";
 import { useToast } from "./toast";
 import {
+  addPromptStash,
   loadLocalTuiState,
   saveLocalTuiState,
   type LocalTuiState,
@@ -19,6 +20,8 @@ export type LocalTuiContext = {
   recordModel(model: string): void;
   toggleModelFavorite(model: string): void;
   selectAgent(agent?: string): void;
+  stashPrompt(input: string): boolean;
+  removeStash(index: number): void;
 };
 
 const LocalContext = createContext<LocalTuiContext>();
@@ -31,6 +34,7 @@ export function LocalProvider(props: ParentProps<{ workspaceRoot?: string }>) {
     recentModels: [],
     favoriteModels: [],
     mcpEnabled: {},
+    promptStash: [],
   });
   const [ready, setReady] = createSignal(false);
   let write = Promise.resolve();
@@ -79,6 +83,19 @@ export function LocalProvider(props: ParentProps<{ workspaceRoot?: string }>) {
     },
     selectAgent(agent) {
       setState("activeAgent", agent);
+      persist();
+    },
+    stashPrompt(input) {
+      const next = addPromptStash(state.promptStash, input);
+      if (next === state.promptStash) return false;
+      setState("promptStash", next);
+      persist();
+      return true;
+    },
+    removeStash(index) {
+      setState("promptStash", (entries) =>
+        entries.filter((_, current) => current !== index),
+      );
       persist();
     },
   };

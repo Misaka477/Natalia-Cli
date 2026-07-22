@@ -762,6 +762,148 @@ test("agent model and variant overrides apply when the next provider turn starts
   }
 });
 
+test("runtime model selections persist across reopen and expose safe catalogs", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-runtime-model-selection-"),
+  );
+  const requests: Array<Record<string, unknown>> = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      requests.push((await request.json()) as Record<string, unknown>);
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+  });
+  try {
+    await mkdir(join(root, ".natalia"), { recursive: true });
+    await writeFile(
+      join(root, ".natalia", "config.json"),
+      JSON.stringify({
+        version: 2,
+        providers: {
+          local: {
+            type: "openai",
+            apiKey: "local-key",
+            baseURL: server.url.toString(),
+          },
+        },
+        models: {
+          alpha: { provider: "local", model: "alpha" },
+          beta: {
+            provider: "local",
+            model: "beta",
+            variants: { careful: { model: "beta-careful", temperature: 0.2 } },
+          },
+        },
+        defaultModel: "alpha",
+      }),
+    );
+    const sessionID = "ses_runtime_model_selection" as const;
+    const client = createRealRuntimeClient({ workspaceRoot: root, sessionID });
+    client.start(() => undefined);
+    expect(await client.modelCatalog?.()).toEqual([
+      { id: "alpha", name: "alpha", provider: "local", variants: [] },
+      { id: "beta", name: "beta", provider: "local", variants: ["careful"] },
+    ]);
+    await client.selectModel?.("beta", "careful");
+    expect(await client.modelSelection?.()).toEqual({
+      modelID: "beta",
+      variant: "careful",
+    });
+    await client.submit("selected model");
+    expect(requests[0]).toMatchObject({
+      model: "beta-careful",
+      temperature: 0.2,
+    });
+    await client.dispose?.();
+
+    const reopened = createRealRuntimeClient({
+      workspaceRoot: root,
+      sessionID,
+    });
+    reopened.start(() => undefined);
+    await reopened.submit("restored model");
+    expect(requests[1]).toMatchObject({
+      model: "beta-careful",
+      temperature: 0.2,
+    });
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("runtime skill catalog exposes discovery metadata without skill body", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-skill-catalog-"));
+  await mkdir(join(root, ".natalia", "skills", "release"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "skills", "release", "SKILL.md"),
+    "---\nname: release\ndescription: Prepare release evidence\nrequire-approval: true\n---\nSECRET SKILL BODY",
+  );
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_runtime_skill_catalog",
+    provider: scriptedProvider("unused"),
+  });
+  client.start(() => undefined);
+  expect(await client.skills?.()).toEqual([
+    {
+      name: "release",
+      qualifiedName: "project:release",
+      description: "Prepare release evidence",
+      source: "project",
+      requireApproval: true,
+      sandboxRequired: false,
+    },
+  ]);
+});
+
+test("model slash commands share catalog and durable selection behavior", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-model-command-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      providers: {
+        local: {
+          type: "openai",
+          apiKey: "local-key",
+          baseURL: "http://127.0.0.1:9",
+        },
+      },
+      models: {
+        alpha: { provider: "local", model: "alpha" },
+        beta: {
+          provider: "local",
+          model: "beta",
+          variants: { fast: { model: "beta-fast" } },
+        },
+      },
+      defaultModel: "alpha",
+    }),
+  );
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_runtime_model_command",
+  });
+  client.start((event) => events.push(event));
+  await client.submit("/models");
+  expect(
+    events.filter((event) => event.type === "content.delta").at(-1),
+  ).toMatchObject({
+    text: expect.stringContaining("beta: beta @ local (fast)"),
+  });
+  await client.submit("/model beta fast");
+  expect(events).toContainEqual({
+    type: "model.selection",
+    modelID: "beta",
+    variant: "fast",
+  });
+});
+
 test("configured provider policy denies a selected model without starting a provider request", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-provider-policy-"));
   await mkdir(join(root, ".natalia"), { recursive: true });

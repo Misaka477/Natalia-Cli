@@ -174,6 +174,39 @@ export const commands: Record<string, CommandDef> = {
     desc: "Edit agent override",
     scope: "dialog",
   },
+  "model.dialog.variant": {
+    id: "model.dialog.variant",
+    keys: "v",
+    desc: "Select model variant",
+    scope: "dialog",
+  },
+  "skill.list": {
+    id: "skill.list",
+    keys: "unset",
+    desc: "List local skills",
+  },
+  "mcp.dialog.delete": {
+    id: "mcp.dialog.delete",
+    keys: "d",
+    desc: "Delete MCP server",
+    scope: "dialog",
+  },
+  "prompt.stash.save": {
+    id: "prompt.stash.save",
+    keys: "ctrl+shift+s",
+    desc: "Stash current prompt",
+  },
+  "prompt.stash.list": {
+    id: "prompt.stash.list",
+    keys: "ctrl+shift+p",
+    desc: "Open prompt stash",
+  },
+  "prompt.stash.delete": {
+    id: "prompt.stash.delete",
+    keys: "d",
+    desc: "Delete stashed prompt",
+    scope: "dialog",
+  },
   "provider.connect": {
     id: "provider.connect",
     keys: "unset",
@@ -492,12 +525,12 @@ export function buildKeybindMap(
     Object.entries(bindings)
       .filter(([command]) => commands[command]?.scope !== "dialog")
       .flatMap(([command, keys]) =>
-      keys.map((key) => ({
-        command,
-        keys: key,
-        source: "default" as const,
-        disabled: false,
-      })),
+        keys.map((key) => ({
+          command,
+          keys: key,
+          source: "default" as const,
+          disabled: false,
+        })),
       ),
   );
   diagnostics.push(...conflictDiags);
