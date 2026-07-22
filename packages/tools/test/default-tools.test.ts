@@ -138,6 +138,7 @@ test("managed process restart preserves readiness configuration", async () => {
       command: "echo ready; sleep 1",
       readyPattern: "ready",
       maxOutputBytes: 91,
+      stopTimeoutMs: 77,
     },
     { workspaceRoot: root },
   );
@@ -145,14 +146,94 @@ test("managed process restart preserves readiness configuration", async () => {
     await tools
       .get("process_restart")!
       .execute({ id: "proc_restart" }, { workspaceRoot: root }),
-  ) as { readyPattern?: string; maxOutputBytes?: number };
+  ) as {
+    readyPattern?: string;
+    maxOutputBytes?: number;
+    stopTimeoutMs?: number;
+  };
   expect(restarted).toMatchObject({
     readyPattern: "ready",
     maxOutputBytes: 91,
+    stopTimeoutMs: 77,
   });
   await tools
     .get("process_stop")!
     .execute({ id: "proc_restart" }, { workspaceRoot: root });
+});
+
+test("managed process stop terminates the owned process group", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-process-group-"));
+  const tools = createToolRegistry();
+  const started = JSON.parse(
+    await tools.get("process_start")!.execute(
+      {
+        id: "proc_group",
+        command: "sleep 30 & echo $! > child.pid; wait",
+        stopTimeoutMs: 50,
+      },
+      { workspaceRoot: root },
+    ),
+  ) as { pid?: number };
+  const childPID = Number(await waitForFile(join(root, "child.pid")));
+  expect(started.pid).toBeNumber();
+  await tools
+    .get("process_stop")!
+    .execute({ id: "proc_group" }, { workspaceRoot: root });
+  await Bun.sleep(100);
+  expect(processAlive(started.pid!)).toBe(false);
+  expect(processAlive(childPID)).toBe(false);
+});
+
+test("managed process output uses a UTF-8 byte budget", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-process-output-"));
+  const tools = createToolRegistry();
+  await tools.get("process_start")!.execute(
+    {
+      id: "proc_output",
+      command: "printf 'abc界界'; sleep 1",
+      maxOutputBytes: 6,
+    },
+    { workspaceRoot: root },
+  );
+  await waitForOutput(
+    async () =>
+      await tools
+        .get("process_output")!
+        .execute({ id: "proc_output" }, { workspaceRoot: root }),
+    "界",
+  );
+  const output = await tools
+    .get("process_output")!
+    .execute({ id: "proc_output" }, { workspaceRoot: root });
+  expect(Buffer.byteLength(output)).toBeLessThanOrEqual(6);
+  await tools
+    .get("process_stop")!
+    .execute({ id: "proc_output" }, { workspaceRoot: root });
+});
+
+test("managed process max runtime stops the owned process group", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-process-deadline-"));
+  const tools = createToolRegistry();
+  const started = JSON.parse(
+    await tools.get("process_start")!.execute(
+      {
+        id: "proc_deadline",
+        command: "sleep 30 & echo $! > child.pid; wait",
+        maxRuntimeMs: 100,
+      },
+      { workspaceRoot: root },
+    ),
+  ) as { pid?: number; maxRuntimeMs?: number };
+  const childPID = Number(await waitForFile(join(root, "child.pid")));
+  expect(started.maxRuntimeMs).toBe(100);
+  await Bun.sleep(250);
+  const status = JSON.parse(
+    await tools
+      .get("process_status")!
+      .execute({ id: "proc_deadline" }, { workspaceRoot: root }),
+  ) as { status: string };
+  expect(status.status).toBe("stopped");
+  expect(processAlive(childPID)).toBe(false);
 });
 
 test("native glob grep and durable todo tools operate inside the workspace", async () => {
@@ -362,4 +443,24 @@ async function waitForInteractiveOutput(read: () => string) {
     await Bun.sleep(20);
   }
   throw new Error(`timed out waiting for interactive tool output: ${read()}`);
+}
+
+function processAlive(pid: number) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForFile(path: string) {
+  for (let index = 0; index < 50; index++) {
+    try {
+      return await readFile(path, "utf8");
+    } catch {
+      await Bun.sleep(20);
+    }
+  }
+  throw new Error(`timed out waiting for ${path}`);
 }

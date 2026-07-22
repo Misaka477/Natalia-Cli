@@ -120,10 +120,13 @@ export type ManagedProcessInfo = {
   ready?: boolean;
   readyPattern?: string;
   maxOutputBytes?: number;
+  stopTimeoutMs?: number;
+  maxRuntimeMs?: number;
 };
 
 export class ManagedProcessRegistry {
   private processes = new Map<string, ManagedProcessRuntime>();
+  private deadlines = new Map<string, ReturnType<typeof setTimeout>>();
   private sequence = 0;
   private loadedRoots = new Set<string>();
 
@@ -131,7 +134,12 @@ export class ManagedProcessRegistry {
     command: string,
     context: ToolExecutionContext,
     id?: string,
-    options: { readyPattern?: string; maxOutputBytes?: number } = {},
+    options: {
+      readyPattern?: string;
+      maxOutputBytes?: number;
+      stopTimeoutMs?: number;
+      maxRuntimeMs?: number;
+    } = {},
   ) {
     await this.load(context);
     const processID = id ?? `proc_${(++this.sequence).toString(36)}`;
@@ -144,7 +152,7 @@ export class ManagedProcessRegistry {
       [
         "bash",
         "-lc",
-        `bash -c ${shellQuote(command)} > ${shellQuote(outputPath)} 2>&1 & echo $!`,
+        `setsid bash -c ${shellQuote(command)} > ${shellQuote(outputPath)} 2>&1 & echo $!`,
       ],
       { cwd: context.workspaceRoot, stdout: "pipe", stderr: "pipe" },
     );
@@ -167,10 +175,16 @@ export class ManagedProcessRegistry {
       ready: false,
       readyPattern: options.readyPattern,
       maxOutputBytes: options.maxOutputBytes ?? 20000,
+      stopTimeoutMs: options.stopTimeoutMs ?? 1000,
+      maxRuntimeMs: options.maxRuntimeMs,
+      deadlineAt: options.maxRuntimeMs
+        ? new Date(Date.now() + options.maxRuntimeMs).toISOString()
+        : undefined,
       ...(await processFingerprint(pid)),
     };
     this.processes.set(processID, info);
     await this.save(context);
+    this.scheduleDeadline(info, context);
     return publicProcessInfo(info);
   }
 
@@ -205,7 +219,8 @@ export class ManagedProcessRegistry {
     const info = this.processes.get(id);
     if (!info) throw new Error(`process not found: ${id}`);
     if (info.status === "running" && info.pid)
-      process.kill(info.pid, "SIGTERM");
+      await stopProcessTree(info.pid, info.stopTimeoutMs ?? 1000);
+    this.clearDeadline(id);
     info.status = "stopped";
     info.endedAt = new Date().toISOString();
     await this.save(context);
@@ -219,6 +234,8 @@ export class ManagedProcessRegistry {
     return await this.start(current.command, context, id, {
       readyPattern: current.readyPattern,
       maxOutputBytes: current.maxOutputBytes,
+      stopTimeoutMs: current.stopTimeoutMs,
+      maxRuntimeMs: current.maxRuntimeMs,
     });
   }
 
@@ -294,7 +311,9 @@ export class ManagedProcessRegistry {
       ) as { processes?: ManagedProcessRuntime[] };
       for (const info of parsed.processes ?? []) {
         if (!info.id || !info.command || !info.outputPath) continue;
-        this.processes.set(info.id, await refreshPersistedProcessStatus(info));
+        const restored = await refreshPersistedProcessStatus(info);
+        this.processes.set(restored.id, restored);
+        this.scheduleDeadline(restored, context);
         const match = info.id.match(/^proc_([0-9a-z]+)$/u);
         if (match)
           this.sequence = Math.max(this.sequence, parseInt(match[1]!, 36));
@@ -312,6 +331,22 @@ export class ManagedProcessRegistry {
       `${JSON.stringify({ processes: [...this.processes.values()] }, null, 2)}\n`,
       { mode: 0o600 },
     );
+  }
+
+  private scheduleDeadline(info: ManagedProcessRuntime, context: ToolExecutionContext) {
+    this.clearDeadline(info.id);
+    if (info.status !== "running" || !info.deadlineAt) return;
+    const delay = new Date(info.deadlineAt).getTime() - Date.now();
+    if (!Number.isFinite(delay)) return;
+    const timer = setTimeout(() => void this.stop(info.id, context), Math.max(0, delay));
+    timer.unref();
+    this.deadlines.set(info.id, timer);
+  }
+
+  private clearDeadline(id: string) {
+    const timer = this.deadlines.get(id);
+    if (timer) clearTimeout(timer);
+    this.deadlines.delete(id);
   }
 }
 
@@ -1466,6 +1501,8 @@ function processStartTool(registry: ManagedProcessRegistry): RuntimeTool {
         id: { type: "string" },
         readyPattern: { type: "string" },
         maxOutputBytes: { type: "number" },
+        stopTimeoutMs: { type: "number" },
+        maxRuntimeMs: { type: "number" },
       },
       required: ["command"],
       additionalProperties: false,
@@ -1480,6 +1517,8 @@ function processStartTool(registry: ManagedProcessRegistry): RuntimeTool {
           {
             readyPattern: optionalString(args.readyPattern),
             maxOutputBytes: numberOr(args.maxOutputBytes, 20000),
+            stopTimeoutMs: numberOr(args.stopTimeoutMs, 1000),
+            maxRuntimeMs: positiveNumberOrUndefined(args.maxRuntimeMs),
           },
         ),
         null,
@@ -2097,14 +2136,26 @@ function numberOr(value: unknown, fallback: number) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+function positiveNumberOrUndefined(value: unknown) {
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0)
+    throw new Error("value must be a positive number");
+  return value;
+}
+
 function truncateProcessOutput(output: string, maxBytes = 20000) {
-  return output.length > maxBytes ? output.slice(-maxBytes) : output;
+  const bytes = Buffer.from(output);
+  if (bytes.byteLength <= maxBytes) return output;
+  let start = bytes.byteLength - maxBytes;
+  while (start < bytes.byteLength && (bytes[start]! & 0xc0) === 0x80) start++;
+  return bytes.subarray(start).toString("utf8");
 }
 
 type ManagedProcessRuntime = ManagedProcessInfo & {
   outputPath: string;
   pidStartTicks?: string;
   commandLine?: string;
+  deadlineAt?: string;
 };
 
 async function refreshPersistedProcessStatus(info: ManagedProcessRuntime) {
@@ -2146,6 +2197,38 @@ function refreshProcessStatus(info: ManagedProcessRuntime) {
     info.endedAt = new Date().toISOString();
   }
   return info;
+}
+
+async function stopProcessTree(pid: number, timeoutMs: number) {
+  sendProcessSignal(pid, "SIGTERM");
+  const deadline = Date.now() + Math.max(0, timeoutMs);
+  while (Date.now() < deadline) {
+    if (!isProcessRunning(pid)) return;
+    await Bun.sleep(25);
+  }
+  if (isProcessRunning(pid)) sendProcessSignal(pid, "SIGKILL");
+}
+
+function sendProcessSignal(pid: number, signal: NodeJS.Signals) {
+  try {
+    // Managed processes start through setsid, so the negative PID addresses
+    // their owned process group and includes background children.
+    if (process.platform !== "win32") process.kill(-pid, signal);
+    else process.kill(pid, signal);
+  } catch {
+    try {
+      process.kill(pid, signal);
+    } catch {}
+  }
+}
+
+function isProcessRunning(pid: number) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function readOptionalFile(path: string) {
@@ -2203,5 +2286,7 @@ function publicProcessInfo(info: ManagedProcessRuntime): ManagedProcessInfo {
     ready: info.ready,
     readyPattern: info.readyPattern,
     maxOutputBytes: info.maxOutputBytes,
+    stopTimeoutMs: info.stopTimeoutMs,
+    maxRuntimeMs: info.maxRuntimeMs,
   };
 }
