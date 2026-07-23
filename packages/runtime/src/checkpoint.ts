@@ -206,7 +206,7 @@ export class CheckpointStore {
       await mkdir(this.objectRoot(), { recursive: true, mode: 0o700 });
       await appendFile(this.journalPath(), "", { mode: 0o600 });
     } catch (error) {
-      const message = errorMessage(error);
+      const message = `checkpoint storage unavailable: ${errorKind(error)}`;
       this.unavailableReason = message;
       this.emit({
         type: "checkpoint.unavailable",
@@ -279,19 +279,6 @@ export class CheckpointStore {
         diskUsageBytes,
       };
       await this.writeJournal([...existing, record]);
-      this.emit({
-        type: "checkpoint.created",
-        id: record.id,
-        reason: record.reason,
-        sequence: record.sequence,
-        complete: record.complete,
-        files: Object.keys(record.manifest.entries).length,
-        changes: record.changes.length,
-        contextJournalOffset: record.context.journalOffset,
-        step: record.context.step,
-        tokenEstimate: record.context.tokenEstimate,
-        diskUsageBytes: record.diskUsageBytes,
-      });
       if (!record.complete)
         this.emit({
           type: "checkpoint.failed",
@@ -300,9 +287,23 @@ export class CheckpointStore {
           incomplete: true,
           errors: record.errors,
         });
+      else
+        this.emit({
+          type: "checkpoint.created",
+          id: record.id,
+          reason: record.reason,
+          sequence: record.sequence,
+          complete: record.complete,
+          files: Object.keys(record.manifest.entries).length,
+          changes: record.changes.length,
+          contextJournalOffset: record.context.journalOffset,
+          step: record.context.step,
+          tokenEstimate: record.context.tokenEstimate,
+          diskUsageBytes: record.diskUsageBytes,
+        });
       return record;
     } catch (error) {
-      const message = errorMessage(error);
+      const message = `checkpoint creation failed: ${errorKind(error)}`;
       this.emit({ type: "checkpoint.failed", reason: input.reason, message });
       throw error;
     }
@@ -435,7 +436,7 @@ export class CheckpointStore {
           type: "rollback.failed",
           checkpointID: target.id,
           safetyCheckpointID: safety.id,
-          message: errorMessage(error),
+          message: `rollback transaction failed: ${errorKind(error)}`,
           recovered,
         });
       }
@@ -469,6 +470,7 @@ export class CheckpointStore {
     options: { writeObjects?: boolean } = {},
   ): Promise<WorkspaceManifest> {
     const writeObjects = options.writeObjects ?? true;
+    const gitIgnore = await rootGitIgnoreRules(this.workspaceRoot);
     const manifest: WorkspaceManifest = {
       root: this.workspaceRoot,
       entries: {},
@@ -483,11 +485,13 @@ export class CheckpointStore {
       if (isContained(this.workspaceRoot, resolved)) roots.push(resolved);
       else {
         manifest.complete = false;
-        manifest.errors.push(`additional dir escapes workspace root: ${dir}`);
+        manifest.errors.push(
+          "checkpoint additional directory is outside the managed workspace",
+        );
       }
     }
     for (const root of roots)
-      await this.scanDirectory(root, manifest, writeObjects);
+      await this.scanDirectory(root, manifest, writeObjects, gitIgnore);
     return manifest;
   }
 
@@ -495,12 +499,13 @@ export class CheckpointStore {
     dir: string,
     manifest: WorkspaceManifest,
     writeObjects: boolean,
+    gitIgnore: string[],
   ): Promise<void> {
     const entries = await readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       const full = join(dir, entry.name);
       const rel = normalizeManifestPath(relative(this.workspaceRoot, full));
-      if (!rel || this.shouldIgnore(rel, full)) {
+      if (!rel || this.shouldIgnore(rel, full, gitIgnore)) {
         manifest.ignoredFiles += 1;
         continue;
       }
@@ -514,7 +519,7 @@ export class CheckpointStore {
       try {
         const info = await lstat(full);
         if (info.isDirectory()) {
-          await this.scanDirectory(full, manifest, writeObjects);
+          await this.scanDirectory(full, manifest, writeObjects, gitIgnore);
           continue;
         }
         if (info.isSymbolicLink()) {
@@ -545,7 +550,9 @@ export class CheckpointStore {
         };
       } catch (error) {
         manifest.complete = false;
-        manifest.errors.push(`${rel}: ${errorMessage(error)}`);
+        manifest.errors.push(
+          `checkpoint could not read a workspace entry: ${errorKind(error)}`,
+        );
       }
     }
   }
@@ -560,7 +567,7 @@ export class CheckpointStore {
     if (!isContained(this.workspaceRoot, resolvedTarget)) {
       manifest.complete = false;
       manifest.errors.push(
-        `symlink escapes workspace root: ${rel} -> ${target}`,
+        "checkpoint contains a symlink outside the managed workspace",
       );
       return;
     }
@@ -657,9 +664,12 @@ export class CheckpointStore {
     }
   }
 
-  private shouldIgnore(rel: string, full: string) {
+  private shouldIgnore(rel: string, full: string, gitIgnore: string[]) {
     if (isContained(this.storeDir, full) || full === this.storeDir) return true;
-    return this.ignore.some((pattern) => matchesIgnore(rel, pattern));
+    return (
+      this.ignore.some((pattern) => matchesIgnore(rel, pattern)) ||
+      gitIgnore.some((pattern) => matchesGitIgnore(rel, pattern))
+    );
   }
 
   private assertAvailable() {
@@ -863,7 +873,9 @@ function formatRollbackPreview(preview: CheckpointPreview) {
 function additionalDirWarnings(root: string, dirs: string[]) {
   return dirs
     .filter((dir) => !isContained(root, resolve(root, dir)))
-    .map((dir) => `additional dir escapes workspace root: ${dir}`);
+    .map(
+      () => "checkpoint additional directory is outside the managed workspace",
+    );
 }
 
 function matchesIgnore(rel: string, pattern: string) {
@@ -885,6 +897,32 @@ function matchesIgnore(rel: string, pattern: string) {
     basename(rel) === normalized ||
     rel.includes(`/${normalized}/`)
   );
+}
+
+async function rootGitIgnoreRules(root: string) {
+  try {
+    return (await readFile(join(root, ".gitignore"), "utf8"))
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#") && !line.startsWith("!"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+function matchesGitIgnore(rel: string, rule: string) {
+  const directoryOnly = rule.endsWith("/");
+  const pattern = normalizeManifestPath(rule.replace(/^\/+|\/+$/gu, ""));
+  if (!pattern) return false;
+  const anchored = rule.startsWith("/") || pattern.includes("/");
+  const expression = pattern
+    .replace(/[.+?^${}()|[\]\\]/gu, "\\$&")
+    .replace(/\*\*/gu, ".*")
+    .replace(/\*/gu, "[^/]*");
+  const prefix = anchored ? "^" : "(?:^|.*/)";
+  const suffix = directoryOnly ? "(?:/.*)?$" : "$";
+  return new RegExp(`${prefix}${expression}${suffix}`, "u").test(rel);
 }
 
 function entryKey(entry: ManifestEntry | undefined) {
@@ -964,6 +1002,10 @@ async function fileSize(path: string) {
   }
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+function errorKind(error: unknown) {
+  if (error && typeof error === "object" && "code" in error) {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === "string") return code;
+  }
+  return "filesystem_error";
 }

@@ -90,6 +90,30 @@ import {
 } from "../settings";
 import type { TuiConfigWriteScope } from "../config";
 
+function parseSettingsStringRecord(value: string) {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      return undefined;
+    return Object.entries(parsed).every(([, item]) => typeof item === "string")
+      ? (parsed as Record<string, string>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseSettingsRecord(value: string) {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function App(props: {
   backend: RuntimeClient;
   createBackend?: (sessionID?: string) => RuntimeClient;
@@ -1002,6 +1026,11 @@ function Shell(props: {
               description: "Root, instructions, README, docs",
             },
             {
+              title: "Extensions",
+              value: "extensions",
+              description: "Remote skills and local plugin policy",
+            },
+            {
               title: "Runtime Config",
               value: "runtime",
               description: "Max steps, retry, checkpoints",
@@ -1018,7 +1047,9 @@ function Shell(props: {
                 workspaceRoot: props.workspaceRoot ?? process.cwd(),
               })
             ).config;
-            settingsBase = resolved;
+            // Settings editors mutate a resolved working copy. Keep the base
+            // snapshot separate so configPatch writes the actual minimal delta.
+            settingsBase = structuredClone(resolved);
             switch (option.value) {
               case "provider":
                 dialog.push(() => (
@@ -1168,8 +1199,7 @@ function Shell(props: {
                         resolved.permissionProfiles![name.trim()] = {
                           description: "",
                           approval: "ask",
-                          tools: [],
-                        } as any;
+                        };
                         resolved.defaultPermission = name.trim();
                         void saveConfig(resolved);
                         dialog.pop();
@@ -1180,6 +1210,63 @@ function Shell(props: {
                       dialog.pop();
                     }}
                     onExtraKey={(key, opt) => {
+                      if (key === "e" && opt.value !== "$new") {
+                        const profile = resolved.permissionProfiles[opt.value];
+                        if (!profile) return;
+                        dialog.push(() => (
+                          <DialogSelect
+                            title={`Permission Profile: ${opt.value}`}
+                            options={[
+                              {
+                                title: "Approval Mode",
+                                value: "approval",
+                                description: profile.approval,
+                              },
+                              {
+                                title: "Description",
+                                value: "description",
+                                description: profile.description || "(none)",
+                              },
+                            ]}
+                            onSelect={(field) => {
+                              const next = structuredClone(resolved);
+                              const target = next.permissionProfiles[opt.value];
+                              if (!target) return;
+                              if (field.value === "approval") {
+                                dialog.push(() => (
+                                  <DialogSelect
+                                    title="Approval Mode"
+                                    options={["ask", "auto", "read_only"].map(
+                                      (value) => ({
+                                        title: value,
+                                        value,
+                                      }),
+                                    )}
+                                    current={target.approval}
+                                    onSelect={(choice) => {
+                                      target.approval =
+                                        choice.value as typeof target.approval;
+                                      void saveConfig(next);
+                                    }}
+                                  />
+                                ));
+                                return;
+                              }
+                              dialog.push(() => (
+                                <DialogPrompt
+                                  title="Permission Profile Description"
+                                  placeholder={target.description}
+                                  onConfirm={(value) => {
+                                    target.description = value.trim();
+                                    void saveConfig(next);
+                                  }}
+                                />
+                              ));
+                            }}
+                          />
+                        ));
+                        return;
+                      }
                       if (key === "d" && opt.value !== "$new") {
                         delete (
                           resolved.permissionProfiles as Record<string, unknown>
@@ -1228,6 +1315,115 @@ function Shell(props: {
                       dialog.pop();
                     }}
                     onExtraKey={(key, opt) => {
+                      if (key === "e" && opt.value !== "$new") {
+                        const mode = resolved.modes[opt.value];
+                        if (!mode) return;
+                        dialog.push(() => (
+                          <DialogSelect
+                            title={`Agent Mode: ${opt.value}`}
+                            options={[
+                              {
+                                title: "System Prompt",
+                                value: "system",
+                                description: mode.systemPrompt || "(none)",
+                              },
+                              {
+                                title: "Model",
+                                value: "model",
+                                description: mode.model || "(default)",
+                              },
+                              {
+                                title: "Permission Profile",
+                                value: "permission",
+                                description: mode.permission || "(default)",
+                              },
+                              {
+                                title: "Allowed Tools",
+                                value: "allow",
+                                description: `${mode.allowedTools.length} tools`,
+                              },
+                              {
+                                title: "Excluded Tools",
+                                value: "exclude",
+                                description: `${mode.excludedTools.length} tools`,
+                              },
+                              {
+                                title: "MCP Servers",
+                                value: "mcp",
+                                description: `${mode.mcpServers.length} servers`,
+                              },
+                            ]}
+                            onSelect={(field) => {
+                              const next = structuredClone(resolved);
+                              const target = next.modes[opt.value];
+                              if (!target) return;
+                              if (field.value === "permission") {
+                                dialog.push(() => (
+                                  <DialogSelect
+                                    title="Mode Permission Profile"
+                                    options={[
+                                      { title: "Default", value: "" },
+                                      ...Object.keys(
+                                        next.permissionProfiles,
+                                      ).map((value) => ({
+                                        title: value,
+                                        value,
+                                      })),
+                                    ]}
+                                    current={target.permission ?? ""}
+                                    onSelect={(choice) => {
+                                      target.permission =
+                                        choice.value || undefined;
+                                      void saveConfig(next);
+                                    }}
+                                  />
+                                ));
+                                return;
+                              }
+                              const listField =
+                                field.value === "allow"
+                                  ? "allowedTools"
+                                  : field.value === "exclude"
+                                    ? "excludedTools"
+                                    : field.value === "mcp"
+                                      ? "mcpServers"
+                                      : undefined;
+                              const textField =
+                                field.value === "system"
+                                  ? "systemPrompt"
+                                  : "model";
+                              dialog.push(() => (
+                                <DialogPrompt
+                                  title={`Mode ${field.title}`}
+                                  description={() =>
+                                    listField
+                                      ? "Comma-separated values."
+                                      : "Leave blank to use the default."
+                                  }
+                                  placeholder={
+                                    listField
+                                      ? target[listField].join(", ")
+                                      : (target[textField] ?? "")
+                                  }
+                                  onConfirm={(value) => {
+                                    if (listField)
+                                      target[listField] = value
+                                        .split(",")
+                                        .map((item) => item.trim())
+                                        .filter(Boolean);
+                                    else if (textField === "systemPrompt")
+                                      target.systemPrompt = value.trim();
+                                    else
+                                      target.model = value.trim() || undefined;
+                                    void saveConfig(next);
+                                  }}
+                                />
+                              ));
+                            }}
+                          />
+                        ));
+                        return;
+                      }
                       if (key === "d" && opt.value !== "$new") {
                         delete (resolved.modes as Record<string, unknown>)[
                           opt.value
@@ -1251,6 +1447,13 @@ function Shell(props: {
                         value: "ep",
                         description:
                           resolved.webSearch?.endpoint ?? "(not set)",
+                      },
+                      {
+                        title: "Web Search Provider Priority",
+                        value: "search-priority",
+                        description:
+                          resolved.webSearch?.providerPriority.join(", ") ||
+                          "configured, duckduckgo",
                       },
                       {
                         title: "Browser",
@@ -1293,6 +1496,45 @@ function Shell(props: {
                         value: "bua",
                         description: resolved.browser?.userAgent || "(default)",
                       },
+                      {
+                        title: "Persistent Browser Profile",
+                        value: "profile",
+                        description: resolved.browser?.persistentProfile
+                          ? "On"
+                          : "Off",
+                      },
+                      {
+                        title: "Browser Profile Directory",
+                        value: "pdir",
+                        description: resolved.browser?.profileDir || "(none)",
+                      },
+                      {
+                        title: "Browser Locale",
+                        value: "locale",
+                        description: resolved.browser?.locale || "(default)",
+                      },
+                      {
+                        title: "Browser Timezone",
+                        value: "timezone",
+                        description: resolved.browser?.timezone || "(default)",
+                      },
+                      {
+                        title: "Browser Headers",
+                        value: "bheaders",
+                        description: `${Object.keys(resolved.browser?.headers ?? {}).length} entries`,
+                      },
+                      {
+                        title: "Allowed Hosts",
+                        value: "hosts",
+                        description: `${resolved.network?.allowedHosts.length ?? 0} hosts`,
+                      },
+                      {
+                        title: "Allowed Schemes",
+                        value: "schemes",
+                        description: (
+                          resolved.network?.allowedSchemes ?? []
+                        ).join(", "),
+                      },
                     ]}
                     onSelect={(opt) => {
                       const next = structuredClone(resolved);
@@ -1307,6 +1549,159 @@ function Shell(props: {
                       if (opt.value === "redact")
                         next.security!.redactToolOutput =
                           !next.security!.redactToolOutput;
+                      if (opt.value === "profile") {
+                        next.browser!.persistentProfile =
+                          !next.browser!.persistentProfile;
+                        void saveConfig(next);
+                        return;
+                      }
+                      if (opt.value === "ep") {
+                        dialog.push(() => (
+                          <DialogPrompt
+                            title="Web Search Endpoint"
+                            placeholder={next.webSearch!.endpoint ?? ""}
+                            onConfirm={(value) => {
+                              next.webSearch!.endpoint = value.trim() || null;
+                              void saveConfig(next);
+                            }}
+                          />
+                        ));
+                        return;
+                      }
+                      if (opt.value === "search-priority") {
+                        dialog.push(() => (
+                          <DialogPrompt
+                            title="Web Search Provider Priority"
+                            description={() =>
+                              "Comma-separated: configured, duckduckgo. Configured requires an endpoint."
+                            }
+                            placeholder={next.webSearch!.providerPriority.join(
+                              ", ",
+                            )}
+                            onConfirm={(value) => {
+                              const priority = value
+                                .split(",")
+                                .map((item) => item.trim())
+                                .filter(
+                                  (item) =>
+                                    item === "configured" ||
+                                    item === "duckduckgo",
+                                );
+                              if (!priority.length) return;
+                              next.webSearch!.providerPriority = priority;
+                              void saveConfig(next);
+                            }}
+                          />
+                        ));
+                        return;
+                      }
+                      if (opt.value === "env") {
+                        dialog.push(() => (
+                          <DialogPrompt
+                            title="Env Allowlist"
+                            description={() =>
+                              "Comma-separated environment variable names."
+                            }
+                            placeholder={next.security!.envAllowlist.join(", ")}
+                            onConfirm={(value) => {
+                              next.security!.envAllowlist = value
+                                .split(",")
+                                .map((item) => item.trim())
+                                .filter(Boolean);
+                              void saveConfig(next);
+                            }}
+                          />
+                        ));
+                        return;
+                      }
+                      if (opt.value === "bbin" || opt.value === "bua") {
+                        dialog.push(() => (
+                          <DialogPrompt
+                            title={
+                              opt.value === "bbin"
+                                ? "Browser Binary"
+                                : "Browser User Agent"
+                            }
+                            placeholder={
+                              opt.value === "bbin"
+                                ? next.browser!.binary
+                                : next.browser!.userAgent
+                            }
+                            onConfirm={(value) => {
+                              if (opt.value === "bbin")
+                                next.browser!.binary = value.trim();
+                              else next.browser!.userAgent = value.trim();
+                              void saveConfig(next);
+                            }}
+                          />
+                        ));
+                        return;
+                      }
+                      if (["pdir", "locale", "timezone"].includes(opt.value)) {
+                        const field =
+                          opt.value === "pdir"
+                            ? "profileDir"
+                            : opt.value === "locale"
+                              ? "locale"
+                              : "timezone";
+                        dialog.push(() => (
+                          <DialogPrompt
+                            title={`Browser ${field}`}
+                            placeholder={next.browser![field]}
+                            onConfirm={(value) => {
+                              next.browser![field] = value.trim();
+                              void saveConfig(next);
+                            }}
+                          />
+                        ));
+                        return;
+                      }
+                      if (opt.value === "bheaders") {
+                        dialog.push(() => (
+                          <DialogPrompt
+                            title="Browser Headers"
+                            description={() =>
+                              "JSON string record. Values are not shown in the settings list."
+                            }
+                            placeholder={JSON.stringify(next.browser!.headers)}
+                            onConfirm={(value) => {
+                              const headers = parseSettingsStringRecord(value);
+                              if (!headers) return;
+                              next.browser!.headers = headers;
+                              void saveConfig(next);
+                            }}
+                          />
+                        ));
+                        return;
+                      }
+                      if (opt.value === "hosts" || opt.value === "schemes") {
+                        dialog.push(() => (
+                          <DialogPrompt
+                            title={
+                              opt.value === "hosts"
+                                ? "Allowed Hosts"
+                                : "Allowed Schemes"
+                            }
+                            description={() => "Comma-separated values."}
+                            placeholder={
+                              opt.value === "hosts"
+                                ? next.network!.allowedHosts.join(", ")
+                                : next.network!.allowedSchemes.join(", ")
+                            }
+                            onConfirm={(value) => {
+                              const values = value
+                                .split(",")
+                                .map((item) => item.trim())
+                                .filter(Boolean);
+                              if (opt.value === "hosts")
+                                next.network!.allowedHosts = values;
+                              else next.network!.allowedSchemes = values;
+                              void saveConfig(next);
+                            }}
+                          />
+                        ));
+                        return;
+                      }
                       void saveConfig(next);
                     }}
                   />
@@ -1361,7 +1756,185 @@ function Shell(props: {
                       if (opt.value === "docs")
                         next.instructions!.includeDocs =
                           !next.instructions!.includeDocs;
+                      if (opt.value === "root") {
+                        dialog.push(() => (
+                          <DialogPrompt
+                            title="Workspace Root"
+                            placeholder={next.workspace!.root}
+                            onConfirm={(value) => {
+                              next.workspace!.root = value.trim();
+                              void saveConfig(next);
+                            }}
+                          />
+                        ));
+                        return;
+                      }
+                      if (opt.value === "extra") {
+                        dialog.push(() => (
+                          <DialogPrompt
+                            title="Instruction Extra Files"
+                            description={() =>
+                              "Comma-separated workspace-relative files."
+                            }
+                            placeholder={next.instructions!.extraFiles.join(
+                              ", ",
+                            )}
+                            onConfirm={(value) => {
+                              next.instructions!.extraFiles = value
+                                .split(",")
+                                .map((item) => item.trim())
+                                .filter(Boolean);
+                              void saveConfig(next);
+                            }}
+                          />
+                        ));
+                        return;
+                      }
                       void saveConfig(next);
+                    }}
+                  />
+                ));
+                break;
+              case "extensions":
+                dialog.push(() => (
+                  <DialogSelect
+                    title="Extensions"
+                    options={[
+                      {
+                        title: "Remote Skill URLs",
+                        value: "skills",
+                        description: `${resolved.skills.urls.length} sources`,
+                      },
+                      {
+                        title: "Plugin Paths",
+                        value: "plugin-paths",
+                        description: `${resolved.plugins.paths.length} roots`,
+                      },
+                      {
+                        title: "Plugin Enabled Overrides",
+                        value: "plugin-enabled",
+                        description: `${Object.keys(resolved.plugins.enabled).length} overrides`,
+                      },
+                      {
+                        title: "Plugin Capabilities",
+                        value: "plugin-capabilities",
+                        description: `${Object.keys(resolved.plugins.capabilities).length} overrides`,
+                      },
+                      {
+                        title: "Plugin Read-only Overrides",
+                        value: "plugin-readonly",
+                        description: `${Object.keys(resolved.plugins.readOnly).length} overrides`,
+                      },
+                      {
+                        title: "Checkpoint Additional Directories",
+                        value: "checkpoint-dirs",
+                        description: `${resolved.checkpoint.additionalDirs.length} directories`,
+                      },
+                      {
+                        title: "Workspace Additional Directories",
+                        value: "workspace-dirs",
+                        description: `${resolved.workspace.additionalDirs.length} directories`,
+                      },
+                    ]}
+                    onSelect={(opt) => {
+                      const next = structuredClone(resolved);
+                      if (opt.value === "skills") {
+                        dialog.push(() => (
+                          <DialogPrompt
+                            title="Remote Skill URLs"
+                            description={() =>
+                              "Comma-separated HTTP(S) skill index URLs."
+                            }
+                            placeholder={next.skills.urls.join(", ")}
+                            onConfirm={(value) => {
+                              next.skills.urls = value
+                                .split(",")
+                                .map((item) => item.trim())
+                                .filter(Boolean);
+                              void saveConfig(next);
+                            }}
+                          />
+                        ));
+                        return;
+                      }
+                      if (
+                        opt.value === "plugin-paths" ||
+                        opt.value.endsWith("dirs")
+                      ) {
+                        const target =
+                          opt.value === "plugin-paths"
+                            ? next.plugins.paths
+                            : opt.value === "checkpoint-dirs"
+                              ? next.checkpoint.additionalDirs
+                              : next.workspace.additionalDirs;
+                        dialog.push(() => (
+                          <DialogPrompt
+                            title={
+                              opt.value === "plugin-paths"
+                                ? "Plugin Paths"
+                                : "Additional Directories"
+                            }
+                            description={() =>
+                              "Comma-separated workspace-relative paths."
+                            }
+                            placeholder={target.join(", ")}
+                            onConfirm={(value) => {
+                              const paths = value
+                                .split(",")
+                                .map((item) => item.trim())
+                                .filter(Boolean);
+                              if (opt.value === "plugin-paths")
+                                next.plugins.paths = paths;
+                              else if (opt.value === "checkpoint-dirs")
+                                next.checkpoint.additionalDirs = paths;
+                              else next.workspace.additionalDirs = paths;
+                              void saveConfig(next);
+                            }}
+                          />
+                        ));
+                        return;
+                      }
+                      const current =
+                        opt.value === "plugin-enabled"
+                          ? next.plugins.enabled
+                          : opt.value === "plugin-capabilities"
+                            ? next.plugins.capabilities
+                            : next.plugins.readOnly;
+                      dialog.push(() => (
+                        <DialogPrompt
+                          title={
+                            opt.value === "plugin-enabled"
+                              ? "Plugin Enabled Overrides"
+                              : opt.value === "plugin-capabilities"
+                                ? "Plugin Capabilities"
+                                : "Plugin Read-only Overrides"
+                          }
+                          description={() =>
+                            "JSON record keyed by plugin ID. Values are not shown in this menu."
+                          }
+                          placeholder={JSON.stringify(current)}
+                          onConfirm={(value) => {
+                            const parsed = parseSettingsRecord(value);
+                            if (!parsed) return;
+                            if (opt.value === "plugin-enabled")
+                              next.plugins.enabled = parsed as Record<
+                                string,
+                                boolean
+                              >;
+                            else if (opt.value === "plugin-capabilities")
+                              next.plugins.capabilities = parsed as Record<
+                                string,
+                                Array<"tools" | "events">
+                              >;
+                            else
+                              next.plugins.readOnly = parsed as Record<
+                                string,
+                                boolean
+                              >;
+                            void saveConfig(next);
+                          }}
+                        />
+                      ));
                     }}
                   />
                 ));
@@ -1962,6 +2535,55 @@ function Shell(props: {
             toolPreviewLines={layout().toolPreviewLines}
             showJumpToBottom={jumpToBottomVisible()}
             onJumpToBottom={jumpToBottom}
+            onMessageCopy={(text) => {
+              if (!clipboard.write) {
+                toast.show({
+                  variant: "warning",
+                  message: "Clipboard unavailable",
+                });
+                return;
+              }
+              void clipboard.write(text).then(
+                () =>
+                  toast.show({
+                    variant: "success",
+                    message: "Copied to clipboard",
+                  }),
+                (error) => toast.error(error),
+              );
+            }}
+            onMessageFork={(turnID, prompt) => {
+              if (!state.sessionID || !props.backend.sessionFork) {
+                toast.show({
+                  variant: "warning",
+                  message: "No fork-capable runtime is available",
+                });
+                return;
+              }
+              void DialogConfirm.show(
+                dialog,
+                "Fork message",
+                "Create a child session before this user message and restore its prompt in the composer.",
+              ).then((confirmed) => {
+                if (!confirmed) return;
+                return props.backend.sessionFork!(
+                  state.sessionID!,
+                  turnID,
+                ).then(
+                  (fork) => {
+                    composer()?.setText(prompt);
+                    setComposerText(prompt);
+                    composer()?.gotoBufferEnd();
+                    toast.show({
+                      variant: "success",
+                      message: `Forked session ${fork.id}`,
+                    });
+                    changeSession(fork.id);
+                  },
+                  (error) => toast.error(error),
+                );
+              });
+            }}
             backend={props.backend}
             onExit={exitOrCancel}
           />

@@ -12,7 +12,17 @@ import { join, resolve } from "node:path";
 export type SessionMetadata = {
   pinned?: boolean;
   lastAccessedAt?: string;
+  inFlightOperation?: DurableInFlightOperation;
 } & Record<string, unknown>;
+
+/** Safe crash-audit state, intentionally insufficient to replay work. */
+export type DurableInFlightOperation = {
+  kind: "provider_dispatch" | "tool_execution";
+  turnID: string;
+  toolName?: string;
+  toolCallID?: string;
+  startedAt: string;
+};
 
 export type SessionRecord = {
   id: SessionID;
@@ -203,133 +213,6 @@ export class JsonSessionStore {
   private path(id: SessionID) {
     return join(this.dir, `${id}.json`);
   }
-}
-
-export type LegacySessionImportResult = {
-  session: SessionRecord;
-  importedMessages: number;
-  warnings: string[];
-};
-
-export async function importLegacyGoSession(input: {
-  legacyDir: string;
-  targetStore: JsonSessionStore;
-  targetID?: SessionID;
-}): Promise<LegacySessionImportResult> {
-  const legacyDir = resolve(input.legacyDir);
-  const meta = await readOptionalJSON(join(legacyDir, "meta.json"));
-  const sourceID = stringField(meta, "id") ?? basenameSafe(legacyDir);
-  const sessionID = input.targetID ?? (`ses_import_${sourceID}` as SessionID);
-  const session = createSessionRecord(
-    sessionID,
-    stringField(meta, "title") ?? `Imported Go session ${sourceID}`,
-  );
-  const warnings: string[] = [];
-  const messages = await readLegacyContext(
-    join(legacyDir, "context.jsonl"),
-    warnings,
-  );
-  for (const message of messages) {
-    const id = `import_${session.events.length}`;
-    if (message.role === "user") {
-      appendSessionEvent(session, {
-        type: "turn.submitted",
-        id,
-        text: message.content,
-        byteLength: new TextEncoder().encode(message.content).byteLength,
-        lineCount: message.content ? message.content.split(/\r?\n/u).length : 0,
-        sha256: "legacy-import",
-      });
-    } else {
-      appendSessionEvent(session, {
-        type: "content.delta",
-        id,
-        text: message.content,
-      });
-      appendSessionEvent(session, {
-        type: "content.done",
-        id,
-      });
-    }
-  }
-  if (await pathExists(join(legacyDir, "state.json")))
-    warnings.push(
-      "legacy state.json is retained as import metadata only; mode/profile migration is not yet automatic",
-    );
-  if (await pathExists(join(legacyDir, "wire.jsonl")))
-    warnings.push(
-      "legacy wire.jsonl is not replayed; preserve it for Go fallback until TS wire migration completes",
-    );
-  await input.targetStore.save(session);
-  return { session, importedMessages: messages.length, warnings };
-}
-
-export async function listLegacyGoSessions(baseDir: string) {
-  const entries = await readdir(resolve(baseDir), {
-    withFileTypes: true,
-    encoding: "utf8",
-  });
-  return entries
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort();
-}
-
-type LegacyMessage = { role: "user" | "assistant"; content: string };
-
-async function readLegacyContext(path: string, warnings: string[]) {
-  try {
-    const lines = (await readFile(path, "utf8")).split("\n").filter(Boolean);
-    const messages: LegacyMessage[] = [];
-    for (const line of lines) {
-      try {
-        const value = JSON.parse(line) as Record<string, unknown>;
-        const role =
-          value.role === "assistant"
-            ? "assistant"
-            : value.role === "user"
-              ? "user"
-              : undefined;
-        const content =
-          typeof value.content === "string" ? value.content : undefined;
-        if (role && content !== undefined) messages.push({ role, content });
-        else warnings.push("skipped unsupported legacy context message shape");
-      } catch {
-        warnings.push("skipped malformed legacy context JSONL row");
-      }
-    }
-    return messages;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
-  }
-}
-
-async function readOptionalJSON(path: string) {
-  try {
-    return JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    throw error;
-  }
-}
-
-async function pathExists(path: string) {
-  try {
-    await readFile(path);
-    return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
-    throw error;
-  }
-}
-
-function stringField(value: Record<string, unknown> | undefined, key: string) {
-  return typeof value?.[key] === "string" ? value[key] : undefined;
-}
-
-function basenameSafe(path: string) {
-  return path.split("/").filter(Boolean).at(-1) ?? "legacy";
 }
 
 export { SqliteSessionStore } from "./sqlite-store";

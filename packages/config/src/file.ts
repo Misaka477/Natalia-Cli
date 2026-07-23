@@ -15,18 +15,15 @@ import {
   migrationSummaryText,
   type MigrationResult,
 } from "./migration";
-import { defaultConfigPath } from "./path";
 import { defaultConfigV2 } from "./migration";
 
-export async function loadConfigFile(
-  path = defaultConfigPath(),
-): Promise<MigrationResult> {
+export async function loadConfigFile(path: string): Promise<MigrationResult> {
   const raw = await readFile(path, "utf8");
   const data = parseConfigText(raw);
   return migrateConfig(data);
 }
 
-export async function loadOrCreateConfigFile(path = defaultConfigPath()) {
+export async function loadOrCreateConfigFile(path: string) {
   try {
     return await loadConfigFile(path);
   } catch (error) {
@@ -36,7 +33,7 @@ export async function loadOrCreateConfigFile(path = defaultConfigPath()) {
     return {
       config,
       summary: {
-        fromVersion: "legacy" as const,
+        fromVersion: 2 as const,
         toVersion: 2 as const,
         changed: ["created default TS config"],
         warnings: [],
@@ -45,10 +42,7 @@ export async function loadOrCreateConfigFile(path = defaultConfigPath()) {
   }
 }
 
-export async function saveConfigFile(
-  config: ConfigV2,
-  path = defaultConfigPath(),
-) {
+export async function saveConfigFile(config: ConfigV2, path: string) {
   const parsed = configV2Schema.parse(config);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const temporary = `${path}.tmp-${randomUUID()}`;
@@ -68,10 +62,27 @@ export async function saveConfigFile(
   }
 }
 
-export async function migrateConfigFile(
-  path = defaultConfigPath(),
-  now = new Date(),
-) {
+/** Persists a validated scope overlay without promoting resolved values. */
+export async function saveConfigOverlayFile(path: string, overlay: unknown) {
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  const temporary = `${path}.tmp-${randomUUID()}`;
+  try {
+    await writeFile(temporary, `${JSON.stringify(overlay, null, 2)}\n`, {
+      mode: 0o600,
+    });
+    const handle = await open(temporary, "r");
+    try {
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await rename(temporary, path);
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined);
+  }
+}
+
+export async function migrateConfigFile(path: string, now = new Date()) {
   const raw = await readFile(path, "utf8");
   const data = parseConfigText(raw);
   const result = migrateConfig(data);

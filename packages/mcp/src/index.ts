@@ -1,4 +1,3 @@
-import { discoverLegacyProviderConfig } from "@natalia/config";
 import type { RuntimeTool, ToolRegistry } from "@natalia/tools";
 
 export type MCPTool = {
@@ -608,101 +607,6 @@ export async function inspectMCPCatalog(
     client.listResources(timeoutMs),
   ]);
   return { tools, prompts, resources };
-}
-
-export async function loadLegacyMCPTools(input: {
-  registry: ToolRegistry;
-  configPath?: string;
-  workspaceRoot: string;
-  onDiagnostic?: (message: string) => void;
-}) {
-  const discovery = await discoverLegacyProviderConfig({
-    configPath: input.configPath,
-  });
-  if (discovery.status !== "found")
-    return {
-      loaded: 0,
-      diagnostics: [],
-      statuses: {},
-      catalog: async () => ({ prompts: [], resources: [] }),
-      getPrompt: async () => {
-        throw new Error("MCP server is not connected");
-      },
-      readResource: async () => {
-        throw new Error("MCP server is not connected");
-      },
-      close: async () => undefined,
-    };
-  const diagnostics: string[] = [];
-  const statuses: Record<string, MCPServerStatus> = {};
-  let loaded = 0;
-  const owner = new MCPConnectionOwner(input.registry);
-  const active = discovery.config.activeMCPServers.length
-    ? discovery.config.activeMCPServers
-    : Object.keys(discovery.config.mcpServers);
-  for (const serverName of active) {
-    const server = discovery.config.mcpServers[serverName];
-    if (!server) {
-      diagnostics.push(
-        `MCP server ${serverName} is referenced but not configured`,
-      );
-      statuses[serverName] = {
-        status: "failed",
-        tools: 0,
-        message: `MCP server ${serverName} is referenced but not configured`,
-      };
-      continue;
-    }
-    try {
-      const client = await StdioMCPClient.connect({
-        command: server.command,
-        args: server.args,
-        cwd: input.workspaceRoot,
-        env: cleanEnv({ ...process.env, ...server.env }),
-      });
-      owner.addClient(serverName, client);
-      for (const tool of await client.listTools()) {
-        if (
-          server.allowedTools.length &&
-          !server.allowedTools.includes(tool.name)
-        )
-          continue;
-        owner.register(
-          `mcp_${serverName}_${tool.name}`,
-          mcpToolToRuntimeTool(client, tool, {
-            serverName,
-            readOnly: server.readOnly,
-            timeoutMs: server.timeoutSec ? server.timeoutSec * 1000 : undefined,
-          }),
-        );
-        loaded++;
-      }
-      diagnostics.push(`MCP server ${serverName} loaded ${loaded} tool(s)`);
-      statuses[serverName] = {
-        status: "connected",
-        tools: owner.count(`mcp_${serverName}_`),
-      };
-    } catch (error) {
-      const message = `MCP server ${serverName} failed: ${error instanceof Error ? error.message : String(error)}`;
-      diagnostics.push(message);
-      statuses[serverName] = { status: "failed", tools: 0, message };
-    }
-  }
-  for (const diagnostic of diagnostics) input.onDiagnostic?.(diagnostic);
-  return {
-    loaded,
-    diagnostics,
-    statuses,
-    catalog: () => owner.catalog(),
-    getPrompt: (
-      server: string,
-      name: string,
-      arguments_?: Record<string, string>,
-    ) => owner.getPrompt(server, name, arguments_),
-    readResource: (server: string, uri: string) =>
-      owner.readResource(server, uri),
-    close: () => owner.close(),
-  };
 }
 
 async function registerMCPTools(input: {

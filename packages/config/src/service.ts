@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { configV2Schema, type ConfigV2 } from "@natalia/contracts";
-import { parseConfigText, saveConfigFile } from "./file";
+import { parseConfigText, saveConfigOverlayFile } from "./file";
 import { readFile } from "node:fs/promises";
 
 export type ConfigScope =
@@ -251,7 +251,11 @@ export async function updateConfig(
 ): Promise<ConfigV2> {
   const { config, projectConfigPath } = await resolveConfig({ workspaceRoot });
   const next = mergeConfig(config, patch);
-  await saveConfigFile(next, projectConfigPath);
+  const overlay = mergeOverlay(
+    await loadOverlay(projectConfigPath),
+    patch as Record<string, unknown>,
+  );
+  await saveConfigOverlayFile(projectConfigPath, overlay);
   return next;
 }
 
@@ -262,16 +266,58 @@ export async function updateGlobalConfig(
   const path =
     globalPath ??
     resolve(process.env.HOME ?? "", ".config", "natalia-cli", "config.json");
-  let base: ConfigV2;
+  const base = mergeConfig(
+    configV2Schema.parse({ version: 2 }),
+    (await loadOverlay(path)) as ConfigPatch,
+  );
+  const next = mergeConfig(base, patch);
+  const overlay = mergeOverlay(
+    await loadOverlay(path),
+    patch as Record<string, unknown>,
+  );
+  await saveConfigOverlayFile(path, overlay);
+  return next;
+}
+
+async function loadOverlay(path: string): Promise<Record<string, unknown>> {
   try {
     const raw = parseConfigText(await readFile(path, "utf8"));
-    base = configV2Schema.parse(raw);
-  } catch {
-    base = configV2Schema.parse({ version: 2 });
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    return raw as Record<string, unknown>;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw error;
   }
-  const next = mergeConfig(base, patch);
-  await saveConfigFile(next, path);
-  return next;
+}
+
+function mergeOverlay(
+  base: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const result = structuredClone(base);
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) {
+      delete result[key];
+      continue;
+    }
+    const current = result[key];
+    if (
+      current &&
+      value &&
+      typeof current === "object" &&
+      typeof value === "object" &&
+      !Array.isArray(current) &&
+      !Array.isArray(value)
+    ) {
+      result[key] = mergeOverlay(
+        current as Record<string, unknown>,
+        value as Record<string, unknown>,
+      );
+      continue;
+    }
+    result[key] = value;
+  }
+  return result;
 }
 
 /** Writes validated config through the selected durable scope. */

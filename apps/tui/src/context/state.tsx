@@ -60,6 +60,17 @@ export type MessageBlock = {
   reasoningVisible?: boolean;
   providerPolicy?: "visible" | "hidden";
   tool?: ToolBlockState;
+  interactive?:
+    | {
+        kind: "approval";
+        request: Extract<RuntimeEvent, { type: "approval.request" }>;
+        response?: Extract<RuntimeEvent, { type: "approval.response" }>;
+      }
+    | {
+        kind: "question";
+        request: Extract<RuntimeEvent, { type: "question.request" }>;
+        response?: Extract<RuntimeEvent, { type: "question.response" }>;
+      };
 };
 
 export type ToolBlockState = {
@@ -522,6 +533,7 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
         "approval",
         `${event.title}: ${event.preview}`,
         "awaiting_approval",
+        { interactive: { kind: "approval", request: event } },
       );
       return;
     case "approval.response":
@@ -535,19 +547,27 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
         state,
         event.id,
         "approval",
-        approvalResponseText(event.decision, event.feedback),
+        interactiveApprovalText(state, event),
         event.decision,
+        { interactive: resolvedApproval(state, event) },
       );
       return;
     case "question.request":
-      enqueueQuestion(state.modal, normalizeQuestionRequest(event));
+      const normalizedQuestion = normalizeQuestionRequest(event);
+      enqueueQuestion(state.modal, normalizedQuestion);
       state.dialog = activeModal(state.modal)?.kind;
       upsertBlock(
         state,
         event.id,
         "question",
-        questionRequestText(normalizeQuestionRequest(event)),
+        questionRequestText(normalizedQuestion),
         "awaiting",
+        {
+          interactive: {
+            kind: "question",
+            request: { ...event, questions: normalizedQuestion.questions },
+          },
+        },
       );
       return;
     case "question.response":
@@ -561,8 +581,9 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
         state,
         event.id,
         "question",
-        questionResponseText(event.answers, event.rejected),
+        interactiveQuestionText(state, event),
         event.rejected ? "rejected" : "answered",
+        { interactive: resolvedQuestion(state, event) },
       );
       return;
     case "snapshot.created":
@@ -684,6 +705,50 @@ function questionRequestText(
 function questionResponseText(answers: string[][], rejected?: boolean) {
   if (rejected) return "question rejected";
   return `answered: ${answers.map((answer) => answer.join(", ") || "(empty)").join("; ")}`;
+}
+
+function resolvedApproval(
+  state: AppState,
+  response: Extract<RuntimeEvent, { type: "approval.response" }>,
+) {
+  const current = state.messages.find(
+    (message) => message.id === response.id,
+  )?.interactive;
+  return current?.kind === "approval" ? { ...current, response } : undefined;
+}
+
+function resolvedQuestion(
+  state: AppState,
+  response: Extract<RuntimeEvent, { type: "question.response" }>,
+) {
+  const current = state.messages.find(
+    (message) => message.id === response.id,
+  )?.interactive;
+  return current?.kind === "question" ? { ...current, response } : undefined;
+}
+
+function interactiveApprovalText(
+  state: AppState,
+  response: Extract<RuntimeEvent, { type: "approval.response" }>,
+) {
+  const request = state.messages.find(
+    (message) => message.id === response.id,
+  )?.interactive;
+  const title =
+    request?.kind === "approval" ? request.request.title : "Approval";
+  return `${title}: ${approvalResponseText(response.decision, response.feedback)}`;
+}
+
+function interactiveQuestionText(
+  state: AppState,
+  response: Extract<RuntimeEvent, { type: "question.response" }>,
+) {
+  const request = state.messages.find(
+    (message) => message.id === response.id,
+  )?.interactive;
+  const title =
+    request?.kind === "question" ? request.request.title : "Question";
+  return `${title}: ${questionResponseText(response.answers, response.rejected)}`;
 }
 
 function appendStreamBlock(
@@ -1040,6 +1105,8 @@ function upsertBlock(
     if (block.providerPolicy !== extra.providerPolicy)
       block.providerPolicy = extra.providerPolicy;
     if (block.tool !== extra.tool) block.tool = extra.tool;
+    if (block.interactive !== extra.interactive)
+      block.interactive = extra.interactive;
     return;
   }
   state.messages.push({ id, role, text, status, ...extra });

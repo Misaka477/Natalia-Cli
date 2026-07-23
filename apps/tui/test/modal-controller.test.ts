@@ -194,6 +194,82 @@ test("state reducer advances queued /modal requests after keyboard responses", (
   expect(state.dialog).toBeUndefined();
 });
 
+test("interactive timeline blocks retain durable request context after a response", () => {
+  let state = structuredClone(initialState);
+  state = reduceState(state, {
+    type: "approval.request",
+    id: "turn_inline:write",
+    title: "Write file",
+    preview: "src/app.ts",
+  });
+  state = reduceState(state, {
+    type: "approval.response",
+    id: "turn_inline:write",
+    decision: "once",
+  });
+  state = reduceState(state, {
+    type: "question.request",
+    id: "turn_inline:choice",
+    title: "Choose strategy",
+    questions: [question("strategy", "Strategy")],
+  });
+  state = reduceState(state, {
+    type: "question.response",
+    id: "turn_inline:choice",
+    answers: [["A"]],
+  });
+
+  const approval = state.messages.find(
+    (message) => message.id === "turn_inline:write",
+  );
+  expect(approval?.interactive).toMatchObject({
+    kind: "approval",
+    request: { title: "Write file" },
+    response: { decision: "once" },
+  });
+  const questionBlock = state.messages.find(
+    (message) => message.id === "turn_inline:choice",
+  );
+  expect(questionBlock?.interactive).toMatchObject({
+    kind: "question",
+    request: { title: "Choose strategy" },
+    response: { answers: [["A"]] },
+  });
+});
+
+test("queued multi-question replies retain custom and multiple selections in timeline history", () => {
+  let state = structuredClone(initialState);
+  state = reduceState(state, {
+    type: "question.request",
+    id: "turn_choices:question",
+    title: "Choose options",
+    questions: [
+      question("single", "Single"),
+      { ...question("many", "Many"), multiple: true },
+    ],
+  });
+  state = reduceState(state, {
+    type: "approval.request",
+    id: "turn_approval:write",
+    title: "Write file",
+    preview: "src/app.ts",
+  });
+  state = reduceState(state, {
+    type: "question.response",
+    id: "turn_choices:question",
+    answers: [["custom answer"], ["A", "custom second"]],
+  });
+
+  expect(state.dialog).toBe("approval");
+  expect(
+    state.messages.find((message) => message.id === "turn_choices:question")
+      ?.interactive,
+  ).toMatchObject({
+    kind: "question",
+    response: { answers: [["custom answer"], ["A", "custom second"]] },
+  });
+});
+
 function question(id: string, header: string) {
   return {
     id,

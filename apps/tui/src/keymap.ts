@@ -25,7 +25,7 @@ export const moduleBoundaries = [
   "live smoke: submit a short prompt, then approve any write/shell/process tool action",
   "durability: /checkpoint, /checkpoints, /rollback <id> --dry-run",
   "control: /pause, /resume, Ctrl-C cancel, Ctrl-D exit on an empty composer",
-  "legacy Go remains a fallback only; it is not used by this TS7 TUI",
+  "TypeScript/Bun runtime is the only local execution path",
 ];
 
 export type ComposerKeyEvent = {

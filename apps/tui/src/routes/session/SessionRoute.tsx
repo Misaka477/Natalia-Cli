@@ -4,6 +4,7 @@ import {
   createSignal,
   For,
   onCleanup,
+  onMount,
   Show,
 } from "solid-js";
 import { SyntaxStyle, TextAttributes } from "@opentui/core";
@@ -23,8 +24,14 @@ import { timelineLayout } from "../../session-layout";
 import { useRouteController } from "../../context/route";
 import { useDialog } from "../../dialog/provider";
 import { Dialog } from "../../dialog/Dialog";
+import { DialogPrompt } from "../../dialog/DialogPrompt";
 import { PermissionPrompt } from "./permission";
 import { QuestionPrompt } from "./question";
+import {
+  TimelineVirtualizer,
+  groupTimelineBlocks,
+  type TimelineRange,
+} from "./timeline-virtualizer";
 
 const markdownSyntax = () =>
   SyntaxStyle.fromStyles({
@@ -45,17 +52,92 @@ export function SessionRoute(props: {
   toolPreviewLines?: number;
   showJumpToBottom?: boolean;
   onJumpToBottom?: () => void;
+  onMessageCopy?: (text: string) => void;
+  onMessageFork?: (turnID: string, prompt: string) => void;
   backend?: RuntimeClient;
   onExit?: () => void;
 }) {
   const { state, dispatch } = useAppState();
   const layout = () => timelineLayout(props.terminalWidth ?? 80);
   const modal = createMemo(() => activeModal(state.modal));
+  const virtualizer = new TimelineVirtualizer<MessageBlock>(4);
+  const [timelineRange, setTimelineRange] = createSignal<
+    TimelineRange<MessageBlock>
+  >({ items: [], top: 0, bottom: 0, total: 0 });
+  const renderedGroups = new Map<string, any>();
+  let timelineScroll: any;
+  let measuring = false;
+  let observedScrollTop = -1;
+
+  const viewportHeight = () => timelineScroll?.viewport?.height ?? 1;
+  const activeGroup = () =>
+    state.activeTurn ? `turn:${state.activeTurn}` : undefined;
+  const updateRange = (pinned: string[] = []) => {
+    if (!timelineScroll || timelineScroll.isDestroyed) return;
+    setTimelineRange(
+      virtualizer.range(
+        timelineScroll.scrollTop ?? 0,
+        viewportHeight(),
+        pinned,
+      ),
+    );
+  };
+  const measureRenderedGroups = () => {
+    if (measuring || !timelineScroll || timelineScroll.isDestroyed) return;
+    measuring = true;
+    queueMicrotask(() => {
+      measuring = false;
+      if (!timelineScroll || timelineScroll.isDestroyed) return;
+      const scrollTop = timelineScroll.scrollTop ?? 0;
+      if (scrollTop !== observedScrollTop) {
+        observedScrollTop = scrollTop;
+        updateRange(activeGroup() ? [activeGroup()!] : []);
+      }
+      let adjustment = 0;
+      for (const [key, element] of renderedGroups) {
+        if (!element || element.isDestroyed) continue;
+        const measured = virtualizer.measure(
+          key,
+          element.height ?? 1,
+          (timelineScroll.scrollTop ?? 0) + adjustment,
+          viewportHeight(),
+        );
+        adjustment += measured.adjustment;
+      }
+      if (adjustment) timelineScroll.scrollTop += adjustment;
+      observedScrollTop = timelineScroll.scrollTop ?? 0;
+      updateRange(activeGroup() ? [activeGroup()!] : []);
+    });
+  };
+
+  createEffect(() => {
+    const groups = groupTimelineBlocks(state.messages);
+    const scrollTop = timelineScroll?.scrollTop ?? 0;
+    const result = virtualizer.replace(groups, scrollTop, viewportHeight());
+    const visibleKeys = new Set(result.range.items.map((group) => group.key));
+    for (const key of renderedGroups.keys())
+      if (!visibleKeys.has(key)) renderedGroups.delete(key);
+    setTimelineRange(result.range);
+    if (result.adjustment && timelineScroll)
+      queueMicrotask(() => {
+        if (!timelineScroll || timelineScroll.isDestroyed) return;
+        timelineScroll.scrollTop += result.adjustment;
+        updateRange(activeGroup() ? [activeGroup()!] : []);
+      });
+    measureRenderedGroups();
+  });
+
+  onMount(() => {
+    const timer = setInterval(measureRenderedGroups, 50);
+    onCleanup(() => clearInterval(timer));
+  });
   return (
     <box flexGrow={1} minHeight={0} flexDirection="column" width="100%">
       <scrollbox
         ref={(r: any) => {
           if (props.scrollRef) props.scrollRef.current = r;
+          timelineScroll = r;
+          updateRange(activeGroup() ? [activeGroup()!] : []);
         }}
         flexGrow={1}
         stickyScroll={props.followBottom ?? true}
@@ -63,18 +145,35 @@ export function SessionRoute(props: {
         paddingLeft={layout().horizontalPadding}
         paddingRight={layout().horizontalPadding}
       >
-        <For each={state.messages}>
-          {(block) => (
-            <MessageBlockView
-              block={block}
-              density={props.density ?? "comfortable"}
-              toolDetails={props.toolDetails ?? "collapsed"}
-              diffStyle={props.diffStyle ?? "auto"}
-              terminalWidth={props.terminalWidth ?? 80}
-              toolPreviewLines={props.toolPreviewLines ?? 10}
-            />
+        <box height={timelineRange().top} flexShrink={0} />
+        <For each={timelineRange().items}>
+          {(group) => (
+            <box
+              flexDirection="column"
+              ref={(element: any) => {
+                renderedGroups.set(group.key, element);
+                measureRenderedGroups();
+              }}
+            >
+              <For each={group.items}>
+                {(block) => (
+                  <MessageBlockView
+                    block={block}
+                    backend={props.backend}
+                    onCopy={props.onMessageCopy}
+                    onFork={props.onMessageFork}
+                    density={props.density ?? "comfortable"}
+                    toolDetails={props.toolDetails ?? "collapsed"}
+                    diffStyle={props.diffStyle ?? "auto"}
+                    terminalWidth={props.terminalWidth ?? 80}
+                    toolPreviewLines={props.toolPreviewLines ?? 10}
+                  />
+                )}
+              </For>
+            </box>
           )}
         </For>
+        <box height={timelineRange().bottom} flexShrink={0} />
         <Show when={state.messages.length === 0}>
           <box
             flexDirection="column"
@@ -508,12 +607,19 @@ function ModelPTyPane(props: {
 
 function MessageBlockView(props: {
   block: MessageBlock;
+  backend?: RuntimeClient;
+  onCopy?: (text: string) => void;
+  onFork?: (turnID: string, prompt: string) => void;
   density: TuiPreferences["density"];
   toolDetails: TuiPreferences["toolDetails"];
   diffStyle: TuiPreferences["diffStyle"];
   terminalWidth: number;
   toolPreviewLines: number;
 }) {
+  if (props.block.interactive)
+    return (
+      <InlineInteractiveBlock block={props.block} backend={props.backend} />
+    );
   if (props.block.tool)
     return (
       <ToolBlockView
@@ -527,6 +633,7 @@ function MessageBlockView(props: {
   const isUser = props.block.role === "user";
   const isThinking = props.block.role === "thinking";
   const isAssistant = props.block.role === "assistant";
+  const isCopyable = isUser || isThinking || isAssistant;
   return (
     <box
       flexDirection="column"
@@ -557,8 +664,205 @@ function MessageBlockView(props: {
         props.block.providerPolicy === "hidden" ? (
           <text fg={darkTheme.warning}>provider-safe</text>
         ) : null}
+        <Show when={isCopyable && (props.onCopy || (isUser && props.onFork))}>
+          <box flexDirection="row" gap={1}>
+            <Show when={props.onCopy}>
+              <text
+                fg={darkTheme.muted}
+                onMouseUp={() => props.onCopy?.(props.block.text)}
+              >
+                copy
+              </text>
+            </Show>
+            <Show when={isUser && props.onFork}>
+              <text
+                fg={darkTheme.muted}
+                onMouseUp={() =>
+                  props.onFork?.(props.block.id, props.block.text)
+                }
+              >
+                fork
+              </text>
+            </Show>
+          </box>
+        </Show>
       </box>
       <BlockBody block={props.block} toolDetails={props.toolDetails} />
+    </box>
+  );
+}
+
+function InlineInteractiveBlock(props: {
+  block: MessageBlock;
+  backend?: RuntimeClient;
+}) {
+  const dialog = useDialog();
+  const interactive = () => props.block.interactive!;
+  const resolved = () => Boolean(interactive().response);
+  const approval = () => {
+    const value = interactive();
+    return value.kind === "approval" ? value : undefined;
+  };
+  const question = () => {
+    const value = interactive();
+    return value.kind === "question" ? value : undefined;
+  };
+  const [answers, setAnswers] = createSignal<string[][]>([]);
+  const answer = (index: number, value: string, multiple = false) => {
+    const next = [...answers()];
+    const current = next[index] ?? [];
+    next[index] = multiple
+      ? current.includes(value)
+        ? current.filter((item) => item !== value)
+        : [...current, value]
+      : [value];
+    setAnswers(next);
+  };
+  const respondApproval = (decision: "once" | "session" | "reject") => {
+    const value = interactive();
+    if (value.kind !== "approval" || resolved()) return;
+    props.backend?.respondApproval({ requestID: value.request.id, decision });
+  };
+  const respondQuestion = (rejected = false) => {
+    const value = interactive();
+    if (value.kind !== "question" || resolved()) return;
+    props.backend?.respondQuestion({
+      requestID: value.request.id,
+      answers: rejected
+        ? []
+        : (value.request.questions?.map((_, index) => answers()[index] ?? []) ??
+          []),
+      rejected,
+    });
+  };
+  const addCustomAnswer = (questionIndex: number, multiple: boolean) => {
+    void DialogPrompt.show(dialog, "Type your own answer", {
+      placeholder: "Enter answer",
+    }).then((value) => {
+      if (value === null || !value.trim() || resolved()) return;
+      answer(questionIndex, value.trim(), multiple);
+    });
+  };
+
+  return (
+    <box
+      flexDirection="column"
+      border={["left"]}
+      borderColor={
+        interactive().kind === "approval" ? darkTheme.warning : darkTheme.accent
+      }
+      paddingLeft={1}
+      marginTop={1}
+    >
+      <Show when={interactive().kind === "approval"}>
+        <box flexDirection="column" gap={1}>
+          <text fg={darkTheme.warning} attributes={TextAttributes.BOLD}>
+            △ Permission {resolved() ? props.block.status : "required"}
+          </text>
+          <text fg={darkTheme.text} wrapMode="word">
+            {approval()?.request.title}
+          </text>
+          <text fg={darkTheme.muted} wrapMode="word">
+            {approval()?.request.preview}
+          </text>
+          <Show when={approval()?.response}>
+            <text fg={darkTheme.muted}>{props.block.text}</text>
+          </Show>
+          <Show when={!resolved()}>
+            <box flexDirection="row" gap={1}>
+              <InlineAction
+                label="Allow once"
+                onSelect={() => respondApproval("once")}
+              />
+              <InlineAction
+                label="Allow session"
+                onSelect={() => respondApproval("session")}
+              />
+              <InlineAction
+                label="Reject"
+                onSelect={() => respondApproval("reject")}
+              />
+            </box>
+          </Show>
+        </box>
+      </Show>
+      <Show when={interactive().kind === "question"}>
+        <box flexDirection="column" gap={1}>
+          <text fg={darkTheme.accent} attributes={TextAttributes.BOLD}>
+            ? {resolved() ? props.block.status : "Question"}
+          </text>
+          <text fg={darkTheme.text} wrapMode="word">
+            {question()?.request.title}
+          </text>
+          <Show when={!resolved()}>
+            <For each={question()?.request.questions ?? []}>
+              {(question, questionIndex) => (
+                <box flexDirection="column" paddingLeft={1}>
+                  <text fg={darkTheme.text} wrapMode="word">
+                    {question.question}
+                  </text>
+                  <For each={question.options}>
+                    {(option) => (
+                      <InlineAction
+                        label={`${(answers()[questionIndex()] ?? []).includes(option.label) ? "[x]" : "[ ]"} ${option.label}`}
+                        detail={option.description}
+                        onSelect={() =>
+                          answer(
+                            questionIndex(),
+                            option.label,
+                            question.multiple,
+                          )
+                        }
+                      />
+                    )}
+                  </For>
+                  <Show when={question.custom !== false}>
+                    <InlineAction
+                      label={`[ ] Type your own answer${(answers()[questionIndex()] ?? []).some((answer) => !question.options.some((option) => option.label === answer)) ? " (added)" : ""}`}
+                      onSelect={() =>
+                        addCustomAnswer(
+                          questionIndex(),
+                          question.multiple === true,
+                        )
+                      }
+                    />
+                  </Show>
+                </box>
+              )}
+            </For>
+            <box flexDirection="row" gap={1}>
+              <InlineAction
+                label="Submit answers"
+                onSelect={() => respondQuestion()}
+              />
+              <InlineAction
+                label="Reject"
+                onSelect={() => respondQuestion(true)}
+              />
+            </box>
+          </Show>
+          <Show when={resolved()}>
+            <text fg={darkTheme.muted}>{props.block.text}</text>
+          </Show>
+        </box>
+      </Show>
+    </box>
+  );
+}
+
+function InlineAction(props: {
+  label: string;
+  detail?: string;
+  onSelect(): void;
+}) {
+  return (
+    <box flexDirection="column" onMouseUp={props.onSelect} paddingRight={1}>
+      <text fg={darkTheme.accent}>{props.label}</text>
+      <Show when={props.detail}>
+        <text fg={darkTheme.muted} paddingLeft={2} wrapMode="word">
+          {props.detail}
+        </text>
+      </Show>
     </box>
   );
 }

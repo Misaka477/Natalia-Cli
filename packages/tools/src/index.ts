@@ -82,8 +82,17 @@ export type ToolExecutionContext = {
   onSandboxEvent?: (event: { type: string; [key: string]: unknown }) => void;
   settings?: {
     webSearchEndpoint?: string;
+    webSearchProviderPriority?: string[];
     browserBinary?: string;
+    browserEnabled?: boolean;
+    browserUserAgent?: string;
+    browserHeaders?: Record<string, string>;
+    browserPersistentProfile?: boolean;
+    browserProfileDir?: string;
+    browserLocale?: string;
+    browserTimezone?: string;
     allowedHosts?: string[];
+    allowedSchemes?: string[];
     allowLocalhost?: boolean;
     allowPrivate?: boolean;
     deniedHosts?: string[];
@@ -1883,10 +1892,13 @@ function webSearchTool(): RuntimeTool {
     },
     async execute(input, context) {
       const args = requireObject(input);
-      const endpoint =
-        context.settings?.webSearchEndpoint ??
-        process.env.NATALIA_WEB_SEARCH_URL ??
-        "https://html.duckduckgo.com/html/";
+      const search = selectWebSearchSource({
+        endpoint:
+          context.settings?.webSearchEndpoint ??
+          process.env.NATALIA_WEB_SEARCH_URL,
+        priority: context.settings?.webSearchProviderPriority,
+      });
+      const endpoint = search.endpoint;
       const url = new URL(endpoint);
       url.searchParams.set("q", requireString(args.query, "query"));
       assertNetworkURL(url.href, context);
@@ -1901,10 +1913,39 @@ function webSearchTool(): RuntimeTool {
       return [
         `status=${response.status}`,
         `content-type=${response.headers.get("content-type") ?? "unknown"}`,
-        `source=${context.settings?.webSearchEndpoint || process.env.NATALIA_WEB_SEARCH_URL ? "configured endpoint" : "DuckDuckGo HTML"}`,
+        `source=${search.label}`,
         text.slice(0, numberOr(args.maxBytes, 20000)),
       ].join("\n");
     },
+  };
+}
+
+function selectWebSearchSource(input: {
+  endpoint?: string;
+  priority?: string[];
+}) {
+  const priority = input.priority?.length
+    ? input.priority
+    : input.endpoint
+      ? ["configured", "duckduckgo"]
+      : ["duckduckgo"];
+  for (const provider of priority) {
+    if (provider === "configured" && input.endpoint)
+      return { endpoint: input.endpoint, label: "configured endpoint" };
+    if (provider === "duckduckgo")
+      return {
+        endpoint: "https://html.duckduckgo.com/html/",
+        label: "DuckDuckGo HTML",
+      };
+  }
+  if (input.endpoint)
+    return {
+      endpoint: input.endpoint,
+      label: "configured endpoint (priority fallback)",
+    };
+  return {
+    endpoint: "https://html.duckduckgo.com/html/",
+    label: "DuckDuckGo HTML (priority fallback)",
   };
 }
 
@@ -1955,13 +1996,20 @@ function browserVisitTool(): RuntimeTool {
       required: ["url"],
       additionalProperties: false,
     },
-    async execute(input) {
+    async execute(input, context) {
+      if (context.settings?.browserEnabled === false)
+        throw new Error("browser tools are disabled by runtime configuration");
       const args = requireObject(input);
       const url = requireString(args.url, "url");
       if (!/^https?:\/\//iu.test(url))
         throw new Error("browser_visit requires http(s) URL");
+      assertNetworkURL(url, context);
       const response = await fetch(url, {
-        headers: { "user-agent": "Natalia-TS7-Browser/0.1" },
+        headers: {
+          "user-agent":
+            context.settings?.browserUserAgent || "Natalia-TS7-Browser/0.1",
+          ...context.settings?.browserHeaders,
+        },
       });
       const html = await response.text();
       return JSON.stringify(
@@ -2004,6 +2052,8 @@ function browserScreenshotTool(): RuntimeTool {
       additionalProperties: false,
     },
     async execute(input, context) {
+      if (context.settings?.browserEnabled === false)
+        throw new Error("browser tools are disabled by runtime configuration");
       const args = requireObject(input);
       const url = requireString(args.url, "url");
       const output = workspacePath(
@@ -2012,6 +2062,7 @@ function browserScreenshotTool(): RuntimeTool {
       );
       await mkdir(dirname(output), { recursive: true });
       const chrome =
+        context.settings?.browserBinary ??
         process.env.NATALIA_CHROME_BIN ??
         (await firstExecutable([
           "chromium",
@@ -2022,8 +2073,20 @@ function browserScreenshotTool(): RuntimeTool {
         throw new Error(
           "browser_screenshot requires Chrome/Chromium; set NATALIA_CHROME_BIN to enable the TS native browser adapter",
         );
+      assertNetworkURL(url, context);
+      const profile = context.settings?.browserPersistentProfile
+        ? context.settings.browserProfileDir
+          ? ` --user-data-dir=${shellQuote(workspacePath(context.workspaceRoot, context.settings.browserProfileDir))}`
+          : ""
+        : "";
+      const locale = context.settings?.browserLocale
+        ? ` --lang=${shellQuote(context.settings.browserLocale)}`
+        : "";
+      const timezone = context.settings?.browserTimezone
+        ? ` --timezone=${shellQuote(context.settings.browserTimezone)}`
+        : "";
       await runShell(
-        `${shellQuote(chrome)} --headless=new --disable-gpu --no-sandbox --window-size=${Math.trunc(numberOr(args.width, 1280))},${Math.trunc(numberOr(args.height, 720))} --screenshot=${shellQuote(output)} ${shellQuote(url)}`,
+        `${shellQuote(chrome)} --headless=new --disable-gpu --no-sandbox --window-size=${Math.trunc(numberOr(args.width, 1280))},${Math.trunc(numberOr(args.height, 720))}${profile}${locale}${timezone} --screenshot=${shellQuote(output)} ${shellQuote(url)}`,
         context,
         60,
       );
@@ -2139,6 +2202,9 @@ async function runShell(
 
 function assertNetworkURL(input: string, context: ToolExecutionContext) {
   const url = new URL(input);
+  const allowedSchemes = context.settings?.allowedSchemes ?? ["https", "http"];
+  if (!allowedSchemes.includes(url.protocol.slice(0, -1)))
+    throw new Error(`network scheme is not allowed: ${url.protocol}`);
   const host = url.hostname.toLowerCase();
   const allowed = context.settings?.allowedHosts ?? [];
   const denied = context.settings?.deniedHosts ?? [];

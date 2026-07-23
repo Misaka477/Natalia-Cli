@@ -14,7 +14,8 @@ console.log(
       target,
       entrypoint,
       install: "npx bun apps/cli/src/main.ts",
-      rollback: "legacy Go launcher remains installed until M13 approval",
+      rollback:
+        "TS-only release; restore the prior repository revision if rollback is required",
       releaseReady: true,
     },
     null,

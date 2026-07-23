@@ -229,7 +229,7 @@ export const instructionConfigSchema = z.object({
 
 export const webSearchConfigSchema = z.object({
   endpoint: z.string().url().nullable().default(null),
-  providerPriority: z.array(z.string()).default(["duckduckgo"]),
+  providerPriority: z.array(z.string()).default(["configured", "duckduckgo"]),
 });
 
 export const browserConfigSchema = z.object({

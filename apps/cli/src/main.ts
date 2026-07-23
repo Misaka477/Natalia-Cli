@@ -1,9 +1,3 @@
-import {
-  defaultConfigPath,
-  exportLegacyGoWorkspaceBundle,
-  importLegacyGoWorkspaceBundle,
-  rollbackLegacyGoWorkspaceBundle,
-} from "@natalia/config";
 import { createRealRuntimeClient } from "@natalia/client";
 import type { RuntimeEvent } from "@natalia/contracts";
 import {
@@ -35,7 +29,8 @@ import {
 } from "./index";
 
 const argv = process.argv.slice(2);
-const configPath = process.env.NATALIA_CONFIG ?? defaultConfigPath();
+const configPath =
+  process.env.NATALIA_CONFIG ?? `${process.cwd()}/.natalia/config.json`;
 const subcommand = argv[0];
 
 switch (subcommand) {
@@ -344,58 +339,6 @@ switch (subcommand) {
             ? Number(valueAfter(argv, "--limit"))
             : undefined,
         }),
-        null,
-        2,
-      ),
-    );
-    break;
-  }
-
-  case "export-legacy":
-  case "--export-legacy": {
-    const legacyRoot =
-      valueAfter(argv, "--export-legacy") ?? valueAfter(argv, "export-legacy");
-    const output = valueAfter(argv, "--out");
-    if (!legacyRoot || !output)
-      throw new Error("export-legacy requires --out <bundle.json>");
-    console.log(
-      JSON.stringify(
-        await exportLegacyGoWorkspaceBundle({ legacyRoot, outputPath: output }),
-        null,
-        2,
-      ),
-    );
-    break;
-  }
-
-  case "import-legacy":
-  case "--import-legacy-bundle": {
-    const bundlePath =
-      valueAfter(argv, "--import-legacy-bundle") ??
-      valueAfter(argv, "import-legacy", 1);
-    if (!bundlePath) throw new Error("import-legacy requires a bundle path");
-    console.log(
-      JSON.stringify(
-        await importLegacyGoWorkspaceBundle({
-          bundlePath,
-          targetRoot: valueAfter(argv, "--target"),
-        }),
-        null,
-        2,
-      ),
-    );
-    break;
-  }
-
-  case "rollback-legacy":
-  case "--rollback-legacy-bundle": {
-    const targetRoot =
-      valueAfter(argv, "--rollback-legacy-bundle") ??
-      valueAfter(argv, "rollback-legacy", 1);
-    if (!targetRoot) throw new Error("rollback-legacy requires a target root");
-    console.log(
-      JSON.stringify(
-        await rollbackLegacyGoWorkspaceBundle({ targetRoot }),
         null,
         2,
       ),

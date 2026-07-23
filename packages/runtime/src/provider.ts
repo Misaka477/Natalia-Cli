@@ -1,6 +1,5 @@
 import type { ContextEntry } from "./context";
 import { providerError, providerErrorFromHttp } from "./errors";
-import { discoverLegacyProviderConfig } from "@natalia/config";
 
 export type ProviderMessage = {
   role: "system" | "user" | "assistant" | "tool";
@@ -480,41 +479,6 @@ export function providerFromEnvironment(env = process.env) {
       env.OPENAI_BASE_URL,
     provider: env.NATALIA_PROVIDER ?? "openai-compatible",
   });
-}
-
-export async function providerFromLegacyGoConfig(
-  input: {
-    configPath?: string;
-    home?: string;
-  } = {},
-) {
-  const discovery = await discoverLegacyProviderConfig(input);
-  if (discovery.status !== "found") return discovery;
-  return {
-    status: "found" as const,
-    configPath: discovery.config.configPath,
-    profile: {
-      workDir: discovery.config.workDir,
-      autoApprove: discovery.config.autoApprove,
-      maxSteps: discovery.config.maxSteps,
-    },
-    provider: providerFromKind({
-      providerName: discovery.config.providerName,
-      apiKey: discovery.config.apiKey,
-      model: discovery.config.model,
-      baseURL: discovery.config.baseURL,
-      authHeader: discovery.config.authHeader,
-      customHeaders: discovery.config.customHeaders,
-      temperature: discovery.config.temperature,
-      maxTokens: discovery.config.maxTokens,
-      topP: discovery.config.topP,
-      reasoningEffort: discovery.config.reasoningEffort,
-      thinkingEnabled: discovery.config.thinkingEnabled,
-      timeoutMs: discovery.config.timeoutSec
-        ? discovery.config.timeoutSec * 1000
-        : undefined,
-    }),
-  };
 }
 
 export function providerFromKind(

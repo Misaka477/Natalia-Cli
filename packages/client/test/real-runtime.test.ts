@@ -501,6 +501,12 @@ test("runtime sends a baseline system prompt without configured agent instructio
     "Be warm, perceptive, and recognizably yourself",
   );
   expect(String(requests[0]?.messages[0]?.content)).toContain(
+    "Natalia is a gentle, cute, and thoughtful girl",
+  );
+  expect(String(requests[0]?.messages[0]?.content)).toContain(
+    "Do not turn a simple personal question into a detached disclaimer",
+  );
+  expect(String(requests[0]?.messages[0]?.content)).toContain(
     `Working directory: ${root}`,
   );
   expect(String(requests[0]?.messages[0]?.content)).toContain(
@@ -2630,6 +2636,13 @@ test("restart resumes a pending queued input but does not replay interrupted pro
       createdAt: "2026-07-21T00:00:00.000Z",
       cancelled: false,
       resumable: true,
+      metadata: {
+        inFlightOperation: {
+          kind: "provider_dispatch",
+          turnID: "turn_interrupted",
+          startedAt: "2026-07-21T00:00:01.000Z",
+        },
+      },
       events: [
         {
           type: "turn.submitted",
@@ -2669,11 +2682,126 @@ test("restart resumes a pending queued input but does not replay interrupted pro
   reopened.start((event) => events.push(event));
   for (let index = 0; index < 50 && !calls; index++) await Bun.sleep(1);
   expect(calls).toBe(1);
+  for (
+    let index = 0;
+    index < 50 &&
+    !events.some(
+      (event) => event.type === "turn.finished" && event.id === "turn_queued",
+    );
+    index++
+  )
+    await Bun.sleep(1);
   expect(
     events.some(
       (event) =>
         event.type === "diagnostic" &&
-        event.message.includes("incomplete provider work"),
+        event.message.includes("provider dispatch") &&
+        event.message.includes("cannot be replayed"),
+    ),
+  ).toBe(true);
+  const persisted = JSON.parse(
+    await readFile(
+      join(root, ".natalia", "sessions", "ses_ts7_restart_queue.json"),
+      "utf8",
+    ),
+  );
+  expect(persisted.metadata?.inFlightOperation).toBeUndefined();
+});
+
+test("restart safely settles a durable tool execution window without replaying its side effect", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-ts7-restart-tool-window-"),
+  );
+  await mkdir(join(root, ".natalia", "sessions"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "sessions", "ses_ts7_restart_tool_window.json"),
+    JSON.stringify({
+      id: "ses_ts7_restart_tool_window",
+      title: "Interrupted tool",
+      createdAt: "2026-07-21T00:00:00.000Z",
+      cancelled: false,
+      resumable: true,
+      metadata: {
+        inFlightOperation: {
+          kind: "tool_execution",
+          turnID: "turn_interrupted_tool",
+          toolName: "write_file",
+          toolCallID: "call_write",
+          startedAt: "2026-07-21T00:00:01.000Z",
+        },
+      },
+      events: [
+        {
+          type: "turn.submitted",
+          id: "turn_interrupted_tool",
+          text: "write this once",
+          byteLength: 15,
+          lineCount: 1,
+          sha256: "test",
+        },
+        {
+          type: "tool.update",
+          id: "turn_interrupted_tool:call_write",
+          name: "write_file",
+          callID: "call_write",
+          status: "running",
+          summary: "running",
+          startedAt: 1,
+        },
+      ],
+      inbox: [
+        {
+          id: "turn_queued_after_tool",
+          sessionID: "ses_ts7_restart_tool_window",
+          text: "safe queued",
+          delivery: "queue",
+          admittedAt: "2026-07-21T00:00:00.000Z",
+        },
+      ],
+    }),
+  );
+
+  const events: RuntimeEvent[] = [];
+  let calls = 0;
+  const reopened = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_restart_tool_window",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        calls++;
+        yield { type: "done" as const };
+      },
+    },
+  });
+  reopened.start((event) => events.push(event));
+  for (let index = 0; index < 50 && !calls; index++) await Bun.sleep(1);
+  expect(calls).toBe(1);
+  for (
+    let index = 0;
+    index < 50 &&
+    !events.some(
+      (event) =>
+        event.type === "turn.finished" && event.id === "turn_queued_after_tool",
+    );
+    index++
+  )
+    await Bun.sleep(1);
+  expect(
+    events.some(
+      (event) =>
+        event.type === "turn.finished" &&
+        event.id === "turn_interrupted_tool" &&
+        event.stopReason === "error",
+    ),
+  ).toBe(true);
+  expect(
+    events.some(
+      (event) =>
+        event.type === "diagnostic" &&
+        event.message.includes("tool execution") &&
+        event.message.includes("cannot be replayed"),
     ),
   ).toBe(true);
 });
@@ -2930,10 +3058,27 @@ test("restart projects unresolved interactive requests from durable events", asy
   });
   client.respondApproval({ requestID: "approval_open", decision: "once" });
   client.respondQuestion({ requestID: "question_open", answers: [["answer"]] });
+  client.respondApproval({ requestID: "approval_open", decision: "reject" });
+  client.respondQuestion({ requestID: "question_open", answers: [["late"]] });
   expect(await client.pendingInteractive!()).toEqual({
     approvals: [],
     questions: [],
   });
+  const history = await client.history!({ limit: 100 });
+  expect(
+    history.events.filter(
+      (entry) =>
+        entry.event.type === "approval.response" &&
+        entry.event.id === "approval_open",
+    ),
+  ).toHaveLength(1);
+  expect(
+    history.events.filter(
+      (entry) =>
+        entry.event.type === "question.response" &&
+        entry.event.id === "question_open",
+    ),
+  ).toHaveLength(1);
 });
 
 test("restart durably rejects orphaned interactive requests from a crashed turn", async () => {
@@ -3157,7 +3302,6 @@ test("real runtime client provides provider-independent doctor and help commands
   const client = createRealRuntimeClient({
     workspaceRoot: root,
     sessionID: "ses_ts7_doctor",
-    legacyConfigPath: join(root, "no-legacy-config.yaml"),
   });
   client.start((event) => events.push(event));
   await waitFor(() => events.some((event) => event.type === "session.ready"));
@@ -3171,41 +3315,6 @@ test("real runtime client provides provider-independent doctor and help commands
   expect(output).toContain("Natalia TS7 runtime doctor");
   expect(output).toContain("provider: not configured");
   expect(output).toContain("/checkpoint");
-});
-
-test("real runtime client falls back to active legacy Go provider config without leaking key", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-legacy-provider-"));
-  const configPath = join(root, "legacy-config.yaml");
-  await writeFile(
-    configPath,
-    [
-      "default_profile: default",
-      "providers:",
-      "  legacy:",
-      "    base_url: https://legacy.example/v1",
-      "    api_key: legacy-ts7-secret",
-      "profiles:",
-      "  default:",
-      "    provider: legacy",
-      "    model: legacy-model",
-    ].join("\n"),
-  );
-  const events: RuntimeEvent[] = [];
-  process.env.NATALIA_LEGACY_FALLBACK = "1";
-  const client = createRealRuntimeClient({
-    workspaceRoot: root,
-    sessionID: "ses_ts7_legacy_provider",
-    legacyConfigPath: configPath,
-  });
-  client.start((event) => events.push(event));
-  await waitFor(() => events.some((event) => event.type === "session.ready"));
-  await client.submit("/doctor");
-  delete process.env.NATALIA_LEGACY_FALLBACK;
-
-  const serialized = JSON.stringify(events);
-  expect(serialized).toContain("legacy_go_config");
-  expect(serialized).toContain("legacy/legacy-model");
-  expect(serialized).not.toContain("legacy-ts7-secret");
 });
 
 test("real runtime client records provider usage checkpoints", async () => {

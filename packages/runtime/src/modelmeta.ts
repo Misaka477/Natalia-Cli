@@ -1,11 +1,17 @@
-import { keyIdentity } from "@natalia/config";
-
 export type ContextWindowSource =
   | "config"
   | "provider_metadata"
   | "provider_detail"
   | "known_catalog"
   | "fallback";
+
+function keyIdentity(apiKey?: string) {
+  if (!apiKey) return "no-key";
+  return new Bun.CryptoHasher("sha256")
+    .update(apiKey)
+    .digest("hex")
+    .slice(0, 12);
+}
 
 export type ContextWindowConfidence = "high" | "medium" | "low";
 

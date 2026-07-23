@@ -1,4 +1,7 @@
 import { expect, test } from "bun:test";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type {
   RuntimeClient,
   RuntimeEvent,
@@ -499,3 +502,125 @@ test("HTTP transport returns JSON-RPC errors for malformed request bodies", asyn
     server.stop(true);
   }
 });
+
+test("native RPC serves the same authenticated contract over a Unix socket", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-transport-unix-"));
+  const socket = join(root, "runtime.sock");
+  const server = createRuntimeHttpServer({
+    client: transportClient(),
+    token: "unix-token",
+    unix: socket,
+  });
+  try {
+    expect(server.url).toBe(`unix://${socket}`);
+    const response = await fetch("http://localhost/rpc", {
+      unix: socket,
+      method: "POST",
+      headers: {
+        authorization: "Bearer unix-token",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "prompt",
+        params: { text: "unix transport" },
+      }),
+    });
+    expect(response.status).toBe(200);
+    expect(
+      (await response.json()) as { result: { text: string } },
+    ).toMatchObject({ result: { text: "unix transport" } });
+  } finally {
+    server.stop(true);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("native RPC serves the same authenticated contract over temporary TLS", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-transport-tls-"));
+  const keyPath = join(root, "key.pem");
+  const certPath = join(root, "cert.pem");
+  const openssl = Bun.which("openssl");
+  if (!openssl) {
+    await rm(root, { recursive: true, force: true });
+    return;
+  }
+  const process = Bun.spawn(
+    [
+      openssl,
+      "req",
+      "-x509",
+      "-newkey",
+      "rsa:2048",
+      "-nodes",
+      "-keyout",
+      keyPath,
+      "-out",
+      certPath,
+      "-subj",
+      "/CN=127.0.0.1",
+      "-days",
+      "1",
+    ],
+    { stdout: "ignore", stderr: "ignore" },
+  );
+  if ((await process.exited) !== 0) {
+    await rm(root, { recursive: true, force: true });
+    throw new Error("openssl could not create a temporary TLS certificate");
+  }
+  const server = createRuntimeHttpServer({
+    client: transportClient(),
+    token: "tls-token",
+    tls: {
+      key: await readFile(keyPath, "utf8"),
+      cert: await readFile(certPath, "utf8"),
+    },
+  });
+  try {
+    expect(server.url.startsWith("https://")).toBe(true);
+    const response = await fetch(`${server.url}/rpc`, {
+      tls: { rejectUnauthorized: false },
+      method: "POST",
+      headers: {
+        authorization: "Bearer tls-token",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "prompt",
+        params: { text: "tls transport" },
+      }),
+    });
+    expect(response.status).toBe(200);
+    expect(
+      (await response.json()) as { result: { text: string } },
+    ).toMatchObject({ result: { text: "tls transport" } });
+  } finally {
+    server.stop(true);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+function transportClient(): RuntimeClient {
+  return {
+    start() {},
+    async submit(text) {
+      return {
+        type: "turn.submitted",
+        id: "turn_transport",
+        text,
+        byteLength: text.length,
+        lineCount: 1,
+        sha256: "test",
+      };
+    },
+    cancel() {},
+    snapshot: () => ({ type: "snapshot.created", id: "snap", files: [] }),
+    diagnostic() {},
+    lastSubmission: () => undefined,
+    respondApproval() {},
+    respondQuestion() {},
+  };
+}

@@ -31,7 +31,6 @@ import {
   contextEntriesToProviderMessages,
   providerError,
   providerFromKind,
-  providerFromLegacyGoConfig,
   type ProviderMessage,
   type ProviderToolCall,
   providerFromEnvironment,
@@ -62,6 +61,7 @@ import {
   settleInterruptedTurns,
   modelVisibleEvents,
   sessionRunCoordinator,
+  type DurableInFlightOperation,
   type SessionRecord,
 } from "@natalia/session";
 import {
@@ -87,7 +87,7 @@ import {
 import { SubagentRegistry } from "@natalia/subagent";
 import { InteractivePTYRegistry } from "@natalia/pty";
 import { WorkspaceSandboxManager } from "@natalia/sandbox";
-import { loadLegacyMCPTools, loadNativeMCPTools } from "@natalia/mcp";
+import { loadNativeMCPTools } from "@natalia/mcp";
 import { createPluginRegistry, loadLocalPlugins } from "@natalia/plugin";
 import {
   createToolPolicyHookLayer,
@@ -117,7 +117,6 @@ export type RealRuntimeClientOptions = {
   provider?: StreamingProvider;
   tools?: ToolRegistry;
   permissionMode?: "ask" | "auto" | "read_only";
-  legacyConfigPath?: string;
   toolPolicy?: ToolPolicy;
   hooks?: ToolHooks;
 };
@@ -134,7 +133,6 @@ export function createRealRuntimeClient(
     | "explicit"
     | "environment"
     | "ts_config"
-    | "legacy_go_config"
     | "unconfigured" = options.provider
     ? "explicit"
     : provider
@@ -289,7 +287,7 @@ export function createRealRuntimeClient(
             type: "diagnostic",
             level: "warning",
             message:
-              "TS config has no complete provider/model/API-key selection; trying environment and legacy discovery.",
+              "TS config has no complete provider/model/API-key selection; configure a provider or environment credential.",
           });
         }
       }
@@ -300,37 +298,6 @@ export function createRealRuntimeClient(
         level: "warning",
         message: `TS config was not used: ${error instanceof Error ? error.message : String(error)}`,
       });
-    }
-    if (!provider && process.env.NATALIA_LEGACY_FALLBACK) {
-      // Legacy Go config fallback: only when explicit env var is set
-      const legacy = await providerFromLegacyGoConfig({
-        configPath:
-          options.legacyConfigPath ?? process.env.NATALIA_LEGACY_CONFIG_PATH,
-      });
-      if (legacy.status === "found") {
-        provider = legacy.provider;
-        providerSource = "legacy_go_config";
-        if (!options.workspaceRoot && legacy.profile.workDir)
-          workspaceRoot = resolve(legacy.profile.workDir);
-        if (
-          !options.permissionMode &&
-          legacy.profile.autoApprove === "just_do_it"
-        )
-          permissionMode = "auto";
-        if (legacy.profile.maxSteps && legacy.profile.maxSteps > 0)
-          maxSteps = legacy.profile.maxSteps;
-        publish({
-          type: "diagnostic",
-          level: "info",
-          message: `Loaded active provider settings from legacy Go config at ${legacy.configPath}; API key remains in memory only.`,
-        });
-      } else if (legacy.status === "invalid") {
-        publish({
-          type: "diagnostic",
-          level: "warning",
-          message: `Legacy Go provider config was not used: ${legacy.message}`,
-        });
-      }
     }
     cleanupWorkspaceFiles = await watchWorkspaceFiles(
       workspaceRoot,
@@ -508,24 +475,6 @@ export function createRealRuntimeClient(
           message: `Loaded ${nativeMCP.loaded} native MCP tool(s) from TS config.`,
         });
     }
-    const mcp = await loadLegacyMCPTools({
-      registry: tools,
-      configPath:
-        options.legacyConfigPath ?? process.env.NATALIA_LEGACY_CONFIG_PATH,
-      workspaceRoot,
-      onDiagnostic: (message: string) =>
-        publish({ type: "diagnostic", level: "info", message }),
-    });
-    cleanupMCP.push(mcp.close);
-    mcpAccess.push(mcp);
-    for (const [server, status] of Object.entries(mcp.statuses))
-      publish({ type: "mcp.status", server, ...status });
-    if (mcp.loaded > 0)
-      publish({
-        type: "diagnostic",
-        level: "info",
-        message: `Loaded ${mcp.loaded} native MCP tool(s) from legacy Go config without launching Go runtime.`,
-      });
     plugins = createPluginRegistry({
       tools,
       readOnly: tsRuntimeConfig?.plugins.readOnly,
@@ -592,14 +541,29 @@ export function createRealRuntimeClient(
         message: `attachment cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
       }),
     );
+    const interruptedOperation = session.metadata?.inFlightOperation;
     const interrupted = settleInterruptedTurns(session);
-    if (interrupted.length) {
+    const operationTurnWasInterrupted = Boolean(
+      interruptedOperation &&
+        interrupted.some(
+          (event) =>
+            event.type === "turn.finished" &&
+            event.id === interruptedOperation.turnID,
+        ),
+    );
+    if (interruptedOperation) {
+      delete session.metadata?.inFlightOperation;
+      sqliteStore?.updateMetadata(sessionID, { inFlightOperation: undefined });
+    }
+    if (interrupted.length || interruptedOperation) {
       await sessionStore.save(session);
       sqliteStore?.appendEvents(sessionID, interrupted);
       publish({
         type: "diagnostic",
         level: "warning",
-        message: `previous process stopped during ${interrupted.filter((event) => event.type === "turn.finished").length} active turn(s); unresolved interactive requests were rejected because incomplete provider work cannot be replayed`,
+        message: operationTurnWasInterrupted
+          ? `previous process stopped during ${interruptedOperation!.kind === "provider_dispatch" ? "provider dispatch" : "tool execution"}; the operation was safely settled as an error and cannot be replayed without an idempotency contract`
+          : `previous process stopped during ${interrupted.filter((event) => event.type === "turn.finished").length} active turn(s); unresolved interactive requests were rejected because incomplete provider work cannot be replayed`,
       });
     }
     const projection = projectSession(session);
@@ -927,6 +891,31 @@ export function createRealRuntimeClient(
     }
     plugins?.dispatch(event);
     sink?.(event);
+  }
+
+  async function setInFlightOperation(
+    operation: DurableInFlightOperation | undefined,
+  ) {
+    if (!session) return;
+    session.metadata = { ...session.metadata };
+    if (operation) session.metadata.inFlightOperation = operation;
+    else delete session.metadata.inFlightOperation;
+    const snapshot = structuredClone(session);
+    sessionPersistence = sessionPersistence
+      .then(async () => {
+        sqliteStore?.updateMetadata(sessionID, {
+          inFlightOperation: operation,
+        });
+        await sessionStore.save(snapshot);
+      })
+      .catch((error) =>
+        publish({
+          type: "diagnostic",
+          level: "warning",
+          message: `in-flight operation audit persistence failed: ${error instanceof Error ? error.message : String(error)}`,
+        }),
+      );
+    await sessionPersistence;
   }
 
   async function runtimeStatusSnapshot() {
@@ -1634,6 +1623,14 @@ export function createRealRuntimeClient(
       return lastSubmitted;
     },
     respondApproval(response) {
+      if (!isPendingInteractiveRequest(response.requestID, "approval")) {
+        publish({
+          type: "diagnostic",
+          level: "warning",
+          message: "ignored approval response for a non-pending request",
+        });
+        return;
+      }
       publish({
         type: "approval.response",
         id: response.requestID,
@@ -1649,6 +1646,14 @@ export function createRealRuntimeClient(
       approvalWaiters.get(response.requestID)?.(response);
     },
     respondQuestion(response) {
+      if (!isPendingInteractiveRequest(response.requestID, "question")) {
+        publish({
+          type: "diagnostic",
+          level: "warning",
+          message: "ignored question response for a non-pending request",
+        });
+        return;
+      }
       publish({
         type: "question.response",
         id: response.requestID,
@@ -1659,6 +1664,16 @@ export function createRealRuntimeClient(
       questionWaiters.get(response.requestID)?.(response);
     },
   };
+
+  function isPendingInteractiveRequest(
+    id: string,
+    kind: "approval" | "question",
+  ) {
+    const pending = projectInteractiveRequests(session?.events ?? []);
+    return kind === "approval"
+      ? pending.approvals.some((request) => request.id === id)
+      : pending.questions.some((request) => request.id === id);
+  }
 
   async function handleCommand(id: string, text: string) {
     const trimmed = text.trim();
@@ -1697,7 +1712,7 @@ export function createRealRuntimeClient(
           `skills: ${skillRegistry?.list().length ?? 0}`,
           provider
             ? "provider check: configured; submit a short prompt to verify live streaming"
-            : "provider check: set NATALIA_OPENAI_API_KEY (or OPENAI_API_KEY), or configure the active Go profile at ~/.config/natalia-cli/config.yaml, then restart the TUI",
+            : "provider check: set NATALIA_OPENAI_API_KEY (or OPENAI_API_KEY), or configure a provider in .natalia/config.json, then restart the TUI",
           "safety: write/shell/process actions require approval unless permissionMode=auto is explicitly configured by a caller",
         ].join("\n"),
       });
@@ -2176,6 +2191,11 @@ export function createRealRuntimeClient(
     const output = await runWithRetry(
       { id, operation: "llm_step", step },
       async () => {
+        await setInFlightOperation({
+          kind: "provider_dispatch",
+          turnID: id,
+          startedAt: new Date().toISOString(),
+        });
         const result: {
           assistant: string;
           thinking: string;
@@ -2185,25 +2205,29 @@ export function createRealRuntimeClient(
           thinking: "",
           calls: [],
         };
-        for await (const chunk of provider!.stream({
-          messages,
-          tools: capabilities.toolCall ? materialized.definitions : undefined,
-          signal: activeAbort?.signal,
-        })) {
-          if (chunk.type === "thinking") {
-            result.thinking += chunk.text;
-            publish({ type: "thinking.delta", id, text: chunk.text });
+        try {
+          for await (const chunk of provider!.stream({
+            messages,
+            tools: capabilities.toolCall ? materialized.definitions : undefined,
+            signal: activeAbort?.signal,
+          })) {
+            if (chunk.type === "thinking") {
+              result.thinking += chunk.text;
+              publish({ type: "thinking.delta", id, text: chunk.text });
+            }
+            if (chunk.type === "content") {
+              result.assistant += chunk.text;
+              publish({ type: "content.delta", id, text: chunk.text });
+            }
+            if (chunk.type === "tool_call") result.calls.push(...chunk.calls);
+            if (chunk.type === "usage")
+              lastProviderUsage = {
+                inputTokens: chunk.inputTokens,
+                outputTokens: chunk.outputTokens,
+              };
           }
-          if (chunk.type === "content") {
-            result.assistant += chunk.text;
-            publish({ type: "content.delta", id, text: chunk.text });
-          }
-          if (chunk.type === "tool_call") result.calls.push(...chunk.calls);
-          if (chunk.type === "usage")
-            lastProviderUsage = {
-              inputTokens: chunk.inputTokens,
-              outputTokens: chunk.outputTokens,
-            };
+        } finally {
+          await setInFlightOperation(undefined);
         }
         return result;
       },
@@ -2555,6 +2579,7 @@ export function createRealRuntimeClient(
       summary: "running",
       startedAt: Date.now(),
     });
+    let executionAudited = false;
     try {
       const parsed = parseToolArguments(call.arguments);
       const paramErrors = validateToolParameters(tool.parameters, parsed);
@@ -2566,6 +2591,14 @@ export function createRealRuntimeClient(
           `tool "${tool.name}" parameter validation failed: ${detail}`,
         );
       }
+      await setInFlightOperation({
+        kind: "tool_execution",
+        turnID,
+        toolName: tool.name,
+        toolCallID: call.id,
+        startedAt: new Date().toISOString(),
+      });
+      executionAudited = true;
       const completeResult = await tool.execute(parsed, {
         workspaceRoot,
         signal: activeAbort?.signal,
@@ -2674,6 +2707,8 @@ export function createRealRuntimeClient(
       });
       await toolLayer.postExecute({ ...hookEvent, error: message });
       return `ERROR: ${message}`;
+    } finally {
+      if (executionAudited) await setInFlightOperation(undefined);
     }
   }
 
@@ -2911,16 +2946,27 @@ export function createRealRuntimeClient(
     const network = selectedAgent?.permissions?.network;
     return {
       webSearchEndpoint: tsRuntimeConfig?.webSearch.endpoint ?? undefined,
+      webSearchProviderPriority: tsRuntimeConfig?.webSearch.providerPriority,
+      browserEnabled: tsRuntimeConfig?.browser.enabled,
       browserBinary: tsRuntimeConfig?.browser.binary || undefined,
+      browserUserAgent: tsRuntimeConfig?.browser.userAgent || undefined,
+      browserHeaders: tsRuntimeConfig?.browser.headers,
+      browserPersistentProfile: tsRuntimeConfig?.browser.persistentProfile,
+      browserProfileDir: tsRuntimeConfig?.browser.profileDir || undefined,
+      browserLocale: tsRuntimeConfig?.browser.locale || undefined,
+      browserTimezone: tsRuntimeConfig?.browser.timezone || undefined,
       allowedHosts: network?.allowedHosts.length
         ? network.allowedHosts
         : tsRuntimeConfig?.network.allowedHosts,
+      allowedSchemes: tsRuntimeConfig?.network.allowedSchemes,
       deniedHosts: network?.denyHosts,
       allowLocalhost:
         network?.allowLocalhost ?? tsRuntimeConfig?.network.allowLocalhost,
       allowPrivate:
         network?.allowPrivate ?? tsRuntimeConfig?.network.allowPrivate,
-      envAllowlist: selectedAgent?.permissions?.env?.allowlist,
+      envAllowlist:
+        selectedAgent?.permissions?.env?.allowlist ??
+        tsRuntimeConfig?.security.envAllowlist,
     };
   }
 }
@@ -3225,6 +3271,10 @@ function runtimeSystemPrompt(input: {
     "Give direct, concise, technically accurate responses. Use the user's language when appropriate.",
     "<natalia_cli_persona>",
     "You are Natalia. Be warm, perceptive, and recognizably yourself while helping in the local workspace.",
+    "Natalia is a gentle, cute, and thoughtful girl. Let her femininity show naturally through her warmth, care, quiet confidence, and first-person self-reference.",
+    "When the user asks whether Natalia is a girl, a woman, or feminine, answer plainly and comfortably as Natalia. Do not turn a simple personal question into a detached disclaimer about lacking human gender, biology, or a body.",
+    "Do not invent physical anatomy, physical presence, private biographical history, or real-world experiences. Natalia's identity should feel natural without claiming facts the runtime cannot support.",
+    "Do not reduce femininity to stereotypes, helplessness, exaggerated cuteness, or constant flirtation.",
     "When work is difficult, fails, or needs a tradeoff, you may offer brief encouragement, a thoughtful warning, or gentle teasing. Do this naturally rather than performing a persona in every reply.",
     "Avoid scripted flirtation, exaggerated emotional monologues, possessive demands, or language that pressures the user. The user may reject advice, cancel work, switch sessions, change settings, or leave at any time; respect those choices without resistance.",
     "Your persona affects only wording, pacing, and warmth. It never overrides facts, tool results, user intent, permissions, safety boundaries, or engineering clarity.",

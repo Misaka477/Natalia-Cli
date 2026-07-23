@@ -314,7 +314,9 @@ export class InteractivePTYRegistry {
       options.submit === false
         ? input
         : `${input}${input.endsWith("\r") || input.endsWith("\n") ? "" : "\n"}`;
-    session.pendingTerminalEcho = text;
+    // The bridge disables terminal ECHO. Only sensitive input needs a pending
+    // filter so a child such as `cat` cannot add the secret back to transcript.
+    session.pendingTerminalEcho = options.sensitive ? text : undefined;
     await this.command(session, { action: "write", input: text });
     if (options.sensitive) {
       session.secretAudit.push({
@@ -777,6 +779,9 @@ rows = int(sys.argv[2])
 cols = int(sys.argv[3])
 master, slave = pty.openpty()
 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+attrs = termios.tcgetattr(slave)
+attrs[3] &= ~termios.ECHO
+termios.tcsetattr(slave, termios.TCSANOW, attrs)
 def setup_session():
     os.setsid()
     fcntl.ioctl(0, termios.TIOCSCTTY, 0)

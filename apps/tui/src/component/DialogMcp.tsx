@@ -105,14 +105,39 @@ export function DialogMcp(props: {
             description: srv.command ?? "(none)",
           },
           {
+            value: "args",
+            title: "Arguments",
+            description: `${srv.args.length} arguments`,
+          },
+          {
+            value: "cwd",
+            title: "Working directory",
+            description: srv.cwd ?? "(workspace root)",
+          },
+          {
             value: "url",
             title: "URL",
             description: srv.url ?? "(none)",
           },
           {
+            value: "headers",
+            title: "HTTP headers",
+            description: `${Object.keys(srv.headers).length} entries`,
+          },
+          {
+            value: "environment",
+            title: "Environment",
+            description: `${Object.keys(srv.environment).length} entries`,
+          },
+          {
             value: "allowed",
             title: "Allowed tools",
             description: `${srv.allowedTools.length} tools`,
+          },
+          {
+            value: "excluded",
+            title: "Excluded tools",
+            description: `${srv.excludedTools.length} tools`,
           },
           {
             value: "status",
@@ -168,6 +193,35 @@ export function DialogMcp(props: {
                 />
               ));
               break;
+            case "args":
+              dialog.push(() => (
+                <DialogPrompt
+                  title="MCP Arguments"
+                  description={() =>
+                    'JSON string array, for example ["--stdio"].'
+                  }
+                  placeholder={JSON.stringify(sv.args)}
+                  onConfirm={(value) => {
+                    const parsed = parseStringArray(value);
+                    if (!parsed) return;
+                    sv.args = parsed;
+                    persist(next);
+                  }}
+                />
+              ));
+              break;
+            case "cwd":
+              dialog.push(() => (
+                <DialogPrompt
+                  title="MCP Working Directory"
+                  placeholder={sv.cwd ?? ""}
+                  onConfirm={(value) => {
+                    sv.cwd = value.trim() || undefined;
+                    persist(next);
+                  }}
+                />
+              ));
+              break;
             case "url":
               dialog.push(() => (
                 <DialogPrompt
@@ -175,6 +229,67 @@ export function DialogMcp(props: {
                   placeholder={sv.url ?? ""}
                   onConfirm={(v) => {
                     sv.url = v.trim() || undefined;
+                    persist(next);
+                  }}
+                />
+              ));
+              break;
+            case "headers":
+              dialog.push(() => (
+                <DialogPrompt
+                  title="MCP HTTP Headers"
+                  description={() =>
+                    "JSON string record. Values are not shown in the server list."
+                  }
+                  placeholder={JSON.stringify(sv.headers)}
+                  onConfirm={(value) => {
+                    const parsed = parseStringRecord(value);
+                    if (!parsed) return;
+                    sv.headers = parsed;
+                    persist(next);
+                  }}
+                />
+              ));
+              break;
+            case "environment":
+              dialog.push(() => (
+                <DialogPrompt
+                  title="MCP Environment"
+                  description={() =>
+                    "JSON string record. Values are not shown in the server list."
+                  }
+                  placeholder={JSON.stringify(sv.environment)}
+                  onConfirm={(value) => {
+                    const parsed = parseStringRecord(value);
+                    if (!parsed) return;
+                    sv.environment = parsed;
+                    persist(next);
+                  }}
+                />
+              ));
+              break;
+            case "allowed":
+            case "excluded":
+              dialog.push(() => (
+                <DialogPrompt
+                  title={
+                    option.value === "allowed"
+                      ? "Allowed MCP Tools"
+                      : "Excluded MCP Tools"
+                  }
+                  description={() => "Comma-separated MCP tool names."}
+                  placeholder={
+                    option.value === "allowed"
+                      ? sv.allowedTools.join(", ")
+                      : sv.excludedTools.join(", ")
+                  }
+                  onConfirm={(value) => {
+                    const tools = value
+                      .split(",")
+                      .map((item) => item.trim())
+                      .filter(Boolean);
+                    if (option.value === "allowed") sv.allowedTools = tools;
+                    else sv.excludedTools = tools;
                     persist(next);
                   }}
                 />
@@ -263,5 +378,30 @@ export function DialogMcp(props: {
   function persist(next: ConfigV2) {
     setConfig(next);
     props.onPersist(next);
+  }
+}
+
+function parseStringArray(value: string) {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) &&
+      parsed.every((item) => typeof item === "string")
+      ? parsed
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseStringRecord(value: string) {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      return undefined;
+    return Object.entries(parsed).every(([, item]) => typeof item === "string")
+      ? (parsed as Record<string, string>)
+      : undefined;
+  } catch {
+    return undefined;
   }
 }

@@ -447,17 +447,55 @@ test("media and browser visit tools provide native TS metadata", async () => {
       .get("read_media_file")!
       .execute({ path: "image.png" }, { workspaceRoot: root }),
   ).toContain('"kind": "png"');
+  let browserHeaders: Headers | undefined;
   const server = Bun.serve({
     port: 0,
-    fetch: () =>
-      new Response("<title>TS Browser</title><main>browser-ok</main>"),
+    fetch: (request) => {
+      browserHeaders = request.headers;
+      return new Response("<title>TS Browser</title><main>browser-ok</main>");
+    },
   });
   try {
     expect(
-      await tools
-        .get("browser_visit")!
-        .execute({ url: server.url.toString() }, { workspaceRoot: root }),
+      await tools.get("browser_visit")!.execute(
+        { url: server.url.toString() },
+        {
+          workspaceRoot: root,
+          settings: {
+            allowLocalhost: true,
+            allowedSchemes: ["http"],
+            browserUserAgent: "Natalia browser test",
+            browserHeaders: { "x-natalia-test": "enabled" },
+          },
+        },
+      ),
     ).toContain("browser-ok");
+    expect(browserHeaders?.get("user-agent")).toBe("Natalia browser test");
+    expect(browserHeaders?.get("x-natalia-test")).toBe("enabled");
+    await expect(
+      tools
+        .get("browser_visit")!
+        .execute(
+          { url: server.url.toString() },
+          { workspaceRoot: root, settings: { allowLocalhost: false } },
+        ),
+    ).rejects.toThrow("localhost network access is not allowed");
+    await expect(
+      tools
+        .get("browser_visit")!
+        .execute(
+          { url: server.url.toString() },
+          { workspaceRoot: root, settings: { allowedSchemes: ["https"] } },
+        ),
+    ).rejects.toThrow("network scheme is not allowed");
+    await expect(
+      tools
+        .get("browser_visit")!
+        .execute(
+          { url: server.url.toString() },
+          { workspaceRoot: root, settings: { browserEnabled: false } },
+        ),
+    ).rejects.toThrow("browser tools are disabled");
   } finally {
     server.stop(true);
   }
@@ -502,6 +540,31 @@ test("web_search uses a native configured endpoint without proxying Go", async (
     server.stop(true);
     if (saved) process.env.NATALIA_WEB_SEARCH_URL = saved;
     else delete process.env.NATALIA_WEB_SEARCH_URL;
+  }
+});
+
+test("web_search selects the configured endpoint only when its priority permits", async () => {
+  const tools = createToolRegistry();
+  const configured = Bun.serve({
+    port: 0,
+    fetch: () => new Response("configured provider result"),
+  });
+  try {
+    await expect(
+      tools.get("web_search")!.execute(
+        { query: "priority" },
+        {
+          workspaceRoot: tmpdir(),
+          settings: {
+            webSearchEndpoint: configured.url.toString(),
+            webSearchProviderPriority: ["configured", "duckduckgo"],
+            allowLocalhost: true,
+          },
+        },
+      ),
+    ).resolves.toContain("configured provider result");
+  } finally {
+    configured.stop(true);
   }
 });
 

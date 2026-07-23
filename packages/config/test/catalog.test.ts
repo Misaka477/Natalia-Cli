@@ -8,7 +8,12 @@ import {
   configureDiscoveredProviderModel,
   discoverProviderModels,
 } from "../src/catalog";
-import { configPatch, updateConfig, updateConfigAtScope } from "../src/service";
+import {
+  configPatch,
+  resolveConfig,
+  updateConfig,
+  updateConfigAtScope,
+} from "../src/service";
 
 test("discovers models from configured provider URL and persists selected model", async () => {
   const requests: Array<{ path: string; authorization: string | null }> = [];
@@ -99,23 +104,20 @@ test("writes settings mutations to the requested config scope", async () => {
       { context: { compactionThresholdPercent: 91 } },
       "global",
     );
-    const project = configV2Schema.parse(
-      JSON.parse(
-        await readFile(join(workspaceRoot, ".natalia", "config.json"), "utf8"),
+    const project = JSON.parse(
+      await readFile(join(workspaceRoot, ".natalia", "config.json"), "utf8"),
+    );
+    const global = JSON.parse(
+      await readFile(
+        join(home, ".config", "natalia-cli", "config.json"),
+        "utf8",
       ),
     );
-    const global = configV2Schema.parse(
-      JSON.parse(
-        await readFile(
-          join(home, ".config", "natalia-cli", "config.json"),
-          "utf8",
-        ),
-      ),
-    );
-    expect(project.runtime.maxStepsPerTurn).toBe(7);
-    expect(global.context.compactionThresholdPercent).toBe(91);
-    expect(project.context.compactionThresholdPercent).toBe(85);
-    expect(global.runtime.maxStepsPerTurn).toBe(1000);
+    expect(project).toEqual({ runtime: { maxStepsPerTurn: 7 } });
+    expect(global).toEqual({ context: { compactionThresholdPercent: 91 } });
+    const resolved = await resolveConfig({ workspaceRoot });
+    expect(resolved.config.runtime.maxStepsPerTurn).toBe(7);
+    expect(resolved.config.context.compactionThresholdPercent).toBe(91);
   } finally {
     if (previousHome === undefined) delete process.env.HOME;
     else process.env.HOME = previousHome;
@@ -151,6 +153,172 @@ test("config patches preserve complete changed records and delete removed record
       removed: undefined,
     },
   });
+});
+
+test("settings arrays and browser fields persist as a minimal selected-scope patch", async () => {
+  const workspaceRoot = await mkdtemp(
+    join(tmpdir(), "natalia-config-settings-surface-"),
+  );
+  const home = await mkdtemp(join(tmpdir(), "natalia-config-settings-home-"));
+  const previousHome = process.env.HOME;
+  process.env.HOME = home;
+  try {
+    const base = (await resolveConfig({ workspaceRoot })).config;
+    const next = configV2Schema.parse({
+      ...base,
+      instructions: {
+        ...base.instructions,
+        extraFiles: ["AGENTS.md", "docs/local.md"],
+      },
+      browser: {
+        ...base.browser,
+        binary: "/usr/bin/chromium",
+        userAgent: "Natalia test agent",
+        persistentProfile: true,
+        profileDir: ".natalia/browser-profile",
+        locale: "zh-CN",
+        timezone: "Asia/Shanghai",
+        headers: { "x-browser-test": "enabled" },
+      },
+      security: { ...base.security, envAllowlist: ["SAFE_TOKEN", "PATH"] },
+      webSearch: {
+        ...base.webSearch,
+        endpoint: "https://search.example/v1",
+        providerPriority: ["configured", "duckduckgo"],
+      },
+      network: {
+        ...base.network,
+        allowedHosts: ["example.com", "*.example.net"],
+        allowedSchemes: ["https"],
+      },
+      mcpServers: {
+        ...base.mcpServers,
+        local: {
+          type: "stdio",
+          command: "mcp-server",
+          args: ["--stdio", "--scope", "test"],
+          cwd: "tools/mcp",
+          headers: { "x-mcp-key": "test-only" },
+          environment: { MCP_MODE: "test" },
+          timeoutSec: 45,
+          allowedTools: ["read"],
+          excludedTools: ["write"],
+          readOnly: true,
+          enabled: true,
+        },
+      },
+      skills: { urls: ["https://skills.example/index.json"] },
+      plugins: {
+        enabled: { formatter: true },
+        paths: [".natalia/plugins-extra"],
+        capabilities: { formatter: ["tools"] },
+        readOnly: { formatter: true },
+      },
+      checkpoint: { ...base.checkpoint, additionalDirs: ["generated"] },
+      workspace: {
+        ...base.workspace,
+        root: "worktree",
+        additionalDirs: ["shared"],
+      },
+      permissionProfiles: {
+        ...base.permissionProfiles,
+        guarded: { approval: "read_only", description: "Safe inspection" },
+      },
+      modes: {
+        ...base.modes,
+        review: {
+          description: "Review only",
+          systemPrompt: "Inspect changes and report findings.",
+          model: "review-model",
+          permission: "guarded",
+          allowedTools: ["read_file", "grep"],
+          excludedTools: ["run_shell"],
+          mcpServers: ["docs"],
+        },
+      },
+    });
+    await updateConfigAtScope(
+      workspaceRoot,
+      configPatch(base, next),
+      "project",
+    );
+
+    const resolved = (await resolveConfig({ workspaceRoot })).config;
+    expect(resolved.workspace.root).toBe("worktree");
+    expect(resolved.instructions.extraFiles).toEqual([
+      "AGENTS.md",
+      "docs/local.md",
+    ]);
+    expect(resolved.browser).toMatchObject({
+      binary: "/usr/bin/chromium",
+      userAgent: "Natalia test agent",
+      persistentProfile: true,
+      profileDir: ".natalia/browser-profile",
+      locale: "zh-CN",
+      timezone: "Asia/Shanghai",
+      headers: { "x-browser-test": "enabled" },
+    });
+    expect(resolved.network).toMatchObject({
+      allowedHosts: ["example.com", "*.example.net"],
+      allowedSchemes: ["https"],
+    });
+    expect(resolved.security.envAllowlist).toEqual(["SAFE_TOKEN", "PATH"]);
+    expect(resolved.webSearch.endpoint).toBe("https://search.example/v1");
+    expect(resolved.webSearch.providerPriority).toEqual([
+      "configured",
+      "duckduckgo",
+    ]);
+    expect(resolved.mcpServers.local).toMatchObject({
+      args: ["--stdio", "--scope", "test"],
+      cwd: "tools/mcp",
+      headers: { "x-mcp-key": "test-only" },
+      environment: { MCP_MODE: "test" },
+      allowedTools: ["read"],
+      excludedTools: ["write"],
+    });
+    expect(resolved.skills.urls).toEqual(["https://skills.example/index.json"]);
+    expect(resolved.plugins).toMatchObject({
+      enabled: { formatter: true },
+      paths: [".natalia/plugins-extra"],
+      capabilities: { formatter: ["tools"] },
+      readOnly: { formatter: true },
+    });
+    expect(resolved.checkpoint.additionalDirs).toEqual(["generated"]);
+    expect(resolved.workspace.additionalDirs).toEqual(["shared"]);
+    expect(resolved.permissionProfiles.guarded).toEqual({
+      approval: "read_only",
+      description: "Safe inspection",
+    });
+    expect(resolved.modes.review).toMatchObject({
+      systemPrompt: "Inspect changes and report findings.",
+      model: "review-model",
+      permission: "guarded",
+      allowedTools: ["read_file", "grep"],
+      excludedTools: ["run_shell"],
+      mcpServers: ["docs"],
+    });
+    const patch = JSON.parse(
+      await readFile(join(workspaceRoot, ".natalia", "config.json"), "utf8"),
+    );
+    expect(patch).toMatchObject({
+      workspace: { root: "worktree" },
+      instructions: { extraFiles: ["AGENTS.md", "docs/local.md"] },
+      browser: { binary: "/usr/bin/chromium" },
+      security: { envAllowlist: ["SAFE_TOKEN", "PATH"] },
+      mcpServers: {
+        local: expect.objectContaining({
+          args: ["--stdio", "--scope", "test"],
+          headers: { "x-mcp-key": "test-only" },
+          environment: { MCP_MODE: "test" },
+        }),
+      },
+    });
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    await rm(workspaceRoot, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
+  }
 });
 
 test("catalog excludes providers denied by the configured policy", () => {

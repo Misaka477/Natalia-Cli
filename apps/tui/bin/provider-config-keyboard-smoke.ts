@@ -1,6 +1,6 @@
 import { createMockKeys } from "@opentui/core/testing";
 import type { RuntimeClient } from "@natalia/contracts";
-import { configV2Schema } from "@natalia/contracts";
+import { resolveConfig } from "@natalia/config";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -56,12 +56,13 @@ try {
   keys.pressEnter();
 
   const path = join(workspaceRoot, ".natalia", "config.json");
-  let persisted: ReturnType<typeof configV2Schema.parse> | undefined;
+  let persisted:
+    | Awaited<ReturnType<typeof resolveConfig>>["config"]
+    | undefined;
   for (let attempts = 0; attempts < 20; attempts++) {
     try {
-      persisted = configV2Schema.parse(
-        JSON.parse(await readFile(path, "utf8")),
-      );
+      await readFile(path, "utf8");
+      persisted = (await resolveConfig({ workspaceRoot })).config;
       break;
     } catch {
       await Bun.sleep(50);

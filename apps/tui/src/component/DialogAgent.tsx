@@ -1,7 +1,8 @@
-import { resolveConfig, updateConfig } from "@natalia/config";
+import { configPatch, resolveConfig, updateConfig } from "@natalia/config";
 import type { ConfigV2, RuntimeAgentCatalogEntry } from "@natalia/contracts";
 import { createMemo, createSignal, onMount } from "solid-js";
 import { DialogSelect, type DialogSelectOption } from "../dialog/DialogSelect";
+import { DialogPrompt } from "../dialog/DialogPrompt";
 import { useDialog } from "../dialog/provider";
 import { useLocal } from "../context/local";
 
@@ -188,6 +189,33 @@ function DialogAgentOverride(props: {
           description: props.agent.variant ?? "Default variant",
           disabled: !modelName(),
         },
+        {
+          title: "System Prompt",
+          value: "system",
+          description: "Edit configuration override",
+        },
+        {
+          title: "Step Limit",
+          value: "steps",
+          description: props.agent.maxSteps
+            ? String(props.agent.maxSteps)
+            : "Runtime default",
+        },
+        {
+          title: "Allowed Tools",
+          value: "allow",
+          description: `${props.agent.allowedTools?.length ?? 0} tools`,
+        },
+        {
+          title: "Excluded Tools",
+          value: "exclude",
+          description: `${props.agent.excludedTools?.length ?? 0} tools`,
+        },
+        {
+          title: "MCP Servers",
+          value: "mcp",
+          description: `${props.agent.mcpServers?.length ?? 0} servers`,
+        },
       ]}
       onSelect={(option) => {
         if (option.value === "model")
@@ -197,7 +225,7 @@ function DialogAgentOverride(props: {
               agent={props.agent}
             />
           ));
-        else
+        else if (option.value === "variant")
           dialog.push(() => (
             <DialogAgentVariant
               workspaceRoot={props.workspaceRoot}
@@ -205,6 +233,92 @@ function DialogAgentOverride(props: {
               modelName={modelName()!}
             />
           ));
+        else
+          dialog.push(() => (
+            <DialogAgentField
+              workspaceRoot={props.workspaceRoot}
+              agent={props.agent}
+              field={
+                option.value as "system" | "steps" | "allow" | "exclude" | "mcp"
+              }
+            />
+          ));
+      }}
+    />
+  );
+}
+
+function DialogAgentField(props: {
+  workspaceRoot: string;
+  agent: RuntimeAgentCatalogEntry;
+  field: "system" | "steps" | "allow" | "exclude" | "mcp";
+}) {
+  const dialog = useDialog();
+  const [config, setConfig] = createSignal<ConfigV2>();
+  onMount(() => {
+    void resolveConfig({ workspaceRoot: props.workspaceRoot }).then(
+      ({ config }) => setConfig(config),
+    );
+  });
+  const title = {
+    system: "Agent System Prompt",
+    steps: "Agent Step Limit",
+    allow: "Agent Allowed Tools",
+    exclude: "Agent Excluded Tools",
+    mcp: "Agent MCP Servers",
+  }[props.field];
+  const placeholder =
+    props.field === "system"
+      ? (config()?.agents[props.agent.name]?.systemPrompt ?? "")
+      : props.field === "steps"
+        ? props.agent.maxSteps
+          ? String(props.agent.maxSteps)
+          : ""
+        : props.field === "allow"
+          ? (props.agent.allowedTools ?? []).join(", ")
+          : props.field === "exclude"
+            ? (props.agent.excludedTools ?? []).join(", ")
+            : (props.agent.mcpServers ?? []).join(", ");
+  return (
+    <DialogPrompt
+      title={title}
+      description={() =>
+        props.field === "steps"
+          ? "Positive integer. Leave blank to use the runtime default."
+          : props.field === "system"
+            ? "Leave blank to clear the override."
+            : "Comma-separated values."
+      }
+      placeholder={placeholder}
+      validate={(value) =>
+        props.field === "steps" &&
+        value.trim() &&
+        (!Number.isInteger(Number(value)) || Number(value) <= 0)
+          ? "Step limit must be a positive integer."
+          : undefined
+      }
+      onConfirm={(value) => {
+        void resolveConfig({ workspaceRoot: props.workspaceRoot }).then(
+          async ({ config }) => {
+            const next = structuredClone(config);
+            const agent = next.agents[props.agent.name];
+            if (!agent) return;
+            if (props.field === "system") agent.systemPrompt = value.trim();
+            else if (props.field === "steps")
+              agent.maxSteps = value.trim() ? Number(value) : undefined;
+            else {
+              const list = value
+                .split(",")
+                .map((item) => item.trim())
+                .filter(Boolean);
+              if (props.field === "allow") agent.allowedTools = list;
+              else if (props.field === "exclude") agent.excludedTools = list;
+              else agent.mcpServers = list;
+            }
+            await updateConfig(props.workspaceRoot, configPatch(config, next));
+            dialog.pop();
+          },
+        );
       }}
     />
   );
@@ -234,7 +348,7 @@ function DialogAgentModel(props: {
     agent.model = option.value || undefined;
     // Variants belong to a particular model and cannot outlive a model change.
     agent.variant = undefined;
-    await updateConfig(props.workspaceRoot, next);
+    await updateConfig(props.workspaceRoot, configPatch(resolved, next));
     dialog.pop();
   };
   return (
@@ -270,7 +384,7 @@ function DialogAgentVariant(props: {
     const agent = next.agents[props.agent.name];
     if (!agent) return;
     agent.variant = option.value || undefined;
-    await updateConfig(props.workspaceRoot, next);
+    await updateConfig(props.workspaceRoot, configPatch(resolved, next));
     dialog.pop();
   };
   return (

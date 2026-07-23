@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { configV2Schema } from "@natalia/contracts";
 import {
   mkdir,
   mkdtemp,
@@ -10,60 +11,33 @@ import {
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { loadConfigFile, saveConfigFile } from "../src/file";
-import { migrateConfig, migrationSummaryText } from "../src/migration";
-import {
-  diagnoseLegacyGoWorkspace,
-  exportLegacyGoWorkspaceBundle,
-  importLegacyGoWorkspaceBundle,
-  rollbackLegacyGoWorkspaceBundle,
-  VersionedMigrationRegistry,
-} from "../src/registry";
+import { defaultConfigV2, migrateConfig } from "../src/migration";
+import { VersionedMigrationRegistry } from "../src/registry";
 import { loadOrCreateConfigFile } from "../src/file";
 import { resolveConfig } from "../src/service";
 import { createSetupSnapshot } from "../src/setup";
 
-test("config v2 migration keeps zero/null/omitted semantics and new defaults", () => {
-  const migrated = migrateConfig({
-    providers: { openai: { type: "openai", api_key: "secret-token" } },
-    default_profile: "default",
-    profiles: {
-      default: {
-        provider: "openai",
-        model: "gpt-5.5",
-        max_context: 200000,
-        max_tokens: 0,
-        max_steps: 0,
-        timeout_sec: 0,
+function configuredConfig() {
+  return configV2Schema.parse({
+    ...defaultConfigV2(),
+    providers: {
+      openai: {
+        type: "openai-compatible",
+        enabled: true,
+        baseURL: "https://api.example/v1",
+        apiKey: "test-only",
+        customHeaders: {},
       },
     },
+    models: {
+      default: { provider: "openai", model: "test-model" },
+    },
+    defaultModel: "default",
   });
-  const model = migrated.config.models.default;
-  expect(model.contextWindow).toBe(200000);
-  expect(model.maxOutputTokens).toBeNull();
-  expect(migrated.config.runtime.maxStepsPerTurn).toBe(1000);
-  expect(migrated.config.runtime.timeouts.requestSec).toBe(120);
-  expect(migrated.config.context.compactionEnabled).toBe(true);
-  expect(migrated.config.context.compactionThresholdPercent).toBe(85);
-  expect(migrated.config.context.reservedOutputTokens).toBe("auto");
-  expect(migrated.config.checkpoint.enabled).toBe(true);
-  expect(migrated.config.checkpoint.additionalDirs).toEqual([]);
-});
-
-test("migration summary redacts secrets and preserves explicit 8192", () => {
-  const migrated = migrateConfig({
-    providers: { openai: { type: "openai", api_key: "sk-live-secret" } },
-    profiles: { default: { provider: "openai", model: "x", max_tokens: 8192 } },
-  });
-  expect(migrated.config.models.default.maxOutputTokens).toBe(8192);
-  const text = migrationSummaryText(migrated.summary);
-  expect(text).not.toContain("sk-live-secret");
-  expect(text).toContain("8192 preserved");
-});
+}
 
 test("setup snapshot exposes detection source and manual override", () => {
-  const migrated = migrateConfig({
-    profiles: { default: { provider: "openai", model: "gpt-5.5" } },
-  });
+  const migrated = migrateConfig(configuredConfig());
   const snapshot = createSetupSnapshot(migrated.config, "default", {
     tokens: 200000,
     source: "known_catalog",
@@ -76,17 +50,15 @@ test("setup snapshot exposes detection source and manual override", () => {
   expect(snapshot.secretFields).toContain("providers.*.apiKey");
 });
 
-test("config v2 save/load roundtrip preserves omitted output limit", async () => {
+test("config v2 save/load roundtrip preserves an omitted output limit", async () => {
   const dir = await mkdtemp(join(tmpdir(), "natalia-config-v2-"));
   try {
-    const path = join(dir, "config.yaml");
-    const config = migrateConfig({
-      profiles: { default: { provider: "openai", model: "gpt-5.5" } },
-    }).config;
+    const path = join(dir, "config.json");
+    const config = configuredConfig();
     await saveConfigFile(config, path);
     const loaded = await loadConfigFile(path);
     expect(loaded.config.version).toBe(2);
-    expect(loaded.config.models.default.maxOutputTokens).toBeNull();
+    expect(loaded.config.models.default.maxOutputTokens).toBeUndefined();
     expect(loaded.summary.changed).toEqual([]);
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -98,12 +70,7 @@ test("config save atomically replaces the target without leaving temporary files
   try {
     const path = join(dir, "config.json");
     await writeFile(path, '{"old":true}\n');
-    await saveConfigFile(
-      migrateConfig({
-        profiles: { default: { provider: "openai", model: "x" } },
-      }).config,
-      path,
-    );
+    await saveConfigFile(configuredConfig(), path);
     expect(JSON.parse(await readFile(path, "utf8"))).toMatchObject({
       version: 2,
     });
@@ -148,76 +115,6 @@ test("versioned migration registry applies steps and reports unsupported version
     code: "migration.unsupported_version",
     supported: false,
   });
-});
-
-test("legacy Go workspace diagnostics and migration bundle are explicit", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "natalia-legacy-diagnostics-"));
-  try {
-    await writeFile(join(dir, "config.yaml"), "profiles: {}\n");
-    await mkdir(join(dir, "sessions"));
-    await mkdir(join(dir, "checkpoints"));
-    await mkdir(join(dir, "skills"));
-    await mkdir(join(dir, "workflows"));
-    const diagnostics = await diagnoseLegacyGoWorkspace(dir);
-    expect(
-      diagnostics.some(
-        (item) => item.code === "legacy.config_yaml" && item.supported,
-      ),
-    ).toBe(true);
-    expect(
-      diagnostics.some(
-        (item) => item.code === "legacy.checkpoints_manifest" && item.supported,
-      ),
-    ).toBe(true);
-    expect(
-      diagnostics.some(
-        (item) => item.code === "legacy.workflows_bundle" && item.supported,
-      ),
-    ).toBe(true);
-    const bundle = await exportLegacyGoWorkspaceBundle({
-      legacyRoot: dir,
-      outputPath: join(dir, "bundle", "legacy.json"),
-    });
-    expect(bundle.format).toBe("natalia-ts7-legacy-workspace-bundle");
-    expect(bundle.artifacts.some((item) => item.path === "config.yaml")).toBe(
-      true,
-    );
-    const targetRoot = join(dir, "ts-target");
-    const imported = await importLegacyGoWorkspaceBundle({
-      bundlePath: join(dir, "bundle", "legacy.json"),
-      targetRoot,
-    });
-    expect(imported).toMatchObject({ artifactCount: expect.any(Number) });
-    expect(imported.receipt.id).toMatch(/^mig_/u);
-    expect(
-      await readFile(
-        join(targetRoot, ".natalia", "migration-receipt.json"),
-        "utf8",
-      ),
-    ).toContain(imported.receipt.id);
-    expect(
-      await importLegacyGoWorkspaceBundle({
-        bundlePath: join(dir, "bundle", "legacy.json"),
-        targetRoot,
-      }),
-    ).toMatchObject({
-      alreadyApplied: true,
-      receipt: { id: imported.receipt.id },
-    });
-    expect(await rollbackLegacyGoWorkspaceBundle({ targetRoot })).toMatchObject(
-      {
-        rolledBack: true,
-        receiptID: imported.receipt.id,
-      },
-    );
-    expect(await rollbackLegacyGoWorkspaceBundle({ targetRoot })).toMatchObject(
-      {
-        rolledBack: false,
-      },
-    );
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
 });
 
 test("TS config settings store creates a schema-valid config when absent", async () => {
