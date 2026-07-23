@@ -74,3 +74,50 @@ export function selectedAgentFromEvents(events: RuntimeEvent[]) {
     if (event.type === "agent.selection" && !event.pending) return event.name;
   return undefined;
 }
+
+/**
+ * Settles only interactive requests owned by a crashed turn. Provider and tool
+ * execution cannot be resumed safely without a durable continuation record.
+ */
+export function settleInterruptedTurns(session: SessionRecord) {
+  const activeTurnIDs = projectSession(session).activeTurnIDs;
+  if (!activeTurnIDs.length) return [];
+  const pendingApprovals = new Set<string>();
+  const pendingQuestions = new Set<string>();
+  for (const event of session.events) {
+    if (event.type === "approval.request") pendingApprovals.add(event.id);
+    if (event.type === "approval.response") pendingApprovals.delete(event.id);
+    if (event.type === "question.request") pendingQuestions.add(event.id);
+    if (event.type === "question.response") pendingQuestions.delete(event.id);
+  }
+  const settled: RuntimeEvent[] = [];
+  for (const requestID of pendingApprovals)
+    if (requestBelongsToInterruptedTurn(requestID, activeTurnIDs))
+      settled.push({
+        type: "approval.response",
+        id: requestID,
+        decision: "reject",
+        feedback: "interrupted turn cannot continue after runtime restart",
+      });
+  for (const requestID of pendingQuestions)
+    if (requestBelongsToInterruptedTurn(requestID, activeTurnIDs))
+      settled.push({
+        type: "question.response",
+        id: requestID,
+        answers: [],
+        rejected: true,
+      });
+  for (const id of activeTurnIDs)
+    settled.push({ type: "turn.finished", id, stopReason: "error" });
+  session.events.push(...settled);
+  return settled;
+}
+
+function requestBelongsToInterruptedTurn(requestID: string, turnIDs: string[]) {
+  return turnIDs.some(
+    (turnID) =>
+      requestID === turnID ||
+      requestID.startsWith(`${turnID}:`) ||
+      requestID.includes(`:${turnID}:`),
+  );
+}

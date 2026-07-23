@@ -52,7 +52,11 @@ export type SandboxManager = {
     id: string,
   ): Promise<{ pendingChanges: SandboxChange[]; runningResources: string[] }>;
   previewMerge(id: string): Promise<SandboxChange[]>;
-  merge(id: string, hostRoot: string): Promise<SandboxChange[]>;
+  merge(
+    id: string,
+    hostRoot: string,
+    authorize?: (paths: string[]) => Promise<void>,
+  ): Promise<SandboxChange[]>;
 };
 
 export type SandboxExecutor = {
@@ -271,10 +275,18 @@ export class WorkspaceSandboxManager
     return manifest.changedFiles.map((change) => ({ ...change }));
   }
 
-  async merge(id: string, hostRoot: string) {
+  async merge(
+    id: string,
+    hostRoot: string,
+    authorize?: (paths: string[]) => Promise<void>,
+  ) {
     await this.initialize();
     const manifest = this.mustGet(id);
     const changes = await this.previewMerge(id);
+    const previewRevision = JSON.stringify(changes);
+    await authorize?.(mergeMutationPaths(changes));
+    if (JSON.stringify(manifest.changedFiles) !== previewRevision)
+      throw new Error("sandbox manifest changed during merge authorization");
     const backups: Array<{ path: string; content?: Buffer; existed: boolean }> =
       [];
     try {
@@ -482,6 +494,16 @@ function classifyRenames(changes: SandboxChange[]) {
     normalized.push({ ...change });
   }
   return normalized;
+}
+
+function mergeMutationPaths(changes: SandboxChange[]) {
+  return [
+    ...new Set(
+      changes.flatMap((change) =>
+        change.oldPath ? [change.path, change.oldPath] : [change.path],
+      ),
+    ),
+  ].sort();
 }
 
 function removeChangesForPath(changes: SandboxChange[], path: string) {

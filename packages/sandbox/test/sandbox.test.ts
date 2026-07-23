@@ -57,6 +57,57 @@ test("sandbox merge is atomic on failure", async () => {
   expect(await readFile(join(host, "keep.txt"), "utf8")).toBe("original");
 });
 
+test("sandbox merge authorizes every host mutation before writing", async () => {
+  const base = await mkdtemp(join(tmpdir(), "natalia-sandbox-policy-base-"));
+  const host = await mkdtemp(join(tmpdir(), "natalia-sandbox-policy-host-"));
+  const manager = new WorkspaceSandboxManager(base);
+  await manager.create("box");
+  await manager.write("box", "allowed.txt", "allowed");
+  await manager.write("box", "protected.txt", "blocked");
+  const checked: string[][] = [];
+
+  await expect(
+    manager.merge("box", host, async (paths) => {
+      checked.push(paths);
+      if (paths.includes("protected.txt")) throw new Error("protected path");
+    }),
+  ).rejects.toThrow("protected path");
+  expect(checked).toEqual([["allowed.txt", "protected.txt"]]);
+  await expect(
+    readFile(join(host, "allowed.txt"), "utf8"),
+  ).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+  await expect(
+    readFile(join(host, "protected.txt"), "utf8"),
+  ).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+  expect(await manager.previewMerge("box")).toHaveLength(2);
+});
+
+test("sandbox merge rejects manifest changes during asynchronous authorization", async () => {
+  const base = await mkdtemp(join(tmpdir(), "natalia-sandbox-race-base-"));
+  const host = await mkdtemp(join(tmpdir(), "natalia-sandbox-race-host-"));
+  const manager = new WorkspaceSandboxManager(base);
+  await manager.create("box");
+  await manager.write("box", "initial.txt", "initial");
+
+  await expect(
+    manager.merge("box", host, async () => {
+      await manager.write("box", "later.txt", "later");
+    }),
+  ).rejects.toThrow("manifest changed during merge authorization");
+  await expect(
+    readFile(join(host, "initial.txt"), "utf8"),
+  ).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+  expect(
+    (await manager.previewMerge("box")).map((change) => change.path),
+  ).toEqual(["initial.txt", "later.txt"]);
+});
+
 test("sandbox merge applies rename content and mode without orphaning host files", async () => {
   const base = await mkdtemp(join(tmpdir(), "natalia-sandbox-merge-base-"));
   const host = await mkdtemp(join(tmpdir(), "natalia-sandbox-merge-host-"));

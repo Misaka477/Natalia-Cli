@@ -14,6 +14,7 @@ import type {
   ProviderStreamRequest,
   StreamingProvider,
 } from "@natalia/runtime";
+import { WorkspaceSandboxManager } from "@natalia/sandbox";
 
 test("createToolPolicyHookLayer default allows all tools", () => {
   const layer = createToolPolicyHookLayer();
@@ -121,6 +122,20 @@ test("agent rules cover sandbox paths and all command-launching tools", () => {
     evaluatePermissionRules(fileRules, "browser_screenshot", {
       path: "protected/page.png",
     }),
+  ).toMatchObject({ allowed: false, reason: "protected" });
+  expect(
+    evaluatePermissionRules(
+      { files: { readPaths: fileRules.files.writePaths } },
+      "glob",
+      { path: "protected/note.txt" },
+    ),
+  ).toMatchObject({ allowed: false, reason: "protected" });
+  expect(
+    evaluatePermissionRules(
+      { files: { readPaths: fileRules.files.writePaths } },
+      "grep",
+      { path: "protected/note.txt" },
+    ),
   ).toMatchObject({ allowed: false, reason: "protected" });
 
   const commandRules = { commands: { denyPatterns: ["rm\\s+-rf"] } };
@@ -372,6 +387,205 @@ test("agent command rules block sandbox execution before approval", async () => 
   );
 });
 
+test("sandbox merge preflight rejects every denied manifest path atomically", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-ts7-sandbox-merge-policy-"),
+  );
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await Bun.write(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      defaultAgent: "review",
+      agents: {
+        review: {
+          description: "Review",
+          permissions: {
+            files: {
+              writePaths: [
+                {
+                  pattern: "protected.txt",
+                  allow: false,
+                  reason: "protected by agent policy",
+                },
+              ],
+            },
+          },
+        },
+      },
+    }),
+  );
+  const sandboxes = new WorkspaceSandboxManager(
+    join(root, ".natalia", "sandboxes"),
+  );
+  await sandboxes.create("box");
+  await sandboxes.write("box", "allowed.txt", "allowed");
+  await sandboxes.write("box", "protected.txt", "protected");
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_sandbox_merge_policy",
+    permissionMode: "auto",
+    provider: sandboxMergeProvider(),
+  });
+  client.start((event) => events.push(event));
+  await client.submit("merge sandbox changes");
+
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "tool.update",
+      name: "sandbox_merge",
+      status: "failed",
+      summary: expect.stringContaining("protected by agent policy"),
+    }),
+  );
+  await expect(
+    readFile(join(root, "allowed.txt"), "utf8"),
+  ).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+  await expect(
+    readFile(join(root, "protected.txt"), "utf8"),
+  ).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+});
+
+test("sandbox merge preflight permits a manifest when every path is allowed", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-ts7-sandbox-merge-allow-"),
+  );
+  const sandboxes = new WorkspaceSandboxManager(
+    join(root, ".natalia", "sandboxes"),
+  );
+  await sandboxes.create("box");
+  await sandboxes.write("box", "allowed.txt", "allowed");
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_sandbox_merge_allow",
+    permissionMode: "auto",
+    provider: sandboxMergeProvider(),
+  });
+  client.start((event) => events.push(event));
+  await client.submit("merge sandbox changes");
+
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "tool.update",
+      name: "sandbox_merge",
+      status: "succeeded",
+    }),
+  );
+  expect(await readFile(join(root, "allowed.txt"), "utf8")).toBe("allowed");
+});
+
+test("sandbox merge exclusion applies to catalog and forced execution", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-ts7-sandbox-merge-exclude-"),
+  );
+  const sandboxes = new WorkspaceSandboxManager(
+    join(root, ".natalia", "sandboxes"),
+  );
+  await sandboxes.create("box");
+  await sandboxes.write("box", "allowed.txt", "allowed");
+  const events: RuntimeEvent[] = [];
+  const requests: ProviderStreamRequest[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_sandbox_merge_exclude",
+    permissionMode: "auto",
+    toolPolicy: { exclude: ["sandbox_merge"] },
+    provider: {
+      provider: "scripted-sandbox-merge-exclude",
+      model: "scripted-sandbox-merge-exclude-model",
+      async *stream(request) {
+        requests.push(request);
+        if (!request.messages.some((message) => message.role === "tool"))
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "merge",
+                name: "sandbox_merge",
+                arguments: JSON.stringify({ id: "box" }),
+              },
+            ],
+          };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("merge sandbox changes");
+
+  expect(requests[0]?.tools?.map((tool) => tool.name)).not.toContain(
+    "sandbox_merge",
+  );
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "tool.update",
+      name: "sandbox_merge",
+      status: "failed",
+      summary: "Unknown tool: sandbox_merge",
+    }),
+  );
+  await expect(
+    readFile(join(root, "allowed.txt"), "utf8"),
+  ).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+});
+
+test("agent read paths block glob and grep before exposing protected files", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-search-policy-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(join(root, "allowed.ts"), "const value = 'needle';\n");
+  await writeFile(join(root, "protected.ts"), "const secret = 'needle';\n");
+  await Bun.write(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      defaultAgent: "review",
+      agents: {
+        review: {
+          description: "Review",
+          permissions: {
+            files: {
+              readPaths: [
+                {
+                  pattern: "protected.ts",
+                  allow: false,
+                  reason: "protected read path",
+                },
+              ],
+            },
+          },
+        },
+      },
+    }),
+  );
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_search_policy",
+    permissionMode: "auto",
+    provider: searchPolicyProvider(),
+  });
+  client.start((event) => events.push(event));
+  await client.submit("search workspace");
+
+  for (const name of ["glob", "grep"])
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "tool.update",
+        name,
+        status: "failed",
+        summary: expect.stringContaining("protected read path"),
+      }),
+    );
+});
+
 test("real runtime client with exclude policy blocks tool execution", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-policy-block-"));
   const events: RuntimeEvent[] = [];
@@ -393,6 +607,92 @@ test("real runtime client with exclude policy blocks tool execution", async () =
       event.status === "failed",
   );
   expect(failedEvents.length).toBeGreaterThan(0);
+});
+
+test("runtime persists safe policy decisions without tool arguments", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-policy-audit-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await Bun.write(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      defaultAgent: "review",
+      agents: {
+        review: {
+          description: "Review",
+          permissions: {
+            files: {
+              writePaths: [
+                {
+                  pattern: "protected.txt",
+                  allow: false,
+                  reason: "protected by agent policy",
+                },
+              ],
+            },
+          },
+        },
+      },
+    }),
+  );
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_policy_audit",
+    permissionMode: "auto",
+    provider: writeProvider("protected.txt"),
+  });
+  client.start((event) => events.push(event));
+  await client.submit("read input.txt");
+
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "policy.decision",
+      toolName: "write_file",
+      decision: "deny",
+      reason: 'write to "protected.txt" blocked: protected by agent policy',
+    }),
+  );
+  const history = await client.history!({ limit: 100 });
+  const decision = history.events.find(
+    (
+      entry,
+    ): entry is typeof entry & {
+      event: Extract<RuntimeEvent, { type: "policy.decision" }>;
+    } => entry.event.type === "policy.decision",
+  )?.event;
+  expect(decision).toEqual({
+    type: "policy.decision",
+    turnID: expect.any(String),
+    toolName: "write_file",
+    toolCallID: "call_write",
+    decision: "deny",
+    reason: 'write to "protected.txt" blocked: protected by agent policy',
+  });
+  expect(JSON.stringify(decision)).not.toContain("content");
+});
+
+test("catalog policy denials are durably distinguished from unknown tools", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-catalog-audit-"));
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_catalog_audit",
+    permissionMode: "auto",
+    toolPolicy: { exclude: ["read_file"] },
+    provider: blockTestProvider(),
+  });
+  client.start((event) => events.push(event));
+  await client.submit("read input.txt");
+
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "policy.decision",
+      toolName: "read_file",
+      decision: "deny",
+      reason: "tool is excluded from the runtime catalog by policy",
+    }),
+  );
 });
 
 test("real runtime client hooks emit diagnostics on preExecute", async () => {
@@ -604,6 +904,57 @@ function sandboxCommandProvider(): StreamingProvider {
           ],
         };
       }
+      yield { type: "done" };
+    },
+  };
+}
+
+function sandboxMergeProvider(): StreamingProvider {
+  return {
+    provider: "scripted-sandbox-merge",
+    model: "scripted-sandbox-merge-model",
+    async *stream(request: ProviderStreamRequest) {
+      if (!request.messages.some((message) => message.role === "tool")) {
+        yield {
+          type: "tool_call",
+          calls: [
+            {
+              id: "merge",
+              name: "sandbox_merge",
+              arguments: JSON.stringify({ id: "box" }),
+            },
+          ],
+        };
+      }
+      yield { type: "done" };
+    },
+  };
+}
+
+function searchPolicyProvider(): StreamingProvider {
+  return {
+    provider: "scripted-search-policy",
+    model: "scripted-search-policy-model",
+    async *stream(request: ProviderStreamRequest) {
+      if (!request.messages.some((message) => message.role === "tool"))
+        yield {
+          type: "tool_call",
+          calls: [
+            {
+              id: "glob",
+              name: "glob",
+              arguments: JSON.stringify({ pattern: "*.ts" }),
+            },
+            {
+              id: "grep",
+              name: "grep",
+              arguments: JSON.stringify({
+                pattern: "needle",
+                include: "*.ts",
+              }),
+            },
+          ],
+        };
       yield { type: "done" };
     },
   };

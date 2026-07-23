@@ -260,6 +260,14 @@ export type RuntimeEvent =
       endedAt?: number;
     }
   | {
+      type: "policy.decision";
+      turnID: string;
+      toolName: string;
+      toolCallID?: string;
+      decision: "allow" | "deny" | "approval_required" | "rejected";
+      reason?: string;
+    }
+  | {
       type: "subagent.update";
       id: string;
       status:
@@ -843,6 +851,11 @@ export type RuntimeClient = {
   sessionRename?(id: string, title: string): Promise<RuntimeSessionSummary>;
   sessionPin?(id: string, pinned: boolean): Promise<RuntimeSessionSummary>;
   sessionDuplicate?(id: string, title?: string): Promise<RuntimeSessionSummary>;
+  sessionFork?(
+    id: string,
+    turnID: string,
+    title?: string,
+  ): Promise<RuntimeSessionSummary>;
   sessionDelete?(
     id: string,
   ): Promise<{ id: string; removedAttachments: number }>;

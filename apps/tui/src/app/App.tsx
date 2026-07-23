@@ -58,7 +58,13 @@ import {
   retainEditorMentions,
 } from "../prompt/external-editor";
 import { DialogAgent } from "../component/DialogAgent";
-import { resolveConfig, updateConfig } from "@natalia/config";
+import {
+  resolveConfig,
+  configPatch,
+  updateConfigAtScope,
+  type ConfigPatch,
+  type ConfigWriteScope,
+} from "@natalia/config";
 import { discoverProviderModels } from "@natalia/config";
 import { decidePaste } from "../prompt/paste";
 import { PromptHistory, shouldUseHistory } from "../prompt/history";
@@ -154,6 +160,8 @@ function Shell(props: {
   const local = useLocal();
   const [tuiWriteScope, setTuiWriteScope] =
     createSignal<TuiConfigWriteScope>("project");
+  const [configWriteScope, setConfigWriteScope] =
+    createSignal<ConfigWriteScope>("project");
   const layout = () =>
     sessionLayout(
       terminalWidth(),
@@ -234,6 +242,19 @@ function Shell(props: {
           }),
         (error) => toast.error(error),
       );
+  }
+
+  async function persistConfig(next: ConfigPatch, base?: ConfigV2) {
+    const scope = configWriteScope();
+    await updateConfigAtScope(
+      props.workspaceRoot ?? process.cwd(),
+      base ? configPatch(base, next as ConfigV2) : next,
+      scope,
+    );
+    toast.show({
+      variant: "success",
+      message: `Runtime config saved to ${scope} config`,
+    });
   }
 
   async function submit() {
@@ -418,7 +439,7 @@ function Shell(props: {
           <DialogProviderSetup
             config={resolved}
             onPersist={(next) =>
-              void updateConfig(props.workspaceRoot ?? process.cwd(), next)
+              void persistConfig(next, resolved).catch(toast.error)
             }
           />
         ));
@@ -596,7 +617,7 @@ function Shell(props: {
           return `${pvid}_${v.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
         };
         const save = (next: ConfigV2) => {
-          void updateConfig(props.workspaceRoot ?? process.cwd(), next);
+          void persistConfig(next, resolved).catch(toast.error);
         };
         const openModelDetail = (opt: { value: string }) => {
           const m = resolved.models[opt.value];
@@ -906,7 +927,7 @@ function Shell(props: {
             config={resolved}
             statuses={state.mcp}
             onPersist={(next) =>
-              void updateConfig(props.workspaceRoot ?? process.cwd(), next)
+              void persistConfig(next, resolved).catch(toast.error)
             }
           />
         ));
@@ -914,8 +935,9 @@ function Shell(props: {
       return;
     }
     if (command === "settings.open") {
-      async function saveConfig(next: any) {
-        await updateConfig(props.workspaceRoot ?? process.cwd(), next);
+      let settingsBase: ConfigV2 | undefined;
+      async function saveConfig(next: ConfigPatch) {
+        await persistConfig(next, settingsBase);
       }
       dialog.push(() => (
         <DialogSelect
@@ -993,6 +1015,7 @@ function Shell(props: {
                 workspaceRoot: props.workspaceRoot ?? process.cwd(),
               })
             ).config;
+            settingsBase = resolved;
             switch (option.value) {
               case "provider":
                 dialog.push(() => (
@@ -1444,8 +1467,7 @@ function Shell(props: {
                       {
                         title: "Config Write Scope",
                         value: "cscope",
-                        description:
-                          (state as any).configWriteScope ?? "project",
+                        description: configWriteScope(),
                       },
                       {
                         title: "Keybinds",
@@ -1483,10 +1505,11 @@ function Shell(props: {
                           tuiWriteScope() === "project" ? "global" : "project",
                         );
                       if (opt.value === "cscope")
-                        (state as any).configWriteScope =
-                          (state as any).configWriteScope === "project"
+                        setConfigWriteScope(
+                          configWriteScope() === "project"
                             ? "global"
-                            : "project";
+                            : "project",
+                        );
                     }}
                   />
                 ));
@@ -1583,6 +1606,30 @@ function Shell(props: {
       void clipboard.write(text).then(
         () =>
           toast.show({ variant: "success", message: "Copied to clipboard" }),
+        (error) => toast.error(error),
+      );
+      return;
+    }
+    if (command === "session.fork.last") {
+      const turnID = state.lastSubmission?.id;
+      if (!state.sessionID || !turnID || !props.backend.sessionFork) {
+        toast.show({
+          variant: "warning",
+          message: "No submitted message or fork-capable runtime is available",
+        });
+        return;
+      }
+      void props.backend.sessionFork(state.sessionID, turnID).then(
+        (fork) => {
+          composer()?.setText(state.lastSubmission!.text);
+          setComposerText(state.lastSubmission!.text);
+          composer()?.gotoBufferEnd();
+          toast.show({
+            variant: "success",
+            message: `Forked session ${fork.id}`,
+          });
+          changeSession(fork.id);
+        },
         (error) => toast.error(error),
       );
       return;

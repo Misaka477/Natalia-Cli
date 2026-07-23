@@ -145,11 +145,14 @@ export function evaluatePermissionRules(
     }
   }
 
-  const readsPath = ["read_file", "read_media_file"].includes(toolName);
+  const readsPath = ["read_file", "read_media_file", "glob", "grep"].includes(
+    toolName,
+  );
   const writesPath = [
     "write_file",
     "edit_file",
     "sandbox_write",
+    "sandbox_merge",
     "browser_screenshot",
   ].includes(toolName);
   if (rules.files && (readsPath || writesPath)) {

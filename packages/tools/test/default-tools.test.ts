@@ -406,6 +406,35 @@ test("native glob grep and durable todo tools operate inside the workspace", asy
   ).toContain("cutover evidence");
 });
 
+test("glob and grep preflight every exposed or read workspace path", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-read-policy-"));
+  await writeFile(join(root, "allowed.ts"), "const value = 'needle';\n");
+  await writeFile(join(root, "protected.ts"), "const secret = 'needle';\n");
+  const checks: Array<{ toolName: string; paths: string[] }> = [];
+  const context = {
+    workspaceRoot: root,
+    workspaceReadAuthorize: async (input: {
+      toolName: "glob" | "grep";
+      paths: string[];
+    }) => {
+      checks.push(input);
+      if (input.paths.includes("protected.ts")) throw new Error("protected");
+    },
+  };
+  const tools = createToolRegistry();
+  await expect(
+    tools.get("glob")!.execute({ pattern: "*.ts" }, context),
+  ).rejects.toThrow("protected");
+  await expect(
+    tools.get("grep")!.execute({ pattern: "needle", include: "*.ts" }, context),
+  ).rejects.toThrow("protected");
+  expect(checks).toEqual([
+    { toolName: "glob", paths: ["allowed.ts", "protected.ts"] },
+    { toolName: "grep", paths: ["allowed.ts"] },
+    { toolName: "grep", paths: ["protected.ts"] },
+  ]);
+});
+
 test("media and browser visit tools provide native TS metadata", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-browser-"));
   await writeFile(

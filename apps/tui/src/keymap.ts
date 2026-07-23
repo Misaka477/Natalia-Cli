@@ -113,6 +113,11 @@ export const commands: Record<string, CommandDef> = {
     keys: "ctrl+shift+c",
     desc: "Copy last assistant or tool message",
   },
+  "session.fork.last": {
+    id: "session.fork.last",
+    keys: "ctrl+shift+g",
+    desc: "Fork session at the last submitted message",
+  },
   snapshot: { id: "snapshot", keys: "ctrl+s", desc: "Create snapshot" },
   "pty.focus-toggle": {
     id: "pty.focus-toggle",

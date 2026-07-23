@@ -161,6 +161,45 @@ export class JsonSessionStore {
     return copy;
   }
 
+  async fork(
+    id: SessionID,
+    turnID: string,
+    newID?: SessionID,
+    newTitle?: string,
+  ) {
+    const session = await this.load(id);
+    if (!session) throw new Error(`session not found: ${id}`);
+    const boundary = session.events.findIndex(
+      (event) => event.type === "turn.submitted" && event.id === turnID,
+    );
+    if (boundary < 0) throw new Error(`turn not found: ${turnID}`);
+    const targetID =
+      newID ??
+      (`ses_${crypto.randomUUID().replace(/-/gu, "").slice(0, 16)}` as SessionID);
+    const includedTurns = new Set(
+      session.events
+        .slice(0, boundary)
+        .flatMap((event) =>
+          event.type === "turn.submitted" ? [event.id] : [],
+        ),
+    );
+    const fork: SessionRecord = {
+      ...structuredClone(session),
+      id: targetID,
+      title: newTitle ?? `${session.title} (fork)`,
+      events: structuredClone(session.events.slice(0, boundary)),
+      inbox: session.inbox
+        ?.filter((input) => includedTurns.has(input.id))
+        .map((input) => ({ ...structuredClone(input), sessionID: targetID })),
+      metadata: {
+        ...session.metadata,
+        lastAccessedAt: new Date().toISOString(),
+      },
+    };
+    await this.save(fork);
+    return fork;
+  }
+
   private path(id: SessionID) {
     return join(this.dir, `${id}.json`);
   }
@@ -316,6 +355,7 @@ export type { AdmittedSessionInput, SessionInputDelivery } from "./inbox";
 export {
   modelVisibleEvents,
   projectSession,
+  settleInterruptedTurns,
   selectedAgentFromEvents,
   selectedModelFromEvents,
 } from "./projector";

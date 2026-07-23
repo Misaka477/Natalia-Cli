@@ -12,6 +12,7 @@ import { providerError } from "@natalia/runtime";
 import { createToolRegistry } from "@natalia/tools";
 import { resolveConfig } from "@natalia/config";
 import { SqliteSessionStore } from "@natalia/session";
+import { WorkspaceSandboxManager } from "@natalia/sandbox";
 
 test("real runtime client streams provider output and persists replayable session", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-real-"));
@@ -832,6 +833,144 @@ test("workflow script steps require runtime shell approval", async () => {
   expect(approvals).toEqual(["Approve workflow_run", "Approve run_shell"]);
   expect(await readFile(join(root, "workflow-script.txt"), "utf8")).toBe(
     "approved",
+  );
+});
+
+test("workflow sandbox merge retains manifest path authorization", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-workflow-sandbox-merge-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      defaultAgent: "review",
+      agents: {
+        review: {
+          description: "Review",
+          permissions: {
+            files: {
+              writePaths: [
+                {
+                  pattern: "protected.txt",
+                  allow: false,
+                  reason: "protected by agent policy",
+                },
+              ],
+            },
+          },
+        },
+      },
+    }),
+  );
+  const sandboxes = new WorkspaceSandboxManager(
+    join(root, ".natalia", "sandboxes"),
+  );
+  await sandboxes.create("box");
+  await sandboxes.write("box", "allowed.txt", "allowed");
+  await sandboxes.write("box", "protected.txt", "protected");
+  const workflow = JSON.stringify({
+    version: 1,
+    name: "sandbox-merge-policy",
+    steps: [
+      {
+        id: "merge",
+        kind: "tool",
+        tool: "sandbox_merge",
+        arguments: { id: "box" },
+      },
+    ],
+  });
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_workflow_sandbox_merge",
+    permissionMode: "auto",
+    provider: workflowProvider(workflow),
+  });
+  client.start((event) => events.push(event));
+  await client.submit("run sandbox merge workflow");
+
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "workflow.update",
+      workflow: "sandbox-merge-policy",
+      status: "failed",
+      event: "step_failed",
+      stepID: "merge",
+      error: expect.stringContaining("protected by agent policy"),
+    }),
+  );
+  await expect(
+    readFile(join(root, "allowed.txt"), "utf8"),
+  ).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+  await expect(
+    readFile(join(root, "protected.txt"), "utf8"),
+  ).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+});
+
+test("workflow grep retains workspace read path authorization", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-workflow-grep-policy-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(join(root, "allowed.ts"), "const value = 'needle';\n");
+  await writeFile(join(root, "protected.ts"), "const secret = 'needle';\n");
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      defaultAgent: "review",
+      agents: {
+        review: {
+          description: "Review",
+          permissions: {
+            files: {
+              readPaths: [
+                {
+                  pattern: "protected.ts",
+                  allow: false,
+                  reason: "protected read path",
+                },
+              ],
+            },
+          },
+        },
+      },
+    }),
+  );
+  const workflow = JSON.stringify({
+    version: 1,
+    name: "grep-read-policy",
+    steps: [
+      {
+        id: "grep",
+        kind: "tool",
+        tool: "grep",
+        arguments: { pattern: "needle", include: "*.ts" },
+      },
+    ],
+  });
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_workflow_grep_policy",
+    permissionMode: "auto",
+    provider: workflowProvider(workflow),
+  });
+  client.start((event) => events.push(event));
+  await client.submit("run grep workflow");
+
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "workflow.update",
+      workflow: "grep-read-policy",
+      status: "failed",
+      event: "step_failed",
+      stepID: "grep",
+      error: expect.stringContaining("protected read path"),
+    }),
   );
 });
 
@@ -2591,6 +2730,91 @@ test("restart projects unresolved interactive requests from durable events", asy
   });
 });
 
+test("restart durably rejects orphaned interactive requests from a crashed turn", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-ts7-interrupted-interactive-restart-"),
+  );
+  await mkdir(join(root, ".natalia", "sessions"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "sessions", "ses_ts7_interrupted_interactive.json"),
+    JSON.stringify({
+      id: "ses_ts7_interrupted_interactive",
+      title: "Interrupted interactive",
+      createdAt: "2026-07-21T00:00:00.000Z",
+      cancelled: false,
+      resumable: true,
+      events: [
+        {
+          type: "turn.submitted",
+          id: "turn_crashed",
+          text: "write",
+          byteLength: 5,
+          lineCount: 1,
+          sha256: "test",
+        },
+        {
+          type: "approval.request",
+          id: "turn_crashed:write",
+          title: "Write",
+          preview: "file",
+        },
+        {
+          type: "question.request",
+          id: "turn_crashed:write:question",
+          title: "Confirm",
+        },
+        {
+          type: "approval.request",
+          id: "independent_approval",
+          title: "Independent",
+          preview: "safe",
+        },
+      ],
+    }),
+  );
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_interrupted_interactive",
+    provider: toolCallingProvider(),
+  });
+  client.start((event) => events.push(event));
+
+  expect(await client.pendingInteractive!()).toEqual({
+    approvals: [expect.objectContaining({ id: "independent_approval" })],
+    questions: [],
+  });
+  const history = await client.history!({ limit: 100 });
+  expect(history.events.map((entry) => entry.event)).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        type: "approval.response",
+        id: "turn_crashed:write",
+        decision: "reject",
+      }),
+      expect.objectContaining({
+        type: "question.response",
+        id: "turn_crashed:write:question",
+        rejected: true,
+      }),
+      expect.objectContaining({
+        type: "turn.finished",
+        id: "turn_crashed",
+        stopReason: "error",
+      }),
+    ]),
+  );
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "diagnostic",
+      level: "warning",
+      message: expect.stringContaining(
+        "unresolved interactive requests were rejected",
+      ),
+    }),
+  );
+});
+
 test("provider can load a discovered skill through the canonical tool path", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-skill-tool-"));
   const skillRoot = join(root, ".natalia", "skills", "review");
@@ -2795,6 +3019,37 @@ test("real runtime client records provider usage checkpoints", async () => {
         event.type === "context.status" &&
         event.used === 15 &&
         event.source === "exact_checkpoint",
+    ),
+  ).toBe(true);
+});
+
+test("real runtime forks a session at a submitted-turn boundary", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-session-fork-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_session_fork",
+    provider: scriptedProvider("answer"),
+  });
+  client.start(() => undefined);
+  const first = await client.submit("first");
+  const second = await client.submit("second");
+
+  const fork = await client.sessionFork!("ses_ts7_session_fork", second.id);
+  const child = JSON.parse(
+    await readFile(
+      join(root, ".natalia", "sessions", `${fork.id}.json`),
+      "utf8",
+    ),
+  ) as { events: RuntimeEvent[] };
+  expect(fork.title).toBe("Natalia TS session ses_ts7_session_fork (fork)");
+  expect(
+    child.events.some(
+      (event) => event.type === "turn.submitted" && event.text === "second",
+    ),
+  ).toBe(false);
+  expect(
+    child.events.some(
+      (event) => event.type === "turn.submitted" && event.text === "first",
     ),
   ).toBe(true);
 });
@@ -3023,6 +3278,27 @@ function scriptedProvider(text: string): StreamingProvider {
     model: "scripted-model",
     async *stream(_request: ProviderStreamRequest) {
       yield { type: "content", text };
+      yield { type: "done" };
+    },
+  };
+}
+
+function workflowProvider(workflow: string): StreamingProvider {
+  return {
+    provider: "scripted-workflow",
+    model: "scripted-workflow-model",
+    async *stream(request: ProviderStreamRequest) {
+      if (!request.messages.some((message) => message.role === "tool"))
+        yield {
+          type: "tool_call",
+          calls: [
+            {
+              id: "workflow",
+              name: "workflow_run",
+              arguments: JSON.stringify({ workflow }),
+            },
+          ],
+        };
       yield { type: "done" };
     },
   };

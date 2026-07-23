@@ -71,6 +71,14 @@ export type ToolExecutionContext = {
     redacted: boolean,
   ) => void;
   sandboxes?: WorkspaceSandboxManager;
+  workspaceReadAuthorize?: (input: {
+    toolName: "glob" | "grep";
+    paths: string[];
+  }) => Promise<void>;
+  sandboxMergeAuthorize?: (input: {
+    id: string;
+    paths: string[];
+  }) => Promise<void>;
   onSandboxEvent?: (event: { type: string; [key: string]: unknown }) => void;
   settings?: {
     webSearchEndpoint?: string;
@@ -633,7 +641,15 @@ function sandboxMergeTool(): RuntimeTool {
     async execute(input, context) {
       const id = requireString(requireObject(input).id, "id");
       const manager = requireSandboxes(context);
-      const changes = await manager.merge(id, context.workspaceRoot);
+      const changes = await manager.merge(
+        id,
+        context.workspaceRoot,
+        async (paths) =>
+          await context.sandboxMergeAuthorize?.({
+            id,
+            paths,
+          }),
+      );
       context.onSandboxEvent?.(manager.updateEvent(id));
       context.onSandboxEvent?.(manager.auditEvent(id, "merge"));
       return JSON.stringify(changes, null, 2);
@@ -1270,9 +1286,11 @@ function globTool(): RuntimeTool {
         onlyFiles: true,
       }))
         paths.push(path);
+      paths.sort();
       const offset = Math.max(0, numberOr(args.offset, 0));
       const limit = Math.min(1000, Math.max(1, numberOr(args.limit, 200)));
-      const page = paths.sort().slice(offset, offset + limit);
+      const page = paths.slice(offset, offset + limit);
+      await context.workspaceReadAuthorize?.({ toolName: "glob", paths: page });
       return [
         ...page,
         paths.length > offset + limit
@@ -1308,12 +1326,20 @@ function grepTool(): RuntimeTool {
       );
       const include = optionalString(args.include) ?? "**/*";
       const limit = Math.min(1000, Math.max(1, numberOr(args.limit, 200)));
-      const lines: string[] = [];
+      const paths: string[] = [];
       for await (const relativePath of new Bun.Glob(include).scan({
         cwd: context.workspaceRoot,
         onlyFiles: true,
-      })) {
+      }))
+        paths.push(relativePath);
+      paths.sort();
+      const lines: string[] = [];
+      for (const relativePath of paths) {
         if (lines.length >= limit) break;
+        await context.workspaceReadAuthorize?.({
+          toolName: "grep",
+          paths: [relativePath],
+        });
         let content: string;
         try {
           content = await readFile(

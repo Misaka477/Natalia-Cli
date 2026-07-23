@@ -483,6 +483,21 @@ export async function handleRPCMessage(
         ),
       };
     }
+    if (body.method === "session.fork") {
+      optionsGuard(client.sessionFork, "session.fork");
+      const title = body.params?.title;
+      if (title !== undefined && typeof title !== "string")
+        throw new Error("session.fork.params.title must be a string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.sessionFork(
+          stringParam(body.params, "id"),
+          stringParam(body.params, "turnID"),
+          typeof title === "string" ? title : undefined,
+        ),
+      };
+    }
     if (body.method === "session.delete") {
       optionsGuard(client.sessionDelete, "session.delete");
       return {

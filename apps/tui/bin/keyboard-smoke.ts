@@ -16,6 +16,7 @@ const attachmentSubmissions: Array<{
 }> = [];
 const workspaceFiles = [{ path: "src/mentioned.ts", type: "file" as const }];
 const selectedAgents: Array<string | undefined> = [];
+const forkCalls: Array<{ id: string; turnID: string }> = [];
 let statusLoads = 0;
 const statusLoadCount = () => statusLoads;
 const handle = await runTuiShell({
@@ -195,6 +196,21 @@ if (statusLoadCount() !== 2)
 keys.pressEscape();
 await Bun.sleep(80);
 
+keys.pressKey("g", { ctrl: true, shift: true });
+await Bun.sleep(120);
+if (
+  JSON.stringify(forkCalls) !==
+  JSON.stringify([
+    {
+      id: "ses_keyboard_smoke",
+      turnID: `turn_keyboard_${submissions.length}`,
+    },
+  ])
+)
+  throw new Error(`Session fork shortcut failed: ${JSON.stringify(forkCalls)}`);
+keys.pressCtrlC();
+await Bun.sleep(80);
+
 const destroyed = new Promise<void>((resolve) =>
   handle.renderer.once("destroy", resolve),
 );
@@ -305,6 +321,19 @@ function makeBackend(): RuntimeClient {
     },
     async workspaceSearch() {
       return [{ path: "src/mentioned.ts", line: 4, text: "needle" }];
+    },
+    async sessionFork(id, turnID) {
+      forkCalls.push({ id, turnID });
+      return {
+        id: "ses_keyboard_fork",
+        title: "Keyboard smoke (fork)",
+        createdAt: "2026-07-23T00:00:00.000Z",
+        pinned: false,
+        events: 0,
+        pendingInputs: 0,
+        cancelled: false,
+        resumable: true,
+      };
     },
     cancel() {},
     snapshot() {

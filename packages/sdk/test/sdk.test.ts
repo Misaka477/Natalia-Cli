@@ -144,6 +144,18 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
         resumable: true,
       };
     },
+    async sessionFork(id, turnID) {
+      return {
+        id: `${id}_fork_${turnID}`,
+        title: "One (fork)",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        pinned: false,
+        events: 1,
+        pendingInputs: 0,
+        cancelled: false,
+        resumable: true,
+      };
+    },
     async sessionDelete(id) {
       return { id, removedAttachments: 0 };
     },
@@ -266,6 +278,10 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
   expect(await sdk.pinSession("ses_one", true)).toMatchObject({ pinned: true });
   expect(await sdk.duplicateSession("ses_one")).toMatchObject({
     id: "ses_one_copy",
+  });
+  expect(await sdk.forkSession("ses_one", "turn_sdk")).toMatchObject({
+    id: "ses_one_fork_turn_sdk",
+    title: "One (fork)",
   });
   expect(await sdk.deleteSession("ses_one")).toEqual({
     id: "ses_one",

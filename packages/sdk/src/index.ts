@@ -71,6 +71,11 @@ export type NataliaSDK = {
     id: string,
     title?: string,
   ): Promise<import("@natalia/contracts").RuntimeSessionSummary>;
+  forkSession(
+    id: string,
+    turnID: string,
+    title?: string,
+  ): Promise<import("@natalia/contracts").RuntimeSessionSummary>;
   deleteSession(
     id: string,
   ): Promise<{ id: string; removedAttachments: number }>;
@@ -174,6 +179,11 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       await call(
         "session.duplicate",
         title === undefined ? { id } : { id, title },
+      ),
+    forkSession: async (id, turnID, title) =>
+      await call(
+        "session.fork",
+        title === undefined ? { id, turnID } : { id, turnID, title },
       ),
     deleteSession: async (id) => await call("session.delete", { id }),
     respondApproval: async (response) => {

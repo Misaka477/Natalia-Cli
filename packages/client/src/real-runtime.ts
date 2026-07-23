@@ -58,6 +58,7 @@ import {
   promoteSteers,
   projectInteractiveRequests,
   projectSession,
+  settleInterruptedTurns,
   modelVisibleEvents,
   sessionRunCoordinator,
   type SessionRecord,
@@ -437,6 +438,8 @@ export function createRealRuntimeClient(
               subagents,
               interactivePTY,
               sandboxes,
+              workspaceReadAuthorize: authorizeWorkspaceRead,
+              sandboxMergeAuthorize: authorizeSandboxMerge,
               settings: toolSettings(),
               parentSessionID: sessionID,
               parentAgentID: runner.agentId,
@@ -584,6 +587,16 @@ export function createRealRuntimeClient(
         message: `attachment cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
       }),
     );
+    const interrupted = settleInterruptedTurns(session);
+    if (interrupted.length) {
+      await sessionStore.save(session);
+      sqliteStore?.appendEvents(sessionID, interrupted);
+      publish({
+        type: "diagnostic",
+        level: "warning",
+        message: `previous process stopped during ${interrupted.filter((event) => event.type === "turn.finished").length} active turn(s); unresolved interactive requests were rejected because incomplete provider work cannot be replayed`,
+      });
+    }
     const projection = projectSession(session);
     for (const event of projection.replayableEvents)
       if (event.type === "diagnostic")
@@ -611,13 +624,6 @@ export function createRealRuntimeClient(
     if (projection.selectedModel) {
       selectedModel = projection.selectedModel;
       applyAgentProvider();
-    }
-    if (projection.activeTurnIDs.length) {
-      publish({
-        type: "diagnostic",
-        level: "warning",
-        message: `previous process stopped during ${projection.activeTurnIDs.length} active turn(s); incomplete provider work was not replayed`,
-      });
     }
     await cleanupToolOutput(workspaceRoot).catch((error) =>
       publish({
@@ -1322,6 +1328,17 @@ export function createRealRuntimeClient(
       await ready;
       const session = await sessionStore.duplicate(
         id as SessionID,
+        undefined,
+        title,
+      );
+      sqliteStore?.replace(session);
+      return sessionSummary(session);
+    },
+    async sessionFork(id, turnID, title) {
+      await ready;
+      const session = await sessionStore.fork(
+        id as SessionID,
+        turnID,
         undefined,
         title,
       );
@@ -2108,6 +2125,23 @@ export function createRealRuntimeClient(
       const resolved = materialized.resolve(call.name);
       if (resolved.status !== "ready") {
         const reason = resolved.error;
+        const registered = tools.get(call.name);
+        if (
+          registered &&
+          (!isToolAllowed(call.name) ||
+            (permissionMode === "read_only" && registered.requiresApproval))
+        )
+          publish({
+            type: "policy.decision",
+            turnID,
+            toolName: call.name,
+            toolCallID: call.id,
+            decision: "deny",
+            reason:
+              permissionMode === "read_only" && registered.requiresApproval
+                ? readOnlyToolMessage(call.name)
+                : "tool is excluded from the runtime catalog by policy",
+          });
         publish({
           type: "tool.update",
           id: `${turnID}:${call.id}`,
@@ -2182,6 +2216,14 @@ export function createRealRuntimeClient(
     }
     if (!preResult.allowed) {
       publish({
+        type: "policy.decision",
+        turnID,
+        toolName: tool.name,
+        toolCallID: call.id,
+        decision: "deny",
+        reason: preResult.diagnostics.join("; "),
+      });
+      publish({
         type: "tool.update",
         id: toolID,
         name: tool.name,
@@ -2195,6 +2237,14 @@ export function createRealRuntimeClient(
     }
     if (permissionMode === "read_only" && tool.requiresApproval) {
       const message = readOnlyToolMessage(tool.name);
+      publish({
+        type: "policy.decision",
+        turnID,
+        toolName: tool.name,
+        toolCallID: call.id,
+        decision: "deny",
+        reason: message,
+      });
       publish({
         type: "tool.update",
         id: toolID,
@@ -2215,6 +2265,13 @@ export function createRealRuntimeClient(
       status: tool.requiresApproval ? "awaiting_approval" : "queued",
       summary: tool.requiresApproval ? "awaiting approval" : "queued",
       argumentsDelta: call.arguments,
+    });
+    publish({
+      type: "policy.decision",
+      turnID,
+      toolName: tool.name,
+      toolCallID: call.id,
+      decision: tool.requiresApproval ? "approval_required" : "allow",
     });
     if (tool.requiresApproval) await requireApproval(toolID, tool, call);
     await waitIfPaused();
@@ -2288,6 +2345,8 @@ export function createRealRuntimeClient(
           });
         },
         sandboxes,
+        workspaceReadAuthorize: authorizeWorkspaceRead,
+        sandboxMergeAuthorize: authorizeSandboxMerge,
         settings: toolSettings(),
         parentSessionID: sessionID,
         maxSubagentDepth: tsRuntimeConfig?.runtime.subagentDepth,
@@ -2375,6 +2434,15 @@ export function createRealRuntimeClient(
         `approval timed out: ${tool.name}`,
       );
       if (response.decision === "reject")
+        publish({
+          type: "policy.decision",
+          turnID: activeTurnID ?? `approval:${sessionID}`,
+          toolName: tool.name,
+          toolCallID: call.id,
+          decision: "rejected",
+          reason: response.feedback,
+        });
+      if (response.decision === "reject")
         throw new Error(`tool rejected: ${response.feedback ?? tool.name}`);
     } finally {
       pendingApprovalRequests.delete(approvalID);
@@ -2407,14 +2475,40 @@ export function createRealRuntimeClient(
       arguments: rawArguments,
     };
     const preResult = await toolLayer.preExecute(hookEvent);
-    if (!preResult.allowed) throw new Error(preResult.diagnostics.join("; "));
-    if (permissionMode === "read_only" && tool.requiresApproval)
+    if (!preResult.allowed) {
+      publish({
+        type: "policy.decision",
+        turnID: hookEvent.turnID,
+        toolName,
+        toolCallID: hookEvent.toolCallID,
+        decision: "deny",
+        reason: preResult.diagnostics.join("; "),
+      });
+      throw new Error(preResult.diagnostics.join("; "));
+    }
+    if (permissionMode === "read_only" && tool.requiresApproval) {
+      publish({
+        type: "policy.decision",
+        turnID: hookEvent.turnID,
+        toolName,
+        toolCallID: hookEvent.toolCallID,
+        decision: "deny",
+        reason: readOnlyToolMessage(toolName),
+      });
       throw new Error(readOnlyToolMessage(toolName));
+    }
     const errors = validateToolParameters(tool.parameters, arguments_);
     if (errors.length)
       throw new Error(
         `workflow tool "${toolName}" parameter validation failed: ${errors.map((error) => `${error.path}: ${error.message}`).join("; ")}`,
       );
+    publish({
+      type: "policy.decision",
+      turnID: hookEvent.turnID,
+      toolName,
+      toolCallID: hookEvent.toolCallID,
+      decision: tool.requiresApproval ? "approval_required" : "allow",
+    });
     if (tool.requiresApproval)
       await requireApproval(
         `workflow:${activeTurnID ?? sessionID}:${request.stepID}`,
@@ -2425,6 +2519,43 @@ export function createRealRuntimeClient(
           arguments: rawArguments,
         },
       );
+  }
+
+  async function authorizeSandboxMerge(input: { id: string; paths: string[] }) {
+    for (const path of input.paths) {
+      const hookEvent: ToolHookEvent = {
+        turnID: activeTurnID ?? `sandbox:${sessionID}`,
+        toolName: "sandbox_merge",
+        toolCallID: `sandbox:${input.id}:${path}`,
+        arguments: JSON.stringify({ id: input.id, path }),
+      };
+      const preResult = await toolLayer.preExecute(hookEvent);
+      for (const diagnostic of preResult.diagnostics)
+        publish({ type: "diagnostic", level: "info", message: diagnostic });
+      if (!preResult.allowed)
+        throw new Error(
+          `sandbox merge denied for "${path}": ${preResult.diagnostics.join("; ")}`,
+        );
+    }
+  }
+
+  async function authorizeWorkspaceRead(input: {
+    toolName: "glob" | "grep";
+    paths: string[];
+  }) {
+    for (const path of input.paths) {
+      const permission = evaluatePermissionRules(
+        selectedAgent?.permissions,
+        input.toolName,
+        { path },
+      );
+      if (permission.allowed) continue;
+      for (const diagnostic of permission.diagnostics)
+        publish({ type: "diagnostic", level: "info", message: diagnostic });
+      throw new Error(
+        `${input.toolName} denied for "${path}": ${permission.diagnostics.join("; ")}`,
+      );
+    }
   }
 
   async function requireQuestion(

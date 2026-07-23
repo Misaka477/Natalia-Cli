@@ -8,7 +8,7 @@ import {
   configureDiscoveredProviderModel,
   discoverProviderModels,
 } from "../src/catalog";
-import { updateConfig } from "../src/service";
+import { configPatch, updateConfig, updateConfigAtScope } from "../src/service";
 
 test("discovers models from configured provider URL and persists selected model", async () => {
   const requests: Array<{ path: string; authorization: string | null }> = [];
@@ -79,6 +79,78 @@ test("rejects a model that provider discovery did not return", () => {
       discoveredModels: ["real-model"],
     }),
   ).toThrow("Model was not returned by provider");
+});
+
+test("writes settings mutations to the requested config scope", async () => {
+  const workspaceRoot = await mkdtemp(
+    join(tmpdir(), "natalia-config-write-scope-"),
+  );
+  const home = await mkdtemp(join(tmpdir(), "natalia-config-write-home-"));
+  const previousHome = process.env.HOME;
+  process.env.HOME = home;
+  try {
+    await updateConfigAtScope(
+      workspaceRoot,
+      { runtime: { maxStepsPerTurn: 7 } },
+      "project",
+    );
+    await updateConfigAtScope(
+      workspaceRoot,
+      { context: { compactionThresholdPercent: 91 } },
+      "global",
+    );
+    const project = configV2Schema.parse(
+      JSON.parse(
+        await readFile(join(workspaceRoot, ".natalia", "config.json"), "utf8"),
+      ),
+    );
+    const global = configV2Schema.parse(
+      JSON.parse(
+        await readFile(
+          join(home, ".config", "natalia-cli", "config.json"),
+          "utf8",
+        ),
+      ),
+    );
+    expect(project.runtime.maxStepsPerTurn).toBe(7);
+    expect(global.context.compactionThresholdPercent).toBe(91);
+    expect(project.context.compactionThresholdPercent).toBe(85);
+    expect(global.runtime.maxStepsPerTurn).toBe(1000);
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    await rm(workspaceRoot, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("config patches preserve complete changed records and delete removed records", () => {
+  const base = configV2Schema.parse({
+    version: 2,
+    providers: {
+      retained: { type: "openai", apiKey: "base-key" },
+      removed: { type: "openai", apiKey: "remove-key" },
+    },
+  });
+  const next = configV2Schema.parse({
+    ...base,
+    providers: {
+      retained: {
+        ...base.providers.retained,
+        baseURL: "https://example.invalid",
+      },
+    },
+  });
+  expect(configPatch(base, next)).toMatchObject({
+    providers: {
+      retained: {
+        type: "openai",
+        apiKey: "base-key",
+        baseURL: "https://example.invalid",
+      },
+      removed: undefined,
+    },
+  });
 });
 
 test("catalog excludes providers denied by the configured policy", () => {
