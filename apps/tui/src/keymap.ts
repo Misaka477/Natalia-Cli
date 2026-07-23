@@ -180,6 +180,12 @@ export const commands: Record<string, CommandDef> = {
     desc: "Edit agent override",
     scope: "dialog",
   },
+  "agent.dialog.details": {
+    id: "agent.dialog.details",
+    keys: "d",
+    desc: "View agent details",
+    scope: "dialog",
+  },
   "model.dialog.variant": {
     id: "model.dialog.variant",
     keys: "v",

@@ -3,6 +3,7 @@ import {
   createMemo,
   createSignal,
   For,
+  onMount,
   Show,
   type JSX,
 } from "solid-js";
@@ -10,8 +11,11 @@ import { TextAttributes } from "@opentui/core";
 import { useAppState } from "../context/state";
 import { darkTheme } from "../theme/theme";
 import { useBindings } from "@opentui/keymap/solid";
-import type { RuntimeSessionSummary } from "@natalia/contracts";
-import type { RuntimeDiagnostic } from "@natalia/contracts";
+import type {
+  RuntimeDiagnostic,
+  RuntimeSessionSummary,
+  RuntimeStatusSnapshot,
+} from "@natalia/contracts";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { DialogPrompt } from "./DialogPrompt";
 import { useDialog } from "./provider";
@@ -44,48 +48,102 @@ export function DialogHelp(props: { onClose(): void }) {
   );
 }
 
-export function DialogStatus() {
+export function statusRows(snapshot: RuntimeStatusSnapshot) {
+  return [
+    ["Model", snapshot.model],
+    ["Provider", snapshot.provider],
+    ["Context", snapshot.context],
+    ["Step", snapshot.step],
+    ["Permissions", snapshot.permissions],
+    ["Workspace", snapshot.cwd],
+    ["Background", snapshot.background],
+  ] as const;
+}
+
+export function DialogStatus(props: {
+  load(): Promise<RuntimeStatusSnapshot>;
+}) {
   const { state } = useAppState();
-  const segments = () => {
-    const map: Record<string, string> = {};
-    for (const s of state.statusSegments) {
-      const idx = s.indexOf(":");
-      if (idx > 0) map[s.slice(0, idx)] = s.slice(idx + 1);
-      else map._extra = s;
+  const dialog = useDialog();
+  const [snapshot, setSnapshot] = createSignal<RuntimeStatusSnapshot>();
+  const [loading, setLoading] = createSignal(false);
+  const [error, setError] = createSignal<string>();
+  let refreshing = false;
+  const refresh = async () => {
+    refreshing = true;
+    setLoading(true);
+    setError(undefined);
+    try {
+      setSnapshot(await props.load());
+    } catch {
+      setError("Unable to load runtime status");
+    } finally {
+      setLoading(false);
+      refreshing = false;
     }
-    return map;
   };
+  onMount(() => void refresh());
+  useBindings(() => ({
+    mode: "modal",
+    enabled: true,
+    bindings: [
+      {
+        key: "r",
+        desc: "Refresh runtime status",
+        group: "Dialog",
+        cmd: () => void refresh(),
+      },
+      {
+        key: "escape",
+        desc: "Close status",
+        group: "Dialog",
+        cmd: () => dialog.pop(),
+      },
+    ],
+  }));
   return (
     <DialogFrame title="Runtime Status" tone="accent">
-      <text fg={darkTheme.text}>Mode: {segments().mode ?? "runtime"}</text>
-      <text fg={darkTheme.text}>
-        Model: {segments().model ?? "not connected"}
-      </text>
-      <text fg={darkTheme.text}>
-        Provider: {segments().provider ?? "not connected"}
-      </text>
-      <text fg={darkTheme.text}>Context: {segments().ctx ?? "unknown"}</text>
-      <Show when={segments().threshold}>
-        <text fg={darkTheme.muted}>
-          Threshold: {segments().threshold} · Reserved:{" "}
-          {segments().reserved ?? "-"}
-        </text>
+      <Show when={error()}>
+        {(message) => <text fg={darkTheme.danger}>{message()}</text>}
       </Show>
-      <Show when={segments().step}>
-        <text fg={darkTheme.muted}>Step: {segments().step}</text>
-      </Show>
-      <Show when={segments().bg}>
-        <text fg={darkTheme.muted}>Background: {segments().bg}</text>
-      </Show>
-      <Show when={segments()._extra}>
-        <text fg={darkTheme.muted}>Permissions: {segments()._extra}</text>
+      <Show
+        when={snapshot()}
+        fallback={<text fg={darkTheme.muted}>Loading runtime status...</text>}
+      >
+        {(current) => (
+          <For each={statusRows(current())}>
+            {([label, value]) => (
+              <text fg={darkTheme.text}>
+                {label}: {value}
+              </text>
+            )}
+          </For>
+        )}
       </Show>
       <text fg={darkTheme.muted}>
         PTY sessions: {Object.keys(state.pty).length} · Messages:{" "}
         {state.messages.length}
       </text>
-      <text fg={darkTheme.muted}>Escape to close</text>
+      <text fg={darkTheme.muted}>
+        {loading() ? "Refreshing... · " : ""}R refresh · Escape close
+      </text>
     </DialogFrame>
+  );
+}
+
+export function formatDiagnosticsReport(items: RuntimeDiagnostic[]) {
+  return items
+    .map((item) => `${item.at} ${item.level.toUpperCase()} ${item.message}`)
+    .join("\n");
+}
+
+export function diagnosticsSummary(items: RuntimeDiagnostic[]) {
+  return items.reduce(
+    (summary, item) => {
+      summary[item.level]++;
+      return summary;
+    },
+    { info: 0, warning: 0, error: 0 },
   );
 }
 
@@ -97,21 +155,35 @@ export function DialogDiagnostics(props: {
   const [items, setItems] = createSignal<RuntimeDiagnostic[]>([]);
   const [loading, setLoading] = createSignal(false);
   const [copied, setCopied] = createSignal(false);
-  const report = () =>
-    items()
-      .map((item) => `${item.at} ${item.level.toUpperCase()} ${item.message}`)
-      .join("\n");
+  const [error, setError] = createSignal<string>();
+  let refreshing = false;
+  const report = () => formatDiagnosticsReport(items());
+  const summary = () => diagnosticsSummary(items());
   const refresh = async () => {
+    if (refreshing) return;
+    refreshing = true;
     setLoading(true);
+    setError(undefined);
     try {
       setItems(await props.load());
+    } catch {
+      // Diagnostics may originate from unavailable local transports. Do not expose
+      // an unredacted transport error in this report surface.
+      setError("Unable to load runtime diagnostics");
     } finally {
       setLoading(false);
+      refreshing = false;
     }
   };
   const copy = async () => {
-    await props.copy(report());
-    setCopied(true);
+    try {
+      await props.copy(report());
+      setCopied(true);
+      setError(undefined);
+    } catch {
+      setCopied(false);
+      setError("Unable to copy diagnostics report");
+    }
   };
   createEffect(() => void refresh());
   useBindings(() => ({
@@ -140,6 +212,15 @@ export function DialogDiagnostics(props: {
   }));
   return (
     <DialogFrame title="Runtime Diagnostics" tone="accent">
+      <Show when={!loading() && items().length > 0}>
+        <text fg={darkTheme.muted}>
+          {items().length} entries · {summary().error} errors ·{" "}
+          {summary().warning} warnings
+        </text>
+      </Show>
+      <Show when={error()}>
+        {(message) => <text fg={darkTheme.danger}>{message()}</text>}
+      </Show>
       <scrollbox height={16} border={["left"]} borderColor={darkTheme.muted}>
         <Show
           when={!loading()}

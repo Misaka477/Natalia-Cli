@@ -27,7 +27,18 @@ type WorkflowModule = typeof import("@natalia/workflow") & {
   ): {
     run(
       document: import("@natalia/workflow").WorkflowDocument,
-      context: { workspaceRoot: string; signal?: AbortSignal },
+      context: {
+        workspaceRoot: string;
+        signal?: AbortSignal;
+        authorize?: (request: {
+          kind: "tool" | "script";
+          stepID: string;
+          toolName?: string;
+          arguments?: unknown;
+          command?: string;
+          timeoutMs?: number;
+        }) => Promise<void>;
+      },
       runID?: string,
     ): Promise<import("@natalia/workflow").WorkflowRun>;
   };
@@ -146,7 +157,15 @@ function workflowRunTool(getRegistry: () => ToolRegistry): RuntimeTool {
           }),
       );
       const runID = optionalString(args.runID);
-      const run = await runtime.run(document, context, runID);
+      const run = await runtime.run(
+        document,
+        {
+          ...context,
+          authorize: async (request) =>
+            await context.workflowAuthorize?.(request),
+        },
+        runID,
+      );
       return JSON.stringify(
         {
           id: run.id,

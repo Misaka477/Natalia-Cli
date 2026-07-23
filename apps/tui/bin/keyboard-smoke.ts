@@ -15,6 +15,9 @@ const attachmentSubmissions: Array<{
   resources?: Array<{ server: string; uri: string; name: string }>;
 }> = [];
 const workspaceFiles = [{ path: "src/mentioned.ts", type: "file" as const }];
+const selectedAgents: Array<string | undefined> = [];
+let statusLoads = 0;
+const statusLoadCount = () => statusLoads;
 const handle = await runTuiShell({
   backend: makeBackend(),
   closeAfterInitialTurn: false,
@@ -160,6 +163,38 @@ if (attachmentSubmissions[4]?.resources?.[0]?.uri !== "docs://guide")
     `Resource mention metadata failed: got ${JSON.stringify(attachmentSubmissions[4])}`,
   );
 
+keys.pressKey("x", { ctrl: true });
+await Bun.sleep(30);
+keys.pressKey("a");
+await Bun.sleep(100);
+keys.pressKey("d");
+await Bun.sleep(100);
+keys.pressEscape();
+await Bun.sleep(80);
+keys.pressEscape();
+await Bun.sleep(80);
+if (selectedAgents.length !== 0)
+  throw new Error(
+    "agent detail dialog selected an agent while opening details",
+  );
+
+keys.pressKey("p", { ctrl: true });
+await Bun.sleep(80);
+await keys.typeText("status");
+await Bun.sleep(80);
+keys.pressEnter();
+for (let attempts = 0; attempts < 20 && statusLoadCount() !== 1; attempts++)
+  await Bun.sleep(25);
+if (statusLoadCount() !== 1)
+  throw new Error(`expected runtime status load, got ${statusLoadCount()}`);
+keys.pressKey("r");
+for (let attempts = 0; attempts < 20 && statusLoadCount() !== 2; attempts++)
+  await Bun.sleep(25);
+if (statusLoadCount() !== 2)
+  throw new Error(`expected runtime status refresh, got ${statusLoadCount()}`);
+keys.pressEscape();
+await Bun.sleep(80);
+
 const destroyed = new Promise<void>((resolve) =>
   handle.renderer.once("destroy", resolve),
 );
@@ -219,12 +254,41 @@ function makeBackend(): RuntimeClient {
     async agents() {
       return [
         {
+          name: "review",
+          description: "Review changes",
+          mode: "primary",
+          hidden: false,
+          model: "scripted",
+          variant: "careful",
+          maxSteps: 12,
+          allowedTools: ["read_file"],
+          excludedTools: ["run_shell"],
+          mcpServers: ["docs"],
+          permissions: { tools: { allow: ["grep"], exclude: ["write_file"] } },
+        },
+        {
           name: "reviewer",
           description: "Review changes",
           mode: "subagent",
           hidden: false,
         },
       ];
+    },
+    selectAgent(name) {
+      selectedAgents.push(name);
+    },
+    async runtimeStatus() {
+      statusLoads++;
+      return {
+        type: "status.snapshot",
+        model: "scripted-model",
+        provider: "fixture",
+        context: "0 tokens",
+        step: "0",
+        permissions: "ask",
+        cwd: "/workspace",
+        background: "0 running",
+      };
     },
     async mcpCatalog() {
       return {

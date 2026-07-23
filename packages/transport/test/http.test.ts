@@ -90,6 +90,21 @@ test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", as
         },
       ];
     },
+    async agents() {
+      return [
+        {
+          name: "review",
+          description: "Review changes",
+          mode: "primary",
+          hidden: false,
+          model: "test-model",
+          maxSteps: 12,
+          allowedTools: ["read_file"],
+          excludedTools: ["run_shell"],
+          mcpServers: ["docs"],
+        },
+      ];
+    },
     cancel() {},
     pause(reason) {
       sink?.({ type: "turn.paused", id: "turn_1", reason: reason ?? "test" });
@@ -155,6 +170,40 @@ test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", as
   expect(
     (await diagnostics.json()) as { result: Array<{ message: string }> },
   ).toMatchObject({ result: [{ message: "safe" }] });
+  const status = await fetch(`${server.url}/rpc`, {
+    method: "POST",
+    headers: {
+      authorization: "Bearer secret",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 12,
+      method: "runtime.status",
+      params: {},
+    }),
+  });
+  expect(
+    (await status.json()) as { result: { background: string } },
+  ).toMatchObject({ result: { background: "0 running" } });
+  const agents = await fetch(`${server.url}/rpc`, {
+    method: "POST",
+    headers: {
+      authorization: "Bearer secret",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 11,
+      method: "agent.list",
+      params: {},
+    }),
+  });
+  expect(
+    (await agents.json()) as {
+      result: Array<{ name: string; maxSteps: number }>;
+    },
+  ).toMatchObject({ result: [{ name: "review", maxSteps: 12 }] });
   const pending = await fetch(`${server.url}/rpc`, {
     method: "POST",
     headers: {

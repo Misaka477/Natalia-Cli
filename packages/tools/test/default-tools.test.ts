@@ -2,7 +2,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, test } from "bun:test";
-import { createToolRegistry } from "../src";
+import { createToolRegistry, ManagedProcessRegistry } from "../src";
 import { InteractivePTYRegistry } from "@natalia/pty";
 import { WorkspaceSandboxManager } from "@natalia/sandbox";
 
@@ -93,10 +93,31 @@ test("default shell and process tools execute real commands", async () => {
     .execute({ id: "proc_test" }, { workspaceRoot: root });
 });
 
+test("managed process registry reports live workspace process counts", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-process-count-"));
+  const registry = new ManagedProcessRegistry();
+  const tools = createToolRegistry(undefined, registry);
+  await tools
+    .get("process_start")!
+    .execute(
+      { id: "proc_count", command: "sleep 30" },
+      { workspaceRoot: root },
+    );
+  expect(await registry.runningCount({ workspaceRoot: root })).toBe(1);
+  await tools
+    .get("process_stop")!
+    .execute({ id: "proc_count" }, { workspaceRoot: root });
+  expect(await registry.runningCount({ workspaceRoot: root })).toBe(0);
+});
+
 test("subagent retry is exposed as an explicit continuation tool", () => {
   const tools = createToolRegistry();
   expect(tools.get("agent_retry")?.requiresApproval).toBe(true);
   expect(tools.get("agent_retry")?.description).toContain("continuation");
+});
+
+test("plan retains the approval boundary of its durable todo write", () => {
+  expect(createToolRegistry().get("plan")?.requiresApproval).toBe(true);
 });
 
 test("managed process registry persists state for restart and background aliases", async () => {

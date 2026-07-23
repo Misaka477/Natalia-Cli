@@ -84,6 +84,86 @@ test("native workflow executes script steps with sanitized environment", async (
   }
 });
 
+test("workflow authorization blocks script and nested tool steps", async () => {
+  const { root, store } = await makeRuntime();
+  const checked: string[] = [];
+  const runtime = new WorkflowRuntime(createToolRegistry(), store);
+  const run = await runtime.run(
+    {
+      version: 1,
+      name: "authorization",
+      steps: [
+        {
+          id: "script",
+          kind: "script",
+          command: "printf blocked > blocked.txt",
+        },
+        {
+          id: "write",
+          kind: "tool",
+          tool: "write_file",
+          arguments: { path: "blocked.txt", content: "blocked" },
+        },
+      ],
+    },
+    {
+      workspaceRoot: root,
+      authorize: async (request) => {
+        checked.push(
+          request.kind === "script" ? "run_shell" : request.toolName,
+        );
+        throw new Error("blocked by workflow policy");
+      },
+    },
+  );
+  expect(run.status).toBe("failed");
+  expect(checked).toEqual(["run_shell"]);
+  await expect(
+    readFile(join(root, "blocked.txt"), "utf8"),
+  ).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+});
+
+test("workflow authorization covers nested tool steps", async () => {
+  const { root, store } = await makeRuntime();
+  const checked: string[] = [];
+  const runtime = new WorkflowRuntime(createToolRegistry(), store);
+  const run = await runtime.run(
+    {
+      version: 1,
+      name: "nested-authorization",
+      steps: [
+        {
+          id: "retry",
+          kind: "retry",
+          maxAttempts: 1,
+          step: {
+            id: "write",
+            kind: "tool",
+            tool: "write_file",
+            arguments: { path: "blocked.txt", content: "blocked" },
+          },
+        },
+      ],
+    },
+    {
+      workspaceRoot: root,
+      authorize: async (request) => {
+        if (request.kind === "tool") checked.push(request.toolName);
+        throw new Error("blocked by workflow policy");
+      },
+    },
+  );
+  expect(run.status).toBe("failed");
+  expect(checked).toEqual(["write_file"]);
+  await expect(
+    readFile(join(root, "blocked.txt"), "utf8"),
+  ).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+});
+
 // ── Branch / switch ─────────────────────────────────────────────────────────
 
 test("branch matches first condition", async () => {

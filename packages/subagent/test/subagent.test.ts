@@ -83,8 +83,10 @@ test("status returns agent status", async () => {
   const reg = new SubagentRegistry({ runner: delayedRunner });
   const rec = await reg.spawn("status test");
   expect(rec.status).toBe("running");
+  expect(reg.runningCount()).toBe(1);
   await new Promise((r) => setTimeout(r, 100));
   expect(rec.status).toBe("completed");
+  expect(reg.runningCount()).toBe(0);
 });
 
 test("output returns agent outputs", async () => {

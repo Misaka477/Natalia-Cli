@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -102,6 +102,40 @@ test("invalid command policy regex fails closed with a diagnostic", async () => 
   expect(result.diagnostics.join(" ")).toContain(
     "invalid command deny pattern",
   );
+});
+
+test("agent rules cover sandbox paths and all command-launching tools", () => {
+  const fileRules = {
+    files: {
+      writePaths: [
+        { pattern: "protected/*", allow: false, reason: "protected" },
+      ],
+    },
+  };
+  expect(
+    evaluatePermissionRules(fileRules, "sandbox_write", {
+      path: "protected/note.txt",
+    }),
+  ).toMatchObject({ allowed: false, reason: "protected" });
+  expect(
+    evaluatePermissionRules(fileRules, "browser_screenshot", {
+      path: "protected/page.png",
+    }),
+  ).toMatchObject({ allowed: false, reason: "protected" });
+
+  const commandRules = { commands: { denyPatterns: ["rm\\s+-rf"] } };
+  for (const toolName of [
+    "sandbox_execute",
+    "sandbox_resource_start",
+    "process_start",
+    "background_start",
+    "interactive_start",
+  ])
+    expect(
+      evaluatePermissionRules(commandRules, toolName, {
+        command: "rm -rf generated",
+      }),
+    ).toMatchObject({ allowed: false, reason: "command blocked by policy" });
 });
 
 test("createToolPolicyHookLayer preExecute calls custom hook", async () => {
@@ -224,6 +258,118 @@ test("real runtime client with allow policy prevents excluded tools from provide
   expect(toolNames).toContain("read_file");
   expect(toolNames).not.toContain("write_file");
   expect(toolNames).not.toContain("run_shell");
+});
+
+test("mode permission profile overrides default runtime approval mode", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-mode-permission-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await Bun.write(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      defaultPermission: "ask",
+      permissionProfiles: {
+        ask: { approval: "ask", description: "Ask" },
+        safe: { approval: "read_only", description: "Safe mode" },
+      },
+      modes: { review: { permission: "safe" } },
+      defaultMode: "review",
+    }),
+  );
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_mode_permission",
+    provider: toolCallingProviderWithName("read_file"),
+  });
+  client.start(() => undefined);
+
+  expect(await client.runtimeStatus?.()).toMatchObject({
+    permissions: "read_only",
+  });
+});
+
+test("explicit toolPolicy cannot bypass agent file permissions", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-agent-policy-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await Bun.write(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      defaultAgent: "review",
+      agents: {
+        review: {
+          description: "Review",
+          permissions: {
+            files: {
+              writePaths: [
+                { pattern: "protected.txt", allow: false, reason: "protected" },
+              ],
+            },
+          },
+        },
+      },
+    }),
+  );
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_agent_policy",
+    provider: writeProvider("protected.txt"),
+    permissionMode: "auto",
+    toolPolicy: { allow: ["write_file"] },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("write protected");
+
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "tool.update",
+      name: "write_file",
+      status: "failed",
+      summary: expect.stringContaining("protected"),
+    }),
+  );
+  await expect(
+    readFile(join(root, "protected.txt"), "utf8"),
+  ).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+});
+
+test("agent command rules block sandbox execution before approval", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-sandbox-policy-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await Bun.write(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      defaultAgent: "review",
+      agents: {
+        review: {
+          description: "Review",
+          permissions: { commands: { denyPatterns: ["rm\\s+-rf"] } },
+        },
+      },
+    }),
+  );
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_sandbox_policy",
+    provider: sandboxCommandProvider(),
+    permissionMode: "auto",
+  });
+  client.start((event) => events.push(event));
+  await client.submit("run sandbox command");
+
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "tool.update",
+      name: "sandbox_execute",
+      status: "failed",
+      summary: expect.stringContaining("command matches deny pattern"),
+    }),
+  );
 });
 
 test("real runtime client with exclude policy blocks tool execution", async () => {
@@ -411,6 +557,53 @@ function toolCallingProviderWithName(toolName: string): StreamingProvider {
         return;
       }
       yield { type: "content", text: "done" };
+      yield { type: "done" };
+    },
+  };
+}
+
+function writeProvider(path: string): StreamingProvider {
+  return {
+    provider: "scripted-write",
+    model: "scripted-write-model",
+    async *stream(request: ProviderStreamRequest) {
+      if (!request.messages.some((message) => message.role === "tool")) {
+        yield {
+          type: "tool_call",
+          calls: [
+            {
+              id: "call_write",
+              name: "write_file",
+              arguments: JSON.stringify({ path, content: "blocked" }),
+            },
+          ],
+        };
+      }
+      yield { type: "done" };
+    },
+  };
+}
+
+function sandboxCommandProvider(): StreamingProvider {
+  return {
+    provider: "scripted-sandbox",
+    model: "scripted-sandbox-model",
+    async *stream(request: ProviderStreamRequest) {
+      if (!request.messages.some((message) => message.role === "tool")) {
+        yield {
+          type: "tool_call",
+          calls: [
+            {
+              id: "call_sandbox",
+              name: "sandbox_execute",
+              arguments: JSON.stringify({
+                id: "box",
+                command: "rm -rf generated",
+              }),
+            },
+          ],
+        };
+      }
       yield { type: "done" };
     },
   };

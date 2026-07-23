@@ -13,7 +13,6 @@ import { KeybindProvider } from "../context/keybind";
 import { LocalProvider } from "../context/local";
 import { ThemeProvider } from "../context/theme";
 import { RouteProvider } from "../context/route";
-import { DialogProvider } from "../dialog/provider";
 import { registerNataliaKeymap } from "../modal/mode-stack";
 import { App } from "./App";
 
@@ -76,35 +75,33 @@ export async function runTuiShell(
                   <RouteProvider>
                     <ThemeProvider workspaceRoot={input.workspaceRoot}>
                       <LocalProvider workspaceRoot={input.workspaceRoot}>
-                        <DialogProvider>
-                          <App
-                            backend={backend}
-                            createBackend={input.createBackend}
-                            workspaceRoot={input.workspaceRoot}
-                            onSessionChange={input.onSessionChange}
-                            onDispatch={(event) => {
-                              events.push(event);
-                              input.onEvent?.(event);
-                              if (
-                                input.initialPrompt &&
-                                input.closeAfterInitialTurn !== false &&
-                                event.type === "turn.finished"
-                              ) {
-                                if (process.env.NATALIA_TUI_SMOKE_MARKER)
-                                  void Bun.write(
-                                    process.env.NATALIA_TUI_SMOKE_MARKER,
-                                    "done",
-                                  );
-                                setTimeout(
-                                  () => renderer.destroy(),
-                                  process.env.NATALIA_TUI_SMOKE_MARKER
-                                    ? 1000
-                                    : 50,
+                        <App
+                          backend={backend}
+                          createBackend={input.createBackend}
+                          workspaceRoot={input.workspaceRoot}
+                          onSessionChange={input.onSessionChange}
+                          onDispatch={(event) => {
+                            events.push(event);
+                            input.onEvent?.(event);
+                            if (
+                              input.initialPrompt &&
+                              input.closeAfterInitialTurn !== false &&
+                              event.type === "turn.finished"
+                            ) {
+                              if (process.env.NATALIA_TUI_SMOKE_MARKER)
+                                void Bun.write(
+                                  process.env.NATALIA_TUI_SMOKE_MARKER,
+                                  "done",
                                 );
-                              }
-                            }}
-                          />
-                        </DialogProvider>
+                              setTimeout(
+                                () => renderer.destroy(),
+                                process.env.NATALIA_TUI_SMOKE_MARKER
+                                  ? 1000
+                                  : 50,
+                              );
+                            }
+                          }}
+                        />
                       </LocalProvider>
                     </ThemeProvider>
                   </RouteProvider>

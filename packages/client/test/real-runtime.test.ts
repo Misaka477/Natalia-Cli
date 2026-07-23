@@ -21,7 +21,11 @@ test("real runtime client streams provider output and persists replayable sessio
     sessionID: "ses_ts7_real",
     provider: scriptedProvider("hello from provider"),
   });
-  client.start((event) => events.push(event));
+  client.start((event) => {
+    events.push(event);
+    if (event.type === "approval.request")
+      client.respondApproval({ requestID: event.id, decision: "once" });
+  });
 
   await client.submit("Say hello");
 
@@ -75,19 +79,264 @@ test("runtime status and diagnostics expose only published safe state", async ()
     sessionID: "ses_runtime_status",
     provider: scriptedProvider("ready"),
   });
-  client.start(() => undefined);
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
   client.diagnostic("provider key is configured", "info");
   const status = await client.runtimeStatus?.();
   const diagnostics = await client.diagnostics?.(1);
   expect(status).toMatchObject({
     type: "status.snapshot",
     model: "scripted-model",
+    permissions: "ask",
   });
   expect(diagnostics).toMatchObject([
     {
       level: "info",
       message: "provider key is configured",
       at: expect.any(String),
+    },
+  ]);
+});
+
+test("runtime status reports the active approval mode", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-permissions-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_runtime_permissions",
+    provider: scriptedProvider("ready"),
+    permissionMode: "auto",
+  });
+  client.start(() => undefined);
+
+  expect(await client.runtimeStatus?.()).toMatchObject({
+    type: "status.snapshot",
+    permissions: "auto",
+  });
+});
+
+test("runtime status reflects the configured auto approval profile", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-profile-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      defaultPermission: "trusted",
+      permissionProfiles: {
+        trusted: { approval: "auto", description: "Trusted workspace" },
+      },
+    }),
+  );
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_runtime_profile",
+    provider: scriptedProvider("ready"),
+  });
+  client.start(() => undefined);
+
+  expect(await client.runtimeStatus?.()).toMatchObject({
+    type: "status.snapshot",
+    permissions: "auto",
+  });
+});
+
+test("read-only profile rejects side-effecting tools without an approval request", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-read-only-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      defaultPermission: "safe",
+      permissionProfiles: {
+        safe: { approval: "read_only", description: "Read-only workspace" },
+      },
+    }),
+  );
+  const events: RuntimeEvent[] = [];
+  const requests: ProviderStreamRequest[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_runtime_read_only",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        requests.push(request);
+        if (!request.messages.some((message) => message.role === "tool"))
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "write",
+                name: "write_file",
+                arguments: JSON.stringify({
+                  path: "hello-ts7.txt",
+                  content: "blocked",
+                }),
+              },
+            ],
+          };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("write a file");
+
+  expect(await client.runtimeStatus?.()).toMatchObject({
+    type: "status.snapshot",
+    permissions: "read_only",
+  });
+  expect(requests[0]?.tools?.map((tool) => tool.name)).not.toContain(
+    "write_file",
+  );
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "tool.update",
+      name: "write_file",
+      status: "failed",
+      summary: "Unknown tool: write_file",
+    }),
+  );
+  expect(events.some((event) => event.type === "approval.request")).toBe(false);
+  await expect(
+    readFile(join(root, "hello-ts7.txt"), "utf8"),
+  ).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+});
+
+test("runtime status reflects committed agent and model selections", async () => {
+  const agentRoot = await mkdtemp(join(tmpdir(), "natalia-agent-status-"));
+  await mkdir(join(agentRoot, ".natalia"), { recursive: true });
+  await writeFile(
+    join(agentRoot, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      providers: {
+        alpha: {
+          type: "openai",
+          apiKey: "alpha-key",
+          baseURL: "http://127.0.0.1:9",
+        },
+        beta: {
+          type: "anthropic",
+          apiKey: "beta-key",
+          baseURL: "http://127.0.0.1:9",
+        },
+      },
+      models: {
+        alpha: { provider: "alpha", model: "alpha-model" },
+        beta: { provider: "beta", model: "beta-model" },
+      },
+      defaultModel: "alpha",
+      agents: {
+        first: { description: "First", model: "alpha" },
+        second: { description: "Second", model: "beta" },
+      },
+      defaultAgent: "first",
+    }),
+  );
+  const agentClient = createRealRuntimeClient({
+    workspaceRoot: agentRoot,
+    sessionID: "ses_agent_status",
+  });
+  agentClient.start(() => undefined);
+  expect(await agentClient.runtimeStatus?.()).toMatchObject({
+    provider: "openai",
+    model: "alpha-model",
+  });
+  agentClient.selectAgent?.("second");
+  expect(await agentClient.runtimeStatus?.()).toMatchObject({
+    provider: "anthropic",
+    model: "beta-model",
+  });
+
+  const modelRoot = await mkdtemp(join(tmpdir(), "natalia-model-status-"));
+  await mkdir(join(modelRoot, ".natalia"), { recursive: true });
+  await writeFile(
+    join(modelRoot, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      providers: {
+        alpha: {
+          type: "openai",
+          apiKey: "alpha-key",
+          baseURL: "http://127.0.0.1:9",
+        },
+        beta: {
+          type: "anthropic",
+          apiKey: "beta-key",
+          baseURL: "http://127.0.0.1:9",
+        },
+      },
+      models: {
+        alpha: { provider: "alpha", model: "alpha-model" },
+        beta: { provider: "beta", model: "beta-model" },
+      },
+      defaultModel: "alpha",
+    }),
+  );
+  const modelClient = createRealRuntimeClient({
+    workspaceRoot: modelRoot,
+    sessionID: "ses_model_status",
+  });
+  modelClient.start(() => undefined);
+  expect(await modelClient.runtimeStatus?.()).toMatchObject({
+    provider: "openai",
+    model: "alpha-model",
+  });
+  await modelClient.selectModel?.("beta");
+  expect(await modelClient.runtimeStatus?.()).toMatchObject({
+    provider: "anthropic",
+    model: "beta-model",
+  });
+});
+
+test("runtime agent catalog exposes configured selectable metadata", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-agent-catalog-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      defaultAgent: "review",
+      agents: {
+        review: {
+          description: "Review changes",
+          mode: "primary",
+          model: "scripted",
+          variant: "careful",
+          maxSteps: 12,
+          allowedTools: ["read_file"],
+          excludedTools: ["run_shell"],
+          mcpServers: ["docs"],
+          permissions: { tools: { allow: ["grep"], exclude: ["write_file"] } },
+        },
+      },
+    }),
+  );
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_agent_catalog",
+    provider: scriptedProvider("ready"),
+  });
+  client.start(() => undefined);
+
+  expect(await client.agents?.()).toEqual([
+    {
+      name: "review",
+      description: "Review changes",
+      mode: "primary",
+      hidden: false,
+      model: "scripted",
+      variant: "careful",
+      maxSteps: 12,
+      allowedTools: ["read_file"],
+      excludedTools: ["run_shell"],
+      mcpServers: ["docs"],
+      permissions: { tools: { allow: ["grep"], exclude: ["write_file"] } },
     },
   ]);
 });
@@ -311,7 +560,11 @@ test("runtime loads a local manifest plugin and exposes its owned tool", async (
       },
     },
   });
-  client.start((event) => events.push(event));
+  client.start((event) => {
+    events.push(event);
+    if (event.type === "approval.request")
+      client.respondApproval({ requestID: event.id, decision: "once" });
+  });
   await client.submit("run plugin");
   expect(events).toContainEqual({
     type: "plugin.update",
@@ -334,6 +587,97 @@ test("runtime loads a local manifest plugin and exposes its owned tool", async (
     status: "unloaded",
     detail: undefined,
   });
+});
+
+test("read-only runtime hides untrusted plugin tools from the provider", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-plugin-read-only-"));
+  const pluginRoot = join(root, ".natalia", "plugins", "unsafe");
+  await mkdir(pluginRoot, { recursive: true });
+  await writeFile(
+    join(pluginRoot, "natalia.plugin.json"),
+    JSON.stringify({
+      apiVersion: 1,
+      id: "unsafe.plugin",
+      version: "1.0.0",
+      name: "Unsafe",
+      description: "",
+      entry: "index.ts",
+      capabilities: ["tools"],
+    }),
+  );
+  await writeFile(
+    join(pluginRoot, "index.ts"),
+    "export default { setup(api) { api.tools.register({ name: 'mutate', description: 'Mutate', requiresApproval: false, parameters: { type: 'object', properties: {} }, async execute() { return 'mutated'; } }) } }",
+  );
+  const requests: ProviderStreamRequest[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_plugin_read_only",
+    permissionMode: "read_only",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        requests.push(request);
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.submit("inspect plugins");
+
+  expect(requests[0]?.tools?.map((tool) => tool.name)).not.toContain(
+    "plugin_unsafe_plugin_mutate",
+  );
+});
+
+test("read-only runtime permits workspace trusted read-only plugin tools", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-plugin-trusted-"));
+  const pluginRoot = join(root, ".natalia", "plugins", "trusted");
+  await mkdir(pluginRoot, { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      plugins: { readOnly: { "trusted.plugin": true } },
+    }),
+  );
+  await writeFile(
+    join(pluginRoot, "natalia.plugin.json"),
+    JSON.stringify({
+      apiVersion: 1,
+      id: "trusted.plugin",
+      version: "1.0.0",
+      name: "Trusted",
+      description: "",
+      entry: "index.ts",
+      capabilities: ["tools"],
+    }),
+  );
+  await writeFile(
+    join(pluginRoot, "index.ts"),
+    "export default { setup(api) { api.tools.register({ name: 'observe', description: 'Observe', requiresApproval: false, parameters: { type: 'object', properties: {} }, async execute() { return 'observed'; } }) } }",
+  );
+  const requests: ProviderStreamRequest[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_plugin_trusted",
+    permissionMode: "read_only",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        requests.push(request);
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.submit("inspect trusted plugins");
+
+  expect(requests[0]?.tools?.map((tool) => tool.name)).toContain(
+    "plugin_trusted_plugin_observe",
+  );
 });
 
 test("runtime persists workflow lifecycle events from workflow_run", async () => {
@@ -392,6 +736,103 @@ test("runtime persists workflow lifecycle events from workflow_run", async () =>
         item.event.runID === "wf_runtime",
     ),
   ).toBe(true);
+});
+
+test("workflow inner tools require their own runtime approval", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-workflow-approval-"));
+  const workflow = JSON.stringify({
+    version: 1,
+    name: "workflow-approval",
+    steps: [
+      {
+        id: "write",
+        kind: "tool",
+        tool: "write_file",
+        arguments: { path: "workflow.txt", content: "approved" },
+      },
+    ],
+  });
+  const approvals: string[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_workflow_approval",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        if (!request.messages.some((message) => message.role === "tool"))
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "workflow",
+                name: "workflow_run",
+                arguments: JSON.stringify({ workflow }),
+              },
+            ],
+          };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => {
+    if (event.type !== "approval.request") return;
+    approvals.push(event.title);
+    client.respondApproval({ requestID: event.id, decision: "once" });
+  });
+  await client.submit("run write workflow");
+
+  expect(approvals).toEqual(["Approve workflow_run", "Approve write_file"]);
+  expect(await readFile(join(root, "workflow.txt"), "utf8")).toBe("approved");
+});
+
+test("workflow script steps require runtime shell approval", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-workflow-script-"));
+  const workflow = JSON.stringify({
+    version: 1,
+    name: "workflow-script",
+    steps: [
+      {
+        id: "script",
+        kind: "script",
+        command: "printf approved > workflow-script.txt",
+      },
+    ],
+  });
+  const approvals: string[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_workflow_script",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        if (!request.messages.some((message) => message.role === "tool"))
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "workflow",
+                name: "workflow_run",
+                arguments: JSON.stringify({ workflow }),
+              },
+            ],
+          };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => {
+    if (event.type !== "approval.request") return;
+    approvals.push(event.title);
+    client.respondApproval({ requestID: event.id, decision: "once" });
+  });
+  await client.submit("run script workflow");
+
+  expect(approvals).toEqual(["Approve workflow_run", "Approve run_shell"]);
+  expect(await readFile(join(root, "workflow-script.txt"), "utf8")).toBe(
+    "approved",
+  );
 });
 
 test("runtime projects exact durable interactive PTY actions", async () => {
@@ -1561,6 +2002,70 @@ test("real runtime client executes model tool calls with approval policy", async
           message.role === "tool" && message.content.includes("tool data"),
       ),
   ).toBe(true);
+});
+
+test("runtime status counts managed background processes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-background-"));
+  const handled = new Set<string>();
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_runtime_background",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        const text = [...request.messages]
+          .reverse()
+          .find((message) => message.role === "user")?.content;
+        if (typeof text === "string" && !handled.has(text)) {
+          handled.add(text);
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              text === "start"
+                ? {
+                    id: "start",
+                    name: "process_start",
+                    arguments: JSON.stringify({
+                      id: "proc_status",
+                      command: "sleep 30",
+                    }),
+                  }
+                : {
+                    id: "stop",
+                    name: "process_stop",
+                    arguments: JSON.stringify({ id: "proc_status" }),
+                  },
+            ],
+          };
+        }
+        yield { type: "done" as const };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  await client.submit("start");
+  expect(await client.runtimeStatus?.()).toMatchObject({
+    background: "1 running",
+  });
+  await waitFor(() =>
+    events.some(
+      (event) =>
+        event.type === "status.snapshot" && event.background === "1 running",
+    ),
+  );
+  await client.submit("stop");
+  expect(await client.runtimeStatus?.()).toMatchObject({
+    background: "0 running",
+  });
+  await waitFor(() =>
+    events.some(
+      (event) =>
+        event.type === "status.snapshot" && event.background === "0 running",
+    ),
+  );
 });
 
 test("write approval uses a compact preview and preserves raw request detail", async () => {

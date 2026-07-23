@@ -13,7 +13,17 @@ import { evaluateCondition, walkValues } from "./eval";
 export type WorkflowExecutionContext = {
   workspaceRoot: string;
   signal?: AbortSignal;
+  authorize?: (request: WorkflowAuthorizationRequest) => Promise<void>;
 };
+
+export type WorkflowAuthorizationRequest =
+  | {
+      kind: "tool";
+      stepID: string;
+      toolName: string;
+      arguments: unknown;
+    }
+  | { kind: "script"; stepID: string; command: string; timeoutMs?: number };
 
 export type WorkflowToolRegistry = {
   get(name: string):
@@ -241,12 +251,24 @@ export class WorkflowRuntime {
         return `waited ${step.ms}ms`;
 
       case "script":
+        await context.authorize?.({
+          kind: "script",
+          stepID: step.id,
+          command: step.command,
+          timeoutMs: step.timeoutMs,
+        });
         return await this.executeScript(step, context);
 
       case "tool": {
         const tool = this.tools.get(step.tool);
         if (!tool) throw new Error(`workflow tool not found: ${step.tool}`);
         const args = walkValues(step.arguments, run.values);
+        await context.authorize?.({
+          kind: "tool",
+          stepID: step.id,
+          toolName: step.tool,
+          arguments: args,
+        });
         return await tool.execute(args, context);
       }
 

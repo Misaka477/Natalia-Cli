@@ -52,6 +52,7 @@ export function definePlugin(plugin: Plugin) {
 export function createPluginRegistry(input: {
   tools: ToolRegistry;
   allowed?: string[];
+  readOnly?: Record<string, boolean>;
   onAudit?: (entry: PluginAudit) => void;
 }) {
   const plugins = new Map<
@@ -101,7 +102,14 @@ export function createPluginRegistry(input: {
           register(tool) {
             assertCapability(manifest, "tools", allowedOverride);
             const name = `plugin_${manifest.id.replace(/[^a-z0-9_]/giu, "_")}_${tool.name}`;
-            const owned = { ...tool, name };
+            // Dynamic plugin tools require approval unless the workspace explicitly
+            // trusts a plugin's own read-only side-effect declaration.
+            const owned = {
+              ...tool,
+              name,
+              requiresApproval:
+                tool.requiresApproval || !input.readOnly?.[manifest.id],
+            };
             input.tools.set(name, owned);
             const dispose = () => {
               if (input.tools.get(name) === owned) input.tools.delete(name);

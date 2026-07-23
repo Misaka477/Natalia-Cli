@@ -103,6 +103,7 @@ function mergeConfig(base: ConfigV2, overlay: Partial<ConfigV2>): ConfigV2 {
         ...base.plugins.capabilities,
         ...overlay.plugins?.capabilities,
       },
+      readOnly: { ...base.plugins.readOnly, ...overlay.plugins?.readOnly },
     },
     workspace: { ...base.workspace, ...overlay.workspace },
     instructions: { ...base.instructions, ...overlay.instructions },

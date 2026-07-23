@@ -42,6 +42,25 @@ test("plugin registrations are capability-gated and removed on unload", async ()
   ]);
 });
 
+test("plugin tools require approval unless workspace marks plugin read-only", async () => {
+  const safeTools = createToolRegistry([]);
+  const safeRegistry = createPluginRegistry({
+    tools: safeTools,
+    readOnly: { "safe.plugin": true },
+  });
+  await safeRegistry.load(pluginWithReadOnlyTool("safe.plugin"));
+  expect(safeTools.get("plugin_safe_plugin_observe")?.requiresApproval).toBe(
+    false,
+  );
+
+  const guardedTools = createToolRegistry([]);
+  const guardedRegistry = createPluginRegistry({ tools: guardedTools });
+  await guardedRegistry.load(pluginWithReadOnlyTool("guarded.plugin"));
+  expect(
+    guardedTools.get("plugin_guarded_plugin_observe")?.requiresApproval,
+  ).toBe(true);
+});
+
 test("plugin conformance harness verifies lifecycle cleanup", async () => {
   const results = await runPluginConformance({
     plugin: definePlugin({
@@ -129,3 +148,28 @@ test("an explicit empty capability grant denies all plugin capabilities", async 
     ),
   ).rejects.toThrow("capability denied");
 });
+
+function pluginWithReadOnlyTool(id: string) {
+  return definePlugin({
+    manifest: {
+      apiVersion: 1,
+      id,
+      version: "1.0.0",
+      name: "Observe",
+      description: "",
+      entry: "index.ts",
+      capabilities: ["tools"],
+    },
+    setup(api) {
+      api.tools.register({
+        name: "observe",
+        description: "Observe",
+        requiresApproval: false,
+        parameters: { type: "object", properties: {} },
+        async execute() {
+          return "ok";
+        },
+      });
+    },
+  });
+}

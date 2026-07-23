@@ -96,6 +96,7 @@ test("interactive PTY registry writes input, special keys, resize and transcript
     cols: 100,
   });
   expect(started).toMatchObject({ status: "running", rows: 30, cols: 100 });
+  expect(registry.runningCount()).toBe(1);
   await registry.write(started.id, "hello");
   await waitForInteractive(() => registry.get(started.id).transcript, "hello");
   expect(registry.get(started.id).transcript).toContain("hello");
@@ -113,6 +114,7 @@ test("interactive PTY registry writes input, special keys, resize and transcript
   expect(await registry.attach(started.id)).toMatchObject({ attached: true });
   await registry.specialKey(started.id, "ctrl-d");
   expect(await registry.stop(started.id)).toMatchObject({ status: "exited" });
+  expect(registry.runningCount()).toBe(0);
 });
 
 test("interactive PTY sensitive input is redacted and audited", async () => {

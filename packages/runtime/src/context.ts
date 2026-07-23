@@ -122,7 +122,7 @@ export class ContextLedger {
       tokens: inputTokens + outputTokens,
       inputTokens,
       outputTokens,
-      source: "estimate",
+      source: "provider_usage",
     };
     this.journalOffset += 1;
   }

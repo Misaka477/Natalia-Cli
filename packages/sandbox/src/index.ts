@@ -197,6 +197,12 @@ export class WorkspaceSandboxManager
       );
   }
 
+  runningResourceCount(): number {
+    return [...this.resources.values()].filter(
+      (resource) => this.refreshResource(resource)?.status === "running",
+    ).length;
+  }
+
   async resourceOutput(id: string, resourceID: string, maxBytes = 20000) {
     this.mustGet(id);
     const resource = this.mustResource(resourceID);

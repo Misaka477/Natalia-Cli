@@ -195,6 +195,7 @@ export const pluginConfigSchema = z.object({
   enabled: z.record(z.boolean()).default({}),
   paths: z.array(z.string()).default([]),
   capabilities: z.record(z.array(z.enum(["tools", "events"]))).default({}),
+  readOnly: z.record(z.boolean()).default({}),
 });
 
 export const mcpServerConfigSchema = z.object({

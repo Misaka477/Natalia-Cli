@@ -264,6 +264,13 @@ export class InteractivePTYRegistry {
     return [...this.sessions.values()].map(publicInteractivePTY);
   }
 
+  runningCount(): number {
+    return [...this.sessions.values()].filter(
+      (session) =>
+        session.status === "starting" || session.status === "running",
+    ).length;
+  }
+
   get(id: string) {
     const session = this.mustGet(id);
     return publicInteractivePTY(session);

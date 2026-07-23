@@ -4,6 +4,7 @@ import { runTuiShell } from "../src/app/runtime";
 
 const sessions: Array<string | undefined> = [];
 let diagnosticsLoaded = 0;
+const diagnosticLoads = () => diagnosticsLoaded;
 const handle = await runTuiShell({
   backend: backend(),
   closeAfterInitialTurn: false,
@@ -14,27 +15,38 @@ const keys = createMockKeys(handle.renderer, { kittyKeyboard: true });
 
 await Bun.sleep(100);
 
-// Open palette, type "settings", press Enter
+// Open palette, filter to settings, then select it.
 keys.pressKey("p", { ctrl: true });
 await Bun.sleep(80);
 await keys.typeText("settings");
 await Bun.sleep(80);
+if (diagnosticLoads() !== 0)
+  throw new Error("palette filtering dispatched diagnostics before selection");
 keys.pressEnter();
 await Bun.sleep(200);
 
-// Close Settings with Escape
+// The palette must clear before opening Settings, so Escape returns to the shell.
 keys.pressEscape();
 await Bun.sleep(80);
-if (diagnosticsLoaded !== 1)
-  throw new Error(`expected diagnostics dialog load, got ${diagnosticsLoaded}`);
 
-// Open runtime diagnostics, copy the report, then close the dialog.
+// Open a fresh palette, filter to the concrete diagnostics option, then select it.
 keys.pressKey("p", { ctrl: true });
 await Bun.sleep(80);
 await keys.typeText("diagnostics");
 await Bun.sleep(80);
+if (diagnosticLoads() !== 0)
+  throw new Error("diagnostics loaded before the filtered option was selected");
 keys.pressEnter();
-await Bun.sleep(160);
+for (let attempts = 0; attempts < 20 && diagnosticLoads() !== 1; attempts++)
+  await Bun.sleep(25);
+if (diagnosticLoads() !== 1)
+  throw new Error(`expected diagnostics dialog load, got ${diagnosticLoads()}`);
+await Bun.sleep(25);
+keys.pressKey("r");
+for (let attempts = 0; attempts < 20 && diagnosticLoads() !== 2; attempts++)
+  await Bun.sleep(25);
+if (diagnosticLoads() !== 2)
+  throw new Error(`expected diagnostics refresh, got ${diagnosticLoads()}`);
 keys.pressEnter();
 await Bun.sleep(80);
 keys.pressEscape();

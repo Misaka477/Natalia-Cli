@@ -145,16 +145,17 @@ export function evaluatePermissionRules(
     }
   }
 
-  // Check file path rules for write/read tools
-  if (
-    rules.files &&
-    (toolName === "write_file" ||
-      toolName === "read_file" ||
-      toolName === "edit_file")
-  ) {
+  const readsPath = ["read_file", "read_media_file"].includes(toolName);
+  const writesPath = [
+    "write_file",
+    "edit_file",
+    "sandbox_write",
+    "browser_screenshot",
+  ].includes(toolName);
+  if (rules.files && (readsPath || writesPath)) {
     const path = typeof args.path === "string" ? args.path : undefined;
     if (path) {
-      if (toolName !== "read_file" && rules.files.writePaths) {
+      if (writesPath && rules.files.writePaths) {
         const denied = rules.files.writePaths.find(
           (r) => !r.allow && pathMatch(path, r.pattern),
         );
@@ -165,7 +166,7 @@ export function evaluatePermissionRules(
           return { allowed: false, reason: denied.reason, diagnostics: diags };
         }
       }
-      if (toolName === "read_file" && rules.files.readPaths) {
+      if (readsPath && rules.files.readPaths) {
         const denied = rules.files.readPaths.find(
           (r) => !r.allow && pathMatch(path, r.pattern),
         );
@@ -179,8 +180,15 @@ export function evaluatePermissionRules(
     }
   }
 
-  // Check command rules for shell tool
-  if (rules.commands && toolName === "run_shell") {
+  const runsCommand = [
+    "run_shell",
+    "sandbox_execute",
+    "sandbox_resource_start",
+    "process_start",
+    "background_start",
+    "interactive_start",
+  ].includes(toolName);
+  if (rules.commands && runsCommand) {
     const cmd = typeof args.command === "string" ? args.command : undefined;
     if (cmd) {
       const denied = matchesCommandPatterns(cmd, rules.commands.denyPatterns);

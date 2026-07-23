@@ -30,7 +30,11 @@ import {
   keymapBoundary,
 } from "../keymap";
 import { useKeybinds } from "../context/keybind";
-import { useDialog, type DialogContext } from "../dialog/provider";
+import {
+  DialogProvider,
+  useDialog,
+  type DialogContext,
+} from "../dialog/provider";
 import { DialogConfirm } from "../dialog/DialogConfirm";
 import { DialogPrompt } from "../dialog/DialogPrompt";
 import { DialogSelect, type DialogSelectOption } from "../dialog/DialogSelect";
@@ -103,11 +107,13 @@ export function App(props: {
             });
           }}
         >
-          <Shell
-            backend={activeBackend}
-            workspaceRoot={props.workspaceRoot}
-            onSessionChange={changeSession}
-          />
+          <DialogProvider>
+            <Shell
+              backend={activeBackend}
+              workspaceRoot={props.workspaceRoot}
+              onSessionChange={changeSession}
+            />
+          </DialogProvider>
         </StateProvider>
       )}
     </Show>
@@ -366,7 +372,7 @@ function Shell(props: {
 
   function runCommand(command: string) {
     if (command === "palette.toggle") {
-      dialog.replace(() => <CommandPalette />);
+      dialog.replace(() => <CommandPalette onRun={runCommand} />);
       return;
     }
     if (command === "session.new") {
@@ -559,20 +565,24 @@ function Shell(props: {
       return;
     }
     if (command === "agent.list") {
-      resolveConfig({
-        workspaceRoot: props.workspaceRoot ?? process.cwd(),
-      }).then(({ config }) =>
-        dialog.push(() => (
-          <DialogAgent
-            agents={Object.entries(config.agents).map(([name, agent]) => ({
-              name,
-              ...agent,
-            }))}
-            current={local.state.activeAgent}
-            selectAgent={(name) => props.backend.selectAgent?.(name)}
-            workspaceRoot={props.workspaceRoot ?? process.cwd()}
-          />
-        )),
+      if (!props.backend.agents) {
+        toast.show({
+          variant: "warning",
+          message: "Runtime agent catalog unavailable",
+        });
+        return;
+      }
+      void props.backend.agents().then(
+        (agents) =>
+          dialog.push(() => (
+            <DialogAgent
+              agents={agents}
+              current={local.state.activeAgent}
+              selectAgent={(name) => props.backend.selectAgent?.(name)}
+              workspaceRoot={props.workspaceRoot ?? process.cwd()}
+            />
+          )),
+        (error) => toast.error(error),
       );
       return;
     }
@@ -1488,7 +1498,16 @@ function Shell(props: {
       return;
     }
     if (command === "status") {
-      dialog.push(() => <DialogStatus />);
+      if (!props.backend.runtimeStatus) {
+        toast.show({
+          variant: "warning",
+          message: "Runtime status unavailable",
+        });
+        return;
+      }
+      dialog.push(() => (
+        <DialogStatus load={() => props.backend.runtimeStatus!()} />
+      ));
       return;
     }
     if (command === "diagnostics") {
@@ -2048,7 +2067,7 @@ function isNearBottom(scrollbox: any, threshold = 10) {
   return scrollHeight - viewportHeight - scrollTop <= threshold;
 }
 
-function CommandPalette() {
+function CommandPalette(props: { onRun(command: string): void }) {
   const dialog = useDialog();
   const keymap = useKeymap();
   const definitions = commands;
@@ -2092,7 +2111,8 @@ function CommandPalette() {
             )
             .join(" / "),
           onSelect: (dialog: DialogContext) => {
-            keymap.dispatchCommand(entry.command.name);
+            dialog.clear();
+            props.onRun(entry.command.name);
           },
         })),
         {
@@ -2100,8 +2120,9 @@ function CommandPalette() {
           description: "View and copy runtime diagnostics",
           value: "diagnostics",
           category: "runtime",
-          onSelect: (_dialog: DialogContext) => {
-            void runCommand("diagnostics");
+          onSelect: (dialog: DialogContext) => {
+            dialog.clear();
+            props.onRun("diagnostics");
           },
         },
         ...getPluginCommands().map((cmd) => ({
@@ -2109,7 +2130,8 @@ function CommandPalette() {
           description: cmd.category ? `plugin · ${cmd.category}` : "plugin",
           value: cmd.name,
           category: cmd.category ?? "plugin",
-          onSelect: (_dialog: DialogContext) => {
+          onSelect: (dialog: DialogContext) => {
+            dialog.clear();
             cmd.run();
           },
         })),

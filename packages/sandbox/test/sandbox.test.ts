@@ -122,12 +122,14 @@ test("sandbox tracks running resources with output and stop lifecycle", async ()
     "res_1",
   );
   expect(resource).toMatchObject({ id: "res_1", status: "running" });
+  expect(manager.runningResourceCount()).toBe(1);
   expect(manager.updateEvent("box")).toMatchObject({ runningResources: 1 });
   await waitFor(async () => await manager.resourceOutput("box", "res_1"));
   expect(await manager.resourceOutput("box", "res_1")).toContain("resource-ok");
   expect(await manager.stopResource("box", "res_1")).toMatchObject({
     status: "stopped",
   });
+  expect(manager.runningResourceCount()).toBe(0);
   expect(manager.updateEvent("box")).toMatchObject({ runningResources: 0 });
 });
 

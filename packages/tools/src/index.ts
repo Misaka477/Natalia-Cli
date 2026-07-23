@@ -99,6 +99,14 @@ export type ToolExecutionContext = {
     result?: string;
     error?: string;
   }) => void;
+  workflowAuthorize?: (request: {
+    kind: "tool" | "script";
+    stepID: string;
+    toolName?: string;
+    arguments?: unknown;
+    command?: string;
+    timeoutMs?: number;
+  }) => Promise<void>;
 };
 
 export type ToolRegistry = Map<string, RuntimeTool>;
@@ -200,6 +208,13 @@ export class ManagedProcessRegistry {
     return [...this.workspaceProcesses(context).values()].map((info) =>
       publicProcessInfo(refreshProcessStatus(info)),
     );
+  }
+
+  async runningCount(context: ToolExecutionContext): Promise<number> {
+    await this.load(context);
+    return [...this.workspaceProcesses(context).values()].filter(
+      (info) => refreshProcessStatus(info).status === "running",
+    ).length;
   }
 
   async get(id: string, context: ToolExecutionContext) {
@@ -400,14 +415,17 @@ export class ManagedProcessRegistry {
 }
 
 export function createToolRegistry(
-  tools: RuntimeTool[] = defaultTools(),
+  tools?: RuntimeTool[],
+  processRegistry?: ManagedProcessRegistry,
 ): ToolRegistry {
-  return new Map(tools.map((tool) => [tool.name, tool]));
+  return new Map(
+    (tools ?? defaultTools(processRegistry)).map((tool) => [tool.name, tool]),
+  );
 }
 
-export function defaultTools(): RuntimeTool[] {
-  const processRegistry = new ManagedProcessRegistry();
-
+export function defaultTools(
+  processRegistry = new ManagedProcessRegistry(),
+): RuntimeTool[] {
   let registryRef: ToolRegistry | undefined;
   const lazyWorkflowTools = createWorkflowTools(() => {
     if (!registryRef) throw new Error("tool registry not initialized");
@@ -489,7 +507,7 @@ function planTool(): RuntimeTool {
   return {
     name: "plan",
     description: "Create or update the durable workspace execution plan.",
-    requiresApproval: false,
+    requiresApproval: true,
     parameters: {
       type: "object",
       properties: { items: { type: "array" } },

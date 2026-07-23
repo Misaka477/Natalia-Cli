@@ -68,6 +68,7 @@ import {
   cleanupToolOutput,
   materializeTools,
   validateToolParameters,
+  ManagedProcessRegistry,
   type RuntimeTool,
   type ToolMaterialization,
   type ToolRegistry,
@@ -113,7 +114,7 @@ export type RealRuntimeClientOptions = {
   useSqliteStore?: boolean;
   provider?: StreamingProvider;
   tools?: ToolRegistry;
-  permissionMode?: "ask" | "auto";
+  permissionMode?: "ask" | "auto" | "read_only";
   legacyConfigPath?: string;
   toolPolicy?: ToolPolicy;
   hooks?: ToolHooks;
@@ -137,8 +138,30 @@ export function createRealRuntimeClient(
     : provider
       ? "environment"
       : "unconfigured";
-  const tools = options.tools ?? createToolRegistry();
-  let toolLayer = createToolPolicyHookLayer(options.toolPolicy, options.hooks);
+  const processRegistry = options.tools
+    ? undefined
+    : new ManagedProcessRegistry();
+  const tools = options.tools ?? createToolRegistry(undefined, processRegistry);
+  let agentToolLayer = createToolPolicyHookLayer();
+  const toolLayer = createToolPolicyHookLayer(options.toolPolicy, {
+    preExecute: async (event) => {
+      const agentResult = await agentToolLayer.preExecute(event);
+      if (!agentResult.allowed) return agentResult;
+      const permission = evaluatePermissionRules(
+        selectedAgent?.permissions,
+        event.toolName,
+        tryParseToolArguments(event.arguments),
+      );
+      if (!permission.allowed) return permission;
+      return (
+        (await options.hooks?.preExecute?.(event)) ?? {
+          allowed: true,
+          diagnostics: [],
+        }
+      );
+    },
+    postExecute: options.hooks?.postExecute,
+  });
   let permissionMode = options.permissionMode ?? "ask";
   let maxSteps = 10;
   let subagents: SubagentRegistry | undefined;
@@ -183,7 +206,6 @@ export function createRealRuntimeClient(
     string,
     import("@natalia/contracts").LocalAttachment[]
   >();
-  let latestStatus: Extract<RuntimeEvent, { type: "status.snapshot" }>;
   const runtimeDiagnostics: Array<
     Extract<RuntimeEvent, { type: "diagnostic" }> & { at: string }
   > = [];
@@ -201,6 +223,9 @@ export function createRealRuntimeClient(
   let runtimeContextConfig = contextStatusConfig();
   let retryPolicy: NonNullable<Parameters<typeof runWithRetry>[2]>["policy"];
   let cleanupWorkspaceFiles: (() => void) | undefined;
+  let statusRefreshQueued = false;
+  const ptyStatusByID = new Map<string, string>();
+  const sandboxResourcesByID = new Map<string, number>();
   const turnCoordinator = () => sessionRunCoordinator(sessionID);
 
   async function initialize() {
@@ -217,15 +242,12 @@ export function createRealRuntimeClient(
       if (!options.permissionMode) {
         const permission =
           tsConfig.config.permissionProfiles[tsConfig.config.defaultPermission];
-        if (permission?.approval === "auto") permissionMode = "auto";
-      }
-      if (!options.toolPolicy) {
+        if (permission) permissionMode = permission.approval;
         const mode = tsConfig.config.modes[tsConfig.config.defaultMode];
-        if (mode)
-          toolLayer = createToolPolicyHookLayer(
-            { allow: mode.allowedTools, exclude: mode.excludedTools },
-            options.hooks,
-          );
+        const modePermission = mode?.permission
+          ? tsConfig.config.permissionProfiles[mode.permission]
+          : undefined;
+        if (modePermission) permissionMode = modePermission.approval;
       }
       agentRegistry = agentsFromConfig(tsConfig.config);
       selectedAgent = agentRegistry.default();
@@ -347,7 +369,8 @@ export function createRealRuntimeClient(
           const calls: ProviderToolCall[] = [];
           const visibleTools = [...tools.values()].filter(
             (tool) =>
-              toolLayer.isToolAllowed(tool.name) &&
+              isToolAllowed(tool.name) &&
+              (permissionMode !== "read_only" || !tool.requiresApproval) &&
               !excluded.has(tool.name) &&
               (!allowed.length || allowed.includes(tool.name)),
           );
@@ -379,7 +402,7 @@ export function createRealRuntimeClient(
                 `subagent requested unavailable tool: ${call.name}`,
               );
             if (
-              !toolLayer.isToolAllowed(tool.name) ||
+              !isToolAllowed(tool.name) ||
               excluded.has(tool.name) ||
               (allowed.length && !allowed.includes(tool.name))
             )
@@ -396,6 +419,8 @@ export function createRealRuntimeClient(
               throw new Error(
                 `subagent tool denied by policy: ${preResult.diagnostics.join("; ")}`,
               );
+            if (permissionMode === "read_only" && tool.requiresApproval)
+              throw new Error(readOnlyToolMessage(tool.name));
             if (tool.requiresApproval)
               await requireApproval(toolID, tool, call);
             const parsed = parseToolArguments(call.arguments);
@@ -418,6 +443,7 @@ export function createRealRuntimeClient(
               maxSubagentDepth: tsRuntimeConfig?.runtime.subagentDepth,
               onWorkflowEvent: (event) =>
                 publish({ type: "workflow.update", ...event }),
+              workflowAuthorize: authorizeWorkflowStep,
             });
             await toolLayer.postExecute({ ...hookEvent, result });
             runner.log(`tool ${tool.name}: ${result.slice(0, 240)}`);
@@ -452,6 +478,8 @@ export function createRealRuntimeClient(
         parentAgentID: event.parentAgentID,
         continuation: event.continuation,
       });
+      if (event.event === "created" || event.event === "done")
+        scheduleRuntimeStatusSnapshot();
     });
     if (tsRuntimeConfig) {
       const nativeMCP = await loadNativeMCPTools({
@@ -492,6 +520,7 @@ export function createRealRuntimeClient(
       });
     plugins = createPluginRegistry({
       tools,
+      readOnly: tsRuntimeConfig?.plugins.readOnly,
       onAudit: (entry) =>
         publish({
           type: "plugin.update",
@@ -674,7 +703,7 @@ export function createRealRuntimeClient(
       await checkpointStore.ensureBaseline(context, 0);
     publish({ type: "session.ready", sessionID });
     publish(contextStatusEvent(context.status(runtimeContextConfig)));
-    publish(statusSnapshot(provider, context, workspaceRoot));
+    publish(await runtimeStatusSnapshot());
   }
 
   function applyAgentPolicy() {
@@ -687,27 +716,14 @@ export function createRealRuntimeClient(
       ...(selectedAgent?.excludedTools ?? mode?.excludedTools ?? []),
       ...(selectedAgent?.permissions?.tools?.exclude ?? []),
     ];
-    if (!options.toolPolicy)
-      toolLayer = createToolPolicyHookLayer(
-        { allow, exclude },
-        {
-          preExecute: async (event) => {
-            const permission = evaluatePermissionRules(
-              selectedAgent?.permissions,
-              event.toolName,
-              tryParseToolArguments(event.arguments),
-            );
-            if (!permission.allowed) return permission;
-            return (
-              (await options.hooks?.preExecute?.(event)) ?? {
-                allowed: true,
-                diagnostics: [],
-              }
-            );
-          },
-          postExecute: options.hooks?.postExecute,
-        },
-      );
+    agentToolLayer = createToolPolicyHookLayer({ allow, exclude });
+  }
+
+  function isToolAllowed(toolName: string) {
+    return (
+      toolLayer.isToolAllowed(toolName) &&
+      agentToolLayer.isToolAllowed(toolName)
+    );
   }
 
   function checkpointResources() {
@@ -870,7 +886,6 @@ export function createRealRuntimeClient(
   function publish(event: RuntimeEvent) {
     if (event.type === "diagnostic")
       event = { ...event, at: event.at ?? new Date().toISOString() };
-    if (event.type === "status.snapshot") latestStatus = event;
     if (event.type === "diagnostic") {
       runtimeDiagnostics.push({
         ...event,
@@ -901,6 +916,40 @@ export function createRealRuntimeClient(
     }
     plugins?.dispatch(event);
     sink?.(event);
+  }
+
+  async function runtimeStatusSnapshot() {
+    const running =
+      (subagents?.runningCount() ?? 0) +
+      (interactivePTY?.runningCount() ?? 0) +
+      (sandboxes?.runningResourceCount() ?? 0) +
+      (processRegistry
+        ? await processRegistry.runningCount({ workspaceRoot })
+        : 0);
+    return statusSnapshot(
+      provider,
+      context,
+      workspaceRoot,
+      permissionMode,
+      running,
+    );
+  }
+
+  function scheduleRuntimeStatusSnapshot() {
+    if (statusRefreshQueued) return;
+    statusRefreshQueued = true;
+    queueMicrotask(() => {
+      statusRefreshQueued = false;
+      void runtimeStatusSnapshot()
+        .then(publish)
+        .catch((error) =>
+          publish({
+            type: "diagnostic",
+            level: "warning",
+            message: `runtime status refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+          }),
+        );
+    });
   }
 
   async function submitInput(input: SubmitInput) {
@@ -1143,6 +1192,14 @@ export function createRealRuntimeClient(
         description: agent.description,
         mode: agent.mode,
         hidden: agent.hidden,
+        color: agent.color,
+        model: agent.model,
+        variant: agent.variant,
+        maxSteps: agent.maxSteps,
+        allowedTools: agent.allowedTools,
+        excludedTools: agent.excludedTools,
+        mcpServers: agent.mcpServers,
+        permissions: agent.permissions,
       }));
     },
     async mcpCatalog() {
@@ -1288,7 +1345,7 @@ export function createRealRuntimeClient(
     },
     async runtimeStatus() {
       await ready;
-      return latestStatus ?? statusSnapshot(provider, context, workspaceRoot);
+      return await runtimeStatusSnapshot();
     },
     async diagnostics(limit = 100) {
       await ready;
@@ -1375,11 +1432,11 @@ export function createRealRuntimeClient(
       });
       publish({ type: "content.done", id });
       publish({ type: "turn.finished", id, stopReason: "done" });
-      publish(statusSnapshot(provider, context, workspaceRoot));
+      publish(await runtimeStatusSnapshot());
       return true;
     }
     if (trimmed === "/status") {
-      const snapshot = statusSnapshot(provider, context, workspaceRoot);
+      const snapshot = await runtimeStatusSnapshot();
       publish(snapshot);
       publish({
         type: "content.delta",
@@ -1472,7 +1529,7 @@ export function createRealRuntimeClient(
         id,
         stopReason: result.ok ? "done" : "error",
       });
-      publish(statusSnapshot(provider, context, workspaceRoot));
+      publish(await runtimeStatusSnapshot());
       return true;
     }
     if (trimmed === "/skills") {
@@ -1814,7 +1871,7 @@ export function createRealRuntimeClient(
       });
       publish({ type: "content.done", id });
       publish({ type: "turn.finished", id, stopReason: "done" });
-      publish(statusSnapshot(provider, context, workspaceRoot));
+      publish(await runtimeStatusSnapshot());
     } catch (error) {
       publish({
         type: "diagnostic",
@@ -1841,7 +1898,8 @@ export function createRealRuntimeClient(
     const advertised = new Map(
       [...tools].filter(
         ([name, tool]) =>
-          toolLayer.isToolAllowed(name) &&
+          isToolAllowed(name) &&
+          (permissionMode !== "read_only" || !tool.requiresApproval) &&
           (!selectedAgent?.mcpServers.length ||
             !name.startsWith("mcp_") ||
             selectedAgent.mcpServers.some((server) =>
@@ -2135,6 +2193,20 @@ export function createRealRuntimeClient(
       });
       return `ERROR: ${preResult.diagnostics.join("; ")}`;
     }
+    if (permissionMode === "read_only" && tool.requiresApproval) {
+      const message = readOnlyToolMessage(tool.name);
+      publish({
+        type: "tool.update",
+        id: toolID,
+        name: tool.name,
+        callID: call.id,
+        status: "rejected",
+        summary: message,
+        result: message,
+        endedAt: Date.now(),
+      });
+      return `ERROR: ${message}`;
+    }
     publish({
       type: "tool.update",
       id: toolID,
@@ -2173,7 +2245,7 @@ export function createRealRuntimeClient(
           await requireQuestion(`${toolID}:question`, question),
         subagents,
         interactivePTY,
-        onPTYUpdate: (pty) =>
+        onPTYUpdate: (pty) => {
           publish({
             type: "pty.update",
             id: pty.id,
@@ -2189,7 +2261,12 @@ export function createRealRuntimeClient(
             lastAction: "write",
             target: { kind: "host", cwd: pty.cwd },
             ownership: "model",
-          }),
+          });
+          if (ptyStatusByID.get(pty.id) !== pty.status) {
+            ptyStatusByID.set(pty.id, pty.status);
+            scheduleRuntimeStatusSnapshot();
+          }
+        },
         onPTYAction: (pty, action, redacted) => {
           publish({
             type: "pty.action",
@@ -2216,7 +2293,18 @@ export function createRealRuntimeClient(
         maxSubagentDepth: tsRuntimeConfig?.runtime.subagentDepth,
         onWorkflowEvent: (event) =>
           publish({ type: "workflow.update", ...event }),
-        onSandboxEvent: (event) => publish(event as RuntimeEvent),
+        workflowAuthorize: authorizeWorkflowStep,
+        onSandboxEvent: (event) => {
+          const update = event as Extract<
+            RuntimeEvent,
+            { type: "sandbox.update" }
+          >;
+          publish(update);
+          if (sandboxResourcesByID.get(update.id) !== update.runningResources) {
+            sandboxResourcesByID.set(update.id, update.runningResources);
+            scheduleRuntimeStatusSnapshot();
+          }
+        },
       });
       const bounded = await boundToolOutput(
         workspaceRoot,
@@ -2239,6 +2327,7 @@ export function createRealRuntimeClient(
           : undefined,
         endedAt: Date.now(),
       });
+      if (isManagedResourceTool(tool.name)) scheduleRuntimeStatusSnapshot();
       await toolLayer.postExecute({ ...hookEvent, result });
       return result;
     } catch (error) {
@@ -2264,6 +2353,8 @@ export function createRealRuntimeClient(
     call: ProviderToolCall,
   ) {
     if (permissionMode === "auto") return;
+    if (permissionMode === "read_only")
+      throw new Error(readOnlyToolMessage(tool.name));
     const presentation = approvalPresentation(tool.name, call.arguments);
     publish({
       type: "approval.request",
@@ -2288,6 +2379,52 @@ export function createRealRuntimeClient(
     } finally {
       pendingApprovalRequests.delete(approvalID);
     }
+  }
+
+  async function authorizeWorkflowStep(request: {
+    kind: "tool" | "script";
+    stepID: string;
+    toolName?: string;
+    arguments?: unknown;
+    command?: string;
+    timeoutMs?: number;
+  }) {
+    const toolName = request.kind === "script" ? "run_shell" : request.toolName;
+    if (!toolName) throw new Error("workflow tool name is required");
+    const tool = tools.get(toolName);
+    if (!tool) throw new Error(`workflow tool not found: ${toolName}`);
+    const arguments_ =
+      request.kind === "script"
+        ? request.timeoutMs
+          ? { command: request.command, timeoutSec: request.timeoutMs / 1000 }
+          : { command: request.command }
+        : request.arguments;
+    const rawArguments = JSON.stringify(arguments_ ?? {});
+    const hookEvent: ToolHookEvent = {
+      turnID: activeTurnID ?? `workflow:${sessionID}`,
+      toolName,
+      toolCallID: `workflow:${request.stepID}`,
+      arguments: rawArguments,
+    };
+    const preResult = await toolLayer.preExecute(hookEvent);
+    if (!preResult.allowed) throw new Error(preResult.diagnostics.join("; "));
+    if (permissionMode === "read_only" && tool.requiresApproval)
+      throw new Error(readOnlyToolMessage(toolName));
+    const errors = validateToolParameters(tool.parameters, arguments_);
+    if (errors.length)
+      throw new Error(
+        `workflow tool "${toolName}" parameter validation failed: ${errors.map((error) => `${error.path}: ${error.message}`).join("; ")}`,
+      );
+    if (tool.requiresApproval)
+      await requireApproval(
+        `workflow:${activeTurnID ?? sessionID}:${request.stepID}`,
+        tool,
+        {
+          id: `workflow:${request.stepID}`,
+          name: toolName,
+          arguments: rawArguments,
+        },
+      );
   }
 
   async function requireQuestion(
@@ -2513,6 +2650,8 @@ function statusSnapshot(
   provider: StreamingProvider | undefined,
   context: ContextLedger,
   cwd: string,
+  permissionMode: "ask" | "auto" | "read_only",
+  running: number,
 ): Extract<RuntimeEvent, { type: "status.snapshot" }> {
   const status = context.journalStatus();
   return {
@@ -2521,10 +2660,25 @@ function statusSnapshot(
     provider: provider?.provider ?? "not-configured",
     context: `${status.tokenEstimate} tokens`,
     step: `${status.messageCount}`,
-    permissions: "ask",
+    permissions: permissionMode,
     cwd,
-    background: "0 running",
+    background: `${running} running`,
   };
+}
+
+function readOnlyToolMessage(toolName: string) {
+  return `tool denied by read-only permission mode: ${toolName}`;
+}
+
+function isManagedResourceTool(toolName: string) {
+  return [
+    "process_start",
+    "process_stop",
+    "process_restart",
+    "background_start",
+    "background_stop",
+    "background_restart",
+  ].includes(toolName);
 }
 
 function restoreContextFromEvents(

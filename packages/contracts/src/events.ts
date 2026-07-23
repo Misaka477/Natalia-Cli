@@ -3,6 +3,7 @@ import type {
   QuestionItem,
   QuestionResponse,
 } from "@natalia/ui-model";
+import type { AgentPermissionRules } from "./schemas";
 export type { ApprovalResponse, QuestionResponse } from "@natalia/ui-model";
 
 export type SessionID = `ses_${string}`;
@@ -649,6 +650,14 @@ export type RuntimeAgentCatalogEntry = {
   description: string;
   mode: "primary" | "subagent" | "all";
   hidden: boolean;
+  color?: string;
+  model?: string;
+  variant?: string;
+  maxSteps?: number;
+  allowedTools?: string[];
+  excludedTools?: string[];
+  mcpServers?: string[];
+  permissions?: AgentPermissionRules;
 };
 export type RuntimeSkillCatalogEntry = {
   name: string;

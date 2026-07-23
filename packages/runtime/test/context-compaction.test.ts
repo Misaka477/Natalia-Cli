@@ -28,6 +28,13 @@ test("context accounting combines provider exact checkpoint with pending estimat
     tokens: 20,
   });
   ledger.recordProviderUsage(100, 25);
+  expect(
+    ledger.status({
+      max: 200,
+      thresholdPercent: 85,
+      reserved: 50,
+    }).source,
+  ).toBe("exact_checkpoint");
   ledger.add({
     id: "dyn",
     role: "dynamic",

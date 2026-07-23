@@ -216,6 +216,10 @@ export class SubagentRegistry {
     return [...this.records.values()];
   }
 
+  runningCount(): number {
+    return this.running.size;
+  }
+
   get(id: SubagentID): SubagentRecord | undefined {
     return this.records.get(id);
   }
