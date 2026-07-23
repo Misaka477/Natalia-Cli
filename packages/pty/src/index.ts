@@ -185,7 +185,157 @@ export type InteractivePTYInfo = {
   startedAt: string;
   endedAt?: string;
   secretAudit: InteractivePTYSecretAudit[];
+  screen: TerminalScreenSnapshot;
+  revision: number;
+  lastOutputAt?: string;
 };
+
+export type TerminalScreenSnapshot = {
+  rows: number;
+  cols: number;
+  cursor: { row: number; col: number; visible: boolean };
+  text: string;
+};
+
+/**
+ * A deliberately small VT screen model shared by every interactive program.
+ * It tracks display state, not any program-specific prompt or completion rule.
+ */
+export class TerminalScreen {
+  private lines: string[];
+  private row = 0;
+  private col = 0;
+  private visible = true;
+  private control = "";
+
+  constructor(
+    private rows: number,
+    private cols: number,
+  ) {
+    this.lines = Array.from({ length: rows }, () => " ".repeat(cols));
+  }
+
+  write(chunk: string) {
+    let text = `${this.control}${chunk}`;
+    this.control = "";
+    for (let index = 0; index < text.length; index++) {
+      const char = text[index]!;
+      if (char === "\x1b") {
+        const sequence = readTerminalControlSequence(text, index);
+        if (!sequence) {
+          this.control = text.slice(index);
+          break;
+        }
+        this.applyControl(sequence.value);
+        index = sequence.end;
+        continue;
+      }
+      this.writeCharacter(char);
+    }
+  }
+
+  resize(rows: number, cols: number) {
+    const previous = this.lines;
+    this.rows = rows;
+    this.cols = cols;
+    this.lines = Array.from({ length: rows }, (_, index) =>
+      (previous[index] ?? "").slice(0, cols).padEnd(cols, " "),
+    );
+    this.row = Math.min(this.row, rows - 1);
+    this.col = Math.min(this.col, cols - 1);
+  }
+
+  snapshot(): TerminalScreenSnapshot {
+    return {
+      rows: this.rows,
+      cols: this.cols,
+      cursor: { row: this.row, col: this.col, visible: this.visible },
+      text: this.lines
+        .map((line) => line.trimEnd())
+        .join("\n")
+        .replace(/\n+$/u, ""),
+    };
+  }
+
+  private writeCharacter(char: string) {
+    if (char === "\r") {
+      this.col = 0;
+      return;
+    }
+    if (char === "\n") {
+      this.lineFeed();
+      return;
+    }
+    if (char === "\b") {
+      this.col = Math.max(0, this.col - 1);
+      return;
+    }
+    if (char === "\t") {
+      this.col = Math.min(this.cols - 1, this.col + (8 - (this.col % 8)));
+      return;
+    }
+    if (char < " ") return;
+    this.replace(this.row, this.col, char);
+    this.col++;
+    if (this.col >= this.cols) {
+      this.col = 0;
+      this.lineFeed();
+    }
+  }
+
+  private applyControl(sequence: string) {
+    if (!sequence.startsWith("\x1b[")) return;
+    const final = sequence.at(-1)!;
+    const values = sequence.slice(2, -1).replace(/^\?/u, "");
+    const params = values
+      ? values.split(";").map((value) => Number(value) || 0)
+      : [];
+    const amount = params[0] || 1;
+    if (final === "A") this.row = Math.max(0, this.row - amount);
+    if (final === "B") this.row = Math.min(this.rows - 1, this.row + amount);
+    if (final === "C") this.col = Math.min(this.cols - 1, this.col + amount);
+    if (final === "D") this.col = Math.max(0, this.col - amount);
+    if (final === "G") this.col = Math.min(this.cols - 1, amount - 1);
+    if (final === "H" || final === "f") {
+      this.row = Math.min(this.rows - 1, Math.max(0, (params[0] || 1) - 1));
+      this.col = Math.min(this.cols - 1, Math.max(0, (params[1] || 1) - 1));
+    }
+    if (final === "J" && (params[0] === 2 || params[0] === 3)) {
+      this.lines.fill(" ".repeat(this.cols));
+      this.row = 0;
+      this.col = 0;
+    }
+    if (final === "K") this.eraseLine(params[0] ?? 0);
+    if (final === "h" && values === "25") this.visible = true;
+    if (final === "l" && values === "25") this.visible = false;
+  }
+
+  private eraseLine(mode: number) {
+    if (mode === 2) {
+      this.lines[this.row] = " ".repeat(this.cols);
+      return;
+    }
+    const line = this.lines[this.row]!;
+    const start = mode === 1 ? 0 : this.col;
+    const end = mode === 1 ? this.col + 1 : this.cols;
+    this.lines[this.row] =
+      `${line.slice(0, start)}${" ".repeat(end - start)}${line.slice(end)}`;
+  }
+
+  private replace(row: number, col: number, char: string) {
+    const line = this.lines[row]!;
+    this.lines[row] = `${line.slice(0, col)}${char}${line.slice(col + 1)}`;
+  }
+
+  private lineFeed() {
+    if (this.row < this.rows - 1) {
+      this.row++;
+      return;
+    }
+    this.lines.shift();
+    this.lines.push(" ".repeat(this.cols));
+  }
+}
 
 export type InteractivePTYSecretAudit = {
   at: string;
@@ -227,6 +377,8 @@ export class InteractivePTYRegistry {
       outputPath: resolve(this.stateDir, `${id}.log`),
       secretAudit: [],
       terminalControlTail: "",
+      screenModel: new TerminalScreen(input.rows ?? 24, input.cols ?? 80),
+      revision: 0,
     };
     const process = Bun.spawn(
       [
@@ -349,6 +501,8 @@ export class InteractivePTYRegistry {
     const session = this.mustRunning(id);
     session.rows = rows;
     session.cols = cols;
+    session.screenModel.resize(rows, cols);
+    session.revision++;
     await this.command(session, { action: "resize", rows, cols });
     await this.persist(session);
     this.emit(session);
@@ -405,12 +559,17 @@ export class InteractivePTYRegistry {
     try {
       const message = JSON.parse(line) as { type: string; data?: string };
       if (message.type === "output" && message.data) {
-        const output = stripPendingTerminalEcho(
+        const rawOutput = Buffer.from(message.data, "base64").toString("utf8");
+        const outputWithoutSensitiveEcho = stripPendingTerminalEcho(
           session,
-          sanitizeInteractiveTerminalOutput(
-            session,
-            Buffer.from(message.data, "base64").toString("utf8"),
-          ),
+          rawOutput,
+        );
+        session.screenModel.write(outputWithoutSensitiveEcho);
+        session.revision++;
+        session.lastOutputAt = new Date().toISOString();
+        const output = sanitizeInteractiveTerminalOutput(
+          session,
+          outputWithoutSensitiveEcho,
         );
         if (output) appendInteractiveOutput(session, output);
         if (/password[: ]*$/iu.test(session.tail))
@@ -675,13 +834,37 @@ sys.exit(child.wait())
 
 type PersistentPTYRuntime = PersistentPTYSessionInfo;
 
-type InteractivePTYRuntime = InteractivePTYInfo & {
+type InteractivePTYRuntime = Omit<InteractivePTYInfo, "screen"> & {
   process: ReturnType<typeof Bun.spawn>;
   listeners: Set<(session: InteractivePTYInfo) => void>;
   outputPath: string;
   pendingTerminalEcho?: string;
   terminalControlTail: string;
+  screenModel: TerminalScreen;
 };
+
+function readTerminalControlSequence(text: string, start: number) {
+  const next = text[start + 1];
+  if (next === "]" || next === "P") {
+    for (let index = start + 2; index < text.length; index++) {
+      if (text[index] === "\x07")
+        return { value: text.slice(start, index + 1), end: index };
+      if (text[index] === "\x1b" && text[index + 1] === "\\")
+        return { value: text.slice(start, index + 2), end: index + 1 };
+    }
+    return undefined;
+  }
+  if (next !== "[") {
+    if (next === undefined) return undefined;
+    return { value: text.slice(start, start + 2), end: start + 1 };
+  }
+  for (let index = start + 2; index < text.length; index++) {
+    const code = text.charCodeAt(index);
+    if (code >= 0x40 && code <= 0x7e)
+      return { value: text.slice(start, index + 1), end: index };
+  }
+  return undefined;
+}
 
 function appendInteractiveOutput(session: InteractivePTYRuntime, text: string) {
   const safe = sanitizeTerminalOutput(text);
@@ -758,6 +941,9 @@ function publicInteractivePTY(
     startedAt: session.startedAt,
     endedAt: session.endedAt,
     secretAudit: [...session.secretAudit],
+    screen: session.screenModel.snapshot(),
+    revision: session.revision,
+    lastOutputAt: session.lastOutputAt,
   };
 }
 

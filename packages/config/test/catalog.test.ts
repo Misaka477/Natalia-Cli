@@ -86,6 +86,28 @@ test("rejects a model that provider discovery did not return", () => {
   ).toThrow("Model was not returned by provider");
 });
 
+test("persists an Anthropic-compatible custom Messages API endpoint", () => {
+  const configured = configureDiscoveredProviderModel(
+    configV2Schema.parse({ version: 2 }),
+    {
+      providerID: "gateway-anthropic",
+      providerType: "anthropic-compatible",
+      apiKey: "test-only",
+      baseURL: "https://gateway.example/v1",
+      modelID: "claude-compatible-model",
+      discoveredModels: ["claude-compatible-model"],
+    },
+  );
+  expect(configured.providers["gateway-anthropic"]).toMatchObject({
+    type: "anthropic-compatible",
+    baseURL: "https://gateway.example/v1",
+  });
+  expect(configured.models[configured.defaultModel]).toMatchObject({
+    provider: "gateway-anthropic",
+    model: "claude-compatible-model",
+  });
+});
+
 test("writes settings mutations to the requested config scope", async () => {
   const workspaceRoot = await mkdtemp(
     join(tmpdir(), "natalia-config-write-scope-"),

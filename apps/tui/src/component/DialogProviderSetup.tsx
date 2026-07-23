@@ -44,6 +44,12 @@ export function DialogProviderSetup(props: {
           description: "Custom endpoint",
           category: "Other",
         },
+        {
+          value: "anthropic-compatible",
+          title: "Anthropic Compatible",
+          description: "Messages API endpoint",
+          category: "Other",
+        },
       ]}
       onSelect={(option) => {
         dialog.replace(() => (
@@ -133,9 +139,11 @@ function ProviderURL(props: {
       ? "https://api.openai.com/v1"
       : props.type === "anthropic"
         ? "https://api.anthropic.com"
-        : props.type === "gemini"
-          ? "https://generativelanguage.googleapis.com/v1beta"
-          : "https://api.example.com/v1";
+        : props.type === "anthropic-compatible"
+          ? "https://api.example.com/v1"
+          : props.type === "gemini"
+            ? "https://generativelanguage.googleapis.com/v1beta"
+            : "https://api.example.com/v1";
   return (
     <DialogPrompt
       title="API Base URL"
@@ -158,6 +166,19 @@ function ProviderURL(props: {
         setBusy(true);
         setError("");
         try {
+          if (props.type === "anthropic-compatible") {
+            dialog.replace(() => (
+              <ProviderManualModel
+                type={props.type}
+                name={props.name}
+                apiKey={props.apiKey}
+                baseURL={baseURL}
+                config={props.config}
+                onPersist={props.onPersist}
+              />
+            ));
+            return;
+          }
           const models = await discoverProviderModels(
             props.type,
             baseURL,
@@ -179,6 +200,44 @@ function ProviderURL(props: {
           setError(cause instanceof Error ? cause.message : String(cause));
           setBusy(false);
         }
+      }}
+    />
+  );
+}
+
+function ProviderManualModel(props: {
+  type: string;
+  name: string;
+  apiKey: string;
+  baseURL: string;
+  config: ConfigV2;
+  onPersist: (next: ConfigV2) => void;
+}) {
+  const dialog = useDialog();
+  return (
+    <DialogPrompt
+      title="Model ID"
+      description={() => (
+        <text fg={darkTheme.muted} wrapMode="word">
+          Anthropic-compatible endpoints do not have a universal model listing
+          API. Enter the model ID supplied by this endpoint.
+        </text>
+      )}
+      placeholder="claude-3-5-sonnet-latest"
+      onConfirm={(value) => {
+        const modelID = value.trim();
+        if (!modelID) return;
+        props.onPersist(
+          configureDiscoveredProviderModel(props.config, {
+            providerID: props.name,
+            providerType: props.type,
+            apiKey: props.apiKey,
+            baseURL: props.baseURL,
+            modelID,
+            discoveredModels: [modelID],
+          }),
+        );
+        dialog.pop();
       }}
     />
   );

@@ -285,7 +285,7 @@ export class AnthropicProvider implements StreamingProvider {
         ? AbortSignal.any([request.signal, timeout])
         : timeout
       : request.signal;
-    const response = await this.fetchImpl(`${this.baseURL}/messages`, {
+    const response = await this.fetchImpl(messagesURL(this.baseURL), {
       method: "POST",
       headers: {
         "x-api-key": this.apiKey,
@@ -521,6 +521,10 @@ function chatCompletionsURL(baseURL: string) {
   return baseURL.endsWith("/chat/completions")
     ? baseURL
     : `${baseURL}/chat/completions`;
+}
+
+function messagesURL(baseURL: string) {
+  return baseURL.endsWith("/messages") ? baseURL : `${baseURL}/messages`;
 }
 
 function modelsURL(baseURL: string) {

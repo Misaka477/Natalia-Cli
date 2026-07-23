@@ -4,6 +4,7 @@ import {
   contextEntriesToProviderMessages,
   GeminiProvider,
   OpenAICompatibleProvider,
+  providerFromKind,
   readWithIdleTimeout,
 } from "../src/provider";
 import { ContextWindowResolver } from "../src/modelmeta";
@@ -36,6 +37,39 @@ test("OpenAI-compatible provider accepts both base and complete chat endpoint UR
   expect(requested).toEqual([
     "https://gateway.example/v1/chat/completions",
     "https://gateway.example/v1/chat/completions",
+  ]);
+});
+
+test("Anthropic-compatible provider names use the Messages API adapter", async () => {
+  const requested: string[] = [];
+  const fetchImpl = Object.assign(
+    async (input: URL | RequestInfo) => {
+      requested.push(String(input));
+      return new Response("event: message_stop\ndata: {}\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  for (const baseURL of [
+    "https://gateway.example/v1",
+    "https://gateway.example/v1/messages",
+  ]) {
+    const provider = providerFromKind({
+      provider: "anthropic-compatible",
+      apiKey: "test-key",
+      model: "claude-compatible-model",
+      baseURL,
+      fetch: fetchImpl,
+    });
+    expect(provider).toBeInstanceOf(AnthropicProvider);
+    for await (const _chunk of provider.stream({ messages: [] })) {
+      // Drain the stream to force the request.
+    }
+  }
+  expect(requested).toEqual([
+    "https://gateway.example/v1/messages",
+    "https://gateway.example/v1/messages",
   ]);
 });
 

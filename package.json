@@ -4,7 +4,7 @@
   "version": "0.0.0-m8",
   "private": true,
   "type": "module",
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -32,8 +32,10 @@
     "guard:imports": "npx bun run packages/testing/bin/import-guard.ts",
     "ts:tui": "npm --workspace @natalia/tui run dev",
     "ts:cli": "npx bun apps/cli/src/main.ts",
-    "ts:release-check": "npx bun scripts/ts-release-check.ts",
-    "ts:build": "npx bun scripts/ts-build.ts",
+    "ts:release-check": "npm run licenses:check && npx bun scripts/ts-release-check.ts",
+    "ts:build": "npm run licenses:check && npx bun scripts/ts-build.ts",
+    "licenses:check": "npx bun scripts/license-check.ts",
+    "licenses:generate": "npx bun scripts/generate-third-party-licenses.ts",
     "verify": "npm run format && npm run typecheck && npm run test && npm run guard:imports"
   },
   "dependencies": {

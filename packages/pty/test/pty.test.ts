@@ -16,6 +16,7 @@ import {
   redactSensitiveInput,
   sanitizeTerminalOutput,
   runRealPTYCommand,
+  TerminalScreen,
 } from "../src";
 
 const target = { kind: "host" as const, cwd: "/repo" };
@@ -101,6 +102,8 @@ test("interactive PTY registry writes input, special keys, resize and transcript
   await waitForInteractive(() => registry.get(started.id).transcript, "hello");
   expect(registry.get(started.id).transcript).toContain("hello");
   expect(registry.get(started.id).transcript.match(/hello/gu)?.length).toBe(1);
+  expect(registry.get(started.id).screen.text).toContain("hello");
+  expect(registry.get(started.id).revision).toBeGreaterThan(0);
   expect(registry.read(started.id, { maxChars: 2 })).toMatchObject({
     offset: expect.any(Number),
     nextOffset: expect.any(Number),
@@ -175,6 +178,29 @@ test("terminal sanitizer removes OSC shell integration metadata", () => {
   );
   expect(transcript).toBe("hello\r\n$ ");
   expect(transcript).not.toContain("machine-metadata");
+});
+
+test("terminal screen applies ANSI cursor movement and erasure generically", () => {
+  const screen = new TerminalScreen(3, 12);
+  screen.write("hello\r\x1b[2CXX\nline\x1b[2;1HROW\x1b[K");
+  expect(screen.snapshot()).toMatchObject({
+    cursor: { row: 1, col: 3, visible: true },
+    text: "heXXo\nROW",
+  });
+});
+
+test("terminal screen preserves incomplete ANSI sequences across output chunks", () => {
+  const screen = new TerminalScreen(2, 10);
+  screen.write("before\x1b[");
+  screen.write("2DXX");
+  expect(screen.snapshot().text).toBe("befoXX");
+});
+
+test("terminal screen does not render OSC terminal metadata", () => {
+  const screen = new TerminalScreen(2, 20);
+  screen.write("\x1b]1337;secret-metadata\x07visible");
+  expect(screen.snapshot().text).toBe("visible");
+  expect(screen.snapshot().text).not.toContain("secret-metadata");
 });
 
 test("model PTY registry pauses high-risk actions until approval then executes serially", async () => {

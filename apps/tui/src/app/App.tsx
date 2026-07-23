@@ -1168,6 +1168,9 @@ function Shell(props: {
                 dialog.push(() => (
                   <DialogModel
                     workspaceRoot={props.workspaceRoot ?? process.cwd()}
+                    catalog={props.backend.modelCatalog}
+                    selection={props.backend.modelSelection}
+                    selectRuntimeModel={props.backend.selectModel}
                   />
                 ));
                 break;
@@ -1194,15 +1197,31 @@ function Shell(props: {
                     ]}
                     onSelect={(opt) => {
                       if (opt.value === "$new") {
-                        const name = prompt("Profile name") ?? "";
-                        if (!name.trim()) return;
-                        resolved.permissionProfiles![name.trim()] = {
-                          description: "",
-                          approval: "ask",
-                        };
-                        resolved.defaultPermission = name.trim();
-                        void saveConfig(resolved);
-                        dialog.pop();
+                        setTimeout(() => {
+                          void DialogPrompt.show(
+                            dialog,
+                            "Permission Profile Name",
+                            {
+                              description: () => (
+                                <text fg={darkTheme.muted}>
+                                  Create a named permission profile and select
+                                  it as the default.
+                                </text>
+                              ),
+                              placeholder: "review-only",
+                            },
+                          ).then((value) => {
+                            const name = value?.trim();
+                            if (!name || resolved.permissionProfiles[name])
+                              return;
+                            resolved.permissionProfiles[name] = {
+                              description: "",
+                              approval: "ask",
+                            };
+                            resolved.defaultPermission = name;
+                            void saveConfig(resolved);
+                          });
+                        }, 0);
                         return;
                       }
                       resolved.defaultPermission = opt.value;
@@ -1299,15 +1318,29 @@ function Shell(props: {
                     ]}
                     onSelect={(opt) => {
                       if (opt.value === "$new") {
-                        const name = prompt("Mode name") ?? "";
-                        if (!name.trim()) return;
-                        resolved.modes![name.trim()] = {
-                          description: "",
-                          allowedTools: [],
-                        } as any;
-                        resolved.defaultMode = name.trim();
-                        void saveConfig(resolved);
-                        dialog.pop();
+                        setTimeout(() => {
+                          void DialogPrompt.show(dialog, "Agent Mode Name", {
+                            description: () => (
+                              <text fg={darkTheme.muted}>
+                                Create a named mode and select it as the
+                                default.
+                              </text>
+                            ),
+                            placeholder: "review",
+                          }).then((value) => {
+                            const name = value?.trim();
+                            if (!name || resolved.modes[name]) return;
+                            resolved.modes[name] = {
+                              description: "",
+                              systemPrompt: "",
+                              allowedTools: [],
+                              excludedTools: [],
+                              mcpServers: [],
+                            };
+                            resolved.defaultMode = name;
+                            void saveConfig(resolved);
+                          });
+                        }, 0);
                         return;
                       }
                       resolved.defaultMode = opt.value;
