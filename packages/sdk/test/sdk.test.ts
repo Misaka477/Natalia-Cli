@@ -156,6 +156,77 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
         resumable: true,
       };
     },
+    async messages() {
+      return {
+        data: [
+          {
+            id: "turn_message",
+            turnID: "turn_message",
+            submitted: {
+              type: "turn.submitted" as const,
+              id: "turn_message",
+              text: "projected",
+              byteLength: 9,
+              lineCount: 1,
+              sha256: "sdk",
+            },
+            rows: [],
+          },
+        ],
+        cursor: {},
+      };
+    },
+    async ptyList() {
+      return [ptyFixture()];
+    },
+    async ptyRead() {
+      return {
+        ...ptyFixture(),
+        offset: 0,
+        nextOffset: 3,
+        totalChars: 3,
+        truncated: false,
+      };
+    },
+    async ptyWrite() {
+      return ptyFixture();
+    },
+    async ptyKey() {
+      return ptyFixture();
+    },
+    async ptyResize() {
+      return { ...ptyFixture(), rows: 32, cols: 120 };
+    },
+    async ptyAttach() {
+      return ptyFixture();
+    },
+    async ptyDetach() {
+      return { ...ptyFixture(), attached: false };
+    },
+    async ptyStop() {
+      return { ...ptyFixture(), status: "exited" as const };
+    },
+    async checkpointList() {
+      return [checkpointFixture()];
+    },
+    async checkpointPreview() {
+      return checkpointPreviewFixture(true);
+    },
+    async checkpointRollback(input) {
+      return checkpointPreviewFixture(Boolean(input.dryRun));
+    },
+    async sandboxList() {
+      return [sandboxFixture()];
+    },
+    async sandboxDiff() {
+      return [{ kind: "modify" as const, path: "draft.txt" }];
+    },
+    async sandboxResources() {
+      return [];
+    },
+    async sandboxResourceOutput() {
+      return "";
+    },
     async sessionDelete(id) {
       return { id, removedAttachments: 0 };
     },
@@ -283,6 +354,41 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
     id: "ses_one_fork_turn_sdk",
     title: "One (fork)",
   });
+  expect(await sdk.messages({ order: "asc" })).toMatchObject({
+    data: [{ id: "turn_message" }],
+  });
+  expect(await sdk.ptySessions()).toMatchObject([{ id: "tty_fixture" }]);
+  expect(await sdk.ptyRead({ id: "tty_fixture" })).toMatchObject({
+    nextOffset: 3,
+  });
+  expect(
+    await sdk.ptyWrite({ id: "tty_fixture", text: "hello" }),
+  ).toMatchObject({
+    id: "tty_fixture",
+  });
+  expect(await sdk.ptyKey({ id: "tty_fixture", key: "ctrl-c" })).toMatchObject({
+    id: "tty_fixture",
+  });
+  expect(
+    await sdk.ptyResize({ id: "tty_fixture", rows: 32, cols: 120 }),
+  ).toMatchObject({
+    rows: 32,
+    cols: 120,
+  });
+  expect(await sdk.ptyDetach("tty_fixture")).toMatchObject({ attached: false });
+  expect(await sdk.ptyAttach("tty_fixture")).toMatchObject({ attached: true });
+  expect(await sdk.ptyStop("tty_fixture")).toMatchObject({ status: "exited" });
+  expect(await sdk.checkpointList()).toMatchObject([{ id: "checkpoint_0" }]);
+  expect(await sdk.checkpointPreview("checkpoint_0")).toMatchObject({
+    dryRun: true,
+  });
+  expect(
+    await sdk.checkpointRollback({ id: "checkpoint_0", dryRun: false }),
+  ).toMatchObject({ dryRun: false });
+  expect(await sdk.sandboxList()).toMatchObject([{ id: "sandbox_fixture" }]);
+  expect(await sdk.sandboxDiff("sandbox_fixture")).toMatchObject([
+    { path: "draft.txt" },
+  ]);
   expect(await sdk.deleteSession("ses_one")).toEqual({
     id: "ses_one",
     removedAttachments: 0,
@@ -319,3 +425,66 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
   });
   server.stop(true);
 });
+
+function ptyFixture() {
+  return {
+    id: "tty_fixture",
+    command: "cat",
+    cwd: "/tmp",
+    status: "running" as const,
+    attached: true,
+    rows: 24,
+    cols: 80,
+    transcript: "ok\n",
+    tail: "ok\n",
+    startedAt: "2026-07-23T00:00:00.000Z",
+    secretAudit: [],
+  };
+}
+
+function checkpointFixture() {
+  return {
+    id: "checkpoint_0",
+    sequence: 0,
+    step: 0,
+    reason: "baseline" as const,
+    createdAt: "2026-07-23T00:00:00.000Z",
+    complete: true,
+    errors: [],
+    files: 0,
+    changes: 0,
+    tokenEstimate: 0,
+    diskUsageBytes: 0,
+  };
+}
+
+function checkpointPreviewFixture(dryRun: boolean) {
+  return {
+    checkpointID: "checkpoint_0",
+    dryRun,
+    changes: [],
+    context: {
+      truncateMessages: 0,
+      targetJournalOffset: 0,
+      targetStep: 0,
+      targetTokens: 0,
+      compactionGeneration: 0,
+    },
+    resources: [],
+    ignoredFiles: 0,
+    diskUsageBytes: 0,
+    complete: true,
+    warnings: [],
+  };
+}
+
+function sandboxFixture() {
+  return {
+    id: "sandbox_fixture",
+    root: "/tmp/sandbox_fixture",
+    isolationLevel: "workspace" as const,
+    changedFiles: 1,
+    runningResources: 0,
+    envAllowlist: ["PATH"],
+  };
+}

@@ -44,6 +44,77 @@ test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", as
         hasMore: false,
       };
     },
+    async messages() {
+      return {
+        data: [
+          {
+            id: "turn_message",
+            turnID: "turn_message",
+            submitted: {
+              type: "turn.submitted" as const,
+              id: "turn_message",
+              text: "projected",
+              byteLength: 9,
+              lineCount: 1,
+              sha256: "test",
+            },
+            rows: [],
+          },
+        ],
+        cursor: { next: "opaque-next" },
+      };
+    },
+    async ptyList() {
+      return [ptyFixture()];
+    },
+    async ptyRead() {
+      return {
+        ...ptyFixture(),
+        offset: 0,
+        nextOffset: 3,
+        totalChars: 3,
+        truncated: false,
+      };
+    },
+    async ptyWrite() {
+      return ptyFixture();
+    },
+    async ptyKey() {
+      return ptyFixture();
+    },
+    async ptyResize() {
+      return { ...ptyFixture(), rows: 32, cols: 120 };
+    },
+    async ptyAttach() {
+      return ptyFixture();
+    },
+    async ptyDetach() {
+      return { ...ptyFixture(), attached: false };
+    },
+    async ptyStop() {
+      return { ...ptyFixture(), status: "exited" as const };
+    },
+    async checkpointList() {
+      return [checkpointFixture()];
+    },
+    async checkpointPreview() {
+      return checkpointPreviewFixture(true);
+    },
+    async checkpointRollback(input) {
+      return checkpointPreviewFixture(Boolean(input.dryRun));
+    },
+    async sandboxList() {
+      return [sandboxFixture()];
+    },
+    async sandboxDiff() {
+      return [{ kind: "modify" as const, path: "draft.txt" }];
+    },
+    async sandboxResources() {
+      return [];
+    },
+    async sandboxResourceOutput() {
+      return "";
+    },
     async pendingInteractive() {
       return {
         approvals: [
@@ -239,6 +310,74 @@ test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", as
   expect(replayed).toContain("id: 7");
   expect(replayed).toContain("durable replay");
   await reader.cancel();
+  const pty = await fetch(`${server.url}/rpc`, {
+    method: "POST",
+    headers: {
+      authorization: "Bearer secret",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 14,
+      method: "pty.resize",
+      params: { id: "tty_fixture", rows: 32, cols: 120 },
+    }),
+  });
+  expect(
+    (await pty.json()) as { result: { rows: number; cols: number } },
+  ).toMatchObject({
+    result: { rows: 32, cols: 120 },
+  });
+  const checkpoint = await fetch(`${server.url}/rpc`, {
+    method: "POST",
+    headers: {
+      authorization: "Bearer secret",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 15,
+      method: "checkpoint.rollback",
+      params: { id: "checkpoint_0", dryRun: true },
+    }),
+  });
+  expect(
+    (await checkpoint.json()) as { result: { dryRun: boolean } },
+  ).toMatchObject({ result: { dryRun: true } });
+  const sandbox = await fetch(`${server.url}/rpc`, {
+    method: "POST",
+    headers: {
+      authorization: "Bearer secret",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 16,
+      method: "sandbox.list",
+      params: {},
+    }),
+  });
+  expect(
+    (await sandbox.json()) as { result: Array<{ id: string }> },
+  ).toMatchObject({
+    result: [{ id: "sandbox_fixture" }],
+  });
+  const messages = await fetch(`${server.url}/rpc`, {
+    method: "POST",
+    headers: {
+      authorization: "Bearer secret",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 13,
+      method: "session.messages",
+      params: { limit: 1, order: "asc" },
+    }),
+  });
+  expect(
+    (await messages.json()) as { result: { data: Array<{ id: string }> } },
+  ).toMatchObject({ result: { data: [{ id: "turn_message" }] } });
   const pause = await fetch(`${server.url}/rpc`, {
     method: "POST",
     headers: {
@@ -257,6 +396,69 @@ test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", as
   );
   server.stop(true);
 });
+
+function ptyFixture() {
+  return {
+    id: "tty_fixture",
+    command: "cat",
+    cwd: "/tmp",
+    status: "running" as const,
+    attached: true,
+    rows: 24,
+    cols: 80,
+    transcript: "ok\n",
+    tail: "ok\n",
+    startedAt: "2026-07-23T00:00:00.000Z",
+    secretAudit: [],
+  };
+}
+
+function checkpointFixture() {
+  return {
+    id: "checkpoint_0",
+    sequence: 0,
+    step: 0,
+    reason: "baseline" as const,
+    createdAt: "2026-07-23T00:00:00.000Z",
+    complete: true,
+    errors: [],
+    files: 0,
+    changes: 0,
+    tokenEstimate: 0,
+    diskUsageBytes: 0,
+  };
+}
+
+function checkpointPreviewFixture(dryRun: boolean) {
+  return {
+    checkpointID: "checkpoint_0",
+    dryRun,
+    changes: [],
+    context: {
+      truncateMessages: 0,
+      targetJournalOffset: 0,
+      targetStep: 0,
+      targetTokens: 0,
+      compactionGeneration: 0,
+    },
+    resources: [],
+    ignoredFiles: 0,
+    diskUsageBytes: 0,
+    complete: true,
+    warnings: [],
+  };
+}
+
+function sandboxFixture() {
+  return {
+    id: "sandbox_fixture",
+    root: "/tmp/sandbox_fixture",
+    isolationLevel: "workspace" as const,
+    changedFiles: 1,
+    runningResources: 0,
+    envAllowlist: ["PATH"],
+  };
+}
 
 test("HTTP transport returns JSON-RPC errors for malformed request bodies", async () => {
   const client: RuntimeClient = {

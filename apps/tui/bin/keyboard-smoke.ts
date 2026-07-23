@@ -18,6 +18,9 @@ const workspaceFiles = [{ path: "src/mentioned.ts", type: "file" as const }];
 const selectedAgents: Array<string | undefined> = [];
 const forkCalls: Array<{ id: string; turnID: string }> = [];
 let statusLoads = 0;
+let ptyLoads = 0;
+let checkpointLoads = 0;
+let sandboxLoads = 0;
 const statusLoadCount = () => statusLoads;
 const handle = await runTuiShell({
   backend: makeBackend(),
@@ -196,6 +199,32 @@ if (statusLoadCount() !== 2)
 keys.pressEscape();
 await Bun.sleep(80);
 
+keys.pressKey("t", { ctrl: true, shift: true });
+for (let attempts = 0; attempts < 20 && ptyLoads !== 1; attempts++)
+  await Bun.sleep(25);
+if (ptyLoads !== 1)
+  throw new Error(`expected PTY management load, got ${ptyLoads}`);
+keys.pressEscape();
+await Bun.sleep(80);
+
+keys.pressKey("k", { ctrl: true, shift: true });
+for (let attempts = 0; attempts < 20 && checkpointLoads !== 1; attempts++)
+  await Bun.sleep(25);
+if (checkpointLoads !== 1)
+  throw new Error(
+    `expected checkpoint management load, got ${checkpointLoads}`,
+  );
+keys.pressEscape();
+await Bun.sleep(80);
+
+keys.pressKey("b", { ctrl: true, shift: true });
+for (let attempts = 0; attempts < 20 && sandboxLoads !== 1; attempts++)
+  await Bun.sleep(25);
+if (sandboxLoads !== 1)
+  throw new Error(`expected sandbox management load, got ${sandboxLoads}`);
+keys.pressEscape();
+await Bun.sleep(80);
+
 keys.pressKey("g", { ctrl: true, shift: true });
 await Bun.sleep(120);
 if (
@@ -305,6 +334,55 @@ function makeBackend(): RuntimeClient {
         cwd: "/workspace",
         background: "0 running",
       };
+    },
+    async ptyList() {
+      ptyLoads++;
+      return [
+        {
+          id: "tty_keyboard",
+          command: "cat",
+          cwd: "/workspace",
+          status: "running" as const,
+          attached: true,
+          rows: 24,
+          cols: 80,
+          transcript: "ready\n",
+          tail: "ready\n",
+          startedAt: "2026-07-23T00:00:00.000Z",
+          secretAudit: [],
+        },
+      ];
+    },
+    async checkpointList() {
+      checkpointLoads++;
+      return [
+        {
+          id: "checkpoint_0",
+          sequence: 0,
+          step: 0,
+          reason: "baseline" as const,
+          createdAt: "2026-07-23T00:00:00.000Z",
+          complete: true,
+          errors: [],
+          files: 0,
+          changes: 0,
+          tokenEstimate: 0,
+          diskUsageBytes: 0,
+        },
+      ];
+    },
+    async sandboxList() {
+      sandboxLoads++;
+      return [
+        {
+          id: "sandbox_keyboard",
+          root: "/workspace/.natalia/sandboxes/sandbox_keyboard",
+          isolationLevel: "workspace" as const,
+          changedFiles: 0,
+          runningResources: 0,
+          envAllowlist: ["PATH"],
+        },
+      ];
     },
     async mcpCatalog() {
       return {

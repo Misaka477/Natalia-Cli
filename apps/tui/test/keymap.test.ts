@@ -86,6 +86,11 @@ describe("command definitions", () => {
     expect(commands["help.open"]).toBeDefined();
     expect(commands["snapshot"]).toBeDefined();
     expect(commands["pty.focus-toggle"]).toBeDefined();
+    expect(commands["pty.manage"]).toMatchObject({ keys: "ctrl+shift+t" });
+    expect(commands["checkpoint.manage"]).toMatchObject({
+      keys: "ctrl+shift+k",
+    });
+    expect(commands["sandbox.manage"]).toMatchObject({ keys: "ctrl+shift+b" });
     expect(commands["cancel"]).toBeDefined();
     expect(commands["exit"]).toBeDefined();
     expect(commands["dialog.close"]).toBeDefined();

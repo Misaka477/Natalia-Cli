@@ -357,6 +357,222 @@ export async function handleRPCMessage(
         }),
       };
     }
+    if (body.method === "pty.list") {
+      optionsGuard(client.ptyList, "pty.list");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.ptyList(),
+      };
+    }
+    if (body.method === "pty.read") {
+      optionsGuard(client.ptyRead, "pty.read");
+      const offset = body.params?.offset;
+      const maxChars = body.params?.maxChars;
+      if (
+        offset !== undefined &&
+        (typeof offset !== "number" || !Number.isInteger(offset) || offset < 0)
+      )
+        throw new Error(
+          "pty.read.params.offset must be a non-negative integer",
+        );
+      if (
+        maxChars !== undefined &&
+        (typeof maxChars !== "number" ||
+          !Number.isInteger(maxChars) ||
+          maxChars < 1 ||
+          maxChars > 20000)
+      )
+        throw new Error(
+          "pty.read.params.maxChars must be an integer between 1 and 20000",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.ptyRead({
+          id: stringParam(body.params, "id"),
+          offset: typeof offset === "number" ? offset : undefined,
+          maxChars: typeof maxChars === "number" ? maxChars : undefined,
+        }),
+      };
+    }
+    if (body.method === "pty.write") {
+      optionsGuard(client.ptyWrite, "pty.write");
+      const submit = body.params?.submit;
+      const sensitive = body.params?.sensitive;
+      if (submit !== undefined && typeof submit !== "boolean")
+        throw new Error("pty.write.params.submit must be a boolean");
+      if (sensitive !== undefined && typeof sensitive !== "boolean")
+        throw new Error("pty.write.params.sensitive must be a boolean");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.ptyWrite({
+          id: stringParam(body.params, "id"),
+          text: stringParam(body.params, "text"),
+          submit: typeof submit === "boolean" ? submit : undefined,
+          sensitive: typeof sensitive === "boolean" ? sensitive : undefined,
+        }),
+      };
+    }
+    if (body.method === "pty.key") {
+      optionsGuard(client.ptyKey, "pty.key");
+      const key = stringParam(body.params, "key");
+      if (!["enter", "ctrl-c", "ctrl-d", "tab", "esc"].includes(key))
+        throw new Error("pty.key.params.key is invalid");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.ptyKey({
+          id: stringParam(body.params, "id"),
+          key: key as "enter" | "ctrl-c" | "ctrl-d" | "tab" | "esc",
+        }),
+      };
+    }
+    if (body.method === "pty.resize") {
+      optionsGuard(client.ptyResize, "pty.resize");
+      const rows = body.params?.rows;
+      const cols = body.params?.cols;
+      if (
+        typeof rows !== "number" ||
+        !Number.isInteger(rows) ||
+        typeof cols !== "number" ||
+        !Number.isInteger(cols)
+      )
+        throw new Error("pty.resize.params.rows and cols must be integers");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.ptyResize({
+          id: stringParam(body.params, "id"),
+          rows,
+          cols,
+        }),
+      };
+    }
+    if (
+      body.method === "pty.attach" ||
+      body.method === "pty.detach" ||
+      body.method === "pty.stop"
+    ) {
+      const method = body.method;
+      const action =
+        method === "pty.attach"
+          ? client.ptyAttach
+          : method === "pty.detach"
+            ? client.ptyDetach
+            : client.ptyStop;
+      optionsGuard(action, method);
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await action(stringParam(body.params, "id")),
+      };
+    }
+    if (body.method === "checkpoint.list") {
+      optionsGuard(client.checkpointList, "checkpoint.list");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.checkpointList(),
+      };
+    }
+    if (body.method === "checkpoint.preview") {
+      optionsGuard(client.checkpointPreview, "checkpoint.preview");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.checkpointPreview(stringParam(body.params, "id")),
+      };
+    }
+    if (body.method === "checkpoint.rollback") {
+      optionsGuard(client.checkpointRollback, "checkpoint.rollback");
+      const dryRun = body.params?.dryRun;
+      if (dryRun !== undefined && typeof dryRun !== "boolean")
+        throw new Error("checkpoint.rollback.params.dryRun must be a boolean");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.checkpointRollback({
+          id: stringParam(body.params, "id"),
+          dryRun: typeof dryRun === "boolean" ? dryRun : undefined,
+        }),
+      };
+    }
+    if (body.method === "sandbox.list") {
+      optionsGuard(client.sandboxList, "sandbox.list");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.sandboxList(),
+      };
+    }
+    if (body.method === "sandbox.diff") {
+      optionsGuard(client.sandboxDiff, "sandbox.diff");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.sandboxDiff(stringParam(body.params, "id")),
+      };
+    }
+    if (body.method === "sandbox.resources") {
+      optionsGuard(client.sandboxResources, "sandbox.resources");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.sandboxResources(stringParam(body.params, "id")),
+      };
+    }
+    if (body.method === "sandbox.resource.output") {
+      optionsGuard(client.sandboxResourceOutput, "sandbox.resource.output");
+      const maxBytes = body.params?.maxBytes;
+      if (
+        maxBytes !== undefined &&
+        (typeof maxBytes !== "number" ||
+          !Number.isInteger(maxBytes) ||
+          maxBytes < 1 ||
+          maxBytes > 20000)
+      )
+        throw new Error(
+          "sandbox.resource.output.params.maxBytes must be an integer between 1 and 20000",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.sandboxResourceOutput({
+          id: stringParam(body.params, "id"),
+          resourceID: stringParam(body.params, "resourceID"),
+          maxBytes: typeof maxBytes === "number" ? maxBytes : undefined,
+        }),
+      };
+    }
+    if (body.method === "sandbox.merge") {
+      optionsGuard(client.sandboxMerge, "sandbox.merge");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.sandboxMerge(stringParam(body.params, "id")),
+      };
+    }
+    if (body.method === "sandbox.delete") {
+      optionsGuard(client.sandboxDelete, "sandbox.delete");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.sandboxDelete(stringParam(body.params, "id")),
+      };
+    }
+    if (body.method === "sandbox.resource.stop") {
+      optionsGuard(client.sandboxResourceStop, "sandbox.resource.stop");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.sandboxResourceStop({
+          id: stringParam(body.params, "id"),
+          resourceID: stringParam(body.params, "resourceID"),
+        }),
+      };
+    }
     if (body.method === "approval.respond") {
       const requestID = stringParam(body.params, "requestID");
       const decision = stringParam(body.params, "decision");
@@ -429,6 +645,39 @@ export async function handleRPCMessage(
         result: await client.history({
           after: typeof after === "number" ? after : undefined,
           limit: typeof limit === "number" ? limit : undefined,
+        }),
+      };
+    }
+    if (body.method === "session.messages") {
+      optionsGuard(client.messages, "session.messages");
+      const limit = body.params?.limit;
+      const order = body.params?.order;
+      const cursor = body.params?.cursor;
+      if (
+        limit !== undefined &&
+        (typeof limit !== "number" ||
+          !Number.isInteger(limit) ||
+          limit < 1 ||
+          limit > 200)
+      )
+        throw new Error(
+          "session.messages.params.limit must be an integer between 1 and 200",
+        );
+      if (order !== undefined && order !== "asc" && order !== "desc")
+        throw new Error("session.messages.params.order must be asc or desc");
+      if (cursor !== undefined && typeof cursor !== "string")
+        throw new Error("session.messages.params.cursor must be a string");
+      if (cursor !== undefined && order !== undefined)
+        throw new Error(
+          "session.messages.params.cursor cannot be combined with order",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.messages({
+          limit: typeof limit === "number" ? limit : undefined,
+          order: order as "asc" | "desc" | undefined,
+          cursor: typeof cursor === "string" ? cursor : undefined,
         }),
       };
     }

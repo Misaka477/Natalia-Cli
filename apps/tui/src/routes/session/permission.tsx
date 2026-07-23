@@ -214,18 +214,19 @@ function Actions(props: { selected: number; onSelect(index: number): void }) {
           <box
             paddingLeft={1}
             paddingRight={1}
-            backgroundColor={
+            border={["left"]}
+            borderColor={
               index() === props.selected ? darkTheme.warning : darkTheme.panel
             }
             onMouseUp={() => props.onSelect(index())}
           >
             <text
-              fg={
-                index() === props.selected
-                  ? darkTheme.background
-                  : darkTheme.text
+              fg={darkTheme.text}
+              attributes={
+                index() === props.selected ? TextAttributes.BOLD : undefined
               }
             >
+              {index() === props.selected ? "> " : "  "}
               {label}
             </text>
           </box>

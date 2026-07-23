@@ -165,6 +165,52 @@ export type CheckpointPreview = {
   complete: boolean;
   warnings: string[];
 };
+export type RuntimeCheckpoint = {
+  id: string;
+  sequence: number;
+  turnID?: string;
+  stepID?: string;
+  step: number;
+  reason:
+    | "baseline"
+    | "turn_begin"
+    | "step_begin"
+    | "manual"
+    | "pre_tool"
+    | "pre_compaction"
+    | "rollback_safety";
+  createdAt: string;
+  complete: boolean;
+  errors: string[];
+  files: number;
+  changes: number;
+  tokenEstimate: number;
+  diskUsageBytes: number;
+};
+export type RuntimeSandbox = {
+  id: string;
+  root: string;
+  isolationLevel: "workspace" | "container" | "vm";
+  changedFiles: number;
+  runningResources: number;
+  envAllowlist: string[];
+};
+export type RuntimeSandboxChange = {
+  kind: SandboxDiffKind;
+  path: string;
+  oldPath?: string;
+  mode?: string;
+};
+export type RuntimeSandboxResource = {
+  id: string;
+  sandboxID: string;
+  command: string;
+  pid: number;
+  status: "running" | "exited" | "failed" | "stopped";
+  outputPath: string;
+  startedAt: string;
+  endedAt?: string;
+};
 
 export type ToolStatus =
   | "receiving_arguments"
@@ -600,6 +646,35 @@ export type RuntimeHistory = {
   events: RuntimeHistoryEvent[];
   hasMore: boolean;
 };
+export type RuntimeProjectedMessageRowKind =
+  | "user"
+  | "thinking"
+  | "assistant"
+  | "tool"
+  | "approval"
+  | "question"
+  | "system";
+export type RuntimeProjectedMessageRow = {
+  id: string;
+  turnID: string;
+  kind: RuntimeProjectedMessageRowKind;
+  event: RuntimeEvent;
+};
+export type RuntimeProjectedMessage = {
+  id: string;
+  turnID: string;
+  submitted: SubmittedTurn;
+  rows: RuntimeProjectedMessageRow[];
+  stopReason?: Extract<RuntimeEvent, { type: "turn.finished" }>["stopReason"];
+};
+export type RuntimeMessageCursor = {
+  previous?: string;
+  next?: string;
+};
+export type RuntimeMessagePage = {
+  data: RuntimeProjectedMessage[];
+  cursor: RuntimeMessageCursor;
+};
 export type PendingInteractiveRequests = {
   approvals: Array<Extract<RuntimeEvent, { type: "approval.request" }>>;
   questions: Array<Extract<RuntimeEvent, { type: "question.request" }>>;
@@ -702,6 +777,25 @@ export type RuntimeWorkspaceContent = {
   offset?: number;
   truncated?: boolean;
   next?: number;
+};
+export type RuntimePTYSession = {
+  id: string;
+  command: string;
+  cwd: string;
+  status: PTYStatus;
+  attached: boolean;
+  rows: number;
+  cols: number;
+  transcript: string;
+  tail: string;
+  startedAt: string;
+  endedAt?: string;
+  secretAudit: Array<{
+    at: string;
+    action: "write" | "prompt_detected";
+    summary: string;
+    sha256?: string;
+  }>;
 };
 export type RuntimeSessionSummary = {
   id: string;
@@ -810,6 +904,11 @@ export type RuntimeClient = {
     after?: number;
     limit?: number;
   }): Promise<RuntimeHistory>;
+  messages?(options?: {
+    limit?: number;
+    order?: "asc" | "desc";
+    cursor?: string;
+  }): Promise<RuntimeMessagePage>;
   pendingInteractive?(): Promise<PendingInteractiveRequests>;
   dispose?(): Promise<void>;
   cancel(reason?: string): void;
@@ -846,6 +945,56 @@ export type RuntimeClient = {
     path?: string;
     limit?: number;
   }): Promise<RuntimeWorkspaceFileEntry[]>;
+  ptyList?(): Promise<RuntimePTYSession[]>;
+  ptyRead?(input: { id: string; offset?: number; maxChars?: number }): Promise<
+    RuntimePTYSession & {
+      offset: number;
+      nextOffset: number;
+      totalChars: number;
+      truncated: boolean;
+    }
+  >;
+  ptyWrite?(input: {
+    id: string;
+    text: string;
+    submit?: boolean;
+    sensitive?: boolean;
+  }): Promise<RuntimePTYSession>;
+  ptyKey?(input: {
+    id: string;
+    key: "enter" | "ctrl-c" | "ctrl-d" | "tab" | "esc";
+  }): Promise<RuntimePTYSession>;
+  ptyResize?(input: {
+    id: string;
+    rows: number;
+    cols: number;
+  }): Promise<RuntimePTYSession>;
+  ptyAttach?(id: string): Promise<RuntimePTYSession>;
+  ptyDetach?(id: string): Promise<RuntimePTYSession>;
+  ptyStop?(id: string): Promise<RuntimePTYSession>;
+  checkpointList?(): Promise<RuntimeCheckpoint[]>;
+  checkpointPreview?(id: string): Promise<CheckpointPreview>;
+  checkpointRollback?(input: {
+    id: string;
+    dryRun?: boolean;
+  }): Promise<CheckpointPreview>;
+  sandboxList?(): Promise<RuntimeSandbox[]>;
+  sandboxDiff?(id: string): Promise<RuntimeSandboxChange[]>;
+  sandboxResources?(id: string): Promise<RuntimeSandboxResource[]>;
+  sandboxResourceOutput?(input: {
+    id: string;
+    resourceID: string;
+    maxBytes?: number;
+  }): Promise<string>;
+  sandboxMerge?(id: string): Promise<RuntimeSandboxChange[]>;
+  sandboxDelete?(id: string): Promise<{
+    pendingChanges: RuntimeSandboxChange[];
+    runningResources: string[];
+  }>;
+  sandboxResourceStop?(input: {
+    id: string;
+    resourceID: string;
+  }): Promise<RuntimeSandboxResource>;
   sessionList?(): Promise<RuntimeSessionSummary[]>;
   sessionTouch?(id: string): Promise<void>;
   sessionRename?(id: string, title: string): Promise<RuntimeSessionSummary>;

@@ -354,6 +354,7 @@ export {
 export type { AdmittedSessionInput, SessionInputDelivery } from "./inbox";
 export {
   modelVisibleEvents,
+  projectSessionMessages,
   projectSession,
   settleInterruptedTurns,
   selectedAgentFromEvents,

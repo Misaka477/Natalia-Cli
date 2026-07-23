@@ -52,6 +52,9 @@ import { DialogSkill } from "../component/DialogSkill";
 import { DialogStash } from "../component/DialogStash";
 import { DialogAttachment } from "../component/DialogAttachment";
 import { DialogWorkspaceSearch } from "../component/DialogWorkspaceSearch";
+import { DialogPty } from "../component/DialogPty";
+import { DialogCheckpoint } from "../component/DialogCheckpoint";
+import { DialogSandbox } from "../component/DialogSandbox";
 import { PromptAutocomplete } from "../component/PromptAutocomplete";
 import {
   editPromptExternally,
@@ -1668,6 +1671,18 @@ function Shell(props: {
           type: "pty.pane.focus",
           focus: state.ptyPane.focus === "chat" ? "pty" : "chat",
         });
+      return;
+    }
+    if (command === "pty.manage") {
+      dialog.push(() => <DialogPty backend={props.backend} />);
+      return;
+    }
+    if (command === "checkpoint.manage") {
+      dialog.push(() => <DialogCheckpoint backend={props.backend} />);
+      return;
+    }
+    if (command === "sandbox.manage") {
+      dialog.push(() => <DialogSandbox backend={props.backend} />);
       return;
     }
     // Plugin commands

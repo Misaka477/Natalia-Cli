@@ -609,13 +609,31 @@ type OpenAIStreamChunk = {
     completion_tokens: number;
   } | null;
   choices?: Array<{
+    recipient?: string;
+    function_call?: { name?: string; arguments?: string };
+    message?: {
+      recipient?: string;
+      function_call?: { name?: string; arguments?: string };
+    };
     delta?: {
       content?: string;
       reasoning_content?: string;
+      // Some OpenAI-compatible gateways use the older single-function shape
+      // or the ChatGPT recipient field instead of tool_calls[].function.
+      recipient?: string;
+      function_call?: { name?: string; arguments?: string };
       tool_calls?: Array<{
         index: number;
         id?: string;
-        function?: { name?: string; arguments?: string };
+        name?: string;
+        recipient?: string;
+        tool_name?: string;
+        function_name?: string;
+        function?: { name?: string; arguments?: string } | string;
+        function_call?: { name?: string; arguments?: string };
+        tool?: { name?: string };
+        arguments?: string;
+        input?: string;
       }>;
     };
     finish_reason?: string | null;
@@ -812,6 +830,42 @@ function parseSSEChunks(
       });
     const choice = parsed.choices?.[0];
     const delta = choice?.delta;
+    const legacyRecipient =
+      delta?.recipient ?? choice?.recipient ?? choice?.message?.recipient;
+    const legacyFunction =
+      delta?.function_call ??
+      choice?.function_call ??
+      choice?.message?.function_call;
+    if (
+      legacyRecipient ||
+      legacyFunction ||
+      (toolCalls.size > 0 && delta?.content)
+    ) {
+      const current = toolCalls.get(0) ?? {
+        id: `tool_0`,
+        name: "",
+        arguments: "",
+      };
+      const recipient = normalizeToolRecipient(legacyRecipient);
+      toolCalls.set(0, {
+        id: current.id,
+        name:
+          normalizeToolRecipient(legacyFunction?.name) ??
+          recipient ??
+          current.name,
+        arguments: `${current.arguments}${legacyFunction?.arguments ?? delta?.content ?? ""}`,
+      });
+      if (
+        (choice?.finish_reason === "tool_calls" ||
+          choice?.finish_reason === "function_call") &&
+        toolCalls.size
+      ) {
+        const calls = [...toolCalls.values()];
+        toolCalls.clear();
+        chunks.push({ type: "tool_call", calls });
+      }
+      continue;
+    }
     if (delta?.tool_calls) {
       for (const call of delta.tool_calls) {
         const current = toolCalls.get(call.index) ?? {
@@ -819,10 +873,11 @@ function parseSSEChunks(
           name: "",
           arguments: "",
         };
+        const name = toolNameFromGatewayCall(call);
         toolCalls.set(call.index, {
           id: call.id ?? current.id,
-          name: call.function?.name ?? current.name,
-          arguments: `${current.arguments}${call.function?.arguments ?? ""}`,
+          name: name ?? current.name,
+          arguments: `${current.arguments}${toolArgumentsFromGatewayCall(call)}`,
         });
       }
       if (choice?.finish_reason === "tool_calls" && toolCalls.size) {
@@ -837,6 +892,46 @@ function parseSSEChunks(
     if (delta?.content) chunks.push({ type: "content", text: delta.content });
   }
   return chunks;
+}
+
+function normalizeToolRecipient(recipient: string | undefined) {
+  if (!recipient) return undefined;
+  for (const prefix of ["functions.", "function.", "tools."])
+    if (recipient.startsWith(prefix)) return recipient.slice(prefix.length);
+  return recipient;
+}
+
+function toolNameFromGatewayCall(call: {
+  name?: string;
+  recipient?: string;
+  tool_name?: string;
+  function_name?: string;
+  function?: { name?: string; arguments?: string } | string;
+  function_call?: { name?: string; arguments?: string };
+  tool?: { name?: string };
+}) {
+  return (
+    normalizeToolRecipient(
+      typeof call.function === "object" ? call.function.name : call.function,
+    ) ??
+    normalizeToolRecipient(call.function_call?.name) ??
+    normalizeToolRecipient(call.name) ??
+    normalizeToolRecipient(call.recipient) ??
+    normalizeToolRecipient(call.tool_name) ??
+    normalizeToolRecipient(call.function_name) ??
+    normalizeToolRecipient(call.tool?.name)
+  );
+}
+
+function toolArgumentsFromGatewayCall(call: {
+  function?: { arguments?: string } | string;
+  function_call?: { arguments?: string };
+  arguments?: string;
+  input?: string;
+}) {
+  if (typeof call.function === "object" && call.function.arguments)
+    return call.function.arguments;
+  return call.function_call?.arguments ?? call.arguments ?? call.input ?? "";
 }
 
 function toOpenAIMessage(message: ProviderMessage) {

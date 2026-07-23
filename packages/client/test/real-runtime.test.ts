@@ -463,11 +463,50 @@ test("configured agent selection supplies the provider system prompt and tool po
   await client.submit("review this");
   const request = requests[0];
   expect(request).toBeDefined();
-  expect(request!.messages[0]).toMatchObject({
-    role: "system",
-    content: "Review only with evidence.",
-  });
+  expect(request!.messages[0]?.role).toBe("system");
+  const systemPrompt = String(request!.messages[0]?.content);
+  expect(systemPrompt).toContain(
+    "You are Natalia, a local software engineering agent",
+  );
+  expect(systemPrompt).toContain("Working directory: " + root);
+  expect(systemPrompt).toContain("Review only with evidence.");
   expect(request!.tools?.map((tool) => tool.name)).toEqual(["read_file"]);
+});
+
+test("runtime sends a baseline system prompt without configured agent instructions", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-baseline-system-prompt-"));
+  const requests: ProviderStreamRequest[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_baseline_system_prompt",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        requests.push(request);
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.submit("who are you?");
+  expect(requests[0]?.messages[0]).toMatchObject({ role: "system" });
+  expect(String(requests[0]?.messages[0]?.content)).toContain(
+    "You are Natalia, a local software engineering agent",
+  );
+  expect(String(requests[0]?.messages[0]?.content)).toContain(
+    "<natalia_cli_persona>",
+  );
+  expect(String(requests[0]?.messages[0]?.content)).toContain(
+    "Be warm, perceptive, and recognizably yourself",
+  );
+  expect(String(requests[0]?.messages[0]?.content)).toContain(
+    `Working directory: ${root}`,
+  );
+  expect(String(requests[0]?.messages[0]?.content)).toContain(
+    "Permission mode: ask",
+  );
+  await client.dispose?.();
 });
 
 test("runtime discovers configured remote skills through the local cache", async () => {
@@ -1047,6 +1086,173 @@ test("runtime projects exact durable interactive PTY actions", async () => {
   await client.dispose?.();
 });
 
+test("runtime exposes interactive PTY management through RuntimeClient", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-pty-management-runtime-"));
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_pty_management",
+    permissionMode: "auto",
+    provider: interactivePTYProvider(),
+  });
+  client.start((event) => events.push(event));
+  await client.submit("start pty");
+
+  expect(await client.ptyList!()).toMatchObject([
+    { id: "tty_management", status: "running" },
+  ]);
+  await client.ptyWrite!({
+    id: "tty_management",
+    text: "secret",
+    sensitive: true,
+  });
+  await client.ptyResize!({ id: "tty_management", rows: 32, cols: 120 });
+  await client.ptyDetach!("tty_management");
+  await client.ptyAttach!("tty_management");
+  const transcript = await client.ptyRead!({
+    id: "tty_management",
+    maxChars: 12000,
+  });
+  expect(transcript.transcript).toContain("[sensitive input redacted]");
+  expect(transcript.transcript).not.toContain("secret");
+  expect(transcript).toMatchObject({ rows: 32, cols: 120, attached: true });
+  await client.ptyStop!("tty_management");
+  expect(events).toContainEqual(
+    expect.objectContaining({ type: "pty.action", action: "resize" }),
+  );
+  expect(events).toContainEqual(
+    expect.objectContaining({ type: "pty.action", action: "exit" }),
+  );
+  await client.dispose?.();
+});
+
+test("runtime exposes checkpoint list, preview, dry-run, and safety rollback", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-checkpoint-management-"));
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_checkpoint_management",
+    provider: scriptedProvider("ready"),
+  });
+  client.start((event) => events.push(event));
+  expect(await client.checkpointList!()).toMatchObject([
+    { id: "checkpoint_0", reason: "baseline", complete: true },
+  ]);
+  expect(await client.checkpointPreview!("checkpoint_0")).toMatchObject({
+    checkpointID: "checkpoint_0",
+    dryRun: true,
+  });
+  expect(
+    await client.checkpointRollback!({ id: "checkpoint_0", dryRun: true }),
+  ).toMatchObject({ dryRun: true });
+  expect(
+    await client.checkpointRollback!({ id: "checkpoint_0" }),
+  ).toMatchObject({
+    checkpointID: "checkpoint_0",
+    safetyCheckpointID: "checkpoint_1",
+    dryRun: false,
+  });
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "rollback.end",
+      checkpointID: "checkpoint_0",
+    }),
+  );
+  await client.dispose?.();
+});
+
+test("runtime reports malformed provider tool calls without rendering an empty tool", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-empty-tool-call-"));
+  const events: RuntimeEvent[] = [];
+  const provider: StreamingProvider = {
+    provider: "malformed",
+    model: "malformed",
+    async *stream() {
+      yield {
+        type: "tool_call",
+        calls: [{ id: "empty_call", name: "", arguments: "{}" }],
+      };
+      yield { type: "done" };
+    },
+  };
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_empty_tool_call",
+    provider,
+  });
+  client.start((event) => events.push(event));
+  await client.submit("test malformed tool call");
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "tool.update",
+      name: "invalid_tool_call",
+      summary: expect.stringContaining("without a name"),
+    }),
+  );
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "diagnostic",
+      level: "warning",
+      message: expect.stringContaining("without a name"),
+    }),
+  );
+  await client.dispose?.();
+});
+
+test("session approval grants the approved tool for this runtime instance only", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-session-approval-"));
+  let approvalCount = 0;
+  const provider: StreamingProvider = {
+    provider: "session-approval",
+    model: "session-approval",
+    async *stream(request) {
+      if (!request.messages.some((message) => message.role === "tool"))
+        yield {
+          type: "tool_call",
+          calls: [
+            {
+              id: `call_${crypto.randomUUID()}`,
+              name: "run_shell",
+              arguments: JSON.stringify({ command: "pwd" }),
+            },
+          ],
+        };
+      yield { type: "done" };
+    },
+  };
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_session_approval",
+    provider,
+  });
+  client.start((event) => {
+    if (event.type !== "approval.request") return;
+    approvalCount++;
+    client.respondApproval({ requestID: event.id, decision: "session" });
+  });
+  await client.submit("run pwd once");
+  await client.submit("run pwd again");
+  expect(approvalCount).toBe(1);
+  await client.dispose?.();
+
+  const reopenedApprovals: RuntimeEvent[] = [];
+  const reopened = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_session_approval",
+    provider,
+  });
+  reopened.start((event) => {
+    reopenedApprovals.push(event);
+    if (event.type === "approval.request")
+      reopened.respondApproval({ requestID: event.id, decision: "once" });
+  });
+  await reopened.submit("run pwd after restart");
+  expect(reopenedApprovals).toContainEqual(
+    expect.objectContaining({ type: "approval.request" }),
+  );
+  await reopened.dispose?.();
+});
+
 test("agent permissions block configured file and command execution at tool boundary", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-agent-permissions-"));
   await mkdir(join(root, ".natalia"), { recursive: true });
@@ -1232,8 +1438,8 @@ test("runtime agent selection applies only at the next provider turn boundary", 
   release();
   await first;
   await client.submit("second");
-  expect(requests[0]?.messages[0]).toMatchObject({ content: "first system" });
-  expect(requests[1]?.messages[0]).toMatchObject({ content: "second system" });
+  expect(String(requests[0]?.messages[0]?.content)).toContain("first system");
+  expect(String(requests[1]?.messages[0]?.content)).toContain("second system");
   expect(events).toContainEqual({
     type: "agent.selection",
     name: "second",
@@ -1281,7 +1487,7 @@ test("committed agent selection restores when a session runtime is reopened", as
   });
   reopened.start(() => undefined);
   await reopened.submit("after reopen");
-  expect(requests[0]?.messages[0]).toMatchObject({ content: "second system" });
+  expect(String(requests[0]?.messages[0]?.content)).toContain("second system");
 });
 
 test("agent model and variant overrides apply when the next provider turn starts", async () => {
@@ -3054,6 +3260,30 @@ test("real runtime forks a session at a submitted-turn boundary", async () => {
   ).toBe(true);
 });
 
+test("real runtime exposes projected message pages independently from event history", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-message-pages-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_message_pages",
+    provider: scriptedProvider("answer"),
+  });
+  client.start(() => undefined);
+  await client.submit("first");
+  await client.submit("second");
+
+  const page = await client.messages!({ order: "asc", limit: 1 });
+  expect(page.data).toHaveLength(1);
+  expect(page.data[0]).toMatchObject({
+    id: expect.stringMatching(/^turn_/u),
+    submitted: { text: "first" },
+  });
+  expect(page.data[0]?.rows.map((row) => row.kind)).toContain("assistant");
+  expect(page.cursor.next).toEqual(expect.any(String));
+  expect((await client.history!({ limit: 1 })).events[0]?.event.type).toBe(
+    "checkpoint.created",
+  );
+});
+
 test("real runtime client publishes provider chunks before stream completion", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-live-stream-"));
   const events: RuntimeEvent[] = [];
@@ -3304,6 +3534,30 @@ function workflowProvider(workflow: string): StreamingProvider {
   };
 }
 
+function interactivePTYProvider(): StreamingProvider {
+  return {
+    provider: "scripted-interactive-pty",
+    model: "scripted-interactive-pty-model",
+    async *stream(request) {
+      if (!request.messages.some((message) => message.role === "tool"))
+        yield {
+          type: "tool_call",
+          calls: [
+            {
+              id: "start",
+              name: "interactive_start",
+              arguments: JSON.stringify({
+                id: "tty_management",
+                command: "cat",
+              }),
+            },
+          ],
+        };
+      yield { type: "done" };
+    },
+  };
+}
+
 function usageProvider(): StreamingProvider {
   return {
     provider: "scripted-usage",
@@ -3468,7 +3722,12 @@ function subagentProvider(): StreamingProvider {
     provider: "scripted-subagent",
     model: "scripted-subagent-model",
     async *stream(request: ProviderStreamRequest) {
-      if (request.messages[0]?.role === "system") {
+      if (
+        request.messages[0]?.role === "system" &&
+        String(request.messages[0].content).includes(
+          "focused Natalia TS/Bun subagent",
+        )
+      ) {
         yield { type: "content", text: "child result" };
         yield { type: "done" };
         return;

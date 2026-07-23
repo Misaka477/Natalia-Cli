@@ -32,6 +32,16 @@ const sessions: RuntimeSessionSummary[] = [
     cancelled: false,
     resumable: true,
   },
+  ...Array.from({ length: 30 }, (_, index) => ({
+    id: `ses_long_${index}`,
+    title: `Long session ${index} ${"detail ".repeat(8)}`,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    pinned: false,
+    events: index + 2,
+    pendingInputs: 0,
+    cancelled: false,
+    resumable: true,
+  })),
 ];
 const selected: Array<string | undefined> = [];
 const backend = {
@@ -118,6 +128,17 @@ if (
   selected.at(-1) !== "ses_smoke"
 )
   throw new Error("session select did not touch and select through backend");
+
+open!();
+await Bun.sleep(80);
+for (let index = 0; index < 24; index++) keys.pressArrow("down");
+await Bun.sleep(100);
+keys.pressEnter();
+await Bun.sleep(80);
+if (selected.at(-1) !== "ses_long_23")
+  throw new Error(
+    "long session dialog did not keep the keyboard selection visible",
+  );
 
 renderer.destroy();
 disposeKeymap();

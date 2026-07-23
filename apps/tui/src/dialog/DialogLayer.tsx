@@ -7,7 +7,7 @@ import {
   Show,
   type JSX,
 } from "solid-js";
-import { TextAttributes } from "@opentui/core";
+import { ScrollBoxRenderable, TextAttributes } from "@opentui/core";
 import { useAppState } from "../context/state";
 import { darkTheme } from "../theme/theme";
 import { useBindings } from "@opentui/keymap/solid";
@@ -264,6 +264,7 @@ export function DialogSessionList(props: {
   const [loading, setLoading] = createSignal(false);
   const [query, setQuery] = createSignal("");
   const [mode, setMode] = createSignal<"list" | "confirm-delete">("list");
+  let sessionScroll: ScrollBoxRenderable | undefined;
 
   const filtered = createMemo(() => {
     const terms = query().toLowerCase().trim().split(/\s+/u).filter(Boolean);
@@ -281,9 +282,27 @@ export function DialogSessionList(props: {
       setSelected(0);
       setQuery("");
       setMode("list");
+      queueMicrotask(() => sessionScroll?.scrollTo(0));
     } finally {
       setLoading(false);
     }
+  }
+
+  function moveSelection(direction: -1 | 1) {
+    const count = filtered().length;
+    if (!count) return;
+    setSelected((value) => Math.max(0, Math.min(count - 1, value + direction)));
+    queueMicrotask(scrollToSelected);
+  }
+
+  function scrollToSelected() {
+    if (!sessionScroll) return;
+    const target = sessionScroll.getChildren()[selected()];
+    if (!target) return;
+    const y = target.y - sessionScroll.y;
+    if (y < 0) sessionScroll.scrollBy(y);
+    else if (y >= sessionScroll.height)
+      sessionScroll.scrollBy(y - sessionScroll.height + 1);
   }
 
   async function selectSession(session: RuntimeSessionSummary) {
@@ -335,7 +354,7 @@ export function DialogSessionList(props: {
         desc: "Previous session",
         group: "Dialog",
         cmd: () => {
-          setSelected((value) => Math.max(0, value - 1));
+          moveSelection(-1);
         },
       },
       {
@@ -343,7 +362,7 @@ export function DialogSessionList(props: {
         desc: "Next session",
         group: "Dialog",
         cmd: () => {
-          setSelected((value) => Math.min(filtered().length - 1, value + 1));
+          moveSelection(1);
         },
       },
       {
@@ -435,6 +454,7 @@ export function DialogSessionList(props: {
             onInput={(value: string) => {
               setQuery(value);
               setSelected(0);
+              queueMicrotask(() => sessionScroll?.scrollTo(0));
             }}
           />
         </Show>
@@ -455,19 +475,32 @@ export function DialogSessionList(props: {
         >
           <text fg={darkTheme.muted}>No sessions match your search.</text>
         </Show>
-        <scrollbox height={12} border={["left"]} borderColor={darkTheme.muted}>
+        <scrollbox
+          height={12}
+          maxHeight={12}
+          border={["left"]}
+          borderColor={darkTheme.muted}
+          ref={(value: ScrollBoxRenderable) => (sessionScroll = value)}
+        >
           <For each={filtered().slice(0, 100)}>
             {(session, index) => (
-              <text
-                fg={index() === selected() ? darkTheme.accent : darkTheme.text}
-                attributes={
-                  index() === selected() ? TextAttributes.BOLD : undefined
-                }
-              >
-                {index() === selected() ? ">" : " "}
-                {session.pinned ? "* " : "  "}
-                {session.title} · {session.id} · {session.events}
-              </text>
+              <box flexDirection="row" paddingRight={1}>
+                <text
+                  flexGrow={1}
+                  overflow="hidden"
+                  wrapMode="none"
+                  fg={
+                    index() === selected() ? darkTheme.accent : darkTheme.text
+                  }
+                  attributes={
+                    index() === selected() ? TextAttributes.BOLD : undefined
+                  }
+                >
+                  {index() === selected() ? ">" : " "}
+                  {session.pinned ? "* " : "  "}
+                  {session.title} · {session.id} · {session.events}
+                </text>
+              </box>
             )}
           </For>
         </scrollbox>
@@ -495,11 +528,9 @@ function DialogFrame(props: {
   const color = props.tone === "warning" ? darkTheme.warning : darkTheme.accent;
   return (
     <box
-      position={props.inline ? "relative" : "absolute"}
-      left={props.inline ? undefined : 4}
-      right={props.inline ? undefined : 4}
-      bottom={props.inline ? undefined : 3}
-      maxHeight={props.inline ? 16 : "80%"}
+      position="relative"
+      width="100%"
+      maxHeight={props.inline ? 16 : "100%"}
       border
       borderColor={color}
       backgroundColor={darkTheme.panel}

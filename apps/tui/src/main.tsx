@@ -10,11 +10,14 @@ const diagnostics = process.argv.includes("--diagnostics");
 const workspaceRoot = await resolveTuiWorkspaceRoot({
   override: process.env.NATALIA_WORKSPACE ?? argumentValue("--workspace"),
 });
-const sessionID = argumentValue("--session");
+const requestedSessionID = argumentValue("--session");
+const launchSessionID = requestedSessionID ?? newSessionID();
 const createBackend = (nextSessionID?: string) =>
   createRealRuntimeClient({
     workspaceRoot,
-    sessionID: (nextSessionID ?? sessionID) as never,
+    // An interactive launch starts a new session. A prior session is only
+    // reopened via --session or an explicit selection in the session dialog.
+    sessionID: (nextSessionID ?? launchSessionID) as never,
   });
 const handle = await runTuiShell({
   initialPrompt: smoke
@@ -41,4 +44,8 @@ function argumentValue(name: string) {
   if (index >= 0 && (!value || value.startsWith("--")))
     throw new Error(`${name} requires an absolute or relative path`);
   return value;
+}
+
+function newSessionID() {
+  return `ses_${crypto.randomUUID().replace(/-/gu, "").slice(0, 16)}`;
 }

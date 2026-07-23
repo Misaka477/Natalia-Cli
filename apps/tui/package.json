@@ -27,6 +27,7 @@
     "smoke:palette-keyboard": "npx bun run bin/palette-keyboard-smoke.ts",
     "smoke:provider-config": "npx bun run bin/provider-config-keyboard-smoke.ts",
     "smoke:dialog-stack": "npx bun run bin/dialog-stack-smoke.tsx",
+    "smoke:approval-overlay": "npx bun run bin/approval-overlay-smoke.tsx",
     "smoke:model-variant": "npx bun run bin/model-variant-keyboard-smoke.tsx",
     "smoke:session-dialog": "npx bun run bin/session-dialog-keyboard-smoke.tsx",
     "demo:diff": "npx bun run bin/diff-screen-demo.ts",

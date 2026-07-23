@@ -70,6 +70,181 @@ test("OpenAI-compatible provider preserves content and usage from the same SSE f
   );
 });
 
+test("OpenAI-compatible provider maps legacy function and recipient streaming calls", async () => {
+  const fetchImpl = Object.assign(
+    async () =>
+      new Response(
+        [
+          'data: {"choices":[{"delta":{"recipient":"functions.run_shell","content":"{\\"command\\":\\"pwd"}}]}',
+          "",
+          'data: {"choices":[{"delta":{"content":"\\"}"},"finish_reason":"tool_calls"}]}',
+          "",
+          'data: {"choices":[{"delta":{"function_call":{"name":"glob","arguments":"{\\"pattern\\":\\"*.ts\\"}"}},"finish_reason":"function_call"}]}',
+          "",
+          "data: [DONE]",
+          "",
+        ].join("\n"),
+        { headers: { "content-type": "text/event-stream" } },
+      ),
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  const provider = new OpenAICompatibleProvider({
+    apiKey: "test-key",
+    model: "test-model",
+    fetch: fetchImpl,
+  });
+  const chunks = [];
+  for await (const chunk of provider.stream({ messages: [] }))
+    chunks.push(chunk);
+  expect(chunks).toEqual(
+    expect.arrayContaining([
+      {
+        type: "tool_call",
+        calls: [
+          {
+            id: "tool_0",
+            name: "run_shell",
+            arguments: '{"command":"pwd"}',
+          },
+        ],
+      },
+      {
+        type: "tool_call",
+        calls: [
+          { id: "tool_0", name: "glob", arguments: '{"pattern":"*.ts"}' },
+        ],
+      },
+    ]),
+  );
+});
+
+test("OpenAI-compatible provider accepts gateway tool-call name aliases", async () => {
+  const fetchImpl = Object.assign(
+    async () =>
+      new Response(
+        [
+          'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_top_name","name":"glob","function":{"arguments":"{\\"pattern\\":\\"*.ts\\"}"}}]}}]}',
+          "",
+          'data: {"choices":[{"delta":{"tool_calls":[{"index":1,"id":"call_recipient","recipient":"functions.run_shell","function":{"arguments":"{\\"command\\":\\"pwd\\"}"}}]},"finish_reason":"tool_calls"}]}',
+          "",
+          "data: [DONE]",
+          "",
+        ].join("\n"),
+        { headers: { "content-type": "text/event-stream" } },
+      ),
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  const provider = new OpenAICompatibleProvider({
+    apiKey: "test-key",
+    model: "test-model",
+    fetch: fetchImpl,
+  });
+  const chunks = [];
+  for await (const chunk of provider.stream({ messages: [] }))
+    chunks.push(chunk);
+  expect(chunks).toEqual(
+    expect.arrayContaining([
+      {
+        type: "tool_call",
+        calls: [
+          {
+            id: "call_top_name",
+            name: "glob",
+            arguments: '{"pattern":"*.ts"}',
+          },
+          {
+            id: "call_recipient",
+            name: "run_shell",
+            arguments: '{"command":"pwd"}',
+          },
+        ],
+      },
+    ]),
+  );
+});
+
+test("OpenAI-compatible provider waits for a later function name fragment", async () => {
+  const fetchImpl = Object.assign(
+    async () =>
+      new Response(
+        [
+          'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"path\\":\\"README"}}]}}]}',
+          "",
+          'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"read_file","arguments":".md\\"}"}}]},"finish_reason":"tool_calls"}]}',
+          "",
+          "data: [DONE]",
+          "",
+        ].join("\n"),
+        { headers: { "content-type": "text/event-stream" } },
+      ),
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  const provider = new OpenAICompatibleProvider({
+    apiKey: "test-key",
+    model: "test-model",
+    fetch: fetchImpl,
+  });
+  const chunks = [];
+  for await (const chunk of provider.stream({ messages: [] }))
+    chunks.push(chunk);
+  expect(chunks).toEqual([
+    {
+      type: "tool_call",
+      calls: [
+        {
+          id: "tool_0",
+          name: "read_file",
+          arguments: '{"path":"README.md"}',
+        },
+      ],
+    },
+    { type: "done" },
+  ]);
+});
+
+test("OpenAI-compatible provider normalizes alternate gateway function fields", async () => {
+  const fetchImpl = Object.assign(
+    async () =>
+      new Response(
+        [
+          'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_function","function":"functions.read_file","input":"{\\"path\\":\\"README.md\\"}"},{"index":1,"id":"call_alias","tool_name":"tools.glob","arguments":"{\\"pattern\\":\\"*.ts\\"}"}]},"finish_reason":"tool_calls"}]}',
+          "",
+          "data: [DONE]",
+          "",
+        ].join("\n"),
+        { headers: { "content-type": "text/event-stream" } },
+      ),
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  const provider = new OpenAICompatibleProvider({
+    apiKey: "test-key",
+    model: "test-model",
+    fetch: fetchImpl,
+  });
+  const chunks = [];
+  for await (const chunk of provider.stream({ messages: [] }))
+    chunks.push(chunk);
+  expect(chunks).toEqual(
+    expect.arrayContaining([
+      {
+        type: "tool_call",
+        calls: [
+          {
+            id: "call_function",
+            name: "read_file",
+            arguments: '{"path":"README.md"}',
+          },
+          {
+            id: "call_alias",
+            name: "glob",
+            arguments: '{"pattern":"*.ts"}',
+          },
+        ],
+      },
+    ]),
+  );
+});
+
 test("OpenAI-compatible provider sends active profile request parameters safely", async () => {
   let headers: Headers | undefined;
   let body: Record<string, unknown> | undefined;

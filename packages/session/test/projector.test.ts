@@ -4,6 +4,7 @@ import {
   appendSessionEvent,
   createSessionRecord,
   modelVisibleEvents,
+  projectSessionMessages,
   projectSession,
   settleInterruptedTurns,
   selectedAgentFromEvents,
@@ -210,4 +211,92 @@ test("session fork truncates at a durable submitted-turn boundary", async () => 
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("projects ordered turn messages without splitting durable rows", () => {
+  const session = createSessionRecord("ses_messages", "Messages");
+  for (const id of ["turn_one", "turn_two", "turn_three"]) {
+    appendSessionEvent(session, {
+      type: "turn.submitted",
+      id,
+      text: id,
+      byteLength: id.length,
+      lineCount: 1,
+      sha256: "test",
+    });
+    appendSessionEvent(session, {
+      type: "content.done",
+      id,
+      text: `${id} response`,
+    });
+    appendSessionEvent(session, {
+      type: "tool.update",
+      id: `${id}:tool:read`,
+      name: "read_file",
+      status: "succeeded",
+      summary: "read",
+      result: "content",
+    });
+    appendSessionEvent(session, {
+      type: "turn.finished",
+      id,
+      stopReason: "done",
+    });
+  }
+
+  const first = projectSessionMessages(session, { order: "asc", limit: 2 });
+  expect(first.data.map((message) => message.id)).toEqual([
+    "turn_one",
+    "turn_two",
+  ]);
+  expect(first.data[0]?.rows.map((row) => row.kind)).toEqual([
+    "user",
+    "assistant",
+    "tool",
+    "system",
+  ]);
+  expect(first.data[0]?.stopReason).toBe("done");
+  expect(first.cursor.next).toEqual(expect.any(String));
+
+  const next = projectSessionMessages(session, {
+    cursor: first.cursor.next,
+  });
+  expect(next.data.map((message) => message.id)).toEqual(["turn_three"]);
+  expect(next.cursor.previous).toEqual(expect.any(String));
+
+  const previous = projectSessionMessages(session, {
+    cursor: next.cursor.previous,
+    limit: 2,
+  });
+  expect(previous.data.map((message) => message.id)).toEqual([
+    "turn_one",
+    "turn_two",
+  ]);
+});
+
+test("message projection rejects malformed or stale opaque cursors", () => {
+  const session = createSessionRecord("ses_message_cursor", "Messages");
+  appendSessionEvent(session, {
+    type: "turn.submitted",
+    id: "turn_one",
+    text: "one",
+    byteLength: 3,
+    lineCount: 1,
+    sha256: "test",
+  });
+  expect(() => projectSessionMessages(session, { cursor: "invalid" })).toThrow(
+    "invalid message cursor",
+  );
+  expect(() =>
+    projectSessionMessages(session, {
+      cursor: Buffer.from(
+        JSON.stringify({
+          version: 1,
+          order: "asc",
+          direction: "next",
+          anchor: "missing",
+        }),
+      ).toString("base64url"),
+    }),
+  ).toThrow("message cursor anchor is no longer available");
 });

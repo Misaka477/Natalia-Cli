@@ -44,6 +44,19 @@ test("sandbox diff covers delete rename mode and env allowlist redacts secrets",
   expect(isSecretEnvKey("GITHUB_TOKEN")).toBe(true);
 });
 
+test("sandbox manager lists durable manifests without exposing mutable state", async () => {
+  const base = await mkdtemp(join(tmpdir(), "natalia-sandbox-list-"));
+  const manager = new WorkspaceSandboxManager(base);
+  await manager.create("box");
+  await manager.write("box", "draft.txt", "draft");
+  const listed = await manager.list();
+  expect(listed).toMatchObject([
+    { id: "box", changedFiles: [{ path: "draft.txt" }] },
+  ]);
+  listed[0]!.changedFiles.length = 0;
+  expect(await manager.previewMerge("box")).toHaveLength(1);
+});
+
 test("sandbox merge is atomic on failure", async () => {
   const base = await mkdtemp(join(tmpdir(), "natalia-sandbox-base-"));
   const host = await mkdtemp(join(tmpdir(), "natalia-host-"));

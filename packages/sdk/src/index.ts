@@ -57,6 +57,37 @@ export type NataliaSDK = {
     path?: string;
     limit?: number;
   }): Promise<import("@natalia/contracts").RuntimeWorkspaceFileEntry[]>;
+  ptySessions(): Promise<import("@natalia/contracts").RuntimePTYSession[]>;
+  ptyRead(input: { id: string; offset?: number; maxChars?: number }): Promise<
+    import("@natalia/contracts").RuntimePTYSession & {
+      offset: number;
+      nextOffset: number;
+      totalChars: number;
+      truncated: boolean;
+    }
+  >;
+  ptyWrite(input: {
+    id: string;
+    text: string;
+    submit?: boolean;
+    sensitive?: boolean;
+  }): Promise<import("@natalia/contracts").RuntimePTYSession>;
+  ptyKey(input: {
+    id: string;
+    key: "enter" | "ctrl-c" | "ctrl-d" | "tab" | "esc";
+  }): Promise<import("@natalia/contracts").RuntimePTYSession>;
+  ptyResize(input: {
+    id: string;
+    rows: number;
+    cols: number;
+  }): Promise<import("@natalia/contracts").RuntimePTYSession>;
+  ptyAttach(
+    id: string,
+  ): Promise<import("@natalia/contracts").RuntimePTYSession>;
+  ptyDetach(
+    id: string,
+  ): Promise<import("@natalia/contracts").RuntimePTYSession>;
+  ptyStop(id: string): Promise<import("@natalia/contracts").RuntimePTYSession>;
   sessions(): Promise<import("@natalia/contracts").RuntimeSessionSummary[]>;
   touchSession(id: string): Promise<void>;
   renameSession(
@@ -91,11 +122,47 @@ export type NataliaSDK = {
     checkpointID: string,
     options?: { dryRun?: boolean },
   ): Promise<SubmittedTurn>;
+  checkpointList(): Promise<import("@natalia/contracts").RuntimeCheckpoint[]>;
+  checkpointPreview(
+    id: string,
+  ): Promise<import("@natalia/contracts").CheckpointPreview>;
+  checkpointRollback(input: {
+    id: string;
+    dryRun?: boolean;
+  }): Promise<import("@natalia/contracts").CheckpointPreview>;
+  sandboxList(): Promise<import("@natalia/contracts").RuntimeSandbox[]>;
+  sandboxDiff(
+    id: string,
+  ): Promise<import("@natalia/contracts").RuntimeSandboxChange[]>;
+  sandboxResources(
+    id: string,
+  ): Promise<import("@natalia/contracts").RuntimeSandboxResource[]>;
+  sandboxResourceOutput(input: {
+    id: string;
+    resourceID: string;
+    maxBytes?: number;
+  }): Promise<string>;
+  sandboxMerge(
+    id: string,
+  ): Promise<import("@natalia/contracts").RuntimeSandboxChange[]>;
+  sandboxDelete(id: string): Promise<{
+    pendingChanges: import("@natalia/contracts").RuntimeSandboxChange[];
+    runningResources: string[];
+  }>;
+  sandboxResourceStop(input: {
+    id: string;
+    resourceID: string;
+  }): Promise<import("@natalia/contracts").RuntimeSandboxResource>;
   snapshot(): Promise<RuntimeEvent>;
   history(options?: { after?: number; limit?: number }): Promise<{
     events: Array<{ seq: number; event: RuntimeEvent }>;
     hasMore: boolean;
   }>;
+  messages(options?: {
+    limit?: number;
+    order?: "asc" | "desc";
+    cursor?: string;
+  }): Promise<import("@natalia/contracts").RuntimeMessagePage>;
   mcpCatalog(): Promise<import("@natalia/contracts").MCPCatalogSnapshot>;
   mcpPrompt(
     server: string,
@@ -168,6 +235,14 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     workspaceList: async (input = {}) => await call("workspace.list", input),
     workspaceRead: async (input) => await call("workspace.read", input),
     workspaceGlob: async (input) => await call("workspace.glob", input),
+    ptySessions: async () => await call("pty.list", {}),
+    ptyRead: async (input) => await call("pty.read", input),
+    ptyWrite: async (input) => await call("pty.write", input),
+    ptyKey: async (input) => await call("pty.key", input),
+    ptyResize: async (input) => await call("pty.resize", input),
+    ptyAttach: async (id) => await call("pty.attach", { id }),
+    ptyDetach: async (id) => await call("pty.detach", { id }),
+    ptyStop: async (id) => await call("pty.stop", { id }),
     sessions: async () => await call("session.list", {}),
     touchSession: async (id) => {
       await call("session.touch", { id });
@@ -209,9 +284,24 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       await call<SubmittedTurn>("prompt", {
         text: `/rollback ${checkpointID}${rollbackOptions.dryRun ? " --dry-run" : ""}`,
       }),
+    checkpointList: async () => await call("checkpoint.list", {}),
+    checkpointPreview: async (id) => await call("checkpoint.preview", { id }),
+    checkpointRollback: async (input) =>
+      await call("checkpoint.rollback", input),
+    sandboxList: async () => await call("sandbox.list", {}),
+    sandboxDiff: async (id) => await call("sandbox.diff", { id }),
+    sandboxResources: async (id) => await call("sandbox.resources", { id }),
+    sandboxResourceOutput: async (input) =>
+      await call("sandbox.resource.output", input),
+    sandboxMerge: async (id) => await call("sandbox.merge", { id }),
+    sandboxDelete: async (id) => await call("sandbox.delete", { id }),
+    sandboxResourceStop: async (input) =>
+      await call("sandbox.resource.stop", input),
     snapshot: async () => await call<RuntimeEvent>("snapshot", {}),
     history: async (historyOptions = {}) =>
       await call("session.history", historyOptions),
+    messages: async (messageOptions = {}) =>
+      await call("session.messages", messageOptions),
     mcpCatalog: async () => await call("mcp.catalog", {}),
     mcpPrompt: async (server, name, arguments_ = {}) =>
       await call("mcp.prompt", { server, name, arguments: arguments_ }),

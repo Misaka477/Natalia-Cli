@@ -7,6 +7,7 @@ export function Dialog(
   props: ParentProps<{
     size?: "medium" | "large" | "xlarge";
     onClose: () => void;
+    dismissible?: boolean;
   }>,
 ) {
   const dimensions = useTerminalDimensions();
@@ -29,7 +30,7 @@ export function Dialog(
           dismiss = false;
           return;
         }
-        props.onClose?.();
+        if (props.dismissible !== false) props.onClose?.();
       }}
       width={dimensions().width}
       height={dimensions().height}
@@ -49,8 +50,12 @@ export function Dialog(
         }}
         width={width()}
         maxWidth={dimensions().width - 2}
+        maxHeight={Math.max(8, dimensions().height - 4)}
         backgroundColor={darkTheme.panel}
         paddingTop={1}
+        paddingBottom={1}
+        flexDirection="column"
+        flexShrink={1}
       >
         {props.children}
       </box>

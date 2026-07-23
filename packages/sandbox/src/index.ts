@@ -103,6 +103,16 @@ export class WorkspaceSandboxManager
     return manifest;
   }
 
+  async list() {
+    await this.initialize();
+    return [...this.sandboxes.values()].map((manifest) => ({
+      ...manifest,
+      changedFiles: manifest.changedFiles.map((change) => ({ ...change })),
+      runningResources: [...manifest.runningResources],
+      envAllowlist: [...manifest.envAllowlist],
+    }));
+  }
+
   target(id: string): ExecutionTarget {
     const manifest = this.mustGet(id);
     return {
