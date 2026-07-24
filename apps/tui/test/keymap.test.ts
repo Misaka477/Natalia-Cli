@@ -74,6 +74,7 @@ describe("command definitions", () => {
     const { bindings } = buildKeybindMap();
     expect(bindings["session.new"]).toContain("<leader>n");
     expect(bindings["session.list"]).toContain("<leader>l");
+    expect(bindings["settings.open"]).toEqual(["ctrl+comma", "<leader>comma"]);
     expect(bindings["agent.list"]).toEqual(["<leader>a"]);
     expect(bindings["model.list"]).toEqual(["<leader>m"]);
   });
@@ -86,7 +87,7 @@ describe("command definitions", () => {
     expect(commands["help.open"]).toBeDefined();
     expect(commands["snapshot"]).toBeDefined();
     expect(commands["pty.focus-toggle"]).toBeDefined();
-    expect(commands["pty.manage"]).toMatchObject({ keys: "ctrl+shift+t" });
+    expect(commands["pty.manage"]).toMatchObject({ keys: "f8" });
     expect(commands["checkpoint.manage"]).toMatchObject({
       keys: "ctrl+shift+k",
     });

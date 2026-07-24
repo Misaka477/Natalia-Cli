@@ -4,9 +4,14 @@ import type {
   PTYOwnership,
   PTYStatus,
   RuntimeEvent,
+  TerminalScreenSnapshot,
+  TerminalScreenDelivery,
+  TerminalScreenUpdate,
+  TerminalScrollbackPage,
 } from "@natalia/contracts";
+import { diffTerminalScreens, XtermTerminalEmulator } from "@natalia/terminal";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 export type PTYSessionState = {
@@ -188,154 +193,30 @@ export type InteractivePTYInfo = {
   screen: TerminalScreenSnapshot;
   revision: number;
   lastOutputAt?: string;
+  viewers: import("@natalia/contracts").TerminalViewer[];
+  inputOwner: import("@natalia/contracts").TerminalOwner;
+  geometryOwner: import("@natalia/contracts").TerminalOwner;
 };
 
-export type TerminalScreenSnapshot = {
-  rows: number;
-  cols: number;
-  cursor: { row: number; col: number; visible: boolean };
-  text: string;
+export type InteractivePTYUpdate = Omit<
+  InteractivePTYInfo,
+  "screen" | "transcript"
+> & {
+  screen?: TerminalScreenSnapshot;
+  transcript?: string;
 };
 
-/**
- * A deliberately small VT screen model shared by every interactive program.
- * It tracks display state, not any program-specific prompt or completion rule.
- */
-export class TerminalScreen {
-  private lines: string[];
-  private row = 0;
-  private col = 0;
-  private visible = true;
-  private control = "";
-
-  constructor(
-    private rows: number,
-    private cols: number,
-  ) {
-    this.lines = Array.from({ length: rows }, () => " ".repeat(cols));
-  }
-
-  write(chunk: string) {
-    let text = `${this.control}${chunk}`;
-    this.control = "";
-    for (let index = 0; index < text.length; index++) {
-      const char = text[index]!;
-      if (char === "\x1b") {
-        const sequence = readTerminalControlSequence(text, index);
-        if (!sequence) {
-          this.control = text.slice(index);
-          break;
-        }
-        this.applyControl(sequence.value);
-        index = sequence.end;
-        continue;
-      }
-      this.writeCharacter(char);
-    }
-  }
-
-  resize(rows: number, cols: number) {
-    const previous = this.lines;
-    this.rows = rows;
-    this.cols = cols;
-    this.lines = Array.from({ length: rows }, (_, index) =>
-      (previous[index] ?? "").slice(0, cols).padEnd(cols, " "),
-    );
-    this.row = Math.min(this.row, rows - 1);
-    this.col = Math.min(this.col, cols - 1);
-  }
-
-  snapshot(): TerminalScreenSnapshot {
-    return {
-      rows: this.rows,
-      cols: this.cols,
-      cursor: { row: this.row, col: this.col, visible: this.visible },
-      text: this.lines
-        .map((line) => line.trimEnd())
-        .join("\n")
-        .replace(/\n+$/u, ""),
-    };
-  }
-
-  private writeCharacter(char: string) {
-    if (char === "\r") {
-      this.col = 0;
-      return;
-    }
-    if (char === "\n") {
-      this.lineFeed();
-      return;
-    }
-    if (char === "\b") {
-      this.col = Math.max(0, this.col - 1);
-      return;
-    }
-    if (char === "\t") {
-      this.col = Math.min(this.cols - 1, this.col + (8 - (this.col % 8)));
-      return;
-    }
-    if (char < " ") return;
-    this.replace(this.row, this.col, char);
-    this.col++;
-    if (this.col >= this.cols) {
-      this.col = 0;
-      this.lineFeed();
-    }
-  }
-
-  private applyControl(sequence: string) {
-    if (!sequence.startsWith("\x1b[")) return;
-    const final = sequence.at(-1)!;
-    const values = sequence.slice(2, -1).replace(/^\?/u, "");
-    const params = values
-      ? values.split(";").map((value) => Number(value) || 0)
-      : [];
-    const amount = params[0] || 1;
-    if (final === "A") this.row = Math.max(0, this.row - amount);
-    if (final === "B") this.row = Math.min(this.rows - 1, this.row + amount);
-    if (final === "C") this.col = Math.min(this.cols - 1, this.col + amount);
-    if (final === "D") this.col = Math.max(0, this.col - amount);
-    if (final === "G") this.col = Math.min(this.cols - 1, amount - 1);
-    if (final === "H" || final === "f") {
-      this.row = Math.min(this.rows - 1, Math.max(0, (params[0] || 1) - 1));
-      this.col = Math.min(this.cols - 1, Math.max(0, (params[1] || 1) - 1));
-    }
-    if (final === "J" && (params[0] === 2 || params[0] === 3)) {
-      this.lines.fill(" ".repeat(this.cols));
-      this.row = 0;
-      this.col = 0;
-    }
-    if (final === "K") this.eraseLine(params[0] ?? 0);
-    if (final === "h" && values === "25") this.visible = true;
-    if (final === "l" && values === "25") this.visible = false;
-  }
-
-  private eraseLine(mode: number) {
-    if (mode === 2) {
-      this.lines[this.row] = " ".repeat(this.cols);
-      return;
-    }
-    const line = this.lines[this.row]!;
-    const start = mode === 1 ? 0 : this.col;
-    const end = mode === 1 ? this.col + 1 : this.cols;
-    this.lines[this.row] =
-      `${line.slice(0, start)}${" ".repeat(end - start)}${line.slice(end)}`;
-  }
-
-  private replace(row: number, col: number, char: string) {
-    const line = this.lines[row]!;
-    this.lines[row] = `${line.slice(0, col)}${char}${line.slice(col + 1)}`;
-  }
-
-  private lineFeed() {
-    if (this.row < this.rows - 1) {
-      this.row++;
-      return;
-    }
-    this.lines.shift();
-    this.lines.push(" ".repeat(this.cols));
-  }
-}
+export type TerminalObservation = {
+  session: Omit<InteractivePTYInfo, "screen" | "transcript"> & {
+    screen?: TerminalScreenSnapshot;
+    transcript?: string;
+  };
+  afterRevision: number;
+  changed: boolean;
+  reason: "changed" | "timeout" | "exited";
+  screenUpdate?: TerminalScreenUpdate;
+  screenDelivery?: TerminalScreenDelivery;
+};
 
 export type InteractivePTYSecretAudit = {
   at: string;
@@ -347,8 +228,27 @@ export type InteractivePTYSecretAudit = {
 export class InteractivePTYRegistry {
   private sessions = new Map<string, InteractivePTYRuntime>();
   private sequence = 0;
+  private readonly watchdog?: ReturnType<typeof setInterval>;
 
-  constructor(private readonly stateDir: string) {}
+  constructor(
+    private readonly stateDir: string,
+    private readonly options: {
+      viewerTimeoutMs?: number;
+      watchdogIntervalMs?: number;
+      exitedSessionRetentionMs?: number;
+      onViewerExpired?: (session: InteractivePTYInfo, viewerID: string) => void;
+    } = {},
+  ) {
+    this.watchdog = setInterval(
+      () => void this.expireStaleViewers(),
+      options.watchdogIntervalMs ?? 5000,
+    );
+    this.watchdog.unref();
+  }
+
+  dispose() {
+    if (this.watchdog) clearInterval(this.watchdog);
+  }
 
   async start(input: {
     command: string;
@@ -361,25 +261,58 @@ export class InteractivePTYRegistry {
     if (this.sessions.has(id))
       throw new Error(`interactive PTY already exists: ${id}`);
     await mkdir(this.stateDir, { recursive: true, mode: 0o700 });
-    const runtime: InteractivePTYRuntime = {
+    const outputPath = resolve(this.stateDir, `${id}.log`);
+    await writeFile(outputPath, "", { mode: 0o600 });
+    let markReady!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      markReady = resolve;
+    });
+    let runtime!: InteractivePTYRuntime;
+    const screenModel = new XtermTerminalEmulator(
+      input.rows ?? 36,
+      input.cols ?? 120,
+      {
+        onData: (data) => {
+          if (!runtime?.process) return;
+          void this.command(runtime, { action: "write", input: data }).catch(
+            () => undefined,
+          );
+        },
+      },
+    );
+    runtime = {
       id,
       command: input.command,
       cwd: input.cwd,
       status: "starting",
       attached: true,
-      rows: input.rows ?? 24,
-      cols: input.cols ?? 80,
+      rows: input.rows ?? 36,
+      cols: input.cols ?? 120,
       transcript: "",
       tail: "",
       startedAt: new Date().toISOString(),
       process: undefined as never,
       listeners: new Set(),
-      outputPath: resolve(this.stateDir, `${id}.log`),
+      outputPath,
       secretAudit: [],
       terminalControlTail: "",
-      screenModel: new TerminalScreen(input.rows ?? 24, input.cols ?? 80),
+      outputDecoder: new TextDecoder(),
+      screenModel,
       revision: 0,
+      ready,
+      markReady,
+      viewers: new Map(),
+      screenHistory: new Map(),
+      inputOwner: { type: "model" },
+      geometryOwner: { type: "model" },
+      commandQueue: Promise.resolve(),
+      sensitiveInputBuffer: "",
+      sensitiveRedactions: [],
+      pendingTranscript: [],
+      persistQueue: Promise.resolve(),
     };
+    runtime.screenHistory.set(0, runtime.screenModel.snapshot());
+    this.sessions.set(id, runtime);
     const process = Bun.spawn(
       [
         "python3",
@@ -399,7 +332,6 @@ export class InteractivePTYRegistry {
     );
     runtime.process = process;
     runtime.status = "running";
-    this.sessions.set(id, runtime);
     void this.consume(runtime);
     void process.exited.then(async (exitCode) => {
       if (runtime.status !== "exited")
@@ -407,13 +339,27 @@ export class InteractivePTYRegistry {
       runtime.endedAt = new Date().toISOString();
       await this.persist(runtime);
       this.emit(runtime);
+      this.scheduleRelease(runtime);
     });
+    await Promise.race([
+      ready,
+      Bun.sleep(5000).then(() => {
+        throw new Error(`interactive PTY bridge did not become ready: ${id}`);
+      }),
+      process.exited.then((exitCode) => {
+        throw new Error(
+          `interactive PTY bridge exited before ready: ${id} (${exitCode})`,
+        );
+      }),
+    ]);
     await this.persist(runtime);
     return publicInteractivePTY(runtime);
   }
 
   list() {
-    return [...this.sessions.values()].map(publicInteractivePTY);
+    return [...this.sessions.values()].map((session) =>
+      publicInteractivePTY(session),
+    );
   }
 
   runningCount(): number {
@@ -449,11 +395,112 @@ export class InteractivePTYRegistry {
     };
   }
 
-  subscribe(id: string, listener: (session: InteractivePTYInfo) => void) {
+  scrollback(
+    id: string,
+    input: { offsetFromBottom?: number; maxRows?: number } = {},
+  ): TerminalScrollbackPage {
     const session = this.mustGet(id);
-    session.listeners.add(listener);
-    listener(publicInteractivePTY(session));
-    return () => session.listeners.delete(listener);
+    return session.screenModel.scrollback(
+      Math.max(0, input.offsetFromBottom ?? 0),
+      Math.max(1, Math.min(input.maxRows ?? session.rows, 200)),
+    );
+  }
+
+  subscribe(id: string, listener: (session: InteractivePTYUpdate) => void) {
+    const session = this.mustGet(id);
+    const subscription = { listener, screen: false };
+    session.listeners.add(subscription);
+    listener(publicInteractivePTYMetadata(session));
+    return () => session.listeners.delete(subscription);
+  }
+
+  async observe(
+    id: string,
+    input: {
+      afterRevision?: number;
+      timeoutMs?: number;
+      signal?: AbortSignal;
+      differential?: boolean;
+    } = {},
+  ): Promise<TerminalObservation> {
+    const session = this.mustGet(id);
+    const afterRevision = Math.max(0, input.afterRevision ?? session.revision);
+    const current = publicInteractivePTYUpdate(session, true);
+    if (current.revision > afterRevision) {
+      const observation = {
+        session: current,
+        afterRevision,
+        changed: true,
+        reason: "changed",
+      } as TerminalObservation;
+      return this.withScreenUpdate(session, observation, input.differential);
+    }
+    if (current.status === "exited" || current.status === "failed")
+      return {
+        session: current,
+        afterRevision,
+        changed: false,
+        reason: "exited",
+      };
+
+    const timeoutMs = Math.max(0, Math.min(input.timeoutMs ?? 30_000, 30_000));
+    return await new Promise<TerminalObservation>((resolve, reject) => {
+      let settled = false;
+      const finish = (observation: TerminalObservation) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        session.listeners.delete(subscription);
+        input.signal?.removeEventListener("abort", onAbort);
+        resolve(observation);
+      };
+      const onUpdate = (next: InteractivePTYUpdate) => {
+        const current = next.screen ? next : publicInteractivePTY(session);
+        if (next.revision > afterRevision)
+          finish(
+            this.withScreenUpdate(
+              session,
+              {
+                session: current,
+                afterRevision,
+                changed: true,
+                reason: "changed",
+              },
+              input.differential,
+            ),
+          );
+        else if (next.status === "exited" || next.status === "failed")
+          finish({
+            session: current,
+            afterRevision,
+            changed: false,
+            reason: "exited",
+          });
+      };
+      const onAbort = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        session.listeners.delete(subscription);
+        reject(
+          input.signal?.reason ?? new DOMException("Aborted", "AbortError"),
+        );
+      };
+      const timer = setTimeout(
+        () =>
+          finish({
+            session: publicInteractivePTYUpdate(session, true),
+            afterRevision,
+            changed: false,
+            reason: "timeout",
+          }),
+        timeoutMs,
+      );
+      const subscription = { listener: onUpdate, screen: true };
+      session.listeners.add(subscription);
+      input.signal?.addEventListener("abort", onAbort, { once: true });
+      if (input.signal?.aborted) onAbort();
+    });
   }
 
   async write(
@@ -462,15 +509,26 @@ export class InteractivePTYRegistry {
     options: { submit?: boolean; sensitive?: boolean } = {},
   ) {
     const session = this.mustRunning(id);
+    this.pruneStaleViewers(session);
+    if (session.inputOwner.type !== "model")
+      throw new Error(
+        `terminal input is controlled by viewer: ${session.inputOwner.viewerID}`,
+      );
     const text =
       options.submit === false
         ? input
-        : `${input}${input.endsWith("\r") || input.endsWith("\n") ? "" : "\n"}`;
+        : `${input}${input.endsWith("\r") || input.endsWith("\n") ? "" : "\r"}`;
     // The bridge disables terminal ECHO. Only sensitive input needs a pending
     // filter so a child such as `cat` cannot add the secret back to transcript.
     session.pendingTerminalEcho = options.sensitive ? text : undefined;
     await this.command(session, { action: "write", input: text });
     if (options.sensitive) {
+      const secret = input.replace(/[\r\n]+$/u, "");
+      if (secret) {
+        session.sensitiveRedactions.push(secret);
+        if (session.sensitiveRedactions.length > 8)
+          session.sensitiveRedactions.shift();
+      }
       session.secretAudit.push({
         at: new Date().toISOString(),
         action: "write",
@@ -482,6 +540,143 @@ export class InteractivePTYRegistry {
     return publicInteractivePTY(session);
   }
 
+  registerViewer(
+    id: string,
+    input: { viewerID: string; kind: "external" | "embedded" },
+  ) {
+    const session = this.mustGet(id);
+    this.pruneStaleViewers(session);
+    const now = new Date().toISOString();
+    const existing = session.viewers.get(input.viewerID);
+    session.viewers.set(input.viewerID, {
+      id: input.viewerID,
+      kind: input.kind,
+      connectedAt: existing?.connectedAt ?? now,
+      lastSeenAt: now,
+    });
+    session.revision++;
+    this.emit(session);
+    return publicInteractivePTY(session);
+  }
+
+  heartbeatViewer(id: string, viewerID: string) {
+    const session = this.mustGet(id);
+    const viewer = this.mustViewer(session, viewerID);
+    viewer.lastSeenAt = new Date().toISOString();
+    this.pruneStaleViewers(session);
+    return publicInteractivePTY(session);
+  }
+
+  takeoverViewer(id: string, viewerID: string) {
+    const session = this.mustRunning(id);
+    this.pruneStaleViewers(session);
+    this.mustViewer(session, viewerID);
+    if (
+      session.inputOwner.type === "viewer" &&
+      session.inputOwner.viewerID !== viewerID
+    )
+      throw new Error(
+        `terminal input is already controlled by viewer: ${session.inputOwner.viewerID}`,
+      );
+    session.modelGeometry ??= { rows: session.rows, cols: session.cols };
+    session.inputOwner = { type: "viewer", viewerID };
+    session.geometryOwner = { type: "viewer", viewerID };
+    session.revision++;
+    this.emit(session);
+    return publicInteractivePTY(session);
+  }
+
+  takeGeometryViewer(id: string, viewerID: string) {
+    const session = this.mustRunning(id);
+    this.pruneStaleViewers(session);
+    this.mustViewer(session, viewerID);
+    if (
+      session.geometryOwner.type === "viewer" &&
+      session.geometryOwner.viewerID !== viewerID
+    )
+      throw new Error(
+        `terminal geometry is already controlled by viewer: ${session.geometryOwner.viewerID}`,
+      );
+    session.modelGeometry ??= { rows: session.rows, cols: session.cols };
+    session.geometryOwner = { type: "viewer", viewerID };
+    session.revision++;
+    this.emit(session);
+    return publicInteractivePTY(session);
+  }
+
+  releaseInputViewer(id: string, viewerID: string) {
+    const session = this.mustGet(id);
+    this.mustViewer(session, viewerID);
+    if (
+      session.inputOwner.type === "viewer" &&
+      session.inputOwner.viewerID === viewerID
+    )
+      session.inputOwner = { type: "model" };
+    session.revision++;
+    this.emit(session);
+    return publicInteractivePTY(session);
+  }
+
+  async releaseViewer(id: string, viewerID: string) {
+    const session = this.mustGet(id);
+    this.mustViewer(session, viewerID);
+    const restoreGeometry = this.restoreModelOwnership(session, viewerID);
+    if (restoreGeometry) return await this.restoreModelGeometry(session);
+    session.revision++;
+    this.emit(session);
+    return publicInteractivePTY(session);
+  }
+
+  async unregisterViewer(id: string, viewerID: string) {
+    const session = this.mustGet(id);
+    if (!session.viewers.delete(viewerID)) return publicInteractivePTY(session);
+    const restoreGeometry = this.restoreModelOwnership(session, viewerID);
+    if (restoreGeometry) return await this.restoreModelGeometry(session);
+    session.revision++;
+    this.emit(session);
+    return publicInteractivePTY(session);
+  }
+
+  async viewerWrite(
+    id: string,
+    viewerID: string,
+    input: string,
+    options: { sensitive?: boolean } = {},
+  ) {
+    const session = this.mustRunning(id);
+    this.pruneStaleViewers(session);
+    this.requireViewerOwner(session, viewerID, "input");
+    if (options.sensitive) {
+      session.pendingTerminalEcho = `${session.pendingTerminalEcho ?? ""}${input}`;
+      session.sensitiveInputBuffer += input;
+      if (/[\r\n]/u.test(input)) {
+        const secret = session.sensitiveInputBuffer.replace(/[\r\n]+$/u, "");
+        session.sensitiveInputBuffer = "";
+        if (secret) {
+          session.sensitiveRedactions.push(secret);
+          if (session.sensitiveRedactions.length > 8)
+            session.sensitiveRedactions.shift();
+          session.secretAudit.push({
+            at: new Date().toISOString(),
+            action: "write",
+            summary: `redacted ${new TextEncoder().encode(secret).byteLength} byte(s) of sensitive viewer input`,
+            sha256: createHash("sha256").update(secret).digest("hex"),
+          });
+          appendInteractiveOutput(session, "[sensitive user input redacted]\n");
+        }
+      }
+    }
+    await this.command(session, { action: "write", input });
+    return publicInteractivePTY(session);
+  }
+
+  async viewerResize(id: string, viewerID: string, rows: number, cols: number) {
+    const session = this.mustRunning(id);
+    this.pruneStaleViewers(session);
+    this.requireViewerOwner(session, viewerID, "geometry");
+    return await this.applyResize(session, rows, cols);
+  }
+
   secretAudit(id: string) {
     return [...this.mustGet(id).secretAudit];
   }
@@ -491,14 +686,32 @@ export class InteractivePTYRegistry {
     key: "enter" | "ctrl-c" | "ctrl-d" | "tab" | "esc",
   ) {
     const session = this.mustRunning(id);
+    this.pruneStaleViewers(session);
+    if (session.inputOwner.type !== "model")
+      throw new Error(
+        `terminal input is controlled by viewer: ${session.inputOwner.viewerID}`,
+      );
     await this.command(session, { action: "key", key });
     return publicInteractivePTY(session);
   }
 
   async resize(id: string, rows: number, cols: number) {
+    const session = this.mustRunning(id);
+    this.pruneStaleViewers(session);
+    if (session.geometryOwner.type !== "model")
+      throw new Error(
+        `terminal geometry is controlled by viewer: ${session.geometryOwner.viewerID}`,
+      );
+    return await this.applyResize(session, rows, cols);
+  }
+
+  private async applyResize(
+    session: InteractivePTYRuntime,
+    rows: number,
+    cols: number,
+  ) {
     if (rows < 10 || rows > 200 || cols < 20 || cols > 400)
       throw new Error("PTY size must be rows 10-200 and cols 20-400");
-    const session = this.mustRunning(id);
     session.rows = rows;
     session.cols = cols;
     session.screenModel.resize(rows, cols);
@@ -533,8 +746,9 @@ export class InteractivePTYRegistry {
     }
     session.status = "exited";
     session.endedAt = new Date().toISOString();
-    await this.persist(session);
+    await this.flushPersist(session);
     this.emit(session);
+    this.scheduleRelease(session);
     return publicInteractivePTY(session);
   }
 
@@ -550,45 +764,61 @@ export class InteractivePTYRegistry {
       buffer += decoder.decode(next.value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
-      for (const line of lines) this.handleBridgeLine(session, line);
+      if (lines.length) await this.processBridgeMessages(session, lines);
     }
-    if (buffer) this.handleBridgeLine(session, buffer);
+    if (buffer) await this.processBridgeMessages(session, [buffer]);
   }
 
-  private handleBridgeLine(session: InteractivePTYRuntime, line: string) {
-    try {
-      const message = JSON.parse(line) as { type: string; data?: string };
-      if (message.type === "output" && message.data) {
-        const rawOutput = Buffer.from(message.data, "base64").toString("utf8");
-        const outputWithoutSensitiveEcho = stripPendingTerminalEcho(
-          session,
-          rawOutput,
-        );
-        session.screenModel.write(outputWithoutSensitiveEcho);
-        session.revision++;
-        session.lastOutputAt = new Date().toISOString();
-        const output = sanitizeInteractiveTerminalOutput(
-          session,
-          outputWithoutSensitiveEcho,
-        );
-        if (output) appendInteractiveOutput(session, output);
-        if (/password[: ]*$/iu.test(session.tail))
-          session.secretAudit.push({
-            at: new Date().toISOString(),
-            action: "prompt_detected",
-            summary: "password prompt detected in PTY tail",
+  private async processBridgeMessages(
+    session: InteractivePTYRuntime,
+    lines: string[],
+  ) {
+    const safeOutputs: string[] = [];
+    let exit = false;
+    for (const line of lines) {
+      if (!line) continue;
+      try {
+        const message = JSON.parse(line) as { type: string; data?: string };
+        if (message.type === "ready") session.markReady();
+        else if (message.type === "exit") exit = true;
+        else if (message.type === "output" && message.data) {
+          const rawBytes = Buffer.from(message.data, "base64");
+          const rawOutput = session.outputDecoder.decode(rawBytes, {
+            stream: true,
           });
-        void this.persist(session);
-        this.emit(session);
+          safeOutputs.push(
+            redactSensitiveOutput(
+              session,
+              stripPendingTerminalEcho(session, rawOutput),
+            ),
+          );
+        }
+      } catch {
+        // Bridge diagnostics are deliberately not interpreted as terminal output.
       }
-      if (message.type === "exit") {
-        session.status = "exited";
-        session.endedAt = new Date().toISOString();
-        void this.persist(session);
-        this.emit(session);
-      }
-    } catch {
-      // Bridge diagnostics are deliberately not interpreted as terminal output.
+    }
+    if (safeOutputs.length) {
+      const combined = safeOutputs.join("");
+      await session.screenModel.write(combined);
+      session.revision += safeOutputs.length;
+      session.lastOutputAt = new Date().toISOString();
+      const sanitized = sanitizeInteractiveTerminalOutput(session, combined);
+      if (sanitized) appendInteractiveOutput(session, sanitized);
+      if (/password[: ]*$/iu.test(session.tail))
+        session.secretAudit.push({
+          at: new Date().toISOString(),
+          action: "prompt_detected",
+          summary: "password prompt detected in PTY tail",
+        });
+      this.schedulePersist(session);
+      this.scheduleScreenEmit(session);
+    }
+    if (exit) {
+      session.status = "exited";
+      session.endedAt = new Date().toISOString();
+      await this.flushPersist(session);
+      this.flushScreenEmit(session);
+      this.scheduleRelease(session);
     }
   }
 
@@ -596,10 +826,14 @@ export class InteractivePTYRegistry {
     session: InteractivePTYRuntime,
     value: Record<string, unknown>,
   ) {
-    if (!session.process.stdin || typeof session.process.stdin === "number")
-      throw new Error("interactive PTY stdin is not writable");
-    session.process.stdin.write(`${JSON.stringify(value)}\n`);
-    await session.process.stdin.flush();
+    const run = async () => {
+      if (!session.process.stdin || typeof session.process.stdin === "number")
+        throw new Error("interactive PTY stdin is not writable");
+      session.process.stdin.write(`${JSON.stringify(value)}\n`);
+      await session.process.stdin.flush();
+    };
+    session.commandQueue = session.commandQueue.then(run, run);
+    await session.commandQueue;
   }
 
   private mustGet(id: string) {
@@ -615,13 +849,221 @@ export class InteractivePTYRegistry {
     return session;
   }
 
+  private mustViewer(session: InteractivePTYRuntime, viewerID: string) {
+    const viewer = session.viewers.get(viewerID);
+    if (!viewer) throw new Error(`terminal viewer not registered: ${viewerID}`);
+    return viewer;
+  }
+
+  private requireViewerOwner(
+    session: InteractivePTYRuntime,
+    viewerID: string,
+    owner: "input" | "geometry",
+  ) {
+    this.mustViewer(session, viewerID);
+    const current =
+      owner === "input" ? session.inputOwner : session.geometryOwner;
+    if (current.type !== "viewer" || current.viewerID !== viewerID)
+      throw new Error(`terminal ${owner} ownership required: ${viewerID}`);
+  }
+
+  private restoreModelOwnership(
+    session: InteractivePTYRuntime,
+    viewerID: string,
+  ) {
+    let restoreGeometry = false;
+    if (
+      session.inputOwner.type === "viewer" &&
+      session.inputOwner.viewerID === viewerID
+    )
+      session.inputOwner = { type: "model" };
+    if (
+      session.geometryOwner.type === "viewer" &&
+      session.geometryOwner.viewerID === viewerID
+    ) {
+      session.geometryOwner = { type: "model" };
+      restoreGeometry = true;
+    }
+    return restoreGeometry;
+  }
+
+  private async restoreModelGeometry(session: InteractivePTYRuntime) {
+    const geometry = session.modelGeometry;
+    session.modelGeometry = undefined;
+    if (
+      !geometry ||
+      (session.status !== "running" && session.status !== "starting")
+    ) {
+      session.revision++;
+      this.emit(session);
+      return publicInteractivePTY(session);
+    }
+    return await this.applyResize(session, geometry.rows, geometry.cols);
+  }
+
+  private pruneStaleViewers(session: InteractivePTYRuntime) {
+    const cutoff = Date.now() - (this.options.viewerTimeoutMs ?? 30_000);
+    let emitNeeded = false;
+    for (const [viewerID, viewer] of session.viewers) {
+      if (Date.parse(viewer.lastSeenAt) >= cutoff) continue;
+      session.viewers.delete(viewerID);
+      const restoreGeometry = this.restoreModelOwnership(session, viewerID);
+      if (restoreGeometry) void this.restoreModelGeometry(session);
+      else emitNeeded = true;
+    }
+    if (!emitNeeded) return;
+    session.revision++;
+    this.emit(session);
+  }
+
+  private async expireStaleViewers() {
+    const cutoff = Date.now() - (this.options.viewerTimeoutMs ?? 30_000);
+    for (const session of this.sessions.values()) {
+      for (const [viewerID, viewer] of [...session.viewers]) {
+        if (Date.parse(viewer.lastSeenAt) >= cutoff) continue;
+        session.viewers.delete(viewerID);
+        const restore = this.restoreModelOwnership(session, viewerID);
+        const current = restore
+          ? await this.restoreModelGeometry(session)
+          : publicInteractivePTY(session);
+        if (!restore) {
+          session.revision++;
+          this.emit(session);
+        }
+        this.options.onViewerExpired?.(current, viewerID);
+      }
+    }
+  }
+
   private async persist(session: InteractivePTYRuntime) {
-    await writeFile(session.outputPath, session.transcript, { mode: 0o600 });
+    session.persistQueue = session.persistQueue.then(async () => {
+      const output = session.pendingTranscript.splice(0).join("");
+      if (output) await appendFile(session.outputPath, output, { mode: 0o600 });
+    });
+    await session.persistQueue;
+  }
+
+  private schedulePersist(session: InteractivePTYRuntime) {
+    if (session.persistTimer) return;
+    session.persistTimer = setTimeout(() => {
+      session.persistTimer = undefined;
+      void this.persist(session);
+    }, 200);
+  }
+
+  private async flushPersist(session: InteractivePTYRuntime) {
+    if (session.persistTimer) clearTimeout(session.persistTimer);
+    session.persistTimer = undefined;
+    await this.persist(session);
+  }
+
+  private scheduleRelease(session: InteractivePTYRuntime) {
+    if (session.releaseTimer) return;
+    session.releaseTimer = setTimeout(
+      () => {
+        if (session.status === "running" || session.status === "starting")
+          return;
+        session.listeners.clear();
+        session.screenHistory.clear();
+        session.viewers.clear();
+        if (session.persistTimer) clearTimeout(session.persistTimer);
+        session.screenModel.dispose();
+        this.sessions.delete(session.id);
+      },
+      this.options.exitedSessionRetentionMs ?? 5 * 60_000,
+    );
+    session.releaseTimer.unref();
+  }
+
+  private scheduleScreenEmit(session: InteractivePTYRuntime) {
+    if (session.screenEmitTimer) return;
+    session.screenEmitTimer = setTimeout(
+      () => {
+        session.screenEmitTimer = undefined;
+        this.emit(session);
+      },
+      this.hasScreenSubscriber(session) ? 50 : 200,
+    );
+  }
+
+  private flushScreenEmit(session: InteractivePTYRuntime) {
+    if (session.screenEmitTimer) clearTimeout(session.screenEmitTimer);
+    session.screenEmitTimer = undefined;
+    this.emit(session);
   }
 
   private emit(session: InteractivePTYRuntime) {
-    const value = publicInteractivePTY(session);
-    for (const listener of session.listeners) listener(value);
+    if (session.screenEmitTimer) clearTimeout(session.screenEmitTimer);
+    session.screenEmitTimer = undefined;
+    const includeScreen = this.hasScreenSubscriber(session);
+    const snapshot = includeScreen ? session.screenModel.snapshot() : undefined;
+    if (snapshot) this.recordScreen(session, snapshot);
+    const metadata = publicInteractivePTYMetadata(session);
+    const screen = includeScreen
+      ? publicInteractivePTYUpdate(session, snapshot)
+      : undefined;
+    for (const subscription of session.listeners)
+      subscription.listener(subscription.screen ? screen! : metadata);
+  }
+
+  private hasScreenSubscriber(session: InteractivePTYRuntime) {
+    return [...session.listeners].some((subscription) => subscription.screen);
+  }
+
+  private withScreenUpdate(
+    session: InteractivePTYRuntime,
+    observation: TerminalObservation,
+    differential = false,
+  ) {
+    if (!differential || !observation.changed) return observation;
+    const next = observation.session.screen;
+    if (!next) throw new Error("terminal observation is missing framebuffer");
+    const base = session.screenHistory.get(observation.afterRevision);
+    const screenUpdate = base
+      ? diffTerminalScreens({
+          base,
+          next,
+          baseRevision: observation.afterRevision,
+          revision: observation.session.revision,
+        })
+      : ({
+          kind: "full",
+          revision: observation.session.revision,
+          screen: next,
+        } as const);
+    const fullBytes = JSON.stringify(next).length;
+    const screenDelivery: TerminalScreenDelivery = {
+      mode: screenUpdate.kind,
+      reason: !base
+        ? "missing_base"
+        : screenUpdate.kind === "patch"
+          ? "differential"
+          : base.rows !== next.rows ||
+              base.cols !== next.cols ||
+              base.buffer !== next.buffer
+            ? "incompatible_frame"
+            : "patch_not_smaller",
+      payloadBytes: JSON.stringify(screenUpdate).length,
+      fullBytes,
+    };
+    return {
+      ...observation,
+      session:
+        screenUpdate.kind === "patch"
+          ? { ...observation.session, screen: undefined }
+          : observation.session,
+      screenUpdate,
+      screenDelivery,
+    };
+  }
+
+  private recordScreen(
+    session: InteractivePTYRuntime,
+    snapshot: TerminalScreenSnapshot,
+  ) {
+    session.screenHistory.set(session.revision, snapshot);
+    while (session.screenHistory.size > 4)
+      session.screenHistory.delete(session.screenHistory.keys().next().value!);
   }
 }
 
@@ -834,41 +1276,38 @@ sys.exit(child.wait())
 
 type PersistentPTYRuntime = PersistentPTYSessionInfo;
 
-type InteractivePTYRuntime = Omit<InteractivePTYInfo, "screen"> & {
+type InteractivePTYRuntime = Omit<InteractivePTYInfo, "screen" | "viewers"> & {
   process: ReturnType<typeof Bun.spawn>;
-  listeners: Set<(session: InteractivePTYInfo) => void>;
+  listeners: Set<{
+    listener(session: InteractivePTYUpdate): void;
+    screen: boolean;
+  }>;
   outputPath: string;
   pendingTerminalEcho?: string;
   terminalControlTail: string;
-  screenModel: TerminalScreen;
+  outputDecoder: TextDecoder;
+  screenModel: XtermTerminalEmulator;
+  viewers: Map<string, import("@natalia/contracts").TerminalViewer>;
+  inputOwner: import("@natalia/contracts").TerminalOwner;
+  geometryOwner: import("@natalia/contracts").TerminalOwner;
+  modelGeometry?: { rows: number; cols: number };
+  screenEmitTimer?: ReturnType<typeof setTimeout>;
+  screenHistory: Map<number, TerminalScreenSnapshot>;
+  commandQueue: Promise<void>;
+  sensitiveInputBuffer: string;
+  sensitiveRedactions: string[];
+  pendingTranscript: string[];
+  persistQueue: Promise<void>;
+  persistTimer?: ReturnType<typeof setTimeout>;
+  releaseTimer?: ReturnType<typeof setTimeout>;
+  ready: Promise<void>;
+  markReady(): void;
 };
-
-function readTerminalControlSequence(text: string, start: number) {
-  const next = text[start + 1];
-  if (next === "]" || next === "P") {
-    for (let index = start + 2; index < text.length; index++) {
-      if (text[index] === "\x07")
-        return { value: text.slice(start, index + 1), end: index };
-      if (text[index] === "\x1b" && text[index + 1] === "\\")
-        return { value: text.slice(start, index + 2), end: index + 1 };
-    }
-    return undefined;
-  }
-  if (next !== "[") {
-    if (next === undefined) return undefined;
-    return { value: text.slice(start, start + 2), end: start + 1 };
-  }
-  for (let index = start + 2; index < text.length; index++) {
-    const code = text.charCodeAt(index);
-    if (code >= 0x40 && code <= 0x7e)
-      return { value: text.slice(start, index + 1), end: index };
-  }
-  return undefined;
-}
 
 function appendInteractiveOutput(session: InteractivePTYRuntime, text: string) {
   const safe = sanitizeTerminalOutput(text);
-  session.transcript += safe;
+  session.pendingTranscript.push(safe);
+  session.transcript = `${session.transcript}${safe}`.slice(-262_144);
   session.tail = (session.tail + safe).slice(-4000);
 }
 
@@ -911,23 +1350,65 @@ function stripPendingTerminalEcho(
     session.pendingTerminalEcho = undefined;
     return output.slice(pending.length);
   }
+  if (pending.startsWith(output)) {
+    session.pendingTerminalEcho = pending.slice(output.length) || undefined;
+    return "";
+  }
+  if (normalizedPending.startsWith(output)) {
+    session.pendingTerminalEcho =
+      normalizedPending.slice(output.length).replace(/\r\n/gu, "\n") ||
+      undefined;
+    return "";
+  }
   return output;
 }
 
-function safePTYEnv() {
-  const allowed = ["PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "TERM"];
-  return Object.fromEntries(
-    allowed
-      .map((key) => [key, process.env[key]] as const)
-      .filter(
-        (entry): entry is [string, string] => typeof entry[1] === "string",
-      ),
-  );
+function redactSensitiveOutput(session: InteractivePTYRuntime, output: string) {
+  let redacted = output;
+  for (const secret of session.sensitiveRedactions)
+    if (secret) redacted = redacted.replaceAll(secret, "[redacted]");
+  return redacted;
 }
 
-function publicInteractivePTY(
+function safePTYEnv() {
+  const allowed = [
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "LANG",
+    "LC_ALL",
+    "TERM",
+    "SHELL",
+    "USER",
+    "LOGNAME",
+    "XDG_RUNTIME_DIR",
+    "DBUS_SESSION_BUS_ADDRESS",
+    "SSH_AUTH_SOCK",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "NO_PROXY",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "REQUESTS_CA_BUNDLE",
+    "CURL_CA_BUNDLE",
+  ];
+  return {
+    ...Object.fromEntries(
+      allowed
+        .map((key) => [key, process.env[key]] as const)
+        .filter(
+          (entry): entry is [string, string] => typeof entry[1] === "string",
+        ),
+    ),
+    TERM: "xterm-256color",
+    COLORTERM: "truecolor",
+  };
+}
+
+function publicInteractivePTYMetadata(
   session: InteractivePTYRuntime,
-): InteractivePTYInfo {
+): InteractivePTYUpdate {
   return {
     id: session.id,
     command: session.command,
@@ -936,14 +1417,40 @@ function publicInteractivePTY(
     attached: session.attached,
     rows: session.rows,
     cols: session.cols,
-    transcript: session.transcript,
     tail: session.tail,
     startedAt: session.startedAt,
     endedAt: session.endedAt,
     secretAudit: [...session.secretAudit],
-    screen: session.screenModel.snapshot(),
     revision: session.revision,
     lastOutputAt: session.lastOutputAt,
+    viewers: [...session.viewers.values()],
+    inputOwner: session.inputOwner,
+    geometryOwner: session.geometryOwner,
+  };
+}
+
+function publicInteractivePTYUpdate(
+  session: InteractivePTYRuntime,
+  screen?: TerminalScreenSnapshot | true,
+): InteractivePTYUpdate {
+  return {
+    ...publicInteractivePTYMetadata(session),
+    screen:
+      screen === true
+        ? session.screenModel.snapshot()
+        : screen === false
+          ? undefined
+          : screen,
+  };
+}
+
+function publicInteractivePTY(
+  session: InteractivePTYRuntime,
+): InteractivePTYInfo {
+  return {
+    ...publicInteractivePTYMetadata(session),
+    transcript: session.transcript,
+    screen: session.screenModel.snapshot(),
   };
 }
 
@@ -972,7 +1479,7 @@ def setup_session():
     os.setsid()
     fcntl.ioctl(0, termios.TIOCSCTTY, 0)
 child = subprocess.Popen(
-    ["bash", "-lc", command],
+    ["bash", "--noprofile", "--norc", "-c", command],
     stdin=slave,
     stdout=slave,
     stderr=slave,
@@ -990,6 +1497,7 @@ def emit(kind, data=None):
         value["data"] = base64.b64encode(data).decode("ascii")
     print(json.dumps(value), flush=True)
 
+emit("ready")
 while True:
     reads = [master, sys.stdin.fileno()]
     readable, _, _ = select.select(reads, [], [], 0.05)

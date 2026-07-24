@@ -3,7 +3,11 @@ import { createHash } from "node:crypto";
 import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { SubagentRegistry } from "@natalia/subagent";
-import { InteractivePTYRegistry, type InteractivePTYInfo } from "@natalia/pty";
+import {
+  InteractivePTYRegistry,
+  type InteractivePTYInfo,
+  type InteractivePTYUpdate,
+} from "@natalia/pty";
 import { WorkspaceSandboxManager } from "@natalia/sandbox";
 
 import { createWorkflowTools } from "./workflow-tools";
@@ -57,7 +61,7 @@ export type ToolExecutionContext = {
   }) => Promise<string[][]>;
   subagents?: SubagentRegistry;
   interactivePTY?: InteractivePTYRegistry;
-  onPTYUpdate?: (session: InteractivePTYInfo) => void;
+  onPTYUpdate?: (session: InteractivePTYUpdate) => void;
   onPTYAction?: (
     session: InteractivePTYInfo,
     action:
@@ -471,6 +475,7 @@ export function defaultTools(
     agentCleanupTool(),
     agentAuditTool(),
     interactiveStartTool(),
+    terminalObserveTool(),
     interactiveReadTool(),
     interactiveWriteTool(),
     interactiveKeyTool(),
@@ -864,7 +869,16 @@ function notifyPTY(
 ) {
   context.onPTYUpdate?.(session);
   if (action) context.onPTYAction?.(session, action, redacted);
-  return JSON.stringify(session, null, 2);
+  return JSON.stringify(modelTerminalInfo(session), null, 2);
+}
+
+function modelTerminalInfo(session: InteractivePTYInfo) {
+  const { lines: _lines, ...screen } = session.screen;
+  return {
+    ...session,
+    transcript: session.transcript.slice(-4000),
+    screen,
+  };
 }
 
 function interactiveStartTool(): RuntimeTool {
@@ -891,8 +905,8 @@ function interactiveStartTool(): RuntimeTool {
         command: requireString(args.command, "command"),
         cwd: context.workspaceRoot,
         id: optionalString(args.id),
-        rows: numberOr(args.rows, 24),
-        cols: numberOr(args.cols, 80),
+        rows: numberOr(args.rows, 36),
+        cols: numberOr(args.cols, 120),
       });
       registry.subscribe(session.id, (next) => context.onPTYUpdate?.(next));
       return notifyPTY(context, session);
@@ -913,6 +927,53 @@ function interactiveReadTool(): RuntimeTool {
     true,
     { offset: { type: "number" }, maxChars: { type: "number" } },
   );
+}
+
+function terminalObserveTool(): RuntimeTool {
+  return {
+    name: "terminal_observe",
+    description:
+      "Wait for a terminal screen revision or process exit, then return the current styled framebuffer. Timeout is a normal observation result.",
+    requiresApproval: false,
+    timeoutSec: 35,
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        afterRevision: { type: "number" },
+        timeoutMs: { type: "number" },
+      },
+      required: ["id", "afterRevision"],
+      additionalProperties: false,
+    },
+    async execute(input, context) {
+      const args = requireObject(input);
+      const observation = await requireInteractivePTY(context).observe(
+        requireString(args.id, "id"),
+        {
+          afterRevision: numberOr(args.afterRevision, 0),
+          timeoutMs: numberOr(args.timeoutMs, 30_000),
+          signal: context.signal,
+        },
+      );
+      if (observation.session.screen)
+        context.onPTYUpdate?.(
+          observation.session as import("@natalia/pty").InteractivePTYInfo,
+        );
+      return JSON.stringify(
+        {
+          ...observation,
+          session: observation.session.screen
+            ? modelTerminalInfo(
+                observation.session as import("@natalia/pty").InteractivePTYInfo,
+              )
+            : observation.session,
+        },
+        null,
+        2,
+      );
+    },
+  };
 }
 
 function interactiveWriteTool(): RuntimeTool {
@@ -967,8 +1028,8 @@ function interactiveResizeTool(): RuntimeTool {
     async (registry, args) =>
       await registry.resize(
         requireString(args.id, "id"),
-        numberOr(args.rows, 24),
-        numberOr(args.cols, 80),
+        numberOr(args.rows, 36),
+        numberOr(args.cols, 120),
       ),
     true,
     { rows: { type: "number" }, cols: { type: "number" } },
@@ -1015,7 +1076,11 @@ function interactiveListTool(): RuntimeTool {
     requiresApproval: false,
     parameters: { type: "object", properties: {}, additionalProperties: false },
     async execute(_input, context) {
-      return JSON.stringify(requireInteractivePTY(context).list(), null, 2);
+      return JSON.stringify(
+        requireInteractivePTY(context).list().map(modelTerminalInfo),
+        null,
+        2,
+      );
     },
   };
 }
@@ -1866,7 +1931,7 @@ function webFetchTool(): RuntimeTool {
       if (!/^https?:\/\//iu.test(url))
         throw new Error("web_fetch requires http(s) URL");
       assertNetworkURL(url, context);
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: context.signal });
       const text = await response.text();
       return [
         `status=${response.status}`,
@@ -1904,6 +1969,7 @@ function webSearchTool(): RuntimeTool {
       assertNetworkURL(url.href, context);
       const response = await fetch(url, {
         headers: { "user-agent": "Natalia-TS7-Search/0.1" },
+        signal: context.signal,
       });
       const text = await response.text();
       if (!response.ok)
@@ -2010,6 +2076,7 @@ function browserVisitTool(): RuntimeTool {
             context.settings?.browserUserAgent || "Natalia-TS7-Browser/0.1",
           ...context.settings?.browserHeaders,
         },
+        signal: context.signal,
       });
       const html = await response.text();
       return JSON.stringify(

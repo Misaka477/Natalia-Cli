@@ -10,6 +10,7 @@ export {
 } from "./ws";
 export {
   handleRPCMessage,
+  callRuntimeRPC,
   stringParam,
   arrayParam,
   type RPCRequest,

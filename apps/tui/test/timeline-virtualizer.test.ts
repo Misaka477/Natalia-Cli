@@ -22,6 +22,21 @@ test("timeline virtualizer groups a complete turn and ranges measured rows", () 
   expect(range.total).toBe(16);
 });
 
+test("timeline groups split long active turns into bounded render chunks", () => {
+  const groups = groupTimelineBlocks(
+    Array.from({ length: 31 }, (_, index) => ({
+      id: `turn_long:tool:${index}`,
+      role: index === 0 ? "user" : "tool",
+    })),
+  );
+  expect(groups.map((group) => group.items.length)).toEqual([12, 12, 7]);
+  expect(groups.map((group) => group.key)).toEqual([
+    "turn:turn_long",
+    "turn:turn_long:1",
+    "turn:turn_long:2",
+  ]);
+});
+
 test("timeline virtualizer preserves the visible anchor when prepending history", () => {
   const virtualizer = new TimelineVirtualizer(5);
   virtualizer.replace(
@@ -83,4 +98,24 @@ test("timeline virtualizer keeps a bounded measured range across a large project
     20,
   );
   expect(prepended.adjustment).toBe(3);
+});
+
+test("timeline virtualizer keeps old history in a continuous visible range", () => {
+  const virtualizer = new TimelineVirtualizer(24);
+  const history = Array.from({ length: 200 }, (_, index) => ({
+    key: `turn:${index}`,
+    items: [index],
+  }));
+  virtualizer.replace(history, 480, 40);
+  const range = virtualizer.range(480, 40);
+  const indexes = range.items.map((group) => Number(group.items[0]));
+
+  expect(range.total).toBe(4_800);
+  expect(indexes[0]).toBeLessThanOrEqual(20);
+  expect(indexes.at(-1)).toBeGreaterThanOrEqual(21);
+  expect(
+    indexes.every(
+      (value, index) => !index || value === indexes[index - 1]! + 1,
+    ),
+  ).toBe(true);
 });

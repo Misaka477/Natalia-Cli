@@ -9,6 +9,7 @@
     { "path": "../../packages/contracts" },
     { "path": "../../packages/runtime" },
     { "path": "../../packages/session" },
+    { "path": "../../packages/terminal" },
     { "path": "../../packages/transport" }
   ]
 }

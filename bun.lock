@@ -26,6 +26,7 @@
         "@natalia/contracts": "workspace:*",
         "@natalia/runtime": "workspace:*",
         "@natalia/session": "workspace:*",
+        "@natalia/terminal": "workspace:*",
         "@natalia/transport": "workspace:*",
       },
     },
@@ -38,7 +39,9 @@
         "@natalia/contracts": "workspace:*",
         "@natalia/plugin": "workspace:*",
         "@natalia/session": "workspace:*",
+        "@natalia/terminal": "workspace:*",
         "@natalia/testing": "workspace:*",
+        "@natalia/transport": "workspace:*",
         "@natalia/ui-model": "workspace:*",
         "@opentui/core": "0.4.3",
         "@opentui/keymap": "0.4.3",
@@ -111,6 +114,7 @@
       "version": "0.0.0-m11",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
+        "@natalia/terminal": "workspace:*",
       },
     },
     "packages/runtime": {
@@ -158,6 +162,14 @@
     "packages/subagent": {
       "name": "@natalia/subagent",
       "version": "0.0.0-m8",
+    },
+    "packages/terminal": {
+      "name": "@natalia/terminal",
+      "version": "0.0.0-m11",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+        "@xterm/headless": "6.0.0",
+      },
     },
     "packages/testing": {
       "name": "@natalia/testing",
@@ -291,6 +303,8 @@
 
     "@natalia/subagent": ["@natalia/subagent@workspace:packages/subagent"],
 
+    "@natalia/terminal": ["@natalia/terminal@workspace:packages/terminal"],
+
     "@natalia/testing": ["@natalia/testing@workspace:packages/testing"],
 
     "@natalia/tools": ["@natalia/tools@workspace:packages/tools"],
@@ -330,6 +344,8 @@
     "@types/bun": ["@types/bun@1.3.13", "", { "dependencies": { "bun-types": "1.3.13" } }, "sha512-9fqXWk5YIHGGnUau9TEi+qdlTYDAnOj+xLCmSTwXfAIqXr2x4tytJb43E9uCvt09zJURKXwAtkoH4nLQfzeTXw=="],
 
     "@types/node": ["@types/node@26.1.1", "", { "dependencies": { "undici-types": "~8.3.0" } }, "sha512-nxAkRSVkN1Y0JC1W8ky/fTfkGsMmcrRsbx+3XoZE+rMOX71kLYTV7fLXpqud1GpbpP5TuffXFqfX7fH2GgZREw=="],
+
+    "@xterm/headless": ["@xterm/headless@6.0.0", "", {}, "sha512-5Yj1QINYCyzrZtf8OFIHi47iQtI+0qYFPHmouEfG8dHNxbZ9Tb9YGSuLcsEwj9Z+OL75GJqPyJbyoFer80a2Hw=="],
 
     "ansi-regex": ["ansi-regex@6.2.2", "", {}, "sha512-Bq3SmSpyFHaWjPk8If9yc6svM8c56dB5BAtW4Qbw5jHTwwXXcTLoRMkpDJp6VL0XzlWaCHTXrkFURMYmD0sLqg=="],
 

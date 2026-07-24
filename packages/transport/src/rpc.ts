@@ -13,6 +13,39 @@ export type RPCResponse = {
   error?: { code: number; message: string };
 };
 
+export async function callRuntimeRPC<T>(input: {
+  url: string;
+  token?: string;
+  method: string;
+  params?: Record<string, unknown>;
+  fetch?: typeof globalThis.fetch;
+  signal?: AbortSignal;
+}): Promise<T> {
+  const response = await (input.fetch ?? globalThis.fetch)(
+    new URL("/rpc", input.url),
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(input.token ? { authorization: `Bearer ${input.token}` } : {}),
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: input.method,
+        params: input.params,
+      }),
+      signal: input.signal,
+    },
+  );
+  const body = (await response.json()) as RPCResponse;
+  if (!response.ok || body.error)
+    throw new Error(
+      body.error?.message ?? `runtime RPC failed with HTTP ${response.status}`,
+    );
+  return body.result as T;
+}
+
 export function stringParam(
   params: Record<string, unknown> | undefined,
   name: string,
@@ -42,6 +75,7 @@ function optionsGuard<T>(
 export async function handleRPCMessage(
   raw: unknown,
   client: RuntimeClient,
+  signal?: AbortSignal,
 ): Promise<RPCResponse> {
   const request =
     raw && typeof raw === "object" && !Array.isArray(raw)
@@ -393,6 +427,178 @@ export async function handleRPCMessage(
           id: stringParam(body.params, "id"),
           offset: typeof offset === "number" ? offset : undefined,
           maxChars: typeof maxChars === "number" ? maxChars : undefined,
+        }),
+      };
+    }
+    if (body.method === "terminal.observe") {
+      optionsGuard(client.terminalObserve, "terminal.observe");
+      const afterRevision = body.params?.afterRevision;
+      const timeoutMs = body.params?.timeoutMs;
+      const differential = body.params?.differential;
+      if (
+        typeof afterRevision !== "number" ||
+        !Number.isInteger(afterRevision) ||
+        afterRevision < 0
+      )
+        throw new Error(
+          "terminal.observe.params.afterRevision must be a non-negative integer",
+        );
+      if (
+        timeoutMs !== undefined &&
+        (typeof timeoutMs !== "number" ||
+          !Number.isInteger(timeoutMs) ||
+          timeoutMs < 0 ||
+          timeoutMs > 30000)
+      )
+        throw new Error(
+          "terminal.observe.params.timeoutMs must be an integer between 0 and 30000",
+        );
+      if (differential !== undefined && typeof differential !== "boolean")
+        throw new Error("terminal.observe.params.differential must be boolean");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.terminalObserve({
+          id: stringParam(body.params, "id"),
+          afterRevision,
+          timeoutMs: typeof timeoutMs === "number" ? timeoutMs : undefined,
+          signal,
+          differential,
+        }),
+      };
+    }
+    if (body.method === "terminal.viewer.register") {
+      optionsGuard(client.terminalViewerRegister, "terminal.viewer.register");
+      const kind = stringParam(body.params, "kind");
+      if (kind !== "external" && kind !== "embedded")
+        throw new Error("terminal.viewer.register.params.kind is invalid");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.terminalViewerRegister({
+          id: stringParam(body.params, "id"),
+          viewerID: stringParam(body.params, "viewerID"),
+          kind,
+        }),
+      };
+    }
+    if (body.method === "terminal.viewer.heartbeat") {
+      optionsGuard(client.terminalViewerHeartbeat, "terminal.viewer.heartbeat");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.terminalViewerHeartbeat({
+          id: stringParam(body.params, "id"),
+          viewerID: stringParam(body.params, "viewerID"),
+        }),
+      };
+    }
+    if (body.method === "terminal.viewer.control") {
+      optionsGuard(client.terminalViewerControl, "terminal.viewer.control");
+      const action = stringParam(body.params, "action");
+      if (
+        ![
+          "takeover",
+          "take_geometry",
+          "release_input",
+          "release",
+          "unregister",
+        ].includes(action)
+      )
+        throw new Error("terminal.viewer.control.params.action is invalid");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.terminalViewerControl({
+          id: stringParam(body.params, "id"),
+          viewerID: stringParam(body.params, "viewerID"),
+          action: action as
+            | "takeover"
+            | "take_geometry"
+            | "release_input"
+            | "release"
+            | "unregister",
+        }),
+      };
+    }
+    if (body.method === "terminal.viewer.write") {
+      optionsGuard(client.terminalViewerWrite, "terminal.viewer.write");
+      if (
+        body.params?.sensitive !== undefined &&
+        typeof body.params.sensitive !== "boolean"
+      )
+        throw new Error(
+          "terminal.viewer.write.params.sensitive must be boolean",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.terminalViewerWrite({
+          id: stringParam(body.params, "id"),
+          viewerID: stringParam(body.params, "viewerID"),
+          data: stringParam(body.params, "data"),
+          sensitive:
+            typeof body.params?.sensitive === "boolean"
+              ? body.params.sensitive
+              : undefined,
+        }),
+      };
+    }
+    if (body.method === "terminal.viewer.resize") {
+      optionsGuard(client.terminalViewerResize, "terminal.viewer.resize");
+      const rows = body.params?.rows;
+      const cols = body.params?.cols;
+      if (
+        typeof rows !== "number" ||
+        !Number.isInteger(rows) ||
+        typeof cols !== "number" ||
+        !Number.isInteger(cols)
+      )
+        throw new Error(
+          "terminal.viewer.resize.params.rows and cols must be integers",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.terminalViewerResize({
+          id: stringParam(body.params, "id"),
+          viewerID: stringParam(body.params, "viewerID"),
+          rows,
+          cols,
+        }),
+      };
+    }
+    if (body.method === "terminal.scrollback") {
+      optionsGuard(client.terminalScrollback, "terminal.scrollback");
+      const offsetFromBottom = body.params?.offsetFromBottom;
+      const maxRows = body.params?.maxRows;
+      if (
+        offsetFromBottom !== undefined &&
+        (typeof offsetFromBottom !== "number" ||
+          !Number.isInteger(offsetFromBottom) ||
+          offsetFromBottom < 0)
+      )
+        throw new Error(
+          "terminal.scrollback.params.offsetFromBottom must be a non-negative integer",
+        );
+      if (
+        maxRows !== undefined &&
+        (typeof maxRows !== "number" ||
+          !Number.isInteger(maxRows) ||
+          maxRows < 1 ||
+          maxRows > 200)
+      )
+        throw new Error(
+          "terminal.scrollback.params.maxRows must be an integer between 1 and 200",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.terminalScrollback({
+          id: stringParam(body.params, "id"),
+          offsetFromBottom:
+            typeof offsetFromBottom === "number" ? offsetFromBottom : undefined,
+          maxRows: typeof maxRows === "number" ? maxRows : undefined,
         }),
       };
     }

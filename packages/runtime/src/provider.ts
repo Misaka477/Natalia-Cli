@@ -414,9 +414,52 @@ export class GeminiProvider implements StreamingProvider {
 export function contextEntriesToProviderMessages(
   entries: ContextEntry[],
 ): ProviderMessage[] {
-  return entries
-    .map((entry) => contextEntryToProviderMessage(entry))
-    .filter((entry): entry is ProviderMessage => entry !== undefined);
+  const messages: ProviderMessage[] = [];
+  for (let index = 0; index < entries.length; index++) {
+    const entry = entries[index]!;
+    if (entry.role === "tool_call") {
+      const transaction: ContextEntry[] = [];
+      while (
+        index < entries.length &&
+        (entries[index]!.role === "tool_call" ||
+          entries[index]!.role === "tool_result")
+      ) {
+        transaction.push(entries[index]!);
+        index += 1;
+      }
+      index -= 1;
+
+      const results = new Map(
+        transaction
+          .filter(
+            (item): item is ContextEntry & { pairID: string } =>
+              item.role === "tool_result" && Boolean(item.pairID),
+          )
+          .map((item) => [item.pairID, item]),
+      );
+      const calls = transaction
+        .filter((item) => item.role === "tool_call")
+        .map(parseDurableToolCall)
+        .filter(
+          (call): call is ProviderToolCall =>
+            call !== undefined && results.has(call.id),
+        );
+      if (!calls.length) continue;
+      messages.push({ role: "assistant", content: "", toolCalls: calls });
+      for (const call of calls) {
+        messages.push({
+          role: "tool",
+          toolCallID: call.id,
+          content: results.get(call.id)!.content,
+        });
+      }
+      continue;
+    }
+    if (entry.role === "tool_result") continue;
+    const message = contextEntryToProviderMessage(entry);
+    if (message) messages.push(message);
+  }
+  return messages;
 }
 
 function contextEntryToProviderMessage(
@@ -430,17 +473,6 @@ function contextEntryToProviderMessage(
     return { role: entry.role, content: entry.content };
   if (entry.role === "summary")
     return { role: "system", content: entry.content };
-  if (entry.role === "tool_call") {
-    const call = parseDurableToolCall(entry);
-    if (!call) return undefined;
-    return { role: "assistant", content: "", toolCalls: [call] };
-  }
-  if (entry.role === "tool_result")
-    return {
-      role: "tool",
-      toolCallID: entry.pairID,
-      content: entry.content,
-    };
   return undefined;
 }
 

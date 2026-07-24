@@ -1,50 +1,123 @@
-# Natalia CLI Commands
+# Natalia CLI Command Reference
 
-Natalia is a TypeScript/Bun runtime. Configuration is read from `.natalia/config.json` and provider credentials may be supplied through environment variables.
-
-## Start
+Natalia CLI runs on Bun. The examples below use the workspace entrypoint:
 
 ```bash
-npm run ts:tui
+npm run ts:cli -- <command>
+```
+
+Installed release builds can replace that prefix with `natalia-ts`.
+
+Runtime configuration defaults to `.natalia/config.json`. Override it with `NATALIA_CONFIG`. Commands that accept `--workspace` otherwise use the current working directory.
+
+## Run And Evaluate
+
+```bash
 npm run ts:cli -- run "List the repository files"
 npm run ts:cli -- run --json "List the repository files"
+npm run ts:cli -- run "Review this file" --attach src/index.ts
 printf '%s\n' '{"prompt":"List the repository files"}' | npm run ts:cli -- eval
 ```
+
+- `run <prompt>` executes one model turn.
+- `run --json <prompt>` streams runtime events as JSON Lines.
+- `run ... --attach <path>` adds workspace attachments and may be repeated.
+- `eval` accepts JSON Lines on stdin. Requests may contain `prompt`, `delivery`, `attachments`, `cancel`, `pause`, or `resume`.
+
+## Status And Diagnostics
+
+```bash
+npm run ts:cli -- status
+npm run ts:cli -- doctor
+npm run ts:cli -- doctor --json
+npm run ts:cli -- doctor --workspace /path/to/project
+npm run ts:cli -- diagnose
+```
+
+- `status` prints the current provider/model and runtime status.
+- `doctor` checks configuration, model selection, migration state, and sessions.
+- `diagnose` prints startup diagnostics as JSON.
 
 ## Runtime Services
 
 ```bash
-npm run ts:cli -- serve 8787
+NATALIA_TRANSPORT_TOKEN="local-token" npm run ts:cli -- serve 8787
 npm run ts:cli -- daemon 8787
 npm run ts:cli -- daemon-status
 npm run ts:cli -- daemon-stop
 ```
 
-`serve` exposes the native HTTP/RPC/SSE transport. Set `NATALIA_TRANSPORT_TOKEN` to require bearer authentication. Unix socket and TLS server options are provided by `@natalia/transport` for embedded or managed deployments.
+- `serve [port]` runs the HTTP/RPC/SSE/WebSocket transport in the foreground.
+- `daemon [port]` registers a local authenticated daemon and waits for signals.
+- `daemon-status` inspects the registered daemon.
+- `daemon-stop` stops the registered daemon.
+- `--daemon-dir <path>` overrides daemon state storage.
 
-## Session Commands
+## Sessions
 
 ```bash
 npm run ts:cli -- session list
+npm run ts:cli -- session list --json
 npm run ts:cli -- session show <id>
-npm run ts:cli -- session rename <id> "Title"
+npm run ts:cli -- session rename <id> "New title"
 npm run ts:cli -- session pin <id>
-npm run ts:cli -- session duplicate <id>
+npm run ts:cli -- session unpin <id>
+npm run ts:cli -- session duplicate <id> --title "Copy" --id <new-id>
+npm run ts:cli -- session export <id>
+npm run ts:cli -- session import '<metadata-json>' --id <new-id>
+npm run ts:cli -- session delete <id>
 ```
 
-## TUI Controls
+All session actions accept `--workspace <path>`.
 
-- `Ctrl+N`: new session
-- `Ctrl+L`: session history
-- `Ctrl+,`: settings
-- `Ctrl+P`: command palette
-- `Ctrl+C`: cancel active turn
-- `Ctrl+Shift+K`: checkpoint dialog
-- `Ctrl+Shift+T`: PTY dialog
-- `Ctrl+Shift+B`: sandbox dialog
+## Workspace Filesystem
 
-Runtime slash commands include `/doctor`, `/help`, `/status`, `/skills`, `/checkpoint`, `/checkpoints`, `/rollback <id> --dry-run`, `/pause`, and `/resume`.
+```bash
+npm run ts:cli -- fs list --path src --limit 100
+npm run ts:cli -- fs read src/index.ts --offset 1 --limit 200
+npm run ts:cli -- fs glob 'src/**/*.ts' --limit 100
+npm run ts:cli -- fs search 'createRuntime' --include '*.ts' --limit 100
+```
 
-## Tool Safety
+The `fs` commands stay within the selected workspace and return JSON.
 
-All tool calls pass runtime policy, schema validation, approval, and audit boundaries. Write, process, shell, browser screenshot, sandbox merge, and mutation-capable MCP operations require the configured permission behavior. Do not place credentials in prompts, repository files, diagnostic fixtures, or screenshots.
+## Terminal Sessions
+
+```bash
+npm run ts:cli -- terminal attach <id>
+npm run ts:cli -- terminal attach <id> --take-control
+npm run ts:cli -- terminal attach <id> --take-control --secure-input
+npm run ts:cli -- terminal open <id>
+npm run ts:cli -- terminal open <id> --terminal kitty --take-control
+npm run ts:cli -- terminal open <id> --take-control --secure-input
+```
+
+- `terminal attach <id>` opens a read-only full-screen view of a Terminal Session hosted by the running Natalia daemon.
+- `--take-control` transfers input and geometry ownership to the external viewer. Press `Ctrl+]` to close it and return ownership to the model.
+- `--secure-input` marks all external viewer input as sensitive for that attach session; input bytes are hashed/audited but excluded from transcript projection.
+- `terminal open <id>` launches a supported external terminal and runs the attach frontend there.
+- Linux launcher detection currently covers Kitty, WezTerm, foot, Alacritty, GNOME Terminal, Konsole, and xterm.
+- A running shared daemon is used by default. An in-process TUI may instead launch the viewer with a private `NATALIA_TERMINAL_URL` and `NATALIA_TERMINAL_TOKEN` bridge.
+- Viewers remain read-only unless `--take-control` is supplied.
+
+## Transport Recording
+
+```bash
+npm run ts:cli -- record /tmp/natalia-cassette.json 8787
+npm run ts:cli -- replay /tmp/natalia-cassette.json
+```
+
+- `record <cassette> [port]` runs a transport server with recorded fetch traffic.
+- `replay <cassette>` replays recorded interactions for diagnostics and tests.
+
+## TUI
+
+```bash
+npm run ts:tui
+```
+
+TUI controls and slash commands are documented in the main [README](../README.md#tui-controls). The canonical slash-command vocabulary is defined by `runtimeSlashCommands` in `packages/contracts/src/events.ts` and shared by runtime handling and TUI completion.
+
+## Current Help Behavior
+
+The current CLI does not yet implement a generated `--help` command. Until that is added, this file is the canonical command-line reference. Unknown commands currently fall back to the plain status output.

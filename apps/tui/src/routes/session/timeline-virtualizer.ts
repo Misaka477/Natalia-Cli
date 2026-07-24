@@ -138,19 +138,30 @@ export class TimelineVirtualizer<T> {
 
 export function groupTimelineBlocks<T extends { id: string; role: string }>(
   blocks: T[],
+  maxItemsPerGroup = 12,
 ) {
   const groups: Array<TimelineGroup<T>> = [];
   for (const block of blocks) {
     const turnID = block.id.split(":", 1)[0] ?? block.id;
     const previous = groups.at(-1);
+    const baseKey = `turn:${turnID}`;
     const sameTurn =
-      block.role !== "system" && previous?.key === `turn:${turnID}`;
-    if (sameTurn) {
+      block.role !== "system" &&
+      (previous?.key === baseKey || previous?.key.startsWith(`${baseKey}:`));
+    if (sameTurn && previous.items.length < maxItemsPerGroup) {
       previous.items.push(block);
       continue;
     }
+    const previousChunk = sameTurn
+      ? Number(previous!.key.slice(baseKey.length + 1) || 0)
+      : -1;
     groups.push({
-      key: block.role === "system" ? `block:${block.id}` : `turn:${turnID}`,
+      key:
+        block.role === "system"
+          ? `block:${block.id}`
+          : previousChunk < 0
+            ? baseKey
+            : `${baseKey}:${previousChunk + 1}`,
       items: [block],
     });
   }

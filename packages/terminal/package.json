@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@natalia/pty",
+  "name": "@natalia/terminal",
   "version": "0.0.0-m11",
   "private": true,
   "type": "module",
@@ -10,6 +10,6 @@
   },
   "dependencies": {
     "@natalia/contracts": "workspace:*",
-    "@natalia/terminal": "workspace:*"
+    "@xterm/headless": "6.0.0"
   }
 }

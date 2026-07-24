@@ -179,7 +179,7 @@ test("retry exhausted summary redacts provider detail", () => {
   expect(text).not.toContain("sk-");
 });
 
-test("PTY and Sandbox dedicated presentation events render stable blocks", () => {
+test("Terminal events stay out of chat while Sandbox renders stable blocks", () => {
   let state = structuredClone(initialState);
   const target = {
     kind: "sandbox" as const,
@@ -231,8 +231,9 @@ test("PTY and Sandbox dedicated presentation events render stable blocks", () =>
     message: "sandbox is not container security",
   });
   expect(
-    state.messages.find((item) => item.id === "pty:pty_1")?.text,
-  ).toContain("PTY pty_1");
+    state.messages.find((item) => item.id === "pty:pty_1"),
+  ).toBeUndefined();
+  expect(state.pty.pty_1.tail).toBe("ready\n$");
   expect(
     state.messages.find((item) => item.id === "sandbox:box_m11")?.text,
   ).toContain("isolation=workspace");
@@ -285,6 +286,9 @@ test("model-owned PTY persists approval wait and action timeline for fixed pane"
   expect(state.pty.pty_model.approvalID).toBe("apr_pty_model_1");
   expect(state.ptyTimeline.pty_model[0]?.status).toBe("awaiting_approval");
   expect(state.footer).toContain("awaiting");
+  expect(state.messages.some((message) => message.id.startsWith("pty:"))).toBe(
+    false,
+  );
 });
 
 test("PTY pane selects among unlimited sessions and closes active view after model exit", () => {
@@ -540,4 +544,56 @@ test("turn finished returns the TUI to idle so Ctrl+C can exit demos", () => {
     stopReason: "done",
   });
   expect(state.activeTurn).toBeUndefined();
+  expect(state.footer).toBe("本轮任务已完成");
+  expect(state.messages.some((item) => item.id === "turn_demo:finished")).toBe(
+    false,
+  );
+  expect(Object.keys(state.streams)).toHaveLength(0);
+});
+
+test("failed turns show an explicit terminal message", () => {
+  let state = reduceState(structuredClone(initialState), {
+    type: "turn.submitted",
+    id: "turn_failed",
+    text: "run tools",
+    byteLength: 9,
+    lineCount: 1,
+    sha256: "sha",
+  });
+  state = reduceState(state, {
+    type: "turn.finished",
+    id: "turn_failed",
+    stopReason: "error",
+  });
+  expect(state.activeTurn).toBeUndefined();
+  expect(state.footer).toBe("本轮任务执行失败");
+  expect(state.messages.at(-1)).toMatchObject({
+    role: "system",
+    text: "本轮任务执行失败，请查看上方错误信息。",
+    status: "failed",
+  });
+});
+
+test("missing final model responses remain completed with a system notice", () => {
+  let state = reduceState(structuredClone(initialState), {
+    type: "turn.submitted",
+    id: "turn_missing_final",
+    text: "run tools",
+    byteLength: 9,
+    lineCount: 1,
+    sha256: "sha",
+  });
+  state = reduceState(state, {
+    type: "turn.finished",
+    id: "turn_missing_final",
+    stopReason: "done",
+    reason: "missing_final_response",
+  });
+  expect(state.status).toBe("ready");
+  expect(state.footer).toBe("任务已完成，模型未提供最终回复");
+  expect(state.messages.at(-1)).toMatchObject({
+    role: "system",
+    text: "任务已执行完成，但模型未提供最终回复。工具执行结果已保留。",
+    status: "completed",
+  });
 });

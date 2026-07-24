@@ -53,6 +53,7 @@ import { DialogStash } from "../component/DialogStash";
 import { DialogAttachment } from "../component/DialogAttachment";
 import { DialogWorkspaceSearch } from "../component/DialogWorkspaceSearch";
 import { DialogPty } from "../component/DialogPty";
+import { TerminalWorkspace } from "../routes/TerminalWorkspace";
 import { DialogCheckpoint } from "../component/DialogCheckpoint";
 import { DialogSandbox } from "../component/DialogSandbox";
 import { PromptAutocomplete } from "../component/PromptAutocomplete";
@@ -200,6 +201,10 @@ function Shell(props: {
     const current = route.route();
     return current.kind === "subagent" ? current : undefined;
   };
+  const activeTerminalRoute = () => {
+    const current = route.route();
+    return current.kind === "terminal" ? current : undefined;
+  };
 
   onMount(() => {
     const resize = (width: number, height: number) => {
@@ -239,17 +244,9 @@ function Shell(props: {
       const nearBottom = isNearBottom(scrollbox, 3);
       if (nearBottom) {
         setJumpToBottomVisible(false);
-        if (!followBottom()) {
-          setFollowBottom(true);
-          scrollbox.stickyScroll = true;
-        }
         return;
       }
-      setJumpToBottomVisible(true);
-      if (followBottom()) {
-        setFollowBottom(false);
-        scrollbox.stickyScroll = false;
-      }
+      if (!followBottom()) setJumpToBottomVisible(true);
     }, 100);
     onCleanup(() => clearInterval(timer));
   });
@@ -2280,7 +2277,12 @@ function Shell(props: {
       return;
     }
     if (command === "pty.manage") {
-      dialog.push(() => <DialogPty backend={props.backend} />);
+      dialog.push(() => (
+        <DialogPty
+          backend={props.backend}
+          onOpenInternal={(id) => route.push({ kind: "terminal", id })}
+        />
+      ));
       return;
     }
     if (command === "checkpoint.manage") {
@@ -2360,7 +2362,7 @@ function Shell(props: {
       {
         key: "ctrl+t",
         desc: "Return focus to chat",
-        group: "PTY",
+        group: "Terminal",
         cmd: () =>
           dispatch({
             type: "pty.pane.focus",
@@ -2369,8 +2371,8 @@ function Shell(props: {
       },
       {
         key: "pageup",
-        desc: "Scroll PTY up",
-        group: "PTY",
+        desc: "Scroll terminal up",
+        group: "Terminal",
         cmd: () =>
           ptyScrollRef.current?.scrollBy(
             -(ptyScrollRef.current.viewport?.height ?? 8) * 0.8,
@@ -2378,8 +2380,8 @@ function Shell(props: {
       },
       {
         key: "pagedown",
-        desc: "Scroll PTY down",
-        group: "PTY",
+        desc: "Scroll terminal down",
+        group: "Terminal",
         cmd: () =>
           ptyScrollRef.current?.scrollBy(
             (ptyScrollRef.current.viewport?.height ?? 8) * 0.8,
@@ -2387,14 +2389,14 @@ function Shell(props: {
       },
       {
         key: "home",
-        desc: "Scroll PTY to start",
-        group: "PTY",
+        desc: "Scroll terminal to start",
+        group: "Terminal",
         cmd: () => ptyScrollRef.current?.scrollTo(0),
       },
       {
         key: "end",
-        desc: "Scroll PTY to end",
-        group: "PTY",
+        desc: "Scroll terminal to end",
+        group: "Terminal",
         cmd: () =>
           ptyScrollRef.current?.scrollTo(
             ptyScrollRef.current.scrollHeight ?? 0,
@@ -2402,26 +2404,26 @@ function Shell(props: {
       },
       {
         key: "left",
-        desc: "Previous PTY session",
-        group: "PTY",
+        desc: "Previous terminal session",
+        group: "Terminal",
         cmd: () => movePtySelection(-1),
       },
       {
         key: "right",
-        desc: "Next PTY session",
-        group: "PTY",
+        desc: "Next terminal session",
+        group: "Terminal",
         cmd: () => movePtySelection(1),
       },
       {
         key: "tab",
-        desc: "Next PTY session",
-        group: "PTY",
+        desc: "Next terminal session",
+        group: "Terminal",
         cmd: () => movePtySelection(1),
       },
       {
         key: "shift+tab",
-        desc: "Previous PTY session",
-        group: "PTY",
+        desc: "Previous terminal session",
+        group: "Terminal",
         cmd: () => movePtySelection(-1),
       },
     ],
@@ -2556,7 +2558,16 @@ function Shell(props: {
             <SubagentRoute agentID={current.id} onBack={() => route.back()} />
           )}
         </Show>
-        <Show when={!activeSubagentRoute()}>
+        <Show when={activeTerminalRoute()} keyed>
+          {(current) => (
+            <TerminalWorkspace
+              backend={props.backend}
+              id={current.id}
+              onBack={() => route.back()}
+            />
+          )}
+        </Show>
+        <Show when={!activeSubagentRoute() && !activeTerminalRoute()}>
           <SessionRoute
             scrollRef={scrollRef}
             ptyScrollRef={ptyScrollRef}
@@ -2620,144 +2631,152 @@ function Shell(props: {
             backend={props.backend}
             onExit={exitOrCancel}
           />
-          <box
-            flexShrink={0}
-            border={["top"]}
-            borderColor={
-              route.route().kind !== "none"
-                ? theme.theme.muted
-                : theme.theme.accent
-            }
-            paddingTop={1}
-            paddingLeft={2}
-            paddingRight={2}
-          >
-            <textarea
-              ref={(value: TextareaRenderable) => {
-                setComposer(value);
-                promptRef.set(value);
-              }}
-              minHeight={1}
-              maxHeight={Math.min(
-                preferences().prompt.maxHeight,
-                layout().promptMaxHeight,
-              )}
-              width="100%"
-              placeholder={
-                route.route().kind !== "none"
-                  ? "Press Escape to return"
-                  : "Ask anything..."
-              }
-              placeholderColor={theme.theme.muted}
-              textColor={
+          <Show when={!activeTerminalRoute()}>
+            <box
+              flexShrink={0}
+              border={["top"]}
+              borderColor={
                 route.route().kind !== "none"
                   ? theme.theme.muted
-                  : theme.theme.text
+                  : theme.theme.accent
               }
-              focusedTextColor={theme.theme.text}
-              cursorColor={theme.theme.accent}
-              onPaste={handlePaste}
-              onContentChange={() =>
-                setComposerText(composer()?.plainText ?? "")
-              }
-              onKeyDown={(event: {
-                name?: string;
-                ctrl?: boolean;
-                alt?: boolean;
-                meta?: boolean;
-                option?: boolean;
-                shift?: boolean;
-                preventDefault(): void;
-              }) => {
-                const key = normalizeKey(event.name ?? "");
-                const action = composerKeyAction(event);
-                if (action === "submit") {
-                  event.preventDefault();
-                  void submit();
-                  return;
+              paddingTop={1}
+              paddingLeft={2}
+              paddingRight={2}
+            >
+              <textarea
+                ref={(value: TextareaRenderable) => {
+                  setComposer(value);
+                  promptRef.set(value);
+                }}
+                minHeight={1}
+                maxHeight={Math.min(
+                  preferences().prompt.maxHeight,
+                  layout().promptMaxHeight,
+                )}
+                width="100%"
+                placeholder={
+                  route.route().kind !== "none"
+                    ? "Press Escape to return"
+                    : "Ask anything..."
                 }
-                if (action === "newline") {
-                  event.preventDefault();
-                  composer()?.insertText("\n");
-                  return;
+                placeholderColor={theme.theme.muted}
+                textColor={
+                  route.route().kind !== "none"
+                    ? theme.theme.muted
+                    : theme.theme.text
                 }
-                if (action === "buffer-home") {
-                  event.preventDefault();
-                  composer()?.gotoBufferHome();
-                  return;
+                focusedTextColor={theme.theme.text}
+                cursorColor={theme.theme.accent}
+                onPaste={handlePaste}
+                onContentChange={() =>
+                  setComposerText(composer()?.plainText ?? "")
                 }
-                if (action === "buffer-end") {
-                  event.preventDefault();
-                  composer()?.gotoBufferEnd();
-                  return;
-                }
-              }}
-            />
-            <PromptAutocomplete
-              input={composer}
-              text={composerText}
-              workspaceFiles={props.backend.workspaceFiles}
-              agents={props.backend.agents}
-              mcpCatalog={props.backend.mcpCatalog}
-              attach={(path) =>
-                setAttachmentPaths((current) =>
-                  current.includes(path) ? current : [...current, path],
-                )
-              }
-              mentionAgent={(name) =>
-                setMentionAgents((current) =>
-                  current.includes(name) ? current : [...current, name],
-                )
-              }
-              mentionResource={(resource) =>
-                setMentionResources((current) =>
-                  current.some(
-                    (item) =>
-                      item.server === resource.server &&
-                      item.uri === resource.uri,
+                onKeyDown={(event: {
+                  name?: string;
+                  ctrl?: boolean;
+                  alt?: boolean;
+                  meta?: boolean;
+                  option?: boolean;
+                  shift?: boolean;
+                  preventDefault(): void;
+                }) => {
+                  const key = normalizeKey(event.name ?? "");
+                  const action = composerKeyAction(event);
+                  if (action === "submit") {
+                    event.preventDefault();
+                    void submit();
+                    return;
+                  }
+                  if (action === "newline") {
+                    event.preventDefault();
+                    composer()?.insertText("\n");
+                    return;
+                  }
+                  if (action === "buffer-home") {
+                    event.preventDefault();
+                    composer()?.gotoBufferHome();
+                    return;
+                  }
+                  if (action === "buffer-end") {
+                    event.preventDefault();
+                    composer()?.gotoBufferEnd();
+                    return;
+                  }
+                }}
+              />
+              <PromptAutocomplete
+                input={composer}
+                text={composerText}
+                workspaceFiles={props.backend.workspaceFiles}
+                agents={props.backend.agents}
+                mcpCatalog={props.backend.mcpCatalog}
+                attach={(path) =>
+                  setAttachmentPaths((current) =>
+                    current.includes(path) ? current : [...current, path],
                   )
-                    ? current
-                    : [...current, resource],
-                )
-              }
-            />
-            <Show when={attachmentPaths().length > 0}>
-              <text fg={theme.theme.muted}>
-                Attachments:{" "}
-                {attachmentPaths()
-                  .map((path) => path.split("/").at(-1) ?? path)
-                  .join(", ")}
-                {" · Ctrl+Shift+O manage"}
-              </text>
-            </Show>
-            <Show when={layout().showComposerHints}>
-              <text
-                fg={
-                  pastePreview().startsWith("paste rejected")
-                    ? theme.theme.danger
-                    : theme.theme.muted
                 }
-              >
-                {pastePreview() ||
-                  (route.route().kind !== "none"
-                    ? `View: ${route.route().kind}`
-                    : layout().compact
-                      ? `${keymapBoundary.palette} commands · ${keymapBoundary.sidebar} sidebar`
-                      : `${keymapBoundary.newline} newline · ${keymapBoundary.palette} commands · ${keymapBoundary.sidebar} sidebar · ctrl+c cancel/exit`)}
-              </text>
-            </Show>
-          </box>
+                mentionAgent={(name) =>
+                  setMentionAgents((current) =>
+                    current.includes(name) ? current : [...current, name],
+                  )
+                }
+                mentionResource={(resource) =>
+                  setMentionResources((current) =>
+                    current.some(
+                      (item) =>
+                        item.server === resource.server &&
+                        item.uri === resource.uri,
+                    )
+                      ? current
+                      : [...current, resource],
+                  )
+                }
+              />
+              <Show when={attachmentPaths().length > 0}>
+                <text fg={theme.theme.muted}>
+                  Attachments:{" "}
+                  {attachmentPaths()
+                    .map((path) => path.split("/").at(-1) ?? path)
+                    .join(", ")}
+                  {" · Ctrl+Shift+O manage"}
+                </text>
+              </Show>
+              <Show when={layout().showComposerHints}>
+                <text
+                  fg={
+                    pastePreview().startsWith("paste rejected")
+                      ? theme.theme.danger
+                      : theme.theme.muted
+                  }
+                >
+                  {pastePreview() ||
+                    (route.route().kind !== "none"
+                      ? `View: ${route.route().kind}`
+                      : layout().compact
+                        ? `${keymapBoundary.palette} commands · ${keymapBoundary.sidebar} sidebar`
+                        : `${keymapBoundary.newline} newline · ${keymapBoundary.palette} commands · ${keymapBoundary.sidebar} sidebar · ctrl+c cancel/exit`)}
+                </text>
+              </Show>
+            </box>
+          </Show>
           <SessionFooter workspaceRoot={props.workspaceRoot} />
         </Show>
       </box>
-      <Show when={layout().sidebarVisible && !layout().sidebarOverlay}>
+      <Show
+        when={
+          !activeTerminalRoute() &&
+          layout().sidebarVisible &&
+          !layout().sidebarOverlay
+        }
+      >
         <SessionSidebar
           workspaceRoot={props.workspaceRoot}
           width={layout().sidebarWidth}
           compact={layout().short}
         />
       </Show>
-      <Show when={layout().sidebarOverlay}>
+      <Show when={!activeTerminalRoute() && layout().sidebarOverlay}>
         <SessionSidebar
           workspaceRoot={props.workspaceRoot}
           width={Math.min(42, Math.max(28, terminalWidth() - 4))}

@@ -443,6 +443,12 @@ export type RuntimeEvent =
       target: ExecutionTarget;
       ownership?: PTYOwnership;
       approvalID?: string;
+      screen?: TerminalScreenSnapshot;
+      revision?: number;
+      lastOutputAt?: string;
+      viewers?: TerminalViewer[];
+      inputOwner?: TerminalOwner;
+      geometryOwner?: TerminalOwner;
     }
   | {
       type: "pty.action";
@@ -473,6 +479,21 @@ export type RuntimeEvent =
       action: PTYAction;
       reason: string;
       target: ExecutionTarget;
+    }
+  | {
+      type: "terminal.viewer";
+      id: string;
+      viewerID: string;
+      viewerKind?: "external" | "embedded";
+      action:
+        | "registered"
+        | "takeover"
+        | "release"
+        | "unregistered"
+        | "expired";
+      inputOwner: TerminalOwner;
+      geometryOwner: TerminalOwner;
+      at: string;
     }
   | { type: "pty.pane.select"; id: string }
   | { type: "pty.pane.focus"; focus: "chat" | "pty" }
@@ -608,6 +629,7 @@ export type RuntimeEvent =
       type: "turn.finished";
       id: string;
       stopReason: "done" | "cancelled" | "error";
+      reason?: "missing_final_response";
     };
 
 export type SubmittedTurn = Extract<RuntimeEvent, { type: "turn.submitted" }>;
@@ -778,6 +800,65 @@ export type RuntimeWorkspaceContent = {
   truncated?: boolean;
   next?: number;
 };
+/** Color encoding: undefined=default, 0..255=palette, 0x1000000+RGB=truecolor. */
+export type TerminalColor = number | null | undefined;
+/** Compact wire cell: chars, width, fg, bg, style bitmask. */
+export type TerminalCell = [
+  chars: string,
+  width: number,
+  fg?: TerminalColor,
+  bg?: TerminalColor,
+  attributes?: number,
+];
+export type TerminalScreenSnapshot = {
+  rows: number;
+  cols: number;
+  buffer: "normal" | "alternate";
+  cursor: { row: number; col: number; visible: boolean };
+  lines: TerminalCell[][];
+  text: string;
+  modes?: { bracketedPaste: boolean };
+};
+export type TerminalScreenPatch = {
+  baseRevision: number;
+  revision: number;
+  rows: number;
+  cols: number;
+  buffer: "normal" | "alternate";
+  cursor: TerminalScreenSnapshot["cursor"];
+  modes?: TerminalScreenSnapshot["modes"];
+  changes: Array<[row: number, start: number, cells: TerminalCell[]]>;
+};
+export type TerminalScreenUpdate =
+  | { kind: "full"; revision: number; screen: TerminalScreenSnapshot }
+  | { kind: "patch"; patch: TerminalScreenPatch };
+export type TerminalScreenDelivery = {
+  mode: "full" | "patch";
+  reason:
+    | "differential"
+    | "missing_base"
+    | "incompatible_frame"
+    | "patch_not_smaller";
+  payloadBytes: number;
+  fullBytes: number;
+};
+export type TerminalScrollbackPage = {
+  offsetFromBottom: number;
+  start: number;
+  end: number;
+  totalLines: number;
+  lines: TerminalCell[][];
+  text: string;
+};
+export type TerminalViewer = {
+  id: string;
+  kind: "external" | "embedded";
+  connectedAt: string;
+  lastSeenAt: string;
+};
+export type TerminalOwner =
+  | { type: "model" }
+  | { type: "viewer"; viewerID: string };
 export type RuntimePTYSession = {
   id: string;
   command: string;
@@ -790,6 +871,12 @@ export type RuntimePTYSession = {
   tail: string;
   startedAt: string;
   endedAt?: string;
+  screen?: TerminalScreenSnapshot;
+  revision?: number;
+  lastOutputAt?: string;
+  viewers?: TerminalViewer[];
+  inputOwner?: TerminalOwner;
+  geometryOwner?: TerminalOwner;
   secretAudit: Array<{
     at: string;
     action: "write" | "prompt_detected";
@@ -954,6 +1041,56 @@ export type RuntimeClient = {
       truncated: boolean;
     }
   >;
+  terminalObserve?(input: {
+    id: string;
+    afterRevision: number;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+    differential?: boolean;
+  }): Promise<{
+    session: RuntimePTYSession;
+    afterRevision: number;
+    changed: boolean;
+    reason: "changed" | "timeout" | "exited";
+    screenUpdate?: TerminalScreenUpdate;
+    screenDelivery?: TerminalScreenDelivery;
+  }>;
+  terminalViewerRegister?(input: {
+    id: string;
+    viewerID: string;
+    kind: "external" | "embedded";
+  }): Promise<RuntimePTYSession>;
+  terminalViewerHeartbeat?(input: {
+    id: string;
+    viewerID: string;
+  }): Promise<RuntimePTYSession>;
+  terminalViewerControl?(input: {
+    id: string;
+    viewerID: string;
+    action:
+      | "takeover"
+      | "take_geometry"
+      | "release_input"
+      | "release"
+      | "unregister";
+  }): Promise<RuntimePTYSession>;
+  terminalViewerWrite?(input: {
+    id: string;
+    viewerID: string;
+    data: string;
+    sensitive?: boolean;
+  }): Promise<RuntimePTYSession>;
+  terminalViewerResize?(input: {
+    id: string;
+    viewerID: string;
+    rows: number;
+    cols: number;
+  }): Promise<RuntimePTYSession>;
+  terminalScrollback?(input: {
+    id: string;
+    offsetFromBottom?: number;
+    maxRows?: number;
+  }): Promise<TerminalScrollbackPage>;
   ptyWrite?(input: {
     id: string;
     text: string;

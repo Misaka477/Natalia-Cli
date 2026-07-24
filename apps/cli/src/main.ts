@@ -11,6 +11,7 @@ import {
   stopRuntimeDaemon,
 } from "@natalia/transport";
 import { resolve } from "node:path";
+import { readFile } from "node:fs/promises";
 import {
   deleteLocalSession,
   duplicateLocalSession,
@@ -24,6 +25,10 @@ import {
   sessionTable,
   promptArguments,
   workspaceFilesystemCommand,
+  attachTerminalReadOnly,
+  attachTerminalWithControl,
+  externalTerminalLaunchCommand,
+  launchExternalTerminal,
   showLocalSession,
   startupDiagnostics,
 } from "./index";
@@ -306,6 +311,75 @@ switch (subcommand) {
       break;
     }
     throw new Error(`unknown session action: ${action}`);
+  }
+
+  case "terminal": {
+    const action = argv[1];
+    const id = argv[2];
+    if (!id || (action !== "attach" && action !== "open"))
+      throw new Error("terminal requires attach <id> or open <id>");
+    const store = createRuntimeDaemonStore({
+      dir: valueAfter(argv, "--daemon-dir") ?? daemonDir(),
+    });
+    const directURL = process.env.NATALIA_TERMINAL_URL;
+    const directToken = process.env.NATALIA_TERMINAL_TOKEN;
+    const status = directURL ? undefined : await runtimeDaemonStatus(store);
+    if (!directURL && status?.state !== "running")
+      throw new Error(
+        "terminal attach requires a running Natalia daemon or NATALIA_TERMINAL_URL bridge",
+      );
+    if (action === "open") {
+      const command = externalTerminalLaunchCommand({
+        id,
+        executable: [process.execPath, process.argv[1]!],
+        preferred: valueAfter(argv, "--terminal"),
+        takeControl: argv.includes("--take-control"),
+        secureInput: argv.includes("--secure-input"),
+      });
+      if (!command)
+        throw new Error(
+          "no supported external terminal found; configure --terminal or use terminal attach inside a terminal",
+        );
+      console.log(
+        JSON.stringify({
+          id,
+          pid: launchExternalTerminal({ command }),
+          command,
+        }),
+      );
+      break;
+    }
+    let url: string;
+    let token: string | undefined;
+    if (directURL) {
+      url = directURL;
+      token = directToken;
+    } else {
+      if (status?.state !== "running")
+        throw new Error("Natalia daemon registration is unavailable");
+      url = status.registration.url;
+      token = (await readFile(status.registration.tokenFile, "utf8")).trim();
+    }
+    const controller = new AbortController();
+    const stop = () => controller.abort();
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+    try {
+      const attach = argv.includes("--take-control")
+        ? attachTerminalWithControl
+        : attachTerminalReadOnly;
+      await attach({
+        id,
+        url,
+        token,
+        signal: controller.signal,
+        sensitive: argv.includes("--secure-input"),
+      });
+    } finally {
+      process.off("SIGINT", stop);
+      process.off("SIGTERM", stop);
+    }
+    break;
   }
 
   case "fs": {

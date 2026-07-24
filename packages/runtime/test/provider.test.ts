@@ -590,6 +590,70 @@ test("durable tool result context preserves its tool_call_id for the next turn",
   ]);
 });
 
+test("durable parallel tool calls are grouped before all tool results", () => {
+  const messages = contextEntriesToProviderMessages([
+    {
+      id: "call_1",
+      role: "tool_call",
+      content: 'read_file {"path":"a.txt"}',
+      pairID: "provider_call_1",
+    },
+    {
+      id: "call_2",
+      role: "tool_call",
+      content: 'read_file {"path":"b.txt"}',
+      pairID: "provider_call_2",
+    },
+    {
+      id: "result_1",
+      role: "tool_result",
+      content: "a",
+      pairID: "provider_call_1",
+    },
+    {
+      id: "result_2",
+      role: "tool_result",
+      content: "b",
+      pairID: "provider_call_2",
+    },
+  ]);
+
+  expect(messages).toEqual([
+    {
+      role: "assistant",
+      content: "",
+      toolCalls: [
+        {
+          id: "provider_call_1",
+          name: "read_file",
+          arguments: '{"path":"a.txt"}',
+        },
+        {
+          id: "provider_call_2",
+          name: "read_file",
+          arguments: '{"path":"b.txt"}',
+        },
+      ],
+    },
+    { role: "tool", toolCallID: "provider_call_1", content: "a" },
+    { role: "tool", toolCallID: "provider_call_2", content: "b" },
+  ]);
+});
+
+test("durable context omits interrupted tool calls without results", () => {
+  expect(
+    contextEntriesToProviderMessages([
+      {
+        id: "call_orphan",
+        role: "tool_call",
+        content: 'read_file {"path":"missing.txt"}',
+        pairID: "provider_call_orphan",
+      },
+      { id: "user", role: "user", content: "continue" },
+    ]),
+  ).toEqual([{ role: "user", content: "continue" }]);
+});
+
 test("Anthropic provider streams text usage and tool calls", async () => {
   let body: Record<string, unknown> | undefined;
   const fetchImpl = Object.assign(

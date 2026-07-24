@@ -4,25 +4,26 @@ Natalia CLI is licensed under Apache-2.0. It uses the third-party software below
 
 ## Direct Runtime Dependencies
 
-| Package | Version | License | Source |
-|---|---:|---|---|
-| `@opentui/core` | 0.4.3 | MIT | <https://github.com/anomalyco/opentui> |
-| `@opentui/keymap` | 0.4.3 | MIT | <https://github.com/anomalyco/opentui> |
-| `@opentui/solid` | 0.4.3 | MIT | <https://github.com/anomalyco/opentui> |
-| `solid-js` | 1.9.12 | MIT | <https://github.com/solidjs/solid> |
-| `zod` | 3.25.76 | MIT | <https://github.com/colinhacks/zod> |
-| `fuzzysort` | 3.1.0 | MIT | <https://github.com/farzher/fuzzysort> |
+| Package           | Version | License | Source                                 |
+| ----------------- | ------: | ------- | -------------------------------------- |
+| `@opentui/core`   |   0.4.3 | MIT     | <https://github.com/anomalyco/opentui> |
+| `@opentui/keymap` |   0.4.3 | MIT     | <https://github.com/anomalyco/opentui> |
+| `@opentui/solid`  |   0.4.3 | MIT     | <https://github.com/anomalyco/opentui> |
+| `solid-js`        |  1.9.12 | MIT     | <https://github.com/solidjs/solid>     |
+| `zod`             | 3.25.76 | MIT     | <https://github.com/colinhacks/zod>    |
+| `fuzzysort`       |   3.1.0 | MIT     | <https://github.com/farzher/fuzzysort> |
+| `@xterm/headless` |   6.0.0 | MIT     | <https://github.com/xtermjs/xterm.js>  |
 
 OpenTUI includes platform-specific native packages built from its Zig core. The locked OpenTUI core and platform packages declare the MIT license.
 
 ## Direct Development Dependencies
 
-| Package | Version | License | Source |
-|---|---:|---|---|
-| `typescript` | 5.8.2 | Apache-2.0 | <https://github.com/microsoft/TypeScript> |
-| `prettier` | 3.6.2 | MIT | <https://github.com/prettier/prettier> |
-| `@types/bun` | 1.3.13 | MIT | <https://github.com/oven-sh/bun> |
-| `@tsconfig/bun` | 1.0.9 | MIT | <https://github.com/tsconfig/bases> |
+| Package         | Version | License    | Source                                    |
+| --------------- | ------: | ---------- | ----------------------------------------- |
+| `typescript`    |   5.8.2 | Apache-2.0 | <https://github.com/microsoft/TypeScript> |
+| `prettier`      |   3.6.2 | MIT        | <https://github.com/prettier/prettier>    |
+| `@types/bun`    |  1.3.13 | MIT        | <https://github.com/oven-sh/bun>          |
+| `@tsconfig/bun` |   1.0.9 | MIT        | <https://github.com/tsconfig/bases>       |
 
 ## Transitive Dependency Licenses
 

@@ -505,6 +505,10 @@ export function createRealRuntimeClient(
     });
     interactivePTY = new InteractivePTYRegistry(
       join(workspaceRoot, ".natalia", "pty", "interactive"),
+      {
+        onViewerExpired: (pty, viewerID) =>
+          publishTerminalViewer(pty, viewerID, "expired"),
+      },
     );
     sandboxes = new WorkspaceSandboxManager(
       join(workspaceRoot, ".natalia", "sandboxes"),
@@ -957,22 +961,7 @@ export function createRealRuntimeClient(
     action?: import("@natalia/contracts").PTYAction,
     redacted = false,
   ) {
-    publish({
-      type: "pty.update",
-      id: pty.id,
-      command: pty.command,
-      cwd: pty.cwd,
-      status: pty.status,
-      attached: pty.attached,
-      rows: pty.rows,
-      cols: pty.cols,
-      activity: pty.status === "running" ? "running" : "waiting",
-      tail: pty.tail,
-      transcript: pty.transcript,
-      lastAction: action,
-      target: { kind: "host", cwd: pty.cwd },
-      ownership: "user",
-    });
+    publish(ptyLiveUpdate(pty, action));
     if (action) {
       publish({
         type: "pty.action",
@@ -995,6 +984,59 @@ export function createRealRuntimeClient(
       ptyStatusByID.set(pty.id, pty.status);
       scheduleRuntimeStatusSnapshot();
     }
+  }
+
+  function ptyLiveUpdate(
+    pty: import("@natalia/contracts").RuntimePTYSession,
+    action?: import("@natalia/contracts").PTYAction,
+  ): Extract<
+    import("@natalia/contracts").RuntimeEvent,
+    { type: "pty.update" }
+  > {
+    // Framebuffers and transcripts are read on demand. Sending either with every
+    // output revision makes the live event stream retain and clone large snapshots.
+    return {
+      type: "pty.update",
+      id: pty.id,
+      command: pty.command,
+      cwd: pty.cwd,
+      status: pty.status,
+      attached: pty.attached,
+      rows: pty.rows,
+      cols: pty.cols,
+      activity: pty.status === "running" ? "running" : "waiting",
+      tail: pty.tail,
+      lastAction: action,
+      target: { kind: "host", cwd: pty.cwd },
+      ownership: pty.inputOwner?.type === "viewer" ? "user" : "model",
+      revision: pty.revision,
+      lastOutputAt: pty.lastOutputAt,
+      viewers: pty.viewers,
+      inputOwner: pty.inputOwner,
+      geometryOwner: pty.geometryOwner,
+    };
+  }
+
+  function publishTerminalViewer(
+    pty: import("@natalia/contracts").RuntimePTYSession,
+    viewerID: string,
+    action: Extract<
+      import("@natalia/contracts").RuntimeEvent,
+      { type: "terminal.viewer" }
+    >["action"],
+    viewerKind?: "external" | "embedded",
+  ) {
+    publishInteractivePTY(pty);
+    publish({
+      type: "terminal.viewer",
+      id: pty.id,
+      viewerID,
+      viewerKind,
+      action,
+      inputOwner: pty.inputOwner ?? { type: "model" },
+      geometryOwner: pty.geometryOwner ?? { type: "model" },
+      at: new Date().toISOString(),
+    });
   }
 
   function checkpointRollbackOptions() {
@@ -1216,6 +1258,7 @@ export function createRealRuntimeClient(
       for (const plugin of plugins?.list() ?? [])
         await plugins!.unload(plugin.id);
       await Promise.all(cleanupMCP.splice(0).map((close) => close()));
+      interactivePTY?.dispose();
     },
     cancel(reason = "user cancel") {
       activeAbort?.abort(reason);
@@ -1374,6 +1417,84 @@ export function createRealRuntimeClient(
       await ready;
       if (!interactivePTY) throw new Error("interactive PTY is unavailable");
       return interactivePTY.read(input.id, input);
+    },
+    async terminalObserve(input) {
+      await ready;
+      if (!interactivePTY) throw new Error("interactive PTY is unavailable");
+      return await interactivePTY.observe(input.id, input);
+    },
+    async terminalViewerRegister(input) {
+      await ready;
+      if (!interactivePTY) throw new Error("interactive PTY is unavailable");
+      const pty = interactivePTY.registerViewer(input.id, input);
+      publishTerminalViewer(pty, input.viewerID, "registered", input.kind);
+      return pty;
+    },
+    async terminalViewerHeartbeat(input) {
+      await ready;
+      if (!interactivePTY) throw new Error("interactive PTY is unavailable");
+      return interactivePTY.heartbeatViewer(input.id, input.viewerID);
+    },
+    async terminalViewerControl(input) {
+      await ready;
+      if (!interactivePTY) throw new Error("interactive PTY is unavailable");
+      const pty =
+        input.action === "takeover"
+          ? interactivePTY.takeoverViewer(input.id, input.viewerID)
+          : input.action === "take_geometry"
+            ? interactivePTY.takeGeometryViewer(input.id, input.viewerID)
+            : input.action === "release_input"
+              ? interactivePTY.releaseInputViewer(input.id, input.viewerID)
+              : input.action === "release"
+                ? await interactivePTY.releaseViewer(input.id, input.viewerID)
+                : await interactivePTY.unregisterViewer(
+                    input.id,
+                    input.viewerID,
+                  );
+      publishTerminalViewer(
+        pty,
+        input.viewerID,
+        input.action === "unregister"
+          ? "unregistered"
+          : input.action === "take_geometry"
+            ? "takeover"
+            : input.action === "release_input"
+              ? "release"
+              : input.action,
+      );
+      return pty;
+    },
+    async terminalViewerWrite(input) {
+      await ready;
+      if (!interactivePTY) throw new Error("interactive PTY is unavailable");
+      const pty = await interactivePTY.viewerWrite(
+        input.id,
+        input.viewerID,
+        input.data,
+        {
+          sensitive: input.sensitive,
+        },
+      );
+      // The framebuffer is delivered by terminal.observe; returning it per key
+      // stalls input behind a full screen snapshot serialization.
+      return { ...pty, screen: undefined };
+    },
+    async terminalViewerResize(input) {
+      await ready;
+      if (!interactivePTY) throw new Error("interactive PTY is unavailable");
+      const pty = await interactivePTY.viewerResize(
+        input.id,
+        input.viewerID,
+        input.rows,
+        input.cols,
+      );
+      publishInteractivePTY(pty);
+      return pty;
+    },
+    async terminalScrollback(input) {
+      await ready;
+      if (!interactivePTY) throw new Error("interactive PTY is unavailable");
+      return interactivePTY.scrollback(input.id, input);
     },
     async ptyWrite(input) {
       await ready;
@@ -2115,6 +2236,10 @@ export function createRealRuntimeClient(
     });
     let assistant = "";
     try {
+      let usedTools = false;
+      let needsFinalResponse = false;
+      let finalResponse = "";
+      let missingFinalResponse = false;
       for (let step = 0; step < effectiveMaxSteps(); step++) {
         await waitIfPaused();
         const result = await runProviderStepWithRecovery(
@@ -2123,7 +2248,28 @@ export function createRealRuntimeClient(
           step + 1,
         );
         assistant += result.assistant;
-        if (!result.toolMessages.length) break;
+        needsFinalResponse = result.toolMessages.length > 0;
+        usedTools ||= needsFinalResponse;
+        if (!needsFinalResponse) finalResponse = result.assistant;
+        if (!needsFinalResponse) break;
+        finalResponse = "";
+      }
+      if (usedTools && !finalResponse.trim()) {
+        const result = await runProviderStepWithRecovery(
+          id,
+          [
+            ...messages,
+            {
+              role: "system",
+              content:
+                "Tool execution is complete. Provide the user with a concise final answer summarizing the outcome. Do not call any tools.",
+            },
+          ],
+          effectiveMaxSteps() + 1,
+          false,
+        );
+        if (!result.assistant.trim()) missingFinalResponse = true;
+        else assistant += result.assistant;
       }
       if (assistant)
         context.add({
@@ -2147,7 +2293,12 @@ export function createRealRuntimeClient(
         ),
       });
       publish({ type: "content.done", id });
-      publish({ type: "turn.finished", id, stopReason: "done" });
+      publish({
+        type: "turn.finished",
+        id,
+        stopReason: "done",
+        reason: missingFinalResponse ? "missing_final_response" : undefined,
+      });
       publish(await runtimeStatusSnapshot());
     } catch (error) {
       publish({
@@ -2170,6 +2321,7 @@ export function createRealRuntimeClient(
     id: string,
     messages: ProviderMessage[],
     step: number,
+    allowToolCalls = true,
   ) {
     const toolMessages: ProviderMessage[] = [];
     const advertised = new Map(
@@ -2208,7 +2360,10 @@ export function createRealRuntimeClient(
         try {
           for await (const chunk of provider!.stream({
             messages,
-            tools: capabilities.toolCall ? materialized.definitions : undefined,
+            tools:
+              allowToolCalls && capabilities.toolCall
+                ? materialized.definitions
+                : undefined,
             signal: activeAbort?.signal,
           })) {
             if (chunk.type === "thinking") {
@@ -2237,6 +2392,10 @@ export function createRealRuntimeClient(
       publish({ type: "thinking.done", id, text: output.thinking });
     if (output.assistant)
       publish({ type: "content.done", id, text: output.assistant });
+    if (!allowToolCalls && output.calls.length)
+      throw new Error(
+        "model emitted tool calls while producing the required final response",
+      );
     if (output.calls.length) {
       const produced = await executeToolCalls(
         id,
@@ -2309,9 +2468,10 @@ export function createRealRuntimeClient(
     id: string,
     messages: ProviderMessage[],
     step: number,
+    allowToolCalls = true,
   ) {
     try {
-      return await runProviderStep(id, messages, step);
+      return await runProviderStep(id, messages, step, allowToolCalls);
     } catch (error) {
       if ((error as { kind?: string }).kind !== "context_limit") throw error;
       publish({
@@ -2357,6 +2517,7 @@ export function createRealRuntimeClient(
           id,
           contextEntriesToProviderMessages(context.snapshot().entries),
           step,
+          allowToolCalls,
         );
       } catch (retryError) {
         if ((retryError as { kind?: string }).kind === "context_limit")
@@ -2415,6 +2576,12 @@ export function createRealRuntimeClient(
           toolName: "invalid_tool_call",
           content: `ERROR: ${reason}`,
         });
+        context.add({
+          id: `${turnID}:${call.id}:result`,
+          role: "tool_result",
+          content: `ERROR: ${reason}`,
+          pairID: call.id,
+        });
         continue;
       }
       const resolved = materialized.resolve(call.name);
@@ -2452,6 +2619,12 @@ export function createRealRuntimeClient(
           toolCallID: call.id,
           toolName: call.name,
           content: `ERROR: ${reason}`,
+        });
+        context.add({
+          id: `${turnID}:${call.id}:result`,
+          role: "tool_result",
+          content: `ERROR: ${reason}`,
+          pairID: call.id,
         });
         continue;
       }
@@ -2599,75 +2772,88 @@ export function createRealRuntimeClient(
         startedAt: new Date().toISOString(),
       });
       executionAudited = true;
-      const completeResult = await tool.execute(parsed, {
-        workspaceRoot,
-        signal: activeAbort?.signal,
-        askQuestion: async (question) =>
-          await requireQuestion(`${toolID}:question`, question),
-        subagents,
-        interactivePTY,
-        onPTYUpdate: (pty) => {
-          publish({
-            type: "pty.update",
-            id: pty.id,
-            command: pty.command,
-            cwd: pty.cwd,
-            status: pty.status,
-            attached: pty.attached,
-            rows: pty.rows,
-            cols: pty.cols,
-            activity: pty.status === "running" ? "running" : "waiting",
-            tail: pty.tail,
-            transcript: pty.transcript,
-            lastAction: "write",
-            target: { kind: "host", cwd: pty.cwd },
-            ownership: "model",
-          });
-          if (ptyStatusByID.get(pty.id) !== pty.status) {
-            ptyStatusByID.set(pty.id, pty.status);
-            scheduleRuntimeStatusSnapshot();
-          }
-        },
-        onPTYAction: (pty, action, redacted) => {
-          publish({
-            type: "pty.action",
-            id: pty.id,
-            action,
-            redacted,
-            target: { kind: "host", cwd: pty.cwd },
-          });
-          publish({
-            type: "pty.timeline",
-            id: pty.id,
-            actor: "model",
-            action,
-            status: "executed",
-            summary: redacted
-              ? "sensitive input supplied"
-              : `${action} executed`,
-            at: new Date().toISOString(),
-          });
-        },
-        sandboxes,
-        workspaceReadAuthorize: authorizeWorkspaceRead,
-        sandboxMergeAuthorize: authorizeSandboxMerge,
-        settings: toolSettings(),
-        parentSessionID: sessionID,
-        maxSubagentDepth: tsRuntimeConfig?.runtime.subagentDepth,
-        onWorkflowEvent: (event) =>
-          publish({ type: "workflow.update", ...event }),
-        workflowAuthorize: authorizeWorkflowStep,
-        onSandboxEvent: (event) => {
-          const update = event as Extract<
-            RuntimeEvent,
-            { type: "sandbox.update" }
-          >;
-          publish(update);
-          if (sandboxResourcesByID.get(update.id) !== update.runningResources) {
-            sandboxResourcesByID.set(update.id, update.runningResources);
-            scheduleRuntimeStatusSnapshot();
-          }
-        },
+      const executionController = new AbortController();
+      const cancelExecution = () =>
+        executionController.abort(
+          activeAbort?.signal.reason ?? new Error("tool cancelled"),
+        );
+      activeAbort?.signal.addEventListener("abort", cancelExecution, {
+        once: true,
+      });
+      const timeoutTimer = tool.timeoutSec
+        ? setTimeout(
+            () =>
+              executionController.abort(
+                new Error(
+                  `tool ${tool.name} timed out after ${tool.timeoutSec}s`,
+                ),
+              ),
+            tool.timeoutSec * 1000,
+          )
+        : undefined;
+      const signal = executionController.signal;
+      const completeResult = await waitForToolExecution(
+        tool.execute(parsed, {
+          workspaceRoot,
+          signal,
+          askQuestion: async (question) =>
+            await requireQuestion(`${toolID}:question`, question),
+          subagents,
+          interactivePTY,
+          onPTYUpdate: (pty) => {
+            publish(ptyLiveUpdate(pty, "write"));
+            if (ptyStatusByID.get(pty.id) !== pty.status) {
+              ptyStatusByID.set(pty.id, pty.status);
+              scheduleRuntimeStatusSnapshot();
+            }
+          },
+          onPTYAction: (pty, action, redacted) => {
+            publish({
+              type: "pty.action",
+              id: pty.id,
+              action,
+              redacted,
+              target: { kind: "host", cwd: pty.cwd },
+            });
+            publish({
+              type: "pty.timeline",
+              id: pty.id,
+              actor: "model",
+              action,
+              status: "executed",
+              summary: redacted
+                ? "sensitive input supplied"
+                : `${action} executed`,
+              at: new Date().toISOString(),
+            });
+          },
+          sandboxes,
+          workspaceReadAuthorize: authorizeWorkspaceRead,
+          sandboxMergeAuthorize: authorizeSandboxMerge,
+          settings: toolSettings(),
+          parentSessionID: sessionID,
+          maxSubagentDepth: tsRuntimeConfig?.runtime.subagentDepth,
+          onWorkflowEvent: (event) =>
+            publish({ type: "workflow.update", ...event }),
+          workflowAuthorize: authorizeWorkflowStep,
+          onSandboxEvent: (event) => {
+            const update = event as Extract<
+              RuntimeEvent,
+              { type: "sandbox.update" }
+            >;
+            publish(update);
+            if (
+              sandboxResourcesByID.get(update.id) !== update.runningResources
+            ) {
+              sandboxResourcesByID.set(update.id, update.runningResources);
+              scheduleRuntimeStatusSnapshot();
+            }
+          },
+        }),
+        signal,
+      ).finally(() => {
+        if (timeoutTimer) clearTimeout(timeoutTimer);
+        activeAbort?.signal.removeEventListener("abort", cancelExecution);
       });
       const bounded = await boundToolOutput(
         workspaceRoot,
@@ -3138,6 +3324,25 @@ function statusSnapshot(
 
 function readOnlyToolMessage(toolName: string) {
   return `tool denied by read-only permission mode: ${toolName}`;
+}
+
+function waitForToolExecution<T>(execution: Promise<T>, signal?: AbortSignal) {
+  if (!signal) return execution;
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason ?? new Error("tool cancelled"));
+    signal.addEventListener("abort", abort, { once: true });
+    execution.then(
+      (result) => {
+        signal.removeEventListener("abort", abort);
+        resolve(result);
+      },
+      (error) => {
+        signal.removeEventListener("abort", abort);
+        reject(error);
+      },
+    );
+  });
 }
 
 function isManagedResourceTool(toolName: string) {

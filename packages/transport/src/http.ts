@@ -8,6 +8,7 @@ export type RuntimeHttpServerOptions = {
   token?: string;
   unix?: string;
   tls?: { cert: string; key: string };
+  events?: boolean;
 };
 
 export type RuntimeHttpServer = {
@@ -48,18 +49,21 @@ export function createRuntimeHttpServer(
   const encoder = new TextEncoder();
   const eventBuffer: Array<{ id: number; event: RuntimeEvent }> = [];
   let nextEventID = 1;
-  options.client.start((event) => {
-    const id = nextEventID++;
-    eventBuffer.push({ id, event });
-    if (eventBuffer.length > 500) eventBuffer.shift();
-    const payload = encodeSSE(encoder, id, event);
-    for (const subscriber of subscribers) subscriber.enqueue(payload);
-  });
+  if (options.events !== false)
+    options.client.start((event) => {
+      const id = nextEventID++;
+      eventBuffer.push({ id, event });
+      if (eventBuffer.length > 500) eventBuffer.shift();
+      const payload = encodeSSE(encoder, id, event);
+      for (const subscriber of subscribers) subscriber.enqueue(payload);
+    });
   const fetchHandler = async (request: Request) => {
     const url = new URL(request.url);
     if (url.pathname === "/healthz") return Response.json({ ok: true });
     if (!authorized(request, options.token))
       return Response.json({ error: "unauthorized" }, { status: 401 });
+    if (url.pathname === "/events" && options.events === false)
+      return Response.json({ error: "event stream disabled" }, { status: 404 });
     if (url.pathname === "/events" && request.method === "GET") {
       let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
       return new Response(
@@ -135,7 +139,7 @@ export function createRuntimeHttpServer(
         { status: 400 },
       );
     }
-    const result = await handleRPCMessage(body, options.client);
+    const result = await handleRPCMessage(body, options.client, request.signal);
     if (result.error) return Response.json(result, { status: 400 });
     return Response.json(result);
   };

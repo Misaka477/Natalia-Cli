@@ -16,7 +16,6 @@ import {
   redactSensitiveInput,
   sanitizeTerminalOutput,
   runRealPTYCommand,
-  TerminalScreen,
 } from "../src";
 
 const target = { kind: "host" as const, cwd: "/repo" };
@@ -120,6 +119,27 @@ test("interactive PTY registry writes input, special keys, resize and transcript
   expect(registry.runningCount()).toBe(0);
 });
 
+test("interactive PTY subscriptions omit full transcript from live updates", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-pty-light-update-"));
+  const registry = new InteractivePTYRegistry(join(root, ".natalia", "pty"));
+  const started = await registry.start({ command: "cat", cwd: root });
+  const updates: import("../src").InteractivePTYUpdate[] = [];
+  const unsubscribe = registry.subscribe(started.id, (update) =>
+    updates.push(update),
+  );
+  await registry.write(started.id, "lightweight");
+  await waitForInteractive(
+    () => registry.get(started.id).transcript,
+    "lightweight",
+  );
+  await Bun.sleep(250);
+  expect(updates.length).toBeGreaterThan(0);
+  expect(updates.every((update) => update.transcript === undefined)).toBe(true);
+  expect(registry.get(started.id).transcript).toContain("lightweight");
+  unsubscribe();
+  await registry.stop(started.id);
+});
+
 test("interactive PTY sensitive input is redacted and audited", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-pty-secret-"));
   const registry = new InteractivePTYRegistry(join(root, ".natalia", "pty"));
@@ -141,6 +161,311 @@ test("interactive PTY sensitive input is redacted and audited", async () => {
   expect(
     await Bun.file(join(root, ".natalia", "pty", `${started.id}.log`)).text(),
   ).not.toContain("super-secret");
+  await registry.stop(started.id);
+});
+
+test("interactive PTY projects ANSI style through the xterm framebuffer", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-pty-screen-"));
+  const registry = new InteractivePTYRegistry(join(root, ".natalia", "pty"));
+  const started = await registry.start({
+    command: "printf '\\033[31;1mRED\\033[0m\\n'; cat",
+    cwd: root,
+  });
+  await waitForInteractive(() => registry.get(started.id).screen.text, "RED");
+  expect(registry.get(started.id).screen.lines[0]?.[0]).toEqual([
+    "R",
+    1,
+    1,
+    undefined,
+    1,
+  ]);
+  await registry.stop(started.id);
+});
+
+test("terminal observation waits for revision changes, timeout, exit and abort", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-terminal-observe-"));
+  const registry = new InteractivePTYRegistry(join(root, ".natalia", "pty"));
+  const started = await registry.start({ command: "cat", cwd: root });
+  const pending = registry.observe(started.id, {
+    afterRevision: started.revision,
+    timeoutMs: 2000,
+  });
+  await registry.write(started.id, "observe me");
+  expect(await pending).toMatchObject({
+    changed: true,
+    reason: "changed",
+    afterRevision: started.revision,
+    session: { screen: { text: expect.stringContaining("observe me") } },
+  });
+
+  const differentialRevision = registry.get(started.id).revision;
+  const differential = registry.observe(started.id, {
+    afterRevision: differentialRevision,
+    timeoutMs: 2000,
+    differential: true,
+  });
+  await registry.write(started.id, "x");
+  const differentialResult = await differential;
+  expect(differentialResult).toMatchObject({
+    changed: true,
+    screenUpdate: { kind: "patch" },
+    screenDelivery: {
+      mode: "patch",
+      reason: "differential",
+    },
+    session: { screen: undefined },
+  });
+  expect(differentialResult.screenDelivery!.payloadBytes).toBeLessThan(
+    differentialResult.screenDelivery!.fullBytes,
+  );
+
+  const resizeRevision = registry.get(started.id).revision;
+  const resized = registry.observe(started.id, {
+    afterRevision: resizeRevision,
+    timeoutMs: 2000,
+    differential: true,
+  });
+  await registry.resize(started.id, 30, 100);
+  expect(await resized).toMatchObject({
+    screenUpdate: { kind: "full" },
+    screenDelivery: {
+      mode: "full",
+      reason: "incompatible_frame",
+    },
+  });
+
+  for (let index = 0; index < 9; index++) {
+    const before = registry.get(started.id).revision;
+    const changed = registry.observe(started.id, {
+      afterRevision: before,
+      timeoutMs: 2000,
+    });
+    await registry.write(started.id, `history-${index}`);
+    expect((await changed).changed).toBe(true);
+  }
+  expect(
+    await registry.observe(started.id, {
+      afterRevision: 0,
+      timeoutMs: 2000,
+      differential: true,
+    }),
+  ).toMatchObject({
+    screenUpdate: { kind: "full" },
+    screenDelivery: { mode: "full", reason: "missing_base" },
+  });
+
+  const revision = registry.get(started.id).revision;
+  expect(
+    await registry.observe(started.id, {
+      afterRevision: revision,
+      timeoutMs: 5,
+    }),
+  ).toMatchObject({ changed: false, reason: "timeout" });
+
+  const exited = registry.observe(started.id, {
+    afterRevision: revision,
+    timeoutMs: 2000,
+  });
+  await registry.stop(started.id);
+  expect(await exited).toMatchObject({ changed: false, reason: "exited" });
+
+  const second = await registry.start({ command: "cat", cwd: root });
+  const controller = new AbortController();
+  const aborted = registry.observe(second.id, {
+    afterRevision: second.revision,
+    timeoutMs: 2000,
+    signal: controller.signal,
+  });
+  controller.abort(new DOMException("turn cancelled", "AbortError"));
+  await expect(aborted).rejects.toMatchObject({ name: "AbortError" });
+  await registry.stop(second.id);
+});
+
+test("terminal viewers require explicit ownership and return it on release", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-terminal-owner-"));
+  const registry = new InteractivePTYRegistry(join(root, ".natalia", "pty"));
+  const started = await registry.start({ command: "cat", cwd: root });
+  expect(
+    registry.registerViewer(started.id, {
+      viewerID: "viewer_one",
+      kind: "external",
+    }),
+  ).toMatchObject({
+    inputOwner: { type: "model" },
+    geometryOwner: { type: "model" },
+    viewers: [{ id: "viewer_one", kind: "external" }],
+  });
+  await expect(
+    registry.viewerWrite(started.id, "viewer_one", "blocked\n"),
+  ).rejects.toThrow("terminal input ownership required");
+
+  expect(registry.takeoverViewer(started.id, "viewer_one")).toMatchObject({
+    inputOwner: { type: "viewer", viewerID: "viewer_one" },
+    geometryOwner: { type: "viewer", viewerID: "viewer_one" },
+  });
+  await expect(registry.write(started.id, "model blocked")).rejects.toThrow(
+    "controlled by viewer",
+  );
+  await expect(registry.resize(started.id, 30, 100)).rejects.toThrow(
+    "geometry is controlled by viewer",
+  );
+  await registry.viewerWrite(started.id, "viewer_one", "viewer input\n");
+  await waitForInteractive(
+    () => registry.get(started.id).screen.text,
+    "viewer input",
+  );
+  expect(
+    await registry.viewerResize(started.id, "viewer_one", 30, 100),
+  ).toMatchObject({ rows: 30, cols: 100 });
+  await registry.viewerWrite(started.id, "viewer_one", "viewer-secret\n", {
+    sensitive: true,
+  });
+  await Bun.sleep(50);
+  expect(registry.get(started.id).transcript).not.toContain("viewer-secret");
+  expect(registry.get(started.id).screen.text).not.toContain("viewer-secret");
+  expect(registry.secretAudit(started.id).at(-1)).toMatchObject({
+    action: "write",
+    summary: expect.stringContaining("sensitive viewer input"),
+  });
+
+  registry.registerViewer(started.id, {
+    viewerID: "viewer_two",
+    kind: "external",
+  });
+  expect(() => registry.takeoverViewer(started.id, "viewer_two")).toThrow(
+    "already controlled by viewer",
+  );
+  expect(await registry.releaseViewer(started.id, "viewer_one")).toMatchObject({
+    inputOwner: { type: "model" },
+    geometryOwner: { type: "model" },
+    rows: 36,
+    cols: 120,
+  });
+  await registry.write(started.id, "model resumed");
+  registry.takeoverViewer(started.id, "viewer_one");
+  expect(
+    await registry.unregisterViewer(started.id, "viewer_one"),
+  ).toMatchObject({
+    inputOwner: { type: "model" },
+    geometryOwner: { type: "model" },
+    viewers: [{ id: "viewer_two" }],
+  });
+  await registry.stop(started.id);
+});
+
+test("terminal viewer watchdog expires ownership without later activity", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-terminal-watchdog-"));
+  const expired: string[] = [];
+  const registry = new InteractivePTYRegistry(join(root, ".natalia", "pty"), {
+    viewerTimeoutMs: 20,
+    watchdogIntervalMs: 5,
+    onViewerExpired: (_session, viewerID) => expired.push(viewerID),
+  });
+  const started = await registry.start({ command: "cat", cwd: root });
+  registry.registerViewer(started.id, {
+    viewerID: "viewer_stale",
+    kind: "external",
+  });
+  registry.takeoverViewer(started.id, "viewer_stale");
+  await registry.viewerResize(started.id, "viewer_stale", 30, 100);
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline && expired.length === 0) await Bun.sleep(5);
+  expect(expired).toEqual(["viewer_stale"]);
+  expect(registry.get(started.id)).toMatchObject({
+    viewers: [],
+    inputOwner: { type: "model" },
+    geometryOwner: { type: "model" },
+    rows: 36,
+    cols: 120,
+  });
+  registry.dispose();
+  await registry.stop(started.id);
+});
+
+test("embedded viewer can heartbeat, take control, and submit Unicode", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-terminal-embedded-"));
+  const registry = new InteractivePTYRegistry(join(root, ".natalia", "pty"));
+  const started = await registry.start({ command: "cat", cwd: root });
+  registry.registerViewer(started.id, {
+    viewerID: "embedded_test",
+    kind: "embedded",
+  });
+  expect(
+    registry.heartbeatViewer(started.id, "embedded_test").viewers,
+  ).toHaveLength(1);
+  registry.takeoverViewer(started.id, "embedded_test");
+  await registry.viewerWrite(started.id, "embedded_test", "你好\r");
+  await waitForInteractive(() => registry.get(started.id).screen.text, "你好");
+  expect(registry.get(started.id).inputOwner).toEqual({
+    type: "viewer",
+    viewerID: "embedded_test",
+  });
+  await registry.unregisterViewer(started.id, "embedded_test");
+  expect(registry.get(started.id).inputOwner).toEqual({ type: "model" });
+  registry.dispose();
+  await registry.stop(started.id);
+});
+
+test("embedded viewer can own geometry while model retains input", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-terminal-geometry-"));
+  const registry = new InteractivePTYRegistry(join(root, ".natalia", "pty"));
+  const started = await registry.start({ command: "cat", cwd: root });
+  registry.registerViewer(started.id, {
+    viewerID: "embedded_geometry",
+    kind: "embedded",
+  });
+  expect(
+    registry.takeGeometryViewer(started.id, "embedded_geometry"),
+  ).toMatchObject({
+    inputOwner: { type: "model" },
+    geometryOwner: { type: "viewer", viewerID: "embedded_geometry" },
+  });
+  await registry.viewerResize(started.id, "embedded_geometry", 45, 140);
+  await registry.write(started.id, "model still writes");
+  registry.takeoverViewer(started.id, "embedded_geometry");
+  expect(
+    registry.releaseInputViewer(started.id, "embedded_geometry"),
+  ).toMatchObject({
+    inputOwner: { type: "model" },
+    geometryOwner: { type: "viewer", viewerID: "embedded_geometry" },
+    rows: 45,
+    cols: 140,
+  });
+  expect(
+    await registry.unregisterViewer(started.id, "embedded_geometry"),
+  ).toMatchObject({
+    inputOwner: { type: "model" },
+    geometryOwner: { type: "model" },
+    rows: 36,
+    cols: 120,
+  });
+  registry.dispose();
+  await registry.stop(started.id);
+});
+
+test("sensitive viewer input is redacted from delayed child output", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-terminal-secure-"));
+  const registry = new InteractivePTYRegistry(join(root, ".natalia", "pty"));
+  const started = await registry.start({
+    command: "IFS= read -r secret; printf 'delayed:%s\\n' \"$secret\"; cat",
+    cwd: root,
+  });
+  registry.registerViewer(started.id, {
+    viewerID: "viewer_secure",
+    kind: "external",
+  });
+  registry.takeoverViewer(started.id, "viewer_secure");
+  await registry.viewerWrite(started.id, "viewer_secure", "late-secret\n", {
+    sensitive: true,
+  });
+  await waitForInteractive(
+    () => registry.get(started.id).screen.text,
+    "delayed:[redacted]",
+  );
+  expect(registry.get(started.id).transcript).not.toContain("late-secret");
+  expect(registry.get(started.id).screen.text).not.toContain("late-secret");
+  await registry.unregisterViewer(started.id, "viewer_secure");
+  registry.dispose();
   await registry.stop(started.id);
 });
 
@@ -178,29 +503,6 @@ test("terminal sanitizer removes OSC shell integration metadata", () => {
   );
   expect(transcript).toBe("hello\r\n$ ");
   expect(transcript).not.toContain("machine-metadata");
-});
-
-test("terminal screen applies ANSI cursor movement and erasure generically", () => {
-  const screen = new TerminalScreen(3, 12);
-  screen.write("hello\r\x1b[2CXX\nline\x1b[2;1HROW\x1b[K");
-  expect(screen.snapshot()).toMatchObject({
-    cursor: { row: 1, col: 3, visible: true },
-    text: "heXXo\nROW",
-  });
-});
-
-test("terminal screen preserves incomplete ANSI sequences across output chunks", () => {
-  const screen = new TerminalScreen(2, 10);
-  screen.write("before\x1b[");
-  screen.write("2DXX");
-  expect(screen.snapshot().text).toBe("befoXX");
-});
-
-test("terminal screen does not render OSC terminal metadata", () => {
-  const screen = new TerminalScreen(2, 20);
-  screen.write("\x1b]1337;secret-metadata\x07visible");
-  expect(screen.snapshot().text).toBe("visible");
-  expect(screen.snapshot().text).not.toContain("secret-metadata");
 });
 
 test("model PTY registry pauses high-risk actions until approval then executes serially", async () => {

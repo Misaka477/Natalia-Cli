@@ -7,7 +7,7 @@ export const keymapBoundary = {
   palette: "ctrl+p",
   newSession: "ctrl+n",
   sessions: "ctrl+l",
-  settings: "ctrl+,",
+  settings: "ctrl+comma",
   status: "ctrl+i",
   help: "ctrl+h",
   sidebar: "ctrl+b",
@@ -89,7 +89,7 @@ export const commands: Record<string, CommandDef> = {
   "session.list": { id: "session.list", keys: "ctrl+l", desc: "List sessions" },
   "settings.open": {
     id: "settings.open",
-    keys: "ctrl+,",
+    keys: "ctrl+comma",
     desc: "Open settings",
   },
   status: { id: "status", keys: "ctrl+i", desc: "Show runtime status" },
@@ -126,7 +126,7 @@ export const commands: Record<string, CommandDef> = {
   },
   "pty.manage": {
     id: "pty.manage",
-    keys: "ctrl+shift+t",
+    keys: "f8",
     desc: "Manage interactive PTY sessions",
   },
   "checkpoint.manage": {
@@ -348,7 +348,7 @@ const leaderBindings: Record<string, string> = {
   "session.new": "<leader>n",
   "session.list": "<leader>l",
   "session.sidebar.toggle": "<leader>b",
-  "settings.open": "<leader>,",
+  "settings.open": "<leader>comma",
   "help.open": "<leader>h",
   snapshot: "<leader>c",
   "agent.list": "<leader>a",

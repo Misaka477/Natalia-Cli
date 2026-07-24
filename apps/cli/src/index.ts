@@ -18,8 +18,19 @@ import {
   resolveConfig,
 } from "@natalia/config";
 import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimePTYSession } from "@natalia/contracts";
+import {
+  applyTerminalScreenUpdate,
+  renderTerminalSnapshotANSI,
+} from "@natalia/terminal";
+export {
+  externalTerminalLaunchCommand,
+  launchExternalTerminal,
+} from "@natalia/terminal";
+import { callRuntimeRPC } from "@natalia/transport";
 import { ContextWindowResolver } from "@natalia/runtime";
 import { JsonSessionStore } from "@natalia/session";
+import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 
 export type StartupDiagnostics = {
@@ -40,6 +51,166 @@ export async function startupDiagnostics(
     tty,
     automation: !tty,
   };
+}
+
+export async function attachTerminalReadOnly(input: {
+  id: string;
+  url: string;
+  token?: string;
+  signal?: AbortSignal;
+  pollMs?: number;
+  write?: (frame: string) => void;
+  viewerID?: string;
+  sensitive?: boolean;
+  manageViewer?: boolean;
+}) {
+  const write = input.write ?? ((frame: string) => process.stdout.write(frame));
+  const viewerID = input.viewerID ?? `viewer_${randomUUID()}`;
+  let revision = -1;
+  let last: RuntimePTYSession | undefined;
+  let screen: RuntimePTYSession["screen"];
+  if (input.manageViewer !== false)
+    await callRuntimeRPC({
+      url: input.url,
+      token: input.token,
+      method: "terminal.viewer.register",
+      params: { id: input.id, viewerID, kind: "external" },
+    });
+  write("\x1b[?1049h\x1b[?25l");
+  try {
+    while (!input.signal?.aborted) {
+      const observation = await callRuntimeRPC<{
+        session: RuntimePTYSession;
+        afterRevision: number;
+        changed: boolean;
+        reason: "changed" | "timeout" | "exited";
+        screenUpdate?: import("@natalia/contracts").TerminalScreenUpdate;
+      }>({
+        url: input.url,
+        token: input.token,
+        method: "terminal.observe",
+        signal: input.signal,
+        params: {
+          id: input.id,
+          afterRevision: Math.max(0, revision),
+          timeoutMs: Math.min(30_000, Math.max(0, input.pollMs ?? 30_000)),
+          differential: revision >= 0,
+        },
+      });
+      const session = observation.session;
+      last = observation.session;
+      screen = applyTerminalScreenUpdate(
+        screen ?? session.screen,
+        observation.screenUpdate,
+        revision >= 0 ? revision : undefined,
+      );
+      if (screen && session.revision !== revision) {
+        revision = session.revision ?? revision;
+        write(renderTerminalSnapshotANSI(screen));
+      }
+      if (session.status === "exited" || session.status === "failed") break;
+    }
+  } catch (error) {
+    if (!input.signal?.aborted) throw error;
+  } finally {
+    write("\x1b[0m\x1b[?2004l\x1b[?25h\x1b[?1049l");
+    if (input.manageViewer !== false)
+      await callRuntimeRPC({
+        url: input.url,
+        token: input.token,
+        method: "terminal.viewer.control",
+        params: { id: input.id, viewerID, action: "unregister" },
+      }).catch(() => undefined);
+  }
+  return last;
+}
+
+export async function attachTerminalWithControl(input: {
+  id: string;
+  url: string;
+  token?: string;
+  signal?: AbortSignal;
+  viewerID?: string;
+  sensitive?: boolean;
+}) {
+  const viewerID = input.viewerID ?? `viewer_${randomUUID()}`;
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  input.signal?.addEventListener("abort", abort, { once: true });
+  await callRuntimeRPC({
+    url: input.url,
+    token: input.token,
+    method: "terminal.viewer.register",
+    params: { id: input.id, viewerID, kind: "external" },
+  });
+  await callRuntimeRPC({
+    url: input.url,
+    token: input.token,
+    method: "terminal.viewer.control",
+    params: { id: input.id, viewerID, action: "takeover" },
+  });
+
+  let writes = Promise.resolve();
+  const send = (method: string, params: Record<string, unknown>) => {
+    writes = writes.then(async () => {
+      await callRuntimeRPC({
+        url: input.url,
+        token: input.token,
+        method,
+        params: { id: input.id, viewerID, ...params },
+      });
+    });
+  };
+  const resize = () => {
+    const rows = process.stdout.rows;
+    const cols = process.stdout.columns;
+    if (rows && cols)
+      send("terminal.viewer.resize", {
+        rows: Math.max(10, rows),
+        cols: Math.max(20, cols),
+      });
+  };
+  const onData = (chunk: Buffer) => {
+    const data = chunk.toString("utf8");
+    if (data.includes("\x1d")) {
+      controller.abort();
+      return;
+    }
+    send("terminal.viewer.write", { data, sensitive: input.sensitive });
+  };
+  const raw = Boolean(process.stdin.isTTY && process.stdin.setRawMode);
+  if (raw) process.stdin.setRawMode(true);
+  process.stdin.resume();
+  process.stdin.on("data", onData);
+  process.stdout.on("resize", resize);
+  resize();
+  const heartbeat = setInterval(
+    () => send("terminal.viewer.heartbeat", {}),
+    10_000,
+  );
+  heartbeat.unref();
+  try {
+    return await attachTerminalReadOnly({
+      ...input,
+      viewerID,
+      manageViewer: false,
+      signal: controller.signal,
+    });
+  } finally {
+    clearInterval(heartbeat);
+    process.stdin.off("data", onData);
+    process.stdout.off("resize", resize);
+    if (raw) process.stdin.setRawMode(false);
+    process.stdin.pause();
+    await writes.catch(() => undefined);
+    await callRuntimeRPC({
+      url: input.url,
+      token: input.token,
+      method: "terminal.viewer.control",
+      params: { id: input.id, viewerID, action: "unregister" },
+    }).catch(() => undefined);
+    input.signal?.removeEventListener("abort", abort);
+  }
 }
 
 export async function plainStatus(configPath: string) {

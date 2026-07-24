@@ -201,7 +201,7 @@ export function PermissionPrompt(props: {
 function Actions(props: { selected: number; onSelect(index: number): void }) {
   return (
     <box
-      flexDirection="row"
+      flexDirection="column"
       gap={1}
       paddingLeft={2}
       paddingRight={2}
@@ -209,29 +209,31 @@ function Actions(props: { selected: number; onSelect(index: number): void }) {
       paddingBottom={1}
       backgroundColor={darkTheme.background}
     >
-      <For each={["Allow once", "Allow session", "Reject"]}>
-        {(label, index) => (
-          <box
-            paddingLeft={1}
-            paddingRight={1}
-            border={["left"]}
-            borderColor={
-              index() === props.selected ? darkTheme.warning : darkTheme.panel
-            }
-            onMouseUp={() => props.onSelect(index())}
-          >
-            <text
-              fg={darkTheme.text}
-              attributes={
-                index() === props.selected ? TextAttributes.BOLD : undefined
+      <box flexDirection="row" gap={1}>
+        <For each={["Allow once", "Allow session", "Reject"]}>
+          {(label, index) => (
+            <box
+              flexGrow={1}
+              paddingLeft={1}
+              border={["left"]}
+              borderColor={
+                index() === props.selected ? darkTheme.warning : darkTheme.panel
               }
+              onMouseUp={() => props.onSelect(index())}
             >
-              {index() === props.selected ? "> " : "  "}
-              {label}
-            </text>
-          </box>
-        )}
-      </For>
+              <text
+                fg={darkTheme.text}
+                attributes={
+                  index() === props.selected ? TextAttributes.BOLD : undefined
+                }
+              >
+                {index() === props.selected ? "> " : "  "}
+                {label}
+              </text>
+            </box>
+          )}
+        </For>
+      </box>
       <text fg={darkTheme.muted}>←→ select · enter confirm · esc reject</text>
     </box>
   );

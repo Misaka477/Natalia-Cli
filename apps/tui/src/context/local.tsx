@@ -5,7 +5,7 @@ import {
   useContext,
   type ParentProps,
 } from "solid-js";
-import { createStore } from "solid-js/store";
+import { createStore, unwrap } from "solid-js/store";
 import { useToast } from "./toast";
 import {
   addPromptStash,
@@ -41,7 +41,7 @@ export function LocalProvider(props: ParentProps<{ workspaceRoot?: string }>) {
 
   function persist() {
     if (!props.workspaceRoot || !ready()) return;
-    const snapshot = structuredClone(state);
+    const snapshot = structuredClone(unwrap(state));
     write = write
       .then(() => saveLocalTuiState(props.workspaceRoot!, snapshot))
       .catch((error) => {

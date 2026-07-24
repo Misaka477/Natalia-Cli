@@ -1335,6 +1335,13 @@ MIT License
     SOFTWARE
 
 ================================================================================
+@xterm/headless@6.0.0
+Declared license: MIT
+Source file: node_modules/.bun/@xterm+headless@6.0.0/node_modules/@xterm/headless/package.json
+================================================================================
+No standalone license text was included in the installed package. See the declared SPDX license and upstream package source.
+
+================================================================================
 ansi-regex@6.2.2
 Declared license: MIT
 Source file: node_modules/.bun/ansi-regex@6.2.2/node_modules/ansi-regex/license

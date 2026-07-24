@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defaultConfigV2, saveConfigFile } from "@natalia/config";
 import { JsonSessionStore, createSessionRecord } from "@natalia/session";
+import type { RuntimeClient } from "@natalia/contracts";
+import { createRuntimeHttpServer } from "@natalia/transport";
 import {
+  attachTerminalReadOnly,
   deleteLocalSession,
   duplicateLocalSession,
   exportLocalSessionMetadata,
@@ -18,6 +21,7 @@ import {
   sessionTable,
   showLocalSession,
   workspaceFilesystemCommand,
+  externalTerminalLaunchCommand,
 } from "../src";
 
 test("CLI session helpers list and delete local durable sessions", async () => {
@@ -280,4 +284,144 @@ test("CLI doctor reports safe config/model/session availability", async () => {
       },
     ],
   });
+});
+
+test("CLI terminal attach renders a daemon framebuffer read-only", async () => {
+  const viewerActions: string[] = [];
+  const client = {
+    start() {},
+    cancel() {},
+    async terminalViewerRegister() {
+      viewerActions.push("register");
+      return {};
+    },
+    async terminalViewerControl(input: { action: string }) {
+      viewerActions.push(input.action);
+      return {};
+    },
+    async terminalObserve(input: { afterRevision: number }) {
+      const session = {
+        id: "tty_cli",
+        command: "claude",
+        cwd: "/repo",
+        status: "exited",
+        attached: true,
+        rows: 2,
+        cols: 8,
+        transcript: "Hi",
+        tail: "Hi",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        target: { kind: "host", cwd: "/repo" },
+        ownership: "model",
+        revision: 1,
+        screen: {
+          rows: 2,
+          cols: 8,
+          buffer: "alternate",
+          cursor: { row: 0, col: 2, visible: true },
+          lines: [
+            [
+              ["H", 1, 0x1000000 + 0x0c2238, undefined, 1],
+              ["i", 1],
+            ],
+            [],
+          ],
+          text: "Hi",
+        },
+      } as const;
+      return {
+        session,
+        afterRevision: input.afterRevision,
+        changed: true,
+        reason: "exited" as const,
+      };
+    },
+  } as unknown as RuntimeClient;
+  const server = createRuntimeHttpServer({ client });
+  const frames: string[] = [];
+  try {
+    const session = await attachTerminalReadOnly({
+      id: "tty_cli",
+      url: server.url,
+      pollMs: 1,
+      write: (frame) => frames.push(frame),
+    });
+    expect(session?.status).toBe("exited");
+    expect(frames.join("")).toContain("\x1b[1;38;2;12;34;56mH");
+    expect(frames.at(0)).toContain("\x1b[?1049h");
+    expect(frames.at(-1)).toContain("\x1b[?1049l");
+    expect(viewerActions).toEqual(["register", "unregister"]);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("CLI external terminal launcher uses platform-specific argument forms", () => {
+  const executable = ["bun", "apps/cli/src/main.ts"];
+  expect(
+    externalTerminalLaunchCommand({
+      id: "tty_1",
+      executable,
+      which: (name) => (name === "kitty" ? "/usr/bin/kitty" : null),
+    }),
+  ).toEqual(["kitty", "--", ...executable, "terminal", "attach", "tty_1"]);
+  expect(
+    externalTerminalLaunchCommand({
+      id: "tty_1",
+      executable,
+      preferred: "wezterm",
+      which: () => "/usr/bin/wezterm",
+    }),
+  ).toEqual([
+    "wezterm",
+    "start",
+    "--",
+    ...executable,
+    "terminal",
+    "attach",
+    "tty_1",
+  ]);
+  expect(
+    externalTerminalLaunchCommand({
+      id: "tty_1",
+      executable,
+      preferred: "kitty",
+      takeControl: true,
+      secureInput: true,
+      which: () => "/usr/bin/kitty",
+    }),
+  ).toEqual([
+    "kitty",
+    "--",
+    ...executable,
+    "terminal",
+    "attach",
+    "tty_1",
+    "--take-control",
+    "--secure-input",
+  ]);
+  expect(
+    externalTerminalLaunchCommand({
+      id: "tty_1",
+      executable,
+      which: () => null,
+    }),
+  ).toBeUndefined();
+  expect(
+    externalTerminalLaunchCommand({
+      id: "tty_1",
+      executable,
+      preferred: "kitty",
+      takeControl: true,
+      which: () => "/usr/bin/kitty",
+    }),
+  ).toEqual([
+    "kitty",
+    "--",
+    ...executable,
+    "terminal",
+    "attach",
+    "tty_1",
+    "--take-control",
+  ]);
 });

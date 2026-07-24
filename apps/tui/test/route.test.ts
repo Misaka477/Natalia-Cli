@@ -17,3 +17,14 @@ test("subagent detail route returns to the parent session view", () => {
   route.back();
   expect(route.route()).toEqual({ kind: "none" });
 });
+
+test("terminal workspace route participates in navigation history", () => {
+  const route = createRouteController();
+  route.push({ kind: "subagent", id: "agent_a" });
+  route.push({ kind: "terminal", id: "tty_a" });
+  expect(route.route()).toEqual({ kind: "terminal", id: "tty_a" });
+  route.back();
+  expect(route.route()).toEqual({ kind: "subagent", id: "agent_a" });
+  route.back();
+  expect(route.route()).toEqual({ kind: "none" });
+});

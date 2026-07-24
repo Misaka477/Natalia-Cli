@@ -20,6 +20,7 @@
     "@natalia/contracts": "workspace:*",
     "@natalia/runtime": "workspace:*",
     "@natalia/session": "workspace:*",
+    "@natalia/terminal": "workspace:*",
     "@natalia/transport": "workspace:*"
   }
 }

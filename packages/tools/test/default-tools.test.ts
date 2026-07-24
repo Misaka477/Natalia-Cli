@@ -575,11 +575,11 @@ test("interactive tools operate a real persistent PTY through the registry", asy
   );
   const context = { workspaceRoot: root, interactivePTY };
   const tools = createToolRegistry();
-  const started = JSON.parse(
-    await tools
-      .get("interactive_start")!
-      .execute({ command: "cat", id: "tty_tools" }, context),
-  ) as { id: string; status: string };
+  const startResult = await tools
+    .get("interactive_start")!
+    .execute({ command: "cat", id: "tty_tools" }, context);
+  expect(startResult).not.toContain('"lines"');
+  const started = JSON.parse(startResult) as { id: string; status: string };
   expect(started).toMatchObject({ id: "tty_tools", status: "running" });
   await tools
     .get("interactive_write")!
@@ -590,6 +590,20 @@ test("interactive tools operate a real persistent PTY through the registry", asy
   expect(
     await tools.get("interactive_read")!.execute({ id: "tty_tools" }, context),
   ).toContain("tool input");
+  const revision = interactivePTY.get("tty_tools").revision;
+  const observation = tools
+    .get("terminal_observe")!
+    .execute(
+      { id: "tty_tools", afterRevision: revision, timeoutMs: 2000 },
+      context,
+    );
+  await tools
+    .get("interactive_write")!
+    .execute({ id: "tty_tools", input: "new screen\n" }, context);
+  const observationResult = await observation;
+  expect(observationResult).toContain('"reason": "changed"');
+  expect(observationResult).toContain("new screen");
+  expect(observationResult).not.toContain('"lines"');
   expect(
     await tools
       .get("interactive_resize")!

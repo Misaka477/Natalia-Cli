@@ -4,7 +4,6 @@ import {
   createSignal,
   For,
   onCleanup,
-  onMount,
   Show,
 } from "solid-js";
 import { SyntaxStyle, TextAttributes } from "@opentui/core";
@@ -60,7 +59,8 @@ export function SessionRoute(props: {
   const { state, dispatch } = useAppState();
   const layout = () => timelineLayout(props.terminalWidth ?? 80);
   const modal = createMemo(() => activeModal(state.modal));
-  const virtualizer = new TimelineVirtualizer<MessageBlock>(4);
+  const timelineGroups = createMemo(() => groupTimelineBlocks(state.messages));
+  const virtualizer = new TimelineVirtualizer<MessageBlock>(24);
   const [timelineRange, setTimelineRange] = createSignal<
     TimelineRange<MessageBlock>
   >({ items: [], top: 0, bottom: 0, total: 0 });
@@ -68,18 +68,21 @@ export function SessionRoute(props: {
   let timelineScroll: any;
   let measuring = false;
   let observedScrollTop = -1;
+  const scrollObserver = setInterval(() => {
+    if (!timelineScroll || timelineScroll.isDestroyed) return;
+    const scrollTop = timelineScroll.scrollTop ?? 0;
+    if (scrollTop === observedScrollTop) return;
+    observedScrollTop = scrollTop;
+    updateRange();
+    measureRenderedGroups();
+  }, 50);
+  onCleanup(() => clearInterval(scrollObserver));
 
   const viewportHeight = () => timelineScroll?.viewport?.height ?? 1;
-  const activeGroup = () =>
-    state.activeTurn ? `turn:${state.activeTurn}` : undefined;
-  const updateRange = (pinned: string[] = []) => {
+  const updateRange = () => {
     if (!timelineScroll || timelineScroll.isDestroyed) return;
     setTimelineRange(
-      virtualizer.range(
-        timelineScroll.scrollTop ?? 0,
-        viewportHeight(),
-        pinned,
-      ),
+      virtualizer.range(timelineScroll.scrollTop ?? 0, viewportHeight()),
     );
   };
   const measureRenderedGroups = () => {
@@ -91,7 +94,7 @@ export function SessionRoute(props: {
       const scrollTop = timelineScroll.scrollTop ?? 0;
       if (scrollTop !== observedScrollTop) {
         observedScrollTop = scrollTop;
-        updateRange(activeGroup() ? [activeGroup()!] : []);
+        updateRange();
       }
       let adjustment = 0;
       for (const [key, element] of renderedGroups) {
@@ -106,12 +109,12 @@ export function SessionRoute(props: {
       }
       if (adjustment) timelineScroll.scrollTop += adjustment;
       observedScrollTop = timelineScroll.scrollTop ?? 0;
-      updateRange(activeGroup() ? [activeGroup()!] : []);
+      updateRange();
     });
   };
 
   createEffect(() => {
-    const groups = groupTimelineBlocks(state.messages);
+    const groups = timelineGroups();
     const scrollTop = timelineScroll?.scrollTop ?? 0;
     const result = virtualizer.replace(groups, scrollTop, viewportHeight());
     const visibleKeys = new Set(result.range.items.map((group) => group.key));
@@ -122,14 +125,9 @@ export function SessionRoute(props: {
       queueMicrotask(() => {
         if (!timelineScroll || timelineScroll.isDestroyed) return;
         timelineScroll.scrollTop += result.adjustment;
-        updateRange(activeGroup() ? [activeGroup()!] : []);
+        updateRange();
       });
     measureRenderedGroups();
-  });
-
-  onMount(() => {
-    const timer = setInterval(measureRenderedGroups, 50);
-    onCleanup(() => clearInterval(timer));
   });
   return (
     <box flexGrow={1} minHeight={0} flexDirection="column" width="100%">
@@ -137,7 +135,7 @@ export function SessionRoute(props: {
         ref={(r: any) => {
           if (props.scrollRef) props.scrollRef.current = r;
           timelineScroll = r;
-          updateRange(activeGroup() ? [activeGroup()!] : []);
+          updateRange();
         }}
         flexGrow={1}
         stickyScroll={props.followBottom ?? true}
@@ -190,7 +188,7 @@ export function SessionRoute(props: {
         </Show>
       </scrollbox>
       <Show when={props.backend && modal()?.kind === "approval"}>
-        <Dialog dismissible={false} size="large" onClose={() => undefined}>
+        <Dialog dismissible={false} size="medium" onClose={() => undefined}>
           <PermissionPrompt
             request={
               modal() as Extract<ReturnType<typeof modal>, { kind: "approval" }>
@@ -201,7 +199,7 @@ export function SessionRoute(props: {
         </Dialog>
       </Show>
       <Show when={props.backend && modal()?.kind === "question"}>
-        <Dialog dismissible={false} size="large" onClose={() => undefined}>
+        <Dialog dismissible={false} size="medium" onClose={() => undefined}>
           <QuestionPrompt
             request={
               modal() as Extract<ReturnType<typeof modal>, { kind: "question" }>
@@ -289,7 +287,7 @@ export function SessionFooter(props: { workspaceRoot?: string }) {
         <Show when={Object.keys(state.pty).length > 0}>
           <text fg={darkTheme.text}>
             <span style={{ fg: darkTheme.success }}>•</span>{" "}
-            {Object.keys(state.pty).length} PTY
+            {Object.keys(state.pty).length} terminal
           </text>
         </Show>
         <Show when={Object.keys(state.sandboxes).length > 0}>
@@ -534,12 +532,12 @@ function ModelPTyPane(props: {
           fg={props.focus === "pty" ? darkTheme.accent : darkTheme.muted}
           attributes={TextAttributes.BOLD}
         >
-          PTY Pane · model control · {props.pty.status}
+          Terminal Preview · model control · {props.pty.status}
         </text>
         <text fg={darkTheme.muted} onMouseUp={props.onFocus}>
           {props.focus === "pty"
-            ? "PTY focus · Ctrl+T chat"
-            : "chat focus · Ctrl+T PTY"}
+            ? "preview focus · Ctrl+T chat"
+            : "Ctrl+T preview · F8 manage"}
         </text>
       </box>
       <Show when={props.sessions.length > 1}>
@@ -566,6 +564,11 @@ function ModelPTyPane(props: {
       <text fg={darkTheme.muted}>
         {props.pty.id} · {target()} · {props.pty.cwd} · {props.pty.rows}x
         {props.pty.cols} · prompt {props.pty.prompt ?? "-"}
+        {" · "}
+        {props.pty.inputOwner?.type === "viewer"
+          ? `user control (${props.pty.inputOwner.viewerID})`
+          : "model control"}
+        {` · ${props.pty.viewers?.length ?? 0} viewer(s)`}
       </text>
       <Show when={props.pty.approvalID}>
         <text fg={darkTheme.warning}>
@@ -573,36 +576,28 @@ function ModelPTyPane(props: {
           paused.
         </text>
       </Show>
-      <text fg={darkTheme.muted}>TRANSCRIPT</text>
-      <scrollbox
-        ref={(value: any) => {
-          if (props.scrollRef) props.scrollRef.current = value;
-        }}
-        maxHeight={10}
-        border={["left"]}
-        borderColor={darkTheme.muted}
-        paddingLeft={1}
-        stickyScroll={props.focus === "pty"}
-        stickyStart="bottom"
-      >
-        <text fg={darkTheme.text} wrapMode="word">
-          {(props.pty.transcript ?? props.pty.tail) ||
-            "(waiting for terminal output)"}
-        </text>
-      </scrollbox>
-      <text fg={darkTheme.muted}>MODEL TIMELINE</text>
-      <For each={props.timeline.slice(-4)}>
-        {(item) => (
-          <text fg={darkTheme.muted}>
-            [{item.actor}] {item.action} · {item.status} · {item.summary}
+      <For each={terminalPreview(props.pty.screen?.text ?? props.pty.tail)}>
+        {(line) => (
+          <text fg={darkTheme.muted} wrapMode="none">
+            {line}
           </text>
         )}
       </For>
       <text fg={darkTheme.muted}>
-        User writes are not enabled in this version.
+        Preview is read-only and never resizes the terminal.
       </text>
     </box>
   );
+}
+
+function terminalPreview(text: string) {
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-2)
+    .map((line) => (line.length > 120 ? `${line.slice(0, 117)}...` : line));
+  return lines.length ? lines : ["No visible terminal output yet."];
 }
 
 function MessageBlockView(props: {

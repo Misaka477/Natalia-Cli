@@ -76,7 +76,7 @@ If a process stops during an unknown provider or tool side effect, Natalia safel
 | `Ctrl+P`       | Open command palette       |
 | `Ctrl+C`       | Cancel the active turn     |
 | `Ctrl+Shift+K` | Open checkpoint management |
-| `Ctrl+Shift+T` | Open PTY management        |
+| `F8`           | Open terminal management   |
 | `Ctrl+Shift+B` | Open sandbox management    |
 
 Useful slash commands include `/doctor`, `/help`, `/status`, `/skills`, `/checkpoint`, `/checkpoints`, `/rollback <id> --dry-run`, `/pause`, and `/resume`.
@@ -106,6 +106,7 @@ npm run format
 npm run typecheck
 npm run test
 npm run guard:imports
+npm run licenses:check
 npm run ts:build
 npm run ts:release-check
 ```
@@ -115,6 +116,9 @@ TUI smoke tests are available through:
 ```bash
 npm --workspace @natalia/tui run smoke:<name>
 ```
+
+See the complete [CLI command reference](docs/commands.md) for session,
+filesystem, daemon, diagnostics, and recording commands.
 
 ---
 
@@ -192,7 +196,7 @@ npm run ts:cli -- daemon-stop
 | `Ctrl+P`       | 打开 command palette |
 | `Ctrl+C`       | 取消当前 turn        |
 | `Ctrl+Shift+K` | 打开 checkpoint 管理 |
-| `Ctrl+Shift+T` | 打开 PTY 管理        |
+| `F8`           | 打开终端管理         |
 | `Ctrl+Shift+B` | 打开 sandbox 管理    |
 
 常用 slash command：`/doctor`、`/help`、`/status`、`/skills`、`/checkpoint`、`/checkpoints`、`/rollback <id> --dry-run`、`/pause`、`/resume`。
@@ -222,6 +226,7 @@ npm run format
 npm run typecheck
 npm run test
 npm run guard:imports
+npm run licenses:check
 npm run ts:build
 npm run ts:release-check
 ```
@@ -232,11 +237,25 @@ TUI smoke test：
 npm --workspace @natalia/tui run smoke:<name>
 ```
 
+完整的 session、filesystem、daemon、diagnostics 与 recording 命令见
+[CLI 命令参考](docs/commands.md)。
+
 ## License / 许可
 
-Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
+Natalia CLI is licensed under the Apache License, Version 2.0. See
+[LICENSE](LICENSE) and [NOTICE](NOTICE).
 
-本项目使用 Apache License 2.0，详见 [LICENSE](LICENSE)。
+Third-party dependency attribution and bundled license texts are provided in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and
+[THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt). Redistributors that bundle
+system components such as Bun, Python, Bash, or Git must also comply with those
+components' licenses.
+
+Natalia CLI 使用 Apache License 2.0，详见 [LICENSE](LICENSE) 与
+[NOTICE](NOTICE)。第三方依赖归属及随包分发的许可文本见
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 和
+[THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt)。如果发行包同时捆绑
+Bun、Python、Bash 或 Git 等系统组件，还需要分别履行对应组件的许可义务。
 
 ## Contact / 联系方式
 

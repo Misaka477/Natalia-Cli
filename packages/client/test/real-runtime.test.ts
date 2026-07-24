@@ -1115,6 +1115,18 @@ test("runtime exposes interactive PTY management through RuntimeClient", async (
   await client.ptyResize!({ id: "tty_management", rows: 32, cols: 120 });
   await client.ptyDetach!("tty_management");
   await client.ptyAttach!("tty_management");
+  const updates = events.filter(
+    (event): event is Extract<RuntimeEvent, { type: "pty.update" }> =>
+      event.type === "pty.update",
+  );
+  expect(updates.length).toBeGreaterThan(0);
+  expect(updates.every((event) => !event.screen && !event.transcript)).toBe(
+    true,
+  );
+  const history = await client.history?.();
+  expect(history?.events.some((item) => item.event.type === "pty.update")).toBe(
+    false,
+  );
   const transcript = await client.ptyRead!({
     id: "tty_management",
     maxChars: 12000,
@@ -2353,6 +2365,211 @@ test("real runtime client executes model tool calls with approval policy", async
           message.role === "tool" && message.content.includes("tool data"),
       ),
   ).toBe(true);
+});
+
+test("real runtime requests a final response after exhausting tool steps", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-tool-finalize-"));
+  await writeFile(join(root, "input.txt"), "tool data\n");
+  const requests: ProviderStreamRequest[] = [];
+  const provider: StreamingProvider = {
+    provider: "scripted-tool-finalize",
+    model: "scripted-tool-finalize-model",
+    async *stream(request) {
+      requests.push(request);
+      if (request.tools === undefined) {
+        yield { type: "content", text: "All tool checks completed." };
+        yield { type: "done" };
+        return;
+      }
+      yield {
+        type: "tool_call",
+        calls: [
+          {
+            id: `call_read_${requests.length}`,
+            name: "read_file",
+            arguments: JSON.stringify({ path: "input.txt" }),
+          },
+        ],
+      };
+      yield { type: "done" };
+    },
+  };
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_tool_finalize",
+    provider,
+    permissionMode: "auto",
+  });
+  client.start((event) => events.push(event));
+  await client.submit("run every tool step");
+
+  expect(requests).toHaveLength(11);
+  expect(requests.at(-1)?.tools).toBeUndefined();
+  expect(
+    events
+      .filter((event) => event.type === "content.delta")
+      .map((event) => event.text)
+      .join(""),
+  ).toContain("All tool checks completed.");
+  expect(events.at(-2)).toMatchObject({
+    type: "turn.finished",
+    stopReason: "done",
+  });
+});
+
+test("tool turns require a non-empty final assistant response", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-final-response-"));
+  await writeFile(join(root, "input.txt"), "tool data\n");
+  let requests = 0;
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_final_response",
+    permissionMode: "auto",
+    provider: {
+      provider: "scripted-final-response",
+      model: "scripted-final-response-model",
+      async *stream(request) {
+        requests += 1;
+        if (!request.messages.some((message) => message.role === "tool")) {
+          yield {
+            type: "tool_call",
+            calls: [
+              {
+                id: "call_read_final",
+                name: "read_file",
+                arguments: JSON.stringify({ path: "input.txt" }),
+              },
+            ],
+          };
+        } else if (request.tools === undefined) {
+          yield {
+            type: "content",
+            text: "The file check completed successfully.",
+          };
+        }
+        yield { type: "done" };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("check the file");
+
+  expect(requests).toBe(3);
+  expect(
+    events
+      .filter((event) => event.type === "content.delta")
+      .map((event) => event.text)
+      .join(""),
+  ).toBe("The file check completed successfully.");
+  expect(events).toContainEqual({
+    type: "turn.finished",
+    id: expect.any(String),
+    stopReason: "done",
+  });
+});
+
+test("tool turns complete with a reason when the model omits its final response", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-missing-final-"));
+  await writeFile(join(root, "input.txt"), "tool data\n");
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_missing_final",
+    permissionMode: "auto",
+    provider: {
+      provider: "scripted-missing-final",
+      model: "scripted-missing-final-model",
+      async *stream(request) {
+        if (!request.messages.some((message) => message.role === "tool")) {
+          yield {
+            type: "tool_call",
+            calls: [
+              {
+                id: "call_read_missing_final",
+                name: "read_file",
+                arguments: JSON.stringify({ path: "input.txt" }),
+              },
+            ],
+          };
+        }
+        yield { type: "done" };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("check the file");
+
+  expect(events).toContainEqual({
+    type: "turn.finished",
+    id: expect.any(String),
+    stopReason: "done",
+    reason: "missing_final_response",
+  });
+  expect(
+    events.some(
+      (event) => event.type === "diagnostic" && event.level === "error",
+    ),
+  ).toBe(false);
+});
+
+test("ordinary tools settle as failed when their execution timeout expires", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-tool-timeout-"));
+  const tools = createToolRegistry([]);
+  tools.set("wait_forever", {
+    name: "wait_forever",
+    description: "Wait until the runtime cancels this tool.",
+    requiresApproval: false,
+    timeoutSec: 0.01,
+    parameters: { type: "object", properties: {} },
+    async execute() {
+      return await new Promise<string>(() => undefined);
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_tool_timeout",
+    tools,
+    provider: {
+      provider: "scripted-tool-timeout",
+      model: "scripted-tool-timeout-model",
+      async *stream(request) {
+        if (!request.messages.some((message) => message.role === "tool")) {
+          yield {
+            type: "tool_call",
+            calls: [
+              {
+                id: "call_wait",
+                name: "wait_forever",
+                arguments: "{}",
+              },
+            ],
+          };
+        } else {
+          yield { type: "content", text: "The tool timed out; task stopped." };
+        }
+        yield { type: "done" };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("wait forever");
+
+  expect(
+    events.find(
+      (event) =>
+        event.type === "tool.update" &&
+        event.callID === "call_wait" &&
+        event.status === "failed",
+    ),
+  ).toBeDefined();
+  expect(events).toContainEqual({
+    type: "turn.finished",
+    id: expect.any(String),
+    stopReason: "done",
+  });
 });
 
 test("runtime status counts managed background processes", async () => {

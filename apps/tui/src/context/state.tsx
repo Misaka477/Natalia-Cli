@@ -304,6 +304,8 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
       return;
     case "pty.update":
       const ptyEvent = compactPTYEvent(event);
+      const previousPTY = state.pty[ptyEvent.id];
+      if (previousPTY && samePTYUpdate(previousPTY, ptyEvent)) return;
       const isNewPTY = !state.pty[ptyEvent.id];
       state.pty[ptyEvent.id] = ptyEvent;
       if (
@@ -321,13 +323,6 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
         state.ptyPane.selectedID = nextActivePTY(state, ptyEvent.id);
         if (!state.ptyPane.selectedID) state.ptyPane.focus = "chat";
       }
-      upsertBlock(
-        state,
-        `pty:${ptyEvent.id}`,
-        "system",
-        `PTY ${ptyEvent.id} ${ptyEvent.status} ${ptyEvent.activity} ${targetLabel(ptyEvent.target)} ${ptyEvent.rows}x${ptyEvent.cols}\ncmd: ${ptyEvent.command}\nprompt: ${ptyEvent.prompt ?? "-"}\nlast: ${ptyEvent.lastAction ?? "-"}\ntail: ${ptyEvent.tail}`,
-        ptyEvent.status,
-      );
       return;
     case "pty.pane.select":
       if (activePTYIDs(state).includes(event.id)) {
@@ -355,7 +350,7 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
       }
       return;
     case "pty.approval":
-      state.footer = `PTY ${event.id} ${event.state}: ${event.reason}`;
+      state.footer = `Terminal ${event.id} ${event.state}: ${event.reason}`;
       return;
     case "pty.action":
       state.footer =
@@ -596,6 +591,8 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
       return;
     case "turn.cancelled":
       removeStreamTail(state, event.id);
+      delete state.streams[streamID(event.id, "thinking")];
+      delete state.streams[streamID(event.id, "assistant")];
       cancelPendingModals(state.modal, event.reason);
       state.dialog = undefined;
       upsertBlock(
@@ -608,8 +605,33 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
     case "turn.finished":
       revealDeferredStreamBlock(state, streamID(event.id, "thinking"));
       flushStreamBlock(state, streamID(event.id, "assistant"));
+      delete state.streams[streamID(event.id, "thinking")];
+      delete state.streams[streamID(event.id, "assistant")];
       state.activeTurn = undefined;
       state.status = event.stopReason === "done" ? "ready" : event.stopReason;
+      if (event.stopReason === "done") {
+        if (event.reason === "missing_final_response") {
+          upsertBlock(
+            state,
+            `${event.id}:finished`,
+            "system",
+            "任务已执行完成，但模型未提供最终回复。工具执行结果已保留。",
+            "completed",
+          );
+          state.footer = "任务已完成，模型未提供最终回复";
+        } else {
+          state.footer = "本轮任务已完成";
+        }
+      } else if (event.stopReason === "error") {
+        upsertBlock(
+          state,
+          `${event.id}:finished`,
+          "system",
+          "本轮任务执行失败，请查看上方错误信息。",
+          "failed",
+        );
+        state.footer = "本轮任务执行失败";
+      }
       return;
   }
 }
@@ -1128,6 +1150,38 @@ function compactPTYEvent(event: Extract<RuntimeEvent, { type: "pty.update" }>) {
     ...event,
     transcript: `... ${transcript.length - maxPTYTranscriptChars} earlier chars omitted from live pane ...\n${transcript.slice(-maxPTYTranscriptChars)}`,
   };
+}
+
+function samePTYUpdate(
+  previous: Extract<RuntimeEvent, { type: "pty.update" }>,
+  next: Extract<RuntimeEvent, { type: "pty.update" }>,
+) {
+  return (
+    previous.status === next.status &&
+    previous.attached === next.attached &&
+    previous.rows === next.rows &&
+    previous.cols === next.cols &&
+    previous.activity === next.activity &&
+    previous.tail === next.tail &&
+    previous.lastAction === next.lastAction &&
+    previous.ownership === next.ownership &&
+    previous.revision === next.revision &&
+    previous.lastOutputAt === next.lastOutputAt &&
+    sameTerminalOwner(previous.inputOwner, next.inputOwner) &&
+    sameTerminalOwner(previous.geometryOwner, next.geometryOwner)
+  );
+}
+
+function sameTerminalOwner(
+  previous: Extract<RuntimeEvent, { type: "pty.update" }>["inputOwner"],
+  next: Extract<RuntimeEvent, { type: "pty.update" }>["inputOwner"],
+) {
+  return (
+    previous?.type === next?.type &&
+    (previous?.type !== "viewer" ||
+      next?.type !== "viewer" ||
+      previous.viewerID === next.viewerID)
+  );
 }
 
 function upsertBlockBefore(
