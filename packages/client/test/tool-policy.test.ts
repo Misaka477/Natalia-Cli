@@ -10,6 +10,7 @@ import {
   type RuntimeEvent,
 } from "../src";
 import { evaluatePermissionRules } from "../src/tool-policy";
+import { terminalApprovalScope, terminalInputRisk } from "../src/real-runtime";
 import type {
   ProviderStreamRequest,
   StreamingProvider,
@@ -152,6 +153,51 @@ test("agent rules cover sandbox paths and all command-launching tools", () => {
         command: "rm -rf generated",
       }),
     ).toMatchObject({ allowed: false, reason: "command blocked by policy" });
+});
+
+test("terminal low-risk approval scopes bind one terminal and exclude high-risk input", () => {
+  expect(
+    terminalApprovalScope(
+      "interactive_terminal_send_line",
+      JSON.stringify({ id: "terminal_a", text: "ls" }),
+    ),
+  ).toMatchObject({
+    terminalID: "terminal_a",
+    scope: "terminal:terminal_a:low-risk",
+    risk: "terminal_low",
+  });
+  expect(
+    terminalApprovalScope(
+      "interactive_terminal_send_line",
+      JSON.stringify({ id: "terminal_b", text: "ls" }),
+    ),
+  ).toMatchObject({ scope: "terminal:terminal_b:low-risk" });
+  expect(
+    terminalApprovalScope(
+      "interactive_terminal_send_line",
+      JSON.stringify({ id: "terminal_a", text: "rm -rf generated" }),
+    ),
+  ).toMatchObject({
+    scope: "terminal:terminal_a:high-risk",
+    risk: "terminal_high",
+  });
+  expect(
+    terminalApprovalScope(
+      "interactive_terminal_keys",
+      JSON.stringify({ id: "terminal_a", key: "ArrowUp" }),
+    ),
+  ).toMatchObject({ risk: "terminal_high" });
+  expect(
+    terminalInputRisk("interactive_terminal_keys", {
+      key: "x",
+    }),
+  ).toBe("terminal_low");
+  expect(
+    terminalInputRisk("interactive_terminal_keys", {
+      key: "x",
+      modifiers: ["ctrl"],
+    }),
+  ).toBe("terminal_high");
 });
 
 test("createToolPolicyHookLayer preExecute calls custom hook", async () => {

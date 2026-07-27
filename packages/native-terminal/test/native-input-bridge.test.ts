@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { NativeTerminalRegistry } from "../src";
 
-test("injects broker credentials only when opening a native terminal window", async () => {
+test("injects broker credentials only when starting the Terminal Hub", async () => {
   const launches: Array<Record<string, string | undefined> | undefined> = [];
   const registry = new NativeTerminalRegistry({
     kind: "wezterm",
@@ -24,18 +24,15 @@ test("injects broker credentials only when opening a native terminal window", as
     async resize() {},
     async stop() {},
   });
-  const session = await registry.start({ cwd: "/repo", command: "cat" });
   registry.setHumanInputBridge({
     endpoint: "/run/user/1000/broker.sock",
     token: "token_1",
   });
-  await registry.focus(session.id);
+  await registry.start({ cwd: "/repo", command: "cat" });
   expect(launches).toEqual([
     {
       NATALIA_NATIVE_INPUT_ENDPOINT: "/run/user/1000/broker.sock",
       NATALIA_NATIVE_INPUT_TOKEN: "token_1",
-      NATALIA_TERMINAL_ID: session.id,
-      NATALIA_TERMINAL_PANE_ID: "22",
     },
   ]);
 });

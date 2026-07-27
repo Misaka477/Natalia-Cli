@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { platform } from "node:os";
 import { dirname, join } from "node:path";
 import { Worker } from "node:worker_threads";
@@ -42,6 +42,7 @@ export type NativeTerminalHost = {
     cwd: string;
     command: string[];
     workspace?: string;
+    muxWindowID?: number;
   }): Promise<NativeTerminalPane>;
   list(): Promise<NativeTerminalPane[]>;
   read(
@@ -51,14 +52,23 @@ export type NativeTerminalHost = {
   write(paneID: number, data: string): Promise<void>;
   open?(
     paneID: number,
-    options?: { environment?: Record<string, string | undefined> },
+    options?: {
+      environment?: Record<string, string | undefined>;
+      muxWindowID?: number;
+      launch?: boolean;
+      discardBootstrapPanes?: boolean;
+    },
   ): Promise<NativeTerminalPane>;
+  openHub?(options?: {
+    environment?: Record<string, string | undefined>;
+  }): Promise<void>;
   focus(
     paneID: number,
     options?: { environment?: Record<string, string | undefined> },
   ): Promise<void>;
   resize(paneID: number, rows: number, cols: number): Promise<void>;
   stop(paneID: number): Promise<void>;
+  dispose?(): Promise<void>;
 };
 
 type CommandRunner = (
@@ -225,6 +235,10 @@ export function createWezTermHost(
   const configFile = input.nativeDomain?.configFile ?? input.configFile;
   const global = configFile ? ["--config-file", configFile] : [];
   const muxServer = join(dirname(executable), "wezterm-mux-server");
+  const privateEnvironment = {
+    ...input.environment,
+    ...(input.muxRuntimeDir ? { XDG_RUNTIME_DIR: input.muxRuntimeDir } : {}),
+  };
   let muxReady: Promise<void> | undefined;
   let command: (args: string[], stdin?: string) => Promise<string>;
   const ensureMux = async () => {
@@ -237,9 +251,7 @@ export function createWezTermHost(
             muxServer,
             [...global, "--daemonize"],
             undefined,
-            input.muxRuntimeDir
-              ? { ...input.environment, XDG_RUNTIME_DIR: input.muxRuntimeDir }
-              : input.environment,
+            privateEnvironment,
             timeoutMs,
           ),
           timeoutMs,
@@ -286,7 +298,7 @@ export function createWezTermHost(
           executable,
           [...global, ...cliArgs],
           stdin,
-          input.environment,
+          privateEnvironment,
           timeoutMs,
         ),
         timeoutMs,
@@ -307,14 +319,40 @@ export function createWezTermHost(
       return false;
     }
   };
+  const privateClientPaneIDs = async () => {
+    try {
+      const output = await command(["cli", "list-clients", "--format", "json"]);
+      const clients = JSON.parse(output) as unknown;
+      if (!Array.isArray(clients)) return [];
+      return clients.flatMap((client) => {
+        if (!client || typeof client !== "object") return [];
+        const paneID = (client as Record<string, unknown>).focused_pane_id;
+        return Number.isSafeInteger(paneID) ? [paneID as number] : [];
+      });
+    } catch {
+      return [];
+    }
+  };
+  const ensureCjkGlyphReadiness = async () => {
+    await measure("native.gui.glyph-ready", async () => {
+      const output = await command(["ls-fonts", "--text", "你好中文"]);
+      if (!output.trim() || /(?:Last Resort|No fonts)/iu.test(output))
+        throw new Error(
+          "Native GUI CJK glyph fallback is unavailable; refusing to report Terminal Hub open success",
+        );
+    });
+  };
   return {
     kind: "wezterm",
     executable,
     async spawn(options) {
       return await measure("native.spawn", async () => {
         await ensureMux();
-        const args = ["cli", "spawn", "--new-window", "--cwd", options.cwd];
-        if (options.workspace) args.push("--workspace", options.workspace);
+        const args = ["cli", "spawn", "--cwd", options.cwd];
+        if (options.muxWindowID === undefined) {
+          args.push("--new-window");
+          if (options.workspace) args.push("--workspace", options.workspace);
+        } else args.push("--window-id", String(options.muxWindowID));
         args.push("--", ...options.command);
         const output = await command(args);
         const paneID = Number.parseInt(output.trim(), 10);
@@ -361,45 +399,34 @@ export function createWezTermHost(
         (item) => item.pane_id === paneID,
       );
       if (!before) throw new Error(`WezTerm pane ${paneID} is unavailable`);
+      // A fresh wezterm-mux-server creates a default shell pane before Natalia
+      // spawns the first TerminalSession. It is private to this UUID-scoped
+      // mux, but must not become a stray empty tab in the first Hub window.
+      if (options.discardBootstrapPanes)
+        for (const pane of await this.list())
+          if (pane.pane_id !== paneID)
+            await command([
+              "cli",
+              "kill-pane",
+              "--pane-id",
+              String(pane.pane_id),
+            ]);
       await command([
         "cli",
         "move-pane-to-new-tab",
         "--pane-id",
         String(paneID),
-        "--new-window",
-        "--workspace",
-        "natalia",
+        ...(options.muxWindowID === undefined
+          ? ["--new-window", "--workspace", "natalia"]
+          : ["--window-id", String(options.muxWindowID)]),
       ]);
-      await launch(
-        executable,
-        input.nativeDomain
-          ? [
-              ...global,
-              "start",
-              "--always-new-process",
-              ...(input.className ? ["--class", input.className] : []),
-              "--domain",
-              input.nativeDomain.name,
-              "--attach",
-              "--workspace",
-              "natalia",
-            ]
-          : [
-              ...global,
-              "start",
-              "--always-new-process",
-              ...(input.className ? ["--class", input.className] : []),
-              "--domain",
-              input.muxDomain ?? "local",
-              "--attach",
-              "--workspace",
-              "natalia",
-            ],
-        options.environment
-          ? { ...input.environment, ...options.environment }
-          : input.environment,
-      );
-      input.onPerformance?.("native.gui.launch", performance.now() - openedAt);
+      if (options.launch !== false) {
+        await this.openHub?.({ environment: options.environment });
+        input.onPerformance?.(
+          "native.gui.launch",
+          performance.now() - openedAt,
+        );
+      }
       const deadline = performance.now() + timeoutMs;
       while (performance.now() < deadline) {
         await command(["cli", "activate-pane", "--pane-id", String(paneID)]);
@@ -408,17 +435,10 @@ export function createWezTermHost(
         );
         if (!pane)
           throw new Error(`WezTerm pane ${paneID} disappeared while opening`);
-        // move-pane-to-new-tab changes the server-side window identity only
-        // after a GUI client attaches. This is portable across WezTerm builds;
-        // list-clients output is not.
-        if (pane.window_id !== before.window_id) {
-          input.onPerformance?.(
-            "native.gui.attach",
-            performance.now() - openedAt,
-          );
-          return pane;
-        }
-        if (pane.is_active) {
+        // A server-side move changes window identity before any GUI client
+        // exists. Only the private mux client's focused pane proves the GUI
+        // attached to this exact Natalia pane rather than a local shell.
+        if ((await privateClientPaneIDs()).includes(paneID)) {
           input.onPerformance?.(
             "native.gui.attach",
             performance.now() - openedAt,
@@ -431,20 +451,24 @@ export function createWezTermHost(
         `WezTerm GUI did not attach to the native terminal window within ${timeoutMs}ms`,
       );
     },
-    async focus(paneID, options) {
-      // Start a separate native GUI client attached to the existing local mux.
-      // This does not create, move, or replace the pane/process.
+    async openHub(options = {}) {
+      if ((await privateClientPaneIDs()).length) return;
+      await ensureCjkGlyphReadiness();
       await launch(
         executable,
         [
           ...global,
           "connect",
           input.nativeDomain?.name ?? input.muxDomain ?? "local",
+          "--workspace",
+          "natalia",
         ],
-        options?.environment
-          ? { ...input.environment, ...options.environment }
-          : input.environment,
+        options.environment
+          ? { ...privateEnvironment, ...options.environment }
+          : privateEnvironment,
       );
+    },
+    async focus(paneID) {
       await command(["cli", "activate-pane", "--pane-id", String(paneID)]);
     },
     async resize(paneID, rows, cols) {
@@ -477,6 +501,28 @@ export function createWezTermHost(
     async stop(paneID) {
       await command(["cli", "kill-pane", "--pane-id", String(paneID)]);
     },
+    async dispose() {
+      if (!input.muxRuntimeDir) return;
+      const pidFile = join(input.muxRuntimeDir, "wezterm", "pid");
+      try {
+        const pid = Number.parseInt(
+          (await readFile(pidFile, "utf8")).trim(),
+          10,
+        );
+        if (Number.isSafeInteger(pid) && pid > 1) process.kill(pid, "SIGTERM");
+      } catch (error) {
+        if (
+          !(
+            error instanceof Error &&
+            "code" in error &&
+            error.code === "ENOENT"
+          )
+        )
+          throw error;
+      } finally {
+        await rm(input.muxRuntimeDir, { recursive: true, force: true });
+      }
+    },
   };
 }
 
@@ -489,7 +535,26 @@ export async function writeWezTermNativeDomainConfig(input: {
   const configFile = join(input.directory, "wezterm-native-domain.lua");
   await writeFile(
     configFile,
-    `return { unix_domains = { { name = ${JSON.stringify(name)}, socket_path = [[${input.socketPath}]], no_serve_automatically = true } } }\n`,
+    `local wezterm = require 'wezterm'
+
+return {
+  unix_domains = {
+    {
+      name = ${JSON.stringify(name)},
+      socket_path = [[${input.socketPath}]],
+      no_serve_automatically = true,
+    },
+  },
+  -- Avoid the asynchronous system fallback path for CJK text. The latter can
+  -- briefly render Last Resort/tofu glyphs while fontconfig resolves fonts.
+  font = wezterm.font_with_fallback {
+    'JetBrains Mono',
+    'Noto Sans Mono CJK SC',
+    'Noto Sans CJK SC',
+    'Noto Color Emoji',
+  },
+}
+`,
     { mode: 0o600 },
   );
   return { name, socketPath: input.socketPath, configFile };
@@ -526,6 +591,7 @@ export type NativeTerminalSession = {
   host: "wezterm";
   paneID: number;
   windowID: number;
+  muxWindowID: number;
   tabID: number;
   command: string;
   cwd: string;
@@ -538,6 +604,11 @@ export type NativeTerminalSession = {
   status: "running" | "exited";
   rows?: number;
   cols?: number;
+};
+
+export type NativeTerminalHub = {
+  workspace: "natalia";
+  muxWindowID: number;
 };
 
 export type NativeTerminalWriteResult = {
@@ -563,6 +634,8 @@ export class NativeTerminalRegistry {
   private readonly sessions = new Map<string, NativeTerminalSession>();
   private readonly idempotency = new Map<string, Map<string, string>>();
   private readonly modelWrites = new Map<string, Promise<void>>();
+  private readonly revisionWaiters = new Map<string, Set<() => void>>();
+  private hub?: NativeTerminalHub;
   private humanInputBridge?: { endpoint: string; token: string };
   private lastReconcileAt = 0;
   private reconcileInFlight?: Promise<NativeTerminalSession[]>;
@@ -571,6 +644,7 @@ export class NativeTerminalRegistry {
     private readonly host: NativeTerminalHost,
     private readonly options: {
       onAudit?: (event: NativeTerminalAuditEvent) => void;
+      autoOpenHub?: boolean;
     } = {},
   ) {}
 
@@ -579,6 +653,7 @@ export class NativeTerminalRegistry {
   }
 
   async start(input: { command: string; cwd: string; id?: string }) {
+    const isFirstHubSession = this.hub === undefined;
     const pane = await this.host.spawn({
       cwd: input.cwd,
       command:
@@ -586,12 +661,14 @@ export class NativeTerminalRegistry {
           ? ["cmd.exe", "/d", "/s", "/c", input.command]
           : ["/bin/sh", "-lc", input.command],
       workspace: "natalia",
+      muxWindowID: this.hub?.muxWindowID,
     });
     const session: NativeTerminalSession = {
       id: input.id ?? `terminal_${randomUUID()}`,
       host: "wezterm",
       paneID: pane.pane_id,
       windowID: pane.window_id,
+      muxWindowID: pane.window_id,
       tabID: pane.tab_id,
       command: input.command,
       cwd: input.cwd,
@@ -605,11 +682,25 @@ export class NativeTerminalRegistry {
       cols: pane.cols,
     };
     this.sessions.set(session.id, session);
+    if (this.options.autoOpenHub !== false) {
+      if (isFirstHubSession) await this.attachToHub(session, true, true);
+      else {
+        // The pane was born directly in the existing Hub window. Moving it
+        // again can produce a second native window on some WezTerm builds.
+        session.windowID = this.hub!.muxWindowID;
+        session.muxWindowID = this.hub!.muxWindowID;
+        await this.host.focus(session.paneID);
+      }
+    }
     return session;
   }
 
   list() {
     return [...this.sessions.values()];
+  }
+
+  isHumanInputOwner(id: string) {
+    return this.get(id).inputOwner === "human";
   }
 
   async reconcile(options: { force?: boolean } = {}) {
@@ -633,6 +724,7 @@ export class NativeTerminalRegistry {
       if (!pane) {
         if (session.status !== "exited") {
           session.revision += 1;
+          this.notifyRevision(session.id);
           this.audit(session, "exit", "system");
         }
         session.status = "exited";
@@ -708,52 +800,52 @@ export class NativeTerminalRegistry {
         this.idempotency.get(id)?.delete(options.idempotencyKey);
       return { writtenBytes, delivery: "cancelled" };
     }
+    session.revision += 1;
     this.audit(session, "write", "model");
+    this.notifyRevision(session.id);
     return { writtenBytes, delivery: "accepted" };
   }
 
-  async focus(id: string) {
-    const session = this.get(id);
-    await this.reconcile();
-    this.assertRunning(session);
+  async openHub() {
+    if (!this.hub) {
+      const firstSession = this.list().find(
+        (session) => session.status === "running",
+      );
+      if (!firstSession) throw new Error("no running native terminal session");
+      await this.attachToHub(firstSession, true, false);
+      return this.hub!;
+    }
+    await this.host.openHub?.();
+    return this.hub;
+  }
+
+  private async attachToHub(
+    session: NativeTerminalSession,
+    launch: boolean,
+    selectTarget = false,
+  ) {
+    if (!this.host.open) return undefined;
     const environment = this.humanInputBridge
       ? {
           NATALIA_NATIVE_INPUT_ENDPOINT: this.humanInputBridge.endpoint,
           NATALIA_NATIVE_INPUT_TOKEN: this.humanInputBridge.token,
-          NATALIA_TERMINAL_ID: session.id,
-          NATALIA_TERMINAL_PANE_ID: String(session.paneID),
         }
       : undefined;
-    const pane = this.host.open
-      ? await this.host.open(session.paneID, { environment })
-      : await this.focusWithoutOpening(session);
+    const pane = await this.host.open(session.paneID, {
+      environment,
+      muxWindowID: this.hub?.muxWindowID,
+      launch,
+      discardBootstrapPanes: this.hub === undefined,
+    });
+    if (!this.hub)
+      this.hub = { workspace: "natalia", muxWindowID: pane.window_id };
     session.windowID = pane.window_id;
+    session.muxWindowID = pane.window_id;
     session.tabID = pane.tab_id;
     session.rows = pane.rows;
     session.cols = pane.cols;
-    // Showing a window is not proof that a person has typed. Stable WezTerm
-    // CLI exposes no physical-key event, so Open must not steal model input.
-    this.audit(session, "attach", "human");
-    return session;
-  }
-
-  private async focusWithoutOpening(session: NativeTerminalSession) {
-    const environment = this.humanInputBridge
-      ? {
-          NATALIA_NATIVE_INPUT_ENDPOINT: this.humanInputBridge.endpoint,
-          NATALIA_NATIVE_INPUT_TOKEN: this.humanInputBridge.token,
-          NATALIA_TERMINAL_ID: session.id,
-          NATALIA_TERMINAL_PANE_ID: String(session.paneID),
-        }
-      : undefined;
-    await this.host.focus(session.paneID, { environment });
-    return {
-      pane_id: session.paneID,
-      window_id: session.windowID,
-      tab_id: session.tabID,
-      rows: session.rows,
-      cols: session.cols,
-    };
+    if (selectTarget && this.hub) await this.host.focus(session.paneID);
+    return pane;
   }
 
   async claimHumanInput(id: string) {
@@ -761,10 +853,15 @@ export class NativeTerminalRegistry {
     this.assertRunning(session);
     if (session.secureInput && session.inputOwner !== "human")
       throw new Error("secure input requires human terminal control");
+    // The host claims before every native pane write. Only the first accepted
+    // claim is an ownership transition; subsequent human keystrokes must not
+    // churn revisions, audit events, or the TUI timeline.
+    if (session.inputOwner === "human") return session;
     // A native host retains and writes the bytes through its original pane path
     // after this synchronous ownership transition. Natalia never sees them.
     session.inputOwner = "human";
     session.revision += 1;
+    this.notifyRevision(session.id);
     await this.reconcile();
     this.assertRunning(session);
     this.audit(session, "write", "human", session.secureInput);
@@ -772,7 +869,11 @@ export class NativeTerminalRegistry {
   }
 
   async attach(id: string) {
-    return await this.focus(id);
+    const session = this.get(id);
+    this.assertRunning(session);
+    await this.openHub();
+    this.audit(session, "attach", "human");
+    return session;
   }
 
   detach(id: string) {
@@ -781,6 +882,7 @@ export class NativeTerminalRegistry {
       throw new Error("secure input must end before detaching");
     session.inputOwner = "model";
     session.revision += 1;
+    this.notifyRevision(session.id);
     this.audit(session, "detach", "human");
     return session;
   }
@@ -793,6 +895,7 @@ export class NativeTerminalRegistry {
       );
     session.inputOwner = "model";
     session.revision += 1;
+    this.notifyRevision(session.id);
     this.audit(session, "detach", "human");
     return session;
   }
@@ -804,6 +907,7 @@ export class NativeTerminalRegistry {
       throw new Error("secure input requires human terminal control");
     session.secureInput = true;
     session.revision += 1;
+    this.notifyRevision(session.id);
     this.audit(session, "secure_input", "human");
     return session;
   }
@@ -812,6 +916,7 @@ export class NativeTerminalRegistry {
     const session = this.get(id);
     session.secureInput = false;
     session.revision += 1;
+    this.notifyRevision(session.id);
     this.audit(session, "secure_input", "human");
     return session;
   }
@@ -836,6 +941,7 @@ export class NativeTerminalRegistry {
         };
       // reconcile above already established pane liveness. Calling read()
       // here would run a second `wezterm cli list` for every observe poll.
+      const revisionBeforeRead = session.revision;
       const text = await this.readSession(session, {
         maxLines: options.maxLines,
       });
@@ -845,7 +951,10 @@ export class NativeTerminalRegistry {
           text,
           afterRevision,
           changed: true,
-          reason: "changed" as const,
+          reason:
+            session.revision > revisionBeforeRead
+              ? ("screen_changed" as const)
+              : ("session_activity" as const),
         };
       if (performance.now() >= deadline)
         return {
@@ -855,14 +964,12 @@ export class NativeTerminalRegistry {
           changed: false,
           reason: "timeout" as const,
         };
-      // WezTerm exposes no subscription API for pane output. Poll at a bounded
-      // cadence; 100ms would spawn twenty CLI processes per second because a
-      // read also reconciles pane metadata.
-      await new Promise<void>((resolve) =>
-        setTimeout(
-          resolve,
-          Math.max(10, Math.min(500, deadline - performance.now())),
-        ),
+      // Internal writes/ownership/exit changes wake immediately. Native pane
+      // output itself has no subscription API, so bounded CLI polling remains
+      // only as a fallback for external process activity.
+      await this.waitForRevision(
+        session.id,
+        Math.max(10, Math.min(500, deadline - performance.now())),
       );
     }
   }
@@ -881,6 +988,7 @@ export class NativeTerminalRegistry {
     session.rows = rows;
     session.cols = cols;
     session.revision += 1;
+    this.notifyRevision(session.id);
     this.audit(session, "resize", "human");
     return session;
   }
@@ -890,10 +998,24 @@ export class NativeTerminalRegistry {
     if (session.status === "running") await this.host.stop(session.paneID);
     session.status = "exited";
     session.revision += 1;
+    this.notifyRevision(session.id);
     this.idempotency.delete(id);
     this.modelWrites.delete(id);
     this.audit(session, "exit", "system");
     return session;
+  }
+
+  async dispose() {
+    const running = this.list().filter(
+      (session) => session.status === "running",
+    );
+    await Promise.allSettled(running.map((session) => this.stop(session.id)));
+    await this.host.dispose?.();
+    this.sessions.clear();
+    this.modelWrites.clear();
+    this.idempotency.clear();
+    this.revisionWaiters.clear();
+    this.hub = undefined;
   }
 
   private get(id: string) {
@@ -910,6 +1032,7 @@ export class NativeTerminalRegistry {
     if (text !== session.lastText) {
       session.lastText = text;
       session.revision += 1;
+      this.notifyRevision(session.id);
     }
     return text;
   }
@@ -917,6 +1040,25 @@ export class NativeTerminalRegistry {
   private assertRunning(session: NativeTerminalSession) {
     if (session.status !== "running")
       throw new Error("terminal session has exited");
+  }
+
+  private async waitForRevision(id: string, timeoutMs: number) {
+    await new Promise<void>((resolve) => {
+      const waiters = this.revisionWaiters.get(id) ?? new Set<() => void>();
+      const wake = () => {
+        clearTimeout(timer);
+        waiters.delete(wake);
+        if (!waiters.size) this.revisionWaiters.delete(id);
+        resolve();
+      };
+      const timer = setTimeout(wake, timeoutMs);
+      waiters.add(wake);
+      this.revisionWaiters.set(id, waiters);
+    });
+  }
+
+  private notifyRevision(id: string) {
+    for (const wake of this.revisionWaiters.get(id) ?? []) wake();
   }
 
   private assertReadable(session: NativeTerminalSession) {

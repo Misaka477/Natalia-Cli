@@ -1,5 +1,4 @@
 use crate::tabbar::TabBarItem;
-use crate::termwindow::native_input::claim_before_pane_write;
 use crate::termwindow::{
     GuiWin, MouseCapture, PositionedSplit, ScrollHit, TermWindowNotif, UIItem, UIItemType, TMB,
 };
@@ -1033,11 +1032,10 @@ impl super::TermWindow {
         if allow_action
             && !(self.config.swallow_mouse_click_on_pane_focus && is_click_to_focus_pane)
         {
-            if !pane.is_mouse_grabbed()
-                || claim_before_pane_write(pane.pane_id(), "mouse", 1)
-            {
-                pane.mouse_event(mouse_event).ok();
-            }
+            // Mouse focus, tab selection, scrolling, and terminal mouse
+            // reporting must never transfer stdin ownership. Only committed
+            // keyboard/IME/paste data can claim human control.
+            pane.mouse_event(mouse_event).ok();
         }
 
         match event.kind {

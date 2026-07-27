@@ -104,32 +104,35 @@ function handleConnection(
     buffer = "";
     try {
       const event = decodeNativeEvent(frame);
-      const knownSessions = new Map(
+      const knownPanes = new Map(
         registry
           .list()
           .filter((session) => session.status === "running")
-          .map((session) => [session.id, session.paneID]),
+          .map((session) => [session.paneID, session.id]),
       );
       const decision = nativeInputBrokerDecision({
         event,
         expectedToken: token,
-        knownSessions,
+        knownPanes,
       });
+      const terminalID = knownPanes.get(event.paneID);
       if (!decision.permit)
         onDenied?.({
-          terminalID: event.terminalID,
+          terminalID: terminalID ?? event.terminalID,
           paneID: event.paneID,
           tokenAccepted: event.token === token,
-          paneAccepted: knownSessions.get(event.terminalID) === event.paneID,
+          paneAccepted: terminalID !== undefined,
         });
       if (decision.permit) {
-        onInput?.({
-          terminalID: event.terminalID,
-          paneID: event.paneID,
-          kind: event.kind,
-          byteLength: event.byteLength,
-        });
-        await registry.claimHumanInput(event.terminalID);
+        const ownershipChanged = !registry.isHumanInputOwner(terminalID!);
+        await registry.claimHumanInput(terminalID!);
+        if (ownershipChanged)
+          onInput?.({
+            terminalID: terminalID!,
+            paneID: event.paneID,
+            kind: event.kind,
+            byteLength: event.byteLength,
+          });
       }
       socket.end(encodeNativeInputDecision(decision));
     } catch {

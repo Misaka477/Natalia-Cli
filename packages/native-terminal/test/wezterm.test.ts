@@ -154,12 +154,7 @@ test("maps native pane lifecycle to WezTerm CLI", async () => {
   await host.focus(42);
   await host.resize(42, 26, 84);
   await host.stop(42);
-  expect(launches).toEqual([
-    {
-      args: ["--config-file", "/tmp/natalia.lua", "connect", "local"],
-      environment: undefined,
-    },
-  ]);
+  expect(launches).toEqual([]);
   expect(calls).toEqual(
     expect.arrayContaining([
       [
@@ -169,9 +164,9 @@ test("maps native pane lifecycle to WezTerm CLI", async () => {
         "--no-auto-start",
         "--prefer-mux",
         "spawn",
-        "--new-window",
         "--cwd",
         "/repo",
+        "--new-window",
         "--workspace",
         "natalia",
         "--",
@@ -281,6 +276,7 @@ test("reuses a ready private mux socket for CLI and GUI attach", async () => {
   const environment = {
     WEZTERM_UNIX_SOCKET: "/run/user/1000/natalia/mux.sock",
   };
+  let guiAttached = false;
   const host = createWezTermHost({
     executable: "/opt/natalia/wezterm",
     environment,
@@ -289,6 +285,20 @@ test("reuses a ready private mux socket for CLI and GUI attach", async () => {
       calls.push({ executable, args, environment: commandEnvironment });
       if (args.includes("spawn"))
         return { stdout: "42\n", stderr: "", exitCode: 0 };
+      if (args.includes("list-clients"))
+        return {
+          stdout: guiAttached
+            ? JSON.stringify([{ focused_pane_id: 42 }])
+            : "[]",
+          stderr: "",
+          exitCode: 0,
+        };
+      if (args.includes("ls-fonts"))
+        return {
+          stdout: '你 wezterm.font("Noto Sans Mono CJK SC")',
+          stderr: "",
+          exitCode: 0,
+        };
       if (args.includes("list"))
         return {
           stdout: JSON.stringify([
@@ -307,6 +317,7 @@ test("reuses a ready private mux socket for CLI and GUI attach", async () => {
     },
     launch: async (_executable, _args, launchEnvironment) => {
       launches.push(launchEnvironment);
+      guiAttached = true;
     },
   });
   await host.spawn({ cwd: "/repo", command: ["bash"] });
@@ -315,8 +326,178 @@ test("reuses a ready private mux socket for CLI and GUI attach", async () => {
     expect.objectContaining({ executable: "/opt/natalia/wezterm-mux-server" }),
   );
   expect(launches).toEqual([
-    { ...environment, NATALIA_TERMINAL_ID: "terminal_1" },
+    {
+      ...environment,
+      XDG_RUNTIME_DIR: "/run/user/1000/natalia/mux-runtime",
+      NATALIA_TERMINAL_ID: "terminal_1",
+    },
   ]);
+});
+
+test("spawns later Terminal sessions directly in the existing Hub window", async () => {
+  const calls: string[][] = [];
+  const host = createWezTermHost({
+    executable: "wezterm",
+    run: async (_executable, args) => {
+      calls.push(args);
+      if (args.includes("spawn"))
+        return { stdout: "88\n", stderr: "", exitCode: 0 };
+      if (args.includes("list"))
+        return {
+          stdout: JSON.stringify([
+            {
+              pane_id: 88,
+              window_id: 501,
+              tab_id: 77,
+              is_active: true,
+            },
+          ]),
+          stderr: "",
+          exitCode: 0,
+        };
+      return { stdout: "", stderr: "", exitCode: 0 };
+    },
+  });
+  await host.spawn({
+    cwd: "/repo",
+    command: ["btop"],
+    workspace: "natalia",
+    muxWindowID: 501,
+  });
+  expect(calls).toContainEqual([
+    "cli",
+    "--no-auto-start",
+    "--prefer-mux",
+    "spawn",
+    "--cwd",
+    "/repo",
+    "--window-id",
+    "501",
+    "--",
+    "btop",
+  ]);
+  expect(calls.flat()).not.toContain("--new-window");
+  expect(calls.flat()).not.toContain("move-pane-to-new-tab");
+});
+
+test("opens the Terminal Hub through one connect client", async () => {
+  const launches: string[][] = [];
+  const host = createWezTermHost({
+    executable: "wezterm",
+    nativeDomain: {
+      name: "natalia",
+      socketPath: "/run/user/1000/natalia/wezterm/sock",
+      configFile: "/tmp/natalia.lua",
+    },
+    run: async (_executable, args) => {
+      if (args.includes("list-clients"))
+        return { stdout: "[]", stderr: "", exitCode: 0 };
+      if (args.includes("ls-fonts"))
+        return {
+          stdout: '你 wezterm.font("Noto Sans Mono CJK SC")',
+          stderr: "",
+          exitCode: 0,
+        };
+      return { stdout: "", stderr: "", exitCode: 0 };
+    },
+    launch: async (_executable, args) => {
+      launches.push(args);
+    },
+  });
+  await host.openHub!();
+  expect(launches).toEqual([
+    [
+      "--config-file",
+      "/tmp/natalia.lua",
+      "connect",
+      "natalia",
+      "--workspace",
+      "natalia",
+    ],
+  ]);
+});
+
+test("refuses to open the Hub while CJK glyph fallback resolves to Last Resort", async () => {
+  const host = createWezTermHost({
+    executable: "wezterm",
+    run: async (_executable, args) => {
+      if (args.includes("list-clients"))
+        return { stdout: "[]", stderr: "", exitCode: 0 };
+      if (args.includes("ls-fonts"))
+        return {
+          stdout: '你 wezterm.font("Last Resort")',
+          stderr: "",
+          exitCode: 0,
+        };
+      return { stdout: "", stderr: "", exitCode: 0 };
+    },
+    launch: async () => {
+      throw new Error("must not launch with tofu fallback");
+    },
+  });
+  await expect(host.openHub!()).rejects.toThrow(
+    "CJK glyph fallback is unavailable",
+  );
+});
+
+test("first Hub attach removes only the private mux bootstrap pane", async () => {
+  const calls: string[][] = [];
+  const host = createWezTermHost({
+    executable: "wezterm",
+    run: async (_executable, args) => {
+      calls.push(args);
+      if (args.includes("list-clients"))
+        return {
+          stdout: JSON.stringify([{ focused_pane_id: 2 }]),
+          stderr: "",
+          exitCode: 0,
+        };
+      if (args.includes("list"))
+        return {
+          stdout: JSON.stringify([
+            { pane_id: 1, window_id: 1, tab_id: 1, is_active: true },
+            { pane_id: 2, window_id: 2, tab_id: 2, is_active: true },
+          ]),
+          stderr: "",
+          exitCode: 0,
+        };
+      return { stdout: "", stderr: "", exitCode: 0 };
+    },
+    launch: async () => {},
+  });
+  await host.open!(2, { discardBootstrapPanes: true, launch: false });
+  expect(calls).toContainEqual([
+    "cli",
+    "--no-auto-start",
+    "--prefer-mux",
+    "kill-pane",
+    "--pane-id",
+    "1",
+  ]);
+  expect(calls).not.toContainEqual(
+    expect.arrayContaining(["kill-pane", "--pane-id", "2"]),
+  );
+});
+
+test("does not launch a second GUI client for an existing Terminal Hub", async () => {
+  const launches: string[][] = [];
+  const host = createWezTermHost({
+    executable: "wezterm",
+    run: async (_executable, args) => {
+      if (args.includes("list-clients"))
+        return {
+          stdout: JSON.stringify([{ focused_pane_id: 42 }]),
+          stderr: "",
+          exitCode: 0,
+        };
+      return { stdout: "", stderr: "", exitCode: 0 };
+    },
+    launch: async (_executable, args) => {
+      launches.push(args);
+    },
+  });
+  await host.openHub!();
+  expect(launches).toEqual([]);
 });
 
 test("writes a named Unix domain config for the fork GUI client", async () => {
@@ -326,9 +507,12 @@ test("writes a named Unix domain config for the fork GUI client", async () => {
     socketPath: "/run/user/1000/natalia/wezterm/sock",
   });
   expect(domain.name).toBe("natalia");
-  expect(await readFile(domain.configFile, "utf8")).toContain(
+  const config = await readFile(domain.configFile, "utf8");
+  expect(config).toContain(
     "socket_path = [[/run/user/1000/natalia/wezterm/sock]]",
   );
+  expect(config).toContain("wezterm.font_with_fallback");
+  expect(config).toContain("Noto Sans Mono CJK SC");
 });
 
 test("fails a stalled WezTerm control command within its timeout", async () => {
@@ -412,14 +596,12 @@ test("native registry keeps model I/O on the host-rendered pane", async () => {
       idempotencyKey: "write_1",
     }),
   ).rejects.toThrow("reused with different input");
-  await registry.focus(session.id);
   await registry.write(session.id, "model keeps control after open");
   await registry.claimHumanInput(session.id);
   await expect(registry.write(session.id, "blocked")).rejects.toThrow(
     "controlled by a human",
   );
   registry.releaseHumanControl(session.id);
-  await registry.focus(session.id);
   await registry.claimHumanInput(session.id);
   registry.beginSecureInput(session.id);
   await expect(registry.read(session.id)).rejects.toThrow(
@@ -449,6 +631,119 @@ test("native registry keeps model I/O on the host-rendered pane", async () => {
   expect(audit.filter((action) => action === "detach").length).toBe(2);
 });
 
+test("native registry dispose stops only its running panes and host", async () => {
+  const stopped: number[] = [];
+  let disposed = 0;
+  let nextPane = 301;
+  const registry = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      const paneID = nextPane++;
+      return { pane_id: paneID, window_id: 1, tab_id: paneID };
+    },
+    async list() {
+      return [301, 302].map((paneID) => ({
+        pane_id: paneID,
+        window_id: 1,
+        tab_id: paneID,
+        rows: 24,
+        cols: 80,
+      }));
+    },
+    async read() {
+      return "";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop(paneID) {
+      stopped.push(paneID);
+    },
+    async dispose() {
+      disposed += 1;
+    },
+  });
+  await registry.start({ id: "terminal_a", cwd: "/repo", command: "cat" });
+  await registry.start({ id: "terminal_b", cwd: "/repo", command: "cat" });
+  await registry.dispose();
+  expect(stopped.sort()).toEqual([301, 302]);
+  expect(disposed).toBe(1);
+  expect(registry.list()).toEqual([]);
+});
+
+test("native starts automatically place sessions in one Terminal Hub", async () => {
+  let nextPaneID = 101;
+  const openCalls: Array<{
+    paneID: number;
+    muxWindowID?: number;
+    launch?: boolean;
+  }> = [];
+  const spawnCalls: Array<number | undefined> = [];
+  const registry = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn(input) {
+      spawnCalls.push(input.muxWindowID);
+      const paneID = nextPaneID++;
+      return { pane_id: paneID, window_id: paneID, tab_id: paneID + 100 };
+    },
+    async list() {
+      return [101, 102].map((paneID) => ({
+        pane_id: paneID,
+        window_id: paneID,
+        tab_id: paneID + 100,
+        rows: 24,
+        cols: 80,
+      }));
+    },
+    async read() {
+      return "";
+    },
+    async write() {},
+    async open(paneID, options) {
+      openCalls.push({
+        paneID,
+        muxWindowID: options?.muxWindowID,
+        launch: options?.launch,
+      });
+      return {
+        pane_id: paneID,
+        window_id: 501,
+        tab_id: paneID + 1_000,
+        rows: 24,
+        cols: 80,
+      };
+    },
+    async openHub() {},
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  });
+
+  const first = await registry.start({
+    id: "terminal_first",
+    cwd: "/repo",
+    command: "first",
+  });
+  const second = await registry.start({
+    id: "terminal_second",
+    cwd: "/repo",
+    command: "second",
+  });
+
+  expect(openCalls).toEqual([
+    { paneID: 101, launch: true, muxWindowID: undefined },
+  ]);
+  expect(spawnCalls).toEqual([undefined, 501]);
+  expect(first).toMatchObject({ paneID: 101, tabID: 1101, muxWindowID: 501 });
+  expect(second).toMatchObject({ paneID: 102, tabID: 202, muxWindowID: 501 });
+  expect(await registry.openHub()).toEqual({
+    workspace: "natalia",
+    muxWindowID: 501,
+  });
+});
+
 test("native observe returns its own bounded timeout instead of tool timeout", async () => {
   let reads = 0;
   let lists = 0;
@@ -467,6 +762,10 @@ test("native observe returns its own bounded timeout instead of tool timeout", a
       return "unchanged";
     },
     async write() {},
+    async open() {
+      return { pane_id: 37, window_id: 2, tab_id: 3, rows: 24, cols: 80 };
+    },
+    async openHub() {},
     async focus() {},
     async resize() {},
     async stop() {},
@@ -485,6 +784,40 @@ test("native observe returns its own bounded timeout instead of tool timeout", a
   // One initial read plus one reconcile per bounded observe poll. There must
   // not be a second list caused by observe calling the public read method.
   expect(lists).toBeLessThanOrEqual(reads + 2);
+});
+
+test("native observe wakes immediately for registry session activity", async () => {
+  const registry = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 82, window_id: 2, tab_id: 3 };
+    },
+    async list() {
+      return [{ pane_id: 82, window_id: 2, tab_id: 3, rows: 24, cols: 80 }];
+    },
+    async read() {
+      return "unchanged";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  });
+  const session = await registry.start({ cwd: "/repo", command: "cat" });
+  await registry.read(session.id);
+  const revision = registry.list()[0]!.revision;
+  const startedAt = performance.now();
+  const observation = registry.observe(session.id, revision, {
+    timeoutMs: 1_000,
+  });
+  await Bun.sleep(20);
+  await registry.write(session.id, "wake");
+  await expect(observation).resolves.toMatchObject({
+    changed: true,
+    reason: "session_activity",
+  });
+  expect(performance.now() - startedAt).toBeLessThan(450);
 });
 
 test("human input cancels unsent visible model input chunks", async () => {
@@ -589,7 +922,7 @@ test("reconcile marks a closed native pane exited without polling", async () => 
     { id: session.id, status: "exited", geometryOwner: "human" },
   ]);
   await expect(registry.write(session.id, "late")).rejects.toThrow("exited");
-  await expect(registry.focus(session.id)).rejects.toThrow("exited");
+  await expect(registry.attach(session.id)).rejects.toThrow("exited");
   await expect(registry.resize(session.id, 30, 100)).rejects.toThrow("exited");
 });
 

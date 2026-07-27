@@ -153,6 +153,23 @@ export function PermissionPrompt(props: {
             args: {props.request.keyArguments?.join(", ")}
           </text>
         </Show>
+        <Show when={props.request.risk}>
+          <text fg={darkTheme.muted}>
+            risk:{" "}
+            {props.request.risk === "terminal_low"
+              ? "terminal low"
+              : "terminal high"}
+          </text>
+        </Show>
+        <Show when={props.request.scope}>
+          <text fg={darkTheme.muted} wrapMode="word">
+            scope: {props.request.scope}
+            {props.request.expiresAt
+              ? ` · expires ${props.request.expiresAt}`
+              : ""}
+            {props.request.revocable ? " · revocable" : ""}
+          </text>
+        </Show>
         <Show when={props.request.detail}>
           <text fg={darkTheme.muted}>
             d {expanded() ? "hide" : "show"} detail

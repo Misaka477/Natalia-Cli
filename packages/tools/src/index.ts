@@ -474,11 +474,11 @@ export function createToolRegistry(
 const interactiveTerminalToolAliases = {
   interactive_start: "interactive_terminal_start",
   interactive_read: "interactive_terminal_read",
+  interactive_search: "interactive_terminal_search",
   interactive_write: "interactive_terminal_write",
+  interactive_send_line: "interactive_terminal_send_line",
   interactive_keys: "interactive_terminal_keys",
   interactive_resize: "interactive_terminal_resize",
-  interactive_attach: "interactive_terminal_attach",
-  interactive_detach: "interactive_terminal_detach",
   interactive_stop: "interactive_terminal_stop",
   interactive_list: "interactive_terminal_list",
 } as const;
@@ -516,11 +516,11 @@ export function defaultTools(
     interactiveStartTool(),
     terminalObserveTool(),
     interactiveReadTool(),
+    interactiveSearchTool(),
     interactiveWriteTool(),
+    interactiveSendLineTool(),
     interactiveKeyTool(),
     interactiveResizeTool(),
-    interactiveAttachTool(),
-    interactiveDetachTool(),
     interactiveStopTool(),
     interactiveListTool(),
     sandboxCreateTool(),
@@ -935,6 +935,7 @@ function modelNativeTerminalInfo(session: NativeTerminalSession) {
     host: session.host,
     paneID: session.paneID,
     windowID: session.windowID,
+    muxWindowID: session.muxWindowID,
     tabID: session.tabID,
     command: session.command,
     cwd: session.cwd,
@@ -984,6 +985,7 @@ function interactiveReadTool(): RuntimeTool {
         maxLines: { type: "number" },
         startLine: { type: "number" },
         endLine: { type: "number" },
+        cursor: { type: "number" },
       },
       required: ["id"],
       additionalProperties: false,
@@ -992,17 +994,25 @@ function interactiveReadTool(): RuntimeTool {
       const args = requireObject(input);
       const id = requireString(args.id, "id");
       const startLine = optionalInteger(args.startLine, "startLine");
+      const cursor = optionalInteger(args.cursor, "cursor");
       const endLine = optionalInteger(args.endLine, "endLine");
+      if (startLine !== undefined && cursor !== undefined)
+        throw new Error("startLine and cursor cannot be used together");
+      const pageStartLine = startLine ?? cursor;
       const text = await requireNativeTerminal(context).read(id, {
         maxLines: Math.max(1, Math.min(numberOr(args.maxLines, 60), 200)),
-        startLine,
+        startLine: pageStartLine,
+        endLine,
+      });
+      const page = nativeTerminalReadPage(text, {
+        startLine: pageStartLine,
         endLine,
       });
       return JSON.stringify(
         {
           id,
           range:
-            startLine === undefined
+            pageStartLine === undefined
               ? {
                   kind: "tail",
                   maxLines: Math.max(
@@ -1012,17 +1022,186 @@ function interactiveReadTool(): RuntimeTool {
                 }
               : {
                   kind: "lines",
-                  startLine,
+                  startLine: pageStartLine,
                   endLine,
                 },
-          text: truncateProcessOutput(text, 16_384),
-          truncated: new TextEncoder().encode(text).byteLength > 16_384,
+          deliveredRange:
+            pageStartLine === undefined
+              ? { kind: "tail", deliveredLines: page.deliveredLines }
+              : {
+                  kind: "lines",
+                  startLine: pageStartLine,
+                  endLine: page.endLine,
+                  deliveredLines: page.deliveredLines,
+                },
+          nextCursor: page.nextStartLine
+            ? {
+                startLine: page.nextStartLine,
+                ...(endLine === undefined ? {} : { endLine }),
+              }
+            : undefined,
+          text: page.text,
+          truncated: page.truncated,
+          totalBytes: page.totalBytes,
+          rangeDiscovery: "native_scrollback_unbounded",
         },
         null,
         2,
       );
     },
   };
+}
+
+function interactiveSearchTool(): RuntimeTool {
+  return {
+    name: "interactive_terminal_search",
+    description:
+      "Search a bounded native Terminal scrollback line range for literal UTF-8 text. Continue with nextCursor; it never transports the full terminal screen.",
+    requiresApproval: false,
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        query: { type: "string" },
+        startLine: { type: "number" },
+        endLine: { type: "number" },
+        cursor: { type: "number" },
+        maxMatches: { type: "number" },
+      },
+      required: ["id", "query"],
+      additionalProperties: false,
+    },
+    async execute(input, context) {
+      const args = requireObject(input);
+      const id = requireString(args.id, "id");
+      const query = requireString(args.query, "query");
+      if (!query) throw new Error("query must not be empty");
+      if (new TextEncoder().encode(query).byteLength > 256)
+        throw new Error("query must be at most 256 UTF-8 bytes");
+      const startLine = optionalInteger(args.startLine, "startLine");
+      const cursor = optionalInteger(args.cursor, "cursor");
+      const endLine = optionalInteger(args.endLine, "endLine");
+      if (startLine !== undefined && cursor !== undefined)
+        throw new Error("startLine and cursor cannot be used together");
+      const pageStartLine = startLine ?? cursor;
+      if (pageStartLine === undefined)
+        throw new Error(
+          "startLine or cursor is required for scrollback search",
+        );
+      if (endLine !== undefined && endLine < pageStartLine)
+        throw new Error("endLine must not be before startLine");
+      const pageEndLine = Math.min(
+        endLine ?? pageStartLine + 199,
+        pageStartLine + 199,
+      );
+      const text = await requireNativeTerminal(context).read(id, {
+        startLine: pageStartLine,
+        endLine: pageEndLine,
+      });
+      const result = nativeTerminalSearchPage(text, {
+        query,
+        startLine: pageStartLine,
+        endLine: pageEndLine,
+        requestedEndLine: endLine,
+        maxMatches: Math.max(1, Math.min(numberOr(args.maxMatches, 20), 20)),
+      });
+      return JSON.stringify({ id, ...result }, null, 2);
+    },
+  };
+}
+
+export function nativeTerminalSearchPage(
+  text: string,
+  input: {
+    query: string;
+    startLine: number;
+    endLine: number;
+    requestedEndLine?: number;
+    maxMatches: number;
+  },
+) {
+  const lines = text.split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  const matches = lines
+    .flatMap((line, index) =>
+      line.includes(input.query)
+        ? [{ line: input.startLine + index, text: truncateTerminalLine(line) }]
+        : [],
+    )
+    .slice(0, input.maxMatches);
+  const scannedEndLine = input.startLine + Math.max(0, lines.length - 1);
+  return {
+    query: input.query,
+    searchedRange: {
+      startLine: input.startLine,
+      endLine: Math.min(input.endLine, scannedEndLine),
+      scannedLines: lines.length,
+    },
+    matches,
+    truncatedMatches: matches.length === input.maxMatches,
+    nextCursor:
+      lines.length === 200 &&
+      (input.requestedEndLine === undefined ||
+        scannedEndLine < input.requestedEndLine)
+        ? {
+            startLine: scannedEndLine + 1,
+            ...(input.requestedEndLine === undefined
+              ? {}
+              : { endLine: input.requestedEndLine }),
+          }
+        : undefined,
+  };
+}
+
+function truncateTerminalLine(line: string) {
+  return nativeTerminalReadPage(line, {}, 1_024).text;
+}
+
+export function nativeTerminalReadPage(
+  text: string,
+  input: { startLine?: number; endLine?: number },
+  maxBytes = 16_384,
+) {
+  const bytes = Buffer.from(text);
+  const totalBytes = bytes.byteLength;
+  if (totalBytes <= maxBytes)
+    return {
+      text,
+      totalBytes,
+      truncated: false,
+      deliveredLines: deliveredLineCount(text),
+      endLine:
+        input.startLine === undefined
+          ? undefined
+          : input.startLine + deliveredLineCount(text) - 1,
+      nextStartLine: undefined,
+    };
+  let end = maxBytes;
+  while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end--;
+  const boundary = bytes.subarray(0, end).toString("utf8");
+  const newline = boundary.lastIndexOf("\n");
+  const pageText = newline >= 0 ? boundary.slice(0, newline + 1) : boundary;
+  const deliveredLines = deliveredLineCount(pageText);
+  return {
+    text: pageText,
+    totalBytes,
+    truncated: true,
+    deliveredLines,
+    endLine:
+      input.startLine === undefined
+        ? undefined
+        : input.startLine + deliveredLines - 1,
+    nextStartLine:
+      input.startLine === undefined || deliveredLines === 0
+        ? undefined
+        : input.startLine + deliveredLines,
+  };
+}
+
+function deliveredLineCount(text: string) {
+  if (!text) return 0;
+  const lines = text.split("\n");
+  return lines.at(-1) === "" ? lines.length - 1 : lines.length;
 }
 
 function terminalObserveTool(): RuntimeTool {
@@ -1156,38 +1335,232 @@ function interactiveWriteTool(): RuntimeTool {
   };
 }
 
-function interactiveKeyTool(): RuntimeTool {
+function interactiveSendLineTool(): RuntimeTool {
   return {
-    name: "interactive_terminal_keys",
+    name: "interactive_terminal_send_line",
     description:
-      "Send raw terminal control bytes to the same native Terminal pane used by the human.",
+      "Atomically write text and submit it with Enter to the same native Terminal pane used by the human.",
     requiresApproval: true,
     parameters: {
       type: "object",
-      properties: { id: { type: "string" }, key: { type: "string" } },
-      required: ["id", "key"],
+      properties: {
+        id: { type: "string" },
+        text: { type: "string" },
+        idempotencyKey: { type: "string" },
+      },
+      required: ["id", "text"],
       additionalProperties: false,
     },
     async execute(input, context) {
       const args = requireObject(input);
-      const key = requireString(args.key, "key");
-      const bytes = terminalControlBytes[key];
-      if (!bytes)
-        throw new Error("key must be enter, ctrl-c, ctrl-d, tab, or esc");
       const id = requireString(args.id, "id");
-      await requireNativeTerminal(context).write(id, bytes);
-      return JSON.stringify({ id, key, writtenBytes: bytes.length });
+      const text = requireString(args.text, "text");
+      const result = await requireNativeTerminal(context).write(
+        id,
+        `${text}\r`,
+        {
+          idempotencyKey: optionalString(args.idempotencyKey),
+        },
+      );
+      return JSON.stringify({ id, ...result, submitted: true });
     },
   };
 }
 
-const terminalControlBytes: Record<string, string> = {
-  enter: "\r",
-  "ctrl-c": "\x03",
-  "ctrl-d": "\x04",
-  tab: "\t",
-  esc: "\x1b",
+function interactiveKeyTool(): RuntimeTool {
+  return {
+    name: "interactive_terminal_keys",
+    description:
+      "Send normalized terminal key sequences to the same native Terminal pane used by the human.",
+    requiresApproval: true,
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        key: { type: "string" },
+        keys: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              key: { type: "string" },
+              text: { type: "string" },
+              modifiers: { type: "array", items: { type: "string" } },
+              repeat: { type: "number" },
+            },
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+    async execute(input, context) {
+      const args = requireObject(input);
+      const id = requireString(args.id, "id");
+      const sequence = Array.isArray(args.keys)
+        ? args.keys.map((item) => requireObject(item))
+        : [requireObject({ key: requireString(args.key, "key") })];
+      if (!sequence.length) throw new Error("keys must not be empty");
+      const bytes = sequence.map(encodeTerminalKey).join("");
+      const result = await requireNativeTerminal(context).write(id, bytes);
+      return JSON.stringify({ id, keys: sequence, ...result });
+    },
+  };
+}
+
+type TerminalKeyInput = {
+  key?: unknown;
+  text?: unknown;
+  modifiers?: unknown;
+  repeat?: unknown;
 };
+
+export function encodeTerminalKey(input: TerminalKeyInput) {
+  const modifiers = normalizeTerminalModifiers(input.modifiers);
+  const repeat = input.repeat === undefined ? 1 : requireRepeat(input.repeat);
+  const text =
+    input.text === undefined ? undefined : requireString(input.text, "text");
+  if (text !== undefined) {
+    if (modifiers.size)
+      throw new Error("UTF-8 committed text cannot have terminal modifiers");
+    return text.repeat(repeat);
+  }
+  const rawKey = requireString(input.key, "key");
+  const key = normalizeTerminalKey(rawKey);
+  const bytes = encodeTerminalKeyOnce(key, modifiers);
+  return bytes.repeat(repeat);
+}
+
+function normalizeTerminalModifiers(value: unknown) {
+  if (value === undefined) return new Set<string>();
+  if (!Array.isArray(value)) throw new Error("modifiers must be an array");
+  const modifiers = new Set(value.map((item) => String(item).toLowerCase()));
+  for (const modifier of modifiers)
+    if (!["ctrl", "alt", "shift"].includes(modifier))
+      throw new Error(`unsupported terminal modifier: ${modifier}`);
+  return modifiers;
+}
+
+function requireRepeat(value: unknown) {
+  if (
+    !Number.isInteger(value) ||
+    (value as number) < 1 ||
+    (value as number) > 100
+  )
+    throw new Error("repeat must be an integer between 1 and 100");
+  return value as number;
+}
+
+function normalizeTerminalKey(value: string) {
+  const aliases: Record<string, string> = {
+    enter: "Enter",
+    esc: "Esc",
+    escape: "Esc",
+    backspace: "Backspace",
+    delete: "Delete",
+    tab: "Tab",
+    "ctrl-c": "CtrlC",
+    "ctrl-d": "CtrlD",
+    arrowup: "ArrowUp",
+    arrowdown: "ArrowDown",
+    arrowleft: "ArrowLeft",
+    arrowright: "ArrowRight",
+    home: "Home",
+    end: "End",
+    pageup: "PageUp",
+    pagedown: "PageDown",
+    insert: "Insert",
+  };
+  const canonical = aliases[value.toLowerCase()] ?? value;
+  if (/^F(?:[1-9]|1[0-2])$/u.test(canonical)) return canonical;
+  if ([...canonical].length === 1) return canonical;
+  if (canonical === "CtrlC" || canonical === "CtrlD") return canonical;
+  if (
+    [
+      "Enter",
+      "Esc",
+      "Backspace",
+      "Delete",
+      "Tab",
+      "ArrowUp",
+      "ArrowDown",
+      "ArrowLeft",
+      "ArrowRight",
+      "Home",
+      "End",
+      "PageUp",
+      "PageDown",
+      "Insert",
+    ].includes(canonical)
+  )
+    return canonical;
+  throw new Error(`unsupported terminal key: ${value}`);
+}
+
+function encodeTerminalKeyOnce(key: string, modifiers: Set<string>) {
+  if (key === "CtrlC") return "\x03";
+  if (key === "CtrlD") return "\x04";
+  const modifier = terminalModifierCode(modifiers);
+  const plain = modifiers.size === 0;
+  const base: Record<string, string> = {
+    Enter: "\r",
+    Esc: "\x1b",
+    Tab: "\t",
+    Backspace: "\x7f",
+    Delete: "\x1b[3~",
+    Insert: "\x1b[2~",
+    Home: "\x1b[H",
+    End: "\x1b[F",
+    PageUp: "\x1b[5~",
+    PageDown: "\x1b[6~",
+    ArrowUp: "\x1b[A",
+    ArrowDown: "\x1b[B",
+    ArrowRight: "\x1b[C",
+    ArrowLeft: "\x1b[D",
+    F1: "\x1bOP",
+    F2: "\x1bOQ",
+    F3: "\x1bOR",
+    F4: "\x1bOS",
+    F5: "\x1b[15~",
+    F6: "\x1b[17~",
+    F7: "\x1b[18~",
+    F8: "\x1b[19~",
+    F9: "\x1b[20~",
+    F10: "\x1b[21~",
+    F11: "\x1b[23~",
+    F12: "\x1b[24~",
+  };
+  if (key in base) {
+    if (plain) return base[key]!;
+    if (["Enter", "Esc", "Tab", "Backspace"].includes(key))
+      throw new Error(`terminal modifiers are not encodable for ${key}`);
+    return applyTerminalModifier(base[key]!, modifier);
+  }
+  if (key.length !== 1) throw new Error(`unsupported terminal key: ${key}`);
+  if (modifiers.has("ctrl")) {
+    const code = key.toUpperCase().codePointAt(0)!;
+    if (code < 0x40 || code > 0x5f)
+      throw new Error(`Ctrl modifier is not encodable for ${key}`);
+    return `${modifiers.has("alt") ? "\x1b" : ""}${String.fromCharCode(code - 0x40)}`;
+  }
+  return `${modifiers.has("alt") ? "\x1b" : ""}${key}`;
+}
+
+function terminalModifierCode(modifiers: Set<string>) {
+  return (
+    1 +
+    Number(modifiers.has("shift")) +
+    Number(modifiers.has("alt")) * 2 +
+    Number(modifiers.has("ctrl")) * 4
+  );
+}
+
+function applyTerminalModifier(bytes: string, modifier: number) {
+  if (bytes.startsWith("\x1bO")) return `\x1b[1;${modifier}${bytes.at(-1)}`;
+  if (bytes.endsWith("~")) return `${bytes.slice(0, -1)};${modifier}~`;
+  return `${bytes.slice(0, -1)}1;${modifier}${bytes.at(-1)}`;
+}
 
 function interactiveResizeTool(): RuntimeTool {
   return {
@@ -1221,68 +1594,6 @@ function interactiveResizeTool(): RuntimeTool {
         context,
         await requireInteractivePTY(context).resize(id, rows, cols),
         "resize",
-      );
-    },
-  };
-}
-
-function interactiveAttachTool(): RuntimeTool {
-  return nativeOrLegacyTerminalAction(
-    "interactive_terminal_attach",
-    "Attach to an interactive Terminal session.",
-    (registry, id) => registry.attach(id),
-    (registry, id) => registry.attach(id),
-    "attach",
-  );
-}
-
-function interactiveDetachTool(): RuntimeTool {
-  return nativeOrLegacyTerminalAction(
-    "interactive_terminal_detach",
-    "Detach an interactive Terminal session.",
-    (registry, id) => registry.detach(id),
-    (registry, id) => registry.detach(id),
-    "detach",
-  );
-}
-
-function nativeOrLegacyTerminalAction(
-  name: string,
-  description: string,
-  nativeAction: (
-    registry: NativeTerminalRegistry,
-    id: string,
-  ) => Promise<NativeTerminalSession> | NativeTerminalSession,
-  legacyAction: (
-    registry: TerminalRegistry,
-    id: string,
-  ) => Promise<TerminalSessionInfo>,
-  action: "attach" | "detach",
-): RuntimeTool {
-  return {
-    name,
-    description,
-    requiresApproval: false,
-    parameters: {
-      type: "object",
-      properties: { id: { type: "string" } },
-      required: ["id"],
-      additionalProperties: false,
-    },
-    async execute(input, context) {
-      const id = requireString(requireObject(input).id, "id");
-      if (context.nativeTerminal)
-        return JSON.stringify(
-          modelNativeTerminalInfo(
-            await nativeAction(context.nativeTerminal, id),
-          ),
-          null,
-          2,
-        );
-      return notifyPTY(
-        context,
-        await legacyAction(requireInteractivePTY(context), id),
-        action,
       );
     },
   };
@@ -1361,13 +1672,9 @@ function interactiveTool(
             ? "special_key"
             : name === "interactive_terminal_resize"
               ? "resize"
-              : name === "interactive_terminal_attach"
-                ? "attach"
-                : name === "interactive_terminal_detach"
-                  ? "detach"
-                  : name === "interactive_terminal_stop"
-                    ? "exit"
-                    : undefined;
+              : name === "interactive_terminal_stop"
+                ? "exit"
+                : undefined;
       return notifyPTY(context, session, ptyAction, args.sensitive === true);
     },
   };

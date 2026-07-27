@@ -16,11 +16,13 @@ type WorkerRequest = {
     | "pause"
     | "resume"
     | "snapshot"
+    | "diagnostic"
     | "approval"
     | "question"
     | "interactive.pending"
     | "dispose"
     | "history"
+    | "diagnostics"
     | "messages"
     | "agents"
     | "model.catalog"
@@ -42,7 +44,9 @@ type WorkerRequest = {
     | "terminal.stop"
     | "native-terminal.list"
     | "native-terminal.read"
-    | "native-terminal.focus"
+    | "native-terminal.open-hub"
+    | "native-terminal.release-human-control"
+    | "native-terminal.revoke-approval-scope"
     | "native-terminal.stop";
   value?: unknown;
 };
@@ -226,9 +230,29 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["nativeTerminalRead"]>>
       >;
     },
-    async nativeTerminalFocus(id) {
-      return (await request("native-terminal.focus", id)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["nativeTerminalFocus"]>>
+    async nativeTerminalOpenHub() {
+      return (await request("native-terminal.open-hub")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["nativeTerminalOpenHub"]>>
+      >;
+    },
+    async nativeTerminalReleaseHumanControl(id) {
+      return (await request(
+        "native-terminal.release-human-control",
+        id,
+      )) as Awaited<
+        ReturnType<
+          NonNullable<RuntimeClient["nativeTerminalReleaseHumanControl"]>
+        >
+      >;
+    },
+    async nativeTerminalRevokeApprovalScope(id) {
+      return (await request(
+        "native-terminal.revoke-approval-scope",
+        id,
+      )) as Awaited<
+        ReturnType<
+          NonNullable<RuntimeClient["nativeTerminalRevokeApprovalScope"]>
+        >
       >;
     },
     async nativeTerminalStop(id) {
@@ -254,7 +278,14 @@ export function createWorkerRuntimeClient(
       void request("snapshot");
       return { type: "snapshot.created", id, files: [] };
     },
-    diagnostic() {},
+    async diagnostics(limit) {
+      return (await request("diagnostics", limit)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["diagnostics"]>>
+      >;
+    },
+    diagnostic(message, level) {
+      void request("diagnostic", { message, level });
+    },
     lastSubmission() {
       return undefined;
     },
@@ -353,8 +384,18 @@ async function handleWorkerRequest(
     return await client.nativeTerminalList?.();
   if (request.method === "native-terminal.read")
     return await client.nativeTerminalRead?.(request.value as string);
-  if (request.method === "native-terminal.focus")
-    return await client.nativeTerminalFocus?.(request.value as string);
+  if (request.method === "native-terminal.open-hub")
+    return await client.nativeTerminalOpenHub?.();
+  if (request.method === "native-terminal.release-human-control")
+    return await client.nativeTerminalReleaseHumanControl?.(
+      request.value as string,
+    );
+  if (request.method === "diagnostics")
+    return await client.diagnostics?.(request.value as number | undefined);
+  if (request.method === "native-terminal.revoke-approval-scope")
+    return await client.nativeTerminalRevokeApprovalScope?.(
+      request.value as string,
+    );
   if (request.method === "native-terminal.stop")
     return await client.nativeTerminalStop?.(request.value as string);
   if (request.method === "cancel")
@@ -367,6 +408,15 @@ async function handleWorkerRequest(
     );
   if (request.method === "resume") return client.resume?.();
   if (request.method === "snapshot") return client.snapshot();
+  if (request.method === "diagnostic") {
+    const input = request.value as { message?: unknown; level?: unknown };
+    return client.diagnostic(
+      typeof input.message === "string" ? input.message : "runtime diagnostic",
+      input.level === "info" || input.level === "error"
+        ? input.level
+        : "warning",
+    );
+  }
   if (request.method === "dispose") return await client.dispose?.();
   if (request.method === "approval")
     return client.respondApproval(request.value as ApprovalResponse);

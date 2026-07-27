@@ -46,7 +46,7 @@ test("local input broker atomically claims without relaying input bytes", async 
         type: "claim",
         nonce: "nonce_1",
         token: broker.token,
-        terminalID: session.id,
+        terminalID: `pane_${session.paneID}`,
         paneID: session.paneID,
         kind: "paste",
         byteLength: 16,
@@ -57,6 +57,62 @@ test("local input broker atomically claims without relaying input bytes", async 
     expect(writes).toEqual([]);
   } finally {
     await broker.stop();
+  }
+});
+
+test("local input broker records only the first human ownership claim", async () => {
+  const inputs: Array<{ terminalID: string; kind: string }> = [];
+  const registry = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 94, window_id: 2, tab_id: 3 };
+    },
+    async list() {
+      return [{ pane_id: 94, window_id: 2, tab_id: 3, rows: 24, cols: 80 }];
+    },
+    async read() {
+      return "";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  });
+  const session = await registry.start({ cwd: "/repo", command: "cat" });
+  const broker = await startNativeInputBroker({
+    registry,
+    runtimeDir: await mkdtemp(join(tmpdir(), "natalia-input-broker-")),
+    daemonID: "claim_once",
+    token: "token_claim_once",
+    onInput: (input) => inputs.push(input),
+  });
+  try {
+    for (const nonce of ["nonce_first", "nonce_second"]) {
+      const response = await send(
+        broker.endpoint,
+        `${JSON.stringify({
+          version: NATIVE_INPUT_BROKER_VERSION,
+          type: "claim",
+          nonce,
+          token: broker.token,
+          terminalID: `pane_${session.paneID}`,
+          paneID: session.paneID,
+          kind: "keyboard",
+          byteLength: 1,
+        })}\n`,
+      );
+      expect(decodeNativeInputDecision(response).permit).toBe(true);
+    }
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]).toMatchObject({
+      terminalID: session.id,
+      kind: "keyboard",
+    });
+    expect(registry.list()[0]).toMatchObject({ inputOwner: "human" });
+  } finally {
+    await broker.stop();
+    await registry.dispose();
   }
 });
 
@@ -93,7 +149,7 @@ test("local input broker denies an unknown pane without changing ownership", asy
         type: "claim",
         nonce: "nonce_2",
         token: broker.token,
-        terminalID: session.id,
+        terminalID: `pane_${session.paneID + 1}`,
         paneID: session.paneID + 1,
         kind: "keyboard",
         byteLength: 1,
@@ -144,7 +200,7 @@ test("metadata-only native claim switches ownership without relaying bytes", asy
         type: "claim",
         nonce: "nonce_3",
         token: broker.token,
-        terminalID: session.id,
+        terminalID: `pane_${session.paneID}`,
         paneID: session.paneID,
         kind: "ime_commit",
         byteLength: 6,

@@ -7,6 +7,10 @@ export type ApprovalRequest = {
   detail?: string;
   keyArguments?: string[];
   sensitive?: boolean;
+  risk?: "terminal_low" | "terminal_high";
+  scope?: string;
+  expiresAt?: string;
+  revocable?: boolean;
 };
 
 export type ApprovalResponse = {

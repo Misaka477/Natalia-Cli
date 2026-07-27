@@ -611,6 +611,10 @@ export type RuntimeEvent =
       detail?: string;
       keyArguments?: string[];
       sensitive?: boolean;
+      risk?: "terminal_low" | "terminal_high";
+      scope?: string;
+      expiresAt?: string;
+      revocable?: boolean;
     }
   | {
       type: "approval.response";
@@ -899,6 +903,7 @@ export type RuntimeNativeTerminalSession = {
   host: "wezterm";
   paneID: number;
   windowID: number;
+  muxWindowID: number;
   tabID: number;
   command: string;
   cwd: string;
@@ -1107,7 +1112,12 @@ export type RuntimeClient = {
   terminalStop?(id: string): Promise<RuntimeTerminalSession>;
   nativeTerminalList?(): Promise<RuntimeNativeTerminalSession[]>;
   nativeTerminalRead?(id: string): Promise<{ id: string; text: string }>;
-  nativeTerminalFocus?(id: string): Promise<RuntimeNativeTerminalSession>;
+  nativeTerminalOpenHub?(): Promise<{ muxWindowID: number }>;
+  nativeTerminalRevokeApprovalScope?(id: string): Promise<{
+    id: string;
+    scope: string;
+    revoked: boolean;
+  }>;
   nativeTerminalReleaseHumanControl?(
     id: string,
   ): Promise<RuntimeNativeTerminalSession>;

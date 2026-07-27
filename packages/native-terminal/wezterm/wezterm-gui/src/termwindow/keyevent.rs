@@ -367,7 +367,9 @@ impl super::TermWindow {
                             if self.config.debug_key_events {
                                 log::info!("win32: Encoded input as {:?}", encoded);
                             }
-                            if !claim_before_pane_write(pane.pane_id(), "keyboard", encoded.len()) {
+                            if !keycode.is_modifier()
+                                && !claim_before_pane_write(pane.pane_id(), "keyboard", encoded.len())
+                            {
                                 return true;
                             }
                             pane.writer()
@@ -379,7 +381,9 @@ impl super::TermWindow {
                             if self.config.debug_key_events {
                                 log::info!("kitty: Encoded input as {:?}", encoded);
                             }
-                            if !claim_before_pane_write(pane.pane_id(), "keyboard", encoded.len()) {
+                            if !keycode.is_modifier()
+                                && !claim_before_pane_write(pane.pane_id(), "keyboard", encoded.len())
+                            {
                                 return true;
                             }
                             pane.writer()
@@ -401,7 +405,9 @@ impl super::TermWindow {
                         }
 
                         did_encode = if is_down {
-                            if !claim_before_pane_write(pane.pane_id(), "keyboard", 1) {
+                            if !keycode.is_modifier()
+                                && !claim_before_pane_write(pane.pane_id(), "keyboard", 1)
+                            {
                                 return true;
                             }
                             pane.key_down(term_key, tw_raw_modifiers)
@@ -685,7 +691,9 @@ impl super::TermWindow {
                     if self.config.debug_key_events {
                         log::info!("win32: Encoded input as {:?}", encoded);
                     }
-                    if !claim_before_pane_write(pane.pane_id(), "keyboard", encoded.len()) {
+                    if !key.is_modifier()
+                        && !claim_before_pane_write(pane.pane_id(), "keyboard", encoded.len())
+                    {
                         return;
                     }
                     pane.writer()
@@ -695,7 +703,9 @@ impl super::TermWindow {
                     if self.config.debug_key_events {
                         log::info!("kitty: Encoded input as {:?}", encoded);
                     }
-                    if !claim_before_pane_write(pane.pane_id(), "keyboard", encoded.len()) {
+                    if !key.is_modifier()
+                        && !claim_before_pane_write(pane.pane_id(), "keyboard", encoded.len())
+                    {
                         return;
                     }
                     pane.writer()
@@ -712,7 +722,9 @@ impl super::TermWindow {
                     }
 
                     if window_key.key_is_down {
-                        if !claim_before_pane_write(pane.pane_id(), "keyboard", 1) {
+                        if !key.is_modifier()
+                            && !claim_before_pane_write(pane.pane_id(), "keyboard", 1)
+                        {
                             return;
                         }
                         pane.key_down(key, modifiers)

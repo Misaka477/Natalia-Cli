@@ -29,7 +29,7 @@ test("accepts a byte-free native host pre-write claim", () => {
       type: "claim",
       nonce: "nonce_native_host",
       token: "token_native_host",
-      terminalID: "terminal_native_host",
+      terminalID: "pane_42",
       paneID: 42,
       kind: "paste",
       byteLength: 42,
@@ -45,13 +45,27 @@ test("accepts a byte-free native host pre-write claim", () => {
     nativeInputBrokerDecision({
       event: claim,
       expectedToken: "token_native_host",
-      knownSessions: new Map([["terminal_native_host", 42]]),
+      knownPanes: new Map([[42, "terminal_native_host"]]),
     }),
   ).toMatchObject({ permit: true, reason: "accepted" });
 });
 
 test("rejects malformed claims and creates platform-private endpoints", () => {
   expect(() => decodeNativeInputClaim('{"type":"input"}')).toThrow("invalid");
+  expect(() =>
+    decodeNativeInputClaim(
+      JSON.stringify({
+        version: NATIVE_INPUT_BROKER_VERSION,
+        type: "claim",
+        nonce: "nonce_mouse",
+        token: "token_mouse",
+        terminalID: "pane_7",
+        paneID: 7,
+        kind: "mouse",
+        byteLength: 1,
+      }),
+    ),
+  ).toThrow("invalid");
   expect(
     nativeInputBrokerEndpoint({
       runtimeDir: "/run/user/1000",
@@ -75,7 +89,7 @@ test("permits only a broker-authenticated mapped terminal", () => {
       type: "claim",
       nonce: "nonce_2",
       token: "token_2",
-      terminalID: "terminal_2",
+      terminalID: "pane_77",
       paneID: 77,
       kind: "keyboard",
       byteLength: 1,
@@ -85,14 +99,14 @@ test("permits only a broker-authenticated mapped terminal", () => {
     nativeInputBrokerDecision({
       event,
       expectedToken: "token_2",
-      knownSessions: new Map([["terminal_2", 77]]),
+      knownPanes: new Map([[77, "terminal_2"]]),
     }),
   ).toMatchObject({ permit: true, reason: "accepted" });
   expect(
     nativeInputBrokerDecision({
       event,
       expectedToken: "wrong",
-      knownSessions: new Map([["terminal_2", 77]]),
+      knownPanes: new Map([[77, "terminal_2"]]),
     }),
   ).toMatchObject({ permit: false, reason: "denied" });
 });
@@ -103,7 +117,7 @@ test("uses identical claim wire frames for Unix sockets and Windows pipes", () =
     type: "claim" as const,
     nonce: "nonce_cross_platform",
     token: "token_cross_platform",
-    terminalID: "terminal_cross_platform",
+    terminalID: "pane_7",
     paneID: 7,
     kind: "paste" as const,
     byteLength: 18,

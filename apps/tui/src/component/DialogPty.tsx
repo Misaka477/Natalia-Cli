@@ -99,8 +99,6 @@ function TerminalActions(props: {
     try {
       await openExternalTerminal({
         backend: props.backend,
-        id: props.session.id,
-        takeControl: true,
       });
       setError(undefined);
       props.onChanged();
@@ -127,6 +125,18 @@ function TerminalActions(props: {
         {"\n"}
         {props.session.command}
       </text>
+      <text
+        fg={
+          props.session.inputOwner === "human"
+            ? darkTheme.warning
+            : darkTheme.success
+        }
+        wrapMode="word"
+      >
+        {props.session.inputOwner === "human"
+          ? "You currently control terminal input. Select Give input to model below to return writing to the model."
+          : "The model can write to this terminal until your first keyboard, IME, or paste input."}
+      </text>
       <Show when={error()}>
         <text fg={darkTheme.danger} wrapMode="word">
           {error()}
@@ -141,10 +151,40 @@ function TerminalActions(props: {
             value: "open",
             disabled: opening(),
           },
+          {
+            title: "Revoke low-risk approval",
+            value: "revoke-approval",
+            disabled: !props.backend.nativeTerminalRevokeApprovalScope,
+          },
+          {
+            title: "Give input to model",
+            value: "give-model-control",
+            disabled:
+              props.session.inputOwner === "model" ||
+              !props.backend.nativeTerminalReleaseHumanControl,
+          },
           { title: "Stop terminal", value: "stop" },
         ]}
         onSelect={(option) => {
           if (option.value === "open") void openExternal();
+          if (
+            option.value === "revoke-approval" &&
+            props.backend.nativeTerminalRevokeApprovalScope
+          )
+            void run(() =>
+              props.backend.nativeTerminalRevokeApprovalScope!(
+                props.session.id,
+              ),
+            );
+          if (
+            option.value === "give-model-control" &&
+            props.backend.nativeTerminalReleaseHumanControl
+          )
+            void run(() =>
+              props.backend.nativeTerminalReleaseHumanControl!(
+                props.session.id,
+              ),
+            );
           if (option.value === "stop" && props.backend.nativeTerminalStop)
             void run(() => props.backend.nativeTerminalStop!(props.session.id));
         }}

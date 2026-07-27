@@ -47,11 +47,8 @@ pub fn claim_before_pane_write(pane_id: PaneId, kind: &'static str, byte_length:
         Ok(value) => value,
         Err(_) => return deny("NATALIA_NATIVE_INPUT_TOKEN is missing"),
     };
-    let terminal_id = match env::var("NATALIA_TERMINAL_ID") {
-        Ok(value) => value,
-        Err(_) => return deny("NATALIA_TERMINAL_ID is missing"),
-    };
     let nonce = format!("{:016x}{:016x}", fastrand::u64(..), fastrand::u64(..));
+    let terminal_id = format!("pane_{pane_id}");
     let claim = Claim {
         version: VERSION,
         kind_type: "claim",

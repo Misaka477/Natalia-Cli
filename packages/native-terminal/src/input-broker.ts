@@ -1,6 +1,6 @@
 export const NATIVE_INPUT_BROKER_VERSION = 2;
 
-export type NativeInputKind = "keyboard" | "ime_commit" | "paste" | "mouse";
+export type NativeInputKind = "keyboard" | "ime_commit" | "paste";
 
 /**
  * A native host asks permission before it performs its own original pane write.
@@ -62,11 +62,12 @@ export function nativeInputBrokerEndpoint(input: {
 export function nativeInputBrokerDecision(input: {
   event: Pick<NativeInputClaim, "nonce" | "token" | "terminalID" | "paneID">;
   expectedToken: string;
-  knownSessions: ReadonlyMap<string, number>;
+  knownPanes: ReadonlyMap<number, string>;
 }): NativeInputDecision {
   const permit =
     input.event.token === input.expectedToken &&
-    input.knownSessions.get(input.event.terminalID) === input.event.paneID;
+    input.event.terminalID === `pane_${input.event.paneID}` &&
+    input.knownPanes.has(input.event.paneID);
   return {
     version: NATIVE_INPUT_BROKER_VERSION,
     type: "decision",
@@ -89,7 +90,7 @@ function validateNativeInputClaim(
     !validSegment(claim.token) ||
     !validSegment(claim.terminalID) ||
     !Number.isSafeInteger(claim.paneID) ||
-    !["keyboard", "ime_commit", "paste", "mouse"].includes(claim.kind ?? "") ||
+    !["keyboard", "ime_commit", "paste"].includes(claim.kind ?? "") ||
     !Number.isSafeInteger(claim.byteLength) ||
     (claim.byteLength ?? 0) < 1 ||
     (claim.byteLength ?? 0) > 64 * 1024

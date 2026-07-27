@@ -2,18 +2,18 @@ import { expect, test } from "bun:test";
 import type { RuntimeClient } from "@natalia/contracts";
 import { openExternalTerminal } from "../src/terminal-attach";
 
-test("TUI focuses the existing native terminal pane", async () => {
-  const focused: string[] = [];
+test("TUI restores the native Terminal Hub without choosing a pane", async () => {
+  let opened = 0;
   const backend = {
     cancel() {},
     async nativeTerminalList() {
       return [];
     },
-    async nativeTerminalFocus(id: string) {
-      focused.push(id);
-      return {};
+    async nativeTerminalOpenHub() {
+      opened += 1;
+      return { muxWindowID: 7 };
     },
   } as unknown as RuntimeClient;
-  await openExternalTerminal({ backend, id: "terminal_test" });
-  expect(focused).toEqual(["terminal_test"]);
+  await openExternalTerminal({ backend });
+  expect(opened).toBe(1);
 });

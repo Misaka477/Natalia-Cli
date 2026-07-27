@@ -2,7 +2,13 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, test } from "bun:test";
-import { createToolRegistry, ManagedProcessRegistry } from "../src";
+import {
+  createToolRegistry,
+  encodeTerminalKey,
+  ManagedProcessRegistry,
+  nativeTerminalReadPage,
+  nativeTerminalSearchPage,
+} from "../src";
 import { InteractivePTYRegistry } from "@natalia/pty";
 import { NativeTerminalRegistry } from "@natalia/native-terminal";
 import { WorkspaceSandboxManager } from "@natalia/sandbox";
@@ -611,6 +617,16 @@ test("interactive Terminal tools keep model I/O on one native host pane", async 
     .execute({ id: "tty_tools", input: "tool input\n" }, context);
   expect(
     JSON.parse(
+      await tools
+        .get("interactive_terminal_send_line")!
+        .execute(
+          { id: "tty_tools", text: "atomic command", idempotencyKey: "line_1" },
+          context,
+        ),
+    ),
+  ).toMatchObject({ writtenBytes: 15, submitted: true, delivery: "accepted" });
+  expect(
+    JSON.parse(
       await tools.get("interactive_terminal_write")!.execute(
         {
           id: "tty_tools",
@@ -636,7 +652,7 @@ test("interactive Terminal tools keep model I/O on one native host pane", async 
   await tools
     .get("interactive_terminal_keys")!
     .execute({ id: "tty_tools", key: "ctrl-c" }, context);
-  await nativeTerminal.focus("tty_tools");
+  await nativeTerminal.openHub();
   await nativeTerminal.claimHumanInput("tty_tools");
   await expect(
     tools
@@ -649,8 +665,15 @@ test("interactive Terminal tools keep model I/O on one native host pane", async 
       .get("interactive_terminal_read")!
       .execute({ id: "tty_tools" }, context),
   ).toContain("native terminal output");
-  expect(writes.join("")).toBe("tool input\nidempotent input\n\x03");
+  expect(writes.join("")).toBe(
+    "tool input\natomic command\ridempotent input\n\x03",
+  );
   expect(tools.has("interactive_start")).toBe(true);
+  expect(tools.has("interactive_send_line")).toBe(true);
+  expect(tools.has("interactive_terminal_attach")).toBe(false);
+  expect(tools.has("interactive_terminal_detach")).toBe(false);
+  expect(tools.has("interactive_attach")).toBe(false);
+  expect(tools.has("interactive_detach")).toBe(false);
   expect(tools.get("interactive_start")?.name).toBe(
     "interactive_terminal_start",
   );
@@ -658,6 +681,87 @@ test("interactive Terminal tools keep model I/O on one native host pane", async 
   await tools
     .get("interactive_terminal_stop")!
     .execute({ id: "tty_tools" }, context);
+});
+
+test("encodes normalized native terminal key sequences", () => {
+  expect(encodeTerminalKey({ key: "enter" })).toBe("\r");
+  expect(encodeTerminalKey({ key: "Esc" })).toBe("\x1b");
+  expect(encodeTerminalKey({ key: "ArrowUp", modifiers: ["ctrl"] })).toBe(
+    "\x1b[1;5A",
+  );
+  expect(
+    encodeTerminalKey({ key: "Delete", modifiers: ["alt", "shift"] }),
+  ).toBe("\x1b[3;4~");
+  expect(encodeTerminalKey({ key: "F12", repeat: 2 })).toBe("\x1b[24~\x1b[24~");
+  expect(encodeTerminalKey({ key: "c", modifiers: ["ctrl", "alt"] })).toBe(
+    "\x1b\x03",
+  );
+  expect(encodeTerminalKey({ text: "你好", repeat: 2 })).toBe("你好你好");
+  expect(() => encodeTerminalKey({ key: "Unknown" })).toThrow(
+    "unsupported terminal key",
+  );
+  expect(() =>
+    encodeTerminalKey({ key: "Enter", modifiers: ["ctrl"] }),
+  ).toThrow("not encodable");
+});
+
+test("native terminal scrollback pages preserve CJK line boundaries and cursors", () => {
+  const text = Array.from(
+    { length: 4_000 },
+    (_, index) => `第${index}行\n`,
+  ).join("");
+  const first = nativeTerminalReadPage(text, { startLine: 100 });
+  expect(first).toMatchObject({
+    truncated: true,
+    totalBytes: new TextEncoder().encode(text).byteLength,
+    endLine: 100 + first.deliveredLines - 1,
+    nextStartLine: 100 + first.deliveredLines,
+  });
+  expect(first.text.endsWith("\n")).toBe(true);
+  expect(new TextDecoder().decode(new TextEncoder().encode(first.text))).toBe(
+    first.text,
+  );
+  const final = nativeTerminalReadPage("最后一行", { startLine: 4_100 });
+  expect(final).toMatchObject({
+    truncated: false,
+    deliveredLines: 1,
+    endLine: 4_100,
+    nextStartLine: undefined,
+  });
+});
+
+test("native terminal search pages bounded Unicode matches without screen transport", () => {
+  const text = Array.from(
+    { length: 200 },
+    (_, index) => `line ${index}${index % 50 === 0 ? " 命中" : ""}\n`,
+  ).join("");
+  const result = nativeTerminalSearchPage(text, {
+    query: "命中",
+    startLine: 500,
+    endLine: 900,
+    requestedEndLine: 900,
+    maxMatches: 2,
+  });
+  expect(result).toMatchObject({
+    searchedRange: { startLine: 500, endLine: 699, scannedLines: 200 },
+    matches: [
+      { line: 500, text: "line 0 命中" },
+      { line: 550, text: "line 50 命中" },
+    ],
+    truncatedMatches: true,
+    nextCursor: { startLine: 700, endLine: 900 },
+  });
+  const final = nativeTerminalSearchPage("one\n命中\n", {
+    query: "命中",
+    startLine: 900,
+    endLine: 901,
+    requestedEndLine: 901,
+    maxMatches: 20,
+  });
+  expect(final).toMatchObject({
+    matches: [{ line: 901, text: "命中" }],
+    nextCursor: undefined,
+  });
 });
 
 test("sandbox tools create execute diff and merge through the registry", async () => {

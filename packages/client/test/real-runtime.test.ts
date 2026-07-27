@@ -1189,7 +1189,14 @@ test("runtime exposes native Terminal pane management through RuntimeClient", as
     id: "tty_management",
     text: "native pane output",
   });
-  await client.nativeTerminalFocus!("tty_management");
+  await client.nativeTerminalOpenHub!();
+  await expect(
+    client.nativeTerminalRevokeApprovalScope!("tty_management"),
+  ).resolves.toEqual({
+    id: "tty_management",
+    scope: "terminal:tty_management:low-risk",
+    revoked: false,
+  });
   await client.nativeTerminalStop!("tty_management");
   expect(await client.nativeTerminalList!()).toMatchObject([
     { id: "tty_management", status: "exited" },
@@ -4065,6 +4072,10 @@ function nativeTerminalFixture() {
       return "native pane output";
     },
     async write() {},
+    async open() {
+      return { pane_id: 71, window_id: 7, tab_id: 1, rows: 24, cols: 80 };
+    },
+    async openHub() {},
     async focus() {},
     async resize() {},
     async stop() {

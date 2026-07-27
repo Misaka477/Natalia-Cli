@@ -4,7 +4,11 @@ import {
 } from "../packages/native-terminal/src/index";
 
 const command = process.env.NATALIA_KIMI_COMMAND ?? "kimi-cli";
-const registry = new NativeTerminalRegistry(createWezTermHost());
+// The product auto-opens the Hub. Keep this non-GUI smoke headless so it does
+// not create or leave desktop windows behind during automated verification.
+const registry = new NativeTerminalRegistry(createWezTermHost(), {
+  autoOpenHub: false,
+});
 const session = await registry.start({
   id: `native_kimi_${Date.now()}`,
   cwd: process.cwd(),

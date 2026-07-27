@@ -127,6 +127,7 @@ function publicNativeTerminal(
     host: session.host,
     paneID: session.paneID,
     windowID: session.windowID,
+    muxWindowID: session.muxWindowID,
     tabID: session.tabID,
     command: session.command,
     cwd: session.cwd,
@@ -222,6 +223,11 @@ export function createRealRuntimeClient(
   // durable session must never silently restore side-effecting permissions.
   const sessionApprovedTools = new Set<string>();
   const approvalToolByID = new Map<string, string>();
+  const terminalApprovalByID = new Map<
+    string,
+    { scope: string; expiresAt: number }
+  >();
+  const terminalApprovalScopes = new Map<string, number>();
   const approvalWaiters = new Map<
     string,
     (response: ApprovalResponse) => void
@@ -258,6 +264,7 @@ export function createRealRuntimeClient(
     | { inputTokens: number; outputTokens: number }
     | undefined;
   let sessionPersistence = Promise.resolve();
+  const nativeRuntimeID = randomUUID();
   let tsRuntimeConfig:
     | Awaited<ReturnType<typeof resolveConfig>>["config"]
     | undefined;
@@ -557,13 +564,20 @@ export function createRealRuntimeClient(
           ? join(process.env.XDG_RUNTIME_DIR, "natalia")
           : join(workspaceRoot, ".natalia", "native-input");
         await mkdir(nativeRuntimeDir, { recursive: true, mode: 0o700 });
-        const nativeMuxRuntimeDir = join(nativeRuntimeDir, "wezterm-runtime");
+        // A private mux belongs to one Natalia runtime, not the whole desktop
+        // account. Reusing a workspace-wide socket would let a fresh Hub attach
+        // historical test panes from a prior runtime.
+        const nativeMuxRuntimeDir = join(
+          nativeRuntimeDir,
+          "wezterm-runtime",
+          nativeRuntimeID,
+        );
         await mkdir(nativeMuxRuntimeDir, { recursive: true, mode: 0o700 });
         // wezterm-mux-server's default Unix domain is derived from its own
         // XDG runtime directory; clients must connect to that exact socket.
         const nativeMuxSocket = join(nativeMuxRuntimeDir, "wezterm", "sock");
         const nativeDomain = await writeWezTermNativeDomainConfig({
-          directory: nativeRuntimeDir,
+          directory: nativeMuxRuntimeDir,
           socketPath: nativeMuxSocket,
         });
         nativeTerminal = new NativeTerminalRegistry(
@@ -607,6 +621,25 @@ export function createRealRuntimeClient(
           registry: nativeTerminal,
           runtimeDir: nativeRuntimeDir,
           daemonID: randomUUID(),
+          onInput: ({ terminalID, paneID, kind, byteLength }) => {
+            const summary = `native human input claim accepted: terminal=${terminalID} pane=${paneID} kind=${kind} bytes=${byteLength}`;
+            publish({ type: "diagnostic", level: "info", message: summary });
+            publish({
+              type: "pty.timeline",
+              id: terminalID,
+              actor: "user",
+              action: "write",
+              status: "executed",
+              summary,
+              at: new Date().toISOString(),
+            });
+          },
+          onDenied: ({ terminalID, paneID, tokenAccepted, paneAccepted }) =>
+            publish({
+              type: "diagnostic",
+              level: "warning",
+              message: `native input claim denied: terminal=${terminalID} pane=${paneID} token=${tokenAccepted} paneKnown=${paneAccepted}`,
+            }),
         });
         nativeTerminal.setHumanInputBridge(nativeInputBroker);
       } catch {
@@ -1495,6 +1528,8 @@ export function createRealRuntimeClient(
       for (const plugin of plugins?.list() ?? [])
         await plugins!.unload(plugin.id);
       await Promise.all(cleanupMCP.splice(0).map((close) => close()));
+      await nativeTerminal?.dispose();
+      nativeTerminal = undefined;
       await nativeInputBroker?.stop();
       nativeInputBroker = undefined;
       await performanceTrace.stop();
@@ -1669,11 +1704,26 @@ export function createRealRuntimeClient(
         throw new Error("Native Terminal Host is unavailable");
       return { id, text: await nativeTerminal.read(id, { maxLines: 200 }) };
     },
-    async nativeTerminalFocus(id) {
+    async nativeTerminalOpenHub() {
       await ready;
       if (!nativeTerminal)
         throw new Error("Native Terminal Host is unavailable");
-      return publicNativeTerminal(await nativeTerminal.focus(id));
+      const hub = await nativeTerminal.openHub();
+      return { muxWindowID: hub.muxWindowID };
+    },
+    async nativeTerminalRevokeApprovalScope(id) {
+      await ready;
+      if (!nativeTerminal)
+        throw new Error("Native Terminal Host is unavailable");
+      const scope = `terminal:${id}:low-risk`;
+      const revoked = terminalApprovalScopes.delete(scope);
+      if (revoked)
+        publish({
+          type: "diagnostic",
+          level: "info",
+          message: `revoked terminal approval scope: ${scope}`,
+        });
+      return { id, scope, revoked };
     },
     async nativeTerminalReleaseHumanControl(id) {
       await ready;
@@ -2158,8 +2208,16 @@ export function createRealRuntimeClient(
         feedback: response.feedback,
       });
       if (response.decision === "session") {
-        const toolName = approvalToolByID.get(response.requestID);
-        if (toolName) sessionApprovedTools.add(toolName);
+        const terminalApproval = terminalApprovalByID.get(response.requestID);
+        if (terminalApproval)
+          terminalApprovalScopes.set(
+            terminalApproval.scope,
+            terminalApproval.expiresAt,
+          );
+        else {
+          const toolName = approvalToolByID.get(response.requestID);
+          if (toolName) sessionApprovedTools.add(toolName);
+        }
       }
       pendingApprovals.set(response.requestID, response);
       pendingApprovalRequests.delete(response.requestID);
@@ -3306,8 +3364,19 @@ export function createRealRuntimeClient(
     if (permissionMode === "auto") return;
     if (permissionMode === "read_only")
       throw new Error(readOnlyToolMessage(tool.name));
-    if (sessionApprovedTools.has(tool.name)) return;
+    const terminalApproval = terminalApprovalScope(tool.name, call.arguments);
+    if (terminalApproval) {
+      if (terminalApproval.risk === "terminal_low") {
+        const expiresAt = terminalApprovalScopes.get(terminalApproval.scope);
+        if (expiresAt && expiresAt > Date.now()) return;
+        terminalApprovalScopes.delete(terminalApproval.scope);
+      }
+    } else if (sessionApprovedTools.has(tool.name)) return;
     const presentation = approvalPresentation(tool.name, call.arguments);
+    const expiresAt =
+      terminalApproval?.risk === "terminal_low"
+        ? Date.now() + terminalApproval.ttlMs
+        : undefined;
     publish({
       type: "approval.request",
       id: approvalID,
@@ -3316,9 +3385,18 @@ export function createRealRuntimeClient(
       detail: presentation.detail,
       keyArguments: presentation.keyArguments,
       sensitive: presentation.sensitive,
+      risk: terminalApproval?.risk,
+      scope: terminalApproval?.scope,
+      expiresAt: expiresAt ? new Date(expiresAt).toISOString() : undefined,
+      revocable: terminalApproval ? true : undefined,
     });
     pendingApprovalRequests.add(approvalID);
-    approvalToolByID.set(approvalID, tool.name);
+    if (terminalApproval?.risk === "terminal_low" && expiresAt)
+      terminalApprovalByID.set(approvalID, {
+        scope: terminalApproval.scope,
+        expiresAt,
+      });
+    else approvalToolByID.set(approvalID, tool.name);
     try {
       const response = await waitForResponse(
         approvalID,
@@ -3341,6 +3419,7 @@ export function createRealRuntimeClient(
     } finally {
       pendingApprovalRequests.delete(approvalID);
       approvalToolByID.delete(approvalID);
+      terminalApprovalByID.delete(approvalID);
     }
   }
 
@@ -3680,6 +3759,9 @@ function approvalPresentation(toolName: string, rawArguments: string) {
     // Keep malformed raw arguments only in the explicit detail pane.
   }
   const keyArguments = [`tool=${toolName}`];
+  const terminalID = typeof args?.id === "string" ? args.id : undefined;
+  if (terminalID && toolName.startsWith("interactive_terminal_"))
+    keyArguments.push(`terminal=${terminalID}`);
   const path = typeof args?.path === "string" ? args.path : undefined;
   if (path) keyArguments.push(`path=${path}`);
   const sensitive = Object.keys(args ?? {}).some((key) =>
@@ -3701,6 +3783,59 @@ function approvalPresentation(toolName: string, rawArguments: string) {
           ? `${toolName}: ${path}`
           : `${toolName} requires approval`;
   return { preview, detail: rawArguments, keyArguments, sensitive };
+}
+
+export function terminalApprovalScope(toolName: string, rawArguments: string) {
+  const args = tryParseToolArguments(rawArguments);
+  const terminalID = typeof args.id === "string" ? args.id : undefined;
+  if (!terminalID) return undefined;
+  if (
+    ![
+      "interactive_terminal_write",
+      "interactive_terminal_send_line",
+      "interactive_terminal_keys",
+    ].includes(toolName)
+  )
+    return undefined;
+  const risk = terminalInputRisk(toolName, args);
+  return {
+    terminalID,
+    risk,
+    scope: `terminal:${terminalID}:${risk === "terminal_low" ? "low-risk" : "high-risk"}`,
+    ttlMs: 30 * 60 * 1_000,
+  } as const;
+}
+
+export function terminalInputRisk(
+  toolName: string,
+  args: Record<string, unknown>,
+) {
+  if (toolName === "interactive_terminal_keys") {
+    const keys = Array.isArray(args.keys)
+      ? args.keys
+      : args.key === undefined
+        ? []
+        : [{ key: args.key, modifiers: args.modifiers }];
+    return keys.every((value) => {
+      if (!value || typeof value !== "object") return false;
+      const key = value as Record<string, unknown>;
+      const modifiers = Array.isArray(key.modifiers) ? key.modifiers : [];
+      return (
+        modifiers.length === 0 &&
+        typeof key.key === "string" &&
+        /^[\p{L}\p{N}\p{P}\p{S}\s]$/u.test(key.key)
+      );
+    })
+      ? "terminal_low"
+      : "terminal_high";
+  }
+  const input = typeof args.text === "string" ? args.text : args.input;
+  if (typeof input !== "string") return "terminal_high";
+  return /(?:\brm\b|\bsudo\b|\bcurl\b|\bwget\b|\bssh\b|\bscp\b|\b(?:git\s+push|npm\s+publish)\b|>|\bchmod\b|\bkill\b)/iu.test(
+    input,
+  )
+    ? "terminal_high"
+    : "terminal_low";
 }
 
 function singleLine(value: string, max: number) {
