@@ -42,22 +42,29 @@ export type ExecutionTarget =
       isolationLevel: "workspace" | "container" | "vm";
     };
 
-export type PTYStatus =
+export type TerminalStatus =
   | "starting"
   | "running"
   | "waiting"
   | "awaiting_approval"
   | "exited"
   | "failed";
-export type PTYOwnership = "model" | "user" | "shared" | "detached";
-export type PTYAction =
+export type TerminalOwnership = "model" | "user" | "shared" | "detached";
+export type TerminalAction =
   | "write"
   | "submit"
   | "special_key"
   | "resize"
   | "exit"
   | "attach"
-  | "detach";
+  | "detach"
+  | "secure_input";
+/** @deprecated Use TerminalStatus. */
+export type PTYStatus = TerminalStatus;
+/** @deprecated Use TerminalOwnership. */
+export type PTYOwnership = TerminalOwnership;
+/** @deprecated Use TerminalAction. */
+export type PTYAction = TerminalAction;
 export type SandboxStatus =
   | "created"
   | "running"
@@ -859,11 +866,11 @@ export type TerminalViewer = {
 export type TerminalOwner =
   | { type: "model" }
   | { type: "viewer"; viewerID: string };
-export type RuntimePTYSession = {
+export type RuntimeTerminalSession = {
   id: string;
   command: string;
   cwd: string;
-  status: PTYStatus;
+  status: TerminalStatus;
   attached: boolean;
   rows: number;
   cols: number;
@@ -874,6 +881,8 @@ export type RuntimePTYSession = {
   screen?: TerminalScreenSnapshot;
   revision?: number;
   lastOutputAt?: string;
+  prompt?: string;
+  activity?: "waiting" | "running";
   viewers?: TerminalViewer[];
   inputOwner?: TerminalOwner;
   geometryOwner?: TerminalOwner;
@@ -884,6 +893,35 @@ export type RuntimePTYSession = {
     sha256?: string;
   }>;
 };
+
+export type RuntimeNativeTerminalSession = {
+  id: string;
+  host: "wezterm";
+  paneID: number;
+  windowID: number;
+  tabID: number;
+  command: string;
+  cwd: string;
+  status: "running" | "exited";
+  inputOwner: "model" | "human";
+  geometryOwner: "human";
+  secureInput: boolean;
+  rows?: number;
+  cols?: number;
+  startedAt: string;
+};
+
+export type RuntimeTerminalObservationSession = Omit<
+  RuntimeTerminalSession,
+  "screen" | "transcript"
+> & {
+  screen?: TerminalScreenSnapshot;
+  transcript?: string;
+};
+/** @deprecated Use RuntimeTerminalSession. */
+export type RuntimePTYSession = RuntimeTerminalSession;
+/** @deprecated Use RuntimeTerminalObservationSession. */
+export type RuntimePTYObservationSession = RuntimeTerminalObservationSession;
 export type RuntimeSessionSummary = {
   id: string;
   title: string;
@@ -984,7 +1022,10 @@ export function runtimeEventDurability(
 }
 
 export type RuntimeClient = {
-  start(onEvent: (event: RuntimeEvent) => void): void;
+  start(
+    onEvent: (event: RuntimeEvent) => void,
+    options?: { replay?: "all" | "none" },
+  ): void;
   submit(text: string): Promise<SubmittedTurn>;
   submitInput?(input: SubmitInput): Promise<SubmittedTurn>;
   history?(options?: {
@@ -1032,7 +1073,54 @@ export type RuntimeClient = {
     path?: string;
     limit?: number;
   }): Promise<RuntimeWorkspaceFileEntry[]>;
+  terminalList?(): Promise<RuntimeTerminalSession[]>;
+  terminalRead?(input: {
+    id: string;
+    offset?: number;
+    maxChars?: number;
+  }): Promise<
+    RuntimeTerminalSession & {
+      offset: number;
+      nextOffset: number;
+      totalChars: number;
+      truncated: boolean;
+    }
+  >;
+  terminalWrite?(input: {
+    id: string;
+    text: string;
+    submit?: boolean;
+    sensitive?: boolean;
+    idempotencyKey?: string;
+  }): Promise<RuntimeTerminalSession>;
+  terminalKey?(input: {
+    id: string;
+    key: "enter" | "ctrl-c" | "ctrl-d" | "tab" | "esc";
+  }): Promise<RuntimeTerminalSession>;
+  terminalResize?(input: {
+    id: string;
+    rows: number;
+    cols: number;
+  }): Promise<RuntimeTerminalSession>;
+  terminalAttach?(id: string): Promise<RuntimeTerminalSession>;
+  terminalDetach?(id: string): Promise<RuntimeTerminalSession>;
+  terminalStop?(id: string): Promise<RuntimeTerminalSession>;
+  nativeTerminalList?(): Promise<RuntimeNativeTerminalSession[]>;
+  nativeTerminalRead?(id: string): Promise<{ id: string; text: string }>;
+  nativeTerminalFocus?(id: string): Promise<RuntimeNativeTerminalSession>;
+  nativeTerminalReleaseHumanControl?(
+    id: string,
+  ): Promise<RuntimeNativeTerminalSession>;
+  nativeTerminalBeginSecureInput?(
+    id: string,
+  ): Promise<RuntimeNativeTerminalSession>;
+  nativeTerminalEndSecureInput?(
+    id: string,
+  ): Promise<RuntimeNativeTerminalSession>;
+  nativeTerminalStop?(id: string): Promise<RuntimeNativeTerminalSession>;
+  /** @deprecated Use terminalList. */
   ptyList?(): Promise<RuntimePTYSession[]>;
+  /** @deprecated Use terminalRead. */
   ptyRead?(input: { id: string; offset?: number; maxChars?: number }): Promise<
     RuntimePTYSession & {
       offset: number;
@@ -1048,7 +1136,7 @@ export type RuntimeClient = {
     signal?: AbortSignal;
     differential?: boolean;
   }): Promise<{
-    session: RuntimePTYSession;
+    session: RuntimePTYObservationSession;
     afterRevision: number;
     changed: boolean;
     reason: "changed" | "timeout" | "exited";
@@ -1079,6 +1167,7 @@ export type RuntimeClient = {
     viewerID: string;
     data: string;
     sensitive?: boolean;
+    idempotencyKey?: string;
   }): Promise<RuntimePTYSession>;
   terminalViewerResize?(input: {
     id: string;
@@ -1091,23 +1180,30 @@ export type RuntimeClient = {
     offsetFromBottom?: number;
     maxRows?: number;
   }): Promise<TerminalScrollbackPage>;
+  /** @deprecated Use terminalWrite. */
   ptyWrite?(input: {
     id: string;
     text: string;
     submit?: boolean;
     sensitive?: boolean;
+    idempotencyKey?: string;
   }): Promise<RuntimePTYSession>;
+  /** @deprecated Use terminalKey. */
   ptyKey?(input: {
     id: string;
     key: "enter" | "ctrl-c" | "ctrl-d" | "tab" | "esc";
   }): Promise<RuntimePTYSession>;
+  /** @deprecated Use terminalResize. */
   ptyResize?(input: {
     id: string;
     rows: number;
     cols: number;
   }): Promise<RuntimePTYSession>;
+  /** @deprecated Use terminalAttach. */
   ptyAttach?(id: string): Promise<RuntimePTYSession>;
+  /** @deprecated Use terminalDetach. */
   ptyDetach?(id: string): Promise<RuntimePTYSession>;
+  /** @deprecated Use terminalStop. */
   ptyStop?(id: string): Promise<RuntimePTYSession>;
   checkpointList?(): Promise<RuntimeCheckpoint[]>;
   checkpointPreview?(id: string): Promise<CheckpointPreview>;

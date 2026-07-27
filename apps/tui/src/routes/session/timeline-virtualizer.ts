@@ -148,7 +148,7 @@ export function groupTimelineBlocks<T extends { id: string; role: string }>(
     const sameTurn =
       block.role !== "system" &&
       (previous?.key === baseKey || previous?.key.startsWith(`${baseKey}:`));
-    if (sameTurn && previous.items.length < maxItemsPerGroup) {
+    if (sameTurn && previous && previous.items.length < maxItemsPerGroup) {
       previous.items.push(block);
       continue;
     }

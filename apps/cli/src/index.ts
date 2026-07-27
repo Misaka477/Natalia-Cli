@@ -18,7 +18,10 @@ import {
   resolveConfig,
 } from "@natalia/config";
 import type { RuntimeEvent } from "@natalia/contracts";
-import type { RuntimePTYSession } from "@natalia/contracts";
+import type {
+  RuntimePTYSession,
+  TerminalScreenSnapshot,
+} from "@natalia/contracts";
 import {
   applyTerminalScreenUpdate,
   renderTerminalSnapshotANSI,
@@ -38,6 +41,12 @@ export type StartupDiagnostics = {
   migrationSummary: string;
   tty: boolean;
   automation: boolean;
+};
+
+type TerminalScrollbackController = {
+  offsetFromBottom: number;
+  pageRows?: number;
+  render?(): Promise<void>;
 };
 
 export async function startupDiagnostics(
@@ -63,12 +72,56 @@ export async function attachTerminalReadOnly(input: {
   viewerID?: string;
   sensitive?: boolean;
   manageViewer?: boolean;
+  scrollback?: TerminalScrollbackController;
+  reconnectViewer?: () => Promise<void>;
+  reconnectDelayMs?: number;
 }) {
   const write = input.write ?? ((frame: string) => process.stdout.write(frame));
   const viewerID = input.viewerID ?? `viewer_${randomUUID()}`;
   let revision = -1;
   let last: RuntimePTYSession | undefined;
   let screen: RuntimePTYSession["screen"];
+  const scrollback = input.scrollback;
+  const reconnectViewer = async () => {
+    if (input.reconnectViewer) return await input.reconnectViewer();
+    if (input.manageViewer === false) return;
+    await callRuntimeRPC({
+      url: input.url,
+      token: input.token,
+      method: "terminal.viewer.register",
+      params: { id: input.id, viewerID, kind: "external" },
+    });
+  };
+  const renderScrollback = async () => {
+    if (!scrollback || !last) return;
+    if (scrollback.offsetFromBottom === 0 && screen) {
+      write(renderTerminalSnapshotANSI(screen));
+      return;
+    }
+    const page = await callRuntimeRPC<
+      import("@natalia/contracts").TerminalScrollbackPage
+    >({
+      url: input.url,
+      token: input.token,
+      method: "terminal.scrollback",
+      params: {
+        id: input.id,
+        offsetFromBottom: scrollback.offsetFromBottom,
+        maxRows: scrollback.pageRows ?? last.rows,
+      },
+    });
+    const rows = Math.max(1, scrollback.pageRows ?? last.rows);
+    scrollback.offsetFromBottom = Math.min(
+      Math.max(0, page.totalLines - rows),
+      scrollback.offsetFromBottom,
+    );
+    write(
+      renderTerminalSnapshotANSI(scrollbackSnapshot(last, page), {
+        clear: true,
+      }),
+    );
+  };
+  if (scrollback) scrollback.render = renderScrollback;
   if (input.manageViewer !== false)
     await callRuntimeRPC({
       url: input.url,
@@ -77,42 +130,87 @@ export async function attachTerminalReadOnly(input: {
       params: { id: input.id, viewerID, kind: "external" },
     });
   write("\x1b[?1049h\x1b[?25l");
+  const heartbeat =
+    input.manageViewer === false
+      ? undefined
+      : setInterval(() => {
+          void callRuntimeRPC({
+            url: input.url,
+            token: input.token,
+            method: "terminal.viewer.heartbeat",
+            params: { id: input.id, viewerID },
+          }).catch(() => undefined);
+        }, 10_000);
+  heartbeat?.unref();
   try {
+    let failures = 0;
     while (!input.signal?.aborted) {
-      const observation = await callRuntimeRPC<{
+      let observation: {
         session: RuntimePTYSession;
         afterRevision: number;
         changed: boolean;
         reason: "changed" | "timeout" | "exited";
         screenUpdate?: import("@natalia/contracts").TerminalScreenUpdate;
-      }>({
-        url: input.url,
-        token: input.token,
-        method: "terminal.observe",
-        signal: input.signal,
-        params: {
-          id: input.id,
-          afterRevision: Math.max(0, revision),
-          timeoutMs: Math.min(30_000, Math.max(0, input.pollMs ?? 30_000)),
-          differential: revision >= 0,
-        },
-      });
+      };
+      try {
+        observation = await callRuntimeRPC({
+          url: input.url,
+          token: input.token,
+          method: "terminal.observe",
+          signal: input.signal,
+          params: {
+            id: input.id,
+            afterRevision: Math.max(0, revision),
+            timeoutMs: Math.min(30_000, Math.max(0, input.pollMs ?? 30_000)),
+            differential: revision >= 0,
+          },
+        });
+        failures = 0;
+      } catch (error) {
+        if (input.signal?.aborted) break;
+        failures += 1;
+        if (failures >= 3)
+          throw new Error(
+            `terminal connection lost after ${failures} attempts: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        await Bun.sleep(
+          (input.reconnectDelayMs ?? 1_000) * 2 ** (failures - 1),
+        );
+        await reconnectViewer();
+        revision = -1;
+        screen = undefined;
+        continue;
+      }
       const session = observation.session;
       last = observation.session;
-      screen = applyTerminalScreenUpdate(
-        screen ?? session.screen,
-        observation.screenUpdate,
-        revision >= 0 ? revision : undefined,
-      );
+      try {
+        screen = applyTerminalScreenUpdate(
+          screen ?? session.screen,
+          observation.screenUpdate,
+          revision >= 0 ? revision : undefined,
+        );
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message.includes("does not match current framebuffer")
+        ) {
+          revision = -1;
+          screen = undefined;
+          continue;
+        }
+        throw error;
+      }
       if (screen && session.revision !== revision) {
         revision = session.revision ?? revision;
-        write(renderTerminalSnapshotANSI(screen));
+        if (!scrollback || scrollback.offsetFromBottom === 0)
+          write(renderTerminalSnapshotANSI(screen));
       }
       if (session.status === "exited" || session.status === "failed") break;
     }
   } catch (error) {
     if (!input.signal?.aborted) throw error;
   } finally {
+    if (heartbeat) clearInterval(heartbeat);
     write("\x1b[0m\x1b[?2004l\x1b[?25h\x1b[?1049l");
     if (input.manageViewer !== false)
       await callRuntimeRPC({
@@ -134,6 +232,7 @@ export async function attachTerminalWithControl(input: {
   sensitive?: boolean;
 }) {
   const viewerID = input.viewerID ?? `viewer_${randomUUID()}`;
+  const scrollback: TerminalScrollbackController = { offsetFromBottom: 0 };
   const controller = new AbortController();
   const abort = () => controller.abort();
   input.signal?.addEventListener("abort", abort, { once: true });
@@ -152,14 +251,16 @@ export async function attachTerminalWithControl(input: {
 
   let writes = Promise.resolve();
   const send = (method: string, params: Record<string, unknown>) => {
-    writes = writes.then(async () => {
-      await callRuntimeRPC({
-        url: input.url,
-        token: input.token,
-        method,
-        params: { id: input.id, viewerID, ...params },
-      });
-    });
+    writes = writes
+      .then(async () => {
+        await callRuntimeRPC({
+          url: input.url,
+          token: input.token,
+          method,
+          params: { id: input.id, viewerID, ...params },
+        });
+      })
+      .catch(() => undefined);
   };
   const resize = () => {
     const rows = process.stdout.rows;
@@ -174,6 +275,19 @@ export async function attachTerminalWithControl(input: {
     const data = chunk.toString("utf8");
     if (data.includes("\x1d")) {
       controller.abort();
+      return;
+    }
+    if (data === "\x1b[5;2~") {
+      scrollback.offsetFromBottom += Math.max(1, process.stdout.rows ?? 24);
+      void scrollback.render?.();
+      return;
+    }
+    if (data === "\x1b[6;2~") {
+      scrollback.offsetFromBottom = Math.max(
+        0,
+        scrollback.offsetFromBottom - Math.max(1, process.stdout.rows ?? 24),
+      );
+      void scrollback.render?.();
       return;
     }
     send("terminal.viewer.write", { data, sensitive: input.sensitive });
@@ -195,6 +309,21 @@ export async function attachTerminalWithControl(input: {
       viewerID,
       manageViewer: false,
       signal: controller.signal,
+      scrollback,
+      reconnectViewer: async () => {
+        await callRuntimeRPC({
+          url: input.url,
+          token: input.token,
+          method: "terminal.viewer.register",
+          params: { id: input.id, viewerID, kind: "external" },
+        });
+        await callRuntimeRPC({
+          url: input.url,
+          token: input.token,
+          method: "terminal.viewer.control",
+          params: { id: input.id, viewerID, action: "takeover" },
+        });
+      },
     });
   } finally {
     clearInterval(heartbeat);
@@ -211,6 +340,24 @@ export async function attachTerminalWithControl(input: {
     }).catch(() => undefined);
     input.signal?.removeEventListener("abort", abort);
   }
+}
+
+function scrollbackSnapshot(
+  session: RuntimePTYSession,
+  page: import("@natalia/contracts").TerminalScrollbackPage,
+): TerminalScreenSnapshot {
+  const rows = session.rows;
+  const lines = page.lines.slice(-rows);
+  while (lines.length < rows) lines.unshift([]);
+  return {
+    rows,
+    cols: session.cols,
+    buffer: session.screen?.buffer ?? "normal",
+    cursor: { row: rows - 1, col: 0, visible: false },
+    lines,
+    text: page.text,
+    modes: { bracketedPaste: false },
+  };
 }
 
 export async function plainStatus(configPath: string) {

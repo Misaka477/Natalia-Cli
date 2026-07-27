@@ -2,7 +2,7 @@ import { chmod, mkdtemp, readFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { InteractivePTYRegistry } from "../packages/pty/src";
+import { TerminalRegistry } from "../packages/pty/src";
 
 const results: Array<Record<string, unknown>> = [];
 const tmux = Bun.which("tmux");
@@ -34,7 +34,7 @@ console.log(JSON.stringify({ result: "passed", targets: results }));
 async function smokeTmux(executable: string) {
   const root = await mkdtemp(join(tmpdir(), "natalia-terminal-tmux-"));
   const socket = `natalia_${process.pid}`;
-  const registry = new InteractivePTYRegistry(join(root, ".natalia", "pty"));
+  const registry = new TerminalRegistry(join(root, ".natalia", "terminal"));
   const session = await registry.start({
     id: "tty_tmux_smoke",
     command: `${executable} -L ${socket} -f /dev/null new-session`,
@@ -75,7 +75,7 @@ async function smokeTmux(executable: string) {
 
 async function smokeVim(executable: string) {
   const root = await mkdtemp(join(tmpdir(), "natalia-terminal-vim-"));
-  const registry = new InteractivePTYRegistry(join(root, ".natalia", "pty"));
+  const registry = new TerminalRegistry(join(root, ".natalia", "terminal"));
   const file = join(root, "compat.txt");
   const local = executable === "/tmp/kilo/vim-user/usr/bin/vim";
   const environment = local
@@ -137,7 +137,7 @@ async function smokeVim(executable: string) {
 
 async function smokeKimi(uv: string, reference: string) {
   const root = await mkdtemp(join(tmpdir(), "natalia-terminal-kimi-"));
-  const registry = new InteractivePTYRegistry(join(root, ".natalia", "pty"));
+  const registry = new TerminalRegistry(join(root, ".natalia", "terminal"));
   const session = await registry.start({
     id: "tty_kimi_smoke",
     command: `env HOME=${root}/home XDG_CONFIG_HOME=${root}/config XDG_DATA_HOME=${root}/data ${uv} run --project ${reference} kimi --work-dir ${root}`,
@@ -154,6 +154,8 @@ async function smokeKimi(uv: string, reference: string) {
     const before = registry.get(session.id);
     if (!before.screen.text.includes("Model: not set"))
       throw new Error("Kimi unconfigured model state was not visible");
+    if (before.screen.text.includes("cursor position requests (CPR)"))
+      throw new Error("Kimi reported an unsupported cursor position request");
     await registry.resize(session.id, 40, 132);
     const after = registry.get(session.id);
     if (after.rows !== 40 || after.cols !== 132)
@@ -235,7 +237,7 @@ async function smokeSSH(ssh: string, sshd: string) {
     stdout: "pipe",
     stderr: "pipe",
   });
-  const registry = new InteractivePTYRegistry(join(root, ".natalia", "pty"));
+  const registry = new TerminalRegistry(join(root, ".natalia", "terminal"));
   try {
     await Bun.sleep(200);
     if (server.exitCode !== null)

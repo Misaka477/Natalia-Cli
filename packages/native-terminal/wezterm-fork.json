@@ -1,0 +1,28 @@
+{
+  "host": "wezterm",
+  "role": "natalia-current-main-experimental-host",
+  "upstream": {
+    "repository": "https://github.com/wez/wezterm",
+    "commit": "76b606ec597a3c0263fa60321548637451c0a547"
+  },
+  "versionTag": "20260716-195552-76b606e+natalia-input-broker-main",
+  "nataliaPatch": {
+    "description": "Metadata-only authenticated input claim immediately before the existing pane write path.",
+    "files": [
+      "wezterm-gui/src/termwindow/clipboard.rs",
+      "wezterm-gui/src/termwindow/keyevent.rs",
+      "wezterm-gui/src/termwindow/mod.rs",
+      "wezterm-gui/src/termwindow/mouseevent.rs",
+      "wezterm-gui/src/termwindow/native_input.rs"
+    ]
+  },
+  "build": {
+    "command": "npm run native-terminal:build-wezterm (cleans Conda variables, sets PATH=/usr/bin:/bin, and uses /usr/bin/gcc and /usr/bin/g++)",
+    "executables": [
+      "target/release/wezterm",
+      "target/release/wezterm-gui",
+      "target/release/wezterm-mux-server"
+    ]
+  },
+  "releaseStatus": "experimental-current-main-not-a-formal-wezterm-stable-release"
+}

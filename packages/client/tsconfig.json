@@ -9,6 +9,7 @@
     { "path": "../plugin" },
     { "path": "../contracts" },
     { "path": "../mcp" },
+    { "path": "../native-terminal" },
     { "path": "../pty" },
     { "path": "../runtime" },
     { "path": "../session" },

@@ -19,7 +19,31 @@ type WorkerRequest = {
     | "approval"
     | "question"
     | "interactive.pending"
-    | "dispose";
+    | "dispose"
+    | "history"
+    | "messages"
+    | "agents"
+    | "model.catalog"
+    | "model.selection"
+    | "model.select"
+    | "skills"
+    | "workspace.files"
+    | "workspace.search"
+    | "workspace.list"
+    | "workspace.read"
+    | "workspace.glob"
+    | "terminal.list"
+    | "terminal.read"
+    | "terminal.write"
+    | "terminal.key"
+    | "terminal.resize"
+    | "terminal.attach"
+    | "terminal.detach"
+    | "terminal.stop"
+    | "native-terminal.list"
+    | "native-terminal.read"
+    | "native-terminal.focus"
+    | "native-terminal.stop";
   value?: unknown;
 };
 
@@ -94,6 +118,128 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["pendingInteractive"]>>
       >;
     },
+    async history(options) {
+      return (await request("history", options)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["history"]>>
+      >;
+    },
+    async messages(options) {
+      return (await request("messages", options)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["messages"]>>
+      >;
+    },
+    async agents() {
+      return (await request("agents")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["agents"]>>
+      >;
+    },
+    async modelCatalog() {
+      return (await request("model.catalog")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["modelCatalog"]>>
+      >;
+    },
+    async modelSelection() {
+      return (await request("model.selection")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["modelSelection"]>>
+      >;
+    },
+    async selectModel(modelID, variant) {
+      await request("model.select", { modelID, variant });
+    },
+    async skills() {
+      return (await request("skills")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["skills"]>>
+      >;
+    },
+    async workspaceFiles(input) {
+      return (await request("workspace.files", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["workspaceFiles"]>>
+      >;
+    },
+    async workspaceSearch(input) {
+      return (await request("workspace.search", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["workspaceSearch"]>>
+      >;
+    },
+    async workspaceList(input) {
+      return (await request("workspace.list", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["workspaceList"]>>
+      >;
+    },
+    async workspaceRead(input) {
+      return (await request("workspace.read", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["workspaceRead"]>>
+      >;
+    },
+    async workspaceGlob(input) {
+      return (await request("workspace.glob", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["workspaceGlob"]>>
+      >;
+    },
+    async terminalList() {
+      return (await request("terminal.list")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["terminalList"]>>
+      >;
+    },
+    async terminalRead(input) {
+      return (await request("terminal.read", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["terminalRead"]>>
+      >;
+    },
+    async terminalWrite(input) {
+      return (await request("terminal.write", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["terminalWrite"]>>
+      >;
+    },
+    async terminalKey(input) {
+      return (await request("terminal.key", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["terminalKey"]>>
+      >;
+    },
+    async terminalResize(input) {
+      return (await request("terminal.resize", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["terminalResize"]>>
+      >;
+    },
+    async terminalAttach(id) {
+      return (await request("terminal.attach", id)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["terminalAttach"]>>
+      >;
+    },
+    async terminalDetach(id) {
+      return (await request("terminal.detach", id)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["terminalDetach"]>>
+      >;
+    },
+    async terminalStop(id) {
+      return (await request("terminal.stop", id)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["terminalStop"]>>
+      >;
+    },
+    async nativeTerminalList() {
+      return (await request("native-terminal.list")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["nativeTerminalList"]>>
+      >;
+    },
+    async nativeTerminalRead(id) {
+      return (await request("native-terminal.read", id)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["nativeTerminalRead"]>>
+      >;
+    },
+    async nativeTerminalFocus(id) {
+      return (await request("native-terminal.focus", id)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["nativeTerminalFocus"]>>
+      >;
+    },
+    async nativeTerminalStop(id) {
+      return (await request("native-terminal.stop", id)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["nativeTerminalStop"]>>
+      >;
+    },
+    async dispose() {
+      await request("dispose");
+      port.removeEventListener("message", onMessage);
+    },
     cancel(reason) {
       void request("cancel", reason);
     },
@@ -166,6 +312,51 @@ async function handleWorkerRequest(
       throw new Error("RuntimeClient does not support interactive.pending");
     return await client.pendingInteractive();
   }
+  if (request.method === "history") return await client.history?.();
+  if (request.method === "messages")
+    return await client.messages?.(request.value as never);
+  if (request.method === "agents") return await client.agents?.();
+  if (request.method === "model.catalog") return await client.modelCatalog?.();
+  if (request.method === "model.selection")
+    return await client.modelSelection?.();
+  if (request.method === "model.select") {
+    const input = request.value as { modelID?: string; variant?: string };
+    return await client.selectModel?.(input.modelID, input.variant);
+  }
+  if (request.method === "skills") return await client.skills?.();
+  if (request.method === "workspace.files")
+    return await client.workspaceFiles?.(request.value as never);
+  if (request.method === "workspace.search")
+    return await client.workspaceSearch?.(request.value as never);
+  if (request.method === "workspace.list")
+    return await client.workspaceList?.(request.value as never);
+  if (request.method === "workspace.read")
+    return await client.workspaceRead?.(request.value as never);
+  if (request.method === "workspace.glob")
+    return await client.workspaceGlob?.(request.value as never);
+  if (request.method === "terminal.list") return await client.terminalList?.();
+  if (request.method === "terminal.read")
+    return await client.terminalRead?.(request.value as never);
+  if (request.method === "terminal.write")
+    return await client.terminalWrite?.(request.value as never);
+  if (request.method === "terminal.key")
+    return await client.terminalKey?.(request.value as never);
+  if (request.method === "terminal.resize")
+    return await client.terminalResize?.(request.value as never);
+  if (request.method === "terminal.attach")
+    return await client.terminalAttach?.(request.value as string);
+  if (request.method === "terminal.detach")
+    return await client.terminalDetach?.(request.value as string);
+  if (request.method === "terminal.stop")
+    return await client.terminalStop?.(request.value as string);
+  if (request.method === "native-terminal.list")
+    return await client.nativeTerminalList?.();
+  if (request.method === "native-terminal.read")
+    return await client.nativeTerminalRead?.(request.value as string);
+  if (request.method === "native-terminal.focus")
+    return await client.nativeTerminalFocus?.(request.value as string);
+  if (request.method === "native-terminal.stop")
+    return await client.nativeTerminalStop?.(request.value as string);
   if (request.method === "cancel")
     return client.cancel(
       typeof request.value === "string" ? request.value : undefined,
@@ -176,6 +367,7 @@ async function handleWorkerRequest(
     );
   if (request.method === "resume") return client.resume?.();
   if (request.method === "snapshot") return client.snapshot();
+  if (request.method === "dispose") return await client.dispose?.();
   if (request.method === "approval")
     return client.respondApproval(request.value as ApprovalResponse);
   return client.respondQuestion(request.value as QuestionResponse);

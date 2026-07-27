@@ -16,7 +16,7 @@ import {
   Show,
 } from "solid-js";
 import { usePromptRef } from "../context/prompt";
-import { useRouteController } from "../context/route";
+import { useRouteController, type AppRoute } from "../context/route";
 import { StateProvider, useAppState } from "../context/state";
 import { useClipboard } from "../context/clipboard";
 import { ToastRegion, useToast } from "../context/toast";
@@ -53,7 +53,6 @@ import { DialogStash } from "../component/DialogStash";
 import { DialogAttachment } from "../component/DialogAttachment";
 import { DialogWorkspaceSearch } from "../component/DialogWorkspaceSearch";
 import { DialogPty } from "../component/DialogPty";
-import { TerminalWorkspace } from "../routes/TerminalWorkspace";
 import { DialogCheckpoint } from "../component/DialogCheckpoint";
 import { DialogSandbox } from "../component/DialogSandbox";
 import { PromptAutocomplete } from "../component/PromptAutocomplete";
@@ -122,10 +121,27 @@ export function App(props: {
   onSessionChange?: (sessionID?: string) => void;
   onDispatch?: (event: RuntimeEvent) => void;
   initialPrompt?: string;
+  initialRoute?: AppRoute;
+  onHistoryControls?: (controls: {
+    loadOlder(): Promise<void>;
+    loadNewer(): Promise<void>;
+  }) => void;
 }) {
   const [backend, setBackend] = createSignal(props.backend);
+  const [historyCursor, setHistoryCursor] = createSignal<string>();
+  const [newerHistoryCursor, setNewerHistoryCursor] = createSignal<string>();
+  let loadingHistory = false;
+  let historyHydrate:
+    | ((
+        messages: import("@natalia/contracts").RuntimeProjectedMessage[],
+        direction?: "older" | "newer",
+      ) => boolean)
+    | undefined;
 
   function changeSession(sessionID?: string) {
+    setHistoryCursor(undefined);
+    setNewerHistoryCursor(undefined);
+    historyHydrate = undefined;
     if (props.createBackend) setBackend(props.createBackend(sessionID));
     props.onSessionChange?.(sessionID);
   }
@@ -134,11 +150,20 @@ export function App(props: {
     <Show when={backend()} keyed>
       {(activeBackend) => (
         <StateProvider
-          onReady={(dispatch) => {
-            activeBackend.start((event: RuntimeEvent) => {
-              dispatch(event);
-              props.onDispatch?.(event);
-            });
+          onReady={(bridge) => {
+            historyHydrate = bridge.hydrateMessages;
+            activeBackend.start(
+              (event: RuntimeEvent) => {
+                bridge.dispatch(event);
+                props.onDispatch?.(event);
+                if (event.type === "session.ready")
+                  void hydrateRecentMessages(
+                    activeBackend,
+                    bridge.hydrateMessages,
+                  ).then((cursor) => setHistoryCursor(cursor));
+              },
+              { replay: "none" },
+            );
           }}
         >
           <DialogProvider>
@@ -146,6 +171,48 @@ export function App(props: {
               backend={activeBackend}
               workspaceRoot={props.workspaceRoot}
               onSessionChange={changeSession}
+              initialRoute={props.initialRoute}
+              onHistoryControls={props.onHistoryControls}
+              onLoadOlderHistory={async () => {
+                const cursor = historyCursor();
+                if (!cursor || loadingHistory || !historyHydrate) return;
+                loadingHistory = true;
+                try {
+                  const page = await activeBackend.messages?.({
+                    cursor,
+                    limit: 100,
+                  });
+                  if (!page) return;
+                  const evicted = historyHydrate(
+                    [...page.data].reverse(),
+                    "older",
+                  );
+                  if (evicted) setNewerHistoryCursor(page.cursor.previous);
+                  setHistoryCursor(page.cursor.next);
+                } finally {
+                  loadingHistory = false;
+                }
+              }}
+              onLoadNewerHistory={async () => {
+                const cursor = newerHistoryCursor();
+                if (!cursor || loadingHistory || !historyHydrate) return;
+                loadingHistory = true;
+                try {
+                  const page = await activeBackend.messages?.({
+                    cursor,
+                    limit: 100,
+                  });
+                  if (!page) return;
+                  const evicted = historyHydrate(
+                    [...page.data].reverse(),
+                    "newer",
+                  );
+                  if (evicted) setHistoryCursor(page.cursor.next);
+                  setNewerHistoryCursor(page.cursor.previous);
+                } finally {
+                  loadingHistory = false;
+                }
+              }}
             />
           </DialogProvider>
         </StateProvider>
@@ -154,10 +221,29 @@ export function App(props: {
   );
 }
 
+async function hydrateRecentMessages(
+  backend: RuntimeClient,
+  hydrateMessages: (
+    messages: import("@natalia/contracts").RuntimeProjectedMessage[],
+    direction?: "older" | "newer",
+  ) => boolean,
+) {
+  const page = await backend.messages?.({ limit: 100 }).catch(() => undefined);
+  hydrateMessages([...(page?.data ?? [])].reverse());
+  return page?.cursor.next;
+}
+
 function Shell(props: {
   backend: RuntimeClient;
   workspaceRoot?: string;
   onSessionChange?: (sessionID?: string) => void;
+  onLoadOlderHistory?: () => Promise<void>;
+  onLoadNewerHistory?: () => Promise<void>;
+  onHistoryControls?: (controls: {
+    loadOlder(): Promise<void>;
+    loadNewer(): Promise<void>;
+  }) => void;
+  initialRoute?: AppRoute;
 }) {
   const renderer = useRenderer();
   const [terminalWidth, setTerminalWidth] = createSignal(renderer.width);
@@ -201,12 +287,16 @@ function Shell(props: {
     const current = route.route();
     return current.kind === "subagent" ? current : undefined;
   };
-  const activeTerminalRoute = () => {
-    const current = route.route();
-    return current.kind === "terminal" ? current : undefined;
-  };
 
   onMount(() => {
+    if (props.onHistoryControls)
+      props.onHistoryControls({
+        loadOlder: async () => props.onLoadOlderHistory?.(),
+        loadNewer: async () => props.onLoadNewerHistory?.(),
+      });
+    const initialRoute = props.initialRoute;
+    if (initialRoute && initialRoute.kind !== "none")
+      route.replace(initialRoute);
     const resize = (width: number, height: number) => {
       setTerminalWidth(width);
       setTerminalHeight(height);
@@ -232,7 +322,7 @@ function Shell(props: {
       const loaded = await loadTuiPreferences(props.workspaceRoot);
       setPreferences(loaded);
       keybinds.set(loaded.keybinds);
-      setFollowBottom(loaded.followBottom);
+      setFollowMode(loaded.followBottom);
     }
     setTimeout(() => composer()?.focus(), 1);
   });
@@ -255,7 +345,7 @@ function Shell(props: {
     const patch = tuiPreferencePatch(preferences(), next);
     setPreferences(next);
     keybinds.set(next.keybinds);
-    setFollowBottom(next.followBottom);
+    setFollowMode(next.followBottom);
     theme.preview(next.theme);
     if (props.workspaceRoot)
       void saveTuiPreferences(props.workspaceRoot, patch, scope).then(
@@ -2277,12 +2367,7 @@ function Shell(props: {
       return;
     }
     if (command === "pty.manage") {
-      dialog.push(() => (
-        <DialogPty
-          backend={props.backend}
-          onOpenInternal={(id) => route.push({ kind: "terminal", id })}
-        />
-      ));
+      dialog.push(() => <DialogPty backend={props.backend} />);
       return;
     }
     if (command === "checkpoint.manage") {
@@ -2558,26 +2643,20 @@ function Shell(props: {
             <SubagentRoute agentID={current.id} onBack={() => route.back()} />
           )}
         </Show>
-        <Show when={activeTerminalRoute()} keyed>
-          {(current) => (
-            <TerminalWorkspace
-              backend={props.backend}
-              id={current.id}
-              onBack={() => route.back()}
-            />
-          )}
-        </Show>
-        <Show when={!activeSubagentRoute() && !activeTerminalRoute()}>
+        <Show when={!activeSubagentRoute()}>
           <SessionRoute
             scrollRef={scrollRef}
             ptyScrollRef={ptyScrollRef}
             followBottom={followBottom()}
+            onFollowChange={setFollowMode}
             density={preferences().density}
             toolDetails={preferences().toolDetails}
             diffStyle={preferences().diffStyle}
             terminalWidth={layout().toolContentWidth}
             toolPreviewLines={layout().toolPreviewLines}
             showJumpToBottom={jumpToBottomVisible()}
+            onLoadOlderHistory={props.onLoadOlderHistory}
+            onLoadNewerHistory={props.onLoadNewerHistory}
             onJumpToBottom={jumpToBottom}
             onMessageCopy={(text) => {
               if (!clipboard.write) {
@@ -2631,152 +2710,144 @@ function Shell(props: {
             backend={props.backend}
             onExit={exitOrCancel}
           />
-          <Show when={!activeTerminalRoute()}>
-            <box
-              flexShrink={0}
-              border={["top"]}
-              borderColor={
+          <box
+            flexShrink={0}
+            border={["top"]}
+            borderColor={
+              route.route().kind !== "none"
+                ? theme.theme.muted
+                : theme.theme.accent
+            }
+            paddingTop={1}
+            paddingLeft={2}
+            paddingRight={2}
+          >
+            <textarea
+              ref={(value: TextareaRenderable) => {
+                setComposer(value);
+                promptRef.set(value);
+              }}
+              minHeight={1}
+              maxHeight={Math.min(
+                preferences().prompt.maxHeight,
+                layout().promptMaxHeight,
+              )}
+              width="100%"
+              placeholder={
+                route.route().kind !== "none"
+                  ? "Press Escape to return"
+                  : "Ask anything..."
+              }
+              placeholderColor={theme.theme.muted}
+              textColor={
                 route.route().kind !== "none"
                   ? theme.theme.muted
-                  : theme.theme.accent
+                  : theme.theme.text
               }
-              paddingTop={1}
-              paddingLeft={2}
-              paddingRight={2}
-            >
-              <textarea
-                ref={(value: TextareaRenderable) => {
-                  setComposer(value);
-                  promptRef.set(value);
-                }}
-                minHeight={1}
-                maxHeight={Math.min(
-                  preferences().prompt.maxHeight,
-                  layout().promptMaxHeight,
-                )}
-                width="100%"
-                placeholder={
-                  route.route().kind !== "none"
-                    ? "Press Escape to return"
-                    : "Ask anything..."
+              focusedTextColor={theme.theme.text}
+              cursorColor={theme.theme.accent}
+              onPaste={handlePaste}
+              onContentChange={() =>
+                setComposerText(composer()?.plainText ?? "")
+              }
+              onKeyDown={(event: {
+                name?: string;
+                ctrl?: boolean;
+                alt?: boolean;
+                meta?: boolean;
+                option?: boolean;
+                shift?: boolean;
+                preventDefault(): void;
+              }) => {
+                const key = normalizeKey(event.name ?? "");
+                const action = composerKeyAction(event);
+                if (action === "submit") {
+                  event.preventDefault();
+                  void submit();
+                  return;
                 }
-                placeholderColor={theme.theme.muted}
-                textColor={
-                  route.route().kind !== "none"
-                    ? theme.theme.muted
-                    : theme.theme.text
+                if (action === "newline") {
+                  event.preventDefault();
+                  composer()?.insertText("\n");
+                  return;
                 }
-                focusedTextColor={theme.theme.text}
-                cursorColor={theme.theme.accent}
-                onPaste={handlePaste}
-                onContentChange={() =>
-                  setComposerText(composer()?.plainText ?? "")
+                if (action === "buffer-home") {
+                  event.preventDefault();
+                  composer()?.gotoBufferHome();
+                  return;
                 }
-                onKeyDown={(event: {
-                  name?: string;
-                  ctrl?: boolean;
-                  alt?: boolean;
-                  meta?: boolean;
-                  option?: boolean;
-                  shift?: boolean;
-                  preventDefault(): void;
-                }) => {
-                  const key = normalizeKey(event.name ?? "");
-                  const action = composerKeyAction(event);
-                  if (action === "submit") {
-                    event.preventDefault();
-                    void submit();
-                    return;
-                  }
-                  if (action === "newline") {
-                    event.preventDefault();
-                    composer()?.insertText("\n");
-                    return;
-                  }
-                  if (action === "buffer-home") {
-                    event.preventDefault();
-                    composer()?.gotoBufferHome();
-                    return;
-                  }
-                  if (action === "buffer-end") {
-                    event.preventDefault();
-                    composer()?.gotoBufferEnd();
-                    return;
-                  }
-                }}
-              />
-              <PromptAutocomplete
-                input={composer}
-                text={composerText}
-                workspaceFiles={props.backend.workspaceFiles}
-                agents={props.backend.agents}
-                mcpCatalog={props.backend.mcpCatalog}
-                attach={(path) =>
-                  setAttachmentPaths((current) =>
-                    current.includes(path) ? current : [...current, path],
+                if (action === "buffer-end") {
+                  event.preventDefault();
+                  composer()?.gotoBufferEnd();
+                  return;
+                }
+              }}
+            />
+            <PromptAutocomplete
+              input={composer}
+              text={composerText}
+              workspaceFiles={props.backend.workspaceFiles}
+              agents={props.backend.agents}
+              mcpCatalog={props.backend.mcpCatalog}
+              attach={(path) =>
+                setAttachmentPaths((current) =>
+                  current.includes(path) ? current : [...current, path],
+                )
+              }
+              mentionAgent={(name) =>
+                setMentionAgents((current) =>
+                  current.includes(name) ? current : [...current, name],
+                )
+              }
+              mentionResource={(resource) =>
+                setMentionResources((current) =>
+                  current.some(
+                    (item) =>
+                      item.server === resource.server &&
+                      item.uri === resource.uri,
                   )
+                    ? current
+                    : [...current, resource],
+                )
+              }
+            />
+            <Show when={attachmentPaths().length > 0}>
+              <text fg={theme.theme.muted}>
+                Attachments:{" "}
+                {attachmentPaths()
+                  .map((path) => path.split("/").at(-1) ?? path)
+                  .join(", ")}
+                {" · Ctrl+Shift+O manage"}
+              </text>
+            </Show>
+            <Show when={layout().showComposerHints}>
+              <text
+                fg={
+                  pastePreview().startsWith("paste rejected")
+                    ? theme.theme.danger
+                    : theme.theme.muted
                 }
-                mentionAgent={(name) =>
-                  setMentionAgents((current) =>
-                    current.includes(name) ? current : [...current, name],
-                  )
-                }
-                mentionResource={(resource) =>
-                  setMentionResources((current) =>
-                    current.some(
-                      (item) =>
-                        item.server === resource.server &&
-                        item.uri === resource.uri,
-                    )
-                      ? current
-                      : [...current, resource],
-                  )
-                }
-              />
-              <Show when={attachmentPaths().length > 0}>
-                <text fg={theme.theme.muted}>
-                  Attachments:{" "}
-                  {attachmentPaths()
-                    .map((path) => path.split("/").at(-1) ?? path)
-                    .join(", ")}
-                  {" · Ctrl+Shift+O manage"}
-                </text>
-              </Show>
-              <Show when={layout().showComposerHints}>
-                <text
-                  fg={
-                    pastePreview().startsWith("paste rejected")
-                      ? theme.theme.danger
-                      : theme.theme.muted
-                  }
-                >
-                  {pastePreview() ||
-                    (route.route().kind !== "none"
-                      ? `View: ${route.route().kind}`
-                      : layout().compact
-                        ? `${keymapBoundary.palette} commands · ${keymapBoundary.sidebar} sidebar`
-                        : `${keymapBoundary.newline} newline · ${keymapBoundary.palette} commands · ${keymapBoundary.sidebar} sidebar · ctrl+c cancel/exit`)}
-                </text>
-              </Show>
-            </box>
-          </Show>
+              >
+                {pastePreview() ||
+                  (route.route().kind !== "none"
+                    ? `View: ${route.route().kind}`
+                    : layout().compact
+                      ? `${keymapBoundary.palette} commands · ${keymapBoundary.sidebar} sidebar`
+                      : `${keymapBoundary.newline} newline · ${keymapBoundary.palette} commands · ${keymapBoundary.sidebar} sidebar · ctrl+c cancel/exit`)}
+              </text>
+            </Show>
+          </box>
           <SessionFooter workspaceRoot={props.workspaceRoot} />
         </Show>
       </box>
-      <Show
-        when={
-          !activeTerminalRoute() &&
-          layout().sidebarVisible &&
-          !layout().sidebarOverlay
-        }
-      >
+      <Show when={layout().sidebarVisible && !layout().sidebarOverlay}>
         <SessionSidebar
           workspaceRoot={props.workspaceRoot}
           width={layout().sidebarWidth}
           compact={layout().short}
         />
       </Show>
-      <Show when={!activeTerminalRoute() && layout().sidebarOverlay}>
+      <Show when={layout().sidebarOverlay}>
         <SessionSidebar
           workspaceRoot={props.workspaceRoot}
           width={Math.min(42, Math.max(28, terminalWidth() - 4))}

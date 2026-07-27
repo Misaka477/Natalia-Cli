@@ -145,6 +145,7 @@ test("agent rules cover sandbox paths and all command-launching tools", () => {
     "process_start",
     "background_start",
     "interactive_start",
+    "interactive_terminal_start",
   ])
     expect(
       evaluatePermissionRules(commandRules, toolName, {

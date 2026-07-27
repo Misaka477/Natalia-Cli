@@ -1,5 +1,6 @@
 import { paste100KiB } from "@natalia/testing";
-import { createRealRuntimeClient } from "@natalia/client";
+import { createWorkerRuntimeClient } from "@natalia/client";
+import { MessageChannel, Worker } from "node:worker_threads";
 import { runTuiShell } from "./app/runtime";
 import { resolveTuiWorkspaceRoot } from "./workspace";
 
@@ -12,13 +13,26 @@ const workspaceRoot = await resolveTuiWorkspaceRoot({
 });
 const requestedSessionID = argumentValue("--session");
 const launchSessionID = requestedSessionID ?? newSessionID();
-const createBackend = (nextSessionID?: string) =>
-  createRealRuntimeClient({
-    workspaceRoot,
-    // An interactive launch starts a new session. A prior session is only
-    // reopened via --session or an explicit selection in the session dialog.
-    sessionID: (nextSessionID ?? launchSessionID) as never,
+const createBackend = (nextSessionID?: string) => {
+  const channel = new MessageChannel();
+  const worker = new Worker(new URL("./runtime-worker.ts", import.meta.url), {
+    workerData: {
+      port: channel.port1,
+      workspaceRoot,
+      // An interactive launch starts a new session. A prior session is only
+      // reopened via --session or an explicit selection in the session dialog.
+      sessionID: nextSessionID ?? launchSessionID,
+    },
+    transferList: [channel.port1],
   });
+  const client = createWorkerRuntimeClient(channel.port2);
+  const dispose = client.dispose;
+  client.dispose = async () => {
+    await dispose?.();
+    await worker.terminate();
+  };
+  return client;
+};
 const handle = await runTuiShell({
   initialPrompt: smoke
     ? process.env.NATALIA_TUI_SMOKE_PROMPT || paste100KiB()
@@ -34,8 +48,15 @@ const handle = await runTuiShell({
   closeAfterInitialTurn: doctor || diagnostics ? false : undefined,
 });
 
-process.once("SIGINT", () => handle.stop());
-process.once("SIGTERM", () => handle.stop());
+let stopping = false;
+const stop = () => {
+  if (stopping) return;
+  stopping = true;
+  void handle.stop();
+};
+
+process.once("SIGINT", stop);
+process.once("SIGTERM", stop);
 await new Promise<void>((resolve) => handle.renderer.once("destroy", resolve));
 
 function argumentValue(name: string) {

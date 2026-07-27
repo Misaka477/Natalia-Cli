@@ -6,10 +6,7 @@ import {
   type JSX,
 } from "solid-js";
 
-export type AppRoute =
-  | { kind: "none" }
-  | { kind: "subagent"; id: string }
-  | { kind: "terminal"; id: string };
+export type AppRoute = { kind: "none" } | { kind: "subagent"; id: string };
 
 type NavigableRoute = Exclude<AppRoute, { kind: "none" }>;
 

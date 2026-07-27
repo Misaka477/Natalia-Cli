@@ -94,35 +94,7 @@ export function projectSessionMessages(
     : (options.order ?? "desc");
   if (options.cursor && options.order)
     throw new Error("message cursor cannot be combined with order");
-  const messages = session.events.flatMap((event) => {
-    if (event.type !== "turn.submitted") return [];
-    const rows = session.events.flatMap((candidate) => {
-      const kind = projectedRowKind(candidate, event.id);
-      return kind
-        ? [
-            {
-              id: projectedRowID(candidate, event.id),
-              turnID: event.id,
-              kind,
-              event: candidate,
-            },
-          ]
-        : [];
-    });
-    const terminal = rows.findLast((row) => row.event.type === "turn.finished");
-    return [
-      {
-        id: event.id,
-        turnID: event.id,
-        submitted: event,
-        rows,
-        stopReason:
-          terminal?.event.type === "turn.finished"
-            ? terminal.event.stopReason
-            : undefined,
-      } satisfies RuntimeProjectedMessage,
-    ];
-  });
+  const messages = projectTurnMessages(session.events);
   const ordered = order === "asc" ? messages : [...messages].reverse();
   const limit = Math.min(200, Math.max(1, options.limit ?? 100));
   const start = messagePageStart(ordered, options.cursor, limit);
@@ -150,7 +122,7 @@ export function projectSessionMessages(
   };
 }
 
-type MessageCursor = {
+export type MessageCursor = {
   version: 1;
   order: "asc" | "desc";
   direction: "previous" | "next";
@@ -169,6 +141,100 @@ function messagePageStart(
     throw new Error("message cursor anchor is no longer available");
   if (value.direction === "next") return index + 1;
   return Math.max(0, index - limit);
+}
+
+export function projectTurnMessage(
+  submitted: Extract<RuntimeEvent, { type: "turn.submitted" }>,
+  events: RuntimeEvent[],
+): RuntimeProjectedMessage {
+  const rows = events.flatMap((candidate) => {
+    const kind = projectedRowKind(candidate, submitted.id);
+    return kind
+      ? [
+          {
+            id: projectedRowID(candidate, submitted.id),
+            turnID: submitted.id,
+            kind,
+            event: candidate,
+          },
+        ]
+      : [];
+  });
+  const terminal = rows.findLast((row) => row.event.type === "turn.finished");
+  return {
+    id: submitted.id,
+    turnID: submitted.id,
+    submitted,
+    rows,
+    stopReason:
+      terminal?.event.type === "turn.finished"
+        ? terminal.event.stopReason
+        : undefined,
+  };
+}
+
+/**
+ * Projects all submitted turns in one event pass. The former implementation
+ * scanned the complete journal once per turn, which made JSON-mode history
+ * projection quadratic while producing the same row membership.
+ */
+export function projectTurnMessages(events: RuntimeEvent[]) {
+  const byID = new Map<
+    string,
+    {
+      submitted: Extract<RuntimeEvent, { type: "turn.submitted" }>;
+      rows: RuntimeProjectedMessage["rows"];
+    }
+  >();
+  const ordered: string[] = [];
+  for (const event of events)
+    if (event.type === "turn.submitted" && !byID.has(event.id)) {
+      byID.set(event.id, { submitted: event, rows: [] });
+      ordered.push(event.id);
+    }
+  for (const event of events) {
+    const turnID = projectedTurnID(event, byID);
+    if (!turnID) continue;
+    const message = byID.get(turnID)!;
+    const kind = projectedRowKind(event, turnID);
+    if (!kind) continue;
+    message.rows.push({
+      id: projectedRowID(event, turnID),
+      turnID,
+      kind,
+      event,
+    });
+  }
+  return ordered.map((id) => {
+    const message = byID.get(id)!;
+    const terminal = message.rows.findLast(
+      (row) => row.event.type === "turn.finished",
+    );
+    return {
+      id,
+      turnID: id,
+      submitted: message.submitted,
+      rows: message.rows,
+      stopReason:
+        terminal?.event.type === "turn.finished"
+          ? terminal.event.stopReason
+          : undefined,
+    } satisfies RuntimeProjectedMessage;
+  });
+}
+
+function projectedTurnID(event: RuntimeEvent, messages: Map<string, unknown>) {
+  if (event.type === "policy.decision")
+    return messages.has(event.turnID) ? event.turnID : undefined;
+  if (!("id" in event) || typeof event.id !== "string") return undefined;
+  let candidate = event.id;
+  while (candidate) {
+    if (messages.has(candidate)) return candidate;
+    const separator = candidate.lastIndexOf(":");
+    if (separator < 0) return undefined;
+    candidate = candidate.slice(0, separator);
+  }
+  return undefined;
 }
 
 function projectedRowKind(
@@ -201,13 +267,13 @@ function projectedRowID(event: RuntimeEvent, turnID: string) {
   return `${turnID}:${event.type}`;
 }
 
-function encodeMessageCursor(input: Omit<MessageCursor, "version">) {
+export function encodeMessageCursor(input: Omit<MessageCursor, "version">) {
   return Buffer.from(JSON.stringify({ version: 1, ...input })).toString(
     "base64url",
   );
 }
 
-function decodeMessageCursor(cursor: string): MessageCursor {
+export function decodeMessageCursor(cursor: string): MessageCursor {
   try {
     const value = JSON.parse(
       Buffer.from(cursor, "base64url").toString("utf8"),
@@ -241,8 +307,22 @@ export function settleInterruptedTurns(session: SessionRecord) {
     if (event.type === "question.request") pendingQuestions.add(event.id);
     if (event.type === "question.response") pendingQuestions.delete(event.id);
   }
+  const settled = settleInterruptedTurnIDs(
+    activeTurnIDs,
+    [...pendingApprovals],
+    [...pendingQuestions],
+  );
+  session.events.push(...settled);
+  return settled;
+}
+
+export function settleInterruptedTurnIDs(
+  activeTurnIDs: string[],
+  pendingApprovalIDs: string[],
+  pendingQuestionIDs: string[],
+) {
   const settled: RuntimeEvent[] = [];
-  for (const requestID of pendingApprovals)
+  for (const requestID of pendingApprovalIDs)
     if (requestBelongsToInterruptedTurn(requestID, activeTurnIDs))
       settled.push({
         type: "approval.response",
@@ -250,7 +330,7 @@ export function settleInterruptedTurns(session: SessionRecord) {
         decision: "reject",
         feedback: "interrupted turn cannot continue after runtime restart",
       });
-  for (const requestID of pendingQuestions)
+  for (const requestID of pendingQuestionIDs)
     if (requestBelongsToInterruptedTurn(requestID, activeTurnIDs))
       settled.push({
         type: "question.response",
@@ -260,7 +340,6 @@ export function settleInterruptedTurns(session: SessionRecord) {
       });
   for (const id of activeTurnIDs)
     settled.push({ type: "turn.finished", id, stopReason: "error" });
-  session.events.push(...settled);
   return settled;
 }
 

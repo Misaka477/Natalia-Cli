@@ -17,7 +17,11 @@ export {
   searchWorkspaceFiles,
   watchWorkspaceFiles,
 } from "./workspace-files";
-export { attachRuntimeClientWorker, createWorkerRuntimeClient } from "./worker";
+export {
+  attachRuntimeClientWorker,
+  createWorkerRuntimeClient,
+  type RuntimeWorkerPort,
+} from "./worker";
 export {
   createToolPolicyHookLayer,
   type ToolPolicy,

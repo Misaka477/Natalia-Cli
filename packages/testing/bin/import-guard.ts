@@ -7,7 +7,16 @@ const dependencyGuarded = [
   "packages/session",
   "packages/tools",
   "packages/config",
+  "packages/pty",
+  "packages/sandbox",
+  "packages/terminal",
+  "packages/mcp",
+  "packages/skills",
+  "packages/subagent",
+  "packages/workflow",
+  "packages/plugin",
 ];
+const capabilityRoots = ["packages/capabilities"];
 const productionRoots = ["apps", "packages", "cmd", "internal", "scripts"];
 const sourceExtensions = /\.(ts|tsx|js|jsx|go|json|toml|ya?ml)$/u;
 const skippedDirs = new Set([
@@ -23,7 +32,7 @@ const forbiddenDependencies = [
   /from\s+["']@opentui\//u,
   /from\s+["']solid-js/u,
   /from\s+["'](?:react|preact|vue|svelte)["']/u,
-  /document\.|window\.|HTMLElement/u,
+  /\bHTMLElement\b/u,
 ];
 const forbiddenTraceNames = [new RegExp("open" + "code", "iu")];
 const forbiddenAccountFlowNames = [
@@ -44,6 +53,20 @@ for (const dir of dependencyGuarded)
     for (const pattern of forbiddenDependencies) {
       if (pattern.test(text))
         failures.push(`${full}: forbidden dependency ${pattern}`);
+    }
+  });
+for (const dir of capabilityRoots)
+  await scan(join(root, dir), sourceExtensions, (full, text) => {
+    for (const pattern of [
+      /from\s+["']@natalia\/(?:client|runtime|session|tools)["']/u,
+      /from\s+["'](?:\.\.\/)+apps\//u,
+      /from\s+["']@opentui\//u,
+      /from\s+["']solid-js/u,
+    ]) {
+      if (pattern.test(text))
+        failures.push(
+          `${full}: capability bypasses kernel or presentation boundary ${pattern}`,
+        );
     }
   });
 for (const dir of productionRoots)

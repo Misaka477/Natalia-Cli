@@ -57,6 +57,47 @@ export type NataliaSDK = {
     path?: string;
     limit?: number;
   }): Promise<import("@natalia/contracts").RuntimeWorkspaceFileEntry[]>;
+  terminalSessions(): Promise<
+    import("@natalia/contracts").RuntimeTerminalSession[]
+  >;
+  terminalRead(input: {
+    id: string;
+    offset?: number;
+    maxChars?: number;
+  }): Promise<
+    import("@natalia/contracts").RuntimeTerminalSession & {
+      offset: number;
+      nextOffset: number;
+      totalChars: number;
+      truncated: boolean;
+    }
+  >;
+  terminalWrite(input: {
+    id: string;
+    text: string;
+    submit?: boolean;
+    sensitive?: boolean;
+    idempotencyKey?: string;
+  }): Promise<import("@natalia/contracts").RuntimeTerminalSession>;
+  terminalKey(input: {
+    id: string;
+    key: "enter" | "ctrl-c" | "ctrl-d" | "tab" | "esc";
+  }): Promise<import("@natalia/contracts").RuntimeTerminalSession>;
+  terminalResize(input: {
+    id: string;
+    rows: number;
+    cols: number;
+  }): Promise<import("@natalia/contracts").RuntimeTerminalSession>;
+  terminalAttach(
+    id: string,
+  ): Promise<import("@natalia/contracts").RuntimeTerminalSession>;
+  terminalDetach(
+    id: string,
+  ): Promise<import("@natalia/contracts").RuntimeTerminalSession>;
+  terminalStop(
+    id: string,
+  ): Promise<import("@natalia/contracts").RuntimeTerminalSession>;
+  /** @deprecated Use terminalSessions. */
   ptySessions(): Promise<import("@natalia/contracts").RuntimePTYSession[]>;
   ptyRead(input: { id: string; offset?: number; maxChars?: number }): Promise<
     import("@natalia/contracts").RuntimePTYSession & {
@@ -235,6 +276,14 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     workspaceList: async (input = {}) => await call("workspace.list", input),
     workspaceRead: async (input) => await call("workspace.read", input),
     workspaceGlob: async (input) => await call("workspace.glob", input),
+    terminalSessions: async () => await call("terminal.list", {}),
+    terminalRead: async (input) => await call("terminal.read", input),
+    terminalWrite: async (input) => await call("terminal.write", input),
+    terminalKey: async (input) => await call("terminal.key", input),
+    terminalResize: async (input) => await call("terminal.resize", input),
+    terminalAttach: async (id) => await call("terminal.attach", { id }),
+    terminalDetach: async (id) => await call("terminal.detach", { id }),
+    terminalStop: async (id) => await call("terminal.stop", { id }),
     ptySessions: async () => await call("pty.list", {}),
     ptyRead: async (input) => await call("pty.read", input),
     ptyWrite: async (input) => await call("pty.write", input),

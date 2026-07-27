@@ -300,3 +300,35 @@ test("message projection rejects malformed or stale opaque cursors", () => {
     }),
   ).toThrow("message cursor anchor is no longer available");
 });
+
+test("message projection keeps large histories within a bounded local budget", () => {
+  const session = createSessionRecord(
+    "ses_large_projection",
+    "Large projection",
+  );
+  for (let index = 0; index < 1_000; index++) {
+    const id = `turn_${index}`;
+    appendSessionEvent(session, {
+      type: "turn.submitted",
+      id,
+      text: `prompt ${index}`,
+      byteLength: 8,
+      lineCount: 1,
+      sha256: "fixture",
+    });
+    appendSessionEvent(session, {
+      type: "content.done",
+      id,
+      text: `response ${index}`,
+    });
+    appendSessionEvent(session, {
+      type: "turn.finished",
+      id,
+      stopReason: "done",
+    });
+  }
+  const start = performance.now();
+  const page = projectSessionMessages(session, { limit: 100 });
+  expect(page.data).toHaveLength(100);
+  expect(performance.now() - start).toBeLessThan(100);
+});

@@ -190,6 +190,7 @@ export function evaluatePermissionRules(
     "process_start",
     "background_start",
     "interactive_start",
+    "interactive_terminal_start",
   ].includes(toolName);
   if (rules.commands && runsCommand) {
     const cmd = typeof args.command === "string" ? args.command : undefined;

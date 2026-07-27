@@ -25,6 +25,28 @@ export class XtermTerminalEmulator {
       scrollback: 500,
     });
     if (options.onData) this.terminal.onData(options.onData);
+    this.terminal.parser.registerCsiHandler({ final: "n" }, (params) => {
+      if (!options.onData) return false;
+      const cursor = this.terminal.buffer.active;
+      if (params.includes(5)) {
+        options.onData("\x1b[0n");
+        return true;
+      }
+      if (params.includes(6)) {
+        options.onData(`\x1b[${cursor.cursorY + 1};${cursor.cursorX + 1}R`);
+        return true;
+      }
+      return false;
+    });
+    this.terminal.parser.registerCsiHandler(
+      { prefix: "?", final: "n" },
+      (params) => {
+        if (!options.onData || !params.includes(6)) return false;
+        const cursor = this.terminal.buffer.active;
+        options.onData(`\x1b[?${cursor.cursorY + 1};${cursor.cursorX + 1};1R`);
+        return true;
+      },
+    );
     this.terminal.parser.registerCsiHandler(
       { prefix: "?", final: "h" },
       (params) => {
@@ -151,19 +173,41 @@ export function diffTerminalScreens(input: {
   revision: number;
 }): TerminalScreenUpdate {
   const { base, next, baseRevision, revision } = input;
+  const patch = scanTerminalScreenPatch(input);
+  if (!patch) return { kind: "full", revision, screen: next };
+  // Cursor visibility, position and modes can change without touching a cell.
+  // A patch with no cell payload is always smaller than a complete framebuffer.
+  if (!patch.changes.length) return { kind: "patch", patch };
+  return terminalScreenPatchBytes(patch) < terminalScreenSnapshotBytes(next)
+    ? { kind: "patch", patch }
+    : { kind: "full", revision, screen: next };
+}
+
+/**
+ * Scans compatible snapshots into a patch without delivery-size accounting.
+ * PERF fixtures use this to isolate grid scan cost from patch/full selection.
+ */
+export function scanTerminalScreenPatch(input: {
+  base: TerminalScreenSnapshot;
+  next: TerminalScreenSnapshot;
+  baseRevision: number;
+  revision: number;
+}): TerminalScreenPatch | undefined {
+  const { base, next, baseRevision, revision } = input;
   if (
     base.rows !== next.rows ||
     base.cols !== next.cols ||
     base.buffer !== next.buffer
   )
-    return { kind: "full", revision, screen: next };
+    return undefined;
   const changes: TerminalScreenPatch["changes"] = [];
   for (let row = 0; row < next.rows; row++) {
     const before = base.lines[row] ?? [];
     const after = next.lines[row] ?? [];
+    if (before === after) continue;
     let start = -1;
     for (let col = 0; col < next.cols; col++) {
-      const changed = !sameCell(before[col], after[col]);
+      const changed = !sameTerminalCell(before[col], after[col]);
       if (changed && start < 0) start = col;
       if ((!changed || col === next.cols - 1) && start >= 0) {
         const end = changed && col === next.cols - 1 ? col + 1 : col;
@@ -172,7 +216,7 @@ export function diffTerminalScreens(input: {
       }
     }
   }
-  const patch: TerminalScreenPatch = {
+  return {
     baseRevision,
     revision,
     rows: next.rows,
@@ -182,9 +226,6 @@ export function diffTerminalScreens(input: {
     modes: next.modes,
     changes,
   };
-  return JSON.stringify(patch).length < JSON.stringify(next).length
-    ? { kind: "patch", patch }
-    : { kind: "full", revision, screen: next };
 }
 
 export function applyTerminalScreenUpdate(
@@ -203,7 +244,10 @@ export function applyTerminalScreenUpdate(
     current.buffer !== update.patch.buffer
   )
     throw new Error("terminal screen patch does not match current framebuffer");
-  const lines = current.lines.map((line) => [...line]);
+  const changedRows = new Set(update.patch.changes.map(([row]) => row));
+  const lines = current.lines.map((line, row) =>
+    changedRows.has(row) ? [...line] : line,
+  );
   for (const [row, start, cells] of update.patch.changes)
     lines[row]!.splice(start, cells.length, ...cells);
   return {
@@ -212,6 +256,47 @@ export function applyTerminalScreenUpdate(
     modes: update.patch.modes,
     lines,
     text: screenText(lines),
+  };
+}
+
+/**
+ * UTF-8 wire-size estimate used only to choose/describe live frame delivery.
+ * It avoids serializing a full framebuffer merely to collect diagnostics.
+ */
+export function terminalScreenSnapshotBytes(screen: TerminalScreenSnapshot) {
+  let bytes = 80 + stringBytes(screen.buffer) + stringBytes(screen.text);
+  bytes += screen.lines.length * 2;
+  for (const line of screen.lines) {
+    bytes += 2;
+    for (const cell of line) bytes += terminalCellBytes(cell);
+  }
+  return bytes;
+}
+
+export function terminalScreenPatchBytes(patch: TerminalScreenPatch) {
+  let bytes = 96 + stringBytes(patch.buffer);
+  for (const [, , cells] of patch.changes) {
+    bytes += 12;
+    for (const cell of cells) bytes += terminalCellBytes(cell);
+  }
+  return bytes;
+}
+
+/** PERF-only diagnostic: counts cells represented by a live update. */
+export function terminalScreenUpdateStats(update: TerminalScreenUpdate) {
+  if (update.kind === "full")
+    return {
+      mode: "full" as const,
+      dirtyRows: update.screen.rows,
+      dirtyCells: update.screen.rows * update.screen.cols,
+    };
+  return {
+    mode: "patch" as const,
+    dirtyRows: new Set(update.patch.changes.map(([row]) => row)).size,
+    dirtyCells: update.patch.changes.reduce(
+      (total, [, , cells]) => total + cells.length,
+      0,
+    ),
   };
 }
 
@@ -312,9 +397,15 @@ function emptyCell(): TerminalCell {
   return [" ", 1];
 }
 
-function sameCell(left?: TerminalCell, right?: TerminalCell) {
+function sameTerminalCell(left?: TerminalCell, right?: TerminalCell) {
   if (!left || !right || left.length !== right.length) return false;
-  return left.every((value, index) => value === right[index]);
+  return (
+    left[0] === right[0] &&
+    left[1] === right[1] &&
+    left[2] === right[2] &&
+    left[3] === right[3] &&
+    left[4] === right[4]
+  );
 }
 
 function screenText(lines: TerminalCell[][]) {
@@ -328,6 +419,22 @@ function screenText(lines: TerminalCell[][]) {
     )
     .join("\n")
     .replace(/\n+$/u, "");
+}
+
+function terminalCellBytes(cell: TerminalCell) {
+  // JSON punctuation and numeric fields are bounded; cell text is the
+  // variable-size part and must use UTF-8 rather than JavaScript code units.
+  return (
+    8 +
+    stringBytes(cell[0]) +
+    (cell[2] === undefined ? 0 : 12) +
+    (cell[3] === undefined ? 0 : 12) +
+    (cell[4] === undefined ? 0 : 4)
+  );
+}
+
+function stringBytes(value: string) {
+  return Buffer.byteLength(value, "utf8") + 2;
 }
 
 function ansiCellStyle(cell: TerminalCell) {

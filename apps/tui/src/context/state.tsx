@@ -7,8 +7,10 @@ import {
   type JSX,
 } from "solid-js";
 import { createStore, produce } from "solid-js/store";
+import { TuiPerformanceTrace } from "../performance-trace";
 import type {
   RuntimeEvent,
+  RuntimeProjectedMessage,
   SessionID,
   SubmittedTurn,
   ToolStatus,
@@ -19,6 +21,7 @@ import {
   flushMarkdown,
   splitMarkdownAtSafeBoundary,
 } from "@natalia/ui-model";
+import { boundHistoryCache } from "../history-page-cache";
 import {
   classifyTool,
   elapsedLabel,
@@ -123,6 +126,7 @@ export type AppState = {
     | "status";
   modal: ModalControllerState;
   streams: Record<string, StreamState>;
+  streamPhases: Record<string, "thinking" | "assistant">;
   tools: Record<string, ToolBlockState>;
   subagents: Record<string, SubagentView>;
   subagentHistory: Record<string, SubagentView[]>;
@@ -150,6 +154,7 @@ export const initialState: AppState = {
   ],
   modal: structuredClone(initialModalState),
   streams: {},
+  streamPhases: {},
   tools: {},
   subagents: {},
   subagentHistory: {},
@@ -170,9 +175,16 @@ export function reduceState(state: AppState, event: RuntimeEvent): AppState {
 
 export function StateProvider(props: {
   children: JSX.Element;
-  onReady?: (dispatch: (event: RuntimeEvent) => void) => void;
+  onReady?: (bridge: {
+    dispatch: (event: RuntimeEvent) => void;
+    hydrateMessages: (
+      messages: RuntimeProjectedMessage[],
+      direction?: "older" | "newer",
+    ) => boolean;
+  }) => void;
 }) {
   const [state, setState] = createStore<AppState>(initialState);
+  const performanceTrace = new TuiPerformanceTrace();
   const pendingEvents: RuntimeEvent[] = [];
   let flushTimer: ReturnType<typeof setTimeout> | undefined;
   let lastFlush = 0;
@@ -181,6 +193,7 @@ export function StateProvider(props: {
     flushTimer = undefined;
     if (!pendingEvents.length) return;
     const events = pendingEvents.splice(0);
+    const startedAt = performance.now();
     lastFlush = performance.now();
     batch(() => {
       setState(
@@ -189,9 +202,11 @@ export function StateProvider(props: {
         }),
       );
     });
+    performanceTrace.batch(events.length, performance.now() - startedAt);
   };
   const dispatch = (event: RuntimeEvent) => {
     pendingEvents.push(event);
+    performanceTrace.enqueue(event, pendingEvents.length);
     const elapsed = performance.now() - lastFlush;
     if (elapsed >= eventBatchMs || isUrgentEvent(event)) {
       flush();
@@ -199,13 +214,48 @@ export function StateProvider(props: {
     }
     if (!flushTimer) flushTimer = setTimeout(flush, eventBatchMs - elapsed);
   };
+  const hydrateMessages = (
+    messages: RuntimeProjectedMessage[],
+    direction: "older" | "newer" = "older",
+  ) => {
+    flush();
+    const projected = structuredClone(initialState);
+    const existingTurnIDs = new Set(
+      state.messages
+        .filter((message) => message.role === "user")
+        .map((message) => message.id.replace(/:user$/u, "")),
+    );
+    for (const message of messages)
+      if (!existingTurnIDs.has(message.turnID))
+        for (const row of message.rows) applyEvent(projected, row.event);
+    const incoming = projected.messages;
+    if (!incoming.length) return false;
+    const incomingIDs = new Set(incoming.map((message) => message.id));
+    let evicted = false;
+    setState(
+      produce((draft) => {
+        const retained = draft.messages.filter(
+          (message) => !incomingIDs.has(message.id),
+        );
+        const merged =
+          direction === "older"
+            ? [...incoming, ...retained]
+            : [...retained, ...incoming];
+        const bounded = boundHistoryCache(merged, direction);
+        draft.messages = bounded.messages;
+        evicted = bounded.evicted;
+      }),
+    );
+    return evicted;
+  };
   onCleanup(() => {
     if (flushTimer) clearTimeout(flushTimer);
     flush();
+    void performanceTrace.stop();
   });
-  onMount(() => props.onReady?.(dispatch));
+  onMount(() => props.onReady?.({ dispatch, hydrateMessages }));
   return (
-    <StateContext.Provider value={{ state, dispatch }}>
+    <StateContext.Provider value={{ state, dispatch, hydrateMessages }}>
       {props.children}
     </StateContext.Provider>
   );
@@ -452,19 +502,21 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
       state.footer = `retry exhausted: ${event.reason}`;
       return;
     case "thinking.delta":
+      prepareStreamPhase(state, event.id, "thinking");
       appendStreamBlock(state, {
         id: streamID(event.id, "thinking"),
         role: "thinking",
         text: event.text,
         attempt: event.attempt,
         reasoningVisible: event.visible !== false,
-        deferVisible: event.visible !== false,
+        deferVisible: false,
       });
       return;
     case "thinking.done":
-      revealDeferredStreamBlock(state, streamID(event.id, "thinking"));
+      flushStreamBlock(state, streamID(event.id, "thinking"));
       return;
     case "content.delta":
+      prepareStreamPhase(state, event.id, "assistant");
       appendStreamBlock(state, {
         id: streamID(event.id, "assistant"),
         role: "assistant",
@@ -475,13 +527,28 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
       return;
     case "content.done":
       flushStreamBlock(state, streamID(event.id, "assistant"));
+      if (
+        event.text &&
+        !state.messages.some(
+          (block) => block.id === segmentID(streamID(event.id, "assistant"), 0),
+        )
+      )
+        upsertBlock(
+          state,
+          segmentID(event.id, 0),
+          "assistant",
+          event.text,
+          undefined,
+          { reasoningVisible: true },
+        );
       return;
     case "tool.update":
-      // Reasoning is step-atomic: reveal the fully collected reasoning before
-      // its tool card, never as token-by-token text behind that tool.
-      revealDeferredStreamBlock(state, streamID(event.id, "thinking"));
+      // Complete the active model output before its tool card. Tool updates
+      // mutate their own card but never reorder model output around it.
+      flushStreamBlock(state, streamID(event.id, "thinking"));
       flushStreamBlock(state, streamID(event.id, "assistant"));
       beginPostToolStreamSegment(state, event.id);
+      delete state.streamPhases[event.id];
       upsertTool(state, event);
       return;
     case "subagent.update":
@@ -840,9 +907,13 @@ function revealDeferredStreamBlock(state: AppState, id: string) {
     stream.tail = "";
   }
   if (!stream.segmentText) return;
-  upsertBlock(
+  upsertBlockBefore(
     state,
     segmentID(id, stream.segmentIndex),
+    segmentID(
+      streamID(id.slice(0, -":thinking".length), "assistant"),
+      stream.segmentIndex,
+    ),
     "thinking",
     stream.segmentText,
     "completed",
@@ -891,6 +962,23 @@ function beginPostToolStreamSegment(state: AppState, turnID: string) {
     stream.segmentText = "";
     stream.tail = "";
   }
+}
+
+function prepareStreamPhase(
+  state: AppState,
+  turnID: string,
+  role: "thinking" | "assistant",
+) {
+  const previous = state.streamPhases[turnID];
+  if (previous === role) return;
+  if (previous) flushStreamBlock(state, streamID(turnID, previous));
+  const stream = state.streams[streamID(turnID, role)];
+  if (stream && (stream.segmentText || stream.tail)) {
+    stream.segmentIndex += 1;
+    stream.segmentText = "";
+    stream.tail = "";
+  }
+  state.streamPhases[turnID] = role;
 }
 
 function handleRetry(
@@ -1204,4 +1292,5 @@ function upsertBlockBefore(
 const StateContext = createContext<{
   state: AppState;
   dispatch: (event: RuntimeEvent) => void;
+  hydrateMessages: (messages: RuntimeProjectedMessage[]) => void;
 }>();

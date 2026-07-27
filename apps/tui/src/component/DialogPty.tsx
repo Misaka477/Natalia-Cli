@@ -1,30 +1,30 @@
-import { createSignal, For, onMount, Show } from "solid-js";
+import { createSignal, onMount, Show } from "solid-js";
 import { TextAttributes } from "@opentui/core";
-import type { RuntimeClient, RuntimePTYSession } from "@natalia/contracts";
+import type {
+  RuntimeClient,
+  RuntimeNativeTerminalSession,
+} from "@natalia/contracts";
 import { darkTheme } from "../theme/theme";
 import { useDialog } from "../dialog/provider";
-import { DialogPrompt } from "../dialog/DialogPrompt";
 import { DialogSelect } from "../dialog/DialogSelect";
-import { TerminalScreen } from "./TerminalScreen";
 import { openExternalTerminal } from "../terminal-attach";
 
-export function DialogPty(props: {
-  backend: RuntimeClient;
-  onOpenInternal?(id: string): void;
-}) {
+export function DialogPty(props: { backend: RuntimeClient }) {
   const dialog = useDialog();
-  const [sessions, setSessions] = createSignal<RuntimePTYSession[]>([]);
+  const [sessions, setSessions] = createSignal<RuntimeNativeTerminalSession[]>(
+    [],
+  );
   const [error, setError] = createSignal<string>();
   const [loading, setLoading] = createSignal(true);
 
   const refresh = async () => {
-    if (!props.backend.ptyList) {
+    if (!props.backend.nativeTerminalList) {
       setError("Terminal management is unavailable in this runtime.");
       setLoading(false);
       return;
     }
     try {
-      setSessions(await props.backend.ptyList());
+      setSessions(await props.backend.nativeTerminalList());
       setError(undefined);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -35,16 +35,15 @@ export function DialogPty(props: {
 
   onMount(() => void refresh());
 
-  const select = (session: RuntimePTYSession) =>
+  const select = (session: RuntimeNativeTerminalSession) =>
     dialog.push(() => (
-      <PtyActions
+      <TerminalActions
         backend={props.backend}
         session={session}
         onChanged={() => {
           void refresh();
           dialog.pop();
         }}
-        onOpenInternal={props.onOpenInternal}
       />
     ));
 
@@ -53,9 +52,9 @@ export function DialogPty(props: {
       title="Terminal Sessions"
       options={sessions().map((session) => ({
         title: session.id,
-        description: `${session.status} · ${session.rows}x${session.cols} · ${session.command}`,
+        description: `${session.status} · WezTerm pane ${session.paneID} · ${session.command}`,
         value: session,
-        footer: `${session.inputOwner?.type ?? "model"} control · ${session.viewers?.length ?? 0} viewer(s)`,
+        footer: `${session.inputOwner} control · ${session.rows ?? "?"}x${session.cols ?? "?"} human geometry · native window ${session.windowID}`,
       }))}
       emptyView={
         <box paddingLeft={4} paddingRight={4} paddingTop={1}>
@@ -78,16 +77,14 @@ export function DialogPty(props: {
   );
 }
 
-function PtyActions(props: {
+function TerminalActions(props: {
   backend: RuntimeClient;
-  session: RuntimePTYSession;
+  session: RuntimeNativeTerminalSession;
   onChanged(): void;
-  onOpenInternal?(id: string): void;
 }) {
   const dialog = useDialog();
   const [error, setError] = createSignal<string>();
-  const [detail, setDetail] = createSignal(props.session);
-  const inputOwner = () => detail().inputOwner;
+  const [opening, setOpening] = createSignal(false);
   const run = async (action: () => Promise<unknown>) => {
     try {
       await action();
@@ -96,71 +93,21 @@ function PtyActions(props: {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
   };
-  const read = async () => {
-    if (!props.backend.ptyRead) return;
+  const openExternal = async () => {
+    if (opening()) return;
+    setOpening(true);
     try {
-      const result = await props.backend.ptyRead({
-        id: props.session.id,
-        maxChars: 12000,
-      });
-      setDetail(result);
-      setError(undefined);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-      dialog.clear();
-      props.onOpenInternal?.(props.session.id);
-    }
-  };
-  const promptWrite = (sensitive = false) =>
-    dialog.push(() => (
-      <DialogPrompt
-        title={sensitive ? "Sensitive Terminal Input" : "Terminal Input"}
-        placeholder={
-          sensitive ? "Input is redacted from transcript" : "Send input"
-        }
-        onConfirm={(text) => {
-          if (!props.backend.ptyWrite) return;
-          dialog.pop();
-          void run(() =>
-            props.backend.ptyWrite!({
-              id: props.session.id,
-              text,
-              sensitive,
-            }),
-          );
-        }}
-      />
-    ));
-  const promptResize = () =>
-    dialog.push(() => (
-      <DialogPrompt
-        title="Resize Terminal"
-        placeholder="rows cols, e.g. 32 120"
-        onConfirm={(text) => {
-          const [rows, cols] = text.trim().split(/\s+/u).map(Number);
-          if (!Number.isInteger(rows) || !Number.isInteger(cols)) {
-            setError("Enter integer rows and columns.");
-            return;
-          }
-          if (!props.backend.ptyResize) return;
-          dialog.pop();
-          void run(() =>
-            props.backend.ptyResize!({ id: props.session.id, rows, cols }),
-          );
-        }}
-      />
-    ));
-  const openExternal = (takeControl = false, secureInput = false) => {
-    try {
-      openExternalTerminal({
+      await openExternalTerminal({
         backend: props.backend,
         id: props.session.id,
-        takeControl,
-        secureInput,
+        takeControl: true,
       });
       setError(undefined);
+      props.onChanged();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setOpening(false);
     }
   };
 
@@ -175,29 +122,11 @@ function PtyActions(props: {
         </text>
       </box>
       <text fg={darkTheme.muted} wrapMode="word">
-        {props.session.status} ·{" "}
-        {props.session.attached ? "attached" : "detached"} ·{" "}
-        {props.session.rows}x{props.session.cols}
-        {" · "}
-        {inputOwner()?.type === "viewer"
-          ? `user control (${(inputOwner() as { type: "viewer"; viewerID: string }).viewerID})`
-          : "model control"}
-        {` · ${detail().viewers?.length ?? 0} viewer(s)`}
+        {props.session.status} · native WezTerm pane {props.session.paneID}
+        {props.session.secureInput ? " · secure input active" : ""}
         {"\n"}
         {props.session.command}
       </text>
-      <scrollbox
-        maxHeight={20}
-        border={["left"]}
-        borderColor={darkTheme.muted}
-        paddingLeft={1}
-      >
-        <TerminalScreen
-          screen={detail().screen}
-          fallback={detail().transcript || "(no terminal output)"}
-          maxRows={20}
-        />
-      </scrollbox>
       <Show when={error()}>
         <text fg={darkTheme.danger} wrapMode="word">
           {error()}
@@ -207,60 +136,17 @@ function PtyActions(props: {
         title="Terminal Actions"
         renderFilter={false}
         options={[
-          { title: "Refresh terminal", value: "read" },
-          { title: "Open full-screen workspace", value: "internal" },
-          { title: "Open external viewer", value: "external-readonly" },
           {
-            title: "Open external and take control",
-            value: "external-control",
+            title: opening() ? "Opening terminal..." : "Open terminal",
+            value: "open",
+            disabled: opening(),
           },
-          {
-            title: "Open external for secure input",
-            value: "external-secure",
-          },
-          {
-            title: props.session.attached ? "Detach session" : "Attach session",
-            value: props.session.attached ? "detach" : "attach",
-          },
-          { title: "Send input", value: "write" },
-          { title: "Send sensitive input", value: "sensitive" },
-          { title: "Resize", value: "resize" },
-          { title: "Send Ctrl-C", value: "ctrl-c" },
-          { title: "Send Ctrl-D", value: "ctrl-d" },
-          { title: "Stop session", value: "stop" },
+          { title: "Stop terminal", value: "stop" },
         ]}
         onSelect={(option) => {
-          if (option.value === "read") void read();
-          if (option.value === "write") promptWrite();
-          if (option.value === "sensitive") promptWrite(true);
-          if (option.value === "resize") promptResize();
-          if (option.value === "internal") {
-            dialog.clear();
-            props.onOpenInternal?.(props.session.id);
-          }
-          if (option.value === "external-readonly") openExternal();
-          if (option.value === "external-control") openExternal(true);
-          if (option.value === "external-secure") openExternal(true, true);
-          if (option.value === "attach" && props.backend.ptyAttach)
-            void run(() => props.backend.ptyAttach!(props.session.id));
-          if (option.value === "detach" && props.backend.ptyDetach)
-            void run(() => props.backend.ptyDetach!(props.session.id));
-          if (option.value === "ctrl-c" && props.backend.ptyKey)
-            void run(() =>
-              props.backend.ptyKey!({
-                id: props.session.id,
-                key: "ctrl-c",
-              }),
-            );
-          if (option.value === "ctrl-d" && props.backend.ptyKey)
-            void run(() =>
-              props.backend.ptyKey!({
-                id: props.session.id,
-                key: "ctrl-d",
-              }),
-            );
-          if (option.value === "stop" && props.backend.ptyStop)
-            void run(() => props.backend.ptyStop!(props.session.id));
+          if (option.value === "open") void openExternal();
+          if (option.value === "stop" && props.backend.nativeTerminalStop)
+            void run(() => props.backend.nativeTerminalStop!(props.session.id));
         }}
       />
     </box>

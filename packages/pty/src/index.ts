@@ -9,9 +9,19 @@ import type {
   TerminalScreenUpdate,
   TerminalScrollbackPage,
 } from "@natalia/contracts";
-import { diffTerminalScreens, XtermTerminalEmulator } from "@natalia/terminal";
+import {
+  diffTerminalScreens,
+  terminalScreenPatchBytes,
+  terminalScreenSnapshotBytes,
+  XtermTerminalEmulator,
+} from "@natalia/terminal";
 import { createHash } from "node:crypto";
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  mkdir,
+  readFile as readFileAsync,
+  writeFile,
+} from "node:fs/promises";
 import { resolve } from "node:path";
 
 export type PTYSessionState = {
@@ -177,7 +187,7 @@ export type PersistentPTYSessionInfo = {
   transcriptPath: string;
 };
 
-export type InteractivePTYInfo = {
+export type TerminalSessionInfo = {
   id: string;
   command: string;
   cwd: string;
@@ -193,13 +203,15 @@ export type InteractivePTYInfo = {
   screen: TerminalScreenSnapshot;
   revision: number;
   lastOutputAt?: string;
+  prompt?: string;
+  activity: "waiting" | "running";
   viewers: import("@natalia/contracts").TerminalViewer[];
   inputOwner: import("@natalia/contracts").TerminalOwner;
   geometryOwner: import("@natalia/contracts").TerminalOwner;
 };
 
-export type InteractivePTYUpdate = Omit<
-  InteractivePTYInfo,
+export type TerminalSessionUpdate = Omit<
+  TerminalSessionInfo,
   "screen" | "transcript"
 > & {
   screen?: TerminalScreenSnapshot;
@@ -207,7 +219,7 @@ export type InteractivePTYUpdate = Omit<
 };
 
 export type TerminalObservation = {
-  session: Omit<InteractivePTYInfo, "screen" | "transcript"> & {
+  session: Omit<TerminalSessionInfo, "screen" | "transcript"> & {
     screen?: TerminalScreenSnapshot;
     transcript?: string;
   };
@@ -217,6 +229,10 @@ export type TerminalObservation = {
   screenUpdate?: TerminalScreenUpdate;
   screenDelivery?: TerminalScreenDelivery;
 };
+/** @deprecated Use TerminalSessionInfo. */
+export type InteractivePTYInfo = TerminalSessionInfo;
+/** @deprecated Use TerminalSessionUpdate. */
+export type InteractivePTYUpdate = TerminalSessionUpdate;
 
 export type InteractivePTYSecretAudit = {
   at: string;
@@ -225,7 +241,7 @@ export type InteractivePTYSecretAudit = {
   sha256?: string;
 };
 
-export class InteractivePTYRegistry {
+export class TerminalRegistry {
   private sessions = new Map<string, InteractivePTYRuntime>();
   private sequence = 0;
   private readonly watchdog?: ReturnType<typeof setInterval>;
@@ -299,6 +315,7 @@ export class InteractivePTYRegistry {
       outputDecoder: new TextDecoder(),
       screenModel,
       revision: 0,
+      activity: "running",
       ready,
       markReady,
       viewers: new Map(),
@@ -306,6 +323,7 @@ export class InteractivePTYRegistry {
       inputOwner: { type: "model" },
       geometryOwner: { type: "model" },
       commandQueue: Promise.resolve(),
+      idempotentWrites: new Map(),
       sensitiveInputBuffer: "",
       sensitiveRedactions: [],
       pendingTranscript: [],
@@ -506,7 +524,11 @@ export class InteractivePTYRegistry {
   async write(
     id: string,
     input: string,
-    options: { submit?: boolean; sensitive?: boolean } = {},
+    options: {
+      submit?: boolean;
+      sensitive?: boolean;
+      idempotencyKey?: string;
+    } = {},
   ) {
     const session = this.mustRunning(id);
     this.pruneStaleViewers(session);
@@ -518,26 +540,34 @@ export class InteractivePTYRegistry {
       options.submit === false
         ? input
         : `${input}${input.endsWith("\r") || input.endsWith("\n") ? "" : "\r"}`;
-    // The bridge disables terminal ECHO. Only sensitive input needs a pending
-    // filter so a child such as `cat` cannot add the secret back to transcript.
-    session.pendingTerminalEcho = options.sensitive ? text : undefined;
-    await this.command(session, { action: "write", input: text });
-    if (options.sensitive) {
-      const secret = input.replace(/[\r\n]+$/u, "");
-      if (secret) {
-        session.sensitiveRedactions.push(secret);
-        if (session.sensitiveRedactions.length > 8)
-          session.sensitiveRedactions.shift();
-      }
-      session.secretAudit.push({
-        at: new Date().toISOString(),
-        action: "write",
-        summary: `redacted ${new TextEncoder().encode(input).byteLength} byte(s) of sensitive input`,
-        sha256: createHash("sha256").update(input).digest("hex"),
-      });
-      appendInteractiveOutput(session, "[sensitive input redacted]\n");
-    }
-    return publicInteractivePTY(session);
+    return await this.idempotentWrite(
+      session,
+      options.idempotencyKey,
+      `model:${options.submit !== false}:${options.sensitive === true}:${text}`,
+      async () => {
+        // The bridge disables terminal ECHO. Only sensitive input needs a pending
+        // filter so a child such as `cat` cannot add the secret back to transcript.
+        session.pendingTerminalEcho = options.sensitive ? text : undefined;
+        this.markInputSubmitted(session);
+        await this.command(session, { action: "write", input: text });
+        if (options.sensitive) {
+          const secret = input.replace(/[\r\n]+$/u, "");
+          if (secret) {
+            session.sensitiveRedactions.push(secret);
+            if (session.sensitiveRedactions.length > 8)
+              session.sensitiveRedactions.shift();
+          }
+          session.secretAudit.push({
+            at: new Date().toISOString(),
+            action: "write",
+            summary: `redacted ${new TextEncoder().encode(input).byteLength} byte(s) of sensitive input`,
+            sha256: createHash("sha256").update(input).digest("hex"),
+          });
+          appendInteractiveOutput(session, "[sensitive input redacted]\n");
+        }
+        return publicInteractivePTY(session);
+      },
+    );
   }
 
   registerViewer(
@@ -641,33 +671,47 @@ export class InteractivePTYRegistry {
     id: string,
     viewerID: string,
     input: string,
-    options: { sensitive?: boolean } = {},
+    options: { sensitive?: boolean; idempotencyKey?: string } = {},
   ) {
     const session = this.mustRunning(id);
     this.pruneStaleViewers(session);
     this.requireViewerOwner(session, viewerID, "input");
-    if (options.sensitive) {
-      session.pendingTerminalEcho = `${session.pendingTerminalEcho ?? ""}${input}`;
-      session.sensitiveInputBuffer += input;
-      if (/[\r\n]/u.test(input)) {
-        const secret = session.sensitiveInputBuffer.replace(/[\r\n]+$/u, "");
-        session.sensitiveInputBuffer = "";
-        if (secret) {
-          session.sensitiveRedactions.push(secret);
-          if (session.sensitiveRedactions.length > 8)
-            session.sensitiveRedactions.shift();
-          session.secretAudit.push({
-            at: new Date().toISOString(),
-            action: "write",
-            summary: `redacted ${new TextEncoder().encode(secret).byteLength} byte(s) of sensitive viewer input`,
-            sha256: createHash("sha256").update(secret).digest("hex"),
-          });
-          appendInteractiveOutput(session, "[sensitive user input redacted]\n");
+    return await this.idempotentWrite(
+      session,
+      options.idempotencyKey,
+      `viewer:${viewerID}:${options.sensitive === true}:${input}`,
+      async () => {
+        if (options.sensitive) {
+          session.pendingTerminalEcho = `${session.pendingTerminalEcho ?? ""}${input}`;
+          session.sensitiveInputBuffer += input;
+          if (/[\r\n]/u.test(input)) {
+            const secret = session.sensitiveInputBuffer.replace(
+              /[\r\n]+$/u,
+              "",
+            );
+            session.sensitiveInputBuffer = "";
+            if (secret) {
+              session.sensitiveRedactions.push(secret);
+              if (session.sensitiveRedactions.length > 8)
+                session.sensitiveRedactions.shift();
+              session.secretAudit.push({
+                at: new Date().toISOString(),
+                action: "write",
+                summary: `redacted ${new TextEncoder().encode(secret).byteLength} byte(s) of sensitive viewer input`,
+                sha256: createHash("sha256").update(secret).digest("hex"),
+              });
+              appendInteractiveOutput(
+                session,
+                "[sensitive user input redacted]\n",
+              );
+            }
+          }
         }
-      }
-    }
-    await this.command(session, { action: "write", input });
-    return publicInteractivePTY(session);
+        this.markInputSubmitted(session);
+        await this.command(session, { action: "write", input });
+        return publicInteractivePTY(session);
+      },
+    );
   }
 
   async viewerResize(id: string, viewerID: string, rows: number, cols: number) {
@@ -804,6 +848,9 @@ export class InteractivePTYRegistry {
       session.lastOutputAt = new Date().toISOString();
       const sanitized = sanitizeInteractiveTerminalOutput(session, combined);
       if (sanitized) appendInteractiveOutput(session, sanitized);
+      const prompt = detectPrompt(session.tail);
+      session.prompt = prompt;
+      session.activity = prompt ? "waiting" : "running";
       if (/password[: ]*$/iu.test(session.tail))
         session.secretAudit.push({
           at: new Date().toISOString(),
@@ -834,6 +881,40 @@ export class InteractivePTYRegistry {
     };
     session.commandQueue = session.commandQueue.then(run, run);
     await session.commandQueue;
+  }
+
+  private markInputSubmitted(session: InteractivePTYRuntime) {
+    session.activity = "running";
+    session.prompt = undefined;
+  }
+
+  private async idempotentWrite(
+    session: InteractivePTYRuntime,
+    idempotencyKey: string | undefined,
+    fingerprint: string,
+    write: () => Promise<InteractivePTYInfo>,
+  ) {
+    if (!idempotencyKey) return await write();
+    const existing = session.idempotentWrites.get(idempotencyKey);
+    if (existing) {
+      if (existing.fingerprint !== fingerprint)
+        throw new Error(
+          "terminal idempotency key was reused for different input",
+        );
+      return await existing.result;
+    }
+    const result = write();
+    session.idempotentWrites.set(idempotencyKey, { fingerprint, result });
+    while (session.idempotentWrites.size > 64)
+      session.idempotentWrites.delete(
+        session.idempotentWrites.keys().next().value!,
+      );
+    try {
+      return await result;
+    } catch (cause) {
+      session.idempotentWrites.delete(idempotencyKey);
+      throw cause;
+    }
   }
 
   private mustGet(id: string) {
@@ -982,7 +1063,9 @@ export class InteractivePTYRegistry {
         session.screenEmitTimer = undefined;
         this.emit(session);
       },
-      this.hasScreenSubscriber(session) ? 50 : 200,
+      // Foreground viewers need low-latency input echo; hidden/model-only
+      // sessions remain coalesced to avoid needless framebuffer projection.
+      this.hasScreenSubscriber(session) ? 8 : 200,
     );
   }
 
@@ -996,7 +1079,7 @@ export class InteractivePTYRegistry {
     if (session.screenEmitTimer) clearTimeout(session.screenEmitTimer);
     session.screenEmitTimer = undefined;
     const includeScreen = this.hasScreenSubscriber(session);
-    const snapshot = includeScreen ? session.screenModel.snapshot() : undefined;
+    const snapshot = includeScreen ? screenSnapshot(session) : undefined;
     if (snapshot) this.recordScreen(session, snapshot);
     const metadata = publicInteractivePTYMetadata(session);
     const screen = includeScreen
@@ -1007,7 +1090,9 @@ export class InteractivePTYRegistry {
   }
 
   private hasScreenSubscriber(session: InteractivePTYRuntime) {
-    return [...session.listeners].some((subscription) => subscription.screen);
+    for (const subscription of session.listeners)
+      if (subscription.screen) return true;
+    return false;
   }
 
   private withScreenUpdate(
@@ -1031,7 +1116,7 @@ export class InteractivePTYRegistry {
           revision: observation.session.revision,
           screen: next,
         } as const);
-    const fullBytes = JSON.stringify(next).length;
+    const fullBytes = terminalScreenSnapshotBytes(next);
     const screenDelivery: TerminalScreenDelivery = {
       mode: screenUpdate.kind,
       reason: !base
@@ -1043,7 +1128,10 @@ export class InteractivePTYRegistry {
               base.buffer !== next.buffer
             ? "incompatible_frame"
             : "patch_not_smaller",
-      payloadBytes: JSON.stringify(screenUpdate).length,
+      payloadBytes:
+        screenUpdate.kind === "patch"
+          ? terminalScreenPatchBytes(screenUpdate.patch)
+          : fullBytes,
       fullBytes,
     };
     return {
@@ -1062,10 +1150,15 @@ export class InteractivePTYRegistry {
     snapshot: TerminalScreenSnapshot,
   ) {
     session.screenHistory.set(session.revision, snapshot);
-    while (session.screenHistory.size > 4)
+    // Two revisions cover normal observer handoff; older observers already
+    // receive the protocol's full-frame fallback on revision mismatch.
+    while (session.screenHistory.size > 2)
       session.screenHistory.delete(session.screenHistory.keys().next().value!);
   }
 }
+
+/** @deprecated Use TerminalRegistry. */
+export { TerminalRegistry as InteractivePTYRegistry };
 
 export class PersistentPTYRegistry {
   private sessions = new Map<string, PersistentPTYRuntime>();
@@ -1139,7 +1232,7 @@ export class PersistentPTYRegistry {
   async transcript(id: string, maxBytes = 20000) {
     const session = await this.mustGet(id);
     try {
-      const text = await readFile(session.transcriptPath, "utf8");
+      const text = await readFileAsync(session.transcriptPath, "utf8");
       return text.slice(-maxBytes);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
@@ -1166,7 +1259,7 @@ export class PersistentPTYRegistry {
   private async load() {
     try {
       const parsed = JSON.parse(
-        await readFile(resolve(this.stateDir, "pty.json"), "utf8"),
+        await readFileAsync(resolve(this.stateDir, "pty.json"), "utf8"),
       ) as {
         sessions?: PersistentPTYRuntime[];
       };
@@ -1293,7 +1386,12 @@ type InteractivePTYRuntime = Omit<InteractivePTYInfo, "screen" | "viewers"> & {
   modelGeometry?: { rows: number; cols: number };
   screenEmitTimer?: ReturnType<typeof setTimeout>;
   screenHistory: Map<number, TerminalScreenSnapshot>;
+  screenCache?: { revision: number; snapshot: TerminalScreenSnapshot };
   commandQueue: Promise<void>;
+  idempotentWrites: Map<
+    string,
+    { fingerprint: string; result: Promise<InteractivePTYInfo> }
+  >;
   sensitiveInputBuffer: string;
   sensitiveRedactions: string[];
   pendingTranscript: string[];
@@ -1423,6 +1521,8 @@ function publicInteractivePTYMetadata(
     secretAudit: [...session.secretAudit],
     revision: session.revision,
     lastOutputAt: session.lastOutputAt,
+    prompt: session.prompt,
+    activity: session.activity,
     viewers: [...session.viewers.values()],
     inputOwner: session.inputOwner,
     geometryOwner: session.geometryOwner,
@@ -1435,12 +1535,7 @@ function publicInteractivePTYUpdate(
 ): InteractivePTYUpdate {
   return {
     ...publicInteractivePTYMetadata(session),
-    screen:
-      screen === true
-        ? session.screenModel.snapshot()
-        : screen === false
-          ? undefined
-          : screen,
+    screen: screen === true ? screenSnapshot(session) : screen,
   };
 }
 
@@ -1450,8 +1545,16 @@ function publicInteractivePTY(
   return {
     ...publicInteractivePTYMetadata(session),
     transcript: session.transcript,
-    screen: session.screenModel.snapshot(),
+    screen: screenSnapshot(session),
   };
+}
+
+function screenSnapshot(session: InteractivePTYRuntime) {
+  if (session.screenCache?.revision === session.revision)
+    return session.screenCache.snapshot;
+  const snapshot = session.screenModel.snapshot();
+  session.screenCache = { revision: session.revision, snapshot };
+  return snapshot;
 }
 
 const PYTHON_INTERACTIVE_PTY_BRIDGE = String.raw`
@@ -1488,8 +1591,26 @@ child = subprocess.Popen(
 )
 os.close(slave)
 os.set_blocking(master, False)
-os.set_blocking(sys.stdin.fileno(), False)
+control_fd = sys.stdin.fileno()
+os.set_blocking(control_fd, False)
 control_buffer = b""
+
+def stop_child():
+    if child.poll() is not None:
+        return
+    try:
+        # The shell starts its own terminal session, so terminating only the
+        # bridge leaves Kimi and its descendants orphaned.
+        os.killpg(child.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+
+def on_shutdown(_signal, _frame):
+    stop_child()
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, on_shutdown)
+signal.signal(signal.SIGINT, on_shutdown)
 
 def emit(kind, data=None):
     value = {"type": kind}
@@ -1499,7 +1620,9 @@ def emit(kind, data=None):
 
 emit("ready")
 while True:
-    reads = [master, sys.stdin.fileno()]
+    reads = [master]
+    if control_fd is not None:
+        reads.append(control_fd)
     readable, _, _ = select.select(reads, [], [], 0.05)
     if master in readable:
         try:
@@ -1508,9 +1631,16 @@ while True:
                 emit("output", data)
         except (BlockingIOError, OSError):
             pass
-    if sys.stdin.fileno() in readable:
+    if control_fd is not None and control_fd in readable:
         try:
-            control_buffer += os.read(sys.stdin.fileno(), 4096)
+            incoming = os.read(control_fd, 4096)
+            if not incoming:
+                # Parent shutdown closes stdin. Leaving an EOF fd in select()
+                # makes it permanently readable and spins one CPU core.
+                control_fd = None
+                stop_child()
+            else:
+                control_buffer += incoming
         except BlockingIOError:
             pass
         while b"\n" in control_buffer:
@@ -1528,7 +1658,7 @@ while True:
                 elif action == "resize":
                     fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", int(request["rows"]), int(request["cols"]), 0, 0))
                 elif action == "stop":
-                    child.terminate()
+                    stop_child()
             except Exception:
                 pass
     if child.poll() is not None:
@@ -1544,7 +1674,14 @@ while True:
         break
 
 os.close(master)
-sys.exit(child.wait())
+try:
+    sys.exit(child.wait(timeout=2))
+except subprocess.TimeoutExpired:
+    try:
+        os.killpg(child.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    sys.exit(child.wait())
 `;
 
 function refreshPersistentPTY(session: PersistentPTYRuntime) {

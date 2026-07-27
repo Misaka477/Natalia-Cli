@@ -1,6 +1,5 @@
 import type { ParentProps } from "solid-js";
 import { useRenderer, useTerminalDimensions } from "@opentui/solid";
-import { RGBA } from "@opentui/core";
 import { darkTheme } from "../theme/theme";
 
 export function Dialog(
@@ -40,7 +39,6 @@ export function Dialog(
       paddingTop={dimensions().height / 4}
       left={0}
       top={0}
-      backgroundColor={RGBA.fromInts(0, 0, 0, 150)}
     >
       <box
         onMouseUp={(e: { stopPropagation(): void }) => {

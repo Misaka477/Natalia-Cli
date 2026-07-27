@@ -4,10 +4,14 @@ import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { SubagentRegistry } from "@natalia/subagent";
 import {
-  InteractivePTYRegistry,
-  type InteractivePTYInfo,
-  type InteractivePTYUpdate,
+  TerminalRegistry,
+  type TerminalSessionInfo,
+  type TerminalSessionUpdate,
 } from "@natalia/pty";
+import {
+  NativeTerminalRegistry,
+  type NativeTerminalSession,
+} from "@natalia/native-terminal";
 import { WorkspaceSandboxManager } from "@natalia/sandbox";
 
 import { createWorkflowTools } from "./workflow-tools";
@@ -60,10 +64,11 @@ export type ToolExecutionContext = {
     }>;
   }) => Promise<string[][]>;
   subagents?: SubagentRegistry;
-  interactivePTY?: InteractivePTYRegistry;
-  onPTYUpdate?: (session: InteractivePTYUpdate) => void;
+  interactivePTY?: TerminalRegistry;
+  nativeTerminal?: NativeTerminalRegistry;
+  onPTYUpdate?: (session: TerminalSessionUpdate) => void;
   onPTYAction?: (
-    session: InteractivePTYInfo,
+    session: TerminalSessionInfo,
     action:
       | "write"
       | "submit"
@@ -130,7 +135,23 @@ export type ToolExecutionContext = {
   }) => Promise<void>;
 };
 
-export type ToolRegistry = Map<string, RuntimeTool>;
+export class ToolRegistry extends Map<string, RuntimeTool> {
+  private readonly aliases = new Map<string, string>();
+
+  addAlias(alias: string, target: string) {
+    if (!super.has(target))
+      throw new Error(`cannot alias unknown tool: ${target}`);
+    this.aliases.set(alias, target);
+  }
+
+  override get(name: string) {
+    return super.get(this.aliases.get(name) ?? name);
+  }
+
+  override has(name: string) {
+    return super.has(this.aliases.get(name) ?? name);
+  }
+}
 
 export type ManagedProcessStatus = "running" | "exited" | "failed" | "stopped";
 
@@ -439,10 +460,28 @@ export function createToolRegistry(
   tools?: RuntimeTool[],
   processRegistry?: ManagedProcessRegistry,
 ): ToolRegistry {
-  return new Map(
+  const registry = new ToolRegistry(
     (tools ?? defaultTools(processRegistry)).map((tool) => [tool.name, tool]),
   );
+  if (!tools)
+    for (const [alias, target] of Object.entries(
+      interactiveTerminalToolAliases,
+    ))
+      registry.addAlias(alias, target);
+  return registry;
 }
+
+const interactiveTerminalToolAliases = {
+  interactive_start: "interactive_terminal_start",
+  interactive_read: "interactive_terminal_read",
+  interactive_write: "interactive_terminal_write",
+  interactive_keys: "interactive_terminal_keys",
+  interactive_resize: "interactive_terminal_resize",
+  interactive_attach: "interactive_terminal_attach",
+  interactive_detach: "interactive_terminal_detach",
+  interactive_stop: "interactive_terminal_stop",
+  interactive_list: "interactive_terminal_list",
+} as const;
 
 export function defaultTools(
   processRegistry = new ManagedProcessRegistry(),
@@ -521,7 +560,7 @@ export function defaultTools(
     ...lazyWorkflowTools,
   ];
 
-  registryRef = new Map(tools.map((t) => [t.name, t]));
+  registryRef = new ToolRegistry(tools.map((t) => [t.name, t]));
   return tools;
 }
 
@@ -554,12 +593,13 @@ function sandboxCreateTool(): RuntimeTool {
     requiresApproval: true,
     parameters: {
       type: "object",
-      properties: { id: { type: "string" } },
+      properties: { id: { type: "string" }, maxLines: { type: "number" } },
       required: ["id"],
       additionalProperties: false,
     },
     async execute(input, context) {
-      const id = requireString(requireObject(input).id, "id");
+      const args = requireObject(input);
+      const id = requireString(args.id, "id");
       const sandbox = await requireSandboxes(context).create(id);
       context.onSandboxEvent?.(requireSandboxes(context).updateEvent(id));
       context.onSandboxEvent?.(
@@ -648,12 +688,13 @@ function sandboxMergeTool(): RuntimeTool {
     requiresApproval: true,
     parameters: {
       type: "object",
-      properties: { id: { type: "string" } },
+      properties: { id: { type: "string" }, maxLines: { type: "number" } },
       required: ["id"],
       additionalProperties: false,
     },
     async execute(input, context) {
-      const id = requireString(requireObject(input).id, "id");
+      const args = requireObject(input);
+      const id = requireString(args.id, "id");
       const manager = requireSandboxes(context);
       const changes = await manager.merge(
         id,
@@ -850,13 +891,21 @@ function sandboxReadTool(
 
 function requireInteractivePTY(context: ToolExecutionContext) {
   if (!context.interactivePTY)
-    throw new Error("interactive PTY runtime unavailable");
+    throw new Error("interactive terminal runtime unavailable");
   return context.interactivePTY;
+}
+
+function requireNativeTerminal(context: ToolExecutionContext) {
+  if (!context.nativeTerminal)
+    throw new Error(
+      "Native Terminal Host is unavailable. Install the Natalia WezTerm distribution to start an interactive terminal.",
+    );
+  return context.nativeTerminal;
 }
 
 function notifyPTY(
   context: ToolExecutionContext,
-  session: InteractivePTYInfo,
+  session: TerminalSessionInfo,
   action?:
     | "write"
     | "submit"
@@ -872,61 +921,108 @@ function notifyPTY(
   return JSON.stringify(modelTerminalInfo(session), null, 2);
 }
 
-function modelTerminalInfo(session: InteractivePTYInfo) {
+function modelTerminalInfo(session: TerminalSessionInfo) {
   const { lines: _lines, ...screen } = session.screen;
   return {
     ...session,
-    transcript: session.transcript.slice(-4000),
     screen,
+  };
+}
+
+function modelNativeTerminalInfo(session: NativeTerminalSession) {
+  return {
+    id: session.id,
+    host: session.host,
+    paneID: session.paneID,
+    windowID: session.windowID,
+    tabID: session.tabID,
+    command: session.command,
+    cwd: session.cwd,
+    status: session.status,
+    startedAt: session.startedAt,
   };
 }
 
 function interactiveStartTool(): RuntimeTool {
   return {
-    name: "interactive_start",
+    name: "interactive_terminal_start",
     description:
-      "Start a real interactive OS PTY session inside the workspace.",
+      "Start a real interactive Terminal session inside the workspace.",
     requiresApproval: true,
     parameters: {
       type: "object",
       properties: {
         command: { type: "string" },
         id: { type: "string" },
-        rows: { type: "number" },
-        cols: { type: "number" },
       },
       required: ["command"],
       additionalProperties: false,
     },
     async execute(input, context) {
       const args = requireObject(input);
-      const registry = requireInteractivePTY(context);
+      const registry = requireNativeTerminal(context);
       const session = await registry.start({
         command: requireString(args.command, "command"),
         cwd: context.workspaceRoot,
         id: optionalString(args.id),
-        rows: numberOr(args.rows, 36),
-        cols: numberOr(args.cols, 120),
       });
-      registry.subscribe(session.id, (next) => context.onPTYUpdate?.(next));
-      return notifyPTY(context, session);
+      return JSON.stringify(modelNativeTerminalInfo(session), null, 2);
     },
   };
 }
 
 function interactiveReadTool(): RuntimeTool {
-  return interactiveTool(
-    "interactive_read",
-    "Read a bounded interactive PTY transcript slice. Use nextOffset for incremental reads.",
-    false,
-    async (registry, args) =>
-      registry.read(requireString(args.id, "id"), {
-        offset: numberOr(args.offset, 0),
-        maxChars: numberOr(args.maxChars, 4000),
-      }),
-    true,
-    { offset: { type: "number" }, maxChars: { type: "number" } },
-  );
+  return {
+    name: "interactive_terminal_read",
+    description:
+      "Read a bounded line range from the same native Terminal pane used by the human. Use startLine/endLine to page through complete scrollback without copying it all at once.",
+    requiresApproval: false,
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        maxLines: { type: "number" },
+        startLine: { type: "number" },
+        endLine: { type: "number" },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+    async execute(input, context) {
+      const args = requireObject(input);
+      const id = requireString(args.id, "id");
+      const startLine = optionalInteger(args.startLine, "startLine");
+      const endLine = optionalInteger(args.endLine, "endLine");
+      const text = await requireNativeTerminal(context).read(id, {
+        maxLines: Math.max(1, Math.min(numberOr(args.maxLines, 60), 200)),
+        startLine,
+        endLine,
+      });
+      return JSON.stringify(
+        {
+          id,
+          range:
+            startLine === undefined
+              ? {
+                  kind: "tail",
+                  maxLines: Math.max(
+                    1,
+                    Math.min(numberOr(args.maxLines, 60), 200),
+                  ),
+                }
+              : {
+                  kind: "lines",
+                  startLine,
+                  endLine,
+                },
+          text: truncateProcessOutput(text, 16_384),
+          truncated: new TextEncoder().encode(text).byteLength > 16_384,
+        },
+        null,
+        2,
+      );
+    },
+  };
 }
 
 function terminalObserveTool(): RuntimeTool {
@@ -942,32 +1038,78 @@ function terminalObserveTool(): RuntimeTool {
         id: { type: "string" },
         afterRevision: { type: "number" },
         timeoutMs: { type: "number" },
+        scrollbackRows: { type: "number" },
       },
       required: ["id", "afterRevision"],
       additionalProperties: false,
     },
     async execute(input, context) {
       const args = requireObject(input);
-      const observation = await requireInteractivePTY(context).observe(
-        requireString(args.id, "id"),
-        {
-          afterRevision: numberOr(args.afterRevision, 0),
-          timeoutMs: numberOr(args.timeoutMs, 30_000),
-          signal: context.signal,
-        },
-      );
+      const id = requireString(args.id, "id");
+      if (context.nativeTerminal) {
+        await context.nativeTerminal.reconcile();
+        const observation = await context.nativeTerminal.observe(
+          id,
+          numberOr(args.afterRevision, 0),
+          {
+            maxLines: Math.max(
+              1,
+              Math.min(numberOr(args.scrollbackRows, 60), 200),
+            ),
+            timeoutMs: Math.max(
+              1_000,
+              Math.min(numberOr(args.timeoutMs, 5_000), 30_000),
+            ),
+          },
+        );
+        return JSON.stringify(
+          {
+            id,
+            host: "wezterm",
+            revision: observation.session.revision,
+            afterRevision: observation.afterRevision,
+            changed: observation.changed,
+            reason: observation.reason,
+            // Terminal output enters model context and durable tool history.
+            // Cap it here even when the native frontend has much more
+            // scrollback; the model can request a smaller targeted read.
+            text: truncateProcessOutput(observation.text, 16_384),
+          },
+          null,
+          2,
+        );
+      }
+      const registry = requireInteractivePTY(context);
+      const observation = await registry.observe(id, {
+        afterRevision: numberOr(args.afterRevision, 0),
+        timeoutMs: numberOr(args.timeoutMs, 30_000),
+        signal: context.signal,
+      });
       if (observation.session.screen)
         context.onPTYUpdate?.(
-          observation.session as import("@natalia/pty").InteractivePTYInfo,
+          observation.session as import("@natalia/pty").TerminalSessionInfo,
         );
+      const scrollbackRows = Math.max(
+        0,
+        Math.min(numberOr(args.scrollbackRows, 0), 200),
+      );
       return JSON.stringify(
         {
           ...observation,
           session: observation.session.screen
             ? modelTerminalInfo(
-                observation.session as import("@natalia/pty").InteractivePTYInfo,
+                observation.session as import("@natalia/pty").TerminalSessionInfo,
               )
             : observation.session,
+          ...(scrollbackRows
+            ? {
+                scrollback: modelTerminalScrollback(
+                  registry.scrollback(observation.session.id, {
+                    maxRows: scrollbackRows,
+                  }),
+                ),
+              }
+            : {}),
         },
         null,
         2,
@@ -976,108 +1118,208 @@ function terminalObserveTool(): RuntimeTool {
   };
 }
 
+function modelTerminalScrollback(
+  scrollback: ReturnType<TerminalRegistry["scrollback"]>,
+) {
+  const { lines: _lines, ...summary } = scrollback;
+  return summary;
+}
+
 function interactiveWriteTool(): RuntimeTool {
-  return interactiveTool(
-    "interactive_write",
-    "Write literal input to an interactive PTY session.",
-    true,
-    async (registry, args) =>
-      await registry.write(
-        requireString(args.id, "id"),
-        requireString(args.input, "input"),
-        {
-          submit: args.submit !== false,
-          sensitive: args.sensitive === true,
-        },
-      ),
-    true,
-    {
-      input: { type: "string" },
-      submit: { type: "boolean" },
-      sensitive: { type: "boolean" },
+  return {
+    name: "interactive_terminal_write",
+    description:
+      "Write literal input to the same native Terminal pane used by the human.",
+    requiresApproval: true,
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        input: { type: "string" },
+        idempotencyKey: { type: "string" },
+      },
+      required: ["id", "input"],
+      additionalProperties: false,
     },
-    ["id", "input"],
-  );
+    async execute(input, context) {
+      const args = requireObject(input);
+      const id = requireString(args.id, "id");
+      const data = requireString(args.input, "input");
+      const result = await requireNativeTerminal(context).write(id, data, {
+        idempotencyKey: optionalString(args.idempotencyKey),
+      });
+      return JSON.stringify({
+        id,
+        ...result,
+      });
+    },
+  };
 }
 
 function interactiveKeyTool(): RuntimeTool {
-  return interactiveTool(
-    "interactive_keys",
-    "Send enter, ctrl-c, ctrl-d, tab, or esc to an interactive PTY session.",
-    true,
-    async (registry, args) => {
-      const key = requireString(args.key, "key");
-      if (!["enter", "ctrl-c", "ctrl-d", "tab", "esc"].includes(key))
-        throw new Error("key must be enter, ctrl-c, ctrl-d, tab, or esc");
-      return await registry.specialKey(
-        requireString(args.id, "id"),
-        key as "enter" | "ctrl-c" | "ctrl-d" | "tab" | "esc",
-      );
+  return {
+    name: "interactive_terminal_keys",
+    description:
+      "Send raw terminal control bytes to the same native Terminal pane used by the human.",
+    requiresApproval: true,
+    parameters: {
+      type: "object",
+      properties: { id: { type: "string" }, key: { type: "string" } },
+      required: ["id", "key"],
+      additionalProperties: false,
     },
-    true,
-    { key: { type: "string" } },
-    ["id", "key"],
-  );
+    async execute(input, context) {
+      const args = requireObject(input);
+      const key = requireString(args.key, "key");
+      const bytes = terminalControlBytes[key];
+      if (!bytes)
+        throw new Error("key must be enter, ctrl-c, ctrl-d, tab, or esc");
+      const id = requireString(args.id, "id");
+      await requireNativeTerminal(context).write(id, bytes);
+      return JSON.stringify({ id, key, writtenBytes: bytes.length });
+    },
+  };
 }
 
+const terminalControlBytes: Record<string, string> = {
+  enter: "\r",
+  "ctrl-c": "\x03",
+  "ctrl-d": "\x04",
+  tab: "\t",
+  esc: "\x1b",
+};
+
 function interactiveResizeTool(): RuntimeTool {
-  return interactiveTool(
-    "interactive_resize",
-    "Resize an interactive PTY session.",
-    false,
-    async (registry, args) =>
-      await registry.resize(
-        requireString(args.id, "id"),
-        numberOr(args.rows, 36),
-        numberOr(args.cols, 120),
-      ),
-    true,
-    { rows: { type: "number" }, cols: { type: "number" } },
-    ["id", "rows", "cols"],
-  );
+  return {
+    name: "interactive_terminal_resize",
+    description: "Resize an interactive Terminal session.",
+    requiresApproval: false,
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        rows: { type: "number" },
+        cols: { type: "number" },
+      },
+      required: ["id", "rows", "cols"],
+      additionalProperties: false,
+    },
+    async execute(input, context) {
+      const args = requireObject(input);
+      const id = requireString(args.id, "id");
+      const rows = numberOr(args.rows, 36);
+      const cols = numberOr(args.cols, 120);
+      if (context.nativeTerminal)
+        return JSON.stringify(
+          modelNativeTerminalInfo(
+            await context.nativeTerminal.resize(id, rows, cols),
+          ),
+          null,
+          2,
+        );
+      return notifyPTY(
+        context,
+        await requireInteractivePTY(context).resize(id, rows, cols),
+        "resize",
+      );
+    },
+  };
 }
 
 function interactiveAttachTool(): RuntimeTool {
-  return interactiveTool(
-    "interactive_attach",
-    "Attach to an interactive PTY session.",
-    false,
-    async (registry, args) =>
-      await registry.attach(requireString(args.id, "id")),
-    true,
+  return nativeOrLegacyTerminalAction(
+    "interactive_terminal_attach",
+    "Attach to an interactive Terminal session.",
+    (registry, id) => registry.attach(id),
+    (registry, id) => registry.attach(id),
+    "attach",
   );
 }
 
 function interactiveDetachTool(): RuntimeTool {
-  return interactiveTool(
-    "interactive_detach",
-    "Detach an interactive PTY session.",
-    false,
-    async (registry, args) =>
-      await registry.detach(requireString(args.id, "id")),
-    true,
+  return nativeOrLegacyTerminalAction(
+    "interactive_terminal_detach",
+    "Detach an interactive Terminal session.",
+    (registry, id) => registry.detach(id),
+    (registry, id) => registry.detach(id),
+    "detach",
   );
 }
 
+function nativeOrLegacyTerminalAction(
+  name: string,
+  description: string,
+  nativeAction: (
+    registry: NativeTerminalRegistry,
+    id: string,
+  ) => Promise<NativeTerminalSession> | NativeTerminalSession,
+  legacyAction: (
+    registry: TerminalRegistry,
+    id: string,
+  ) => Promise<TerminalSessionInfo>,
+  action: "attach" | "detach",
+): RuntimeTool {
+  return {
+    name,
+    description,
+    requiresApproval: false,
+    parameters: {
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
+      additionalProperties: false,
+    },
+    async execute(input, context) {
+      const id = requireString(requireObject(input).id, "id");
+      if (context.nativeTerminal)
+        return JSON.stringify(
+          modelNativeTerminalInfo(
+            await nativeAction(context.nativeTerminal, id),
+          ),
+          null,
+          2,
+        );
+      return notifyPTY(
+        context,
+        await legacyAction(requireInteractivePTY(context), id),
+        action,
+      );
+    },
+  };
+}
+
 function interactiveStopTool(): RuntimeTool {
-  return interactiveTool(
-    "interactive_stop",
-    "Stop an interactive PTY session.",
-    true,
-    async (registry, args) => await registry.stop(requireString(args.id, "id")),
-    true,
-  );
+  return {
+    name: "interactive_terminal_stop",
+    description: "Stop the native Terminal pane.",
+    requiresApproval: true,
+    parameters: {
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
+      additionalProperties: false,
+    },
+    async execute(input, context) {
+      const session = await requireNativeTerminal(context).stop(
+        requireString(requireObject(input).id, "id"),
+      );
+      return JSON.stringify({
+        ...modelNativeTerminalInfo(session),
+        status: "exited",
+      });
+    },
+  };
 }
 
 function interactiveListTool(): RuntimeTool {
   return {
-    name: "interactive_list",
-    description: "List real interactive PTY sessions.",
+    name: "interactive_terminal_list",
+    description: "List real interactive Terminal sessions.",
     requiresApproval: false,
     parameters: { type: "object", properties: {}, additionalProperties: false },
     async execute(_input, context) {
       return JSON.stringify(
-        requireInteractivePTY(context).list().map(modelTerminalInfo),
+        requireNativeTerminal(context).list().map(modelNativeTerminalInfo),
         null,
         2,
       );
@@ -1090,9 +1332,9 @@ function interactiveTool(
   description: string,
   requiresApproval: boolean,
   action: (
-    registry: InteractivePTYRegistry,
+    registry: TerminalRegistry,
     args: Record<string, unknown>,
-  ) => Promise<InteractivePTYInfo>,
+  ) => Promise<TerminalSessionInfo>,
   requiresID: boolean,
   extra: Record<string, unknown> = {},
   required: string[] = requiresID ? ["id"] : [],
@@ -1111,19 +1353,19 @@ function interactiveTool(
       const args = requireObject(input);
       const session = await action(requireInteractivePTY(context), args);
       const ptyAction =
-        name === "interactive_write"
+        name === "interactive_terminal_write"
           ? args.submit === false
             ? "write"
             : "submit"
-          : name === "interactive_keys"
+          : name === "interactive_terminal_keys"
             ? "special_key"
-            : name === "interactive_resize"
+            : name === "interactive_terminal_resize"
               ? "resize"
-              : name === "interactive_attach"
+              : name === "interactive_terminal_attach"
                 ? "attach"
-                : name === "interactive_detach"
+                : name === "interactive_terminal_detach"
                   ? "detach"
-                  : name === "interactive_stop"
+                  : name === "interactive_terminal_stop"
                     ? "exit"
                     : undefined;
       return notifyPTY(context, session, ptyAction, args.sensitive === true);
@@ -2372,6 +2614,13 @@ function positiveNumberOrUndefined(value: unknown) {
 function positiveNumberOr(value: unknown, fallback: number) {
   if (value === undefined) return fallback;
   return positiveNumberOrUndefined(value) ?? fallback;
+}
+
+function optionalInteger(value: unknown, name: string): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isInteger(value))
+    throw new Error(`${name} must be an integer`);
+  return value;
 }
 
 function truncateProcessOutput(output: string, maxBytes = 20000) {

@@ -13,6 +13,7 @@ import { createToolRegistry } from "@natalia/tools";
 import { resolveConfig } from "@natalia/config";
 import { SqliteSessionStore } from "@natalia/session";
 import { WorkspaceSandboxManager } from "@natalia/sandbox";
+import { NativeTerminalRegistry } from "@natalia/native-terminal";
 
 test("real runtime client streams provider output and persists replayable session", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-real-"));
@@ -71,6 +72,96 @@ test("real runtime client streams provider output and persists replayable sessio
         event.type === "content.done" && event.text === "hello from provider",
     ),
   ).toBe(true);
+});
+
+test("runtime can suppress startup event replay for paged UI hydration", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-paged-replay-"));
+  const sessionID = "ses_runtime_paged_replay" as SessionID;
+  const initial = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    provider: scriptedProvider("paged response"),
+  });
+  initial.start(() => undefined);
+  await initial.submit("persist history");
+  await initial.dispose?.();
+
+  const replay: RuntimeEvent[] = [];
+  const reopened = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    provider: scriptedProvider("unused"),
+  });
+  reopened.start((event) => replay.push(event), { replay: "none" });
+  await waitFor(() => replay.some((event) => event.type === "session.ready"));
+  expect(replay.some((event) => event.type === "content.done")).toBe(false);
+  const page = await reopened.messages?.({ limit: 1 });
+  expect(page?.data[0]?.rows).toContainEqual(
+    expect.objectContaining({
+      event: expect.objectContaining({
+        type: "content.done",
+        text: "paged response",
+      }),
+    }),
+  );
+  await reopened.dispose?.();
+});
+
+test("SQLite runtime message pages use the durable turn cursor", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-sqlite-message-page-"));
+  const sessionID = "ses_sqlite_message_page" as SessionID;
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    provider: scriptedProvider("reply"),
+    useSqliteStore: true,
+  });
+  client.start(() => undefined);
+  for (const prompt of ["one", "two", "three"]) await client.submit(prompt);
+
+  const latest = await client.messages?.({ limit: 2 });
+  expect(latest?.data.map((message) => message.submitted.text)).toEqual([
+    "three",
+    "two",
+  ]);
+  const older = await client.messages?.({ cursor: latest?.cursor.next });
+  expect(older?.data.map((message) => message.submitted.text)).toEqual(["one"]);
+  await client.dispose?.();
+});
+
+test("SQLite runtime persists durable events without growing the JSON mirror", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-sqlite-authority-"));
+  const sessionID = "ses_sqlite_authority" as SessionID;
+  const initial = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    provider: scriptedProvider("durable SQLite reply"),
+    useSqliteStore: true,
+  });
+  initial.start(() => undefined);
+  await initial.submit("persist only in SQLite");
+  await initial.dispose?.();
+
+  await expect(
+    readFile(join(root, ".natalia", "sessions", `${sessionID}.json`), "utf8"),
+  ).rejects.toMatchObject({ code: "ENOENT" });
+
+  const replayed: RuntimeEvent[] = [];
+  const reopened = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    provider: scriptedProvider("unused"),
+    useSqliteStore: true,
+  });
+  reopened.start((event) => replayed.push(event));
+  await waitFor(() => replayed.some((event) => event.type === "session.ready"));
+  expect(
+    replayed.some(
+      (event) =>
+        event.type === "content.done" && event.text === "durable SQLite reply",
+    ),
+  ).toBe(true);
+  await reopened.dispose?.();
 });
 
 test("runtime status and diagnostics expose only published safe state", async () => {
@@ -1019,7 +1110,7 @@ test("workflow grep retains workspace read path authorization", async () => {
   );
 });
 
-test("runtime projects exact durable interactive PTY actions", async () => {
+test("runtime executes canonical interactive Terminal tools on one native pane", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-pty-runtime-"));
   const events: RuntimeEvent[] = [];
   const handled = new Set<string>();
@@ -1040,7 +1131,7 @@ test("runtime projects exact durable interactive PTY actions", async () => {
             text === "start pty"
               ? {
                   id: "start",
-                  name: "interactive_start",
+                  name: "interactive_terminal_start",
                   arguments: JSON.stringify({
                     id: "tty_runtime",
                     command: "cat",
@@ -1049,7 +1140,7 @@ test("runtime projects exact durable interactive PTY actions", async () => {
               : text === "write pty"
                 ? {
                     id: "write",
-                    name: "interactive_write",
+                    name: "interactive_terminal_write",
                     arguments: JSON.stringify({
                       id: "tty_runtime",
                       input: "secret",
@@ -1058,7 +1149,7 @@ test("runtime projects exact durable interactive PTY actions", async () => {
                   }
                 : {
                     id: "stop",
-                    name: "interactive_stop",
+                    name: "interactive_terminal_stop",
                     arguments: JSON.stringify({ id: "tty_runtime" }),
                   };
           yield { type: "tool_call" as const, calls: [call] };
@@ -1066,33 +1157,19 @@ test("runtime projects exact durable interactive PTY actions", async () => {
         yield { type: "done" as const };
       },
     },
+    nativeTerminal: nativeTerminalFixture(),
   });
   client.start((event) => events.push(event));
   await client.submit("start pty");
   await client.submit("write pty");
   await client.submit("stop pty");
-  const actions = events.filter(
-    (event): event is Extract<RuntimeEvent, { type: "pty.action" }> =>
-      event.type === "pty.action",
-  );
-  expect(actions).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ action: "submit", redacted: true }),
-      expect.objectContaining({ action: "exit", redacted: false }),
-    ]),
-  );
-  const history = await client.history?.();
-  expect(
-    history?.events.some(
-      (item) =>
-        item.event.type === "pty.timeline" &&
-        item.event.summary === "sensitive input supplied",
-    ),
-  ).toBe(true);
+  expect(await client.nativeTerminalList?.()).toMatchObject([
+    { id: "tty_runtime", status: "exited" },
+  ]);
   await client.dispose?.();
 });
 
-test("runtime exposes interactive PTY management through RuntimeClient", async () => {
+test("runtime exposes native Terminal pane management through RuntimeClient", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-pty-management-runtime-"));
   const events: RuntimeEvent[] = [];
   const client = createRealRuntimeClient({
@@ -1100,47 +1177,23 @@ test("runtime exposes interactive PTY management through RuntimeClient", async (
     sessionID: "ses_pty_management",
     permissionMode: "auto",
     provider: interactivePTYProvider(),
+    nativeTerminal: nativeTerminalFixture(),
   });
   client.start((event) => events.push(event));
   await client.submit("start pty");
 
-  expect(await client.ptyList!()).toMatchObject([
-    { id: "tty_management", status: "running" },
+  expect(await client.nativeTerminalList!()).toMatchObject([
+    { id: "tty_management", status: "running", paneID: 71 },
   ]);
-  await client.ptyWrite!({
+  expect(await client.nativeTerminalRead!("tty_management")).toEqual({
     id: "tty_management",
-    text: "secret",
-    sensitive: true,
+    text: "native pane output",
   });
-  await client.ptyResize!({ id: "tty_management", rows: 32, cols: 120 });
-  await client.ptyDetach!("tty_management");
-  await client.ptyAttach!("tty_management");
-  const updates = events.filter(
-    (event): event is Extract<RuntimeEvent, { type: "pty.update" }> =>
-      event.type === "pty.update",
-  );
-  expect(updates.length).toBeGreaterThan(0);
-  expect(updates.every((event) => !event.screen && !event.transcript)).toBe(
-    true,
-  );
-  const history = await client.history?.();
-  expect(history?.events.some((item) => item.event.type === "pty.update")).toBe(
-    false,
-  );
-  const transcript = await client.ptyRead!({
-    id: "tty_management",
-    maxChars: 12000,
-  });
-  expect(transcript.transcript).toContain("[sensitive input redacted]");
-  expect(transcript.transcript).not.toContain("secret");
-  expect(transcript).toMatchObject({ rows: 32, cols: 120, attached: true });
-  await client.ptyStop!("tty_management");
-  expect(events).toContainEqual(
-    expect.objectContaining({ type: "pty.action", action: "resize" }),
-  );
-  expect(events).toContainEqual(
-    expect.objectContaining({ type: "pty.action", action: "exit" }),
-  );
+  await client.nativeTerminalFocus!("tty_management");
+  await client.nativeTerminalStop!("tty_management");
+  expect(await client.nativeTerminalList!()).toMatchObject([
+    { id: "tty_management", status: "exited" },
+  ]);
   await client.dispose?.();
 });
 
@@ -1503,7 +1556,7 @@ test("committed agent selection restores when a session runtime is reopened", as
       },
     },
   });
-  reopened.start(() => undefined);
+  reopened.start(() => undefined, { replay: "none" });
   await reopened.submit("after reopen");
   expect(String(requests[0]?.messages[0]?.content)).toContain("second system");
 });
@@ -3218,7 +3271,7 @@ test("SQLite restart restores context from epoch baseline without duplicate hist
       },
     },
   });
-  reopened.start(() => undefined);
+  reopened.start(() => undefined, { replay: "none" });
   await reopened.submit("second question");
   const restored = requests[0]!.messages;
   expect(
@@ -3230,6 +3283,117 @@ test("SQLite restart restores context from epoch baseline without duplicate hist
   expect(
     restored.filter((message) => message.content === "second question"),
   ).toHaveLength(1);
+});
+
+test("SQLite indexed replay recovers pending interactive control state", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-ts7-sqlite-indexed-interactive-"),
+  );
+  const sessionID = "ses_ts7_sqlite_indexed_interactive" as SessionID;
+  const databasePath = join(root, ".natalia", "sessions.db");
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  const store = new SqliteSessionStore(databasePath);
+  store.create(sessionID, "Indexed interactive");
+  store.appendEvents(sessionID, [
+    {
+      type: "context.checkpoint",
+      id: "epoch_indexed_interactive",
+      snapshot: {
+        entries: [],
+        resources: [],
+        journalOffset: 0,
+        step: 0,
+        tokenEstimate: 0,
+        compactionGeneration: 0,
+      },
+    },
+    {
+      type: "approval.request",
+      id: "approval_indexed",
+      title: "Write",
+      preview: "file",
+    },
+    {
+      type: "question.request",
+      id: "question_indexed",
+      title: "Choice",
+    },
+  ]);
+  store.close();
+
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    useSqliteStore: true,
+    provider: scriptedProvider("unused"),
+  });
+  client.start((event) => events.push(event), { replay: "none" });
+  await waitFor(() => events.some((event) => event.type === "session.ready"));
+  expect(await client.pendingInteractive!()).toMatchObject({
+    approvals: [{ id: "approval_indexed" }],
+    questions: [{ id: "question_indexed" }],
+  });
+  expect(events).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        type: "approval.request",
+        id: "approval_indexed",
+      }),
+      expect.objectContaining({
+        type: "question.request",
+        id: "question_indexed",
+      }),
+    ]),
+  );
+  await client.dispose?.();
+});
+
+test("SQLite indexed replay recovers bounded durable diagnostics", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-ts7-sqlite-indexed-diagnostics-"),
+  );
+  const sessionID = "ses_ts7_sqlite_indexed_diagnostics" as SessionID;
+  const databasePath = join(root, ".natalia", "sessions.db");
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  const store = new SqliteSessionStore(databasePath);
+  store.create(sessionID, "Indexed diagnostics");
+  store.appendEvents(sessionID, [
+    {
+      type: "context.checkpoint",
+      id: "epoch_indexed_diagnostics",
+      snapshot: {
+        entries: [],
+        resources: [],
+        journalOffset: 0,
+        step: 0,
+        tokenEstimate: 0,
+        compactionGeneration: 0,
+      },
+    },
+    {
+      type: "diagnostic",
+      level: "warning",
+      message: "durable indexed diagnostic",
+      at: "2026-07-25T00:00:00.000Z",
+    },
+  ]);
+  store.close();
+
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    useSqliteStore: true,
+    provider: scriptedProvider("unused"),
+  });
+  client.start(() => undefined, { replay: "none" });
+  await Bun.sleep(50);
+  expect(await client.diagnostics?.(10)).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ message: "durable indexed diagnostic" }),
+    ]),
+  );
+  await client.dispose?.();
 });
 
 test("restart projects unresolved interactive requests from durable events", async () => {
@@ -3871,7 +4035,7 @@ function interactivePTYProvider(): StreamingProvider {
           calls: [
             {
               id: "start",
-              name: "interactive_start",
+              name: "interactive_terminal_start",
               arguments: JSON.stringify({
                 id: "tty_management",
                 command: "cat",
@@ -3882,6 +4046,31 @@ function interactivePTYProvider(): StreamingProvider {
       yield { type: "done" };
     },
   };
+}
+
+function nativeTerminalFixture() {
+  let running = true;
+  return new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 71, window_id: 7, tab_id: 1 };
+    },
+    async list() {
+      return running
+        ? [{ pane_id: 71, window_id: 7, tab_id: 1, rows: 24, cols: 80 }]
+        : [];
+    },
+    async read() {
+      return "native pane output";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {
+      running = false;
+    },
+  });
 }
 
 function usageProvider(): StreamingProvider {

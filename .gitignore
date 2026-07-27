@@ -55,6 +55,7 @@ Thumbs.db
 /apps/*/tsconfig.tsbuildinfo
 /packages/*/dist/
 /packages/*/tsconfig.tsbuildinfo
+/packages/native-terminal/wezterm/target/
 /dist/
 /packages/*/.turbo/
 /packages/*/.vite/

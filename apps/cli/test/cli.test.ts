@@ -356,6 +356,71 @@ test("CLI terminal attach renders a daemon framebuffer read-only", async () => {
   }
 });
 
+test("CLI terminal attach reconnects after a transient observation failure", async () => {
+  const viewerActions: string[] = [];
+  let attempts = 0;
+  const client = {
+    start() {},
+    cancel() {},
+    async terminalViewerRegister() {
+      viewerActions.push("register");
+      return {};
+    },
+    async terminalViewerControl(input: { action: string }) {
+      viewerActions.push(input.action);
+      return {};
+    },
+    async terminalObserve() {
+      attempts += 1;
+      if (attempts === 1) throw new Error("temporary bridge failure");
+      return {
+        session: {
+          id: "tty_reconnect",
+          command: "cat",
+          cwd: "/repo",
+          status: "exited",
+          attached: true,
+          rows: 1,
+          cols: 4,
+          transcript: "ok",
+          tail: "ok",
+          startedAt: "2026-01-01T00:00:00.000Z",
+          revision: 2,
+          screen: {
+            rows: 1,
+            cols: 4,
+            buffer: "normal",
+            cursor: { row: 0, col: 2, visible: true },
+            lines: [["o", "k"].map((char) => [char, 1])],
+            text: "ok",
+          },
+        },
+        afterRevision: 0,
+        changed: true,
+        reason: "exited" as const,
+      };
+    },
+  } as unknown as RuntimeClient;
+  const server = createRuntimeHttpServer({ client });
+  const frames: string[] = [];
+  try {
+    await expect(
+      attachTerminalReadOnly({
+        id: "tty_reconnect",
+        url: server.url,
+        reconnectDelayMs: 1,
+        write: (frame) => frames.push(frame),
+      }),
+    ).resolves.toMatchObject({ status: "exited" });
+    expect(attempts).toBe(2);
+    expect(viewerActions).toEqual(["register", "register", "unregister"]);
+    expect(frames.join("")).toContain("ok");
+    expect(frames.at(-1)).toContain("\x1b[?1049l");
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("CLI external terminal launcher uses platform-specific argument forms", () => {
   const executable = ["bun", "apps/cli/src/main.ts"];
   expect(

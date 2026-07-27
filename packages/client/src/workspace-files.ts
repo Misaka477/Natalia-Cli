@@ -262,30 +262,56 @@ export async function watchWorkspaceFiles(
   const root = await realpath(workspaceRoot);
   let watchers: FSWatcher[] = [];
   let closed = false;
-  let refreshTimer: ReturnType<typeof setTimeout> | undefined;
-
-  const refresh = async () => {
+  const watchedDirectories = new Set([root]);
+  const catalog = await workspaceCatalog(root);
+  const trigger = (directory: string, eventType: string, filename?: string) => {
     if (closed) return;
-    watchers.forEach((watcher) => watcher.close());
-    const catalog = await workspaceCatalog(root);
-    watchers = await watchDirectories(
-      root,
-      root,
-      trigger,
-      catalog.ignoreRules,
-      new Set([root]),
-    );
-  };
-  const trigger = () => {
+    const changedPath = filename
+      ? resolve(directory, filename.toString())
+      : directory;
+    const relativePath = relative(root, changedPath).split(sep).join("/");
+    if (relativePath && isIgnored(relativePath, false, catalog.ignoreRules))
+      return;
     invalidateWorkspaceFiles(root);
     onChange();
-    if (refreshTimer) clearTimeout(refreshTimer);
-    refreshTimer = setTimeout(() => void refresh(), 50);
+    // Existing directory watchers observe ordinary file writes. Rebuilding the
+    // full recursive watcher tree after every event self-scans large devref
+    // trees forever. Attach only genuinely new directories incrementally.
+    if (eventType === "rename" && filename)
+      void attachNewDirectory(changedPath);
   };
-  await refresh();
+  const attachNewDirectory = async (path: string) => {
+    const info = await stat(path).catch(() => undefined);
+    if (closed || !info?.isDirectory()) return;
+    const real = await realpath(path).catch(() => undefined);
+    const relativePath = real ? relative(root, real).split(sep).join("/") : "";
+    if (
+      !real ||
+      !contains(root, real) ||
+      isIgnored(relativePath, true, catalog.ignoreRules)
+    )
+      return;
+    if (watchedDirectories.has(real)) return;
+    watchedDirectories.add(real);
+    watchers.push(
+      ...(await watchDirectories(
+        root,
+        real,
+        trigger,
+        catalog.ignoreRules,
+        watchedDirectories,
+      )),
+    );
+  };
+  watchers = await watchDirectories(
+    root,
+    root,
+    trigger,
+    catalog.ignoreRules,
+    watchedDirectories,
+  );
   return () => {
     closed = true;
-    if (refreshTimer) clearTimeout(refreshTimer);
     watchers.forEach((watcher) => watcher.close());
     watchers = [];
   };
@@ -386,7 +412,7 @@ async function collect(
 async function watchDirectories(
   root: string,
   directory: string,
-  onChange: () => void,
+  onChange: (directory: string, eventType: string, filename?: string) => void,
   ignoreRules: IgnoreRule[],
   visited: Set<string>,
 ): Promise<FSWatcher[]> {
@@ -395,7 +421,11 @@ async function watchDirectories(
     () => [],
   );
   try {
-    watchers.push(watch(directory, { persistent: false }, onChange));
+    watchers.push(
+      watch(directory, { persistent: false }, (eventType, filename) =>
+        onChange(directory, eventType, filename?.toString()),
+      ),
+    );
   } catch {
     return watchers;
   }

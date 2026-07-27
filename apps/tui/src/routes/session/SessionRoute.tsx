@@ -18,6 +18,7 @@ import {
 } from "@natalia/ui-model";
 import { useAppState, type MessageBlock } from "../../context/state";
 import { roleColor, themeTokens as darkTheme } from "../../theme/theme";
+import { terminalPreview } from "../../terminal-preview";
 import type { TuiPreferences } from "../../settings";
 import { timelineLayout } from "../../session-layout";
 import { useRouteController } from "../../context/route";
@@ -44,6 +45,7 @@ export function SessionRoute(props: {
   scrollRef?: { current?: any };
   ptyScrollRef?: { current?: any };
   followBottom?: boolean;
+  onFollowChange?: (follow: boolean) => void;
   density?: TuiPreferences["density"];
   toolDetails?: TuiPreferences["toolDetails"];
   diffStyle?: TuiPreferences["diffStyle"];
@@ -53,6 +55,8 @@ export function SessionRoute(props: {
   onJumpToBottom?: () => void;
   onMessageCopy?: (text: string) => void;
   onMessageFork?: (turnID: string, prompt: string) => void;
+  onLoadOlderHistory?: () => Promise<void>;
+  onLoadNewerHistory?: () => Promise<void>;
   backend?: RuntimeClient;
   onExit?: () => void;
 }) {
@@ -68,11 +72,22 @@ export function SessionRoute(props: {
   let timelineScroll: any;
   let measuring = false;
   let observedScrollTop = -1;
+  let wasAtTop = false;
+  let wasAtBottom = false;
   const scrollObserver = setInterval(() => {
     if (!timelineScroll || timelineScroll.isDestroyed) return;
     const scrollTop = timelineScroll.scrollTop ?? 0;
     if (scrollTop === observedScrollTop) return;
     observedScrollTop = scrollTop;
+    const isAtTop = scrollTop <= 1;
+    if (isAtTop && !wasAtTop) void props.onLoadOlderHistory?.();
+    wasAtTop = isAtTop;
+    const isAtBottom =
+      scrollTop + viewportHeight() >=
+      virtualizer.range(scrollTop, viewportHeight()).total - 1;
+    if (isAtBottom) props.onFollowChange?.(true);
+    if (isAtBottom && !wasAtBottom) void props.onLoadNewerHistory?.();
+    wasAtBottom = isAtBottom;
     updateRange();
     measureRenderedGroups();
   }, 50);
@@ -107,7 +122,8 @@ export function SessionRoute(props: {
         );
         adjustment += measured.adjustment;
       }
-      if (adjustment) timelineScroll.scrollTop += adjustment;
+      if (adjustment && !props.followBottom)
+        timelineScroll.scrollTop += adjustment;
       observedScrollTop = timelineScroll.scrollTop ?? 0;
       updateRange();
     });
@@ -121,7 +137,7 @@ export function SessionRoute(props: {
     for (const key of renderedGroups.keys())
       if (!visibleKeys.has(key)) renderedGroups.delete(key);
     setTimelineRange(result.range);
-    if (result.adjustment && timelineScroll)
+    if (result.adjustment && timelineScroll && !props.followBottom)
       queueMicrotask(() => {
         if (!timelineScroll || timelineScroll.isDestroyed) return;
         timelineScroll.scrollTop += result.adjustment;
@@ -588,16 +604,6 @@ function ModelPTyPane(props: {
       </text>
     </box>
   );
-}
-
-function terminalPreview(text: string) {
-  const lines = text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(-2)
-    .map((line) => (line.length > 120 ? `${line.slice(0, 117)}...` : line));
-  return lines.length ? lines : ["No visible terminal output yet."];
 }
 
 function MessageBlockView(props: {

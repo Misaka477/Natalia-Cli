@@ -49,6 +49,42 @@ test("thinking and final streams remain separate with provider-safe hidden mode"
   expect(final?.text).toBe("final answer\n\n");
 });
 
+test("streaming tail is rendered once while markdown is incomplete", () => {
+  let state = reduceState(structuredClone(initialState), {
+    type: "content.delta",
+    id: "turn_pending_once",
+    text: "an incomplete streaming tail",
+  });
+  const block = state.messages.find(
+    (item) => item.id === "turn_pending_once:assistant",
+  );
+  expect(block?.text).toBe("");
+  expect(block?.pendingText).toBe("an incomplete streaming tail");
+});
+
+test("content.done hydrates a durable assistant settlement without live deltas", () => {
+  let state = reduceState(initialState, {
+    type: "turn.submitted",
+    id: "turn_durable_page",
+    text: "restored prompt",
+    byteLength: 15,
+    lineCount: 1,
+    sha256: "fixture",
+  });
+  state = reduceState(state, {
+    type: "content.done",
+    id: "turn_durable_page",
+    text: "restored durable response",
+  });
+  expect(state.messages).toContainEqual(
+    expect.objectContaining({
+      id: "turn_durable_page",
+      role: "assistant",
+      text: "restored durable response",
+    }),
+  );
+});
+
 test("retry rollback drops transient tail without duplicate committed content", () => {
   let state = structuredClone(initialState);
   state = reduceState(state, {
@@ -452,7 +488,7 @@ test("provider text after a tool starts a new stream segment below that tool", (
   expect(state.messages.indexOf(second!)).toBeGreaterThan(toolIndex);
 });
 
-test("visible reasoning is committed atomically at a provider step boundary", () => {
+test("visible reasoning renders in arrival order before its tool boundary", () => {
   let state = structuredClone(initialState);
   state = reduceState(state, {
     type: "turn.submitted",
@@ -469,8 +505,9 @@ test("visible reasoning is committed atomically at a provider step boundary", ()
     visible: true,
   });
   expect(
-    state.messages.find((item) => item.id === "turn_atomic_reasoning:thinking"),
-  ).toBeUndefined();
+    state.messages.find((item) => item.id === "turn_atomic_reasoning:thinking")
+      ?.pendingText,
+  ).toBe("reasoning before tool");
   state = reduceState(state, {
     type: "tool.update",
     id: "turn_atomic_reasoning",
@@ -487,6 +524,86 @@ test("visible reasoning is committed atomically at a provider step boundary", ()
   );
   expect(state.messages[thinkingIndex]?.text).toBe("reasoning before tool");
   expect(thinkingIndex).toBeLessThan(toolIndex);
+});
+
+test("alternating model output and tools keep their original event order", () => {
+  let state = structuredClone(initialState);
+  const turnID = "turn_strict_order";
+  state = reduceState(state, {
+    type: "thinking.delta",
+    id: turnID,
+    text: "first thought",
+  });
+  state = reduceState(state, {
+    type: "tool.update",
+    id: turnID,
+    name: "read_file",
+    callID: "read_1",
+    status: "succeeded",
+    summary: "done",
+  });
+  state = reduceState(state, {
+    type: "content.delta",
+    id: turnID,
+    text: "first answer",
+  });
+  state = reduceState(state, {
+    type: "thinking.delta",
+    id: turnID,
+    text: "second thought",
+  });
+  state = reduceState(state, {
+    type: "content.delta",
+    id: turnID,
+    text: "final answer",
+  });
+  state = reduceState(state, { type: "content.done", id: turnID });
+
+  expect(state.messages.map((item) => [item.role, item.text])).toEqual([
+    ["thinking", "first thought"],
+    ["tool", expect.any(String)],
+    ["assistant", "first answer"],
+    ["thinking", "second thought"],
+    ["assistant", "final answer"],
+  ]);
+});
+
+test("deferred reasoning remains above the final assistant response", () => {
+  let state = reduceState(structuredClone(initialState), {
+    type: "turn.submitted",
+    id: "turn_final_reasoning_order",
+    text: "answer directly",
+    byteLength: 15,
+    lineCount: 1,
+    sha256: "test",
+  });
+  state = reduceState(state, {
+    type: "thinking.delta",
+    id: "turn_final_reasoning_order",
+    text: "reasoning before the answer",
+    visible: true,
+  });
+  state = reduceState(state, {
+    type: "content.delta",
+    id: "turn_final_reasoning_order",
+    text: "final answer",
+  });
+  state = reduceState(state, {
+    type: "turn.finished",
+    id: "turn_final_reasoning_order",
+    stopReason: "done",
+  });
+  const thinkingIndex = state.messages.findIndex(
+    (item) => item.id === "turn_final_reasoning_order:thinking",
+  );
+  const assistantIndex = state.messages.findIndex(
+    (item) => item.id === "turn_final_reasoning_order:assistant",
+  );
+  expect(state.messages[thinkingIndex]?.text).toBe(
+    "reasoning before the answer",
+  );
+  expect(state.messages[assistantIndex]?.text).toBe("final answer");
+  expect(thinkingIndex).toBeLessThan(assistantIndex);
 });
 
 test("typed subagent updates remain available outside transcript text", () => {
@@ -549,6 +666,38 @@ test("turn finished returns the TUI to idle so Ctrl+C can exit demos", () => {
     false,
   );
   expect(Object.keys(state.streams)).toHaveLength(0);
+});
+
+test("turn settlement releases all transient streaming buffers", () => {
+  let state = reduceState(initialState, {
+    type: "turn.submitted",
+    id: "turn_release",
+    text: "release buffers",
+    byteLength: 15,
+    lineCount: 1,
+    sha256: "fixture",
+  });
+  state = reduceState(state, {
+    type: "thinking.delta",
+    id: "turn_release",
+    text: "reasoning tail without a final boundary",
+  });
+  state = reduceState(state, {
+    type: "content.delta",
+    id: "turn_release",
+    text: "assistant tail without a final boundary",
+  });
+  expect(Object.keys(state.streams)).toHaveLength(2);
+  state = reduceState(state, {
+    type: "turn.finished",
+    id: "turn_release",
+    stopReason: "done",
+  });
+  expect(state.activeTurn).toBeUndefined();
+  expect(state.streams).toEqual({});
+  expect(state.messages).toContainEqual(
+    expect.objectContaining({ id: "turn_release:assistant" }),
+  );
 });
 
 test("failed turns show an explicit terminal message", () => {

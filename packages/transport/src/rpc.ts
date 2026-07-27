@@ -55,6 +55,16 @@ export function stringParam(
   return value;
 }
 
+function optionalStringParam(
+  params: Record<string, unknown> | undefined,
+  name: string,
+) {
+  const value = params?.[name];
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") throw new Error(`${name} must be a string`);
+  return value;
+}
+
 export function arrayParam(
   params: Record<string, unknown> | undefined,
   name: string,
@@ -391,16 +401,24 @@ export async function handleRPCMessage(
         }),
       };
     }
-    if (body.method === "pty.list") {
-      optionsGuard(client.ptyList, "pty.list");
+    if (body.method === "pty.list" || body.method === "terminal.list") {
+      const terminal = body.method === "terminal.list";
+      optionsGuard(
+        terminal ? client.terminalList : client.ptyList,
+        body.method,
+      );
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.ptyList(),
+        result: await (terminal ? client.terminalList!() : client.ptyList!()),
       };
     }
-    if (body.method === "pty.read") {
-      optionsGuard(client.ptyRead, "pty.read");
+    if (body.method === "pty.read" || body.method === "terminal.read") {
+      const terminal = body.method === "terminal.read";
+      optionsGuard(
+        terminal ? client.terminalRead : client.ptyRead,
+        body.method,
+      );
       const offset = body.params?.offset;
       const maxChars = body.params?.maxChars;
       if (
@@ -423,7 +441,7 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.ptyRead({
+        result: await (terminal ? client.terminalRead! : client.ptyRead!)({
           id: stringParam(body.params, "id"),
           offset: typeof offset === "number" ? offset : undefined,
           maxChars: typeof maxChars === "number" ? maxChars : undefined,
@@ -541,6 +559,7 @@ export async function handleRPCMessage(
             typeof body.params?.sensitive === "boolean"
               ? body.params.sensitive
               : undefined,
+          idempotencyKey: optionalStringParam(body.params, "idempotencyKey"),
         }),
       };
     }
@@ -602,8 +621,12 @@ export async function handleRPCMessage(
         }),
       };
     }
-    if (body.method === "pty.write") {
-      optionsGuard(client.ptyWrite, "pty.write");
+    if (body.method === "pty.write" || body.method === "terminal.write") {
+      const terminal = body.method === "terminal.write";
+      optionsGuard(
+        terminal ? client.terminalWrite : client.ptyWrite,
+        body.method,
+      );
       const submit = body.params?.submit;
       const sensitive = body.params?.sensitive;
       if (submit !== undefined && typeof submit !== "boolean")
@@ -613,30 +636,36 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.ptyWrite({
+        result: await (terminal ? client.terminalWrite! : client.ptyWrite!)({
           id: stringParam(body.params, "id"),
           text: stringParam(body.params, "text"),
           submit: typeof submit === "boolean" ? submit : undefined,
           sensitive: typeof sensitive === "boolean" ? sensitive : undefined,
+          idempotencyKey: optionalStringParam(body.params, "idempotencyKey"),
         }),
       };
     }
-    if (body.method === "pty.key") {
-      optionsGuard(client.ptyKey, "pty.key");
+    if (body.method === "pty.key" || body.method === "terminal.key") {
+      const terminal = body.method === "terminal.key";
+      optionsGuard(terminal ? client.terminalKey : client.ptyKey, body.method);
       const key = stringParam(body.params, "key");
       if (!["enter", "ctrl-c", "ctrl-d", "tab", "esc"].includes(key))
         throw new Error("pty.key.params.key is invalid");
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.ptyKey({
+        result: await (terminal ? client.terminalKey! : client.ptyKey!)({
           id: stringParam(body.params, "id"),
           key: key as "enter" | "ctrl-c" | "ctrl-d" | "tab" | "esc",
         }),
       };
     }
-    if (body.method === "pty.resize") {
-      optionsGuard(client.ptyResize, "pty.resize");
+    if (body.method === "pty.resize" || body.method === "terminal.resize") {
+      const terminal = body.method === "terminal.resize";
+      optionsGuard(
+        terminal ? client.terminalResize : client.ptyResize,
+        body.method,
+      );
       const rows = body.params?.rows;
       const cols = body.params?.cols;
       if (
@@ -649,7 +678,7 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.ptyResize({
+        result: await (terminal ? client.terminalResize! : client.ptyResize!)({
           id: stringParam(body.params, "id"),
           rows,
           cols,
@@ -659,11 +688,20 @@ export async function handleRPCMessage(
     if (
       body.method === "pty.attach" ||
       body.method === "pty.detach" ||
-      body.method === "pty.stop"
+      body.method === "pty.stop" ||
+      body.method === "terminal.attach" ||
+      body.method === "terminal.detach" ||
+      body.method === "terminal.stop"
     ) {
       const method = body.method;
-      const action =
-        method === "pty.attach"
+      const terminal = method.startsWith("terminal.");
+      const action = terminal
+        ? method === "terminal.attach"
+          ? client.terminalAttach
+          : method === "terminal.detach"
+            ? client.terminalDetach
+            : client.terminalStop
+        : method === "pty.attach"
           ? client.ptyAttach
           : method === "pty.detach"
             ? client.ptyDetach

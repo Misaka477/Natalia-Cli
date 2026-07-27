@@ -13,13 +13,14 @@ import { KeybindProvider } from "../context/keybind";
 import { LocalProvider } from "../context/local";
 import { ThemeProvider } from "../context/theme";
 import { RouteProvider } from "../context/route";
+import type { AppRoute } from "../context/route";
 import { registerNataliaKeymap } from "../modal/mode-stack";
 import { App } from "./App";
 
 export type RuntimeHandle = {
   renderer: CliRenderer;
   events: RuntimeEvent[];
-  stop(): void;
+  stop(): Promise<void>;
 };
 
 export async function runTuiShell(
@@ -33,6 +34,11 @@ export async function runTuiShell(
     fixture?: boolean;
     closeAfterInitialTurn?: boolean;
     rendererSize?: { width: number; height: number };
+    initialRoute?: AppRoute;
+    onHistoryControls?: (controls: {
+      loadOlder(): Promise<void>;
+      loadNewer(): Promise<void>;
+    }) => void;
   } = {},
 ): Promise<RuntimeHandle> {
   const renderer = await createCliRenderer({
@@ -49,6 +55,12 @@ export async function runTuiShell(
       ? createFakeBackend()
       : createRealRuntimeClient({ workspaceRoot: input.workspaceRoot }));
   const events: RuntimeEvent[] = [];
+  let backendDisposed = false;
+  const disposeBackend = async () => {
+    if (backendDisposed) return;
+    backendDisposed = true;
+    await backend.dispose?.();
+  };
   const keymap = createDefaultOpenTuiKeymap(renderer);
   const tuiConfig = input.workspaceRoot
     ? (await resolveTuiConfig(input.workspaceRoot)).config
@@ -80,6 +92,8 @@ export async function runTuiShell(
                           createBackend={input.createBackend}
                           workspaceRoot={input.workspaceRoot}
                           onSessionChange={input.onSessionChange}
+                          initialRoute={input.initialRoute}
+                          onHistoryControls={input.onHistoryControls}
                           onDispatch={(event) => {
                             events.push(event);
                             input.onEvent?.(event);
@@ -116,11 +130,13 @@ export async function runTuiShell(
   );
   if (input.initialPrompt)
     setTimeout(() => void backend.submit(input.initialPrompt!), 100);
+  renderer.once("destroy", () => void disposeBackend());
   return {
     renderer,
     events,
-    stop: () => {
+    stop: async () => {
       cleanupKeymap();
+      await disposeBackend();
       renderer.destroy();
     },
   };

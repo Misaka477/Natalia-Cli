@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { expect, test } from "bun:test";
 import { createToolRegistry, ManagedProcessRegistry } from "../src";
 import { InteractivePTYRegistry } from "@natalia/pty";
+import { NativeTerminalRegistry } from "@natalia/native-terminal";
 import { WorkspaceSandboxManager } from "@natalia/sandbox";
 
 test("default file tools read write and edit inside workspace", async () => {
@@ -568,48 +569,95 @@ test("web_search selects the configured endpoint only when its priority permits"
   }
 });
 
-test("interactive tools operate a real persistent PTY through the registry", async () => {
+test("interactive Terminal tools keep model I/O on one native host pane", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-interactive-"));
-  const interactivePTY = new InteractivePTYRegistry(
-    join(root, ".natalia", "pty"),
-  );
-  const context = { workspaceRoot: root, interactivePTY };
+  const writes: string[] = [];
+  const nativeTerminal = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 73, window_id: 3, tab_id: 5 };
+    },
+    async list() {
+      return [{ pane_id: 73, window_id: 3, tab_id: 5, rows: 24, cols: 80 }];
+    },
+    async read() {
+      return "native terminal output";
+    },
+    async write(_paneID, data) {
+      writes.push(data);
+    },
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  });
+  const context = { workspaceRoot: root, nativeTerminal };
   const tools = createToolRegistry();
   const startResult = await tools
-    .get("interactive_start")!
+    .get("interactive_terminal_start")!
     .execute({ command: "cat", id: "tty_tools" }, context);
-  expect(startResult).not.toContain('"lines"');
-  const started = JSON.parse(startResult) as { id: string; status: string };
-  expect(started).toMatchObject({ id: "tty_tools", status: "running" });
+  const started = JSON.parse(startResult) as {
+    id: string;
+    status: string;
+    paneID: number;
+  };
+  expect(started).toMatchObject({
+    id: "tty_tools",
+    status: "running",
+    paneID: 73,
+  });
   await tools
-    .get("interactive_write")!
+    .get("interactive_terminal_write")!
     .execute({ id: "tty_tools", input: "tool input\n" }, context);
-  await waitForInteractiveOutput(
-    () => interactivePTY.get("tty_tools").transcript,
-  );
   expect(
-    await tools.get("interactive_read")!.execute({ id: "tty_tools" }, context),
-  ).toContain("tool input");
-  const revision = interactivePTY.get("tty_tools").revision;
-  const observation = tools
-    .get("terminal_observe")!
-    .execute(
-      { id: "tty_tools", afterRevision: revision, timeoutMs: 2000 },
-      context,
-    );
+    JSON.parse(
+      await tools.get("interactive_terminal_write")!.execute(
+        {
+          id: "tty_tools",
+          input: "idempotent input\n",
+          idempotencyKey: "write_1",
+        },
+        context,
+      ),
+    ),
+  ).toMatchObject({ delivery: "accepted" });
+  expect(
+    JSON.parse(
+      await tools.get("interactive_terminal_write")!.execute(
+        {
+          id: "tty_tools",
+          input: "idempotent input\n",
+          idempotencyKey: "write_1",
+        },
+        context,
+      ),
+    ),
+  ).toMatchObject({ delivery: "duplicate" });
   await tools
-    .get("interactive_write")!
-    .execute({ id: "tty_tools", input: "new screen\n" }, context);
-  const observationResult = await observation;
-  expect(observationResult).toContain('"reason": "changed"');
-  expect(observationResult).toContain("new screen");
-  expect(observationResult).not.toContain('"lines"');
+    .get("interactive_terminal_keys")!
+    .execute({ id: "tty_tools", key: "ctrl-c" }, context);
+  await nativeTerminal.focus("tty_tools");
+  await nativeTerminal.claimHumanInput("tty_tools");
+  await expect(
+    tools
+      .get("interactive_terminal_write")!
+      .execute({ id: "tty_tools", input: "must not interleave" }, context),
+  ).rejects.toThrow("controlled by a human");
+  nativeTerminal.releaseHumanControl("tty_tools");
   expect(
     await tools
-      .get("interactive_resize")!
-      .execute({ id: "tty_tools", rows: 40, cols: 100 }, context),
-  ).toContain('"rows": 40');
-  await tools.get("interactive_stop")!.execute({ id: "tty_tools" }, context);
+      .get("interactive_terminal_read")!
+      .execute({ id: "tty_tools" }, context),
+  ).toContain("native terminal output");
+  expect(writes.join("")).toBe("tool input\nidempotent input\n\x03");
+  expect(tools.has("interactive_start")).toBe(true);
+  expect(tools.get("interactive_start")?.name).toBe(
+    "interactive_terminal_start",
+  );
+  expect([...tools.keys()]).not.toContain("interactive_start");
+  await tools
+    .get("interactive_terminal_stop")!
+    .execute({ id: "tty_tools" }, context);
 });
 
 test("sandbox tools create execute diff and merge through the registry", async () => {

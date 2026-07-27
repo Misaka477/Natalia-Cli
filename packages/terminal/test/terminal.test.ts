@@ -3,6 +3,9 @@ import {
   applyTerminalScreenUpdate,
   diffTerminalScreens,
   renderTerminalSnapshotANSI,
+  scanTerminalScreenPatch,
+  terminalScreenPatchBytes,
+  terminalScreenSnapshotBytes,
   XtermTerminalEmulator,
 } from "../src";
 
@@ -65,6 +68,16 @@ test("xterm emulator decodes UTF-8 split across raw PTY chunks", async () => {
   terminal.dispose();
 });
 
+test("xterm emulator replies to standard cursor position requests", async () => {
+  const replies: string[] = [];
+  const terminal = new XtermTerminalEmulator(3, 12, {
+    onData: (data) => replies.push(data),
+  });
+  await terminal.write("hello\x1b[6n\x1b[?6n\x1b[5n");
+  expect(replies).toEqual(["\x1b[1;6R", "\x1b[?1;6;1R", "\x1b[0n"]);
+  terminal.dispose();
+});
+
 test("terminal snapshot renders as a standalone ANSI terminal frame", async () => {
   const terminal = new XtermTerminalEmulator(2, 12);
   await terminal.write("\x1b[38;2;12;34;56m\x1b[1mHi");
@@ -88,6 +101,10 @@ test("terminal screen diff patches a small redraw without sending a full frame",
     revision: 5,
   });
   expect(update.kind).toBe("patch");
+  if (update.kind === "patch")
+    expect(terminalScreenPatchBytes(update.patch)).toBeLessThan(
+      terminalScreenSnapshotBytes(next),
+    );
   expect(JSON.stringify(update).length).toBeLessThan(
     JSON.stringify({ kind: "full", revision: 5, screen: next }).length / 5,
   );
@@ -95,6 +112,52 @@ test("terminal screen diff patches a small redraw without sending a full frame",
   expect(() => applyTerminalScreenUpdate(base, update, 3)).toThrow(
     "does not match current framebuffer",
   );
+  terminal.dispose();
+});
+
+test("terminal patch application reuses unchanged framebuffer rows", async () => {
+  const terminal = new XtermTerminalEmulator(3, 12);
+  await terminal.write("first\r\nsecond");
+  const base = terminal.snapshot();
+  await terminal.write("\x1b[2;1Hchanged");
+  const next = terminal.snapshot();
+  const update = diffTerminalScreens({
+    base,
+    next,
+    baseRevision: 1,
+    revision: 2,
+  });
+  expect(update.kind).toBe("patch");
+  const applied = applyTerminalScreenUpdate(base, update, 1)!;
+  expect(applied).toEqual(next);
+  expect(applied.lines[0]).toBe(base.lines[0]);
+  expect(applied.lines[1]).not.toBe(base.lines[1]);
+  terminal.dispose();
+});
+
+test("terminal patch scan separates compatible-grid work from delivery choice", async () => {
+  const terminal = new XtermTerminalEmulator(3, 12);
+  await terminal.write("before");
+  const base = terminal.snapshot();
+  await terminal.write("\x1b[1;1Hafter");
+  const next = terminal.snapshot();
+  expect(
+    scanTerminalScreenPatch({
+      base,
+      next,
+      baseRevision: 1,
+      revision: 2,
+    }),
+  ).toMatchObject({ baseRevision: 1, revision: 2, changes: expect.any(Array) });
+  terminal.resize(2, 12);
+  expect(
+    scanTerminalScreenPatch({
+      base,
+      next: terminal.snapshot(),
+      baseRevision: 1,
+      revision: 2,
+    }),
+  ).toBeUndefined();
   terminal.dispose();
 });
 
@@ -124,6 +187,8 @@ test("xterm emulator projects bracketed paste mode through screen updates", asyn
   expect(applyTerminalScreenUpdate(before, update, 1)?.modes).toEqual({
     bracketedPaste: true,
   });
+  expect(update.kind).toBe("patch");
+  if (update.kind === "patch") expect(update.patch.changes).toEqual([]);
   terminal.dispose();
 });
 

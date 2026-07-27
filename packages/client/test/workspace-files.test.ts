@@ -363,3 +363,14 @@ test("workspace watcher invalidates the catalog and watches new directories", as
   );
   stop();
 });
+
+test("workspace watcher ignores Natalia runtime writes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-workspace-watch-ignore-"));
+  await mkdir(join(root, ".natalia", "perf"), { recursive: true });
+  let changes = 0;
+  const stop = await watchWorkspaceFiles(root, () => changes++);
+  await writeFile(join(root, ".natalia", "perf", "runtime.jsonl"), "{}\n");
+  await Bun.sleep(150);
+  expect(changes).toBe(0);
+  stop();
+});

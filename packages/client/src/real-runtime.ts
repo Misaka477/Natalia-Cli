@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import {
   runtimeEventDurability,
@@ -48,6 +48,7 @@ import {
 } from "@natalia/agent";
 import {
   appendSessionEvent,
+  createSessionRecord,
   JsonSessionStore,
   SqliteSessionStore,
   admitInput,
@@ -59,6 +60,7 @@ import {
   projectSession,
   projectSessionMessages,
   settleInterruptedTurns,
+  settleInterruptedTurnIDs,
   modelVisibleEvents,
   sessionRunCoordinator,
   type DurableInFlightOperation,
@@ -85,10 +87,19 @@ import {
   type SkillRegistry,
 } from "@natalia/skills";
 import { SubagentRegistry } from "@natalia/subagent";
-import { InteractivePTYRegistry } from "@natalia/pty";
+import { TerminalRegistry } from "@natalia/pty";
+import {
+  createWezTermHost,
+  NativeTerminalRegistry,
+  resolveWezTermExecutable,
+  startNativeInputBroker,
+  writeWezTermNativeDomainConfig,
+  type NativeInputBroker,
+} from "@natalia/native-terminal";
 import { WorkspaceSandboxManager } from "@natalia/sandbox";
 import { loadNativeMCPTools } from "@natalia/mcp";
 import { createPluginRegistry, loadLocalPlugins } from "@natalia/plugin";
+import { RuntimePerformanceTrace } from "./performance-trace";
 import {
   createToolPolicyHookLayer,
   evaluatePermissionRules,
@@ -108,6 +119,27 @@ import {
 
 const sqliteStores = new Map<string, SqliteSessionStore>();
 
+function publicNativeTerminal(
+  session: import("@natalia/native-terminal").NativeTerminalSession,
+) {
+  return {
+    id: session.id,
+    host: session.host,
+    paneID: session.paneID,
+    windowID: session.windowID,
+    tabID: session.tabID,
+    command: session.command,
+    cwd: session.cwd,
+    status: session.status,
+    inputOwner: session.inputOwner,
+    geometryOwner: session.geometryOwner,
+    secureInput: session.secureInput,
+    rows: session.rows,
+    cols: session.cols,
+    startedAt: session.startedAt,
+  };
+}
+
 export type RealRuntimeClientOptions = {
   sessionID?: SessionID;
   title?: string;
@@ -119,6 +151,7 @@ export type RealRuntimeClientOptions = {
   permissionMode?: "ask" | "auto" | "read_only";
   toolPolicy?: ToolPolicy;
   hooks?: ToolHooks;
+  nativeTerminal?: NativeTerminalRegistry;
 };
 
 export function createRealRuntimeClient(
@@ -165,7 +198,10 @@ export function createRealRuntimeClient(
   let permissionMode = options.permissionMode ?? "ask";
   let maxSteps = 10;
   let subagents: SubagentRegistry | undefined;
-  let interactivePTY: InteractivePTYRegistry | undefined;
+  let interactivePTY: TerminalRegistry | undefined;
+  let nativeTerminal: NativeTerminalRegistry | undefined =
+    options.nativeTerminal;
+  let nativeInputBroker: NativeInputBroker | undefined;
   let sandboxes: WorkspaceSandboxManager | undefined;
   let plugins: ReturnType<typeof createPluginRegistry> | undefined;
   const cleanupMCP: Array<() => Promise<void>> = [];
@@ -196,6 +232,7 @@ export function createRealRuntimeClient(
     (response: QuestionResponse) => void
   >();
   let sink: ((event: RuntimeEvent) => void) | undefined;
+  let replayMode: "all" | "none" = "all";
   let session: SessionRecord | undefined;
   let checkpointStore: CheckpointStore | undefined;
   let lastSubmitted: SubmittedTurn | undefined;
@@ -229,6 +266,7 @@ export function createRealRuntimeClient(
   let cleanupWorkspaceFiles: (() => void) | undefined;
   let statusRefreshQueued = false;
   const ptyStatusByID = new Map<string, string>();
+  const performanceTrace = new RuntimePerformanceTrace();
   const sandboxResourcesByID = new Map<string, number>();
   const turnCoordinator = () => sessionRunCoordinator(sessionID);
 
@@ -409,6 +447,7 @@ export function createRealRuntimeClient(
                 await requireQuestion(`${toolID}:question`, question),
               subagents,
               interactivePTY,
+              nativeTerminal,
               sandboxes,
               workspaceReadAuthorize: authorizeWorkspaceRead,
               sandboxMergeAuthorize: authorizeSandboxMerge,
@@ -503,25 +542,112 @@ export function createRealRuntimeClient(
           message: `plugin ${id} failed to load: ${error instanceof Error ? error.message : String(error)}`,
         }),
     });
-    interactivePTY = new InteractivePTYRegistry(
+    interactivePTY = new TerminalRegistry(
       join(workspaceRoot, ".natalia", "pty", "interactive"),
       {
         onViewerExpired: (pty, viewerID) =>
           publishTerminalViewer(pty, viewerID, "expired"),
       },
     );
+    if (!nativeTerminal)
+      try {
+        // Unix domain socket paths are capped at roughly 108 bytes on Linux.
+        // Keep the authenticated broker out of a potentially deep workspace.
+        const nativeRuntimeDir = process.env.XDG_RUNTIME_DIR
+          ? join(process.env.XDG_RUNTIME_DIR, "natalia")
+          : join(workspaceRoot, ".natalia", "native-input");
+        await mkdir(nativeRuntimeDir, { recursive: true, mode: 0o700 });
+        const nativeMuxRuntimeDir = join(nativeRuntimeDir, "wezterm-runtime");
+        await mkdir(nativeMuxRuntimeDir, { recursive: true, mode: 0o700 });
+        // wezterm-mux-server's default Unix domain is derived from its own
+        // XDG runtime directory; clients must connect to that exact socket.
+        const nativeMuxSocket = join(nativeMuxRuntimeDir, "wezterm", "sock");
+        const nativeDomain = await writeWezTermNativeDomainConfig({
+          directory: nativeRuntimeDir,
+          socketPath: nativeMuxSocket,
+        });
+        nativeTerminal = new NativeTerminalRegistry(
+          createWezTermHost({
+            // The GUI, CLI, and mux server must share this socket. Otherwise
+            // Open terminal can attach a real window to the user's unrelated
+            // default mux while Natalia controls a different pane.
+            environment: { WEZTERM_UNIX_SOCKET: nativeMuxSocket },
+            muxRuntimeDir: nativeMuxRuntimeDir,
+            nativeDomain,
+            onPerformance: (name, durationMs) =>
+              performanceTrace.mark(name, durationMs),
+          }),
+          {
+            onAudit: (event) => {
+              publish({
+                type: "pty.action",
+                id: event.id,
+                action: event.action,
+                redacted: event.redacted,
+                target: { kind: "host", cwd: event.cwd },
+              });
+              publish({
+                type: "pty.timeline",
+                id: event.id,
+                actor: event.actor === "human" ? "user" : event.actor,
+                action: event.action,
+                status: "executed",
+                summary:
+                  event.action === "write"
+                    ? "native terminal input accepted"
+                    : event.action === "secure_input"
+                      ? "native terminal secure input state changed"
+                      : `native terminal ${event.action} executed`,
+                at: event.at,
+              });
+            },
+          },
+        );
+        nativeInputBroker = await startNativeInputBroker({
+          registry: nativeTerminal,
+          runtimeDir: nativeRuntimeDir,
+          daemonID: randomUUID(),
+        });
+        nativeTerminal.setHumanInputBridge(nativeInputBroker);
+      } catch {
+        // Native Terminal is optional during migration. Its canonical tools
+        // report an actionable error when invoked; startup remains quiet.
+      }
     sandboxes = new WorkspaceSandboxManager(
       join(workspaceRoot, ".natalia", "sandboxes"),
     );
     await sandboxes.initialize();
-    session = await sessionStore.loadOrCreate(
-      sessionID,
-      options.title ?? `Natalia TS session ${sessionID}`,
-    );
+    session = sqliteStore
+      ? ((await sessionStore.load(sessionID)) ??
+        createSessionRecord(
+          sessionID,
+          options.title ?? `Natalia TS session ${sessionID}`,
+        ))
+      : await sessionStore.loadOrCreate(
+          sessionID,
+          options.title ?? `Natalia TS session ${sessionID}`,
+        );
+    if (!session) throw new Error("session initialization did not complete");
+    let sqliteRecovery:
+      | ReturnType<SqliteSessionStore["loadRecoveryProjection"]>
+      | undefined;
+    let sqliteEpoch: ReturnType<SqliteSessionStore["loadContextEpoch"]>;
+    let indexedPagedRecovery = false;
     if (sqliteStore) {
-      const durable = sqliteStore.get(sessionID);
-      const events = sqliteStore.loadEvents(sessionID);
-      if (durable && events.length > session.events.length) {
+      let durable = sqliteStore.get(sessionID);
+      sqliteEpoch = sqliteStore.loadContextEpoch(sessionID);
+      indexedPagedRecovery = replayMode === "none" && Boolean(sqliteEpoch);
+      let events = indexedPagedRecovery
+        ? []
+        : sqliteStore.loadEvents(sessionID);
+      if (!events.length && !indexedPagedRecovery && session.events.length) {
+        // Migrate an existing JSON-only session once, before SQLite becomes the
+        // event authority. New SQLite sessions never mirror durable events back.
+        sqliteStore.replace(session);
+        durable = sqliteStore.get(sessionID);
+        events = sqliteStore.loadEvents(sessionID);
+      }
+      if (durable) {
         session = {
           ...session,
           title: durable.title,
@@ -529,15 +655,22 @@ export function createRealRuntimeClient(
           cancelled: durable.cancelled,
           resumable: durable.resumable,
           metadata: durable.metadata,
-          events,
+          // SQLite is the durable event authority in SQLite mode. Preserve a
+          // legacy JSON-only session only until it is explicitly imported.
+          events: events.length ? events : session.events,
+          inbox: sqliteStore.loadInbox(sessionID).length
+            ? sqliteStore.loadInbox(sessionID)
+            : session.inbox,
         };
-        await sessionStore.save(session);
       }
+      if (indexedPagedRecovery)
+        sqliteRecovery = sqliteStore.loadRecoveryProjection(sessionID);
     }
-    const attachmentSessions = await sessionStore.list();
     await cleanupUnreferencedAttachments({
       workspaceRoot,
-      attachments: referencedAttachmentsForSessions(attachmentSessions),
+      attachments: sqliteStore
+        ? sqliteStore.referencedAttachments()
+        : referencedAttachmentsForSessions(await sessionStore.list()),
     }).catch((error) =>
       publish({
         type: "diagnostic",
@@ -546,7 +679,13 @@ export function createRealRuntimeClient(
       }),
     );
     const interruptedOperation = session.metadata?.inFlightOperation;
-    const interrupted = settleInterruptedTurns(session);
+    const interrupted = sqliteRecovery
+      ? settleInterruptedTurnIDs(
+          sqliteRecovery.activeTurnIDs,
+          sqliteRecovery.approvals.map((request) => request.id),
+          sqliteRecovery.questions.map((request) => request.id),
+        )
+      : settleInterruptedTurns(session);
     const operationTurnWasInterrupted = Boolean(
       interruptedOperation &&
         interrupted.some(
@@ -560,8 +699,8 @@ export function createRealRuntimeClient(
       sqliteStore?.updateMetadata(sessionID, { inFlightOperation: undefined });
     }
     if (interrupted.length || interruptedOperation) {
-      await sessionStore.save(session);
-      sqliteStore?.appendEvents(sessionID, interrupted);
+      if (sqliteStore) sqliteStore.appendEvents(sessionID, interrupted);
+      else await sessionStore.save(session);
       publish({
         type: "diagnostic",
         level: "warning",
@@ -571,6 +710,11 @@ export function createRealRuntimeClient(
       });
     }
     const projection = projectSession(session);
+    for (const event of sqliteRecovery?.diagnostics ?? [])
+      runtimeDiagnostics.push({
+        ...event,
+        at: event.at ?? session.createdAt,
+      });
     for (const event of projection.replayableEvents)
       if (event.type === "diagnostic")
         runtimeDiagnostics.push({
@@ -580,8 +724,10 @@ export function createRealRuntimeClient(
     for (const event of projection.replayableEvents)
       if (event.type === "turn.submitted" && event.attachments?.length)
         attachmentReferences.set(`${event.id}:user`, event.attachments);
-    if (projection.selectedAgent) {
-      const restored = agentRegistry?.select(projection.selectedAgent);
+    const selectedAgentName =
+      sqliteRecovery?.selectedAgent ?? projection.selectedAgent;
+    if (selectedAgentName) {
+      const restored = agentRegistry?.select(selectedAgentName);
       if (restored) {
         selectedAgent = restored;
         applyAgentPolicy();
@@ -590,12 +736,14 @@ export function createRealRuntimeClient(
         publish({
           type: "diagnostic",
           level: "warning",
-          message: `persisted agent is no longer configured: ${projection.selectedAgent}`,
+          message: `persisted agent is no longer configured: ${selectedAgentName}`,
         });
       }
     }
-    if (projection.selectedModel) {
-      selectedModel = projection.selectedModel;
+    const recoveredModel =
+      sqliteRecovery?.selectedModel ?? projection.selectedModel;
+    if (recoveredModel) {
+      selectedModel = recoveredModel;
       applyAgentProvider();
     }
     await cleanupToolOutput(workspaceRoot).catch((error) =>
@@ -608,7 +756,6 @@ export function createRealRuntimeClient(
     const latestContextCheckpoint = [...projection.replayableEvents]
       .reverse()
       .find((event) => event.type === "context.checkpoint");
-    const sqliteEpoch = sqliteStore?.loadContextEpoch(sessionID);
     if (sqliteEpoch) context.restoreDurableCheckpoint(sqliteEpoch.snapshot);
     else if (latestContextCheckpoint)
       context.restoreDurableCheckpoint(latestContextCheckpoint.snapshot);
@@ -618,6 +765,8 @@ export function createRealRuntimeClient(
         ? sqliteStore!.loadEventsAfter(sessionID, sqliteEpoch.baselineSeq)
         : modelVisibleEvents(projection.replayableEvents),
     );
+    for (const [turnID, attachments] of sqliteRecovery?.attachments ?? [])
+      attachmentReferences.set(`${turnID}:user`, attachments);
     const [queued] = projection.pendingInputs.filter(
       (input) => input.delivery === "queue",
     );
@@ -663,8 +812,49 @@ export function createRealRuntimeClient(
       sessionID,
       title: session.title,
     });
-    for (const event of session.events) sink?.(event);
-    restoreInteractiveState(session.events);
+    if (replayMode === "all") for (const event of session.events) sink?.(event);
+    if (sqliteRecovery)
+      restoreRecoveredInteractiveState(
+        sqliteRecovery.approvals.filter(
+          (request) =>
+            !interrupted.some(
+              (event) =>
+                event.type === "approval.response" && event.id === request.id,
+            ),
+        ),
+        sqliteRecovery.questions.filter(
+          (request) =>
+            !interrupted.some(
+              (event) =>
+                event.type === "question.response" && event.id === request.id,
+            ),
+        ),
+      );
+    else restoreInteractiveState(session.events);
+    if (replayMode === "none") {
+      const pending = sqliteRecovery
+        ? {
+            approvals: sqliteRecovery.approvals.filter(
+              (request) =>
+                !interrupted.some(
+                  (event) =>
+                    event.type === "approval.response" &&
+                    event.id === request.id,
+                ),
+            ),
+            questions: sqliteRecovery.questions.filter(
+              (request) =>
+                !interrupted.some(
+                  (event) =>
+                    event.type === "question.response" &&
+                    event.id === request.id,
+                ),
+            ),
+          }
+        : projectInteractiveRequests(session.events);
+      for (const request of pending.approvals) sink?.(request);
+      for (const request of pending.questions) sink?.(request);
+    }
     checkpointStore = await CheckpointStore.open({
       sessionID,
       workspaceRoot,
@@ -863,6 +1053,7 @@ export function createRealRuntimeClient(
   }
 
   function publish(event: RuntimeEvent) {
+    const publishStartedAt = performance.now();
     if (event.type === "diagnostic")
       event = { ...event, at: event.at ?? new Date().toISOString() };
     if (event.type === "diagnostic") {
@@ -879,11 +1070,13 @@ export function createRealRuntimeClient(
       runtimeEventDurability(event) === "durable"
     ) {
       appendSessionEvent(session, event);
-      const sessionSnapshot = structuredClone(session);
+      const sessionSnapshot = sqliteStore
+        ? undefined
+        : structuredClone(session);
       sessionPersistence = sessionPersistence
         .then(async () => {
-          await sqliteStore?.appendEventAsync(sessionID, event);
-          await sessionStore.save(sessionSnapshot);
+          if (sqliteStore) await sqliteStore.appendEventAsync(sessionID, event);
+          else await sessionStore.save(sessionSnapshot!);
         })
         .catch((error) => {
           sink?.({
@@ -893,8 +1086,27 @@ export function createRealRuntimeClient(
           });
         });
     }
+    const pluginStartedAt = performance.now();
     plugins?.dispatch(event);
+    const pluginMs = performance.now() - pluginStartedAt;
+    const sinkStartedAt = performance.now();
     sink?.(event);
+    const sinkMs = performance.now() - sinkStartedAt;
+    performanceTrace.record(event, {
+      publishMs: performance.now() - publishStartedAt,
+      pluginMs,
+      sinkMs,
+    });
+  }
+
+  function runtimeEventFlushBarrier(event: RuntimeEvent) {
+    return (
+      event.type === "approval.response" ||
+      event.type === "question.response" ||
+      event.type === "turn.finished" ||
+      event.type === "turn.cancelled" ||
+      event.type === "context.checkpoint"
+    );
   }
 
   async function setInFlightOperation(
@@ -904,13 +1116,14 @@ export function createRealRuntimeClient(
     session.metadata = { ...session.metadata };
     if (operation) session.metadata.inFlightOperation = operation;
     else delete session.metadata.inFlightOperation;
-    const snapshot = structuredClone(session);
+    const sessionSnapshot = sqliteStore ? undefined : structuredClone(session);
     sessionPersistence = sessionPersistence
       .then(async () => {
-        sqliteStore?.updateMetadata(sessionID, {
-          inFlightOperation: operation,
-        });
-        await sessionStore.save(snapshot);
+        if (sqliteStore)
+          sqliteStore.updateMetadata(sessionID, {
+            inFlightOperation: operation,
+          });
+        else await sessionStore.save(sessionSnapshot!);
       })
       .catch((error) =>
         publish({
@@ -957,7 +1170,7 @@ export function createRealRuntimeClient(
   }
 
   function publishInteractivePTY(
-    pty: import("@natalia/contracts").RuntimePTYSession,
+    pty: import("@natalia/contracts").RuntimePTYObservationSession,
     action?: import("@natalia/contracts").PTYAction,
     redacted = false,
   ) {
@@ -987,7 +1200,7 @@ export function createRealRuntimeClient(
   }
 
   function ptyLiveUpdate(
-    pty: import("@natalia/contracts").RuntimePTYSession,
+    pty: import("@natalia/contracts").RuntimePTYObservationSession,
     action?: import("@natalia/contracts").PTYAction,
   ): Extract<
     import("@natalia/contracts").RuntimeEvent,
@@ -1176,7 +1389,11 @@ export function createRealRuntimeClient(
     if (!session) return;
     const snapshot = structuredClone(session);
     sessionPersistence = sessionPersistence
-      .then(() => sessionStore.save(snapshot))
+      .then(() => {
+        if (sqliteStore)
+          sqliteStore.replaceInbox(sessionID, snapshot.inbox ?? []);
+        else return sessionStore.save(snapshot);
+      })
       .catch((error) =>
         publish({
           type: "diagnostic",
@@ -1202,6 +1419,23 @@ export function createRealRuntimeClient(
     };
   }
 
+  function sqliteSessionSummary(
+    record: import("@natalia/session").SessionRow,
+    store: SqliteSessionStore,
+  ): RuntimeSessionSummary {
+    return {
+      id: record.id,
+      title: record.title,
+      createdAt: record.createdAt,
+      lastAccessedAt: record.metadata.lastAccessedAt as string | undefined,
+      pinned: record.pinned,
+      events: store.eventCount(record.id),
+      pendingInputs: 0,
+      cancelled: record.cancelled,
+      resumable: record.resumable,
+    };
+  }
+
   async function sessionByID(id: string) {
     const record = await sessionStore.load(id as SessionID);
     if (!record) throw new Error(`session not found: ${id}`);
@@ -1209,8 +1443,9 @@ export function createRealRuntimeClient(
   }
 
   return {
-    start(onEvent) {
+    start(onEvent, options) {
       sink = onEvent;
+      replayMode = options?.replay ?? "all";
       ready = initialize().catch((error) => {
         publish({
           type: "diagnostic",
@@ -1241,6 +1476,7 @@ export function createRealRuntimeClient(
     async messages(options = {}) {
       await ready;
       if (!session) throw new Error("session initialization did not complete");
+      if (sqliteStore) return sqliteStore.loadMessagePage(sessionID, options);
       return projectSessionMessages(session, options);
     },
     async pendingInteractive() {
@@ -1253,11 +1489,15 @@ export function createRealRuntimeClient(
       // A committed selection and other durable controls must reach disk before
       // a caller opens the same session in a replacement runtime.
       await sessionPersistence;
+      if (sqliteStore) await sqliteStore.flushPendingWrites(sessionID);
       cleanupWorkspaceFiles?.();
       cleanupWorkspaceFiles = undefined;
       for (const plugin of plugins?.list() ?? [])
         await plugins!.unload(plugin.id);
       await Promise.all(cleanupMCP.splice(0).map((close) => close()));
+      await nativeInputBroker?.stop();
+      nativeInputBroker = undefined;
+      await performanceTrace.stop();
       interactivePTY?.dispose();
     },
     cancel(reason = "user cancel") {
@@ -1413,9 +1653,64 @@ export function createRealRuntimeClient(
       await ready;
       return interactivePTY?.list() ?? [];
     },
+    async terminalList() {
+      await ready;
+      return interactivePTY?.list() ?? [];
+    },
+    async nativeTerminalList() {
+      await ready;
+      return ((await nativeTerminal?.reconcile()) ?? []).map(
+        publicNativeTerminal,
+      );
+    },
+    async nativeTerminalRead(id) {
+      await ready;
+      if (!nativeTerminal)
+        throw new Error("Native Terminal Host is unavailable");
+      return { id, text: await nativeTerminal.read(id, { maxLines: 200 }) };
+    },
+    async nativeTerminalFocus(id) {
+      await ready;
+      if (!nativeTerminal)
+        throw new Error("Native Terminal Host is unavailable");
+      return publicNativeTerminal(await nativeTerminal.focus(id));
+    },
+    async nativeTerminalReleaseHumanControl(id) {
+      await ready;
+      if (!nativeTerminal)
+        throw new Error("Native Terminal Host is unavailable");
+      return publicNativeTerminal(nativeTerminal.releaseHumanControl(id));
+    },
+    async nativeTerminalBeginSecureInput(id) {
+      await ready;
+      if (!nativeTerminal)
+        throw new Error("Native Terminal Host is unavailable");
+      return publicNativeTerminal(nativeTerminal.beginSecureInput(id));
+    },
+    async nativeTerminalEndSecureInput(id) {
+      await ready;
+      if (!nativeTerminal)
+        throw new Error("Native Terminal Host is unavailable");
+      return publicNativeTerminal(nativeTerminal.endSecureInput(id));
+    },
+    async nativeTerminalStop(id) {
+      await ready;
+      if (!nativeTerminal)
+        throw new Error("Native Terminal Host is unavailable");
+      return {
+        ...publicNativeTerminal(await nativeTerminal.stop(id)),
+        status: "exited",
+      };
+    },
     async ptyRead(input) {
       await ready;
       if (!interactivePTY) throw new Error("interactive PTY is unavailable");
+      return interactivePTY.read(input.id, input);
+    },
+    async terminalRead(input) {
+      await ready;
+      if (!interactivePTY)
+        throw new Error("interactive terminal is unavailable");
       return interactivePTY.read(input.id, input);
     },
     async terminalObserve(input) {
@@ -1473,6 +1768,7 @@ export function createRealRuntimeClient(
         input.data,
         {
           sensitive: input.sensitive,
+          idempotencyKey: input.idempotencyKey,
         },
       );
       // The framebuffer is delivered by terminal.observe; returning it per key
@@ -1502,6 +1798,7 @@ export function createRealRuntimeClient(
       const pty = await interactivePTY.write(input.id, input.text, {
         submit: input.submit,
         sensitive: input.sensitive,
+        idempotencyKey: input.idempotencyKey,
       });
       publishInteractivePTY(
         pty,
@@ -1510,12 +1807,36 @@ export function createRealRuntimeClient(
       );
       return pty;
     },
+    async terminalWrite(input) {
+      await ready;
+      if (!interactivePTY)
+        throw new Error("interactive terminal is unavailable");
+      const terminal = await interactivePTY.write(input.id, input.text, {
+        submit: input.submit,
+        sensitive: input.sensitive,
+        idempotencyKey: input.idempotencyKey,
+      });
+      publishInteractivePTY(
+        terminal,
+        input.submit === false ? "write" : "submit",
+        Boolean(input.sensitive),
+      );
+      return terminal;
+    },
     async ptyKey(input) {
       await ready;
       if (!interactivePTY) throw new Error("interactive PTY is unavailable");
       const pty = await interactivePTY.specialKey(input.id, input.key);
       publishInteractivePTY(pty, "special_key");
       return pty;
+    },
+    async terminalKey(input) {
+      await ready;
+      if (!interactivePTY)
+        throw new Error("interactive terminal is unavailable");
+      const terminal = await interactivePTY.specialKey(input.id, input.key);
+      publishInteractivePTY(terminal, "special_key");
+      return terminal;
     },
     async ptyResize(input) {
       await ready;
@@ -1524,12 +1845,32 @@ export function createRealRuntimeClient(
       publishInteractivePTY(pty, "resize");
       return pty;
     },
+    async terminalResize(input) {
+      await ready;
+      if (!interactivePTY)
+        throw new Error("interactive terminal is unavailable");
+      const terminal = await interactivePTY.resize(
+        input.id,
+        input.rows,
+        input.cols,
+      );
+      publishInteractivePTY(terminal, "resize");
+      return terminal;
+    },
     async ptyAttach(id) {
       await ready;
       if (!interactivePTY) throw new Error("interactive PTY is unavailable");
       const pty = await interactivePTY.attach(id);
       publishInteractivePTY(pty, "attach");
       return pty;
+    },
+    async terminalAttach(id) {
+      await ready;
+      if (!interactivePTY)
+        throw new Error("interactive terminal is unavailable");
+      const terminal = await interactivePTY.attach(id);
+      publishInteractivePTY(terminal, "attach");
+      return terminal;
     },
     async ptyDetach(id) {
       await ready;
@@ -1538,12 +1879,28 @@ export function createRealRuntimeClient(
       publishInteractivePTY(pty, "detach");
       return pty;
     },
+    async terminalDetach(id) {
+      await ready;
+      if (!interactivePTY)
+        throw new Error("interactive terminal is unavailable");
+      const terminal = await interactivePTY.detach(id);
+      publishInteractivePTY(terminal, "detach");
+      return terminal;
+    },
     async ptyStop(id) {
       await ready;
       if (!interactivePTY) throw new Error("interactive PTY is unavailable");
       const pty = await interactivePTY.stop(id);
       publishInteractivePTY(pty, "exit");
       return pty;
+    },
+    async terminalStop(id) {
+      await ready;
+      if (!interactivePTY)
+        throw new Error("interactive terminal is unavailable");
+      const terminal = await interactivePTY.stop(id);
+      publishInteractivePTY(terminal, "exit");
+      return terminal;
     },
     async checkpointList() {
       await ready;
@@ -1661,57 +2018,99 @@ export function createRealRuntimeClient(
     },
     async sessionList() {
       await ready;
+      const store = sqliteStore;
+      if (store)
+        return store.list().map((record) => ({
+          id: record.id,
+          title: record.title,
+          createdAt: record.createdAt,
+          lastAccessedAt: record.metadata.lastAccessedAt as string | undefined,
+          pinned: record.pinned,
+          events: store.eventCount(record.id),
+          pendingInputs: store.pendingInputCount(record.id),
+          cancelled: record.cancelled,
+          resumable: record.resumable,
+        }));
       return (await sessionStore.list()).map(sessionSummary);
     },
     async sessionTouch(id) {
       await ready;
+      const store = sqliteStore as SqliteSessionStore | undefined;
+      if (store) {
+        store.touch(id as SessionID);
+        return;
+      }
       const session = await sessionStore.updateMetadata(id as SessionID, {
         lastAccessedAt: new Date().toISOString(),
       });
-      sqliteStore?.updateMetadata(id as SessionID, session.metadata ?? {});
     },
     async sessionRename(id, title) {
       await ready;
+      const store = sqliteStore as SqliteSessionStore | undefined;
+      if (store)
+        return sqliteSessionSummary(
+          store.rename(id as SessionID, title),
+          store,
+        );
       const session = await sessionStore.rename(id as SessionID, title);
-      sqliteStore?.rename(id as SessionID, session.title);
       return sessionSummary(session);
     },
     async sessionPin(id, pinned) {
       await ready;
+      const store = sqliteStore as SqliteSessionStore | undefined;
+      if (store)
+        return sqliteSessionSummary(store.pin(id as SessionID, pinned), store);
       const session = await sessionStore.updateMetadata(id as SessionID, {
         pinned,
       });
-      sqliteStore?.updateMetadata(id as SessionID, session.metadata ?? {});
       return sessionSummary(session);
     },
     async sessionDuplicate(id, title) {
       await ready;
+      const store = sqliteStore as SqliteSessionStore | undefined;
+      if (store)
+        return sessionSummary(
+          store.duplicate(id as SessionID, undefined, title),
+        );
       const session = await sessionStore.duplicate(
         id as SessionID,
         undefined,
         title,
       );
-      sqliteStore?.replace(session);
       return sessionSummary(session);
     },
     async sessionFork(id, turnID, title) {
       await ready;
+      const store = sqliteStore as SqliteSessionStore | undefined;
+      if (store)
+        return sessionSummary(
+          store.fork(id as SessionID, turnID, undefined, title),
+        );
       const session = await sessionStore.fork(
         id as SessionID,
         turnID,
         undefined,
         title,
       );
-      sqliteStore?.replace(session);
       return sessionSummary(session);
     },
     async sessionDelete(id) {
       await ready;
       if (id === sessionID)
         throw new Error("cannot delete the active runtime session");
+      const store = sqliteStore as SqliteSessionStore | undefined;
+      if (store) {
+        if (!store.get(id as SessionID))
+          throw new Error(`session not found: ${id}`);
+        store.delete(id as SessionID);
+        const removedAttachments = await cleanupUnreferencedAttachments({
+          workspaceRoot,
+          attachments: store.referencedAttachments(),
+        });
+        return { id, removedAttachments: removedAttachments.length };
+      }
       await sessionByID(id);
       await sessionStore.delete(id as SessionID);
-      sqliteStore?.delete(id as SessionID);
       const removedAttachments = await cleanupUnreferencedAttachments({
         workspaceRoot,
         attachments: referencedAttachmentsForSessions(
@@ -2800,6 +3199,7 @@ export function createRealRuntimeClient(
             await requireQuestion(`${toolID}:question`, question),
           subagents,
           interactivePTY,
+          nativeTerminal,
           onPTYUpdate: (pty) => {
             publish(ptyLiveUpdate(pty, "write"));
             if (ptyStatusByID.get(pty.id) !== pty.status) {
@@ -3108,7 +3508,14 @@ export function createRealRuntimeClient(
 
   function restoreInteractiveState(events: RuntimeEvent[]) {
     const pending = projectInteractiveRequests(events);
-    for (const request of pending.approvals) {
+    restoreRecoveredInteractiveState(pending.approvals, pending.questions);
+  }
+
+  function restoreRecoveredInteractiveState(
+    approvals: Array<Extract<RuntimeEvent, { type: "approval.request" }>>,
+    questions: Array<Extract<RuntimeEvent, { type: "question.request" }>>,
+  ) {
+    for (const request of approvals) {
       pendingApprovalRequests.add(request.id);
       publish({
         type: "diagnostic",
@@ -3116,7 +3523,7 @@ export function createRealRuntimeClient(
         message: `Recovered unresolved approval record ${request.id}; active tool execution was not replayed and must be resubmitted after a response.`,
       });
     }
-    for (const request of pending.questions)
+    for (const request of questions)
       publish({
         type: "diagnostic",
         level: "warning",

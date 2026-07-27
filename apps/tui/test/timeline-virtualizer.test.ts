@@ -59,6 +59,25 @@ test("timeline virtualizer preserves the visible anchor when prepending history"
   expect(result.adjustment).toBe(5);
 });
 
+test("timeline virtualizer keeps a bottom viewport at its new bottom after shrink measurements", () => {
+  const virtualizer = new TimelineVirtualizer(24);
+  const groups = Array.from({ length: 12 }, (_, index) => ({
+    key: `turn:${index}`,
+    items: [index],
+  }));
+  virtualizer.replace(groups, 276, 12);
+  const before = virtualizer.range(276, 12);
+  expect(before.total).toBe(288);
+
+  // The screen route deliberately ignores this negative adjustment while
+  // sticky-bottom is active, then scrolls to the new bottom (0 here).
+  const measured = virtualizer.measure("turn:0", 1, 276, 12);
+  expect(measured.adjustment).toBe(-23);
+  const after = virtualizer.range(Math.max(0, measured.range.total - 12), 12);
+  expect(after.total).toBe(265);
+  expect(after.bottom).toBe(0);
+});
+
 test("timeline virtualizer pins the active group and corrects pre-viewport measurements", () => {
   const virtualizer = new TimelineVirtualizer(4);
   virtualizer.replace(
@@ -118,4 +137,18 @@ test("timeline virtualizer keeps old history in a continuous visible range", () 
       (value, index) => !index || value === indexes[index - 1]! + 1,
     ),
   ).toBe(true);
+});
+
+test("timeline virtualizer keeps 500 tool cards outside the rendered work set", () => {
+  const virtualizer = new TimelineVirtualizer(6);
+  const tools = Array.from({ length: 500 }, (_, index) => ({
+    key: `turn:tool:${index}`,
+    items: [`user:${index}`, `tool:${index}`, `assistant:${index}`],
+  }));
+  virtualizer.replace(tools, 1_500, 36);
+  const range = virtualizer.range(1_500, 36);
+  expect(range.items.length).toBeLessThan(30);
+  expect(range.items.flatMap((group) => group.items)).toContain("tool:250");
+  expect(range.items.flatMap((group) => group.items)).not.toContain("tool:0");
+  expect(range.items.flatMap((group) => group.items)).not.toContain("tool:499");
 });
