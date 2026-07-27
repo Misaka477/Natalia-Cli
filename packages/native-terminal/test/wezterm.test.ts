@@ -6,32 +6,25 @@ import {
   createWezTermHost,
   writeWezTermNativeDomainConfig,
   NativeTerminalRegistry,
-  nativeTerminalArtifactKey,
   resolveNataliaWezTermForkExecutable,
   resolveWezTermExecutable,
-  resolveBundledWezTermExecutable,
-  verifyBundledWezTerm,
 } from "../src/index";
-import artifacts from "../wezterm-artifacts.json" with { type: "json" };
 
-test("resolves WezTerm across Unix and Windows executable names", () => {
+test("does not fall back to an arbitrary system WezTerm executable", () => {
   expect(
     resolveWezTermExecutable({
       os: "linux",
-      bundledDataDir: "/does-not-exist",
       forkBuildDir: "/does-not-exist",
-      which: (name) => (name === "wezterm" ? "/usr/bin/wezterm" : null),
+      which: () => "/usr/bin/wezterm",
     }),
-  ).toBe("/usr/bin/wezterm");
+  ).toBeUndefined();
   expect(
     resolveWezTermExecutable({
       os: "win32",
-      bundledDataDir: "/does-not-exist",
       forkBuildDir: "/does-not-exist",
-      which: (name) =>
-        name === "wezterm.exe" ? "C:\\WezTerm\\wezterm.exe" : null,
+      which: () => "C:\\WezTerm\\wezterm.exe",
     }),
-  ).toBe("C:\\WezTerm\\wezterm.exe");
+  ).toBeUndefined();
 });
 
 test("uses an explicit host executable without falling back to system WezTerm", () => {
@@ -43,7 +36,7 @@ test("uses an explicit host executable without falling back to system WezTerm", 
   ).toBe("/opt/natalia/wezterm");
 });
 
-test("prefers the managed patched fork build before bundled or system hosts", () => {
+test("requires the managed patched fork when no explicit override is set", () => {
   expect(
     resolveNataliaWezTermForkExecutable({
       os: "linux",
@@ -54,55 +47,9 @@ test("prefers the managed patched fork build before bundled or system hosts", ()
     resolveWezTermExecutable({
       os: "linux",
       forkBuildDir: "/opt/natalia/wezterm/target/release",
-      bundledDataDir: "/does-not-exist",
       which: () => "/usr/bin/wezterm",
     }),
-  ).toBe("/usr/bin/wezterm");
-});
-
-test("prefers the project-bundled Native Terminal Host", () => {
-  expect(nativeTerminalArtifactKey({ os: "linux", arch: "x64" })).toBe(
-    "linux-x64",
-  );
-  expect(nativeTerminalArtifactKey({ os: "darwin", arch: "arm64" })).toBe(
-    "darwin-aarch64",
-  );
-  expect(
-    resolveBundledWezTermExecutable({
-      os: "linux",
-      dataDir: "/does-not-exist",
-    }),
   ).toBeUndefined();
-});
-
-test("pins every vendored Native Host artifact to one tested release", () => {
-  expect(artifacts.version).toBe("20240203-110809-5046fc22");
-  for (const artifact of Object.values(artifacts.artifacts)) {
-    expect(artifact.sha256).toMatch(/^[a-f0-9]{64}$/u);
-    expect(artifact).not.toHaveProperty("url");
-    expect(artifact).not.toHaveProperty("checksumUrl");
-  }
-  expect(artifacts.artifacts["darwin-aarch64"]).toMatchObject({
-    file: "WezTerm-macos.zip",
-    sha256: "e77388cad55f2e9da95a220a89206a6c58f865874a629b7c3ea3c162f5692224",
-  });
-  expect(artifacts.artifacts["win32-x64"]).toMatchObject({
-    file: "WezTerm-windows.zip",
-    sha256: "57e5d03b585303d81e8b8e96d1230362852eb39aca92b3b29c7a42cfb82f9ac4",
-  });
-});
-
-test("verifies a bundled Native Terminal Host checksum", async () => {
-  const source = new TextEncoder().encode("wezterm fixture");
-  const path = "/tmp/kilo/wezterm-fixture";
-  await Bun.write(path, source);
-  await expect(
-    verifyBundledWezTerm({
-      executable: path,
-      expectedSHA256:
-        "6809af9e6ac6b5d8c6c738efe6bf4f172d23f73de59030882473c390d0698da8",
-    }),
-  ).resolves.toBe(path);
 });
 
 test("maps native pane lifecycle to WezTerm CLI", async () => {

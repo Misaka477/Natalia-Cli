@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { platform } from "node:os";
@@ -90,7 +90,6 @@ export function resolveWezTermExecutable(
     configured?: string;
     which?: (name: string) => string | null;
     os?: NodeJS.Platform;
-    bundledDataDir?: string;
     forkBuildDir?: string;
   } = {},
 ) {
@@ -100,21 +99,6 @@ export function resolveWezTermExecutable(
     buildDir: input.forkBuildDir,
   });
   if (fork) return fork;
-  const bundled = resolveBundledWezTermExecutable({
-    os: input.os,
-    dataDir: input.bundledDataDir,
-  });
-  if (bundled) return bundled;
-  const which = input.which ?? Bun.which;
-  const os = input.os ?? platform();
-  const candidates =
-    os === "win32"
-      ? ["wezterm.exe", "wezterm-gui.exe"]
-      : ["wezterm", "wezterm-gui"];
-  for (const candidate of candidates) {
-    const resolved = which(candidate);
-    if (resolved) return resolved;
-  }
   return undefined;
 }
 
@@ -135,60 +119,6 @@ export function resolveNataliaWezTermForkExecutable(
     os === "win32" ? "wezterm.exe" : "wezterm",
   );
   return existsSync(executable) ? executable : undefined;
-}
-
-export function nativeTerminalArtifactKey(
-  input: {
-    os?: NodeJS.Platform;
-    arch?: NodeJS.Architecture;
-  } = {},
-) {
-  const os = input.os ?? platform();
-  const arch = input.arch ?? process.arch;
-  return `${os}-${arch === "arm64" ? "aarch64" : arch}`;
-}
-
-export function nativeTerminalDataDir() {
-  return (
-    process.env.NATALIA_NATIVE_TERMINAL_DIR ??
-    join(
-      process.env.XDG_DATA_HOME ??
-        join(process.env.HOME ?? ".", ".local", "share"),
-      "natalia",
-      "native-terminal",
-    )
-  );
-}
-
-export function resolveBundledWezTermExecutable(
-  input: {
-    os?: NodeJS.Platform;
-    dataDir?: string;
-  } = {},
-) {
-  const os = input.os ?? platform();
-  const file =
-    os === "win32"
-      ? "wezterm.exe"
-      : os === "darwin"
-        ? "WezTerm.app/Contents/MacOS/wezterm"
-        : "wezterm.AppImage";
-  const executable = join(input.dataDir ?? nativeTerminalDataDir(), file);
-  return existsSync(executable) ? executable : undefined;
-}
-
-export async function verifyBundledWezTerm(input: {
-  executable?: string;
-  expectedSHA256: string;
-}) {
-  const executable = input.executable ?? resolveBundledWezTermExecutable();
-  if (!executable) throw new Error("Bundled WezTerm executable is missing");
-  const digest = createHash("sha256")
-    .update(await readFile(executable))
-    .digest("hex");
-  if (digest !== input.expectedSHA256)
-    throw new Error("Bundled WezTerm checksum mismatch");
-  return executable;
 }
 
 export function createWezTermHost(
@@ -219,7 +149,7 @@ export function createWezTermHost(
     });
   if (!executable)
     throw new Error(
-      "WezTerm Native Terminal Host is unavailable. Install the bundled or system WezTerm distribution.",
+      "WezTerm Native Terminal Host is unavailable. Build the managed Natalia fork for this platform or set NATALIA_WEZTERM_EXECUTABLE for controlled diagnostics.",
     );
   const run = input.run ?? runWezTermCommand;
   const measure = async <T>(name: string, work: () => Promise<T>) => {
