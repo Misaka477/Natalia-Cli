@@ -1,8 +1,8 @@
 import type {
   ExecutionTarget,
-  PTYAction,
-  PTYOwnership,
-  PTYStatus,
+  TerminalAction,
+  TerminalOwnership,
+  TerminalStatus,
   RuntimeEvent,
   TerminalScreenSnapshot,
   TerminalScreenDelivery,
@@ -24,11 +24,11 @@ import {
 } from "node:fs/promises";
 import { resolve } from "node:path";
 
-export type PTYSessionState = {
+export type TerminalSessionState = {
   id: string;
   command: string;
   cwd: string;
-  status: PTYStatus;
+  status: TerminalStatus;
   attached: boolean;
   rows: number;
   cols: number;
@@ -36,26 +36,26 @@ export type PTYSessionState = {
   activity: "waiting" | "running";
   tail: string;
   transcript: string;
-  lastAction?: PTYAction;
+  lastAction?: TerminalAction;
   target: ExecutionTarget;
-  ownership: PTYOwnership;
+  ownership: TerminalOwnership;
   approvalID?: string;
 };
 
-export type PTYOutputChunk = {
+export type TerminalOutputChunk = {
   text: string;
   sensitive?: boolean;
   lifecycle?: boolean;
 };
 
-export function createPTYSession(input: {
+export function createTerminalSession(input: {
   id: string;
   command: string;
   cwd: string;
   rows?: number;
   cols?: number;
   target: ExecutionTarget;
-}): PTYSessionState {
+}): TerminalSessionState {
   return {
     id: input.id,
     command: input.command,
@@ -72,15 +72,15 @@ export function createPTYSession(input: {
   };
 }
 
-export function applyPTYAction(
-  state: PTYSessionState,
-  action: PTYAction,
+export function applyTerminalAction(
+  state: TerminalSessionState,
+  action: TerminalAction,
   options: {
     rows?: number;
     cols?: number;
     input?: string;
     sensitive?: boolean;
-    exitStatus?: PTYStatus;
+    exitStatus?: TerminalStatus;
   } = {},
 ) {
   state.lastAction = action;
@@ -105,8 +105,8 @@ export function applyPTYAction(
 }
 
 export function appendTerminalOutput(
-  state: PTYSessionState,
-  chunk: PTYOutputChunk,
+  state: TerminalSessionState,
+  chunk: TerminalOutputChunk,
   maxTail = 4000,
 ) {
   const text = chunk.sensitive
@@ -125,17 +125,17 @@ export function appendTerminalOutput(
   }
 }
 
-export function ptyUpdateEvent(state: PTYSessionState): RuntimeEvent {
-  return { type: "pty.update", ...state };
+export function terminalUpdateEvent(state: TerminalSessionState): RuntimeEvent {
+  return { type: "terminal.update", ...state };
 }
 
-export function ptyActionEvent(
-  state: PTYSessionState,
-  action: PTYAction,
+export function terminalActionEvent(
+  state: TerminalSessionState,
+  action: TerminalAction,
   redacted = false,
 ): RuntimeEvent {
   return {
-    type: "pty.action",
+    type: "terminal.action",
     id: state.id,
     action,
     redacted,
@@ -143,24 +143,24 @@ export function ptyActionEvent(
   };
 }
 
-export class PTYOutputCoalescer {
+export class TerminalOutputCoalescer {
   private pending = new Map<string, string>();
 
-  push(state: PTYSessionState, chunk: PTYOutputChunk) {
+  push(state: TerminalSessionState, chunk: TerminalOutputChunk) {
     appendTerminalOutput(state, chunk);
-    if (chunk.lifecycle) return [ptyUpdateEvent(state)];
+    if (chunk.lifecycle) return [terminalUpdateEvent(state)];
     this.pending.set(state.id, state.tail);
     return [] as RuntimeEvent[];
   }
 
-  flush(state: PTYSessionState) {
+  flush(state: TerminalSessionState) {
     if (!this.pending.has(state.id)) return [] as RuntimeEvent[];
     this.pending.delete(state.id);
-    return [ptyUpdateEvent(state)];
+    return [terminalUpdateEvent(state)];
   }
 }
 
-export type RealPTYCommandInput = {
+export type RealTerminalCommandInput = {
   id: string;
   command: string;
   cwd: string;
@@ -169,17 +169,17 @@ export type RealPTYCommandInput = {
   signal?: AbortSignal;
 };
 
-export type RealPTYCommandResult = {
-  state: PTYSessionState;
+export type RealTerminalCommandResult = {
+  state: TerminalSessionState;
   exitCode: number;
   events: RuntimeEvent[];
 };
 
-export type PersistentPTYSessionInfo = {
+export type PersistentTerminalSessionInfo = {
   id: string;
   command: string;
   cwd: string;
-  status: PTYStatus;
+  status: TerminalStatus;
   pid?: number;
   rows: number;
   cols: number;
@@ -191,7 +191,7 @@ export type TerminalSessionInfo = {
   id: string;
   command: string;
   cwd: string;
-  status: PTYStatus;
+  status: TerminalStatus;
   attached: boolean;
   rows: number;
   cols: number;
@@ -279,7 +279,7 @@ export class TerminalRegistry {
   }) {
     const id = input.id ?? `tty_${(++this.sequence).toString(36)}`;
     if (this.sessions.has(id))
-      throw new Error(`interactive PTY already exists: ${id}`);
+      throw new Error(`interactive terminal already exists: ${id}`);
     await mkdir(this.stateDir, { recursive: true, mode: 0o700 });
     const outputPath = resolve(this.stateDir, `${id}.log`);
     await writeFile(outputPath, "", { mode: 0o600 });
@@ -341,14 +341,14 @@ export class TerminalRegistry {
       [
         "python3",
         "-c",
-        PYTHON_INTERACTIVE_PTY_BRIDGE,
+        PYTHON_INTERACTIVE_TERMINAL_BRIDGE,
         runtime.command,
         String(runtime.rows),
         String(runtime.cols),
       ],
       {
         cwd: runtime.cwd,
-        env: safePTYEnv(),
+        env: safeTerminalEnv(),
         stdin: "pipe",
         stdout: "pipe",
         stderr: "pipe",
@@ -368,11 +368,13 @@ export class TerminalRegistry {
     await Promise.race([
       ready,
       Bun.sleep(5000).then(() => {
-        throw new Error(`interactive PTY bridge did not become ready: ${id}`);
+        throw new Error(
+          `interactive terminal bridge did not become ready: ${id}`,
+        );
       }),
       process.exited.then((exitCode) => {
         throw new Error(
-          `interactive PTY bridge exited before ready: ${id} (${exitCode})`,
+          `interactive terminal bridge exited before ready: ${id} (${exitCode})`,
         );
       }),
     ]);
@@ -777,7 +779,7 @@ export class TerminalRegistry {
     cols: number,
   ) {
     if (rows < 10 || rows > 200 || cols < 20 || cols > 400)
-      throw new Error("PTY size must be rows 10-200 and cols 20-400");
+      throw new Error("terminal size must be rows 10-200 and cols 20-400");
     session.rows = rows;
     session.cols = cols;
     session.screenModel.resize(rows, cols);
@@ -820,7 +822,7 @@ export class TerminalRegistry {
 
   private async consume(session: TerminalSessionRuntime) {
     if (!(session.process.stdout instanceof ReadableStream))
-      throw new Error("interactive PTY stdout is not readable");
+      throw new Error("interactive terminal stdout is not readable");
     const reader = session.process.stdout.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
@@ -877,7 +879,7 @@ export class TerminalRegistry {
         session.secretAudit.push({
           at: new Date().toISOString(),
           action: "prompt_detected",
-          summary: "password prompt detected in PTY tail",
+          summary: "password prompt detected in terminal tail",
         });
       this.schedulePersist(session);
       this.scheduleScreenEmit(session);
@@ -897,7 +899,7 @@ export class TerminalRegistry {
   ) {
     const run = async () => {
       if (!session.process.stdin || typeof session.process.stdin === "number")
-        throw new Error("interactive PTY stdin is not writable");
+        throw new Error("interactive terminal stdin is not writable");
       session.process.stdin.write(`${JSON.stringify(value)}\n`);
       await session.process.stdin.flush();
     };
@@ -941,14 +943,14 @@ export class TerminalRegistry {
 
   private mustGet(id: string) {
     const session = this.sessions.get(id);
-    if (!session) throw new Error(`interactive PTY not found: ${id}`);
+    if (!session) throw new Error(`interactive terminal not found: ${id}`);
     return session;
   }
 
   private mustRunning(id: string) {
     const session = this.mustGet(id);
     if (session.status !== "running" && session.status !== "starting")
-      throw new Error(`interactive PTY is not running: ${id}`);
+      throw new Error(`interactive terminal is not running: ${id}`);
     return session;
   }
 
@@ -1179,8 +1181,8 @@ export class TerminalRegistry {
   }
 }
 
-export class PersistentPTYRegistry {
-  private sessions = new Map<string, PersistentPTYRuntime>();
+export class PersistentTerminalRegistry {
+  private sessions = new Map<string, PersistentTerminalRuntime>();
 
   constructor(private readonly stateDir: string) {}
 
@@ -1193,10 +1195,10 @@ export class PersistentPTYRegistry {
   }) {
     await this.load();
     if (this.sessions.has(input.id))
-      throw new Error(`PTY already exists: ${input.id}`);
+      throw new Error(`terminal already exists: ${input.id}`);
     await mkdir(this.stateDir, { recursive: true, mode: 0o700 });
     const transcriptPath = resolve(this.stateDir, `${input.id}.log`);
-    const result = await runRealPTYCommand({
+    const result = await runRealTerminalCommand({
       id: input.id,
       command: input.command,
       cwd: input.cwd,
@@ -1204,7 +1206,7 @@ export class PersistentPTYRegistry {
       cols: input.cols,
     });
     await writeFile(transcriptPath, result.state.transcript, { mode: 0o600 });
-    const session: PersistentPTYRuntime = {
+    const session: PersistentTerminalRuntime = {
       id: input.id,
       command: input.command,
       cwd: input.cwd,
@@ -1216,13 +1218,13 @@ export class PersistentPTYRegistry {
     };
     this.sessions.set(input.id, session);
     await this.save();
-    return publicPersistentPTY(session);
+    return publicPersistentTerminal(session);
   }
 
   async list() {
     await this.load();
     return [...this.sessions.values()].map((session) =>
-      publicPersistentPTY(refreshPersistentPTY(session)),
+      publicPersistentTerminal(refreshPersistentTerminal(session)),
     );
   }
 
@@ -1230,14 +1232,14 @@ export class PersistentPTYRegistry {
     const session = await this.mustGet(id);
     session.attached = true;
     await this.save();
-    return publicPersistentPTY(refreshPersistentPTY(session));
+    return publicPersistentTerminal(refreshPersistentTerminal(session));
   }
 
   async detach(id: string) {
     const session = await this.mustGet(id);
     session.attached = false;
     await this.save();
-    return publicPersistentPTY(refreshPersistentPTY(session));
+    return publicPersistentTerminal(refreshPersistentTerminal(session));
   }
 
   async resize(id: string, rows: number, cols: number) {
@@ -1245,7 +1247,7 @@ export class PersistentPTYRegistry {
     session.rows = rows;
     session.cols = cols;
     await this.save();
-    return publicPersistentPTY(refreshPersistentPTY(session));
+    return publicPersistentTerminal(refreshPersistentTerminal(session));
   }
 
   async transcript(id: string, maxBytes = 20000) {
@@ -1265,22 +1267,22 @@ export class PersistentPTYRegistry {
       process.kill(session.pid, "SIGTERM");
     session.status = "exited";
     await this.save();
-    return publicPersistentPTY(session);
+    return publicPersistentTerminal(session);
   }
 
   private async mustGet(id: string) {
     await this.load();
     const session = this.sessions.get(id);
-    if (!session) throw new Error(`unknown PTY session: ${id}`);
+    if (!session) throw new Error(`unknown terminal session: ${id}`);
     return session;
   }
 
   private async load() {
     try {
       const parsed = JSON.parse(
-        await readFileAsync(resolve(this.stateDir, "pty.json"), "utf8"),
+        await readFileAsync(resolve(this.stateDir, "terminal.json"), "utf8"),
       ) as {
-        sessions?: PersistentPTYRuntime[];
+        sessions?: PersistentTerminalRuntime[];
       };
       for (const session of parsed.sessions ?? [])
         this.sessions.set(session.id, session);
@@ -1292,17 +1294,17 @@ export class PersistentPTYRegistry {
   private async save() {
     await mkdir(this.stateDir, { recursive: true, mode: 0o700 });
     await writeFile(
-      resolve(this.stateDir, "pty.json"),
+      resolve(this.stateDir, "terminal.json"),
       `${JSON.stringify({ sessions: [...this.sessions.values()] }, null, 2)}\n`,
       { mode: 0o600 },
     );
   }
 }
 
-export async function runRealPTYCommand(
-  input: RealPTYCommandInput,
-): Promise<RealPTYCommandResult> {
-  const state = createPTYSession({
+export async function runRealTerminalCommand(
+  input: RealTerminalCommandInput,
+): Promise<RealTerminalCommandResult> {
+  const state = createTerminalSession({
     id: input.id,
     command: input.command,
     cwd: input.cwd,
@@ -1311,7 +1313,7 @@ export async function runRealPTYCommand(
     target: { kind: "host", cwd: input.cwd },
   });
   const process = Bun.spawn(
-    ["python3", "-c", PYTHON_PTY_RUNNER, input.command],
+    ["python3", "-c", PYTHON_INTERACTIVE_TERMINAL_RUNNER, input.command],
     {
       cwd: input.cwd,
       stdin: "ignore",
@@ -1328,17 +1330,17 @@ export async function runRealPTYCommand(
   ]);
   input.signal?.removeEventListener("abort", abort);
   appendTerminalOutput(state, { text: `${stdout}${stderr}`, lifecycle: true });
-  applyPTYAction(state, "exit", {
+  applyTerminalAction(state, "exit", {
     exitStatus: exitCode === 0 ? "exited" : "failed",
   });
   return {
     state,
     exitCode,
-    events: [ptyUpdateEvent(state), ptyActionEvent(state, "exit")],
+    events: [terminalUpdateEvent(state), terminalActionEvent(state, "exit")],
   };
 }
 
-const PYTHON_PTY_RUNNER = String.raw`
+const PYTHON_INTERACTIVE_TERMINAL_RUNNER = String.raw`
 import os
 import pty
 import select
@@ -1386,7 +1388,7 @@ os.close(master)
 sys.exit(child.wait())
 `;
 
-type PersistentPTYRuntime = PersistentPTYSessionInfo;
+type PersistentTerminalRuntime = PersistentTerminalSessionInfo;
 
 type TerminalSessionRuntime = Omit<
   TerminalSessionInfo,
@@ -1498,7 +1500,7 @@ function redactSensitiveOutput(
   return redacted;
 }
 
-function safePTYEnv() {
+function safeTerminalEnv() {
   const allowed = [
     "PATH",
     "HOME",
@@ -1587,7 +1589,7 @@ function screenSnapshot(session: TerminalSessionRuntime) {
   return snapshot;
 }
 
-const PYTHON_INTERACTIVE_PTY_BRIDGE = String.raw`
+const PYTHON_INTERACTIVE_TERMINAL_BRIDGE = String.raw`
 import base64
 import fcntl
 import json
@@ -1714,7 +1716,7 @@ except subprocess.TimeoutExpired:
     sys.exit(child.wait())
 `;
 
-function refreshPersistentPTY(session: PersistentPTYRuntime) {
+function refreshPersistentTerminal(session: PersistentTerminalRuntime) {
   if (session.status !== "running" || !session.pid) return session;
   try {
     process.kill(session.pid, 0);
@@ -1724,9 +1726,9 @@ function refreshPersistentPTY(session: PersistentPTYRuntime) {
   return session;
 }
 
-function publicPersistentPTY(
-  session: PersistentPTYRuntime,
-): PersistentPTYSessionInfo {
+function publicPersistentTerminal(
+  session: PersistentTerminalRuntime,
+): PersistentTerminalSessionInfo {
   return { ...session };
 }
 
@@ -1758,7 +1760,7 @@ export function detectPrompt(text: string) {
 }
 
 export type ModelTerminalAction = {
-  action: PTYAction;
+  action: TerminalAction;
   input?: string;
   rows?: number;
   cols?: number;
@@ -1773,14 +1775,14 @@ export type ModelTerminalActionResult =
   | { state: "rejected"; events: RuntimeEvent[] };
 
 export class ModelTerminalRegistry {
-  private sessions = new Map<string, PTYSessionState>();
+  private sessions = new Map<string, TerminalSessionState>();
   private pending = new Map<
     string,
     { sessionID: string; request: ModelTerminalAction }
   >();
   private queues = new Map<string, Promise<void>>();
 
-  create(input: Parameters<typeof createPTYSession>[0]) {
+  create(input: Parameters<typeof createTerminalSession>[0]) {
     const existing = this.sessions.get(input.id);
     if (
       existing &&
@@ -1789,12 +1791,12 @@ export class ModelTerminalRegistry {
     ) {
       return { session: existing, events: [] as RuntimeEvent[] };
     }
-    const session = createPTYSession(input);
+    const session = createTerminalSession(input);
     this.sessions.set(session.id, session);
     return {
       session,
       events: [
-        ptyUpdateEvent(session),
+        terminalUpdateEvent(session),
         timeline(
           session,
           "system",
@@ -1808,7 +1810,7 @@ export class ModelTerminalRegistry {
 
   get(id: string) {
     const session = this.sessions.get(id);
-    if (!session) throw new Error(`unknown PTY session: ${id}`);
+    if (!session) throw new Error(`unknown terminal session: ${id}`);
     return session;
   }
 
@@ -1818,9 +1820,9 @@ export class ModelTerminalRegistry {
   ): Promise<ModelTerminalActionResult> {
     const session = this.get(id);
     if (session.ownership !== "model")
-      throw new Error("PTY is not model-controlled");
+      throw new Error("terminal is not model-controlled");
     if (request.requiresApproval) {
-      const approvalID = `apr_pty_${id}_${this.pending.size + 1}`;
+      const approvalID = `apr_terminal_${id}_${this.pending.size + 1}`;
       session.status = "awaiting_approval";
       session.approvalID = approvalID;
       this.pending.set(approvalID, { sessionID: id, request });
@@ -1833,16 +1835,16 @@ export class ModelTerminalRegistry {
             "model",
             request.action,
             "requested",
-            request.reason ?? "model PTY action requested",
+            request.reason ?? "model terminal action requested",
           ),
-          { type: "pty.update", ...session },
+          { type: "terminal.update", ...session },
           {
-            type: "pty.approval",
+            type: "terminal.approval",
             id,
             approvalID,
             state: "awaiting",
             action: request.action,
-            reason: request.reason ?? "PTY action requires approval",
+            reason: request.reason ?? "terminal action requires approval",
             target: session.target,
           },
         ],
@@ -1856,7 +1858,7 @@ export class ModelTerminalRegistry {
     approved: boolean,
   ): Promise<ModelTerminalActionResult> {
     const pending = this.pending.get(approvalID);
-    if (!pending) throw new Error(`unknown PTY approval: ${approvalID}`);
+    if (!pending) throw new Error(`unknown terminal approval: ${approvalID}`);
     this.pending.delete(approvalID);
     const session = this.get(pending.sessionID);
     session.approvalID = undefined;
@@ -1866,12 +1868,12 @@ export class ModelTerminalRegistry {
         state: "rejected",
         events: [
           {
-            type: "pty.approval",
+            type: "terminal.approval",
             id: session.id,
             approvalID,
             state: "rejected",
             action: pending.request.action,
-            reason: "user rejected PTY action",
+            reason: "user rejected terminal action",
             target: session.target,
           },
           timeline(
@@ -1879,9 +1881,9 @@ export class ModelTerminalRegistry {
             "system",
             "approval",
             "rejected",
-            "user rejected PTY action",
+            "user rejected terminal action",
           ),
-          ptyUpdateEvent(session),
+          terminalUpdateEvent(session),
         ],
       };
     }
@@ -1890,12 +1892,12 @@ export class ModelTerminalRegistry {
       ...executed,
       events: [
         {
-          type: "pty.approval",
+          type: "terminal.approval",
           id: session.id,
           approvalID,
           state: "approved",
           action: pending.request.action,
-          reason: "user approved PTY action",
+          reason: "user approved terminal action",
           target: session.target,
         },
         ...executed.events,
@@ -1904,13 +1906,13 @@ export class ModelTerminalRegistry {
   }
 
   private async execute(
-    session: PTYSessionState,
+    session: TerminalSessionState,
     request: ModelTerminalAction,
   ): Promise<ModelTerminalActionResult> {
     const prior = this.queues.get(session.id) ?? Promise.resolve();
     let events: RuntimeEvent[] = [];
     const next = prior.then(() => {
-      applyPTYAction(session, request.action, {
+      applyTerminalAction(session, request.action, {
         rows: request.rows,
         cols: request.cols,
         sensitive: request.sensitive,
@@ -1935,8 +1937,12 @@ export class ModelTerminalRegistry {
             ? "sensitive input supplied"
             : `${request.action} executed`,
         ),
-        ptyActionEvent(session, request.action, Boolean(request.sensitive)),
-        ptyUpdateEvent(session),
+        terminalActionEvent(
+          session,
+          request.action,
+          Boolean(request.sensitive),
+        ),
+        terminalUpdateEvent(session),
       ];
     });
     this.queues.set(session.id, next);
@@ -1946,9 +1952,9 @@ export class ModelTerminalRegistry {
 }
 
 function timeline(
-  session: PTYSessionState,
+  session: TerminalSessionState,
   actor: "model" | "user" | "system",
-  action: "created" | "approval" | PTYAction,
+  action: "created" | "approval" | TerminalAction,
   status:
     | "requested"
     | "awaiting_approval"
@@ -1958,7 +1964,7 @@ function timeline(
   summary: string,
 ): RuntimeEvent {
   return {
-    type: "pty.timeline",
+    type: "terminal.timeline",
     id: session.id,
     actor,
     action,

@@ -594,14 +594,14 @@ export function createRealRuntimeClient(
           {
             onAudit: (event) => {
               publish({
-                type: "pty.action",
+                type: "terminal.action",
                 id: event.id,
                 action: event.action,
                 redacted: event.redacted,
                 target: { kind: "host", cwd: event.cwd },
               });
               publish({
-                type: "pty.timeline",
+                type: "terminal.timeline",
                 id: event.id,
                 actor: event.actor === "human" ? "user" : event.actor,
                 action: event.action,
@@ -625,7 +625,7 @@ export function createRealRuntimeClient(
             const summary = `native human input claim accepted: terminal=${terminalID} pane=${paneID} kind=${kind} bytes=${byteLength}`;
             publish({ type: "diagnostic", level: "info", message: summary });
             publish({
-              type: "pty.timeline",
+              type: "terminal.timeline",
               id: terminalID,
               actor: "user",
               action: "write",
@@ -1210,14 +1210,14 @@ export function createRealRuntimeClient(
     publish(ptyLiveUpdate(pty, action));
     if (action) {
       publish({
-        type: "pty.action",
+        type: "terminal.action",
         id: pty.id,
         action,
         redacted,
         target: { kind: "host", cwd: pty.cwd },
       });
       publish({
-        type: "pty.timeline",
+        type: "terminal.timeline",
         id: pty.id,
         actor: "user",
         action,
@@ -1237,12 +1237,12 @@ export function createRealRuntimeClient(
     action?: import("@natalia/contracts").PTYAction,
   ): Extract<
     import("@natalia/contracts").RuntimeEvent,
-    { type: "pty.update" }
+    { type: "terminal.update" }
   > {
     // Framebuffers and transcripts are read on demand. Sending either with every
     // output revision makes the live event stream retain and clone large snapshots.
     return {
-      type: "pty.update",
+      type: "terminal.update",
       id: pty.id,
       command: pty.command,
       cwd: pty.cwd,
@@ -3272,14 +3272,14 @@ export function createRealRuntimeClient(
           },
           onPTYAction: (pty, action, redacted) => {
             publish({
-              type: "pty.action",
+              type: "terminal.action",
               id: pty.id,
               action,
               redacted,
               target: { kind: "host", cwd: pty.cwd },
             });
             publish({
-              type: "pty.timeline",
+              type: "terminal.timeline",
               id: pty.id,
               actor: "model",
               action,

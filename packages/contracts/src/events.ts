@@ -434,7 +434,7 @@ export type RuntimeEvent =
       snapshot: DurableContextCheckpointRecord;
     }
   | {
-      type: "pty.update";
+      type: "terminal.update";
       id: string;
       command: string;
       cwd: string;
@@ -458,14 +458,14 @@ export type RuntimeEvent =
       geometryOwner?: TerminalOwner;
     }
   | {
-      type: "pty.action";
+      type: "terminal.action";
       id: string;
       action: PTYAction;
       redacted?: boolean;
       target: ExecutionTarget;
     }
   | {
-      type: "pty.timeline";
+      type: "terminal.timeline";
       id: string;
       actor: "model" | "user" | "system";
       action: PTYAction | "created" | "approval";
@@ -479,7 +479,7 @@ export type RuntimeEvent =
       at: string;
     }
   | {
-      type: "pty.approval";
+      type: "terminal.approval";
       id: string;
       approvalID: string;
       state: "awaiting" | "approved" | "rejected";
@@ -502,8 +502,8 @@ export type RuntimeEvent =
       geometryOwner: TerminalOwner;
       at: string;
     }
-  | { type: "pty.pane.select"; id: string }
-  | { type: "pty.pane.focus"; focus: "chat" | "pty" }
+  | { type: "terminal.pane.select"; id: string }
+  | { type: "terminal.pane.focus"; focus: "chat" | "terminal" }
   | {
       type: "sandbox.update";
       id: string;
@@ -1013,7 +1013,7 @@ export function runtimeEventDurability(
     case "thinking.delta":
     case "context.status":
     case "status.update":
-    case "pty.update":
+    case "terminal.update":
       return "live";
     case "tool.update":
       return ["succeeded", "failed", "rejected", "cancelled"].includes(

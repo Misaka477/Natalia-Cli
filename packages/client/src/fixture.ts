@@ -514,9 +514,14 @@ export function createFakeBackend(): FakeBackend {
       root: "/tmp/kilo/m11-box",
       isolationLevel: "workspace" as const,
     };
-    publish({ type: "pty.action", id: "pty_m11", action: "attach", target });
     publish({
-      type: "pty.update",
+      type: "terminal.action",
+      id: "pty_m11",
+      action: "attach",
+      target,
+    });
+    publish({
+      type: "terminal.update",
       id: "pty_m11",
       command: "bash --noprofile --norc",
       cwd: "/tmp/kilo/m11-box",
@@ -532,14 +537,14 @@ export function createFakeBackend(): FakeBackend {
       target,
     });
     publish({
-      type: "pty.action",
+      type: "terminal.action",
       id: "pty_m11",
       action: "write",
       redacted: true,
       target,
     });
     publish({
-      type: "pty.update",
+      type: "terminal.update",
       id: "pty_m11",
       command: "bash --noprofile --norc",
       cwd: "/tmp/kilo/m11-box",
@@ -584,7 +589,7 @@ export function createFakeBackend(): FakeBackend {
     }
     if (text.includes("stream")) streamingModelTerminal.add(sessionID);
     for (const event of created.events) publish(event);
-    if (isNewSession) publish({ type: "pty.update", ...created.session });
+    if (isNewSession) publish({ type: "terminal.update", ...created.session });
     if (text.includes("exit")) {
       const exited = await modelTerminal.request(sessionID, {
         action: "exit",
@@ -816,14 +821,14 @@ export function createFakeBackend(): FakeBackend {
         decision: response.decision,
         feedback: response.feedback,
       });
-      if (response.requestID.startsWith("apr_pty_")) {
+      if (response.requestID.startsWith("apr_terminal_")) {
         void modelTerminal
           .resolveApproval(response.requestID, response.decision !== "reject")
           .then((result) => {
             for (const event of result.events) publish(event);
             if (result.state === "executed") {
               const update = result.events.find(
-                (event) => event.type === "pty.update",
+                (event) => event.type === "terminal.update",
               );
               if (!update) return;
               const session = modelTerminal.get(update.id);
@@ -832,7 +837,7 @@ export function createFakeBackend(): FakeBackend {
               });
               session.status = "waiting";
               session.activity = "waiting";
-              publish({ type: "pty.update", ...session });
+              publish({ type: "terminal.update", ...session });
               if (streamingModelTerminal.delete(session.id)) {
                 void (async () => {
                   for (let index = 1; index <= 48; index++) {
@@ -840,12 +845,12 @@ export function createFakeBackend(): FakeBackend {
                     appendTerminalOutput(session, {
                       text: `stream line ${index.toString().padStart(2, "0")}: model observes interactive command output\n`,
                     });
-                    publish({ type: "pty.update", ...session });
+                    publish({ type: "terminal.update", ...session });
                   }
                   appendTerminalOutput(session, { text: "$" });
                   session.status = "waiting";
                   session.activity = "waiting";
-                  publish({ type: "pty.update", ...session });
+                  publish({ type: "terminal.update", ...session });
                 })();
               }
             }

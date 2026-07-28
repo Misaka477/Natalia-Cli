@@ -7,8 +7,8 @@ const sandbox = await runPrompt("/sandbox");
 const events = [...pty.events, ...sandbox.events];
 const state = events.reduce(reduceState, structuredClone(initialState));
 const summary = {
-  ptyUpdate: events.find((event) => event.type === "pty.update"),
-  ptyAction: events.find((event) => event.type === "pty.action"),
+  ptyUpdate: events.find((event) => event.type === "terminal.update"),
+  ptyAction: events.find((event) => event.type === "terminal.action"),
   sandboxUpdate: events.find((event) => event.type === "sandbox.update"),
   sandboxDiff: events.find((event) => event.type === "sandbox.diff"),
   sandboxAudit: events.find((event) => event.type === "sandbox.audit"),

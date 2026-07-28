@@ -2361,8 +2361,8 @@ function Shell(props: {
     if (command === "pty.focus-toggle") {
       if (state.ptyPane.selectedID)
         dispatch({
-          type: "pty.pane.focus",
-          focus: state.ptyPane.focus === "chat" ? "pty" : "chat",
+          type: "terminal.pane.focus",
+          focus: state.ptyPane.focus === "chat" ? "terminal" : "chat",
         });
       return;
     }
@@ -2442,7 +2442,7 @@ function Shell(props: {
   useBindings(() => ({
     mode: "base",
     priority: 1,
-    enabled: () => state.ptyPane.focus === "pty",
+    enabled: () => state.ptyPane.focus === "terminal",
     bindings: [
       {
         key: "ctrl+t",
@@ -2450,7 +2450,7 @@ function Shell(props: {
         group: "Terminal",
         cmd: () =>
           dispatch({
-            type: "pty.pane.focus",
+            type: "terminal.pane.focus",
             focus: "chat",
           }),
       },
@@ -2614,7 +2614,7 @@ function Shell(props: {
     );
     const next =
       sessions[(current + direction + sessions.length) % sessions.length];
-    if (next) dispatch({ type: "pty.pane.select", id: next.id });
+    if (next) dispatch({ type: "terminal.pane.select", id: next.id });
   }
 
   function setFollowMode(value: boolean) {

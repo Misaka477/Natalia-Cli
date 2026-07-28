@@ -224,7 +224,7 @@ test("Terminal events stay out of chat while Sandbox renders stable blocks", () 
     isolationLevel: "workspace" as const,
   };
   state = reduceState(state, {
-    type: "pty.update",
+    type: "terminal.update",
     id: "pty_1",
     command: "bash",
     cwd: "/tmp/box",
@@ -285,7 +285,7 @@ test("model-owned PTY persists approval wait and action timeline for fixed pane"
   let state = structuredClone(initialState);
   const target = { kind: "host" as const, cwd: "/workspace" };
   state = reduceState(state, {
-    type: "pty.update",
+    type: "terminal.update",
     id: "pty_model",
     command: "bash",
     cwd: "/workspace",
@@ -301,7 +301,7 @@ test("model-owned PTY persists approval wait and action timeline for fixed pane"
     approvalID: "apr_pty_model_1",
   });
   state = reduceState(state, {
-    type: "pty.timeline",
+    type: "terminal.timeline",
     id: "pty_model",
     actor: "model",
     action: "submit",
@@ -310,7 +310,7 @@ test("model-owned PTY persists approval wait and action timeline for fixed pane"
     at: "2026-07-17T12:00:00Z",
   });
   state = reduceState(state, {
-    type: "pty.approval",
+    type: "terminal.approval",
     id: "pty_model",
     approvalID: "apr_pty_model_1",
     state: "awaiting",
@@ -332,7 +332,7 @@ test("PTY pane selects among unlimited sessions and closes active view after mod
   const target = { kind: "host" as const, cwd: "/workspace" };
   for (const id of ["pty_a", "pty_b"]) {
     state = reduceState(state, {
-      type: "pty.update",
+      type: "terminal.update",
       id,
       command: "bash",
       cwd: "/workspace",
@@ -347,14 +347,17 @@ test("PTY pane selects among unlimited sessions and closes active view after mod
     });
   }
   expect(state.ptyPane.selectedID).toBe("pty_b");
-  state = reduceState(state, { type: "pty.pane.select", id: "pty_a" });
+  state = reduceState(state, { type: "terminal.pane.select", id: "pty_a" });
   expect(state.ptyPane.selectedID).toBe("pty_a");
-  state = reduceState(state, { type: "pty.pane.focus", focus: "chat" });
+  state = reduceState(state, { type: "terminal.pane.focus", focus: "chat" });
   expect(state.ptyPane.focus).toBe("chat");
-  state = reduceState(state, { type: "pty.pane.focus", focus: "pty" });
-  expect(state.ptyPane.focus).toBe("pty");
   state = reduceState(state, {
-    type: "pty.update",
+    type: "terminal.pane.focus",
+    focus: "terminal",
+  });
+  expect(state.ptyPane.focus).toBe("terminal");
+  state = reduceState(state, {
+    type: "terminal.update",
     id: "pty_a",
     command: "bash",
     cwd: "/workspace",

@@ -254,10 +254,12 @@ export function SessionRoute(props: {
                     item.status !== "exited" &&
                     item.status !== "failed",
                 )}
-                onSelect={(id) => dispatch({ type: "pty.pane.select", id })}
+                onSelect={(id) =>
+                  dispatch({ type: "terminal.pane.select", id })
+                }
                 focus={state.ptyPane.focus}
                 onFocus={() =>
-                  dispatch({ type: "pty.pane.focus", focus: "pty" })
+                  dispatch({ type: "terminal.pane.focus", focus: "terminal" })
                 }
                 scrollRef={props.ptyScrollRef}
               />
@@ -510,18 +512,18 @@ function compactPath(path?: string) {
 function ModelPTyPane(props: {
   pty: Extract<
     ReturnType<typeof useAppState>["state"]["pty"][string],
-    { type: "pty.update" }
+    { type: "terminal.update" }
   >;
   timeline: Extract<
     ReturnType<typeof useAppState>["state"]["ptyTimeline"][string][number],
-    { type: "pty.timeline" }
+    { type: "terminal.timeline" }
   >[];
   sessions: Extract<
     ReturnType<typeof useAppState>["state"]["pty"][string],
-    { type: "pty.update" }
+    { type: "terminal.update" }
   >[];
   onSelect(id: string): void;
-  focus: "chat" | "pty";
+  focus: "chat" | "terminal";
   onFocus(): void;
   scrollRef?: { current?: any };
 }) {
@@ -534,7 +536,9 @@ function ModelPTyPane(props: {
       flexShrink={0}
       flexDirection="column"
       border
-      borderColor={props.focus === "pty" ? darkTheme.accent : darkTheme.muted}
+      borderColor={
+        props.focus === "terminal" ? darkTheme.accent : darkTheme.muted
+      }
       paddingLeft={1}
       paddingRight={1}
       paddingTop={1}
@@ -545,13 +549,13 @@ function ModelPTyPane(props: {
     >
       <box flexDirection="row" justifyContent="space-between">
         <text
-          fg={props.focus === "pty" ? darkTheme.accent : darkTheme.muted}
+          fg={props.focus === "terminal" ? darkTheme.accent : darkTheme.muted}
           attributes={TextAttributes.BOLD}
         >
           Terminal Preview · model control · {props.pty.status}
         </text>
         <text fg={darkTheme.muted} onMouseUp={props.onFocus}>
-          {props.focus === "pty"
+          {props.focus === "terminal"
             ? "preview focus · Ctrl+T chat"
             : "Ctrl+T preview · F8 manage"}
         </text>

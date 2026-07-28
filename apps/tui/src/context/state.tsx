@@ -133,12 +133,12 @@ export type AppState = {
   todos: TodoView[];
   retryBanner?: string;
   compactionBanner?: string;
-  pty: Record<string, Extract<RuntimeEvent, { type: "pty.update" }>>;
+  pty: Record<string, Extract<RuntimeEvent, { type: "terminal.update" }>>;
   ptyTimeline: Record<
     string,
-    Extract<RuntimeEvent, { type: "pty.timeline" }>[]
+    Extract<RuntimeEvent, { type: "terminal.timeline" }>[]
   >;
-  ptyPane: { selectedID?: string; focus: "chat" | "pty" };
+  ptyPane: { selectedID?: string; focus: "chat" | "terminal" };
   sandboxes: Record<string, Extract<RuntimeEvent, { type: "sandbox.update" }>>;
   mcp: Record<string, Extract<RuntimeEvent, { type: "mcp.status" }>>;
 };
@@ -352,7 +352,7 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
     case "rollback.failed":
       handleCheckpointEvent(state, event);
       return;
-    case "pty.update":
+    case "terminal.update":
       const ptyEvent = compactPTYEvent(event);
       const previousPTY = state.pty[ptyEvent.id];
       if (previousPTY && samePTYUpdate(previousPTY, ptyEvent)) return;
@@ -374,17 +374,17 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
         if (!state.ptyPane.selectedID) state.ptyPane.focus = "chat";
       }
       return;
-    case "pty.pane.select":
+    case "terminal.pane.select":
       if (activePTYIDs(state).includes(event.id)) {
         state.ptyPane.selectedID = event.id;
-        state.ptyPane.focus = "pty";
+        state.ptyPane.focus = "terminal";
       }
       return;
-    case "pty.pane.focus":
+    case "terminal.pane.focus":
       state.ptyPane.focus = event.focus;
       state.ptyPane.selectedID ??= nextActivePTY(state);
       return;
-    case "pty.timeline":
+    case "terminal.timeline":
       const timeline = (state.ptyTimeline[event.id] ??= []);
       if (
         !timeline.some(
@@ -399,10 +399,10 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
         state.ptyTimeline[event.id] = timeline.slice(-40);
       }
       return;
-    case "pty.approval":
+    case "terminal.approval":
       state.footer = `Terminal ${event.id} ${event.state}: ${event.reason}`;
       return;
-    case "pty.action":
+    case "terminal.action":
       state.footer =
         `pty ${event.id} ${event.action} ${event.redacted ? "[redacted]" : ""}`.trim();
       return;
@@ -1043,7 +1043,7 @@ function formatWait(ms: number) {
 }
 
 function targetLabel(
-  target: Extract<RuntimeEvent, { type: "pty.update" }>["target"],
+  target: Extract<RuntimeEvent, { type: "terminal.update" }>["target"],
 ) {
   if (target.kind === "host") return `host:${target.cwd}`;
   return `sandbox:${target.sandboxID}:${target.isolationLevel}`;
@@ -1231,7 +1231,9 @@ function isUrgentEvent(event: RuntimeEvent) {
   );
 }
 
-function compactPTYEvent(event: Extract<RuntimeEvent, { type: "pty.update" }>) {
+function compactPTYEvent(
+  event: Extract<RuntimeEvent, { type: "terminal.update" }>,
+) {
   const transcript = event.transcript;
   if (!transcript || transcript.length <= maxPTYTranscriptChars) return event;
   return {
@@ -1241,8 +1243,8 @@ function compactPTYEvent(event: Extract<RuntimeEvent, { type: "pty.update" }>) {
 }
 
 function samePTYUpdate(
-  previous: Extract<RuntimeEvent, { type: "pty.update" }>,
-  next: Extract<RuntimeEvent, { type: "pty.update" }>,
+  previous: Extract<RuntimeEvent, { type: "terminal.update" }>,
+  next: Extract<RuntimeEvent, { type: "terminal.update" }>,
 ) {
   return (
     previous.status === next.status &&
@@ -1261,8 +1263,8 @@ function samePTYUpdate(
 }
 
 function sameTerminalOwner(
-  previous: Extract<RuntimeEvent, { type: "pty.update" }>["inputOwner"],
-  next: Extract<RuntimeEvent, { type: "pty.update" }>["inputOwner"],
+  previous: Extract<RuntimeEvent, { type: "terminal.update" }>["inputOwner"],
+  next: Extract<RuntimeEvent, { type: "terminal.update" }>["inputOwner"],
 ) {
   return (
     previous?.type === next?.type &&
