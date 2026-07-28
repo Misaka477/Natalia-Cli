@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { readFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { platform } from "node:os";
 import { dirname, join } from "node:path";
 import { Worker } from "node:worker_threads";
@@ -676,8 +676,11 @@ export class NativeTerminalRegistry {
       const data = JSON.parse(
         readFileSync(this.options.persistPath, "utf8"),
       ) as unknown;
-      if (!Array.isArray(data)) return;
-      for (const raw of data) {
+      if (!data || typeof data !== "object") return;
+      const manifest = data as Record<string, unknown>;
+      const sessions = manifest.sessions;
+      if (!Array.isArray(sessions)) return;
+      for (const raw of sessions) {
         if (!raw || typeof raw !== "object") continue;
         const paneID = (raw as Record<string, unknown>).paneID;
         const session: NativeTerminalSession = {
@@ -1104,13 +1107,13 @@ export class NativeTerminalRegistry {
       (session) => session.status === "running",
     );
     await Promise.allSettled(running.map((session) => this.stop(session.id)));
+    await this.persistSessions();
     await this.host.dispose?.();
     this.sessions.clear();
     this.modelWrites.clear();
     this.idempotency.clear();
     this.revisionWaiters.clear();
     this.hub = undefined;
-    await this.persistSessions();
   }
 
   session(id: string): NativeTerminalSession {

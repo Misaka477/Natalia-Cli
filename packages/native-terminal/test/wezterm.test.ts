@@ -1133,3 +1133,107 @@ test("cleanupStalePanes removes panes not belonging to current sessions", async 
   expect(stops).not.toContain(51);
 });
 
+test("cross-runtime provenance recovery restores persisted session metadata", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-terminal-provenance-"));
+  const persistPath = join(root, "native-terminal-sessions.json");
+  const listCalls: Array<{ pane_id: number; window_id: number; tab_id: number; rows: number; cols: number }[]> = [];
+  const firstRegistry = new NativeTerminalRegistry(
+    {
+      kind: "wezterm",
+      executable: "wezterm",
+      async spawn() {
+        return { pane_id: 61, window_id: 2, tab_id: 3, rows: 24, cols: 80 };
+      },
+      async list() {
+        const value = listCalls.at(-1) ?? [
+          { pane_id: 61, window_id: 2, tab_id: 3, rows: 24, cols: 80 },
+        ];
+        listCalls.push(value);
+        return value;
+      },
+      async listClients() {
+        return [{ focused_pane_id: 61 }];
+      },
+      async read() {
+        return "";
+      },
+      async write() {},
+      async focus() {},
+      async resize() {},
+      async stop() {},
+      async open() {
+        return {
+          pane_id: 61,
+          window_id: 501,
+          tab_id: 1061,
+          rows: 24,
+          cols: 80,
+        };
+      },
+    },
+    { persistPath }
+  );
+  const firstSession = await firstRegistry.start({
+  id: "tty_provenance",
+  command: "bash",
+  cwd: "/repo",
+});
+await firstRegistry.stop(firstSession.id);
+await firstRegistry.dispose();
+
+const secondRegistry = new NativeTerminalRegistry(
+  {
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 61, window_id: 2, tab_id: 3, rows: 24, cols: 80 };
+    },
+    async list() {
+      const value = listCalls.at(-1) ?? [
+        { pane_id: 61, window_id: 2, tab_id: 3, rows: 24, cols: 80 },
+      ];
+      listCalls.push(value);
+      return value;
+    },
+    async listClients() {
+      return [];
+    },
+    async read() {
+      return "";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {},
+    async open() {
+      return {
+        pane_id: 61,
+        window_id: 501,
+        tab_id: 1061,
+        rows: 24,
+        cols: 80,
+      };
+    },
+  },
+  { persistPath }
+);
+  const recovered = secondRegistry.session("tty_provenance");
+  expect(recovered).toMatchObject({
+    id: "tty_provenance",
+    paneID: 61,
+    windowID: 501,
+    muxWindowID: 501,
+    tabID: 1061,
+    status: "exited",
+    attached: false,
+    command: "bash",
+    cwd: "/repo",
+    rows: 24,
+    cols: 80,
+    inputOwner: "model",
+    secureInput: false,
+  });
+  expect(secondRegistry.list()).toHaveLength(1);
+  await secondRegistry.dispose();
+});
+
