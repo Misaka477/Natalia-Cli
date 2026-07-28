@@ -1,11 +1,11 @@
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { writeHeapSnapshot } from "node:v8";
-import { InteractivePTYRegistry } from "../../packages/terminal/src";
+import { TerminalRegistry } from "../../packages/terminal/src";
 
 const durationMs = Number(process.argv[2] ?? 60_000);
 const root = await mkdtemp("/tmp/natalia-terminal-heap-");
-const registry = new InteractivePTYRegistry(join(root, "pty"));
+const registry = new TerminalRegistry(join(root, "terminal"));
 const session = await registry.start({ command: "cat", cwd: root });
 const viewerID = "heap_evidence_viewer";
 registry.registerViewer(session.id, { viewerID, kind: "embedded" });
@@ -52,5 +52,5 @@ try {
 } finally {
   await registry.stop(session.id);
   registry.dispose();
-  await rm(join(root, "pty"), { recursive: true, force: true });
+  await rm(join(root, "terminal"), { recursive: true, force: true });
 }

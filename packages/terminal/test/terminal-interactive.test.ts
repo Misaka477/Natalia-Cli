@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   applyPTYAction,
-  appendPTYOutput,
+  appendTerminalOutput,
   createPTYSession,
   detectPrompt,
   ptyActionEvent,
@@ -27,7 +27,7 @@ test("PTY presentation model tracks lifecycle and independent actions", () => {
     cwd: "/repo",
     target,
   });
-  appendPTYOutput(session, { text: "ready\n$" });
+  appendTerminalOutput(session, { text: "ready\n$" });
   expect(session.status).toBe("running");
   expect(session.activity).toBe("waiting");
   expect(session.prompt).toBe("$");
@@ -80,7 +80,9 @@ test("runs a real command through an operating-system pseudo terminal", async ()
 
 test("persistent PTY registry records transcript and attach state", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-pty-persist-"));
-  const registry = new PersistentPTYRegistry(join(root, ".natalia", "terminal"));
+  const registry = new PersistentPTYRegistry(
+    join(root, ".natalia", "terminal"),
+  );
   const started = await registry.start({
     id: "tty_persist",
     command: "printf 'pty-persist\\n'",
@@ -93,7 +95,9 @@ test("persistent PTY registry records transcript and attach state", async () => 
     attached: false,
   });
 
-  const reopened = new PersistentPTYRegistry(join(root, ".natalia", "terminal"));
+  const reopened = new PersistentPTYRegistry(
+    join(root, ".natalia", "terminal"),
+  );
   expect(
     (await reopened.list()).some((item) => item.id === "tty_persist"),
   ).toBe(true);
@@ -172,7 +176,9 @@ test("interactive PTY sensitive input is redacted and audited", async () => {
   });
   await Bun.sleep(50);
   expect(
-    await Bun.file(join(root, ".natalia", "terminal", `${started.id}.log`)).text(),
+    await Bun.file(
+      join(root, ".natalia", "terminal", `${started.id}.log`),
+    ).text(),
   ).not.toContain("super-secret");
   await registry.stop(started.id);
 });
@@ -505,7 +511,7 @@ test("PTY retains full transcript while tail remains a bounded presentation summ
     cwd: "/repo",
     target,
   });
-  appendPTYOutput(session, { text: "a".repeat(5000) }, 100);
+  appendTerminalOutput(session, { text: "a".repeat(5000) }, 100);
   expect(session.transcript).toHaveLength(5000);
   expect(session.tail).toHaveLength(100);
 });

@@ -1,10 +1,10 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { InteractivePTYRegistry } from "../../packages/terminal/src";
+import { TerminalRegistry } from "../../packages/terminal/src";
 
 const root = await mkdtemp("/tmp/natalia-terminal-release-");
 const before = process.memoryUsage();
-const registry = new InteractivePTYRegistry(join(root, "pty"), {
+const registry = new TerminalRegistry(join(root, "terminal"), {
   exitedSessionRetentionMs: 60_000,
 });
 const session = await registry.start({ command: "cat", cwd: root });

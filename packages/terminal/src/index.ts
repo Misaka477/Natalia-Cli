@@ -466,4 +466,4 @@ function ansiColor(color: TerminalColor, background: boolean) {
   }
   return [background ? 48 : 38, 5, color];
 }
-export * from "./pty-registry";
+export * from "./terminal-registry";

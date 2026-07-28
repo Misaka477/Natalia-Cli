@@ -19,7 +19,7 @@ import {
   SqliteSessionStore,
 } from "../../packages/session/src";
 import type { StreamingProvider } from "../../packages/runtime/src";
-import { InteractivePTYRegistry } from "../../packages/terminal/src";
+import { TerminalRegistry } from "../../packages/terminal/src";
 import {
   TerminalScreenRenderCache,
   terminalScreenRenderModel,
@@ -764,7 +764,7 @@ async function terminalInputDispatchScenario(): Promise<Scenario> {
 async function terminalViewerWriteObserveScenario(
   root: string,
 ): Promise<Scenario> {
-  const registry = new InteractivePTYRegistry(join(root, "viewer-latency"));
+  const registry = new TerminalRegistry(join(root, "viewer-latency"));
   const session = await registry.start({
     command: "cat",
     cwd: root,
@@ -855,7 +855,7 @@ async function terminalRouteLatencyScenario(): Promise<Scenario> {
 }
 
 async function terminalViewerCadenceScenario(root: string): Promise<Scenario> {
-  const registry = new InteractivePTYRegistry(join(root, "viewer-cadence"));
+  const registry = new TerminalRegistry(join(root, "viewer-cadence"));
   const session = await registry.start({ command: "cat", cwd: root });
   const samples: Sample[] = [];
   try {
@@ -914,9 +914,7 @@ async function terminalViewerCadenceScenario(root: string): Promise<Scenario> {
 async function terminalStopCleanupScenario(root: string): Promise<Scenario> {
   const samples: Sample[] = [];
   for (let run = 0; run < 3; run++) {
-    const registry = new InteractivePTYRegistry(
-      join(root, `stop-cleanup-${run}`),
-    );
+    const registry = new TerminalRegistry(join(root, `stop-cleanup-${run}`));
     const session = await registry.start({ command: "cat", cwd: root });
     const viewerID = `cleanup_viewer_${run}`;
     registry.registerViewer(session.id, { viewerID, kind: "embedded" });
@@ -956,13 +954,10 @@ async function terminalViewerReconnectScenario(
 ): Promise<Scenario> {
   const samples: Sample[] = [];
   for (let run = 0; run < 3; run++) {
-    const registry = new InteractivePTYRegistry(
-      join(root, `reconnect-${run}`),
-      {
-        viewerTimeoutMs: 300,
-        watchdogIntervalMs: 25,
-      },
-    );
+    const registry = new TerminalRegistry(join(root, `reconnect-${run}`), {
+      viewerTimeoutMs: 300,
+      watchdogIntervalMs: 25,
+    });
     const session = await registry.start({ command: "cat", cwd: root });
     try {
       registry.registerViewer(session.id, {

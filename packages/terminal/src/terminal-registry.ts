@@ -97,14 +97,14 @@ export function applyPTYAction(
     state.activity = "waiting";
   }
   if (options.input)
-    appendPTYOutput(state, {
+    appendTerminalOutput(state, {
       text: options.sensitive
         ? redactSensitiveInput(options.input)
         : options.input,
     });
 }
 
-export function appendPTYOutput(
+export function appendTerminalOutput(
   state: PTYSessionState,
   chunk: PTYOutputChunk,
   maxTail = 4000,
@@ -147,7 +147,7 @@ export class PTYOutputCoalescer {
   private pending = new Map<string, string>();
 
   push(state: PTYSessionState, chunk: PTYOutputChunk) {
-    appendPTYOutput(state, chunk);
+    appendTerminalOutput(state, chunk);
     if (chunk.lifecycle) return [ptyUpdateEvent(state)];
     this.pending.set(state.id, state.tail);
     return [] as RuntimeEvent[];
@@ -234,10 +234,6 @@ export type TerminalObservation = {
   cols?: number;
   exited?: boolean;
 };
-/** @deprecated Use TerminalSessionInfo. */
-export type InteractivePTYInfo = TerminalSessionInfo;
-/** @deprecated Use TerminalSessionUpdate. */
-export type InteractivePTYUpdate = TerminalSessionUpdate;
 
 export type TerminalSecretAudit = {
   at: string;
@@ -245,8 +241,6 @@ export type TerminalSecretAudit = {
   summary: string;
   sha256?: string;
 };
-/** @deprecated Use TerminalSecretAudit. */
-export type InteractivePTYSecretAudit = TerminalSecretAudit;
 
 export class TerminalRegistry {
   private sessions = new Map<string, TerminalSessionRuntime>();
@@ -1185,9 +1179,6 @@ export class TerminalRegistry {
   }
 }
 
-/** @deprecated Use TerminalRegistry. */
-export { TerminalRegistry as InteractivePTYRegistry };
-
 export class PersistentPTYRegistry {
   private sessions = new Map<string, PersistentPTYRuntime>();
 
@@ -1336,7 +1327,7 @@ export async function runRealPTYCommand(
     process.exited,
   ]);
   input.signal?.removeEventListener("abort", abort);
-  appendPTYOutput(state, { text: `${stdout}${stderr}`, lifecycle: true });
+  appendTerminalOutput(state, { text: `${stdout}${stderr}`, lifecycle: true });
   applyPTYAction(state, "exit", {
     exitStatus: exitCode === 0 ? "exited" : "failed",
   });
@@ -1925,7 +1916,7 @@ export class ModelTerminalRegistry {
         sensitive: request.sensitive,
       });
       if (request.input) {
-        appendPTYOutput(session, {
+        appendTerminalOutput(session, {
           text: request.sensitive
             ? "[sensitive input supplied]\n"
             : `$ ${request.input}\n`,

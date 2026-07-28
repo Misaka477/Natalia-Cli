@@ -1,5 +1,5 @@
 import { lineCount, makeDigest } from "@natalia/testing";
-import { appendPTYOutput, ModelTerminalRegistry } from "@natalia/terminal";
+import { appendTerminalOutput, ModelTerminalRegistry } from "@natalia/terminal";
 import type {
   ApprovalResponse,
   FakeBackend,
@@ -827,7 +827,7 @@ export function createFakeBackend(): FakeBackend {
               );
               if (!update) return;
               const session = modelTerminal.get(update.id);
-              appendPTYOutput(session, {
+              appendTerminalOutput(session, {
                 text: "installed fixture package\n$",
               });
               session.status = "waiting";
@@ -837,12 +837,12 @@ export function createFakeBackend(): FakeBackend {
                 void (async () => {
                   for (let index = 1; index <= 48; index++) {
                     await Bun.sleep(12);
-                    appendPTYOutput(session, {
+                    appendTerminalOutput(session, {
                       text: `stream line ${index.toString().padStart(2, "0")}: model observes interactive command output\n`,
                     });
                     publish({ type: "pty.update", ...session });
                   }
-                  appendPTYOutput(session, { text: "$" });
+                  appendTerminalOutput(session, { text: "$" });
                   session.status = "waiting";
                   session.activity = "waiting";
                   publish({ type: "pty.update", ...session });

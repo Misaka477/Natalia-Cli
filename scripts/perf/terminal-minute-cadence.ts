@@ -1,9 +1,9 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { InteractivePTYRegistry } from "../../packages/terminal/src";
+import { TerminalRegistry } from "../../packages/terminal/src";
 
 const root = await mkdtemp("/tmp/natalia-terminal-minute-");
-const registry = new InteractivePTYRegistry(join(root, "pty"));
+const registry = new TerminalRegistry(join(root, "terminal"));
 const session = await registry.start({ command: "cat", cwd: root });
 const viewerID = "minute_fixture_viewer";
 registry.registerViewer(session.id, { viewerID, kind: "embedded" });
