@@ -1756,6 +1756,13 @@ export function detectPrompt(text: string) {
   const last = lines.at(-1) ?? "";
   if (/[$#>]\s*$/u.test(last)) return last.slice(-80);
   if (/password[: ]*$/iu.test(last)) return "password prompt";
+  if (/^PS\s+[A-Za-z]:\\.*>\s*$/u.test(last)) return last.slice(-80);
+  if (/^>>>\s*$/u.test(last)) return last.slice(-80);
+  if (/^In\s*\[\d+\]:\s*$/u.test(last)) return last.slice(-80);
+  if (/^❯\s*$/u.test(last)) return last.slice(-80);
+  if (/^➜\s*$/u.test(last)) return last.slice(-80);
+  if (/--\s*(NORMAL|INSERT|VISUAL|VISUAL\s+BLOCK|REPLACE)\s*--$/u.test(last))
+    return last.slice(-80);
   return undefined;
 }
 

@@ -48,6 +48,19 @@ test("PTY presentation model tracks lifecycle and independent actions", () => {
 test("PTY sensitive input redacts and prompt detection works", () => {
   expect(redactSensitiveInput("secret")).toBe("******");
   expect(detectPrompt("Password:".toLowerCase())).toBe("password prompt");
+  expect(detectPrompt("$ ")).toBe("$ ");
+  expect(detectPrompt("# ")).toBe("# ");
+  expect(detectPrompt("PS C:\\Users\\admin> ")).toBe("PS C:\\Users\\admin> ");
+  expect(detectPrompt(">>> ")).toBe(">>> ");
+  expect(detectPrompt("In [1]: ")).toBe("In [1]: ");
+  expect(detectPrompt("❯ ")).toBe("❯ ");
+  expect(detectPrompt("➜ ")).toBe("➜ ");
+  expect(detectPrompt("-- NORMAL --")).toBe("-- NORMAL --");
+  expect(detectPrompt("-- INSERT --")).toBe("-- INSERT --");
+  expect(detectPrompt("-- VISUAL --")).toBe("-- VISUAL --");
+  expect(detectPrompt("-- VISUAL BLOCK --")).toBe("-- VISUAL BLOCK --");
+  expect(detectPrompt("-- REPLACE --")).toBe("-- REPLACE --");
+  expect(detectPrompt("not a prompt line")).toBeUndefined();
 });
 
 test("runs a real command through an operating-system pseudo terminal", async () => {

@@ -571,7 +571,7 @@ export class NativeTerminalRegistry {
   private readonly revisionWaiters = new Map<string, Set<() => void>>();
   private hub?: NativeTerminalHub;
   private humanInputBridge?: { endpoint: string; token: string };
-  private lastReconcileAt = 0;
+  private lastReconcileAt = -Infinity;
   private reconcileInFlight?: Promise<NativeTerminalSession[]>;
 
   constructor(

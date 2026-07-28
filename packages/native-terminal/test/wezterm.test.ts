@@ -508,7 +508,7 @@ test("native registry keeps model I/O on the host-rendered pane", async () => {
     kind: "wezterm" as const,
     executable: "wezterm",
     async spawn() {
-      return { pane_id: 19, window_id: 2, tab_id: 3 };
+      return { pane_id: 19, window_id: 2, tab_id: 3, rows: 24, cols: 80 };
     },
     async list() {
       return [{ pane_id: 19, window_id: 2, tab_id: 3, rows: 24, cols: 80 }];
@@ -970,4 +970,83 @@ test("native registry attaches, detaches, and resizes the same pane", async () =
     { action: "resize", actor: "human" },
     { action: "exit", actor: "system" },
   ]);
+});
+
+test("native snapshot text matches read text and includes cursor", async () => {
+  const registry = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 37, window_id: 2, tab_id: 3, rows: 24, cols: 80 };
+    },
+    async list() {
+      return [
+        {
+          pane_id: 37,
+          window_id: 2,
+          tab_id: 3,
+          rows: 24,
+          cols: 80,
+          cursor_x: 5,
+          cursor_y: 3,
+        },
+      ];
+    },
+    async read() {
+      return "snapshot consistency check\n";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  });
+  const session = await registry.start({ command: "cat", cwd: "/repo" });
+  const read = await registry.read(session.id);
+  const snapshot = await registry.snapshot(session.id);
+  expect(snapshot.text).toBe(read.text);
+  expect(snapshot.cursorX).toBe(5);
+  expect(snapshot.cursorY).toBe(3);
+  expect(snapshot.rows).toBe(24);
+  expect(snapshot.cols).toBe(80);
+  expect(snapshot.revision).toBe(session.revision);
+  await registry.stop(session.id);
+});
+
+test("native model can continue to observe and write after human detach", async () => {
+  const writes: string[] = [];
+  const registry = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 37, window_id: 2, tab_id: 3, rows: 24, cols: 80 };
+    },
+    async list() {
+      return [{ pane_id: 37, window_id: 2, tab_id: 3, rows: 24, cols: 80 }];
+    },
+    async read() {
+      return writes.join("");
+    },
+    async write(_paneID, data) {
+      writes.push(data);
+    },
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  });
+  const session = await registry.start({ command: "cat", cwd: "/repo" });
+  await registry.write(session.id, "model before human\r");
+  await registry.claimHumanInput(session.id);
+  const beforeDetach = await registry.observe(session.id, 0);
+  expect(beforeDetach.changed).toBe(true);
+  registry.detach(session.id);
+  await registry.write(session.id, "model after detach\r");
+  expect(writes).toEqual(["model before human\r", "model after detach\r"]);
+  const afterDetach = await registry.observe(
+    session.id,
+    beforeDetach.afterRevision,
+  );
+  expect(afterDetach.changed).toBe(true);
+  expect(afterDetach.text).toContain("model before human");
+  expect(afterDetach.text).toContain("model after detach");
+  await registry.stop(session.id);
 });
