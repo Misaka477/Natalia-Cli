@@ -117,8 +117,20 @@ export function registerNataliaKeymap(
       );
     },
   });
+  // Keymap dispatch runs before renderable handlers. A global binding or an
+  // incomplete leader sequence must not consume committed text from a focused
+  // editor before OpenTUI can insert it.
+  const offCommittedText = keymap.intercept("key", (context) => {
+    const editor = renderer.currentFocusedEditor;
+    const text = committedText(context.event);
+    if (!editor || editor.isDestroyed || text === undefined) return;
+    keymap.clearPendingSequence();
+    editor.insertText(text);
+    context.consume();
+  });
 
   return () => {
+    offCommittedText();
     offInputBindings();
     offBackspace();
     offEscape();
@@ -127,4 +139,14 @@ export function registerNataliaKeymap(
     offCommaBindings();
     modeStack.dispose();
   };
+}
+
+function committedText(event: KeyEvent) {
+  if (event.ctrl || event.meta || event.option || event.super || event.hyper)
+    return undefined;
+  // Key sequences for navigation/function keys contain control bytes. A
+  // printable raw or Kitty committed-text event contains only text codepoints.
+  if (!event.sequence || /[\p{Cc}\p{Cf}]/u.test(event.sequence))
+    return undefined;
+  return event.sequence;
 }

@@ -1702,7 +1702,8 @@ export function createRealRuntimeClient(
       await ready;
       if (!nativeTerminal)
         throw new Error("Native Terminal Host is unavailable");
-      return { id, text: await nativeTerminal.read(id, { maxLines: 200 }) };
+      const { text } = await nativeTerminal.read(id, { maxLines: 200 });
+      return { id, text };
     },
     async nativeTerminalOpenHub() {
       await ready;

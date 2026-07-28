@@ -478,6 +478,8 @@ const interactiveTerminalToolAliases = {
   interactive_write: "interactive_terminal_write",
   interactive_send_line: "interactive_terminal_send_line",
   interactive_keys: "interactive_terminal_keys",
+  interactive_input: "interactive_terminal_input",
+  interactive_snapshot: "interactive_terminal_snapshot",
   interactive_resize: "interactive_terminal_resize",
   interactive_stop: "interactive_terminal_stop",
   interactive_list: "interactive_terminal_list",
@@ -520,6 +522,8 @@ export function defaultTools(
     interactiveWriteTool(),
     interactiveSendLineTool(),
     interactiveKeyTool(),
+    interactiveInputTool(),
+    interactiveSnapshotTool(),
     interactiveResizeTool(),
     interactiveStopTool(),
     interactiveListTool(),
@@ -976,7 +980,7 @@ function interactiveReadTool(): RuntimeTool {
   return {
     name: "interactive_terminal_read",
     description:
-      "Read a bounded line range from the same native Terminal pane used by the human. Use startLine/endLine to page through complete scrollback without copying it all at once.",
+      "Read a bounded line range from the same native Terminal pane used by the human. Returns text plus cursor position. Use startLine/endLine to page through complete scrollback without copying it all at once.",
     requiresApproval: false,
     parameters: {
       type: "object",
@@ -999,11 +1003,12 @@ function interactiveReadTool(): RuntimeTool {
       if (startLine !== undefined && cursor !== undefined)
         throw new Error("startLine and cursor cannot be used together");
       const pageStartLine = startLine ?? cursor;
-      const text = await requireNativeTerminal(context).read(id, {
-        maxLines: Math.max(1, Math.min(numberOr(args.maxLines, 60), 200)),
-        startLine: pageStartLine,
-        endLine,
-      });
+      const { text, cursorX, cursorY, rows, cols } =
+        await requireNativeTerminal(context).read(id, {
+          maxLines: Math.max(1, Math.min(numberOr(args.maxLines, 60), 200)),
+          startLine: pageStartLine,
+          endLine,
+        });
       const page = nativeTerminalReadPage(text, {
         startLine: pageStartLine,
         endLine,
@@ -1011,6 +1016,10 @@ function interactiveReadTool(): RuntimeTool {
       return JSON.stringify(
         {
           id,
+          cursorX,
+          cursorY,
+          rows,
+          cols,
           range:
             pageStartLine === undefined
               ? {
@@ -1094,7 +1103,7 @@ function interactiveSearchTool(): RuntimeTool {
         endLine ?? pageStartLine + 199,
         pageStartLine + 199,
       );
-      const text = await requireNativeTerminal(context).read(id, {
+      const { text } = await requireNativeTerminal(context).read(id, {
         startLine: pageStartLine,
         endLine: pageEndLine,
       });
@@ -1208,7 +1217,7 @@ function terminalObserveTool(): RuntimeTool {
   return {
     name: "terminal_observe",
     description:
-      "Wait for a terminal screen revision or process exit, then return the current styled framebuffer. Timeout is a normal observation result.",
+      "Wait for a terminal screen revision or process exit, then return the current styled framebuffer. Timeout is a normal observation result. afterRevision is optional; omit it to get current state. Use mode='latest' for current state without waiting; mode='tail' for recent lines; mode='new_only' for only new output since last observation; mode='cursor' for lines around the cursor.",
     requiresApproval: false,
     timeoutSec: 35,
     parameters: {
@@ -1218,18 +1227,59 @@ function terminalObserveTool(): RuntimeTool {
         afterRevision: { type: "number" },
         timeoutMs: { type: "number" },
         scrollbackRows: { type: "number" },
+        mode: {
+          type: "string",
+          enum: ["full", "tail", "new_only", "cursor", "latest"],
+        },
       },
-      required: ["id", "afterRevision"],
+      required: ["id"],
       additionalProperties: false,
     },
     async execute(input, context) {
       const args = requireObject(input);
       const id = requireString(args.id, "id");
+      const mode = args.mode || "full";
+      const afterRevision = numberOr(args.afterRevision, 0);
+      if (mode === "latest") {
+        if (context.nativeTerminal) {
+          const snapshot = await context.nativeTerminal.snapshot(id);
+          return JSON.stringify({
+            id,
+            host: "wezterm",
+            revision: snapshot.revision,
+            currentRevision: snapshot.revision,
+            afterRevision,
+            changed: snapshot.revision > afterRevision,
+            reason: snapshot.revision > afterRevision ? "changed" : "timeout",
+            cursorX: snapshot.cursorX,
+            cursorY: snapshot.cursorY,
+            rows: snapshot.rows,
+            cols: snapshot.cols,
+            mode,
+            text: truncateProcessOutput(snapshot.text, 16_384),
+          });
+        }
+        const registry = requireInteractivePTY(context);
+        const info = registry.get(id);
+        const { lines: _lines, ...screen } = info.screen;
+        const { id: _id, ...rest } = info;
+        return JSON.stringify({
+          id,
+          ...rest,
+          screen,
+          revision: info.revision,
+          currentRevision: info.revision,
+          afterRevision,
+          changed: info.revision > afterRevision,
+          reason: info.revision > afterRevision ? "changed" : "timeout",
+          mode,
+        });
+      }
       if (context.nativeTerminal) {
         await context.nativeTerminal.reconcile();
         const observation = await context.nativeTerminal.observe(
           id,
-          numberOr(args.afterRevision, 0),
+          afterRevision,
           {
             maxLines: Math.max(
               1,
@@ -1241,49 +1291,113 @@ function terminalObserveTool(): RuntimeTool {
             ),
           },
         );
+        let text = observation.text;
+        const session = context.nativeTerminal.session(id);
+        const previousText = session.lastObservedText;
+        if (mode === "tail") {
+          const lines = text.split("\n");
+          if (lines.at(-1) === "") lines.pop();
+          const tailLines = Math.max(
+            1,
+            Math.min(numberOr(args.scrollbackRows, 60), 200),
+          );
+          text = lines.slice(-tailLines).join("\n");
+        } else if (mode === "cursor") {
+          const lines = text.split("\n");
+          if (lines.at(-1) === "") lines.pop();
+          const cursorY = observation.cursorY ?? 0;
+          const contextLines = 10;
+          const startLine = Math.max(0, cursorY - contextLines);
+          const endLine = Math.min(lines.length, cursorY + contextLines + 1);
+          text = lines.slice(startLine, endLine).join("\n");
+        } else if (mode === "new_only") {
+          if (previousText && text.startsWith(previousText)) {
+            text = text.slice(previousText.length);
+          }
+        }
+        context.nativeTerminal.markObserved(
+          id,
+          observation.text,
+          observation.session.revision,
+        );
         return JSON.stringify(
           {
             id,
             host: "wezterm",
             revision: observation.session.revision,
+            currentRevision: observation.session.revision,
             afterRevision: observation.afterRevision,
             changed: observation.changed,
             reason: observation.reason,
-            // Terminal output enters model context and durable tool history.
-            // Cap it here even when the native frontend has much more
-            // scrollback; the model can request a smaller targeted read.
-            text: truncateProcessOutput(observation.text, 16_384),
+            cursorX: observation.cursorX,
+            cursorY: observation.cursorY,
+            rows: observation.rows,
+            cols: observation.cols,
+            mode,
+            text: truncateProcessOutput(text, 16_384),
           },
           null,
           2,
         );
       }
       const registry = requireInteractivePTY(context);
-      const observation = await registry.observe(id, {
-        afterRevision: numberOr(args.afterRevision, 0),
+      const ptyObservation = await registry.observe(id, {
+        afterRevision,
         timeoutMs: numberOr(args.timeoutMs, 30_000),
         signal: context.signal,
       });
-      if (observation.session.screen)
+      if (ptyObservation.session.screen)
         context.onPTYUpdate?.(
-          observation.session as import("@natalia/pty").TerminalSessionInfo,
+          ptyObservation.session as import("@natalia/pty").TerminalSessionInfo,
         );
+      const ptySession = registry.session(id);
+      let ptyText = ptySession.transcript || "";
+      const previousPtyText = ptySession.lastObservedText;
+      if (mode === "tail") {
+        const lines = ptyText.split("\n");
+        if (lines.at(-1) === "") lines.pop();
+        const tailLines = Math.max(
+          1,
+          Math.min(numberOr(args.scrollbackRows, 60), 200),
+        );
+        ptyText = lines.slice(-tailLines).join("\n");
+      } else if (mode === "cursor") {
+        const lines = ptyText.split("\n");
+        if (lines.at(-1) === "") lines.pop();
+        const cursorY = ptyObservation.session.screen?.cursor?.row ?? 0;
+        const contextLines = 10;
+        const startLine = Math.max(0, cursorY - contextLines);
+        const endLine = Math.min(lines.length, cursorY + contextLines + 1);
+        ptyText = lines.slice(startLine, endLine).join("\n");
+      } else if (mode === "new_only") {
+        if (previousPtyText && ptyText.startsWith(previousPtyText)) {
+          ptyText = ptyText.slice(previousPtyText.length);
+        }
+      }
+      registry.markObserved(
+        id,
+        ptySession.transcript,
+        ptyObservation.session.revision,
+      );
       const scrollbackRows = Math.max(
         0,
         Math.min(numberOr(args.scrollbackRows, 0), 200),
       );
       return JSON.stringify(
         {
-          ...observation,
-          session: observation.session.screen
+          ...ptyObservation,
+          session: ptyObservation.session.screen
             ? modelTerminalInfo(
-                observation.session as import("@natalia/pty").TerminalSessionInfo,
+                ptyObservation.session as import("@natalia/pty").TerminalSessionInfo,
               )
-            : observation.session,
+            : ptyObservation.session,
+          text: truncateProcessOutput(ptyText, 16_384),
+          mode,
+          currentRevision: ptyObservation.session.revision,
           ...(scrollbackRows
             ? {
                 scrollback: modelTerminalScrollback(
-                  registry.scrollback(observation.session.id, {
+                  registry.scrollback(ptyObservation.session.id, {
                     maxRows: scrollbackRows,
                   }),
                 ),
@@ -1308,7 +1422,7 @@ function interactiveWriteTool(): RuntimeTool {
   return {
     name: "interactive_terminal_write",
     description:
-      "Write literal input to the same native Terminal pane used by the human.",
+      "Write literal input to the native terminal pane without appending a newline. Prefer interactive_terminal_input with submit=false for new code.",
     requiresApproval: true,
     parameters: {
       type: "object",
@@ -1339,7 +1453,7 @@ function interactiveSendLineTool(): RuntimeTool {
   return {
     name: "interactive_terminal_send_line",
     description:
-      "Atomically write text and submit it with Enter to the same native Terminal pane used by the human.",
+      "Atomically write text and submit it with Enter to the native terminal pane. Prefer interactive_terminal_input with default submit=true for new code.",
     requiresApproval: true,
     parameters: {
       type: "object",
@@ -1371,7 +1485,7 @@ function interactiveKeyTool(): RuntimeTool {
   return {
     name: "interactive_terminal_keys",
     description:
-      "Send normalized terminal key sequences to the same native Terminal pane used by the human.",
+      "Send normalized key sequences to the native terminal pane. Prefer interactive_terminal_input with the keys array for new code.",
     requiresApproval: true,
     parameters: {
       type: "object",
@@ -1409,6 +1523,72 @@ function interactiveKeyTool(): RuntimeTool {
   };
 }
 
+function interactiveInputTool(): RuntimeTool {
+  return {
+    name: "interactive_terminal_input",
+    description:
+      "Unified input for the native terminal pane. Prefer this over interactive_terminal_write, interactive_terminal_send_line, and interactive_terminal_keys. Examples: vim paste -> text='hello', paste=true; vim normal mode -> keys=[{key:'Escape'}]; shell command -> text='ls -la' (submit=true by default); quit interactive app -> keys=[{key:'q'}]. Use submit=false to prevent automatic Enter. Use paste=true for large text blocks in editors like vim (wraps text in bracketed paste escape sequences).",
+    requiresApproval: true,
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        text: { type: "string" },
+        keys: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              key: { type: "string" },
+              text: { type: "string" },
+              modifiers: { type: "array", items: { type: "string" } },
+              repeat: { type: "number" },
+            },
+            additionalProperties: false,
+          },
+        },
+        submit: { type: "boolean" },
+        paste: { type: "boolean" },
+        idempotencyKey: { type: "string" },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+    async execute(input, context) {
+      const args = requireObject(input);
+      const id = requireString(args.id, "id");
+      if (args.text === undefined && !Array.isArray(args.keys))
+        throw new Error("either text or keys is required");
+      let bytes = "";
+      let pasted = false;
+      if (args.text !== undefined) {
+        const text = requireString(args.text, "text");
+        if (args.paste && text) {
+          bytes = `\x1b[?2004h${text}\x1b[?2004l`;
+          pasted = true;
+        } else {
+          bytes = text;
+        }
+      }
+      if (Array.isArray(args.keys))
+        bytes += args.keys
+          .map((item) => encodeTerminalKey(requireObject(item)))
+          .join("");
+      if (!pasted && args.text !== undefined && args.submit !== false)
+        bytes += "\r";
+      if (!bytes) throw new Error("input must not be empty");
+      const result = await requireNativeTerminal(context).write(id, bytes, {
+        idempotencyKey: optionalString(args.idempotencyKey),
+      });
+      return JSON.stringify({
+        id,
+        ...result,
+        submitted: args.submit !== false && !pasted,
+      });
+    },
+  };
+}
+
 type TerminalKeyInput = {
   key?: unknown;
   text?: unknown;
@@ -1428,6 +1608,8 @@ export function encodeTerminalKey(input: TerminalKeyInput) {
   }
   const rawKey = requireString(input.key, "key");
   const key = normalizeTerminalKey(rawKey);
+  if (key.length === 1 && key >= "A" && key <= "Z" && !modifiers.has("shift"))
+    modifiers.add("shift");
   const bytes = encodeTerminalKeyOnce(key, modifiers);
   return bytes.repeat(repeat);
 }
@@ -1560,6 +1742,44 @@ function applyTerminalModifier(bytes: string, modifier: number) {
   if (bytes.startsWith("\x1bO")) return `\x1b[1;${modifier}${bytes.at(-1)}`;
   if (bytes.endsWith("~")) return `${bytes.slice(0, -1)};${modifier}~`;
   return `${bytes.slice(0, -1)}1;${modifier}${bytes.at(-1)}`;
+}
+
+function interactiveSnapshotTool(): RuntimeTool {
+  return {
+    name: "interactive_terminal_snapshot",
+    description:
+      "Return the current terminal screen text with cursor position and revision. Use this to check where you are without specifying afterRevision.",
+    requiresApproval: false,
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+    async execute(input, context) {
+      const args = requireObject(input);
+      const id = requireString(args.id, "id");
+      if (context.nativeTerminal) {
+        const snapshot = await context.nativeTerminal.snapshot(id);
+        return JSON.stringify({
+          id,
+          host: "wezterm",
+          ...snapshot,
+        });
+      }
+      const registry = requireInteractivePTY(context);
+      const info = registry.get(id);
+      const { lines: _lines, ...screen } = info.screen;
+      const { id: _id, ...rest } = info;
+      return JSON.stringify({
+        id,
+        ...rest,
+        screen,
+      });
+    },
+  };
 }
 
 function interactiveResizeTool(): RuntimeTool {

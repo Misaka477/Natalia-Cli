@@ -37,15 +37,25 @@ await Bun.sleep(200);
 if (submissions[0] !== "hello")
   throw new Error(`Submit failed: got ${JSON.stringify(submissions[0])}`);
 
+// P0 regression: `n` in `agent` must not be consumed by a global binding or
+// leader sequence before the textarea receives it.
+await keys.typeText("agent");
+keys.pressEnter();
+await Bun.sleep(200);
+if (submissions.at(-1) !== "agent")
+  throw new Error(
+    `Composer text integrity failed: expected "agent", got ${JSON.stringify(submissions.at(-1))}`,
+  );
+
 await keys.typeText("a");
 keys.pressKey("j", { ctrl: true });
 await keys.typeText("b");
 keys.pressEnter();
 await Bun.sleep(200);
 
-if (submissions[1] !== "a\nb")
+if (submissions.at(-1) !== "a\nb")
   throw new Error(
-    `Ctrl+J newline failed: got ${JSON.stringify(submissions[1])}`,
+    `Ctrl+J newline failed: got ${JSON.stringify(submissions.at(-1))}`,
   );
 
 keys.pressArrow("up");
@@ -53,9 +63,9 @@ await Bun.sleep(40);
 keys.pressEnter();
 await Bun.sleep(200);
 
-if (submissions[2] !== "a\nb")
+if (submissions.at(-1) !== "a\nb")
   throw new Error(
-    `Empty composer history failed: got ${JSON.stringify(submissions[2])}`,
+    `Empty composer history failed: got ${JSON.stringify(submissions.at(-1))}`,
   );
 
 await keys.typeText("stashed prompt");
@@ -68,9 +78,9 @@ await Bun.sleep(80);
 keys.pressEnter();
 await Bun.sleep(200);
 
-if (submissions[3] !== "stashed prompt")
+if (submissions.at(-1) !== "stashed prompt")
   throw new Error(
-    `Prompt stash restore failed: got ${JSON.stringify(submissions[3])}`,
+    `Prompt stash restore failed: got ${JSON.stringify(submissions.at(-1))}`,
   );
 
 keys.pressKey("a", { ctrl: true, shift: true });
@@ -99,9 +109,9 @@ await Bun.sleep(80);
 keys.pressEnter();
 await Bun.sleep(200);
 
-if (submissions[5] !== "/models")
+if (submissions.at(-1) !== "/models")
   throw new Error(
-    `Slash autocomplete submit failed: got ${JSON.stringify(submissions[5])}`,
+    `Slash autocomplete submit failed: got ${JSON.stringify(submissions.at(-1))}`,
   );
 
 await keys.pasteBracketedText("review @ment");

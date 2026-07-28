@@ -703,6 +703,388 @@ test("encodes normalized native terminal key sequences", () => {
   expect(() =>
     encodeTerminalKey({ key: "Enter", modifiers: ["ctrl"] }),
   ).toThrow("not encodable");
+  expect(encodeTerminalKey({ key: "V" })).toBe("V");
+  expect(encodeTerminalKey({ key: "A", modifiers: ["ctrl"] })).toBe("\x01");
+  expect(encodeTerminalKey({ text: "vim" })).toBe("vim");
+  expect(encodeTerminalKey({ text: "你好🚀" })).toBe("你好🚀");
+});
+
+test("unified interactive terminal input tool sends text and key sequences", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-input-"));
+  const writes: string[] = [];
+  const nativeTerminal = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 73, window_id: 3, tab_id: 5 };
+    },
+    async list() {
+      return [{ pane_id: 73, window_id: 3, tab_id: 5, rows: 24, cols: 80 }];
+    },
+    async read() {
+      return "native terminal output";
+    },
+    async write(_paneID, data) {
+      writes.push(data);
+    },
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  });
+  const context = { workspaceRoot: root, nativeTerminal };
+  const tools = createToolRegistry();
+  await tools
+    .get("interactive_terminal_start")!
+    .execute({ command: "cat", id: "tty_input" }, context);
+  await tools
+    .get("interactive_terminal_input")!
+    .execute({ id: "tty_input", text: "vim" }, context);
+  expect(writes.at(-1)).toBe("vim\r");
+  await tools
+    .get("interactive_terminal_input")!
+    .execute({ id: "tty_input", text: "vim", submit: false }, context);
+  expect(writes.at(-1)).toBe("vim");
+  await tools.get("interactive_terminal_input")!.execute(
+    {
+      id: "tty_input",
+      keys: [{ key: "ArrowUp" }, { key: "Enter" }],
+    },
+    context,
+  );
+  expect(writes.at(-1)).toBe("\x1b[A\r");
+  await tools.get("interactive_terminal_input")!.execute(
+    {
+      id: "tty_input",
+      text: "vim",
+      keys: [{ key: "Escape" }],
+      submit: false,
+    },
+    context,
+  );
+  expect(writes.at(-1)).toBe("vim\x1b");
+  await tools
+    .get("interactive_terminal_input")!
+    .execute({ id: "tty_input", text: "Vim" }, context);
+  expect(writes.at(-1)).toBe("Vim\r");
+  expect(tools.has("interactive_input")).toBe(true);
+  expect(tools.has("interactive_terminal_input")).toBe(true);
+  await tools
+    .get("interactive_terminal_stop")!
+    .execute({ id: "tty_input" }, context);
+});
+
+test("interactive terminal snapshot returns cursor and revision without afterRevision", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-snapshot-"));
+  const nativeTerminal = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 73, window_id: 3, tab_id: 5 };
+    },
+    async list() {
+      return [{ pane_id: 73, window_id: 3, tab_id: 5, rows: 24, cols: 80 }];
+    },
+    async read() {
+      return "snapshot output";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  });
+  const context = { workspaceRoot: root, nativeTerminal };
+  const tools = createToolRegistry();
+  await tools
+    .get("interactive_terminal_start")!
+    .execute({ command: "cat", id: "tty_snapshot" }, context);
+  const snap = JSON.parse(
+    await tools
+      .get("interactive_terminal_snapshot")!
+      .execute({ id: "tty_snapshot" }, context),
+  );
+  expect(snap).toMatchObject({
+    id: "tty_snapshot",
+    host: "wezterm",
+    text: "snapshot output",
+    cursorX: 0,
+    cursorY: 0,
+    rows: 24,
+    cols: 80,
+    status: "running",
+    inputOwner: "model",
+  });
+  expect(typeof snap.revision).toBe("number");
+  expect(tools.has("interactive_snapshot")).toBe(true);
+  await tools
+    .get("interactive_terminal_stop")!
+    .execute({ id: "tty_snapshot" }, context);
+});
+
+test("terminal observe latest mode returns current state without waiting", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-observe-"));
+  const nativeTerminal = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 73, window_id: 3, tab_id: 5 };
+    },
+    async list() {
+      return [{ pane_id: 73, window_id: 3, tab_id: 5, rows: 24, cols: 80 }];
+    },
+    async read() {
+      return "latest output";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  });
+  const context = { workspaceRoot: root, nativeTerminal };
+  const tools = createToolRegistry();
+  await tools
+    .get("interactive_terminal_start")!
+    .execute({ command: "cat", id: "tty_observe" }, context);
+  const obs = JSON.parse(
+    await tools
+      .get("terminal_observe")!
+      .execute(
+        { id: "tty_observe", afterRevision: 0, mode: "latest" },
+        context,
+      ),
+  );
+  expect(obs).toMatchObject({
+    id: "tty_observe",
+    mode: "latest",
+    text: "latest output",
+    cursorX: 0,
+    cursorY: 0,
+    rows: 24,
+    cols: 80,
+    currentRevision: expect.any(Number),
+  });
+  await tools
+    .get("interactive_terminal_stop")!
+    .execute({ id: "tty_observe" }, context);
+});
+
+test("terminal observe tail mode returns only recent lines", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-observe-"));
+  const nativeTerminal = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 73, window_id: 3, tab_id: 5 };
+    },
+    async list() {
+      return [{ pane_id: 73, window_id: 3, tab_id: 5, rows: 24, cols: 80 }];
+    },
+    async read() {
+      return "line1\nline2\nline3\nline4\nline5\n";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  });
+  const context = { workspaceRoot: root, nativeTerminal };
+  const tools = createToolRegistry();
+  await tools
+    .get("interactive_terminal_start")!
+    .execute({ command: "cat", id: "tty_tail" }, context);
+  const obs = JSON.parse(
+    await tools
+      .get("terminal_observe")!
+      .execute(
+        { id: "tty_tail", afterRevision: 0, mode: "tail", scrollbackRows: 3 },
+        context,
+      ),
+  );
+  expect(obs.text).toBe("line3\nline4\nline5");
+  await tools
+    .get("interactive_terminal_stop")!
+    .execute({ id: "tty_tail" }, context);
+});
+
+test("terminal observe cursor mode returns lines around cursor", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-observe-"));
+  const lines =
+    Array.from({ length: 30 }, (_, i) => `line${i}`).join("\n") + "\n";
+  const nativeTerminal = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 73, window_id: 3, tab_id: 5 };
+    },
+    async list() {
+      return [
+        {
+          pane_id: 73,
+          window_id: 3,
+          tab_id: 5,
+          rows: 24,
+          cols: 80,
+          cursor_x: 0,
+          cursor_y: 15,
+        },
+      ];
+    },
+    async read() {
+      return lines;
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  });
+  const context = { workspaceRoot: root, nativeTerminal };
+  const tools = createToolRegistry();
+  await tools
+    .get("interactive_terminal_start")!
+    .execute({ command: "cat", id: "tty_cursor" }, context);
+  const obs = JSON.parse(
+    await tools
+      .get("terminal_observe")!
+      .execute({ id: "tty_cursor", afterRevision: 0, mode: "cursor" }, context),
+  );
+  expect(obs.cursorY).toBe(15);
+  expect(obs.text).toContain(
+    Array.from({ length: 11 }, (_, i) => `line${i + 10}`).join("\n") + "\n",
+  );
+  expect(obs.text).not.toContain("line0");
+  expect(obs.text).not.toContain("line29");
+  await tools
+    .get("interactive_terminal_stop")!
+    .execute({ id: "tty_cursor" }, context);
+});
+
+test("terminal observe new_only mode returns only new text since last observation", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-observe-"));
+  let readCall = 0;
+  const nativeTerminal = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 73, window_id: 3, tab_id: 5 };
+    },
+    async list() {
+      return [{ pane_id: 73, window_id: 3, tab_id: 5, rows: 24, cols: 80 }];
+    },
+    async read() {
+      readCall += 1;
+      if (readCall === 1) return "initial text\n";
+      return "initial text\nnew line 1\nnew line 2\n";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  });
+  const context = { workspaceRoot: root, nativeTerminal };
+  const tools = createToolRegistry();
+  await tools
+    .get("interactive_terminal_start")!
+    .execute({ command: "cat", id: "tty_new_only" }, context);
+  const first = JSON.parse(
+    await tools
+      .get("terminal_observe")!
+      .execute(
+        { id: "tty_new_only", afterRevision: 0, mode: "new_only" },
+        context,
+      ),
+  );
+  expect(first.text).toBe("initial text\n");
+  const second = JSON.parse(
+    await tools.get("terminal_observe")!.execute(
+      {
+        id: "tty_new_only",
+        afterRevision: first.currentRevision,
+        mode: "new_only",
+      },
+      context,
+    ),
+  );
+  expect(second.text).toBe("new line 1\nnew line 2\n");
+  await tools
+    .get("interactive_terminal_stop")!
+    .execute({ id: "tty_new_only" }, context);
+});
+
+test("interactive terminal input paste mode wraps text in bracketed paste escape sequences", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-paste-"));
+  const writes: string[] = [];
+  const nativeTerminal = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 73, window_id: 3, tab_id: 5 };
+    },
+    async list() {
+      return [{ pane_id: 73, window_id: 3, tab_id: 5, rows: 24, cols: 80 }];
+    },
+    async read() {
+      return "native terminal output";
+    },
+    async write(_paneID, data) {
+      writes.push(data);
+    },
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  });
+  const context = { workspaceRoot: root, nativeTerminal };
+  const tools = createToolRegistry();
+  await tools
+    .get("interactive_terminal_start")!
+    .execute({ command: "cat", id: "tty_paste" }, context);
+  await tools
+    .get("interactive_terminal_input")!
+    .execute({ id: "tty_paste", text: "hello world", paste: true }, context);
+  expect(writes.at(-1)).toBe("\x1b[?2004hhello world\x1b[?2004l");
+  const result = JSON.parse(
+    await tools
+      .get("interactive_terminal_input")!
+      .execute({ id: "tty_paste", text: "vim", paste: true }, context),
+  );
+  expect(result.submitted).toBe(false);
+  await tools
+    .get("interactive_terminal_stop")!
+    .execute({ id: "tty_paste" }, context);
+});
+
+test("terminal observe afterRevision is optional and defaults to current state", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-observe-"));
+  const nativeTerminal = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 73, window_id: 3, tab_id: 5 };
+    },
+    async list() {
+      return [{ pane_id: 73, window_id: 3, tab_id: 5, rows: 24, cols: 80 }];
+    },
+    async read() {
+      return "no afterRevision output";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  });
+  const context = { workspaceRoot: root, nativeTerminal };
+  const tools = createToolRegistry();
+  await tools
+    .get("interactive_terminal_start")!
+    .execute({ command: "cat", id: "tty_no_ar" }, context);
+  const obs = JSON.parse(
+    await tools
+      .get("terminal_observe")!
+      .execute({ id: "tty_no_ar", mode: "latest" }, context),
+  );
+  expect(obs.text).toBe("no afterRevision output");
+  expect(obs.currentRevision).toBe(obs.revision);
+  await tools
+    .get("interactive_terminal_stop")!
+    .execute({ id: "tty_no_ar" }, context);
 });
 
 test("native terminal scrollback pages preserve CJK line boundaries and cursors", () => {

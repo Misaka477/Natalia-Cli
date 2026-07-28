@@ -528,10 +528,14 @@ export type NativeTerminalSession = {
   startedAt: string;
   revision: number;
   lastText?: string;
+  lastObservedText?: string;
+  lastObservedRevision?: number;
   inputOwner: "model" | "human";
   geometryOwner: "human";
   secureInput: boolean;
   status: "running" | "exited";
+  cursor_x?: number;
+  cursor_y?: number;
   rows?: number;
   cols?: number;
 };
@@ -662,6 +666,8 @@ export class NativeTerminalRegistry {
       }
       session.rows = pane.rows;
       session.cols = pane.cols;
+      session.cursor_x = pane.cursor_x;
+      session.cursor_y = pane.cursor_y;
     }
     return this.list();
   }
@@ -674,6 +680,23 @@ export class NativeTerminalRegistry {
     await this.reconcile();
     this.assertReadable(session);
     return await this.readSession(session, options);
+  }
+
+  async snapshot(id: string) {
+    const session = this.get(id);
+    await this.reconcile();
+    this.assertReadable(session);
+    const { text } = await this.readSession(session);
+    return {
+      text,
+      cursorX: session.cursor_x ?? 0,
+      cursorY: session.cursor_y ?? 0,
+      rows: session.rows ?? 0,
+      cols: session.cols ?? 0,
+      revision: session.revision,
+      status: session.status,
+      inputOwner: session.inputOwner,
+    };
   }
 
   async write(
@@ -865,20 +888,28 @@ export class NativeTerminalRegistry {
         return {
           session,
           text: "",
+          cursorX: session.cursor_x ?? 0,
+          cursorY: session.cursor_y ?? 0,
+          rows: session.rows ?? 0,
+          cols: session.cols ?? 0,
           afterRevision,
           changed: session.revision > afterRevision,
           reason: "exited" as const,
+          exited: true,
         };
-      // reconcile above already established pane liveness. Calling read()
-      // here would run a second `wezterm cli list` for every observe poll.
       const revisionBeforeRead = session.revision;
-      const text = await this.readSession(session, {
-        maxLines: options.maxLines,
-      });
+      const { text, cursorX, cursorY, rows, cols } = await this.readSession(
+        session,
+        { maxLines: options.maxLines },
+      );
       if (session.revision > afterRevision)
         return {
           session,
           text,
+          cursorX,
+          cursorY,
+          rows,
+          cols,
           afterRevision,
           changed: true,
           reason:
@@ -890,13 +921,14 @@ export class NativeTerminalRegistry {
         return {
           session,
           text,
+          cursorX,
+          cursorY,
+          rows,
+          cols,
           afterRevision,
           changed: false,
           reason: "timeout" as const,
         };
-      // Internal writes/ownership/exit changes wake immediately. Native pane
-      // output itself has no subscription API, so bounded CLI polling remains
-      // only as a fallback for external process activity.
       await this.waitForRevision(
         session.id,
         Math.max(10, Math.min(500, deadline - performance.now())),
@@ -948,7 +980,17 @@ export class NativeTerminalRegistry {
     this.hub = undefined;
   }
 
-  private get(id: string) {
+  session(id: string): NativeTerminalSession {
+    return this.get(id);
+  }
+
+  markObserved(id: string, text: string, revision: number) {
+    const session = this.get(id);
+    session.lastObservedText = text;
+    session.lastObservedRevision = revision;
+  }
+
+  private get(id: string): NativeTerminalSession {
     const session = this.sessions.get(id);
     if (!session) throw new Error(`native terminal session not found: ${id}`);
     return session;
@@ -964,7 +1006,13 @@ export class NativeTerminalRegistry {
       session.revision += 1;
       this.notifyRevision(session.id);
     }
-    return text;
+    return {
+      text,
+      cursorX: session.cursor_x ?? 0,
+      cursorY: session.cursor_y ?? 0,
+      rows: session.rows ?? 0,
+      cols: session.cols ?? 0,
+    };
   }
 
   private assertRunning(session: NativeTerminalSession) {

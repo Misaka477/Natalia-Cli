@@ -228,6 +228,11 @@ export type TerminalObservation = {
   reason: "changed" | "timeout" | "exited";
   screenUpdate?: TerminalScreenUpdate;
   screenDelivery?: TerminalScreenDelivery;
+  cursorX?: number;
+  cursorY?: number;
+  rows?: number;
+  cols?: number;
+  exited?: boolean;
 };
 /** @deprecated Use TerminalSessionInfo. */
 export type InteractivePTYInfo = TerminalSessionInfo;
@@ -328,6 +333,8 @@ export class TerminalRegistry {
       sensitiveRedactions: [],
       pendingTranscript: [],
       persistQueue: Promise.resolve(),
+      lastObservedText: "",
+      lastObservedRevision: 0,
     };
     runtime.screenHistory.set(0, runtime.screenModel.snapshot());
     this.sessions.set(id, runtime);
@@ -390,6 +397,16 @@ export class TerminalRegistry {
   get(id: string) {
     const session = this.mustGet(id);
     return publicInteractivePTY(session);
+  }
+
+  session(id: string): InteractivePTYRuntime {
+    return this.mustGet(id);
+  }
+
+  markObserved(id: string, text: string, revision: number) {
+    const session = this.mustGet(id);
+    session.lastObservedText = text;
+    session.lastObservedRevision = revision;
   }
 
   read(id: string, input: { offset?: number; maxChars?: number } = {}) {
@@ -459,6 +476,11 @@ export class TerminalRegistry {
         afterRevision,
         changed: false,
         reason: "exited",
+        cursorX: current.screen?.cursor?.col ?? 0,
+        cursorY: current.screen?.cursor?.row ?? 0,
+        rows: current.screen?.rows ?? session.rows,
+        cols: current.screen?.cols ?? session.cols,
+        exited: true,
       };
 
     const timeoutMs = Math.max(0, Math.min(input.timeoutMs ?? 30_000, 30_000));
@@ -1400,6 +1422,8 @@ type InteractivePTYRuntime = Omit<InteractivePTYInfo, "screen" | "viewers"> & {
   releaseTimer?: ReturnType<typeof setTimeout>;
   ready: Promise<void>;
   markReady(): void;
+  lastObservedText: string;
+  lastObservedRevision: number;
 };
 
 function appendInteractiveOutput(session: InteractivePTYRuntime, text: string) {

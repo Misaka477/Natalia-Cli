@@ -563,7 +563,13 @@ test("native registry keeps model I/O on the host-rendered pane", async () => {
   registry.endSecureInput(session.id);
   registry.releaseHumanControl(session.id);
   await registry.write(session.id, "model again");
-  await expect(registry.read(session.id)).resolves.toBe("pane 19 output");
+  await expect(registry.read(session.id)).resolves.toMatchObject({
+    text: "pane 19 output",
+    cursorX: 0,
+    cursorY: 0,
+    rows: 24,
+    cols: 80,
+  });
   await expect(registry.observe(session.id, 0)).resolves.toMatchObject({
     changed: true,
   });
@@ -576,6 +582,49 @@ test("native registry keeps model I/O on the host-rendered pane", async () => {
   expect(registry.list()).toMatchObject([{ id: "native_1", status: "exited" }]);
   expect(audit).toContain("secure_input");
   expect(audit.filter((action) => action === "detach").length).toBe(2);
+});
+
+test("native registry observe returns typed exit info with cursor", async () => {
+  const registry = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 73, window_id: 3, tab_id: 5 };
+    },
+    async list() {
+      return [
+        {
+          pane_id: 73,
+          window_id: 3,
+          tab_id: 5,
+          rows: 24,
+          cols: 80,
+          cursor_x: 12,
+          cursor_y: 8,
+        },
+      ];
+    },
+    async read() {
+      return "exit output";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  });
+  const session = await registry.start({ command: "cat", cwd: "/repo" });
+  await registry.stop(session.id);
+  const obs = await registry.observe(session.id, 0);
+  expect(obs).toMatchObject({
+    reason: "exited",
+    exited: true,
+    cursorX: 12,
+    cursorY: 8,
+    rows: 24,
+    cols: 80,
+    changed: true,
+  });
+  expect(obs.text).toBe("");
 });
 
 test("native registry dispose stops only its running panes and host", async () => {
