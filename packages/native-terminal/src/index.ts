@@ -808,7 +808,7 @@ export class NativeTerminalRegistry {
     const session = this.get(id);
     await this.reconcile();
     this.assertReadable(session);
-    const { text } = await this.readSession(session);
+    const { text, highlightRanges } = await this.readSession(session);
     return {
       text,
       cursorX: session.cursor_x ?? 0,
@@ -818,6 +818,7 @@ export class NativeTerminalRegistry {
       revision: session.revision,
       status: session.status,
       inputOwner: session.inputOwner,
+      highlightRanges,
     };
   }
 
@@ -1025,16 +1026,15 @@ export class NativeTerminalRegistry {
           cursorY: session.cursor_y ?? 0,
           rows: session.rows ?? 0,
           cols: session.cols ?? 0,
+          highlightRanges: [],
           afterRevision,
           changed: session.revision > afterRevision,
           reason: "exited" as const,
           exited: true,
         };
       const revisionBeforeRead = session.revision;
-      const { text, cursorX, cursorY, rows, cols } = await this.readSession(
-        session,
-        { maxLines: options.maxLines },
-      );
+      const { text, cursorX, cursorY, rows, cols, highlightRanges } =
+        await this.readSession(session, { maxLines: options.maxLines });
       if (session.revision > afterRevision)
         return {
           session,
@@ -1043,6 +1043,7 @@ export class NativeTerminalRegistry {
           cursorY,
           rows,
           cols,
+          highlightRanges,
           afterRevision,
           changed: true,
           reason:
@@ -1058,6 +1059,7 @@ export class NativeTerminalRegistry {
           cursorY,
           rows,
           cols,
+          highlightRanges,
           afterRevision,
           changed: false,
           reason: "timeout" as const,
@@ -1148,6 +1150,12 @@ export class NativeTerminalRegistry {
       cursorY: session.cursor_y ?? 0,
       rows: session.rows ?? 0,
       cols: session.cols ?? 0,
+      highlightRanges: [] as Array<{
+        startRow: number;
+        startCol: number;
+        endRow: number;
+        endCol: number;
+      }>,
     };
   }
 

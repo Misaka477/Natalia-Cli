@@ -212,3 +212,22 @@ test("xterm emulator caps retained scrollback", async () => {
   expect(terminal.scrollback(0, 1).totalLines).toBeLessThanOrEqual(502);
   terminal.dispose();
 });
+
+test("snapshot and scrollback expose highlight ranges from inverse cells", async () => {
+  const terminal = new XtermTerminalEmulator(3, 12);
+  await terminal.write("normal-line\r\n");
+  await terminal.write("\x1b[7mhighlighted\x1b[0m\r\n");
+  await terminal.write("after-line\r\n");
+
+  const screen = terminal.snapshot();
+  expect(screen.text).toBe("highlighted\nafter-line");
+  expect(screen.highlightRanges).toEqual([
+    { startRow: 0, startCol: 0, endRow: 0, endCol: 10 },
+  ]);
+
+  const page = terminal.scrollback(0, 3);
+  expect(page.highlightRanges).toEqual([
+    { startRow: 0, startCol: 0, endRow: 0, endCol: 10 },
+  ]);
+  terminal.dispose();
+});

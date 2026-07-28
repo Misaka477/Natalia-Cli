@@ -825,6 +825,12 @@ export type TerminalScreenSnapshot = {
   lines: TerminalCell[][];
   text: string;
   modes?: { bracketedPaste: boolean };
+  highlightRanges?: Array<{
+    startRow: number;
+    startCol: number;
+    endRow: number;
+    endCol: number;
+  }>;
 };
 export type TerminalScreenPatch = {
   baseRevision: number;
@@ -858,6 +864,12 @@ export type TerminalScrollbackPage = {
   text: string;
   cursorRow: number;
   cursorCol: number;
+  highlightRanges?: Array<{
+    startRow: number;
+    startCol: number;
+    endRow: number;
+    endCol: number;
+  }>;
 };
 export type TerminalViewer = {
   id: string;

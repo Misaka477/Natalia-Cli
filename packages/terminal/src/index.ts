@@ -106,6 +106,7 @@ export class XtermTerminalEmulator {
         .join("\n")
         .replace(/\n+$/u, ""),
       modes: { bracketedPaste: this.terminal.modes.bracketedPasteMode },
+      highlightRanges: extractHighlightRanges(buffer, this.terminal.rows, this.terminal.cols),
     };
   }
 
@@ -137,12 +138,64 @@ export class XtermTerminalEmulator {
       text: screenText(lines),
       cursorRow,
       cursorCol,
+      highlightRanges: extractHighlightRanges(buffer, lines.length, this.terminal.cols),
     };
   }
 
   dispose() {
     this.terminal.dispose();
   }
+}
+
+function extractHighlightRanges(
+  buffer: import("@xterm/headless").IBuffer,
+  rows: number,
+  cols: number,
+): Array<{ startRow: number; startCol: number; endRow: number; endCol: number }> {
+  const viewportY = buffer.viewportY;
+  const rowRanges: Array<{ row: number; startCol: number; endCol: number }> = [];
+  for (let row = 0; row < rows; row++) {
+    const line = buffer.getLine(viewportY + row);
+    let startCol = -1;
+    let endCol = -1;
+    for (let col = 0; col < cols; col++) {
+      const cell = line?.getCell(col);
+      const inverse = cell?.isInverse() ?? false;
+      if (inverse) {
+        if (startCol < 0) startCol = col;
+        endCol = col;
+      } else if (startCol >= 0) {
+        rowRanges.push({ row, startCol, endCol });
+        startCol = -1;
+        endCol = -1;
+      }
+    }
+    if (startCol >= 0) rowRanges.push({ row, startCol, endCol });
+  }
+  const ranges: Array<{ startRow: number; startCol: number; endRow: number; endCol: number }> = [];
+  let current:
+    | { startRow: number; startCol: number; endRow: number; endCol: number }
+    | undefined;
+  for (const range of rowRanges) {
+    if (
+      current &&
+      current.endRow + 1 === range.row &&
+      current.startCol === range.startCol &&
+      current.endCol === range.endCol
+    ) {
+      current.endRow = range.row;
+      continue;
+    }
+    if (current) ranges.push(current);
+    current = {
+      startRow: range.row,
+      startCol: range.startCol,
+      endRow: range.row,
+      endCol: range.endCol,
+    };
+  }
+  if (current) ranges.push(current);
+  return ranges;
 }
 
 export function renderTerminalSnapshotANSI(
