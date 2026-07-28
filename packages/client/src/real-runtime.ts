@@ -87,7 +87,7 @@ import {
   type SkillRegistry,
 } from "@natalia/skills";
 import { SubagentRegistry } from "@natalia/subagent";
-import { TerminalRegistry } from "@natalia/pty";
+import { TerminalRegistry } from "@natalia/terminal";
 import {
   createWezTermHost,
   NativeTerminalRegistry,

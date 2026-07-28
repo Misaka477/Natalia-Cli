@@ -6,7 +6,7 @@
   "references": [
     { "path": "../contracts" },
     { "path": "../native-terminal" },
-    { "path": "../pty" },
+    { "path": "../terminal" },
     { "path": "../sandbox" },
     { "path": "../subagent" }
   ]

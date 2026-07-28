@@ -2,7 +2,7 @@ import { chmod, mkdtemp, readFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { TerminalRegistry } from "../packages/pty/src";
+import { TerminalRegistry } from "../packages/terminal/src";
 
 const results: Array<Record<string, unknown>> = [];
 const tmux = Bun.which("tmux");

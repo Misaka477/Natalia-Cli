@@ -14,7 +14,7 @@ import {
   terminalScreenPatchBytes,
   terminalScreenSnapshotBytes,
   XtermTerminalEmulator,
-} from "@natalia/terminal";
+} from "./index";
 import { createHash } from "node:crypto";
 import {
   appendFile,

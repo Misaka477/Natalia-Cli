@@ -1,7 +1,7 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { InteractivePTYRegistry } from "../packages/pty/src";
+import { InteractivePTYRegistry } from "../packages/terminal/src";
 
 const uv = Bun.which("uv");
 if (!uv) throw new Error("uv is required for configured Kimi smoke");

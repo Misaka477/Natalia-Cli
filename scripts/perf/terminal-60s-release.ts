@@ -1,6 +1,6 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { InteractivePTYRegistry } from "../../packages/pty/src";
+import { InteractivePTYRegistry } from "../../packages/terminal/src";
 
 const root = await mkdtemp("/tmp/natalia-terminal-release-");
 const before = process.memoryUsage();

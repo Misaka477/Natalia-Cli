@@ -1,7 +1,7 @@
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { writeHeapSnapshot } from "node:v8";
-import { InteractivePTYRegistry } from "../../packages/pty/src";
+import { InteractivePTYRegistry } from "../../packages/terminal/src";
 
 const durationMs = Number(process.argv[2] ?? 60_000);
 const root = await mkdtemp("/tmp/natalia-terminal-heap-");

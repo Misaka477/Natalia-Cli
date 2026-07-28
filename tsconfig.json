@@ -12,7 +12,7 @@
     { "path": "packages/session" },
     { "path": "packages/config" },
     { "path": "packages/tools" },
-    { "path": "packages/pty" },
+    { "path": "packages/terminal" },
     { "path": "packages/terminal" },
     { "path": "packages/sandbox" },
     { "path": "packages/skills" },

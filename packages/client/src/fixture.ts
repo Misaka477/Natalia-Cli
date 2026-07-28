@@ -1,5 +1,5 @@
 import { lineCount, makeDigest } from "@natalia/testing";
-import { appendPTYOutput, ModelTerminalRegistry } from "@natalia/pty";
+import { appendPTYOutput, ModelTerminalRegistry } from "@natalia/terminal";
 import type {
   ApprovalResponse,
   FakeBackend,

@@ -7,7 +7,7 @@ const dependencyGuarded = [
   "packages/session",
   "packages/tools",
   "packages/config",
-  "packages/pty",
+  "packages/terminal",
   "packages/sandbox",
   "packages/terminal",
   "packages/mcp",

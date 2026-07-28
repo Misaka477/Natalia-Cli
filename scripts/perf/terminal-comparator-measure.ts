@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { InteractivePTYRegistry } from "../../packages/pty/src";
+import { InteractivePTYRegistry } from "../../packages/terminal/src";
 import { writeFile } from "node:fs/promises";
 
 const outputPath = process.argv[2] ?? "/tmp/natalia-terminal-comparator.json";

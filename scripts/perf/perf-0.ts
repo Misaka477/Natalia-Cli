@@ -19,7 +19,7 @@ import {
   SqliteSessionStore,
 } from "../../packages/session/src";
 import type { StreamingProvider } from "../../packages/runtime/src";
-import { InteractivePTYRegistry } from "../../packages/pty/src";
+import { InteractivePTYRegistry } from "../../packages/terminal/src";
 import {
   TerminalScreenRenderCache,
   terminalScreenRenderModel,

@@ -7,7 +7,7 @@ import {
   TerminalRegistry,
   type TerminalSessionInfo,
   type TerminalSessionUpdate,
-} from "@natalia/pty";
+} from "@natalia/terminal";
 import {
   NativeTerminalRegistry,
   type NativeTerminalSession,
@@ -1348,7 +1348,7 @@ function terminalObserveTool(): RuntimeTool {
       });
       if (ptyObservation.session.screen)
         context.onPTYUpdate?.(
-          ptyObservation.session as import("@natalia/pty").TerminalSessionInfo,
+          ptyObservation.session as import("@natalia/terminal").TerminalSessionInfo,
         );
       const ptySession = registry.session(id);
       let ptyText = ptySession.transcript || "";
@@ -1388,7 +1388,7 @@ function terminalObserveTool(): RuntimeTool {
           ...ptyObservation,
           session: ptyObservation.session.screen
             ? modelTerminalInfo(
-                ptyObservation.session as import("@natalia/pty").TerminalSessionInfo,
+                ptyObservation.session as import("@natalia/terminal").TerminalSessionInfo,
               )
             : ptyObservation.session,
           text: truncateProcessOutput(ptyText, 16_384),

@@ -10,7 +10,7 @@
     { "path": "../contracts" },
     { "path": "../mcp" },
     { "path": "../native-terminal" },
-    { "path": "../pty" },
+    { "path": "../terminal" },
     { "path": "../runtime" },
     { "path": "../session" },
     { "path": "../sandbox" },
