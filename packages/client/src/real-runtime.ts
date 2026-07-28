@@ -550,10 +550,10 @@ export function createRealRuntimeClient(
         }),
     });
     terminalRegistry = new TerminalRegistry(
-      join(workspaceRoot, ".natalia", "pty", "interactive"),
+      join(workspaceRoot, ".natalia", "terminal", "interactive"),
       {
-        onViewerExpired: (pty, viewerID) =>
-          publishTerminalViewer(pty, viewerID, "expired"),
+        onViewerExpired: (session, viewerID) =>
+          publishTerminalViewer(session, viewerID, "expired"),
       },
     );
     if (!nativeTerminal)

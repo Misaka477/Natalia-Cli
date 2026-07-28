@@ -80,7 +80,7 @@ test("runs a real command through an operating-system pseudo terminal", async ()
 
 test("persistent PTY registry records transcript and attach state", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-pty-persist-"));
-  const registry = new PersistentPTYRegistry(join(root, ".natalia", "pty"));
+  const registry = new PersistentPTYRegistry(join(root, ".natalia", "terminal"));
   const started = await registry.start({
     id: "tty_persist",
     command: "printf 'pty-persist\\n'",
@@ -93,7 +93,7 @@ test("persistent PTY registry records transcript and attach state", async () => 
     attached: false,
   });
 
-  const reopened = new PersistentPTYRegistry(join(root, ".natalia", "pty"));
+  const reopened = new PersistentPTYRegistry(join(root, ".natalia", "terminal"));
   expect(
     (await reopened.list()).some((item) => item.id === "tty_persist"),
   ).toBe(true);
@@ -101,7 +101,7 @@ test("persistent PTY registry records transcript and attach state", async () => 
 
 test("interactive PTY registry writes input, special keys, resize and transcript", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-pty-interactive-"));
-  const registry = new TerminalRegistry(join(root, ".natalia", "pty"));
+  const registry = new TerminalRegistry(join(root, ".natalia", "terminal"));
   const started = await registry.start({
     command: "cat",
     cwd: root,
@@ -134,7 +134,7 @@ test("interactive PTY registry writes input, special keys, resize and transcript
 
 test("interactive PTY subscriptions omit full transcript from live updates", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-pty-light-update-"));
-  const registry = new TerminalRegistry(join(root, ".natalia", "pty"));
+  const registry = new TerminalRegistry(join(root, ".natalia", "terminal"));
   const started = await registry.start({ command: "cat", cwd: root });
   const updates: import("../src").TerminalSessionUpdate[] = [];
   const unsubscribe = registry.subscribe(started.id, (update) =>
@@ -155,7 +155,7 @@ test("interactive PTY subscriptions omit full transcript from live updates", asy
 
 test("interactive PTY sensitive input is redacted and audited", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-pty-secret-"));
-  const registry = new TerminalRegistry(join(root, ".natalia", "pty"));
+  const registry = new TerminalRegistry(join(root, ".natalia", "terminal"));
   const started = await registry.start({ command: "cat", cwd: root });
   await registry.write(started.id, "super-secret", { sensitive: true });
   await waitForInteractive(
@@ -172,14 +172,14 @@ test("interactive PTY sensitive input is redacted and audited", async () => {
   });
   await Bun.sleep(50);
   expect(
-    await Bun.file(join(root, ".natalia", "pty", `${started.id}.log`)).text(),
+    await Bun.file(join(root, ".natalia", "terminal", `${started.id}.log`)).text(),
   ).not.toContain("super-secret");
   await registry.stop(started.id);
 });
 
 test("interactive PTY projects ANSI style through the xterm framebuffer", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-pty-screen-"));
-  const registry = new TerminalRegistry(join(root, ".natalia", "pty"));
+  const registry = new TerminalRegistry(join(root, ".natalia", "terminal"));
   const started = await registry.start({
     command: "printf '\\033[31;1mRED\\033[0m\\n'; cat",
     cwd: root,
@@ -197,7 +197,7 @@ test("interactive PTY projects ANSI style through the xterm framebuffer", async 
 
 test("terminal observation waits for revision changes, timeout, exit and abort", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-terminal-observe-"));
-  const registry = new TerminalRegistry(join(root, ".natalia", "pty"));
+  const registry = new TerminalRegistry(join(root, ".natalia", "terminal"));
   const started = await registry.start({ command: "cat", cwd: root });
   const pending = registry.observe(started.id, {
     afterRevision: started.revision,
@@ -296,7 +296,7 @@ test("terminal observation waits for revision changes, timeout, exit and abort",
 
 test("terminal viewers require explicit ownership and return it on release", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-terminal-owner-"));
-  const registry = new TerminalRegistry(join(root, ".natalia", "pty"));
+  const registry = new TerminalRegistry(join(root, ".natalia", "terminal"));
   const started = await registry.start({ command: "cat", cwd: root });
   expect(
     registry.registerViewer(started.id, {
@@ -369,7 +369,7 @@ test("terminal viewers require explicit ownership and return it on release", asy
 test("terminal viewer watchdog expires ownership without later activity", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-terminal-watchdog-"));
   const expired: string[] = [];
-  const registry = new TerminalRegistry(join(root, ".natalia", "pty"), {
+  const registry = new TerminalRegistry(join(root, ".natalia", "terminal"), {
     viewerTimeoutMs: 20,
     watchdogIntervalMs: 5,
     onViewerExpired: (_session, viewerID) => expired.push(viewerID),
@@ -397,7 +397,7 @@ test("terminal viewer watchdog expires ownership without later activity", async 
 
 test("embedded viewer can heartbeat, take control, and submit Unicode", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-terminal-embedded-"));
-  const registry = new TerminalRegistry(join(root, ".natalia", "pty"));
+  const registry = new TerminalRegistry(join(root, ".natalia", "terminal"));
   const started = await registry.start({ command: "cat", cwd: root });
   registry.registerViewer(started.id, {
     viewerID: "embedded_test",
@@ -421,7 +421,7 @@ test("embedded viewer can heartbeat, take control, and submit Unicode", async ()
 
 test("embedded viewer can own geometry while model retains input", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-terminal-geometry-"));
-  const registry = new TerminalRegistry(join(root, ".natalia", "pty"));
+  const registry = new TerminalRegistry(join(root, ".natalia", "terminal"));
   const started = await registry.start({ command: "cat", cwd: root });
   registry.registerViewer(started.id, {
     viewerID: "embedded_geometry",
@@ -458,7 +458,7 @@ test("embedded viewer can own geometry while model retains input", async () => {
 
 test("sensitive viewer input is redacted from delayed child output", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-terminal-secure-"));
-  const registry = new TerminalRegistry(join(root, ".natalia", "pty"));
+  const registry = new TerminalRegistry(join(root, ".natalia", "terminal"));
   const started = await registry.start({
     command: "IFS= read -r secret; printf 'delayed:%s\\n' \"$secret\"; cat",
     cwd: root,
