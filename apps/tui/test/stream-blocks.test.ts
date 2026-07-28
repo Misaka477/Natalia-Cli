@@ -267,9 +267,9 @@ test("Terminal events stay out of chat while Sandbox renders stable blocks", () 
     message: "sandbox is not container security",
   });
   expect(
-    state.messages.find((item) => item.id === "pty:pty_1"),
+    state.messages.find((item) => item.id === "terminal:pty_1"),
   ).toBeUndefined();
-  expect(state.pty.pty_1.tail).toBe("ready\n$");
+  expect(state.terminals.pty_1.tail).toBe("ready\n$");
   expect(
     state.messages.find((item) => item.id === "sandbox:box_m11")?.text,
   ).toContain("isolation=workspace");
@@ -281,7 +281,7 @@ test("Terminal events stay out of chat while Sandbox renders stable blocks", () 
   ).toContain("approval: required");
 });
 
-test("model-owned PTY persists approval wait and action timeline for fixed pane", () => {
+test("model-owned terminal persists approval wait and action timeline for fixed pane", () => {
   let state = structuredClone(initialState);
   const target = { kind: "host" as const, cwd: "/workspace" };
   state = reduceState(state, {
@@ -295,7 +295,7 @@ test("model-owned PTY persists approval wait and action timeline for fixed pane"
     cols: 120,
     prompt: "$",
     activity: "waiting",
-    tail: "Natalia model PTY\n$",
+    tail: "Natalia model terminal\n$",
     target,
     ownership: "model",
     approvalID: "apr_pty_model_1",
@@ -318,16 +318,16 @@ test("model-owned PTY persists approval wait and action timeline for fixed pane"
     reason: "install requires approval",
     target,
   });
-  expect(state.pty.pty_model.ownership).toBe("model");
-  expect(state.pty.pty_model.approvalID).toBe("apr_pty_model_1");
-  expect(state.ptyTimeline.pty_model[0]?.status).toBe("awaiting_approval");
+  expect(state.terminals.pty_model.ownership).toBe("model");
+  expect(state.terminals.pty_model.approvalID).toBe("apr_pty_model_1");
+  expect(state.terminalTimeline.pty_model[0]?.status).toBe("awaiting_approval");
   expect(state.footer).toContain("awaiting");
-  expect(state.messages.some((message) => message.id.startsWith("pty:"))).toBe(
+  expect(state.messages.some((message) => message.id.startsWith("terminal:"))).toBe(
     false,
   );
 });
 
-test("PTY pane selects among unlimited sessions and closes active view after model exit", () => {
+test("terminal pane selects among unlimited sessions and closes active view after model exit", () => {
   let state = structuredClone(initialState);
   const target = { kind: "host" as const, cwd: "/workspace" };
   for (const id of ["pty_a", "pty_b"]) {
@@ -346,16 +346,16 @@ test("PTY pane selects among unlimited sessions and closes active view after mod
       ownership: "model",
     });
   }
-  expect(state.ptyPane.selectedID).toBe("pty_b");
+  expect(state.terminalPane.selectedID).toBe("pty_b");
   state = reduceState(state, { type: "terminal.pane.select", id: "pty_a" });
-  expect(state.ptyPane.selectedID).toBe("pty_a");
+  expect(state.terminalPane.selectedID).toBe("pty_a");
   state = reduceState(state, { type: "terminal.pane.focus", focus: "chat" });
-  expect(state.ptyPane.focus).toBe("chat");
+  expect(state.terminalPane.focus).toBe("chat");
   state = reduceState(state, {
     type: "terminal.pane.focus",
     focus: "terminal",
   });
-  expect(state.ptyPane.focus).toBe("terminal");
+  expect(state.terminalPane.focus).toBe("terminal");
   state = reduceState(state, {
     type: "terminal.update",
     id: "pty_a",
@@ -371,7 +371,7 @@ test("PTY pane selects among unlimited sessions and closes active view after mod
     target,
     ownership: "model",
   });
-  expect(state.ptyPane.selectedID).toBe("pty_b");
+  expect(state.terminalPane.selectedID).toBe("pty_b");
 });
 
 test("partial tool arguments are hidden until complete and sensitive keys redact", () => {

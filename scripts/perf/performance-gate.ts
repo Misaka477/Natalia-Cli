@@ -44,9 +44,9 @@ const checks = [
         ?.runningCountAfterStop === 0,
   },
   {
-    name: "physical key to PTY render p50 <= 50ms",
+    name: "physical key to terminal render p50 <= 50ms",
     pass:
-      scenario("terminal_physical_key_to_real_pty_render").summary.elapsedMs
+      scenario("terminal_physical_key_to_real_terminal_render").summary.elapsedMs
         .p50 <= 50,
   },
 ];

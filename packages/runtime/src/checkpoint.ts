@@ -316,7 +316,8 @@ export class CheckpointStore {
       return text
         .split("\n")
         .filter(Boolean)
-        .map((line) => JSON.parse(line) as CheckpointRecord);
+        .map((line) => JSON.parse(line) as CheckpointRecord)
+        .map(normalizeLegacyCheckpointRecord);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
       throw error;
@@ -815,6 +816,29 @@ function diffManifests(
     if (!after.entries[path]) changes.push({ kind: "delete", path });
   }
   return changes;
+}
+
+function normalizeLegacyCheckpointRecord(
+  record: CheckpointRecord,
+): CheckpointRecord {
+  if (
+    record.context.resources.some(
+      (resource) => (resource.kind as string) === "pty",
+    )
+  ) {
+    return {
+      ...record,
+      context: {
+        ...record.context,
+        resources: record.context.resources.map((resource) =>
+          (resource.kind as string) === "pty"
+            ? { ...resource, kind: "terminal" }
+            : resource,
+        ),
+      },
+    };
+  }
+  return record;
 }
 
 function resourcePolicies(

@@ -176,20 +176,8 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
         cursor: {},
       };
     },
-    async ptyList() {
-      return [ptyFixture()];
-    },
     async terminalList() {
       return [ptyFixture()];
-    },
-    async ptyRead() {
-      return {
-        ...ptyFixture(),
-        offset: 0,
-        nextOffset: 3,
-        totalChars: 3,
-        truncated: false,
-      };
     },
     async terminalRead() {
       return {
@@ -200,38 +188,20 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
         truncated: false,
       };
     },
-    async ptyWrite() {
-      return ptyFixture();
-    },
     async terminalWrite() {
-      return ptyFixture();
-    },
-    async ptyKey() {
       return ptyFixture();
     },
     async terminalKey() {
       return ptyFixture();
     },
-    async ptyResize() {
-      return { ...ptyFixture(), rows: 32, cols: 120 };
-    },
     async terminalResize() {
       return { ...ptyFixture(), rows: 32, cols: 120 };
-    },
-    async ptyAttach() {
-      return ptyFixture();
     },
     async terminalAttach() {
       return ptyFixture();
     },
-    async ptyDetach() {
-      return { ...ptyFixture(), attached: false };
-    },
     async terminalDetach() {
       return { ...ptyFixture(), attached: false };
-    },
-    async ptyStop() {
-      return { ...ptyFixture(), status: "exited" as const };
     },
     async terminalStop() {
       return { ...ptyFixture(), status: "exited" as const };
@@ -387,49 +357,25 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
   expect(await sdk.messages({ order: "asc" })).toMatchObject({
     data: [{ id: "turn_message" }],
   });
-  expect(await sdk.ptySessions()).toMatchObject([{ id: "tty_fixture" }]);
   expect(await sdk.terminalSessions()).toMatchObject([{ id: "tty_fixture" }]);
-  expect(await sdk.ptyRead({ id: "tty_fixture" })).toMatchObject({
-    nextOffset: 3,
-  });
   expect(await sdk.terminalRead({ id: "tty_fixture" })).toMatchObject({
     nextOffset: 3,
   });
-  expect(
-    await sdk.ptyWrite({ id: "tty_fixture", text: "hello" }),
-  ).toMatchObject({
+  expect(await sdk.terminalWrite({ id: "tty_fixture", text: "hello" })).toMatchObject({
     id: "tty_fixture",
   });
-  expect(
-    await sdk.terminalWrite({ id: "tty_fixture", text: "hello" }),
-  ).toMatchObject({ id: "tty_fixture" });
-  expect(await sdk.ptyKey({ id: "tty_fixture", key: "ctrl-c" })).toMatchObject({
+  expect(await sdk.terminalKey({ id: "tty_fixture", key: "ctrl-c" })).toMatchObject({
     id: "tty_fixture",
   });
-  expect(
-    await sdk.terminalKey({ id: "tty_fixture", key: "ctrl-c" }),
-  ).toMatchObject({ id: "tty_fixture" });
-  expect(
-    await sdk.ptyResize({ id: "tty_fixture", rows: 32, cols: 120 }),
-  ).toMatchObject({
+  expect(await sdk.terminalResize({ id: "tty_fixture", rows: 32, cols: 120 })).toMatchObject({
     rows: 32,
     cols: 120,
   });
-  expect(
-    await sdk.terminalResize({ id: "tty_fixture", rows: 32, cols: 120 }),
-  ).toMatchObject({ rows: 32, cols: 120 });
-  expect(await sdk.ptyDetach("tty_fixture")).toMatchObject({ attached: false });
-  expect(await sdk.terminalDetach("tty_fixture")).toMatchObject({
-    attached: false,
-  });
-  expect(await sdk.ptyAttach("tty_fixture")).toMatchObject({ attached: true });
+  expect(await sdk.terminalDetach("tty_fixture")).toMatchObject({ attached: false });
   expect(await sdk.terminalAttach("tty_fixture")).toMatchObject({
     attached: true,
   });
-  expect(await sdk.ptyStop("tty_fixture")).toMatchObject({ status: "exited" });
-  expect(await sdk.terminalStop("tty_fixture")).toMatchObject({
-    status: "exited",
-  });
+  expect(await sdk.terminalStop("tty_fixture")).toMatchObject({ status: "exited" });
   expect(await sdk.checkpointList()).toMatchObject([{ id: "checkpoint_0" }]);
   expect(await sdk.checkpointPreview("checkpoint_0")).toMatchObject({
     dryRun: true,

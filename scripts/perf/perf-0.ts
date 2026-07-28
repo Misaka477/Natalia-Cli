@@ -935,7 +935,7 @@ async function terminalStopCleanupScenario(root: string): Promise<Scenario> {
       memory: process.memoryUsage(),
     });
     if (registry.runningCount() !== 0)
-      throw new Error("terminal stop cleanup left a running PTY");
+      throw new Error("terminal stop cleanup left a running terminal");
     registry.dispose();
   }
   return {

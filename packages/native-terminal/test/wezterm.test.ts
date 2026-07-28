@@ -1050,3 +1050,86 @@ test("native model can continue to observe and write after human detach", async 
   expect(afterDetach.text).toContain("model after detach");
   await registry.stop(session.id);
 });
+
+test("reconcile updates attached from list-clients", async () => {
+  const listClientsCalls: Array<{ focused_pane_id: number }[]> = [];
+  const registry = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 41, window_id: 2, tab_id: 3, rows: 24, cols: 80 };
+    },
+    async list() {
+      return [{ pane_id: 41, window_id: 2, tab_id: 3, rows: 24, cols: 80 }];
+    },
+    async listClients() {
+      const value = listClientsCalls.at(-1) ?? [{ focused_pane_id: 41 }];
+      listClientsCalls.push(value);
+      return value;
+    },
+    async read() {
+      return "";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {},
+    async open() {
+      return {
+        pane_id: 41,
+        window_id: 501,
+        tab_id: 1041,
+        rows: 24,
+        cols: 80,
+      };
+    },
+  });
+  const session = await registry.start({ command: "cat", cwd: "/repo" });
+  expect(registry.session(session.id).attached).toBe(true);
+
+  listClientsCalls.push([]);
+  await registry.reconcile({ force: true });
+  expect(registry.session(session.id).attached).toBe(false);
+});
+
+test("cleanupStalePanes removes panes not belonging to current sessions", async () => {
+  const stops: number[] = [];
+  const registry = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 51, window_id: 2, tab_id: 3, rows: 24, cols: 80 };
+    },
+    async list() {
+      return [
+        { pane_id: 51, window_id: 2, tab_id: 3, rows: 24, cols: 80 },
+        { pane_id: 999, window_id: 2, tab_id: 4, rows: 24, cols: 80 },
+      ];
+    },
+    async listClients() {
+      return [];
+    },
+    async read() {
+      return "";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop(paneID) {
+      stops.push(paneID);
+    },
+    async open() {
+      return {
+        pane_id: 51,
+        window_id: 501,
+        tab_id: 1051,
+        rows: 24,
+        cols: 80,
+      };
+    },
+  });
+  const session = await registry.start({ command: "cat", cwd: "/repo" });
+  expect(stops).toContain(999);
+  expect(stops).not.toContain(51);
+});
+

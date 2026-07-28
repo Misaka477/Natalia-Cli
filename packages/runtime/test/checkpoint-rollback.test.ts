@@ -323,7 +323,7 @@ test("dry-run preview includes running PTY Sandbox workflow modal policy", async
   });
   const resources: CheckpointRuntimeResource[] = [
     {
-      kind: "pty",
+      kind: "terminal",
       id: "pty_1",
       status: "running",
       summary: "interactive shell",
@@ -378,7 +378,7 @@ test("rollback applies resource policies and projects restored context", async (
   await store.rollbackTo("checkpoint_0", {
     context: ledger,
     resources: [
-      { kind: "pty", id: "pty_1", status: "running", summary: "shell" },
+      { kind: "terminal", id: "pty_1", status: "running", summary: "shell" },
       {
         kind: "sandbox",
         id: "box_1",
@@ -393,7 +393,7 @@ test("rollback applies resource policies and projects restored context", async (
       restored++;
     },
   });
-  expect(policies).toEqual(["pty:stop"]);
+  expect(policies).toEqual(["terminal:stop"]);
   expect(restored).toBe(1);
   expect(ledger.snapshot().entries.map((entry) => entry.id)).toEqual([
     "baseline",

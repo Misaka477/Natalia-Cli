@@ -24,7 +24,7 @@ export type ToolKind =
   | "websearch"
   | "question"
   | "execute"
-  | "pty"
+  | "terminal"
   | "sandbox"
   | "skill";
 
@@ -102,8 +102,8 @@ export function classifyTool(
   if (kind === "question" || lower === "ask_user" || lower === "question")
     return "question";
   if (kind === "execute" || lower === "execute") return "execute";
-  if (kind === "pty" || lower.includes("pty") || lower.includes("terminal"))
-    return "pty";
+  if (kind === "terminal" || lower.includes("terminal"))
+    return "terminal";
   if (kind === "sandbox" || lower.includes("sandbox")) return "sandbox";
   if (kind === "skill" || lower.includes("skill")) return "skill";
   return "generic";

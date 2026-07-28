@@ -43,7 +43,7 @@ const markdownSyntax = () =>
 
 export function SessionRoute(props: {
   scrollRef?: { current?: any };
-  ptyScrollRef?: { current?: any };
+  terminalScrollRef?: { current?: any };
   followBottom?: boolean;
   onFollowChange?: (follow: boolean) => void;
   density?: TuiPreferences["density"];
@@ -240,15 +240,15 @@ export function SessionRoute(props: {
           <text fg={darkTheme.text}>↓ Jump to latest</text>
         </box>
       </Show>
-      <Show when={state.ptyPane.selectedID}>
+      <Show when={state.terminalPane.selectedID}>
         {(selectedID) => {
-          const pty = () => state.pty[selectedID()];
+          const terminal = () => state.terminals[selectedID()];
           return (
-            <Show when={pty()}>
-              <ModelPTyPane
-                pty={pty()!}
-                timeline={state.ptyTimeline[selectedID()] ?? []}
-                sessions={Object.values(state.pty).filter(
+            <Show when={terminal()}>
+              <ModelTerminalPane
+                terminal={terminal()!}
+                timeline={state.terminalTimeline[selectedID()] ?? []}
+                sessions={Object.values(state.terminals).filter(
                   (item) =>
                     item.ownership === "model" &&
                     item.status !== "exited" &&
@@ -257,11 +257,11 @@ export function SessionRoute(props: {
                 onSelect={(id) =>
                   dispatch({ type: "terminal.pane.select", id })
                 }
-                focus={state.ptyPane.focus}
+                focus={state.terminalPane.focus}
                 onFocus={() =>
                   dispatch({ type: "terminal.pane.focus", focus: "terminal" })
                 }
-                scrollRef={props.ptyScrollRef}
+                scrollRef={props.terminalScrollRef}
               />
             </Show>
           );
@@ -302,10 +302,10 @@ export function SessionFooter(props: { workspaceRoot?: string }) {
         <Show when={pending}>
           <text fg={darkTheme.warning}>△ Action required</text>
         </Show>
-        <Show when={Object.keys(state.pty).length > 0}>
+        <Show when={Object.keys(state.terminals).length > 0}>
           <text fg={darkTheme.text}>
             <span style={{ fg: darkTheme.success }}>•</span>{" "}
-            {Object.keys(state.pty).length} terminal
+            {Object.keys(state.terminals).length} terminal
           </text>
         </Show>
         <Show when={Object.keys(state.sandboxes).length > 0}>
@@ -509,17 +509,17 @@ function compactPath(path?: string) {
   return home && path.startsWith(home) ? `~${path.slice(home.length)}` : path;
 }
 
-function ModelPTyPane(props: {
-  pty: Extract<
-    ReturnType<typeof useAppState>["state"]["pty"][string],
+function ModelTerminalPane(props: {
+  terminal: Extract<
+    ReturnType<typeof useAppState>["state"]["terminals"][string],
     { type: "terminal.update" }
   >;
   timeline: Extract<
-    ReturnType<typeof useAppState>["state"]["ptyTimeline"][string][number],
+    ReturnType<typeof useAppState>["state"]["terminalTimeline"][string][number],
     { type: "terminal.timeline" }
   >[];
   sessions: Extract<
-    ReturnType<typeof useAppState>["state"]["pty"][string],
+    ReturnType<typeof useAppState>["state"]["terminals"][string],
     { type: "terminal.update" }
   >[];
   onSelect(id: string): void;
@@ -528,9 +528,9 @@ function ModelPTyPane(props: {
   scrollRef?: { current?: any };
 }) {
   const target = () =>
-    props.pty.target.kind === "host"
-      ? `host:${props.pty.target.cwd}`
-      : `sandbox:${props.pty.target.sandboxID}:${props.pty.target.isolationLevel}`;
+    props.terminal.target.kind === "host"
+      ? `host:${props.terminal.target.cwd}`
+      : `sandbox:${props.terminal.target.sandboxID}:${props.terminal.target.isolationLevel}`;
   return (
     <box
       flexShrink={0}
@@ -552,7 +552,7 @@ function ModelPTyPane(props: {
           fg={props.focus === "terminal" ? darkTheme.accent : darkTheme.muted}
           attributes={TextAttributes.BOLD}
         >
-          Terminal Preview · model control · {props.pty.status}
+          Terminal Preview · model control · {props.terminal.status}
         </text>
         <text fg={darkTheme.muted} onMouseUp={props.onFocus}>
           {props.focus === "terminal"
@@ -566,12 +566,12 @@ function ModelPTyPane(props: {
             {(session, index) => (
               <text
                 fg={
-                  session.id === props.pty.id
+                  session.id === props.terminal.id
                     ? darkTheme.accent
                     : darkTheme.muted
                 }
                 attributes={
-                  session.id === props.pty.id ? TextAttributes.BOLD : undefined
+                  session.id === props.terminal.id ? TextAttributes.BOLD : undefined
                 }
                 onMouseUp={() => props.onSelect(session.id)}
               >
@@ -582,21 +582,21 @@ function ModelPTyPane(props: {
         </box>
       </Show>
       <text fg={darkTheme.muted}>
-        {props.pty.id} · {target()} · {props.pty.cwd} · {props.pty.rows}x
-        {props.pty.cols} · prompt {props.pty.prompt ?? "-"}
+        {props.terminal.id} · {target()} · {props.terminal.cwd} · {props.terminal.rows}x
+        {props.terminal.cols} · prompt {props.terminal.prompt ?? "-"}
         {" · "}
-        {props.pty.inputOwner?.type === "viewer"
-          ? `user control (${props.pty.inputOwner.viewerID})`
+        {props.terminal.inputOwner?.type === "viewer"
+          ? `user control (${props.terminal.inputOwner.viewerID})`
           : "model control"}
-        {` · ${props.pty.viewers?.length ?? 0} viewer(s)`}
+        {` · ${props.terminal.viewers?.length ?? 0} viewer(s)`}
       </text>
-      <Show when={props.pty.approvalID}>
+      <Show when={props.terminal.approvalID}>
         <text fg={darkTheme.warning}>
-          Awaiting user approval: {props.pty.approvalID}. Model writes are
+          Awaiting user approval: {props.terminal.approvalID}. Model writes are
           paused.
         </text>
       </Show>
-      <For each={terminalPreview(props.pty.screen?.text ?? props.pty.tail)}>
+      <For each={terminalPreview(props.terminal.screen?.text ?? props.terminal.tail)}>
         {(line) => (
           <text fg={darkTheme.muted} wrapMode="none">
             {line}
@@ -1945,7 +1945,7 @@ function toolIcon(kind: string) {
   if (kind === "background") return "bg";
   if (kind === "subagent") return "agent";
   if (kind === "shell") return "$";
-  if (kind === "pty") return "pty";
+  if (kind === "terminal") return "terminal";
   if (kind === "sandbox") return "box";
   if (kind === "skill") return "skill";
   return "tool";

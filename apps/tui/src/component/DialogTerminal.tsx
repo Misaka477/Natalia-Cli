@@ -9,7 +9,7 @@ import { useDialog } from "../dialog/provider";
 import { DialogSelect } from "../dialog/DialogSelect";
 import { openExternalTerminal } from "../terminal-attach";
 
-export function DialogPty(props: { backend: RuntimeClient }) {
+export function DialogTerminal(props: { backend: RuntimeClient }) {
   const dialog = useDialog();
   const [sessions, setSessions] = createSignal<RuntimeNativeTerminalSession[]>(
     [],
@@ -68,9 +68,15 @@ export function DialogPty(props: { backend: RuntimeClient }) {
       onSelect={(option) => select(option.value)}
       actions={[
         {
-          command: "pty.manage.refresh",
+          command: "terminal.manage.refresh",
           title: "r refresh",
           onTrigger: () => void refresh(),
+        },
+        {
+          command: "terminal.manage.open-hub",
+          title: "Open Terminal Hub",
+          onTrigger: () =>
+            void openExternalTerminal({ backend: props.backend }),
         },
       ]}
     />
@@ -84,7 +90,6 @@ function TerminalActions(props: {
 }) {
   const dialog = useDialog();
   const [error, setError] = createSignal<string>();
-  const [opening, setOpening] = createSignal(false);
   const run = async (action: () => Promise<unknown>) => {
     try {
       await action();
@@ -93,22 +98,6 @@ function TerminalActions(props: {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
   };
-  const openExternal = async () => {
-    if (opening()) return;
-    setOpening(true);
-    try {
-      await openExternalTerminal({
-        backend: props.backend,
-      });
-      setError(undefined);
-      props.onChanged();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setOpening(false);
-    }
-  };
-
   return (
     <box flexDirection="column" paddingLeft={3} paddingRight={3} gap={1}>
       <box flexDirection="row" justifyContent="space-between">
@@ -147,11 +136,6 @@ function TerminalActions(props: {
         renderFilter={false}
         options={[
           {
-            title: opening() ? "Opening terminal..." : "Open terminal",
-            value: "open",
-            disabled: opening(),
-          },
-          {
             title: "Revoke low-risk approval",
             value: "revoke-approval",
             disabled: !props.backend.nativeTerminalRevokeApprovalScope,
@@ -166,7 +150,6 @@ function TerminalActions(props: {
           { title: "Stop terminal", value: "stop" },
         ]}
         onSelect={(option) => {
-          if (option.value === "open") void openExternal();
           if (
             option.value === "revoke-approval" &&
             props.backend.nativeTerminalRevokeApprovalScope

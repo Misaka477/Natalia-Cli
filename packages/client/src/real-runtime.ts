@@ -138,6 +138,7 @@ function publicNativeTerminal(
     rows: session.rows,
     cols: session.cols,
     startedAt: session.startedAt,
+    attached: session.attached,
   };
 }
 
@@ -272,7 +273,7 @@ export function createRealRuntimeClient(
   let retryPolicy: NonNullable<Parameters<typeof runWithRetry>[2]>["policy"];
   let cleanupWorkspaceFiles: (() => void) | undefined;
   let statusRefreshQueued = false;
-  const ptyStatusByID = new Map<string, string>();
+  const terminalStatusByID = new Map<string, string>();
   const performanceTrace = new RuntimePerformanceTrace();
   const sandboxResourcesByID = new Map<string, number>();
   const turnCoordinator = () => sessionRunCoordinator(sessionID);
@@ -615,6 +616,8 @@ export function createRealRuntimeClient(
                 at: event.at,
               });
             },
+            autoOpenHub: true,
+            persistPath: join(nativeMuxRuntimeDir, "native-terminal-sessions.json"),
           },
         );
         nativeInputBroker = await startNativeInputBroker({
@@ -941,14 +944,14 @@ export function createRealRuntimeClient(
               : ("stopped" as const),
         summary: agent.task,
       })) ?? []),
-      ...(terminalRegistry?.list().map((pty) => ({
-        kind: "pty" as const,
-        id: pty.id,
+      ...(terminalRegistry?.list().map((terminal) => ({
+        kind: "terminal" as const,
+        id: terminal.id,
         status:
-          pty.status === "running"
+          terminal.status === "running"
             ? ("running" as const)
             : ("stopped" as const),
-        summary: pty.command,
+        summary: terminal.command,
       })) ?? []),
       ...(activeAbort
         ? [
@@ -1203,22 +1206,22 @@ export function createRealRuntimeClient(
   }
 
   function publishTerminalSession(
-    pty: import("@natalia/contracts").RuntimePTYObservationSession,
-    action?: import("@natalia/contracts").PTYAction,
+    terminal: import("@natalia/contracts").RuntimeTerminalObservationSession,
+    action?: import("@natalia/contracts").TerminalAction,
     redacted = false,
   ) {
-    publish(ptyLiveUpdate(pty, action));
+    publish(terminalLiveUpdate(terminal, action));
     if (action) {
       publish({
         type: "terminal.action",
-        id: pty.id,
+        id: terminal.id,
         action,
         redacted,
-        target: { kind: "host", cwd: pty.cwd },
+        target: { kind: "host", cwd: terminal.cwd },
       });
       publish({
         type: "terminal.timeline",
-        id: pty.id,
+        id: terminal.id,
         actor: "user",
         action,
         status: "executed",
@@ -1226,15 +1229,15 @@ export function createRealRuntimeClient(
         at: new Date().toISOString(),
       });
     }
-    if (ptyStatusByID.get(pty.id) !== pty.status) {
-      ptyStatusByID.set(pty.id, pty.status);
+    if (terminalStatusByID.get(terminal.id) !== terminal.status) {
+      terminalStatusByID.set(terminal.id, terminal.status);
       scheduleRuntimeStatusSnapshot();
     }
   }
 
-  function ptyLiveUpdate(
-    pty: import("@natalia/contracts").RuntimePTYObservationSession,
-    action?: import("@natalia/contracts").PTYAction,
+  function terminalLiveUpdate(
+    terminal: import("@natalia/contracts").RuntimeTerminalObservationSession,
+    action?: import("@natalia/contracts").TerminalAction,
   ): Extract<
     import("@natalia/contracts").RuntimeEvent,
     { type: "terminal.update" }
@@ -1243,28 +1246,28 @@ export function createRealRuntimeClient(
     // output revision makes the live event stream retain and clone large snapshots.
     return {
       type: "terminal.update",
-      id: pty.id,
-      command: pty.command,
-      cwd: pty.cwd,
-      status: pty.status,
-      attached: pty.attached,
-      rows: pty.rows,
-      cols: pty.cols,
-      activity: pty.status === "running" ? "running" : "waiting",
-      tail: pty.tail,
+      id: terminal.id,
+      command: terminal.command,
+      cwd: terminal.cwd,
+      status: terminal.status,
+      attached: terminal.attached,
+      rows: terminal.rows,
+      cols: terminal.cols,
+      activity: terminal.status === "running" ? "running" : "waiting",
+      tail: terminal.tail,
       lastAction: action,
-      target: { kind: "host", cwd: pty.cwd },
-      ownership: pty.inputOwner?.type === "viewer" ? "user" : "model",
-      revision: pty.revision,
-      lastOutputAt: pty.lastOutputAt,
-      viewers: pty.viewers,
-      inputOwner: pty.inputOwner,
-      geometryOwner: pty.geometryOwner,
+      target: { kind: "host", cwd: terminal.cwd },
+      ownership: terminal.inputOwner?.type === "viewer" ? "user" : "model",
+      revision: terminal.revision,
+      lastOutputAt: terminal.lastOutputAt,
+      viewers: terminal.viewers,
+      inputOwner: terminal.inputOwner,
+      geometryOwner: terminal.geometryOwner,
     };
   }
 
   function publishTerminalViewer(
-    pty: import("@natalia/contracts").RuntimePTYSession,
+    terminal: import("@natalia/contracts").RuntimeTerminalSession,
     viewerID: string,
     action: Extract<
       import("@natalia/contracts").RuntimeEvent,
@@ -1272,15 +1275,15 @@ export function createRealRuntimeClient(
     >["action"],
     viewerKind?: "external" | "embedded",
   ) {
-    publishTerminalSession(pty);
+    publishTerminalSession(terminal);
     publish({
       type: "terminal.viewer",
-      id: pty.id,
+      id: terminal.id,
       viewerID,
       viewerKind,
       action,
-      inputOwner: pty.inputOwner ?? { type: "model" },
-      geometryOwner: pty.geometryOwner ?? { type: "model" },
+      inputOwner: terminal.inputOwner ?? { type: "model" },
+      geometryOwner: terminal.geometryOwner ?? { type: "model" },
       at: new Date().toISOString(),
     });
   }
@@ -1293,7 +1296,7 @@ export function createRealRuntimeClient(
       ) => {
         if (policy.action !== "stop" && policy.action !== "cancel") return;
         if (policy.kind === "subagent") await subagents?.stop(policy.id);
-        if (policy.kind === "pty") await terminalRegistry?.stop(policy.id);
+        if (policy.kind === "terminal") await terminalRegistry?.stop(policy.id);
         if (policy.kind === "tool")
           activeAbort?.abort(new Error("checkpoint rollback"));
       },
@@ -1684,10 +1687,6 @@ export function createRealRuntimeClient(
       await ready;
       return await globWorkspaceFiles({ workspaceRoot, ...input });
     },
-    async ptyList() {
-      await ready;
-      return terminalRegistry?.list() ?? [];
-    },
     async terminalList() {
       await ready;
       return terminalRegistry?.list() ?? [];
@@ -1753,11 +1752,6 @@ export function createRealRuntimeClient(
         status: "exited",
       };
     },
-    async ptyRead(input) {
-      await ready;
-      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
-      return terminalRegistry.read(input.id, input);
-    },
     async terminalRead(input) {
       await ready;
       if (!terminalRegistry)
@@ -1766,25 +1760,25 @@ export function createRealRuntimeClient(
     },
     async terminalObserve(input) {
       await ready;
-      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
+      if (!terminalRegistry) throw new Error("interactive terminal is unavailable");
       return await terminalRegistry.observe(input.id, input);
     },
     async terminalViewerRegister(input) {
       await ready;
-      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
-      const pty = terminalRegistry.registerViewer(input.id, input);
-      publishTerminalViewer(pty, input.viewerID, "registered", input.kind);
-      return pty;
+      if (!terminalRegistry) throw new Error("interactive terminal is unavailable");
+      const terminalSession = terminalRegistry.registerViewer(input.id, input);
+      publishTerminalViewer(terminalSession, input.viewerID, "registered", input.kind);
+      return terminalSession;
     },
     async terminalViewerHeartbeat(input) {
       await ready;
-      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
+      if (!terminalRegistry) throw new Error("interactive terminal is unavailable");
       return terminalRegistry.heartbeatViewer(input.id, input.viewerID);
     },
     async terminalViewerControl(input) {
       await ready;
-      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
-      const pty =
+      if (!terminalRegistry) throw new Error("interactive terminal is unavailable");
+      const terminalSession =
         input.action === "takeover"
           ? terminalRegistry.takeoverViewer(input.id, input.viewerID)
           : input.action === "take_geometry"
@@ -1798,7 +1792,7 @@ export function createRealRuntimeClient(
                     input.viewerID,
                   );
       publishTerminalViewer(
-        pty,
+        terminalSession,
         input.viewerID,
         input.action === "unregister"
           ? "unregistered"
@@ -1808,12 +1802,12 @@ export function createRealRuntimeClient(
               ? "release"
               : input.action,
       );
-      return pty;
+      return terminalSession;
     },
     async terminalViewerWrite(input) {
       await ready;
-      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
-      const pty = await terminalRegistry.viewerWrite(
+      if (!terminalRegistry) throw new Error("interactive terminal is unavailable");
+      const terminalSession = await terminalRegistry.viewerWrite(
         input.id,
         input.viewerID,
         input.data,
@@ -1824,39 +1818,24 @@ export function createRealRuntimeClient(
       );
       // The framebuffer is delivered by terminal.observe; returning it per key
       // stalls input behind a full screen snapshot serialization.
-      return { ...pty, screen: undefined };
+      return { ...terminalSession, screen: undefined };
     },
     async terminalViewerResize(input) {
       await ready;
-      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
-      const pty = await terminalRegistry.viewerResize(
+      if (!terminalRegistry) throw new Error("interactive terminal is unavailable");
+      const terminalSession = await terminalRegistry.viewerResize(
         input.id,
         input.viewerID,
         input.rows,
         input.cols,
       );
-      publishTerminalSession(pty);
-      return pty;
+      publishTerminalSession(terminalSession);
+      return terminalSession;
     },
     async terminalScrollback(input) {
       await ready;
-      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
+      if (!terminalRegistry) throw new Error("interactive terminal is unavailable");
       return terminalRegistry.scrollback(input.id, input);
-    },
-    async ptyWrite(input) {
-      await ready;
-      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
-      const pty = await terminalRegistry.write(input.id, input.text, {
-        submit: input.submit,
-        sensitive: input.sensitive,
-        idempotencyKey: input.idempotencyKey,
-      });
-      publishTerminalSession(
-        pty,
-        input.submit === false ? "write" : "submit",
-        Boolean(input.sensitive),
-      );
-      return pty;
     },
     async terminalWrite(input) {
       await ready;
@@ -1874,13 +1853,6 @@ export function createRealRuntimeClient(
       );
       return terminal;
     },
-    async ptyKey(input) {
-      await ready;
-      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
-      const pty = await terminalRegistry.specialKey(input.id, input.key);
-      publishTerminalSession(pty, "special_key");
-      return pty;
-    },
     async terminalKey(input) {
       await ready;
       if (!terminalRegistry)
@@ -1888,17 +1860,6 @@ export function createRealRuntimeClient(
       const terminal = await terminalRegistry.specialKey(input.id, input.key);
       publishTerminalSession(terminal, "special_key");
       return terminal;
-    },
-    async ptyResize(input) {
-      await ready;
-      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
-      const pty = await terminalRegistry.resize(
-        input.id,
-        input.rows,
-        input.cols,
-      );
-      publishTerminalSession(pty, "resize");
-      return pty;
     },
     async terminalResize(input) {
       await ready;
@@ -1912,13 +1873,6 @@ export function createRealRuntimeClient(
       publishTerminalSession(terminal, "resize");
       return terminal;
     },
-    async ptyAttach(id) {
-      await ready;
-      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
-      const pty = await terminalRegistry.attach(id);
-      publishTerminalSession(pty, "attach");
-      return pty;
-    },
     async terminalAttach(id) {
       await ready;
       if (!terminalRegistry)
@@ -1927,13 +1881,6 @@ export function createRealRuntimeClient(
       publishTerminalSession(terminal, "attach");
       return terminal;
     },
-    async ptyDetach(id) {
-      await ready;
-      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
-      const pty = await terminalRegistry.detach(id);
-      publishTerminalSession(pty, "detach");
-      return pty;
-    },
     async terminalDetach(id) {
       await ready;
       if (!terminalRegistry)
@@ -1941,13 +1888,6 @@ export function createRealRuntimeClient(
       const terminal = await terminalRegistry.detach(id);
       publishTerminalSession(terminal, "detach");
       return terminal;
-    },
-    async ptyStop(id) {
-      await ready;
-      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
-      const pty = await terminalRegistry.stop(id);
-      publishTerminalSession(pty, "exit");
-      return pty;
     },
     async terminalStop(id) {
       await ready;
@@ -3263,24 +3203,24 @@ export function createRealRuntimeClient(
           subagents,
           terminalRegistry,
           nativeTerminal,
-          onPTYUpdate: (pty) => {
-            publish(ptyLiveUpdate(pty, "write"));
-            if (ptyStatusByID.get(pty.id) !== pty.status) {
-              ptyStatusByID.set(pty.id, pty.status);
+          onTerminalUpdate: (terminal) => {
+            publish(terminalLiveUpdate(terminal, "write"));
+            if (terminalStatusByID.get(terminal.id) !== terminal.status) {
+              terminalStatusByID.set(terminal.id, terminal.status);
               scheduleRuntimeStatusSnapshot();
             }
           },
-          onPTYAction: (pty, action, redacted) => {
+          onTerminalAction: (terminal, action, redacted) => {
             publish({
               type: "terminal.action",
-              id: pty.id,
+              id: terminal.id,
               action,
               redacted,
-              target: { kind: "host", cwd: pty.cwd },
+              target: { kind: "host", cwd: terminal.cwd },
             });
             publish({
               type: "terminal.timeline",
-              id: pty.id,
+              id: terminal.id,
               actor: "model",
               action,
               status: "executed",

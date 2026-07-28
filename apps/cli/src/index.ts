@@ -19,7 +19,7 @@ import {
 } from "@natalia/config";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type {
-  RuntimePTYSession,
+  RuntimeTerminalSession,
   TerminalScreenSnapshot,
 } from "@natalia/contracts";
 import {
@@ -79,8 +79,8 @@ export async function attachTerminalReadOnly(input: {
   const write = input.write ?? ((frame: string) => process.stdout.write(frame));
   const viewerID = input.viewerID ?? `viewer_${randomUUID()}`;
   let revision = -1;
-  let last: RuntimePTYSession | undefined;
-  let screen: RuntimePTYSession["screen"];
+  let last: RuntimeTerminalSession | undefined;
+  let screen: RuntimeTerminalSession["screen"];
   const scrollback = input.scrollback;
   const reconnectViewer = async () => {
     if (input.reconnectViewer) return await input.reconnectViewer();
@@ -146,7 +146,7 @@ export async function attachTerminalReadOnly(input: {
     let failures = 0;
     while (!input.signal?.aborted) {
       let observation: {
-        session: RuntimePTYSession;
+        session: RuntimeTerminalSession;
         afterRevision: number;
         changed: boolean;
         reason: "changed" | "timeout" | "exited";
@@ -343,7 +343,7 @@ export async function attachTerminalWithControl(input: {
 }
 
 function scrollbackSnapshot(
-  session: RuntimePTYSession,
+  session: RuntimeTerminalSession,
   page: import("@natalia/contracts").TerminalScrollbackPage,
 ): TerminalScreenSnapshot {
   const rows = session.rows;

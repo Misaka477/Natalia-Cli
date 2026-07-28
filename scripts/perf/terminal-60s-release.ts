@@ -26,7 +26,7 @@ registry.dispose();
 await rm(root, { recursive: true, force: true });
 
 if (!released)
-  throw new Error("exited PTY session was retained after 60 seconds");
+  throw new Error("exited terminal session was retained after 60 seconds");
 console.log(
   JSON.stringify({
     retentionMs: 60_000,

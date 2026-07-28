@@ -102,7 +102,7 @@ function makeDemoBackend(): RuntimeClient {
           items: [
             { content: "Reproduce the stream stall", status: "completed" },
             { content: "Patch ownership handoff", status: "in_progress" },
-            { content: "Run PTY recovery smoke", status: "pending" },
+            { content: "Run terminal recovery smoke", status: "pending" },
           ],
         },
         "saved 3 todo items",

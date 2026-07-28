@@ -52,7 +52,7 @@ import { DialogSkill } from "../component/DialogSkill";
 import { DialogStash } from "../component/DialogStash";
 import { DialogAttachment } from "../component/DialogAttachment";
 import { DialogWorkspaceSearch } from "../component/DialogWorkspaceSearch";
-import { DialogPty } from "../component/DialogPty";
+import { DialogTerminal } from "../component/DialogTerminal";
 import { DialogCheckpoint } from "../component/DialogCheckpoint";
 import { DialogSandbox } from "../component/DialogSandbox";
 import { PromptAutocomplete } from "../component/PromptAutocomplete";
@@ -306,7 +306,7 @@ function Shell(props: {
   });
   const history = new PromptHistory();
   const scrollRef: { current?: any } = {};
-  const ptyScrollRef: { current?: any } = {};
+  const terminalScrollRef: { current?: any } = {};
   let submitting = false;
   let restoredAgent = false;
 
@@ -2358,16 +2358,16 @@ function Shell(props: {
       route.back();
       return;
     }
-    if (command === "pty.focus-toggle") {
-      if (state.ptyPane.selectedID)
+    if (command === "terminal.focus-toggle") {
+      if (state.terminalPane.selectedID)
         dispatch({
           type: "terminal.pane.focus",
-          focus: state.ptyPane.focus === "chat" ? "terminal" : "chat",
+          focus: state.terminalPane.focus === "chat" ? "terminal" : "chat",
         });
       return;
     }
-    if (command === "pty.manage") {
-      dialog.push(() => <DialogPty backend={props.backend} />);
+    if (command === "terminal.manage") {
+      dialog.push(() => <DialogTerminal backend={props.backend} />);
       return;
     }
     if (command === "checkpoint.manage") {
@@ -2442,7 +2442,7 @@ function Shell(props: {
   useBindings(() => ({
     mode: "base",
     priority: 1,
-    enabled: () => state.ptyPane.focus === "terminal",
+    enabled: () => state.terminalPane.focus === "terminal",
     bindings: [
       {
         key: "ctrl+t",
@@ -2459,8 +2459,8 @@ function Shell(props: {
         desc: "Scroll terminal up",
         group: "Terminal",
         cmd: () =>
-          ptyScrollRef.current?.scrollBy(
-            -(ptyScrollRef.current.viewport?.height ?? 8) * 0.8,
+          terminalScrollRef.current?.scrollBy(
+            -(terminalScrollRef.current.viewport?.height ?? 8) * 0.8,
           ),
       },
       {
@@ -2468,48 +2468,48 @@ function Shell(props: {
         desc: "Scroll terminal down",
         group: "Terminal",
         cmd: () =>
-          ptyScrollRef.current?.scrollBy(
-            (ptyScrollRef.current.viewport?.height ?? 8) * 0.8,
+          terminalScrollRef.current?.scrollBy(
+            (terminalScrollRef.current.viewport?.height ?? 8) * 0.8,
           ),
       },
       {
         key: "home",
         desc: "Scroll terminal to start",
         group: "Terminal",
-        cmd: () => ptyScrollRef.current?.scrollTo(0),
+        cmd: () => terminalScrollRef.current?.scrollTo(0),
       },
       {
         key: "end",
         desc: "Scroll terminal to end",
         group: "Terminal",
         cmd: () =>
-          ptyScrollRef.current?.scrollTo(
-            ptyScrollRef.current.scrollHeight ?? 0,
+          terminalScrollRef.current?.scrollTo(
+            terminalScrollRef.current.scrollHeight ?? 0,
           ),
       },
       {
         key: "left",
         desc: "Previous terminal session",
         group: "Terminal",
-        cmd: () => movePtySelection(-1),
+        cmd: () => moveTerminalSelection(-1),
       },
       {
         key: "right",
         desc: "Next terminal session",
         group: "Terminal",
-        cmd: () => movePtySelection(1),
+        cmd: () => moveTerminalSelection(1),
       },
       {
         key: "tab",
         desc: "Next terminal session",
         group: "Terminal",
-        cmd: () => movePtySelection(1),
+        cmd: () => moveTerminalSelection(1),
       },
       {
         key: "shift+tab",
         desc: "Previous terminal session",
         group: "Terminal",
-        cmd: () => movePtySelection(-1),
+        cmd: () => moveTerminalSelection(-1),
       },
     ],
   }));
@@ -2592,7 +2592,7 @@ function Shell(props: {
   }));
 
   createEffect(() => {
-    if (route.route().kind === "none" && state.ptyPane.focus === "chat") {
+    if (route.route().kind === "none" && state.terminalPane.focus === "chat") {
       setTimeout(() => composer()?.focus(), 1);
     }
   });
@@ -2601,16 +2601,16 @@ function Shell(props: {
     setTimeout(() => scrollToBottom(scrollRef.current), delay);
   }
 
-  function movePtySelection(direction: -1 | 1) {
-    const sessions = Object.values(state.pty).filter(
-      (pty) =>
-        pty.ownership === "model" &&
-        pty.status !== "exited" &&
-        pty.status !== "failed",
+  function moveTerminalSelection(direction: -1 | 1) {
+    const sessions = Object.values(state.terminals).filter(
+      (terminal) =>
+        terminal.ownership === "model" &&
+        terminal.status !== "exited" &&
+        terminal.status !== "failed",
     );
     if (sessions.length < 2) return;
     const current = sessions.findIndex(
-      (pty) => pty.id === state.ptyPane.selectedID,
+      (terminal) => terminal.id === state.terminalPane.selectedID,
     );
     const next =
       sessions[(current + direction + sessions.length) % sessions.length];
@@ -2646,7 +2646,7 @@ function Shell(props: {
         <Show when={!activeSubagentRoute()}>
           <SessionRoute
             scrollRef={scrollRef}
-            ptyScrollRef={ptyScrollRef}
+            terminalScrollRef={terminalScrollRef}
             followBottom={followBottom()}
             onFollowChange={setFollowMode}
             density={preferences().density}

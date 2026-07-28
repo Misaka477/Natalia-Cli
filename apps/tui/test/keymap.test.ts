@@ -86,8 +86,8 @@ describe("command definitions", () => {
     expect(commands["settings.open"]).toBeDefined();
     expect(commands["help.open"]).toBeDefined();
     expect(commands["snapshot"]).toBeDefined();
-    expect(commands["pty.focus-toggle"]).toBeDefined();
-    expect(commands["pty.manage"]).toMatchObject({ keys: "f8" });
+    expect(commands["terminal.focus-toggle"]).toBeDefined();
+    expect(commands["terminal.manage"]).toMatchObject({ keys: "f8" });
     expect(commands["checkpoint.manage"]).toMatchObject({
       keys: "ctrl+shift+k",
     });

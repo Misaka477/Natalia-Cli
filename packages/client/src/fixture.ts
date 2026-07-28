@@ -116,7 +116,7 @@ export function createFakeBackend(): FakeBackend {
           options: [
             { label: "format", description: "Run format check" },
             { label: "typecheck", description: "Run TypeScript check" },
-            { label: "smoke", description: "Run PTY smoke" },
+            { label: "smoke", description: "Run terminal smoke" },
           ],
           custom: true,
         },
@@ -462,10 +462,10 @@ export function createFakeBackend(): FakeBackend {
           },
           resources: [
             {
-              kind: "pty",
-              id: "pty_m11",
+              kind: "terminal",
+              id: "terminal_m11",
               action: "stop",
-              summary: "running PTY cannot time travel",
+              summary: "running terminal cannot time travel",
             },
             {
               kind: "workflow",
@@ -507,7 +507,7 @@ export function createFakeBackend(): FakeBackend {
     }
   }
 
-  async function ptyResponse(id: string) {
+  async function terminalResponse(id: string) {
     const target = {
       kind: "sandbox" as const,
       sandboxID: "box_m11",
@@ -516,13 +516,13 @@ export function createFakeBackend(): FakeBackend {
     };
     publish({
       type: "terminal.action",
-      id: "pty_m11",
+      id: "terminal_m11",
       action: "attach",
       target,
     });
     publish({
       type: "terminal.update",
-      id: "pty_m11",
+      id: "terminal_m11",
       command: "bash --noprofile --norc",
       cwd: "/tmp/kilo/m11-box",
       status: "running",
@@ -531,21 +531,21 @@ export function createFakeBackend(): FakeBackend {
       cols: 80,
       prompt: "$",
       activity: "waiting",
-      tail: "Natalia PTY smoke\n$",
-      transcript: "Natalia PTY smoke\n$",
+      tail: "Natalia terminal smoke\n$",
+      transcript: "Natalia terminal smoke\n$",
       lastAction: "attach",
       target,
     });
     publish({
       type: "terminal.action",
-      id: "pty_m11",
+      id: "terminal_m11",
       action: "write",
       redacted: true,
       target,
     });
     publish({
       type: "terminal.update",
-      id: "pty_m11",
+      id: "terminal_m11",
       command: "bash --noprofile --norc",
       cwd: "/tmp/kilo/m11-box",
       status: "running",
@@ -554,27 +554,27 @@ export function createFakeBackend(): FakeBackend {
       cols: 120,
       prompt: "$",
       activity: "waiting",
-      tail: "Natalia PTY smoke\n[redacted]\n$",
-      transcript: "Natalia PTY smoke\n[redacted]\n$",
+      tail: "Natalia terminal smoke\n[redacted]\n$",
+      transcript: "Natalia terminal smoke\n[redacted]\n$",
       lastAction: "resize",
       target,
     });
-    publish({ type: "content.delta", id, text: "PTY fixture complete.\n" });
+    publish({ type: "content.delta", id, text: "Terminal fixture complete.\n" });
     publish({ type: "content.done", id });
   }
 
   async function modelTerminalResponse(id: string, text: string) {
-    const sessionID = text.includes("2") ? "pty_model_2" : "pty_model_1";
+    const sessionID = text.includes("2") ? "terminal_model_2" : "terminal_model_1";
     const target = {
       kind: "sandbox" as const,
       sandboxID: "box_model",
-      root: "/tmp/kilo/model-pty",
+      root: "/tmp/kilo/model-terminal",
       isolationLevel: "workspace" as const,
     };
     const created = modelTerminal.create({
       id: sessionID,
       command: "bash --noprofile --norc",
-      cwd: "/tmp/kilo/model-pty",
+      cwd: "/tmp/kilo/model-terminal",
       rows: 32,
       cols: 120,
       target,
@@ -752,11 +752,11 @@ export function createFakeBackend(): FakeBackend {
       publish(submission);
       if (text.trim().toLowerCase().startsWith("/modal")) {
         await modalResponse(id);
-      } else if (text.trim().toLowerCase().startsWith("/pty")) {
-        if (text.trim().toLowerCase().startsWith("/pty-model")) {
+      } else if (text.trim().toLowerCase().startsWith("/terminal")) {
+        if (text.trim().toLowerCase().startsWith("/terminal-model")) {
           await modelTerminalResponse(id, text);
         } else {
-          await ptyResponse(id);
+          await terminalResponse(id);
         }
       } else if (text.trim().toLowerCase().startsWith("/sandbox")) {
         await sandboxResponse(id);

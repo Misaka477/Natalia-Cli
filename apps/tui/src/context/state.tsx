@@ -106,7 +106,7 @@ type StreamState = {
 
 const streamSegmentChars = 6000;
 const eventBatchMs = 16;
-const maxPTYTranscriptChars = 12000;
+const maxTerminalTranscriptChars = 12000;
 
 export type AppState = {
   sessionID?: SessionID;
@@ -133,12 +133,12 @@ export type AppState = {
   todos: TodoView[];
   retryBanner?: string;
   compactionBanner?: string;
-  pty: Record<string, Extract<RuntimeEvent, { type: "terminal.update" }>>;
-  ptyTimeline: Record<
+  terminals: Record<string, Extract<RuntimeEvent, { type: "terminal.update" }>>;
+  terminalTimeline: Record<
     string,
     Extract<RuntimeEvent, { type: "terminal.timeline" }>[]
   >;
-  ptyPane: { selectedID?: string; focus: "chat" | "terminal" };
+  terminalPane: { selectedID?: string; focus: "chat" | "terminal" };
   sandboxes: Record<string, Extract<RuntimeEvent, { type: "sandbox.update" }>>;
   mcp: Record<string, Extract<RuntimeEvent, { type: "mcp.status" }>>;
 };
@@ -159,9 +159,9 @@ export const initialState: AppState = {
   subagents: {},
   subagentHistory: {},
   todos: [],
-  pty: {},
-  ptyTimeline: {},
-  ptyPane: { focus: "chat" },
+  terminals: {},
+  terminalTimeline: {},
+  terminalPane: { focus: "chat" },
   sandboxes: {},
   mcp: {},
   messages: [],
@@ -353,39 +353,39 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
       handleCheckpointEvent(state, event);
       return;
     case "terminal.update":
-      const ptyEvent = compactPTYEvent(event);
-      const previousPTY = state.pty[ptyEvent.id];
-      if (previousPTY && samePTYUpdate(previousPTY, ptyEvent)) return;
-      const isNewPTY = !state.pty[ptyEvent.id];
-      state.pty[ptyEvent.id] = ptyEvent;
+      const terminalEvent = compactTerminalEvent(event);
+      const previousTerminal = state.terminals[terminalEvent.id];
+      if (previousTerminal && sameTerminalUpdate(previousTerminal, terminalEvent)) return;
+      const isNewTerminal = !state.terminals[terminalEvent.id];
+      state.terminals[terminalEvent.id] = terminalEvent;
       if (
-        ptyEvent.ownership === "model" &&
-        (isNewPTY || !state.ptyPane.selectedID) &&
-        ptyEvent.status !== "exited" &&
-        ptyEvent.status !== "failed"
+        terminalEvent.ownership === "model" &&
+        (isNewTerminal || !state.terminalPane.selectedID) &&
+        terminalEvent.status !== "exited" &&
+        terminalEvent.status !== "failed"
       ) {
-        state.ptyPane.selectedID = ptyEvent.id;
+        state.terminalPane.selectedID = terminalEvent.id;
       }
       if (
-        state.ptyPane.selectedID === ptyEvent.id &&
-        (ptyEvent.status === "exited" || ptyEvent.status === "failed")
+        state.terminalPane.selectedID === terminalEvent.id &&
+        (terminalEvent.status === "exited" || terminalEvent.status === "failed")
       ) {
-        state.ptyPane.selectedID = nextActivePTY(state, ptyEvent.id);
-        if (!state.ptyPane.selectedID) state.ptyPane.focus = "chat";
+        state.terminalPane.selectedID = nextActiveTerminal(state, terminalEvent.id);
+        if (!state.terminalPane.selectedID) state.terminalPane.focus = "chat";
       }
       return;
     case "terminal.pane.select":
-      if (activePTYIDs(state).includes(event.id)) {
-        state.ptyPane.selectedID = event.id;
-        state.ptyPane.focus = "terminal";
+      if (activeTerminalIDs(state).includes(event.id)) {
+        state.terminalPane.selectedID = event.id;
+        state.terminalPane.focus = "terminal";
       }
       return;
     case "terminal.pane.focus":
-      state.ptyPane.focus = event.focus;
-      state.ptyPane.selectedID ??= nextActivePTY(state);
+      state.terminalPane.focus = event.focus;
+      state.terminalPane.selectedID ??= nextActiveTerminal(state);
       return;
     case "terminal.timeline":
-      const timeline = (state.ptyTimeline[event.id] ??= []);
+      const timeline = (state.terminalTimeline[event.id] ??= []);
       if (
         !timeline.some(
           (item) =>
@@ -396,7 +396,7 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
         )
       ) {
         timeline.push(event);
-        state.ptyTimeline[event.id] = timeline.slice(-40);
+        state.terminalTimeline[event.id] = timeline.slice(-40);
       }
       return;
     case "terminal.approval":
@@ -404,7 +404,7 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
       return;
     case "terminal.action":
       state.footer =
-        `pty ${event.id} ${event.action} ${event.redacted ? "[redacted]" : ""}`.trim();
+        `terminal ${event.id} ${event.action} ${event.redacted ? "[redacted]" : ""}`.trim();
       return;
     case "sandbox.update":
       state.sandboxes[event.id] = event;
@@ -1049,19 +1049,19 @@ function targetLabel(
   return `sandbox:${target.sandboxID}:${target.isolationLevel}`;
 }
 
-function activePTYIDs(state: AppState) {
-  return Object.values(state.pty)
+function activeTerminalIDs(state: AppState) {
+  return Object.values(state.terminals)
     .filter(
-      (pty) =>
-        pty.ownership === "model" &&
-        pty.status !== "exited" &&
-        pty.status !== "failed",
+      (terminal) =>
+        terminal.ownership === "model" &&
+        terminal.status !== "exited" &&
+        terminal.status !== "failed",
     )
-    .map((pty) => pty.id);
+    .map((terminal) => terminal.id);
 }
 
-function nextActivePTY(state: AppState, excludedID?: string) {
-  return activePTYIDs(state).find((id) => id !== excludedID);
+function nextActiveTerminal(state: AppState, excludedID?: string) {
+  return activeTerminalIDs(state).find((id) => id !== excludedID);
 }
 
 function removeBlock(state: AppState, id: string) {
@@ -1231,18 +1231,18 @@ function isUrgentEvent(event: RuntimeEvent) {
   );
 }
 
-function compactPTYEvent(
+function compactTerminalEvent(
   event: Extract<RuntimeEvent, { type: "terminal.update" }>,
 ) {
   const transcript = event.transcript;
-  if (!transcript || transcript.length <= maxPTYTranscriptChars) return event;
+  if (!transcript || transcript.length <= maxTerminalTranscriptChars) return event;
   return {
     ...event,
-    transcript: `... ${transcript.length - maxPTYTranscriptChars} earlier chars omitted from live pane ...\n${transcript.slice(-maxPTYTranscriptChars)}`,
+    transcript: `... ${transcript.length - maxTerminalTranscriptChars} earlier chars omitted from live pane ...\n${transcript.slice(-maxTerminalTranscriptChars)}`,
   };
 }
 
-function samePTYUpdate(
+function sameTerminalUpdate(
   previous: Extract<RuntimeEvent, { type: "terminal.update" }>,
   next: Extract<RuntimeEvent, { type: "terminal.update" }>,
 ) {

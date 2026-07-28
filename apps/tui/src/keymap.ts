@@ -119,15 +119,15 @@ export const commands: Record<string, CommandDef> = {
     desc: "Fork session at the last submitted message",
   },
   snapshot: { id: "snapshot", keys: "ctrl+s", desc: "Create snapshot" },
-  "pty.focus-toggle": {
-    id: "pty.focus-toggle",
+  "terminal.focus-toggle": {
+    id: "terminal.focus-toggle",
     keys: "ctrl+t",
-    desc: "Toggle PTY/chat focus",
+    desc: "Toggle terminal/chat focus",
   },
-  "pty.manage": {
-    id: "pty.manage",
+  "terminal.manage": {
+    id: "terminal.manage",
     keys: "f8",
-    desc: "Manage interactive PTY sessions",
+    desc: "Manage interactive terminal sessions",
   },
   "checkpoint.manage": {
     id: "checkpoint.manage",

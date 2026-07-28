@@ -2,17 +2,17 @@ import { writeFile } from "node:fs/promises";
 import { runTuiShell } from "../src/app/runtime";
 import { initialState, reduceState } from "../src/context/state";
 
-const pty = await runPrompt("/pty");
+const terminal = await runPrompt("/terminal");
 const sandbox = await runPrompt("/sandbox");
-const events = [...pty.events, ...sandbox.events];
+const events = [...terminal.events, ...sandbox.events];
 const state = events.reduce(reduceState, structuredClone(initialState));
 const summary = {
-  ptyUpdate: events.find((event) => event.type === "terminal.update"),
-  ptyAction: events.find((event) => event.type === "terminal.action"),
+  terminalUpdate: events.find((event) => event.type === "terminal.update"),
+  terminalAction: events.find((event) => event.type === "terminal.action"),
   sandboxUpdate: events.find((event) => event.type === "sandbox.update"),
   sandboxDiff: events.find((event) => event.type === "sandbox.diff"),
   sandboxAudit: events.find((event) => event.type === "sandbox.audit"),
-  ptyBlock: state.messages.find((message) => message.id.startsWith("pty:"))
+  terminalBlock: state.messages.find((message) => message.id.startsWith("terminal:"))
     ?.text,
   sandboxBlock: state.messages.find(
     (message) => message.id === "sandbox:box_m11",
@@ -21,17 +21,17 @@ const summary = {
 };
 
 await writeFile(
-  "/tmp/kilo/natalia-tui-pty-sandbox-latest.json",
+  "/tmp/kilo/natalia-tui-terminal-sandbox-latest.json",
   `${JSON.stringify(summary, null, 2)}\n`,
 );
-if (!summary.ptyUpdate) throw new Error("PTY smoke missed pty.update");
+if (!summary.terminalUpdate) throw new Error("Terminal smoke missed terminal.update");
 if (!summary.sandboxUpdate)
   throw new Error("Sandbox smoke missed sandbox.update");
 if (!summary.sandboxDiff) throw new Error("Sandbox smoke missed sandbox.diff");
 if (!summary.sandboxAudit)
   throw new Error("Sandbox smoke missed sandbox.audit");
-if (summary.ptyBlock?.includes("secret"))
-  throw new Error("PTY sensitive input leaked");
+if (summary.terminalBlock?.includes("secret"))
+  throw new Error("Terminal sensitive input leaked");
 console.log(JSON.stringify(summary, null, 2));
 
 async function runPrompt(initialPrompt: string) {

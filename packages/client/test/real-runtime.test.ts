@@ -1111,7 +1111,7 @@ test("workflow grep retains workspace read path authorization", async () => {
 });
 
 test("runtime executes canonical interactive Terminal tools on one native pane", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-pty-runtime-"));
+  const root = await mkdtemp(join(tmpdir(), "natalia-terminal-runtime-"));
   const events: RuntimeEvent[] = [];
   const handled = new Set<string>();
   const client = createRealRuntimeClient({
@@ -1128,7 +1128,7 @@ test("runtime executes canonical interactive Terminal tools on one native pane",
         if (typeof text === "string" && !handled.has(text)) {
           handled.add(text);
           const call =
-            text === "start pty"
+            text === "start terminal"
               ? {
                   id: "start",
                   name: "interactive_terminal_start",
@@ -1137,7 +1137,7 @@ test("runtime executes canonical interactive Terminal tools on one native pane",
                     command: "cat",
                   }),
                 }
-              : text === "write pty"
+              : text === "write terminal"
                 ? {
                     id: "write",
                     name: "interactive_terminal_write",
@@ -1160,9 +1160,9 @@ test("runtime executes canonical interactive Terminal tools on one native pane",
     nativeTerminal: nativeTerminalFixture(),
   });
   client.start((event) => events.push(event));
-  await client.submit("start pty");
-  await client.submit("write pty");
-  await client.submit("stop pty");
+  await client.submit("start terminal");
+  await client.submit("write terminal");
+  await client.submit("stop terminal");
   expect(await client.nativeTerminalList?.()).toMatchObject([
     { id: "tty_runtime", status: "exited" },
   ]);
@@ -1170,17 +1170,17 @@ test("runtime executes canonical interactive Terminal tools on one native pane",
 });
 
 test("runtime exposes native Terminal pane management through RuntimeClient", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-pty-management-runtime-"));
+  const root = await mkdtemp(join(tmpdir(), "natalia-terminal-management-runtime-"));
   const events: RuntimeEvent[] = [];
   const client = createRealRuntimeClient({
     workspaceRoot: root,
     sessionID: "ses_pty_management",
     permissionMode: "auto",
-    provider: interactivePTYProvider(),
+    provider: interactiveTerminalProvider(),
     nativeTerminal: nativeTerminalFixture(),
   });
   client.start((event) => events.push(event));
-  await client.submit("start pty");
+  await client.submit("start terminal");
 
   expect(await client.nativeTerminalList!()).toMatchObject([
     { id: "tty_management", status: "running", paneID: 71 },
@@ -4031,10 +4031,10 @@ function workflowProvider(workflow: string): StreamingProvider {
   };
 }
 
-function interactivePTYProvider(): StreamingProvider {
+function interactiveTerminalProvider(): StreamingProvider {
   return {
-    provider: "scripted-interactive-pty",
-    model: "scripted-interactive-pty-model",
+    provider: "scripted-interactive-terminal",
+    model: "scripted-interactive-terminal-model",
     async *stream(request) {
       if (!request.messages.some((message) => message.role === "tool"))
         yield {

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { platform } from "node:os";
 import { dirname, join } from "node:path";
@@ -45,6 +45,7 @@ export type NativeTerminalHost = {
     muxWindowID?: number;
   }): Promise<NativeTerminalPane>;
   list(): Promise<NativeTerminalPane[]>;
+  listClients?(): Promise<Array<{ focused_pane_id: number }>>;
   read(
     paneID: number,
     options?: { maxLines?: number; startLine?: number; endLine?: number },
@@ -69,6 +70,7 @@ export type NativeTerminalHost = {
   resize(paneID: number, rows: number, cols: number): Promise<void>;
   stop(paneID: number): Promise<void>;
   dispose?(): Promise<void>;
+  isClientAttached?(paneID: number): Promise<boolean>;
 };
 
 type CommandRunner = (
@@ -453,6 +455,36 @@ export function createWezTermHost(
         await rm(input.muxRuntimeDir, { recursive: true, force: true });
       }
     },
+    async isClientAttached(paneID) {
+      try {
+        const output = await command(["cli", "list-clients", "--format", "json"]);
+        const clients = JSON.parse(output) as unknown;
+        if (!Array.isArray(clients)) return false;
+        return clients.some(
+          (client: Record<string, unknown>) =>
+            client && typeof client.focused_pane_id === "number" && client.focused_pane_id === paneID,
+        );
+      } catch {
+        return false;
+      }
+    },
+    async listClients() {
+      try {
+        const output = await command(["cli", "list-clients", "--format", "json"]);
+        const clients = JSON.parse(output) as unknown;
+        if (!Array.isArray(clients)) return [];
+        return clients
+          .filter(
+            (client: unknown): client is Record<string, unknown> =>
+              !!client && typeof client === "object",
+          )
+          .map((client) => ({
+            focused_pane_id: client.focused_pane_id as number,
+          }));
+      } catch {
+        return [];
+      }
+    },
   };
 }
 
@@ -534,6 +566,7 @@ export type NativeTerminalSession = {
   geometryOwner: "human";
   secureInput: boolean;
   status: "running" | "exited";
+  attached: boolean;
   cursor_x?: number;
   cursor_y?: number;
   rows?: number;
@@ -579,8 +612,11 @@ export class NativeTerminalRegistry {
     private readonly options: {
       onAudit?: (event: NativeTerminalAuditEvent) => void;
       autoOpenHub?: boolean;
+      persistPath?: string;
     } = {},
-  ) {}
+  ) {
+    this.loadPersistedSessions();
+  }
 
   setHumanInputBridge(bridge: { endpoint: string; token: string }) {
     this.humanInputBridge = bridge;
@@ -612,15 +648,15 @@ export class NativeTerminalRegistry {
       geometryOwner: "human",
       secureInput: false,
       status: "running",
+      attached: true,
       rows: pane.rows,
       cols: pane.cols,
     };
     this.sessions.set(session.id, session);
+    await this.persistSessions();
     if (this.options.autoOpenHub !== false) {
       if (isFirstHubSession) await this.attachToHub(session, true, true);
       else {
-        // The pane was born directly in the existing Hub window. Moving it
-        // again can produce a second native window on some WezTerm builds.
         session.windowID = this.hub!.muxWindowID;
         session.muxWindowID = this.hub!.muxWindowID;
         await this.host.focus(session.paneID);
@@ -631,6 +667,83 @@ export class NativeTerminalRegistry {
 
   list() {
     return [...this.sessions.values()];
+  }
+
+  private loadPersistedSessions() {
+    if (!this.options.persistPath) return;
+    try {
+      if (!existsSync(this.options.persistPath)) return;
+      const data = JSON.parse(
+        readFileSync(this.options.persistPath, "utf8"),
+      ) as unknown;
+      if (!Array.isArray(data)) return;
+      for (const raw of data) {
+        if (!raw || typeof raw !== "object") continue;
+        const paneID = (raw as Record<string, unknown>).paneID;
+        const session: NativeTerminalSession = {
+          id: (raw as Record<string, unknown>).id as string,
+          host: "wezterm",
+          paneID: typeof paneID === "number" ? paneID : 0,
+          windowID: (raw as Record<string, unknown>).windowID as number,
+          muxWindowID: (raw as Record<string, unknown>).muxWindowID as number,
+          tabID: (raw as Record<string, unknown>).tabID as number,
+          command: ((raw as Record<string, unknown>).command as string) ?? "",
+          cwd: ((raw as Record<string, unknown>).cwd as string) ?? "",
+          startedAt: ((raw as Record<string, unknown>).startedAt as string) ??
+            new Date().toISOString(),
+          revision: 0,
+          inputOwner: ((raw as Record<string, unknown>).inputOwner as NativeTerminalSession["inputOwner"]) ??
+            "model",
+          geometryOwner: "human",
+          secureInput: Boolean((raw as Record<string, unknown>).secureInput),
+          status: ((raw as Record<string, unknown>).status as NativeTerminalSession["status"]) ??
+            "exited",
+          attached: Boolean((raw as Record<string, unknown>).attached),
+          cursor_x: (raw as Record<string, unknown>).cursor_x as
+            | number
+            | undefined,
+          cursor_y: (raw as Record<string, unknown>).cursor_y as
+            | number
+            | undefined,
+          rows: (raw as Record<string, unknown>).rows as number | undefined,
+          cols: (raw as Record<string, unknown>).cols as number | undefined,
+        };
+        this.sessions.set(session.id, session);
+      }
+    } catch {
+      // ignore corrupt manifest; empty sessions will be rebuilt on start
+    }
+  }
+
+  private async persistSessions() {
+    if (!this.options.persistPath) return;
+    try {
+      await mkdir(dirname(this.options.persistPath), { recursive: true });
+      const data = JSON.stringify({
+        sessions: Array.from(this.sessions.values()).map((s) => ({
+          id: s.id,
+          paneID: s.paneID,
+          windowID: s.windowID,
+          muxWindowID: s.muxWindowID,
+          tabID: s.tabID,
+          command: s.command,
+          cwd: s.cwd,
+          startedAt: s.startedAt,
+          status: s.status,
+          inputOwner: s.inputOwner,
+          secureInput: s.secureInput,
+          rows: s.rows,
+          cols: s.cols,
+          attached: s.attached,
+          cursor_x: s.cursor_x,
+          cursor_y: s.cursor_y,
+        })),
+        hub: this.hub,
+      });
+      await writeFile(this.options.persistPath, data, { mode: 0o600 });
+    } catch {
+      // persistence is best-effort; runtime continues without durable manifest
+    }
   }
 
   isHumanInputOwner(id: string) {
@@ -652,6 +765,9 @@ export class NativeTerminalRegistry {
     const panes = new Map(
       (await this.host.list()).map((pane) => [pane.pane_id, pane]),
     );
+    const attached = new Set(
+      (await this.host.listClients?.())?.map((client) => client.focused_pane_id) ?? [],
+    );
     this.lastReconcileAt = performance.now();
     for (const session of this.sessions.values()) {
       const pane = panes.get(session.paneID);
@@ -662,13 +778,16 @@ export class NativeTerminalRegistry {
           this.audit(session, "exit", "system");
         }
         session.status = "exited";
+        session.attached = false;
         continue;
       }
       session.rows = pane.rows;
       session.cols = pane.cols;
       session.cursor_x = pane.cursor_x;
       session.cursor_y = pane.cursor_y;
+      session.attached = attached.has(session.paneID);
     }
+    await this.persistSessions();
     return this.list();
   }
 
@@ -772,12 +891,23 @@ export class NativeTerminalRegistry {
     return this.hub;
   }
 
+  private async cleanupStalePanes() {
+    if (!this.host.list || !this.host.stop) return;
+    const known = new Set(this.sessions.values().map((session) => session.paneID));
+    for (const pane of await this.host.list()) {
+      if (!known.has(pane.pane_id)) {
+        await this.host.stop(pane.pane_id);
+      }
+    }
+  }
+
   private async attachToHub(
     session: NativeTerminalSession,
     launch: boolean,
     selectTarget = false,
   ) {
     if (!this.host.open) return undefined;
+    await this.cleanupStalePanes();
     const environment = this.humanInputBridge
       ? {
           NATALIA_NATIVE_INPUT_ENDPOINT: this.humanInputBridge.endpoint,
@@ -960,10 +1090,12 @@ export class NativeTerminalRegistry {
     if (session.status === "running") await this.host.stop(session.paneID);
     session.status = "exited";
     session.revision += 1;
+    session.attached = false;
     this.notifyRevision(session.id);
     this.idempotency.delete(id);
     this.modelWrites.delete(id);
     this.audit(session, "exit", "system");
+    await this.persistSessions();
     return session;
   }
 
@@ -978,6 +1110,7 @@ export class NativeTerminalRegistry {
     this.idempotency.clear();
     this.revisionWaiters.clear();
     this.hub = undefined;
+    await this.persistSessions();
   }
 
   session(id: string): NativeTerminalSession {

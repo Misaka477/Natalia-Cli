@@ -68,20 +68,8 @@ test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", as
         cursor: { next: "opaque-next" },
       };
     },
-    async ptyList() {
-      return [ptyFixture()];
-    },
     async terminalList() {
       return [ptyFixture()];
-    },
-    async ptyRead() {
-      return {
-        ...ptyFixture(),
-        offset: 0,
-        nextOffset: 3,
-        totalChars: 3,
-        truncated: false,
-      };
     },
     async terminalRead() {
       return {
@@ -132,40 +120,24 @@ test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", as
         totalLines: 1,
         lines: [[["history", 1]]],
         text: "history",
+        cursorRow: 0,
+        cursorCol: 0,
       };
     },
-    async ptyWrite() {
-      return ptyFixture();
-    },
     async terminalWrite() {
-      return ptyFixture();
-    },
-    async ptyKey() {
       return ptyFixture();
     },
     async terminalKey() {
       return ptyFixture();
     },
-    async ptyResize() {
-      return { ...ptyFixture(), rows: 32, cols: 120 };
-    },
     async terminalResize() {
       return { ...ptyFixture(), rows: 32, cols: 120 };
-    },
-    async ptyAttach() {
-      return ptyFixture();
     },
     async terminalAttach() {
       return ptyFixture();
     },
-    async ptyDetach() {
-      return { ...ptyFixture(), attached: false };
-    },
     async terminalDetach() {
       return { ...ptyFixture(), attached: false };
-    },
-    async ptyStop() {
-      return { ...ptyFixture(), status: "exited" as const };
     },
     async terminalStop() {
       return { ...ptyFixture(), status: "exited" as const };
@@ -386,7 +358,7 @@ test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", as
   expect(replayed).toContain("id: 7");
   expect(replayed).toContain("durable replay");
   await reader.cancel();
-  const pty = await fetch(`${server.url}/rpc`, {
+  const terminal = await fetch(`${server.url}/rpc`, {
     method: "POST",
     headers: {
       authorization: "Bearer secret",
@@ -395,16 +367,16 @@ test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", as
     body: JSON.stringify({
       jsonrpc: "2.0",
       id: 14,
-      method: "pty.resize",
+      method: "terminal.resize",
       params: { id: "tty_fixture", rows: 32, cols: 120 },
     }),
   });
   expect(
-    (await pty.json()) as { result: { rows: number; cols: number } },
+    (await terminal.json()) as { result: { rows: number; cols: number } },
   ).toMatchObject({
     result: { rows: 32, cols: 120 },
   });
-  const terminal = await fetch(`${server.url}/rpc`, {
+  const terminal2 = await fetch(`${server.url}/rpc`, {
     method: "POST",
     headers: {
       authorization: "Bearer secret",
@@ -418,7 +390,7 @@ test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", as
     }),
   });
   expect(
-    (await terminal.json()) as { result: { rows: number; cols: number } },
+    (await terminal2.json()) as { result: { rows: number; cols: number } },
   ).toMatchObject({
     result: { rows: 32, cols: 120 },
   });

@@ -92,6 +92,8 @@ export class XtermTerminalEmulator {
         col: buffer.cursorX,
         visible: this.cursorVisible,
       },
+      cursorX: buffer.cursorX,
+      cursorY: buffer.cursorY,
       lines,
       text: lines
         .map((line) =>
@@ -124,6 +126,8 @@ export class XtermTerminalEmulator {
       }
       lines.push(cells);
     }
+    const cursorRow = Math.max(-1, Math.min(lines.length, this.terminal.buffer.active.cursorY - start));
+    const cursorCol = this.terminal.buffer.active.cursorX;
     return {
       offsetFromBottom,
       start,
@@ -131,6 +135,8 @@ export class XtermTerminalEmulator {
       totalLines: buffer.length,
       lines,
       text: screenText(lines),
+      cursorRow,
+      cursorCol,
     };
   }
 
@@ -253,6 +259,8 @@ export function applyTerminalScreenUpdate(
   return {
     ...current,
     cursor: update.patch.cursor,
+    cursorX: update.patch.cursor.col,
+    cursorY: update.patch.cursor.row,
     modes: update.patch.modes,
     lines,
     text: screenText(lines),

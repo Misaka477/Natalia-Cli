@@ -18,7 +18,7 @@ const workspaceFiles = [{ path: "src/mentioned.ts", type: "file" as const }];
 const selectedAgents: Array<string | undefined> = [];
 const forkCalls: Array<{ id: string; turnID: string }> = [];
 let statusLoads = 0;
-let ptyLoads = 0;
+let terminalLoads = 0;
 let checkpointLoads = 0;
 let sandboxLoads = 0;
 const statusLoadCount = () => statusLoads;
@@ -210,10 +210,10 @@ keys.pressEscape();
 await Bun.sleep(80);
 
 keys.pressKey("t", { ctrl: true, shift: true });
-for (let attempts = 0; attempts < 20 && ptyLoads !== 1; attempts++)
+for (let attempts = 0; attempts < 20 && terminalLoads !== 1; attempts++)
   await Bun.sleep(25);
-if (ptyLoads !== 1)
-  throw new Error(`expected PTY management load, got ${ptyLoads}`);
+if (terminalLoads !== 1)
+  throw new Error(`expected terminal management load, got ${terminalLoads}`);
 keys.pressEscape();
 await Bun.sleep(80);
 
@@ -345,8 +345,8 @@ function makeBackend(): RuntimeClient {
         background: "0 running",
       };
     },
-    async ptyList() {
-      ptyLoads++;
+    async terminalList() {
+      terminalLoads++;
       return [
         {
           id: "tty_keyboard",

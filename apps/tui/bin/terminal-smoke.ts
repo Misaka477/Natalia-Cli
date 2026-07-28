@@ -3,17 +3,17 @@ import { existsSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-const log = path.join("/tmp/kilo", `natalia-tui-pty-${Date.now()}.log`);
-const marker = path.join("/tmp/kilo", `natalia-tui-pty-${Date.now()}.done`);
+const log = path.join("/tmp/kilo", `natalia-tui-terminal-${Date.now()}.log`);
+const marker = path.join("/tmp/kilo", `natalia-tui-terminal-${Date.now()}.done`);
 const script = existsSync("/usr/bin/script")
   ? "/usr/bin/script"
   : "/bin/script";
-const command = `NATALIA_TUI_SMOKE=1 NATALIA_TUI_SMOKE_PROMPT=${JSON.stringify("short PTY smoke")} NATALIA_TUI_SMOKE_MARKER=${JSON.stringify(marker)} ${JSON.stringify(process.execPath)} run src/main.tsx; sleep 1`;
+const command = `NATALIA_TUI_SMOKE=1 NATALIA_TUI_SMOKE_PROMPT=${JSON.stringify("short terminal smoke")} NATALIA_TUI_SMOKE_MARKER=${JSON.stringify(marker)} ${JSON.stringify(process.execPath)} run src/main.tsx; sleep 1`;
 const code = existsSync(script)
   ? await runScript(command, log)
   : await runTmux(command, log);
 
-if (code !== 0) throw new Error(`PTY smoke exited with ${code}`);
+if (code !== 0) throw new Error(`Terminal smoke exited with ${code}`);
 
 for (let index = 0; index < 100; index++) {
   if (existsSync(marker)) break;
@@ -22,22 +22,22 @@ for (let index = 0; index < 100; index++) {
 
 const transcript = await readFile(log, "utf8");
 await writeFile(
-  path.join("/tmp/kilo", "natalia-tui-pty-latest.log"),
+  path.join("/tmp/kilo", "natalia-tui-terminal-latest.log"),
   transcript,
 );
 await rm(marker, { force: true });
 
-if (!transcript.includes("short PTY smoke"))
-  throw new Error("PTY transcript missed the submitted prompt");
+if (!transcript.includes("short terminal smoke"))
+  throw new Error("Terminal transcript missed the submitted prompt");
 if (!transcript.includes("Thinking [completed]"))
-  throw new Error("PTY transcript missed the streaming thinking block");
+  throw new Error("Terminal transcript missed the streaming thinking block");
 if (
   !transcript.includes("Streaming final") &&
   !transcript.includes("apiToken=[REDACTED]")
 )
-  throw new Error("PTY transcript missed streamed content or tool block");
+  throw new Error("Terminal transcript missed streamed content or tool block");
 
-console.log(`PTY smoke transcript: ${log}`);
+console.log(`Terminal smoke transcript: ${log}`);
 
 async function runScript(command: string, output: string) {
   const child = spawn(script, ["-qfec", command, output], {

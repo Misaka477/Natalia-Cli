@@ -97,38 +97,6 @@ export type NataliaSDK = {
   terminalStop(
     id: string,
   ): Promise<import("@natalia/contracts").RuntimeTerminalSession>;
-  /** @deprecated Use terminalSessions. */
-  ptySessions(): Promise<import("@natalia/contracts").RuntimePTYSession[]>;
-  ptyRead(input: { id: string; offset?: number; maxChars?: number }): Promise<
-    import("@natalia/contracts").RuntimePTYSession & {
-      offset: number;
-      nextOffset: number;
-      totalChars: number;
-      truncated: boolean;
-    }
-  >;
-  ptyWrite(input: {
-    id: string;
-    text: string;
-    submit?: boolean;
-    sensitive?: boolean;
-  }): Promise<import("@natalia/contracts").RuntimePTYSession>;
-  ptyKey(input: {
-    id: string;
-    key: "enter" | "ctrl-c" | "ctrl-d" | "tab" | "esc";
-  }): Promise<import("@natalia/contracts").RuntimePTYSession>;
-  ptyResize(input: {
-    id: string;
-    rows: number;
-    cols: number;
-  }): Promise<import("@natalia/contracts").RuntimePTYSession>;
-  ptyAttach(
-    id: string,
-  ): Promise<import("@natalia/contracts").RuntimePTYSession>;
-  ptyDetach(
-    id: string,
-  ): Promise<import("@natalia/contracts").RuntimePTYSession>;
-  ptyStop(id: string): Promise<import("@natalia/contracts").RuntimePTYSession>;
   sessions(): Promise<import("@natalia/contracts").RuntimeSessionSummary[]>;
   touchSession(id: string): Promise<void>;
   renameSession(
@@ -284,14 +252,6 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     terminalAttach: async (id) => await call("terminal.attach", { id }),
     terminalDetach: async (id) => await call("terminal.detach", { id }),
     terminalStop: async (id) => await call("terminal.stop", { id }),
-    ptySessions: async () => await call("pty.list", {}),
-    ptyRead: async (input) => await call("pty.read", input),
-    ptyWrite: async (input) => await call("pty.write", input),
-    ptyKey: async (input) => await call("pty.key", input),
-    ptyResize: async (input) => await call("pty.resize", input),
-    ptyAttach: async (id) => await call("pty.attach", { id }),
-    ptyDetach: async (id) => await call("pty.detach", { id }),
-    ptyStop: async (id) => await call("pty.stop", { id }),
     sessions: async () => await call("session.list", {}),
     touchSession: async (id) => {
       await call("session.touch", { id });

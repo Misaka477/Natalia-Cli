@@ -66,8 +66,8 @@ export type ToolExecutionContext = {
   subagents?: SubagentRegistry;
   terminalRegistry?: TerminalRegistry;
   nativeTerminal?: NativeTerminalRegistry;
-  onPTYUpdate?: (session: TerminalSessionUpdate) => void;
-  onPTYAction?: (
+  onTerminalUpdate?: (session: TerminalSessionUpdate) => void;
+  onTerminalAction?: (
     session: TerminalSessionInfo,
     action:
       | "write"
@@ -907,7 +907,7 @@ function requireNativeTerminal(context: ToolExecutionContext) {
   return context.nativeTerminal;
 }
 
-function notifyPTY(
+function notifyTerminal(
   context: ToolExecutionContext,
   session: TerminalSessionInfo,
   action?:
@@ -920,8 +920,8 @@ function notifyPTY(
     | "exit",
   redacted = false,
 ) {
-  context.onPTYUpdate?.(session);
-  if (action) context.onPTYAction?.(session, action, redacted);
+  context.onTerminalUpdate?.(session);
+  if (action) context.onTerminalAction?.(session, action, redacted);
   return JSON.stringify(modelTerminalInfo(session), null, 2);
 }
 
@@ -1341,43 +1341,43 @@ function terminalObserveTool(): RuntimeTool {
         );
       }
       const registry = requireTerminalRegistry(context);
-      const ptyObservation = await registry.observe(id, {
+      const terminalObservation = await registry.observe(id, {
         afterRevision,
         timeoutMs: numberOr(args.timeoutMs, 30_000),
         signal: context.signal,
       });
-      if (ptyObservation.session.screen)
-        context.onPTYUpdate?.(
-          ptyObservation.session as import("@natalia/terminal").TerminalSessionInfo,
+      if (terminalObservation.session.screen)
+        context.onTerminalUpdate?.(
+          terminalObservation.session as import("@natalia/terminal").TerminalSessionInfo,
         );
-      const ptySession = registry.session(id);
-      let ptyText = ptySession.transcript || "";
-      const previousPtyText = ptySession.lastObservedText;
+      const terminalSession = registry.session(id);
+      let terminalText = terminalSession.transcript || "";
+      const previousTerminalText = terminalSession.lastObservedText;
       if (mode === "tail") {
-        const lines = ptyText.split("\n");
+        const lines = terminalText.split("\n");
         if (lines.at(-1) === "") lines.pop();
         const tailLines = Math.max(
           1,
           Math.min(numberOr(args.scrollbackRows, 60), 200),
         );
-        ptyText = lines.slice(-tailLines).join("\n");
+        terminalText = lines.slice(-tailLines).join("\n");
       } else if (mode === "cursor") {
-        const lines = ptyText.split("\n");
+        const lines = terminalText.split("\n");
         if (lines.at(-1) === "") lines.pop();
-        const cursorY = ptyObservation.session.screen?.cursor?.row ?? 0;
+        const cursorY = terminalObservation.session.screen?.cursor?.row ?? 0;
         const contextLines = 10;
         const startLine = Math.max(0, cursorY - contextLines);
         const endLine = Math.min(lines.length, cursorY + contextLines + 1);
-        ptyText = lines.slice(startLine, endLine).join("\n");
+        terminalText = lines.slice(startLine, endLine).join("\n");
       } else if (mode === "new_only") {
-        if (previousPtyText && ptyText.startsWith(previousPtyText)) {
-          ptyText = ptyText.slice(previousPtyText.length);
+        if (previousTerminalText && terminalText.startsWith(previousTerminalText)) {
+          terminalText = terminalText.slice(previousTerminalText.length);
         }
       }
       registry.markObserved(
         id,
-        ptySession.transcript,
-        ptyObservation.session.revision,
+        terminalSession.transcript,
+        terminalObservation.session.revision,
       );
       const scrollbackRows = Math.max(
         0,
@@ -1385,19 +1385,19 @@ function terminalObserveTool(): RuntimeTool {
       );
       return JSON.stringify(
         {
-          ...ptyObservation,
-          session: ptyObservation.session.screen
+          ...terminalObservation,
+          session: terminalObservation.session.screen
             ? modelTerminalInfo(
-                ptyObservation.session as import("@natalia/terminal").TerminalSessionInfo,
+                terminalObservation.session as import("@natalia/terminal").TerminalSessionInfo,
               )
-            : ptyObservation.session,
-          text: truncateProcessOutput(ptyText, 16_384),
+            : terminalObservation.session,
+          text: truncateProcessOutput(terminalText, 16_384),
           mode,
-          currentRevision: ptyObservation.session.revision,
+          currentRevision: terminalObservation.session.revision,
           ...(scrollbackRows
             ? {
                 scrollback: modelTerminalScrollback(
-                  registry.scrollback(ptyObservation.session.id, {
+                  registry.scrollback(terminalObservation.session.id, {
                     maxRows: scrollbackRows,
                   }),
                 ),
@@ -1810,7 +1810,7 @@ function interactiveResizeTool(): RuntimeTool {
           null,
           2,
         );
-      return notifyPTY(
+      return notifyTerminal(
         context,
         await requireTerminalRegistry(context).resize(id, rows, cols),
         "resize",
@@ -1883,7 +1883,7 @@ function interactiveTool(
     async execute(input, context) {
       const args = requireObject(input);
       const session = await action(requireTerminalRegistry(context), args);
-      const ptyAction =
+      const terminalAction =
         name === "interactive_terminal_write"
           ? args.submit === false
             ? "write"
@@ -1895,7 +1895,7 @@ function interactiveTool(
               : name === "interactive_terminal_stop"
                 ? "exit"
                 : undefined;
-      return notifyPTY(context, session, ptyAction, args.sensitive === true);
+      return notifyTerminal(context, session, terminalAction, args.sensitive === true);
     },
   };
 }

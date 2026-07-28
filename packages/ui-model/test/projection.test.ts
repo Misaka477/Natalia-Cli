@@ -9,10 +9,10 @@ import {
   stripAnsiOutput,
 } from "../src";
 
-test("shell tools classify separately from PTY and generic tools", () => {
+test("shell tools classify separately from terminal and generic tools", () => {
   expect(classifyTool("run_shell")).toBe("shell");
   expect(classifyTool("bash")).toBe("shell");
-  expect(classifyTool("pty_create")).toBe("pty");
+  expect(classifyTool("terminal_create")).toBe("terminal");
 });
 
 test("file tools classify into dedicated presentation kinds", () => {

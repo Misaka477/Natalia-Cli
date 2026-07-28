@@ -39,8 +39,8 @@ if (alacritty) {
     if (!pid) await Bun.sleep(500);
 
     const start = performance.now();
-    // Write to Alacritty via OSC 52 or direct to the pty
-    // For simplicity, we use the same cat PTY and measure
+    // Write to Alacritty via OSC 52 or direct to the terminal
+    // For simplicity, we use the same cat terminal and measure
     alacrittyRegistry.write = async () => undefined;
     await alacrittyRegistry.write(mockID, `echo-test-${run}\r`);
     await Bun.sleep(20);
@@ -70,7 +70,7 @@ if (alacritty) {
 
 results.natalia = {
   // Reference from existing physical-key route benchmark
-  note: "See terminal_physical_key_to_real_pty_render in latest perf baseline",
+  note: "See terminal_physical_key_to_real_terminal_render in latest perf baseline",
 };
 
 await writeFile(outputPath, JSON.stringify(results, null, 2));

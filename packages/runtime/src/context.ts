@@ -60,7 +60,7 @@ export type ResourceSnapshot = {
     | "background"
     | "process"
     | "agent"
-    | "pty"
+    | "terminal"
     | "sandbox"
     | "workflow"
     | "skill";

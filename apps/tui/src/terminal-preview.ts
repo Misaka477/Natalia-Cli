@@ -1,6 +1,6 @@
 /**
  * Produces the two-line read-only terminal summary without scanning a full,
- * potentially high-volume PTY tail on every TUI update.
+ * potentially high-volume terminal tail on every TUI update.
  */
 export function terminalPreview(text: string) {
   const tail = text.slice(-4_096);

@@ -1160,6 +1160,10 @@ export class TerminalRegistry {
     };
     return {
       ...observation,
+      cursorX: next.cursor?.col ?? next.cursorX ?? 0,
+      cursorY: next.cursor?.row ?? next.cursorY ?? 0,
+      rows: next.rows,
+      cols: next.cols,
       session:
         screenUpdate.kind === "patch"
           ? { ...observation.session, screen: undefined }

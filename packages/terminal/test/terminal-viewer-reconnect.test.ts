@@ -5,8 +5,8 @@ import { expect, test } from "bun:test";
 import { TerminalRegistry } from "../src";
 
 test("viewer watchdog reclaims ownership and a replacement viewer reconnects", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-pty-reconnect-"));
-  const registry = new TerminalRegistry(join(root, "pty"), {
+  const root = await mkdtemp(join(tmpdir(), "natalia-terminal-reconnect-"));
+  const registry = new TerminalRegistry(join(root, "terminal"), {
     viewerTimeoutMs: 300,
     watchdogIntervalMs: 25,
   });

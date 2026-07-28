@@ -121,7 +121,7 @@ export function DialogStatus(props: {
         )}
       </Show>
       <text fg={darkTheme.muted}>
-        Terminal sessions: {Object.keys(state.pty).length} · Messages:{" "}
+        Terminal sessions: {Object.keys(state.terminals).length} · Messages:{" "}
         {state.messages.length}
       </text>
       <text fg={darkTheme.muted}>
