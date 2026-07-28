@@ -9,7 +9,7 @@ import {
   nativeTerminalReadPage,
   nativeTerminalSearchPage,
 } from "../src";
-import { InteractivePTYRegistry } from "@natalia/pty";
+import { TerminalRegistry } from "@natalia/pty";
 import { NativeTerminalRegistry } from "@natalia/native-terminal";
 import { WorkspaceSandboxManager } from "@natalia/sandbox";
 

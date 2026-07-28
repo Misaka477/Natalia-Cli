@@ -199,7 +199,7 @@ export function createRealRuntimeClient(
   let permissionMode = options.permissionMode ?? "ask";
   let maxSteps = 10;
   let subagents: SubagentRegistry | undefined;
-  let interactivePTY: TerminalRegistry | undefined;
+  let terminalRegistry: TerminalRegistry | undefined;
   let nativeTerminal: NativeTerminalRegistry | undefined =
     options.nativeTerminal;
   let nativeInputBroker: NativeInputBroker | undefined;
@@ -453,7 +453,7 @@ export function createRealRuntimeClient(
               askQuestion: async (question) =>
                 await requireQuestion(`${toolID}:question`, question),
               subagents,
-              interactivePTY,
+              terminalRegistry,
               nativeTerminal,
               sandboxes,
               workspaceReadAuthorize: authorizeWorkspaceRead,
@@ -549,7 +549,7 @@ export function createRealRuntimeClient(
           message: `plugin ${id} failed to load: ${error instanceof Error ? error.message : String(error)}`,
         }),
     });
-    interactivePTY = new TerminalRegistry(
+    terminalRegistry = new TerminalRegistry(
       join(workspaceRoot, ".natalia", "pty", "interactive"),
       {
         onViewerExpired: (pty, viewerID) =>
@@ -941,7 +941,7 @@ export function createRealRuntimeClient(
               : ("stopped" as const),
         summary: agent.task,
       })) ?? []),
-      ...(interactivePTY?.list().map((pty) => ({
+      ...(terminalRegistry?.list().map((pty) => ({
         kind: "pty" as const,
         id: pty.id,
         status:
@@ -1171,7 +1171,7 @@ export function createRealRuntimeClient(
   async function runtimeStatusSnapshot() {
     const running =
       (subagents?.runningCount() ?? 0) +
-      (interactivePTY?.runningCount() ?? 0) +
+      (terminalRegistry?.runningCount() ?? 0) +
       (sandboxes?.runningResourceCount() ?? 0) +
       (processRegistry
         ? await processRegistry.runningCount({ workspaceRoot })
@@ -1202,7 +1202,7 @@ export function createRealRuntimeClient(
     });
   }
 
-  function publishInteractivePTY(
+  function publishTerminalSession(
     pty: import("@natalia/contracts").RuntimePTYObservationSession,
     action?: import("@natalia/contracts").PTYAction,
     redacted = false,
@@ -1272,7 +1272,7 @@ export function createRealRuntimeClient(
     >["action"],
     viewerKind?: "external" | "embedded",
   ) {
-    publishInteractivePTY(pty);
+    publishTerminalSession(pty);
     publish({
       type: "terminal.viewer",
       id: pty.id,
@@ -1293,7 +1293,7 @@ export function createRealRuntimeClient(
       ) => {
         if (policy.action !== "stop" && policy.action !== "cancel") return;
         if (policy.kind === "subagent") await subagents?.stop(policy.id);
-        if (policy.kind === "pty") await interactivePTY?.stop(policy.id);
+        if (policy.kind === "pty") await terminalRegistry?.stop(policy.id);
         if (policy.kind === "tool")
           activeAbort?.abort(new Error("checkpoint rollback"));
       },
@@ -1533,7 +1533,7 @@ export function createRealRuntimeClient(
       await nativeInputBroker?.stop();
       nativeInputBroker = undefined;
       await performanceTrace.stop();
-      interactivePTY?.dispose();
+      terminalRegistry?.dispose();
     },
     cancel(reason = "user cancel") {
       activeAbort?.abort(reason);
@@ -1686,11 +1686,11 @@ export function createRealRuntimeClient(
     },
     async ptyList() {
       await ready;
-      return interactivePTY?.list() ?? [];
+      return terminalRegistry?.list() ?? [];
     },
     async terminalList() {
       await ready;
-      return interactivePTY?.list() ?? [];
+      return terminalRegistry?.list() ?? [];
     },
     async nativeTerminalList() {
       await ready;
@@ -1755,45 +1755,45 @@ export function createRealRuntimeClient(
     },
     async ptyRead(input) {
       await ready;
-      if (!interactivePTY) throw new Error("interactive PTY is unavailable");
-      return interactivePTY.read(input.id, input);
+      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
+      return terminalRegistry.read(input.id, input);
     },
     async terminalRead(input) {
       await ready;
-      if (!interactivePTY)
+      if (!terminalRegistry)
         throw new Error("interactive terminal is unavailable");
-      return interactivePTY.read(input.id, input);
+      return terminalRegistry.read(input.id, input);
     },
     async terminalObserve(input) {
       await ready;
-      if (!interactivePTY) throw new Error("interactive PTY is unavailable");
-      return await interactivePTY.observe(input.id, input);
+      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
+      return await terminalRegistry.observe(input.id, input);
     },
     async terminalViewerRegister(input) {
       await ready;
-      if (!interactivePTY) throw new Error("interactive PTY is unavailable");
-      const pty = interactivePTY.registerViewer(input.id, input);
+      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
+      const pty = terminalRegistry.registerViewer(input.id, input);
       publishTerminalViewer(pty, input.viewerID, "registered", input.kind);
       return pty;
     },
     async terminalViewerHeartbeat(input) {
       await ready;
-      if (!interactivePTY) throw new Error("interactive PTY is unavailable");
-      return interactivePTY.heartbeatViewer(input.id, input.viewerID);
+      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
+      return terminalRegistry.heartbeatViewer(input.id, input.viewerID);
     },
     async terminalViewerControl(input) {
       await ready;
-      if (!interactivePTY) throw new Error("interactive PTY is unavailable");
+      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
       const pty =
         input.action === "takeover"
-          ? interactivePTY.takeoverViewer(input.id, input.viewerID)
+          ? terminalRegistry.takeoverViewer(input.id, input.viewerID)
           : input.action === "take_geometry"
-            ? interactivePTY.takeGeometryViewer(input.id, input.viewerID)
+            ? terminalRegistry.takeGeometryViewer(input.id, input.viewerID)
             : input.action === "release_input"
-              ? interactivePTY.releaseInputViewer(input.id, input.viewerID)
+              ? terminalRegistry.releaseInputViewer(input.id, input.viewerID)
               : input.action === "release"
-                ? await interactivePTY.releaseViewer(input.id, input.viewerID)
-                : await interactivePTY.unregisterViewer(
+                ? await terminalRegistry.releaseViewer(input.id, input.viewerID)
+                : await terminalRegistry.unregisterViewer(
                     input.id,
                     input.viewerID,
                   );
@@ -1812,8 +1812,8 @@ export function createRealRuntimeClient(
     },
     async terminalViewerWrite(input) {
       await ready;
-      if (!interactivePTY) throw new Error("interactive PTY is unavailable");
-      const pty = await interactivePTY.viewerWrite(
+      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
+      const pty = await terminalRegistry.viewerWrite(
         input.id,
         input.viewerID,
         input.data,
@@ -1828,30 +1828,30 @@ export function createRealRuntimeClient(
     },
     async terminalViewerResize(input) {
       await ready;
-      if (!interactivePTY) throw new Error("interactive PTY is unavailable");
-      const pty = await interactivePTY.viewerResize(
+      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
+      const pty = await terminalRegistry.viewerResize(
         input.id,
         input.viewerID,
         input.rows,
         input.cols,
       );
-      publishInteractivePTY(pty);
+      publishTerminalSession(pty);
       return pty;
     },
     async terminalScrollback(input) {
       await ready;
-      if (!interactivePTY) throw new Error("interactive PTY is unavailable");
-      return interactivePTY.scrollback(input.id, input);
+      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
+      return terminalRegistry.scrollback(input.id, input);
     },
     async ptyWrite(input) {
       await ready;
-      if (!interactivePTY) throw new Error("interactive PTY is unavailable");
-      const pty = await interactivePTY.write(input.id, input.text, {
+      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
+      const pty = await terminalRegistry.write(input.id, input.text, {
         submit: input.submit,
         sensitive: input.sensitive,
         idempotencyKey: input.idempotencyKey,
       });
-      publishInteractivePTY(
+      publishTerminalSession(
         pty,
         input.submit === false ? "write" : "submit",
         Boolean(input.sensitive),
@@ -1860,14 +1860,14 @@ export function createRealRuntimeClient(
     },
     async terminalWrite(input) {
       await ready;
-      if (!interactivePTY)
+      if (!terminalRegistry)
         throw new Error("interactive terminal is unavailable");
-      const terminal = await interactivePTY.write(input.id, input.text, {
+      const terminal = await terminalRegistry.write(input.id, input.text, {
         submit: input.submit,
         sensitive: input.sensitive,
         idempotencyKey: input.idempotencyKey,
       });
-      publishInteractivePTY(
+      publishTerminalSession(
         terminal,
         input.submit === false ? "write" : "submit",
         Boolean(input.sensitive),
@@ -1876,81 +1876,85 @@ export function createRealRuntimeClient(
     },
     async ptyKey(input) {
       await ready;
-      if (!interactivePTY) throw new Error("interactive PTY is unavailable");
-      const pty = await interactivePTY.specialKey(input.id, input.key);
-      publishInteractivePTY(pty, "special_key");
+      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
+      const pty = await terminalRegistry.specialKey(input.id, input.key);
+      publishTerminalSession(pty, "special_key");
       return pty;
     },
     async terminalKey(input) {
       await ready;
-      if (!interactivePTY)
+      if (!terminalRegistry)
         throw new Error("interactive terminal is unavailable");
-      const terminal = await interactivePTY.specialKey(input.id, input.key);
-      publishInteractivePTY(terminal, "special_key");
+      const terminal = await terminalRegistry.specialKey(input.id, input.key);
+      publishTerminalSession(terminal, "special_key");
       return terminal;
     },
     async ptyResize(input) {
       await ready;
-      if (!interactivePTY) throw new Error("interactive PTY is unavailable");
-      const pty = await interactivePTY.resize(input.id, input.rows, input.cols);
-      publishInteractivePTY(pty, "resize");
-      return pty;
-    },
-    async terminalResize(input) {
-      await ready;
-      if (!interactivePTY)
-        throw new Error("interactive terminal is unavailable");
-      const terminal = await interactivePTY.resize(
+      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
+      const pty = await terminalRegistry.resize(
         input.id,
         input.rows,
         input.cols,
       );
-      publishInteractivePTY(terminal, "resize");
+      publishTerminalSession(pty, "resize");
+      return pty;
+    },
+    async terminalResize(input) {
+      await ready;
+      if (!terminalRegistry)
+        throw new Error("interactive terminal is unavailable");
+      const terminal = await terminalRegistry.resize(
+        input.id,
+        input.rows,
+        input.cols,
+      );
+      publishTerminalSession(terminal, "resize");
       return terminal;
     },
     async ptyAttach(id) {
       await ready;
-      if (!interactivePTY) throw new Error("interactive PTY is unavailable");
-      const pty = await interactivePTY.attach(id);
-      publishInteractivePTY(pty, "attach");
+      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
+      const pty = await terminalRegistry.attach(id);
+      publishTerminalSession(pty, "attach");
       return pty;
     },
     async terminalAttach(id) {
       await ready;
-      if (!interactivePTY)
+      if (!terminalRegistry)
         throw new Error("interactive terminal is unavailable");
-      const terminal = await interactivePTY.attach(id);
-      publishInteractivePTY(terminal, "attach");
+      const terminal = await terminalRegistry.attach(id);
+      publishTerminalSession(terminal, "attach");
       return terminal;
     },
     async ptyDetach(id) {
       await ready;
-      if (!interactivePTY) throw new Error("interactive PTY is unavailable");
-      const pty = await interactivePTY.detach(id);
-      publishInteractivePTY(pty, "detach");
+      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
+      const pty = await terminalRegistry.detach(id);
+      publishTerminalSession(pty, "detach");
       return pty;
     },
     async terminalDetach(id) {
       await ready;
-      if (!interactivePTY)
+      if (!terminalRegistry)
         throw new Error("interactive terminal is unavailable");
-      const terminal = await interactivePTY.detach(id);
-      publishInteractivePTY(terminal, "detach");
+      const terminal = await terminalRegistry.detach(id);
+      publishTerminalSession(terminal, "detach");
       return terminal;
     },
     async ptyStop(id) {
       await ready;
-      if (!interactivePTY) throw new Error("interactive PTY is unavailable");
-      const pty = await interactivePTY.stop(id);
-      publishInteractivePTY(pty, "exit");
+      if (!terminalRegistry) throw new Error("interactive PTY is unavailable");
+      const pty = await terminalRegistry.stop(id);
+      publishTerminalSession(pty, "exit");
       return pty;
     },
     async terminalStop(id) {
       await ready;
-      if (!interactivePTY)
+      if (!terminalRegistry)
         throw new Error("interactive terminal is unavailable");
-      const terminal = await interactivePTY.stop(id);
-      publishInteractivePTY(terminal, "exit");
+      const terminal = await terminalRegistry.stop(id);
+      publishTerminalSession(terminal, "exit");
       return terminal;
     },
     async checkpointList() {
@@ -3257,7 +3261,7 @@ export function createRealRuntimeClient(
           askQuestion: async (question) =>
             await requireQuestion(`${toolID}:question`, question),
           subagents,
-          interactivePTY,
+          terminalRegistry,
           nativeTerminal,
           onPTYUpdate: (pty) => {
             publish(ptyLiveUpdate(pty, "write"));

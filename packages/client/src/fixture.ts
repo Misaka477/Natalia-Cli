@@ -1,5 +1,5 @@
 import { lineCount, makeDigest } from "@natalia/testing";
-import { appendPTYOutput, ModelPTYRegistry } from "@natalia/pty";
+import { appendPTYOutput, ModelTerminalRegistry } from "@natalia/pty";
 import type {
   ApprovalResponse,
   FakeBackend,
@@ -15,8 +15,8 @@ export function createFakeBackend(): FakeBackend {
   let activeTurn: string | undefined;
   let submission: SubmittedTurn | undefined;
   const cancelled = new Set<string>();
-  const modelPty = new ModelPTYRegistry();
-  const streamingModelPTY = new Set<string>();
+  const modelTerminal = new ModelTerminalRegistry();
+  const streamingModelTerminal = new Set<string>();
   const publish = (event: RuntimeEvent) => sink?.(event);
   const checkActive = (id: string) => activeTurn === id;
   const publishStatusSnapshot = (detail = "fixture") =>
@@ -558,7 +558,7 @@ export function createFakeBackend(): FakeBackend {
     publish({ type: "content.done", id });
   }
 
-  async function modelPtyResponse(id: string, text: string) {
+  async function modelTerminalResponse(id: string, text: string) {
     const sessionID = text.includes("2") ? "pty_model_2" : "pty_model_1";
     const target = {
       kind: "sandbox" as const,
@@ -566,7 +566,7 @@ export function createFakeBackend(): FakeBackend {
       root: "/tmp/kilo/model-pty",
       isolationLevel: "workspace" as const,
     };
-    const created = modelPty.create({
+    const created = modelTerminal.create({
       id: sessionID,
       command: "bash --noprofile --norc",
       cwd: "/tmp/kilo/model-pty",
@@ -582,11 +582,11 @@ export function createFakeBackend(): FakeBackend {
       created.session.tail = "Natalia model PTY\n$";
       created.session.transcript = "Natalia model PTY\n$";
     }
-    if (text.includes("stream")) streamingModelPTY.add(sessionID);
+    if (text.includes("stream")) streamingModelTerminal.add(sessionID);
     for (const event of created.events) publish(event);
     if (isNewSession) publish({ type: "pty.update", ...created.session });
     if (text.includes("exit")) {
-      const exited = await modelPty.request(sessionID, {
+      const exited = await modelTerminal.request(sessionID, {
         action: "exit",
         reason: "model ended PTY session",
       });
@@ -599,7 +599,7 @@ export function createFakeBackend(): FakeBackend {
       publish({ type: "content.done", id });
       return;
     }
-    const pending = await modelPty.request(sessionID, {
+    const pending = await modelTerminal.request(sessionID, {
       action: "submit",
       input: "npm install example-package",
       requiresApproval: true,
@@ -749,7 +749,7 @@ export function createFakeBackend(): FakeBackend {
         await modalResponse(id);
       } else if (text.trim().toLowerCase().startsWith("/pty")) {
         if (text.trim().toLowerCase().startsWith("/pty-model")) {
-          await modelPtyResponse(id, text);
+          await modelTerminalResponse(id, text);
         } else {
           await ptyResponse(id);
         }
@@ -817,7 +817,7 @@ export function createFakeBackend(): FakeBackend {
         feedback: response.feedback,
       });
       if (response.requestID.startsWith("apr_pty_")) {
-        void modelPty
+        void modelTerminal
           .resolveApproval(response.requestID, response.decision !== "reject")
           .then((result) => {
             for (const event of result.events) publish(event);
@@ -826,14 +826,14 @@ export function createFakeBackend(): FakeBackend {
                 (event) => event.type === "pty.update",
               );
               if (!update) return;
-              const session = modelPty.get(update.id);
+              const session = modelTerminal.get(update.id);
               appendPTYOutput(session, {
                 text: "installed fixture package\n$",
               });
               session.status = "waiting";
               session.activity = "waiting";
               publish({ type: "pty.update", ...session });
-              if (streamingModelPTY.delete(session.id)) {
+              if (streamingModelTerminal.delete(session.id)) {
                 void (async () => {
                   for (let index = 1; index <= 48; index++) {
                     await Bun.sleep(12);

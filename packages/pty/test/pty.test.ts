@@ -10,9 +10,9 @@ import {
   ptyActionEvent,
   ptyUpdateEvent,
   PTYOutputCoalescer,
-  ModelPTYRegistry,
+  ModelTerminalRegistry,
   PersistentPTYRegistry,
-  InteractivePTYRegistry,
+  TerminalRegistry,
   redactSensitiveInput,
   sanitizeTerminalOutput,
   runRealPTYCommand,
@@ -88,7 +88,7 @@ test("persistent PTY registry records transcript and attach state", async () => 
 
 test("interactive PTY registry writes input, special keys, resize and transcript", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-pty-interactive-"));
-  const registry = new InteractivePTYRegistry(join(root, ".natalia", "pty"));
+  const registry = new TerminalRegistry(join(root, ".natalia", "pty"));
   const started = await registry.start({
     command: "cat",
     cwd: root,
@@ -121,9 +121,9 @@ test("interactive PTY registry writes input, special keys, resize and transcript
 
 test("interactive PTY subscriptions omit full transcript from live updates", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-pty-light-update-"));
-  const registry = new InteractivePTYRegistry(join(root, ".natalia", "pty"));
+  const registry = new TerminalRegistry(join(root, ".natalia", "pty"));
   const started = await registry.start({ command: "cat", cwd: root });
-  const updates: import("../src").InteractivePTYUpdate[] = [];
+  const updates: import("../src").TerminalSessionUpdate[] = [];
   const unsubscribe = registry.subscribe(started.id, (update) =>
     updates.push(update),
   );
@@ -142,7 +142,7 @@ test("interactive PTY subscriptions omit full transcript from live updates", asy
 
 test("interactive PTY sensitive input is redacted and audited", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-pty-secret-"));
-  const registry = new InteractivePTYRegistry(join(root, ".natalia", "pty"));
+  const registry = new TerminalRegistry(join(root, ".natalia", "pty"));
   const started = await registry.start({ command: "cat", cwd: root });
   await registry.write(started.id, "super-secret", { sensitive: true });
   await waitForInteractive(
@@ -166,7 +166,7 @@ test("interactive PTY sensitive input is redacted and audited", async () => {
 
 test("interactive PTY projects ANSI style through the xterm framebuffer", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-pty-screen-"));
-  const registry = new InteractivePTYRegistry(join(root, ".natalia", "pty"));
+  const registry = new TerminalRegistry(join(root, ".natalia", "pty"));
   const started = await registry.start({
     command: "printf '\\033[31;1mRED\\033[0m\\n'; cat",
     cwd: root,
@@ -184,7 +184,7 @@ test("interactive PTY projects ANSI style through the xterm framebuffer", async 
 
 test("terminal observation waits for revision changes, timeout, exit and abort", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-terminal-observe-"));
-  const registry = new InteractivePTYRegistry(join(root, ".natalia", "pty"));
+  const registry = new TerminalRegistry(join(root, ".natalia", "pty"));
   const started = await registry.start({ command: "cat", cwd: root });
   const pending = registry.observe(started.id, {
     afterRevision: started.revision,
@@ -283,7 +283,7 @@ test("terminal observation waits for revision changes, timeout, exit and abort",
 
 test("terminal viewers require explicit ownership and return it on release", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-terminal-owner-"));
-  const registry = new InteractivePTYRegistry(join(root, ".natalia", "pty"));
+  const registry = new TerminalRegistry(join(root, ".natalia", "pty"));
   const started = await registry.start({ command: "cat", cwd: root });
   expect(
     registry.registerViewer(started.id, {
@@ -356,7 +356,7 @@ test("terminal viewers require explicit ownership and return it on release", asy
 test("terminal viewer watchdog expires ownership without later activity", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-terminal-watchdog-"));
   const expired: string[] = [];
-  const registry = new InteractivePTYRegistry(join(root, ".natalia", "pty"), {
+  const registry = new TerminalRegistry(join(root, ".natalia", "pty"), {
     viewerTimeoutMs: 20,
     watchdogIntervalMs: 5,
     onViewerExpired: (_session, viewerID) => expired.push(viewerID),
@@ -384,7 +384,7 @@ test("terminal viewer watchdog expires ownership without later activity", async 
 
 test("embedded viewer can heartbeat, take control, and submit Unicode", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-terminal-embedded-"));
-  const registry = new InteractivePTYRegistry(join(root, ".natalia", "pty"));
+  const registry = new TerminalRegistry(join(root, ".natalia", "pty"));
   const started = await registry.start({ command: "cat", cwd: root });
   registry.registerViewer(started.id, {
     viewerID: "embedded_test",
@@ -408,7 +408,7 @@ test("embedded viewer can heartbeat, take control, and submit Unicode", async ()
 
 test("embedded viewer can own geometry while model retains input", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-terminal-geometry-"));
-  const registry = new InteractivePTYRegistry(join(root, ".natalia", "pty"));
+  const registry = new TerminalRegistry(join(root, ".natalia", "pty"));
   const started = await registry.start({ command: "cat", cwd: root });
   registry.registerViewer(started.id, {
     viewerID: "embedded_geometry",
@@ -445,7 +445,7 @@ test("embedded viewer can own geometry while model retains input", async () => {
 
 test("sensitive viewer input is redacted from delayed child output", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-terminal-secure-"));
-  const registry = new InteractivePTYRegistry(join(root, ".natalia", "pty"));
+  const registry = new TerminalRegistry(join(root, ".natalia", "pty"));
   const started = await registry.start({
     command: "IFS= read -r secret; printf 'delayed:%s\\n' \"$secret\"; cat",
     cwd: root,
@@ -506,7 +506,7 @@ test("terminal sanitizer removes OSC shell integration metadata", () => {
 });
 
 test("model PTY registry pauses high-risk actions until approval then executes serially", async () => {
-  const registry = new ModelPTYRegistry();
+  const registry = new ModelTerminalRegistry();
   registry.create({ id: "pty_model", command: "bash", cwd: "/repo", target });
   const pending = await registry.request("pty_model", {
     action: "submit",
@@ -533,7 +533,7 @@ test("model PTY registry pauses high-risk actions until approval then executes s
 });
 
 test("model PTY registry does not execute rejected approvals", async () => {
-  const registry = new ModelPTYRegistry();
+  const registry = new ModelTerminalRegistry();
   registry.create({ id: "pty_reject", command: "bash", cwd: "/repo", target });
   const pending = await registry.request("pty_reject", {
     action: "special_key",
@@ -551,7 +551,7 @@ test("model PTY registry does not execute rejected approvals", async () => {
 });
 
 test("model PTY registry reuses a persistent session instead of recreating it", () => {
-  const registry = new ModelPTYRegistry();
+  const registry = new ModelTerminalRegistry();
   const first = registry.create({
     id: "pty_persistent",
     command: "bash",
@@ -572,7 +572,7 @@ test("model PTY registry reuses a persistent session instead of recreating it", 
 });
 
 test("model PTY exit preserves exited lifecycle status", async () => {
-  const registry = new ModelPTYRegistry();
+  const registry = new ModelTerminalRegistry();
   registry.create({ id: "pty_exit", command: "bash", cwd: "/repo", target });
   const result = await registry.request("pty_exit", { action: "exit" });
   expect(result.state).toBe("executed");
@@ -585,7 +585,7 @@ test("model PTY exit preserves exited lifecycle status", async () => {
 });
 
 test("a terminal PTY session ID can be recreated after model exit", async () => {
-  const registry = new ModelPTYRegistry();
+  const registry = new ModelTerminalRegistry();
   const first = registry.create({
     id: "pty_reopen",
     command: "bash",

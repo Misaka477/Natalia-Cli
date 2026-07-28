@@ -64,7 +64,7 @@ export type ToolExecutionContext = {
     }>;
   }) => Promise<string[][]>;
   subagents?: SubagentRegistry;
-  interactivePTY?: TerminalRegistry;
+  terminalRegistry?: TerminalRegistry;
   nativeTerminal?: NativeTerminalRegistry;
   onPTYUpdate?: (session: TerminalSessionUpdate) => void;
   onPTYAction?: (
@@ -893,10 +893,10 @@ function sandboxReadTool(
   };
 }
 
-function requireInteractivePTY(context: ToolExecutionContext) {
-  if (!context.interactivePTY)
+function requireTerminalRegistry(context: ToolExecutionContext) {
+  if (!context.terminalRegistry)
     throw new Error("interactive terminal runtime unavailable");
-  return context.interactivePTY;
+  return context.terminalRegistry;
 }
 
 function requireNativeTerminal(context: ToolExecutionContext) {
@@ -1259,7 +1259,7 @@ function terminalObserveTool(): RuntimeTool {
             text: truncateProcessOutput(snapshot.text, 16_384),
           });
         }
-        const registry = requireInteractivePTY(context);
+        const registry = requireTerminalRegistry(context);
         const info = registry.get(id);
         const { lines: _lines, ...screen } = info.screen;
         const { id: _id, ...rest } = info;
@@ -1340,7 +1340,7 @@ function terminalObserveTool(): RuntimeTool {
           2,
         );
       }
-      const registry = requireInteractivePTY(context);
+      const registry = requireTerminalRegistry(context);
       const ptyObservation = await registry.observe(id, {
         afterRevision,
         timeoutMs: numberOr(args.timeoutMs, 30_000),
@@ -1769,7 +1769,7 @@ function interactiveSnapshotTool(): RuntimeTool {
           ...snapshot,
         });
       }
-      const registry = requireInteractivePTY(context);
+      const registry = requireTerminalRegistry(context);
       const info = registry.get(id);
       const { lines: _lines, ...screen } = info.screen;
       const { id: _id, ...rest } = info;
@@ -1812,7 +1812,7 @@ function interactiveResizeTool(): RuntimeTool {
         );
       return notifyPTY(
         context,
-        await requireInteractivePTY(context).resize(id, rows, cols),
+        await requireTerminalRegistry(context).resize(id, rows, cols),
         "resize",
       );
     },
@@ -1882,7 +1882,7 @@ function interactiveTool(
     },
     async execute(input, context) {
       const args = requireObject(input);
-      const session = await action(requireInteractivePTY(context), args);
+      const session = await action(requireTerminalRegistry(context), args);
       const ptyAction =
         name === "interactive_terminal_write"
           ? args.submit === false

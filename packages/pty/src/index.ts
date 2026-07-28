@@ -199,7 +199,7 @@ export type TerminalSessionInfo = {
   tail: string;
   startedAt: string;
   endedAt?: string;
-  secretAudit: InteractivePTYSecretAudit[];
+  secretAudit: TerminalSecretAudit[];
   screen: TerminalScreenSnapshot;
   revision: number;
   lastOutputAt?: string;
@@ -239,15 +239,17 @@ export type InteractivePTYInfo = TerminalSessionInfo;
 /** @deprecated Use TerminalSessionUpdate. */
 export type InteractivePTYUpdate = TerminalSessionUpdate;
 
-export type InteractivePTYSecretAudit = {
+export type TerminalSecretAudit = {
   at: string;
   action: "write" | "prompt_detected";
   summary: string;
   sha256?: string;
 };
+/** @deprecated Use TerminalSecretAudit. */
+export type InteractivePTYSecretAudit = TerminalSecretAudit;
 
 export class TerminalRegistry {
-  private sessions = new Map<string, InteractivePTYRuntime>();
+  private sessions = new Map<string, TerminalSessionRuntime>();
   private sequence = 0;
   private readonly watchdog?: ReturnType<typeof setInterval>;
 
@@ -257,7 +259,10 @@ export class TerminalRegistry {
       viewerTimeoutMs?: number;
       watchdogIntervalMs?: number;
       exitedSessionRetentionMs?: number;
-      onViewerExpired?: (session: InteractivePTYInfo, viewerID: string) => void;
+      onViewerExpired?: (
+        session: TerminalSessionInfo,
+        viewerID: string,
+      ) => void;
     } = {},
   ) {
     this.watchdog = setInterval(
@@ -288,7 +293,7 @@ export class TerminalRegistry {
     const ready = new Promise<void>((resolve) => {
       markReady = resolve;
     });
-    let runtime!: InteractivePTYRuntime;
+    let runtime!: TerminalSessionRuntime;
     const screenModel = new XtermTerminalEmulator(
       input.rows ?? 36,
       input.cols ?? 120,
@@ -378,12 +383,12 @@ export class TerminalRegistry {
       }),
     ]);
     await this.persist(runtime);
-    return publicInteractivePTY(runtime);
+    return publicTerminalSession(runtime);
   }
 
   list() {
     return [...this.sessions.values()].map((session) =>
-      publicInteractivePTY(session),
+      publicTerminalSession(session),
     );
   }
 
@@ -396,10 +401,10 @@ export class TerminalRegistry {
 
   get(id: string) {
     const session = this.mustGet(id);
-    return publicInteractivePTY(session);
+    return publicTerminalSession(session);
   }
 
-  session(id: string): InteractivePTYRuntime {
+  session(id: string): TerminalSessionRuntime {
     return this.mustGet(id);
   }
 
@@ -421,7 +426,7 @@ export class TerminalRegistry {
     );
     const transcript = session.transcript.slice(offset, offset + maxChars);
     return {
-      ...publicInteractivePTY(session),
+      ...publicTerminalSession(session),
       transcript,
       offset,
       nextOffset: offset + transcript.length,
@@ -441,11 +446,11 @@ export class TerminalRegistry {
     );
   }
 
-  subscribe(id: string, listener: (session: InteractivePTYUpdate) => void) {
+  subscribe(id: string, listener: (session: TerminalSessionUpdate) => void) {
     const session = this.mustGet(id);
     const subscription = { listener, screen: false };
     session.listeners.add(subscription);
-    listener(publicInteractivePTYMetadata(session));
+    listener(publicTerminalSessionMetadata(session));
     return () => session.listeners.delete(subscription);
   }
 
@@ -460,7 +465,7 @@ export class TerminalRegistry {
   ): Promise<TerminalObservation> {
     const session = this.mustGet(id);
     const afterRevision = Math.max(0, input.afterRevision ?? session.revision);
-    const current = publicInteractivePTYUpdate(session, true);
+    const current = publicTerminalSessionUpdate(session, true);
     if (current.revision > afterRevision) {
       const observation = {
         session: current,
@@ -494,8 +499,8 @@ export class TerminalRegistry {
         input.signal?.removeEventListener("abort", onAbort);
         resolve(observation);
       };
-      const onUpdate = (next: InteractivePTYUpdate) => {
-        const current = next.screen ? next : publicInteractivePTY(session);
+      const onUpdate = (next: TerminalSessionUpdate) => {
+        const current = next.screen ? next : publicTerminalSession(session);
         if (next.revision > afterRevision)
           finish(
             this.withScreenUpdate(
@@ -529,7 +534,7 @@ export class TerminalRegistry {
       const timer = setTimeout(
         () =>
           finish({
-            session: publicInteractivePTYUpdate(session, true),
+            session: publicTerminalSessionUpdate(session, true),
             afterRevision,
             changed: false,
             reason: "timeout",
@@ -587,7 +592,7 @@ export class TerminalRegistry {
           });
           appendInteractiveOutput(session, "[sensitive input redacted]\n");
         }
-        return publicInteractivePTY(session);
+        return publicTerminalSession(session);
       },
     );
   }
@@ -608,7 +613,7 @@ export class TerminalRegistry {
     });
     session.revision++;
     this.emit(session);
-    return publicInteractivePTY(session);
+    return publicTerminalSession(session);
   }
 
   heartbeatViewer(id: string, viewerID: string) {
@@ -616,7 +621,7 @@ export class TerminalRegistry {
     const viewer = this.mustViewer(session, viewerID);
     viewer.lastSeenAt = new Date().toISOString();
     this.pruneStaleViewers(session);
-    return publicInteractivePTY(session);
+    return publicTerminalSession(session);
   }
 
   takeoverViewer(id: string, viewerID: string) {
@@ -635,7 +640,7 @@ export class TerminalRegistry {
     session.geometryOwner = { type: "viewer", viewerID };
     session.revision++;
     this.emit(session);
-    return publicInteractivePTY(session);
+    return publicTerminalSession(session);
   }
 
   takeGeometryViewer(id: string, viewerID: string) {
@@ -653,7 +658,7 @@ export class TerminalRegistry {
     session.geometryOwner = { type: "viewer", viewerID };
     session.revision++;
     this.emit(session);
-    return publicInteractivePTY(session);
+    return publicTerminalSession(session);
   }
 
   releaseInputViewer(id: string, viewerID: string) {
@@ -666,7 +671,7 @@ export class TerminalRegistry {
       session.inputOwner = { type: "model" };
     session.revision++;
     this.emit(session);
-    return publicInteractivePTY(session);
+    return publicTerminalSession(session);
   }
 
   async releaseViewer(id: string, viewerID: string) {
@@ -676,17 +681,18 @@ export class TerminalRegistry {
     if (restoreGeometry) return await this.restoreModelGeometry(session);
     session.revision++;
     this.emit(session);
-    return publicInteractivePTY(session);
+    return publicTerminalSession(session);
   }
 
   async unregisterViewer(id: string, viewerID: string) {
     const session = this.mustGet(id);
-    if (!session.viewers.delete(viewerID)) return publicInteractivePTY(session);
+    if (!session.viewers.delete(viewerID))
+      return publicTerminalSession(session);
     const restoreGeometry = this.restoreModelOwnership(session, viewerID);
     if (restoreGeometry) return await this.restoreModelGeometry(session);
     session.revision++;
     this.emit(session);
-    return publicInteractivePTY(session);
+    return publicTerminalSession(session);
   }
 
   async viewerWrite(
@@ -731,7 +737,7 @@ export class TerminalRegistry {
         }
         this.markInputSubmitted(session);
         await this.command(session, { action: "write", input });
-        return publicInteractivePTY(session);
+        return publicTerminalSession(session);
       },
     );
   }
@@ -758,7 +764,7 @@ export class TerminalRegistry {
         `terminal input is controlled by viewer: ${session.inputOwner.viewerID}`,
       );
     await this.command(session, { action: "key", key });
-    return publicInteractivePTY(session);
+    return publicTerminalSession(session);
   }
 
   async resize(id: string, rows: number, cols: number) {
@@ -772,7 +778,7 @@ export class TerminalRegistry {
   }
 
   private async applyResize(
-    session: InteractivePTYRuntime,
+    session: TerminalSessionRuntime,
     rows: number,
     cols: number,
   ) {
@@ -785,7 +791,7 @@ export class TerminalRegistry {
     await this.command(session, { action: "resize", rows, cols });
     await this.persist(session);
     this.emit(session);
-    return publicInteractivePTY(session);
+    return publicTerminalSession(session);
   }
 
   async attach(id: string) {
@@ -793,7 +799,7 @@ export class TerminalRegistry {
     session.attached = true;
     await this.persist(session);
     this.emit(session);
-    return publicInteractivePTY(session);
+    return publicTerminalSession(session);
   }
 
   async detach(id: string) {
@@ -801,7 +807,7 @@ export class TerminalRegistry {
     session.attached = false;
     await this.persist(session);
     this.emit(session);
-    return publicInteractivePTY(session);
+    return publicTerminalSession(session);
   }
 
   async stop(id: string) {
@@ -815,10 +821,10 @@ export class TerminalRegistry {
     await this.flushPersist(session);
     this.emit(session);
     this.scheduleRelease(session);
-    return publicInteractivePTY(session);
+    return publicTerminalSession(session);
   }
 
-  private async consume(session: InteractivePTYRuntime) {
+  private async consume(session: TerminalSessionRuntime) {
     if (!(session.process.stdout instanceof ReadableStream))
       throw new Error("interactive PTY stdout is not readable");
     const reader = session.process.stdout.getReader();
@@ -836,7 +842,7 @@ export class TerminalRegistry {
   }
 
   private async processBridgeMessages(
-    session: InteractivePTYRuntime,
+    session: TerminalSessionRuntime,
     lines: string[],
   ) {
     const safeOutputs: string[] = [];
@@ -892,7 +898,7 @@ export class TerminalRegistry {
   }
 
   private async command(
-    session: InteractivePTYRuntime,
+    session: TerminalSessionRuntime,
     value: Record<string, unknown>,
   ) {
     const run = async () => {
@@ -905,16 +911,16 @@ export class TerminalRegistry {
     await session.commandQueue;
   }
 
-  private markInputSubmitted(session: InteractivePTYRuntime) {
+  private markInputSubmitted(session: TerminalSessionRuntime) {
     session.activity = "running";
     session.prompt = undefined;
   }
 
   private async idempotentWrite(
-    session: InteractivePTYRuntime,
+    session: TerminalSessionRuntime,
     idempotencyKey: string | undefined,
     fingerprint: string,
-    write: () => Promise<InteractivePTYInfo>,
+    write: () => Promise<TerminalSessionInfo>,
   ) {
     if (!idempotencyKey) return await write();
     const existing = session.idempotentWrites.get(idempotencyKey);
@@ -952,14 +958,14 @@ export class TerminalRegistry {
     return session;
   }
 
-  private mustViewer(session: InteractivePTYRuntime, viewerID: string) {
+  private mustViewer(session: TerminalSessionRuntime, viewerID: string) {
     const viewer = session.viewers.get(viewerID);
     if (!viewer) throw new Error(`terminal viewer not registered: ${viewerID}`);
     return viewer;
   }
 
   private requireViewerOwner(
-    session: InteractivePTYRuntime,
+    session: TerminalSessionRuntime,
     viewerID: string,
     owner: "input" | "geometry",
   ) {
@@ -971,7 +977,7 @@ export class TerminalRegistry {
   }
 
   private restoreModelOwnership(
-    session: InteractivePTYRuntime,
+    session: TerminalSessionRuntime,
     viewerID: string,
   ) {
     let restoreGeometry = false;
@@ -990,7 +996,7 @@ export class TerminalRegistry {
     return restoreGeometry;
   }
 
-  private async restoreModelGeometry(session: InteractivePTYRuntime) {
+  private async restoreModelGeometry(session: TerminalSessionRuntime) {
     const geometry = session.modelGeometry;
     session.modelGeometry = undefined;
     if (
@@ -999,12 +1005,12 @@ export class TerminalRegistry {
     ) {
       session.revision++;
       this.emit(session);
-      return publicInteractivePTY(session);
+      return publicTerminalSession(session);
     }
     return await this.applyResize(session, geometry.rows, geometry.cols);
   }
 
-  private pruneStaleViewers(session: InteractivePTYRuntime) {
+  private pruneStaleViewers(session: TerminalSessionRuntime) {
     const cutoff = Date.now() - (this.options.viewerTimeoutMs ?? 30_000);
     let emitNeeded = false;
     for (const [viewerID, viewer] of session.viewers) {
@@ -1028,7 +1034,7 @@ export class TerminalRegistry {
         const restore = this.restoreModelOwnership(session, viewerID);
         const current = restore
           ? await this.restoreModelGeometry(session)
-          : publicInteractivePTY(session);
+          : publicTerminalSession(session);
         if (!restore) {
           session.revision++;
           this.emit(session);
@@ -1038,7 +1044,7 @@ export class TerminalRegistry {
     }
   }
 
-  private async persist(session: InteractivePTYRuntime) {
+  private async persist(session: TerminalSessionRuntime) {
     session.persistQueue = session.persistQueue.then(async () => {
       const output = session.pendingTranscript.splice(0).join("");
       if (output) await appendFile(session.outputPath, output, { mode: 0o600 });
@@ -1046,7 +1052,7 @@ export class TerminalRegistry {
     await session.persistQueue;
   }
 
-  private schedulePersist(session: InteractivePTYRuntime) {
+  private schedulePersist(session: TerminalSessionRuntime) {
     if (session.persistTimer) return;
     session.persistTimer = setTimeout(() => {
       session.persistTimer = undefined;
@@ -1054,13 +1060,13 @@ export class TerminalRegistry {
     }, 200);
   }
 
-  private async flushPersist(session: InteractivePTYRuntime) {
+  private async flushPersist(session: TerminalSessionRuntime) {
     if (session.persistTimer) clearTimeout(session.persistTimer);
     session.persistTimer = undefined;
     await this.persist(session);
   }
 
-  private scheduleRelease(session: InteractivePTYRuntime) {
+  private scheduleRelease(session: TerminalSessionRuntime) {
     if (session.releaseTimer) return;
     session.releaseTimer = setTimeout(
       () => {
@@ -1078,7 +1084,7 @@ export class TerminalRegistry {
     session.releaseTimer.unref();
   }
 
-  private scheduleScreenEmit(session: InteractivePTYRuntime) {
+  private scheduleScreenEmit(session: TerminalSessionRuntime) {
     if (session.screenEmitTimer) return;
     session.screenEmitTimer = setTimeout(
       () => {
@@ -1091,34 +1097,34 @@ export class TerminalRegistry {
     );
   }
 
-  private flushScreenEmit(session: InteractivePTYRuntime) {
+  private flushScreenEmit(session: TerminalSessionRuntime) {
     if (session.screenEmitTimer) clearTimeout(session.screenEmitTimer);
     session.screenEmitTimer = undefined;
     this.emit(session);
   }
 
-  private emit(session: InteractivePTYRuntime) {
+  private emit(session: TerminalSessionRuntime) {
     if (session.screenEmitTimer) clearTimeout(session.screenEmitTimer);
     session.screenEmitTimer = undefined;
     const includeScreen = this.hasScreenSubscriber(session);
     const snapshot = includeScreen ? screenSnapshot(session) : undefined;
     if (snapshot) this.recordScreen(session, snapshot);
-    const metadata = publicInteractivePTYMetadata(session);
+    const metadata = publicTerminalSessionMetadata(session);
     const screen = includeScreen
-      ? publicInteractivePTYUpdate(session, snapshot)
+      ? publicTerminalSessionUpdate(session, snapshot)
       : undefined;
     for (const subscription of session.listeners)
       subscription.listener(subscription.screen ? screen! : metadata);
   }
 
-  private hasScreenSubscriber(session: InteractivePTYRuntime) {
+  private hasScreenSubscriber(session: TerminalSessionRuntime) {
     for (const subscription of session.listeners)
       if (subscription.screen) return true;
     return false;
   }
 
   private withScreenUpdate(
-    session: InteractivePTYRuntime,
+    session: TerminalSessionRuntime,
     observation: TerminalObservation,
     differential = false,
   ) {
@@ -1168,7 +1174,7 @@ export class TerminalRegistry {
   }
 
   private recordScreen(
-    session: InteractivePTYRuntime,
+    session: TerminalSessionRuntime,
     snapshot: TerminalScreenSnapshot,
   ) {
     session.screenHistory.set(session.revision, snapshot);
@@ -1391,10 +1397,13 @@ sys.exit(child.wait())
 
 type PersistentPTYRuntime = PersistentPTYSessionInfo;
 
-type InteractivePTYRuntime = Omit<InteractivePTYInfo, "screen" | "viewers"> & {
+type TerminalSessionRuntime = Omit<
+  TerminalSessionInfo,
+  "screen" | "viewers"
+> & {
   process: ReturnType<typeof Bun.spawn>;
   listeners: Set<{
-    listener(session: InteractivePTYUpdate): void;
+    listener(session: TerminalSessionUpdate): void;
     screen: boolean;
   }>;
   outputPath: string;
@@ -1412,7 +1421,7 @@ type InteractivePTYRuntime = Omit<InteractivePTYInfo, "screen" | "viewers"> & {
   commandQueue: Promise<void>;
   idempotentWrites: Map<
     string,
-    { fingerprint: string; result: Promise<InteractivePTYInfo> }
+    { fingerprint: string; result: Promise<TerminalSessionInfo> }
   >;
   sensitiveInputBuffer: string;
   sensitiveRedactions: string[];
@@ -1426,7 +1435,10 @@ type InteractivePTYRuntime = Omit<InteractivePTYInfo, "screen" | "viewers"> & {
   lastObservedRevision: number;
 };
 
-function appendInteractiveOutput(session: InteractivePTYRuntime, text: string) {
+function appendInteractiveOutput(
+  session: TerminalSessionRuntime,
+  text: string,
+) {
   const safe = sanitizeTerminalOutput(text);
   session.pendingTranscript.push(safe);
   session.transcript = `${session.transcript}${safe}`.slice(-262_144);
@@ -1434,7 +1446,7 @@ function appendInteractiveOutput(session: InteractivePTYRuntime, text: string) {
 }
 
 function sanitizeInteractiveTerminalOutput(
-  session: InteractivePTYRuntime,
+  session: TerminalSessionRuntime,
   chunk: string,
 ) {
   let text = `${session.terminalControlTail}${chunk}`;
@@ -1454,7 +1466,7 @@ function sanitizeInteractiveTerminalOutput(
 }
 
 function stripPendingTerminalEcho(
-  session: InteractivePTYRuntime,
+  session: TerminalSessionRuntime,
   output: string,
 ) {
   const pending = session.pendingTerminalEcho;
@@ -1485,7 +1497,10 @@ function stripPendingTerminalEcho(
   return output;
 }
 
-function redactSensitiveOutput(session: InteractivePTYRuntime, output: string) {
+function redactSensitiveOutput(
+  session: TerminalSessionRuntime,
+  output: string,
+) {
   let redacted = output;
   for (const secret of session.sensitiveRedactions)
     if (secret) redacted = redacted.replaceAll(secret, "[redacted]");
@@ -1528,9 +1543,9 @@ function safePTYEnv() {
   };
 }
 
-function publicInteractivePTYMetadata(
-  session: InteractivePTYRuntime,
-): InteractivePTYUpdate {
+function publicTerminalSessionMetadata(
+  session: TerminalSessionRuntime,
+): TerminalSessionUpdate {
   return {
     id: session.id,
     command: session.command,
@@ -1553,27 +1568,27 @@ function publicInteractivePTYMetadata(
   };
 }
 
-function publicInteractivePTYUpdate(
-  session: InteractivePTYRuntime,
+function publicTerminalSessionUpdate(
+  session: TerminalSessionRuntime,
   screen?: TerminalScreenSnapshot | true,
-): InteractivePTYUpdate {
+): TerminalSessionUpdate {
   return {
-    ...publicInteractivePTYMetadata(session),
+    ...publicTerminalSessionMetadata(session),
     screen: screen === true ? screenSnapshot(session) : screen,
   };
 }
 
-function publicInteractivePTY(
-  session: InteractivePTYRuntime,
-): InteractivePTYInfo {
+function publicTerminalSession(
+  session: TerminalSessionRuntime,
+): TerminalSessionInfo {
   return {
-    ...publicInteractivePTYMetadata(session),
+    ...publicTerminalSessionMetadata(session),
     transcript: session.transcript,
     screen: screenSnapshot(session),
   };
 }
 
-function screenSnapshot(session: InteractivePTYRuntime) {
+function screenSnapshot(session: TerminalSessionRuntime) {
   if (session.screenCache?.revision === session.revision)
     return session.screenCache.snapshot;
   const snapshot = session.screenModel.snapshot();
@@ -1744,7 +1759,7 @@ export function detectPrompt(text: string) {
   return undefined;
 }
 
-export type ModelPTYAction = {
+export type ModelTerminalAction = {
   action: PTYAction;
   input?: string;
   rows?: number;
@@ -1754,16 +1769,16 @@ export type ModelPTYAction = {
   reason?: string;
 };
 
-export type ModelPTYActionResult =
+export type ModelTerminalActionResult =
   | { state: "executed"; events: RuntimeEvent[] }
   | { state: "awaiting_approval"; approvalID: string; events: RuntimeEvent[] }
   | { state: "rejected"; events: RuntimeEvent[] };
 
-export class ModelPTYRegistry {
+export class ModelTerminalRegistry {
   private sessions = new Map<string, PTYSessionState>();
   private pending = new Map<
     string,
-    { sessionID: string; request: ModelPTYAction }
+    { sessionID: string; request: ModelTerminalAction }
   >();
   private queues = new Map<string, Promise<void>>();
 
@@ -1801,8 +1816,8 @@ export class ModelPTYRegistry {
 
   async request(
     id: string,
-    request: ModelPTYAction,
-  ): Promise<ModelPTYActionResult> {
+    request: ModelTerminalAction,
+  ): Promise<ModelTerminalActionResult> {
     const session = this.get(id);
     if (session.ownership !== "model")
       throw new Error("PTY is not model-controlled");
@@ -1841,7 +1856,7 @@ export class ModelPTYRegistry {
   async resolveApproval(
     approvalID: string,
     approved: boolean,
-  ): Promise<ModelPTYActionResult> {
+  ): Promise<ModelTerminalActionResult> {
     const pending = this.pending.get(approvalID);
     if (!pending) throw new Error(`unknown PTY approval: ${approvalID}`);
     this.pending.delete(approvalID);
@@ -1892,8 +1907,8 @@ export class ModelPTYRegistry {
 
   private async execute(
     session: PTYSessionState,
-    request: ModelPTYAction,
-  ): Promise<ModelPTYActionResult> {
+    request: ModelTerminalAction,
+  ): Promise<ModelTerminalActionResult> {
     const prior = this.queues.get(session.id) ?? Promise.resolve();
     let events: RuntimeEvent[] = [];
     const next = prior.then(() => {

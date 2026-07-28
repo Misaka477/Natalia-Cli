@@ -2,11 +2,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, test } from "bun:test";
-import { InteractivePTYRegistry } from "../src";
+import { TerminalRegistry } from "../src";
 
 test("viewer watchdog reclaims ownership and a replacement viewer reconnects", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-pty-reconnect-"));
-  const registry = new InteractivePTYRegistry(join(root, "pty"), {
+  const registry = new TerminalRegistry(join(root, "pty"), {
     viewerTimeoutMs: 300,
     watchdogIntervalMs: 25,
   });
