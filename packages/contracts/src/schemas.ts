@@ -328,6 +328,50 @@ export const completionEvidenceSchema = z.object({
   workGraphRefs: z.array(z.string()).default([]),
 });
 
+export const workGraphNodeSchema = z.object({
+  id: z.string().min(1),
+  kind: z.enum([
+    "goal",
+    "constraint",
+    "decision",
+    "plan",
+    "plan_step",
+    "agent_action",
+    "tool_call",
+    "approval",
+    "checkpoint",
+    "validation",
+    "workspace_change",
+  ]),
+  summary: z.string(),
+  actor: z.string().optional(),
+  target: z.string().optional(),
+  journalOffset: z.number().int().nonnegative().optional(),
+  sessionID: z.string().optional(),
+  turnID: z.string().optional(),
+  stepID: z.string().optional(),
+});
+
+export const workGraphEdgeSchema = z.object({
+  id: z.string().min(1),
+  sourceID: z.string().min(1),
+  targetID: z.string().min(1),
+  kind: z.enum([
+    "requested_by",
+    "constrained_by",
+    "planned_by",
+    "executed_by",
+    "caused",
+    "modified",
+    "validated_by",
+    "approved_by",
+    "checkpointed_by",
+    "superseded_by",
+    "rolled_back_by",
+  ]),
+  reason: z.string().optional(),
+});
+
 export const scopedOverrideSchema = z.object({
   id: z.string().min(1),
   ruleID: z.string().min(1),

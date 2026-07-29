@@ -37,6 +37,7 @@ import {
   DialogConstitution,
   DialogDecision,
   DialogEvidence,
+  DialogWorkGraph,
 } from "../dialog/DialogLayer";
 import { useDialog, type DialogContext } from "../dialog/provider";
 import type { TuiConfigWriteScope } from "../config";
@@ -1971,6 +1972,16 @@ export function runCommand(command: string, ctx: CommandContext) {
     if (command === "evidence.list") {
       void ctx.backend.evidenceRecords?.().then(
         (records) => ctx.dialog.push(() => <DialogEvidence records={records} />),
+        (error: any) => ctx.toast.error(error),
+      );
+      return;
+    }
+    if (command === "workgraph.list") {
+      void Promise.all([
+        ctx.backend.workGraphNodes?.() ?? Promise.resolve([]),
+        ctx.backend.workGraphEdges?.() ?? Promise.resolve([]),
+      ]).then(
+        ([nodes]) => ctx.dialog.push(() => <DialogWorkGraph nodes={nodes} />),
         (error: any) => ctx.toast.error(error),
       );
       return;

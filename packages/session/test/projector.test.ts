@@ -7,6 +7,8 @@ import {
   projectedConstitutionRules,
   projectedDecisionRecords,
   projectedEvidenceRecords,
+  projectedWorkGraphNodes,
+  projectedWorkGraphEdges,
   projectSessionMessages,
   projectSession,
   settleInterruptedTurns,
@@ -398,4 +400,36 @@ test("projectedEvidenceRecords collects evidence records", () => {
   expect(records).toHaveLength(1);
   expect(records[0]?.taskID).toBe("T-001");
   expect(records[0]?.status).toBe("validated");
+});
+
+test("projectedWorkGraphNodes and Edges collect graph nodes", () => {
+  const session = createSessionRecord("ses_wg", "WorkGraph");
+  appendSessionEvent(session, {
+    type: "workgraph.node_added",
+    id: "evt_1",
+    nodeID: "G-001",
+    kind: "goal",
+    summary: "Fix empty provider response",
+    sessionID: "ses_wg",
+  });
+  appendSessionEvent(session, {
+    type: "workgraph.node_added",
+    id: "evt_2",
+    nodeID: "A-001",
+    kind: "agent_action",
+    summary: "edit-parser-fallback",
+  });
+  appendSessionEvent(session, {
+    type: "workgraph.edge_added",
+    id: "evt_3",
+    sourceID: "A-001",
+    targetID: "G-001",
+    kind: "requested_by",
+  });
+  const nodes = projectedWorkGraphNodes(session.events);
+  const edges = projectedWorkGraphEdges(session.events);
+  expect(nodes).toHaveLength(2);
+  expect(edges).toHaveLength(1);
+  expect(nodes[0]?.kind).toBe("goal");
+  expect(edges[0]?.kind).toBe("requested_by");
 });

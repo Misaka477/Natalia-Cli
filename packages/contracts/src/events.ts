@@ -372,6 +372,25 @@ export type RuntimeEvent =
       error?: string;
     }
   | {
+      type: "workgraph.node_added";
+      id: string;
+      nodeID: string;
+      kind: string;
+      summary: string;
+      actor?: string;
+      target?: string;
+      sessionID?: string;
+      turnID?: string;
+    }
+  | {
+      type: "workgraph.edge_added";
+      id: string;
+      sourceID: string;
+      targetID: string;
+      kind: string;
+      reason?: string;
+    }
+  | {
       type: "evidence.recorded";
       id: string;
       taskID: string;
@@ -1364,6 +1383,23 @@ export type RuntimeClient = {
       objective: string;
       status: string;
       knownGaps: string[];
+    }>
+  >;
+  workGraphNodes?(): Promise<
+    Array<{
+      nodeID: string;
+      kind: string;
+      summary: string;
+      actor?: string;
+      target?: string;
+    }>
+  >;
+  workGraphEdges?(): Promise<
+    Array<{
+      sourceID: string;
+      targetID: string;
+      kind: string;
+      reason?: string;
     }>
   >;
 };

@@ -639,6 +639,35 @@ export function DialogEvidence(props: {
   );
 }
 
+export function DialogWorkGraph(props: {
+  nodes: Array<{ nodeID: string; kind: string; summary: string; actor?: string }>;
+}) {
+  return (
+    <box flexDirection="column" paddingLeft={2} paddingRight={2} paddingBottom={1}>
+      <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>
+        Work Graph
+      </text>
+      <box flexDirection="column" gap={1} paddingTop={1}>
+        <For each={props.nodes}>
+          {(node) => (
+            <box flexDirection="column">
+              <box flexDirection="row" gap={1}>
+                <text fg={darkTheme.accent} attributes={TextAttributes.BOLD}>
+                  {node.kind}
+                </text>
+                <text fg={darkTheme.muted}>{node.nodeID}</text>
+              </box>
+              <text fg={darkTheme.text} wrapMode="word">
+                {node.summary}
+              </text>
+            </box>
+          )}
+        </For>
+      </box>
+    </box>
+  );
+}
+
 export function DialogDecision(props: {
   records: Array<{
     decision: string;

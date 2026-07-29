@@ -241,6 +241,8 @@ export {
   projectedConstitutionRules,
   projectedDecisionRecords,
   projectedEvidenceRecords,
+  projectedWorkGraphNodes,
+  projectedWorkGraphEdges,
   projectSession,
   settleInterruptedTurns,
   settleInterruptedTurnIDs,

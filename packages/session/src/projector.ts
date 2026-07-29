@@ -342,6 +342,20 @@ export function projectedConstitutionRules(events: RuntimeEvent[]) {
   );
 }
 
+export function projectedWorkGraphNodes(events: RuntimeEvent[]) {
+  return events.filter(
+    (event): event is Extract<RuntimeEvent, { type: "workgraph.node_added" }> =>
+      event.type === "workgraph.node_added",
+  );
+}
+
+export function projectedWorkGraphEdges(events: RuntimeEvent[]) {
+  return events.filter(
+    (event): event is Extract<RuntimeEvent, { type: "workgraph.edge_added" }> =>
+      event.type === "workgraph.edge_added",
+  );
+}
+
 export function projectedEvidenceRecords(events: RuntimeEvent[]) {
   return events.filter(
     (event): event is Extract<RuntimeEvent, { type: "evidence.recorded" }> =>

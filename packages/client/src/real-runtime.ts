@@ -62,6 +62,8 @@ import {
   projectedConstitutionRules,
   projectedDecisionRecords,
   projectedEvidenceRecords,
+  projectedWorkGraphNodes,
+  projectedWorkGraphEdges,
   settleInterruptedTurns,
   settleInterruptedTurnIDs,
   modelVisibleEvents,
@@ -2169,6 +2171,25 @@ export function createRealRuntimeClient(
         objective: r.objective,
         status: r.status,
         knownGaps: r.knownGaps ?? [],
+      }));
+    },
+    workGraphNodes() {
+      if (!session) return [];
+      return projectedWorkGraphNodes(session.events).map((r) => ({
+        nodeID: r.nodeID,
+        kind: r.kind,
+        summary: r.summary,
+        actor: r.actor,
+        target: r.target,
+      }));
+    },
+    workGraphEdges() {
+      if (!session) return [];
+      return projectedWorkGraphEdges(session.events).map((r) => ({
+        sourceID: r.sourceID,
+        targetID: r.targetID,
+        kind: r.kind,
+        reason: r.reason,
       }));
     },
     respondApproval(response) {
