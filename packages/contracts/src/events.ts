@@ -372,6 +372,18 @@ export type RuntimeEvent =
       error?: string;
     }
   | {
+      type: "constitution.check";
+      id: string;
+      ruleID: string;
+      statement: string;
+      priority: "critical" | "high" | "medium" | "low";
+      enforcement: "deny" | "approval" | "warn";
+      action: string;
+      resource: string;
+      conflict: boolean;
+      override?: { reason: string; approvedBy: string };
+    }
+  | {
       type: "constitution.rule_added";
       id: string;
       ruleID: string;

@@ -3071,6 +3071,32 @@ export function createRealRuntimeClient(
     return messages;
   }
 
+  /** Checks applicable constitution rules and emits `constitution.check` events. */
+  function checkConstitutionForTool(
+    turnID: string,
+    toolName: string,
+    toolAction: string,
+    toolResource: string,
+  ) {
+    if (!session) return;
+    const rules = projectedConstitutionRules(session.events);
+    for (const rule of rules) {
+      if (rule.enforcement === "deny" || rule.enforcement === "warn") {
+        publish({
+          type: "constitution.check",
+          id: `${turnID}:constitution:${rule.ruleID.toLowerCase()}`,
+          ruleID: rule.ruleID,
+          statement: rule.statement,
+          priority: rule.priority,
+          enforcement: rule.enforcement,
+          action: toolAction,
+          resource: toolResource,
+          conflict: false,
+        });
+      }
+    }
+  }
+
   async function executeOneTool(
     turnID: string,
     call: ProviderToolCall,
@@ -3167,6 +3193,14 @@ export function createRealRuntimeClient(
       toolCallID: call.id,
       decision: tool.requiresApproval ? "approval_required" : "allow",
     });
+    checkConstitutionForTool(
+      turnID,
+      tool.name,
+      tool.name,
+      tool.name === "write" || tool.name === "apply_patch"
+        ? (call.arguments ?? "")
+        : "global",
+    );
     if (tool.requiresApproval) await requireApproval(toolID, tool, call);
     await waitIfPaused();
     publish({
