@@ -491,6 +491,45 @@ test("provider text after a tool starts a new stream segment below that tool", (
   expect(state.messages.indexOf(second!)).toBeGreaterThan(toolIndex);
 });
 
+test("runtime tool ids still advance post-tool stream segments", () => {
+  let state = structuredClone(initialState);
+  state = reduceState(state, {
+    type: "thinking.delta",
+    id: "turn_runtime_tool",
+    text: "before terminal tool\n",
+  });
+  state = reduceState(state, {
+    type: "tool.update",
+    id: "turn_runtime_tool:terminal_observe_1",
+    name: "terminal_observe",
+    callID: "terminal_observe_1",
+    status: "succeeded",
+    summary: "terminal observed",
+    result: "observe complete",
+  });
+  state = reduceState(state, {
+    type: "thinking.delta",
+    id: "turn_runtime_tool",
+    text: "after terminal tool\n",
+  });
+  state = reduceState(state, { type: "thinking.done", id: "turn_runtime_tool" });
+
+  const first = state.messages.find(
+    (item) => item.id === "turn_runtime_tool:thinking",
+  );
+  const toolIndex = state.messages.findIndex(
+    (item) => item.id === "turn_runtime_tool:tool:terminal_observe_1",
+  );
+  const second = state.messages.find(
+    (item) => item.id === "turn_runtime_tool:thinking:segment:1",
+  );
+
+  expect(first?.text).toBe("before terminal tool\n");
+  expect(toolIndex).toBeGreaterThan(-1);
+  expect(second?.text).toBe("after terminal tool\n");
+  expect(state.messages.indexOf(second!)).toBeGreaterThan(toolIndex);
+});
+
 test("visible reasoning renders in arrival order before its tool boundary", () => {
   let state = structuredClone(initialState);
   state = reduceState(state, {

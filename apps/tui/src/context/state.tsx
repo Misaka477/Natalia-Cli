@@ -543,12 +543,13 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
         );
       return;
     case "tool.update":
+      const toolTurnID = turnIDForToolEvent(event);
       // Complete the active model output before its tool card. Tool updates
       // mutate their own card but never reorder model output around it.
-      flushStreamBlock(state, streamID(event.id, "thinking"));
-      flushStreamBlock(state, streamID(event.id, "assistant"));
-      beginPostToolStreamSegment(state, event.id);
-      delete state.streamPhases[event.id];
+      flushStreamBlock(state, streamID(toolTurnID, "thinking"));
+      flushStreamBlock(state, streamID(toolTurnID, "assistant"));
+      beginPostToolStreamSegment(state, toolTurnID);
+      delete state.streamPhases[toolTurnID];
       upsertTool(state, event);
       return;
     case "subagent.update":
@@ -1128,7 +1129,17 @@ function upsertTool(
 }
 
 function toolStateID(event: Extract<RuntimeEvent, { type: "tool.update" }>) {
-  return `${event.id}:tool:${event.callID ?? event.name}`;
+  return `${turnIDForToolEvent(event)}:tool:${event.callID ?? event.name}`;
+}
+
+function turnIDForToolEvent(
+  event: Extract<RuntimeEvent, { type: "tool.update" }>,
+) {
+  if (!event.callID) return event.id;
+  const suffix = `:${event.callID}`;
+  return event.id.endsWith(suffix)
+    ? event.id.slice(0, -suffix.length)
+    : event.id;
 }
 
 function toolText(tool: ToolBlockState) {
