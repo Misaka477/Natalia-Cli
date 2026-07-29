@@ -316,6 +316,39 @@ export function settleInterruptedTurns(session: SessionRecord) {
   return settled;
 }
 
+export function projectedConstitutionRules(events: RuntimeEvent[]) {
+  const rules: RuntimeEvent[] = [];
+  for (const event of events) {
+    if (event.type === "constitution.rule_added") {
+      rules.push(event);
+    }
+    if (event.type === "constitution.rule_updated") {
+      const existing = rules.findLast(
+        (r) => r.type === "constitution.rule_added" && r.ruleID === event.ruleID,
+      );
+      if (existing && existing.type === "constitution.rule_added") {
+        const idx = rules.indexOf(existing);
+        rules[idx] = {
+          ...existing,
+          statement: event.statement ?? existing.statement,
+          priority: event.priority ?? existing.priority,
+        };
+      }
+    }
+  }
+  return rules.filter(
+    (r): r is Extract<RuntimeEvent, { type: "constitution.rule_added" }> =>
+      r.type === "constitution.rule_added",
+  );
+}
+
+export function projectedDecisionRecords(events: RuntimeEvent[]) {
+  return events.filter(
+    (event): event is Extract<RuntimeEvent, { type: "decision.recorded" }> =>
+      event.type === "decision.recorded",
+  );
+}
+
 export function settleInterruptedTurnIDs(
   activeTurnIDs: string[],
   pendingApprovalIDs: string[],

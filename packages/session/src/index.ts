@@ -238,6 +238,8 @@ export type { AdmittedSessionInput, SessionInputDelivery } from "./inbox";
 export {
   modelVisibleEvents,
   projectSessionMessages,
+  projectedConstitutionRules,
+  projectedDecisionRecords,
   projectSession,
   settleInterruptedTurns,
   settleInterruptedTurnIDs,

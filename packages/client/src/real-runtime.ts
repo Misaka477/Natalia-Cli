@@ -59,6 +59,8 @@ import {
   projectInteractiveRequests,
   projectSession,
   projectSessionMessages,
+  projectedConstitutionRules,
+  projectedDecisionRecords,
   settleInterruptedTurns,
   settleInterruptedTurnIDs,
   modelVisibleEvents,
@@ -2136,6 +2138,28 @@ export function createRealRuntimeClient(
     },
     lastSubmission() {
       return lastSubmitted;
+    },
+    constitutionRules() {
+      const record = sessionSnapshot!;
+      return projectedConstitutionRules(record.events).map((r) => ({
+        ruleID: r.ruleID,
+        statement: r.statement,
+        scope: r.scope,
+        priority: r.priority,
+        source: r.source,
+        enforcement: r.enforcement,
+        overridePolicy: r.overridePolicy,
+      }));
+    },
+    decisionRecords() {
+      const record = sessionSnapshot!;
+      return projectedDecisionRecords(record.events).map((r) => ({
+        decision: r.decision,
+        rationale: r.rationale ?? [],
+        status: r.status,
+        linkedPlans: r.linkedPlans ?? [],
+        linkedConstraints: r.linkedConstraints ?? [],
+      }));
     },
     respondApproval(response) {
       if (!isPendingInteractiveRequest(response.requestID, "approval")) {
