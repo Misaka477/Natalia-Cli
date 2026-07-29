@@ -655,16 +655,34 @@ export class NativeTerminalRegistry {
   }
 
   async start(input: { command: string; cwd: string; id?: string }) {
-    const isFirstHubSession = this.hub === undefined;
-    const pane = await this.host.spawn({
-      cwd: input.cwd,
-      command:
-        platform() === "win32"
-          ? ["cmd.exe", "/d", "/s", "/c", input.command]
-          : ["/bin/sh", "-lc", input.command],
-      workspace: "natalia",
-      muxWindowID: this.hub?.muxWindowID,
-    });
+    let pane;
+    try {
+      pane = await this.host.spawn({
+        cwd: input.cwd,
+        command:
+          platform() === "win32"
+            ? ["cmd.exe", "/d", "/s", "/c", input.command]
+            : ["/bin/sh", "-lc", input.command],
+        workspace: "natalia",
+        muxWindowID: this.hub?.muxWindowID,
+      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (this.hub && /window.*(?:not found|doesn.t exist)/i.test(msg)) {
+        this.hub = undefined;
+        pane = await this.host.spawn({
+          cwd: input.cwd,
+          command:
+            platform() === "win32"
+              ? ["cmd.exe", "/d", "/s", "/c", input.command]
+              : ["/bin/sh", "-lc", input.command],
+          workspace: "natalia",
+          muxWindowID: undefined,
+        });
+      } else {
+        throw error;
+      }
+    }
     const session: NativeTerminalSession = {
       id: input.id ?? `terminal_${randomUUID()}`,
       host: "wezterm",
@@ -687,10 +705,10 @@ export class NativeTerminalRegistry {
     this.sessions.set(session.id, session);
     await this.persistSessions();
     if (this.options.autoOpenHub !== false) {
-      if (isFirstHubSession) await this.attachToHub(session, true, true);
+      if (!this.hub) await this.attachToHub(session, true, true);
       else {
-        session.windowID = this.hub!.muxWindowID;
-        session.muxWindowID = this.hub!.muxWindowID;
+        session.windowID = this.hub.muxWindowID;
+        session.muxWindowID = this.hub.muxWindowID;
         await this.host.focus(session.paneID);
       }
     }
@@ -1219,34 +1237,45 @@ export class NativeTerminalRegistry {
     session: NativeTerminalSession,
     options?: { maxLines?: number; startLine?: number; endLine?: number },
   ) {
-    const [text, selectionJson, highlightsJson] = await Promise.all([
-      this.host.read(session.paneID, options),
-      this.host.read(session.paneID, { format: "selection" }),
-      this.host.read(session.paneID, { format: "highlights" }),
-    ]);
+    const paneID = session.paneID;
+    let text: string;
+    let selectionJson: string;
+    let highlightsJson: string;
+    try {
+      [text, selectionJson, highlightsJson] = await Promise.all([
+        this.host.read(paneID, options),
+        this.host.read(paneID, { format: "selection" }),
+        this.host.read(paneID, { format: "highlights" }),
+      ]);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (/pane.*(?:not found|doesn.t exist|unavailable)|window.*(?:not found|doesn.t exist)/i.test(msg)) {
+        session.status = "exited";
+        session.attached = false;
+        session.revision += 1;
+        this.notifyRevision(session.id);
+        return { text: "", cursorX: 0, cursorY: 0, rows: 1, cols: 80, highlightRanges: [] };
+      }
+      throw error;
+    }
     if (text !== session.lastText) {
       session.lastText = text;
       session.revision += 1;
       this.notifyRevision(session.id);
     }
-    let highlightRanges: Array<{
-      startRow: number;
-      startCol: number;
-      endRow: number;
-      endCol: number;
-    }> = [];
+    const highlightRanges: Array<{ startRow: number; startCol: number; endRow: number; endCol: number }> = [];
     try {
       const parsedSelection = JSON.parse(selectionJson) as Record<string, unknown>;
       const selection = parsedSelection.selection as Record<string, unknown> | null;
       if (selection && Array.isArray(selection.ranges)) {
-        highlightRanges = highlightRanges.concat(
-          (selection.ranges as Array<Record<string, unknown>>).map((r) => ({
+        for (const r of selection.ranges as Array<Record<string, unknown>>) {
+          highlightRanges.push({
             startRow: Number(r.startRow) ?? 0,
             startCol: Number(r.startCol) ?? 0,
             endRow: Number(r.endRow) ?? 0,
             endCol: Number(r.endCol) ?? 0,
-          })),
-        );
+          });
+        }
       }
     } catch {
       // ignore parse errors
@@ -1255,14 +1284,14 @@ export class NativeTerminalRegistry {
       const parsedHighlights = JSON.parse(highlightsJson) as Record<string, unknown>;
       const highlights = parsedHighlights.highlights as Record<string, unknown> | null;
       if (highlights && Array.isArray(highlights.ranges)) {
-        highlightRanges = highlightRanges.concat(
-          (highlights.ranges as Array<Record<string, unknown>>).map((r) => ({
+        for (const r of highlights.ranges as Array<Record<string, unknown>>) {
+          highlightRanges.push({
             startRow: Number(r.startRow) ?? 0,
             startCol: Number(r.startCol) ?? 0,
             endRow: Number(r.endRow) ?? 0,
             endCol: Number(r.endCol) ?? 0,
-          })),
-        );
+          });
+        }
       }
     } catch {
       // ignore parse errors

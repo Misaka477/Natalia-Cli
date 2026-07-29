@@ -89,6 +89,7 @@ export function SessionRoute(props: {
   let observedScrollTop = -1;
   let wasAtTop = false;
   let wasAtBottom = false;
+  let observedTotal = 0;
   const scrollObserver = setInterval(() => {
     if (!timelineScroll || timelineScroll.isDestroyed) return;
     const scrollTop = timelineScroll.scrollTop ?? 0;
@@ -102,6 +103,9 @@ export function SessionRoute(props: {
     const isAtBottom =
       scrollTop + viewportHeight() >= range.total - 1;
     if (isAtBottom) props.onFollowChange?.(true);
+    if (props.followBottom && !isAtBottom && range.total > observedTotal)
+      props.onFollowChange?.(true);
+    observedTotal = range.total;
     if (isAtBottom && !wasAtBottom) void props.onLoadNewerHistory?.();
     wasAtBottom = isAtBottom;
     updateRange();
@@ -128,6 +132,7 @@ export function SessionRoute(props: {
       }
       let adjustment = 0;
       let anyChanged = false;
+      const oldTotal = virtualizer.range(timelineScroll.scrollTop ?? 0, viewportHeight()).total;
       for (const [key, element] of renderedGroups) {
         if (!element || element.isDestroyed) continue;
         const measured = virtualizer.measure(
@@ -139,9 +144,8 @@ export function SessionRoute(props: {
         adjustment += measured.adjustment;
         if (measured.changed) anyChanged = true;
       }
-      const isNearBottom = (timelineScroll.scrollTop ?? 0) + viewportHeight() >=
-        virtualizer.range(timelineScroll.scrollTop ?? 0, viewportHeight()).total - 1;
-      const newTop = props.followBottom && anyChanged && isNearBottom
+      const wasNearBottom = props.followBottom && (timelineScroll.scrollTop ?? 0) + viewportHeight() >= oldTotal - 1;
+      const newTop = props.followBottom && anyChanged && wasNearBottom
         ? Math.max(0, virtualizer.range(timelineScroll.scrollTop ?? 0, viewportHeight()).total - viewportHeight())
         : adjustment && !props.followBottom
           ? (timelineScroll.scrollTop ?? 0) + adjustment
