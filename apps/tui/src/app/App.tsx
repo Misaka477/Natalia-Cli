@@ -61,6 +61,7 @@ import {
   retainEditorMentions,
 } from "../prompt/external-editor";
 import { DialogAgent } from "../component/DialogAgent";
+import { CommandPalette } from "../component/CommandPalette";
 import {
   resolveConfig,
   configPatch,
@@ -2872,80 +2873,6 @@ function isNearBottom(scrollbox: any, threshold = 10) {
   const scrollHeight = scrollbox.scrollHeight ?? 0;
   if (scrollHeight <= viewportHeight + 1) return true;
   return scrollHeight - viewportHeight - scrollTop <= threshold;
-}
-
-function CommandPalette(props: { onRun(command: string): void }) {
-  const dialog = useDialog();
-  const keymap = useKeymap();
-  const definitions = commands;
-  const entries = useKeymapSelector((current) => {
-    const commands = current.getCommandEntries({
-      namespace: "palette",
-      visibility: "registered",
-      filter: (command) =>
-        command.name !== "palette.toggle" && !definitions[command.name]?.scope,
-    });
-    const bindings = current.getCommandBindings({
-      commands: commands.map((entry) => entry.command.name),
-      visibility: "registered",
-    });
-    return commands.map((entry) => ({
-      entry,
-      bindings: bindings.get(entry.command.name) ?? entry.bindings,
-    }));
-  });
-
-  const options = createMemo(
-    () =>
-      [
-        ...entries().map(({ entry, bindings }) => ({
-          title:
-            typeof entry.command.title === "string"
-              ? entry.command.title
-              : entry.command.name,
-          description:
-            typeof entry.command.desc === "string"
-              ? entry.command.desc
-              : undefined,
-          value: entry.command.name,
-          category:
-            typeof entry.command.category === "string"
-              ? entry.command.category
-              : undefined,
-          footer: bindings
-            .map((binding) =>
-              stringifyKeySequence(binding.sequence, { preferDisplay: true }),
-            )
-            .join(" / "),
-          onSelect: (dialog: DialogContext) => {
-            dialog.clear();
-            props.onRun(entry.command.name);
-          },
-        })),
-        {
-          title: "Runtime diagnostics",
-          description: "View and copy runtime diagnostics",
-          value: "diagnostics",
-          category: "runtime",
-          onSelect: (dialog: DialogContext) => {
-            dialog.clear();
-            props.onRun("diagnostics");
-          },
-        },
-        ...getPluginCommands().map((cmd) => ({
-          title: cmd.title,
-          description: cmd.category ? `plugin · ${cmd.category}` : "plugin",
-          value: cmd.name,
-          category: cmd.category ?? "plugin",
-          onSelect: (dialog: DialogContext) => {
-            dialog.clear();
-            cmd.run();
-          },
-        })),
-      ] as DialogSelectOption<string>[],
-  );
-
-  return <DialogSelect title="Commands" options={options()} />;
 }
 
 function normalizeKey(key: string | undefined) {
