@@ -33,7 +33,11 @@ import { DialogTerminal } from "../component/DialogTerminal";
 import { DialogSelect } from "../dialog/DialogSelect";
 import { DialogPrompt } from "../dialog/DialogPrompt";
 import { DialogConfirm } from "../dialog/DialogConfirm";
-import { DialogConstitution, DialogDecision } from "../dialog/DialogLayer";
+import {
+  DialogConstitution,
+  DialogDecision,
+  DialogEvidence,
+} from "../dialog/DialogLayer";
 import { useDialog, type DialogContext } from "../dialog/provider";
 import type { TuiConfigWriteScope } from "../config";
 import { editPromptExternally, retainEditorMentions } from "../prompt/external-editor";
@@ -1960,6 +1964,13 @@ export function runCommand(command: string, ctx: CommandContext) {
     if (command === "decision.list") {
       void ctx.backend.decisionRecords?.().then(
         (records) => ctx.dialog.push(() => <DialogDecision records={records} />),
+        (error: any) => ctx.toast.error(error),
+      );
+      return;
+    }
+    if (command === "evidence.list") {
+      void ctx.backend.evidenceRecords?.().then(
+        (records) => ctx.dialog.push(() => <DialogEvidence records={records} />),
         (error: any) => ctx.toast.error(error),
       );
       return;

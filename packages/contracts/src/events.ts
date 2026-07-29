@@ -372,6 +372,32 @@ export type RuntimeEvent =
       error?: string;
     }
   | {
+      type: "evidence.recorded";
+      id: string;
+      taskID: string;
+      objective: string;
+      status:
+        | "planned"
+        | "implemented"
+        | "validated"
+        | "accepted"
+        | "promoted"
+        | "blocked"
+        | "failed"
+        | "partial";
+      changes?: Array<{
+        path: string;
+        changeType: "added" | "modified" | "deleted";
+        summary: string;
+      }>;
+      validations?: Array<{
+        command: string;
+        result: "passed" | "failed" | "skipped";
+        safeSummary: string;
+      }>;
+      knownGaps?: string[];
+    }
+  | {
       type: "constitution.check";
       id: string;
       ruleID: string;
@@ -1330,6 +1356,14 @@ export type RuntimeClient = {
       status: "proposed" | "accepted" | "superseded";
       linkedPlans: string[];
       linkedConstraints: string[];
+    }>
+  >;
+  evidenceRecords?(): Promise<
+    Array<{
+      taskID: string;
+      objective: string;
+      status: string;
+      knownGaps: string[];
     }>
   >;
 };

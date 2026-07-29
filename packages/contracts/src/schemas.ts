@@ -285,6 +285,49 @@ export const decisionRecordSchema = z.object({
   linkedConstraints: z.array(z.string()).default([]),
 });
 
+export const validationRunSchema = z.object({
+  command: z.string(),
+  target: z.string(),
+  result: z.enum(["passed", "failed", "skipped"]),
+  durationMs: z.number().int().positive().optional(),
+  outputArtifact: z.string().optional(),
+  safeSummary: z.string(),
+});
+
+export const completionEvidenceSchema = z.object({
+  id: z.string().min(1),
+  taskID: z.string().min(1),
+  objective: z.string().min(1),
+  status: z.enum([
+    "planned",
+    "implemented",
+    "validated",
+    "accepted",
+    "promoted",
+    "blocked",
+    "failed",
+    "partial",
+  ]),
+  changes: z
+    .array(
+      z.object({
+        path: z.string(),
+        changeType: z.enum(["added", "modified", "deleted"]),
+        summary: z.string(),
+      }),
+    )
+    .default([]),
+  validations: z.array(validationRunSchema).default([]),
+  knownGaps: z.array(z.string()).default([]),
+  rollback: z
+    .object({
+      checkpointID: z.string().optional(),
+      sandboxID: z.string().optional(),
+    })
+    .optional(),
+  workGraphRefs: z.array(z.string()).default([]),
+});
+
 export const scopedOverrideSchema = z.object({
   id: z.string().min(1),
   ruleID: z.string().min(1),

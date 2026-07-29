@@ -61,6 +61,7 @@ import {
   projectSessionMessages,
   projectedConstitutionRules,
   projectedDecisionRecords,
+  projectedEvidenceRecords,
   settleInterruptedTurns,
   settleInterruptedTurnIDs,
   modelVisibleEvents,
@@ -2140,8 +2141,8 @@ export function createRealRuntimeClient(
       return lastSubmitted;
     },
     constitutionRules() {
-      const record = sessionSnapshot!;
-      return projectedConstitutionRules(record.events).map((r) => ({
+      if (!session) return [];
+      return projectedConstitutionRules(session.events).map((r) => ({
         ruleID: r.ruleID,
         statement: r.statement,
         scope: r.scope,
@@ -2152,13 +2153,22 @@ export function createRealRuntimeClient(
       }));
     },
     decisionRecords() {
-      const record = sessionSnapshot!;
-      return projectedDecisionRecords(record.events).map((r) => ({
+      if (!session) return [];
+      return projectedDecisionRecords(session.events).map((r) => ({
         decision: r.decision,
         rationale: r.rationale ?? [],
         status: r.status,
         linkedPlans: r.linkedPlans ?? [],
         linkedConstraints: r.linkedConstraints ?? [],
+      }));
+    },
+    evidenceRecords() {
+      if (!session) return [];
+      return projectedEvidenceRecords(session.events).map((r) => ({
+        taskID: r.taskID,
+        objective: r.objective,
+        status: r.status,
+        knownGaps: r.knownGaps ?? [],
       }));
     },
     respondApproval(response) {

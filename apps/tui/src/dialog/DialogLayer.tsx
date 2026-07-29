@@ -594,6 +594,51 @@ export function DialogConstitution(props: {
   );
 }
 
+export function DialogEvidence(props: {
+  records: Array<{
+    taskID: string;
+    objective: string;
+    status: string;
+    knownGaps: string[];
+  }>;
+}) {
+  return (
+    <box flexDirection="column" paddingLeft={2} paddingRight={2} paddingBottom={1}>
+      <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>
+        Completion Evidence
+      </text>
+      <box flexDirection="column" gap={1} paddingTop={1}>
+        <For each={props.records}>
+          {(record) => (
+            <box flexDirection="column">
+              <box flexDirection="row" gap={1}>
+                <text
+                  fg={
+                    record.status === "validated" || record.status === "accepted"
+                      ? darkTheme.success
+                      : record.status === "failed"
+                        ? darkTheme.danger
+                        : darkTheme.warning
+                  }
+                  attributes={TextAttributes.BOLD}
+                >
+                  {record.status}
+                </text>
+              </box>
+              <text fg={darkTheme.text} wrapMode="word">
+                {record.objective}
+              </text>
+              <Show when={record.knownGaps.length > 0}>
+                <text fg={darkTheme.muted}>Gaps: {record.knownGaps.join("; ")}</text>
+              </Show>
+            </box>
+          )}
+        </For>
+      </box>
+    </box>
+  );
+}
+
 export function DialogDecision(props: {
   records: Array<{
     decision: string;

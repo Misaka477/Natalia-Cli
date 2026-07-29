@@ -342,6 +342,13 @@ export function projectedConstitutionRules(events: RuntimeEvent[]) {
   );
 }
 
+export function projectedEvidenceRecords(events: RuntimeEvent[]) {
+  return events.filter(
+    (event): event is Extract<RuntimeEvent, { type: "evidence.recorded" }> =>
+      event.type === "evidence.recorded",
+  );
+}
+
 export function projectedDecisionRecords(events: RuntimeEvent[]) {
   return events.filter(
     (event): event is Extract<RuntimeEvent, { type: "decision.recorded" }> =>

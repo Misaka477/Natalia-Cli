@@ -6,6 +6,7 @@ import {
   modelVisibleEvents,
   projectedConstitutionRules,
   projectedDecisionRecords,
+  projectedEvidenceRecords,
   projectSessionMessages,
   projectSession,
   settleInterruptedTurns,
@@ -381,4 +382,20 @@ test("projectedDecisionRecords collects decision records", () => {
   expect(records).toHaveLength(1);
   expect(records[0]?.decision).toContain("TypeScript/Bun");
   expect(records[0]?.status).toBe("accepted");
+});
+
+test("projectedEvidenceRecords collects evidence records", () => {
+  const session = createSessionRecord("ses_evidence", "Evidence");
+  appendSessionEvent(session, {
+    type: "evidence.recorded",
+    id: "evt_1",
+    taskID: "T-001",
+    objective: "Add completion evidence schema",
+    status: "validated",
+    knownGaps: ["Needs full integration test"],
+  });
+  const records = projectedEvidenceRecords(session.events);
+  expect(records).toHaveLength(1);
+  expect(records[0]?.taskID).toBe("T-001");
+  expect(records[0]?.status).toBe("validated");
 });
