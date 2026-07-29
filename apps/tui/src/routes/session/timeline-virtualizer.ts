@@ -141,22 +141,29 @@ export function groupTimelineBlocks<T extends { id: string; role: string }>(
   maxItemsPerGroup = 12,
 ) {
   const groups: Array<TimelineGroup<T>> = [];
-  const turnChunk = new Map<string, number>();
   for (const block of blocks) {
     const turnID = block.id.split(":", 1)[0] ?? block.id;
+    const previous = groups.at(-1);
     const baseKey = `turn:${turnID}`;
-    const chunk = block.role !== "system" ? (turnChunk.get(baseKey) ?? 0) : -1;
-    const groupKey = chunk <= 0 ? baseKey : `${baseKey}:${chunk}`;
-    const existing = chunk >= 0 ? groups.findLastIndex((g) => g.key === groupKey) : -1;
-    if (existing >= 0 && groups[existing]!.items.length < maxItemsPerGroup) {
-      groups[existing]!.items.push(block);
+    const sameTurn =
+      block.role !== "system" &&
+      (previous?.key === baseKey || previous?.key.startsWith(`${baseKey}:`));
+    if (sameTurn && previous && previous.items.length < maxItemsPerGroup) {
+      previous.items.push(block);
       continue;
     }
-    const nextChunk = existing >= 0 ? chunk + 1 : chunk < 0 ? 0 : chunk;
-    if (chunk >= 0) turnChunk.set(baseKey, nextChunk);
-    const key = nextChunk === 0 ? baseKey : `${baseKey}:${nextChunk}`;
-    groups.push({ key, items: [block] });
-    if (block.role !== "system" && !turnChunk.has(baseKey)) turnChunk.set(baseKey, 0);
+    const previousChunk = sameTurn
+      ? Number(previous!.key.slice(baseKey.length + 1) || 0)
+      : -1;
+    groups.push({
+      key:
+        block.role === "system"
+          ? `block:${block.id}`
+          : previousChunk < 0
+            ? baseKey
+            : `${baseKey}:${previousChunk + 1}`,
+      items: [block],
+    });
   }
   return groups;
 }
