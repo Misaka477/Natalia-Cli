@@ -33,12 +33,14 @@ import {
   type TimelineRange,
 } from "./timeline-virtualizer";
 import {
+  compactPath,
   filetype,
   formatToolPath,
   formatPrimitiveArgs,
   parseExecuteCalls,
   parseQuestionAnswers,
   parseResultRecord,
+  statusValues,
   stringField,
   subagentColor,
   toolColor,
@@ -503,23 +505,6 @@ export function SessionSidebar(props: {
       </text>
     </box>
   );
-}
-
-function statusValues(segments: string[]) {
-  return Object.fromEntries(
-    segments.flatMap((segment) => {
-      const index = segment.indexOf(":");
-      return index < 0
-        ? []
-        : [[segment.slice(0, index), segment.slice(index + 1)]];
-    }),
-  ) as Record<string, string>;
-}
-
-function compactPath(path?: string) {
-  if (!path) return "local workspace";
-  const home = process.env.HOME;
-  return home && path.startsWith(home) ? `~${path.slice(home.length)}` : path;
 }
 
 export function SubagentRoute(props: { agentID: string; onBack(): void }) {

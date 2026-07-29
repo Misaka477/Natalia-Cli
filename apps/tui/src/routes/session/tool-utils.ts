@@ -146,6 +146,23 @@ export function subagentColor(status: string) {
   return darkTheme.muted;
 }
 
+export function statusValues(segments: string[]) {
+  return Object.fromEntries(
+    segments.flatMap((segment) => {
+      const index = segment.indexOf(":");
+      return index < 0
+        ? []
+        : [[segment.slice(0, index), segment.slice(index + 1)]];
+    }),
+  ) as Record<string, string>;
+}
+
+export function compactPath(path?: string) {
+  if (!path) return "local workspace";
+  const home = process.env.HOME;
+  return home && path.startsWith(home) ? `~${path.slice(home.length)}` : path;
+}
+
 export function toolIcon(kind: string) {
   if (kind === "diff") return "diff";
   if (kind === "todo") return "todo";
