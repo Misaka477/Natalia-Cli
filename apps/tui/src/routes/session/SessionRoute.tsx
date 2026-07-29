@@ -89,6 +89,7 @@ export function SessionRoute(props: {
   let observedScrollTop = -1;
   let wasAtTop = false;
   let wasAtBottom = false;
+  let lastReplaceAdjustment = 0;
   const scrollObserver = setInterval(() => {
     if (!timelineScroll || timelineScroll.isDestroyed) return;
     const scrollTop = timelineScroll.scrollTop ?? 0;
@@ -139,6 +140,14 @@ export function SessionRoute(props: {
       }
       if (adjustment && !props.followBottom)
         timelineScroll.scrollTop += adjustment;
+      if (props.followBottom && (adjustment || lastReplaceAdjustment))
+        timelineScroll.scrollTop = Math.max(
+          0,
+          virtualizer.range(
+            timelineScroll.scrollTop ?? 0,
+            viewportHeight(),
+          ).total - viewportHeight(),
+        );
       observedScrollTop = timelineScroll.scrollTop ?? 0;
       updateRange();
     });
@@ -148,6 +157,7 @@ export function SessionRoute(props: {
     const groups = timelineGroups();
     const scrollTop = timelineScroll?.scrollTop ?? 0;
     const result = virtualizer.replace(groups, scrollTop, viewportHeight());
+    lastReplaceAdjustment = result.adjustment;
     const visibleKeys = new Set(result.range.items.map((group) => group.key));
     for (const key of renderedGroups.keys())
       if (!visibleKeys.has(key)) renderedGroups.delete(key);
