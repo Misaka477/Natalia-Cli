@@ -40,6 +40,7 @@ import {
   providerCompactor,
 } from "@natalia/runtime";
 import { modelSelectionStatus, resolveConfig } from "@natalia/config";
+import { CapabilityRegistry, type CapabilityRegistration } from "@natalia/capability";
 import type { ConfigV2 } from "@natalia/contracts";
 import {
   agentsFromConfig,
@@ -258,6 +259,7 @@ export function createRealRuntimeClient(
   let pauseWaiters: Array<() => void> = [];
   let ready: Promise<void> | undefined;
   let skillRegistry: SkillRegistry | undefined;
+  let capabilityRegistry: CapabilityRegistry | undefined;
   let activeSkill: Skill | undefined;
   const attachmentReferences = new Map<
     string,
@@ -916,20 +918,15 @@ export function createRealRuntimeClient(
     if (checkpointStore.isEnabled())
       await checkpointStore.ensureBaseline(context, 0);
     publish({ type: "session.ready", sessionID });
+    capabilityRegistry = new CapabilityRegistry();
     registerBuiltinCapabilities();
     publish(contextStatusEvent(context.status(runtimeContextConfig)));
     publish(await runtimeStatusSnapshot());
   }
 
-  /** Registers built-in internal capabilities. */
+  /** Registers built-in internal capabilities through the capability kernel. */
   function registerBuiltinCapabilities() {
-    const builtins: Array<{
-      id: string;
-      name: string;
-      version: string;
-      scope: "process" | "workspace" | "session";
-      grants: string[];
-    }> = [
+    const builtins: Array<CapabilityRegistration> = [
       {
         id: "natalia-terminal",
         name: "Terminal",
@@ -959,19 +956,15 @@ export function createRealRuntimeClient(
         grants: ["tools", "resources"],
       },
     ];
-    for (const cap of builtins) {
-      publish({
-        type: "capability.loaded",
-        id: `cap:${cap.id}`,
-        manifest: {
-          apiVersion: 1,
-          id: cap.id,
-          version: cap.version,
-          name: cap.name,
-          scope: cap.scope,
-          grants: cap.grants,
-        },
-      });
+    for (const reg of builtins) {
+      const ctx = capabilityRegistry.tryLoad(reg);
+      if (ctx) {
+        publish({
+          type: "capability.loaded",
+          id: `cap:${reg.id}`,
+          manifest: { apiVersion: 1 as const, ...reg },
+        });
+      }
     }
   }
 
@@ -2260,13 +2253,13 @@ export function createRealRuntimeClient(
       }));
     },
     capabilities() {
-      if (!session) return [];
-      return projectedCapabilities(session.events).map((m) => ({
-        id: m.manifest.id,
-        name: m.manifest.name,
-        version: m.manifest.version,
-        scope: m.manifest.scope,
-        grants: m.manifest.grants,
+      if (!capabilityRegistry) return [];
+      return capabilityRegistry.list().map((r) => ({
+        id: r.id,
+        name: r.name,
+        version: r.version,
+        scope: r.scope,
+        grants: r.grants,
       }));
     },
     workGraphNodes() {

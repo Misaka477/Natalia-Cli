@@ -6,6 +6,7 @@
     { "path": "apps/cli" },
     { "path": "packages/contracts" },
     { "path": "packages/agent" },
+    { "path": "packages/capability" },
     { "path": "packages/client" },
     { "path": "packages/view-store" },
     { "path": "packages/ui-model" },
