@@ -255,6 +255,48 @@ export const securityConfigSchema = z.object({
   redactToolOutput: z.boolean().default(true),
 });
 
+export const constitutionRuleSchema = z.object({
+  id: z.string().min(1),
+  statement: z.string().min(1),
+  scope: z.enum(["project", "package", "sandbox", "task", "release"]),
+  priority: z.enum(["critical", "high", "medium", "low"]),
+  source: z.enum(["user", "master_plan", "policy"]),
+  enforcement: z.enum(["deny", "approval", "warn"]),
+  overridePolicy: z.enum(["forbidden", "user_scoped", "user_explicit"]),
+  evidenceRefs: z.array(z.string()).default([]),
+});
+
+export const decisionRecordSchema = z.object({
+  id: z.string().min(1),
+  decision: z.string().min(1),
+  rationale: z.array(z.string()).default([]),
+  alternatives: z
+    .array(
+      z.object({
+        option: z.string(),
+        rejectedReason: z.string().optional(),
+      }),
+    )
+    .default([]),
+  consequences: z.array(z.string()).default([]),
+  status: z.enum(["proposed", "accepted", "superseded"]),
+  scope: z.array(z.string()).default([]),
+  linkedPlans: z.array(z.string()).default([]),
+  linkedConstraints: z.array(z.string()).default([]),
+});
+
+export const scopedOverrideSchema = z.object({
+  id: z.string().min(1),
+  ruleID: z.string().min(1),
+  reason: z.string().min(1),
+  scope: z.object({
+    paths: z.array(z.string()).optional(),
+    taskID: z.string().optional(),
+    expiresAt: z.string().optional(),
+  }),
+  approvedBy: z.literal("user"),
+});
+
 export const policyStatementSchema = z.object({
   effect: z.enum(["allow", "deny"]),
   action: z.string().min(1),
