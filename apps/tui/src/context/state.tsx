@@ -15,7 +15,6 @@ import type {
   SubmittedTurn,
   ToolStatus,
 } from "@natalia/contracts";
-import { newStream, segmentID, streamID, toolStateID, upsertBlock, type AppState, type MessageBlock, type StreamState } from "@natalia/view-store";
 import {
   appendWithRetrySkip,
   checkpointProgressView,
@@ -46,7 +45,133 @@ import {
   type ModalControllerState,
 } from "@natalia/ui-model";
 
-// export moved to @natalia/view-store
+export type MessageBlock = {
+  id: string;
+  role:
+    | "system"
+    | "user"
+    | "thinking"
+    | "assistant"
+    | "tool"
+    | "approval"
+    | "question"
+    | "subagent"
+    | "snapshot";
+  text: string;
+  status?: string;
+  pendingText?: string;
+  reasoningVisible?: boolean;
+  providerPolicy?: "visible" | "hidden";
+  tool?: ToolBlockState;
+  interactive?:
+    | {
+        kind: "approval";
+        request: Extract<RuntimeEvent, { type: "approval.request" }>;
+        response?: Extract<RuntimeEvent, { type: "approval.response" }>;
+      }
+    | {
+        kind: "question";
+        request: Extract<RuntimeEvent, { type: "question.request" }>;
+        response?: Extract<RuntimeEvent, { type: "question.response" }>;
+      };
+};
+
+export type ToolBlockState = {
+  id: string;
+  name: string;
+  kind: ToolKind;
+  status: ToolStatus;
+  summary: string;
+  argumentsRaw: string;
+  argumentsComplete: boolean;
+  keyArguments: string[];
+  redactedArguments?: string;
+  elapsed: string;
+  result?: ToolResultView;
+  metadata: Record<string, unknown>;
+  detailAvailable: boolean;
+};
+
+export type SubagentView = Extract<RuntimeEvent, { type: "subagent.update" }>;
+
+type StreamState = {
+  committed: string;
+  tail: string;
+  retrySkip: string;
+  attempt: number;
+  segmentIndex: number;
+  segmentText: string;
+  deferVisible: boolean;
+};
+
+const streamSegmentChars = 6000;
+const eventBatchMs = 16;
+const maxTerminalTranscriptChars = 12000;
+
+export type AppState = {
+  sessionID?: SessionID;
+  title: string;
+  status: string;
+  footer: string;
+  statusSegments: string[];
+  messages: MessageBlock[];
+  activeTurn?: string;
+  lastSubmission?: SubmittedTurn;
+  dialog?:
+    | "palette"
+    | "approval"
+    | "question"
+    | "sessions"
+    | "settings"
+    | "status";
+  modal: ModalControllerState;
+  streams: Record<string, StreamState>;
+  streamPhases: Record<string, "thinking" | "assistant">;
+  tools: Record<string, ToolBlockState>;
+  subagents: Record<string, SubagentView>;
+  subagentHistory: Record<string, SubagentView[]>;
+  todos: TodoView[];
+  retryBanner?: string;
+  compactionBanner?: string;
+  terminals: Record<string, Extract<RuntimeEvent, { type: "terminal.update" }>>;
+  terminalTimeline: Record<
+    string,
+    Extract<RuntimeEvent, { type: "terminal.timeline" }>[]
+  >;
+  terminalPane: { selectedID?: string; focus: "chat" | "terminal" };
+  sandboxes: Record<string, Extract<RuntimeEvent, { type: "sandbox.update" }>>;
+  mcp: Record<string, Extract<RuntimeEvent, { type: "mcp.status" }>>;
+};
+
+export const initialState: AppState = {
+  title: "New session",
+  status: "booting",
+  footer: "Ready",
+  statusSegments: [
+    "mode:runtime",
+    "model:not-connected",
+    "provider:not-connected",
+  ],
+  modal: structuredClone(initialModalState),
+  streams: {},
+  streamPhases: {},
+  tools: {},
+  subagents: {},
+  subagentHistory: {},
+  todos: [],
+  terminals: {},
+  terminalTimeline: {},
+  terminalPane: { focus: "chat" },
+  sandboxes: {},
+  mcp: {},
+  messages: [],
+};
+
+export function reduceState(state: AppState, event: RuntimeEvent): AppState {
+  const next = structuredClone(state) as AppState;
+  applyEvent(next, event);
+  return next;
+}
 
 export function StateProvider(props: {
   children: JSX.Element;
@@ -1002,7 +1127,10 @@ function upsertTool(
   upsertBlock(state, id, "tool", toolText(tool), event.status, { tool });
 }
 
-// function toolStateID moved to @natalia/view-store
+function toolStateID(event: Extract<RuntimeEvent, { type: "tool.update" }>) {
+  return `${event.id}:tool:${event.callID ?? event.name}`;
+}
+
 function toolText(tool: ToolBlockState) {
   const args = tool.argumentsComplete
     ? tool.keyArguments.join(" ") || "arguments ready"
@@ -1012,9 +1140,27 @@ function toolText(tool: ToolBlockState) {
   return `${tool.kind}:${tool.name} ${args} · ${summary}${elapsed}`;
 }
 
-// function newStream moved to @natalia/view-store
-// function streamID moved to @natalia/view-store
-// function segmentID moved to @natalia/view-store
+function newStream(): StreamState {
+  return {
+    committed: "",
+    tail: "",
+    retrySkip: "",
+    attempt: 1,
+    segmentIndex: 0,
+    segmentText: "",
+    deferVisible: false,
+  };
+}
+
+function streamID(turnID: string, role: "thinking" | "assistant") {
+  return `${turnID}:${role}`;
+}
+
+function segmentID(baseID: string, index: number) {
+  if (index === 0) return baseID;
+  return `${baseID}:segment:${index}`;
+}
+
 function appendCommittedSegment(
   state: AppState,
   input: {
@@ -1050,7 +1196,31 @@ function appendCommittedSegment(
   stream.segmentText = "";
 }
 
-
+function upsertBlock(
+  state: AppState,
+  id: string,
+  role: MessageBlock["role"],
+  text: string,
+  status?: string,
+  extra: Partial<MessageBlock> = {},
+) {
+  const block = state.messages.find((item) => item.id === id);
+  if (block) {
+    if (block.text !== text) block.text = text;
+    if (block.status !== status) block.status = status;
+    if (block.pendingText !== extra.pendingText)
+      block.pendingText = extra.pendingText;
+    if (block.reasoningVisible !== extra.reasoningVisible)
+      block.reasoningVisible = extra.reasoningVisible;
+    if (block.providerPolicy !== extra.providerPolicy)
+      block.providerPolicy = extra.providerPolicy;
+    if (block.tool !== extra.tool) block.tool = extra.tool;
+    if (block.interactive !== extra.interactive)
+      block.interactive = extra.interactive;
+    return;
+  }
+  state.messages.push({ id, role, text, status, ...extra });
+}
 
 function isUrgentEvent(event: RuntimeEvent) {
   return (

@@ -962,7 +962,11 @@ export function createRealRuntimeClient(
         publish({
           type: "capability.loaded",
           id: `cap:${reg.id}`,
-          manifest: { apiVersion: 1 as const, ...reg },
+          apiVersion: 1,
+          name: reg.name,
+          version: reg.version,
+          scope: reg.scope,
+          grants: reg.grants,
         });
       }
     }

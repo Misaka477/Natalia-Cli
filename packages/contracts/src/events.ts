@@ -419,7 +419,11 @@ export type RuntimeEvent =
   | {
       type: "capability.loaded";
       id: string;
-      manifest: import("./schemas").CapabilityManifest;
+      apiVersion: number;
+      name: string;
+      version: string;
+      scope: "process" | "workspace" | "session";
+      grants: string[];
     }
   | {
       type: "capability.unloaded";

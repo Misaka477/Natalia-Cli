@@ -443,18 +443,15 @@ test("projectedCapabilities tracks loaded/unloaded capabilities", () => {
   appendSessionEvent(session, {
     type: "capability.loaded",
     id: "evt_1",
-    manifest: {
-      apiVersion: 1,
-      id: "test-cap",
-      version: "1.0.0",
-      name: "Test Capability",
-      scope: "session",
-      grants: ["tools"],
-    },
+    apiVersion: 1,
+    name: "Test Capability",
+    version: "1.0.0",
+    scope: "session",
+    grants: ["tools"],
   });
   const caps = projectedCapabilities(session.events);
   expect(caps).toHaveLength(1);
-  expect(caps[0]?.manifest.id).toBe("test-cap");
+  expect(caps[0]?.name).toBe("Test Capability");
   expect(caps[0]?.manifest.scope).toBe("session");
 });
 
