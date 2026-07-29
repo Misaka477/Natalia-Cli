@@ -371,6 +371,36 @@ export type RuntimeEvent =
       result?: string;
       error?: string;
     }
+  | {
+      type: "constitution.rule_added";
+      id: string;
+      ruleID: string;
+      statement: string;
+      scope: "project" | "package" | "sandbox" | "task" | "release";
+      priority: "critical" | "high" | "medium" | "low";
+      source: "user" | "master_plan" | "policy";
+      enforcement: "deny" | "approval" | "warn";
+      overridePolicy: "forbidden" | "user_scoped" | "user_explicit";
+      evidenceRefs?: string[];
+    }
+  | {
+      type: "constitution.rule_updated";
+      id: string;
+      ruleID: string;
+      statement?: string;
+      priority?: "critical" | "high" | "medium" | "low";
+    }
+  | {
+      type: "decision.recorded";
+      id: string;
+      decision: string;
+      rationale?: string[];
+      alternatives?: { option: string; rejectedReason?: string }[];
+      consequences?: string[];
+      status: "proposed" | "accepted" | "superseded";
+      linkedPlans?: string[];
+      linkedConstraints?: string[];
+    }
   | { type: "status.update"; status: string; detail?: string }
   | {
       type: "status.snapshot";
@@ -1270,6 +1300,26 @@ export type RuntimeClient = {
   lastSubmission(): SubmittedTurn | undefined;
   respondApproval(response: ApprovalResponse): void;
   respondQuestion(response: QuestionResponse): void;
+  constitutionRules?(): Promise<
+    Array<{
+      ruleID: string;
+      statement: string;
+      scope: "project" | "package" | "sandbox" | "task" | "release";
+      priority: "critical" | "high" | "medium" | "low";
+      source: "user" | "master_plan" | "policy";
+      enforcement: "deny" | "approval" | "warn";
+      overridePolicy: "forbidden" | "user_scoped" | "user_explicit";
+    }>
+  >;
+  decisionRecords?(): Promise<
+    Array<{
+      decision: string;
+      rationale: string[];
+      status: "proposed" | "accepted" | "superseded";
+      linkedPlans: string[];
+      linkedConstraints: string[];
+    }>
+  >;
 };
 
 export type FakeBackend = RuntimeClient;
