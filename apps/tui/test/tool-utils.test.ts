@@ -1,11 +1,13 @@
 import { expect, test } from "bun:test";
 import {
+  compactPath,
   filetype,
   formatPrimitiveArgs,
   formatToolPath,
   parseExecuteCalls,
   parseQuestionAnswers,
   parseResultRecord,
+  statusValues,
   stringField,
   toolColor,
   toolIcon,
@@ -54,6 +56,19 @@ test("parseExecuteCalls extracts tool call records", () => {
   expect(calls[0]?.tool).toBe("read_file");
   expect(calls[0]?.status).toBe("completed");
   expect(parseExecuteCalls([{ tool: "x", status: "unknown" }])).toEqual([]);
+});
+
+test("statusValues parses segment key:value pairs", () => {
+  expect(statusValues(["a:1", "b:x"])).toEqual({ a: "1", b: "x" });
+  expect(statusValues(["no-colon"])).toEqual({});
+  expect(statusValues([])).toEqual({});
+});
+
+test("compactPath shortens HOME path to ~", () => {
+  const home = process.env.HOME ?? "";
+  expect(compactPath(`${home}/project`)).toBe("~/project");
+  expect(compactPath("/other/path")).toBe("/other/path");
+  expect(compactPath(undefined)).toBe("local workspace");
 });
 
 test("formatPrimitiveArgs formats key=value pairs", () => {
