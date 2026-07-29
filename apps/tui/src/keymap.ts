@@ -139,6 +139,16 @@ export const commands: Record<string, CommandDef> = {
     keys: "ctrl+shift+b",
     desc: "Manage workspace sandboxes",
   },
+  "constitution.list": {
+    id: "constitution.list",
+    keys: "unset",
+    desc: "Show constitution rules",
+  },
+  "decision.list": {
+    id: "decision.list",
+    keys: "unset",
+    desc: "Show decision records",
+  },
   cancel: { id: "cancel", keys: "ctrl+c", desc: "Cancel current turn" },
   exit: { id: "exit", keys: "ctrl+d", desc: "Exit on empty composer" },
   "dialog.close": {

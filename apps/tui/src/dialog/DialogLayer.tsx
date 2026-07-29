@@ -551,3 +551,91 @@ function DialogFrame(props: {
     </box>
   );
 }
+
+export function DialogConstitution(props: {
+  rules: Array<{
+    ruleID: string;
+    statement: string;
+    priority: string;
+    scope: string;
+    enforcement: string;
+  }>;
+}) {
+  const color = (priority: string) =>
+    priority === "critical"
+      ? darkTheme.danger
+      : priority === "high"
+        ? darkTheme.warning
+        : darkTheme.muted;
+  return (
+    <box flexDirection="column" paddingLeft={2} paddingRight={2} paddingBottom={1}>
+      <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>
+        Constitution Rules
+      </text>
+      <box flexDirection="column" gap={1} paddingTop={1}>
+        <For each={props.rules}>
+          {(rule) => (
+            <box flexDirection="column">
+              <box flexDirection="row" gap={1}>
+                <text fg={color(rule.priority)} attributes={TextAttributes.BOLD}>
+                  {rule.ruleID}
+                </text>
+                <text fg={darkTheme.muted}>{rule.enforcement}</text>
+                <text fg={darkTheme.muted}>{rule.scope}</text>
+              </box>
+              <text fg={darkTheme.text} wrapMode="word">
+                {rule.statement}
+              </text>
+            </box>
+          )}
+        </For>
+      </box>
+    </box>
+  );
+}
+
+export function DialogDecision(props: {
+  records: Array<{
+    decision: string;
+    rationale: string[];
+    status: string;
+    linkedPlans: string[];
+    linkedConstraints: string[];
+  }>;
+}) {
+  return (
+    <box flexDirection="column" paddingLeft={2} paddingRight={2} paddingBottom={1}>
+      <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>
+        Decision Ledger
+      </text>
+      <box flexDirection="column" gap={1} paddingTop={1}>
+        <For each={props.records}>
+          {(record) => (
+            <box flexDirection="column">
+              <box flexDirection="row" gap={1}>
+                <text
+                  fg={
+                    record.status === "accepted"
+                      ? darkTheme.success
+                      : record.status === "superseded"
+                        ? darkTheme.muted
+                        : darkTheme.warning
+                  }
+                  attributes={TextAttributes.BOLD}
+                >
+                  {record.status}
+                </text>
+              </box>
+              <text fg={darkTheme.text} wrapMode="word">
+                {record.decision}
+              </text>
+              <Show when={record.rationale.length > 0}>
+                <text fg={darkTheme.muted}>Rationale: {record.rationale.join("; ")}</text>
+              </Show>
+            </box>
+          )}
+        </For>
+      </box>
+    </box>
+  );
+}

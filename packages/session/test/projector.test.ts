@@ -4,6 +4,8 @@ import {
   appendSessionEvent,
   createSessionRecord,
   modelVisibleEvents,
+  projectedConstitutionRules,
+  projectedDecisionRecords,
   projectSessionMessages,
   projectSession,
   settleInterruptedTurns,
@@ -331,4 +333,52 @@ test("message projection keeps large histories within a bounded local budget", (
   const page = projectSessionMessages(session, { limit: 100 });
   expect(page.data).toHaveLength(100);
   expect(performance.now() - start).toBeLessThan(100);
+});
+
+test("projectedConstitutionRules collects rules and applies updates", () => {
+  const session = createSessionRecord("ses_constitution", "Constitution");
+  appendSessionEvent(session, {
+    type: "constitution.rule_added",
+    id: "evt_1",
+    ruleID: "C-001",
+    statement: "Never commit without approval",
+    scope: "project",
+    priority: "critical",
+    source: "user",
+    enforcement: "approval",
+    overridePolicy: "forbidden",
+  });
+  appendSessionEvent(session, {
+    type: "constitution.rule_added",
+    id: "evt_2",
+    ruleID: "C-002",
+    statement: "Use TypeScript only",
+    scope: "project",
+    priority: "high",
+    source: "master_plan",
+    enforcement: "deny",
+    overridePolicy: "forbidden",
+  });
+  const rules = projectedConstitutionRules(session.events);
+  expect(rules).toHaveLength(2);
+  expect(rules[0]?.ruleID).toBe("C-001");
+  expect(rules[0]?.priority).toBe("critical");
+  expect(rules[1]?.ruleID).toBe("C-002");
+});
+
+test("projectedDecisionRecords collects decision records", () => {
+  const session = createSessionRecord("ses_decisions", "Decisions");
+  appendSessionEvent(session, {
+    type: "decision.recorded",
+    id: "evt_1",
+    decision: "Use TypeScript/Bun runtime only",
+    rationale: ["Go fallback was removed", "TypeScript provides better DX"],
+    status: "accepted",
+    linkedPlans: ["natalia-engineering-intelligence-mainline"],
+    linkedConstraints: ["C-002"],
+  });
+  const records = projectedDecisionRecords(session.events);
+  expect(records).toHaveLength(1);
+  expect(records[0]?.decision).toContain("TypeScript/Bun");
+  expect(records[0]?.status).toBe("accepted");
 });

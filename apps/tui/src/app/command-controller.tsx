@@ -33,6 +33,7 @@ import { DialogTerminal } from "../component/DialogTerminal";
 import { DialogSelect } from "../dialog/DialogSelect";
 import { DialogPrompt } from "../dialog/DialogPrompt";
 import { DialogConfirm } from "../dialog/DialogConfirm";
+import { DialogConstitution, DialogDecision } from "../dialog/DialogLayer";
 import { useDialog, type DialogContext } from "../dialog/provider";
 import type { TuiConfigWriteScope } from "../config";
 import { editPromptExternally, retainEditorMentions } from "../prompt/external-editor";
@@ -1820,7 +1821,7 @@ export function runCommand(command: string, ctx: CommandContext) {
       ctx.dialog.push(() => <DialogHelp onClose={() => ctx.dialog.pop()} />);
       return;
     }
-    if (command === "ctx.dialog.test") {
+    if (command === "dialog.test") {
       try {
         void (async () => {
           const confirmed = await DialogConfirm.show(
@@ -1947,6 +1948,20 @@ export function runCommand(command: string, ctx: CommandContext) {
     }
     if (command === "sandbox.manage") {
       ctx.dialog.push(() => <DialogSandbox backend={ctx.backend} />);
+      return;
+    }
+    if (command === "constitution.list") {
+      void ctx.backend.constitutionRules?.().then(
+        (rules) => ctx.dialog.push(() => <DialogConstitution rules={rules} />),
+        (error: any) => ctx.toast.error(error),
+      );
+      return;
+    }
+    if (command === "decision.list") {
+      void ctx.backend.decisionRecords?.().then(
+        (records) => ctx.dialog.push(() => <DialogDecision records={records} />),
+        (error: any) => ctx.toast.error(error),
+      );
       return;
     }
     // Plugin commands
