@@ -62,6 +62,7 @@ import {
   projectedConstitutionRules,
   projectedDecisionRecords,
   projectedEvidenceRecords,
+  projectedCanonicalTools,
   projectedCapabilities,
   projectedWorkGraphNodes,
   projectedWorkGraphEdges,
@@ -2227,6 +2228,17 @@ export function createRealRuntimeClient(
         objective: r.objective,
         status: r.status,
         knownGaps: r.knownGaps ?? [],
+      }));
+    },
+    registeredTools() {
+      if (!session) return [];
+      return projectedCanonicalTools(session.events).map((t) => ({
+        name: t.name,
+        owner: t.owner,
+        scope: t.scope,
+        recovery: t.recovery,
+        precedence: t.precedence,
+        requiresApproval: t.requiresApproval,
       }));
     },
     capabilities() {

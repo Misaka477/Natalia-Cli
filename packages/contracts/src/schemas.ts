@@ -352,6 +352,16 @@ export const workGraphNodeSchema = z.object({
   stepID: z.string().optional(),
 });
 
+export const toolCanonicalRegistrationSchema = z.object({
+  name: z.string().min(1),
+  owner: z.string().min(1),
+  scope: z.enum(["process", "workspace", "session"]),
+  recovery: z.enum(["none", "retry", "restart", "fail_closed"]).default("retry"),
+  precedence: z.number().int().default(0),
+  grants: z.array(z.string()).default([]),
+  requiresApproval: z.boolean().default(false),
+});
+
 export const capabilityManifestSchema = z.object({
   apiVersion: z.literal(1),
   id: z.string().min(1),

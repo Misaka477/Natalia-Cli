@@ -372,6 +372,21 @@ export type RuntimeEvent =
       error?: string;
     }
   | {
+      type: "tool.registered";
+      id: string;
+      name: string;
+      owner: string;
+      scope: "process" | "workspace" | "session";
+      recovery: "none" | "retry" | "restart" | "fail_closed";
+      precedence: number;
+      requiresApproval: boolean;
+    }
+  | {
+      type: "tool.unregistered";
+      id: string;
+      name: string;
+    }
+  | {
       type: "capability.loaded";
       id: string;
       manifest: import("./schemas").CapabilityManifest;
@@ -1399,6 +1414,16 @@ export type RuntimeClient = {
       objective: string;
       status: string;
       knownGaps: string[];
+    }>
+  >;
+  registeredTools?(): Promise<
+    Array<{
+      name: string;
+      owner: string;
+      scope: string;
+      recovery: string;
+      precedence: number;
+      requiresApproval: boolean;
     }>
   >;
   capabilities?(): Promise<

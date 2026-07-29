@@ -639,6 +639,28 @@ export function DialogEvidence(props: {
   );
 }
 
+export function DialogRegisteredTools(props: {
+  tools: Array<{ name: string; owner: string; scope: string; recovery: string; precedence: number; requiresApproval: boolean }>;
+}) {
+  return (
+    <box flexDirection="column" paddingLeft={2} paddingRight={2} paddingBottom={1}>
+      <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>
+        Canonical Tool Registry
+      </text>
+      <box flexDirection="column" gap={1} paddingTop={1}>
+        <For each={props.tools}>
+          {(tool) => (
+            <box flexDirection="column" paddingLeft={1}>
+              <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>{tool.name}</text>
+              <text fg={darkTheme.muted}>owner: {tool.owner} · scope: {tool.scope} · recovery: {tool.recovery}</text>
+            </box>
+          )}
+        </For>
+      </box>
+    </box>
+  );
+}
+
 export function DialogCapabilities(props: {
   caps: Array<{ id: string; name: string; version: string; scope: string; grants: string[] }>;
 }) {

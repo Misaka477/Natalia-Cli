@@ -342,6 +342,19 @@ export function projectedConstitutionRules(events: RuntimeEvent[]) {
   );
 }
 
+export function projectedCanonicalTools(events: RuntimeEvent[]) {
+  const tools = new Map<string, RuntimeEvent>();
+  for (const event of events) {
+    if (event.type === "tool.registered")
+      tools.set(event.name, event);
+    if (event.type === "tool.unregistered") tools.delete(event.name);
+  }
+  return [...tools.values()].filter(
+    (e): e is Extract<RuntimeEvent, { type: "tool.registered" }> =>
+      e.type === "tool.registered",
+  );
+}
+
 export function projectedCapabilities(events: RuntimeEvent[]) {
   const loaded = new Map<string, RuntimeEvent>();
   for (const event of events) {

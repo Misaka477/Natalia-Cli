@@ -35,7 +35,9 @@ import { DialogPrompt } from "../dialog/DialogPrompt";
 import { DialogConfirm } from "../dialog/DialogConfirm";
 import {
   DialogCapabilities,
+  DialogRegisteredTools,
   DialogConstitution,
+  DialogDecision,
   DialogDecision,
   DialogEvidence,
   DialogWorkGraph,
@@ -1990,6 +1992,13 @@ export function runCommand(command: string, ctx: CommandContext) {
     if (command === "capability.list") {
       void (ctx.backend.capabilities?.() ?? Promise.resolve([])).then(
         (caps) => ctx.dialog.push(() => <DialogCapabilities caps={caps} />),
+        (error: any) => ctx.toast.error(error),
+      );
+      return;
+    }
+    if (command === "tools.registered") {
+      void (ctx.backend.registeredTools?.() ?? Promise.resolve([])).then(
+        (tools) => ctx.dialog.push(() => <DialogRegisteredTools tools={tools} />),
         (error: any) => ctx.toast.error(error),
       );
       return;

@@ -164,6 +164,11 @@ export const commands: Record<string, CommandDef> = {
     keys: "unset",
     desc: "Show loaded capabilities",
   },
+  "tools.registered": {
+    id: "tools.registered",
+    keys: "unset",
+    desc: "Show registered canonical tools",
+  },
   cancel: { id: "cancel", keys: "ctrl+c", desc: "Cancel current turn" },
   exit: { id: "exit", keys: "ctrl+d", desc: "Exit on empty composer" },
   "dialog.close": {

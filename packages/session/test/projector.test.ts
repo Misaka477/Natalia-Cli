@@ -4,6 +4,7 @@ import {
   appendSessionEvent,
   createSessionRecord,
   modelVisibleEvents,
+  projectedCanonicalTools,
   projectedCapabilities,
   projectedConstitutionRules,
   projectedDecisionRecords,
@@ -453,4 +454,22 @@ test("projectedCapabilities tracks loaded/unloaded capabilities", () => {
   expect(caps).toHaveLength(1);
   expect(caps[0]?.manifest.id).toBe("test-cap");
   expect(caps[0]?.manifest.scope).toBe("session");
+});
+
+test("projectedCanonicalTools registers and unregisters tools", () => {
+  const session = createSessionRecord("ses_treg", "ToolReg");
+  appendSessionEvent(session, {
+    type: "tool.registered",
+    id: "evt_1",
+    name: "read_file",
+    owner: "natalia",
+    scope: "session",
+    recovery: "retry",
+    precedence: 0,
+    requiresApproval: false,
+  });
+  const tools = projectedCanonicalTools(session.events);
+  expect(tools).toHaveLength(1);
+  expect(tools[0]?.name).toBe("read_file");
+  expect(tools[0]?.owner).toBe("natalia");
 });
