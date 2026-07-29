@@ -47,7 +47,6 @@ import {
 } from "@natalia/ui-model";
 
 // export moved to @natalia/view-store
-}
 
 export function StateProvider(props: {
   children: JSX.Element;
@@ -1004,10 +1003,6 @@ function upsertTool(
 }
 
 // function toolStateID moved to @natalia/view-store
-nction toolStateID(event: Extract<RuntimeEvent, { type: "tool.update" }>) {
-  return `${event.id}:tool:${event.callID ?? event.name}`;
-}
-
 function toolText(tool: ToolBlockState) {
   const args = tool.argumentsComplete
     ? tool.keyArguments.join(" ") || "arguments ready"
@@ -1018,29 +1013,8 @@ function toolText(tool: ToolBlockState) {
 }
 
 // function newStream moved to @natalia/view-store
-nction newStream(): StreamState {
-  return {
-    committed: "",
-    tail: "",
-    retrySkip: "",
-    attempt: 1,
-    segmentIndex: 0,
-    segmentText: "",
-    deferVisible: false,
-  };
-}
-
 // function streamID moved to @natalia/view-store
-nction streamID(turnID: string, role: "thinking" | "assistant") {
-  return `${turnID}:${role}`;
-}
-
 // function segmentID moved to @natalia/view-store
-nction segmentID(baseID: string, index: number) {
-  if (index === 0) return baseID;
-  return `${baseID}:segment:${index}`;
-}
-
 function appendCommittedSegment(
   state: AppState,
   input: {
@@ -1076,32 +1050,7 @@ function appendCommittedSegment(
   stream.segmentText = "";
 }
 
-// function upsertBlock moved to @natalia/view-store
-nction upsertBlock(
-  state: AppState,
-  id: string,
-  role: MessageBlock["role"],
-  text: string,
-  status?: string,
-  extra: Partial<MessageBlock> = {},
-) {
-  const block = state.messages.find((item) => item.id === id);
-  if (block) {
-    if (block.text !== text) block.text = text;
-    if (block.status !== status) block.status = status;
-    if (block.pendingText !== extra.pendingText)
-      block.pendingText = extra.pendingText;
-    if (block.reasoningVisible !== extra.reasoningVisible)
-      block.reasoningVisible = extra.reasoningVisible;
-    if (block.providerPolicy !== extra.providerPolicy)
-      block.providerPolicy = extra.providerPolicy;
-    if (block.tool !== extra.tool) block.tool = extra.tool;
-    if (block.interactive !== extra.interactive)
-      block.interactive = extra.interactive;
-    return;
-  }
-  state.messages.push({ id, role, text, status, ...extra });
-}
+
 
 function isUrgentEvent(event: RuntimeEvent) {
   return (

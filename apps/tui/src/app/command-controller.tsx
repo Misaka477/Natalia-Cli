@@ -40,7 +40,6 @@ import {
   DialogRegisteredTools,
   DialogConstitution,
   DialogDecision,
-  DialogDecision,
   DialogEvidence,
   DialogWorkGraph,
 } from "../dialog/DialogLayer";

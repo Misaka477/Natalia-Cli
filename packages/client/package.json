@@ -18,6 +18,7 @@
     "@natalia/terminal": "workspace:*",
     "@natalia/runtime": "workspace:*",
     "@natalia/sandbox": "workspace:*",
+    "@natalia/capability": "workspace:*",
     "@natalia/session": "workspace:*",
     "@natalia/skills": "workspace:*",
     "@natalia/subagent": "workspace:*",

@@ -40,7 +40,9 @@
   },
   "dependencies": {
     "@natalia/client": "workspace:*",
+    "@natalia/capability": "workspace:*",
     "@natalia/config": "workspace:*",
+    "@natalia/view-store": "workspace:*",
     "@natalia/contracts": "workspace:*",
     "@natalia/plugin": "workspace:*",
     "@natalia/session": "workspace:*",
