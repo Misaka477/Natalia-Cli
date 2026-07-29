@@ -36,6 +36,7 @@ import { DialogConfirm } from "../dialog/DialogConfirm";
 import {
   DialogCapabilities,
   DialogDriftFindings,
+  DialogSessionSnapshot,
   DialogRegisteredTools,
   DialogConstitution,
   DialogDecision,
@@ -2007,6 +2008,13 @@ export function runCommand(command: string, ctx: CommandContext) {
     if (command === "drift.list") {
       void (ctx.backend.driftFindings?.() ?? Promise.resolve([])).then(
         (findings) => ctx.dialog.push(() => <DialogDriftFindings findings={findings} />),
+        (error: any) => ctx.toast.error(error),
+      );
+      return;
+    }
+    if (command === "session.snapshot") {
+      void (ctx.backend.sessionSnapshot?.() ?? Promise.resolve(undefined)).then(
+        (snapshot) => ctx.dialog.push(() => <DialogSessionSnapshot snapshot={snapshot} />),
         (error: any) => ctx.toast.error(error),
       );
       return;

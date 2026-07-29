@@ -372,6 +372,18 @@ export type RuntimeEvent =
       error?: string;
     }
   | {
+      type: "session.snapshot";
+      id: string;
+      agentStatus: string;
+      currentStep?: string;
+      activeTool?: string;
+      changedFiles: number;
+      unvalidatedChanges: number;
+      recentOutput?: string;
+      hasPTY: boolean;
+      hasSandbox: boolean;
+    }
+  | {
       type: "drift.finding_opened";
       id: string;
       findingID: string;
@@ -1434,6 +1446,15 @@ export type RuntimeClient = {
       knownGaps: string[];
     }>
   >;
+  sessionSnapshot?(): Promise<{
+    agentStatus: string;
+    currentStep?: string;
+    activeTool?: string;
+    changedFiles: number;
+    unvalidatedChanges: number;
+    hasPTY: boolean;
+    hasSandbox: boolean;
+  } | undefined>;
   driftFindings?(): Promise<
     Array<{
       findingID: string;

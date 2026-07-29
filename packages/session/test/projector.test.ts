@@ -3,6 +3,7 @@ import {
   admitInput,
   appendSessionEvent,
   createSessionRecord,
+  latestSessionSnapshot,
   modelVisibleEvents,
   projectedCanonicalTools,
   projectedCapabilities,
@@ -492,4 +493,22 @@ test("projectedDriftFindings tracks findings and status updates", () => {
   expect(findings).toHaveLength(1);
   expect(findings[0]?.severity).toBe("warning");
   expect(findings[0]?.originalObjective).toBe("Fix parser");
+});
+
+test("latestSessionSnapshot returns the most recent snapshot", () => {
+  const session = createSessionRecord("ses_snap", "Snapshot");
+  appendSessionEvent(session, {
+    type: "session.snapshot",
+    id: "evt_1",
+    agentStatus: "running",
+    currentStep: "fix parser",
+    changedFiles: 3,
+    unvalidatedChanges: 1,
+    hasPTY: true,
+    hasSandbox: false,
+  });
+  const snap = latestSessionSnapshot(session.events);
+  expect(snap?.agentStatus).toBe("running");
+  expect(snap?.currentStep).toBe("fix parser");
+  expect(snap?.hasPTY).toBe(true);
 });

@@ -352,6 +352,18 @@ export const workGraphNodeSchema = z.object({
   stepID: z.string().optional(),
 });
 
+export const sessionIntelligenceSnapshotSchema = z.object({
+  id: z.string().min(1),
+  agentStatus: z.string(),
+  currentStep: z.string().optional(),
+  activeTool: z.string().optional(),
+  changedFiles: z.number().int().nonnegative().default(0),
+  unvalidatedChanges: z.number().int().nonnegative().default(0),
+  recentOutput: z.string().max(2000).optional(),
+  hasPTY: z.boolean().default(false),
+  hasSandbox: z.boolean().default(false),
+});
+
 export const driftFindingSchema = z.object({
   id: z.string().min(1),
   severity: z.enum(["advisory", "warning", "high"]),

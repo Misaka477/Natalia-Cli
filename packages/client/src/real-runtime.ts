@@ -62,6 +62,7 @@ import {
   projectedConstitutionRules,
   projectedDecisionRecords,
   projectedEvidenceRecords,
+  latestSessionSnapshot,
   projectedCanonicalTools,
   projectedDriftFindings,
   projectedCapabilities,
@@ -2230,6 +2231,10 @@ export function createRealRuntimeClient(
         status: r.status,
         knownGaps: r.knownGaps ?? [],
       }));
+    },
+    sessionSnapshot() {
+      if (!session) return undefined;
+      return latestSessionSnapshot(session.events);
     },
     driftFindings() {
       if (!session) return [];

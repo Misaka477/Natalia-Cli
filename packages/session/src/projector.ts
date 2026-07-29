@@ -342,6 +342,14 @@ export function projectedConstitutionRules(events: RuntimeEvent[]) {
   );
 }
 
+export function latestSessionSnapshot(events: RuntimeEvent[]) {
+  let latest: Extract<RuntimeEvent, { type: "session.snapshot" }> | undefined;
+  for (const event of events) {
+    if (event.type === "session.snapshot") latest = event;
+  }
+  return latest;
+}
+
 export function projectedDriftFindings(events: RuntimeEvent[]) {
   const findings = new Map<string, RuntimeEvent>();
   for (const event of events) {

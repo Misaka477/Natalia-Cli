@@ -639,6 +639,35 @@ export function DialogEvidence(props: {
   );
 }
 
+export function DialogSessionSnapshot(props: {
+  snapshot?: {
+    agentStatus: string;
+    currentStep?: string;
+    activeTool?: string;
+    changedFiles: number;
+    unvalidatedChanges: number;
+    hasPTY: boolean;
+    hasSandbox: boolean;
+  };
+}) {
+  return (
+    <box flexDirection="column" paddingLeft={2} paddingRight={2} paddingBottom={1}>
+      <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>
+        Session Intelligence
+      </text>
+      <Show when={props.snapshot} fallback={<text fg={darkTheme.muted}>No snapshot available</text>}>
+        <box flexDirection="column" gap={1} paddingTop={1}>
+          <text fg={darkTheme.text}>Status: {props.snapshot!.agentStatus}</text>
+          <Show when={props.snapshot!.currentStep}><text fg={darkTheme.muted}>Step: {props.snapshot!.currentStep}</text></Show>
+          <Show when={props.snapshot!.activeTool}><text fg={darkTheme.muted}>Tool: {props.snapshot!.activeTool}</text></Show>
+          <text fg={darkTheme.muted}>Changed files: {props.snapshot!.changedFiles} · Unvalidated: {props.snapshot!.unvalidatedChanges}</text>
+          <text fg={darkTheme.muted}>PTY: {props.snapshot!.hasPTY ? "attached" : "none"} · Sandbox: {props.snapshot!.hasSandbox ? "active" : "none"}</text>
+        </box>
+      </Show>
+    </box>
+  );
+}
+
 export function DialogDriftFindings(props: {
   findings: Array<{
     findingID: string;
