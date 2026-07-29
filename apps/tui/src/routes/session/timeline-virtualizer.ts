@@ -143,17 +143,22 @@ export function groupTimelineBlocks<T extends { id: string; role: string }>(
   const groups: Array<TimelineGroup<T>> = [];
   for (const block of blocks) {
     const turnID = block.id.split(":", 1)[0] ?? block.id;
-    const previous = groups.at(-1);
     const baseKey = `turn:${turnID}`;
-    const sameTurn =
-      block.role !== "system" &&
-      (previous?.key === baseKey || previous?.key.startsWith(`${baseKey}:`));
-    if (sameTurn && previous && previous.items.length < maxItemsPerGroup) {
-      previous.items.push(block);
+    const existing =
+      block.role !== "system"
+        ? groups.findLast(
+            (g) => g.key === baseKey || g.key.startsWith(`${baseKey}:`),
+          )
+        : undefined;
+    if (
+      existing &&
+      existing.items.length < maxItemsPerGroup
+    ) {
+      existing.items.push(block);
       continue;
     }
-    const previousChunk = sameTurn
-      ? Number(previous!.key.slice(baseKey.length + 1) || 0)
+    const previousChunk = existing
+      ? Number(existing.key.slice(baseKey.length + 1) || 0) + 1
       : -1;
     groups.push({
       key:
@@ -161,7 +166,7 @@ export function groupTimelineBlocks<T extends { id: string; role: string }>(
           ? `block:${block.id}`
           : previousChunk < 0
             ? baseKey
-            : `${baseKey}:${previousChunk + 1}`,
+            : `${baseKey}:${previousChunk}`,
       items: [block],
     });
   }

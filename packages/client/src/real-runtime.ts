@@ -657,8 +657,79 @@ export function createRealRuntimeClient(
         });
         nativeTerminal.setHumanInputBridge(nativeInputBroker);
       } catch {
-        // Native Terminal is optional during migration. Its canonical tools
-        // report an actionable error when invoked; startup remains quiet.
+        // Native Terminal recovery: if the mux server was killed or runtime
+        // dirs were deleted (e.g. by rm -rf), recreate dirs and retry once.
+        publish({
+          type: "diagnostic",
+          level: "info",
+          message: "native terminal first init failed; attempting recovery",
+        });
+        try {
+          await mkdir(nativeRuntimeDir, { recursive: true, mode: 0o700 });
+          await mkdir(nativeMuxRuntimeDir, { recursive: true, mode: 0o700 });
+          nativeTerminal = new NativeTerminalRegistry(
+            createWezTermHost({
+              environment: { WEZTERM_UNIX_SOCKET: nativeMuxSocket },
+              muxRuntimeDir: nativeMuxRuntimeDir,
+              nativeDomain,
+              onPerformance: (name, durationMs) =>
+                performanceTrace.mark(name, durationMs),
+            }),
+            {
+              onAudit: (event) => {
+                publish({
+                  type: "terminal.action",
+                  id: event.id,
+                  action: event.action,
+                  redacted: event.redacted,
+                  target: { kind: "host", cwd: event.cwd },
+                });
+                publish({
+                  type: "terminal.timeline",
+                  id: event.id,
+                  actor: event.actor === "human" ? "user" : event.actor,
+                  action: event.action,
+                  status: "executed",
+                  summary: `native terminal ${event.action} executed`,
+                  at: event.at,
+                });
+              },
+              autoOpenHub: true,
+              persistPath: join(nativeMuxRuntimeDir, "native-terminal-sessions.json"),
+            },
+          );
+          nativeInputBroker = await startNativeInputBroker({
+            registry: nativeTerminal,
+            runtimeDir: nativeRuntimeDir,
+            daemonID: randomUUID(),
+            onInput: ({ terminalID, paneID, kind, byteLength }) => {
+              publish({
+                type: "terminal.timeline",
+                id: terminalID,
+                actor: "user",
+                action: "write",
+                status: "executed",
+                summary: `native human input accepted: terminal=${terminalID} pane=${paneID} kind=${kind} bytes=${byteLength}`,
+                at: new Date().toISOString(),
+              });
+            },
+            onDenied: ({ terminalID, paneID }) =>
+              publish({
+                type: "diagnostic",
+                level: "warning",
+                message: `native input claim denied: terminal=${terminalID} pane=${paneID}`,
+              }),
+          });
+          nativeTerminal.setHumanInputBridge(nativeInputBroker);
+          publish({
+            type: "diagnostic",
+            level: "info",
+            message: "Native terminal recovered after reinitialization",
+          });
+        } catch {
+          // Recovery failed; native terminal remains unavailable for this session.
+          // Its canonical tools report an actionable error when invoked.
+        }
       }
     sandboxes = new WorkspaceSandboxManager(
       join(workspaceRoot, ".natalia", "sandboxes"),
