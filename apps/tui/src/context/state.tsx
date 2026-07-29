@@ -957,7 +957,7 @@ function flushStreamBlock(state: AppState, id: string) {
 function beginPostToolStreamSegment(state: AppState, turnID: string) {
   for (const role of ["thinking", "assistant"] as const) {
     const stream = state.streams[streamID(turnID, role)];
-    if (!stream || (!stream.segmentText && !stream.tail)) continue;
+    if (!stream) continue;
     stream.segmentIndex += 1;
     stream.segmentText = "";
     stream.tail = "";

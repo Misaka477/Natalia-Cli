@@ -92,19 +92,19 @@ export function SessionRoute(props: {
   const scrollObserver = setInterval(() => {
     if (!timelineScroll || timelineScroll.isDestroyed) return;
     const scrollTop = timelineScroll.scrollTop ?? 0;
+    measureRenderedGroups();
     if (scrollTop === observedScrollTop) return;
     observedScrollTop = scrollTop;
     const isAtTop = scrollTop <= 1;
     if (isAtTop && !wasAtTop) void props.onLoadOlderHistory?.();
     wasAtTop = isAtTop;
+    const range = virtualizer.range(scrollTop, viewportHeight());
     const isAtBottom =
-      scrollTop + viewportHeight() >=
-      virtualizer.range(scrollTop, viewportHeight()).total - 1;
+      scrollTop + viewportHeight() >= range.total - 1;
     if (isAtBottom) props.onFollowChange?.(true);
     if (isAtBottom && !wasAtBottom) void props.onLoadNewerHistory?.();
     wasAtBottom = isAtBottom;
     updateRange();
-    measureRenderedGroups();
   }, 50);
   onCleanup(() => clearInterval(scrollObserver));
 
@@ -118,7 +118,7 @@ export function SessionRoute(props: {
   const measureRenderedGroups = () => {
     if (measuring || !timelineScroll || timelineScroll.isDestroyed) return;
     measuring = true;
-    queueMicrotask(() => {
+    requestAnimationFrame(() => {
       measuring = false;
       if (!timelineScroll || timelineScroll.isDestroyed) return;
       const scrollTop = timelineScroll.scrollTop ?? 0;
@@ -126,11 +126,8 @@ export function SessionRoute(props: {
         observedScrollTop = scrollTop;
         updateRange();
       }
-      const totalBefore = virtualizer.range(
-        timelineScroll.scrollTop ?? 0,
-        viewportHeight(),
-      ).total;
       let adjustment = 0;
+      let anyChanged = false;
       for (const [key, element] of renderedGroups) {
         if (!element || element.isDestroyed) continue;
         const measured = virtualizer.measure(
@@ -140,19 +137,17 @@ export function SessionRoute(props: {
           viewportHeight(),
         );
         adjustment += measured.adjustment;
+        if (measured.changed) anyChanged = true;
       }
-      if (adjustment && !props.followBottom)
-        timelineScroll.scrollTop += adjustment;
-      if (props.followBottom) {
-        const range = virtualizer.range(
-          timelineScroll.scrollTop ?? 0,
-          viewportHeight(),
-        );
-        const totalDelta = range.total - totalBefore;
-        if (totalDelta > 0)
-          timelineScroll.scrollTop = Math.max(0, range.total - viewportHeight());
-        else if (adjustment) timelineScroll.scrollTop += adjustment;
-      }
+      const isNearBottom = (timelineScroll.scrollTop ?? 0) + viewportHeight() >=
+        virtualizer.range(timelineScroll.scrollTop ?? 0, viewportHeight()).total - 1;
+      const newTop = props.followBottom && anyChanged && isNearBottom
+        ? Math.max(0, virtualizer.range(timelineScroll.scrollTop ?? 0, viewportHeight()).total - viewportHeight())
+        : adjustment && !props.followBottom
+          ? (timelineScroll.scrollTop ?? 0) + adjustment
+          : undefined;
+      if (newTop !== undefined) timelineScroll.scrollTo(newTop);
+
       observedScrollTop = timelineScroll.scrollTop ?? 0;
       updateRange();
     });
@@ -169,7 +164,9 @@ export function SessionRoute(props: {
     if (result.adjustment && timelineScroll && !props.followBottom)
       queueMicrotask(() => {
         if (!timelineScroll || timelineScroll.isDestroyed) return;
-        timelineScroll.scrollTop += result.adjustment;
+        timelineScroll.scrollTo(
+          (timelineScroll.scrollTop ?? 0) + result.adjustment,
+        );
         updateRange();
       });
     measureRenderedGroups();

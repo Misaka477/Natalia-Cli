@@ -952,8 +952,9 @@ export class NativeTerminalRegistry {
   private async cleanupStalePanes() {
     if (!this.host.list || !this.host.stop) return;
     const known = new Set(this.sessions.values().map((session) => session.paneID));
+    const hubWindowID = this.hub?.muxWindowID;
     for (const pane of await this.host.list()) {
-      if (!known.has(pane.pane_id)) {
+      if (!known.has(pane.pane_id) && pane.window_id !== hubWindowID) {
         await this.host.stop(pane.pane_id);
       }
     }
@@ -972,12 +973,33 @@ export class NativeTerminalRegistry {
           NATALIA_NATIVE_INPUT_TOKEN: this.humanInputBridge.token,
         }
       : undefined;
-    const pane = await this.host.open(session.paneID, {
-      environment,
-      muxWindowID: this.hub?.muxWindowID,
-      launch,
-      discardBootstrapPanes: this.hub === undefined,
-    });
+    let pane;
+    try {
+      pane = await this.host.open(session.paneID, {
+        environment,
+        muxWindowID: this.hub?.muxWindowID,
+        launch,
+        discardBootstrapPanes: this.hub === undefined,
+      });
+    } catch (error) {
+      if (
+        this.hub &&
+        error instanceof Error &&
+        /window.*not found|not found.*window|not found on this server/i.test(
+          error.message,
+        )
+      ) {
+        this.hub = undefined;
+        pane = await this.host.open(session.paneID, {
+          environment,
+          muxWindowID: undefined,
+          launch,
+          discardBootstrapPanes: true,
+        });
+      } else {
+        throw error;
+      }
+    }
     if (!this.hub)
       this.hub = { workspace: "natalia", muxWindowID: pane.window_id };
     session.windowID = pane.window_id;
@@ -1146,7 +1168,12 @@ export class NativeTerminalRegistry {
 
   async stop(id: string) {
     const session = this.get(id);
-    if (session.status === "running") await this.host.stop(session.paneID);
+    if (session.status === "running")
+      try {
+        await this.host.stop(session.paneID);
+      } catch {
+        // pane already gone; proceed with local cleanup
+      }
     session.status = "exited";
     session.revision += 1;
     session.attached = false;
