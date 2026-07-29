@@ -352,6 +352,28 @@ export const workGraphNodeSchema = z.object({
   stepID: z.string().optional(),
 });
 
+export const capabilityManifestSchema = z.object({
+  apiVersion: z.literal(1),
+  id: z.string().min(1),
+  version: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  scope: z.enum(["process", "workspace", "session"]),
+  dependencies: z.array(z.string()).default([]),
+  grants: z
+    .array(
+      z.enum([
+        "tools",
+        "commands",
+        "settings",
+        "workflows",
+        "projection",
+        "resources",
+      ]),
+    )
+    .default([]),
+});
+
 export const workGraphEdgeSchema = z.object({
   id: z.string().min(1),
   sourceID: z.string().min(1),

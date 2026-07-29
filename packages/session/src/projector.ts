@@ -342,6 +342,19 @@ export function projectedConstitutionRules(events: RuntimeEvent[]) {
   );
 }
 
+export function projectedCapabilities(events: RuntimeEvent[]) {
+  const loaded = new Map<string, RuntimeEvent>();
+  for (const event of events) {
+    if (event.type === "capability.loaded")
+      loaded.set(event.manifest.id, event);
+    if (event.type === "capability.unloaded") loaded.delete(event.id);
+  }
+  return [...loaded.values()].filter(
+    (e): e is Extract<RuntimeEvent, { type: "capability.loaded" }> =>
+      e.type === "capability.loaded",
+  );
+}
+
 export function projectedWorkGraphNodes(events: RuntimeEvent[]) {
   return events.filter(
     (event): event is Extract<RuntimeEvent, { type: "workgraph.node_added" }> =>

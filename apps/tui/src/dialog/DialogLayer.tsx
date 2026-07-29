@@ -639,6 +639,32 @@ export function DialogEvidence(props: {
   );
 }
 
+export function DialogCapabilities(props: {
+  caps: Array<{ id: string; name: string; version: string; scope: string; grants: string[] }>;
+}) {
+  return (
+    <box flexDirection="column" paddingLeft={2} paddingRight={2} paddingBottom={1}>
+      <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>
+        Loaded Capabilities
+      </text>
+      <box flexDirection="column" gap={1} paddingTop={1}>
+        <For each={props.caps}>
+          {(cap) => (
+            <box flexDirection="column" paddingLeft={1}>
+              <box flexDirection="row" gap={1}>
+                <text fg={darkTheme.accent} attributes={TextAttributes.BOLD}>{cap.name}</text>
+                <text fg={darkTheme.muted}>v{cap.version}</text>
+              </box>
+              <text fg={darkTheme.muted}>{cap.id} · {cap.scope}</text>
+              <text fg={darkTheme.muted}>grants: {cap.grants.join(", ")}</text>
+            </box>
+          )}
+        </For>
+      </box>
+    </box>
+  );
+}
+
 export function DialogWorkGraph(props: {
   nodes: Array<{ nodeID: string; kind: string; summary: string; actor?: string }>;
 }) {

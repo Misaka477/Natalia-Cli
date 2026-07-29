@@ -34,6 +34,7 @@ import { DialogSelect } from "../dialog/DialogSelect";
 import { DialogPrompt } from "../dialog/DialogPrompt";
 import { DialogConfirm } from "../dialog/DialogConfirm";
 import {
+  DialogCapabilities,
   DialogConstitution,
   DialogDecision,
   DialogEvidence,
@@ -1982,6 +1983,13 @@ export function runCommand(command: string, ctx: CommandContext) {
         ctx.backend.workGraphEdges?.() ?? Promise.resolve([]),
       ]).then(
         ([nodes]) => ctx.dialog.push(() => <DialogWorkGraph nodes={nodes} />),
+        (error: any) => ctx.toast.error(error),
+      );
+      return;
+    }
+    if (command === "capability.list") {
+      void (ctx.backend.capabilities?.() ?? Promise.resolve([])).then(
+        (caps) => ctx.dialog.push(() => <DialogCapabilities caps={caps} />),
         (error: any) => ctx.toast.error(error),
       );
       return;

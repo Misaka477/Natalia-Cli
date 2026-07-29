@@ -62,6 +62,7 @@ import {
   projectedConstitutionRules,
   projectedDecisionRecords,
   projectedEvidenceRecords,
+  projectedCapabilities,
   projectedWorkGraphNodes,
   projectedWorkGraphEdges,
   settleInterruptedTurns,
@@ -912,8 +913,63 @@ export function createRealRuntimeClient(
     if (checkpointStore.isEnabled())
       await checkpointStore.ensureBaseline(context, 0);
     publish({ type: "session.ready", sessionID });
+    registerBuiltinCapabilities();
     publish(contextStatusEvent(context.status(runtimeContextConfig)));
     publish(await runtimeStatusSnapshot());
+  }
+
+  /** Registers built-in internal capabilities. */
+  function registerBuiltinCapabilities() {
+    const builtins: Array<{
+      id: string;
+      name: string;
+      version: string;
+      scope: "process" | "workspace" | "session";
+      grants: string[];
+    }> = [
+      {
+        id: "natalia-terminal",
+        name: "Terminal",
+        version: "1.0.0",
+        scope: "session",
+        grants: ["tools", "resources"],
+      },
+      {
+        id: "natalia-sandbox",
+        name: "Sandbox",
+        version: "1.0.0",
+        scope: "workspace",
+        grants: ["tools", "resources"],
+      },
+      {
+        id: "natalia-checkpoint",
+        name: "Checkpoint",
+        version: "1.0.0",
+        scope: "workspace",
+        grants: ["tools", "commands"],
+      },
+      {
+        id: "natalia-mcp",
+        name: "MCP Server",
+        version: "1.0.0",
+        scope: "session",
+        grants: ["tools", "resources"],
+      },
+    ];
+    for (const cap of builtins) {
+      publish({
+        type: "capability.loaded",
+        id: `cap:${cap.id}`,
+        manifest: {
+          apiVersion: 1,
+          id: cap.id,
+          version: cap.version,
+          name: cap.name,
+          scope: cap.scope,
+          grants: cap.grants,
+        },
+      });
+    }
   }
 
   function applyAgentPolicy() {
@@ -2171,6 +2227,16 @@ export function createRealRuntimeClient(
         objective: r.objective,
         status: r.status,
         knownGaps: r.knownGaps ?? [],
+      }));
+    },
+    capabilities() {
+      if (!session) return [];
+      return projectedCapabilities(session.events).map((m) => ({
+        id: m.manifest.id,
+        name: m.manifest.name,
+        version: m.manifest.version,
+        scope: m.manifest.scope,
+        grants: m.manifest.grants,
       }));
     },
     workGraphNodes() {

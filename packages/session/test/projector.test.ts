@@ -4,6 +4,7 @@ import {
   appendSessionEvent,
   createSessionRecord,
   modelVisibleEvents,
+  projectedCapabilities,
   projectedConstitutionRules,
   projectedDecisionRecords,
   projectedEvidenceRecords,
@@ -432,4 +433,24 @@ test("projectedWorkGraphNodes and Edges collect graph nodes", () => {
   expect(edges).toHaveLength(1);
   expect(nodes[0]?.kind).toBe("goal");
   expect(edges[0]?.kind).toBe("requested_by");
+});
+
+test("projectedCapabilities tracks loaded/unloaded capabilities", () => {
+  const session = createSessionRecord("ses_cap", "Capabilities");
+  appendSessionEvent(session, {
+    type: "capability.loaded",
+    id: "evt_1",
+    manifest: {
+      apiVersion: 1,
+      id: "test-cap",
+      version: "1.0.0",
+      name: "Test Capability",
+      scope: "session",
+      grants: ["tools"],
+    },
+  });
+  const caps = projectedCapabilities(session.events);
+  expect(caps).toHaveLength(1);
+  expect(caps[0]?.manifest.id).toBe("test-cap");
+  expect(caps[0]?.manifest.scope).toBe("session");
 });

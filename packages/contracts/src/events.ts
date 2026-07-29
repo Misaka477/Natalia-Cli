@@ -372,6 +372,22 @@ export type RuntimeEvent =
       error?: string;
     }
   | {
+      type: "capability.loaded";
+      id: string;
+      manifest: import("./schemas").CapabilityManifest;
+    }
+  | {
+      type: "capability.unloaded";
+      id: string;
+      name: string;
+    }
+  | {
+      type: "capability.failed";
+      id: string;
+      name: string;
+      reason: string;
+    }
+  | {
       type: "workgraph.node_added";
       id: string;
       nodeID: string;
@@ -1383,6 +1399,15 @@ export type RuntimeClient = {
       objective: string;
       status: string;
       knownGaps: string[];
+    }>
+  >;
+  capabilities?(): Promise<
+    Array<{
+      id: string;
+      name: string;
+      version: string;
+      scope: string;
+      grants: string[];
     }>
   >;
   workGraphNodes?(): Promise<

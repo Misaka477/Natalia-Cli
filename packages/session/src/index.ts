@@ -240,6 +240,7 @@ export {
   projectSessionMessages,
   projectedConstitutionRules,
   projectedDecisionRecords,
+  projectedCapabilities,
   projectedEvidenceRecords,
   projectedWorkGraphNodes,
   projectedWorkGraphEdges,
