@@ -7,6 +7,7 @@
     { "path": "packages/contracts" },
     { "path": "packages/agent" },
     { "path": "packages/client" },
+    { "path": "packages/view-store" },
     { "path": "packages/ui-model" },
     { "path": "packages/runtime" },
     { "path": "packages/session" },
