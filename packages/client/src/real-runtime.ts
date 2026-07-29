@@ -3196,14 +3196,45 @@ export function createRealRuntimeClient(
   }
 
   /** Checks applicable constitution rules and emits `constitution.check` events. */
+  /** Hardcoded dangerous shell patterns that are always blocked. */
+  const DANGEROUS_SHELL_PATTERNS = [
+    { pattern: /pkill\s+-f\s+wezterm-mux-server/i, ruleID: "C-TERM-001", statement: "禁止直接杀掉 wezterm-mux-server" },
+    { pattern: /rm\s+-rf\s+\/run\/user\/\d+\/natalia/i, ruleID: "C-TERM-002", statement: "禁止删除 Natalia 运行时目录" },
+    { pattern: /rm\s+-rf\s+\/tmp\/natalia/i, ruleID: "C-TERM-003", statement: "禁止删除 Natalia 临时目录" },
+  ];
+
+  /** Checks constitution rules and hardcoded dangerous patterns. Returns blocked reason or undefined. */
   function checkConstitutionForTool(
     turnID: string,
     toolName: string,
     toolAction: string,
     toolResource: string,
-  ) {
-    if (!session) return;
+    shellCommand?: string,
+  ): string | undefined {
+    if (!session) return undefined;
     const rules = projectedConstitutionRules(session.events);
+    let blocked: string | undefined;
+
+    // Check hardcoded dangerous shell patterns for run_shell
+    if (toolName === "run_shell" && shellCommand) {
+      for (const entry of DANGEROUS_SHELL_PATTERNS)
+        if (entry.pattern.test(shellCommand)) {
+          publish({
+            type: "constitution.check",
+            id: `${turnID}:constitution:${entry.ruleID.toLowerCase()}`,
+            ruleID: entry.ruleID,
+            statement: entry.statement,
+            priority: "critical",
+            enforcement: "deny",
+            action: toolAction,
+            resource: `shell:${shellCommand.slice(0, 120)}`,
+            conflict: true,
+          });
+          blocked = `blocked by constitution: ${entry.statement}. Use terminal.kill or terminal.close instead.`;
+          break;
+        }
+    }
+
     for (const rule of rules) {
       if (rule.enforcement === "deny" || rule.enforcement === "warn") {
         publish({
@@ -3219,6 +3250,7 @@ export function createRealRuntimeClient(
         });
       }
     }
+    return blocked;
   }
 
   async function executeOneTool(
@@ -3317,14 +3349,27 @@ export function createRealRuntimeClient(
       toolCallID: call.id,
       decision: tool.requiresApproval ? "approval_required" : "allow",
     });
-    checkConstitutionForTool(
+    const blocked = checkConstitutionForTool(
       turnID,
       tool.name,
       tool.name,
       tool.name === "write" || tool.name === "apply_patch"
         ? (call.arguments ?? "")
         : "global",
+      tool.name === "run_shell" ? (call.arguments ?? "") : undefined,
     );
+    if (blocked) {
+      publish({
+        type: "tool.update",
+        id: toolID,
+        name: tool.name,
+        callID: call.id,
+        status: "failed",
+        summary: blocked,
+        argumentsDelta: call.arguments,
+      });
+      return blocked;
+    }
     if (tool.requiresApproval) await requireApproval(toolID, tool, call);
     await waitIfPaused();
     publish({
