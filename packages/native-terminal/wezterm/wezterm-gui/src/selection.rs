@@ -8,7 +8,7 @@ use termwiz::surface::line::DoubleClickRange;
 use termwiz::surface::SequenceNo;
 use wezterm_term::{SemanticZone, StableRowIndex};
 
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct Selection {
     /// Remembers the starting coordinate of the selection prior to
     /// dragging.
@@ -19,6 +19,20 @@ pub struct Selection {
     pub seqno: SequenceNo,
     /// Whether the selection is rectangular
     pub rectangular: bool,
+    /// The mode of the selection
+    pub mode: SelectionMode,
+}
+
+impl Default for Selection {
+    fn default() -> Self {
+        Self {
+            origin: None,
+            range: None,
+            seqno: SequenceNo::default(),
+            rectangular: false,
+            mode: SelectionMode::Cell,
+        }
+    }
 }
 
 pub use config::keyassignment::SelectionMode;
@@ -27,11 +41,13 @@ impl Selection {
     pub fn clear(&mut self) {
         self.range = None;
         self.origin = None;
+        self.mode = SelectionMode::Cell;
     }
 
     pub fn begin(&mut self, origin: SelectionCoordinate) {
         self.range = None;
         self.origin = Some(origin);
+        self.mode = SelectionMode::Cell;
     }
 
     pub fn is_empty(&self) -> bool {

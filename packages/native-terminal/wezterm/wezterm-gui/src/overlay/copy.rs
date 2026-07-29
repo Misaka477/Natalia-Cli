@@ -518,6 +518,7 @@ impl CopyRenderable {
                 selection.origin = Some(start);
                 selection.range = Some(range);
                 selection.rectangular = mode == SelectionMode::Block;
+                selection.mode = mode;
                 window.invalidate();
             })));
         self.adjust_viewport_for_cursor_position();

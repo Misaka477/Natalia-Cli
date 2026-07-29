@@ -441,7 +441,7 @@ macro_rules! pdu {
 /// The overall version of the codec.
 /// This must be bumped when backwards incompatible changes
 /// are made to the types and protocol.
-pub const CODEC_VERSION: usize = 45;
+pub const CODEC_VERSION: usize = 46;
 
 // Defines the Pdu enum.
 // Each struct has an explicit identifying number.
@@ -502,6 +502,10 @@ pdu! {
     GetPaneDirection: 60,
     GetPaneDirectionResponse: 61,
     AdjustPaneSize: 62,
+    GetPaneSelection: 63,
+    GetPaneSelectionResponse: 64,
+    GetPaneHighlights: 65,
+    GetPaneHighlightsResponse: 66,
 }
 
 impl Pdu {
@@ -902,6 +906,28 @@ pub struct GetPaneRenderableDimensionsResponse {
     pub pane_id: PaneId,
     pub cursor_position: StableCursorPosition,
     pub dimensions: RenderableDimensions,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug)]
+pub struct GetPaneSelection {
+    pub pane_id: PaneId,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug)]
+pub struct GetPaneSelectionResponse {
+    pub pane_id: PaneId,
+    pub selection: Option<mux::selection::PaneSelection>,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug)]
+pub struct GetPaneHighlights {
+    pub pane_id: PaneId,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug)]
+pub struct GetPaneHighlightsResponse {
+    pub pane_id: PaneId,
+    pub highlights: Option<mux::selection::PaneSelection>,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Debug)]

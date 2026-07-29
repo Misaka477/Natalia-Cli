@@ -46,9 +46,11 @@ export type NativeTerminalHost = {
   }): Promise<NativeTerminalPane>;
   list(): Promise<NativeTerminalPane[]>;
   listClients?(): Promise<Array<{ focused_pane_id: number }>>;
+  isAlive?(): Promise<boolean>;
+  resetMuxReady?(): void;
   read(
     paneID: number,
-    options?: { maxLines?: number; startLine?: number; endLine?: number },
+    options?: { maxLines?: number; startLine?: number; endLine?: number; format?: "text" | "selection" | "highlights" },
   ): Promise<string>;
   write(paneID: number, data: string): Promise<void>;
   open?(
@@ -274,6 +276,24 @@ export function createWezTermHost(
         );
     });
   };
+  const isMuxAlive = async (): Promise<boolean> => {
+    try {
+      await withTimeout(
+        run(
+          executable,
+          ["cli", "--no-auto-start", "--prefer-mux", "list", "--format", "json"],
+          undefined,
+          privateEnvironment,
+          2000,
+        ),
+        2000,
+        ["cli", "list"],
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  };
   return {
     kind: "wezterm",
     executable,
@@ -310,6 +330,12 @@ export function createWezTermHost(
       return parsed.map(parsePane);
     },
     async read(paneID, options = {}) {
+      if (options.format === "selection") {
+        return await command(["cli", "get-selection", "--pane-id", String(paneID)]);
+      }
+      if (options.format === "highlights") {
+        return await command(["cli", "get-highlights", "--pane-id", String(paneID)]);
+      }
       const maxLines = Math.max(1, Math.min(options.maxLines ?? 200, 2000));
       const args = ["cli", "get-text", "--pane-id", String(paneID)];
       if (options.startLine !== undefined) {
@@ -467,6 +493,12 @@ export function createWezTermHost(
       } catch {
         return false;
       }
+    },
+    async isAlive() {
+      return await isMuxAlive();
+    },
+    resetMuxReady() {
+      muxReady = undefined;
     },
     async listClients() {
       try {
@@ -754,8 +786,6 @@ export class NativeTerminalRegistry {
   }
 
   async reconcile(options: { force?: boolean } = {}) {
-    // `wezterm cli list` is an external process. Keep it out of every
-    // read/write/observe hot path while retaining periodic exit detection.
     if (!options.force && performance.now() - this.lastReconcileAt < 2_000)
       return this.list();
     this.reconcileInFlight ??= this.reconcileNow().finally(() => {
@@ -765,15 +795,39 @@ export class NativeTerminalRegistry {
   }
 
   private async reconcileNow() {
-    const panes = new Map(
-      (await this.host.list()).map((pane) => [pane.pane_id, pane]),
-    );
+    let panes: NativeTerminalPane[];
+    try {
+      panes = await this.host.list();
+    } catch (error) {
+      let muxAlive: boolean | undefined = true;
+      try {
+        muxAlive = await this.host.isAlive?.();
+      } catch {
+        // isAlive probe itself failed; keep muxAlive=true and re-throw original
+      }
+      if (muxAlive === false) {
+        await this.host.resetMuxReady?.();
+        for (const session of this.sessions.values()) {
+          if (session.status !== "exited") {
+            session.status = "exited";
+            session.attached = false;
+            session.revision += 1;
+            this.notifyRevision(session.id);
+            this.audit(session, "exit", "system");
+          }
+        }
+        await this.persistSessions();
+        return this.list();
+      }
+      throw error;
+    }
+    const paneMap = new Map(panes.map((pane) => [pane.pane_id, pane]));
     const attached = new Set(
       (await this.host.listClients?.())?.map((client) => client.focused_pane_id) ?? [],
     );
     this.lastReconcileAt = performance.now();
     for (const session of this.sessions.values()) {
-      const pane = panes.get(session.paneID);
+      const pane = paneMap.get(session.paneID);
       if (!pane) {
         if (session.status !== "exited") {
           session.revision += 1;
@@ -1138,11 +1192,53 @@ export class NativeTerminalRegistry {
     session: NativeTerminalSession,
     options?: { maxLines?: number; startLine?: number; endLine?: number },
   ) {
-    const text = await this.host.read(session.paneID, options);
+    const [text, selectionJson, highlightsJson] = await Promise.all([
+      this.host.read(session.paneID, options),
+      this.host.read(session.paneID, { format: "selection" }),
+      this.host.read(session.paneID, { format: "highlights" }),
+    ]);
     if (text !== session.lastText) {
       session.lastText = text;
       session.revision += 1;
       this.notifyRevision(session.id);
+    }
+    let highlightRanges: Array<{
+      startRow: number;
+      startCol: number;
+      endRow: number;
+      endCol: number;
+    }> = [];
+    try {
+      const parsedSelection = JSON.parse(selectionJson) as Record<string, unknown>;
+      const selection = parsedSelection.selection as Record<string, unknown> | null;
+      if (selection && Array.isArray(selection.ranges)) {
+        highlightRanges = highlightRanges.concat(
+          (selection.ranges as Array<Record<string, unknown>>).map((r) => ({
+            startRow: Number(r.startRow) ?? 0,
+            startCol: Number(r.startCol) ?? 0,
+            endRow: Number(r.endRow) ?? 0,
+            endCol: Number(r.endCol) ?? 0,
+          })),
+        );
+      }
+    } catch {
+      // ignore parse errors
+    }
+    try {
+      const parsedHighlights = JSON.parse(highlightsJson) as Record<string, unknown>;
+      const highlights = parsedHighlights.highlights as Record<string, unknown> | null;
+      if (highlights && Array.isArray(highlights.ranges)) {
+        highlightRanges = highlightRanges.concat(
+          (highlights.ranges as Array<Record<string, unknown>>).map((r) => ({
+            startRow: Number(r.startRow) ?? 0,
+            startCol: Number(r.startCol) ?? 0,
+            endRow: Number(r.endRow) ?? 0,
+            endCol: Number(r.endCol) ?? 0,
+          })),
+        );
+      }
+    } catch {
+      // ignore parse errors
     }
     return {
       text,
@@ -1150,12 +1246,7 @@ export class NativeTerminalRegistry {
       cursorY: session.cursor_y ?? 0,
       rows: session.rows ?? 0,
       cols: session.cols ?? 0,
-      highlightRanges: [] as Array<{
-        startRow: number;
-        startCol: number;
-        endRow: number;
-        endCol: number;
-      }>,
+      highlightRanges,
     };
   }
 

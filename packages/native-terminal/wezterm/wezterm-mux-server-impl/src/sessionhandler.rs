@@ -757,6 +757,42 @@ impl SessionHandler {
                 .detach();
             }
 
+            Pdu::GetPaneSelection(GetPaneSelection { pane_id }) => {
+                let sender = self.to_write_tx.clone();
+                let serial = decoded.serial;
+                spawn_into_main_thread(async move {
+                    let response = crate::selection::query_pane_selection(pane_id)
+                        .await
+                        .unwrap_or_else(|| GetPaneSelectionResponse {
+                            pane_id,
+                            selection: None,
+                        });
+                    let _ = sender.send(DecodedPdu {
+                        pdu: Pdu::GetPaneSelectionResponse(response),
+                        serial,
+                    });
+                })
+                .detach();
+            }
+
+            Pdu::GetPaneHighlights(GetPaneHighlights { pane_id }) => {
+                let sender = self.to_write_tx.clone();
+                let serial = decoded.serial;
+                spawn_into_main_thread(async move {
+                    let response = crate::selection::query_pane_highlights(pane_id)
+                        .await
+                        .unwrap_or_else(|| GetPaneHighlightsResponse {
+                            pane_id,
+                            highlights: None,
+                        });
+                    let _ = sender.send(DecodedPdu {
+                        pdu: Pdu::GetPaneHighlightsResponse(response),
+                        serial,
+                    });
+                })
+                .detach();
+            }
+
             Pdu::GetPaneRenderChanges(GetPaneRenderChanges { pane_id, .. }) => {
                 let sender = self.to_write_tx.clone();
                 let per_pane = self.per_pane(pane_id);
@@ -1010,6 +1046,8 @@ impl SessionHandler {
             | Pdu::MovePaneToNewTabResponse { .. }
             | Pdu::TabAddedToWindow { .. }
             | Pdu::GetPaneRenderableDimensionsResponse { .. }
+            | Pdu::GetPaneSelectionResponse { .. }
+            | Pdu::GetPaneHighlightsResponse { .. }
             | Pdu::ErrorResponse { .. } => {
                 send_response(Err(anyhow!("expected a request, got {:?}", decoded.pdu)))
             }

@@ -8,6 +8,8 @@ mod activate_pane_direction;
 mod activate_tab;
 mod adjust_pane_size;
 mod get_pane_direction;
+mod get_selection;
+mod get_highlights;
 mod get_text;
 mod kill_pane;
 mod list;
@@ -121,6 +123,14 @@ Outputs the pane-id for the newly created pane on success"
     #[command(name = "get-text", rename_all = "kebab")]
     GetText(get_text::GetText),
 
+    /// Retrieves the current selection state of a pane as JSON
+    #[command(name = "get-selection", rename_all = "kebab")]
+    GetSelection(get_selection::GetSelection),
+
+    /// Retrieves the current highlight ranges of a pane as JSON
+    #[command(name = "get-highlights", rename_all = "kebab")]
+    GetHighlights(get_highlights::GetHighlights),
+
     /// Activate an adjacent pane in the specified direction.
     #[command(name = "activate-pane-direction", rename_all = "kebab")]
     ActivatePaneDirection(activate_pane_direction::ActivatePaneDirection),
@@ -186,6 +196,8 @@ async fn run_cli_async(opts: &crate::Opt, cli: CliCommand) -> anyhow::Result<()>
         CliSubCommand::SplitPane(cmd) => cmd.run(client).await,
         CliSubCommand::SendText(cmd) => cmd.run(client).await,
         CliSubCommand::GetText(cmd) => cmd.run(client).await,
+        CliSubCommand::GetSelection(cmd) => cmd.run(client).await,
+        CliSubCommand::GetHighlights(cmd) => cmd.run(client).await,
         CliSubCommand::SpawnCommand(cmd) => cmd.run(client, &crate::init_config(opts)?).await,
         CliSubCommand::Proxy(cmd) => cmd.run(client, &crate::init_config(opts)?).await,
         CliSubCommand::TlsCreds(cmd) => cmd.run(client).await,

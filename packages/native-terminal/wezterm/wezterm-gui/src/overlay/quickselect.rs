@@ -1,4 +1,4 @@
-use crate::selection::{SelectionCoordinate, SelectionRange};
+use crate::selection::{SelectionCoordinate, SelectionMode, SelectionRange};
 use crate::termwindow::{TermWindow, TermWindowNotif};
 use config::keyassignment::{ClipboardCopyDestination, QuickSelectArguments, ScrollbackEraseMode};
 use config::ConfigHandle;
@@ -1023,6 +1023,7 @@ impl QuickSelectRenderable {
                         // Ensure that selection doesn't get invalidated when
                         // the overlay is closed
                         selection.seqno = pane.get_current_seqno();
+                        selection.mode = SelectionMode::Cell;
                     }
 
                     let text = term_window.selection_text(&pane);

@@ -31,7 +31,7 @@ use ::window::*;
 use anyhow::{anyhow, ensure, Context};
 use config::keyassignment::{
     Confirmation, KeyAssignment, LauncherActionArgs, PaneDirection, Pattern, PromptInputLine,
-    QuickSelectArguments, RotationDirection, SpawnCommand, SplitSize,
+    QuickSelectArguments, RotationDirection, SelectionMode, SpawnCommand, SplitSize,
 };
 use config::window::WindowLevel;
 use config::{
@@ -129,6 +129,10 @@ pub enum TermWindowNotif {
     GetSelectionForPane {
         pane_id: PaneId,
         tx: Sender<String>,
+    },
+    GetPaneSelectionData {
+        pane_id: PaneId,
+        tx: Sender<Option<mux::selection::PaneSelection>>,
     },
     GetEffectiveConfig(Sender<ConfigHandle>),
     FinishWindowEvent {
@@ -1333,6 +1337,68 @@ impl TermWindow {
                 tx.try_send(self.selection_text(&pane))
                     .map_err(chan_err)
                     .context("send GetSelectionForPane response")?;
+            }
+            TermWindowNotif::GetPaneSelectionData { pane_id, tx } => {
+                let mux = Mux::get();
+                let pane = mux
+                    .get_pane(pane_id)
+                    .ok_or_else(|| anyhow!("pane id {} is not valid", pane_id))?;
+
+                let selection = self.selection(pane_id);
+                let dimensions = pane.get_dimensions();
+                let physical_top = dimensions.physical_top;
+
+                let ranges = if let Some(range) = selection.range {
+                    let norm = range.normalize();
+                    let mut result = vec![];
+                    for row in norm.rows() {
+                        let viewport_row = row - physical_top;
+                        if viewport_row < 0
+                            || viewport_row >= dimensions.viewport_rows as StableRowIndex
+                        {
+                            continue;
+                        }
+                        let cols = norm.cols_for_row(row, selection.rectangular);
+                        if cols.start >= cols.end {
+                            continue;
+                        }
+                        let start_col = cols.start;
+                        let end_col = if cols.end == usize::MAX {
+                            dimensions.cols.saturating_sub(1)
+                        } else {
+                            cols.end.saturating_sub(1)
+                        };
+                        result.push(mux::selection::PaneSelectionRange {
+                            start_row: viewport_row,
+                            start_col,
+                            end_row: viewport_row,
+                            end_col,
+                        });
+                    }
+                    result
+                } else {
+                    vec![]
+                };
+
+                let response = if ranges.is_empty() {
+                    None
+                } else {
+                    let mode_str = match selection.mode {
+                        SelectionMode::Cell => "char",
+                        SelectionMode::Line => "line",
+                        SelectionMode::Block => "block",
+                        SelectionMode::Word => "char",
+                        SelectionMode::SemanticZone => "char",
+                    };
+                    Some(mux::selection::PaneSelection {
+                        mode: mode_str.to_string(),
+                        ranges,
+                    })
+                };
+
+                tx.try_send(response)
+                    .map_err(chan_err)
+                    .context("send GetPaneSelectionData response")?;
             }
             TermWindowNotif::Apply(func) => {
                 func(self);

@@ -102,8 +102,9 @@ impl TryFrom<String> for LauncherFlags {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, FromDynamic, ToDynamic)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, FromDynamic, ToDynamic, Default)]
 pub enum SelectionMode {
+    #[default]
     Cell,
     Word,
     Line,

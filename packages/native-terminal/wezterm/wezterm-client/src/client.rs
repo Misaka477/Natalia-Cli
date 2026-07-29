@@ -1365,6 +1365,8 @@ impl Client {
         GetPaneRenderableDimensions,
         GetPaneRenderableDimensionsResponse
     );
+    rpc!(get_pane_selection, GetPaneSelection, GetPaneSelectionResponse);
+    rpc!(get_pane_highlights, GetPaneHighlights, GetPaneHighlightsResponse);
     rpc!(get_codec_version, GetCodecVersion, GetCodecVersionResponse);
     rpc!(get_tls_creds, GetTlsCreds = (), GetTlsCredsResponse);
     rpc!(

@@ -16,6 +16,7 @@ use mux::Mux;
 use mux_lua::MuxDomain;
 use portable_pty::cmdbuilder::CommandBuilder;
 use promise::spawn::block_on;
+use smol::channel;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::env::current_dir;
@@ -31,7 +32,7 @@ use wezterm_client::domain::ClientDomain;
 use wezterm_font::shaper::PresentationWidth;
 use wezterm_font::FontConfiguration;
 use wezterm_gui_subcommands::*;
-use wezterm_mux_server_impl::update_mux_domains;
+use wezterm_mux_server_impl::{selection as mux_selection, update_mux_domains};
 use wezterm_toast_notification::*;
 
 mod colorease;
@@ -419,6 +420,44 @@ async fn async_run_terminal_gui(
     if let Err(err) = spawn_mux_server(unix_socket_path, should_publish) {
         log::warn!("{:#}", err);
     }
+
+    mux_selection::set_selection_hook(Arc::new(|pane_id| {
+        Box::pin(async move {
+            let gui_win = {
+                let front_end = crate::frontend::front_end();
+                let mut found = None;
+                for gui_win in front_end.gui_windows() {
+                    let mux = Mux::get();
+                    if let Some(window) = mux.get_window(gui_win.mux_window_id) {
+                        for tab in window.iter() {
+                            for pos in tab.iter_panes_ignoring_zoom() {
+                                if pos.pane.pane_id() == pane_id {
+                                    found = Some(gui_win.clone());
+                                    break;
+                                }
+                            }
+                            if found.is_some() {
+                                break;
+                            }
+                        }
+                    }
+                    if found.is_some() {
+                        break;
+                    }
+                }
+                found
+            };
+            let gui_win = gui_win?;
+            let (tx, rx) = channel::bounded(1);
+            gui_win
+                .window
+                .notify(crate::termwindow::TermWindowNotif::GetPaneSelectionData {
+                    pane_id,
+                    tx,
+                });
+            rx.recv().await.ok().flatten()
+        })
+    }));
 
     if !opts.no_auto_connect {
         connect_to_auto_connect_domains().await?;

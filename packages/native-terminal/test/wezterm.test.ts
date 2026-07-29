@@ -776,9 +776,11 @@ test("native observe returns its own bounded timeout instead of tool timeout", a
     registry.observe(session.id, revision, { maxLines: 60, timeoutMs: 25 }),
   ).resolves.toMatchObject({ changed: false, reason: "timeout" });
   expect(performance.now() - startedAt).toBeLessThan(150);
-  expect(reads).toBeLessThanOrEqual(4);
-  // One initial read plus one reconcile per bounded observe poll. There must
-  // not be a second list caused by observe calling the public read method.
+  expect(reads).toBeLessThanOrEqual(12);
+  // One initial read plus one reconcile per bounded observe poll. Each read
+  // now fetches text, selection and highlights in parallel, so the read count
+  // roughly triples compared to the baseline. There must not be a second list
+  // caused by observe calling the public read method.
   expect(lists).toBeLessThanOrEqual(reads + 2);
 });
 
@@ -1012,6 +1014,138 @@ test("native snapshot text matches read text and includes cursor", async () => {
   await registry.stop(session.id);
 });
 
+test("native snapshot includes highlightRanges when selection is active", async () => {
+  const registry = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 37, window_id: 2, tab_id: 3, rows: 24, cols: 80 };
+    },
+    async list() {
+      return [
+        {
+          pane_id: 37,
+          window_id: 2,
+          tab_id: 3,
+          rows: 24,
+          cols: 80,
+          cursor_x: 5,
+          cursor_y: 3,
+        },
+      ];
+    },
+    async read(_paneID: number, options?: Record<string, unknown>) {
+      if (options?.format === "selection") {
+        return JSON.stringify({
+          selection: {
+            mode: "char",
+            ranges: [
+              { startRow: 2, startCol: 4, endRow: 2, endCol: 10 },
+              { startRow: 3, startCol: 0, endRow: 3, endCol: 20 },
+            ],
+          },
+        });
+      }
+      if (options?.format === "highlights") {
+        return JSON.stringify({
+          highlights: {
+            mode: "highlights",
+            ranges: [
+              { startRow: 2, startCol: 4, endRow: 2, endCol: 10 },
+              { startRow: 3, startCol: 0, endRow: 3, endCol: 20 },
+            ],
+          },
+        });
+      }
+      return "selected text\n";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  });
+  const session = await registry.start({ command: "cat", cwd: "/repo" });
+  const snapshot = await registry.snapshot(session.id);
+  expect(snapshot.text).toBe("selected text\n");
+  expect(snapshot.highlightRanges).toEqual([
+    { startRow: 2, startCol: 4, endRow: 2, endCol: 10 },
+    { startRow: 3, startCol: 0, endRow: 3, endCol: 20 },
+    { startRow: 2, startCol: 4, endRow: 2, endCol: 10 },
+    { startRow: 3, startCol: 0, endRow: 3, endCol: 20 },
+  ]);
+  await registry.stop(session.id);
+});
+
+test("native snapshot returns empty highlightRanges when selection is null", async () => {
+  const registry = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 41, window_id: 2, tab_id: 3, rows: 24, cols: 80 };
+    },
+    async list() {
+      return [{ pane_id: 41, window_id: 2, tab_id: 3, rows: 24, cols: 80 }];
+    },
+    async read(_paneID: number, options?: Record<string, unknown>) {
+      if (options?.format === "selection") {
+        return JSON.stringify({ selection: null });
+      }
+      return "no selection\n";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  });
+  const session = await registry.start({ command: "cat", cwd: "/repo" });
+  const snapshot = await registry.snapshot(session.id);
+  expect(snapshot.highlightRanges).toEqual([]);
+  await registry.stop(session.id);
+});
+
+test("native observe returns highlightRanges", async () => {
+  const registry = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 42, window_id: 2, tab_id: 3, rows: 24, cols: 80 };
+    },
+    async list() {
+      return [{ pane_id: 42, window_id: 2, tab_id: 3, rows: 24, cols: 80 }];
+    },
+    async read(_paneID: number, options?: Record<string, unknown>) {
+      if (options?.format === "selection") {
+        return JSON.stringify({
+          selection: {
+            mode: "line",
+            ranges: [{ startRow: 5, startCol: 0, endRow: 5, endCol: 79 }],
+          },
+        });
+      }
+      if (options?.format === "highlights") {
+        return JSON.stringify({
+          highlights: {
+            mode: "highlights",
+            ranges: [{ startRow: 5, startCol: 0, endRow: 5, endCol: 79 }],
+          },
+        });
+      }
+      return "observed\n";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  });
+  const session = await registry.start({ command: "cat", cwd: "/repo" });
+  const obs = await registry.observe(session.id, 0);
+  expect(obs.highlightRanges).toEqual([
+    { startRow: 5, startCol: 0, endRow: 5, endCol: 79 },
+    { startRow: 5, startCol: 0, endRow: 5, endCol: 79 },
+  ]);
+  await registry.stop(session.id);
+});
+
 test("native model can continue to observe and write after human detach", async () => {
   const writes: string[] = [];
   const registry = new NativeTerminalRegistry({
@@ -1235,5 +1369,178 @@ const secondRegistry = new NativeTerminalRegistry(
   });
   expect(secondRegistry.list()).toHaveLength(1);
   await secondRegistry.dispose();
+});
+
+test("mux server unavailability marks running sessions as exited", async () => {
+  let listCalls = 0;
+  const registry = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      const pane = (await this.list()).find((p) => p.pane_id === 201);
+      return pane!;
+    },
+    async list() {
+      listCalls += 1;
+      if (listCalls <= 2) {
+        return [
+          {
+            pane_id: 201,
+            window_id: 1,
+            tab_id: 201,
+            rows: 24,
+            cols: 80,
+            cursor_x: 0,
+            cursor_y: 0,
+          },
+        ];
+      }
+      throw new Error("WezTerm mux connection refused");
+    },
+    async isAlive() {
+      return false;
+    },
+    async read() {
+      return "text";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {},
+    async listClients() {
+      return [{ focused_pane_id: 201 }];
+    },
+  });
+  const session = await registry.start({ id: "mux-down", command: "cat", cwd: "/repo" });
+  expect(session.status).toBe("running");
+
+  const read = await registry.read(session.id);
+  expect(read.text).toBe("text");
+
+  await registry.reconcile({ force: true });
+  expect(registry.session("mux-down").status).toBe("exited");
+  expect(registry.session("mux-down").attached).toBe(false);
+  expect(registry.session("mux-down").revision).toBeGreaterThan(1);
+  await expect(registry.read(session.id)).rejects.toThrow("terminal session has exited");
+  await registry.stop(session.id);
+});
+
+test("mux server transient error does not falsely mark sessions exited", async () => {
+  let listCalls = 0;
+  const registry = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      const pane = (await this.list()).find((p) => p.pane_id === 202);
+      return pane!;
+    },
+    async list() {
+      listCalls += 1;
+      if (listCalls <= 1) {
+        return [{ pane_id: 202, window_id: 1, tab_id: 202, rows: 24, cols: 80 }];
+      }
+      throw new Error("temporary JSON parse error");
+    },
+    async isAlive() {
+      return true;
+    },
+    async read() {
+      return "text";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  });
+  const session = await registry.start({ id: "mux-transient", command: "cat", cwd: "/repo" });
+  await expect(registry.reconcile({ force: true })).rejects.toThrow("temporary JSON parse error");
+  expect(registry.session("mux-transient").status).toBe("running");
+  await registry.stop(session.id);
+});
+
+test("mux recovery allows new sessions after prior sessions were marked exited", async () => {
+  let listCalls = 0;
+  const registry = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      const paneID = listCalls < 3 ? 301 : 302;
+      const pane = (await this.list()).find((p) => p.pane_id === paneID);
+      return pane!;
+    },
+    async list() {
+      listCalls += 1;
+      if (listCalls <= 2) {
+        return [{ pane_id: 301, window_id: 1, tab_id: 301, rows: 24, cols: 80 }];
+      }
+      if (listCalls === 3) {
+        throw new Error("mux down");
+      }
+      return [{ pane_id: 302, window_id: 1, tab_id: 302, rows: 24, cols: 80 }];
+    },
+    async isAlive() {
+      return listCalls < 3;
+    },
+    async read() {
+      return "text";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {},
+    async listClients() {
+      return [{ focused_pane_id: listCalls < 3 ? 301 : 302 }];
+    },
+  });
+  const first = await registry.start({ id: "mux-recovery", command: "cat", cwd: "/repo" });
+  expect(first.status).toBe("running");
+
+  await registry.reconcile({ force: true });
+  expect(registry.session("mux-recovery").status).toBe("running");
+
+  await registry.reconcile({ force: true });
+  expect(registry.session("mux-recovery").status).toBe("exited");
+
+  const second = await registry.start({ id: "mux-recovery-2", command: "bash", cwd: "/repo" });
+  expect(second.status).toBe("running");
+  expect(second.paneID).toBe(302);
+  const read = await registry.read(second.id);
+  expect(read.text).toBe("text");
+  await registry.stop(second.id);
+});
+
+test("observe returns exited when mux dies", async () => {
+  let listCalls = 0;
+  const registry = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      const pane = (await this.list()).find((p) => p.pane_id === 401);
+      return pane!;
+    },
+    async list() {
+      listCalls += 1;
+      if (listCalls <= 1) {
+        return [{ pane_id: 401, window_id: 1, tab_id: 401, rows: 24, cols: 80 }];
+      }
+      throw new Error("WezTerm mux connection refused");
+    },
+    async isAlive() {
+      return false;
+    },
+    async read() {
+      return "text";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  });
+  const session = await registry.start({ id: "mux-observe", command: "cat", cwd: "/repo" });
+  await registry.reconcile({ force: true });
+  const obs = await registry.observe(session.id, 0);
+  expect(obs.exited).toBe(true);
+  expect(obs.highlightRanges).toEqual([]);
+  await registry.stop(session.id);
 });
 

@@ -8,6 +8,7 @@ use wezterm_client::domain::{ClientDomain, ClientDomainConfig};
 pub mod dispatch;
 pub mod local;
 pub mod pki;
+pub mod selection;
 pub mod sessionhandler;
 
 fn client_domains(config: &config::ConfigHandle) -> Vec<ClientDomainConfig> {
