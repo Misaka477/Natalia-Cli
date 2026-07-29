@@ -63,6 +63,7 @@ import {
   projectedDecisionRecords,
   projectedEvidenceRecords,
   projectedCanonicalTools,
+  projectedDriftFindings,
   projectedCapabilities,
   projectedWorkGraphNodes,
   projectedWorkGraphEdges,
@@ -2228,6 +2229,18 @@ export function createRealRuntimeClient(
         objective: r.objective,
         status: r.status,
         knownGaps: r.knownGaps ?? [],
+      }));
+    },
+    driftFindings() {
+      if (!session) return [];
+      return projectedDriftFindings(session.events).map((f) => ({
+        findingID: f.findingID,
+        severity: f.severity,
+        confidence: f.confidence,
+        originalObjective: f.originalObjective,
+        currentActivity: f.currentActivity,
+        evidence: f.evidence,
+        status: f.status ?? "open",
       }));
     },
     registeredTools() {

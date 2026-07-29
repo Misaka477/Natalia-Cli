@@ -342,6 +342,27 @@ export function projectedConstitutionRules(events: RuntimeEvent[]) {
   );
 }
 
+export function projectedDriftFindings(events: RuntimeEvent[]) {
+  const findings = new Map<string, RuntimeEvent>();
+  for (const event of events) {
+    if (event.type === "drift.finding_opened")
+      findings.set(event.findingID, event);
+    if (event.type === "drift.finding_updated") {
+      const existing = findings.get(event.findingID);
+      if (existing && existing.type === "drift.finding_opened") {
+        findings.set(event.findingID, {
+          ...existing,
+          status: event.status,
+        });
+      }
+    }
+  }
+  return [...findings.values()].filter(
+    (f): f is Extract<RuntimeEvent, { type: "drift.finding_opened" }> =>
+      f.type === "drift.finding_opened",
+  );
+}
+
 export function projectedCanonicalTools(events: RuntimeEvent[]) {
   const tools = new Map<string, RuntimeEvent>();
   for (const event of events) {

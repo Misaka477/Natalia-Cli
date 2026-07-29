@@ -6,6 +6,7 @@ import {
   modelVisibleEvents,
   projectedCanonicalTools,
   projectedCapabilities,
+  projectedDriftFindings,
   projectedConstitutionRules,
   projectedDecisionRecords,
   projectedEvidenceRecords,
@@ -472,4 +473,23 @@ test("projectedCanonicalTools registers and unregisters tools", () => {
   expect(tools).toHaveLength(1);
   expect(tools[0]?.name).toBe("read_file");
   expect(tools[0]?.owner).toBe("natalia");
+});
+
+test("projectedDriftFindings tracks findings and status updates", () => {
+  const session = createSessionRecord("ses_drift", "Drift");
+  appendSessionEvent(session, {
+    type: "drift.finding_opened",
+    id: "evt_1",
+    findingID: "DF-001",
+    severity: "warning",
+    confidence: 0.75,
+    originalObjective: "Fix parser",
+    currentActivity: "Auth config",
+    evidence: ["12 actions without parser files"],
+    applicableConstraints: [],
+  });
+  const findings = projectedDriftFindings(session.events);
+  expect(findings).toHaveLength(1);
+  expect(findings[0]?.severity).toBe("warning");
+  expect(findings[0]?.originalObjective).toBe("Fix parser");
 });

@@ -639,6 +639,43 @@ export function DialogEvidence(props: {
   );
 }
 
+export function DialogDriftFindings(props: {
+  findings: Array<{
+    findingID: string;
+    severity: string;
+    confidence: number;
+    originalObjective: string;
+    currentActivity: string;
+    evidence: string[];
+    status: string;
+  }>;
+}) {
+  const sevColor = (s: string) =>
+    s === "high" ? darkTheme.danger : s === "warning" ? darkTheme.warning : darkTheme.muted;
+  return (
+    <box flexDirection="column" paddingLeft={2} paddingRight={2} paddingBottom={1}>
+      <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>
+        Goal Drift Findings
+      </text>
+      <box flexDirection="column" gap={1} paddingTop={1}>
+        <For each={props.findings}>
+          {(f) => (
+            <box flexDirection="column" paddingLeft={1}>
+              <box flexDirection="row" gap={1}>
+                <text fg={sevColor(f.severity)} attributes={TextAttributes.BOLD}>{f.severity}</text>
+                <text fg={darkTheme.muted}>{f.status}</text>
+                <text fg={darkTheme.muted}>{Math.round(f.confidence * 100)}%</text>
+              </box>
+              <text fg={darkTheme.text}>Goal: {f.originalObjective}</text>
+              <text fg={darkTheme.muted}>Current: {f.currentActivity}</text>
+            </box>
+          )}
+        </For>
+      </box>
+    </box>
+  );
+}
+
 export function DialogRegisteredTools(props: {
   tools: Array<{ name: string; owner: string; scope: string; recovery: string; precedence: number; requiresApproval: boolean }>;
 }) {

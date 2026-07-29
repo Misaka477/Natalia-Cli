@@ -35,6 +35,7 @@ import { DialogPrompt } from "../dialog/DialogPrompt";
 import { DialogConfirm } from "../dialog/DialogConfirm";
 import {
   DialogCapabilities,
+  DialogDriftFindings,
   DialogRegisteredTools,
   DialogConstitution,
   DialogDecision,
@@ -1999,6 +2000,13 @@ export function runCommand(command: string, ctx: CommandContext) {
     if (command === "tools.registered") {
       void (ctx.backend.registeredTools?.() ?? Promise.resolve([])).then(
         (tools) => ctx.dialog.push(() => <DialogRegisteredTools tools={tools} />),
+        (error: any) => ctx.toast.error(error),
+      );
+      return;
+    }
+    if (command === "drift.list") {
+      void (ctx.backend.driftFindings?.() ?? Promise.resolve([])).then(
+        (findings) => ctx.dialog.push(() => <DialogDriftFindings findings={findings} />),
         (error: any) => ctx.toast.error(error),
       );
       return;

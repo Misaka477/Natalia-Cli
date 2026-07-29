@@ -241,6 +241,7 @@ export {
   projectedConstitutionRules,
   projectedDecisionRecords,
   projectedCanonicalTools,
+  projectedDriftFindings,
   projectedCapabilities,
   projectedEvidenceRecords,
   projectedWorkGraphNodes,

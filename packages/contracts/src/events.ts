@@ -372,6 +372,24 @@ export type RuntimeEvent =
       error?: string;
     }
   | {
+      type: "drift.finding_opened";
+      id: string;
+      findingID: string;
+      severity: "advisory" | "warning" | "high";
+      confidence: number;
+      originalObjective: string;
+      currentActivity: string;
+      evidence: string[];
+      applicableConstraints: string[];
+    }
+  | {
+      type: "drift.finding_updated";
+      id: string;
+      findingID: string;
+      status: "open" | "explained" | "dismissed" | "corrected";
+      rationale?: string;
+    }
+  | {
       type: "tool.registered";
       id: string;
       name: string;
@@ -1414,6 +1432,17 @@ export type RuntimeClient = {
       objective: string;
       status: string;
       knownGaps: string[];
+    }>
+  >;
+  driftFindings?(): Promise<
+    Array<{
+      findingID: string;
+      severity: "advisory" | "warning" | "high";
+      confidence: number;
+      originalObjective: string;
+      currentActivity: string;
+      evidence: string[];
+      status: string;
     }>
   >;
   registeredTools?(): Promise<

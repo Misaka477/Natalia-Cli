@@ -352,6 +352,25 @@ export const workGraphNodeSchema = z.object({
   stepID: z.string().optional(),
 });
 
+export const driftFindingSchema = z.object({
+  id: z.string().min(1),
+  severity: z.enum(["advisory", "warning", "high"]),
+  confidence: z.number().min(0).max(1),
+  originalObjective: z.string().min(1),
+  currentActivity: z.string().min(1),
+  evidence: z.array(z.string()).default([]),
+  applicableConstraints: z.array(z.string()).default([]),
+  status: z.enum(["open", "explained", "dismissed", "corrected"]),
+  options: z
+    .array(
+      z.object({
+        label: z.string(),
+        action: z.string(),
+      }),
+    )
+    .default([]),
+});
+
 export const toolCanonicalRegistrationSchema = z.object({
   name: z.string().min(1),
   owner: z.string().min(1),

@@ -169,6 +169,11 @@ export const commands: Record<string, CommandDef> = {
     keys: "unset",
     desc: "Show registered canonical tools",
   },
+  "drift.list": {
+    id: "drift.list",
+    keys: "unset",
+    desc: "Show goal drift findings",
+  },
   cancel: { id: "cancel", keys: "ctrl+c", desc: "Cancel current turn" },
   exit: { id: "exit", keys: "ctrl+d", desc: "Exit on empty composer" },
   "dialog.close": {
