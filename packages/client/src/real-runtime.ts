@@ -40,7 +40,10 @@ import {
   providerCompactor,
 } from "@natalia/runtime";
 import { modelSelectionStatus, resolveConfig } from "@natalia/config";
-import { CapabilityRegistry, type CapabilityRegistration } from "@natalia/capability";
+import {
+  CapabilityRegistry,
+  type CapabilityRegistration,
+} from "@natalia/capability";
 import type { ConfigV2 } from "@natalia/contracts";
 import {
   agentsFromConfig,
@@ -128,6 +131,25 @@ import {
 } from "./attachments";
 
 const sqliteStores = new Map<string, SqliteSessionStore>();
+
+/** Hardcoded dangerous shell patterns that are always blocked. */
+const DANGEROUS_SHELL_PATTERNS = [
+  {
+    pattern: /pkill\s+-f\s+wezterm-mux-server/i,
+    ruleID: "C-TERM-001",
+    statement: "禁止直接杀掉 wezterm-mux-server",
+  },
+  {
+    pattern: /rm\s+-rf\s+\/run\/user\/\d+\/natalia/i,
+    ruleID: "C-TERM-002",
+    statement: "禁止删除 Natalia 运行时目录",
+  },
+  {
+    pattern: /rm\s+-rf\s+\/tmp\/natalia/i,
+    ruleID: "C-TERM-003",
+    statement: "禁止删除 Natalia 临时目录",
+  },
+];
 
 function publicNativeTerminal(
   session: import("@natalia/native-terminal").NativeTerminalSession,
@@ -568,27 +590,23 @@ export function createRealRuntimeClient(
           publishTerminalViewer(session, viewerID, "expired"),
       },
     );
-    if (!nativeTerminal)
+    if (!nativeTerminal) {
+      const nativeRuntimeDir = process.env.XDG_RUNTIME_DIR
+        ? join(process.env.XDG_RUNTIME_DIR, "natalia")
+        : join(workspaceRoot, ".natalia", "native-input");
+      const nativeMuxRuntimeDir = join(
+        nativeRuntimeDir,
+        "wezterm-runtime",
+        nativeRuntimeID,
+      );
+      const nativeMuxSocket = join(nativeMuxRuntimeDir, "wezterm", "sock");
+      let nativeDomain: Awaited<
+        ReturnType<typeof writeWezTermNativeDomainConfig>
+      >;
       try {
-        // Unix domain socket paths are capped at roughly 108 bytes on Linux.
-        // Keep the authenticated broker out of a potentially deep workspace.
-        const nativeRuntimeDir = process.env.XDG_RUNTIME_DIR
-          ? join(process.env.XDG_RUNTIME_DIR, "natalia")
-          : join(workspaceRoot, ".natalia", "native-input");
         await mkdir(nativeRuntimeDir, { recursive: true, mode: 0o700 });
-        // A private mux belongs to one Natalia runtime, not the whole desktop
-        // account. Reusing a workspace-wide socket would let a fresh Hub attach
-        // historical test panes from a prior runtime.
-        const nativeMuxRuntimeDir = join(
-          nativeRuntimeDir,
-          "wezterm-runtime",
-          nativeRuntimeID,
-        );
         await mkdir(nativeMuxRuntimeDir, { recursive: true, mode: 0o700 });
-        // wezterm-mux-server's default Unix domain is derived from its own
-        // XDG runtime directory; clients must connect to that exact socket.
-        const nativeMuxSocket = join(nativeMuxRuntimeDir, "wezterm", "sock");
-        const nativeDomain = await writeWezTermNativeDomainConfig({
+        nativeDomain = await writeWezTermNativeDomainConfig({
           directory: nativeMuxRuntimeDir,
           socketPath: nativeMuxSocket,
         });
@@ -628,7 +646,10 @@ export function createRealRuntimeClient(
               });
             },
             autoOpenHub: true,
-            persistPath: join(nativeMuxRuntimeDir, "native-terminal-sessions.json"),
+            persistPath: join(
+              nativeMuxRuntimeDir,
+              "native-terminal-sessions.json",
+            ),
           },
         );
         nativeInputBroker = await startNativeInputBroker({
@@ -667,6 +688,10 @@ export function createRealRuntimeClient(
         try {
           await mkdir(nativeRuntimeDir, { recursive: true, mode: 0o700 });
           await mkdir(nativeMuxRuntimeDir, { recursive: true, mode: 0o700 });
+          nativeDomain = await writeWezTermNativeDomainConfig({
+            directory: nativeMuxRuntimeDir,
+            socketPath: nativeMuxSocket,
+          });
           nativeTerminal = new NativeTerminalRegistry(
             createWezTermHost({
               environment: { WEZTERM_UNIX_SOCKET: nativeMuxSocket },
@@ -695,7 +720,10 @@ export function createRealRuntimeClient(
                 });
               },
               autoOpenHub: true,
-              persistPath: join(nativeMuxRuntimeDir, "native-terminal-sessions.json"),
+              persistPath: join(
+                nativeMuxRuntimeDir,
+                "native-terminal-sessions.json",
+              ),
             },
           );
           nativeInputBroker = await startNativeInputBroker({
@@ -731,6 +759,7 @@ export function createRealRuntimeClient(
           // Its canonical tools report an actionable error when invoked.
         }
       }
+    }
     sandboxes = new WorkspaceSandboxManager(
       join(workspaceRoot, ".natalia", "sandboxes"),
     );
@@ -997,6 +1026,7 @@ export function createRealRuntimeClient(
 
   /** Registers built-in internal capabilities through the capability kernel. */
   function registerBuiltinCapabilities() {
+    if (!capabilityRegistry) return;
     const builtins: Array<CapabilityRegistration> = [
       {
         id: "natalia-terminal",
@@ -1892,24 +1922,33 @@ export function createRealRuntimeClient(
     },
     async terminalObserve(input) {
       await ready;
-      if (!terminalRegistry) throw new Error("interactive terminal is unavailable");
+      if (!terminalRegistry)
+        throw new Error("interactive terminal is unavailable");
       return await terminalRegistry.observe(input.id, input);
     },
     async terminalViewerRegister(input) {
       await ready;
-      if (!terminalRegistry) throw new Error("interactive terminal is unavailable");
+      if (!terminalRegistry)
+        throw new Error("interactive terminal is unavailable");
       const terminalSession = terminalRegistry.registerViewer(input.id, input);
-      publishTerminalViewer(terminalSession, input.viewerID, "registered", input.kind);
+      publishTerminalViewer(
+        terminalSession,
+        input.viewerID,
+        "registered",
+        input.kind,
+      );
       return terminalSession;
     },
     async terminalViewerHeartbeat(input) {
       await ready;
-      if (!terminalRegistry) throw new Error("interactive terminal is unavailable");
+      if (!terminalRegistry)
+        throw new Error("interactive terminal is unavailable");
       return terminalRegistry.heartbeatViewer(input.id, input.viewerID);
     },
     async terminalViewerControl(input) {
       await ready;
-      if (!terminalRegistry) throw new Error("interactive terminal is unavailable");
+      if (!terminalRegistry)
+        throw new Error("interactive terminal is unavailable");
       const terminalSession =
         input.action === "takeover"
           ? terminalRegistry.takeoverViewer(input.id, input.viewerID)
@@ -1938,7 +1977,8 @@ export function createRealRuntimeClient(
     },
     async terminalViewerWrite(input) {
       await ready;
-      if (!terminalRegistry) throw new Error("interactive terminal is unavailable");
+      if (!terminalRegistry)
+        throw new Error("interactive terminal is unavailable");
       const terminalSession = await terminalRegistry.viewerWrite(
         input.id,
         input.viewerID,
@@ -1954,7 +1994,8 @@ export function createRealRuntimeClient(
     },
     async terminalViewerResize(input) {
       await ready;
-      if (!terminalRegistry) throw new Error("interactive terminal is unavailable");
+      if (!terminalRegistry)
+        throw new Error("interactive terminal is unavailable");
       const terminalSession = await terminalRegistry.viewerResize(
         input.id,
         input.viewerID,
@@ -1966,7 +2007,8 @@ export function createRealRuntimeClient(
     },
     async terminalScrollback(input) {
       await ready;
-      if (!terminalRegistry) throw new Error("interactive terminal is unavailable");
+      if (!terminalRegistry)
+        throw new Error("interactive terminal is unavailable");
       return terminalRegistry.scrollback(input.id, input);
     },
     async terminalWrite(input) {
@@ -2269,7 +2311,7 @@ export function createRealRuntimeClient(
     lastSubmission() {
       return lastSubmitted;
     },
-    constitutionRules() {
+    async constitutionRules() {
       if (!session) return [];
       return projectedConstitutionRules(session.events).map((r) => ({
         ruleID: r.ruleID,
@@ -2281,7 +2323,7 @@ export function createRealRuntimeClient(
         overridePolicy: r.overridePolicy,
       }));
     },
-    decisionRecords() {
+    async decisionRecords() {
       if (!session) return [];
       return projectedDecisionRecords(session.events).map((r) => ({
         decision: r.decision,
@@ -2291,7 +2333,7 @@ export function createRealRuntimeClient(
         linkedConstraints: r.linkedConstraints ?? [],
       }));
     },
-    evidenceRecords() {
+    async evidenceRecords() {
       if (!session) return [];
       return projectedEvidenceRecords(session.events).map((r) => ({
         taskID: r.taskID,
@@ -2300,11 +2342,11 @@ export function createRealRuntimeClient(
         knownGaps: r.knownGaps ?? [],
       }));
     },
-    sessionSnapshot() {
+    async sessionSnapshot() {
       if (!session) return undefined;
       return latestSessionSnapshot(session.events);
     },
-    driftFindings() {
+    async driftFindings() {
       if (!session) return [];
       return projectedDriftFindings(session.events).map((f) => ({
         findingID: f.findingID,
@@ -2313,10 +2355,10 @@ export function createRealRuntimeClient(
         originalObjective: f.originalObjective,
         currentActivity: f.currentActivity,
         evidence: f.evidence,
-        status: f.status ?? "open",
+        status: "open",
       }));
     },
-    registeredTools() {
+    async registeredTools() {
       if (!session) return [];
       return projectedCanonicalTools(session.events).map((t) => ({
         name: t.name,
@@ -2327,7 +2369,7 @@ export function createRealRuntimeClient(
         requiresApproval: t.requiresApproval,
       }));
     },
-    capabilities() {
+    async capabilities() {
       if (!capabilityRegistry) return [];
       return capabilityRegistry.list().map((r) => ({
         id: r.id,
@@ -2337,7 +2379,7 @@ export function createRealRuntimeClient(
         grants: r.grants,
       }));
     },
-    workGraphNodes() {
+    async workGraphNodes() {
       if (!session) return [];
       return projectedWorkGraphNodes(session.events).map((r) => ({
         nodeID: r.nodeID,
@@ -2347,7 +2389,7 @@ export function createRealRuntimeClient(
         target: r.target,
       }));
     },
-    workGraphEdges() {
+    async workGraphEdges() {
       if (!session) return [];
       return projectedWorkGraphEdges(session.events).map((r) => ({
         sourceID: r.sourceID,
@@ -3265,14 +3307,6 @@ export function createRealRuntimeClient(
     }
     return messages;
   }
-
-  /** Checks applicable constitution rules and emits `constitution.check` events. */
-  /** Hardcoded dangerous shell patterns that are always blocked. */
-  const DANGEROUS_SHELL_PATTERNS = [
-    { pattern: /pkill\s+-f\s+wezterm-mux-server/i, ruleID: "C-TERM-001", statement: "禁止直接杀掉 wezterm-mux-server" },
-    { pattern: /rm\s+-rf\s+\/run\/user\/\d+\/natalia/i, ruleID: "C-TERM-002", statement: "禁止删除 Natalia 运行时目录" },
-    { pattern: /rm\s+-rf\s+\/tmp\/natalia/i, ruleID: "C-TERM-003", statement: "禁止删除 Natalia 临时目录" },
-  ];
 
   /** Checks constitution rules and hardcoded dangerous patterns. Returns blocked reason or undefined. */
   function checkConstitutionForTool(

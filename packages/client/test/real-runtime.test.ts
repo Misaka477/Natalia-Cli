@@ -1170,7 +1170,9 @@ test("runtime executes canonical interactive Terminal tools on one native pane",
 });
 
 test("runtime exposes native Terminal pane management through RuntimeClient", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-terminal-management-runtime-"));
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-terminal-management-runtime-"),
+  );
   const events: RuntimeEvent[] = [];
   const client = createRealRuntimeClient({
     workspaceRoot: root,
@@ -2425,6 +2427,53 @@ test("real runtime client executes model tool calls with approval policy", async
           message.role === "tool" && message.content.includes("tool data"),
       ),
   ).toBe(true);
+});
+
+test("run_shell constitution checks allow ordinary cat commands", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-shell-cat-"));
+  await writeFile(join(root, "input.txt"), "shell data\n");
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_shell_cat",
+    permissionMode: "auto",
+    provider: {
+      provider: "scripted-shell-cat",
+      model: "scripted-shell-cat-model",
+      async *stream(request) {
+        if (!request.messages.some((message) => message.role === "tool")) {
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "call_cat",
+                name: "run_shell",
+                arguments: JSON.stringify({ command: "cat input.txt" }),
+              },
+            ],
+          };
+          yield { type: "done" as const };
+          return;
+        }
+        yield { type: "content" as const, text: "shell command completed" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+
+  await client.submit("cat input.txt");
+
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "tool.update",
+      name: "run_shell",
+      status: "succeeded",
+      result: expect.stringContaining("shell data"),
+    }),
+  );
+  expect(JSON.stringify(events)).not.toContain("DANGEROUS_SHELL_PATTERNS");
+  expect(JSON.stringify(events)).not.toContain("dangerous shell patterns");
 });
 
 test("real runtime requests a final response after exhausting tool steps", async () => {
