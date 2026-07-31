@@ -17,7 +17,6 @@ Commands are given for PowerShell and for bash. Run whichever matches your shell
 | Three `wezterm*` binaries (Natalia fork build)      | interactive terminals | `interactive_terminal_*` has no fallback, and a stock WezTerm cannot be used.                                                                       |
 | A provider credential                               | for live turns        | Any OpenAI-compatible, Anthropic, or Gemini key.                                                                                                    |
 | Chrome, Chromium, or Edge                           | optional              | `browser_screenshot` only. On Windows all three are discovered automatically and Edge ships with the OS.                                            |
-| Python 3.12+ and [uv](https://docs.astral.sh/uv/)   | only for kimi-cli     | kimi-cli is a separate program Natalia can drive inside a terminal pane.                                                                            |
 
 Install Bun:
 
@@ -290,15 +289,8 @@ know which one you want.
 
 Ask the agent to open an interactive terminal and it starts a WezTerm window
 driven through a mux server. Several sessions can be open at once, for example
-one running an editor and one running a REPL.
-
-For kimi-cli:
-
-```powershell
-uv tool install kimi-cli
-```
-
-Then ask the agent to open an interactive terminal running `kimi-cli`.
+one running an editor and one running a REPL. What runs inside a pane is up to
+you, and the agent can launch other interactive programs on request.
 
 If the first attempt reports a WezTerm timeout, retry once: the first mux server
 start pays a cold-start cost on Windows.

@@ -17,7 +17,6 @@
 | 三个 `wezterm*` 二进制（必须是 Natalia fork 构建）  | 交互式终端需要 | `interactive_terminal_*` 没有备选方案，且普通 WezTerm 不可用。                                               |
 | provider 凭据                                       | 真实对话需要   | 任意 OpenAI 兼容、Anthropic 或 Gemini 的 key。                                                               |
 | Chrome、Chromium 或 Edge                            | 可选           | 仅 `browser_screenshot` 使用。Windows 上三者都会被自动发现，且 Edge 随系统预装。                             |
-| Python 3.12+ 与 [uv](https://docs.astral.sh/uv/)    | 仅 kimi-cli    | kimi-cli 是独立程序，Natalia 在终端 pane 里驱动它。                                                          |
 
 安装 Bun：
 
@@ -270,7 +269,8 @@ Skill 也可以从 `.natalia/config.json` 的 `skills.urls` 声明的 URL 拉取
 ## 7. 交互式终端
 
 让 agent 打开交互式终端，它会启动一个由 mux 服务器驱动的 WezTerm 窗口。多个
-会话可以同时存在，比如一个跑编辑器、一个跑 REPL。当然还可以让 agent 启动别的agent框架例如kimi-cli。
+会话可以同时存在，比如一个跑编辑器、一个跑 REPL。终端 pane 里运行什么程序由
+你决定，agent 也可以按需启动其他交互式程序。
 
 如果第一次报 WezTerm 超时，重试一次即可：Windows 上首次启动 mux 服务器有冷启动
 开销。
