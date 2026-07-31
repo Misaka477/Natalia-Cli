@@ -14,7 +14,7 @@
 | --------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------ |
 | [Bun](https://bun.com/docs/installation) 1.3.x      | 是             | 整个运行时使用 `Bun.*` API，Node 不能替代。                                                                  |
 | [Git for Windows](https://git-scm.com/download/win) | 仅 Windows     | shell 工具、workflow、skill 脚本和 sandbox 都通过兼容 bash 的 shell 执行。缺少它这些工具会以明确的错误失败。 |
-| 三个 `wezterm*` 二进制                              | 交互式终端需要 | `interactive_terminal_*` 没有备选方案。                                                                      |
+| 三个 `wezterm*` 二进制（必须是 Natalia fork 构建）  | 交互式终端需要 | `interactive_terminal_*` 没有备选方案，且普通 WezTerm 不可用。                                               |
 | provider 凭据                                       | 真实对话需要   | 任意 OpenAI 兼容、Anthropic 或 Gemini 的 key。                                                               |
 | Chrome、Chromium 或 Edge                            | 可选           | 仅 `browser_screenshot` 使用。Windows 上三者都会被自动发现，且 Edge 随系统预装。                             |
 | Python 3.12+ 与 [uv](https://docs.astral.sh/uv/)    | 仅 kimi-cli    | kimi-cli 是独立程序，Natalia 在终端 pane 里驱动它。                                                          |
@@ -56,8 +56,9 @@ bun install
 > 却没有链接过去。改用 `bun install --backend copyfile`（仓库根目录），或者直接
 > 在 `apps\tui` 目录下执行 `bun install`。
 
-交互式终端还需要 WezTerm 的二进制文件，它们不在 git 里。自己构建，或从已有的
-机器上拷过来：
+交互式终端还需要 WezTerm 的二进制文件，**必须是 Natalia fork 的构建**——系统
+安装的普通 WezTerm 不可用：运行时不会去 `PATH` 里找它，而且只有打过补丁的
+GUI 才能参与输入所有权仲裁。构建 fork，或从已有二进制的机器上拷贝：
 
 ```powershell
 # 在 Linux 上交叉编译出 Windows 版
@@ -80,7 +81,8 @@ packages/native-terminal/wezterm/target/release/
 运行时按**仓库根下的固定相对路径**查找（基于模块位置解析，与当前目录无关），
 且三个二进制必须**在同一目录** —— mux server 和 GUI 都相对 `wezterm.exe`
 定位。如果你把二进制放到别处，三个要放在一起，并设置
-`NATALIA_WEZTERM_EXECUTABLE` 指向 `wezterm.exe` 的完整路径。
+`NATALIA_WEZTERM_EXECUTABLE` 指向 `wezterm.exe` 的完整路径。无论指向哪里，
+都必须是 **Natalia fork 的构建**，不能是普通 WezTerm。
 
 解压后验证一次：
 

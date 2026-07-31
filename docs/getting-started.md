@@ -14,7 +14,7 @@ Commands are given for PowerShell and for bash. Run whichever matches your shell
 | --------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [Bun](https://bun.com/docs/installation) 1.3.x      | yes                   | The whole runtime uses `Bun.*` APIs. Node is not a substitute.                                                                                      |
 | [Git for Windows](https://git-scm.com/download/win) | Windows only          | Shell tools, workflows, skill scripts, and the sandbox all run through a bash-compatible shell. Without it those tools fail with an explicit error. |
-| Three `wezterm*` binaries                           | interactive terminals | `interactive_terminal_*` has no fallback.                                                                                                           |
+| Three `wezterm*` binaries (Natalia fork build)      | interactive terminals | `interactive_terminal_*` has no fallback, and a stock WezTerm cannot be used.                                                                       |
 | A provider credential                               | for live turns        | Any OpenAI-compatible, Anthropic, or Gemini key.                                                                                                    |
 | Chrome, Chromium, or Edge                           | optional              | `browser_screenshot` only. On Windows all three are discovered automatically and Edge ships with the OS.                                            |
 | Python 3.12+ and [uv](https://docs.astral.sh/uv/)   | only for kimi-cli     | kimi-cli is a separate program Natalia can drive inside a terminal pane.                                                                            |
@@ -58,8 +58,11 @@ third-party dependencies (`@opentui/*`, `solid-js`, `zod`) do not.
 > Use `bun install --backend copyfile` from the repository root, or run
 > `bun install` from inside `apps\tui`.
 
-The interactive terminal also needs the WezTerm binaries. They are not in git.
-Build them, or copy them from a machine that has:
+The interactive terminal also needs the WezTerm binaries. **They must be the
+Natalia fork build** — a stock or system-installed WezTerm cannot be used: the
+runtime never falls back to `PATH`, and the patched GUI is the only one that
+participates in input ownership arbitration. Build the fork, or copy its
+binaries from a machine that has them:
 
 ```powershell
 # from Linux, cross-compiling for Windows
@@ -70,8 +73,8 @@ npm run native-terminal:build-wezterm:windows
 
 They land in `packages/native-terminal/wezterm/target/release/`.
 
-**From a Windows release archive** — the prebuilt binaries are included in the
-archive at their expected path, so nothing needs to be moved:
+**From a Windows release archive** — the prebuilt fork binaries are included in
+the archive at their expected path, so nothing needs to be moved:
 
 ```text
 packages/native-terminal/wezterm/target/release/
@@ -85,7 +88,8 @@ The runtime finds them at this **fixed path relative to the repository root**
 binaries must stay in the same directory — the mux server and GUI are located
 relative to `wezterm.exe`. If you place the binaries elsewhere, keep all three
 together and set `NATALIA_WEZTERM_EXECUTABLE` to the full path of
-`wezterm.exe`.
+`wezterm.exe`. Whatever you point it at must be a **Natalia fork build**, not a
+stock WezTerm.
 
 Verify once after unpacking:
 
