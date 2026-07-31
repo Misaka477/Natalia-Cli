@@ -41,6 +41,55 @@ No GPL, LGPL, or AGPL npm package was identified in the locked dependency tree a
 
 Before each release, run `npm run licenses:check`. It validates workspace license metadata and regenerates the machine-derived dependency inventory used by the release artifact.
 
+## Vendored Components
+
+Natalia vendors source trees that are compiled into its release artifacts and
+therefore must keep their copyright and license notices with every
+redistribution.
+
+### WezTerm (Natalia fork)
+
+The interactive terminal host is a patched fork of
+[WezTerm](https://github.com/wez/wezterm), vendored under
+`packages/native-terminal/wezterm` and pinned to upstream commit
+`76b606ec597a3c0263fa60321548637451c0a547`. The fork adds an authenticated
+input-claim exchange immediately before the pane write path (five files under
+`wezterm-gui/src/termwindow/`); the full fork metadata, including build
+commands, is recorded in `packages/native-terminal/wezterm-fork.json`.
+
+WezTerm is licensed under the MIT License:
+
+> MIT License
+>
+> Copyright (c) 2018-Present Wez Furlong
+>
+> Permission is hereby granted, free of charge, to any person obtaining a copy
+> of this software and associated documentation files (the "Software"), to deal
+> in the Software without restriction, including without limitation the rights
+> to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+> copies of the Software, and to permit persons to whom the Software is
+> furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in
+> all copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+> IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+> FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+> AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+> LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+> FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+> IN THE SOFTWARE.
+
+The upstream text lives at `packages/native-terminal/wezterm/LICENSE.md` and is
+preserved there.
+
+WezTerm bundles the `JetBrains Mono`, `Noto Color Emoji`, and `Roboto` fonts,
+and a `Symbols Nerd Font Mono` build limited to icon sets distributed under the
+OFL 1.1; the Pomicons set is excluded. Those fonts are distributed under the
+SIL Open Font License 1.1, whose text is included in the vendored tree under
+`packages/native-terminal/wezterm/assets/fonts`.
+
 ## System Components
 
 Natalia invokes or uses system/runtime components that are not incorporated into Natalia source code:

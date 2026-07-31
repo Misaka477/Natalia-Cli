@@ -2,6 +2,7 @@
   "name": "@natalia/capability",
   "version": "0.0.0-m8",
   "type": "module",
+  "license": "Apache-2.0",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "dependencies": {

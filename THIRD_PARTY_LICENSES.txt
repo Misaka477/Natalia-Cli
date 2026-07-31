@@ -267,7 +267,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ================================================================================
 @babel/core@7.28.0
 Declared license: MIT
-Source file: node_modules/.bun/@babel+plugin-syntax-typescript@7.29.7+6c39b2892b0950f6/node_modules/@babel/core/LICENSE
+Source file: node_modules/.bun/babel-preset-solid@1.9.12+7e6faa52b4981e79/node_modules/@babel/core/LICENSE
 ================================================================================
 MIT License
 
@@ -295,7 +295,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ================================================================================
 @babel/generator@7.29.7
 Declared license: MIT
-Source file: node_modules/.bun/@babel+generator@7.29.7/node_modules/@babel/generator/LICENSE
+Source file: node_modules/.bun/@babel+traverse@7.29.7/node_modules/@babel/generator/LICENSE
 ================================================================================
 MIT License
 
@@ -323,7 +323,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ================================================================================
 @babel/helper-annotate-as-pure@7.29.7
 Declared license: MIT
-Source file: node_modules/.bun/@babel+helper-create-class-features-plugin@7.29.7+6c39b2892b0950f6/node_modules/@babel/helper-annotate-as-pure/LICENSE
+Source file: node_modules/.bun/@babel+helper-annotate-as-pure@7.29.7/node_modules/@babel/helper-annotate-as-pure/LICENSE
 ================================================================================
 MIT License
 
@@ -379,7 +379,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ================================================================================
 @babel/helper-create-class-features-plugin@7.29.7
 Declared license: MIT
-Source file: node_modules/.bun/@babel+helper-create-class-features-plugin@7.29.7+6c39b2892b0950f6/node_modules/@babel/helper-create-class-features-plugin/LICENSE
+Source file: node_modules/.bun/@babel+plugin-transform-typescript@7.29.7+6c39b2892b0950f6/node_modules/@babel/helper-create-class-features-plugin/LICENSE
 ================================================================================
 MIT License
 
@@ -435,7 +435,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ================================================================================
 @babel/helper-member-expression-to-functions@7.29.7
 Declared license: MIT
-Source file: node_modules/.bun/@babel+helper-create-class-features-plugin@7.29.7+6c39b2892b0950f6/node_modules/@babel/helper-member-expression-to-functions/LICENSE
+Source file: node_modules/.bun/@babel+helper-member-expression-to-functions@7.29.7/node_modules/@babel/helper-member-expression-to-functions/LICENSE
 ================================================================================
 MIT License
 
@@ -519,7 +519,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ================================================================================
 @babel/helper-module-transforms@7.29.7
 Declared license: MIT
-Source file: node_modules/.bun/@babel+helper-module-transforms@7.29.7+6c39b2892b0950f6/node_modules/@babel/helper-module-transforms/LICENSE
+Source file: node_modules/.bun/@babel+plugin-transform-modules-commonjs@7.29.7+6c39b2892b0950f6/node_modules/@babel/helper-module-transforms/LICENSE
 ================================================================================
 MIT License
 
@@ -547,7 +547,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ================================================================================
 @babel/helper-optimise-call-expression@7.29.7
 Declared license: MIT
-Source file: node_modules/.bun/@babel+helper-create-class-features-plugin@7.29.7+6c39b2892b0950f6/node_modules/@babel/helper-optimise-call-expression/LICENSE
+Source file: node_modules/.bun/@babel+helper-optimise-call-expression@7.29.7/node_modules/@babel/helper-optimise-call-expression/LICENSE
 ================================================================================
 MIT License
 
@@ -575,7 +575,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ================================================================================
 @babel/helper-plugin-utils@7.29.7
 Declared license: MIT
-Source file: node_modules/.bun/@babel+plugin-syntax-typescript@7.29.7+6c39b2892b0950f6/node_modules/@babel/helper-plugin-utils/LICENSE
+Source file: node_modules/.bun/@babel+helper-plugin-utils@7.29.7/node_modules/@babel/helper-plugin-utils/LICENSE
 ================================================================================
 MIT License
 
@@ -603,7 +603,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ================================================================================
 @babel/helper-replace-supers@7.29.7
 Declared license: MIT
-Source file: node_modules/.bun/@babel+helper-create-class-features-plugin@7.29.7+6c39b2892b0950f6/node_modules/@babel/helper-replace-supers/LICENSE
+Source file: node_modules/.bun/@babel+helper-replace-supers@7.29.7+6c39b2892b0950f6/node_modules/@babel/helper-replace-supers/LICENSE
 ================================================================================
 MIT License
 
@@ -631,7 +631,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ================================================================================
 @babel/helper-skip-transparent-expression-wrappers@7.29.7
 Declared license: MIT
-Source file: node_modules/.bun/@babel+helper-create-class-features-plugin@7.29.7+6c39b2892b0950f6/node_modules/@babel/helper-skip-transparent-expression-wrappers/LICENSE
+Source file: node_modules/.bun/@babel+helper-skip-transparent-expression-wrappers@7.29.7/node_modules/@babel/helper-skip-transparent-expression-wrappers/LICENSE
 ================================================================================
 MIT License
 
@@ -687,7 +687,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ================================================================================
 @babel/helper-validator-identifier@7.29.7
 Declared license: MIT
-Source file: node_modules/.bun/@babel+helper-validator-identifier@7.29.7/node_modules/@babel/helper-validator-identifier/LICENSE
+Source file: node_modules/.bun/@babel+code-frame@7.29.7/node_modules/@babel/helper-validator-identifier/LICENSE
 ================================================================================
 MIT License
 
@@ -772,7 +772,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ================================================================================
 @babel/parser@7.29.7
 Declared license: MIT
-Source file: node_modules/.bun/@babel+generator@7.29.7/node_modules/@babel/parser/LICENSE
+Source file: node_modules/.bun/@babel+traverse@7.29.7/node_modules/@babel/parser/LICENSE
 ================================================================================
 Copyright (C) 2012-2014 by various contributors (see AUTHORS)
 
@@ -881,7 +881,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ================================================================================
 @babel/plugin-transform-typescript@7.29.7
 Declared license: MIT
-Source file: node_modules/.bun/@babel+plugin-transform-typescript@7.29.7+6c39b2892b0950f6/node_modules/@babel/plugin-transform-typescript/LICENSE
+Source file: node_modules/.bun/@babel+preset-typescript@7.27.1+6c39b2892b0950f6/node_modules/@babel/plugin-transform-typescript/LICENSE
 ================================================================================
 MIT License
 
@@ -909,7 +909,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ================================================================================
 @babel/preset-typescript@7.27.1
 Declared license: MIT
-Source file: node_modules/.bun/@opentui+solid@0.4.3+f38a454781f02d2a/node_modules/@babel/preset-typescript/LICENSE
+Source file: node_modules/.bun/@babel+preset-typescript@7.27.1+6c39b2892b0950f6/node_modules/@babel/preset-typescript/LICENSE
 ================================================================================
 MIT License
 
@@ -937,7 +937,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ================================================================================
 @babel/template@7.29.7
 Declared license: MIT
-Source file: node_modules/.bun/@babel+template@7.29.7/node_modules/@babel/template/LICENSE
+Source file: node_modules/.bun/@babel+traverse@7.29.7/node_modules/@babel/template/LICENSE
 ================================================================================
 MIT License
 
@@ -965,7 +965,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ================================================================================
 @babel/traverse@7.29.7
 Declared license: MIT
-Source file: node_modules/.bun/@babel+helper-create-class-features-plugin@7.29.7+6c39b2892b0950f6/node_modules/@babel/traverse/LICENSE
+Source file: node_modules/.bun/@babel+helper-skip-transparent-expression-wrappers@7.29.7/node_modules/@babel/traverse/LICENSE
 ================================================================================
 MIT License
 
@@ -993,7 +993,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ================================================================================
 @babel/types@7.29.7
 Declared license: MIT
-Source file: node_modules/.bun/@babel+helper-skip-transparent-expression-wrappers@7.29.7/node_modules/@babel/types/LICENSE
+Source file: node_modules/.bun/babel-plugin-jsx-dom-expressions@0.40.7+6c39b2892b0950f6/node_modules/@babel/types/LICENSE
 ================================================================================
 MIT License
 
@@ -1021,7 +1021,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ================================================================================
 @jridgewell/gen-mapping@0.3.13
 Declared license: MIT
-Source file: node_modules/.bun/@babel+generator@7.29.7/node_modules/@jridgewell/gen-mapping/LICENSE
+Source file: node_modules/.bun/@ampproject+remapping@2.3.0/node_modules/@jridgewell/gen-mapping/LICENSE
 ================================================================================
 Copyright 2024 Justin Ridgewell <justin@ridgewell.name>
 
@@ -1096,7 +1096,7 @@ SOFTWARE.
 ================================================================================
 @jridgewell/trace-mapping@0.3.31
 Declared license: MIT
-Source file: node_modules/.bun/@babel+generator@7.29.7/node_modules/@jridgewell/trace-mapping/LICENSE
+Source file: node_modules/.bun/@ampproject+remapping@2.3.0/node_modules/@jridgewell/trace-mapping/LICENSE
 ================================================================================
 Copyright 2024 Justin Ridgewell <justin@ridgewell.name>
 
@@ -1121,7 +1121,7 @@ SOFTWARE.
 ================================================================================
 @opentui/core-linux-x64-musl@0.4.3
 Declared license: MIT
-Source file: node_modules/.bun/@opentui+core-linux-x64-musl@0.4.3/node_modules/@opentui/core-linux-x64-musl/LICENSE
+Source file: node_modules/.bun/@opentui+core@0.4.3+2240c214a0f33214/node_modules/@opentui/core-linux-x64-musl/LICENSE
 ================================================================================
 MIT License
 
@@ -1148,7 +1148,7 @@ SOFTWARE.
 ================================================================================
 @opentui/core-linux-x64@0.4.3
 Declared license: MIT
-Source file: node_modules/.bun/@opentui+core-linux-x64@0.4.3/node_modules/@opentui/core-linux-x64/LICENSE
+Source file: node_modules/.bun/@opentui+core@0.4.3+2240c214a0f33214/node_modules/@opentui/core-linux-x64/LICENSE
 ================================================================================
 MIT License
 
@@ -1175,7 +1175,7 @@ SOFTWARE.
 ================================================================================
 @opentui/core@0.4.3
 Declared license: MIT
-Source file: node_modules/.bun/@opentui+keymap@0.4.3+18d0ca6a630fda9b/node_modules/@opentui/core/LICENSE
+Source file: node_modules/.bun/@opentui+solid@0.4.3+f38a454781f02d2a/node_modules/@opentui/core/LICENSE
 ================================================================================
 MIT License
 
@@ -1229,7 +1229,7 @@ SOFTWARE.
 ================================================================================
 @opentui/solid@0.4.3
 Declared license: MIT
-Source file: node_modules/.bun/@opentui+keymap@0.4.3+18d0ca6a630fda9b/node_modules/@opentui/solid/LICENSE
+Source file: node_modules/.bun/@opentui+solid@0.4.3+f38a454781f02d2a/node_modules/@opentui/solid/LICENSE
 ================================================================================
 MIT License
 
@@ -1308,7 +1308,7 @@ MIT License
     SOFTWARE
 
 ================================================================================
-@types/node@26.1.1
+@types/node@26.1.2
 Declared license: MIT
 Source file: node_modules/.bun/bun-types@1.3.13/node_modules/@types/node/LICENSE
 ================================================================================
@@ -1465,9 +1465,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-baseline-browser-mapping@2.10.43
+baseline-browser-mapping@2.11.6
 Declared license: Apache-2.0
-Source file: node_modules/.bun/baseline-browser-mapping@2.10.43/node_modules/baseline-browser-mapping/LICENSE.txt
+Source file: node_modules/.bun/baseline-browser-mapping@2.11.6/node_modules/baseline-browser-mapping/LICENSE.txt
 ================================================================================
 Apache License
                            Version 2.0, January 2004
@@ -1672,9 +1672,9 @@ Apache License
    limitations under the License.
 
 ================================================================================
-brace-expansion@2.1.2
+brace-expansion@2.1.3
 Declared license: MIT
-Source file: node_modules/.bun/brace-expansion@2.1.2/node_modules/brace-expansion/LICENSE
+Source file: node_modules/.bun/brace-expansion@2.1.3/node_modules/brace-expansion/LICENSE
 ================================================================================
 MIT License
 
@@ -1699,9 +1699,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-browserslist@4.28.6
+browserslist@4.28.7
 Declared license: MIT
-Source file: node_modules/.bun/browserslist@4.28.6+f74c091bff56db2b/node_modules/browserslist/LICENSE
+Source file: node_modules/.bun/browserslist@4.28.7+b240d11157f57a95/node_modules/browserslist/LICENSE
 ================================================================================
 The MIT License (MIT)
 
@@ -2260,9 +2260,9 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ================================================================================
-electron-to-chromium@1.5.392
+electron-to-chromium@1.5.398
 Declared license: ISC
-Source file: node_modules/.bun/electron-to-chromium@1.5.392/node_modules/electron-to-chromium/LICENSE
+Source file: node_modules/.bun/electron-to-chromium@1.5.398/node_modules/electron-to-chromium/LICENSE
 ================================================================================
 Copyright 2018 Kilian Valkhof
 
@@ -3287,9 +3287,9 @@ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR
 IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ================================================================================
-seroval-plugins@1.5.5
+seroval-plugins@1.5.6
 Declared license: MIT
-Source file: node_modules/.bun/seroval-plugins@1.5.5+ad354609f191bfce/node_modules/seroval-plugins/LICENSE
+Source file: node_modules/.bun/seroval-plugins@1.5.6+0400ac0ed5047ca5/node_modules/seroval-plugins/LICENSE
 ================================================================================
 MIT License Copyright (c) 2025 Alexis Munsayac <alexis.munsayac@gmail.com>
 
@@ -3300,9 +3300,9 @@ The above copyright notice and this permission notice (including the next paragr
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ================================================================================
-seroval@1.5.5
+seroval@1.5.6
 Declared license: MIT
-Source file: node_modules/.bun/seroval@1.5.5/node_modules/seroval/LICENSE
+Source file: node_modules/.bun/seroval@1.5.6/node_modules/seroval/LICENSE
 ================================================================================
 MIT License Copyright (c) 2025 Alexis Munsayac <alexis.munsayac@gmail.com>
 
@@ -3487,7 +3487,7 @@ SOFTWARE.
 ================================================================================
 update-browserslist-db@1.2.3
 Declared license: MIT
-Source file: node_modules/.bun/update-browserslist-db@1.2.3+f74c091bff56db2b/node_modules/update-browserslist-db/LICENSE
+Source file: node_modules/.bun/update-browserslist-db@1.2.3+b240d11157f57a95/node_modules/update-browserslist-db/LICENSE
 ================================================================================
 The MIT License (MIT)
 
