@@ -1,6 +1,7 @@
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { join, resolve } from "node:path";
+import { profileShellCommand } from "@natalia/platform";
 import type {
   WorkflowDocument,
   WorkflowEvent,
@@ -326,15 +327,14 @@ export class WorkflowRuntime {
     context: WorkflowExecutionContext,
   ) {
     return await new Promise<string>((resolvePromise, reject) => {
-      const child = spawn(
-        process.env.SHELL ?? "/usr/bin/bash",
-        ["-lc", step.command],
-        {
-          cwd: context.workspaceRoot,
-          stdio: ["ignore", "pipe", "pipe"],
-          env: safeWorkflowEnv(process.env),
-        },
-      );
+      const shell = profileShellCommand(step.command, {
+        posixShell: process.env.SHELL ?? "/usr/bin/bash",
+      });
+      const child = spawn(shell.executable, shell.args, {
+        cwd: context.workspaceRoot,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: safeWorkflowEnv(process.env),
+      });
       const abort = () => child.kill("SIGTERM");
       context.signal?.addEventListener("abort", abort, { once: true });
       const timer = step.timeoutMs

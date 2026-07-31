@@ -4,6 +4,11 @@ import { readFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { platform } from "node:os";
 import { dirname, join } from "node:path";
 import { Worker } from "node:worker_threads";
+import {
+  executableName,
+  isWindows,
+  profileShellCommand,
+} from "@natalia/platform";
 
 export {
   NATIVE_INPUT_BROKER_VERSION,
@@ -50,7 +55,12 @@ export type NativeTerminalHost = {
   resetMuxReady?(): void;
   read(
     paneID: number,
-    options?: { maxLines?: number; startLine?: number; endLine?: number; format?: "text" | "selection" | "highlights" },
+    options?: {
+      maxLines?: number;
+      startLine?: number;
+      endLine?: number;
+      format?: "text" | "selection" | "highlights";
+    },
   ): Promise<string>;
   write(paneID: number, data: string): Promise<void>;
   open?(
@@ -120,9 +130,30 @@ export function resolveNataliaWezTermForkExecutable(
   const os = input.os ?? platform();
   const executable = join(
     input.buildDir ?? nativeTerminalForkBuildDir(),
-    os === "win32" ? "wezterm.exe" : "wezterm",
+    executableName("wezterm", os),
   );
   return existsSync(executable) ? executable : undefined;
+}
+
+/**
+ * Readiness budget for a Windows mux server. It is far larger than the POSIX
+ * one because the server is not daemonized there, so first-run costs such as
+ * Defender inspecting a freshly written executable land inside this window.
+ */
+const WINDOWS_MUX_READY_TIMEOUT_MS = 120_000;
+
+/**
+ * Argument vector for the shell that hosts a managed pane's command. A
+ * bash `-lc` shell is used on every platform so that the command text, its
+ * quoting, and its profile semantics are identical for the model regardless of
+ * host. Windows resolves this to the Git for Windows bash.
+ */
+export function nativeTerminalPaneCommand(
+  command: string,
+  os?: NodeJS.Platform,
+): string[] {
+  const shell = profileShellCommand(command, { os, posixShell: "/bin/sh" });
+  return [shell.executable, ...shell.args];
 }
 
 export function createWezTermHost(
@@ -168,7 +199,10 @@ export function createWezTermHost(
   const launch = input.launch ?? launchWezTermGUI;
   const configFile = input.nativeDomain?.configFile ?? input.configFile;
   const global = configFile ? ["--config-file", configFile] : [];
-  const muxServer = join(dirname(executable), "wezterm-mux-server");
+  const muxServer = join(
+    dirname(executable),
+    executableName("wezterm-mux-server"),
+  );
   const privateEnvironment = {
     ...input.environment,
     ...(input.muxRuntimeDir ? { XDG_RUNTIME_DIR: input.muxRuntimeDir } : {}),
@@ -179,8 +213,23 @@ export function createWezTermHost(
     if (!input.environment?.WEZTERM_UNIX_SOCKET) return;
     muxReady ??= (async () => {
       if (await muxIsReady()) return;
-      const result = await measure("native.mux.start", () =>
-        withTimeout(
+      await measure("native.mux.start", async () => {
+        if (isWindows()) {
+          // `--daemonize` relies on a DETACHED_PROCESS create that can leave the
+          // parent waiting on the cross-compiled binary, so the server is
+          // spawned directly and its readiness is polled instead. Its streams
+          // are discarded because the process outlives this call.
+          Bun.spawn([muxServer, ...global], {
+            env: { ...process.env, ...privateEnvironment },
+            detached: true,
+            stdout: "ignore",
+            stderr: "ignore",
+            stdin: "ignore",
+          }).unref();
+          await waitForMux(WINDOWS_MUX_READY_TIMEOUT_MS, 200);
+          return;
+        }
+        const result = await withTimeout(
           run(
             muxServer,
             [...global, "--daemonize"],
@@ -190,25 +239,28 @@ export function createWezTermHost(
           ),
           timeoutMs,
           ["wezterm-mux-server", "--daemonize"],
-        ),
-      );
-      // A concurrent session may have won the pid lock between the readiness
-      // probe and spawn. Reuse that mux only when it serves our private socket.
-      if (result.exitCode !== 0 && !(await muxIsReady()))
-        throw new Error(`WezTerm mux server failed: ${result.stderr.trim()}`);
-      const deadline = performance.now() + timeoutMs;
-      while (performance.now() < deadline) {
-        if (await muxIsReady()) return;
-        await Bun.sleep(50);
-      }
-      throw new Error(
-        `WezTerm mux server did not become ready within ${timeoutMs}ms`,
-      );
+        );
+        // A concurrent session may have won the pid lock between the readiness
+        // probe and spawn. Reuse that mux only when it serves our private socket.
+        if (result.exitCode !== 0 && !(await muxIsReady()))
+          throw new Error(`WezTerm mux server failed: ${result.stderr.trim()}`);
+        await waitForMux(timeoutMs, 50);
+      });
     })().catch((error) => {
       muxReady = undefined;
       throw error;
     });
     await muxReady;
+  };
+  const waitForMux = async (budgetMs: number, intervalMs: number) => {
+    const deadline = performance.now() + budgetMs;
+    while (performance.now() < deadline) {
+      if (await muxIsReady()) return;
+      await Bun.sleep(intervalMs);
+    }
+    throw new Error(
+      `WezTerm mux server did not become ready within ${budgetMs}ms`,
+    );
   };
   command = async (args: string[], stdin?: string) => {
     const cliArgs =
@@ -281,7 +333,14 @@ export function createWezTermHost(
       await withTimeout(
         run(
           executable,
-          ["cli", "--no-auto-start", "--prefer-mux", "list", "--format", "json"],
+          [
+            "cli",
+            "--no-auto-start",
+            "--prefer-mux",
+            "list",
+            "--format",
+            "json",
+          ],
           undefined,
           privateEnvironment,
           2000,
@@ -331,10 +390,20 @@ export function createWezTermHost(
     },
     async read(paneID, options = {}) {
       if (options.format === "selection") {
-        return await command(["cli", "get-selection", "--pane-id", String(paneID)]);
+        return await command([
+          "cli",
+          "get-selection",
+          "--pane-id",
+          String(paneID),
+        ]);
       }
       if (options.format === "highlights") {
-        return await command(["cli", "get-highlights", "--pane-id", String(paneID)]);
+        return await command([
+          "cli",
+          "get-highlights",
+          "--pane-id",
+          String(paneID),
+        ]);
       }
       const maxLines = Math.max(1, Math.min(options.maxLines ?? 200, 2000));
       const args = ["cli", "get-text", "--pane-id", String(paneID)];
@@ -478,17 +547,37 @@ export function createWezTermHost(
         )
           throw error;
       } finally {
-        await rm(input.muxRuntimeDir, { recursive: true, force: true });
+        // The mux server still holds its socket, pid, and log files for a
+        // moment after termination. POSIX unlinks them regardless; Windows
+        // refuses while any handle is open, so retry briefly instead of
+        // leaving a runtime directory behind on every dispose.
+        for (let attempt = 0; ; attempt += 1) {
+          try {
+            await rm(input.muxRuntimeDir, { recursive: true, force: true });
+            break;
+          } catch (error) {
+            const code = (error as NodeJS.ErrnoException).code;
+            if ((code !== "EBUSY" && code !== "EPERM") || attempt >= 10) break;
+            await Bun.sleep(100);
+          }
+        }
       }
     },
     async isClientAttached(paneID) {
       try {
-        const output = await command(["cli", "list-clients", "--format", "json"]);
+        const output = await command([
+          "cli",
+          "list-clients",
+          "--format",
+          "json",
+        ]);
         const clients = JSON.parse(output) as unknown;
         if (!Array.isArray(clients)) return false;
         return clients.some(
           (client: Record<string, unknown>) =>
-            client && typeof client.focused_pane_id === "number" && client.focused_pane_id === paneID,
+            client &&
+            typeof client.focused_pane_id === "number" &&
+            client.focused_pane_id === paneID,
         );
       } catch {
         return false;
@@ -502,7 +591,12 @@ export function createWezTermHost(
     },
     async listClients() {
       try {
-        const output = await command(["cli", "list-clients", "--format", "json"]);
+        const output = await command([
+          "cli",
+          "list-clients",
+          "--format",
+          "json",
+        ]);
         const clients = JSON.parse(output) as unknown;
         if (!Array.isArray(clients)) return [];
         return clients
@@ -524,9 +618,13 @@ export async function writeWezTermNativeDomainConfig(input: {
   directory: string;
   socketPath: string;
   name?: string;
+  os?: NodeJS.Platform;
 }) {
   const name = input.name ?? "natalia";
   const configFile = join(input.directory, "wezterm-native-domain.lua");
+  const fonts = monospaceFontFallback(input.os)
+    .map((font) => `    ${JSON.stringify(font)},`)
+    .join("\n");
   await writeFile(
     configFile,
     `local wezterm = require 'wezterm'
@@ -542,16 +640,36 @@ return {
   -- Avoid the asynchronous system fallback path for CJK text. The latter can
   -- briefly render Last Resort/tofu glyphs while fontconfig resolves fonts.
   font = wezterm.font_with_fallback {
-    'JetBrains Mono',
-    'Noto Sans Mono CJK SC',
-    'Noto Sans CJK SC',
-    'Noto Color Emoji',
+${fonts}
   },
 }
 `,
     { mode: 0o600 },
   );
   return { name, socketPath: input.socketPath, configFile };
+}
+
+/**
+ * Explicit monospace fallback chain per platform. The CJK families differ
+ * between distributions and Windows, and an absent family would otherwise be
+ * resolved as tofu rather than falling through to the next candidate.
+ */
+export function monospaceFontFallback(os?: NodeJS.Platform): string[] {
+  if (isWindows(os))
+    return [
+      "JetBrains Mono",
+      "Cascadia Mono",
+      "Consolas",
+      "Microsoft YaHei Mono",
+      "Microsoft YaHei",
+      "Segoe UI Emoji",
+    ];
+  return [
+    "JetBrains Mono",
+    "Noto Sans Mono CJK SC",
+    "Noto Sans CJK SC",
+    "Noto Color Emoji",
+  ];
 }
 
 async function withTimeout<T>(
@@ -659,10 +777,7 @@ export class NativeTerminalRegistry {
     try {
       pane = await this.host.spawn({
         cwd: input.cwd,
-        command:
-          platform() === "win32"
-            ? ["cmd.exe", "/d", "/s", "/c", input.command]
-            : ["/bin/sh", "-lc", input.command],
+        command: nativeTerminalPaneCommand(input.command),
         workspace: "natalia",
         muxWindowID: this.hub?.muxWindowID,
       });
@@ -672,10 +787,7 @@ export class NativeTerminalRegistry {
         this.hub = undefined;
         pane = await this.host.spawn({
           cwd: input.cwd,
-          command:
-            platform() === "win32"
-              ? ["cmd.exe", "/d", "/s", "/c", input.command]
-              : ["/bin/sh", "-lc", input.command],
+          command: nativeTerminalPaneCommand(input.command),
           workspace: "natalia",
           muxWindowID: undefined,
         });
@@ -709,6 +821,13 @@ export class NativeTerminalRegistry {
       else {
         session.windowID = this.hub.muxWindowID;
         session.muxWindowID = this.hub.muxWindowID;
+        // Kill stray panes (e.g. mux default pane) in the hub window that
+        // are not managed by any session. The new session is already in
+        // this.sessions so its paneID is in the known set and won't be killed.
+        const known = new Set(this.sessions.values().map((s) => s.paneID));
+        for (const p of await this.host.list())
+          if (!known.has(p.pane_id) && p.window_id === this.hub.muxWindowID)
+            await this.host.stop(p.pane_id).catch(() => {});
         await this.host.focus(session.paneID);
       }
     }
@@ -742,15 +861,18 @@ export class NativeTerminalRegistry {
           tabID: (raw as Record<string, unknown>).tabID as number,
           command: ((raw as Record<string, unknown>).command as string) ?? "",
           cwd: ((raw as Record<string, unknown>).cwd as string) ?? "",
-          startedAt: ((raw as Record<string, unknown>).startedAt as string) ??
+          startedAt:
+            ((raw as Record<string, unknown>).startedAt as string) ??
             new Date().toISOString(),
           revision: 0,
-          inputOwner: ((raw as Record<string, unknown>).inputOwner as NativeTerminalSession["inputOwner"]) ??
-            "model",
+          inputOwner:
+            ((raw as Record<string, unknown>)
+              .inputOwner as NativeTerminalSession["inputOwner"]) ?? "model",
           geometryOwner: "human",
           secureInput: Boolean((raw as Record<string, unknown>).secureInput),
-          status: ((raw as Record<string, unknown>).status as NativeTerminalSession["status"]) ??
-            "exited",
+          status:
+            ((raw as Record<string, unknown>)
+              .status as NativeTerminalSession["status"]) ?? "exited",
           attached: Boolean((raw as Record<string, unknown>).attached),
           cursor_x: (raw as Record<string, unknown>).cursor_x as
             | number
@@ -841,7 +963,9 @@ export class NativeTerminalRegistry {
     }
     const paneMap = new Map(panes.map((pane) => [pane.pane_id, pane]));
     const attached = new Set(
-      (await this.host.listClients?.())?.map((client) => client.focused_pane_id) ?? [],
+      (await this.host.listClients?.())?.map(
+        (client) => client.focused_pane_id,
+      ) ?? [],
     );
     this.lastReconcileAt = performance.now();
     for (const session of this.sessions.values()) {
@@ -969,7 +1093,9 @@ export class NativeTerminalRegistry {
 
   private async cleanupStalePanes() {
     if (!this.host.list || !this.host.stop) return;
-    const known = new Set(this.sessions.values().map((session) => session.paneID));
+    const known = new Set(
+      this.sessions.values().map((session) => session.paneID),
+    );
     const hubWindowID = this.hub?.muxWindowID;
     for (const pane of await this.host.list()) {
       if (!known.has(pane.pane_id) && pane.window_id !== hubWindowID) {
@@ -1249,12 +1375,23 @@ export class NativeTerminalRegistry {
       ]);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      if (/pane.*(?:not found|doesn.t exist|unavailable)|window.*(?:not found|doesn.t exist)/i.test(msg)) {
+      if (
+        /pane.*(?:not found|doesn.t exist|unavailable)|window.*(?:not found|doesn.t exist)/i.test(
+          msg,
+        )
+      ) {
         session.status = "exited";
         session.attached = false;
         session.revision += 1;
         this.notifyRevision(session.id);
-        return { text: "", cursorX: 0, cursorY: 0, rows: 1, cols: 80, highlightRanges: [] };
+        return {
+          text: "",
+          cursorX: 0,
+          cursorY: 0,
+          rows: 1,
+          cols: 80,
+          highlightRanges: [],
+        };
       }
       throw error;
     }
@@ -1263,10 +1400,21 @@ export class NativeTerminalRegistry {
       session.revision += 1;
       this.notifyRevision(session.id);
     }
-    const highlightRanges: Array<{ startRow: number; startCol: number; endRow: number; endCol: number }> = [];
+    const highlightRanges: Array<{
+      startRow: number;
+      startCol: number;
+      endRow: number;
+      endCol: number;
+    }> = [];
     try {
-      const parsedSelection = JSON.parse(selectionJson) as Record<string, unknown>;
-      const selection = parsedSelection.selection as Record<string, unknown> | null;
+      const parsedSelection = JSON.parse(selectionJson) as Record<
+        string,
+        unknown
+      >;
+      const selection = parsedSelection.selection as Record<
+        string,
+        unknown
+      > | null;
       if (selection && Array.isArray(selection.ranges)) {
         for (const r of selection.ranges as Array<Record<string, unknown>>) {
           highlightRanges.push({
@@ -1281,8 +1429,14 @@ export class NativeTerminalRegistry {
       // ignore parse errors
     }
     try {
-      const parsedHighlights = JSON.parse(highlightsJson) as Record<string, unknown>;
-      const highlights = parsedHighlights.highlights as Record<string, unknown> | null;
+      const parsedHighlights = JSON.parse(highlightsJson) as Record<
+        string,
+        unknown
+      >;
+      const highlights = parsedHighlights.highlights as Record<
+        string,
+        unknown
+      > | null;
       if (highlights && Array.isArray(highlights.ranges)) {
         for (const r of highlights.ranges as Array<Record<string, unknown>>) {
           highlightRanges.push({

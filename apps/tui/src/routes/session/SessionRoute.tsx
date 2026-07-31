@@ -54,8 +54,6 @@ import { InlineInteractiveBlock } from "./interactive-rows";
 import { ModelTerminalPane } from "./terminal-pane";
 import { MessageBlockView } from "./message-rows";
 
-
-
 export function SessionRoute(props: {
   scrollRef?: { current?: any };
   terminalScrollRef?: { current?: any };
@@ -99,13 +97,16 @@ export function SessionRoute(props: {
     const isAtTop = scrollTop <= 1;
     if (isAtTop && !wasAtTop) void props.onLoadOlderHistory?.();
     wasAtTop = isAtTop;
-    const range = virtualizer.range(scrollTop, viewportHeight());
-    const isAtBottom =
-      scrollTop + viewportHeight() >= range.total - 1;
-    if (isAtBottom) props.onFollowChange?.(true);
-    if (props.followBottom && !isAtBottom && range.total > observedTotal)
+    // Bottom detection must use the scrollbox's real geometry. range.total is
+    // in estimate space and drifts from reality as tall tool blocks render,
+    // which would strand follow mode off while visually at the bottom.
+    const isAtBottom = atRealBottom();
+    if (isAtBottom) {
       props.onFollowChange?.(true);
-    observedTotal = range.total;
+    } else if (props.followBottom) {
+      props.onFollowChange?.(false);
+    }
+    observedTotal = virtualizer.range(scrollTop, viewportHeight()).total;
     if (isAtBottom && !wasAtBottom) void props.onLoadNewerHistory?.();
     wasAtBottom = isAtBottom;
     updateRange();
@@ -113,6 +114,20 @@ export function SessionRoute(props: {
   onCleanup(() => clearInterval(scrollObserver));
 
   const viewportHeight = () => timelineScroll?.viewport?.height ?? 1;
+  const atRealBottom = () => {
+    if (!timelineScroll || timelineScroll.isDestroyed) return true;
+    const height = timelineScroll.scrollHeight ?? 0;
+    const view = viewportHeight();
+    if (height <= view) return true;
+    return (timelineScroll.scrollTop ?? 0) + view >= height - 1;
+  };
+  // Overshoot and let the scrollbar clamp. Landing on an exactly computed
+  // target that is even one line short flips opentui's _hasManualScroll and
+  // permanently disengages stickyScroll for all later content growth.
+  const scrollToRealBottom = () => {
+    if (!timelineScroll || timelineScroll.isDestroyed) return;
+    timelineScroll.scrollTo(timelineScroll.scrollHeight ?? 0);
+  };
   const updateRange = () => {
     if (!timelineScroll || timelineScroll.isDestroyed) return;
     setTimelineRange(
@@ -132,30 +147,50 @@ export function SessionRoute(props: {
       }
       let adjustment = 0;
       let anyChanged = false;
-      const oldTotal = virtualizer.range(timelineScroll.scrollTop ?? 0, viewportHeight()).total;
+      // Sample real geometry before measurement mutates the estimate model.
+      const wasNearBottom = props.followBottom && atRealBottom();
       for (const [key, element] of renderedGroups) {
         if (!element || element.isDestroyed) continue;
+        // A box laid out this frame reports 0, which is not nullish. Recording
+        // it as 1 line collapses total and makes every scroll target garbage
+        // until the next frame, so keep the existing estimate instead.
+        const height = element.height;
+        if (!height) continue;
         const measured = virtualizer.measure(
           key,
-          element.height ?? 1,
+          height,
           (timelineScroll.scrollTop ?? 0) + adjustment,
           viewportHeight(),
         );
         adjustment += measured.adjustment;
         if (measured.changed) anyChanged = true;
       }
-      const wasNearBottom = props.followBottom && (timelineScroll.scrollTop ?? 0) + viewportHeight() >= oldTotal - 1;
-      const newTop = props.followBottom && anyChanged && wasNearBottom
-        ? Math.max(0, virtualizer.range(timelineScroll.scrollTop ?? 0, viewportHeight()).total - viewportHeight())
-        : adjustment && !props.followBottom
-          ? (timelineScroll.scrollTop ?? 0) + adjustment
-          : undefined;
-      if (newTop !== undefined) timelineScroll.scrollTo(newTop);
+      if (props.followBottom && anyChanged && wasNearBottom)
+        scrollToRealBottom();
+      else if (adjustment && !props.followBottom)
+        timelineScroll.scrollTo((timelineScroll.scrollTop ?? 0) + adjustment);
 
       observedScrollTop = timelineScroll.scrollTop ?? 0;
       updateRange();
     });
   };
+
+  createEffect(() => {
+    // Rewrapping or re-styling invalidates every cached height. Without this
+    // only on-screen groups are ever re-measured, so stale off-screen sizes
+    // accumulate into a permanent estimate-vs-real offset that eventually
+    // strands follow mode and freezes the range short of the newest groups.
+    props.terminalWidth;
+    props.density;
+    props.toolDetails;
+    props.diffStyle;
+    props.toolPreviewLines;
+    virtualizer.invalidate();
+    if (timelineScroll && !timelineScroll.isDestroyed) {
+      updateRange();
+      measureRenderedGroups();
+    }
+  });
 
   createEffect(() => {
     const groups = timelineGroups();
@@ -626,6 +661,3 @@ export function SubagentRoute(props: { agentID: string; onBack(): void }) {
     </box>
   );
 }
-
-
-

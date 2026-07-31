@@ -8,6 +8,7 @@ import {
 } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { profileShellCommand } from "@natalia/platform";
 import type { RuntimeTool } from "@natalia/tools";
 
 export type SkillMetadata = {
@@ -91,7 +92,12 @@ export function parseSkill(
   content: string,
   input: { root: string; source: "project" | "user" | "remote" },
 ) {
-  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/u);
+  // Windows editors and PowerShell's `Set-Content -Encoding UTF8` prepend a
+  // UTF-8 BOM, which would keep `^---` from matching and surface only as
+  // "requires YAML frontmatter delimiters". POSIX files carry no BOM, so
+  // stripping one is a no-op there.
+  const text = content.replace(/^\uFEFF/u, "");
+  const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/u);
   if (!match) throw new Error("SKILL.md requires YAML frontmatter delimiters");
   const frontmatter = parseFrontmatter(match[1]!);
   const name = required(frontmatter.name, "name");
@@ -147,7 +153,11 @@ export async function formatSkillForModel(skill: Skill) {
   )
     .filter((path) => path !== "SKILL.md")
     .sort()
-    .slice(0, 10);
+    .slice(0, 10)
+    // `readdir` yields host separators. Every shell the model reaches is
+    // bash-compatible, so a backslash path would be unusable there; POSIX
+    // output is unchanged because it has no backslashes to replace.
+    .map((path) => path.replaceAll("\\", "/"));
   return [
     `<skill_content name="${skill.name}">`,
     `# Skill: ${skill.name}`,
@@ -202,16 +212,16 @@ export async function runSkillScript(
 ) {
   const command = skill.scripts[name];
   if (!command) throw new Error(`skill script not found: ${name}`);
-  const child = Bun.spawn(
-    [process.env.SHELL ?? "/usr/bin/bash", "-lc", command],
-    {
-      cwd: skill.root,
-      stdout: "pipe",
-      stderr: "pipe",
-      env: safeSkillEnv(globalThis.process.env),
-      signal: input.signal,
-    },
-  );
+  const shell = profileShellCommand(command, {
+    posixShell: process.env.SHELL ?? "/usr/bin/bash",
+  });
+  const child = Bun.spawn([shell.executable, ...shell.args], {
+    cwd: skill.root,
+    stdout: "pipe",
+    stderr: "pipe",
+    env: safeSkillEnv(globalThis.process.env),
+    signal: input.signal,
+  });
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
@@ -311,6 +321,8 @@ export async function pullRemoteSkills(input: {
       continue;
     }
     const staging = `${root}.tmp-${crypto.randomUUID()}`;
+    const backup = `${root}.old-${crypto.randomUUID()}`;
+    let movedAside = false;
     try {
       for (const file of files) {
         const resource = new URL(
@@ -334,14 +346,23 @@ export async function pullRemoteSkills(input: {
         await writeFile(join(staging, ".natalia-version"), version, {
           mode: 0o600,
         });
-      const backup = `${root}.old-${crypto.randomUUID()}`;
       const exists = await Bun.file(join(root, "SKILL.md")).exists();
-      if (exists) await rename(root, backup);
+      if (exists) {
+        await rename(root, backup);
+        movedAside = true;
+      }
       await rename(staging, root);
+      movedAside = false;
       if (exists) await rm(backup, { recursive: true, force: true });
       roots.push(root);
     } catch (error) {
       await rm(staging, { recursive: true, force: true });
+      // The previous skill was moved aside but the swap did not complete.
+      // Without restoring it the skill is lost and the backup is orphaned.
+      // Directory renames fail far more readily on Windows (an open handle,
+      // a cwd inside the tree, or a directory watch is enough), but a POSIX
+      // cross-device or out-of-space rename reaches the same state.
+      if (movedAside) await rename(backup, root).catch(() => undefined);
       if (await Bun.file(join(root, "SKILL.md")).exists()) roots.push(root);
       else throw error;
     }

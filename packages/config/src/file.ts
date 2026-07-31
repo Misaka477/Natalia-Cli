@@ -50,7 +50,7 @@ export async function saveConfigFile(config: ConfigV2, path: string) {
     await writeFile(temporary, `${JSON.stringify(parsed, null, 2)}\n`, {
       mode: 0o600,
     });
-    const handle = await open(temporary, "r");
+    const handle = await open(temporary, "r+");
     try {
       await handle.sync();
     } finally {
@@ -70,7 +70,7 @@ export async function saveConfigOverlayFile(path: string, overlay: unknown) {
     await writeFile(temporary, `${JSON.stringify(overlay, null, 2)}\n`, {
       mode: 0o600,
     });
-    const handle = await open(temporary, "r");
+    const handle = await open(temporary, "r+");
     try {
       await handle.sync();
     } finally {
@@ -96,11 +96,15 @@ export async function migrateConfigFile(path: string, now = new Date()) {
 }
 
 export function parseConfigText(raw: string) {
+  // A UTF-8 BOM from a Windows editor makes JSON.parse throw and also defeats
+  // the `^\s*[\[{]` guard below, so a valid config would silently fall through
+  // to the legacy YAML reader and parse into garbage. POSIX files have no BOM.
+  const text = raw.replace(/^\uFEFF/u, "");
   try {
-    return JSON.parse(raw) as unknown;
+    return JSON.parse(text) as unknown;
   } catch (error) {
-    if (/^\s*[\[{]/u.test(raw)) throw error;
-    return parseLegacyYamlSubset(raw);
+    if (/^\s*[\[{]/u.test(text)) throw error;
+    return parseLegacyYamlSubset(text);
   }
 }
 

@@ -1,5 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { globalConfigHome } from "@natalia/platform";
 import { z } from "zod";
 
 const keybindValue = z.union([
@@ -109,5 +110,10 @@ export function tuiConfigPath(
 ) {
   if (scope === "project")
     return resolve(workspaceRoot, ".natalia", "tui.json");
-  return resolve(process.env.HOME ?? "", ".config", "natalia-cli", "tui.json");
+  // `resolve(process.env.HOME ?? "", ...)` collapsed to the *current directory*
+  // on Windows, where HOME is normally unset. Global settings then silently
+  // applied only inside whatever directory saved them, and Natalia scattered
+  // `.config` trees into user repositories. globalConfigHome reproduces
+  // `$HOME/.config` on POSIX and resolves `%APPDATA%` on Windows.
+  return resolve(globalConfigHome(), "natalia-cli", "tui.json");
 }

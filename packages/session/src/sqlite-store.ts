@@ -191,6 +191,14 @@ export class SqliteSessionStore {
     this.flushTimers.clear();
     this.checkpoint();
     this.closed = true;
+    // `db.close()` calls sqlite3_close_v2, which only *defers* deallocation
+    // when a prepared statement is still alive: the connection becomes a
+    // zombie and keeps its OS handles on the db, -wal, and -shm files. This
+    // statement is owned here and never finalized elsewhere, so releasing it
+    // first is what makes the close actually release those handles. POSIX
+    // hides the difference because an open file can be unlinked; Windows
+    // refuses to delete the database until the handles are gone.
+    this.insertEventStatement.finalize();
     this.db.close();
   }
 
@@ -505,23 +513,29 @@ export class SqliteSessionStore {
       `INSERT INTO session_inputs(session_id, id, text, attachments, resources, agents, delivery, admitted_at, admitted_seq, promoted_at, promoted_seq)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
-    this.db.transaction(() => {
-      this.run(`DELETE FROM session_inputs WHERE session_id = ?`, [sessionID]);
-      for (const input of inputs)
-        insert.run(
+    try {
+      this.db.transaction(() => {
+        this.run(`DELETE FROM session_inputs WHERE session_id = ?`, [
           sessionID,
-          input.id,
-          input.text,
-          optionalJSON(input.attachments),
-          optionalJSON(input.resources),
-          optionalJSON(input.agents),
-          input.delivery,
-          input.admittedAt,
-          input.admittedSeq,
-          input.promotedAt ?? null,
-          input.promotedSeq ?? null,
-        );
-    })();
+        ]);
+        for (const input of inputs)
+          insert.run(
+            sessionID,
+            input.id,
+            input.text,
+            optionalJSON(input.attachments),
+            optionalJSON(input.resources),
+            optionalJSON(input.agents),
+            input.delivery,
+            input.admittedAt,
+            input.admittedSeq,
+            input.promotedAt ?? null,
+            input.promotedSeq ?? null,
+          );
+      })();
+    } finally {
+      insert.finalize();
+    }
   }
 
   pendingInputCount(sessionID: SessionID) {
@@ -714,7 +728,15 @@ export class SqliteSessionStore {
   }
 
   private run(sql: string, params: unknown[] = []) {
-    this.db.prepare(sql).run(...(params as never[]));
+    // `prepare()` is not cached by Bun: the caller owns the statement. Leaving
+    // it unfinalized keeps it alive until GC, and any live statement makes
+    // sqlite3_close_v2 defer releasing the database file handles.
+    const statement = this.db.prepare(sql);
+    try {
+      statement.run(...(params as never[]));
+    } finally {
+      statement.finalize();
+    }
   }
 
   private insertEvent(sessionID: SessionID, event: RuntimeEvent) {

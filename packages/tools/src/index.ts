@@ -1,8 +1,17 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { SubagentRegistry } from "@natalia/subagent";
+import {
+  detachedShellPrefix,
+  isWindows,
+  processTreeKillCommand,
+  profileShellCommand,
+  shellQuote,
+  startDetachedProcess,
+} from "@natalia/platform";
 import {
   TerminalRegistry,
   type TerminalSessionInfo,
@@ -200,24 +209,13 @@ export class ManagedProcessRegistry {
     const processDir = resolve(context.workspaceRoot, ".natalia", "processes");
     await mkdir(processDir, { recursive: true });
     const outputPath = resolve(processDir, `${processID}.log`);
-    const launcher = Bun.spawn(
-      [
-        "bash",
-        "-lc",
-        `setsid bash -c ${shellQuote(command)} > ${shellQuote(outputPath)} 2>&1 & echo $!`,
-      ],
-      {
-        cwd: context.workspaceRoot,
-        env: safeToolEnv(context.settings?.envAllowlist),
-        stdout: "pipe",
-        stderr: "pipe",
-      },
-    );
-    const pid = Number((await new Response(launcher.stdout).text()).trim());
-    const stderr = await new Response(launcher.stderr).text();
-    const launcherExit = await launcher.exited;
-    if (!Number.isFinite(pid) || launcherExit !== 0)
-      throw new Error(`failed to start process: ${stderr}`);
+    const { pid } = await startDetachedProcess({
+      command,
+      posixScript: `${detachedShellPrefix()}bash -c ${shellQuote(command)} > ${shellQuote(outputPath)} 2>&1 & echo $!`,
+      cwd: context.workspaceRoot,
+      outputPath,
+      env: safeToolEnv(context.settings?.envAllowlist),
+    });
     const info: ManagedProcessRuntime = {
       id: processID,
       command,
@@ -952,7 +950,7 @@ function interactiveStartTool(): RuntimeTool {
   return {
     name: "interactive_terminal_start",
     description:
-      "Start a real interactive Terminal session inside the workspace.",
+      "Start a real interactive Terminal session inside the workspace. On Windows the pane shell is Git Bash, not cmd.exe — use POSIX shell syntax.",
     requiresApproval: true,
     parameters: {
       type: "object",
@@ -1370,7 +1368,10 @@ function terminalObserveTool(): RuntimeTool {
         const endLine = Math.min(lines.length, cursorY + contextLines + 1);
         terminalText = lines.slice(startLine, endLine).join("\n");
       } else if (mode === "new_only") {
-        if (previousTerminalText && terminalText.startsWith(previousTerminalText)) {
+        if (
+          previousTerminalText &&
+          terminalText.startsWith(previousTerminalText)
+        ) {
           terminalText = terminalText.slice(previousTerminalText.length);
         }
       }
@@ -1895,7 +1896,12 @@ function interactiveTool(
               : name === "interactive_terminal_stop"
                 ? "exit"
                 : undefined;
-      return notifyTerminal(context, session, terminalAction, args.sensitive === true);
+      return notifyTerminal(
+        context,
+        session,
+        terminalAction,
+        args.sensitive === true,
+      );
     },
   };
 }
@@ -2402,7 +2408,7 @@ function runShellTool(): RuntimeTool {
   return {
     name: "run_shell",
     description:
-      "Run a shell command inside the workspace with output capture.",
+      "Run a shell command inside the workspace with output capture. The shell is always bash-compatible (Git Bash on Windows, native bash on Linux/Mac) — use POSIX syntax, not cmd.exe.",
     requiresApproval: true,
     timeoutSec: 120,
     parameters: {
@@ -2428,7 +2434,8 @@ function runShellTool(): RuntimeTool {
 function processStartTool(registry: ManagedProcessRegistry): RuntimeTool {
   return {
     name: "process_start",
-    description: "Start a long-running shell process in the workspace.",
+    description:
+      "Start a long-running shell process in the workspace. The shell is always bash-compatible (Git Bash on Windows, native bash on Linux/Mac).",
     requiresApproval: true,
     parameters: {
       type: "object",
@@ -2619,7 +2626,7 @@ function processAuditTool(registry: ManagedProcessRegistry): RuntimeTool {
 function backgroundStartTool(registry: ManagedProcessRegistry): RuntimeTool {
   return aliasTool(
     "background_start",
-    "Start a background workspace process.",
+    "Start a background workspace process. Uses a bash-compatible shell on all platforms (Git Bash on Windows).",
     true,
     (input, context) => processStartTool(registry).execute(input, context),
   );
@@ -2904,6 +2911,8 @@ function browserScreenshotTool(): RuntimeTool {
           "chromium",
           "chromium-browser",
           "google-chrome",
+          "chrome",
+          "msedge",
         ]));
       if (!chrome)
         throw new Error(
@@ -2989,8 +2998,9 @@ async function runShell(
   timeoutSec: number,
 ) {
   await stat(context.workspaceRoot);
+  const shell = profileShellCommand(command);
   return await new Promise<string>((resolvePromise, reject) => {
-    const child = spawn("bash", ["-lc", command], {
+    const child = spawn(shell.executable, shell.args, {
       cwd: context.workspaceRoot,
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
@@ -3080,19 +3090,34 @@ function safeToolEnv(allowlist?: string[]) {
 
 function terminateChildProcessTree(pid: number | undefined) {
   if (!pid) return;
-  try {
-    process.kill(-pid, "SIGTERM");
-    const escalation = setTimeout(() => {
-      try {
-        process.kill(-pid, "SIGKILL");
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-      }
-    }, 2_000);
-    escalation.unref();
-    return;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ESRCH") return;
+  const treeKill = processTreeKillCommand(pid);
+  if (treeKill) {
+    // Windows has no process group, so the tree is terminated by the OS
+    // utility. A failure still falls through to the single-process kill below.
+    try {
+      Bun.spawnSync([treeKill.executable, ...treeKill.args], {
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      return;
+    } catch {
+      // Fall through to the direct kill.
+    }
+  } else {
+    try {
+      process.kill(-pid, "SIGTERM");
+      const escalation = setTimeout(() => {
+        try {
+          process.kill(-pid, "SIGKILL");
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+        }
+      }, 2_000);
+      escalation.unref();
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") return;
+    }
   }
   try {
     process.kill(pid, "SIGTERM");
@@ -3224,9 +3249,19 @@ async function stopProcessTree(
 function sendProcessSignal(pid: number, signal: NodeJS.Signals) {
   try {
     // Managed processes start through setsid, so the negative PID addresses
-    // their owned process group and includes background children.
-    if (process.platform !== "win32") process.kill(-pid, signal);
-    else process.kill(pid, signal);
+    // their owned process group and includes background children. Windows has
+    // no equivalent, so the tree is terminated through the OS utility instead.
+    if (isWindows()) {
+      const treeKill = processTreeKillCommand(pid);
+      if (treeKill && signal === "SIGKILL") {
+        Bun.spawnSync([treeKill.executable, ...treeKill.args], {
+          stdout: "ignore",
+          stderr: "ignore",
+        });
+        return;
+      }
+      process.kill(pid, signal);
+    } else process.kill(-pid, signal);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
     try {
@@ -3261,10 +3296,6 @@ async function readOptionalFile(path: string) {
   }
 }
 
-function shellQuote(value: string) {
-  return `'${value.replace(/'/gu, `'\\''`)}'`;
-}
-
 function mediaKind(data: Uint8Array) {
   const hex = [...data.slice(0, 12)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
@@ -3277,17 +3308,36 @@ function mediaKind(data: Uint8Array) {
 }
 
 async function firstExecutable(names: string[]) {
+  // Resolved without a shell. The previous `bash -lc "command -v"` probe was
+  // the one call site that bypassed the platform shell helper, and on Windows
+  // a bare `bash` is the WSL launcher rather than Git bash, so the lookup ran
+  // inside a Linux distro and could never see a Windows browser. Bun.which
+  // performs the same PATH resolution on POSIX without spawning anything.
   for (const name of names) {
-    const result = Bun.spawn(
-      ["bash", "-lc", `command -v ${shellQuote(name)}`],
-      {
-        stdout: "pipe",
-        stderr: "ignore",
-      },
-    );
-    const path = (await new Response(result.stdout).text()).trim();
-    if ((await result.exited) === 0 && path) return path;
+    const resolved = Bun.which(name);
+    if (resolved) return resolved;
   }
+  // Windows installers do not put browsers on PATH, so PATH resolution alone
+  // never finds an installed Chrome or Edge. POSIX has no such well-known
+  // locations and skips this entirely.
+  if (!isWindows()) return undefined;
+  const env = process.env;
+  const roots = [
+    env.LOCALAPPDATA,
+    env.ProgramFiles,
+    env.ProgramW6432,
+    env["ProgramFiles(x86)"],
+  ].filter((root): root is string => Boolean(root));
+  const relative = [
+    join("Google", "Chrome", "Application", "chrome.exe"),
+    join("Chromium", "Application", "chrome.exe"),
+    join("Microsoft", "Edge", "Application", "msedge.exe"),
+  ];
+  for (const root of roots)
+    for (const suffix of relative) {
+      const candidate = join(root, suffix);
+      if (existsSync(candidate)) return candidate;
+    }
   return undefined;
 }
 

@@ -1,3 +1,4 @@
+import { userHomeDirectory } from "@natalia/platform";
 import { themeTokens as darkTheme } from "../../theme/theme";
 
 export function toolInput(argumentsJson?: string) {
@@ -78,10 +79,7 @@ export function formatPrimitiveArgs(input: Record<string, unknown>) {
   return values.length ? ` [${values.join(", ")}]` : "";
 }
 
-export function stringField(
-  input: Record<string, unknown>,
-  ...keys: string[]
-) {
+export function stringField(input: Record<string, unknown>, ...keys: string[]) {
   return (
     keys.flatMap((key) =>
       typeof input[key] === "string" ? [input[key] as string] : [],
@@ -91,7 +89,7 @@ export function stringField(
 
 export function formatToolPath(path: string) {
   if (!path) return "";
-  const home = process.env.HOME;
+  const home = userHomeDirectory();
   return home && path.startsWith(home) ? `~${path.slice(home.length)}` : path;
 }
 
@@ -159,7 +157,7 @@ export function statusValues(segments: string[]) {
 
 export function compactPath(path?: string) {
   if (!path) return "local workspace";
-  const home = process.env.HOME;
+  const home = userHomeDirectory();
   return home && path.startsWith(home) ? `~${path.slice(home.length)}` : path;
 }
 

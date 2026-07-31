@@ -25,8 +25,13 @@ Natalia is local-first. It does not provide cloud accounts, organization managem
 - Bun and Node-compatible npm tooling.
 - A configured provider credential for live model turns.
 - An optional Chromium/Chrome binary for `browser_screenshot`.
+- On Windows, Git for Windows and the Windows build of the managed WezTerm fork.
+  See [docs/getting-started.md](docs/getting-started.md).
 
 ### Quick Start
+
+New here? [docs/getting-started.md](docs/getting-started.md) walks through
+install, provider setup, launching the TUI, and installing skills end to end.
 
 Configure a provider through environment variables or `.natalia/config.json`:
 
@@ -109,6 +114,7 @@ npm run guard:imports
 npm run licenses:check
 npm run ts:build
 npm run ts:release-check
+npm run native-terminal:build-wezterm
 ```
 
 TUI smoke tests are available through:
@@ -119,6 +125,10 @@ npm --workspace @natalia/tui run smoke:<name>
 
 See the complete [CLI command reference](docs/commands.md) for session,
 filesystem, daemon, diagnostics, and recording commands.
+
+To add skills, see section 6 of
+[docs/getting-started.md](docs/getting-started.md) for the project, user, and
+remote install paths and the `SKILL.md` format.
 
 ---
 
@@ -145,8 +155,14 @@ Natalia 是 local-first runtime，不提供云账号、组织管理、账单、b
 - Bun 与兼容 Node 的 npm 工具链。
 - live model turn 需要配置 provider credential。
 - `browser_screenshot` 可选使用 Chromium/Chrome binary。
+- Windows 上需要 Git for Windows 与 Windows 版的 managed WezTerm fork，
+  参见 [docs/getting-started.zh-CN.md](docs/getting-started.zh-CN.md)。
 
 ### 快速开始
+
+第一次使用请看
+[docs/getting-started.zh-CN.md](docs/getting-started.zh-CN.md)，它完整覆盖了
+安装、provider 配置、启动 TUI 和安装 skill 的全过程。
 
 通过环境变量或 `.natalia/config.json` 配置 provider：
 
@@ -229,6 +245,7 @@ npm run guard:imports
 npm run licenses:check
 npm run ts:build
 npm run ts:release-check
+npm run native-terminal:build-wezterm
 ```
 
 TUI smoke test：
@@ -239,6 +256,9 @@ npm --workspace @natalia/tui run smoke:<name>
 
 完整的 session、filesystem、daemon、diagnostics 与 recording 命令见
 [CLI 命令参考](docs/commands.md)。
+
+安装 skill 的项目级、用户级与远程三种方式，以及 `SKILL.md` 格式，见
+[docs/getting-started.zh-CN.md](docs/getting-started.zh-CN.md) 第 6 节。
 
 ## License / 许可
 

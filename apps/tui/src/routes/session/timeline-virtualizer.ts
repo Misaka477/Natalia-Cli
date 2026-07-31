@@ -18,6 +18,19 @@ export class TimelineVirtualizer<T> {
 
   constructor(private readonly estimateSize = 4) {}
 
+  /**
+   * Drops every measured height so the next measurement pass re-reads real
+   * geometry. Cached sizes are width- and preference-dependent: a rewrap or a
+   * density change makes all of them wrong, and only on-screen groups would
+   * ever be re-measured, so stale off-screen sizes accumulate into a permanent
+   * offset between estimate space and the scrollbox's real height.
+   */
+  invalidate() {
+    if (this.sizes.size === 0) return;
+    this.sizes.clear();
+    this.rebuild();
+  }
+
   replace(input: Array<TimelineGroup<T>>, scrollTop: number, viewport: number) {
     const anchor = this.anchor(scrollTop);
     this.groups = input;
@@ -150,10 +163,7 @@ export function groupTimelineBlocks<T extends { id: string; role: string }>(
             (g) => g.key === baseKey || g.key.startsWith(`${baseKey}:`),
           )
         : undefined;
-    if (
-      existing &&
-      existing.items.length < maxItemsPerGroup
-    ) {
+    if (existing && existing.items.length < maxItemsPerGroup) {
       existing.items.push(block);
       continue;
     }

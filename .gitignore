@@ -61,3 +61,11 @@ Thumbs.db
 /packages/*/.vite/
 /.turbo/
 /.bun/
+
+# Docs
+docs/handover-cross-platform.md
+docs/handover-cross-platform.zh-CN.md
+docs/skills.md
+docs/skills.zh-CN.md
+docs/windows.md
+docs/windows.zh-CN.md

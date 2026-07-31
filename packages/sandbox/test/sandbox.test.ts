@@ -221,3 +221,24 @@ async function waitFor(read: () => Promise<string>) {
   }
   throw new Error("timed out waiting for sandbox resource output");
 }
+
+test("sandbox resource preserves a command containing single quotes", async () => {
+  const base = await mkdtemp(join(tmpdir(), "natalia-sandbox-quote-"));
+  const manager = new WorkspaceSandboxManager(base);
+  await manager.create("box");
+  // Incorrect quoting silently truncated this command to `a`, so the assertion
+  // guards against a corrupted command rather than only against a failure.
+  const resource = await manager.startResource("box", "echo 'a b c'", "r1");
+  expect(resource.pid).toBeGreaterThan(0);
+  expect(await waitForResourceOutput(resource.outputPath)).toBe("a b c");
+});
+
+async function waitForResourceOutput(path: string, timeoutMs = 20_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const content = await readFile(path, "utf8").catch(() => "");
+    if (content.trim()) return content.trim();
+    await Bun.sleep(100);
+  }
+  return "";
+}

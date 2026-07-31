@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
+import { isWindows } from "@natalia/platform";
 import type { MCPResourceCatalog } from "@natalia/contracts";
 
 export function retainEditorMentions(input: {
@@ -38,8 +39,13 @@ export async function editPromptExternally(input: {
     await writeFile(path, input.text, { mode: 0o600 });
     const [program, ...args] = splitCommand(command);
     if (!program) throw new Error("external editor command is empty");
+    // Windows needs PATHEXT resolution before spawning: a bare name only
+    // resolves for a literal `.exe`, so editors installed as `.cmd` shims
+    // through npm or scoop (`code`, `nvim`) fail with a bare ENOENT. POSIX
+    // passes the program through untouched.
+    const executable = isWindows() ? (Bun.which(program) ?? program) : program;
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(program, [...args, path], {
+      const child = spawn(executable, [...args, path], {
         stdio: "inherit",
         env: input.env,
       });

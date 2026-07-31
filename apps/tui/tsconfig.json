@@ -12,6 +12,7 @@
     { "path": "../../packages/contracts" },
     { "path": "../../packages/client" },
     { "path": "../../packages/config" },
+    { "path": "../../packages/platform" },
     { "path": "../../packages/session" },
     { "path": "../../packages/ui-model" },
     { "path": "../../packages/testing" },

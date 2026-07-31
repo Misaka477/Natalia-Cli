@@ -1,5 +1,5 @@
 import { expect, test, mock, afterEach } from "bun:test";
-import { mkdtemp, mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { SubagentRegistry, SubagentStore } from "../src";
@@ -60,12 +60,18 @@ test("spawn creates record and runs runner", async () => {
 });
 
 test("spawn rejects empty task", async () => {
-  const reg = new SubagentRegistry({ runner: immediateRunner });
+  const reg = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: await tempDir(),
+  });
   expect(reg.spawn("")).rejects.toThrow("task is required");
 });
 
 test("list returns spawned agents", async () => {
-  const reg = new SubagentRegistry({ runner: immediateRunner });
+  const reg = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: await tempDir(),
+  });
   expect(reg.list()).toHaveLength(0);
   await reg.spawn("task1");
   await reg.spawn("task2");
@@ -73,14 +79,20 @@ test("list returns spawned agents", async () => {
 });
 
 test("get returns agent by id", async () => {
-  const reg = new SubagentRegistry({ runner: immediateRunner });
+  const reg = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: await tempDir(),
+  });
   const rec = await reg.spawn("get test");
   expect(reg.get("a1")).toBe(rec);
   expect(reg.get("nonexistent" as any)).toBeUndefined();
 });
 
 test("status returns agent status", async () => {
-  const reg = new SubagentRegistry({ runner: delayedRunner });
+  const reg = new SubagentRegistry({
+    runner: delayedRunner,
+    workDir: await tempDir(),
+  });
   const rec = await reg.spawn("status test");
   expect(rec.status).toBe("running");
   expect(reg.runningCount()).toBe(1);
@@ -90,7 +102,10 @@ test("status returns agent status", async () => {
 });
 
 test("output returns agent outputs", async () => {
-  const reg = new SubagentRegistry({ runner: immediateRunner });
+  const reg = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: await tempDir(),
+  });
   await reg.spawn("output test");
   const outputs = reg.output("a1");
   expect(outputs).toBeDefined();
@@ -142,7 +157,10 @@ test("stop persists a running agent status without waiting for completion", asyn
 });
 
 test("stop returns false for unknown agent", async () => {
-  const reg = new SubagentRegistry({ runner: immediateRunner });
+  const reg = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: await tempDir(),
+  });
   expect(reg.stop("missing" as any)).toBeFalse();
 });
 
@@ -152,6 +170,7 @@ test("resume restarts a paused runner", async () => {
     runner: async () => {
       runs++;
     },
+    workDir: await tempDir(),
   });
   await reg.spawn("resume test");
   await Bun.sleep(10);
@@ -165,12 +184,18 @@ test("resume restarts a paused runner", async () => {
 });
 
 test("resume returns false for unknown agent", async () => {
-  const reg = new SubagentRegistry({ runner: immediateRunner });
+  const reg = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: await tempDir(),
+  });
   expect(await reg.resume("missing" as any)).toBeFalse();
 });
 
 test("attach/detach toggle attached flag", async () => {
-  const reg = new SubagentRegistry({ runner: immediateRunner });
+  const reg = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: await tempDir(),
+  });
   await reg.spawn("attach test");
   const rec = reg.get("a1")!;
   expect(rec.attached).toBeTrue();
@@ -183,7 +208,10 @@ test("attach/detach toggle attached flag", async () => {
 });
 
 test("cleanup removes completed/failed/stopped agents", async () => {
-  const reg = new SubagentRegistry({ runner: immediateRunner });
+  const reg = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: await tempDir(),
+  });
   await reg.spawn("c1");
   await reg.spawn("c2");
   await new Promise((r) => setTimeout(r, 10));
@@ -193,7 +221,10 @@ test("cleanup removes completed/failed/stopped agents", async () => {
 });
 
 test("cleanup dry run does not remove agents", async () => {
-  const reg = new SubagentRegistry({ runner: immediateRunner });
+  const reg = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: await tempDir(),
+  });
   await reg.spawn("dry");
   await new Promise((r) => setTimeout(r, 10));
   const affected = reg.cleanup(true);
@@ -202,7 +233,10 @@ test("cleanup dry run does not remove agents", async () => {
 });
 
 test("audit returns text format by default", async () => {
-  const reg = new SubagentRegistry({ runner: immediateRunner });
+  const reg = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: await tempDir(),
+  });
   await reg.spawn("audit test");
   const audit = reg.audit();
   expect(audit).not.toBe("<no agent audit entries>");
@@ -213,7 +247,10 @@ test("audit returns text format by default", async () => {
 });
 
 test("audit returns json format", async () => {
-  const reg = new SubagentRegistry({ runner: immediateRunner });
+  const reg = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: await tempDir(),
+  });
   await reg.spawn("json audit");
   const json = reg.audit(undefined, "json");
   expect(json).toStartWith("[");
@@ -226,7 +263,10 @@ test("audit returns json format", async () => {
 });
 
 test("audit tail limits entries", async () => {
-  const reg = new SubagentRegistry({ runner: immediateRunner });
+  const reg = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: await tempDir(),
+  });
   await reg.spawn("tail test");
   await reg.spawn("tail test 2");
   const tail = reg.audit(1);
@@ -235,12 +275,18 @@ test("audit tail limits entries", async () => {
 });
 
 test("audit returns no entries message when empty", async () => {
-  const reg = new SubagentRegistry({ runner: immediateRunner });
+  const reg = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: await tempDir(),
+  });
   expect(reg.audit()).toBe("<no agent audit entries>");
 });
 
 test("subscribe receives events", async () => {
-  const reg = new SubagentRegistry({ runner: immediateRunner });
+  const reg = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: await tempDir(),
+  });
   const events: any[] = [];
   const unsub = reg.subscribe((e) => events.push(e));
   await reg.spawn("events");
@@ -253,7 +299,10 @@ test("subscribe receives events", async () => {
 });
 
 test("subscribe unsubscribe stops events", async () => {
-  const reg = new SubagentRegistry({ runner: immediateRunner });
+  const reg = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: await tempDir(),
+  });
   const events: any[] = [];
   const unsub = reg.subscribe((e) => events.push(e));
   unsub();
@@ -263,7 +312,10 @@ test("subscribe unsubscribe stops events", async () => {
 });
 
 test("formatList returns formatted output", async () => {
-  const reg = new SubagentRegistry({ runner: immediateRunner });
+  const reg = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: await tempDir(),
+  });
   const formatted = await reg.formatList();
   expect(formatted).toBe("no subagents");
   await reg.spawn("format list");
@@ -275,7 +327,10 @@ test("formatList returns formatted output", async () => {
 });
 
 test("formatOutput returns a concise result and can expose full agent outputs", async () => {
-  const reg = new SubagentRegistry({ runner: immediateRunner });
+  const reg = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: await tempDir(),
+  });
   await reg.spawn("format out");
   const out = await reg.formatOutput("a1");
   expect(out).toContain("done: format out");
@@ -285,7 +340,10 @@ test("formatOutput returns a concise result and can expose full agent outputs", 
 });
 
 test("formatStatus returns detailed agent info", async () => {
-  const reg = new SubagentRegistry({ runner: immediateRunner });
+  const reg = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: await tempDir(),
+  });
   await reg.spawn("status detail");
   const s = await reg.formatStatus("a1");
   expect(s).toContain("a1");
@@ -331,15 +389,45 @@ test("store handles missing directory", async () => {
 
 test("store handles corrupt manifest", async () => {
   const dir = await tempDir();
-  await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, "manifest.json"), "{corrupt");
   const store = new SubagentStore(dir);
+  await mkdir(store.dir, { recursive: true });
+  await writeFile(join(store.dir, "manifest.json"), "{corrupt");
   const records = await store.load();
   expect(records).toHaveLength(0);
 });
 
+test("store keeps its state under .natalia and never in the workspace root", async () => {
+  const dir = await tempDir();
+  const store = new SubagentStore(dir);
+  expect(store.dir).toBe(join(dir, ".natalia", "subagents"));
+  const now = Date.now();
+  await store.save([
+    {
+      id: "a1" as any,
+      task: "placement",
+      mode: "code",
+      status: "completed",
+      attached: false,
+      modelProfile: "",
+      allowedTools: [],
+      excludeTools: [],
+      outputs: [{ step: 1, text: "done", timestamp: now }],
+      createdAt: now,
+      updatedAt: now,
+    },
+  ]);
+  // A workspace root is the user's project directory. Writing a manifest there
+  // would leave a stray file next to their own sources.
+  expect(await readdir(dir)).toEqual([".natalia"]);
+  expect(await readdir(store.dir)).toEqual(["manifest.json"]);
+  expect((await store.load())[0]?.task).toBe("placement");
+});
+
 test("spawn respects AbortSignal from options", async () => {
-  const reg = new SubagentRegistry({ runner: delayedRunner });
+  const reg = new SubagentRegistry({
+    runner: delayedRunner,
+    workDir: await tempDir(),
+  });
   const ac = new AbortController();
   const spawnPromise = reg.spawn("abortable", { signal: ac.signal });
   ac.abort();
@@ -348,7 +436,10 @@ test("spawn respects AbortSignal from options", async () => {
 });
 
 test("spawn sets mode and modelProfile from options", async () => {
-  const reg = new SubagentRegistry({ runner: immediateRunner });
+  const reg = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: await tempDir(),
+  });
   const rec = await reg.spawn("options", {
     mode: "debug",
     modelProfile: "strong",
@@ -452,7 +543,10 @@ test("retry explicitly starts a new continuation for stopped subagents", async (
 });
 
 test("spawn enforces configured nested subagent depth", async () => {
-  const registry = new SubagentRegistry({ runner: immediateRunner });
+  const registry = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: await tempDir(),
+  });
   const root = await registry.spawn("root", { maxDepth: 2 });
   const child = await registry.spawn("child", {
     parentAgentID: root.id,
@@ -499,6 +593,7 @@ test("runner failure sets failed status", async () => {
       ctx.setStatus("running");
       throw new Error("runner failed");
     },
+    workDir: await tempDir(),
   });
   const rec = await reg.spawn("fail test");
   await new Promise((r) => setTimeout(r, 10));

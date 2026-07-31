@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { isAbsolute, dirname, join, resolve } from "node:path";
 import {
   runtimeEventDurability,
   runtimeSlashCommands,
@@ -69,7 +69,6 @@ import {
   latestSessionSnapshot,
   projectedCanonicalTools,
   projectedDriftFindings,
-  projectedCapabilities,
   projectedWorkGraphNodes,
   projectedWorkGraphEdges,
   settleInterruptedTurns,
@@ -109,6 +108,7 @@ import {
   writeWezTermNativeDomainConfig,
   type NativeInputBroker,
 } from "@natalia/native-terminal";
+import { globalConfigHome, userRuntimeHome } from "@natalia/platform";
 import { WorkspaceSandboxManager } from "@natalia/sandbox";
 import { loadNativeMCPTools } from "@natalia/mcp";
 import { createPluginRegistry, loadLocalPlugins } from "@natalia/plugin";
@@ -131,6 +131,34 @@ import {
 } from "./attachments";
 
 const sqliteStores = new Map<string, SqliteSessionStore>();
+
+function userSkillRoot() {
+  const root = join(globalConfigHome(), "natalia-cli", "skills");
+  return isAbsolute(root) ? root : undefined;
+}
+// Stores are shared by database path across runtime clients, so the handle may
+// only be closed once the last client releases it. Leaving it open keeps
+// `sessions.db`, `-wal`, and `-shm` locked for the whole process, which on
+// Windows makes the enclosing `.natalia` directory and the workspace root
+// undeletable long after dispose().
+const sqliteStoreUsers = new Map<string, number>();
+
+function retainSqliteStore(path: string, store: SqliteSessionStore) {
+  sqliteStores.set(path, store);
+  sqliteStoreUsers.set(path, (sqliteStoreUsers.get(path) ?? 0) + 1);
+}
+
+function releaseSqliteStore(path: string) {
+  const remaining = (sqliteStoreUsers.get(path) ?? 1) - 1;
+  if (remaining > 0) {
+    sqliteStoreUsers.set(path, remaining);
+    return;
+  }
+  sqliteStoreUsers.delete(path);
+  const store = sqliteStores.get(path);
+  sqliteStores.delete(path);
+  store?.close();
+}
 
 /** Hardcoded dangerous shell patterns that are always blocked. */
 const DANGEROUS_SHELL_PATTERNS = [
@@ -195,6 +223,7 @@ export function createRealRuntimeClient(
   let sessionID: SessionID;
   let sessionStore: JsonSessionStore;
   let sqliteStore: SqliteSessionStore | undefined;
+  let sqliteStorePath: string | undefined;
   let provider = options.provider ?? providerFromEnvironment();
   let providerSource:
     | "explicit"
@@ -311,6 +340,30 @@ export function createRealRuntimeClient(
   const sandboxResourcesByID = new Map<string, number>();
   const turnCoordinator = () => sessionRunCoordinator(sessionID);
 
+  async function reloadConfigFromDisk(): Promise<boolean> {
+    try {
+      const tsConfig = await resolveConfig({ workspaceRoot });
+      tsRuntimeConfig = tsConfig.config;
+      runtimeContextConfig = contextStatusConfig(tsConfig.config);
+      if (!options.provider) {
+        const configured = providerForModel(
+          tsConfig.config,
+          selectedAgent?.model ?? tsConfig.config.defaultModel,
+          selectedAgent?.variant,
+        );
+        if (configured) {
+          provider = configured;
+          providerSource = "ts_config";
+          maxSteps = tsConfig.config.runtime.maxStepsPerTurn;
+          return true;
+        }
+      }
+    } catch {
+      /* config file not readable yet */
+    }
+    return false;
+  }
+
   async function initialize() {
     try {
       const tsConfig = await resolveConfig({ workspaceRoot });
@@ -391,10 +444,9 @@ export function createRealRuntimeClient(
       const databasePath = join(workspaceRoot, ".natalia", "sessions.db");
       await mkdir(dirname(databasePath), { recursive: true });
       sqliteStore = sqliteStores.get(databasePath);
-      if (!sqliteStore) {
-        sqliteStore = new SqliteSessionStore(databasePath);
-        sqliteStores.set(databasePath, sqliteStore);
-      }
+      if (!sqliteStore) sqliteStore = new SqliteSessionStore(databasePath);
+      retainSqliteStore(databasePath, sqliteStore);
+      sqliteStorePath = databasePath;
       sqliteStore.create(
         sessionID,
         options.title ?? `Natalia TS session ${sessionID}`,
@@ -591,8 +643,9 @@ export function createRealRuntimeClient(
       },
     );
     if (!nativeTerminal) {
-      const nativeRuntimeDir = process.env.XDG_RUNTIME_DIR
-        ? join(process.env.XDG_RUNTIME_DIR, "natalia")
+      const runtimeHome = userRuntimeHome();
+      const nativeRuntimeDir = runtimeHome
+        ? join(runtimeHome, "natalia")
         : join(workspaceRoot, ".natalia", "native-input");
       const nativeMuxRuntimeDir = join(
         nativeRuntimeDir,
@@ -920,9 +973,11 @@ export function createRealRuntimeClient(
     if (queued) void turnCoordinator().wake(drainSession);
     skillRegistry = await discoverSkills({
       workspaceRoot,
-      userRoot: process.env.HOME
-        ? join(process.env.HOME, ".config", "natalia-cli", "skills")
-        : undefined,
+      // `$HOME/.config/natalia-cli/skills` on POSIX, unchanged. Windows has no
+      // HOME, so the previous guard left user skills permanently undiscovered
+      // there; globalConfigHome resolves %APPDATA% instead. The absolute check
+      // preserves the old "skip when the home is unresolvable" behaviour.
+      userRoot: userSkillRoot(),
       remoteURLs: tsRuntimeConfig?.skills.urls,
     });
     const activeSkillEntry = [...context.snapshot().entries]
@@ -1688,6 +1743,11 @@ export function createRealRuntimeClient(
       // a caller opens the same session in a replacement runtime.
       await sessionPersistence;
       if (sqliteStore) await sqliteStore.flushPendingWrites(sessionID);
+      if (sqliteStorePath) {
+        releaseSqliteStore(sqliteStorePath);
+        sqliteStorePath = undefined;
+        sqliteStore = undefined;
+      }
       cleanupWorkspaceFiles?.();
       cleanupWorkspaceFiles = undefined;
       for (const plugin of plugins?.list() ?? [])
@@ -2355,7 +2415,7 @@ export function createRealRuntimeClient(
         originalObjective: f.originalObjective,
         currentActivity: f.currentActivity,
         evidence: f.evidence,
-        status: "open",
+        status: f.status,
       }));
     },
     async registeredTools() {
@@ -2794,15 +2854,19 @@ export function createRealRuntimeClient(
     agents: import("@natalia/contracts").PromptAgentMention[] = [],
   ) {
     if (!provider) {
-      publish({
-        type: "diagnostic",
-        level: "error",
-        message:
-          "No real provider configured. Set NATALIA_OPENAI_API_KEY or OPENAI_API_KEY before using the TS7 real runtime.",
-      });
-      publish({ type: "turn.finished", id, stopReason: "error" });
-      return;
+      const reloaded = await reloadConfigFromDisk();
+      if (!reloaded) {
+        publish({
+          type: "diagnostic",
+          level: "error",
+          message:
+            "No real provider configured. Set NATALIA_OPENAI_API_KEY or OPENAI_API_KEY before using the TS7 real runtime.",
+        });
+        publish({ type: "turn.finished", id, stopReason: "error" });
+        return;
+      }
     }
+    const activeProvider = provider!;
     const controller = new AbortController();
     if (pendingAgent) {
       selectedAgent = pendingAgent;
@@ -2827,7 +2891,7 @@ export function createRealRuntimeClient(
         context,
         step: context.journalStatus().messageCount,
         status: "turn_begin",
-        model: provider.model,
+        model: activeProvider.model,
       });
     const messages = contextEntriesToProviderMessages(
       context.snapshot().entries,
@@ -2895,6 +2959,8 @@ export function createRealRuntimeClient(
             ? undefined
             : selectedAgent?.systemPrompt ||
               tsRuntimeConfig?.modes[tsRuntimeConfig.defaultMode]?.systemPrompt,
+        skills: skillRegistry?.list(),
+        activeSkill,
       }),
     });
     let assistant = "";
@@ -4285,6 +4351,8 @@ function runtimeSystemPrompt(input: {
   permissionMode: "ask" | "auto" | "read_only";
   agentName?: string;
   agentPrompt?: string;
+  skills?: Skill[];
+  activeSkill?: Skill;
 }) {
   const lines = [
     "You are Natalia, a local software engineering agent running in a terminal UI.",
@@ -4317,6 +4385,31 @@ function runtimeSystemPrompt(input: {
       "<agent_instructions>",
       input.agentPrompt.trim(),
       "</agent_instructions>",
+    );
+  }
+  // Enumerated from the live skill registry on every turn, so installing or
+  // removing a skill directory is reflected without a restart and nothing is
+  // hardcoded. Omitted entirely when nothing is installed, so a workspace
+  // without skills pays no tokens and the model is not told about a
+  // capability it cannot use.
+  const skills = input.skills ?? [];
+  if (skills.length) {
+    lines.push(
+      "<available_skills>",
+      "These skills are installed in this workspace. Each description states when it applies.",
+      "Call the skill_load tool with the exact name to load one before acting on a task it covers.",
+      ...skills.map((skill) => {
+        const description = skill.description.replace(/\s+/gu, " ").trim();
+        const bounded =
+          description.length > 600
+            ? `${description.slice(0, 600).trimEnd()}...`
+            : description;
+        return `- ${skill.name} (${skill.source}): ${bounded}`;
+      }),
+      input.activeSkill
+        ? `Currently loaded: ${input.activeSkill.name}. Do not reload it.`
+        : "None is loaded yet.",
+      "</available_skills>",
     );
   }
   return lines.join("\n");

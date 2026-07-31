@@ -16,6 +16,7 @@
       "@natalia/contracts": ["packages/contracts/src/index.ts"],
       "@natalia/mcp": ["packages/mcp/src/index.ts"],
       "@natalia/native-terminal": ["packages/native-terminal/src/index.ts"],
+      "@natalia/platform": ["packages/platform/src/index.ts"],
       "@natalia/plugin": ["packages/plugin/src/index.ts"],
       "@natalia/session": ["packages/session/src/index.ts"],
       "@natalia/tools": ["packages/tools/src/index.ts"]

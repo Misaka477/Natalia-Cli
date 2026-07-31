@@ -4387,3 +4387,51 @@ async function waitFor(predicate: () => boolean) {
   }
   throw new Error("timed out waiting for condition");
 }
+
+test("the system prompt enumerates installed skills dynamically", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-prompt-skills-"));
+  const requests: ProviderStreamRequest[] = [];
+  const provider: StreamingProvider = {
+    provider: "test",
+    model: "test",
+    async *stream(request) {
+      requests.push(request);
+      yield { type: "done" as const };
+    },
+  };
+  const promptFor = async (sessionID: SessionID) => {
+    requests.length = 0;
+    const client = createRealRuntimeClient({
+      workspaceRoot: root,
+      sessionID,
+      provider,
+    });
+    client.start(() => undefined);
+    await client.submit("hi");
+    await client.dispose?.();
+    return String(requests[0]?.messages[0]?.content ?? "");
+  };
+
+  // Nothing installed: the section must be absent rather than empty, so a
+  // workspace without skills neither pays tokens nor learns about skill_load.
+  expect(await promptFor("ses_prompt_skills_none" as SessionID)).not.toContain(
+    "<available_skills>",
+  );
+
+  const skillRoot = join(root, ".natalia", "skills", "probe-skill");
+  await mkdir(skillRoot, { recursive: true });
+  await writeFile(
+    join(skillRoot, "SKILL.md"),
+    `---\nname: probe-skill\ndescription: ${"d".repeat(900)}\n---\n\n# probe\n`,
+  );
+
+  const withSkill = await promptFor("ses_prompt_skills_one" as SessionID);
+  expect(withSkill).toContain("<available_skills>");
+  // Enumerated from the registry, not hardcoded: the freshly created directory
+  // shows up without any code or config change.
+  expect(withSkill).toContain("- probe-skill (project):");
+  expect(withSkill).toContain("None is loaded yet.");
+  // A pathological description must not be able to dominate the prompt.
+  expect(withSkill).toContain("...");
+  expect(withSkill).not.toContain("d".repeat(700));
+});

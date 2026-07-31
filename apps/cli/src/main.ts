@@ -1,5 +1,6 @@
 import { createRealRuntimeClient } from "@natalia/client";
 import type { RuntimeEvent } from "@natalia/contracts";
+import { userStateHome } from "@natalia/platform";
 import {
   createRuntimeDaemonStore,
   createRuntimeHttpServer,
@@ -506,10 +507,7 @@ function valueAfter(argv: string[], flag: string, offset = 0) {
 }
 
 function daemonDir() {
-  const base =
-    process.env.XDG_STATE_HOME ??
-    resolve(process.env.HOME ?? ".", ".local", "state");
-  return resolve(base, "natalia-cli", "daemon");
+  return resolve(userStateHome(), "natalia-cli", "daemon");
 }
 
 function waitSignal() {

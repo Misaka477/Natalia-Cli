@@ -44,6 +44,7 @@
     "@natalia/config": "workspace:*",
     "@natalia/view-store": "workspace:*",
     "@natalia/contracts": "workspace:*",
+    "@natalia/platform": "workspace:*",
     "@natalia/plugin": "workspace:*",
     "@natalia/session": "workspace:*",
     "@natalia/testing": "workspace:*",

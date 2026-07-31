@@ -324,7 +324,8 @@ export function projectedConstitutionRules(events: RuntimeEvent[]) {
     }
     if (event.type === "constitution.rule_updated") {
       const existing = rules.findLast(
-        (r) => r.type === "constitution.rule_added" && r.ruleID === event.ruleID,
+        (r) =>
+          r.type === "constitution.rule_added" && r.ruleID === event.ruleID,
       );
       if (existing && existing.type === "constitution.rule_added") {
         const idx = rules.indexOf(existing);
@@ -350,32 +351,61 @@ export function latestSessionSnapshot(events: RuntimeEvent[]) {
   return latest;
 }
 
-export function projectedDriftFindings(events: RuntimeEvent[]) {
-  const findings = new Map<string, RuntimeEvent>();
+/**
+ * A drift finding as projected from the journal. This is deliberately not the
+ * `drift.finding_opened` event type: the current status is the result of
+ * replaying later `drift.finding_updated` events, so it belongs to the
+ * projection rather than to any single event.
+ */
+export type ProjectedDriftFinding = {
+  findingID: string;
+  severity: "advisory" | "warning" | "high";
+  confidence: number;
+  originalObjective: string;
+  currentActivity: string;
+  evidence: string[];
+  applicableConstraints: string[];
+  status: "open" | "explained" | "dismissed" | "corrected";
+  rationale?: string;
+};
+
+export function projectedDriftFindings(
+  events: RuntimeEvent[],
+): ProjectedDriftFinding[] {
+  const findings = new Map<string, ProjectedDriftFinding>();
   for (const event of events) {
     if (event.type === "drift.finding_opened")
-      findings.set(event.findingID, event);
+      findings.set(event.findingID, {
+        findingID: event.findingID,
+        severity: event.severity,
+        confidence: event.confidence,
+        originalObjective: event.originalObjective,
+        currentActivity: event.currentActivity,
+        evidence: event.evidence,
+        applicableConstraints: event.applicableConstraints,
+        status: "open",
+      });
     if (event.type === "drift.finding_updated") {
       const existing = findings.get(event.findingID);
-      if (existing && existing.type === "drift.finding_opened") {
+      // An update carries no objective or evidence, so a finding that was never
+      // opened cannot be reconstructed from it alone.
+      if (existing)
         findings.set(event.findingID, {
           ...existing,
           status: event.status,
+          ...(event.rationale === undefined
+            ? {}
+            : { rationale: event.rationale }),
         });
-      }
     }
   }
-  return [...findings.values()].filter(
-    (f): f is Extract<RuntimeEvent, { type: "drift.finding_opened" }> =>
-      f.type === "drift.finding_opened",
-  );
+  return [...findings.values()];
 }
 
 export function projectedCanonicalTools(events: RuntimeEvent[]) {
   const tools = new Map<string, RuntimeEvent>();
   for (const event of events) {
-    if (event.type === "tool.registered")
-      tools.set(event.name, event);
+    if (event.type === "tool.registered") tools.set(event.name, event);
     if (event.type === "tool.unregistered") tools.delete(event.name);
   }
   return [...tools.values()].filter(
@@ -384,17 +414,46 @@ export function projectedCanonicalTools(events: RuntimeEvent[]) {
   );
 }
 
-export function projectedCapabilities(events: RuntimeEvent[]) {
-  const loaded = new Map<string, RuntimeEvent>();
+/**
+ * A loaded capability as projected from the journal. The nested manifest mirrors
+ * `capabilityManifestSchema`, but only carries the fields the journal actually
+ * records: `description` and `dependencies` are not part of the
+ * `capability.loaded` event and are therefore not invented here.
+ */
+export type ProjectedCapability = {
+  id: string;
+  name: string;
+  manifest: {
+    apiVersion: number;
+    id: string;
+    name: string;
+    version: string;
+    scope: "process" | "workspace" | "session";
+    grants: string[];
+  };
+};
+
+export function projectedCapabilities(
+  events: RuntimeEvent[],
+): ProjectedCapability[] {
+  const loaded = new Map<string, ProjectedCapability>();
   for (const event of events) {
     if (event.type === "capability.loaded")
-      loaded.set(event.id, event);
+      loaded.set(event.id, {
+        id: event.id,
+        name: event.name,
+        manifest: {
+          apiVersion: event.apiVersion,
+          id: event.id,
+          name: event.name,
+          version: event.version,
+          scope: event.scope,
+          grants: event.grants,
+        },
+      });
     if (event.type === "capability.unloaded") loaded.delete(event.id);
   }
-  return [...loaded.values()].filter(
-    (e): e is Extract<RuntimeEvent, { type: "capability.loaded" }> =>
-      e.type === "capability.loaded",
-  );
+  return [...loaded.values()];
 }
 
 export function projectedWorkGraphNodes(events: RuntimeEvent[]) {

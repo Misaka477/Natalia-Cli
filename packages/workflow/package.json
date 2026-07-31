@@ -9,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@natalia/platform": "workspace:*",
     "@natalia/tools": "workspace:*"
   }
 }

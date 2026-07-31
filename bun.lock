@@ -24,6 +24,7 @@
         "@natalia/client": "workspace:*",
         "@natalia/config": "workspace:*",
         "@natalia/contracts": "workspace:*",
+        "@natalia/platform": "workspace:*",
         "@natalia/runtime": "workspace:*",
         "@natalia/session": "workspace:*",
         "@natalia/terminal": "workspace:*",
@@ -38,6 +39,7 @@
         "@natalia/client": "workspace:*",
         "@natalia/config": "workspace:*",
         "@natalia/contracts": "workspace:*",
+        "@natalia/platform": "workspace:*",
         "@natalia/plugin": "workspace:*",
         "@natalia/session": "workspace:*",
         "@natalia/terminal": "workspace:*",
@@ -75,6 +77,7 @@
         "@natalia/contracts": "workspace:*",
         "@natalia/mcp": "workspace:*",
         "@natalia/native-terminal": "workspace:*",
+        "@natalia/platform": "workspace:*",
         "@natalia/plugin": "workspace:*",
         "@natalia/runtime": "workspace:*",
         "@natalia/sandbox": "workspace:*",
@@ -93,6 +96,7 @@
       "version": "0.0.0-m8",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
+        "@natalia/platform": "workspace:*",
         "zod": "3.25.76",
       },
     },
@@ -115,6 +119,13 @@
     "packages/native-terminal": {
       "name": "@natalia/native-terminal",
       "version": "0.0.0-m11",
+      "dependencies": {
+        "@natalia/platform": "workspace:*",
+      },
+    },
+    "packages/platform": {
+      "name": "@natalia/platform",
+      "version": "0.0.0-m8",
     },
     "packages/plugin": {
       "name": "@natalia/plugin",
@@ -130,6 +141,7 @@
       "dependencies": {
         "@natalia/config": "workspace:*",
         "@natalia/contracts": "workspace:*",
+        "@natalia/platform": "workspace:*",
         "@natalia/session": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
@@ -142,6 +154,7 @@
       "version": "0.0.0-m11",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
+        "@natalia/platform": "workspace:*",
       },
     },
     "packages/sdk": {
@@ -163,6 +176,7 @@
       "name": "@natalia/skills",
       "version": "0.0.0-ts7",
       "dependencies": {
+        "@natalia/platform": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
     },
@@ -191,6 +205,7 @@
       "dependencies": {
         "@natalia/contracts": "workspace:*",
         "@natalia/native-terminal": "workspace:*",
+        "@natalia/platform": "workspace:*",
         "@natalia/sandbox": "workspace:*",
         "@natalia/subagent": "workspace:*",
         "@natalia/terminal": "workspace:*",
@@ -219,6 +234,7 @@
       "name": "@natalia/workflow",
       "version": "0.0.0-ts7",
       "dependencies": {
+        "@natalia/platform": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
     },
@@ -305,6 +321,8 @@
     "@natalia/mcp": ["@natalia/mcp@workspace:packages/mcp"],
 
     "@natalia/native-terminal": ["@natalia/native-terminal@workspace:packages/native-terminal"],
+
+    "@natalia/platform": ["@natalia/platform@workspace:packages/platform"],
 
     "@natalia/plugin": ["@natalia/plugin@workspace:packages/plugin"],
 

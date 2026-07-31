@@ -47,7 +47,13 @@ type WorkerRequest = {
     | "native-terminal.open-hub"
     | "native-terminal.release-human-control"
     | "native-terminal.revoke-approval-scope"
-    | "native-terminal.stop";
+    | "native-terminal.stop"
+    | "session.list"
+    | "session.touch"
+    | "session.rename"
+    | "session.pin"
+    | "session.duplicate"
+    | "session.delete";
   value?: unknown;
 };
 
@@ -260,6 +266,34 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["nativeTerminalStop"]>>
       >;
     },
+    async sessionList() {
+      return (await request("session.list")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["sessionList"]>>
+      >;
+    },
+    async sessionTouch(id) {
+      await request("session.touch", id);
+    },
+    async sessionRename(id, title) {
+      return (await request("session.rename", { id, title })) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["sessionRename"]>>
+      >;
+    },
+    async sessionPin(id, pinned) {
+      return (await request("session.pin", { id, pinned })) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["sessionPin"]>>
+      >;
+    },
+    async sessionDuplicate(id, title) {
+      return (await request("session.duplicate", { id, title })) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["sessionDuplicate"]>>
+      >;
+    },
+    async sessionDelete(id) {
+      return (await request("session.delete", id)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["sessionDelete"]>>
+      >;
+    },
     async dispose() {
       await request("dispose");
       port.removeEventListener("message", onMessage);
@@ -418,6 +452,23 @@ async function handleWorkerRequest(
     );
   }
   if (request.method === "dispose") return await client.dispose?.();
+  if (request.method === "session.list") return await client.sessionList?.();
+  if (request.method === "session.touch")
+    return await client.sessionTouch?.(request.value as string);
+  if (request.method === "session.rename") {
+    const input = request.value as { id: string; title: string };
+    return await client.sessionRename?.(input.id, input.title);
+  }
+  if (request.method === "session.pin") {
+    const input = request.value as { id: string; pinned: boolean };
+    return await client.sessionPin?.(input.id, input.pinned);
+  }
+  if (request.method === "session.duplicate") {
+    const input = request.value as { id: string; title?: string };
+    return await client.sessionDuplicate?.(input.id, input.title);
+  }
+  if (request.method === "session.delete")
+    return await client.sessionDelete?.(request.value as string);
   if (request.method === "approval")
     return client.respondApproval(request.value as ApprovalResponse);
   return client.respondQuestion(request.value as QuestionResponse);

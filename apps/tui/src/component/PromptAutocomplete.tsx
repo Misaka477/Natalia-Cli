@@ -135,6 +135,24 @@ export function PromptAutocomplete(props: {
     );
   }
 
+  // Only a handful of rows fit above the prompt, but there are far more
+  // commands than that. Without a window the selection walks past the last
+  // rendered row and the highlight appears to vanish, so the visible slice
+  // follows the selection instead.
+  const visibleCount = 6;
+  const windowed = createMemo(() => {
+    const items = options();
+    if (items.length <= visibleCount)
+      return items.map((item, index) => ({ item, index }));
+    const start = Math.min(
+      Math.max(0, selected() - Math.floor(visibleCount / 2)),
+      items.length - visibleCount,
+    );
+    return items
+      .slice(start, start + visibleCount)
+      .map((item, offset) => ({ item, index: start + offset }));
+  });
+
   function mentionLabel(item: AutocompleteOption) {
     if (item.kind === "mention") return `@${item.file.path}`;
     if (item.kind === "agent") return `@${item.agent.name}`;
@@ -214,31 +232,51 @@ export function PromptAutocomplete(props: {
         borderColor={darkTheme.muted}
         paddingLeft={1}
         paddingRight={1}
-        maxHeight={6}
       >
-        <For
-          each={options()}
+        <Show
+          when={options().length}
           fallback={<text fg={darkTheme.muted}>No matching commands</text>}
         >
-          {(item, index) => (
-            <box
-              backgroundColor={
-                index() === selected() ? darkTheme.accent : undefined
-              }
-            >
-              <text
-                fg={
-                  index() === selected() ? darkTheme.background : darkTheme.text
-                }
-              >
-                {mentionLabel(item)}{" "}
-                <span style={{ fg: darkTheme.muted }}>
-                  {optionDescription(item)}
-                </span>
-              </text>
-            </box>
-          )}
-        </For>
+          <For each={windowed()}>
+            {(entry) => {
+              const active = createMemo(() => entry.index === selected());
+              return (
+                <box
+                  flexDirection="row"
+                  backgroundColor={active() ? darkTheme.accent : undefined}
+                >
+                  {/*
+                    The label and description must live in a single non-wrapping
+                    clipped text node. A sibling whitespace child between two
+                    dynamic children lets neighbouring rows' content land in
+                    this row's blank cells, which renders as interleaved text.
+                  */}
+                  <text
+                    flexGrow={1}
+                    overflow="hidden"
+                    wrapMode="none"
+                    fg={active() ? darkTheme.background : darkTheme.text}
+                  >
+                    {mentionLabel(entry.item)}
+                    <span
+                      style={{
+                        fg: active() ? darkTheme.background : darkTheme.muted,
+                      }}
+                    >
+                      {" "}
+                      {optionDescription(entry.item)}
+                    </span>
+                  </text>
+                </box>
+              );
+            }}
+          </For>
+          <Show when={options().length > visibleCount}>
+            <text fg={darkTheme.muted}>
+              {`${selected() + 1}/${options().length}`}
+            </text>
+          </Show>
+        </Show>
       </box>
     </Show>
   );

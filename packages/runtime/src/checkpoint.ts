@@ -13,10 +13,13 @@ import {
   rename,
   rm,
   stat,
-  symlink,
-  unlink,
   writeFile,
 } from "node:fs/promises";
+import {
+  createSymlink,
+  forceRemove,
+  normalizeLinkTarget,
+} from "@natalia/platform";
 import {
   basename,
   dirname,
@@ -564,7 +567,11 @@ export class CheckpointStore {
     manifest: WorkspaceManifest,
   ) {
     const target = await readlink(full);
-    const resolvedTarget = resolve(dirname(full), target);
+    // A Windows junction reports an extended-length `\\?\C:\...` target, which
+    // no containment check can match. Normalising keeps such a workspace
+    // capturable instead of silently marking every manifest incomplete and
+    // disabling rollback outright.
+    const resolvedTarget = resolve(dirname(full), normalizeLinkTarget(target));
     if (!isContained(this.workspaceRoot, resolvedTarget)) {
       manifest.complete = false;
       manifest.errors.push(
@@ -605,16 +612,25 @@ export class CheckpointStore {
     for (const entry of Object.values(manifest.entries)) {
       const full = workspacePath(this.workspaceRoot, entry.path);
       await mkdir(dirname(full), { recursive: true });
-      await rm(full, { force: true, recursive: true });
+      await forceRemove(full, { recursive: true });
       if (entry.kind === "symlink") {
         if (!entry.linkTarget)
           throw new Error(`missing symlink target: ${entry.path}`);
-        const resolvedTarget = resolve(dirname(full), entry.linkTarget);
+        const resolvedTarget = resolve(
+          dirname(full),
+          normalizeLinkTarget(entry.linkTarget),
+        );
         if (!isContained(this.workspaceRoot, resolvedTarget))
           throw new Error(
             `refusing to restore escaping symlink: ${entry.path}`,
           );
-        await symlink(entry.linkTarget, full);
+        // Windows needs the link type up front: a directory link must be a
+        // junction, which is also the only kind an unelevated process can
+        // create. POSIX ignores the hint.
+        const targetIsDirectory = await stat(resolvedTarget)
+          .then((info) => info.isDirectory())
+          .catch(() => false);
+        await createSymlink(entry.linkTarget, full, { targetIsDirectory });
         restoredFiles += 1;
         continue;
       }
@@ -653,7 +669,7 @@ export class CheckpointStore {
         records.map((record) => JSON.stringify(record)).join("\n") + "\n",
         { mode: 0o600 },
       );
-      const handle = await open(temporary, "r");
+      const handle = await open(temporary, "r+");
       try {
         await handle.sync();
       } finally {
@@ -972,7 +988,7 @@ function workspacePath(root: string, path: string) {
 
 async function removeWorkspacePath(root: string, path: string) {
   const full = workspacePath(root, path);
-  await rm(full, { force: true, recursive: true });
+  await forceRemove(full, { recursive: true });
 }
 
 function assertContained(root: string, target: string) {

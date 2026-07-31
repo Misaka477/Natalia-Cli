@@ -1,5 +1,5 @@
 import { readdir, readFile } from "node:fs/promises";
-import { extname, isAbsolute, join, resolve } from "node:path";
+import { extname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
 import type { RuntimeTool, ToolRegistry } from "@natalia/tools";
@@ -237,7 +237,12 @@ export async function loadLocalPlugins(input: {
 
 export function validatePluginPath(root: string, path: string) {
   const resolved = resolve(root, path);
-  if (!resolved.startsWith(`${resolve(root)}/`) && resolved !== resolve(root))
+  // Containment must be separator-agnostic. Comparing against a hardcoded
+  // `${root}/` prefix never matches a Windows path, which rejected every
+  // plugin as escaping its root. `relative` is equivalent on POSIX and also
+  // honours Windows drive and case semantics.
+  const inside = relative(resolve(root), resolved);
+  if (inside !== "" && (inside.startsWith("..") || isAbsolute(inside)))
     throw new Error("plugin path escapes root");
   if (
     !isAbsolute(resolved) ||

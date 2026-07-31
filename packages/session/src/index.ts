@@ -253,7 +253,11 @@ export {
   selectedAgentFromEvents,
   selectedModelFromEvents,
 } from "./projector";
-export type { SessionProjection } from "./projector";
+export type {
+  ProjectedCapability,
+  ProjectedDriftFinding,
+  SessionProjection,
+} from "./projector";
 export { projectInteractiveRequests, requestsForSession } from "./interactive";
 export type {
   InteractiveProjection,

@@ -13,6 +13,7 @@
     { "path": "packages/runtime" },
     { "path": "packages/session" },
     { "path": "packages/config" },
+    { "path": "packages/platform" },
     { "path": "packages/tools" },
     { "path": "packages/terminal" },
     { "path": "packages/terminal" },

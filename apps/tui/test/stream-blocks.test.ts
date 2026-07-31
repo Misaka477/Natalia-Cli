@@ -76,13 +76,50 @@ test("content.done hydrates a durable assistant settlement without live deltas",
     id: "turn_durable_page",
     text: "restored durable response",
   });
+  // The synthesized block must live in the same key family the streaming
+  // deltas use, otherwise a later done cannot detect it and duplicates it.
   expect(state.messages).toContainEqual(
     expect.objectContaining({
-      id: "turn_durable_page",
+      id: "turn_durable_page:assistant",
       role: "assistant",
       text: "restored durable response",
     }),
   );
+});
+
+test("a tool-first turn renders the final answer exactly once", () => {
+  let state = reduceState(initialState, {
+    type: "turn.submitted",
+    id: "turn_tool_first",
+    text: "call a tool then answer",
+    byteLength: 22,
+    lineCount: 1,
+    sha256: "fixture",
+  });
+  // No assistant text before the tool: the stream must stay on segment 0 so
+  // the content.done guard can match what the deltas committed.
+  state = reduceState(state, {
+    type: "tool.update",
+    id: "call_1",
+    turnID: "turn_tool_first",
+    name: "read",
+    status: "completed",
+  } as never);
+  state = reduceState(state, {
+    type: "content.delta",
+    id: "turn_tool_first",
+    text: "the final answer",
+  } as never);
+  state = reduceState(state, {
+    type: "content.done",
+    id: "turn_tool_first",
+    text: "the final answer",
+  });
+  const assistant = state.messages.filter(
+    (block) => block.role === "assistant",
+  );
+  expect(assistant).toHaveLength(1);
+  expect(assistant[0]?.text).toBe("the final answer");
 });
 
 test("retry rollback drops transient tail without duplicate committed content", () => {
@@ -322,9 +359,9 @@ test("model-owned terminal persists approval wait and action timeline for fixed 
   expect(state.terminals.pty_model.approvalID).toBe("apr_pty_model_1");
   expect(state.terminalTimeline.pty_model[0]?.status).toBe("awaiting_approval");
   expect(state.footer).toContain("awaiting");
-  expect(state.messages.some((message) => message.id.startsWith("terminal:"))).toBe(
-    false,
-  );
+  expect(
+    state.messages.some((message) => message.id.startsWith("terminal:")),
+  ).toBe(false);
 });
 
 test("terminal pane selects among unlimited sessions and closes active view after model exit", () => {
@@ -512,7 +549,10 @@ test("runtime tool ids still advance post-tool stream segments", () => {
     id: "turn_runtime_tool",
     text: "after terminal tool\n",
   });
-  state = reduceState(state, { type: "thinking.done", id: "turn_runtime_tool" });
+  state = reduceState(state, {
+    type: "thinking.done",
+    id: "turn_runtime_tool",
+  });
 
   const first = state.messages.find(
     (item) => item.id === "turn_runtime_tool:thinking",

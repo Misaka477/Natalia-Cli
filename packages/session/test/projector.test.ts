@@ -453,6 +453,27 @@ test("projectedCapabilities tracks loaded/unloaded capabilities", () => {
   expect(caps).toHaveLength(1);
   expect(caps[0]?.name).toBe("Test Capability");
   expect(caps[0]?.manifest.scope).toBe("session");
+  expect(caps[0]?.manifest.apiVersion).toBe(1);
+  expect(caps[0]?.manifest.version).toBe("1.0.0");
+  expect(caps[0]?.manifest.grants).toEqual(["tools"]);
+
+  appendSessionEvent(session, {
+    type: "capability.unloaded",
+    id: "evt_1",
+    name: "Test Capability",
+  });
+  expect(projectedCapabilities(session.events)).toEqual([]);
+});
+
+test("projectedCapabilities keeps a failed load out of the projection", () => {
+  const session = createSessionRecord("ses_cap_failed", "Capabilities");
+  appendSessionEvent(session, {
+    type: "capability.failed",
+    id: "evt_1",
+    name: "Broken Capability",
+    reason: "dependency missing",
+  });
+  expect(projectedCapabilities(session.events)).toEqual([]);
 });
 
 test("projectedCanonicalTools registers and unregisters tools", () => {
@@ -486,10 +507,57 @@ test("projectedDriftFindings tracks findings and status updates", () => {
     evidence: ["12 actions without parser files"],
     applicableConstraints: [],
   });
-  const findings = projectedDriftFindings(session.events);
-  expect(findings).toHaveLength(1);
-  expect(findings[0]?.severity).toBe("warning");
-  expect(findings[0]?.originalObjective).toBe("Fix parser");
+  const opened = projectedDriftFindings(session.events);
+  expect(opened).toHaveLength(1);
+  expect(opened[0]?.severity).toBe("warning");
+  expect(opened[0]?.originalObjective).toBe("Fix parser");
+  // A finding starts open, and the status is owned by the projection rather
+  // than by the opening event.
+  expect(opened[0]?.status).toBe("open");
+  expect(opened[0]?.rationale).toBeUndefined();
+
+  appendSessionEvent(session, {
+    type: "drift.finding_updated",
+    id: "evt_2",
+    findingID: "DF-001",
+    status: "explained",
+    rationale: "Auth config is a prerequisite of the parser fix",
+  });
+  const explained = projectedDriftFindings(session.events);
+  expect(explained).toHaveLength(1);
+  expect(explained[0]?.status).toBe("explained");
+  expect(explained[0]?.rationale).toBe(
+    "Auth config is a prerequisite of the parser fix",
+  );
+  // The opening facts survive the update.
+  expect(explained[0]?.originalObjective).toBe("Fix parser");
+  expect(explained[0]?.evidence).toEqual(["12 actions without parser files"]);
+
+  appendSessionEvent(session, {
+    type: "drift.finding_updated",
+    id: "evt_3",
+    findingID: "DF-001",
+    status: "corrected",
+  });
+  const corrected = projectedDriftFindings(session.events);
+  expect(corrected[0]?.status).toBe("corrected");
+  // The latest update wins, and it does not clear an earlier rationale.
+  expect(corrected[0]?.rationale).toBe(
+    "Auth config is a prerequisite of the parser fix",
+  );
+});
+
+test("projectedDriftFindings ignores an update for a finding that was never opened", () => {
+  const session = createSessionRecord("ses_drift_orphan", "Drift");
+  appendSessionEvent(session, {
+    type: "drift.finding_updated",
+    id: "evt_1",
+    findingID: "DF-404",
+    status: "dismissed",
+  });
+  // An update carries no objective or evidence, so no finding can be
+  // reconstructed from it.
+  expect(projectedDriftFindings(session.events)).toEqual([]);
 });
 
 test("latestSessionSnapshot returns the most recent snapshot", () => {

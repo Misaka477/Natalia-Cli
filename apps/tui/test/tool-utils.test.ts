@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { userHomeDirectory } from "@natalia/platform";
 import {
   compactPath,
   filetype,
@@ -37,12 +38,10 @@ test("parseResultRecord parses result JSON", () => {
 });
 
 test("parseQuestionAnswers handles arrays of string arrays", () => {
-  expect(
-    parseQuestionAnswers([
-      ["a", "b"],
-      ["c"],
-    ]),
-  ).toEqual([["a", "b"], ["c"]]);
+  expect(parseQuestionAnswers([["a", "b"], ["c"]])).toEqual([
+    ["a", "b"],
+    ["c"],
+  ]);
   expect(parseQuestionAnswers(null)).toEqual([]);
   expect(parseQuestionAnswers([1, 2])).toEqual([]);
 });
@@ -65,7 +64,10 @@ test("statusValues parses segment key:value pairs", () => {
 });
 
 test("compactPath shortens HOME path to ~", () => {
-  const home = process.env.HOME ?? "";
+  // Resolve the home directory the same way the implementation does. Deriving
+  // it from HOME alone yields an empty string on Windows, which made this
+  // assert nothing there.
+  const home = userHomeDirectory();
   expect(compactPath(`${home}/project`)).toBe("~/project");
   expect(compactPath("/other/path")).toBe("/other/path");
   expect(compactPath(undefined)).toBe("local workspace");
@@ -86,7 +88,7 @@ test("stringField finds first string value by key", () => {
 });
 
 test("formatToolPath replaces HOME with ~", () => {
-  const home = process.env.HOME ?? "";
+  const home = userHomeDirectory();
   expect(formatToolPath(`${home}/project`)).toBe("~/project");
   expect(formatToolPath("/other/path")).toBe("/other/path");
   expect(formatToolPath("")).toBe("");

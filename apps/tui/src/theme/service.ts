@@ -1,5 +1,6 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { globalConfigHome } from "@natalia/platform";
 import {
   defaultTheme,
   detectSystemTheme,
@@ -28,9 +29,10 @@ export class ThemeService {
       this.workspaceRoot
         ? resolve(this.workspaceRoot, ".natalia", "themes")
         : undefined,
-      process.env.HOME
-        ? resolve(process.env.HOME, ".config", "natalia-cli", "themes")
-        : undefined,
+      // Gating on HOME made the user theme directory invisible on Windows,
+      // where HOME is normally unset, with no diagnostic. globalConfigHome
+      // keeps the POSIX `$HOME/.config` path and adds `%APPDATA%`.
+      resolve(globalConfigHome(), "natalia-cli", "themes"),
     ].filter(Boolean) as string[];
 
     for (const directory of [...new Set(directories)]) {

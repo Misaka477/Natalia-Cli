@@ -23,6 +23,27 @@ import {
   type CheckpointRuntimeResource,
 } from "../src";
 
+// Python is only a stand-in for "a real external program wrote and ran a file
+// here", not a subject of these tests. The interpreter is named `python3` on
+// most POSIX distributions and `python` on Windows, so resolve whichever
+// exists rather than hard-coding one and losing the whole scenario elsewhere.
+function pythonInterpreter() {
+  for (const candidate of ["python3", "python"]) {
+    try {
+      // spawnSync throws ENOENT rather than reporting failure when the
+      // executable is absent, so probing has to be guarded.
+      const probe = Bun.spawnSync([candidate, "--version"], {
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      if (probe.success) return candidate;
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
 test("default baseline, user scenario rollback and session restore remain durable", async () => {
   const root = await tempWorkspace();
   const events: RuntimeEvent[] = [];
@@ -40,9 +61,12 @@ test("default baseline, user scenario rollback and session restore remain durabl
   ]);
   ledger.add({ id: "assistant-1", role: "assistant", content: "writing file" });
   await writeFile(join(root, "test_example.py"), "print('ok')\n");
-  const run = Bun.spawnSync(["python3", join(root, "test_example.py")]);
-  expect(run.exitCode).toBe(0);
-  expect(run.stdout.toString()).toBe("ok\n");
+  const interpreter = pythonInterpreter();
+  if (interpreter) {
+    const run = Bun.spawnSync([interpreter, join(root, "test_example.py")]);
+    expect(run.exitCode).toBe(0);
+    expect(run.stdout.toString().trim()).toBe("ok");
+  }
   ledger.add({
     id: "tool-call",
     role: "tool_call",

@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { configV2Schema, type ConfigV2 } from "@natalia/contracts";
+import { globalConfigHome } from "@natalia/platform";
 import { parseConfigText, saveConfigOverlayFile } from "./file";
 import { readFile } from "node:fs/promises";
 
@@ -118,6 +119,16 @@ export type ResolvedConfig = {
   projectConfigPath: string;
 };
 
+/**
+ * Path of the per-user global config overlay. The POSIX location is unchanged;
+ * Windows resolves it under the roaming application data root.
+ */
+export function defaultGlobalConfigPath(
+  input: { os?: NodeJS.Platform; env?: NodeJS.ProcessEnv } = {},
+): string {
+  return resolve(globalConfigHome(input), "natalia-cli", "config.json");
+}
+
 export async function resolveConfig(input: {
   workspaceRoot: string;
   globalPath?: string;
@@ -125,9 +136,7 @@ export async function resolveConfig(input: {
 }): Promise<ResolvedConfig> {
   const workspaceRoot = resolve(input.workspaceRoot);
   const projectConfigPath = resolve(workspaceRoot, ".natalia", "config.json");
-  const globalPath =
-    input.globalPath ??
-    resolve(process.env.HOME ?? "", ".config", "natalia-cli", "config.json");
+  const globalPath = input.globalPath ?? defaultGlobalConfigPath();
   let config = configV2Schema.parse({ version: 2 });
   const sources: ConfigSource[] = [{ scope: "defaults", applied: true }];
   for (const [scope, path] of [
@@ -263,9 +272,7 @@ export async function updateGlobalConfig(
   patch: ConfigPatch,
   globalPath?: string,
 ): Promise<ConfigV2> {
-  const path =
-    globalPath ??
-    resolve(process.env.HOME ?? "", ".config", "natalia-cli", "config.json");
+  const path = globalPath ?? defaultGlobalConfigPath();
   const base = mergeConfig(
     configV2Schema.parse({ version: 2 }),
     (await loadOverlay(path)) as ConfigPatch,

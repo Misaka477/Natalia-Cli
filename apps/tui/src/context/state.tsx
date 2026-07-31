@@ -355,7 +355,11 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
     case "terminal.update":
       const terminalEvent = compactTerminalEvent(event);
       const previousTerminal = state.terminals[terminalEvent.id];
-      if (previousTerminal && sameTerminalUpdate(previousTerminal, terminalEvent)) return;
+      if (
+        previousTerminal &&
+        sameTerminalUpdate(previousTerminal, terminalEvent)
+      )
+        return;
       const isNewTerminal = !state.terminals[terminalEvent.id];
       state.terminals[terminalEvent.id] = terminalEvent;
       if (
@@ -370,7 +374,10 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
         state.terminalPane.selectedID === terminalEvent.id &&
         (terminalEvent.status === "exited" || terminalEvent.status === "failed")
       ) {
-        state.terminalPane.selectedID = nextActiveTerminal(state, terminalEvent.id);
+        state.terminalPane.selectedID = nextActiveTerminal(
+          state,
+          terminalEvent.id,
+        );
         if (!state.terminalPane.selectedID) state.terminalPane.focus = "chat";
       }
       return;
@@ -525,23 +532,29 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
         reasoningVisible: true,
       });
       return;
-    case "content.done":
-      flushStreamBlock(state, streamID(event.id, "assistant"));
-      if (
-        event.text &&
-        !state.messages.some(
-          (block) => block.id === segmentID(streamID(event.id, "assistant"), 0),
-        )
-      )
+    case "content.done": {
+      const assistantStream = streamID(event.id, "assistant");
+      flushStreamBlock(state, assistantStream);
+      // Streaming deltas commit into segmentID(assistantStream, n), which is
+      // `assistantStream` for n=0 and `assistantStream:segment:n` beyond it.
+      // Only synthesize a block when no segment of this stream rendered, and
+      // write it under the same key family so a later done cannot duplicate it.
+      const streamed = state.messages.some(
+        (block) =>
+          block.id === assistantStream ||
+          block.id.startsWith(`${assistantStream}:segment:`),
+      );
+      if (event.text && !streamed)
         upsertBlock(
           state,
-          segmentID(event.id, 0),
+          assistantStream,
           "assistant",
           event.text,
           undefined,
           { reasoningVisible: true },
         );
       return;
+    }
     case "tool.update":
       const toolTurnID = turnIDForToolEvent(event);
       // Complete the active model output before its tool card. Tool updates
@@ -959,6 +972,10 @@ function beginPostToolStreamSegment(state: AppState, turnID: string) {
   for (const role of ["thinking", "assistant"] as const) {
     const stream = state.streams[streamID(turnID, role)];
     if (!stream) continue;
+    // Only open a new segment when the current one actually rendered text.
+    // A tool-first turn must keep segment 0 so content.done can match it
+    // instead of synthesizing a second identical block.
+    if (!stream.segmentText && !stream.tail) continue;
     stream.segmentIndex += 1;
     stream.segmentText = "";
     stream.tail = "";
@@ -1246,7 +1263,8 @@ function compactTerminalEvent(
   event: Extract<RuntimeEvent, { type: "terminal.update" }>,
 ) {
   const transcript = event.transcript;
-  if (!transcript || transcript.length <= maxTerminalTranscriptChars) return event;
+  if (!transcript || transcript.length <= maxTerminalTranscriptChars)
+    return event;
   return {
     ...event,
     transcript: `... ${transcript.length - maxTerminalTranscriptChars} earlier chars omitted from live pane ...\n${transcript.slice(-maxTerminalTranscriptChars)}`,

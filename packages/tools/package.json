@@ -12,6 +12,7 @@
     "@natalia/contracts": "workspace:*",
     "@natalia/terminal": "workspace:*",
     "@natalia/native-terminal": "workspace:*",
+    "@natalia/platform": "workspace:*",
     "@natalia/sandbox": "workspace:*",
     "@natalia/subagent": "workspace:*",
     "@natalia/workflow": "workspace:*"

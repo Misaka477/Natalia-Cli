@@ -15,6 +15,12 @@ import type {
   RuntimeEvent,
   SandboxDiffKind,
 } from "@natalia/contracts";
+import {
+  forceRemove,
+  profileShellCommand,
+  shellQuote,
+  startDetachedProcess,
+} from "@natalia/platform";
 
 export type IsolationLevel = "workspace" | "container" | "vm";
 
@@ -138,7 +144,8 @@ export class WorkspaceSandboxManager
     options: { signal?: AbortSignal; env?: NodeJS.ProcessEnv } = {},
   ) {
     const manifest = this.mustGet(id);
-    const process = Bun.spawn(["bash", "-lc", command], {
+    const shell = profileShellCommand(command);
+    const process = Bun.spawn([shell.executable, ...shell.args], {
       cwd: manifest.root,
       stdin: "ignore",
       stdout: "pipe",
@@ -170,23 +177,13 @@ export class WorkspaceSandboxManager
       `${finalID}.log`,
     );
     await mkdir(dirname(outputPath), { recursive: true, mode: 0o700 });
-    const launcher = Bun.spawn(
-      [
-        "bash",
-        "-lc",
-        `bash -c ${shellQuote(command)} > ${shellQuote(outputPath)} 2>&1 & echo $!`,
-      ],
-      {
-        cwd: manifest.root,
-        stdout: "pipe",
-        stderr: "pipe",
-        env: this.environment(manifest.envAllowlist),
-      },
-    );
-    const pid = Number((await new Response(launcher.stdout).text()).trim());
-    const stderr = await new Response(launcher.stderr).text();
-    if ((await launcher.exited) !== 0 || !Number.isFinite(pid))
-      throw new Error(`failed to start sandbox resource: ${stderr}`);
+    const { pid } = await startDetachedProcess({
+      command,
+      posixScript: `bash -c ${shellQuote(command)} > ${shellQuote(outputPath)} 2>&1 & echo $!`,
+      cwd: manifest.root,
+      outputPath,
+      env: this.environment(manifest.envAllowlist),
+    });
     const resource: SandboxResourceInfo = {
       id: finalID,
       sandboxID: id,
@@ -320,7 +317,7 @@ export class WorkspaceSandboxManager
           });
         }
         if (change.kind === "delete") {
-          await rm(target, { recursive: true, force: true });
+          await forceRemove(target, { recursive: true });
         } else if (change.kind === "mode") {
           if (!change.mode)
             throw new Error("sandbox mode change is missing mode");
@@ -330,7 +327,7 @@ export class WorkspaceSandboxManager
           const source = await containPath(manifest.root, change.path);
           await writeFile(target, await readFile(source));
           if (change.mode) await chmod(target, Number.parseInt(change.mode, 8));
-          if (oldTarget) await rm(oldTarget, { recursive: true, force: true });
+          if (oldTarget) await forceRemove(oldTarget, { recursive: true });
         }
       }
       manifest.changedFiles = [];
@@ -338,7 +335,9 @@ export class WorkspaceSandboxManager
       return changes;
     } catch (error) {
       for (const backup of backups.reverse()) {
-        if (!backup.existed) await rm(backup.path, { force: true });
+        // A merged `mode` change may have made this path read-only, which
+        // blocks a plain force remove on Windows and would strand the rollback.
+        if (!backup.existed) await forceRemove(backup.path);
         else if (backup.content) await writeFile(backup.path, backup.content);
       }
       throw error;
@@ -549,8 +548,4 @@ async function readOptional(path: string) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
   }
-}
-
-function shellQuote(value: string) {
-  return `'${value.replace(/'/gu, `'\''`)}'`;
 }
