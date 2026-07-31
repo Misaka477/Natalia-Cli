@@ -70,6 +70,30 @@ npm run native-terminal:build-wezterm:windows
 
 They land in `packages/native-terminal/wezterm/target/release/`.
 
+**From a Windows release archive** — the prebuilt binaries are included in the
+archive at their expected path, so nothing needs to be moved:
+
+```text
+packages/native-terminal/wezterm/target/release/
+├── wezterm.exe            ← CLI client
+├── wezterm-gui.exe        ← visible window
+└── wezterm-mux-server.exe ← background multiplexer daemon
+```
+
+The runtime finds them at this **fixed path relative to the repository root**
+(derived from the module location, not the current directory), and the three
+binaries must stay in the same directory — the mux server and GUI are located
+relative to `wezterm.exe`. If you place the binaries elsewhere, keep all three
+together and set `NATALIA_WEZTERM_EXECUTABLE` to the full path of
+`wezterm.exe`.
+
+Verify once after unpacking:
+
+```powershell
+packages\native-terminal\wezterm\target\release\wezterm.exe --version
+packages\native-terminal\wezterm\target\release\wezterm-gui.exe start
+```
+
 ## 3. Configure a provider
 
 Environment variables are the simplest way and keep credentials out of files:

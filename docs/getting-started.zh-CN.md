@@ -68,6 +68,27 @@ npm run native-terminal:build-wezterm:windows
 
 产物在 `packages/native-terminal/wezterm/target/release/`。
 
+**从 Windows release 包安装** —— 预编译三件套已放在压缩包内的预期路径，解压即用，无需移动：
+
+```text
+packages/native-terminal/wezterm/target/release/
+├── wezterm.exe            ← CLI 客户端
+├── wezterm-gui.exe        ← 可见窗口
+└── wezterm-mux-server.exe ← 后台 multiplexer daemon
+```
+
+运行时按**仓库根下的固定相对路径**查找（基于模块位置解析，与当前目录无关），
+且三个二进制必须**在同一目录** —— mux server 和 GUI 都相对 `wezterm.exe`
+定位。如果你把二进制放到别处，三个要放在一起，并设置
+`NATALIA_WEZTERM_EXECUTABLE` 指向 `wezterm.exe` 的完整路径。
+
+解压后验证一次：
+
+```powershell
+packages\native-terminal\wezterm\target\release\wezterm.exe --version
+packages\native-terminal\wezterm\target\release\wezterm-gui.exe start
+```
+
 ## 3. 配置 provider
 
 用环境变量最简单，也能避免凭据落到文件里：
