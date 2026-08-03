@@ -923,6 +923,58 @@ test("workflow inner tools require their own runtime approval", async () => {
   expect(await readFile(join(root, "workflow.txt"), "utf8")).toBe("approved");
 });
 
+test("rejecting a workflow step approval stops the step from running", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-workflow-reject-"));
+  const workflow = JSON.stringify({
+    version: 1,
+    name: "workflow-reject",
+    steps: [
+      {
+        id: "write",
+        kind: "tool",
+        tool: "write_file",
+        arguments: { path: "workflow-rejected.txt", content: "should not run" },
+      },
+    ],
+  });
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_workflow_reject",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        if (!request.messages.some((message) => message.role === "tool"))
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "workflow",
+                name: "workflow_run",
+                arguments: JSON.stringify({ workflow }),
+              },
+            ],
+          };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => {
+    if (event.type !== "approval.request") return;
+    // Allow the workflow itself, refuse the step it wants to run.
+    client.respondApproval({
+      requestID: event.id,
+      decision: event.title === "Approve workflow_run" ? "once" : "reject",
+      feedback: event.title === "Approve workflow_run" ? undefined : "not this",
+    });
+  });
+  await client.submit("run write workflow");
+
+  // A refused approval must not fall through to execution.
+  expect(await readdir(root)).not.toContain("workflow-rejected.txt");
+  await client.dispose?.();
+});
+
 test("workflow script steps require runtime shell approval", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-workflow-script-"));
   const workflow = JSON.stringify({

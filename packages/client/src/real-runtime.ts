@@ -534,8 +534,13 @@ export function createRealRuntimeClient(
               );
             if (permissionMode === "read_only" && tool.requiresApproval)
               throw new Error(readOnlyToolMessage(tool.name));
-            if (tool.requiresApproval)
-              await requireApproval(toolID, tool, call);
+            if (tool.requiresApproval) {
+              // This path reports denials by throwing, so a refusal has to
+              // throw too. Returning it would let the subagent run a call the
+              // user just refused.
+              const refusal = await requireApproval(toolID, tool, call);
+              if (refusal) throw new Error(refusal.reason);
+            }
             const parsed = parseToolArguments(call.arguments);
             const paramErrors = validateToolParameters(tool.parameters, parsed);
             if (paramErrors.length)
@@ -3883,8 +3888,11 @@ export function createRealRuntimeClient(
       toolCallID: hookEvent.toolCallID,
       decision: tool.requiresApproval ? "approval_required" : "allow",
     });
-    if (tool.requiresApproval)
-      await requireApproval(
+    if (tool.requiresApproval) {
+      // Workflow authorization reports every denial by throwing, and the caller
+      // treats a returning call as authorized. A refusal must therefore throw,
+      // or the step would execute after the user refused it.
+      const refusal = await requireApproval(
         `workflow:${activeTurnID ?? sessionID}:${request.stepID}`,
         tool,
         {
@@ -3893,6 +3901,18 @@ export function createRealRuntimeClient(
           arguments: rawArguments,
         },
       );
+      if (refusal) {
+        publish({
+          type: "policy.decision",
+          turnID: hookEvent.turnID,
+          toolName,
+          toolCallID: hookEvent.toolCallID,
+          decision: "rejected",
+          reason: refusal.reason,
+        });
+        throw new Error(refusal.reason);
+      }
+    }
   }
 
   async function authorizeSandboxMerge(input: { id: string; paths: string[] }) {
