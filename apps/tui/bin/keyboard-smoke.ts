@@ -209,7 +209,7 @@ if (statusLoadCount() !== 2)
 keys.pressEscape();
 await Bun.sleep(80);
 
-keys.pressKey("t", { ctrl: true, shift: true });
+keys.pressKey("F8");
 for (let attempts = 0; attempts < 20 && terminalLoads !== 1; attempts++)
   await Bun.sleep(25);
 if (terminalLoads !== 1)
@@ -345,21 +345,26 @@ function makeBackend(): RuntimeClient {
         background: "0 running",
       };
     },
-    async terminalList() {
+    async nativeTerminalList() {
       terminalLoads++;
       return [
         {
           id: "tty_keyboard",
+          host: "wezterm" as const,
+          paneID: 1,
+          windowID: 1,
+          muxWindowID: 1,
+          tabID: 1,
           command: "cat",
           cwd: "/workspace",
           status: "running" as const,
-          attached: true,
+          inputOwner: "model" as const,
+          geometryOwner: "human" as const,
+          secureInput: false,
           rows: 24,
           cols: 80,
-          transcript: "ready\n",
-          tail: "ready\n",
           startedAt: "2026-07-23T00:00:00.000Z",
-          secretAudit: [],
+          attached: true,
         },
       ];
     },
