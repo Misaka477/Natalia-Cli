@@ -114,6 +114,7 @@ import { loadNativeMCPTools } from "@natalia/mcp";
 import { createPluginRegistry, loadLocalPlugins } from "@natalia/plugin";
 import { RuntimePerformanceTrace } from "./performance-trace";
 import {
+  commandTextForTool,
   createToolPolicyHookLayer,
   evaluatePermissionRules,
   type ToolHookEvent,
@@ -160,8 +161,16 @@ function releaseSqliteStore(path: string) {
   store?.close();
 }
 
-/** Hardcoded dangerous shell patterns that are always blocked. */
-const DANGEROUS_SHELL_PATTERNS = [
+/**
+ * Self-protection rules only. These three exist so the agent cannot kill the
+ * terminal host it is running under or delete its own runtime directories, and
+ * they are deliberately not a general danger list: a blocklist cannot cover an
+ * arbitrary byte stream. General command restrictions belong to the agent's
+ * `commands.denyPatterns`, and real isolation belongs to the deployment
+ * (container, restricted user). Do not grow this list into a substitute for
+ * either.
+ */
+const SELF_PROTECTION_PATTERNS = [
   {
     pattern: /pkill\s+-f\s+wezterm-mux-server/i,
     ruleID: "C-TERM-001",
@@ -3374,22 +3383,30 @@ export function createRealRuntimeClient(
     return messages;
   }
 
-  /** Checks constitution rules and hardcoded dangerous patterns. Returns blocked reason or undefined. */
+  /**
+   * Checks constitution rules and the self-protection patterns. Returns the
+   * blocked reason or undefined.
+   *
+   * `commandText` is whatever the call would actually run, extracted by the
+   * same function the command policy uses, so shell and terminal input are
+   * judged from one source. This check runs before approval, which is what
+   * makes it a block rather than a prompt: an approval that is skipped, cached
+   * or auto-granted cannot let a self-protection violation through.
+   */
   function checkConstitutionForTool(
     turnID: string,
     toolName: string,
     toolAction: string,
     toolResource: string,
-    shellCommand?: string,
+    commandText?: string,
   ): string | undefined {
     if (!session) return undefined;
     const rules = projectedConstitutionRules(session.events);
     let blocked: string | undefined;
 
-    // Check hardcoded dangerous shell patterns for run_shell
-    if (toolName === "run_shell" && shellCommand) {
-      for (const entry of DANGEROUS_SHELL_PATTERNS)
-        if (entry.pattern.test(shellCommand)) {
+    if (commandText) {
+      for (const entry of SELF_PROTECTION_PATTERNS)
+        if (entry.pattern.test(commandText)) {
           publish({
             type: "constitution.check",
             id: `${turnID}:constitution:${entry.ruleID.toLowerCase()}`,
@@ -3398,7 +3415,7 @@ export function createRealRuntimeClient(
             priority: "critical",
             enforcement: "deny",
             action: toolAction,
-            resource: `shell:${shellCommand.slice(0, 120)}`,
+            resource: `command:${commandText.slice(0, 120)}`,
             conflict: true,
           });
           blocked = `blocked by constitution: ${entry.statement}. Use terminal.kill or terminal.close instead.`;
@@ -3527,7 +3544,7 @@ export function createRealRuntimeClient(
       tool.name === "write" || tool.name === "apply_patch"
         ? (call.arguments ?? "")
         : "global",
-      tool.name === "run_shell" ? (call.arguments ?? "") : undefined,
+      commandTextForTool(tool.name, tryParseToolArguments(call.arguments)),
     );
     if (blocked) {
       publish({

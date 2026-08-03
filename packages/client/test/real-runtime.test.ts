@@ -1400,6 +1400,127 @@ test("agent permissions block configured file and command execution at tool boun
   expect(JSON.stringify(failures)).toContain("command matches deny pattern");
 });
 
+test("terminal input cannot bypass the command policy after opening a shell", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-terminal-bypass-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      agents: {
+        locked: {
+          description: "Locked",
+          permissions: { commands: { denyPatterns: ["rm\\s+-rf"] } },
+        },
+      },
+      defaultAgent: "locked",
+    }),
+  );
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_terminal_bypass",
+    // permissionMode "auto" grants every approval, which is the strongest form
+    // of the cached approval window: if the block still holds here, no approval
+    // state can let the command through.
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        if (!request.messages.some((message) => message.role === "tool")) {
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "open",
+                name: "interactive_terminal_start",
+                arguments: JSON.stringify({ command: "bash" }),
+              },
+              {
+                id: "sneak",
+                name: "interactive_terminal_send_line",
+                arguments: JSON.stringify({
+                  id: "terminal_1",
+                  text: "rm -rf /",
+                }),
+              },
+            ],
+          };
+        }
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("open a shell and clean up");
+  const sneak = events.filter(
+    (event): event is Extract<RuntimeEvent, { type: "tool.update" }> =>
+      event.type === "tool.update" &&
+      event.callID === "sneak" &&
+      (event.status === "failed" || event.status === "rejected"),
+  );
+  expect(sneak.length).toBeGreaterThan(0);
+  // Denied by policy, not merely by a terminal that failed to start.
+  expect(JSON.stringify(sneak)).toContain("command matches deny pattern");
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "policy.decision",
+      toolCallID: "sneak",
+      decision: "deny",
+    }),
+  );
+  await client.dispose?.();
+});
+
+test("self-protection patterns block terminal input, not only run_shell", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-terminal-selfprotect-"));
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_terminal_selfprotect",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        if (!request.messages.some((message) => message.role === "tool")) {
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "kill",
+                name: "interactive_terminal_send_line",
+                arguments: JSON.stringify({
+                  id: "terminal_1",
+                  text: "pkill -f wezterm-mux-server",
+                }),
+              },
+            ],
+          };
+        }
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("stop the terminal host");
+  const blocked = events.filter(
+    (event): event is Extract<RuntimeEvent, { type: "tool.update" }> =>
+      event.type === "tool.update" &&
+      event.callID === "kill" &&
+      event.status === "failed",
+  );
+  expect(JSON.stringify(blocked)).toContain("blocked by constitution");
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "constitution.check",
+      ruleID: "C-TERM-001",
+    }),
+  );
+  await client.dispose?.();
+});
+
 test("agent permissions apply network, environment, and output redaction boundaries", async () => {
   const root = await mkdtemp(
     join(tmpdir(), "natalia-agent-boundary-permissions-"),

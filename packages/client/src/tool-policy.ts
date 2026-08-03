@@ -115,6 +115,82 @@ export type PermissionCheck = {
   diagnostics: string[];
 };
 
+/**
+ * Tools that receive the command to run as an argument, so the command policy
+ * reads `command`.
+ */
+const COMMAND_ARGUMENT_TOOLS = [
+  "run_shell",
+  "sandbox_execute",
+  "sandbox_resource_start",
+  "process_start",
+  "background_start",
+  "interactive_start",
+  "interactive_terminal_start",
+];
+
+/**
+ * Terminal input tools carry the command as terminal input instead of as a
+ * command argument. They have to be checked by the same policy: otherwise a
+ * model opens a shell once, which is checked, and then feeds every later
+ * command through terminal input, which was not. Both the canonical names and
+ * the registered aliases are listed because either name can be called.
+ */
+const TERMINAL_INPUT_TOOLS = [
+  "interactive_terminal_write",
+  "interactive_terminal_send_line",
+  "interactive_terminal_keys",
+  "interactive_terminal_input",
+  "interactive_write",
+  "interactive_send_line",
+  "interactive_keys",
+  "interactive_input",
+];
+
+/**
+ * The command text a policy should judge for one tool call, or undefined when
+ * the call carries no command. Shell and terminal paths deliberately share this
+ * one function so a rule cannot hold on one path and be absent on the other.
+ */
+export function commandTextForTool(
+  toolName: string,
+  args: Record<string, unknown>,
+): string | undefined {
+  if (COMMAND_ARGUMENT_TOOLS.includes(toolName))
+    return typeof args.command === "string" ? args.command : undefined;
+  if (!TERMINAL_INPUT_TOOLS.includes(toolName)) return undefined;
+  return terminalInputText(args);
+}
+
+/**
+ * Key sequences are joined without a separator because a model can type a
+ * command one key at a time, and only the reconstructed string shows what was
+ * typed. Separate sources are joined by newline so they cannot merge into a
+ * token that neither of them contained.
+ */
+function terminalInputText(args: Record<string, unknown>): string | undefined {
+  const segments: string[] = [];
+  if (typeof args.text === "string") segments.push(args.text);
+  if (typeof args.input === "string") segments.push(args.input);
+  if (typeof args.key === "string") segments.push(args.key);
+  if (Array.isArray(args.keys)) {
+    const typed: string[] = [];
+    for (const entry of args.keys) {
+      if (typeof entry === "string") {
+        typed.push(entry);
+        continue;
+      }
+      if (!entry || typeof entry !== "object") continue;
+      const key = entry as Record<string, unknown>;
+      if (typeof key.text === "string") typed.push(key.text);
+      else if (typeof key.key === "string") typed.push(key.key);
+    }
+    if (typed.length) segments.push(typed.join(""));
+  }
+  const text = segments.join("\n");
+  return text.length ? text : undefined;
+}
+
 export function evaluatePermissionRules(
   rules: PermissionRules | undefined,
   toolName: string,
@@ -183,17 +259,8 @@ export function evaluatePermissionRules(
     }
   }
 
-  const runsCommand = [
-    "run_shell",
-    "sandbox_execute",
-    "sandbox_resource_start",
-    "process_start",
-    "background_start",
-    "interactive_start",
-    "interactive_terminal_start",
-  ].includes(toolName);
-  if (rules.commands && runsCommand) {
-    const cmd = typeof args.command === "string" ? args.command : undefined;
+  if (rules.commands) {
+    const cmd = commandTextForTool(toolName, args);
     if (cmd) {
       const denied = matchesCommandPatterns(cmd, rules.commands.denyPatterns);
       if (denied.error) {

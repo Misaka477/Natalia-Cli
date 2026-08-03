@@ -9,7 +9,10 @@ import {
   type ToolPolicy,
   type RuntimeEvent,
 } from "../src";
-import { evaluatePermissionRules } from "../src/tool-policy";
+import {
+  commandTextForTool,
+  evaluatePermissionRules,
+} from "../src/tool-policy";
 import { terminalApprovalScope, terminalInputRisk } from "../src/real-runtime";
 import type {
   ProviderStreamRequest,
@@ -153,6 +156,100 @@ test("agent rules cover sandbox paths and all command-launching tools", () => {
         command: "rm -rf generated",
       }),
     ).toMatchObject({ allowed: false, reason: "command blocked by policy" });
+});
+
+test("command policy covers terminal input, not only command arguments", () => {
+  const rules = { commands: { denyPatterns: ["rm\\s+-rf"] } };
+  // Every terminal write entry point, under both its canonical name and its
+  // registered alias, carrying the command in whichever field that tool uses.
+  const calls: [string, Record<string, unknown>][] = [
+    ["interactive_terminal_send_line", { id: "t", text: "rm -rf /" }],
+    ["interactive_terminal_write", { id: "t", input: "rm -rf /" }],
+    ["interactive_terminal_input", { id: "t", text: "rm -rf /" }],
+    ["interactive_terminal_keys", { id: "t", key: "rm -rf /" }],
+    ["interactive_send_line", { id: "t", text: "rm -rf /" }],
+    ["interactive_write", { id: "t", input: "rm -rf /" }],
+    ["interactive_input", { id: "t", text: "rm -rf /" }],
+    ["interactive_keys", { id: "t", key: "rm -rf /" }],
+  ];
+  for (const [toolName, args] of calls)
+    expect(evaluatePermissionRules(rules, toolName, args)).toMatchObject({
+      allowed: false,
+      reason: "command blocked by policy",
+    });
+});
+
+test("terminal command text reconstructs key-by-key typing", () => {
+  // Typing a command one key at a time must not evade the policy.
+  expect(
+    commandTextForTool("interactive_terminal_input", {
+      keys: [
+        { key: "r" },
+        { key: "m" },
+        { key: " " },
+        { key: "-" },
+        { key: "r" },
+        { key: "f" },
+      ],
+    }),
+  ).toBe("rm -rf");
+  expect(
+    evaluatePermissionRules(
+      { commands: { denyPatterns: ["rm\\s+-rf"] } },
+      "interactive_terminal_input",
+      {
+        id: "t",
+        keys: [{ text: "rm" }, { text: " -rf" }, { text: " /" }],
+      },
+    ),
+  ).toMatchObject({ allowed: false });
+});
+
+test("terminal command text keeps separate input sources apart", () => {
+  // Sources are joined by newline so two harmless fields cannot be spliced
+  // into a token that neither of them contained.
+  expect(
+    commandTextForTool("interactive_terminal_input", {
+      text: "r",
+      keys: [{ key: "m" }],
+    }),
+  ).toBe("r\nm");
+  expect(
+    evaluatePermissionRules(
+      { commands: { denyPatterns: ["\\brm\\b"] } },
+      "interactive_terminal_input",
+      { id: "t", text: "r", keys: [{ key: "m" }] },
+    ),
+  ).toMatchObject({ allowed: true });
+});
+
+test("terminal input honours command allow lists and ignores unrelated tools", () => {
+  const allowOnlyGit = { commands: { allowPatterns: ["^git\\s"] } };
+  expect(
+    evaluatePermissionRules(allowOnlyGit, "interactive_terminal_send_line", {
+      id: "t",
+      text: "git status",
+    }),
+  ).toMatchObject({ allowed: true });
+  expect(
+    evaluatePermissionRules(allowOnlyGit, "interactive_terminal_send_line", {
+      id: "t",
+      text: "ls",
+    }),
+  ).toMatchObject({ allowed: false, reason: "command blocked by policy" });
+  // A tool that runs no command is not a command carrier, whatever its args.
+  expect(commandTextForTool("read_file", { text: "rm -rf /" })).toBeUndefined();
+  expect(
+    evaluatePermissionRules(
+      { commands: { denyPatterns: ["rm\\s+-rf"] } },
+      "read_file",
+      { path: "a.txt", text: "rm -rf /" },
+    ),
+  ).toMatchObject({ allowed: true });
+  // Calls that carry no input at all stay undefined rather than empty string.
+  expect(
+    commandTextForTool("interactive_terminal_input", { id: "t" }),
+  ).toBeUndefined();
 });
 
 test("terminal low-risk approval scopes bind one terminal and exclude high-risk input", () => {
