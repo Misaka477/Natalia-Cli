@@ -2,9 +2,8 @@ import { TextareaRenderable } from "@opentui/core";
 import { useBindings } from "@opentui/keymap/solid";
 import type { RuntimeClient } from "@natalia/contracts";
 import type { ModalRequest } from "@natalia/ui-model";
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import { usePromptRef } from "../../context/prompt";
-import { useModeStack } from "../../modal/mode-stack";
 import { themeTokens as darkTheme } from "../../theme/theme";
 
 const MODE = "question";
@@ -20,7 +19,7 @@ export function QuestionPrompt(props: {
   const [answers, setAnswers] = createSignal<string[][]>([]);
   const [custom, setCustom] = createSignal<string[]>([]);
   const prompt = usePromptRef();
-  const modes = useModeStack();
+  const [rejecting, setRejecting] = createSignal(false);
   let input: TextareaRenderable | undefined;
   const questions = () => props.request.questions ?? [];
   const single = () => questions().length === 1 && !questions()[0]?.multiple;
@@ -30,10 +29,24 @@ export function QuestionPrompt(props: {
   const customEnabled = () => question()?.custom !== false;
   const total = () => options().length + (customEnabled() ? 1 : 0);
 
-  onMount(() => {
-    const pop = modes.push(MODE);
-    onCleanup(pop);
-  });
+  useBindings(() => ({
+    mode: MODE,
+    enabled: rejecting(),
+    bindings: [
+      {
+        key: "escape",
+        desc: "Keep the question open",
+        group: "Question",
+        cmd: () => setRejecting(false),
+      },
+      {
+        key: "return",
+        desc: "Confirm declining question",
+        group: "Question",
+        cmd: () => reject(),
+      },
+    ],
+  }));
 
   useBindings(() => ({
     mode: MODE,
@@ -120,9 +133,12 @@ export function QuestionPrompt(props: {
       },
       {
         key: "escape",
-        desc: "Reject question",
+        // Escape must never answer on its own: a modal can appear while the
+        // user is reaching for another surface, and declining immediately
+        // would fail the whole turn. This only arms the decline.
+        desc: "Start declining question",
         group: "Question",
-        cmd: reject,
+        cmd: () => setRejecting(true),
       },
       ...Array.from({ length: Math.min(total(), 9) }, (_, index) => ({
         key: String(index + 1),
@@ -296,9 +312,18 @@ export function QuestionPrompt(props: {
         paddingRight={2}
         paddingBottom={1}
       >
-        <text fg={darkTheme.muted}>
-          ↑↓ select · ←→ tab · enter confirm · esc reject
-        </text>
+        <Show
+          when={rejecting()}
+          fallback={
+            <text fg={darkTheme.muted}>
+              ↑↓ select · ←→ tab · enter confirm · esc to decline
+            </text>
+          }
+        >
+          <text fg={darkTheme.warning}>
+            Decline this question? enter confirm · esc cancel
+          </text>
+        </Show>
       </box>
     </box>
   );

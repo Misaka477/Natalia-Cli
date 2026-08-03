@@ -5,6 +5,7 @@ import {
   createContext,
   createEffect,
   createMemo,
+  createSignal,
   onCleanup,
   Show,
   useContext,
@@ -12,7 +13,7 @@ import {
   type ParentProps,
 } from "solid-js";
 import { createStore } from "solid-js/store";
-import { useModeStack } from "../modal/mode-stack";
+import { useModeStack, type SurfaceHandle } from "../modal/mode-stack";
 import { Dialog } from "./Dialog";
 import type { Renderable } from "@opentui/core";
 
@@ -28,6 +29,7 @@ export interface DialogContext {
   replace(element: any, onClose?: () => void): void;
   readonly stack: readonly StackItem[];
   readonly size: "medium" | "large" | "xlarge";
+  readonly zIndex: number;
   setSize(size: "medium" | "large" | "xlarge"): void;
 }
 
@@ -39,11 +41,19 @@ function init(): DialogContext {
 
   const renderer = useRenderer();
   const modeStack = useModeStack();
+  const [surface, setSurface] = createSignal<SurfaceHandle | undefined>();
 
   createEffect(() => {
-    if (store.stack.length === 0) return;
-    const popMode = modeStack.push("modal");
-    onCleanup(popMode);
+    if (store.stack.length === 0) {
+      setSurface(undefined);
+      return;
+    }
+    // Re-pushing on every depth change is intentional: opening a nested dialog
+    // is a fresh interaction, so the dialog surface moves back above any modal
+    // that arrived while it was open.
+    const handle = modeStack.pushSurface("modal");
+    setSurface(handle);
+    onCleanup(() => handle.release());
   });
 
   let focus: Renderable | null = null;
@@ -141,6 +151,9 @@ function init(): DialogContext {
     get size() {
       return store.size;
     },
+    get zIndex() {
+      return surface()?.zIndex() ?? 3000;
+    },
     setSize(size: "medium" | "large" | "xlarge") {
       setStore("size", size);
     },
@@ -158,7 +171,11 @@ export function DialogProvider(props: ParentProps) {
     <DialogCtx.Provider value={value}>
       {props.children}
       <Show when={value.stack.length}>
-        <Dialog onClose={() => value.clear()} size={value.size}>
+        <Dialog
+          onClose={() => value.pop()}
+          size={value.size}
+          zIndex={value.zIndex}
+        >
           {value.stack.at(-1)!.element}
         </Dialog>
       </Show>

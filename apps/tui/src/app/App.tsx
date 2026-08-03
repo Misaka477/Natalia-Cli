@@ -523,7 +523,6 @@ function Shell(props: {
     });
   }
 
-
   useBindings(() => ({
     commands: [
       ...Object.values(commands)
@@ -542,6 +541,23 @@ function Shell(props: {
     mode: "base",
     bindings: Object.entries(keybinds.resolved().bindings)
       .filter(([id]) => !commands[id]?.scope)
+      .flatMap(([id, keys]) =>
+        keys.map((key) => ({
+          key,
+          desc: commands[id]!.desc,
+          group: "Natalia",
+          cmd: () => onCommand(id),
+        })),
+      ),
+  }));
+
+  // Surface-opening commands are registered without a mode so they survive a
+  // runtime modal, and below every other layer so a mode that binds the same
+  // key still wins.
+  useBindings(() => ({
+    priority: -1,
+    bindings: Object.entries(keybinds.resolved().bindings)
+      .filter(([id]) => commands[id]?.overlay)
       .flatMap(([id, keys]) =>
         keys.map((key) => ({
           key,

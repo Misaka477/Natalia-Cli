@@ -15,8 +15,24 @@ import {
   registerTimedLeader,
 } from "@opentui/keymap/addons/opentui";
 import { useKeymap } from "@opentui/keymap/solid";
+import { createSignal } from "solid-js";
 
 type TuiKeymap = Keymap<Renderable, KeyEvent>;
+
+/**
+ * Paint order for presented surfaces is derived from the same stack that gates
+ * key dispatch, so the surface that receives Escape is always the one drawn on
+ * top. Deriving both from one order is what keeps an approval prompt from
+ * silently taking keys aimed at a dialog above it.
+ */
+const SURFACE_BASE_Z_INDEX = 3000;
+const SURFACE_Z_INDEX_STEP = 10;
+
+export interface SurfaceHandle {
+  release(): void;
+  zIndex(): number;
+  isTop(): boolean;
+}
 
 const NATALIA_MODE_KEY = "natalia.mode";
 const NATALIA_BASE_MODE = "base";
@@ -26,6 +42,7 @@ const modeStacks = new WeakMap<TuiKeymap, ModeStack>();
 export interface ModeStack {
   current(): string;
   push(mode: string): () => void;
+  pushSurface(mode: string): SurfaceHandle;
   dispose(): void;
 }
 
@@ -43,28 +60,55 @@ function createModeStack(keymap: TuiKeymap): ModeStack {
 
   const stack: { id: symbol; mode: string }[] = [];
   let disposed = false;
+  // Surfaces read their own position, so a plain array is not enough: the read
+  // has to re-run when the stack changes.
+  const [revision, setRevision] = createSignal(0);
 
   const update = () => {
     keymap.setData(NATALIA_MODE_KEY, stack.at(-1)?.mode ?? NATALIA_BASE_MODE);
+    setRevision((value) => value + 1);
   };
+
+  function pushEntry(mode: string) {
+    const id = Symbol(mode);
+    if (disposed) return { id, release: () => {} };
+    let active = true;
+    stack.push({ id, mode });
+    update();
+    return {
+      id,
+      release() {
+        if (!active) return;
+        active = false;
+        const index = stack.findIndex((item) => item.id === id);
+        if (index !== -1) stack.splice(index, 1);
+        update();
+      },
+    };
+  }
 
   const api: ModeStack = {
     current() {
       return stack.at(-1)?.mode ?? NATALIA_BASE_MODE;
     },
     push(mode: string) {
-      if (disposed) return () => {};
-      const id = Symbol(mode);
-      let active = true;
-      stack.push({ id, mode });
-      update();
-
-      return () => {
-        if (!active) return;
-        active = false;
-        const index = stack.findIndex((item) => item.id === id);
-        if (index !== -1) stack.splice(index, 1);
-        update();
+      return pushEntry(mode).release;
+    },
+    pushSurface(mode: string) {
+      const entry = pushEntry(mode);
+      return {
+        release: entry.release,
+        zIndex() {
+          revision();
+          const index = stack.findIndex((item) => item.id === entry.id);
+          return (
+            SURFACE_BASE_Z_INDEX + Math.max(index, 0) * SURFACE_Z_INDEX_STEP
+          );
+        },
+        isTop() {
+          revision();
+          return stack.at(-1)?.id === entry.id;
+        },
       };
     },
     dispose() {

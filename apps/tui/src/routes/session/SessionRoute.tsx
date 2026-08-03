@@ -23,7 +23,7 @@ import type { TuiPreferences } from "../../settings";
 import { timelineLayout } from "../../session-layout";
 import { useRouteController } from "../../context/route";
 import { useDialog } from "../../dialog/provider";
-import { Dialog } from "../../dialog/Dialog";
+import { ModalSurface } from "../../modal/ModalSurface";
 import { DialogPrompt } from "../../dialog/DialogPrompt";
 import { PermissionPrompt } from "./permission";
 import { QuestionPrompt } from "./question";
@@ -269,7 +269,7 @@ export function SessionRoute(props: {
         </Show>
       </scrollbox>
       <Show when={props.backend && modal()?.kind === "approval"}>
-        <Dialog dismissible={false} size="medium" onClose={() => undefined}>
+        <ModalSurface mode="approval">
           <PermissionPrompt
             request={
               modal() as Extract<ReturnType<typeof modal>, { kind: "approval" }>
@@ -277,10 +277,10 @@ export function SessionRoute(props: {
             backend={props.backend!}
             onExit={props.onExit ?? (() => {})}
           />
-        </Dialog>
+        </ModalSurface>
       </Show>
       <Show when={props.backend && modal()?.kind === "question"}>
-        <Dialog dismissible={false} size="medium" onClose={() => undefined}>
+        <ModalSurface mode="question">
           <QuestionPrompt
             request={
               modal() as Extract<ReturnType<typeof modal>, { kind: "question" }>
@@ -288,7 +288,7 @@ export function SessionRoute(props: {
             backend={props.backend!}
             onExit={props.onExit ?? (() => {})}
           />
-        </Dialog>
+        </ModalSurface>
       </Show>
       <Show when={props.showJumpToBottom}>
         <box

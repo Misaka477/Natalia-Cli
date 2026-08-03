@@ -77,6 +77,12 @@ export interface CommandDef {
   keys: string;
   desc: string;
   scope?: "dialog" | "autocomplete";
+  /**
+   * Opens a surface of its own, so it stays available while a runtime modal is
+   * presented. Without this the base layer is masked by the modal's mode and
+   * the user cannot open a dialog and dismiss it before answering.
+   */
+  overlay?: true;
 }
 
 export const commands: Record<string, CommandDef> = {
@@ -84,6 +90,7 @@ export const commands: Record<string, CommandDef> = {
     id: "palette.toggle",
     keys: "ctrl+p",
     desc: "Toggle command palette",
+    overlay: true,
   },
   "session.new": { id: "session.new", keys: "ctrl+n", desc: "New session" },
   "session.list": { id: "session.list", keys: "ctrl+l", desc: "List sessions" },
@@ -128,6 +135,7 @@ export const commands: Record<string, CommandDef> = {
     id: "terminal.manage",
     keys: "f8",
     desc: "Manage interactive terminal sessions",
+    overlay: true,
   },
   "checkpoint.manage": {
     id: "checkpoint.manage",

@@ -7,6 +7,7 @@ export function Dialog(
     size?: "medium" | "large" | "xlarge";
     onClose: () => void;
     dismissible?: boolean;
+    zIndex?: number;
   }>,
 ) {
   const dimensions = useTerminalDimensions();
@@ -35,7 +36,7 @@ export function Dialog(
       height={dimensions().height}
       alignItems="center"
       position="absolute"
-      zIndex={3000}
+      zIndex={props.zIndex ?? 3000}
       paddingTop={dimensions().height / 4}
       left={0}
       top={0}

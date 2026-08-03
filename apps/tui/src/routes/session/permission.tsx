@@ -2,9 +2,8 @@ import { TextareaRenderable, TextAttributes } from "@opentui/core";
 import { useBindings } from "@opentui/keymap/solid";
 import type { RuntimeClient } from "@natalia/contracts";
 import type { ModalRequest } from "@natalia/ui-model";
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import { usePromptRef } from "../../context/prompt";
-import { useModeStack } from "../../modal/mode-stack";
 import { themeTokens as darkTheme } from "../../theme/theme";
 
 const MODE = "approval";
@@ -19,13 +18,7 @@ export function PermissionPrompt(props: {
   const [expanded, setExpanded] = createSignal(false);
   const actions = ["once", "session", "reject"] as const;
   const prompt = usePromptRef();
-  const modes = useModeStack();
   let input: TextareaRenderable | undefined;
-
-  onMount(() => {
-    const pop = modes.push(MODE);
-    onCleanup(pop);
-  });
 
   function reply(decision: (typeof actions)[number], feedback?: string) {
     props.backend.respondApproval({
@@ -94,9 +87,13 @@ export function PermissionPrompt(props: {
       },
       {
         key: "escape",
-        desc: "Reject permission",
+        // Escape must never answer on its own. A modal can appear while the
+        // user is reaching for another surface, and an immediate rejection
+        // there would fail the whole turn. This only opens the rejection
+        // stage, which still requires an explicit confirmation.
+        desc: "Start rejecting permission",
         group: "Permission",
-        cmd: () => reply("reject"),
+        cmd: () => select(actions.indexOf("reject")),
       },
       {
         key: "d",
@@ -251,7 +248,9 @@ function Actions(props: { selected: number; onSelect(index: number): void }) {
           )}
         </For>
       </box>
-      <text fg={darkTheme.muted}>←→ select · enter confirm · esc reject</text>
+      <text fg={darkTheme.muted}>
+        ←→ select · enter confirm · esc to reject
+      </text>
     </box>
   );
 }
