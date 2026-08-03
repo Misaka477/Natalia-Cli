@@ -1247,3 +1247,58 @@ async function waitForFile(path: string) {
   }
   throw new Error(`timed out waiting for ${path}`);
 }
+
+test("terminal_observe latest reports a point-in-time read, not a wait outcome", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-observe-latest-"));
+  const nativeTerminal = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 91, window_id: 1, tab_id: 1 };
+    },
+    async list() {
+      return [{ pane_id: 91, window_id: 1, tab_id: 1, rows: 24, cols: 80 }];
+    },
+    async read() {
+      return "screen contents";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  });
+  const context = { workspaceRoot: root, nativeTerminal };
+  const tools = createToolRegistry();
+  await tools
+    .get("interactive_terminal_start")!
+    .execute({ command: "cat", id: "tty_latest" }, context);
+
+  const latest = JSON.parse(
+    String(
+      await tools
+        .get("terminal_observe")!
+        .execute({ id: "tty_latest", mode: "latest" }, context),
+    ),
+  );
+  // Nothing waited, so no deadline can have passed. Reporting "timeout" made a
+  // freshly read screen look like a stale frame.
+  expect(latest.reason).toBe("latest");
+  expect(latest.text).toContain("screen contents");
+
+  // The same call with a revision already seen still reports the current text.
+  const repeated = JSON.parse(
+    String(
+      await tools.get("terminal_observe")!.execute(
+        {
+          id: "tty_latest",
+          mode: "latest",
+          afterRevision: latest.currentRevision,
+        },
+        context,
+      ),
+    ),
+  );
+  expect(repeated.reason).toBe("latest");
+  expect(repeated.changed).toBe(false);
+  expect(repeated.text).toContain("screen contents");
+});

@@ -4796,3 +4796,53 @@ test("a rejection without feedback still audits the decision and continues", asy
     .messages.filter((message) => message.role === "tool");
   expect(String(toolMessages[0]?.content)).toContain("without a reason");
 });
+
+test("the repeated call guard blocks loops but not waiting reads", async () => {
+  async function blockedCount(name: string, args: Record<string, unknown>) {
+    const root = await mkdtemp(join(tmpdir(), "natalia-repeat-guard-"));
+    const events: RuntimeEvent[] = [];
+    const client = createRealRuntimeClient({
+      workspaceRoot: root,
+      sessionID: `ses_repeat_${name}`,
+      permissionMode: "auto",
+      provider: {
+        provider: "test",
+        model: "test",
+        async *stream(request) {
+          if (request.messages.some((message) => message.role === "tool")) {
+            yield { type: "done" as const };
+            return;
+          }
+          // Fourteen identical calls in one turn, so the guard's threshold is
+          // crossed without depending on how many rounds a turn allows.
+          yield {
+            type: "tool_call" as const,
+            calls: Array.from({ length: 14 }, (_, index) => ({
+              id: `call_${index}`,
+              name,
+              arguments: JSON.stringify(args),
+            })),
+          };
+        },
+      },
+    });
+    client.start((event) => events.push(event));
+    await client.submit(`repeat ${name}`);
+    await client.dispose?.();
+    return events.filter(
+      (event) =>
+        event.type === "tool.update" &&
+        typeof event.summary === "string" &&
+        event.summary.includes("blocked repeated tool call"),
+    ).length;
+  }
+
+  // A tool with no waiting behaviour repeated identically is a loop, and the
+  // guard still stops it.
+  expect(
+    await blockedCount("read_file", { path: "missing.txt" }),
+  ).toBeGreaterThan(0);
+  // terminal_observe blocks until the screen changes, so identical arguments are
+  // how a caller waits. It used to be cut off mid-wait after twelve polls.
+  expect(await blockedCount("terminal_observe", { id: "tty_absent" })).toBe(0);
+});

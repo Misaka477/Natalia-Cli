@@ -1196,7 +1196,12 @@ function terminalObserveTool(): RuntimeTool {
           currentRevision: snapshot.revision,
           afterRevision,
           changed: snapshot.revision > afterRevision,
-          reason: snapshot.revision > afterRevision ? "changed" : "timeout",
+          // This mode reads the screen as it is and never waits, so it cannot
+          // report a wait outcome. Saying "timeout" claimed the deadline passed
+          // with no output, which reads as a stale frame even though the screen
+          // was just reconciled, and "changed" was not one of the outcomes the
+          // waiting modes report either.
+          reason: "latest",
           cursorX: snapshot.cursorX,
           cursorY: snapshot.cursorY,
           rows: snapshot.rows,

@@ -163,6 +163,16 @@ function releaseSqliteStore(path: string) {
 }
 
 /**
+ * Tools whose contract is to block until the screen changes. Calling one
+ * repeatedly with identical arguments is how a caller waits for output, so the
+ * repeated-call guard would stop legitimate work: the arguments only stay
+ * identical while nothing new has arrived, which is exactly when waiting is
+ * correct. Each call spends real time inside the tool, so a loop cannot spin,
+ * and the turn's step budget still bounds it.
+ */
+const WAITING_TOOLS = new Set(["terminal_observe"]);
+
+/**
  * Self-protection rules only. These three exist so the agent cannot kill the
  * terminal host it is running under or delete its own runtime directories, and
  * they are deliberately not a general danger list: a blocklist cannot cover an
@@ -3483,7 +3493,7 @@ export function createRealRuntimeClient(
     const dedupKey = `${call.name}\u0000${call.arguments}`;
     const occurrences = (toolCalls.get(dedupKey) ?? 0) + 1;
     toolCalls.set(dedupKey, occurrences);
-    if (occurrences > 12) {
+    if (occurrences > 12 && !WAITING_TOOLS.has(tool.name)) {
       const message = `blocked repeated tool call after ${occurrences} identical attempts: ${tool.name}`;
       publish({
         type: "tool.update",
