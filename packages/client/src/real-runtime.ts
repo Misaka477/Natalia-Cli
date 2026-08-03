@@ -1291,6 +1291,25 @@ export function createRealRuntimeClient(
     return selectedAgent?.maxSteps ?? maxSteps;
   }
 
+  /**
+   * Redaction precedence, matching how the other boundaries resolve: an agent
+   * that states a value wins, then the workspace `security.redactToolOutput`
+   * setting, then the schema default.
+   *
+   * The global setting used to be read nowhere, so the only way to get
+   * redaction was to set it per agent, while the config schema and the settings
+   * toggle both presented it as on. A security switch that reports enabled
+   * while doing nothing is worse than having no switch, so the default follows
+   * what the schema already declares.
+   */
+  function redactToolOutputEnabled() {
+    return (
+      selectedAgent?.permissions?.redactOutput ??
+      tsRuntimeConfig?.security.redactToolOutput ??
+      true
+    );
+  }
+
   async function selectRuntimeModel(modelID?: string, variant?: string) {
     await ready;
     if (!tsRuntimeConfig) throw new Error("runtime config is unavailable");
@@ -3699,10 +3718,7 @@ export function createRealRuntimeClient(
       });
       const bounded = await boundToolOutput(
         workspaceRoot,
-        redactToolOutput(
-          completeResult,
-          selectedAgent?.permissions?.redactOutput,
-        ),
+        redactToolOutput(completeResult, redactToolOutputEnabled()),
       );
       const result = bounded.text;
       publish({

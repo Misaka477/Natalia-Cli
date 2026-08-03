@@ -1573,6 +1573,61 @@ test("self-protection patterns block terminal input, not only run_shell", async 
   await client.dispose?.();
 });
 
+test("security.redactToolOutput drives redaction when no agent overrides it", async () => {
+  async function runWithSetting(redact: boolean | undefined) {
+    const root = await mkdtemp(join(tmpdir(), "natalia-redact-global-"));
+    await mkdir(join(root, ".natalia"), { recursive: true });
+    await writeFile(
+      join(root, ".natalia", "config.json"),
+      JSON.stringify({
+        version: 2,
+        ...(redact === undefined
+          ? {}
+          : { security: { redactToolOutput: redact } }),
+      }),
+    );
+    await writeFile(join(root, "creds.txt"), "token=supersecretvalue\n");
+    const events: RuntimeEvent[] = [];
+    const client = createRealRuntimeClient({
+      workspaceRoot: root,
+      sessionID: `ses_redact_${String(redact)}`,
+      permissionMode: "auto",
+      provider: {
+        provider: "test",
+        model: "test",
+        async *stream(request) {
+          if (!request.messages.some((message) => message.role === "tool"))
+            yield {
+              type: "tool_call" as const,
+              calls: [
+                {
+                  id: "read",
+                  name: "read_file",
+                  arguments: JSON.stringify({ path: "creds.txt" }),
+                },
+              ],
+            };
+          yield { type: "done" as const };
+        },
+      },
+    });
+    client.start((event) => events.push(event));
+    await client.submit("read the credentials file");
+    await client.dispose?.();
+    return JSON.stringify(events);
+  }
+
+  // The global setting was previously never read, so a token reached the
+  // journal even though the schema and the settings toggle said otherwise.
+  expect(await runWithSetting(true)).not.toContain("supersecretvalue");
+  expect(await runWithSetting(true)).toContain("[REDACTED]");
+  // Explicitly disabling it still works, so the field is read in both
+  // directions rather than being hardcoded.
+  expect(await runWithSetting(false)).toContain("supersecretvalue");
+  // Unset falls back to the schema default, which is on.
+  expect(await runWithSetting(undefined)).not.toContain("supersecretvalue");
+});
+
 test("agent permissions apply network, environment, and output redaction boundaries", async () => {
   const root = await mkdtemp(
     join(tmpdir(), "natalia-agent-boundary-permissions-"),
