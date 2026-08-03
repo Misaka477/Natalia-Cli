@@ -105,6 +105,7 @@ import {
   NativeTerminalRegistry,
   resolveWezTermExecutable,
   startNativeInputBroker,
+  reclaimStaleMuxRuntimeDirs,
   writeWezTermNativeDomainConfig,
   type NativeInputBroker,
 } from "@natalia/native-terminal";
@@ -673,6 +674,14 @@ export function createRealRuntimeClient(
       try {
         await mkdir(nativeRuntimeDir, { recursive: true, mode: 0o700 });
         await mkdir(nativeMuxRuntimeDir, { recursive: true, mode: 0o700 });
+        // Each runtime owns one of these directories and removes it on dispose,
+        // so anything left from a runtime that was killed accumulates for as
+        // long as the host stays up. Reclaiming is best effort and must not
+        // delay or fail startup.
+        void reclaimStaleMuxRuntimeDirs({
+          root: join(nativeRuntimeDir, "wezterm-runtime"),
+          keep: nativeRuntimeID,
+        }).catch(() => undefined);
         nativeDomain = await writeWezTermNativeDomainConfig({
           directory: nativeMuxRuntimeDir,
           socketPath: nativeMuxSocket,

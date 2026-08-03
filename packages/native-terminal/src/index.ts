@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { readFile, mkdir, rm, writeFile } from "node:fs/promises";
+import {
+  readdir,
+  readFile,
+  mkdir,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { platform } from "node:os";
 import { dirname, join } from "node:path";
 import { Worker } from "node:worker_threads";
@@ -633,6 +640,60 @@ export function createWezTermHost(
       }
     },
   };
+}
+
+/**
+ * Removes mux runtime directories left behind by runtimes that exited without
+ * disposing. Each runtime creates one directory, so a process that is killed or
+ * crashes leaks it, and they accumulate for as long as the host stays up.
+ *
+ * A directory is only reclaimed when nothing is using it: either no mux server
+ * ever wrote a pid there, or the recorded pid is gone. The age check keeps this
+ * away from a sibling runtime that has just created its directory and has not
+ * started its server yet.
+ */
+export async function reclaimStaleMuxRuntimeDirs(input: {
+  root: string;
+  keep?: string;
+  olderThanMs?: number;
+}) {
+  const olderThanMs = input.olderThanMs ?? 600_000;
+  const entries = await readdir(input.root, { withFileTypes: true }).catch(
+    () => [],
+  );
+  let reclaimed = 0;
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name === input.keep) continue;
+    const directory = join(input.root, entry.name);
+    try {
+      const info = await stat(directory);
+      if (Date.now() - info.mtimeMs < olderThanMs) continue;
+      if (await muxRuntimeDirInUse(directory)) continue;
+      await rm(directory, { recursive: true, force: true });
+      reclaimed += 1;
+    } catch {
+      // A directory that cannot be inspected or removed is left alone; another
+      // runtime may own it, and reclamation must never break startup.
+    }
+  }
+  return reclaimed;
+}
+
+async function muxRuntimeDirInUse(directory: string) {
+  const raw = await readFile(join(directory, "wezterm", "pid"), "utf8").catch(
+    () => undefined,
+  );
+  if (raw === undefined) return false;
+  const pid = Number.parseInt(raw.trim(), 10);
+  if (!Number.isSafeInteger(pid) || pid <= 1) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM means the process exists but belongs to someone else, so it is in
+    // use. ESRCH means it is gone and the directory can go with it.
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
 }
 
 export async function writeWezTermNativeDomainConfig(input: {

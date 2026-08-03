@@ -1,9 +1,17 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   createWezTermHost,
+  reclaimStaleMuxRuntimeDirs,
   writeWezTermNativeDomainConfig,
   NativeTerminalRegistry,
   resolveNataliaWezTermForkExecutable,
@@ -1766,4 +1774,43 @@ test("a reversed read range is normalized before it reaches the terminal", async
     ["8", "57"],
     ["-57", "-8"],
   ]);
+});
+
+test("stale mux runtime directories are reclaimed but live ones are kept", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-reclaim-"));
+  const stale = join(root, "stale");
+  const live = join(root, "live");
+  const mine = join(root, "mine");
+  const fresh = join(root, "fresh");
+  for (const dir of [stale, live, mine, fresh])
+    await mkdir(join(dir, "wezterm"), { recursive: true });
+
+  // A directory whose recorded server is gone, which is what a killed runtime
+  // leaves behind.
+  const dead = Bun.spawn(["true"], { stdout: "ignore" });
+  await dead.exited;
+  await writeFile(join(stale, "wezterm", "pid"), `${dead.pid}\n`);
+  // A directory owned by a server that is still running.
+  await writeFile(join(live, "wezterm", "pid"), `${process.pid}\n`);
+  // Our own directory is never a candidate.
+  await writeFile(join(mine, "wezterm", "pid"), `${dead.pid}\n`);
+
+  const old = Date.now() - 3_600_000;
+  for (const dir of [stale, live, mine])
+    await utimes(dir, new Date(old), new Date(old));
+
+  const reclaimed = await reclaimStaleMuxRuntimeDirs({
+    root,
+    keep: "mine",
+    olderThanMs: 600_000,
+  });
+
+  expect(reclaimed).toBe(1);
+  expect(await Bun.file(join(stale, "wezterm", "pid")).exists()).toBe(false);
+  expect(await Bun.file(join(live, "wezterm", "pid")).exists()).toBe(true);
+  expect(await Bun.file(join(mine, "wezterm", "pid")).exists()).toBe(true);
+  // A directory younger than the grace period may belong to a runtime that has
+  // not started its server yet.
+  expect(await Bun.file(join(fresh, "wezterm")).exists()).toBe(false);
+  expect((await readdir(root)).sort()).toEqual(["fresh", "live", "mine"]);
 });
