@@ -538,14 +538,15 @@ export function createWezTermHost(
         );
         if (Number.isSafeInteger(pid) && pid > 1) process.kill(pid, "SIGTERM");
       } catch (error) {
-        if (
-          !(
-            error instanceof Error &&
-            "code" in error &&
-            error.code === "ENOENT"
-          )
-        )
-          throw error;
+        // Dispose wants the mux server gone. A missing pid file (ENOENT) and a
+        // pid that no longer exists (ESRCH) both mean it already is, which is
+        // success, not failure. Treating ESRCH as an error meant that disposing
+        // after the mux had crashed threw from the shutdown path.
+        const code =
+          error instanceof Error && "code" in error
+            ? (error as NodeJS.ErrnoException).code
+            : undefined;
+        if (code !== "ENOENT" && code !== "ESRCH") throw error;
       } finally {
         // The mux server still holds its socket, pid, and log files for a
         // moment after termination. POSIX unlinks them regardless; Windows

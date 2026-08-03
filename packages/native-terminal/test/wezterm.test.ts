@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -1580,4 +1580,48 @@ test("observe returns exited when mux dies", async () => {
   expect(obs.exited).toBe(true);
   expect(obs.highlightRanges).toEqual([]);
   await registry.stop(session.id);
+});
+
+test("dispose succeeds when the mux server is already gone", async () => {
+  const runtimeDir = await mkdtemp(join(tmpdir(), "natalia-mux-dispose-"));
+  await mkdir(join(runtimeDir, "wezterm"), { recursive: true });
+  // A pid that is recorded but no longer running is exactly the state left
+  // behind when the mux server crashes. Signalling it raises ESRCH, which used
+  // to be rethrown and broke the whole shutdown path.
+  const deadProcess = Bun.spawn(["true"], { stdout: "ignore" });
+  await deadProcess.exited;
+  await writeFile(join(runtimeDir, "wezterm", "pid"), `${deadProcess.pid}\n`);
+  const host = createWezTermHost({
+    executable: "/opt/natalia/wezterm",
+    environment: { WEZTERM_UNIX_SOCKET: join(runtimeDir, "sock") },
+    muxRuntimeDir: runtimeDir,
+    run: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
+  });
+
+  await host.dispose?.();
+
+  // The runtime directory is cleaned up as part of a successful dispose.
+  expect(await Bun.file(join(runtimeDir, "wezterm", "pid")).exists()).toBe(
+    false,
+  );
+});
+
+test("dispose still reports failures it cannot interpret", async () => {
+  const runtimeDir = await mkdtemp(join(tmpdir(), "natalia-mux-dispose-fail-"));
+  await mkdir(join(runtimeDir, "wezterm"), { recursive: true });
+  // pid 1 is rejected before any signal is sent, so a permission failure is
+  // simulated by pointing at a pid the test cannot signal.
+  await writeFile(join(runtimeDir, "wezterm", "pid"), "not-a-pid\n");
+  const host = createWezTermHost({
+    executable: "/opt/natalia/wezterm",
+    environment: { WEZTERM_UNIX_SOCKET: join(runtimeDir, "sock") },
+    muxRuntimeDir: runtimeDir,
+    run: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
+  });
+
+  // An unparseable pid is skipped rather than signalled, so dispose completes.
+  await host.dispose?.();
+  expect(await Bun.file(join(runtimeDir, "wezterm", "pid")).exists()).toBe(
+    false,
+  );
 });
