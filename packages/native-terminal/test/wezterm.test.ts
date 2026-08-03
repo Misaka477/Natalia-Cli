@@ -1542,7 +1542,9 @@ test("mux recovery allows new sessions after prior sessions were marked exited",
 });
 
 test("observe returns exited when mux dies", async () => {
-  let listCalls = 0;
+  // The session is created while the mux is up and the mux dies afterwards, so
+  // liveness is an explicit flag rather than a count of list calls.
+  let muxAlive = true;
   const registry = new NativeTerminalRegistry({
     kind: "wezterm",
     executable: "wezterm",
@@ -1551,16 +1553,11 @@ test("observe returns exited when mux dies", async () => {
       return pane!;
     },
     async list() {
-      listCalls += 1;
-      if (listCalls <= 1) {
-        return [
-          { pane_id: 401, window_id: 1, tab_id: 401, rows: 24, cols: 80 },
-        ];
-      }
-      throw new Error("WezTerm mux connection refused");
+      if (!muxAlive) throw new Error("WezTerm mux connection refused");
+      return [{ pane_id: 401, window_id: 1, tab_id: 401, rows: 24, cols: 80 }];
     },
     async isAlive() {
-      return false;
+      return muxAlive;
     },
     async read() {
       return "text";
@@ -1575,6 +1572,7 @@ test("observe returns exited when mux dies", async () => {
     command: "cat",
     cwd: "/repo",
   });
+  muxAlive = false;
   await registry.reconcile({ force: true });
   const obs = await registry.observe(session.id, 0);
   expect(obs.exited).toBe(true);
@@ -1624,4 +1622,121 @@ test("dispose still reports failures it cannot interpret", async () => {
   expect(await Bun.file(join(runtimeDir, "wezterm", "pid")).exists()).toBe(
     false,
   );
+});
+
+test("mux liveness reports a failed connection as dead", async () => {
+  let exitCode = 0;
+  const host = createWezTermHost({
+    executable: "/opt/natalia/wezterm",
+    environment: { WEZTERM_UNIX_SOCKET: "/run/user/1000/natalia/mux.sock" },
+    muxRuntimeDir: "/run/user/1000/natalia/mux-runtime",
+    run: async () => ({
+      stdout: "",
+      stderr: 'failed to connect to Socket("/run/user/1000/natalia/mux.sock")',
+      exitCode,
+    }),
+  });
+
+  expect(await host.isAlive?.()).toBe(true);
+  // The runner resolves with a non-zero code rather than throwing, so a probe
+  // that ignored the code reported a dead server as alive and no recovery ever
+  // ran.
+  exitCode = 1;
+  expect(await host.isAlive?.()).toBe(false);
+});
+
+test("spawn restarts a mux server that died after a successful start", async () => {
+  let muxAlive = true;
+  const daemonizeCalls: number[] = [];
+  const host = createWezTermHost({
+    executable: "/opt/natalia/wezterm",
+    environment: { WEZTERM_UNIX_SOCKET: "/run/user/1000/natalia/mux.sock" },
+    muxRuntimeDir: "/run/user/1000/natalia/mux-runtime",
+    run: async (executable, args) => {
+      if (executable.endsWith("wezterm-mux-server")) {
+        daemonizeCalls.push(daemonizeCalls.length);
+        muxAlive = true;
+        return { stdout: "", stderr: "", exitCode: 0 };
+      }
+      if (args.includes("spawn"))
+        return { stdout: "7\n", stderr: "", exitCode: 0 };
+      if (args.includes("list"))
+        return {
+          stdout: muxAlive
+            ? JSON.stringify([
+                {
+                  pane_id: 7,
+                  window_id: 1,
+                  tab_id: 1,
+                  is_active: true,
+                  size: { rows: 24, cols: 80 },
+                },
+              ])
+            : "",
+          stderr: "",
+          exitCode: muxAlive ? 0 : 1,
+        };
+      return { stdout: "", stderr: "", exitCode: 0 };
+    },
+  });
+
+  await host.spawn({ cwd: "/tmp", command: ["bash"], workspace: "natalia" });
+  expect(daemonizeCalls.length).toBe(0); // the probe found a live server
+
+  // The server dies while the readiness promise stays resolved. Spawning used
+  // to keep talking to the dead socket forever.
+  muxAlive = false;
+  await host.spawn({ cwd: "/tmp", command: ["bash"], workspace: "natalia" });
+  expect(daemonizeCalls.length).toBe(1);
+  expect(await host.isAlive?.()).toBe(true);
+});
+
+test("starting a terminal after the mux died retires the stale sessions", async () => {
+  let muxAlive = true;
+  let nextPane = 1;
+  const registry = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      // A restarted server numbers panes from scratch, so the new pane reuses
+      // the id the retired session still refers to.
+      const paneID = nextPane;
+      nextPane = 1;
+      return { pane_id: paneID, window_id: 1, tab_id: paneID };
+    },
+    async list() {
+      if (!muxAlive) throw new Error("failed to connect to Socket(...)");
+      return [{ pane_id: 1, window_id: 1, tab_id: 1, rows: 24, cols: 80 }];
+    },
+    async isAlive() {
+      return muxAlive;
+    },
+    async read() {
+      return "";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  });
+
+  const first = await registry.start({
+    id: "terminal_before",
+    cwd: "/repo",
+    command: "cat",
+  });
+  expect(first.status).toBe("running");
+
+  muxAlive = false;
+  const second = await registry.start({
+    id: "terminal_after",
+    cwd: "/repo",
+    command: "cat",
+  });
+
+  // The pre-crash session must not be left claiming a pane id the new session
+  // now owns.
+  const before = registry.list().find((item) => item.id === "terminal_before");
+  expect(before?.status).toBe("exited");
+  expect(second.status).toBe("running");
 });

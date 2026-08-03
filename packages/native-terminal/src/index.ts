@@ -211,6 +211,11 @@ export function createWezTermHost(
   let command: (args: string[], stdin?: string) => Promise<string>;
   const ensureMux = async () => {
     if (!input.environment?.WEZTERM_UNIX_SOCKET) return;
+    // A resolved promise only proves the server answered once. It can die
+    // later, and trusting the cache meant every later spawn talked to a dead
+    // socket with no way back: the only code that cleared the cache ran from
+    // reconcile, which spawn never reaches.
+    if (muxReady && !(await isMuxAlive())) muxReady = undefined;
     muxReady ??= (async () => {
       if (await muxIsReady()) return;
       await measure("native.mux.start", async () => {
@@ -330,7 +335,11 @@ export function createWezTermHost(
   };
   const isMuxAlive = async (): Promise<boolean> => {
     try {
-      await withTimeout(
+      // The runner resolves with the exit code instead of throwing on failure,
+      // so the code has to be checked here. Without it this probe reported a
+      // dead server as alive whenever the binary ran at all, which is why
+      // "failed to connect" never triggered recovery.
+      const result = await withTimeout(
         run(
           executable,
           [
@@ -348,7 +357,7 @@ export function createWezTermHost(
         2000,
         ["cli", "list"],
       );
-      return true;
+      return result.exitCode === 0;
     } catch {
       return false;
     }
@@ -774,6 +783,11 @@ export class NativeTerminalRegistry {
   }
 
   async start(input: { command: string; cwd: string; id?: string }) {
+    // A restarted mux server numbers panes from scratch, so stale session
+    // records can collide with the pane about to be created. Recovery marks
+    // them exited first, which also clears the host readiness cache.
+    if ((await this.host.isAlive?.()) === false)
+      await this.reconcile({ force: true });
     let pane;
     try {
       pane = await this.host.spawn({
