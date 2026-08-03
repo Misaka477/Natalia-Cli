@@ -107,6 +107,7 @@ export async function runWithRetry<T>(
           attempts: attempt,
           maxAttempts: policy.maxAttemptsPerStep,
           reason: providerError.kind,
+          retryable: canRetry,
           statusCode: providerError.statusCode,
           message: redactedProviderMessage(providerError),
         });

@@ -17,6 +17,8 @@ export type ErrorKind =
   | "invalid_request"
   | "empty_response"
   | "context_limit"
+  | "quota"
+  | "unknown"
   | "cancel";
 
 export type StepRetryOperation = "llm_step" | "compaction" | "metadata_probe";
@@ -292,6 +294,12 @@ export type RuntimeEvent =
       reason: ErrorKind;
       statusCode?: number;
       message: string;
+      /**
+       * False when the attempt budget was never the limit because the failure
+       * could not be retried. Without it, stopping after one of three attempts
+       * reads as if retries had been used up.
+       */
+      retryable?: boolean;
     }
   | {
       type: "tool.update";

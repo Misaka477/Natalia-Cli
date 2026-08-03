@@ -7,6 +7,7 @@ import {
   type JSX,
 } from "solid-js";
 import { createStore, produce } from "solid-js/store";
+import { retryDisplayLine } from "@natalia/client";
 import { TuiPerformanceTrace } from "../performance-trace";
 import type {
   RuntimeEvent,
@@ -503,10 +504,13 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
         state,
         `${event.id}:retry:exhausted`,
         "system",
-        `retry exhausted after ${event.attempts}/${event.maxAttempts}: ${event.message}`,
+        retryDisplayLine(event) ?? event.message,
         "retry_exhausted",
       );
-      state.footer = `retry exhausted: ${event.reason}`;
+      state.footer =
+        event.retryable === false
+          ? `not retryable: ${event.reason}`
+          : `retry exhausted: ${event.reason}`;
       return;
     case "thinking.delta":
       prepareStreamPhase(state, event.id, "thinking");

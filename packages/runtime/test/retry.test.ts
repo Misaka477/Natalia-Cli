@@ -208,3 +208,41 @@ function toProviderError(
     message: outcome.message ?? outcome.kind,
   });
 }
+
+test("billing failures are classified as quota rather than invalid requests", () => {
+  // DeepSeek answers 402 with this body; OpenAI answers 429 with a quota code.
+  expect(
+    providerErrorFromHttp({ statusCode: 402, message: "Insufficient Balance" })
+      .kind,
+  ).toBe("quota");
+  expect(
+    providerErrorFromHttp({
+      statusCode: 429,
+      bodyCode: "insufficient_quota",
+      message: "You exceeded your current quota",
+    }).kind,
+  ).toBe("quota");
+  // A spent balance is final, so it must not consume the retry budget.
+  expect(
+    shouldRetryProviderError(
+      providerErrorFromHttp({
+        statusCode: 402,
+        message: "Insufficient Balance",
+      }),
+    ),
+  ).toBe(false);
+  // A plain rate limit still retries.
+  expect(
+    shouldRetryProviderError(
+      providerErrorFromHttp({ statusCode: 429, message: "slow down" }),
+    ),
+  ).toBe(true);
+});
+
+test("an unrecognized status is reported as unknown, not as a bad request", () => {
+  expect(mapHttpStatusToErrorKind(418)).toBe("unknown");
+  expect(mapHttpStatusToErrorKind(451)).toBe("unknown");
+  // Claiming the request was invalid asserted a cause that was not established.
+  expect(mapHttpStatusToErrorKind(400)).toBe("invalid_request");
+  expect(mapHttpStatusToErrorKind(503)).toBe("server");
+});

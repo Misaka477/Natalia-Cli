@@ -49,10 +49,30 @@ export function asProviderError(error: unknown): ProviderError {
 export function mapHttpStatusToErrorKind(statusCode: number): ErrorKind {
   if (statusCode === 408) return "timeout";
   if (statusCode === 429) return "rate_limit";
+  if (statusCode === 402) return "quota";
   if ([500, 502, 503, 504].includes(statusCode)) return "server";
   if (statusCode === 401 || statusCode === 403) return "auth";
   if ([400, 404, 422].includes(statusCode)) return "invalid_request";
-  return statusCode >= 500 ? "server" : "invalid_request";
+  // Anything else below 500 is not known to be the caller's fault. Reporting it
+  // as an invalid request asserted something untrue about the request, which
+  // made a billing failure read like a malformed call.
+  return statusCode >= 500 ? "server" : "unknown";
+}
+
+/**
+ * Providers disagree on how a spent balance arrives: some answer 402, others
+ * 429 with a quota code, so the body has to be consulted as well as the status.
+ */
+function isQuotaError(bodyCode?: string, message?: string) {
+  if (
+    bodyCode === "insufficient_quota" ||
+    bodyCode === "insufficient_balance" ||
+    bodyCode === "billing_hard_limit_reached"
+  )
+    return true;
+  return /insufficient[_ -]?(?:quota|balance|credit)|quota[_ -]?exceeded|exceeded[^.]*\bquota\b|out of credit|billing/iu.test(
+    message ?? "",
+  );
 }
 
 export function providerErrorFromHttp(input: {
@@ -64,7 +84,9 @@ export function providerErrorFromHttp(input: {
 }) {
   const kind = isContextLimitError(input.bodyCode, input.message)
     ? "context_limit"
-    : mapHttpStatusToErrorKind(input.statusCode);
+    : isQuotaError(input.bodyCode, input.message)
+      ? "quota"
+      : mapHttpStatusToErrorKind(input.statusCode);
   return providerError({
     kind,
     statusCode: input.statusCode,

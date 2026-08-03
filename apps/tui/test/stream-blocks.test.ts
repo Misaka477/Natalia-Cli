@@ -248,8 +248,32 @@ test("retry exhausted summary redacts provider detail", () => {
   const text =
     state.messages.find((item) => item.id === "turn_exhausted:retry:exhausted")
       ?.text ?? "";
-  expect(text).toContain("retry exhausted after 3/3");
+  expect(text).toContain("Retry exhausted after 3/3");
   expect(text).not.toContain("sk-");
+});
+
+test("a final failure is not reported as spent retries", () => {
+  let state = structuredClone(initialState);
+  state = reduceState(state, {
+    type: "step.retry.exhausted",
+    id: "turn_quota",
+    operation: "llm_step",
+    step: 1,
+    attempts: 1,
+    maxAttempts: 3,
+    reason: "quota",
+    statusCode: 402,
+    message: "quota (402)",
+    retryable: false,
+  });
+  const text =
+    state.messages.find((item) => item.id === "turn_quota:retry:exhausted")
+      ?.text ?? "";
+  // Stopping after one of three attempts is a final failure, not used-up
+  // retries, and the reader is told what to do about it.
+  expect(text).toContain("Not retryable after 1/3");
+  expect(text).toContain("out of credit");
+  expect(text).not.toContain("Retry exhausted");
 });
 
 test("Terminal events stay out of chat while Sandbox renders stable blocks", () => {

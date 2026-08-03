@@ -3,7 +3,7 @@ export { compactionDisplayLine } from "./compaction-display";
 export { createFakeBackend } from "./fixture";
 export { createRealRuntimeClient } from "./real-runtime";
 export type { RealRuntimeClientOptions } from "./real-runtime";
-export { retryDisplayLine } from "./retry-display";
+export { providerErrorHint, retryDisplayLine } from "./retry-display";
 export {
   cleanupUnreferencedAttachments,
   referencedAttachmentsForSessions,
