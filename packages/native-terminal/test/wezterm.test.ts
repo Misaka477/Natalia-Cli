@@ -1740,3 +1740,30 @@ test("starting a terminal after the mux died retires the stale sessions", async 
   expect(before?.status).toBe("exited");
   expect(second.status).toBe("running");
 });
+
+test("a reversed read range is normalized before it reaches the terminal", async () => {
+  const ranges: string[][] = [];
+  const host = createWezTermHost({
+    executable: "/opt/natalia/wezterm",
+    run: async (_executable, args) => {
+      if (args.includes("get-text")) ranges.push(args);
+      return { stdout: "", stderr: "", exitCode: 0 };
+    },
+  });
+
+  await host.read(3, { startLine: 57, endLine: 8 });
+  await host.read(3, { startLine: 8, endLine: 57 });
+  await host.read(3, { startLine: -8, endLine: -57 });
+
+  const bounds = ranges.map((args) => [
+    args[args.indexOf("--start-line") + 1],
+    args[args.indexOf("--end-line") + 1],
+  ]);
+  // Whichever way round the caller wrote it, the terminal receives ascending
+  // bounds describing the same span.
+  expect(bounds).toEqual([
+    ["8", "57"],
+    ["8", "57"],
+    ["-57", "-8"],
+  ]);
+});

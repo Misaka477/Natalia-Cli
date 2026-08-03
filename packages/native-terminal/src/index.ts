@@ -417,9 +417,20 @@ export function createWezTermHost(
       const maxLines = Math.max(1, Math.min(options.maxLines ?? 200, 2000));
       const args = ["cli", "get-text", "--pane-id", String(paneID)];
       if (options.startLine !== undefined) {
-        args.push("--start-line", String(Math.trunc(options.startLine)));
-        if (options.endLine !== undefined)
-          args.push("--end-line", String(Math.trunc(options.endLine)));
+        // The CLI is handed whatever range it is given, so a reversed pair is
+        // normalized here rather than asking the terminal to interpret it. This
+        // is input hygiene: no crash has been traced to a reversed range, and it
+        // should not be presented as a fix for one.
+        const startLine = Math.trunc(options.startLine);
+        const endLine =
+          options.endLine === undefined
+            ? undefined
+            : Math.trunc(options.endLine);
+        const lowerLine =
+          endLine === undefined ? startLine : Math.min(startLine, endLine);
+        args.push("--start-line", String(lowerLine));
+        if (endLine !== undefined)
+          args.push("--end-line", String(Math.max(startLine, endLine)));
       } else args.push("--start-line", String(-maxLines));
       return await command(args);
     },
