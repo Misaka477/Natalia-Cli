@@ -135,37 +135,47 @@ switch (subcommand) {
   case "eval":
   case "--stdio": {
     const client = createRealRuntimeClient();
-    client.start((event) => console.log(JSON.stringify(event)));
-    const input = await Bun.stdin.text();
-    for (const line of input.split(/\r?\n/u)) {
-      if (!line.trim()) continue;
-      const request = JSON.parse(line) as {
-        prompt?: string;
-        delivery?: "steer" | "queue";
-        attachments?: string[];
-        cancel?: string;
-        pause?: string;
-        resume?: boolean;
-      };
-      if (request.cancel) client.cancel(request.cancel);
-      if (request.pause) client.pause?.(request.pause);
-      if (request.resume) client.resume?.();
-      if (request.prompt && request.delivery === "queue" && client.submitInput)
-        await client.submitInput({
-          text: request.prompt,
-          delivery: "queue",
-          attachments: request.attachments,
-        });
-      else if (
-        request.prompt &&
-        request.attachments?.length &&
-        client.submitInput
-      )
-        await client.submitInput({
-          text: request.prompt,
-          attachments: request.attachments,
-        });
-      else if (request.prompt) await client.submit(request.prompt);
+    try {
+      client.start((event) => console.log(JSON.stringify(event)));
+      const input = await Bun.stdin.text();
+      for (const line of input.split(/\r?\n/u)) {
+        if (!line.trim()) continue;
+        const request = JSON.parse(line) as {
+          prompt?: string;
+          delivery?: "steer" | "queue";
+          attachments?: string[];
+          cancel?: string;
+          pause?: string;
+          resume?: boolean;
+        };
+        if (request.cancel) client.cancel(request.cancel);
+        if (request.pause) client.pause?.(request.pause);
+        if (request.resume) client.resume?.();
+        if (
+          request.prompt &&
+          request.delivery === "queue" &&
+          client.submitInput
+        )
+          await client.submitInput({
+            text: request.prompt,
+            delivery: "queue",
+            attachments: request.attachments,
+          });
+        else if (
+          request.prompt &&
+          request.attachments?.length &&
+          client.submitInput
+        )
+          await client.submitInput({
+            text: request.prompt,
+            attachments: request.attachments,
+          });
+        else if (request.prompt) await client.submit(request.prompt);
+      }
+    } finally {
+      // Without this the workspace watcher keeps the loop alive and the
+      // process never exits after the work is done.
+      await client.dispose?.();
     }
     break;
   }
@@ -476,19 +486,26 @@ async function runOnce(
 ) {
   const client = createRealRuntimeClient();
   let text = "";
-  client.start((event) => {
-    if (json) {
-      console.log(JSON.stringify(event));
-      return;
-    }
-    if (event.type === "content.delta") text += event.text;
-    const line = plainRuntimeEvent(event);
-    if (line) console.log(line);
-  });
-  if (attachments.length && client.submitInput)
-    await client.submitInput({ text: prompt, attachments });
-  else await client.submit(prompt);
-  if (!json && text) console.log(text);
+  try {
+    client.start((event) => {
+      if (json) {
+        console.log(JSON.stringify(event));
+        return;
+      }
+      if (event.type === "content.delta") text += event.text;
+      const line = plainRuntimeEvent(event);
+      if (line) console.log(line);
+    });
+    if (attachments.length && client.submitInput)
+      await client.submitInput({ text: prompt, attachments });
+    else await client.submit(prompt);
+    if (!json && text) console.log(text);
+  } finally {
+    // The turn is finished here, but the runtime still holds the workspace
+    // watcher, plugins, MCP connections and terminals. Releasing them is what
+    // lets a one-shot run actually exit, which is what a scheduler needs.
+    await client.dispose?.();
+  }
 }
 
 function plainRuntimeEvent(event: RuntimeEvent) {
