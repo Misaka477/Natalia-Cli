@@ -13,11 +13,6 @@ import {
   startDetachedProcess,
 } from "@natalia/platform";
 import {
-  TerminalRegistry,
-  type TerminalSessionInfo,
-  type TerminalSessionUpdate,
-} from "@natalia/terminal";
-import {
   NativeTerminalRegistry,
   type NativeTerminalSession,
 } from "@natalia/native-terminal";
@@ -73,21 +68,7 @@ export type ToolExecutionContext = {
     }>;
   }) => Promise<string[][]>;
   subagents?: SubagentRegistry;
-  terminalRegistry?: TerminalRegistry;
   nativeTerminal?: NativeTerminalRegistry;
-  onTerminalUpdate?: (session: TerminalSessionUpdate) => void;
-  onTerminalAction?: (
-    session: TerminalSessionInfo,
-    action:
-      | "write"
-      | "submit"
-      | "special_key"
-      | "resize"
-      | "attach"
-      | "detach"
-      | "exit",
-    redacted: boolean,
-  ) => void;
   sandboxes?: WorkspaceSandboxManager;
   workspaceReadAuthorize?: (input: {
     toolName: "glob" | "grep";
@@ -891,44 +872,12 @@ function sandboxReadTool(
   };
 }
 
-function requireTerminalRegistry(context: ToolExecutionContext) {
-  if (!context.terminalRegistry)
-    throw new Error("interactive terminal runtime unavailable");
-  return context.terminalRegistry;
-}
-
 function requireNativeTerminal(context: ToolExecutionContext) {
   if (!context.nativeTerminal)
     throw new Error(
       "Native Terminal Host is unavailable. Install the Natalia WezTerm distribution to start an interactive terminal.",
     );
   return context.nativeTerminal;
-}
-
-function notifyTerminal(
-  context: ToolExecutionContext,
-  session: TerminalSessionInfo,
-  action?:
-    | "write"
-    | "submit"
-    | "special_key"
-    | "resize"
-    | "attach"
-    | "detach"
-    | "exit",
-  redacted = false,
-) {
-  context.onTerminalUpdate?.(session);
-  if (action) context.onTerminalAction?.(session, action, redacted);
-  return JSON.stringify(modelTerminalInfo(session), null, 2);
-}
-
-function modelTerminalInfo(session: TerminalSessionInfo) {
-  const { lines: _lines, ...screen } = session.screen;
-  return {
-    ...session,
-    screen,
-  };
 }
 
 function modelNativeTerminalInfo(session: NativeTerminalSession) {
@@ -1239,184 +1188,82 @@ function terminalObserveTool(): RuntimeTool {
       const mode = args.mode || "full";
       const afterRevision = numberOr(args.afterRevision, 0);
       if (mode === "latest") {
-        if (context.nativeTerminal) {
-          const snapshot = await context.nativeTerminal.snapshot(id);
-          return JSON.stringify({
-            id,
-            host: "wezterm",
-            revision: snapshot.revision,
-            currentRevision: snapshot.revision,
-            afterRevision,
-            changed: snapshot.revision > afterRevision,
-            reason: snapshot.revision > afterRevision ? "changed" : "timeout",
-            cursorX: snapshot.cursorX,
-            cursorY: snapshot.cursorY,
-            rows: snapshot.rows,
-            cols: snapshot.cols,
-            mode,
-            text: truncateProcessOutput(snapshot.text, 16_384),
-          });
-        }
-        const registry = requireTerminalRegistry(context);
-        const info = registry.get(id);
-        const { lines: _lines, ...screen } = info.screen;
-        const { id: _id, ...rest } = info;
+        const snapshot = await requireNativeTerminal(context).snapshot(id);
         return JSON.stringify({
           id,
-          ...rest,
-          screen,
-          revision: info.revision,
-          currentRevision: info.revision,
+          host: "wezterm",
+          revision: snapshot.revision,
+          currentRevision: snapshot.revision,
           afterRevision,
-          changed: info.revision > afterRevision,
-          reason: info.revision > afterRevision ? "changed" : "timeout",
+          changed: snapshot.revision > afterRevision,
+          reason: snapshot.revision > afterRevision ? "changed" : "timeout",
+          cursorX: snapshot.cursorX,
+          cursorY: snapshot.cursorY,
+          rows: snapshot.rows,
+          cols: snapshot.cols,
           mode,
+          text: truncateProcessOutput(snapshot.text, 16_384),
         });
       }
-      if (context.nativeTerminal) {
-        await context.nativeTerminal.reconcile();
-        const observation = await context.nativeTerminal.observe(
-          id,
-          afterRevision,
-          {
-            maxLines: Math.max(
-              1,
-              Math.min(numberOr(args.scrollbackRows, 60), 200),
-            ),
-            timeoutMs: Math.max(
-              1_000,
-              Math.min(numberOr(args.timeoutMs, 5_000), 30_000),
-            ),
-          },
-        );
-        let text = observation.text;
-        const session = context.nativeTerminal.session(id);
-        const previousText = session.lastObservedText;
-        if (mode === "tail") {
-          const lines = text.split("\n");
-          if (lines.at(-1) === "") lines.pop();
-          const tailLines = Math.max(
-            1,
-            Math.min(numberOr(args.scrollbackRows, 60), 200),
-          );
-          text = lines.slice(-tailLines).join("\n");
-        } else if (mode === "cursor") {
-          const lines = text.split("\n");
-          if (lines.at(-1) === "") lines.pop();
-          const cursorY = observation.cursorY ?? 0;
-          const contextLines = 10;
-          const startLine = Math.max(0, cursorY - contextLines);
-          const endLine = Math.min(lines.length, cursorY + contextLines + 1);
-          text = lines.slice(startLine, endLine).join("\n");
-        } else if (mode === "new_only") {
-          if (previousText && text.startsWith(previousText)) {
-            text = text.slice(previousText.length);
-          }
-        }
-        context.nativeTerminal.markObserved(
-          id,
-          observation.text,
-          observation.session.revision,
-        );
-        return JSON.stringify(
-          {
-            id,
-            host: "wezterm",
-            revision: observation.session.revision,
-            currentRevision: observation.session.revision,
-            afterRevision: observation.afterRevision,
-            changed: observation.changed,
-            reason: observation.reason,
-            cursorX: observation.cursorX,
-            cursorY: observation.cursorY,
-            rows: observation.rows,
-            cols: observation.cols,
-            mode,
-            text: truncateProcessOutput(text, 16_384),
-          },
-          null,
-          2,
-        );
-      }
-      const registry = requireTerminalRegistry(context);
-      const terminalObservation = await registry.observe(id, {
-        afterRevision,
-        timeoutMs: numberOr(args.timeoutMs, 30_000),
-        signal: context.signal,
+      const nativeTerminal = requireNativeTerminal(context);
+      await nativeTerminal.reconcile();
+      const observation = await nativeTerminal.observe(id, afterRevision, {
+        maxLines: Math.max(1, Math.min(numberOr(args.scrollbackRows, 60), 200)),
+        timeoutMs: Math.max(
+          1_000,
+          Math.min(numberOr(args.timeoutMs, 5_000), 30_000),
+        ),
       });
-      if (terminalObservation.session.screen)
-        context.onTerminalUpdate?.(
-          terminalObservation.session as import("@natalia/terminal").TerminalSessionInfo,
-        );
-      const terminalSession = registry.session(id);
-      let terminalText = terminalSession.transcript || "";
-      const previousTerminalText = terminalSession.lastObservedText;
+      let text = observation.text;
+      const session = nativeTerminal.session(id);
+      const previousText = session.lastObservedText;
       if (mode === "tail") {
-        const lines = terminalText.split("\n");
+        const lines = text.split("\n");
         if (lines.at(-1) === "") lines.pop();
         const tailLines = Math.max(
           1,
           Math.min(numberOr(args.scrollbackRows, 60), 200),
         );
-        terminalText = lines.slice(-tailLines).join("\n");
+        text = lines.slice(-tailLines).join("\n");
       } else if (mode === "cursor") {
-        const lines = terminalText.split("\n");
+        const lines = text.split("\n");
         if (lines.at(-1) === "") lines.pop();
-        const cursorY = terminalObservation.session.screen?.cursor?.row ?? 0;
+        const cursorY = observation.cursorY ?? 0;
         const contextLines = 10;
         const startLine = Math.max(0, cursorY - contextLines);
         const endLine = Math.min(lines.length, cursorY + contextLines + 1);
-        terminalText = lines.slice(startLine, endLine).join("\n");
+        text = lines.slice(startLine, endLine).join("\n");
       } else if (mode === "new_only") {
-        if (
-          previousTerminalText &&
-          terminalText.startsWith(previousTerminalText)
-        ) {
-          terminalText = terminalText.slice(previousTerminalText.length);
+        if (previousText && text.startsWith(previousText)) {
+          text = text.slice(previousText.length);
         }
       }
-      registry.markObserved(
+      nativeTerminal.markObserved(
         id,
-        terminalSession.transcript,
-        terminalObservation.session.revision,
-      );
-      const scrollbackRows = Math.max(
-        0,
-        Math.min(numberOr(args.scrollbackRows, 0), 200),
+        observation.text,
+        observation.session.revision,
       );
       return JSON.stringify(
         {
-          ...terminalObservation,
-          session: terminalObservation.session.screen
-            ? modelTerminalInfo(
-                terminalObservation.session as import("@natalia/terminal").TerminalSessionInfo,
-              )
-            : terminalObservation.session,
-          text: truncateProcessOutput(terminalText, 16_384),
+          id,
+          host: "wezterm",
+          revision: observation.session.revision,
+          currentRevision: observation.session.revision,
+          afterRevision: observation.afterRevision,
+          changed: observation.changed,
+          reason: observation.reason,
+          cursorX: observation.cursorX,
+          cursorY: observation.cursorY,
+          rows: observation.rows,
+          cols: observation.cols,
           mode,
-          currentRevision: terminalObservation.session.revision,
-          ...(scrollbackRows
-            ? {
-                scrollback: modelTerminalScrollback(
-                  registry.scrollback(terminalObservation.session.id, {
-                    maxRows: scrollbackRows,
-                  }),
-                ),
-              }
-            : {}),
+          text: truncateProcessOutput(text, 16_384),
         },
         null,
         2,
       );
     },
   };
-}
-
-function modelTerminalScrollback(
-  scrollback: ReturnType<TerminalRegistry["scrollback"]>,
-) {
-  const { lines: _lines, ...summary } = scrollback;
-  return summary;
 }
 
 function interactiveWriteTool(): RuntimeTool {
@@ -1762,22 +1609,11 @@ function interactiveSnapshotTool(): RuntimeTool {
     async execute(input, context) {
       const args = requireObject(input);
       const id = requireString(args.id, "id");
-      if (context.nativeTerminal) {
-        const snapshot = await context.nativeTerminal.snapshot(id);
-        return JSON.stringify({
-          id,
-          host: "wezterm",
-          ...snapshot,
-        });
-      }
-      const registry = requireTerminalRegistry(context);
-      const info = registry.get(id);
-      const { lines: _lines, ...screen } = info.screen;
-      const { id: _id, ...rest } = info;
+      const snapshot = await requireNativeTerminal(context).snapshot(id);
       return JSON.stringify({
         id,
-        ...rest,
-        screen,
+        host: "wezterm",
+        ...snapshot,
       });
     },
   };
@@ -1803,18 +1639,12 @@ function interactiveResizeTool(): RuntimeTool {
       const id = requireString(args.id, "id");
       const rows = numberOr(args.rows, 36);
       const cols = numberOr(args.cols, 120);
-      if (context.nativeTerminal)
-        return JSON.stringify(
-          modelNativeTerminalInfo(
-            await context.nativeTerminal.resize(id, rows, cols),
-          ),
-          null,
-          2,
-        );
-      return notifyTerminal(
-        context,
-        await requireTerminalRegistry(context).resize(id, rows, cols),
-        "resize",
+      return JSON.stringify(
+        modelNativeTerminalInfo(
+          await requireNativeTerminal(context).resize(id, rows, cols),
+        ),
+        null,
+        2,
       );
     },
   };
@@ -1854,53 +1684,6 @@ function interactiveListTool(): RuntimeTool {
         requireNativeTerminal(context).list().map(modelNativeTerminalInfo),
         null,
         2,
-      );
-    },
-  };
-}
-
-function interactiveTool(
-  name: string,
-  description: string,
-  requiresApproval: boolean,
-  action: (
-    registry: TerminalRegistry,
-    args: Record<string, unknown>,
-  ) => Promise<TerminalSessionInfo>,
-  requiresID: boolean,
-  extra: Record<string, unknown> = {},
-  required: string[] = requiresID ? ["id"] : [],
-): RuntimeTool {
-  return {
-    name,
-    description,
-    requiresApproval,
-    parameters: {
-      type: "object",
-      properties: { id: { type: "string" }, ...extra },
-      required,
-      additionalProperties: false,
-    },
-    async execute(input, context) {
-      const args = requireObject(input);
-      const session = await action(requireTerminalRegistry(context), args);
-      const terminalAction =
-        name === "interactive_terminal_write"
-          ? args.submit === false
-            ? "write"
-            : "submit"
-          : name === "interactive_terminal_keys"
-            ? "special_key"
-            : name === "interactive_terminal_resize"
-              ? "resize"
-              : name === "interactive_terminal_stop"
-                ? "exit"
-                : undefined;
-      return notifyTerminal(
-        context,
-        session,
-        terminalAction,
-        args.sensitive === true,
       );
     },
   };

@@ -554,7 +554,6 @@ export function createRealRuntimeClient(
               askQuestion: async (question) =>
                 await requireQuestion(`${toolID}:question`, question),
               subagents,
-              terminalRegistry,
               nativeTerminal,
               sandboxes,
               workspaceReadAuthorize: authorizeWorkspaceRead,
@@ -3659,35 +3658,7 @@ export function createRealRuntimeClient(
           askQuestion: async (question) =>
             await requireQuestion(`${toolID}:question`, question),
           subagents,
-          terminalRegistry,
           nativeTerminal,
-          onTerminalUpdate: (terminal) => {
-            publish(terminalLiveUpdate(terminal, "write"));
-            if (terminalStatusByID.get(terminal.id) !== terminal.status) {
-              terminalStatusByID.set(terminal.id, terminal.status);
-              scheduleRuntimeStatusSnapshot();
-            }
-          },
-          onTerminalAction: (terminal, action, redacted) => {
-            publish({
-              type: "terminal.action",
-              id: terminal.id,
-              action,
-              redacted,
-              target: { kind: "host", cwd: terminal.cwd },
-            });
-            publish({
-              type: "terminal.timeline",
-              id: terminal.id,
-              actor: "model",
-              action,
-              status: "executed",
-              summary: redacted
-                ? "sensitive input supplied"
-                : `${action} executed`,
-              at: new Date().toISOString(),
-            });
-          },
           sandboxes,
           workspaceReadAuthorize: authorizeWorkspaceRead,
           sandboxMergeAuthorize: authorizeSandboxMerge,
