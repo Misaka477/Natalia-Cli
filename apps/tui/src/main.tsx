@@ -52,8 +52,27 @@ let stopping = false;
 const stop = () => {
   if (stopping) return;
   stopping = true;
-  void handle.stop();
+  // A signal handler has no caller, so a failing shutdown must not become an
+  // unhandled rejection: that would kill the process mid-teardown and leave the
+  // terminal in the alternate screen.
+  void handle.stop().catch((error: unknown) => {
+    process.stderr.write(
+      `natalia: shutdown failed: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
+    process.exitCode = 1;
+  });
 };
+
+// Last resort. Anything that still escapes is reported without a raw stack
+// trace over a half-restored screen, and the exit code stays non-zero so the
+// failure is not silently swallowed.
+process.on("unhandledRejection", (reason) => {
+  process.stderr.write(
+    `natalia: unhandled rejection: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}\n`,
+  );
+  process.exitCode = 1;
+  stop();
+});
 
 process.once("SIGINT", stop);
 process.once("SIGTERM", stop);

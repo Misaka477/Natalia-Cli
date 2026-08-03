@@ -101,6 +101,22 @@ export function createWorkerRuntimeClient(
     else request.resolve(message.value);
   };
   port.addEventListener("message", onMessage);
+  /**
+   * Notifications have no caller waiting on them, so a rejected worker request
+   * would become an unhandled rejection and take down the host process. The
+   * runtime already reports its own problems through the event stream, so a
+   * failed notification is reported the same way instead of crashing.
+   */
+  const notify = (method: WorkerRequest["method"], value?: unknown) => {
+    void request(method, value).catch((error: unknown) => {
+      sink?.({
+        type: "diagnostic",
+        level: "warning",
+        message: `runtime ${method} failed: ${error instanceof Error ? error.message : String(error)}`,
+        at: new Date().toISOString(),
+      });
+    });
+  };
   const request = (method: WorkerRequest["method"], value?: unknown) => {
     const id = `wrk_${(++sequence).toString(36)}`;
     return new Promise<unknown>((resolve, reject) => {
@@ -299,17 +315,17 @@ export function createWorkerRuntimeClient(
       port.removeEventListener("message", onMessage);
     },
     cancel(reason) {
-      void request("cancel", reason);
+      notify("cancel", reason);
     },
     pause(reason) {
-      void request("pause", reason);
+      notify("pause", reason);
     },
     resume() {
-      void request("resume");
+      notify("resume");
     },
     snapshot() {
       const id = `snap_worker_${Date.now().toString(36)}`;
-      void request("snapshot");
+      notify("snapshot");
       return { type: "snapshot.created", id, files: [] };
     },
     async diagnostics(limit) {
@@ -318,16 +334,16 @@ export function createWorkerRuntimeClient(
       >;
     },
     diagnostic(message, level) {
-      void request("diagnostic", { message, level });
+      notify("diagnostic", { message, level });
     },
     lastSubmission() {
       return undefined;
     },
     respondApproval(response) {
-      void request("approval", response);
+      notify("approval", response);
     },
     respondQuestion(response) {
-      void request("question", response);
+      notify("question", response);
     },
   };
 }

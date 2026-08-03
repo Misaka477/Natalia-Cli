@@ -23,6 +23,20 @@ export type RuntimeHandle = {
   stop(): Promise<void>;
 };
 
+/**
+ * Reports a failure from a call that nothing awaits. These run while the UI is
+ * being torn down, so stderr is the only sink left, and swallowing them would
+ * hide real problems while crashing on them would stop the process from
+ * exiting cleanly and leave the terminal in the alternate screen.
+ */
+function reportTeardownFailure(stage: string, error: unknown) {
+  process.stderr.write(
+    `natalia: ${stage} failed during shutdown: ${
+      error instanceof Error ? error.message : String(error)
+    }\n`,
+  );
+}
+
 export async function runTuiShell(
   input: {
     onEvent?: (event: RuntimeEvent) => void;
@@ -129,8 +143,19 @@ export async function runTuiShell(
     renderer,
   );
   if (input.initialPrompt)
-    setTimeout(() => void backend.submit(input.initialPrompt!), 100);
-  renderer.once("destroy", () => void disposeBackend());
+    setTimeout(() => {
+      void backend
+        .submit(input.initialPrompt!)
+        .catch((error: unknown) => reportTeardownFailure("submit", error));
+    }, 100);
+  // Teardown runs with no UI left to report into, and an unhandled rejection
+  // here would kill the process instead of letting it exit, so the failure is
+  // written out and the shutdown continues.
+  renderer.once("destroy", () => {
+    void disposeBackend().catch((error: unknown) =>
+      reportTeardownFailure("dispose", error),
+    );
+  });
   return {
     renderer,
     events,
