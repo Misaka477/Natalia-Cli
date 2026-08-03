@@ -252,6 +252,49 @@ test("terminal input honours command allow lists and ignores unrelated tools", (
   ).toBeUndefined();
 });
 
+test("file rules cannot be evaded by respelling the same path", () => {
+  const rules = {
+    files: {
+      writePaths: [
+        { pattern: "secret.txt", allow: false, reason: "protected" },
+      ],
+      readPaths: [{ pattern: "secret.txt", allow: false, reason: "protected" }],
+    },
+  };
+  const root = "/tmp/policy-workspace";
+  // Every spelling below resolves to the same file the tool would write.
+  for (const path of [
+    "secret.txt",
+    "./secret.txt",
+    "dir/../secret.txt",
+    "/tmp/policy-workspace/secret.txt",
+    ".\\secret.txt",
+  ]) {
+    expect(
+      evaluatePermissionRules(rules, "write_file", { path }, root),
+    ).toMatchObject({ allowed: false, reason: "protected" });
+    expect(
+      evaluatePermissionRules(rules, "read_file", { path }, root),
+    ).toMatchObject({ allowed: false, reason: "protected" });
+  }
+  // Different files stay allowed, so normalization does not over-block.
+  expect(
+    evaluatePermissionRules(rules, "write_file", { path: "other.txt" }, root),
+  ).toMatchObject({ allowed: true });
+  expect(
+    evaluatePermissionRules(
+      rules,
+      "write_file",
+      { path: "sub/secret.txt" },
+      root,
+    ),
+  ).toMatchObject({ allowed: true });
+  // Rules still apply when no workspace root is supplied.
+  expect(
+    evaluatePermissionRules(rules, "write_file", { path: "./secret.txt" }),
+  ).toMatchObject({ allowed: false, reason: "protected" });
+});
+
 test("terminal low-risk approval scopes bind one terminal and exclude high-risk input", () => {
   expect(
     terminalApprovalScope(

@@ -1,3 +1,5 @@
+import { isAbsolute, normalize, relative, resolve } from "node:path";
+
 export type ToolPolicy = {
   allow?: string[];
   exclude?: string[];
@@ -191,10 +193,58 @@ function terminalInputText(args: Record<string, unknown>): string | undefined {
   return text.length ? text : undefined;
 }
 
+/**
+ * File rules are written as workspace-relative patterns, but a tool resolves
+ * its path against the workspace root before touching disk. `secret.txt` and
+ * `./secret.txt` are therefore the same file, and matching the raw argument let
+ * a rule be evaded by respelling the path. Paths are normalized to the same
+ * workspace-relative POSIX form the tool will actually use.
+ *
+ * Both the normalized and the raw spelling are tested, so this can only ever
+ * block more than before, never less.
+ */
+function policyPathCandidates(path: string, workspaceRoot?: string): string[] {
+  const candidates = new Set<string>([path]);
+  const slashed = path.replace(/\\/gu, "/");
+  candidates.add(slashed);
+  if (workspaceRoot) {
+    const absolute = resolve(workspaceRoot, path);
+    const relativePath = relative(resolve(workspaceRoot), absolute);
+    // A path outside the workspace is matched by its absolute form. Tools
+    // reject those anyway, but a rule must not silently stop applying.
+    candidates.add(
+      relativePath &&
+        !relativePath.startsWith("..") &&
+        !isAbsolute(relativePath)
+        ? relativePath.replace(/\\/gu, "/")
+        : absolute.replace(/\\/gu, "/"),
+    );
+  } else {
+    candidates.add(normalize(slashed).replace(/\\/gu, "/"));
+  }
+  for (const candidate of [...candidates])
+    if (candidate.startsWith("./")) candidates.add(candidate.slice(2));
+  return [...candidates].filter((candidate) => candidate.length > 0);
+}
+
+function matchesResourceRule(
+  rules: ResourceRule[],
+  path: string,
+  workspaceRoot?: string,
+): ResourceRule | undefined {
+  const candidates = policyPathCandidates(path, workspaceRoot);
+  return rules.find(
+    (rule) =>
+      !rule.allow &&
+      candidates.some((candidate) => pathMatch(candidate, rule.pattern)),
+  );
+}
+
 export function evaluatePermissionRules(
   rules: PermissionRules | undefined,
   toolName: string,
   args: Record<string, unknown>,
+  workspaceRoot?: string,
 ): PermissionCheck {
   const diags: string[] = [];
   if (!rules) return { allowed: true, diagnostics: diags };
@@ -235,8 +285,10 @@ export function evaluatePermissionRules(
     const path = typeof args.path === "string" ? args.path : undefined;
     if (path) {
       if (writesPath && rules.files.writePaths) {
-        const denied = rules.files.writePaths.find(
-          (r) => !r.allow && pathMatch(path, r.pattern),
+        const denied = matchesResourceRule(
+          rules.files.writePaths,
+          path,
+          workspaceRoot,
         );
         if (denied) {
           diags.push(
@@ -246,8 +298,10 @@ export function evaluatePermissionRules(
         }
       }
       if (readsPath && rules.files.readPaths) {
-        const denied = rules.files.readPaths.find(
-          (r) => !r.allow && pathMatch(path, r.pattern),
+        const denied = matchesResourceRule(
+          rules.files.readPaths,
+          path,
+          workspaceRoot,
         );
         if (denied) {
           diags.push(

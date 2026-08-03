@@ -256,6 +256,7 @@ export function createRealRuntimeClient(
         selectedAgent?.permissions,
         event.toolName,
         tryParseToolArguments(event.arguments),
+        workspaceRoot,
       );
       if (!permission.allowed) return permission;
       return (
@@ -3961,6 +3962,7 @@ export function createRealRuntimeClient(
         selectedAgent?.permissions,
         input.toolName,
         { path },
+        workspaceRoot,
       );
       if (permission.allowed) continue;
       for (const diagnostic of permission.diagnostics)
