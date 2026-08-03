@@ -12,8 +12,9 @@ const summary = {
   sandboxUpdate: events.find((event) => event.type === "sandbox.update"),
   sandboxDiff: events.find((event) => event.type === "sandbox.diff"),
   sandboxAudit: events.find((event) => event.type === "sandbox.audit"),
-  terminalBlock: state.messages.find((message) => message.id.startsWith("terminal:"))
-    ?.text,
+  terminalBlock: state.messages.find((message) =>
+    message.id.startsWith("terminal:"),
+  )?.text,
   sandboxBlock: state.messages.find(
     (message) => message.id === "sandbox:box_m11",
   )?.text,
@@ -24,7 +25,8 @@ await writeFile(
   "/tmp/kilo/natalia-tui-terminal-sandbox-latest.json",
   `${JSON.stringify(summary, null, 2)}\n`,
 );
-if (!summary.terminalUpdate) throw new Error("Terminal smoke missed terminal.update");
+if (!summary.terminalUpdate)
+  throw new Error("Terminal smoke missed terminal.update");
 if (!summary.sandboxUpdate)
   throw new Error("Sandbox smoke missed sandbox.update");
 if (!summary.sandboxDiff) throw new Error("Sandbox smoke missed sandbox.diff");

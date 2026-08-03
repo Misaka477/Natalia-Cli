@@ -568,7 +568,12 @@ export function DialogConstitution(props: {
         ? darkTheme.warning
         : darkTheme.muted;
   return (
-    <box flexDirection="column" paddingLeft={2} paddingRight={2} paddingBottom={1}>
+    <box
+      flexDirection="column"
+      paddingLeft={2}
+      paddingRight={2}
+      paddingBottom={1}
+    >
       <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>
         Constitution Rules
       </text>
@@ -577,7 +582,10 @@ export function DialogConstitution(props: {
           {(rule) => (
             <box flexDirection="column">
               <box flexDirection="row" gap={1}>
-                <text fg={color(rule.priority)} attributes={TextAttributes.BOLD}>
+                <text
+                  fg={color(rule.priority)}
+                  attributes={TextAttributes.BOLD}
+                >
                   {rule.ruleID}
                 </text>
                 <text fg={darkTheme.muted}>{rule.enforcement}</text>
@@ -603,7 +611,12 @@ export function DialogEvidence(props: {
   }>;
 }) {
   return (
-    <box flexDirection="column" paddingLeft={2} paddingRight={2} paddingBottom={1}>
+    <box
+      flexDirection="column"
+      paddingLeft={2}
+      paddingRight={2}
+      paddingBottom={1}
+    >
       <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>
         Completion Evidence
       </text>
@@ -614,7 +627,8 @@ export function DialogEvidence(props: {
               <box flexDirection="row" gap={1}>
                 <text
                   fg={
-                    record.status === "validated" || record.status === "accepted"
+                    record.status === "validated" ||
+                    record.status === "accepted"
                       ? darkTheme.success
                       : record.status === "failed"
                         ? darkTheme.danger
@@ -629,7 +643,9 @@ export function DialogEvidence(props: {
                 {record.objective}
               </text>
               <Show when={record.knownGaps.length > 0}>
-                <text fg={darkTheme.muted}>Gaps: {record.knownGaps.join("; ")}</text>
+                <text fg={darkTheme.muted}>
+                  Gaps: {record.knownGaps.join("; ")}
+                </text>
               </Show>
             </box>
           )}
@@ -651,17 +667,37 @@ export function DialogSessionSnapshot(props: {
   };
 }) {
   return (
-    <box flexDirection="column" paddingLeft={2} paddingRight={2} paddingBottom={1}>
+    <box
+      flexDirection="column"
+      paddingLeft={2}
+      paddingRight={2}
+      paddingBottom={1}
+    >
       <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>
         Session Intelligence
       </text>
-      <Show when={props.snapshot} fallback={<text fg={darkTheme.muted}>No snapshot available</text>}>
+      <Show
+        when={props.snapshot}
+        fallback={<text fg={darkTheme.muted}>No snapshot available</text>}
+      >
         <box flexDirection="column" gap={1} paddingTop={1}>
           <text fg={darkTheme.text}>Status: {props.snapshot!.agentStatus}</text>
-          <Show when={props.snapshot!.currentStep}><text fg={darkTheme.muted}>Step: {props.snapshot!.currentStep}</text></Show>
-          <Show when={props.snapshot!.activeTool}><text fg={darkTheme.muted}>Tool: {props.snapshot!.activeTool}</text></Show>
-          <text fg={darkTheme.muted}>Changed files: {props.snapshot!.changedFiles} · Unvalidated: {props.snapshot!.unvalidatedChanges}</text>
-          <text fg={darkTheme.muted}>PTY: {props.snapshot!.hasPTY ? "attached" : "none"} · Sandbox: {props.snapshot!.hasSandbox ? "active" : "none"}</text>
+          <Show when={props.snapshot!.currentStep}>
+            <text fg={darkTheme.muted}>
+              Step: {props.snapshot!.currentStep}
+            </text>
+          </Show>
+          <Show when={props.snapshot!.activeTool}>
+            <text fg={darkTheme.muted}>Tool: {props.snapshot!.activeTool}</text>
+          </Show>
+          <text fg={darkTheme.muted}>
+            Changed files: {props.snapshot!.changedFiles} · Unvalidated:{" "}
+            {props.snapshot!.unvalidatedChanges}
+          </text>
+          <text fg={darkTheme.muted}>
+            PTY: {props.snapshot!.hasPTY ? "attached" : "none"} · Sandbox:{" "}
+            {props.snapshot!.hasSandbox ? "active" : "none"}
+          </text>
         </box>
       </Show>
     </box>
@@ -680,9 +716,18 @@ export function DialogDriftFindings(props: {
   }>;
 }) {
   const sevColor = (s: string) =>
-    s === "high" ? darkTheme.danger : s === "warning" ? darkTheme.warning : darkTheme.muted;
+    s === "high"
+      ? darkTheme.danger
+      : s === "warning"
+        ? darkTheme.warning
+        : darkTheme.muted;
   return (
-    <box flexDirection="column" paddingLeft={2} paddingRight={2} paddingBottom={1}>
+    <box
+      flexDirection="column"
+      paddingLeft={2}
+      paddingRight={2}
+      paddingBottom={1}
+    >
       <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>
         Goal Drift Findings
       </text>
@@ -691,9 +736,16 @@ export function DialogDriftFindings(props: {
           {(f) => (
             <box flexDirection="column" paddingLeft={1}>
               <box flexDirection="row" gap={1}>
-                <text fg={sevColor(f.severity)} attributes={TextAttributes.BOLD}>{f.severity}</text>
+                <text
+                  fg={sevColor(f.severity)}
+                  attributes={TextAttributes.BOLD}
+                >
+                  {f.severity}
+                </text>
                 <text fg={darkTheme.muted}>{f.status}</text>
-                <text fg={darkTheme.muted}>{Math.round(f.confidence * 100)}%</text>
+                <text fg={darkTheme.muted}>
+                  {Math.round(f.confidence * 100)}%
+                </text>
               </box>
               <text fg={darkTheme.text}>Goal: {f.originalObjective}</text>
               <text fg={darkTheme.muted}>Current: {f.currentActivity}</text>
@@ -706,10 +758,22 @@ export function DialogDriftFindings(props: {
 }
 
 export function DialogRegisteredTools(props: {
-  tools: Array<{ name: string; owner: string; scope: string; recovery: string; precedence: number; requiresApproval: boolean }>;
+  tools: Array<{
+    name: string;
+    owner: string;
+    scope: string;
+    recovery: string;
+    precedence: number;
+    requiresApproval: boolean;
+  }>;
 }) {
   return (
-    <box flexDirection="column" paddingLeft={2} paddingRight={2} paddingBottom={1}>
+    <box
+      flexDirection="column"
+      paddingLeft={2}
+      paddingRight={2}
+      paddingBottom={1}
+    >
       <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>
         Canonical Tool Registry
       </text>
@@ -717,8 +781,13 @@ export function DialogRegisteredTools(props: {
         <For each={props.tools}>
           {(tool) => (
             <box flexDirection="column" paddingLeft={1}>
-              <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>{tool.name}</text>
-              <text fg={darkTheme.muted}>owner: {tool.owner} · scope: {tool.scope} · recovery: {tool.recovery}</text>
+              <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
+                {tool.name}
+              </text>
+              <text fg={darkTheme.muted}>
+                owner: {tool.owner} · scope: {tool.scope} · recovery:{" "}
+                {tool.recovery}
+              </text>
             </box>
           )}
         </For>
@@ -728,10 +797,21 @@ export function DialogRegisteredTools(props: {
 }
 
 export function DialogCapabilities(props: {
-  caps: Array<{ id: string; name: string; version: string; scope: string; grants: string[] }>;
+  caps: Array<{
+    id: string;
+    name: string;
+    version: string;
+    scope: string;
+    grants: string[];
+  }>;
 }) {
   return (
-    <box flexDirection="column" paddingLeft={2} paddingRight={2} paddingBottom={1}>
+    <box
+      flexDirection="column"
+      paddingLeft={2}
+      paddingRight={2}
+      paddingBottom={1}
+    >
       <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>
         Loaded Capabilities
       </text>
@@ -740,10 +820,14 @@ export function DialogCapabilities(props: {
           {(cap) => (
             <box flexDirection="column" paddingLeft={1}>
               <box flexDirection="row" gap={1}>
-                <text fg={darkTheme.accent} attributes={TextAttributes.BOLD}>{cap.name}</text>
+                <text fg={darkTheme.accent} attributes={TextAttributes.BOLD}>
+                  {cap.name}
+                </text>
                 <text fg={darkTheme.muted}>v{cap.version}</text>
               </box>
-              <text fg={darkTheme.muted}>{cap.id} · {cap.scope}</text>
+              <text fg={darkTheme.muted}>
+                {cap.id} · {cap.scope}
+              </text>
               <text fg={darkTheme.muted}>grants: {cap.grants.join(", ")}</text>
             </box>
           )}
@@ -754,10 +838,20 @@ export function DialogCapabilities(props: {
 }
 
 export function DialogWorkGraph(props: {
-  nodes: Array<{ nodeID: string; kind: string; summary: string; actor?: string }>;
+  nodes: Array<{
+    nodeID: string;
+    kind: string;
+    summary: string;
+    actor?: string;
+  }>;
 }) {
   return (
-    <box flexDirection="column" paddingLeft={2} paddingRight={2} paddingBottom={1}>
+    <box
+      flexDirection="column"
+      paddingLeft={2}
+      paddingRight={2}
+      paddingBottom={1}
+    >
       <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>
         Work Graph
       </text>
@@ -792,7 +886,12 @@ export function DialogDecision(props: {
   }>;
 }) {
   return (
-    <box flexDirection="column" paddingLeft={2} paddingRight={2} paddingBottom={1}>
+    <box
+      flexDirection="column"
+      paddingLeft={2}
+      paddingRight={2}
+      paddingBottom={1}
+    >
       <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>
         Decision Ledger
       </text>
@@ -818,7 +917,9 @@ export function DialogDecision(props: {
                 {record.decision}
               </text>
               <Show when={record.rationale.length > 0}>
-                <text fg={darkTheme.muted}>Rationale: {record.rationale.join("; ")}</text>
+                <text fg={darkTheme.muted}>
+                  Rationale: {record.rationale.join("; ")}
+                </text>
               </Show>
             </box>
           )}

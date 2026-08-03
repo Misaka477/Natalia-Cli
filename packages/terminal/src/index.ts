@@ -106,7 +106,11 @@ export class XtermTerminalEmulator {
         .join("\n")
         .replace(/\n+$/u, ""),
       modes: { bracketedPaste: this.terminal.modes.bracketedPasteMode },
-      highlightRanges: extractHighlightRanges(buffer, this.terminal.rows, this.terminal.cols),
+      highlightRanges: extractHighlightRanges(
+        buffer,
+        this.terminal.rows,
+        this.terminal.cols,
+      ),
     };
   }
 
@@ -127,7 +131,10 @@ export class XtermTerminalEmulator {
       }
       lines.push(cells);
     }
-    const cursorRow = Math.max(-1, Math.min(lines.length, this.terminal.buffer.active.cursorY - start));
+    const cursorRow = Math.max(
+      -1,
+      Math.min(lines.length, this.terminal.buffer.active.cursorY - start),
+    );
     const cursorCol = this.terminal.buffer.active.cursorX;
     return {
       offsetFromBottom,
@@ -138,7 +145,11 @@ export class XtermTerminalEmulator {
       text: screenText(lines),
       cursorRow,
       cursorCol,
-      highlightRanges: extractHighlightRanges(buffer, lines.length, this.terminal.cols),
+      highlightRanges: extractHighlightRanges(
+        buffer,
+        lines.length,
+        this.terminal.cols,
+      ),
     };
   }
 
@@ -151,9 +162,15 @@ function extractHighlightRanges(
   buffer: import("@xterm/headless").IBuffer,
   rows: number,
   cols: number,
-): Array<{ startRow: number; startCol: number; endRow: number; endCol: number }> {
+): Array<{
+  startRow: number;
+  startCol: number;
+  endRow: number;
+  endCol: number;
+}> {
   const viewportY = buffer.viewportY;
-  const rowRanges: Array<{ row: number; startCol: number; endCol: number }> = [];
+  const rowRanges: Array<{ row: number; startCol: number; endCol: number }> =
+    [];
   for (let row = 0; row < rows; row++) {
     const line = buffer.getLine(viewportY + row);
     let startCol = -1;
@@ -172,7 +189,12 @@ function extractHighlightRanges(
     }
     if (startCol >= 0) rowRanges.push({ row, startCol, endCol });
   }
-  const ranges: Array<{ startRow: number; startCol: number; endRow: number; endCol: number }> = [];
+  const ranges: Array<{
+    startRow: number;
+    startCol: number;
+    endRow: number;
+    endCol: number;
+  }> = [];
   let current:
     | { startRow: number; startCol: number; endRow: number; endCol: number }
     | undefined;

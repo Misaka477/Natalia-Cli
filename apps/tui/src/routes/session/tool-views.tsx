@@ -58,9 +58,7 @@ export function ToolBlockView(props: {
         previewLines={props.toolPreviewLines}
       />
     );
-  if (
-    ["read", "write", "grep", "glob"].includes(props.block.tool?.kind ?? "")
-  )
+  if (["read", "write", "grep", "glob"].includes(props.block.tool?.kind ?? ""))
     return <FileToolView block={props.block} />;
   if (
     [
@@ -273,9 +271,7 @@ function ToolDetailDialog(props: {
         <Show when={props.argumentsRaw}>
           <text
             fg={tab() === "arguments" ? darkTheme.accent : darkTheme.muted}
-            attributes={
-              tab() === "arguments" ? TextAttributes.BOLD : undefined
-            }
+            attributes={tab() === "arguments" ? TextAttributes.BOLD : undefined}
             onMouseUp={() => setTab("arguments")}
           >
             arguments
@@ -318,11 +314,7 @@ function InteractionToolView(props: { block: MessageBlock }) {
       <>
         <InlineToolRow
           icon={
-            runtimeError()
-              ? "✗"
-              : tool().status === "succeeded"
-                ? "✓"
-                : "│"
+            runtimeError() ? "✗" : tool().status === "succeeded" ? "✓" : "│"
           }
           pending="execute"
           complete={true}
@@ -373,8 +365,7 @@ function InteractionToolView(props: { block: MessageBlock }) {
 
   if (tool().kind === "subagent") {
     const task = () => stringField(input(), "task", "description");
-    const mode = () =>
-      stringField(input(), "mode", "subagent_type") || "Agent";
+    const mode = () => stringField(input(), "mode", "subagent_type") || "Agent";
     const record = () => result();
     return (
       <InlineToolRow
@@ -619,9 +610,7 @@ function InlineToolRow(props: {
           <text
             flexGrow={1}
             fg={color()}
-            attributes={
-              denied() ? TextAttributes.STRIKETHROUGH : undefined
-            }
+            attributes={denied() ? TextAttributes.STRIKETHROUGH : undefined}
             wrapMode="word"
           >
             {props.children as never}
@@ -809,9 +798,7 @@ function ShellToolView(props: {
 }
 
 function ShellSpinner(props: { command: string }) {
-  const frames = [
-    "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏",
-  ];
+  const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
   const [index, setIndex] = createSignal(0);
   createEffect(() => {
     const timer = setInterval(

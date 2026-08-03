@@ -102,8 +102,7 @@ export function classifyTool(
   if (kind === "question" || lower === "ask_user" || lower === "question")
     return "question";
   if (kind === "execute" || lower === "execute") return "execute";
-  if (kind === "terminal" || lower.includes("terminal"))
-    return "terminal";
+  if (kind === "terminal" || lower.includes("terminal")) return "terminal";
   if (kind === "sandbox" || lower.includes("sandbox")) return "sandbox";
   if (kind === "skill" || lower.includes("skill")) return "skill";
   return "generic";

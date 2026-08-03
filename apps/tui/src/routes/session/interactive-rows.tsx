@@ -61,9 +61,8 @@ export function InlineInteractiveBlock(props: {
       requestID: value.request.id,
       answers: rejected
         ? []
-        : (value.request.questions?.map(
-            (_, index) => answers()[index] ?? [],
-          ) ?? []),
+        : (value.request.questions?.map((_, index) => answers()[index] ?? []) ??
+          []),
       rejected,
     });
   };

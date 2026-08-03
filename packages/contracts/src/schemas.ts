@@ -387,7 +387,9 @@ export const toolCanonicalRegistrationSchema = z.object({
   name: z.string().min(1),
   owner: z.string().min(1),
   scope: z.enum(["process", "workspace", "session"]),
-  recovery: z.enum(["none", "retry", "restart", "fail_closed"]).default("retry"),
+  recovery: z
+    .enum(["none", "retry", "restart", "fail_closed"])
+    .default("retry"),
   precedence: z.number().int().default(0),
   grants: z.array(z.string()).default([]),
   requiresApproval: z.boolean().default(false),
@@ -507,8 +509,12 @@ export type CompletionEvidence = z.infer<typeof completionEvidenceSchema>;
 export type DriftFinding = z.infer<typeof driftFindingSchema>;
 export type WorkGraphNode = z.infer<typeof workGraphNodeSchema>;
 export type WorkGraphEdge = z.infer<typeof workGraphEdgeSchema>;
-export type SessionIntelligenceSnapshot = z.infer<typeof sessionIntelligenceSnapshotSchema>;
-export type ToolCanonicalRegistration = z.infer<typeof toolCanonicalRegistrationSchema>;
+export type SessionIntelligenceSnapshot = z.infer<
+  typeof sessionIntelligenceSnapshotSchema
+>;
+export type ToolCanonicalRegistration = z.infer<
+  typeof toolCanonicalRegistrationSchema
+>;
 export type ConstitutionRule = z.infer<typeof constitutionRuleSchema>;
 export type DecisionRecord = z.infer<typeof decisionRecordSchema>;
 export type ScopedOverride = z.infer<typeof scopedOverrideSchema>;

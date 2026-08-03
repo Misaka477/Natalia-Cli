@@ -24,7 +24,9 @@ export type CapabilityRegistration = {
   description?: string;
   scope: "process" | "workspace" | "session";
   dependencies?: string[];
-  grants: Array<"tools" | "commands" | "settings" | "workflows" | "projection" | "resources">;
+  grants: Array<
+    "tools" | "commands" | "settings" | "workflows" | "projection" | "resources"
+  >;
 };
 
 /** Controlled API the runtime provides to each loaded capability. */
@@ -87,7 +89,11 @@ export class CapabilityRegistry {
     if (!instance) return false;
 
     for (const fn of instance.unloadFns) {
-      try { fn(); } catch { /* cleanup best-effort */ }
+      try {
+        fn();
+      } catch {
+        /* cleanup best-effort */
+      }
     }
     for (const grant of instance.registration.grants)
       this.byGrant.get(grant)?.delete(id);
@@ -122,4 +128,3 @@ export class CapabilityRegistry {
     }
   }
 }
-

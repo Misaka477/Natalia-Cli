@@ -4,7 +4,10 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const log = path.join("/tmp/kilo", `natalia-tui-terminal-${Date.now()}.log`);
-const marker = path.join("/tmp/kilo", `natalia-tui-terminal-${Date.now()}.done`);
+const marker = path.join(
+  "/tmp/kilo",
+  `natalia-tui-terminal-${Date.now()}.done`,
+);
 const script = existsSync("/usr/bin/script")
   ? "/usr/bin/script"
   : "/bin/script";

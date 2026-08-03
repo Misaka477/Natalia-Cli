@@ -1270,7 +1270,15 @@ test("cleanupStalePanes removes panes not belonging to current sessions", async 
 test("cross-runtime provenance recovery restores persisted session metadata", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-terminal-provenance-"));
   const persistPath = join(root, "native-terminal-sessions.json");
-  const listCalls: Array<{ pane_id: number; window_id: number; tab_id: number; rows: number; cols: number }[]> = [];
+  const listCalls: Array<
+    {
+      pane_id: number;
+      window_id: number;
+      tab_id: number;
+      rows: number;
+      cols: number;
+    }[]
+  > = [];
   const firstRegistry = new NativeTerminalRegistry(
     {
       kind: "wezterm",
@@ -1305,52 +1313,52 @@ test("cross-runtime provenance recovery restores persisted session metadata", as
         };
       },
     },
-    { persistPath }
+    { persistPath },
   );
   const firstSession = await firstRegistry.start({
-  id: "tty_provenance",
-  command: "bash",
-  cwd: "/repo",
-});
-await firstRegistry.stop(firstSession.id);
-await firstRegistry.dispose();
+    id: "tty_provenance",
+    command: "bash",
+    cwd: "/repo",
+  });
+  await firstRegistry.stop(firstSession.id);
+  await firstRegistry.dispose();
 
-const secondRegistry = new NativeTerminalRegistry(
-  {
-    kind: "wezterm",
-    executable: "wezterm",
-    async spawn() {
-      return { pane_id: 61, window_id: 2, tab_id: 3, rows: 24, cols: 80 };
+  const secondRegistry = new NativeTerminalRegistry(
+    {
+      kind: "wezterm",
+      executable: "wezterm",
+      async spawn() {
+        return { pane_id: 61, window_id: 2, tab_id: 3, rows: 24, cols: 80 };
+      },
+      async list() {
+        const value = listCalls.at(-1) ?? [
+          { pane_id: 61, window_id: 2, tab_id: 3, rows: 24, cols: 80 },
+        ];
+        listCalls.push(value);
+        return value;
+      },
+      async listClients() {
+        return [];
+      },
+      async read() {
+        return "";
+      },
+      async write() {},
+      async focus() {},
+      async resize() {},
+      async stop() {},
+      async open() {
+        return {
+          pane_id: 61,
+          window_id: 501,
+          tab_id: 1061,
+          rows: 24,
+          cols: 80,
+        };
+      },
     },
-    async list() {
-      const value = listCalls.at(-1) ?? [
-        { pane_id: 61, window_id: 2, tab_id: 3, rows: 24, cols: 80 },
-      ];
-      listCalls.push(value);
-      return value;
-    },
-    async listClients() {
-      return [];
-    },
-    async read() {
-      return "";
-    },
-    async write() {},
-    async focus() {},
-    async resize() {},
-    async stop() {},
-    async open() {
-      return {
-        pane_id: 61,
-        window_id: 501,
-        tab_id: 1061,
-        rows: 24,
-        cols: 80,
-      };
-    },
-  },
-  { persistPath }
-);
+    { persistPath },
+  );
   const recovered = secondRegistry.session("tty_provenance");
   expect(recovered).toMatchObject({
     id: "tty_provenance",
@@ -1411,7 +1419,11 @@ test("mux server unavailability marks running sessions as exited", async () => {
       return [{ focused_pane_id: 201 }];
     },
   });
-  const session = await registry.start({ id: "mux-down", command: "cat", cwd: "/repo" });
+  const session = await registry.start({
+    id: "mux-down",
+    command: "cat",
+    cwd: "/repo",
+  });
   expect(session.status).toBe("running");
 
   const read = await registry.read(session.id);
@@ -1421,7 +1433,9 @@ test("mux server unavailability marks running sessions as exited", async () => {
   expect(registry.session("mux-down").status).toBe("exited");
   expect(registry.session("mux-down").attached).toBe(false);
   expect(registry.session("mux-down").revision).toBeGreaterThan(1);
-  await expect(registry.read(session.id)).rejects.toThrow("terminal session has exited");
+  await expect(registry.read(session.id)).rejects.toThrow(
+    "terminal session has exited",
+  );
   await registry.stop(session.id);
 });
 
@@ -1437,7 +1451,9 @@ test("mux server transient error does not falsely mark sessions exited", async (
     async list() {
       listCalls += 1;
       if (listCalls <= 1) {
-        return [{ pane_id: 202, window_id: 1, tab_id: 202, rows: 24, cols: 80 }];
+        return [
+          { pane_id: 202, window_id: 1, tab_id: 202, rows: 24, cols: 80 },
+        ];
       }
       throw new Error("temporary JSON parse error");
     },
@@ -1452,8 +1468,14 @@ test("mux server transient error does not falsely mark sessions exited", async (
     async resize() {},
     async stop() {},
   });
-  const session = await registry.start({ id: "mux-transient", command: "cat", cwd: "/repo" });
-  await expect(registry.reconcile({ force: true })).rejects.toThrow("temporary JSON parse error");
+  const session = await registry.start({
+    id: "mux-transient",
+    command: "cat",
+    cwd: "/repo",
+  });
+  await expect(registry.reconcile({ force: true })).rejects.toThrow(
+    "temporary JSON parse error",
+  );
   expect(registry.session("mux-transient").status).toBe("running");
   await registry.stop(session.id);
 });
@@ -1471,7 +1493,9 @@ test("mux recovery allows new sessions after prior sessions were marked exited",
     async list() {
       listCalls += 1;
       if (listCalls <= 2) {
-        return [{ pane_id: 301, window_id: 1, tab_id: 301, rows: 24, cols: 80 }];
+        return [
+          { pane_id: 301, window_id: 1, tab_id: 301, rows: 24, cols: 80 },
+        ];
       }
       if (listCalls === 3) {
         throw new Error("mux down");
@@ -1492,7 +1516,11 @@ test("mux recovery allows new sessions after prior sessions were marked exited",
       return [{ focused_pane_id: listCalls < 3 ? 301 : 302 }];
     },
   });
-  const first = await registry.start({ id: "mux-recovery", command: "cat", cwd: "/repo" });
+  const first = await registry.start({
+    id: "mux-recovery",
+    command: "cat",
+    cwd: "/repo",
+  });
   expect(first.status).toBe("running");
 
   await registry.reconcile({ force: true });
@@ -1501,7 +1529,11 @@ test("mux recovery allows new sessions after prior sessions were marked exited",
   await registry.reconcile({ force: true });
   expect(registry.session("mux-recovery").status).toBe("exited");
 
-  const second = await registry.start({ id: "mux-recovery-2", command: "bash", cwd: "/repo" });
+  const second = await registry.start({
+    id: "mux-recovery-2",
+    command: "bash",
+    cwd: "/repo",
+  });
   expect(second.status).toBe("running");
   expect(second.paneID).toBe(302);
   const read = await registry.read(second.id);
@@ -1521,7 +1553,9 @@ test("observe returns exited when mux dies", async () => {
     async list() {
       listCalls += 1;
       if (listCalls <= 1) {
-        return [{ pane_id: 401, window_id: 1, tab_id: 401, rows: 24, cols: 80 }];
+        return [
+          { pane_id: 401, window_id: 1, tab_id: 401, rows: 24, cols: 80 },
+        ];
       }
       throw new Error("WezTerm mux connection refused");
     },
@@ -1536,11 +1570,14 @@ test("observe returns exited when mux dies", async () => {
     async resize() {},
     async stop() {},
   });
-  const session = await registry.start({ id: "mux-observe", command: "cat", cwd: "/repo" });
+  const session = await registry.start({
+    id: "mux-observe",
+    command: "cat",
+    cwd: "/repo",
+  });
   await registry.reconcile({ force: true });
   const obs = await registry.observe(session.id, 0);
   expect(obs.exited).toBe(true);
   expect(obs.highlightRanges).toEqual([]);
   await registry.stop(session.id);
 });
-

@@ -605,7 +605,12 @@ test("model terminal registry reuses a persistent session instead of recreating 
 
 test("model terminal exit preserves exited lifecycle status", async () => {
   const registry = new ModelTerminalRegistry();
-  registry.create({ id: "terminal_exit", command: "bash", cwd: "/repo", target });
+  registry.create({
+    id: "terminal_exit",
+    command: "bash",
+    cwd: "/repo",
+    target,
+  });
   const result = await registry.request("terminal_exit", { action: "exit" });
   expect(result.state).toBe("executed");
   expect(registry.get("terminal_exit").status).toBe("exited");

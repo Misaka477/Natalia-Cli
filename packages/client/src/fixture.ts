@@ -559,12 +559,18 @@ export function createFakeBackend(): FakeBackend {
       lastAction: "resize",
       target,
     });
-    publish({ type: "content.delta", id, text: "Terminal fixture complete.\n" });
+    publish({
+      type: "content.delta",
+      id,
+      text: "Terminal fixture complete.\n",
+    });
     publish({ type: "content.done", id });
   }
 
   async function modelTerminalResponse(id: string, text: string) {
-    const sessionID = text.includes("2") ? "terminal_model_2" : "terminal_model_1";
+    const sessionID = text.includes("2")
+      ? "terminal_model_2"
+      : "terminal_model_1";
     const target = {
       kind: "sandbox" as const,
       sandboxID: "box_model",

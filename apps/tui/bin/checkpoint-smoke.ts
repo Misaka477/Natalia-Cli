@@ -30,7 +30,12 @@ const events: RuntimeEvent[] = [
         compactionGeneration: 0,
       },
       resources: [
-        { kind: "terminal", id: "pty_1", action: "stop", summary: "running terminal" },
+        {
+          kind: "terminal",
+          id: "pty_1",
+          action: "stop",
+          summary: "running terminal",
+        },
       ],
       ignoredFiles: 0,
       diskUsageBytes: 4096,

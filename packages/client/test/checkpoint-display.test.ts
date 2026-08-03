@@ -31,7 +31,12 @@ test("checkpoint progress and result events project for TUI and plain output", (
         compactionGeneration: 0,
       },
       resources: [
-        { kind: "terminal", id: "pty_1", action: "stop", summary: "running shell" },
+        {
+          kind: "terminal",
+          id: "pty_1",
+          action: "stop",
+          summary: "running shell",
+        },
       ],
       ignoredFiles: 1,
       diskUsageBytes: 2048,

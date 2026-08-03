@@ -4,10 +4,7 @@ import { stringifyKeySequence } from "@opentui/keymap";
 import { commands } from "../keymap";
 import { getPluginCommands } from "@natalia/plugin";
 import { useDialog, type DialogContext } from "../dialog/provider";
-import {
-  DialogSelect,
-  type DialogSelectOption,
-} from "../dialog/DialogSelect";
+import { DialogSelect, type DialogSelectOption } from "../dialog/DialogSelect";
 
 export function CommandPalette(props: { onRun(command: string): void }) {
   const dialog = useDialog();
@@ -18,8 +15,7 @@ export function CommandPalette(props: { onRun(command: string): void }) {
       namespace: "palette",
       visibility: "registered",
       filter: (command) =>
-        command.name !== "palette.toggle" &&
-        !definitions[command.name]?.scope,
+        command.name !== "palette.toggle" && !definitions[command.name]?.scope,
     });
     const bindings = current.getCommandBindings({
       commands: commands_.map((entry) => entry.command.name),
@@ -72,9 +68,7 @@ export function CommandPalette(props: { onRun(command: string): void }) {
         },
         ...getPluginCommands().map((cmd) => ({
           title: cmd.title,
-          description: cmd.category
-            ? `plugin · ${cmd.category}`
-            : "plugin",
+          description: cmd.category ? `plugin · ${cmd.category}` : "plugin",
           value: cmd.name,
           category: cmd.category ?? "plugin",
           onSelect: (dialog: DialogContext) => {

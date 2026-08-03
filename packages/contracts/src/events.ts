@@ -1288,7 +1288,11 @@ export type RuntimeClient = {
   ): Promise<RuntimeNativeTerminalSession>;
   nativeTerminalStop?(id: string): Promise<RuntimeNativeTerminalSession>;
   terminalList?(): Promise<RuntimeTerminalSession[]>;
-  terminalRead?(input: { id: string; offset?: number; maxChars?: number }): Promise<
+  terminalRead?(input: {
+    id: string;
+    offset?: number;
+    maxChars?: number;
+  }): Promise<
     RuntimeTerminalSession & {
       offset: number;
       nextOffset: number;
@@ -1450,15 +1454,18 @@ export type RuntimeClient = {
       knownGaps: string[];
     }>
   >;
-  sessionSnapshot?(): Promise<{
-    agentStatus: string;
-    currentStep?: string;
-    activeTool?: string;
-    changedFiles: number;
-    unvalidatedChanges: number;
-    hasPTY: boolean;
-    hasSandbox: boolean;
-  } | undefined>;
+  sessionSnapshot?(): Promise<
+    | {
+        agentStatus: string;
+        currentStep?: string;
+        activeTool?: string;
+        changedFiles: number;
+        unvalidatedChanges: number;
+        hasPTY: boolean;
+        hasSandbox: boolean;
+      }
+    | undefined
+  >;
   driftFindings?(): Promise<
     Array<{
       findingID: string;

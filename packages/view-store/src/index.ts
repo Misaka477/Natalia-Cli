@@ -1,4 +1,8 @@
-import type { RuntimeEvent, RuntimeProjectedMessage, SubmittedTurn } from "@natalia/contracts";
+import type {
+  RuntimeEvent,
+  RuntimeProjectedMessage,
+  SubmittedTurn,
+} from "@natalia/contracts";
 
 export type MessageBlock = {
   id: string;
@@ -20,7 +24,12 @@ export type MessageBlock = {
     redactedArguments?: string;
     keyArguments: string[];
     argumentsComplete: boolean;
-    result?: { summary: string; preview: string; detail: string; truncated?: boolean };
+    result?: {
+      summary: string;
+      preview: string;
+      detail: string;
+      truncated?: boolean;
+    };
     detailAvailable: boolean;
     metadata: Record<string, unknown>;
   };
@@ -81,7 +90,11 @@ export function streamID(turnID: string, role: "thinking" | "assistant") {
   return `${turnID}:${role}`;
 }
 
-export function toolStateID(event: { id: string; name: string; callID?: string }) {
+export function toolStateID(event: {
+  id: string;
+  name: string;
+  callID?: string;
+}) {
   return `${event.id}:tool:${event.callID ?? event.name}`;
 }
 

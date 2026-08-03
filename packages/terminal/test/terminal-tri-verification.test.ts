@@ -39,12 +39,12 @@ test("tri-verification: screen, transcript and scrollback agree on the same outp
   expect(readResult.transcript).toContain(marker);
   expect(scrollbackPage.text).toContain(marker);
 
-  const screenLine = screenText.split("\n").find((line: string) =>
-    line.includes(marker),
-  );
-  const scrollbackLine = scrollbackPage.text.split("\n").find((line: string) =>
-    line.includes(marker),
-  );
+  const screenLine = screenText
+    .split("\n")
+    .find((line: string) => line.includes(marker));
+  const scrollbackLine = scrollbackPage.text
+    .split("\n")
+    .find((line: string) => line.includes(marker));
   const transcriptSlice = readResult.transcript.slice(
     Math.max(0, readResult.transcript.lastIndexOf(marker) - 20),
     readResult.transcript.lastIndexOf(marker) + marker.length + 20,
