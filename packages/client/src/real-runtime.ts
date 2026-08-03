@@ -3541,7 +3541,25 @@ export function createRealRuntimeClient(
       });
       return blocked;
     }
-    if (tool.requiresApproval) await requireApproval(toolID, tool, call);
+    if (tool.requiresApproval) {
+      const refusal = await requireApproval(toolID, tool, call);
+      if (refusal) {
+        // Reported like a policy denial: the call did not run, the turn keeps
+        // going, and the model receives the reason as this call's result.
+        publish({
+          type: "tool.update",
+          id: toolID,
+          name: tool.name,
+          callID: call.id,
+          status: "rejected",
+          summary: refusal.reason,
+          result: refusal.reason,
+          endedAt: Date.now(),
+        });
+        await toolLayer.postExecute({ ...hookEvent, error: refusal.reason });
+        return `ERROR: ${refusal.reason}`;
+      }
+    }
     await waitIfPaused();
     publish({
       type: "tool.update",
@@ -3699,22 +3717,31 @@ export function createRealRuntimeClient(
     }
   }
 
+  /**
+   * Resolves the approval for one tool call.
+   *
+   * A refusal is a decision about this call, not a failure of the turn, so it
+   * is returned as a reason for the caller to hand back to the model. Only a
+   * cancellation or a timeout still throws, because in those cases there is no
+   * decision to act on. Returning instead of throwing is what lets the model
+   * read why it was refused and choose a different approach.
+   */
   async function requireApproval(
     approvalID: string,
     tool: RuntimeTool,
     call: ProviderToolCall,
-  ) {
-    if (permissionMode === "auto") return;
+  ): Promise<{ reason: string } | undefined> {
+    if (permissionMode === "auto") return undefined;
     if (permissionMode === "read_only")
-      throw new Error(readOnlyToolMessage(tool.name));
+      return { reason: readOnlyToolMessage(tool.name) };
     const terminalApproval = terminalApprovalScope(tool.name, call.arguments);
     if (terminalApproval) {
       if (terminalApproval.risk === "terminal_low") {
         const expiresAt = terminalApprovalScopes.get(terminalApproval.scope);
-        if (expiresAt && expiresAt > Date.now()) return;
+        if (expiresAt && expiresAt > Date.now()) return undefined;
         terminalApprovalScopes.delete(terminalApproval.scope);
       }
-    } else if (sessionApprovedTools.has(tool.name)) return;
+    } else if (sessionApprovedTools.has(tool.name)) return undefined;
     const presentation = approvalPresentation(tool.name, call.arguments);
     const expiresAt =
       terminalApproval?.risk === "terminal_low"
@@ -3748,17 +3775,30 @@ export function createRealRuntimeClient(
         activeAbort?.signal,
         `approval timed out: ${tool.name}`,
       );
-      if (response.decision === "reject")
-        publish({
-          type: "policy.decision",
-          turnID: activeTurnID ?? `approval:${sessionID}`,
-          toolName: tool.name,
-          toolCallID: call.id,
-          decision: "rejected",
-          reason: response.feedback,
-        });
-      if (response.decision === "reject")
-        throw new Error(`tool rejected: ${response.feedback ?? tool.name}`);
+      if (response.decision !== "reject") return undefined;
+      publish({
+        type: "policy.decision",
+        turnID: activeTurnID ?? `approval:${sessionID}`,
+        toolName: tool.name,
+        toolCallID: call.id,
+        decision: "rejected",
+        reason: response.feedback,
+      });
+      return { reason: rejectedToolMessage(tool.name, response.feedback) };
+    } catch (error) {
+      // A cancellation is a deliberate stop and still ends the turn. A timeout
+      // is not: nobody answered, and discarding the whole turn after a long
+      // wait loses more work than telling the model the request expired.
+      if (activeAbort?.signal.aborted) throw error;
+      publish({
+        type: "policy.decision",
+        turnID: activeTurnID ?? `approval:${sessionID}`,
+        toolName: tool.name,
+        toolCallID: call.id,
+        decision: "rejected",
+        reason: "approval expired without an answer",
+      });
+      return { reason: expiredToolMessage(tool.name) };
     } finally {
       pendingApprovalRequests.delete(approvalID);
       approvalToolByID.delete(approvalID);
@@ -4209,6 +4249,25 @@ function statusSnapshot(
 
 function readOnlyToolMessage(toolName: string) {
   return `tool denied by read-only permission mode: ${toolName}`;
+}
+
+/**
+ * The refusal the model reads. The reason has to be actionable, because the
+ * turn continues: repeating the same call would only be refused again.
+ */
+function rejectedToolMessage(toolName: string, feedback?: string) {
+  const reason = feedback?.trim();
+  return reason
+    ? `tool "${toolName}" was rejected by the user: ${reason}. Do not retry the same call; take this into account and continue.`
+    : `tool "${toolName}" was rejected by the user without a reason. Do not retry the same call; consider a different approach or ask what to do instead.`;
+}
+
+/**
+ * An unanswered approval must never read as permission. The model is told the
+ * call did not run so it can continue without it rather than assume success.
+ */
+function expiredToolMessage(toolName: string) {
+  return `approval for tool "${toolName}" expired without an answer, so the call did not run. Do not assume it was allowed; continue without it or state what you need.`;
 }
 
 function waitForToolExecution<T>(execution: Promise<T>, signal?: AbortSignal) {

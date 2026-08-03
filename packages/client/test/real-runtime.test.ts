@@ -4435,3 +4435,136 @@ test("the system prompt enumerates installed skills dynamically", async () => {
   expect(withSkill).toContain("...");
   expect(withSkill).not.toContain("d".repeat(700));
 });
+
+test("a rejected approval feeds the reason back and lets the turn continue", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-reject-"));
+  const events: RuntimeEvent[] = [];
+  const requests: ProviderStreamRequest[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_reject_continue" as SessionID,
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        requests.push(request);
+        // The second step only happens if the turn survived the rejection.
+        if (request.messages.some((message) => message.role === "tool")) {
+          yield { type: "content" as const, text: "understood, moving on" };
+          yield { type: "done" as const };
+          return;
+        }
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            {
+              id: "call_1",
+              name: "run_shell",
+              arguments: JSON.stringify({ command: "rm -rf /" }),
+            },
+          ],
+        };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => {
+    events.push(event);
+    if (event.type === "approval.request")
+      client.respondApproval({
+        requestID: event.id,
+        decision: "reject",
+        feedback: "too dangerous, list the directory instead",
+      });
+  });
+
+  await client.submit("clean the workspace");
+
+  // The refusal is reported as a decision about the call, not a broken turn.
+  expect(
+    events.find(
+      (event) => event.type === "tool.update" && event.status === "rejected",
+    ),
+  ).toMatchObject({
+    type: "tool.update",
+    name: "run_shell",
+    status: "rejected",
+  });
+  const finished = events.filter((event) => event.type === "turn.finished");
+  expect(finished).toHaveLength(1);
+  expect(finished[0]).not.toMatchObject({ stopReason: "error" });
+
+  // The model is told why, so it can choose differently.
+  const toolMessages = requests
+    .at(-1)!
+    .messages.filter((message) => message.role === "tool");
+  expect(toolMessages).toHaveLength(1);
+  expect(String(toolMessages[0]?.content)).toContain(
+    "too dangerous, list the directory instead",
+  );
+  expect(String(toolMessages[0]?.content)).toContain("rejected by the user");
+
+  // And it kept working afterwards.
+  expect(
+    events
+      .filter((event) => event.type === "content.delta")
+      .map((event) => event.text)
+      .join(""),
+  ).toContain("understood, moving on");
+});
+
+test("a rejection without feedback still audits the decision and continues", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-reject-bare-"));
+  const events: RuntimeEvent[] = [];
+  const requests: ProviderStreamRequest[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_reject_bare" as SessionID,
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        requests.push(request);
+        if (request.messages.some((message) => message.role === "tool")) {
+          yield { type: "content" as const, text: "asking instead" };
+          yield { type: "done" as const };
+          return;
+        }
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            {
+              id: "call_1",
+              name: "run_shell",
+              arguments: JSON.stringify({ command: "echo hi" }),
+            },
+          ],
+        };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => {
+    events.push(event);
+    if (event.type === "approval.request")
+      client.respondApproval({ requestID: event.id, decision: "reject" });
+  });
+
+  await client.submit("run something");
+
+  // The audit trail must record the refusal even when no reason was given.
+  expect(
+    events.find(
+      (event) =>
+        event.type === "policy.decision" && event.decision === "rejected",
+    ),
+  ).toMatchObject({ toolName: "run_shell", toolCallID: "call_1" });
+  expect(events.filter((event) => event.type === "turn.finished")).toHaveLength(
+    1,
+  );
+
+  const toolMessages = requests
+    .at(-1)!
+    .messages.filter((message) => message.role === "tool");
+  expect(String(toolMessages[0]?.content)).toContain("without a reason");
+});
