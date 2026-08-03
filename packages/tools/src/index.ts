@@ -1375,7 +1375,7 @@ function interactiveInputTool(): RuntimeTool {
   return {
     name: "interactive_terminal_input",
     description:
-      "Unified input for the native terminal pane. Prefer this over interactive_terminal_write, interactive_terminal_send_line, and interactive_terminal_keys. Examples: vim paste -> text='hello', paste=true; vim normal mode -> keys=[{key:'Escape'}]; shell command -> text='ls -la' (submit=true by default); quit interactive app -> keys=[{key:'q'}]. Use submit=false to prevent automatic Enter. Use paste=true for large text blocks in editors like vim (wraps text in bracketed paste escape sequences).",
+      "Unified input for the native terminal pane. Prefer this over interactive_terminal_write, interactive_terminal_send_line, and interactive_terminal_keys. Use `text` alone for a shell command: text='ls -la' sends it and presses Enter (submit=true by default; submit=false suppresses it). Use `keys` when order matters: it is an ordered sequence sent one entry at a time, where each entry is either a key ({key:'Escape'}) or literal text ({text:'hello'}). Entering insert mode and typing is keys=[{key:'i'},{text:'hello'},{key:'Escape'}]; saving is keys=[{key:'Escape'},{text:':wq'},{key:'Enter'}]. Add Enter explicitly as {key:'Enter'} inside a sequence. Do not pass `text` and `keys` in the same call, because their relative order is not expressible that way; put the text inside the sequence instead. Use paste=true with `text` for large blocks in editors like vim (wraps it in bracketed paste escape sequences).",
     requiresApproval: true,
     parameters: {
       type: "object",
@@ -1407,6 +1407,14 @@ function interactiveInputTool(): RuntimeTool {
       const id = requireString(args.id, "id");
       if (args.text === undefined && !Array.isArray(args.keys))
         throw new Error("either text or keys is required");
+      // Two parallel fields cannot express interleaving, so the old behaviour
+      // silently sent all text before all keys. In an editor that reverses the
+      // intent: text meant for insert mode arrives while still in normal mode.
+      // Ordering is expressible inside `keys`, so ask for it there.
+      if (args.text !== undefined && Array.isArray(args.keys))
+        throw new Error(
+          "text and keys cannot be combined because their order is ambiguous; put the text inside the keys sequence instead, for example keys=[{key:'i'},{text:'hello'},{key:'Escape'}]",
+        );
       let bytes = "";
       let pasted = false;
       if (args.text !== undefined) {

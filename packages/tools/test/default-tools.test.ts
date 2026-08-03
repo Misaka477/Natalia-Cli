@@ -751,16 +751,28 @@ test("unified interactive terminal input tool sends text and key sequences", asy
     context,
   );
   expect(writes.at(-1)).toBe("\x1b[A\r");
+  // Ordering lives inside the sequence, so text entries are sent in place.
   await tools.get("interactive_terminal_input")!.execute(
     {
       id: "tty_input",
-      text: "vim",
-      keys: [{ key: "Escape" }],
-      submit: false,
+      keys: [{ key: "i" }, { text: "hello" }, { key: "Escape" }],
     },
     context,
   );
-  expect(writes.at(-1)).toBe("vim\x1b");
+  expect(writes.at(-1)).toBe("ihello\x1b");
+  // Mixing the two fields cannot express order, and used to send every
+  // character of text before the keys regardless of intent.
+  await expect(
+    tools.get("interactive_terminal_input")!.execute(
+      {
+        id: "tty_input",
+        text: "vim",
+        keys: [{ key: "Escape" }],
+        submit: false,
+      },
+      context,
+    ),
+  ).rejects.toThrow(/cannot be combined/u);
   await tools
     .get("interactive_terminal_input")!
     .execute({ id: "tty_input", text: "Vim" }, context);
