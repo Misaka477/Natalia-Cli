@@ -14,6 +14,7 @@ import { resolveConfig } from "@natalia/config";
 import { SqliteSessionStore } from "@natalia/session";
 import { WorkspaceSandboxManager } from "@natalia/sandbox";
 import { NativeTerminalRegistry } from "@natalia/native-terminal";
+import { NataliaTaskStateStore } from "@natalia/workflow";
 
 test("real runtime client streams provider output and persists replayable session", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-real-"));
@@ -72,6 +73,102 @@ test("real runtime client streams provider output and persists replayable sessio
         event.type === "content.done" && event.text === "hello from provider",
     ),
   ).toBe(true);
+});
+
+test("flow_module_complete is only advertised to an active task module runtime", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-task-module-runtime-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_1" as SessionID,
+  });
+  store.activateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    conditionIDs: ["c1"],
+  });
+  store.recordModuleEvidence({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    ref: "tool:read:1",
+  });
+  const seenTools: string[][] = [];
+  const provider: StreamingProvider = {
+    provider: "task-module",
+    model: "task-module-model",
+    async *stream(request) {
+      seenTools.push((request.tools ?? []).map((tool) => tool.name));
+      if (!request.messages.some((message) => message.role === "tool"))
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            {
+              id: "complete",
+              name: "flow_module_complete",
+              arguments: JSON.stringify({
+                flowID: "flow_1",
+                moduleID: "read",
+                conditionStatuses: [{ id: "c1", status: "satisfied" }],
+                evidenceRefs: ["tool:read:1"],
+                gaps: [],
+                recommendedAction: "Evaluate the claim.",
+              }),
+            },
+          ],
+        };
+      yield { type: "done" as const };
+    },
+  };
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_task_module" as SessionID,
+    provider,
+    taskModuleContext: { store, invocationID: "inv_1", attempt: 1 },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("complete module");
+  expect(seenTools[0]).toContain("flow_module_complete");
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "tool.update",
+      name: "flow_module_complete",
+      status: "succeeded",
+    }),
+  );
+  expect(store.moduleEvents("inv_1", 1)).toContainEqual(
+    expect.objectContaining({ kind: "flow.module_claimed" }),
+  );
+  expect(store.getWaterline("task_1")).toBeUndefined();
+  await client.dispose?.();
+  store.close();
+});
+
+test("ordinary runtime never advertises flow_module_complete", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ordinary-runtime-"));
+  const seenTools: string[][] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ordinary" as SessionID,
+    provider: {
+      provider: "ordinary",
+      model: "ordinary-model",
+      async *stream(request) {
+        seenTools.push((request.tools ?? []).map((tool) => tool.name));
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.submit("hello");
+  expect(seenTools[0]).not.toContain("flow_module_complete");
+  await client.dispose?.();
 });
 
 test("runtime can suppress startup event replay for paged UI hydration", async () => {

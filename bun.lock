@@ -89,6 +89,7 @@
         "@natalia/testing": "workspace:*",
         "@natalia/tools": "workspace:*",
         "@natalia/ui-model": "workspace:*",
+        "@natalia/workflow": "workspace:*",
         "@vscode/tree-sitter-wasm": "0.3.1",
         "fuzzysort": "3.1.0",
         "web-tree-sitter": "0.25.10",

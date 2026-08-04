@@ -113,6 +113,7 @@ import { globalConfigHome, userRuntimeHome } from "@natalia/platform";
 import { WorkspaceSandboxManager } from "@natalia/sandbox";
 import { loadNativeMCPTools } from "@natalia/mcp";
 import { createPluginRegistry, loadLocalPlugins } from "@natalia/plugin";
+import { NataliaTaskStateStore } from "@natalia/workflow";
 import { ensureBashCommandParser } from "./bash-command-policy";
 import { RuntimePerformanceTrace } from "./performance-trace";
 import {
@@ -136,6 +137,106 @@ import {
 } from "./attachments";
 
 const sqliteStores = new Map<string, SqliteSessionStore>();
+
+function createFlowModuleCompleteTool(
+  context: NonNullable<RealRuntimeClientOptions["taskModuleContext"]>,
+): RuntimeTool {
+  return {
+    name: "flow_module_complete",
+    description:
+      "Claim completion of the active flow module with condition status and attempt-scoped evidence. This records a claim only; it does not complete the task.",
+    requiresApproval: false,
+    parameters: {
+      type: "object",
+      properties: {
+        flowID: { type: "string", minLength: 1 },
+        moduleID: { type: "string", minLength: 1 },
+        conditionStatuses: { type: "array" },
+        evidenceRefs: { type: "array" },
+        gaps: { type: "array" },
+        recommendedAction: { type: "string", minLength: 1 },
+      },
+      required: [
+        "flowID",
+        "moduleID",
+        "conditionStatuses",
+        "evidenceRefs",
+        "gaps",
+        "recommendedAction",
+      ],
+      additionalProperties: false,
+    },
+    async execute(input) {
+      const args = requireToolObject(input);
+      const flowID = requireToolString(args.flowID, "flowID");
+      const moduleID = requireToolString(args.moduleID, "moduleID");
+      const conditionStatuses = requireConditionStatuses(
+        args.conditionStatuses,
+      );
+      const evidenceRefs = requireStringList(args.evidenceRefs, "evidenceRefs");
+      const gaps = requireStringList(args.gaps, "gaps");
+      const recommendedAction = requireToolString(
+        args.recommendedAction,
+        "recommendedAction",
+      );
+      context.store.claimModule({
+        invocationID: context.invocationID,
+        attempt: context.attempt,
+        claim: {
+          flowID,
+          moduleID,
+          conditionStatuses,
+          evidenceRefs,
+          gaps,
+          recommendedAction,
+        },
+      });
+      return JSON.stringify({
+        flowID,
+        moduleID,
+        status: "claimed",
+        message:
+          "Module completion claim recorded. The task is not complete until the controller evaluates this claim.",
+      });
+    },
+  };
+}
+
+function requireToolObject(input: unknown) {
+  if (!input || typeof input !== "object" || Array.isArray(input))
+    throw new Error("flow module completion input must be an object");
+  return input as Record<string, unknown>;
+}
+
+function requireToolString(value: unknown, name: string) {
+  if (typeof value !== "string" || !value.trim())
+    throw new Error(`${name} must be a non-empty string`);
+  return value;
+}
+
+function requireStringList(value: unknown, name: string) {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string"))
+    throw new Error(`${name} must be an array of strings`);
+  return value as string[];
+}
+
+function requireConditionStatuses(value: unknown) {
+  if (!Array.isArray(value))
+    throw new Error("conditionStatuses must be an array");
+  return value.map((condition, index) => {
+    if (!condition || typeof condition !== "object" || Array.isArray(condition))
+      throw new Error(`conditionStatuses[${index}] must be an object`);
+    const entry = condition as Record<string, unknown>;
+    const id = requireToolString(entry.id, `conditionStatuses[${index}].id`);
+    const status = entry.status;
+    if (status !== "missing" && status !== "partial" && status !== "satisfied")
+      throw new Error(`conditionStatuses[${index}].status is invalid`);
+    return {
+      id,
+      status: status as "missing" | "partial" | "satisfied",
+    };
+  });
+}
 
 function userSkillRoot() {
   const root = join(globalConfigHome(), "natalia-cli", "skills");
@@ -239,6 +340,11 @@ export type RealRuntimeClientOptions = {
   toolPolicy?: ToolPolicy;
   hooks?: ToolHooks;
   nativeTerminal?: NativeTerminalRegistry;
+  taskModuleContext?: {
+    store: NataliaTaskStateStore;
+    invocationID: string;
+    attempt: number;
+  };
 };
 
 export function createRealRuntimeClient(
@@ -263,6 +369,16 @@ export function createRealRuntimeClient(
     ? undefined
     : new ManagedProcessRegistry();
   const tools = options.tools ?? createToolRegistry(undefined, processRegistry);
+  if (options.taskModuleContext) {
+    if (tools.has("flow_module_complete"))
+      throw new Error(
+        "task module context cannot replace flow_module_complete",
+      );
+    tools.set(
+      "flow_module_complete",
+      createFlowModuleCompleteTool(options.taskModuleContext),
+    );
+  }
   let agentToolLayer = createToolPolicyHookLayer();
   let permissionProfileToolLayer = createToolPolicyHookLayer();
   const terminalCommandBuffer = new TerminalCommandBuffer();

@@ -53,6 +53,9 @@
     },
     {
       "path": "../ui-model"
+    },
+    {
+      "path": "../workflow"
     }
   ]
 }
