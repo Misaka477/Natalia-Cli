@@ -47,6 +47,11 @@ export {
 } from "./natalia-documents";
 export { NataliaDocumentStore } from "./natalia-document-store";
 export {
+  moduleToolPolicy,
+  type NataliaFlowModuleType,
+  type NataliaModuleToolPolicy,
+} from "./natalia-module-policy";
+export {
   NataliaTaskStateStore,
   type NataliaTaskAttempt,
   type NataliaTaskAttemptStatus,

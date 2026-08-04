@@ -632,6 +632,7 @@ async function runTaskOnce(input: {
       store: state,
       invocationID,
       attempt: started.attempt.attempt,
+      moduleType: module.type,
     },
   });
   let stopReason: Extract<

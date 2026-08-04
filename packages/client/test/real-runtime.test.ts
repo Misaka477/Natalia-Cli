@@ -130,7 +130,12 @@ test("flow_module_complete is only advertised to an active task module runtime",
     workspaceRoot: root,
     sessionID: "ses_task_module" as SessionID,
     provider,
-    taskModuleContext: { store, invocationID: "inv_1", attempt: 1 },
+    taskModuleContext: {
+      store,
+      invocationID: "inv_1",
+      attempt: 1,
+      moduleType: "read_search",
+    },
   });
   client.start((event) => events.push(event));
   await client.submit("complete module");
@@ -169,6 +174,72 @@ test("ordinary runtime never advertises flow_module_complete", async () => {
   await client.submit("hello");
   expect(seenTools[0]).not.toContain("flow_module_complete");
   await client.dispose?.();
+});
+
+test("task module policy denies tools outside the active capability bundle", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-task-module-policy-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_1" as SessionID,
+  });
+  store.activateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    conditionIDs: [],
+  });
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_task_policy" as SessionID,
+    taskModuleContext: {
+      store,
+      invocationID: "inv_1",
+      attempt: 1,
+      moduleType: "read_search",
+    },
+    provider: {
+      provider: "module-policy",
+      model: "module-policy-model",
+      async *stream(request) {
+        if (!request.messages.some((message) => message.role === "tool"))
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "outside_module",
+                name: "run_shell",
+                arguments: JSON.stringify({ command: "pwd" }),
+              },
+            ],
+          };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  await client.submit("run shell");
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "policy.decision",
+      toolName: "run_shell",
+      decision: "deny",
+      reason: expect.stringContaining("outside active read_search module"),
+    }),
+  );
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "tool.update",
+      name: "run_shell",
+      status: "failed",
+    }),
+  );
+  await client.dispose?.();
+  store.close();
 });
 
 test("runtime can suppress startup event replay for paged UI hydration", async () => {

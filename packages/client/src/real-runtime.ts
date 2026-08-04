@@ -113,7 +113,11 @@ import { globalConfigHome, userRuntimeHome } from "@natalia/platform";
 import { WorkspaceSandboxManager } from "@natalia/sandbox";
 import { loadNativeMCPTools } from "@natalia/mcp";
 import { createPluginRegistry, loadLocalPlugins } from "@natalia/plugin";
-import { NataliaTaskStateStore } from "@natalia/workflow";
+import {
+  moduleToolPolicy,
+  NataliaTaskStateStore,
+  type NataliaFlowModuleType,
+} from "@natalia/workflow";
 import { ensureBashCommandParser } from "./bash-command-policy";
 import { RuntimePerformanceTrace } from "./performance-trace";
 import {
@@ -344,6 +348,7 @@ export type RealRuntimeClientOptions = {
     store: NataliaTaskStateStore;
     invocationID: string;
     attempt: number;
+    moduleType: NataliaFlowModuleType;
   };
 };
 
@@ -381,6 +386,11 @@ export function createRealRuntimeClient(
   }
   let agentToolLayer = createToolPolicyHookLayer();
   let permissionProfileToolLayer = createToolPolicyHookLayer();
+  const moduleToolLayer = createToolPolicyHookLayer(
+    options.taskModuleContext
+      ? moduleToolPolicy(options.taskModuleContext.moduleType)
+      : undefined,
+  );
   const terminalCommandBuffer = new TerminalCommandBuffer();
   const toolLayer = createToolPolicyHookLayer(options.toolPolicy, {
     preExecute: async (event) => {
@@ -388,6 +398,14 @@ export function createRealRuntimeClient(
       if (!agentResult.allowed) return agentResult;
       const profileResult = await permissionProfileToolLayer.preExecute(event);
       if (!profileResult.allowed) return profileResult;
+      const moduleResult = await moduleToolLayer.preExecute(event);
+      if (!moduleResult.allowed)
+        return {
+          ...moduleResult,
+          diagnostics: [
+            `blocked outside active ${options.taskModuleContext?.moduleType} module: ${event.toolName}`,
+          ],
+        };
       const extensionResult = extensionToolPermission(event.toolName);
       if (!extensionResult.allowed) return extensionResult;
       const permission = evaluatePermissionRules(
@@ -1358,6 +1376,7 @@ export function createRealRuntimeClient(
       toolLayer.isToolAllowed(toolName) &&
       agentToolLayer.isToolAllowed(toolName) &&
       permissionProfileToolLayer.isToolAllowed(toolName) &&
+      moduleToolLayer.isToolAllowed(toolName) &&
       extensionToolPermission(toolName).allowed
     );
   }
@@ -3593,8 +3612,10 @@ export function createRealRuntimeClient(
             reason:
               permissionMode === "read_only" && registered.requiresApproval
                 ? readOnlyToolMessage(call.name)
-                : (extensionToolPermission(call.name).diagnostics[0] ??
-                  "tool is excluded from the runtime catalog by policy"),
+                : !moduleToolLayer.isToolAllowed(call.name)
+                  ? `blocked outside active ${options.taskModuleContext?.moduleType} module: ${call.name}`
+                  : (extensionToolPermission(call.name).diagnostics[0] ??
+                    "tool is excluded from the runtime catalog by policy"),
           });
         publish({
           type: "tool.update",
