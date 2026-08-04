@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { Database } from "bun:sqlite";
 import type { EpisodeID, SessionID } from "@natalia/contracts";
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const ACTIVE_STATUSES = ["running", "blocked", "retrying"] as const;
 
 export type NataliaTaskInvocationStatus =
@@ -43,6 +43,44 @@ export type NataliaTaskAttempt = {
   startedAt: string;
   endedAt?: string;
   reason?: string;
+};
+
+export type NataliaFlowModuleStatus =
+  | "activated"
+  | "claimed"
+  | "completed"
+  | "blocked"
+  | "stalled";
+
+export type NataliaFlowModuleEventKind =
+  | "flow.module_activated"
+  | "flow.module_claimed"
+  | "flow.module_evaluated"
+  | "flow.module_continued"
+  | "flow.module_completed"
+  | "flow.module_blocked"
+  | "flow.module_stalled";
+
+export type NataliaFlowModuleEvent = {
+  invocationID: string;
+  attempt: number;
+  flowID: string;
+  moduleID: string;
+  kind: NataliaFlowModuleEventKind;
+  at: string;
+  data: Record<string, unknown>;
+};
+
+export type NataliaFlowModuleClaim = {
+  flowID: string;
+  moduleID: string;
+  conditionStatuses: Array<{
+    id: string;
+    status: "missing" | "partial" | "satisfied";
+  }>;
+  evidenceRefs: string[];
+  gaps: string[];
+  recommendedAction: string;
 };
 
 export type StartTaskInvocationResult =
@@ -235,6 +273,230 @@ export class NataliaTaskStateStore {
       : undefined;
   }
 
+  activateModule(input: {
+    invocationID: string;
+    attempt: number;
+    flowID: string;
+    moduleID: string;
+    conditionIDs: string[];
+    at?: string;
+  }) {
+    const at = input.at ?? new Date().toISOString();
+    this.#db.transaction(() => {
+      this.requireRunningAttempt(input.invocationID, input.attempt);
+      const active = this.#db
+        .query<
+          ModuleRow,
+          [string, number]
+        >("SELECT * FROM task_flow_modules WHERE invocation_id = ? AND attempt = ? AND status IN ('activated', 'claimed')")
+        .get(input.invocationID, input.attempt);
+      if (active)
+        throw new Error(
+          `another flow module is active: ${active.flow_id}/${active.module_id}`,
+        );
+      const existing = this.#db
+        .query<
+          ModuleRow,
+          [string, number, string, string]
+        >("SELECT * FROM task_flow_modules WHERE invocation_id = ? AND attempt = ? AND flow_id = ? AND module_id = ?")
+        .get(input.invocationID, input.attempt, input.flowID, input.moduleID);
+      if (existing)
+        throw new Error(`flow module was already activated: ${input.moduleID}`);
+      this.#db
+        .query(
+          "INSERT INTO task_flow_modules VALUES (?, ?, ?, ?, 'activated', ?, ?)",
+        )
+        .run(
+          input.invocationID,
+          input.attempt,
+          input.flowID,
+          input.moduleID,
+          JSON.stringify([...new Set(input.conditionIDs)]),
+          at,
+        );
+      this.appendModuleEvent({
+        ...input,
+        kind: "flow.module_activated",
+        at,
+        data: {},
+      });
+    })();
+  }
+
+  recordModuleEvidence(input: {
+    invocationID: string;
+    attempt: number;
+    flowID: string;
+    moduleID: string;
+    ref: string;
+    at?: string;
+  }) {
+    const at = input.at ?? new Date().toISOString();
+    this.#db.transaction(() => {
+      this.requireActiveModule(input);
+      this.#db
+        .query(
+          "INSERT OR IGNORE INTO task_flow_evidence VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          input.invocationID,
+          input.attempt,
+          input.flowID,
+          input.moduleID,
+          input.ref,
+          at,
+        );
+    })();
+  }
+
+  claimModule(input: {
+    invocationID: string;
+    attempt: number;
+    claim: NataliaFlowModuleClaim;
+    at?: string;
+  }) {
+    const at = input.at ?? new Date().toISOString();
+    this.#db.transaction(() => {
+      const module = this.requireActiveModule({ ...input, ...input.claim });
+      const expected = JSON.parse(module.condition_ids) as string[];
+      const claimed = input.claim.conditionStatuses.map(
+        (condition) => condition.id,
+      );
+      if (
+        claimed.length !== expected.length ||
+        new Set(claimed).size !== claimed.length ||
+        expected.some((id) => !claimed.includes(id))
+      )
+        throw new Error(
+          "module claim must include each declared condition exactly once",
+        );
+      const evidence = new Set(
+        this.#db
+          .query<{ ref: string }, [string, number, string, string]>(
+            "SELECT ref FROM task_flow_evidence WHERE invocation_id = ? AND attempt = ? AND flow_id = ? AND module_id = ?",
+          )
+          .all(
+            input.invocationID,
+            input.attempt,
+            input.claim.flowID,
+            input.claim.moduleID,
+          )
+          .map((row) => row.ref),
+      );
+      for (const ref of input.claim.evidenceRefs)
+        if (!evidence.has(ref))
+          throw new Error(
+            `module claim references unknown attempt evidence: ${ref}`,
+          );
+      this.#db
+        .query(
+          "UPDATE task_flow_modules SET status = 'claimed' WHERE invocation_id = ? AND attempt = ? AND flow_id = ? AND module_id = ?",
+        )
+        .run(
+          input.invocationID,
+          input.attempt,
+          input.claim.flowID,
+          input.claim.moduleID,
+        );
+      this.appendModuleEvent({
+        invocationID: input.invocationID,
+        attempt: input.attempt,
+        flowID: input.claim.flowID,
+        moduleID: input.claim.moduleID,
+        kind: "flow.module_claimed",
+        at,
+        data: input.claim as unknown as Record<string, unknown>,
+      });
+    })();
+  }
+
+  evaluateModule(input: {
+    invocationID: string;
+    attempt: number;
+    flowID: string;
+    moduleID: string;
+    outcome: "complete" | "incomplete" | "blocked";
+    data?: Record<string, unknown>;
+    at?: string;
+  }) {
+    const at = input.at ?? new Date().toISOString();
+    this.#db.transaction(() => {
+      const module = this.requireModule(input);
+      if (module.status !== "claimed")
+        throw new Error(
+          `flow module must be claimed before evaluation: ${input.moduleID}`,
+        );
+      this.appendModuleEvent({
+        ...input,
+        kind: "flow.module_evaluated",
+        at,
+        data: { outcome: input.outcome, ...input.data },
+      });
+      const kind: NataliaFlowModuleEventKind =
+        input.outcome === "complete"
+          ? "flow.module_completed"
+          : input.outcome === "blocked"
+            ? "flow.module_blocked"
+            : "flow.module_continued";
+      const status: NataliaFlowModuleStatus =
+        input.outcome === "complete"
+          ? "completed"
+          : input.outcome === "blocked"
+            ? "blocked"
+            : "activated";
+      this.#db
+        .query(
+          "UPDATE task_flow_modules SET status = ? WHERE invocation_id = ? AND attempt = ? AND flow_id = ? AND module_id = ?",
+        )
+        .run(
+          status,
+          input.invocationID,
+          input.attempt,
+          input.flowID,
+          input.moduleID,
+        );
+      this.appendModuleEvent({ ...input, kind, at, data: input.data ?? {} });
+    })();
+  }
+
+  stallModule(input: {
+    invocationID: string;
+    attempt: number;
+    flowID: string;
+    moduleID: string;
+    reason: string;
+    at?: string;
+  }) {
+    const at = input.at ?? new Date().toISOString();
+    this.#db.transaction(() => {
+      this.requireActiveModule(input);
+      this.#db
+        .query(
+          "UPDATE task_flow_modules SET status = 'stalled' WHERE invocation_id = ? AND attempt = ? AND flow_id = ? AND module_id = ?",
+        )
+        .run(input.invocationID, input.attempt, input.flowID, input.moduleID);
+      this.appendModuleEvent({
+        ...input,
+        kind: "flow.module_stalled",
+        at,
+        data: { reason: input.reason },
+      });
+    })();
+  }
+
+  moduleEvents(
+    invocationID: string,
+    attempt: number,
+  ): NataliaFlowModuleEvent[] {
+    return this.#db
+      .query<
+        ModuleEventRow,
+        [string, number]
+      >("SELECT * FROM task_flow_module_events WHERE invocation_id = ? AND attempt = ? ORDER BY seq")
+      .all(invocationID, attempt)
+      .map(moduleEventFromRow);
+  }
+
   private migrate() {
     const version =
       this.#db.query<{ user_version: number }, []>("PRAGMA user_version").get()
@@ -269,8 +531,44 @@ export class NataliaTaskStateStore {
           invocation_id TEXT NOT NULL REFERENCES task_invocations(invocation_id),
           advanced_at TEXT NOT NULL
         );
-        PRAGMA user_version = 1;
       `);
+      this.#db.exec("PRAGMA user_version = 1");
+    }
+    if (version <= 1) {
+      this.#db.exec(`
+        CREATE TABLE task_flow_modules (
+          invocation_id TEXT NOT NULL REFERENCES task_invocations(invocation_id),
+          attempt INTEGER NOT NULL,
+          flow_id TEXT NOT NULL,
+          module_id TEXT NOT NULL,
+          status TEXT NOT NULL,
+          condition_ids TEXT NOT NULL,
+          activated_at TEXT NOT NULL,
+          PRIMARY KEY(invocation_id, attempt, flow_id, module_id),
+          FOREIGN KEY(invocation_id, attempt) REFERENCES task_attempts(invocation_id, attempt)
+        );
+        CREATE TABLE task_flow_evidence (
+          invocation_id TEXT NOT NULL,
+          attempt INTEGER NOT NULL,
+          flow_id TEXT NOT NULL,
+          module_id TEXT NOT NULL,
+          ref TEXT NOT NULL,
+          recorded_at TEXT NOT NULL,
+          PRIMARY KEY(invocation_id, attempt, flow_id, module_id, ref)
+        );
+        CREATE TABLE task_flow_module_events (
+          seq INTEGER PRIMARY KEY AUTOINCREMENT,
+          invocation_id TEXT NOT NULL,
+          attempt INTEGER NOT NULL,
+          flow_id TEXT NOT NULL,
+          module_id TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          at TEXT NOT NULL,
+          data TEXT NOT NULL
+        );
+        CREATE INDEX task_flow_module_events_attempt ON task_flow_module_events(invocation_id, attempt, seq);
+      `);
+      this.#db.exec("PRAGMA user_version = 2");
     }
   }
 
@@ -325,6 +623,60 @@ export class NataliaTaskStateStore {
       throw new Error(`task attempt not found: ${invocationID}/${attempt}`);
     return result;
   }
+
+  private requireRunningAttempt(invocationID: string, attempt: number) {
+    const result = this.requireAttempt(invocationID, attempt);
+    if (result.status !== "running")
+      throw new Error(
+        `task attempt is not running: ${invocationID}/${attempt}`,
+      );
+  }
+
+  private requireModule(input: {
+    invocationID: string;
+    attempt: number;
+    flowID: string;
+    moduleID: string;
+  }) {
+    const module = this.#db
+      .query<
+        ModuleRow,
+        [string, number, string, string]
+      >("SELECT * FROM task_flow_modules WHERE invocation_id = ? AND attempt = ? AND flow_id = ? AND module_id = ?")
+      .get(input.invocationID, input.attempt, input.flowID, input.moduleID);
+    if (!module)
+      throw new Error(`flow module is not active: ${input.moduleID}`);
+    return module;
+  }
+
+  private requireActiveModule(input: {
+    invocationID: string;
+    attempt: number;
+    flowID: string;
+    moduleID: string;
+  }) {
+    this.requireRunningAttempt(input.invocationID, input.attempt);
+    const module = this.requireModule(input);
+    if (module.status !== "activated")
+      throw new Error(`flow module is not active: ${input.moduleID}`);
+    return module;
+  }
+
+  private appendModuleEvent(event: NataliaFlowModuleEvent) {
+    this.#db
+      .query(
+        "INSERT INTO task_flow_module_events(invocation_id, attempt, flow_id, module_id, kind, at, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(
+        event.invocationID,
+        event.attempt,
+        event.flowID,
+        event.moduleID,
+        event.kind,
+        event.at,
+        JSON.stringify(event.data),
+      );
+  }
 }
 
 type InvocationRow = {
@@ -346,5 +698,37 @@ function invocationFromRow(row: InvocationRow): NataliaTaskInvocation {
     endedAt: row.ended_at ?? undefined,
     waterlineAdvanced: Boolean(row.waterline_advanced),
     skipReason: row.skip_reason ?? undefined,
+  };
+}
+
+type ModuleRow = {
+  invocation_id: string;
+  attempt: number;
+  flow_id: string;
+  module_id: string;
+  status: NataliaFlowModuleStatus;
+  condition_ids: string;
+  activated_at: string;
+};
+
+type ModuleEventRow = {
+  invocation_id: string;
+  attempt: number;
+  flow_id: string;
+  module_id: string;
+  kind: NataliaFlowModuleEventKind;
+  at: string;
+  data: string;
+};
+
+function moduleEventFromRow(row: ModuleEventRow): NataliaFlowModuleEvent {
+  return {
+    invocationID: row.invocation_id,
+    attempt: row.attempt,
+    flowID: row.flow_id,
+    moduleID: row.module_id,
+    kind: row.kind,
+    at: row.at,
+    data: JSON.parse(row.data) as Record<string, unknown>,
   };
 }

@@ -115,3 +115,141 @@ test("task state store rejects invalid attempt transitions", async () => {
   ).toThrow("not retrying");
   store.close();
 });
+
+test("module lifecycle records an audited claim and evaluator completion", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-module-lifecycle-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_1" as import("@natalia/contracts").SessionID,
+  });
+  store.activateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    conditionIDs: ["minimum-1", "minimum-2"],
+  });
+  store.recordModuleEvidence({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    ref: "tool:glob:1",
+  });
+  store.claimModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    claim: {
+      flowID: "flow_1",
+      moduleID: "read",
+      conditionStatuses: [
+        { id: "minimum-1", status: "satisfied" },
+        { id: "minimum-2", status: "partial" },
+      ],
+      evidenceRefs: ["tool:glob:1"],
+      gaps: ["Inspect generated output"],
+      recommendedAction: "Read the generated output.",
+    },
+  });
+  store.evaluateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    outcome: "incomplete",
+    data: { gaps: ["Inspect generated output"] },
+  });
+  expect(store.moduleEvents("inv_1", 1).map((event) => event.kind)).toEqual([
+    "flow.module_activated",
+    "flow.module_claimed",
+    "flow.module_evaluated",
+    "flow.module_continued",
+  ]);
+  store.claimModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    claim: {
+      flowID: "flow_1",
+      moduleID: "read",
+      conditionStatuses: [
+        { id: "minimum-1", status: "satisfied" },
+        { id: "minimum-2", status: "satisfied" },
+      ],
+      evidenceRefs: ["tool:glob:1"],
+      gaps: [],
+      recommendedAction: "Complete the module.",
+    },
+  });
+  store.evaluateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    outcome: "complete",
+  });
+  expect(store.moduleEvents("inv_1", 1).at(-1)).toMatchObject({
+    kind: "flow.module_completed",
+  });
+  expect(store.getWaterline("task_1")).toBeUndefined();
+  store.close();
+});
+
+test("module claims reject missing conditions, foreign evidence, and inactive modules", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-module-claim-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_1" as import("@natalia/contracts").SessionID,
+  });
+  store.activateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    conditionIDs: ["c1"],
+  });
+  const base = {
+    invocationID: "inv_1",
+    attempt: 1,
+    claim: {
+      flowID: "flow_1",
+      moduleID: "read",
+      conditionStatuses: [] as Array<{
+        id: string;
+        status: "missing" | "partial" | "satisfied";
+      }>,
+      evidenceRefs: [] as string[],
+      gaps: [],
+      recommendedAction: "Continue.",
+    },
+  };
+  expect(() => store.claimModule(base)).toThrow(
+    "include each declared condition",
+  );
+  expect(() =>
+    store.claimModule({
+      ...base,
+      claim: {
+        ...base.claim,
+        conditionStatuses: [{ id: "c1", status: "satisfied" }],
+        evidenceRefs: ["tool:foreign:1"],
+      },
+    }),
+  ).toThrow("unknown attempt evidence");
+  expect(() =>
+    store.claimModule({
+      ...base,
+      attempt: 2,
+      claim: {
+        ...base.claim,
+        conditionStatuses: [{ id: "c1", status: "satisfied" }],
+      },
+    }),
+  ).toThrow("not found");
+  store.close();
+});

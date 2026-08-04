@@ -52,6 +52,10 @@ export {
   type NataliaTaskAttemptStatus,
   type NataliaTaskInvocation,
   type NataliaTaskInvocationStatus,
+  type NataliaFlowModuleClaim,
+  type NataliaFlowModuleEvent,
+  type NataliaFlowModuleEventKind,
+  type NataliaFlowModuleStatus,
   type StartTaskInvocationResult,
 } from "./natalia-task-state-store";
 export { evaluateCondition, interpolate } from "./eval";
