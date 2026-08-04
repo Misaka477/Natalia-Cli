@@ -31,6 +31,7 @@
     "native-terminal:build-wezterm:windows": "cargo build --manifest-path packages/native-terminal/wezterm/Cargo.toml --release --bin wezterm --bin wezterm-gui --bin wezterm-mux-server",
     "native-terminal:build-wezterm:windows-cross": "npx bun scripts/build-wezterm-windows.ts",
     "smoke:native-terminal:kimi": "npx bun scripts/native-terminal-kimi-smoke.ts",
+    "smoke:native-terminal:headless": "env -u DISPLAY -u WAYLAND_DISPLAY npx bun scripts/native-terminal-headless-smoke.ts",
     "smoke:native-terminal:chat": "npx bun scripts/native-terminal-kimi-chat-smoke.ts",
     "perf:native-terminal:kimi-30m": "npx bun scripts/perf/kimi-terminal-soak.ts 1800000",
     "perf:native-terminal:kimi-2h": "npx bun scripts/perf/kimi-terminal-soak.ts 7200000",
