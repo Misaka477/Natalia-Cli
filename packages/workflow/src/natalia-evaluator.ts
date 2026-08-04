@@ -2,6 +2,8 @@ import {
   evaluatorResultSchema,
   type EvaluatorResult,
 } from "@natalia/contracts";
+import type { StreamingProvider } from "@natalia/runtime";
+import { NataliaTaskStateStore } from "./natalia-task-state-store";
 
 export type EvaluatorModuleContext = {
   flowID: string;
@@ -24,6 +26,20 @@ export type RedactedEvaluatorModuleContext = Omit<
   executionRecords: string[];
   redacted: true;
 };
+
+export type EvaluatorSelection = {
+  provider: string;
+  model: string;
+};
+
+export type EvaluatorConsent = {
+  provider: string;
+  confirmedAt: string;
+};
+
+export type EvaluatorExecutionResult =
+  | { outcome: "complete" | "incomplete"; result: EvaluatorResult }
+  | { outcome: "blocked"; reason: string };
 
 export function buildRedactedEvaluatorContext(
   context: EvaluatorModuleContext,
@@ -78,6 +94,83 @@ export function parseEvaluatorResult(
       "evaluator result must include each declared condition exactly once",
     );
   return parsed.data;
+}
+
+/**
+ * Evaluator failures are a module block, never a fallback approval or task
+ * success. The state transition requires a prior flow_module_complete claim.
+ */
+export async function evaluateAndRecordModule(input: {
+  store: NataliaTaskStateStore;
+  invocationID: string;
+  attempt: number;
+  executionProvider: string;
+  selection: EvaluatorSelection;
+  consent?: EvaluatorConsent;
+  provider: StreamingProvider;
+  context: EvaluatorModuleContext;
+}): Promise<EvaluatorExecutionResult> {
+  const redacted = buildRedactedEvaluatorContext(input.context);
+  const block = (reason: string): EvaluatorExecutionResult => {
+    input.store.evaluateModule({
+      invocationID: input.invocationID,
+      attempt: input.attempt,
+      flowID: redacted.flowID,
+      moduleID: redacted.moduleID,
+      outcome: "blocked",
+      data: { reason, evaluatorProvider: input.selection.provider },
+    });
+    return { outcome: "blocked", reason };
+  };
+  if (
+    input.provider.provider !== input.selection.provider ||
+    input.provider.model !== input.selection.model
+  )
+    return block("evaluator provider selection does not match the task");
+  if (
+    input.executionProvider !== input.selection.provider &&
+    (!input.consent || input.consent.provider !== input.selection.provider)
+  )
+    return block(
+      "cross-provider evaluator requires confirmed consent for the evaluator provider",
+    );
+  try {
+    let content = "";
+    for await (const chunk of input.provider.stream({
+      messages: [
+        {
+          role: "system",
+          content:
+            "Return only one evaluator result JSON object matching schemaVersion 1. Do not call tools or write Markdown.",
+        },
+        { role: "user", content: JSON.stringify(redacted) },
+      ],
+    })) {
+      if (chunk.type === "content") content += chunk.text;
+      if (chunk.type === "tool_call")
+        return block("evaluator emitted a forbidden tool call");
+    }
+    const result = parseEvaluatorResult(content, redacted.conditionIDs);
+    input.store.evaluateModule({
+      invocationID: input.invocationID,
+      attempt: input.attempt,
+      flowID: redacted.flowID,
+      moduleID: redacted.moduleID,
+      outcome: result.outcome,
+      data: {
+        evaluatorProvider: input.selection.provider,
+        evaluatorModel: input.selection.model,
+        result,
+      },
+    });
+    return result.outcome === "blocked"
+      ? { outcome: "blocked", reason: "evaluator marked the module blocked" }
+      : { outcome: result.outcome, result };
+  } catch (error) {
+    return block(
+      `evaluator unavailable or invalid: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 function redactEvaluatorText(text: string): string {

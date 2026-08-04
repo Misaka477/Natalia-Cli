@@ -48,8 +48,12 @@ export {
 export { NataliaDocumentStore } from "./natalia-document-store";
 export {
   buildRedactedEvaluatorContext,
+  evaluateAndRecordModule,
   parseEvaluatorResult,
+  type EvaluatorConsent,
+  type EvaluatorExecutionResult,
   type EvaluatorModuleContext,
+  type EvaluatorSelection,
   type RedactedEvaluatorModuleContext,
 } from "./natalia-evaluator";
 export {
