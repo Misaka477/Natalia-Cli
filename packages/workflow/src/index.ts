@@ -46,6 +46,14 @@ export {
   type NataliaDocument,
 } from "./natalia-documents";
 export { NataliaDocumentStore } from "./natalia-document-store";
+export {
+  NataliaTaskStateStore,
+  type NataliaTaskAttempt,
+  type NataliaTaskAttemptStatus,
+  type NataliaTaskInvocation,
+  type NataliaTaskInvocationStatus,
+  type StartTaskInvocationResult,
+} from "./natalia-task-state-store";
 export { evaluateCondition, interpolate } from "./eval";
 
 export class JsonlWorkflowStore {
