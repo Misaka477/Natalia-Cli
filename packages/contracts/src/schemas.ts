@@ -188,6 +188,65 @@ export const permissionProfileSchema = z.object({
     .optional(),
 });
 
+export const flowModuleTypeSchema = z.enum([
+  "read_search",
+  "terminal",
+  "shell_command",
+  "workspace_changes",
+  "web_fetch",
+  "skills",
+  "mcp",
+  "plugins",
+  "subagents",
+  "report_output",
+]);
+
+export const flowConditionSchema = z.object({
+  id: z.string().min(1),
+  text: z.string().min(1),
+});
+
+export const nataliaFlowModuleSchema = z.object({
+  id: z.string().min(1),
+  type: flowModuleTypeSchema,
+  displayName: z.string().min(1),
+  enabled: z.boolean().default(true),
+  instructions: z.string().default(""),
+  minimumConditions: z.array(flowConditionSchema).default([]),
+  idealConditions: z.array(flowConditionSchema).default([]),
+  commandRules: permissionProfileCommandRulesSchema.optional(),
+});
+
+export const nataliaFlowDocumentSchema = z.object({
+  kind: z.literal("natalia-flow"),
+  version: z.number().int().positive(),
+  flowID: z.string().min(1),
+  displayName: z.string().min(1),
+  modules: z.array(nataliaFlowModuleSchema).min(1),
+});
+
+export const nataliaTaskDocumentSchema = z.object({
+  kind: z.literal("natalia-task"),
+  version: z.number().int().positive(),
+  taskID: z.string().min(1),
+  displayName: z.string().min(1),
+  schedule: z.string().min(1),
+  prompt: z.string().min(1),
+  permissionProfile: z.string().min(1),
+  flow: z.object({
+    path: z.string().min(1),
+    flowID: z.string().min(1).optional(),
+  }),
+  retry: z.enum(["none", "once", "twice", "three_times"]).default("none"),
+  alerts: z.array(z.string()).default([]),
+  evaluator: z
+    .object({ provider: z.string().min(1), model: z.string().min(1) })
+    .optional(),
+  evaluatorConsent: z
+    .object({ provider: z.string().min(1), confirmedAt: z.string().datetime() })
+    .optional(),
+});
+
 export const agentConfigSchema = z.object({
   description: z.string().default(""),
   systemPrompt: z.string().default(""),
@@ -518,6 +577,8 @@ export type ConfigV2 = z.infer<typeof configV2Schema>;
 export type ModelConfig = z.infer<typeof modelConfigSchema>;
 export type ProviderConfig = z.infer<typeof providerConfigSchema>;
 export type PermissionProfile = z.infer<typeof permissionProfileSchema>;
+export type NataliaFlowDocument = z.infer<typeof nataliaFlowDocumentSchema>;
+export type NataliaTaskDocument = z.infer<typeof nataliaTaskDocumentSchema>;
 export type ModeConfig = z.infer<typeof modeConfigSchema>;
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
 export type AgentPermissionRules = z.infer<typeof agentPermissionRulesSchema>;

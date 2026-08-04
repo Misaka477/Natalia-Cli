@@ -39,6 +39,12 @@ export type WorkflowToolRegistry = {
 
 export type * from "./types";
 export { parseWorkflowJSON, parseWorkflowYAML } from "./parser";
+export {
+  parseNataliaDocumentJSON,
+  parseNataliaDocumentYAML,
+  validateNataliaDocument,
+  type NataliaDocument,
+} from "./natalia-documents";
 export { evaluateCondition, interpolate } from "./eval";
 
 export class JsonlWorkflowStore {

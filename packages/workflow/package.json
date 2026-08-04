@@ -9,7 +9,9 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@natalia/contracts": "workspace:*",
     "@natalia/platform": "workspace:*",
-    "@natalia/tools": "workspace:*"
+    "@natalia/tools": "workspace:*",
+    "yaml": "2.8.1"
   }
 }
