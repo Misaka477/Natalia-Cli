@@ -268,6 +268,8 @@ export function createRealRuntimeClient(
       if (!agentResult.allowed) return agentResult;
       const profileResult = await permissionProfileToolLayer.preExecute(event);
       if (!profileResult.allowed) return profileResult;
+      const extensionResult = extensionToolPermission(event.toolName);
+      if (!extensionResult.allowed) return extensionResult;
       const permission = evaluatePermissionRules(
         selectedAgent?.permissions,
         event.toolName,
@@ -641,7 +643,7 @@ export function createRealRuntimeClient(
       if (event.event === "created" || event.event === "done")
         scheduleRuntimeStatusSnapshot();
     });
-    if (tsRuntimeConfig) {
+    if (tsRuntimeConfig && extensionEnabled("mcp")) {
       const nativeMCP = await loadNativeMCPTools({
         registry: tools,
         servers: tsRuntimeConfig.mcpServers,
@@ -660,34 +662,36 @@ export function createRealRuntimeClient(
           message: `Loaded ${nativeMCP.loaded} native MCP tool(s) from TS config.`,
         });
     }
-    plugins = createPluginRegistry({
-      tools,
-      readOnly: tsRuntimeConfig?.plugins.readOnly,
-      onAudit: (entry) =>
-        publish({
-          type: "plugin.update",
-          id: entry.pluginID,
-          status: entry.action,
-          detail: entry.detail,
-        }),
-    });
-    await loadLocalPlugins({
-      roots: [
-        join(workspaceRoot, ".natalia", "plugins"),
-        ...(tsRuntimeConfig?.plugins.paths.map((path) =>
-          resolve(workspaceRoot, path),
-        ) ?? []),
-      ],
-      registry: plugins,
-      enabled: tsRuntimeConfig?.plugins.enabled,
-      capabilities: tsRuntimeConfig?.plugins.capabilities,
-      onError: (id, error) =>
-        publish({
-          type: "diagnostic",
-          level: "warning",
-          message: `plugin ${id} failed to load: ${error instanceof Error ? error.message : String(error)}`,
-        }),
-    });
+    if (extensionEnabled("plugins")) {
+      plugins = createPluginRegistry({
+        tools,
+        readOnly: tsRuntimeConfig?.plugins.readOnly,
+        onAudit: (entry) =>
+          publish({
+            type: "plugin.update",
+            id: entry.pluginID,
+            status: entry.action,
+            detail: entry.detail,
+          }),
+      });
+      await loadLocalPlugins({
+        roots: [
+          join(workspaceRoot, ".natalia", "plugins"),
+          ...(tsRuntimeConfig?.plugins.paths.map((path) =>
+            resolve(workspaceRoot, path),
+          ) ?? []),
+        ],
+        registry: plugins,
+        enabled: tsRuntimeConfig?.plugins.enabled,
+        capabilities: tsRuntimeConfig?.plugins.capabilities,
+        onError: (id, error) =>
+          publish({
+            type: "diagnostic",
+            level: "warning",
+            message: `plugin ${id} failed to load: ${error instanceof Error ? error.message : String(error)}`,
+          }),
+      });
+    }
     terminalRegistry = new TerminalRegistry(
       join(workspaceRoot, ".natalia", "terminal", "interactive"),
       {
@@ -1032,15 +1036,16 @@ export function createRealRuntimeClient(
       (input) => input.delivery === "queue",
     );
     if (queued) void turnCoordinator().wake(drainSession);
-    skillRegistry = await discoverSkills({
-      workspaceRoot,
-      // `$HOME/.config/natalia-cli/skills` on POSIX, unchanged. Windows has no
-      // HOME, so the previous guard left user skills permanently undiscovered
-      // there; globalConfigHome resolves %APPDATA% instead. The absolute check
-      // preserves the old "skip when the home is unresolvable" behaviour.
-      userRoot: userSkillRoot(),
-      remoteURLs: tsRuntimeConfig?.skills.urls,
-    });
+    if (extensionEnabled("skills"))
+      skillRegistry = await discoverSkills({
+        workspaceRoot,
+        // `$HOME/.config/natalia-cli/skills` on POSIX, unchanged. Windows has no
+        // HOME, so the previous guard left user skills permanently undiscovered
+        // there; globalConfigHome resolves %APPDATA% instead. The absolute check
+        // preserves the old "skip when the home is unresolvable" behaviour.
+        userRoot: userSkillRoot(),
+        remoteURLs: tsRuntimeConfig?.skills.urls,
+      });
     const activeSkillEntry = [...context.snapshot().entries]
       .reverse()
       .find(
@@ -1049,27 +1054,29 @@ export function createRealRuntimeClient(
     const qualifiedName = activeSkillEntry?.id.match(
       /^skill:((?:project|remote|user):[^:]+):/u,
     )?.[1];
-    if (qualifiedName) {
+    if (qualifiedName && skillRegistry) {
       try {
         activeSkill = skillRegistry.resolve(qualifiedName);
       } catch {
         // A removed skill must not prevent durable session recovery.
       }
     }
-    tools.set(
-      "skill_load",
-      createSkillLoadTool({
-        registry: () => skillRegistry,
-        onLoad: (skill, output) => {
-          activeSkill = skill;
-          context.add({
-            id: `skill:${skill.qualifiedName}:${context.journalStatus().journalOffset}`,
-            role: "system",
-            content: output,
-          });
-        },
-      }),
-    );
+    if (extensionEnabled("skills"))
+      tools.set(
+        "skill_load",
+        createSkillLoadTool({
+          registry: () => skillRegistry,
+          onLoad: (skill, output) => {
+            activeSkill = skill;
+            context.add({
+              id: `skill:${skill.qualifiedName}:${context.journalStatus().journalOffset}`,
+              role: "system",
+              content: output,
+            });
+          },
+        }),
+      );
+    else tools.delete("skill_load");
     publish({
       type: "session.created",
       sessionID,
@@ -1210,8 +1217,32 @@ export function createRealRuntimeClient(
     return (
       toolLayer.isToolAllowed(toolName) &&
       agentToolLayer.isToolAllowed(toolName) &&
-      permissionProfileToolLayer.isToolAllowed(toolName)
+      permissionProfileToolLayer.isToolAllowed(toolName) &&
+      extensionToolPermission(toolName).allowed
     );
+  }
+
+  function extensionEnabled(extension: "skills" | "mcp" | "plugins") {
+    return selectedPermissionProfile?.extensions?.[extension] !== false;
+  }
+
+  function extensionToolPermission(toolName: string) {
+    const extension =
+      toolName === "skill_load"
+        ? "skills"
+        : toolName.startsWith("mcp_")
+          ? "mcp"
+          : toolName.startsWith("plugin_")
+            ? "plugins"
+            : undefined;
+    if (!extension || extensionEnabled(extension))
+      return { allowed: true, diagnostics: [] };
+    return {
+      allowed: false,
+      diagnostics: [
+        `${extension} extensions are disabled by permission profile`,
+      ],
+    };
   }
 
   function checkpointResources() {
@@ -3421,7 +3452,8 @@ export function createRealRuntimeClient(
             reason:
               permissionMode === "read_only" && registered.requiresApproval
                 ? readOnlyToolMessage(call.name)
-                : "tool is excluded from the runtime catalog by policy",
+                : (extensionToolPermission(call.name).diagnostics[0] ??
+                  "tool is excluded from the runtime catalog by policy"),
           });
         publish({
           type: "tool.update",

@@ -168,6 +168,13 @@ export const permissionProfileSchema = z.object({
   approval: z.enum(["ask", "auto", "read_only"]),
   description: z.string().default(""),
   permissions: agentPermissionRulesSchema.optional(),
+  extensions: z
+    .object({
+      skills: z.boolean().optional(),
+      mcp: z.boolean().optional(),
+      plugins: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 export const agentConfigSchema = z.object({

@@ -946,6 +946,120 @@ test("runtime loads a local manifest plugin and exposes its owned tool", async (
   });
 });
 
+test("permission profile disables installed skills and plugins before discovery", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-profile-extensions-"));
+  const pluginRoot = join(root, ".natalia", "plugins", "demo");
+  const skillRoot = join(root, ".natalia", "skills", "review");
+  await mkdir(pluginRoot, { recursive: true });
+  await mkdir(skillRoot, { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      permissionProfiles: {
+        unattended: {
+          approval: "auto",
+          description: "No extensions",
+          extensions: { skills: false, mcp: false, plugins: false },
+        },
+      },
+    }),
+  );
+  await writeFile(
+    join(skillRoot, "SKILL.md"),
+    "---\nname: review\ndescription: Review\n---\nReview guidance",
+  );
+  await writeFile(
+    join(pluginRoot, "natalia.plugin.json"),
+    JSON.stringify({
+      apiVersion: 1,
+      id: "demo.plugin",
+      version: "1.0.0",
+      name: "Demo",
+      description: "",
+      entry: "index.ts",
+      capabilities: ["tools"],
+    }),
+  );
+  await writeFile(
+    join(pluginRoot, "index.ts"),
+    "export default { setup(api) { api.tools.register({ name: 'echo', description: 'Echo', requiresApproval: false, parameters: { type: 'object', properties: {} }, async execute() { return 'plugin ok'; } }) } }",
+  );
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_profile_extensions",
+    permissionProfile: "unattended",
+    provider: scriptedProvider("done"),
+  });
+  client.start(() => undefined);
+
+  expect(await client.skills?.()).toEqual([]);
+  expect(await client.plugins?.()).toEqual([]);
+  await client.dispose?.();
+});
+
+test("permission profile denies injected MCP tools before execution", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-profile-mcp-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      permissionProfiles: {
+        unattended: {
+          approval: "auto",
+          description: "No MCP",
+          extensions: { mcp: false },
+        },
+      },
+    }),
+  );
+  const tools = createToolRegistry([]);
+  let executed = false;
+  tools.set("mcp_docs_echo", {
+    name: "mcp_docs_echo",
+    description: "test MCP tool",
+    requiresApproval: false,
+    parameters: { type: "object", properties: {} },
+    async execute() {
+      executed = true;
+      return "unexpected";
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_profile_mcp",
+    permissionProfile: "unattended",
+    tools,
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        if (!request.messages.some((message) => message.role === "tool"))
+          yield {
+            type: "tool_call" as const,
+            calls: [{ id: "mcp", name: "mcp_docs_echo", arguments: "{}" }],
+          };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("use MCP");
+
+  expect(executed).toBe(false);
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "policy.decision",
+      toolName: "mcp_docs_echo",
+      decision: "deny",
+      reason: "mcp extensions are disabled by permission profile",
+    }),
+  );
+  await client.dispose?.();
+});
+
 test("read-only runtime hides untrusted plugin tools from the provider", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-plugin-read-only-"));
   const pluginRoot = join(root, ".natalia", "plugins", "unsafe");
