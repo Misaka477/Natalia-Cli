@@ -64,6 +64,7 @@ import {
   parseSettingsStringRecord,
   parseSettingsRecord,
 } from "./settings-utils";
+import { previewCommandRuleImport } from "./permission-command-rules";
 import { themeTokens as darkTheme } from "../theme/theme";
 import { discoverProviderModels } from "@natalia/config";
 
@@ -932,6 +933,13 @@ export function runCommand(command: string, ctx: CommandContext) {
                               value: "description",
                               description: profile.description || "(none)",
                             },
+                            {
+                              title: "Command Rules",
+                              value: "commandRules",
+                              description: profile.commandRules
+                                ? `${profile.commandRules.mode}, ${profile.commandRules.rules.length} commands`
+                                : "not configured",
+                            },
                           ]}
                           onSelect={(field) => {
                             const next = structuredClone(resolved);
@@ -952,6 +960,166 @@ export function runCommand(command: string, ctx: CommandContext) {
                                     target.approval =
                                       choice.value as typeof target.approval;
                                     void saveConfig(next);
+                                  }}
+                                />
+                              ));
+                              return;
+                            }
+                            if (field.value === "commandRules") {
+                              ctx.dialog.push(() => (
+                                <DialogSelect
+                                  title="Command Rules"
+                                  options={[
+                                    {
+                                      title: "Mode",
+                                      value: "$mode",
+                                      description:
+                                        target.commandRules?.mode ?? "none",
+                                    },
+                                    {
+                                      title: "+ Add commands",
+                                      value: "$add",
+                                      description:
+                                        "Paste one Bash command per line.",
+                                    },
+                                    ...(target.commandRules?.rules ?? []).map(
+                                      (rule) => ({
+                                        title: rule.command,
+                                        value: rule.command,
+                                        description:
+                                          rule.reason ?? "select to remove",
+                                      }),
+                                    ),
+                                  ]}
+                                  onSelect={(choice) => {
+                                    if (choice.value === "$mode") {
+                                      ctx.dialog.push(() => (
+                                        <DialogSelect
+                                          title="Command Rule Mode"
+                                          current={
+                                            target.commandRules?.mode ?? "none"
+                                          }
+                                          options={[
+                                            {
+                                              title: "Blacklist",
+                                              value: "blacklist",
+                                              description:
+                                                "Block matching commands; other commands pass this layer.",
+                                            },
+                                            {
+                                              title: "Whitelist",
+                                              value: "whitelist",
+                                              description:
+                                                "Only matching commands pass this layer. Recommended for unattended tasks.",
+                                            },
+                                            {
+                                              title: "None",
+                                              value: "none",
+                                              description:
+                                                "Do not apply profile command rules.",
+                                            },
+                                          ]}
+                                          onSelect={(mode) => {
+                                            target.commandRules = {
+                                              mode: mode.value as
+                                                | "blacklist"
+                                                | "whitelist"
+                                                | "none",
+                                              rules:
+                                                target.commandRules?.rules ??
+                                                [],
+                                            };
+                                            void saveConfig(next);
+                                          }}
+                                        />
+                                      ));
+                                      return;
+                                    }
+                                    if (choice.value === "$add")
+                                      setTimeout(() => {
+                                        void DialogPrompt.show(
+                                          ctx.dialog,
+                                          "Add Commands",
+                                          {
+                                            description: () => (
+                                              <text fg={darkTheme.muted}>
+                                                One Bash command per line. Blank
+                                                lines and # comments are
+                                                ignored. Complex shell syntax is
+                                                rejected before saving.
+                                              </text>
+                                            ),
+                                            placeholder: "git diff\ngit status",
+                                          },
+                                        ).then(async (input) => {
+                                          if (input === null) return;
+                                          const preview =
+                                            await previewCommandRuleImport(
+                                              input,
+                                              target.commandRules?.rules,
+                                            );
+                                          ctx.dialog.push(() => (
+                                            <DialogSelect
+                                              title="Command Rule Preview"
+                                              skipFilter
+                                              options={[
+                                                {
+                                                  title: preview.rejected
+                                                    ? "Fix rejected commands before saving"
+                                                    : `Save ${preview.rules.length} commands`,
+                                                  value: "$save",
+                                                  description: preview.rejected
+                                                    ? "Invalid commands are never saved."
+                                                    : `${target.commandRules?.mode ?? "none"} mode`,
+                                                  disabled: preview.rejected,
+                                                },
+                                                ...preview.previews.map(
+                                                  (entry) => ({
+                                                    title: `${entry.line}: ${entry.command || "(blank)"}`,
+                                                    value: `line:${entry.line}`,
+                                                    description: `${entry.status}: ${entry.detail}`,
+                                                  }),
+                                                ),
+                                              ]}
+                                              onSelect={(choice) => {
+                                                if (choice.value !== "$save")
+                                                  return;
+                                                target.commandRules = {
+                                                  mode:
+                                                    target.commandRules?.mode ??
+                                                    "none",
+                                                  rules: [
+                                                    ...(target.commandRules
+                                                      ?.rules ?? []),
+                                                    ...preview.rules,
+                                                  ],
+                                                };
+                                                void saveConfig(next);
+                                              }}
+                                            />
+                                          ));
+                                        });
+                                      }, 0);
+                                    else {
+                                      void DialogConfirm.show(
+                                        ctx.dialog,
+                                        "Remove command rule",
+                                        `Remove "${choice.value}" from this profile?`,
+                                      ).then((confirmed) => {
+                                        if (!confirmed) return;
+                                        target.commandRules = {
+                                          mode:
+                                            target.commandRules?.mode ?? "none",
+                                          rules: (
+                                            target.commandRules?.rules ?? []
+                                          ).filter(
+                                            (rule) =>
+                                              rule.command !== choice.value,
+                                          ),
+                                        };
+                                        void saveConfig(next);
+                                      });
+                                    }
                                   }}
                                 />
                               ));

@@ -1,4 +1,10 @@
 export { checkpointDisplayLine } from "./checkpoint-display";
+export {
+  parseBashCommandRule,
+  parseBashSimpleCommand,
+  type BashCommandParseResult,
+  type BashCommandRule,
+} from "./bash-command-policy";
 export { compactionDisplayLine } from "./compaction-display";
 export { createFakeBackend } from "./fixture";
 export { createRealRuntimeClient } from "./real-runtime";
