@@ -13,6 +13,7 @@ import {
   commandTextForTool,
   evaluatePermissionRules,
   evaluatePermissionProfileCommandRules,
+  TerminalCommandBuffer,
 } from "../src/tool-policy";
 import { parseBashSimpleCommand } from "../src/bash-command-policy";
 import { terminalApprovalScope, terminalInputRisk } from "../src/real-runtime";
@@ -191,6 +192,61 @@ test("structured profile command rules enforce whitelist and fail closed", async
     allowed: false,
     reason: "command policy configuration is invalid",
   });
+});
+
+test("terminal command buffer evaluates the complete pane line on submit", async () => {
+  const buffer = new TerminalCommandBuffer();
+  const rules = { mode: "blacklist" as const, rules: [{ command: "rm -rf" }] };
+  await expect(
+    buffer.evaluate(rules, "interactive_terminal_write", {
+      id: "pane_a",
+      input: "rm ",
+    }),
+  ).resolves.toMatchObject({ allowed: true });
+  await expect(
+    buffer.evaluate(rules, "interactive_terminal_send_line", {
+      id: "pane_a",
+      text: "-rf /tmp",
+    }),
+  ).resolves.toMatchObject({ allowed: false, clearTerminal: true });
+  // The denied command was cleared, so a later command on this pane is not
+  // contaminated by the old prefix.
+  await expect(
+    buffer.evaluate(rules, "interactive_terminal_send_line", {
+      id: "pane_a",
+      text: "git status",
+    }),
+  ).resolves.toMatchObject({ allowed: true });
+});
+
+test("terminal command buffer is pane-scoped and fails closed for unsafe input", async () => {
+  const buffer = new TerminalCommandBuffer();
+  const rules = {
+    mode: "whitelist" as const,
+    rules: [{ command: "git diff" }],
+  };
+  await buffer.evaluate(rules, "interactive_terminal_write", {
+    id: "pane_a",
+    input: "git ",
+  });
+  await expect(
+    buffer.evaluate(rules, "interactive_terminal_send_line", {
+      id: "pane_b",
+      text: "git diff --stat",
+    }),
+  ).resolves.toMatchObject({ allowed: true });
+  await expect(
+    buffer.evaluate(rules, "interactive_terminal_keys", {
+      id: "pane_a",
+      keys: [{ key: "ArrowUp" }],
+    }),
+  ).resolves.toMatchObject({ allowed: false, clearTerminal: true });
+  await expect(
+    buffer.evaluate(rules, "interactive_terminal_send_line", {
+      id: "pane_a",
+      text: "diff --stat",
+    }),
+  ).resolves.toMatchObject({ allowed: false });
 });
 
 test("agent rules cover sandbox paths and all command-launching tools", () => {
@@ -468,6 +524,24 @@ test("createToolPolicyHookLayer preExecute hook can block", async () => {
   expect(allowed.allowed).toBe(true);
   expect(blocked.allowed).toBe(false);
   expect(blocked.diagnostics).toContain("write not allowed by hook");
+});
+
+test("createToolPolicyHookLayer preserves terminal cleanup on a policy denial", async () => {
+  const layer = createToolPolicyHookLayer(undefined, {
+    preExecute: () => ({
+      allowed: false,
+      diagnostics: ["blocked command"],
+      clearTerminal: true,
+    }),
+  });
+  await expect(
+    layer.preExecute({
+      turnID: "turn_1",
+      toolName: "interactive_terminal_send_line",
+      toolCallID: "call_1",
+      arguments: '{"id":"pane"}',
+    }),
+  ).resolves.toMatchObject({ allowed: false, clearTerminal: true });
 });
 
 test("createToolPolicyHookLayer postExecute calls custom hook", async () => {

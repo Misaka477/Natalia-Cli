@@ -44,6 +44,12 @@ export type PermissionProfileCommandRules = {
   rules: BashCommandRule[];
 };
 
+export type TerminalCommandBufferResult = PermissionCheck & {
+  clearTerminal?: boolean;
+};
+
+const TERMINAL_COMMAND_BUFFER_LIMIT = 16 * 1024;
+
 export type ToolHookEvent = {
   turnID: string;
   toolName: string;
@@ -54,6 +60,7 @@ export type ToolHookEvent = {
 export type ToolHookResult = {
   allowed: boolean;
   diagnostics: string[];
+  clearTerminal?: boolean;
 };
 
 export type ToolHooks = {
@@ -105,7 +112,12 @@ export function createToolPolicyHookLayer(
       const result = await hooks.preExecute(event);
       if (result) {
         diagnostics.push(...result.diagnostics);
-        if (!result.allowed) return { allowed: false, diagnostics };
+        if (!result.allowed)
+          return {
+            allowed: false,
+            diagnostics,
+            clearTerminal: result.clearTerminal,
+          };
       }
     }
     return { allowed: true, diagnostics };
@@ -424,6 +436,193 @@ export async function evaluatePermissionProfileCommandRules(
       diagnostics: ["command does not match any profile allow rule"],
     };
   return { allowed: true, diagnostics };
+}
+
+/** Keeps one unsubmitted Bash line per managed pane for structured profiles. */
+export class TerminalCommandBuffer {
+  #lines = new Map<string, string>();
+
+  clear(id: string): void {
+    this.#lines.delete(id);
+  }
+
+  clearAll(): void {
+    this.#lines.clear();
+  }
+
+  async evaluate(
+    rules: PermissionProfileCommandRules | undefined,
+    toolName: string,
+    args: Record<string, unknown>,
+  ): Promise<TerminalCommandBufferResult | undefined> {
+    if (!rules || rules.mode === "none") return undefined;
+    const input = terminalCommandInput(toolName, args);
+    if (!input) return undefined;
+    if (!input.id)
+      return denyTerminalBuffer("terminal command policy requires a pane id");
+    if (input.unsupported) {
+      this.clear(input.id);
+      return denyTerminalBuffer(input.unsupported, true);
+    }
+    const line = `${this.#lines.get(input.id) ?? ""}${input.text}`;
+    if (
+      new TextEncoder().encode(line).byteLength > TERMINAL_COMMAND_BUFFER_LIMIT
+    ) {
+      this.clear(input.id);
+      return denyTerminalBuffer(
+        `terminal command buffer exceeded ${TERMINAL_COMMAND_BUFFER_LIMIT} bytes`,
+        true,
+      );
+    }
+    if (!input.submit) {
+      this.#lines.set(input.id, line);
+      return { allowed: true, diagnostics: [] };
+    }
+    this.clear(input.id);
+    const check = await evaluatePermissionProfileCommandRules(
+      rules,
+      "run_shell",
+      {
+        command: line,
+      },
+    );
+    return check.allowed ? check : { ...check, clearTerminal: true };
+  }
+}
+
+function denyTerminalBuffer(
+  diagnostic: string,
+  clearTerminal = false,
+): TerminalCommandBufferResult {
+  return {
+    allowed: false,
+    reason: "command blocked by policy",
+    diagnostics: [diagnostic],
+    clearTerminal,
+  };
+}
+
+type TerminalCommandInput = {
+  id?: string;
+  text: string;
+  submit: boolean;
+  unsupported?: string;
+};
+
+function terminalCommandInput(
+  toolName: string,
+  args: Record<string, unknown>,
+): TerminalCommandInput | undefined {
+  if (!TERMINAL_INPUT_TOOLS.includes(toolName)) return undefined;
+  const id = typeof args.id === "string" ? args.id : undefined;
+  if (
+    toolName === "interactive_terminal_send_line" ||
+    toolName === "interactive_send_line"
+  )
+    return terminalCommandText(id, args.text, true);
+  if (
+    toolName === "interactive_terminal_write" ||
+    toolName === "interactive_write"
+  )
+    return terminalCommandText(id, args.input, false);
+  if (
+    toolName === "interactive_terminal_input" ||
+    toolName === "interactive_input"
+  ) {
+    if (args.paste)
+      return {
+        id,
+        text: "",
+        submit: false,
+        unsupported:
+          "terminal paste is not allowed while command rules are active",
+      };
+    if (typeof args.text === "string")
+      return terminalCommandText(id, args.text, args.submit !== false);
+  }
+  return terminalCommandKeys(id, args);
+}
+
+function terminalCommandText(
+  id: string | undefined,
+  value: unknown,
+  submit: boolean,
+): TerminalCommandInput {
+  if (typeof value !== "string")
+    return {
+      id,
+      text: "",
+      submit: false,
+      unsupported: "terminal command input must be text",
+    };
+  if (/\r|\n/u.test(value))
+    return {
+      id,
+      text: "",
+      submit: false,
+      unsupported:
+        "terminal command input cannot contain a newline while command rules are active",
+    };
+  return { id, text: value, submit };
+}
+
+function terminalCommandKeys(
+  id: string | undefined,
+  args: Record<string, unknown>,
+): TerminalCommandInput {
+  const entries = Array.isArray(args.keys)
+    ? args.keys
+    : args.key === undefined
+      ? []
+      : [{ key: args.key, modifiers: args.modifiers }];
+  let text = "";
+  let submit = false;
+  for (const entry of entries) {
+    if (!entry || typeof entry !== "object")
+      return {
+        id,
+        text: "",
+        submit: false,
+        unsupported: "terminal command keys must be structured entries",
+      };
+    const key = entry as Record<string, unknown>;
+    if (Array.isArray(key.modifiers) && key.modifiers.length)
+      return {
+        id,
+        text: "",
+        submit: false,
+        unsupported:
+          "terminal modified keys are not allowed while command rules are active",
+      };
+    if (typeof key.text === "string") {
+      if (/\r|\n/u.test(key.text))
+        return {
+          id,
+          text: "",
+          submit: false,
+          unsupported:
+            "terminal command input cannot contain a newline while command rules are active",
+        };
+      text += key.text;
+      continue;
+    }
+    if (key.key === "Enter" || key.key === "return") {
+      submit = true;
+      continue;
+    }
+    if (typeof key.key === "string" && Array.from(key.key).length === 1) {
+      text += key.key;
+      continue;
+    }
+    return {
+      id,
+      text: "",
+      submit: false,
+      unsupported:
+        "terminal control keys are not allowed while command rules are active",
+    };
+  }
+  return { id, text, submit };
 }
 
 function parseFailureReason(

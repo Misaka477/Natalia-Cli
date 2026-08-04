@@ -120,6 +120,7 @@ import {
   createToolPolicyHookLayer,
   evaluatePermissionRules,
   evaluatePermissionProfileCommandRules,
+  TerminalCommandBuffer,
   type ToolHookEvent,
   type ToolHooks,
   type ToolPolicy,
@@ -264,6 +265,7 @@ export function createRealRuntimeClient(
   const tools = options.tools ?? createToolRegistry(undefined, processRegistry);
   let agentToolLayer = createToolPolicyHookLayer();
   let permissionProfileToolLayer = createToolPolicyHookLayer();
+  const terminalCommandBuffer = new TerminalCommandBuffer();
   const toolLayer = createToolPolicyHookLayer(options.toolPolicy, {
     preExecute: async (event) => {
       const agentResult = await agentToolLayer.preExecute(event);
@@ -286,12 +288,20 @@ export function createRealRuntimeClient(
         workspaceRoot,
       );
       if (!profilePermission.allowed) return profilePermission;
-      const profileCommandPermission =
-        await evaluatePermissionProfileCommandRules(
+      const args = tryParseToolArguments(event.arguments);
+      const bufferedProfileCommandPermission =
+        await terminalCommandBuffer.evaluate(
           selectedPermissionProfile?.commandRules,
           event.toolName,
-          tryParseToolArguments(event.arguments),
+          args,
         );
+      const profileCommandPermission =
+        bufferedProfileCommandPermission ??
+        (await evaluatePermissionProfileCommandRules(
+          selectedPermissionProfile?.commandRules,
+          event.toolName,
+          args,
+        ));
       if (!profileCommandPermission.allowed) return profileCommandPermission;
       return (
         (await options.hooks?.preExecute?.(event)) ?? {
@@ -1872,6 +1882,7 @@ export function createRealRuntimeClient(
       return projectInteractiveRequests(session?.events ?? []);
     },
     async dispose() {
+      terminalCommandBuffer.clearAll();
       activeAbort?.abort(new Error("runtime disposed"));
       await turnCoordinator().interrupt();
       // A committed selection and other durable controls must reach disk before
@@ -3606,6 +3617,25 @@ export function createRealRuntimeClient(
       });
     }
     if (!preResult.allowed) {
+      if (preResult.clearTerminal) {
+        const terminalID = tryParseToolArguments(call.arguments).id;
+        if (typeof terminalID === "string") {
+          try {
+            await nativeTerminal?.write(terminalID, "\x15");
+            publish({
+              type: "diagnostic",
+              level: "warning",
+              message: `cleared blocked terminal command buffer for ${terminalID}`,
+            });
+          } catch (error) {
+            publish({
+              type: "diagnostic",
+              level: "warning",
+              message: `could not clear blocked terminal command buffer for ${terminalID}: ${error instanceof Error ? error.message : String(error)}`,
+            });
+          }
+        }
+      }
       publish({
         type: "policy.decision",
         turnID,
@@ -3795,6 +3825,14 @@ export function createRealRuntimeClient(
         redactToolOutput(completeResult, redactToolOutputEnabled()),
       );
       const result = bounded.text;
+      if (
+        tool.name === "interactive_terminal_start" ||
+        tool.name === "interactive_terminal_stop"
+      ) {
+        const terminalID = (parsed as Record<string, unknown>).id;
+        if (typeof terminalID === "string")
+          terminalCommandBuffer.clear(terminalID);
+      }
       publish({
         type: "tool.update",
         id: toolID,
