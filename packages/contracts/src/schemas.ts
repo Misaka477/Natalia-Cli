@@ -579,6 +579,12 @@ export type ProviderConfig = z.infer<typeof providerConfigSchema>;
 export type PermissionProfile = z.infer<typeof permissionProfileSchema>;
 export type NataliaFlowDocument = z.infer<typeof nataliaFlowDocumentSchema>;
 export type NataliaTaskDocument = z.infer<typeof nataliaTaskDocumentSchema>;
+export type NataliaFlowDocumentInput = z.input<
+  typeof nataliaFlowDocumentSchema
+>;
+export type NataliaTaskDocumentInput = z.input<
+  typeof nataliaTaskDocumentSchema
+>;
 export type ModeConfig = z.infer<typeof modeConfigSchema>;
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
 export type AgentPermissionRules = z.infer<typeof agentPermissionRulesSchema>;

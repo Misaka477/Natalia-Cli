@@ -45,6 +45,7 @@ export {
   validateNataliaDocument,
   type NataliaDocument,
 } from "./natalia-documents";
+export { NataliaDocumentStore } from "./natalia-document-store";
 export { evaluateCondition, interpolate } from "./eval";
 
 export class JsonlWorkflowStore {
