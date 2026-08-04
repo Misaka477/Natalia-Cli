@@ -32,8 +32,9 @@ export {
 } from "@natalia/terminal";
 import { callRuntimeRPC } from "@natalia/transport";
 import { ContextWindowResolver } from "@natalia/runtime";
-import { JsonSessionStore } from "@natalia/session";
+import { JsonSessionStore, SqliteSessionStore } from "@natalia/session";
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 export type StartupDiagnostics = {
@@ -399,22 +400,48 @@ export type SessionListRow = {
 };
 
 export async function listLocalSessions(workspaceRoot = process.cwd()) {
-  const sessions = await new JsonSessionStore(
-    join(resolve(workspaceRoot), ".natalia", "sessions"),
+  const root = resolve(workspaceRoot);
+  const jsonSessions = await new JsonSessionStore(
+    join(root, ".natalia", "sessions"),
   ).list();
-  return sessions.map(
-    (session) =>
-      ({
-        id: session.id,
-        title: session.title,
-        createdAt: session.createdAt,
-        lastAccessedAt: session.metadata?.lastAccessedAt,
-        pinned: Boolean(session.metadata?.pinned),
-        events: session.events.length,
-        pendingInputs:
-          session.inbox?.filter((input) => !input.promotedAt).length ?? 0,
-      }) satisfies SessionListRow,
-  );
+  const sqlite = localSqliteSessionStore(root);
+  const sqliteSessions = sqlite
+    ? sqlite.list().map(
+        (session) =>
+          ({
+            id: session.id,
+            title: session.title,
+            createdAt: session.createdAt,
+            lastAccessedAt: session.metadata.lastAccessedAt as
+              | string
+              | undefined,
+            pinned: session.pinned,
+            events: sqlite.eventCount(session.id),
+            pendingInputs: sqlite.pendingInputCount(session.id),
+          }) satisfies SessionListRow,
+      )
+    : [];
+  sqlite?.close();
+  const sqliteIDs = new Set(sqliteSessions.map((session) => session.id));
+  const sessions = jsonSessions
+    .filter((session) => !sqliteIDs.has(session.id))
+    .map(
+      (session) =>
+        ({
+          id: session.id,
+          title: session.title,
+          createdAt: session.createdAt,
+          lastAccessedAt: session.metadata?.lastAccessedAt,
+          pinned: Boolean(session.metadata?.pinned),
+          events: session.events.length,
+          pendingInputs:
+            session.inbox?.filter((input) => !input.promotedAt).length ?? 0,
+        }) satisfies SessionListRow,
+    );
+  return [...sqliteSessions, ...sessions].sort((left, right) => {
+    if (left.pinned !== right.pinned) return left.pinned ? -1 : 1;
+    return right.createdAt.localeCompare(left.createdAt);
+  });
 }
 
 export async function deleteLocalSession(
@@ -440,10 +467,37 @@ function localSessionStore(workspaceRoot = process.cwd()) {
   );
 }
 
+function localSqliteSessionStore(workspaceRoot = process.cwd()) {
+  const path = join(resolve(workspaceRoot), ".natalia", "sessions.db");
+  return existsSync(path) ? new SqliteSessionStore(path) : undefined;
+}
+
 export async function showLocalSession(
   id: string,
   workspaceRoot = process.cwd(),
 ) {
+  const sqlite = localSqliteSessionStore(workspaceRoot);
+  const sqliteSession = sqlite?.get(
+    id as import("@natalia/contracts").SessionID,
+  );
+  if (sqlite && sqliteSession) {
+    const result = {
+      id: sqliteSession.id,
+      title: sqliteSession.title,
+      createdAt: sqliteSession.createdAt,
+      pinned: sqliteSession.pinned,
+      lastAccessedAt: sqliteSession.metadata.lastAccessedAt as
+        | string
+        | undefined,
+      events: sqlite.eventCount(sqliteSession.id),
+      pendingInputs: sqlite.pendingInputCount(sqliteSession.id),
+      cancelled: sqliteSession.cancelled,
+      resumable: sqliteSession.resumable,
+    };
+    sqlite.close();
+    return result;
+  }
+  sqlite?.close();
   const session = await localSessionStore(workspaceRoot).load(
     id as import("@natalia/contracts").SessionID,
   );

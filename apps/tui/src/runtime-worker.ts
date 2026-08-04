@@ -15,5 +15,6 @@ attachRuntimeClientWorker(
   createRealRuntimeClient({
     workspaceRoot: input.workspaceRoot,
     sessionID: input.sessionID as never,
+    useSqliteStore: true,
   }),
 );

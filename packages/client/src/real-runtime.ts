@@ -224,6 +224,7 @@ function publicNativeTerminal(
 
 export type RealRuntimeClientOptions = {
   sessionID?: SessionID;
+  episodeID?: import("@natalia/contracts").EpisodeID;
   title?: string;
   workspaceRoot?: string;
   sessionDir?: string;
@@ -516,7 +517,7 @@ export function createRealRuntimeClient(
           { role: "user", content: task },
         ];
         runner.log(`accepted: ${task}`);
-        for (let step = 1; step <= Math.min(maxSteps, 20); step++) {
+        for (let step = 1; step <= effectiveMaxSteps(); step++) {
           let output = "";
           const calls: ProviderToolCall[] = [];
           const visibleTools = [...tools.values()].filter(
@@ -1391,6 +1392,8 @@ export function createRealRuntimeClient(
 
   function publish(event: RuntimeEvent) {
     const publishStartedAt = performance.now();
+    if (options.episodeID && !event.episodeID)
+      event = { ...event, episodeID: options.episodeID };
     if (event.type === "diagnostic")
       event = { ...event, at: event.at ?? new Date().toISOString() };
     if (event.type === "diagnostic") {

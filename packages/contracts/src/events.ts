@@ -7,6 +7,7 @@ import type { AgentPermissionRules } from "./schemas";
 export type { ApprovalResponse, QuestionResponse } from "@natalia/ui-model";
 
 export type SessionID = `ses_${string}`;
+export type EpisodeID = `epi_${string}`;
 
 export type ErrorKind =
   | "timeout"
@@ -225,7 +226,7 @@ export type ToolStatus =
   | "rejected"
   | "cancelled";
 
-export type RuntimeEvent =
+type RuntimeEventData =
   | { type: "session.created"; sessionID: SessionID; title: string }
   | { type: "session.ready"; sessionID: SessionID }
   | {
@@ -796,6 +797,13 @@ export type RuntimeEvent =
       stopReason: "done" | "cancelled" | "error";
       reason?: "missing_final_response";
     };
+
+/**
+ * An episode groups all events emitted by one isolated execution without
+ * changing the durable workspace-level session identity used by interactive
+ * clients. It is intentionally a correlation field, not a Work Graph event.
+ */
+export type RuntimeEvent = RuntimeEventData & { episodeID?: EpisodeID };
 
 export type SubmittedTurn = Extract<RuntimeEvent, { type: "turn.submitted" }>;
 export type LocalAttachment = {

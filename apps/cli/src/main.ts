@@ -1,5 +1,5 @@
 import { createRealRuntimeClient } from "@natalia/client";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { EpisodeID, RuntimeEvent, SessionID } from "@natalia/contracts";
 import { userStateHome } from "@natalia/platform";
 import {
   createRuntimeDaemonStore,
@@ -144,9 +144,15 @@ switch (subcommand) {
 
   case "eval":
   case "--stdio": {
-    const client = createRealRuntimeClient();
+    const execution = newHeadlessExecution();
+    const client = createRealRuntimeClient(execution);
+    let failed = false;
     try {
-      client.start((event) => console.log(JSON.stringify(event)));
+      client.start((event) => {
+        if (event.type === "turn.finished" && event.stopReason === "error")
+          failed = true;
+        console.log(JSON.stringify(event));
+      });
       const input = await Bun.stdin.text();
       for (const line of input.split(/\r?\n/u)) {
         if (!line.trim()) continue;
@@ -187,6 +193,7 @@ switch (subcommand) {
       // process never exits after the work is done.
       await client.dispose?.();
     }
+    if (failed) process.exitCode = 1;
     break;
   }
 
@@ -495,10 +502,16 @@ async function runOnce(
   attachments: string[] = [],
   permissionProfile?: string,
 ) {
-  const client = createRealRuntimeClient({ permissionProfile });
+  const client = createRealRuntimeClient({
+    ...newHeadlessExecution(),
+    permissionProfile,
+  });
   let text = "";
+  let failed = false;
   try {
     client.start((event) => {
+      if (event.type === "turn.finished" && event.stopReason === "error")
+        failed = true;
       if (json) {
         console.log(JSON.stringify(event));
         return;
@@ -517,6 +530,18 @@ async function runOnce(
     // lets a one-shot run actually exit, which is what a scheduler needs.
     await client.dispose?.();
   }
+  if (failed) process.exitCode = 1;
+}
+
+function newHeadlessExecution() {
+  const episodeID =
+    `epi_${crypto.randomUUID().replace(/-/gu, "")}` as EpisodeID;
+  return {
+    episodeID,
+    sessionID: `ses_${episodeID.slice("epi_".length)}` as SessionID,
+    title: `Natalia unattended episode ${episodeID}`,
+    useSqliteStore: true,
+  };
 }
 
 function plainRuntimeEvent(event: RuntimeEvent) {

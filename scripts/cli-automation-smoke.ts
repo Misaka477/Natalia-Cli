@@ -29,6 +29,17 @@ await writeFile(
 
 const once = run(["--once", "--json", "/doctor"]);
 assertDoctor("--once --json", once);
+assertHeadlessExecution("first --once --json", once);
+
+const secondOnce = run(["--once", "--json", "/doctor"]);
+assertDoctor("second --once --json", secondOnce);
+assertHeadlessExecution("second --once --json", secondOnce);
+const firstSession = sessionCreated(once);
+const secondSession = sessionCreated(secondOnce);
+if (firstSession.sessionID === secondSession.sessionID)
+  throw new Error("separate --once executions reused a session ID");
+if (firstSession.episodeID === secondSession.episodeID)
+  throw new Error("separate --once executions reused an episode ID");
 
 const profiled = run([
   "--once",
@@ -47,10 +58,24 @@ if (
 
 const stdio = run(["--stdio"], `${JSON.stringify({ prompt: "/doctor" })}\n`);
 assertDoctor("--stdio", stdio);
+assertHeadlessExecution("--stdio", stdio);
+
+const failure = run(
+  ["--once", "--json", "inspect this workspace"],
+  undefined,
+  1,
+);
+if (
+  !failure.some(
+    (event) => event.type === "turn.finished" && event.stopReason === "error",
+  )
+)
+  throw new Error("failed --once did not report turn.finished error");
 
 console.log(
   JSON.stringify({
     onceEvents: once.length,
+    secondOnceEvents: secondOnce.length,
     profiledEvents: profiled.length,
     stdioEvents: stdio.length,
     workspaceRoot,
@@ -58,7 +83,7 @@ console.log(
   }),
 );
 
-function run(args: string[], stdin?: string) {
+function run(args: string[], stdin?: string, expectedExitCode = 0) {
   const child = Bun.spawnSync(
     [process.execPath, join(repoRoot, "apps/cli/src/main.ts"), ...args],
     {
@@ -69,9 +94,9 @@ function run(args: string[], stdin?: string) {
       stderr: "pipe",
     },
   );
-  if (child.exitCode !== 0) {
+  if (child.exitCode !== expectedExitCode) {
     throw new Error(
-      `CLI ${args.join(" ")} failed: ${new TextDecoder().decode(child.stderr)}`,
+      `CLI ${args.join(" ")} exited ${child.exitCode}, expected ${expectedExitCode}: ${new TextDecoder().decode(child.stderr)}`,
     );
   }
   return new TextDecoder()
@@ -86,8 +111,35 @@ function run(args: string[], stdin?: string) {
           text?: string;
           stopReason?: string;
           permissions?: string;
+          episodeID?: string;
+          sessionID?: string;
         },
     );
+}
+
+function assertHeadlessExecution(
+  label: string,
+  events: ReturnType<typeof run>,
+) {
+  const session = sessionCreated(events);
+  if (!session.episodeID?.startsWith("epi_"))
+    throw new Error(`${label} did not emit an episode ID`);
+  if (!session.sessionID?.startsWith("ses_"))
+    throw new Error(`${label} did not emit a session ID`);
+  if (
+    events.some(
+      (event) =>
+        event.episodeID !== undefined && event.episodeID !== session.episodeID,
+    )
+  )
+    throw new Error(`${label} emitted events for multiple episodes`);
+}
+
+function sessionCreated(events: ReturnType<typeof run>) {
+  const event = events.find((entry) => entry.type === "session.created");
+  if (!event?.sessionID)
+    throw new Error("headless execution did not create a session");
+  return event;
 }
 
 function assertDoctor(label: string, events: ReturnType<typeof run>) {

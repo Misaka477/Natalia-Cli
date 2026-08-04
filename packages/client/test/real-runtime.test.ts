@@ -164,6 +164,40 @@ test("SQLite runtime persists durable events without growing the JSON mirror", a
   await reopened.dispose?.();
 });
 
+test("runtime correlates durable events with an episode without changing session replay", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-episode-runtime-"));
+  const sessionID = "ses_episode_runtime" as SessionID;
+  const episodeID =
+    "epi_episode_runtime" as import("@natalia/contracts").EpisodeID;
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    episodeID,
+    provider: scriptedProvider("episode response"),
+    useSqliteStore: true,
+  });
+  client.start(() => undefined);
+  await client.submit("record an episode");
+  await client.dispose?.();
+
+  const replay: RuntimeEvent[] = [];
+  const reopened = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    provider: scriptedProvider("unused"),
+    useSqliteStore: true,
+  });
+  reopened.start((event) => replay.push(event));
+  await waitFor(() => replay.some((event) => event.type === "session.ready"));
+  const durable = replay.filter(
+    (event) =>
+      event.type === "turn.submitted" || event.type === "turn.finished",
+  );
+  expect(durable).not.toHaveLength(0);
+  expect(durable.every((event) => event.episodeID === episodeID)).toBe(true);
+  await reopened.dispose?.();
+});
+
 test("runtime status and diagnostics expose only published safe state", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-runtime-status-"));
   const client = createRealRuntimeClient({
@@ -4462,6 +4496,99 @@ test("subagent executes TS native workspace tools before reporting completion", 
   ).toBe(true);
 });
 
+test("subagent honors configured step limits above twenty", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-subagent-step-limit-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      defaultAgent: "long_running",
+      agents: { long_running: { description: "Long running", maxSteps: 21 } },
+    }),
+  );
+  for (let step = 0; step < 21; step++)
+    await writeFile(join(root, `readable-${step}.txt`), "safe test input");
+  const childToolCalls: string[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_subagent_step_limit",
+    permissionMode: "auto",
+    provider: {
+      provider: "subagent-step-limit",
+      model: "subagent-step-limit",
+      async *stream(request) {
+        const child =
+          request.messages[0]?.role === "system" &&
+          String(request.messages[0].content).includes(
+            "focused Natalia TS/Bun subagent",
+          );
+        if (child) {
+          const priorCalls = request.messages.filter(
+            (message) => message.role === "tool",
+          ).length;
+          if (priorCalls < 20) {
+            const path = `readable-${priorCalls}.txt`;
+            childToolCalls.push(path);
+            yield {
+              type: "tool_call" as const,
+              calls: [
+                {
+                  id: `child_read_${priorCalls}`,
+                  name: "read_file",
+                  arguments: JSON.stringify({ path }),
+                },
+              ],
+            };
+            yield { type: "done" as const };
+            return;
+          }
+          yield { type: "content" as const, text: "completed after 20 tools" };
+          yield { type: "done" as const };
+          return;
+        }
+        if (!request.messages.some((message) => message.role === "tool")) {
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "spawn_long_child",
+                name: "agent_spawn",
+                arguments: JSON.stringify({ task: "perform many reads" }),
+              },
+            ],
+          };
+          yield { type: "done" as const };
+          return;
+        }
+        yield { type: "content" as const, text: "parent complete" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  await client.submit("delegate a long task");
+  await waitFor(
+    () =>
+      events.some(
+        (event) =>
+          event.type === "subagent.update" && event.status === "completed",
+      ),
+    2_000,
+  );
+
+  expect(childToolCalls).toHaveLength(20);
+  expect(
+    events.some(
+      (event) =>
+        event.type === "subagent.update" &&
+        event.text?.includes("completed after 20 tools"),
+    ),
+  ).toBe(true);
+  await client.dispose?.();
+});
+
 function scriptedProvider(text: string): StreamingProvider {
   return {
     provider: "scripted",
@@ -4794,8 +4921,8 @@ function subagentToolProvider(): StreamingProvider {
   };
 }
 
-async function waitFor(predicate: () => boolean) {
-  for (let index = 0; index < 50; index++) {
+async function waitFor(predicate: () => boolean, timeoutMs = 500) {
+  for (let elapsed = 0; elapsed < timeoutMs; elapsed += 10) {
     if (predicate()) return;
     await Bun.sleep(10);
   }

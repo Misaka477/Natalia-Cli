@@ -3,7 +3,11 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defaultConfigV2, saveConfigFile } from "@natalia/config";
-import { JsonSessionStore, createSessionRecord } from "@natalia/session";
+import {
+  JsonSessionStore,
+  SqliteSessionStore,
+  createSessionRecord,
+} from "@natalia/session";
 import type { RuntimeClient } from "@natalia/contracts";
 import { createRuntimeHttpServer } from "@natalia/transport";
 import {
@@ -53,6 +57,41 @@ test("CLI session helpers list and delete local durable sessions", async () => {
     removedAttachments: 0,
   });
   expect(await listLocalSessions(root)).toEqual([]);
+});
+
+test("CLI session helpers list and show SQLite-backed unattended episodes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-sqlite-sessions-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  const store = new SqliteSessionStore(join(root, ".natalia", "sessions.db"));
+  const id = "ses_unattended_episode" as import("@natalia/contracts").SessionID;
+  store.create(id, "Natalia unattended episode epi_unattended_episode");
+  store.appendEvents(id, [
+    {
+      type: "turn.submitted",
+      id: "turn",
+      text: "/doctor",
+      byteLength: 7,
+      lineCount: 1,
+      sha256: "doctor",
+      episodeID: "epi_unattended_episode",
+    },
+    {
+      type: "turn.finished",
+      id: "turn",
+      stopReason: "done",
+      episodeID: "epi_unattended_episode",
+    },
+  ]);
+  store.close();
+
+  expect(await listLocalSessions(root)).toContainEqual(
+    expect.objectContaining({ id, events: 2 }),
+  );
+  expect(await showLocalSession(id, root)).toMatchObject({
+    id,
+    events: 2,
+    pendingInputs: 0,
+  });
 });
 
 test("CLI session metadata export/import omits event and attachment contents", async () => {
