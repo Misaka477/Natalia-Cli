@@ -1,4 +1,10 @@
 import { isAbsolute, normalize, relative, resolve } from "node:path";
+import {
+  commandHasPrefix,
+  parseBashCommandRule,
+  parseBashSimpleCommand,
+  type BashCommandRule,
+} from "./bash-command-policy";
 
 export type ToolPolicy = {
   allow?: string[];
@@ -31,6 +37,11 @@ export type PermissionRules = {
     allowlist?: string[];
   };
   redactOutput?: boolean;
+};
+
+export type PermissionProfileCommandRules = {
+  mode: "blacklist" | "whitelist" | "none";
+  rules: BashCommandRule[];
 };
 
 export type ToolHookEvent = {
@@ -354,6 +365,71 @@ export function evaluatePermissionRules(
   }
 
   return { allowed: true, diagnostics: diags };
+}
+
+/**
+ * Applies the structured command rules written by permission-profile editing.
+ * Legacy regular-expression rules remain in `evaluatePermissionRules` for
+ * compatibility and are deliberately evaluated before this profile layer.
+ */
+export async function evaluatePermissionProfileCommandRules(
+  rules: PermissionProfileCommandRules | undefined,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<PermissionCheck> {
+  const diagnostics: string[] = [];
+  if (!rules || rules.mode === "none") return { allowed: true, diagnostics };
+  const source = commandTextForTool(toolName, args);
+  if (!source) return { allowed: true, diagnostics };
+
+  const command = await parseBashSimpleCommand(source);
+  if (!command.ok)
+    return {
+      allowed: false,
+      reason: "command blocked by policy",
+      diagnostics: [`command could not be parsed safely: ${command.reason}`],
+    };
+
+  const parsedRules = await Promise.all(
+    rules.rules.map(async (rule) => ({
+      rule,
+      parsed: await parseBashCommandRule(rule),
+    })),
+  );
+  const invalidRule = parsedRules.find(({ parsed }) => !parsed.ok);
+  if (invalidRule)
+    return {
+      allowed: false,
+      reason: "command policy configuration is invalid",
+      diagnostics: [
+        `invalid profile command rule "${invalidRule.rule.command}": ${parseFailureReason(invalidRule.parsed)}`,
+      ],
+    };
+  const matched = parsedRules.find(
+    ({ parsed }) =>
+      parsed.ok && commandHasPrefix(command.command, parsed.command),
+  );
+  if (rules.mode === "blacklist" && matched)
+    return {
+      allowed: false,
+      reason: "command blocked by policy",
+      diagnostics: [
+        `command matches profile deny rule "${matched.rule.command}"${matched.rule.reason ? `: ${matched.rule.reason}` : ""}`,
+      ],
+    };
+  if (rules.mode === "whitelist" && !matched)
+    return {
+      allowed: false,
+      reason: "command blocked by policy",
+      diagnostics: ["command does not match any profile allow rule"],
+    };
+  return { allowed: true, diagnostics };
+}
+
+function parseFailureReason(
+  result: Awaited<ReturnType<typeof parseBashCommandRule>>,
+): string {
+  return result.ok ? "unknown parser failure" : result.reason;
 }
 
 function pathMatch(path: string, pattern: string): boolean {

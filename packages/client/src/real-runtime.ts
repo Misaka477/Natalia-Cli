@@ -113,11 +113,13 @@ import { globalConfigHome, userRuntimeHome } from "@natalia/platform";
 import { WorkspaceSandboxManager } from "@natalia/sandbox";
 import { loadNativeMCPTools } from "@natalia/mcp";
 import { createPluginRegistry, loadLocalPlugins } from "@natalia/plugin";
+import { ensureBashCommandParser } from "./bash-command-policy";
 import { RuntimePerformanceTrace } from "./performance-trace";
 import {
   commandTextForTool,
   createToolPolicyHookLayer,
   evaluatePermissionRules,
+  evaluatePermissionProfileCommandRules,
   type ToolHookEvent,
   type ToolHooks,
   type ToolPolicy,
@@ -284,6 +286,13 @@ export function createRealRuntimeClient(
         workspaceRoot,
       );
       if (!profilePermission.allowed) return profilePermission;
+      const profileCommandPermission =
+        await evaluatePermissionProfileCommandRules(
+          selectedPermissionProfile?.commandRules,
+          event.toolName,
+          tryParseToolArguments(event.arguments),
+        );
+      if (!profileCommandPermission.allowed) return profileCommandPermission;
       return (
         (await options.hooks?.preExecute?.(event)) ?? {
           allowed: true,
@@ -433,6 +442,11 @@ export function createRealRuntimeClient(
       } else
         selectedPermissionProfile =
           modePermissionProfile ?? defaultPermissionProfile;
+      if (
+        selectedPermissionProfile?.commandRules &&
+        selectedPermissionProfile.commandRules.mode !== "none"
+      )
+        await ensureBashCommandParser();
       if (!options.permissionMode && selectedPermissionProfile)
         permissionMode = selectedPermissionProfile.approval;
       agentRegistry = agentsFromConfig(tsConfig.config);

@@ -248,6 +248,10 @@ test("settings arrays and browser fields persist as a minimal selected-scope pat
           approval: "read_only",
           description: "Safe inspection",
           permissions: { tools: { allow: ["read_file"] } },
+          commandRules: {
+            mode: "whitelist",
+            rules: [{ command: "git diff", reason: "inspect changes" }],
+          },
           extensions: { skills: false, mcp: false, plugins: false },
         },
       },
@@ -316,6 +320,10 @@ test("settings arrays and browser fields persist as a minimal selected-scope pat
       approval: "read_only",
       description: "Safe inspection",
       permissions: { tools: { allow: ["read_file"], exclude: [] } },
+      commandRules: {
+        mode: "whitelist",
+        rules: [{ command: "git diff", reason: "inspect changes" }],
+      },
       extensions: { skills: false, mcp: false, plugins: false },
     });
     expect(resolved.modes.review).toMatchObject({

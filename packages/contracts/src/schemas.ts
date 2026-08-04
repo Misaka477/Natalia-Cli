@@ -164,10 +164,21 @@ export const agentPermissionRulesSchema = z.object({
   redactOutput: z.boolean().optional(),
 });
 
+export const bashCommandRuleSchema = z.object({
+  command: z.string().min(1),
+  reason: z.string().min(1).optional(),
+});
+
+export const permissionProfileCommandRulesSchema = z.object({
+  mode: z.enum(["blacklist", "whitelist", "none"]),
+  rules: z.array(bashCommandRuleSchema).default([]),
+});
+
 export const permissionProfileSchema = z.object({
   approval: z.enum(["ask", "auto", "read_only"]),
   description: z.string().default(""),
   permissions: agentPermissionRulesSchema.optional(),
+  commandRules: permissionProfileCommandRulesSchema.optional(),
   extensions: z
     .object({
       skills: z.boolean().optional(),

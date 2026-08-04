@@ -12,7 +12,9 @@ import {
 import {
   commandTextForTool,
   evaluatePermissionRules,
+  evaluatePermissionProfileCommandRules,
 } from "../src/tool-policy";
+import { parseBashSimpleCommand } from "../src/bash-command-policy";
 import { terminalApprovalScope, terminalInputRisk } from "../src/real-runtime";
 import type {
   ProviderStreamRequest,
@@ -107,6 +109,88 @@ test("invalid command policy regex fails closed with a diagnostic", async () => 
   expect(result.diagnostics.join(" ")).toContain(
     "invalid command deny pattern",
   );
+});
+
+test("structured profile command rules parse only one simple Bash command", async () => {
+  await expect(parseBashSimpleCommand("git push origin main")).resolves.toEqual(
+    {
+      ok: true,
+      command: { tokens: ["git", "push", "origin", "main"] },
+    },
+  );
+  for (const source of [
+    "git status && git push",
+    "git status | less",
+    "git status > status.txt",
+    "echo $(date)",
+    "(git status)",
+    "function check() { git status; }",
+  ])
+    await expect(parseBashSimpleCommand(source)).resolves.toMatchObject({
+      ok: false,
+    });
+});
+
+test("structured profile command rules use exact AST token prefixes", async () => {
+  const denied = await evaluatePermissionProfileCommandRules(
+    {
+      mode: "blacklist",
+      rules: [{ command: "rm -rf /tmp", reason: "temporary files are owned" }],
+    },
+    "run_shell",
+    { command: "rm -rf /tmp generated" },
+  );
+  expect(denied).toMatchObject({
+    allowed: false,
+    reason: "command blocked by policy",
+  });
+  await expect(
+    evaluatePermissionProfileCommandRules(
+      {
+        mode: "blacklist",
+        rules: [{ command: "rm -rf /tmp" }],
+      },
+      "run_shell",
+      { command: "rm -rf /var/tmp" },
+    ),
+  ).resolves.toMatchObject({ allowed: true });
+  await expect(
+    evaluatePermissionProfileCommandRules(
+      {
+        mode: "blacklist",
+        rules: [{ command: "git push" }],
+      },
+      "run_shell",
+      { command: "git diff" },
+    ),
+  ).resolves.toMatchObject({ allowed: true });
+});
+
+test("structured profile command rules enforce whitelist and fail closed", async () => {
+  await expect(
+    evaluatePermissionProfileCommandRules(
+      { mode: "whitelist", rules: [{ command: "git diff" }] },
+      "interactive_terminal_send_line",
+      { id: "term", text: "git diff --stat" },
+    ),
+  ).resolves.toMatchObject({ allowed: true });
+  await expect(
+    evaluatePermissionProfileCommandRules(
+      { mode: "whitelist", rules: [{ command: "git diff" }] },
+      "interactive_terminal_send_line",
+      { id: "term", text: "git status" },
+    ),
+  ).resolves.toMatchObject({ allowed: false });
+  await expect(
+    evaluatePermissionProfileCommandRules(
+      { mode: "whitelist", rules: [{ command: "git status && pwd" }] },
+      "run_shell",
+      { command: "git status" },
+    ),
+  ).resolves.toMatchObject({
+    allowed: false,
+    reason: "command policy configuration is invalid",
+  });
 });
 
 test("agent rules cover sandbox paths and all command-launching tools", () => {
@@ -488,6 +572,72 @@ test("mode permission profile overrides default runtime approval mode", async ()
   expect(await client.runtimeStatus?.()).toMatchObject({
     permissions: "read_only",
   });
+});
+
+test("permission profile command rules deny before execution and audit the decision", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-profile-command-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await Bun.write(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      permissionProfiles: {
+        guarded: {
+          approval: "auto",
+          description: "Guarded commands",
+          commandRules: {
+            mode: "blacklist",
+            rules: [{ command: "git push", reason: "publish manually" }],
+          },
+        },
+      },
+    }),
+  );
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_profile_command",
+    permissionProfile: "guarded",
+    provider: {
+      provider: "scripted-command",
+      model: "scripted-command-model",
+      async *stream(request: ProviderStreamRequest) {
+        if (!request.messages.some((message) => message.role === "tool"))
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "call_command",
+                name: "run_shell",
+                arguments: JSON.stringify({ command: "git push origin main" }),
+              },
+            ],
+          };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("publish changes");
+
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "policy.decision",
+      toolName: "run_shell",
+      decision: "deny",
+      reason: expect.stringContaining(
+        'command matches profile deny rule "git push"',
+      ),
+    }),
+  );
+  expect(events.some((event) => event.type === "approval.request")).toBe(false);
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "tool.update",
+      name: "run_shell",
+      status: "failed",
+    }),
+  );
 });
 
 test("explicit toolPolicy cannot bypass agent file permissions", async () => {
