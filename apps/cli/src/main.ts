@@ -126,9 +126,19 @@ switch (subcommand) {
 
   case "run":
   case "--once": {
-    const { text: prompt, attachments } = promptArguments(argv.slice(1));
+    const permissionProfile = valueAfter(argv, "--permission");
+    if (argv.includes("--permission") && !permissionProfile)
+      throw new Error("--permission requires a profile name");
+    const { text: prompt, attachments } = promptArguments(
+      withoutRunOption(argv.slice(1), "--permission"),
+    );
     if (!prompt) throw new Error("run requires a prompt");
-    await runOnce(prompt, argv.includes("--json"), attachments);
+    await runOnce(
+      prompt,
+      argv.includes("--json"),
+      attachments,
+      permissionProfile,
+    );
     break;
   }
 
@@ -483,8 +493,9 @@ async function runOnce(
   prompt: string,
   json: boolean,
   attachments: string[] = [],
+  permissionProfile?: string,
 ) {
-  const client = createRealRuntimeClient();
+  const client = createRealRuntimeClient({ permissionProfile });
   let text = "";
   try {
     client.start((event) => {
@@ -521,6 +532,12 @@ function plainRuntimeEvent(event: RuntimeEvent) {
 function valueAfter(argv: string[], flag: string, offset = 0) {
   const index = argv.indexOf(flag);
   return index >= 0 ? argv[index + 1 + offset] : undefined;
+}
+
+function withoutRunOption(argv: string[], flag: string) {
+  const index = argv.indexOf(flag);
+  if (index < 0) return argv;
+  return [...argv.slice(0, index), ...argv.slice(index + 2)];
 }
 
 function daemonDir() {

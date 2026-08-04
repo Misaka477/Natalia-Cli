@@ -91,6 +91,7 @@ export type ToolExecutionContext = {
     browserLocale?: string;
     browserTimezone?: string;
     allowedHosts?: string[];
+    allowedHostGroups?: string[][];
     allowedSchemes?: string[];
     allowLocalhost?: boolean;
     allowPrivate?: boolean;
@@ -2849,10 +2850,16 @@ function assertNetworkURL(input: string, context: ToolExecutionContext) {
     throw new Error(`network scheme is not allowed: ${url.protocol}`);
   const host = url.hostname.toLowerCase();
   const allowed = context.settings?.allowedHosts ?? [];
+  const allowedGroups = context.settings?.allowedHostGroups ?? [allowed];
   const denied = context.settings?.deniedHosts ?? [];
   if (denied.some((pattern) => hostMatches(host, pattern)))
     throw new Error(`network host denied: ${host}`);
-  if (allowed.length && !allowed.some((pattern) => hostMatches(host, pattern)))
+  if (
+    allowedGroups.some(
+      (group) =>
+        group.length && !group.some((pattern) => hostMatches(host, pattern)),
+    )
+  )
     throw new Error(`network host is not allowed: ${host}`);
   const localhost =
     host === "localhost" || host === "::1" || host.startsWith("127.");

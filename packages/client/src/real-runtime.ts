@@ -230,6 +230,7 @@ export type RealRuntimeClientOptions = {
   useSqliteStore?: boolean;
   provider?: StreamingProvider;
   tools?: ToolRegistry;
+  permissionProfile?: string;
   permissionMode?: "ask" | "auto" | "read_only";
   toolPolicy?: ToolPolicy;
   hooks?: ToolHooks;
@@ -259,10 +260,13 @@ export function createRealRuntimeClient(
     : new ManagedProcessRegistry();
   const tools = options.tools ?? createToolRegistry(undefined, processRegistry);
   let agentToolLayer = createToolPolicyHookLayer();
+  let permissionProfileToolLayer = createToolPolicyHookLayer();
   const toolLayer = createToolPolicyHookLayer(options.toolPolicy, {
     preExecute: async (event) => {
       const agentResult = await agentToolLayer.preExecute(event);
       if (!agentResult.allowed) return agentResult;
+      const profileResult = await permissionProfileToolLayer.preExecute(event);
+      if (!profileResult.allowed) return profileResult;
       const permission = evaluatePermissionRules(
         selectedAgent?.permissions,
         event.toolName,
@@ -270,6 +274,13 @@ export function createRealRuntimeClient(
         workspaceRoot,
       );
       if (!permission.allowed) return permission;
+      const profilePermission = evaluatePermissionRules(
+        selectedPermissionProfile?.permissions,
+        event.toolName,
+        tryParseToolArguments(event.arguments),
+        workspaceRoot,
+      );
+      if (!profilePermission.allowed) return profilePermission;
       return (
         (await options.hooks?.preExecute?.(event)) ?? {
           allowed: true,
@@ -280,6 +291,11 @@ export function createRealRuntimeClient(
     postExecute: options.hooks?.postExecute,
   });
   let permissionMode = options.permissionMode ?? "ask";
+  let selectedPermissionProfile:
+    | Awaited<
+        ReturnType<typeof resolveConfig>
+      >["config"]["permissionProfiles"][string]
+    | undefined;
   let maxSteps = 10;
   let subagents: SubagentRegistry | undefined;
   let terminalRegistry: TerminalRegistry | undefined;
@@ -348,6 +364,7 @@ export function createRealRuntimeClient(
     | { inputTokens: number; outputTokens: number }
     | undefined;
   let sessionPersistence = Promise.resolve();
+  let initializationError: Error | undefined;
   const nativeRuntimeID = randomUUID();
   let tsRuntimeConfig:
     | Awaited<ReturnType<typeof resolveConfig>>["config"]
@@ -396,16 +413,25 @@ export function createRealRuntimeClient(
         maxBackoffMs: tsConfig.config.runtime.retry.maxBackoffMs,
         jitterMs: tsConfig.config.runtime.retry.jitterMs,
       };
-      if (!options.permissionMode) {
-        const permission =
-          tsConfig.config.permissionProfiles[tsConfig.config.defaultPermission];
-        if (permission) permissionMode = permission.approval;
-        const mode = tsConfig.config.modes[tsConfig.config.defaultMode];
-        const modePermission = mode?.permission
-          ? tsConfig.config.permissionProfiles[mode.permission]
-          : undefined;
-        if (modePermission) permissionMode = modePermission.approval;
-      }
+      const requestedPermissionProfile = options.permissionProfile;
+      const defaultPermissionProfile =
+        tsConfig.config.permissionProfiles[tsConfig.config.defaultPermission];
+      const mode = tsConfig.config.modes[tsConfig.config.defaultMode];
+      const modePermissionProfile = mode?.permission
+        ? tsConfig.config.permissionProfiles[mode.permission]
+        : undefined;
+      if (requestedPermissionProfile) {
+        selectedPermissionProfile =
+          tsConfig.config.permissionProfiles[requestedPermissionProfile];
+        if (!selectedPermissionProfile)
+          throw new Error(
+            `permission profile not found: ${requestedPermissionProfile}`,
+          );
+      } else
+        selectedPermissionProfile =
+          modePermissionProfile ?? defaultPermissionProfile;
+      if (!options.permissionMode && selectedPermissionProfile)
+        permissionMode = selectedPermissionProfile.approval;
       agentRegistry = agentsFromConfig(tsConfig.config);
       selectedAgent = agentRegistry.default();
       if (Object.keys(tsConfig.config.agents).length && !selectedAgent)
@@ -451,6 +477,7 @@ export function createRealRuntimeClient(
         level: "warning",
         message: `TS config was not used: ${error instanceof Error ? error.message : String(error)}`,
       });
+      if (options.permissionProfile) throw error;
     }
     cleanupWorkspaceFiles = await watchWorkspaceFiles(
       workspaceRoot,
@@ -1172,12 +1199,17 @@ export function createRealRuntimeClient(
       ...(selectedAgent?.permissions?.tools?.exclude ?? []),
     ];
     agentToolLayer = createToolPolicyHookLayer({ allow, exclude });
+    permissionProfileToolLayer = createToolPolicyHookLayer({
+      allow: selectedPermissionProfile?.permissions?.tools?.allow,
+      exclude: selectedPermissionProfile?.permissions?.tools?.exclude,
+    });
   }
 
   function isToolAllowed(toolName: string) {
     return (
       toolLayer.isToolAllowed(toolName) &&
-      agentToolLayer.isToolAllowed(toolName)
+      agentToolLayer.isToolAllowed(toolName) &&
+      permissionProfileToolLayer.isToolAllowed(toolName)
     );
   }
 
@@ -1582,6 +1614,7 @@ export function createRealRuntimeClient(
 
   async function submitInput(input: SubmitInput) {
     await ready;
+    if (initializationError) throw initializationError;
     const text = input.text;
     const attachments = input.attachments?.length
       ? await storeLocalAttachments({ workspaceRoot, paths: input.attachments })
@@ -1748,14 +1781,16 @@ export function createRealRuntimeClient(
   }
 
   return {
-    start(onEvent, options) {
+    start(onEvent, startOptions) {
       sink = onEvent;
-      replayMode = options?.replay ?? "all";
+      replayMode = startOptions?.replay ?? "all";
       ready = initialize().catch((error) => {
+        initializationError =
+          error instanceof Error ? error : new Error(String(error));
         publish({
           type: "diagnostic",
           level: "error",
-          message: error instanceof Error ? error.message : String(error),
+          message: initializationError.message,
         });
       });
     },
@@ -4043,7 +4078,16 @@ export function createRealRuntimeClient(
   }
 
   function toolSettings() {
-    const network = selectedAgent?.permissions?.network;
+    const profileNetwork = selectedPermissionProfile?.permissions?.network;
+    const agentNetwork = selectedAgent?.permissions?.network;
+    const effectiveNetwork = agentNetwork ?? profileNetwork;
+    const agentAllowedHosts = agentNetwork?.allowedHosts.length
+      ? agentNetwork.allowedHosts
+      : tsRuntimeConfig?.network.allowedHosts;
+    const allowedHostGroups = [
+      profileNetwork?.allowedHosts,
+      agentAllowedHosts,
+    ].filter((hosts): hosts is string[] => Boolean(hosts?.length));
     return {
       webSearchEndpoint: tsRuntimeConfig?.webSearch.endpoint ?? undefined,
       webSearchProviderPriority: tsRuntimeConfig?.webSearch.providerPriority,
@@ -4055,15 +4099,27 @@ export function createRealRuntimeClient(
       browserProfileDir: tsRuntimeConfig?.browser.profileDir || undefined,
       browserLocale: tsRuntimeConfig?.browser.locale || undefined,
       browserTimezone: tsRuntimeConfig?.browser.timezone || undefined,
-      allowedHosts: network?.allowedHosts.length
-        ? network.allowedHosts
-        : tsRuntimeConfig?.network.allowedHosts,
+      allowedHosts: agentAllowedHosts,
+      allowedHostGroups: allowedHostGroups.length
+        ? allowedHostGroups
+        : undefined,
       allowedSchemes: tsRuntimeConfig?.network.allowedSchemes,
-      deniedHosts: network?.denyHosts,
+      deniedHosts: [
+        ...(profileNetwork?.denyHosts ?? []),
+        ...(agentNetwork?.denyHosts ?? []),
+      ],
       allowLocalhost:
-        network?.allowLocalhost ?? tsRuntimeConfig?.network.allowLocalhost,
+        profileNetwork?.allowLocalhost === false ||
+        agentNetwork?.allowLocalhost === false
+          ? false
+          : (effectiveNetwork?.allowLocalhost ??
+            tsRuntimeConfig?.network.allowLocalhost),
       allowPrivate:
-        network?.allowPrivate ?? tsRuntimeConfig?.network.allowPrivate,
+        profileNetwork?.allowPrivate === false ||
+        agentNetwork?.allowPrivate === false
+          ? false
+          : (effectiveNetwork?.allowPrivate ??
+            tsRuntimeConfig?.network.allowPrivate),
       envAllowlist:
         selectedAgent?.permissions?.env?.allowlist ??
         tsRuntimeConfig?.security.envAllowlist,

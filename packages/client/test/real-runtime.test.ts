@@ -299,6 +299,192 @@ test("read-only profile rejects side-effecting tools without an approval request
   });
 });
 
+test("selected permission profile denies tools outside its allow list before approval", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-profile-allow-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      permissionProfiles: {
+        unattended_read: {
+          approval: "auto",
+          description: "Read-only unattended inspection",
+          permissions: {
+            tools: { allow: ["read_file", "web_fetch"] },
+            files: {
+              readPaths: [
+                { pattern: "allowed.txt", allow: false, reason: "protected" },
+              ],
+            },
+            network: { allowLocalhost: false },
+          },
+        },
+      },
+    }),
+  );
+  const events: RuntimeEvent[] = [];
+  const requests: ProviderStreamRequest[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_runtime_profile_allow",
+    permissionProfile: "unattended_read",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        requests.push(request);
+        if (!request.messages.some((message) => message.role === "tool"))
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "write",
+                name: "write_file",
+                arguments: JSON.stringify({
+                  path: "blocked.txt",
+                  content: "blocked",
+                }),
+              },
+              {
+                id: "network",
+                name: "web_fetch",
+                arguments: JSON.stringify({ url: "http://127.0.0.1:9" }),
+              },
+            ],
+          };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("inspect only");
+
+  expect(requests[0]?.tools?.map((tool) => tool.name)).toEqual([
+    "read_file",
+    "web_fetch",
+  ]);
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "policy.decision",
+      toolName: "write_file",
+      decision: "deny",
+      reason: "tool is excluded from the runtime catalog by policy",
+    }),
+  );
+  expect(events.some((event) => event.type === "approval.request")).toBe(false);
+  const history = await client.history!({ limit: 100 });
+  expect(history.events).toContainEqual(
+    expect.objectContaining({
+      event: expect.objectContaining({
+        type: "policy.decision",
+        toolName: "write_file",
+        decision: "deny",
+      }),
+    }),
+  );
+  expect(
+    events
+      .filter(
+        (event): event is Extract<RuntimeEvent, { type: "tool.update" }> =>
+          event.type === "tool.update" && event.name === "web_fetch",
+      )
+      .map((event) => event.result ?? "")
+      .join(" "),
+  ).toContain("localhost network access is not allowed");
+});
+
+test("selected permission profile applies file rules to allowed tools", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-profile-files-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(join(root, "allowed.txt"), "allowed");
+  await writeFile(join(root, "protected.txt"), "protected");
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      permissionProfiles: {
+        unattended_read: {
+          approval: "auto",
+          description: "Read-only unattended inspection",
+          permissions: {
+            tools: { allow: ["read_file"] },
+            files: {
+              readPaths: [
+                { pattern: "protected.txt", allow: false, reason: "protected" },
+              ],
+            },
+          },
+        },
+      },
+    }),
+  );
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_runtime_profile_files",
+    permissionProfile: "unattended_read",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        if (!request.messages.some((message) => message.role === "tool"))
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "read",
+                name: "read_file",
+                arguments: JSON.stringify({ path: "protected.txt" }),
+              },
+            ],
+          };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("inspect protected file");
+
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "policy.decision",
+      toolName: "read_file",
+      decision: "deny",
+      reason: 'read of "protected.txt" blocked: protected',
+    }),
+  );
+  expect(events.some((event) => event.type === "approval.request")).toBe(false);
+});
+
+test("unknown selected permission profile reports a configuration error", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-runtime-profile-missing-"),
+  );
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_runtime_profile_missing",
+    permissionProfile: "missing",
+    provider: scriptedProvider("ready"),
+  });
+  client.start((event) => events.push(event));
+  await waitFor(() =>
+    events.some(
+      (event) =>
+        event.type === "diagnostic" &&
+        event.message.includes("permission profile not found: missing"),
+    ),
+  );
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "diagnostic",
+      level: "error",
+      message: expect.stringContaining("permission profile not found: missing"),
+    }),
+  );
+});
+
 test("runtime status reflects committed agent and model selections", async () => {
   const agentRoot = await mkdtemp(join(tmpdir(), "natalia-agent-status-"));
   await mkdir(join(agentRoot, ".natalia"), { recursive: true });

@@ -107,11 +107,6 @@ export const providerConfigSchema = z.object({
   requireOutputLimit: z.boolean().optional(),
 });
 
-export const permissionProfileSchema = z.object({
-  approval: z.enum(["ask", "auto", "read_only"]),
-  description: z.string().default(""),
-});
-
 export const modeConfigSchema = z.object({
   description: z.string().default(""),
   model: z.string().optional(),
@@ -167,6 +162,12 @@ export const agentPermissionRulesSchema = z.object({
     .optional(),
   env: z.object({ allowlist: z.array(z.string()).default([]) }).optional(),
   redactOutput: z.boolean().optional(),
+});
+
+export const permissionProfileSchema = z.object({
+  approval: z.enum(["ask", "auto", "read_only"]),
+  description: z.string().default(""),
+  permissions: agentPermissionRulesSchema.optional(),
 });
 
 export const agentConfigSchema = z.object({

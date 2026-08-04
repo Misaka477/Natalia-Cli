@@ -244,7 +244,11 @@ test("settings arrays and browser fields persist as a minimal selected-scope pat
       },
       permissionProfiles: {
         ...base.permissionProfiles,
-        guarded: { approval: "read_only", description: "Safe inspection" },
+        guarded: {
+          approval: "read_only",
+          description: "Safe inspection",
+          permissions: { tools: { allow: ["read_file"] } },
+        },
       },
       modes: {
         ...base.modes,
@@ -310,6 +314,7 @@ test("settings arrays and browser fields persist as a minimal selected-scope pat
     expect(resolved.permissionProfiles.guarded).toEqual({
       approval: "read_only",
       description: "Safe inspection",
+      permissions: { tools: { allow: ["read_file"], exclude: [] } },
     });
     expect(resolved.modes.review).toMatchObject({
       systemPrompt: "Inspect changes and report findings.",

@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -12,8 +12,38 @@ const env = {
   XDG_STATE_HOME: join(home, ".state"),
 };
 
+await mkdir(join(workspaceRoot, ".natalia"), { recursive: true });
+await writeFile(
+  join(workspaceRoot, ".natalia", "config.json"),
+  JSON.stringify({
+    version: 2,
+    permissionProfiles: {
+      unattended_read: {
+        approval: "auto",
+        description: "Automation smoke profile",
+        permissions: { tools: { allow: ["read_file"] } },
+      },
+    },
+  }),
+);
+
 const once = run(["--once", "--json", "/doctor"]);
 assertDoctor("--once --json", once);
+
+const profiled = run([
+  "--once",
+  "--permission",
+  "unattended_read",
+  "--json",
+  "/doctor",
+]);
+assertDoctor("--once --permission unattended_read --json", profiled);
+if (
+  !profiled.some(
+    (event) => event.type === "status.snapshot" && event.permissions === "auto",
+  )
+)
+  throw new Error("--permission did not select the requested approval profile");
 
 const stdio = run(["--stdio"], `${JSON.stringify({ prompt: "/doctor" })}\n`);
 assertDoctor("--stdio", stdio);
@@ -21,6 +51,7 @@ assertDoctor("--stdio", stdio);
 console.log(
   JSON.stringify({
     onceEvents: once.length,
+    profiledEvents: profiled.length,
     stdioEvents: stdio.length,
     workspaceRoot,
     status: "passed",
@@ -54,6 +85,7 @@ function run(args: string[], stdin?: string) {
           type?: string;
           text?: string;
           stopReason?: string;
+          permissions?: string;
         },
     );
 }
