@@ -348,6 +348,8 @@ export type RealRuntimeClientOptions = {
     store: NataliaTaskStateStore;
     invocationID: string;
     attempt: number;
+    flowID: string;
+    moduleID: string;
     moduleType: NataliaFlowModuleType;
   };
 };
@@ -3962,6 +3964,15 @@ export function createRealRuntimeClient(
         redactToolOutput(completeResult, redactToolOutputEnabled()),
       );
       const result = bounded.text;
+      if (options.taskModuleContext && tool.name !== "flow_module_complete") {
+        options.taskModuleContext.store.recordModuleEvidence({
+          invocationID: options.taskModuleContext.invocationID,
+          attempt: options.taskModuleContext.attempt,
+          flowID: options.taskModuleContext.flowID,
+          moduleID: options.taskModuleContext.moduleID,
+          ref: `tool:${call.id}`,
+        });
+      }
       if (
         tool.name === "interactive_terminal_start" ||
         tool.name === "interactive_terminal_stop"

@@ -134,6 +134,8 @@ test("flow_module_complete is only advertised to an active task module runtime",
       store,
       invocationID: "inv_1",
       attempt: 1,
+      flowID: "flow_1",
+      moduleID: "read",
       moduleType: "read_search",
     },
   });
@@ -199,6 +201,8 @@ test("task module policy denies tools outside the active capability bundle", asy
       store,
       invocationID: "inv_1",
       attempt: 1,
+      flowID: "flow_1",
+      moduleID: "read",
       moduleType: "read_search",
     },
     provider: {
@@ -237,6 +241,74 @@ test("task module policy denies tools outside the active capability bundle", asy
       name: "run_shell",
       status: "failed",
     }),
+  );
+  await client.dispose?.();
+  store.close();
+});
+
+test("task module records successful tool calls as attempt-scoped evidence", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-task-evidence-runtime-"));
+  await writeFile(join(root, "note.txt"), "evidence");
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_1" as SessionID,
+  });
+  store.activateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    conditionIDs: ["c1"],
+  });
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_task_evidence" as SessionID,
+    taskModuleContext: {
+      store,
+      invocationID: "inv_1",
+      attempt: 1,
+      flowID: "flow_1",
+      moduleID: "read",
+      moduleType: "read_search",
+    },
+    provider: {
+      provider: "task-evidence",
+      model: "task-evidence-model",
+      async *stream(request) {
+        if (!request.messages.some((message) => message.role === "tool"))
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "read_note",
+                name: "read_file",
+                arguments: JSON.stringify({ path: "note.txt" }),
+              },
+            ],
+          };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.submit("read note");
+  store.claimModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    claim: {
+      flowID: "flow_1",
+      moduleID: "read",
+      conditionStatuses: [{ id: "c1", status: "satisfied" }],
+      evidenceRefs: ["tool:read_note"],
+      gaps: [],
+      recommendedAction: "Evaluate.",
+    },
+  });
+  expect(store.moduleEvents("inv_1", 1)).toContainEqual(
+    expect.objectContaining({ kind: "flow.module_claimed" }),
   );
   await client.dispose?.();
   store.close();

@@ -640,6 +640,8 @@ async function runTaskOnce(input: {
       store: state,
       invocationID,
       attempt: started.attempt.attempt,
+      flowID: input.flow.flowID,
+      moduleID: module.moduleID,
       moduleType: module.moduleType,
     },
   });
