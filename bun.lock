@@ -21,6 +21,7 @@
         "natalia-ts": "./src/main.ts",
       },
       "dependencies": {
+        "@natalia/agent": "workspace:*",
         "@natalia/client": "workspace:*",
         "@natalia/config": "workspace:*",
         "@natalia/contracts": "workspace:*",

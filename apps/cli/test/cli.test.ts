@@ -136,6 +136,212 @@ test("CLI task run creates a task-scoped episode but never treats turn completio
   expect(output.some((event) => event.type === "session.created")).toBe(true);
 });
 
+test("CLI task run evaluates a claimed module without advancing task success", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-task-evaluator-"));
+  await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+  await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+  await writeFile(join(root, "README.md"), "real module evidence\n");
+  let evaluatorPayload = "";
+  let executionRequests = 0;
+  const server = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      const body = (await request.json()) as {
+        model: string;
+        tools?: unknown[];
+        messages: Array<{ content: string }>;
+      };
+      const evaluator = body.model === "evaluator-model";
+      const readArguments = JSON.stringify({ path: "README.md" });
+      const claimArguments = JSON.stringify({
+        flowID: "flow_review",
+        moduleID: "read",
+        conditionStatuses: [{ id: "c1", status: "satisfied" }],
+        evidenceRefs: ["tool:read_1"],
+        gaps: [],
+        recommendedAction: "Evaluate the read evidence.",
+      });
+      const toolCall = (id: string, name: string, arguments_: string) =>
+        [
+          `data: ${JSON.stringify({
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    { index: 0, id, function: { name, arguments: arguments_ } },
+                  ],
+                },
+              },
+            ],
+          })}`,
+          "",
+          'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+          "",
+          "data: [DONE]",
+          "",
+        ].join("\n");
+      const response = evaluator
+        ? (() => {
+            evaluatorPayload = body.messages.at(-1)!.content;
+            return [
+              `data: ${JSON.stringify({
+                choices: [
+                  {
+                    delta: {
+                      content: JSON.stringify({
+                        schemaVersion: 1,
+                        outcome: "incomplete",
+                        conditions: [
+                          {
+                            id: "c1",
+                            status: "satisfied",
+                            reason: "read evidence is present",
+                            evidenceRefs: ["tool:read_1"],
+                          },
+                        ],
+                        gaps: ["report output is still missing"],
+                        forbiddenRepeats: [],
+                        recommendedActions: ["produce the report"],
+                        idealOutcome: "partial",
+                      }),
+                    },
+                  },
+                ],
+              })}`,
+              "",
+              "data: [DONE]",
+              "",
+            ].join("\n");
+          })()
+        : executionRequests++ === 0
+          ? toolCall("read_1", "read_file", readArguments)
+          : executionRequests === 2
+            ? toolCall("claim_1", "flow_module_complete", claimArguments)
+            : "data: [DONE]\n\n";
+      return new Response(response, {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+  });
+  try {
+    await writeFile(
+      join(root, ".natalia", "config.json"),
+      JSON.stringify({
+        version: 2,
+        providers: {
+          local: {
+            type: "openai-compatible",
+            apiKey: "test-key",
+            baseURL: server.url,
+            enabled: true,
+            customHeaders: {},
+          },
+        },
+        models: {
+          execution: {
+            provider: "local",
+            model: "execution-model",
+            enabled: true,
+            capabilities: {
+              toolCall: true,
+              reasoning: false,
+              thinking: false,
+              imageInput: false,
+              pdfInput: false,
+            },
+            contextWindow: "auto",
+            maxOutputTokens: null,
+            temperature: null,
+            topP: null,
+            reasoningEffort: null,
+            thinkingEnabled: false,
+            stream: true,
+            requestTimeoutSec: null,
+            variants: {},
+          },
+          evaluator: {
+            provider: "local",
+            model: "evaluator-model",
+            enabled: true,
+            capabilities: {
+              toolCall: false,
+              reasoning: false,
+              thinking: false,
+              imageInput: false,
+              pdfInput: false,
+            },
+            contextWindow: "auto",
+            maxOutputTokens: null,
+            temperature: null,
+            topP: null,
+            reasoningEffort: null,
+            thinkingEnabled: false,
+            stream: true,
+            requestTimeoutSec: null,
+            variants: {},
+          },
+        },
+        defaultModel: "execution",
+        permissionProfiles: {
+          unattended: { approval: "auto", description: "Task profile" },
+        },
+      }),
+    );
+    await writeFile(
+      join(root, ".natalia", "flows", "review.yaml"),
+      "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n    minimumConditions:\n      - id: c1\n        text: Read the source evidence\n",
+    );
+    await writeFile(
+      join(root, ".natalia", "tasks", "nightly.yaml"),
+      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: token=raw-task-secret Read the source.\npermissionProfile: unattended\nflow:\n  flowID: flow_review\nevaluator:\n  provider: local\n  model: evaluator\n",
+    );
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        join(import.meta.dir, "..", "src", "main.ts"),
+        "task",
+        "run",
+        "nightly.yaml",
+        "--workspace",
+        root,
+        "--json",
+      ],
+      { cwd: root, stdout: "pipe", stderr: "pipe" },
+    );
+    await child.exited;
+    expect(child.exitCode).toBe(0);
+    const output = (await new Response(child.stdout).text())
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(
+      output.find((event) => event.type === "task.invocation"),
+    ).toMatchObject({
+      taskID: "task_nightly",
+      status: "stalled",
+      waterlineAdvanced: false,
+    });
+    expect(evaluatorPayload).toContain('"redacted":true');
+    expect(evaluatorPayload).not.toContain("raw-task-secret");
+    expect(evaluatorPayload).toContain("tool:read_1");
+    const state = await (
+      await import("@natalia/workflow")
+    ).NataliaTaskStateStore.open(root);
+    const invocation = output.find(
+      (event) => event.type === "task.invocation",
+    )!;
+    expect(state.moduleEvents(invocation.invocationID as string, 1)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "flow.module_claimed" }),
+        expect.objectContaining({ kind: "flow.module_continued" }),
+      ]),
+    );
+    state.close();
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("CLI task run rejects non-auto profiles before creating execution state", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-cli-task-approval-"));
   await mkdir(join(root, ".natalia", "flows"), { recursive: true });

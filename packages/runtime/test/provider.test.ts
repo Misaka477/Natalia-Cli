@@ -5,8 +5,10 @@ import {
   GeminiProvider,
   OpenAICompatibleProvider,
   providerFromKind,
+  providerForModel,
   readWithIdleTimeout,
 } from "../src/provider";
+import { defaultConfigV2 } from "@natalia/config";
 import { ContextWindowResolver } from "../src/modelmeta";
 
 test("OpenAI-compatible provider accepts both base and complete chat endpoint URLs", async () => {
@@ -38,6 +40,43 @@ test("OpenAI-compatible provider accepts both base and complete chat endpoint UR
     "https://gateway.example/v1/chat/completions",
     "https://gateway.example/v1/chat/completions",
   ]);
+});
+
+test("configured provider resolution preserves the adapter provider identity", () => {
+  const config = defaultConfigV2();
+  config.providers.internal_gateway = {
+    type: "anthropic-compatible",
+    apiKey: "test-key",
+    enabled: true,
+    customHeaders: {},
+  };
+  config.models.review = {
+    provider: "internal_gateway",
+    model: "review-model",
+    enabled: true,
+    capabilities: {
+      toolCall: false,
+      reasoning: false,
+      thinking: false,
+      imageInput: false,
+      pdfInput: false,
+    },
+    contextWindow: "auto",
+    maxOutputTokens: null,
+    temperature: null,
+    topP: null,
+    reasoningEffort: null,
+    thinkingEnabled: false,
+    stream: true,
+    requestTimeoutSec: null,
+    variants: {},
+  };
+  const provider = providerForModel(config, "review");
+  expect(provider).toBeInstanceOf(AnthropicProvider);
+  expect(provider).toMatchObject({
+    provider: "anthropic-compatible",
+    model: "review-model",
+  });
 });
 
 test("Anthropic-compatible provider names use the Messages API adapter", async () => {

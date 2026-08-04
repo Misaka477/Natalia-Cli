@@ -1,4 +1,6 @@
 import type { ContextEntry } from "./context";
+import { modelSelectionStatus } from "@natalia/config";
+import type { ConfigV2 } from "@natalia/contracts";
 import { providerError, providerErrorFromHttp } from "./errors";
 
 export type ProviderMessage = {
@@ -546,6 +548,45 @@ export function providerFromKind(
   return new OpenAICompatibleProvider({
     ...input,
     provider: input.providerName,
+  });
+}
+
+/** Resolves a configured model into the same provider adapter used by runtime. */
+export function providerForModel(
+  config: ConfigV2,
+  modelID: string,
+  variantName?: string,
+): StreamingProvider | undefined {
+  const status = modelSelectionStatus(config, modelID);
+  if (!status.selected) return undefined;
+  const model = config.models[modelID];
+  const providerConfig = model && config.providers[model.provider];
+  if (!model || !providerConfig?.apiKey) return undefined;
+  const variant = variantName ? model.variants[variantName] : undefined;
+  if (variantName && !variant) return undefined;
+  return providerFromKind({
+    // Keep the runtime provider identity stable: it is the adapter kind used
+    // by runtime status, model metadata, and existing evaluator contracts.
+    providerName: providerConfig.type,
+    provider: providerConfig.type,
+    apiKey: providerConfig.apiKey,
+    model: variant?.model ?? model.model,
+    baseURL: providerConfig.baseURL,
+    maxTokens: variant?.maxOutputTokens ?? model.maxOutputTokens ?? undefined,
+    temperature: variant?.temperature ?? model.temperature ?? undefined,
+    topP: variant?.topP ?? model.topP ?? undefined,
+    reasoningEffort: model.capabilities.reasoning
+      ? (variant?.reasoningEffort ?? model.reasoningEffort ?? undefined)
+      : undefined,
+    thinkingEnabled: model.capabilities.thinking
+      ? (variant?.thinkingEnabled ?? model.thinkingEnabled)
+      : undefined,
+    timeoutMs:
+      (variant?.requestTimeoutSec ?? model.requestTimeoutSec ?? undefined) ===
+      undefined
+        ? undefined
+        : (variant?.requestTimeoutSec ?? model.requestTimeoutSec)! * 1000,
+    streamIdleTimeoutMs: config.runtime.timeouts.streamIdleSec * 1000,
   });
 }
 

@@ -1,8 +1,15 @@
 import { createRealRuntimeClient } from "@natalia/client";
 import type { EpisodeID, RuntimeEvent, SessionID } from "@natalia/contracts";
 import { resolveConfig } from "@natalia/config";
+import { agentsFromConfig } from "@natalia/agent";
 import { userStateHome } from "@natalia/platform";
-import { NataliaDocumentStore, NataliaTaskStateStore } from "@natalia/workflow";
+import {
+  evaluateAndRecordModule,
+  NataliaDocumentStore,
+  NataliaTaskStateStore,
+  type EvaluatorModuleContext,
+} from "@natalia/workflow";
+import { providerForModel } from "@natalia/runtime";
 import {
   createRuntimeDaemonStore,
   createRuntimeHttpServer,
@@ -580,8 +587,9 @@ async function runTaskOnce(input: {
   flow: import("@natalia/contracts").NataliaFlowDocument;
   json: boolean;
 }) {
-  const profile = (await resolveConfig({ workspaceRoot: input.workspaceRoot }))
-    .config.permissionProfiles[input.task.permissionProfile];
+  const config = (await resolveConfig({ workspaceRoot: input.workspaceRoot }))
+    .config;
+  const profile = config.permissionProfiles[input.task.permissionProfile];
   if (!profile)
     throw new Error(
       `task permission profile not found: ${input.task.permissionProfile}`,
@@ -593,6 +601,11 @@ async function runTaskOnce(input: {
   const modules = input.flow.modules.filter((entry) => entry.enabled);
   if (!modules.length)
     throw new Error(`task flow has no enabled modules: ${input.flow.flowID}`);
+  const executionSelection = taskExecutionProvider(config);
+  if (input.task.evaluator && !executionSelection)
+    throw new Error(
+      "task execution model is unavailable in the resolved config",
+    );
   const state = await NataliaTaskStateStore.open(input.workspaceRoot);
   const execution = newHeadlessExecution();
   const invocationID = `inv_${crypto.randomUUID().replace(/-/gu, "")}`;
@@ -649,9 +662,11 @@ async function runTaskOnce(input: {
     RuntimeEvent,
     { type: "turn.finished" }
   >["stopReason"] = "error";
+  const evaluatorContext = createEvaluatorContext(input.flow.flowID, module);
   try {
     client.start((event) => {
       if (event.type === "turn.finished") stopReason = event.stopReason;
+      collectEvaluatorContext(evaluatorContext, event);
       if (input.json) console.log(JSON.stringify(event));
       else {
         const line = plainRuntimeEvent(event);
@@ -659,22 +674,64 @@ async function runTaskOnce(input: {
       }
     });
     await client.submit(input.task.prompt);
-    const terminalStatus = taskTurnTerminalStatus(stopReason);
-    if (terminalStatus === "stalled")
+    const claimed = state
+      .moduleEvents(invocationID, started.attempt.attempt)
+      .some(
+        (event) =>
+          event.kind === "flow.module_claimed" &&
+          event.flowID === input.flow.flowID &&
+          event.moduleID === module.moduleID,
+      );
+    const evaluatorOutcome = claimed
+      ? evaluatorContext.policyDenied
+        ? blockClaimedTaskModule(
+            state,
+            invocationID,
+            started.attempt.attempt,
+            evaluatorContext,
+            "module policy denial prevents evaluator completion",
+          )
+        : input.task.evaluator
+          ? await evaluateClaimedTaskModule({
+              task: input.task,
+              config,
+              state,
+              invocationID,
+              attempt: started.attempt.attempt,
+              executionProvider: executionSelection!,
+              context: evaluatorContext,
+            })
+          : (state.stallModule({
+              invocationID,
+              attempt: started.attempt.attempt,
+              flowID: evaluatorContext.flowID,
+              moduleID: evaluatorContext.moduleID,
+              reason:
+                "module claim requires an evaluator before the controller can complete it",
+            }),
+            "stalled" as const)
+      : undefined;
+    const terminalStatus =
+      evaluatorOutcome === "blocked"
+        ? "blocked"
+        : taskTurnTerminalStatus(stopReason);
+    if (terminalStatus === "stalled" && !claimed)
       state.stallModule({
         invocationID,
         attempt: started.attempt.attempt,
         flowID: input.flow.flowID,
         moduleID: module.moduleID,
         reason:
-          "turn finished before the completion controller evaluated the active module",
+          "turn finished before the completion controller received a module claim",
       });
     state.completeAttempt({
       invocationID,
       attempt: started.attempt.attempt,
       status: terminalStatus,
       retry: false,
-      reason: `runtime turn finished: ${stopReason}`,
+      reason: evaluatorOutcome
+        ? `evaluator ${evaluatorOutcome}; runtime turn finished: ${stopReason}`
+        : `runtime turn finished: ${stopReason}`,
     });
     const result = state.getInvocation(invocationID)!;
     console.log(
@@ -687,6 +744,160 @@ async function runTaskOnce(input: {
     await client.dispose?.();
     state.close();
   }
+}
+
+function taskExecutionProvider(
+  config: Awaited<ReturnType<typeof resolveConfig>>["config"],
+) {
+  const agent = agentsFromConfig(config).default();
+  const modelID = agent?.model ?? config.defaultModel;
+  const provider = providerForModel(config, modelID, agent?.variant);
+  const providerKey = config.models[modelID]?.provider;
+  return provider && providerKey ? providerKey : undefined;
+}
+
+function createEvaluatorContext(
+  flowID: string,
+  module: {
+    moduleID: string;
+    conditionIDs: string[];
+  },
+): EvaluatorModuleContext & { policyDenied: boolean } {
+  return {
+    flowID,
+    moduleID: module.moduleID,
+    conditionIDs: [...module.conditionIDs],
+    messages: [],
+    toolRecords: [],
+    terminalOutput: [],
+    executionRecords: [],
+    policyDenied: false,
+  };
+}
+
+function collectEvaluatorContext(
+  context: EvaluatorModuleContext & { policyDenied: boolean },
+  event: RuntimeEvent,
+) {
+  if (event.type === "turn.submitted" || event.type === "content.delta") {
+    context.messages.push(event.text);
+    return;
+  }
+  if (event.type === "tool.update" && event.status === "succeeded") {
+    context.toolRecords.push(
+      `${event.callID ? `tool:${event.callID} ` : ""}${event.name}: ${event.result ?? event.summary}`,
+    );
+    return;
+  }
+  if (event.type === "terminal.update") {
+    context.terminalOutput.push(`${event.id}: ${event.tail}`);
+    return;
+  }
+  if (event.type === "terminal.action" && event.redacted) {
+    context.secureInput = true;
+    return;
+  }
+  if (
+    event.type === "policy.decision" &&
+    (event.decision === "deny" || event.decision === "rejected")
+  )
+    context.policyDenied = true;
+  if (
+    event.type === "policy.decision" ||
+    event.type === "diagnostic" ||
+    event.type === "turn.finished"
+  )
+    context.executionRecords.push(JSON.stringify(event));
+}
+
+async function evaluateClaimedTaskModule(input: {
+  task: import("@natalia/contracts").NataliaTaskDocument;
+  config: Awaited<ReturnType<typeof resolveConfig>>["config"];
+  state: NataliaTaskStateStore;
+  invocationID: string;
+  attempt: number;
+  executionProvider: string;
+  context: EvaluatorModuleContext & { policyDenied: boolean };
+}) {
+  if (!input.task.evaluator) return undefined;
+  const model = input.config.models[input.task.evaluator.model];
+  const providerConfig = input.config.providers[input.task.evaluator.provider];
+  if (
+    !model ||
+    !providerConfig ||
+    model.provider !== input.task.evaluator.provider
+  ) {
+    input.state.evaluateModule({
+      invocationID: input.invocationID,
+      attempt: input.attempt,
+      flowID: input.context.flowID,
+      moduleID: input.context.moduleID,
+      outcome: "blocked",
+      data: {
+        reason:
+          "task evaluator selection is unavailable in the resolved config",
+      },
+    });
+    return "blocked" as const;
+  }
+  const provider = providerForModel(input.config, input.task.evaluator.model);
+  if (!provider) {
+    input.state.evaluateModule({
+      invocationID: input.invocationID,
+      attempt: input.attempt,
+      flowID: input.context.flowID,
+      moduleID: input.context.moduleID,
+      outcome: "blocked",
+      data: { reason: "task evaluator provider is unavailable" },
+    });
+    return "blocked" as const;
+  }
+  const consent = input.task.evaluatorConsent;
+  if (consent && consent.provider !== input.task.evaluator.provider) {
+    input.state.evaluateModule({
+      invocationID: input.invocationID,
+      attempt: input.attempt,
+      flowID: input.context.flowID,
+      moduleID: input.context.moduleID,
+      outcome: "blocked",
+      data: {
+        reason: "task evaluator consent does not match evaluator provider",
+      },
+    });
+    return "blocked" as const;
+  }
+  const result = await evaluateAndRecordModule({
+    store: input.state,
+    invocationID: input.invocationID,
+    attempt: input.attempt,
+    executionProvider: input.executionProvider,
+    selection: { provider: provider.provider, model: provider.model },
+    consent: consent
+      ? { provider: consent.provider, confirmedAt: consent.confirmedAt }
+      : undefined,
+    provider,
+    providerIdentity: input.task.evaluator.provider,
+    context: input.context,
+  });
+  return result.outcome;
+}
+
+function blockClaimedTaskModule(
+  state: NataliaTaskStateStore,
+  invocationID: string,
+  attempt: number,
+  context: EvaluatorModuleContext,
+  reason: string,
+) {
+  state.evaluateModule({
+    invocationID,
+    attempt,
+    flowID: context.flowID,
+    moduleID: context.moduleID,
+    outcome: "blocked",
+    data: { reason },
+  });
+  return "blocked" as const;
 }
 
 function newHeadlessExecution() {

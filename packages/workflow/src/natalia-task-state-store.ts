@@ -449,6 +449,32 @@ export class NataliaTaskStateStore {
     })();
   }
 
+  validateModuleEvidenceRefs(input: {
+    invocationID: string;
+    attempt: number;
+    flowID: string;
+    moduleID: string;
+    refs: string[];
+  }) {
+    this.requireRunningAttempt(input.invocationID, input.attempt);
+    const module = this.requireModule(input);
+    if (module.status !== "claimed")
+      throw new Error(`flow module is not claimed: ${input.moduleID}`);
+    const owned = new Set(
+      this.#db
+        .query<{ ref: string }, [string, number, string, string]>(
+          "SELECT ref FROM task_flow_evidence WHERE invocation_id = ? AND attempt = ? AND flow_id = ? AND module_id = ?",
+        )
+        .all(input.invocationID, input.attempt, input.flowID, input.moduleID)
+        .map((row) => row.ref),
+    );
+    for (const ref of input.refs)
+      if (!owned.has(ref))
+        throw new Error(
+          `evaluator references unknown attempt evidence: ${ref}`,
+        );
+  }
+
   claimModule(input: {
     invocationID: string;
     attempt: number;

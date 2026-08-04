@@ -108,6 +108,8 @@ export async function evaluateAndRecordModule(input: {
   selection: EvaluatorSelection;
   consent?: EvaluatorConsent;
   provider: StreamingProvider;
+  /** Durable config provider key used for cross-provider consent checks. */
+  providerIdentity?: string;
   context: EvaluatorModuleContext;
 }): Promise<EvaluatorExecutionResult> {
   const redacted = buildRedactedEvaluatorContext(input.context);
@@ -118,7 +120,10 @@ export async function evaluateAndRecordModule(input: {
       flowID: redacted.flowID,
       moduleID: redacted.moduleID,
       outcome: "blocked",
-      data: { reason, evaluatorProvider: input.selection.provider },
+      data: {
+        reason,
+        evaluatorProvider: input.providerIdentity ?? input.selection.provider,
+      },
     });
     return { outcome: "blocked", reason };
   };
@@ -128,8 +133,11 @@ export async function evaluateAndRecordModule(input: {
   )
     return block("evaluator provider selection does not match the task");
   if (
-    input.executionProvider !== input.selection.provider &&
-    (!input.consent || input.consent.provider !== input.selection.provider)
+    input.executionProvider !==
+      (input.providerIdentity ?? input.selection.provider) &&
+    (!input.consent ||
+      input.consent.provider !==
+        (input.providerIdentity ?? input.selection.provider))
   )
     return block(
       "cross-provider evaluator requires confirmed consent for the evaluator provider",
@@ -151,6 +159,14 @@ export async function evaluateAndRecordModule(input: {
         return block("evaluator emitted a forbidden tool call");
     }
     const result = parseEvaluatorResult(content, redacted.conditionIDs);
+    for (const condition of result.conditions)
+      input.store.validateModuleEvidenceRefs({
+        invocationID: input.invocationID,
+        attempt: input.attempt,
+        flowID: redacted.flowID,
+        moduleID: redacted.moduleID,
+        refs: condition.evidenceRefs,
+      });
     input.store.evaluateModule({
       invocationID: input.invocationID,
       attempt: input.attempt,
@@ -158,7 +174,7 @@ export async function evaluateAndRecordModule(input: {
       moduleID: redacted.moduleID,
       outcome: result.outcome,
       data: {
-        evaluatorProvider: input.selection.provider,
+        evaluatorProvider: input.providerIdentity ?? input.selection.provider,
         evaluatorModel: input.selection.model,
         result,
       },

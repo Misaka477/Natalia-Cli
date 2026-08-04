@@ -30,7 +30,7 @@ import {
   contextStatusEvent,
   contextEntriesToProviderMessages,
   providerError,
-  providerFromKind,
+  providerForModel,
   type ProviderMessage,
   type ProviderToolCall,
   providerFromEnvironment,
@@ -3422,42 +3422,6 @@ export function createRealRuntimeClient(
       messages.push({ role: "assistant", content: output.assistant });
     }
     return { assistant: output.assistant, toolMessages };
-  }
-
-  function providerForModel(
-    config: ConfigV2,
-    modelID: string,
-    variantName?: string,
-  ): StreamingProvider | undefined {
-    const status = modelSelectionStatus(config, modelID);
-    if (!status.selected) return undefined;
-    const model = config.models[modelID];
-    const providerConfig = model && config.providers[model.provider];
-    if (!model || !providerConfig?.apiKey) return undefined;
-    const variant = variantName ? model.variants[variantName] : undefined;
-    if (variantName && !variant) return undefined;
-    return providerFromKind({
-      providerName: providerConfig.type,
-      provider: providerConfig.type,
-      apiKey: providerConfig.apiKey,
-      model: variant?.model ?? model.model,
-      baseURL: providerConfig.baseURL,
-      maxTokens: variant?.maxOutputTokens ?? model.maxOutputTokens ?? undefined,
-      temperature: variant?.temperature ?? model.temperature ?? undefined,
-      topP: variant?.topP ?? model.topP ?? undefined,
-      reasoningEffort: model.capabilities.reasoning
-        ? (variant?.reasoningEffort ?? model.reasoningEffort ?? undefined)
-        : undefined,
-      thinkingEnabled: model.capabilities.thinking
-        ? (variant?.thinkingEnabled ?? model.thinkingEnabled)
-        : undefined,
-      timeoutMs:
-        (variant?.requestTimeoutSec ?? model.requestTimeoutSec ?? undefined) ===
-        undefined
-          ? undefined
-          : (variant?.requestTimeoutSec ?? model.requestTimeoutSec)! * 1000,
-      streamIdleTimeoutMs: config.runtime.timeouts.streamIdleSec * 1000,
-    });
   }
 
   function activeModelCapabilities() {

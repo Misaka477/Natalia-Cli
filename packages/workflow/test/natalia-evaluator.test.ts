@@ -102,13 +102,105 @@ test("evaluator result records incomplete outcome from redacted context", async 
   store.close();
 });
 
-test("evaluator blocks cross-provider calls without consent", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-evaluator-blocked-"));
+test("evaluator complete records module completion without task success", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-evaluator-complete-"));
   const store = await claimedModuleStore(root);
   const provider: StreamingProvider = {
     provider: "judge",
     model: "judge-1",
     async *stream() {
+      yield {
+        type: "content",
+        text: JSON.stringify({
+          schemaVersion: 1,
+          outcome: "complete",
+          conditions: [
+            {
+              id: "c1",
+              status: "satisfied",
+              reason: "read evidence is present",
+              evidenceRefs: ["tool:1"],
+            },
+            {
+              id: "c2",
+              status: "satisfied",
+              reason: "module baseline is met",
+              evidenceRefs: [],
+            },
+          ],
+          gaps: [],
+          forbiddenRepeats: [],
+          recommendedActions: [],
+          idealOutcome: "satisfied",
+        }),
+      };
+      yield { type: "done" };
+    },
+  };
+  await expect(
+    evaluateAndRecordModule({
+      store,
+      invocationID: "inv_1",
+      attempt: 1,
+      executionProvider: "judge",
+      selection: { provider: "judge", model: "judge-1" },
+      provider,
+      context: evaluatorContext(),
+    }),
+  ).resolves.toMatchObject({ outcome: "complete" });
+  expect(store.moduleEvents("inv_1", 1).at(-1)).toMatchObject({
+    kind: "flow.module_completed",
+  });
+  expect(store.getInvocation("inv_1")).toMatchObject({
+    status: "running",
+    waterlineAdvanced: false,
+  });
+  store.close();
+});
+
+test("evaluator evidence refs must belong to the claimed module attempt", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-evaluator-evidence-"));
+  const store = await claimedModuleStore(root);
+  const provider: StreamingProvider = {
+    provider: "judge",
+    model: "judge-1",
+    async *stream() {
+      yield {
+        type: "content",
+        text: result.replace('"tool:1"', '"tool:other-attempt"'),
+      };
+      yield { type: "done" };
+    },
+  };
+  await expect(
+    evaluateAndRecordModule({
+      store,
+      invocationID: "inv_1",
+      attempt: 1,
+      executionProvider: "judge",
+      selection: { provider: "judge", model: "judge-1" },
+      provider,
+      context: evaluatorContext(),
+    }),
+  ).resolves.toMatchObject({
+    outcome: "blocked",
+    reason: expect.stringContaining("unknown attempt evidence"),
+  });
+  expect(store.moduleEvents("inv_1", 1).at(-1)).toMatchObject({
+    kind: "flow.module_blocked",
+  });
+  store.close();
+});
+
+test("evaluator blocks cross-provider calls without consent", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-evaluator-blocked-"));
+  const store = await claimedModuleStore(root);
+  let requested = false;
+  const provider: StreamingProvider = {
+    provider: "judge",
+    model: "judge-1",
+    async *stream() {
+      requested = true;
       yield { type: "content", text: "not evaluator json" };
       yield { type: "done" };
     },
@@ -126,6 +218,73 @@ test("evaluator blocks cross-provider calls without consent", async () => {
   ).resolves.toMatchObject({
     outcome: "blocked",
     reason: expect.stringContaining("consent"),
+  });
+  expect(store.moduleEvents("inv_1", 1).at(-1)).toMatchObject({
+    kind: "flow.module_blocked",
+  });
+  expect(requested).toBe(false);
+  store.close();
+});
+
+test("evaluator permits cross-provider calls with matching config-provider consent", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-evaluator-consent-"));
+  const store = await claimedModuleStore(root);
+  let requested = false;
+  const provider: StreamingProvider = {
+    provider: "judge-adapter",
+    model: "judge-1",
+    async *stream() {
+      requested = true;
+      yield { type: "content", text: result };
+      yield { type: "done" };
+    },
+  };
+  await expect(
+    evaluateAndRecordModule({
+      store,
+      invocationID: "inv_1",
+      attempt: 1,
+      executionProvider: "execution-provider-key",
+      selection: { provider: "judge-adapter", model: "judge-1" },
+      consent: {
+        provider: "evaluator-provider-key",
+        confirmedAt: "2026-08-05T00:00:00.000Z",
+      },
+      provider,
+      providerIdentity: "evaluator-provider-key",
+      context: evaluatorContext(),
+    }),
+  ).resolves.toMatchObject({ outcome: "incomplete" });
+  expect(requested).toBe(true);
+  expect(store.moduleEvents("inv_1", 1).at(-1)).toMatchObject({
+    kind: "flow.module_continued",
+  });
+  store.close();
+});
+
+test("evaluator provider exceptions block the claimed module", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-evaluator-throw-"));
+  const store = await claimedModuleStore(root);
+  const provider: StreamingProvider = {
+    provider: "judge",
+    model: "judge-1",
+    async *stream() {
+      throw new Error("quota exhausted");
+    },
+  };
+  await expect(
+    evaluateAndRecordModule({
+      store,
+      invocationID: "inv_1",
+      attempt: 1,
+      executionProvider: "judge",
+      selection: { provider: "judge", model: "judge-1" },
+      provider,
+      context: evaluatorContext(),
+    }),
+  ).resolves.toMatchObject({
+    outcome: "blocked",
+    reason: expect.stringContaining("quota exhausted"),
   });
   expect(store.moduleEvents("inv_1", 1).at(-1)).toMatchObject({
     kind: "flow.module_blocked",
