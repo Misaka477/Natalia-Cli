@@ -251,6 +251,27 @@ export const nataliaTaskDocumentSchema = z.object({
     .optional(),
 });
 
+export const evaluatorConditionStatusSchema = z
+  .object({
+    id: z.string().min(1),
+    status: z.enum(["missing", "partial", "satisfied"]),
+    reason: z.string().min(1),
+    evidenceRefs: z.array(z.string().min(1)),
+  })
+  .strict();
+
+export const evaluatorResultSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    outcome: z.enum(["complete", "incomplete", "blocked"]),
+    conditions: z.array(evaluatorConditionStatusSchema),
+    gaps: z.array(z.string().min(1)),
+    forbiddenRepeats: z.array(z.string().min(1)),
+    recommendedActions: z.array(z.string().min(1)),
+    idealOutcome: z.enum(["missing", "partial", "satisfied"]),
+  })
+  .strict();
+
 export const agentConfigSchema = z.object({
   description: z.string().default(""),
   systemPrompt: z.string().default(""),
@@ -589,6 +610,7 @@ export type NataliaFlowDocumentInput = z.input<
 export type NataliaTaskDocumentInput = z.input<
   typeof nataliaTaskDocumentSchema
 >;
+export type EvaluatorResult = z.infer<typeof evaluatorResultSchema>;
 export type ModeConfig = z.infer<typeof modeConfigSchema>;
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
 export type AgentPermissionRules = z.infer<typeof agentPermissionRulesSchema>;

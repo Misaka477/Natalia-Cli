@@ -47,6 +47,12 @@ export {
 } from "./natalia-documents";
 export { NataliaDocumentStore } from "./natalia-document-store";
 export {
+  buildRedactedEvaluatorContext,
+  parseEvaluatorResult,
+  type EvaluatorModuleContext,
+  type RedactedEvaluatorModuleContext,
+} from "./natalia-evaluator";
+export {
   moduleToolPolicy,
   type NataliaFlowModuleType,
   type NataliaModuleToolPolicy,
