@@ -28,6 +28,65 @@ import {
   externalTerminalLaunchCommand,
 } from "../src";
 
+test("CLI task validate resolves a workspace task and flow without running it", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-task-"));
+  await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+  await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "flows", "review.yaml"),
+    "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n",
+  );
+  await writeFile(
+    join(root, ".natalia", "tasks", "nightly.yaml"),
+    "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Review changes.\npermissionProfile: unattended\nflow:\n  flowID: flow_review\n",
+  );
+  const child = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "task",
+      "validate",
+      "nightly.yaml",
+      "--workspace",
+      root,
+      "--json",
+    ],
+    { cwd: root, stdout: "pipe", stderr: "pipe" },
+  );
+  expect(child.exitCode).toBe(0);
+  expect(JSON.parse(new TextDecoder().decode(child.stdout))).toMatchObject({
+    status: "valid",
+    taskID: "task_nightly",
+    flowID: "flow_review",
+    modules: 1,
+  });
+});
+
+test("CLI task validate fails closed for a missing flow", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-task-missing-"));
+  await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "tasks", "missing.yaml"),
+    "kind: natalia-task\nversion: 1\ntaskID: task_missing\ndisplayName: Missing\nschedule: daily 01:00\nprompt: Review changes.\npermissionProfile: unattended\nflow:\n  flowID: flow_missing\n",
+  );
+  const child = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "task",
+      "validate",
+      "missing.yaml",
+      "--workspace",
+      root,
+    ],
+    { cwd: root, stdout: "pipe", stderr: "pipe" },
+  );
+  expect(child.exitCode).not.toBe(0);
+  expect(new TextDecoder().decode(child.stderr)).toContain(
+    "natalia flow not found",
+  );
+});
+
 test("CLI session helpers list and delete local durable sessions", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-cli-sessions-"));
   const store = new JsonSessionStore(join(root, ".natalia", "sessions"));

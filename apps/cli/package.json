@@ -22,6 +22,7 @@
     "@natalia/runtime": "workspace:*",
     "@natalia/session": "workspace:*",
     "@natalia/terminal": "workspace:*",
-    "@natalia/transport": "workspace:*"
+    "@natalia/transport": "workspace:*",
+    "@natalia/workflow": "workspace:*"
   }
 }

@@ -233,10 +233,14 @@ export const nataliaTaskDocumentSchema = z.object({
   schedule: z.string().min(1),
   prompt: z.string().min(1),
   permissionProfile: z.string().min(1),
-  flow: z.object({
-    path: z.string().min(1),
-    flowID: z.string().min(1).optional(),
-  }),
+  flow: z
+    .object({
+      path: z.string().min(1).optional(),
+      flowID: z.string().min(1).optional(),
+    })
+    .refine((flow) => Boolean(flow.path || flow.flowID), {
+      message: "flow reference requires a path or flowID",
+    }),
   retry: z.enum(["none", "once", "twice", "three_times"]).default("none"),
   alerts: z.array(z.string()).default([]),
   evaluator: z

@@ -29,6 +29,7 @@
         "@natalia/session": "workspace:*",
         "@natalia/terminal": "workspace:*",
         "@natalia/transport": "workspace:*",
+        "@natalia/workflow": "workspace:*",
       },
     },
     "apps/tui": {

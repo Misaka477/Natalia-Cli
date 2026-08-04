@@ -1,6 +1,7 @@
 import { createRealRuntimeClient } from "@natalia/client";
 import type { EpisodeID, RuntimeEvent, SessionID } from "@natalia/contracts";
 import { userStateHome } from "@natalia/platform";
+import { NataliaDocumentStore } from "@natalia/workflow";
 import {
   createRuntimeDaemonStore,
   createRuntimeHttpServer,
@@ -194,6 +195,34 @@ switch (subcommand) {
       await client.dispose?.();
     }
     if (failed) process.exitCode = 1;
+    break;
+  }
+
+  case "task": {
+    const action = argv[1];
+    const taskPath = argv[2];
+    if (action !== "validate" || !taskPath)
+      throw new Error("task validate requires a task path");
+    const workspaceRoot = resolve(
+      valueAfter(argv, "--workspace") ?? process.cwd(),
+    );
+    const store = new NataliaDocumentStore(workspaceRoot);
+    const task = await store.loadTask(taskPath);
+    const flow = await store.resolveTaskFlow(task);
+    const result = {
+      taskID: task.taskID,
+      displayName: task.displayName,
+      permissionProfile: task.permissionProfile,
+      flowID: flow.flowID,
+      flowDisplayName: flow.displayName,
+      modules: flow.modules.filter((module) => module.enabled).length,
+      status: "valid",
+    };
+    console.log(
+      argv.includes("--json")
+        ? JSON.stringify(result)
+        : `task ${result.taskID}: valid\nflow ${result.flowID}: ${result.modules} enabled modules`,
+    );
     break;
   }
 

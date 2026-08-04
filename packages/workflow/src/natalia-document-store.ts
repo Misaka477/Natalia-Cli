@@ -1,4 +1,11 @@
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { basename, dirname, relative, resolve } from "node:path";
 import type {
   NataliaFlowDocument,
@@ -69,12 +76,35 @@ export class NataliaDocumentStore {
   async resolveTaskFlow(
     task: NataliaTaskDocument,
   ): Promise<NataliaFlowDocument> {
-    const flow = await this.loadFlow(task.flow.path);
+    const flow = task.flow.path
+      ? await this.loadFlow(task.flow.path)
+      : await this.loadFlowByID(task.flow.flowID!);
     if (task.flow.flowID && flow.flowID !== task.flow.flowID)
       throw new Error(
         `task ${task.taskID} flow reference mismatch: expected ${task.flow.flowID}, found ${flow.flowID}`,
       );
     return flow;
+  }
+
+  async loadFlowByID(flowID: string): Promise<NataliaFlowDocument> {
+    let entries: string[];
+    try {
+      entries = await readdir(this.flowsDir);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT")
+        throw new Error(`natalia flow not found: ${flowID}`);
+      throw error;
+    }
+    const matches: NataliaFlowDocument[] = [];
+    for (const entry of entries) {
+      if (!/\.ya?ml$/iu.test(entry)) continue;
+      const flow = await this.loadFlow(`.natalia/flows/${entry}`);
+      if (flow.flowID === flowID) matches.push(flow);
+    }
+    if (!matches.length) throw new Error(`natalia flow not found: ${flowID}`);
+    if (matches.length > 1)
+      throw new Error(`natalia flow ID is ambiguous: ${flowID}`);
+    return matches[0]!;
   }
 
   private resolveFlowReference(path: string) {
