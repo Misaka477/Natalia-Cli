@@ -253,3 +253,103 @@ test("module claims reject missing conditions, foreign evidence, and inactive mo
   ).toThrow("not found");
   store.close();
 });
+
+test("module plan advances only after the prior module is explicitly completed", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-module-plan-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_1" as import("@natalia/contracts").SessionID,
+  });
+  store.initializeModulePlan({
+    invocationID: "inv_1",
+    attempt: 1,
+    modules: [
+      {
+        flowID: "flow_1",
+        moduleID: "read",
+        moduleType: "read_search",
+        conditionIDs: [],
+      },
+      {
+        flowID: "flow_1",
+        moduleID: "report",
+        moduleType: "report_output",
+        conditionIDs: [],
+      },
+    ],
+  });
+  expect(
+    store.activateNextModule({ invocationID: "inv_1", attempt: 1 }),
+  ).toMatchObject({ moduleID: "read" });
+  expect(() =>
+    store.activateNextModule({ invocationID: "inv_1", attempt: 1 }),
+  ).toThrow("another flow module is active");
+  store.claimModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    claim: {
+      flowID: "flow_1",
+      moduleID: "read",
+      conditionStatuses: [],
+      evidenceRefs: [],
+      gaps: [],
+      recommendedAction: "Evaluate.",
+    },
+  });
+  store.evaluateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    outcome: "complete",
+  });
+  expect(
+    store.activateNextModule({ invocationID: "inv_1", attempt: 1 }),
+  ).toMatchObject({ moduleID: "report", moduleType: "report_output" });
+  expect(store.getWaterline("task_1")).toBeUndefined();
+  store.close();
+});
+
+test("blocked or stalled module plans cannot advance", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-module-plan-blocked-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_1" as import("@natalia/contracts").SessionID,
+  });
+  store.initializeModulePlan({
+    invocationID: "inv_1",
+    attempt: 1,
+    modules: [
+      {
+        flowID: "flow_1",
+        moduleID: "read",
+        moduleType: "read_search",
+        conditionIDs: [],
+      },
+      {
+        flowID: "flow_1",
+        moduleID: "report",
+        moduleType: "report_output",
+        conditionIDs: [],
+      },
+    ],
+  });
+  store.activateNextModule({ invocationID: "inv_1", attempt: 1 });
+  store.stallModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    reason: "no progress",
+  });
+  expect(() =>
+    store.activateNextModule({ invocationID: "inv_1", attempt: 1 }),
+  ).toThrow("prior modules complete");
+  store.close();
+});

@@ -590,8 +590,8 @@ async function runTaskOnce(input: {
     throw new Error(
       `task permission profile must use auto approval: ${input.task.permissionProfile}`,
     );
-  const module = input.flow.modules.find((entry) => entry.enabled);
-  if (!module)
+  const modules = input.flow.modules.filter((entry) => entry.enabled);
+  if (!modules.length)
     throw new Error(`task flow has no enabled modules: ${input.flow.flowID}`);
   const state = await NataliaTaskStateStore.open(input.workspaceRoot);
   const execution = newHeadlessExecution();
@@ -614,16 +614,24 @@ async function runTaskOnce(input: {
     state.close();
     return;
   }
-  state.activateModule({
+  state.initializeModulePlan({
     invocationID,
     attempt: started.attempt.attempt,
-    flowID: input.flow.flowID,
-    moduleID: module.id,
-    conditionIDs: [
-      ...module.minimumConditions.map((condition) => condition.id),
-      ...module.idealConditions.map((condition) => condition.id),
-    ],
+    modules: modules.map((module) => ({
+      flowID: input.flow.flowID,
+      moduleID: module.id,
+      moduleType: module.type,
+      conditionIDs: [
+        ...module.minimumConditions.map((condition) => condition.id),
+        ...module.idealConditions.map((condition) => condition.id),
+      ],
+    })),
   });
+  const module = state.activateNextModule({
+    invocationID,
+    attempt: started.attempt.attempt,
+  });
+  if (!module) throw new Error("task module plan has no activatable module");
   const client = createRealRuntimeClient({
     ...execution,
     workspaceRoot: input.workspaceRoot,
@@ -632,7 +640,7 @@ async function runTaskOnce(input: {
       store: state,
       invocationID,
       attempt: started.attempt.attempt,
-      moduleType: module.type,
+      moduleType: module.moduleType,
     },
   });
   let stopReason: Extract<
@@ -655,7 +663,7 @@ async function runTaskOnce(input: {
         invocationID,
         attempt: started.attempt.attempt,
         flowID: input.flow.flowID,
-        moduleID: module.id,
+        moduleID: module.moduleID,
         reason:
           "turn finished before the completion controller evaluated the active module",
       });

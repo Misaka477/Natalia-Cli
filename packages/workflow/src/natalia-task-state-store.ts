@@ -2,8 +2,9 @@ import { mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { Database } from "bun:sqlite";
 import type { EpisodeID, SessionID } from "@natalia/contracts";
+import type { NataliaFlowModuleType } from "./natalia-module-policy";
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const ACTIVE_STATUSES = ["running", "blocked", "retrying"] as const;
 
 export type NataliaTaskInvocationStatus =
@@ -81,6 +82,13 @@ export type NataliaFlowModuleClaim = {
   evidenceRefs: string[];
   gaps: string[];
   recommendedAction: string;
+};
+
+export type NataliaPlannedFlowModule = {
+  flowID: string;
+  moduleID: string;
+  moduleType: NataliaFlowModuleType;
+  conditionIDs: string[];
 };
 
 export type StartTaskInvocationResult =
@@ -271,6 +279,98 @@ export class NataliaTaskStateStore {
     return row
       ? { invocationID: row.invocation_id, advancedAt: row.advanced_at }
       : undefined;
+  }
+
+  initializeModulePlan(input: {
+    invocationID: string;
+    attempt: number;
+    modules: NataliaPlannedFlowModule[];
+  }) {
+    if (!input.modules.length) throw new Error("module plan must not be empty");
+    const ids = new Set<string>();
+    for (const module of input.modules) {
+      if (!module.flowID || !module.moduleID || !module.moduleType)
+        throw new Error(
+          "module plan requires flowID, moduleID, and moduleType",
+        );
+      if (ids.has(module.moduleID))
+        throw new Error(`duplicate module in plan: ${module.moduleID}`);
+      ids.add(module.moduleID);
+    }
+    this.#db.transaction(() => {
+      this.requireRunningAttempt(input.invocationID, input.attempt);
+      const existing = this.#db
+        .query<
+          { count: number },
+          [string, number]
+        >("SELECT COUNT(*) AS count FROM task_flow_module_plan WHERE invocation_id = ? AND attempt = ?")
+        .get(input.invocationID, input.attempt);
+      if (existing?.count)
+        throw new Error("module plan is already initialized");
+      const insert = this.#db.query(
+        "INSERT INTO task_flow_module_plan VALUES (?, ?, ?, ?, ?, ?, ?)",
+      );
+      input.modules.forEach((module, ordinal) =>
+        insert.run(
+          input.invocationID,
+          input.attempt,
+          ordinal,
+          module.flowID,
+          module.moduleID,
+          module.moduleType,
+          JSON.stringify([...new Set(module.conditionIDs)]),
+        ),
+      );
+    })();
+  }
+
+  activateNextModule(input: {
+    invocationID: string;
+    attempt: number;
+    at?: string;
+  }): NataliaPlannedFlowModule | undefined {
+    const at = input.at ?? new Date().toISOString();
+    return this.#db.transaction(() => {
+      this.requireRunningAttempt(input.invocationID, input.attempt);
+      const active = this.#db
+        .query<
+          ModuleRow,
+          [string, number]
+        >("SELECT * FROM task_flow_modules WHERE invocation_id = ? AND attempt = ? AND status IN ('activated', 'claimed')")
+        .get(input.invocationID, input.attempt);
+      if (active)
+        throw new Error(
+          `another flow module is active: ${active.flow_id}/${active.module_id}`,
+        );
+      const plan = this.#db
+        .query<PlannedModuleRow, [string, number]>(
+          `SELECT plan.* FROM task_flow_module_plan plan
+           LEFT JOIN task_flow_modules module ON module.invocation_id = plan.invocation_id
+             AND module.attempt = plan.attempt AND module.flow_id = plan.flow_id
+             AND module.module_id = plan.module_id
+           WHERE plan.invocation_id = ? AND plan.attempt = ? AND module.module_id IS NULL
+           ORDER BY plan.ordinal LIMIT 1`,
+        )
+        .get(input.invocationID, input.attempt);
+      if (!plan) return undefined;
+      const incompletePrior = this.#db
+        .query<{ count: number }, [string, number, number]>(
+          `SELECT COUNT(*) AS count FROM task_flow_module_plan plan
+           LEFT JOIN task_flow_modules module ON module.invocation_id = plan.invocation_id
+             AND module.attempt = plan.attempt AND module.flow_id = plan.flow_id
+             AND module.module_id = plan.module_id
+           WHERE plan.invocation_id = ? AND plan.attempt = ? AND plan.ordinal < ?
+             AND (module.status IS NULL OR module.status != 'completed')`,
+        )
+        .get(input.invocationID, input.attempt, plan.ordinal);
+      if (incompletePrior?.count)
+        throw new Error(
+          "cannot activate the next module before prior modules complete",
+        );
+      const module = plannedModuleFromRow(plan);
+      this.insertActivatedModule(input.invocationID, input.attempt, module, at);
+      return module;
+    })();
   }
 
   activateModule(input: {
@@ -573,6 +673,23 @@ export class NataliaTaskStateStore {
       `);
       this.#db.exec("PRAGMA user_version = 2");
     }
+    if (version <= 2) {
+      this.#db.exec(`
+        CREATE TABLE task_flow_module_plan (
+          invocation_id TEXT NOT NULL REFERENCES task_invocations(invocation_id),
+          attempt INTEGER NOT NULL,
+          ordinal INTEGER NOT NULL,
+          flow_id TEXT NOT NULL,
+          module_id TEXT NOT NULL,
+          module_type TEXT NOT NULL,
+          condition_ids TEXT NOT NULL,
+          PRIMARY KEY(invocation_id, attempt, ordinal),
+          UNIQUE(invocation_id, attempt, flow_id, module_id),
+          FOREIGN KEY(invocation_id, attempt) REFERENCES task_attempts(invocation_id, attempt)
+        );
+      `);
+      this.#db.exec("PRAGMA user_version = 3");
+    }
   }
 
   private insertInvocation(invocation: NataliaTaskInvocation) {
@@ -633,6 +750,51 @@ export class NataliaTaskStateStore {
       throw new Error(
         `task attempt is not running: ${invocationID}/${attempt}`,
       );
+  }
+
+  private insertActivatedModule(
+    invocationID: string,
+    attempt: number,
+    module: NataliaPlannedFlowModule,
+    at: string,
+  ) {
+    this.#db
+      .query(
+        "INSERT INTO task_flow_modules VALUES (?, ?, ?, ?, 'activated', ?, ?)",
+      )
+      .run(
+        invocationID,
+        attempt,
+        module.flowID,
+        module.moduleID,
+        JSON.stringify(module.conditionIDs),
+        at,
+      );
+    this.appendModuleEvent({
+      invocationID,
+      attempt,
+      flowID: module.flowID,
+      moduleID: module.moduleID,
+      kind: "flow.module_activated",
+      at,
+      data: {
+        moduleType: module.moduleType,
+        ordinal: this.moduleOrdinal(invocationID, attempt, module),
+      },
+    });
+  }
+
+  private moduleOrdinal(
+    invocationID: string,
+    attempt: number,
+    module: NataliaPlannedFlowModule,
+  ) {
+    return this.#db
+      .query<
+        { ordinal: number },
+        [string, number, string, string]
+      >("SELECT ordinal FROM task_flow_module_plan WHERE invocation_id = ? AND attempt = ? AND flow_id = ? AND module_id = ?")
+      .get(invocationID, attempt, module.flowID, module.moduleID)?.ordinal;
   }
 
   private requireModule(input: {
@@ -723,6 +885,25 @@ type ModuleEventRow = {
   at: string;
   data: string;
 };
+
+type PlannedModuleRow = {
+  invocation_id: string;
+  attempt: number;
+  ordinal: number;
+  flow_id: string;
+  module_id: string;
+  module_type: string;
+  condition_ids: string;
+};
+
+function plannedModuleFromRow(row: PlannedModuleRow): NataliaPlannedFlowModule {
+  return {
+    flowID: row.flow_id,
+    moduleID: row.module_id,
+    moduleType: row.module_type as NataliaFlowModuleType,
+    conditionIDs: JSON.parse(row.condition_ids) as string[],
+  };
+}
 
 function moduleEventFromRow(row: ModuleEventRow): NataliaFlowModuleEvent {
   return {
