@@ -469,7 +469,10 @@ export class NataliaTaskStateStore {
   }) {
     const at = input.at ?? new Date().toISOString();
     this.#db.transaction(() => {
-      this.requireActiveModule(input);
+      this.requireRunningAttempt(input.invocationID, input.attempt);
+      const module = this.requireModule(input);
+      if (module.status !== "activated" && module.status !== "claimed")
+        throw new Error(`flow module cannot stall from ${module.status}`);
       this.#db
         .query(
           "UPDATE task_flow_modules SET status = 'stalled' WHERE invocation_id = ? AND attempt = ? AND flow_id = ? AND module_id = ?",

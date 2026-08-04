@@ -87,6 +87,94 @@ test("CLI task validate fails closed for a missing flow", async () => {
   );
 });
 
+test("CLI task run creates a task-scoped episode but never treats turn completion as success", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-task-run-"));
+  await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+  await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      permissionProfiles: {
+        unattended: { approval: "auto", description: "Task profile" },
+      },
+    }),
+  );
+  await writeFile(
+    join(root, ".natalia", "flows", "review.yaml"),
+    "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n",
+  );
+  await writeFile(
+    join(root, ".natalia", "tasks", "nightly.yaml"),
+    "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: /doctor\npermissionProfile: unattended\nflow:\n  flowID: flow_review\n",
+  );
+  const child = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "task",
+      "run",
+      "nightly.yaml",
+      "--workspace",
+      root,
+      "--json",
+    ],
+    { cwd: root, stdout: "pipe", stderr: "pipe" },
+  );
+  expect(child.exitCode).toBe(0);
+  const output = new TextDecoder()
+    .decode(child.stdout)
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  const invocation = output.find((event) => event.type === "task.invocation");
+  expect(invocation).toMatchObject({
+    taskID: "task_nightly",
+    status: "stalled",
+    waterlineAdvanced: false,
+  });
+  expect(output.some((event) => event.type === "session.created")).toBe(true);
+});
+
+test("CLI task run rejects non-auto profiles before creating execution state", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-task-approval-"));
+  await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+  await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      permissionProfiles: {
+        attended: { approval: "ask", description: "Attended" },
+      },
+    }),
+  );
+  await writeFile(
+    join(root, ".natalia", "flows", "review.yaml"),
+    "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n",
+  );
+  await writeFile(
+    join(root, ".natalia", "tasks", "attended.yaml"),
+    "kind: natalia-task\nversion: 1\ntaskID: task_attended\ndisplayName: Attended\nschedule: daily 01:00\nprompt: /doctor\npermissionProfile: attended\nflow:\n  flowID: flow_review\n",
+  );
+  const child = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "task",
+      "run",
+      "attended.yaml",
+      "--workspace",
+      root,
+    ],
+    { cwd: root, stdout: "pipe", stderr: "pipe" },
+  );
+  expect(child.exitCode).not.toBe(0);
+  expect(new TextDecoder().decode(child.stderr)).toContain(
+    "must use auto approval",
+  );
+});
+
 test("CLI session helpers list and delete local durable sessions", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-cli-sessions-"));
   const store = new JsonSessionStore(join(root, ".natalia", "sessions"));

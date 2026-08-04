@@ -1,7 +1,8 @@
 import { createRealRuntimeClient } from "@natalia/client";
 import type { EpisodeID, RuntimeEvent, SessionID } from "@natalia/contracts";
+import { resolveConfig } from "@natalia/config";
 import { userStateHome } from "@natalia/platform";
-import { NataliaDocumentStore } from "@natalia/workflow";
+import { NataliaDocumentStore, NataliaTaskStateStore } from "@natalia/workflow";
 import {
   createRuntimeDaemonStore,
   createRuntimeHttpServer,
@@ -201,14 +202,25 @@ switch (subcommand) {
   case "task": {
     const action = argv[1];
     const taskPath = argv[2];
-    if (action !== "validate" || !taskPath)
-      throw new Error("task validate requires a task path");
+    if (!taskPath || (action !== "validate" && action !== "run"))
+      throw new Error(
+        "task requires 'validate' or 'run' followed by a task path",
+      );
     const workspaceRoot = resolve(
       valueAfter(argv, "--workspace") ?? process.cwd(),
     );
     const store = new NataliaDocumentStore(workspaceRoot);
     const task = await store.loadTask(taskPath);
     const flow = await store.resolveTaskFlow(task);
+    if (action === "run") {
+      await runTaskOnce({
+        workspaceRoot,
+        task,
+        flow,
+        json: argv.includes("--json"),
+      });
+      break;
+    }
     const result = {
       taskID: task.taskID,
       displayName: task.displayName,
@@ -562,6 +574,110 @@ async function runOnce(
   if (failed) process.exitCode = 1;
 }
 
+async function runTaskOnce(input: {
+  workspaceRoot: string;
+  task: import("@natalia/contracts").NataliaTaskDocument;
+  flow: import("@natalia/contracts").NataliaFlowDocument;
+  json: boolean;
+}) {
+  const profile = (await resolveConfig({ workspaceRoot: input.workspaceRoot }))
+    .config.permissionProfiles[input.task.permissionProfile];
+  if (!profile)
+    throw new Error(
+      `task permission profile not found: ${input.task.permissionProfile}`,
+    );
+  if (profile.approval !== "auto")
+    throw new Error(
+      `task permission profile must use auto approval: ${input.task.permissionProfile}`,
+    );
+  const module = input.flow.modules.find((entry) => entry.enabled);
+  if (!module)
+    throw new Error(`task flow has no enabled modules: ${input.flow.flowID}`);
+  const state = await NataliaTaskStateStore.open(input.workspaceRoot);
+  const execution = newHeadlessExecution();
+  const invocationID = `inv_${crypto.randomUUID().replace(/-/gu, "")}`;
+  const started = state.startInvocation({
+    invocationID,
+    taskID: input.task.taskID,
+    episodeID: execution.episodeID,
+    sessionID: execution.sessionID,
+  });
+  if (!started.started) {
+    console.log(
+      JSON.stringify({
+        invocationID,
+        taskID: input.task.taskID,
+        status: "skipped_due_to_overlap",
+        reason: started.invocation.skipReason,
+      }),
+    );
+    state.close();
+    return;
+  }
+  state.activateModule({
+    invocationID,
+    attempt: started.attempt.attempt,
+    flowID: input.flow.flowID,
+    moduleID: module.id,
+    conditionIDs: [
+      ...module.minimumConditions.map((condition) => condition.id),
+      ...module.idealConditions.map((condition) => condition.id),
+    ],
+  });
+  const client = createRealRuntimeClient({
+    ...execution,
+    workspaceRoot: input.workspaceRoot,
+    permissionProfile: input.task.permissionProfile,
+    taskModuleContext: {
+      store: state,
+      invocationID,
+      attempt: started.attempt.attempt,
+    },
+  });
+  let stopReason: Extract<
+    RuntimeEvent,
+    { type: "turn.finished" }
+  >["stopReason"] = "error";
+  try {
+    client.start((event) => {
+      if (event.type === "turn.finished") stopReason = event.stopReason;
+      if (input.json) console.log(JSON.stringify(event));
+      else {
+        const line = plainRuntimeEvent(event);
+        if (line) console.log(line);
+      }
+    });
+    await client.submit(input.task.prompt);
+    const terminalStatus = taskTurnTerminalStatus(stopReason);
+    if (terminalStatus === "stalled")
+      state.stallModule({
+        invocationID,
+        attempt: started.attempt.attempt,
+        flowID: input.flow.flowID,
+        moduleID: module.id,
+        reason:
+          "turn finished before the completion controller evaluated the active module",
+      });
+    state.completeAttempt({
+      invocationID,
+      attempt: started.attempt.attempt,
+      status: terminalStatus,
+      retry: false,
+      reason: `runtime turn finished: ${stopReason}`,
+    });
+    const result = state.getInvocation(invocationID)!;
+    console.log(
+      input.json
+        ? JSON.stringify({ type: "task.invocation", ...result })
+        : `task ${input.task.taskID}: ${result.status}`,
+    );
+    if (terminalStatus !== "stalled") process.exitCode = 1;
+  } finally {
+    await client.dispose?.();
+    state.close();
+  }
+}
+
 function newHeadlessExecution() {
   const episodeID =
     `epi_${crypto.randomUUID().replace(/-/gu, "")}` as EpisodeID;
@@ -571,6 +687,14 @@ function newHeadlessExecution() {
     title: `Natalia unattended episode ${episodeID}`,
     useSqliteStore: true,
   };
+}
+
+function taskTurnTerminalStatus(
+  stopReason: Extract<RuntimeEvent, { type: "turn.finished" }>["stopReason"],
+): "failed" | "cancelled" | "stalled" {
+  if (stopReason === "cancelled") return "cancelled";
+  if (stopReason === "error") return "failed";
+  return "stalled";
 }
 
 function plainRuntimeEvent(event: RuntimeEvent) {
