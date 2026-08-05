@@ -5887,8 +5887,8 @@ test("report_issue is denied outside the report module bundle", async () => {
   store.close();
 });
 
-test("read_log_source is a task module capability the runtime owns", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-log-source-tool-"));
+test("read_data_source is a task module capability the runtime owns", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-data-source-tool-"));
   const store = await NataliaTaskStateStore.open(root);
   store.startInvocation({
     invocationID: "inv_1",
@@ -5908,7 +5908,7 @@ test("read_log_source is a task module capability the runtime owns", async () =>
   let toolResult = "";
   const client = createRealRuntimeClient({
     workspaceRoot: root,
-    sessionID: "ses_log_source" as SessionID,
+    sessionID: "ses_data_source" as SessionID,
     taskModuleContext: {
       store,
       invocationID: "inv_1",
@@ -5916,7 +5916,7 @@ test("read_log_source is a task module capability the runtime owns", async () =>
       flowID: "flow_1",
       moduleID: "read",
       moduleType: "read_search",
-      async readLogSource(request) {
+      async readDataSource(request) {
         requests.push(request);
         return { source: "app", from: 0, to: 12, content: "error line\n" };
       },
@@ -5939,7 +5939,7 @@ test("read_log_source is a task module capability the runtime owns", async () =>
           calls: [
             {
               id: "log_1",
-              name: "read_log_source",
+              name: "read_data_source",
               arguments: JSON.stringify({ maxBytes: 256 }),
             },
           ],
@@ -5949,7 +5949,7 @@ test("read_log_source is a task module capability the runtime owns", async () =>
   });
   client.start(() => undefined);
   await client.submit("scan the log");
-  expect(seenTools[0]).toContain("read_log_source");
+  expect(seenTools[0]).toContain("read_data_source");
   // The model asks for new content, never for a byte offset.
   expect(requests).toEqual([{ maxBytes: 256 }]);
   expect(JSON.parse(toolResult)).toMatchObject({ from: 0, to: 12 });
@@ -5957,8 +5957,8 @@ test("read_log_source is a task module capability the runtime owns", async () =>
   store.close();
 });
 
-test("read_log_source stays out of runtimes without a configured source", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-log-source-absent-"));
+test("read_data_source stays out of runtimes without a configured source", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-data-source-absent-"));
   const store = await NataliaTaskStateStore.open(root);
   store.startInvocation({
     invocationID: "inv_1",
@@ -5996,7 +5996,7 @@ test("read_log_source stays out of runtimes without a configured source", async 
   });
   taskClient.start(() => undefined);
   await taskClient.submit("begin");
-  expect(seenTools[0]).not.toContain("read_log_source");
+  expect(seenTools[0]).not.toContain("read_data_source");
   await taskClient.dispose?.();
 
   const ordinaryClient = createRealRuntimeClient({
@@ -6013,7 +6013,7 @@ test("read_log_source stays out of runtimes without a configured source", async 
   });
   ordinaryClient.start(() => undefined);
   await ordinaryClient.submit("begin");
-  expect(seenTools[1]).not.toContain("read_log_source");
+  expect(seenTools[1]).not.toContain("read_data_source");
   await ordinaryClient.dispose?.();
   store.close();
 });

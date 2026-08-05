@@ -13,7 +13,7 @@ const MODULE_TOOL_ALLOWLISTS: Record<NataliaFlowModuleType, string[]> = {
     "glob",
     "grep",
     "read_media_file",
-    "read_log_source",
+    "read_data_source",
   ],
   terminal: ["interactive_terminal_*", "terminal_observe"],
   shell_command: ["run_shell"],

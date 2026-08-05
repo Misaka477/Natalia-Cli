@@ -1,6 +1,10 @@
 import { expect, test } from "bun:test";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { modelSelectionStatus, evaluatePolicy } from "../src/policy";
 import { configV2Schema } from "@natalia/contracts";
+import { resolveConfig } from "../src/service";
 
 test("provider policy defaults to the caller fallback", () => {
   expect(evaluatePolicy([], "provider.use", "anthropic", "allow")).toBe(
@@ -66,4 +70,34 @@ test("provider policy applies the last matching wildcard rule", () => {
     evaluatePolicy(rules, "provider.use", "company-experimental-fast", "allow"),
   ).toBe("deny");
   expect(evaluatePolicy(rules, "provider.use", "openai", "allow")).toBe("deny");
+});
+
+test("a rejected configuration file reports why, not just that it failed", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-config-invalid-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      permissionProfiles: {
+        unattended: {
+          approval: "auto",
+          permissions: { files: { writePaths: ["docs/**"] } },
+        },
+      },
+    }),
+  );
+  const resolved = await resolveConfig({
+    workspaceRoot: root,
+    globalPath: join(root, "absent-global.json"),
+  });
+  const project = resolved.sources.find(
+    (source) => source.scope === "project",
+  )!;
+  expect(project.applied).toBe(false);
+  // The operator has to be able to find the offending field: an ignored file
+  // silently drops the profiles and command rules they thought were in effect.
+  expect(project.diagnostic).toContain("invalid_config:");
+  expect(project.diagnostic).toContain("writePaths");
+  expect(resolved.config.permissionProfiles.unattended).toBeUndefined();
 });

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readLogSourceSince, type NataliaLogSource } from "../src";
+import { readDataSourceSince, type NataliaDataSource } from "../src";
 
 async function logFile(prefix: string, content: string) {
   const root = await mkdtemp(join(tmpdir(), prefix));
@@ -11,7 +11,7 @@ async function logFile(prefix: string, content: string) {
   return { root, path };
 }
 
-function source(path: string, overrides: Partial<NataliaLogSource> = {}) {
+function source(path: string, overrides: Partial<NataliaDataSource> = {}) {
   return {
     name: "app",
     path,
@@ -23,7 +23,7 @@ function source(path: string, overrides: Partial<NataliaLogSource> = {}) {
 
 test("a first read consumes the whole log and reports the next position", async () => {
   const { path } = await logFile("natalia-log-first-", "line one\nline two\n");
-  const read = await readLogSourceSince({ source: source(path) });
+  const read = await readDataSourceSince({ source: source(path) });
   expect(read).toMatchObject({
     source: "app",
     from: 0,
@@ -37,9 +37,9 @@ test("a first read consumes the whole log and reports the next position", async 
 
 test("a later read only returns what was appended since the watermark", async () => {
   const { path } = await logFile("natalia-log-append-", "line one\n");
-  const first = await readLogSourceSince({ source: source(path) });
+  const first = await readDataSourceSince({ source: source(path) });
   await writeFile(path, "line one\nline two\n");
-  const second = await readLogSourceSince({
+  const second = await readDataSourceSince({
     source: source(path),
     position: String(first.to),
   });
@@ -53,8 +53,8 @@ test("a later read only returns what was appended since the watermark", async ()
 
 test("nothing new returns an empty read that keeps the position", async () => {
   const { path } = await logFile("natalia-log-idle-", "only line\n");
-  const first = await readLogSourceSince({ source: source(path) });
-  const second = await readLogSourceSince({
+  const first = await readDataSourceSince({ source: source(path) });
+  const second = await readDataSourceSince({
     source: source(path),
     position: String(first.to),
   });
@@ -68,7 +68,7 @@ test("nothing new returns an empty read that keeps the position", async () => {
 
 test("a bounded read reports how much is still waiting", async () => {
   const { path } = await logFile("natalia-log-bounded-", "abcdefghij");
-  const read = await readLogSourceSince({
+  const read = await readDataSourceSince({
     source: source(path, { maxBytes: 4 }),
   });
   expect(read).toMatchObject({
@@ -78,7 +78,7 @@ test("a bounded read reports how much is still waiting", async () => {
     remaining: 6,
   });
   // A caller cannot ask for more than the configured bound.
-  const capped = await readLogSourceSince({
+  const capped = await readDataSourceSince({
     source: source(path, { maxBytes: 4 }),
     maxBytes: 1000,
   });
@@ -87,11 +87,11 @@ test("a bounded read reports how much is still waiting", async () => {
 
 test("a rotated log restarts from the beginning instead of skipping content", async () => {
   const { path } = await logFile("natalia-log-rotate-", "long original line\n");
-  const first = await readLogSourceSince({ source: source(path) });
+  const first = await readDataSourceSince({ source: source(path) });
   expect(first.to).toBe(19);
   // The file was rotated and the new one is shorter than the old position.
   await writeFile(path, "fresh\n");
-  const second = await readLogSourceSince({
+  const second = await readDataSourceSince({
     source: source(path),
     position: String(first.to),
   });
@@ -105,7 +105,7 @@ test("a rotated log restarts from the beginning instead of skipping content", as
 
 test("a relative log path resolves inside the workspace", async () => {
   const { root } = await logFile("natalia-log-relative-", "workspace line\n");
-  const read = await readLogSourceSince({
+  const read = await readDataSourceSince({
     source: source("app.log"),
     workspaceRoot: root,
   });
@@ -115,12 +115,12 @@ test("a relative log path resolves inside the workspace", async () => {
 test("unsupported watermark kinds and positions fail closed", async () => {
   const { path } = await logFile("natalia-log-invalid-", "x\n");
   await expect(
-    readLogSourceSince({ source: source(path, { kind: "timestamp" }) }),
+    readDataSourceSince({ source: source(path, { kind: "timestamp" }) }),
   ).rejects.toThrow("unsupported watermark kind");
   await expect(
-    readLogSourceSince({ source: source(path), position: "2026-08-05" }),
+    readDataSourceSince({ source: source(path), position: "2026-08-05" }),
   ).rejects.toThrow("non-offset watermark position");
   await expect(
-    readLogSourceSince({ source: source(join(path, "missing")) }),
+    readDataSourceSince({ source: source(join(path, "missing")) }),
   ).rejects.toThrow();
 });

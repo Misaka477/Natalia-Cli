@@ -1,17 +1,17 @@
 import { open, stat } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 
-export type NataliaLogSourceKind = "offset" | "timestamp";
+export type NataliaDataSourceKind = "offset" | "timestamp";
 
-export type NataliaLogSource = {
+export type NataliaDataSource = {
   /** Configuration key, also the watermark source name. */
   name: string;
   path: string;
-  kind: NataliaLogSourceKind;
+  kind: NataliaDataSourceKind;
   maxBytes: number;
 };
 
-export type NataliaLogSourceRead = {
+export type NataliaDataSourceRead = {
   source: string;
   /** Byte offset the read started from. */
   from: number;
@@ -26,31 +26,33 @@ export type NataliaLogSourceRead = {
 };
 
 /**
- * Reads the part of a log that this execution has not consumed yet.
+ * Reads the part of an append-only source that this execution has not consumed
+ * yet. The source is any growing text file the operator points at: an
+ * application log, an exported report, an audit trail, a build record.
  *
  * The position is owned by the runtime, not by the model: the caller passes the
  * committed watermark and receives the next position to stage. That keeps the
- * one genuinely deterministic step of an unattended log scan away from the least
+ * one genuinely deterministic step of an incremental task away from the least
  * deterministic component.
  */
-export async function readLogSourceSince(input: {
-  source: NataliaLogSource;
+export async function readDataSourceSince(input: {
+  source: NataliaDataSource;
   /** Committed watermark position, as stored in the unattended state. */
   position?: string;
   maxBytes?: number;
   workspaceRoot?: string;
-}): Promise<NataliaLogSourceRead> {
+}): Promise<NataliaDataSourceRead> {
   const { source } = input;
   if (source.kind !== "offset")
     throw new Error(
-      `log source ${source.name} uses the unsupported watermark kind ${source.kind}`,
+      `data source ${source.name} uses the unsupported watermark kind ${source.kind}`,
     );
   const path = isAbsolute(source.path)
     ? source.path
     : resolve(input.workspaceRoot ?? process.cwd(), source.path);
   const previous = parsePosition(input.position, source.name);
   const size = (await stat(path)).size;
-  // A shrunk file means the log was rotated or truncated, so the old offset
+  // A shrunk file means the source was rotated or truncated, so the old offset
   // points at content that no longer exists. Restarting from the beginning
   // reprocesses data, which is the safe direction; skipping ahead would lose it.
   const rotated = previous > size;
@@ -88,7 +90,7 @@ function parsePosition(position: string | undefined, source: string) {
   if (position === undefined) return 0;
   if (!/^\d+$/u.test(position))
     throw new Error(
-      `log source ${source} has a non-offset watermark position: ${position}`,
+      `data source ${source} has a non-offset watermark position: ${position}`,
     );
   return Number.parseInt(position, 10);
 }

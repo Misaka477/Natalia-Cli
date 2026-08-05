@@ -182,11 +182,13 @@ test("layered config isolates an invalid source and retains valid sources", asyn
     );
     const resolved = await resolveConfig({ workspaceRoot: root, globalPath });
     expect(resolved.config.context.compactionThresholdPercent).toBe(91);
+    // The rejected source names the reason, so the operator can find the
+    // offending file content instead of only learning that something failed.
     expect(resolved.sources).toContainEqual({
       scope: "global",
       path: globalPath,
       applied: false,
-      diagnostic: "invalid_config: SyntaxError",
+      diagnostic: expect.stringContaining("invalid_config: JSON Parse error"),
     });
   } finally {
     await rm(root, { recursive: true, force: true });

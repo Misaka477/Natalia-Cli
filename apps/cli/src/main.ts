@@ -18,7 +18,7 @@ import {
   deliverPendingTaskAlerts,
   evaluateAndRecordModule,
   findingFingerprint,
-  readLogSourceSince,
+  readDataSourceSince,
   NataliaDocumentStore,
   NataliaTaskAlertQueue,
   NataliaTaskStateStore,
@@ -263,7 +263,7 @@ switch (subcommand) {
     }
     const references = assertTaskReferences({
       task,
-      config: (await resolveConfig({ workspaceRoot })).config,
+      config: assertConfigApplied(await resolveConfig({ workspaceRoot })),
     });
     const result = {
       taskID: task.taskID,
@@ -625,8 +625,9 @@ async function runTaskOnce(input: {
   flow: NataliaFlowDocument;
   json: boolean;
 }) {
-  const config = (await resolveConfig({ workspaceRoot: input.workspaceRoot }))
-    .config;
+  const config = assertConfigApplied(
+    await resolveConfig({ workspaceRoot: input.workspaceRoot }),
+  );
   const profile = config.permissionProfiles[input.task.permissionProfile];
   if (!profile)
     throw new Error(
@@ -686,7 +687,7 @@ async function runTaskOnce(input: {
     task: input.task,
     config,
   });
-  const readLogSource = taskLogSourceReader({
+  const readDataSource = taskDataSourceReader({
     workspaceRoot: input.workspaceRoot,
     task: input.task,
     config,
@@ -740,7 +741,7 @@ async function runTaskOnce(input: {
           execution: moduleExecution,
           module,
           reportIssue,
-          readLogSource,
+          readDataSource,
           json: input.json,
         });
         if (lastOutcome.outcome !== "complete") break;
@@ -818,6 +819,29 @@ async function runTaskOnce(input: {
 }
 
 /**
+ * An unattended task must never run under a configuration the operator believes
+ * is active but the runtime silently ignored: a rejected file drops permission
+ * profiles, command rules and channel credentials with it.
+ */
+function assertConfigApplied(
+  resolved: Awaited<ReturnType<typeof resolveConfig>>,
+) {
+  const rejected = resolved.sources.filter(
+    (source) =>
+      !source.applied && source.diagnostic?.startsWith("invalid_config"),
+  );
+  if (rejected.length)
+    throw new Error(
+      `configuration was rejected and is not in effect: ${rejected
+        .map(
+          (source) => `${source.path ?? source.scope} (${source.diagnostic})`,
+        )
+        .join(", ")}`,
+    );
+  return resolved.config;
+}
+
+/**
  * Definition preflight for everything the task points at outside its own
  * document. A dangling or disabled reference fails closed here, because the
  * runtime would otherwise only discover it in the middle of an unattended run.
@@ -842,11 +866,11 @@ function assertTaskReferences(input: {
         entry: input.config.issueTargets[input.task.issueTarget],
       })
     : undefined;
-  const logSource = input.task.logSource
+  const dataSource = input.task.dataSource
     ? requireEnabledReference({
-        kind: "log source",
-        key: input.task.logSource,
-        entry: input.config.logSources[input.task.logSource],
+        kind: "data source",
+        key: input.task.dataSource,
+        entry: input.config.dataSources[input.task.dataSource],
       })
     : undefined;
   const alertChannels = input.task.alerts.map((channel) =>
@@ -866,7 +890,7 @@ function assertTaskReferences(input: {
       approval: profile.approval,
     },
     ...(issueTarget ? { issueTarget } : {}),
-    ...(logSource ? { logSource } : {}),
+    ...(dataSource ? { dataSource } : {}),
     ...(alertChannels.length ? { alertChannels } : {}),
     ...(input.task.evaluator ? { evaluator: input.task.evaluator } : {}),
   };
@@ -914,7 +938,7 @@ async function taskStatusReport(input: {
       retry: input.task.retry,
       alertChannels: input.task.alerts,
       issueTarget: input.task.issueTarget,
-      logSource: input.task.logSource,
+      dataSource: input.task.dataSource,
       waterline: state.getWaterline(input.task.taskID),
       invocations: invocations.map((invocation) => ({
         ...invocation,
@@ -1167,24 +1191,25 @@ function taskIssueReporter(input: {
 }
 
 /**
- * Binds the configured log source on the controller side. The reader stages the
- * next position for this invocation only; it becomes the durable watermark when
- * the whole task succeeds, so a failed run reprocesses the same lines.
+ * Binds the configured append-only source on the controller side. The reader
+ * stages the next position for this invocation only; it becomes the durable
+ * watermark when the whole task succeeds, so a failed run reprocesses the same
+ * content instead of skipping it.
  */
-function taskLogSourceReader(input: {
+function taskDataSourceReader(input: {
   workspaceRoot: string;
   task: NataliaTaskDocument;
   config: Awaited<ReturnType<typeof resolveConfig>>["config"];
   invocationID: string;
 }) {
-  if (!input.task.logSource) return undefined;
-  const configured = input.config.logSources[input.task.logSource];
+  if (!input.task.dataSource) return undefined;
+  const configured = input.config.dataSources[input.task.dataSource];
   if (!configured)
-    throw new Error(`task log source not found: ${input.task.logSource}`);
+    throw new Error(`task data source not found: ${input.task.dataSource}`);
   if (!configured.enabled)
-    throw new Error(`task log source is disabled: ${input.task.logSource}`);
+    throw new Error(`task data source is disabled: ${input.task.dataSource}`);
   const source = {
-    name: input.task.logSource,
+    name: input.task.dataSource,
     path: configured.path,
     kind: configured.kind,
     maxBytes: configured.maxBytes,
@@ -1194,7 +1219,7 @@ function taskLogSourceReader(input: {
       input.workspaceRoot,
       input.task.taskID,
     );
-    const read = await readLogSourceSince({
+    const read = await readDataSourceSince({
       source,
       position: state.watermark(source.name)?.position,
       maxBytes: request.maxBytes,
@@ -1241,9 +1266,9 @@ async function runTaskModule(input: {
   reportIssue?: NonNullable<
     RealRuntimeClientOptions["taskModuleContext"]
   >["reportIssue"];
-  readLogSource?: NonNullable<
+  readDataSource?: NonNullable<
     RealRuntimeClientOptions["taskModuleContext"]
-  >["readLogSource"];
+  >["readDataSource"];
   json: boolean;
 }): Promise<TaskModuleRunOutcome> {
   const taskModuleContext: NonNullable<
@@ -1265,7 +1290,7 @@ async function runTaskModule(input: {
       (entry) => entry.id === input.module.moduleID,
     )?.interactivePrograms,
     reportIssue: input.reportIssue,
-    readLogSource: input.readLogSource,
+    readDataSource: input.readDataSource,
   };
   const client = createRealRuntimeClient({
     ...input.execution,

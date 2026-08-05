@@ -1,0 +1,41 @@
+kind: natalia-flow
+version: 1
+flowID: flow_release_notes
+displayName: Draft the release notes
+modules:
+  - id: collect
+    type: shell_command
+    displayName: Collect the commit range
+    instructions: >-
+      Use the allowed git command to list the commits since the previous tag.
+      Nothing else in this stage: no builds, no network, no writes.
+    commandRules:
+      mode: whitelist
+      rules:
+        - command: git log
+          reason: Reads the commit range being described
+    minimumConditions:
+      - id: collected
+        text: The commits since the previous tag were listed.
+  - id: study
+    type: read_search
+    displayName: Read what actually changed
+    instructions: >-
+      For the commits that are user visible, read the code they touch so the
+      notes describe behaviour rather than commit subjects. Skip commits that
+      only move code or adjust formatting.
+    minimumConditions:
+      - id: studied
+        text: >-
+          Every user-visible change is backed by the file it was read from, and
+          the changes deliberately left out were named.
+  - id: write
+    type: workspace_changes
+    displayName: Write the notes
+    instructions: >-
+      Write the notes to docs/release-notes/, one section per user-visible
+      change, describing the behaviour before and after. Do not touch any other
+      path: the permission profile only allows writes under docs/.
+    minimumConditions:
+      - id: written
+        text: A notes file was written under docs/release-notes/ and read back.

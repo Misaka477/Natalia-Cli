@@ -69,14 +69,51 @@
           }
         ]
       }
-    }
-  },
-  "logSources": {
-    "app_log": {
-      "path": "/var/log/app/app.log",
-      "kind": "offset",
-      "maxBytes": 262144,
-      "enabled": true
+    },
+    "unattended_author": {
+      "approval": "auto",
+      "description": "Drafts a document in the workspace: read the repository, run the release helper, write under docs/",
+      "permissions": {
+        "tools": {
+          "allow": [
+            "read_file",
+            "glob",
+            "grep",
+            "run_shell",
+            "write_file",
+            "edit_file",
+            "flow_module_complete"
+          ]
+        },
+        "files": {
+          "writePaths": [
+            {
+              "pattern": "docs/release-notes/**",
+              "allow": true,
+              "reason": "The drafted notes"
+            },
+            {
+              "pattern": "**",
+              "allow": false,
+              "reason": "Nothing else in the workspace is writable"
+            }
+          ]
+        }
+      },
+      "extensions": {
+        "skills": false,
+        "mcp": false,
+        "plugins": false
+      },
+      "commandRules": {
+        "mode": "whitelist",
+        "rules": [
+          {
+            "command": "git log",
+            "reason": "Reads the commit range being described"
+          }
+        ]
+      }
     }
   },
   "issueTargets": {
@@ -101,6 +138,14 @@
       "token": "",
       "timeoutMs": 10000,
       "enabled": false
+    }
+  },
+  "dataSources": {
+    "app_log": {
+      "path": "/var/log/app/app.log",
+      "kind": "offset",
+      "maxBytes": 262144,
+      "enabled": true
     }
   }
 }

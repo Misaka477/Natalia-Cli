@@ -256,8 +256,11 @@ export const nataliaTaskDocumentSchema = z.object({
   alerts: z.array(z.string()).default([]),
   /** Configuration key of the issue target used to reconcile findings. */
   issueTarget: z.string().min(1).optional(),
-  /** Configuration key of the log source this task consumes incrementally. */
-  logSource: z.string().min(1).optional(),
+  /**
+   * Optional configuration key of an append-only source this task consumes
+   * incrementally. A task that has nothing to resume from omits it.
+   */
+  dataSource: z.string().min(1).optional(),
   evaluator: z
     .object({ provider: z.string().min(1), model: z.string().min(1) })
     .optional(),
@@ -589,11 +592,12 @@ export const issueTargetConfigSchema = z.object({
 });
 
 /**
- * External data source an unattended task consumes incrementally. The path is
+ * Append-only source a task consumes incrementally: an application log, an
+ * exported report, an audit trail, or anything else that only grows. The path is
  * deployment specific, so it lives in configuration rather than in the
  * version-controlled task document, and the model never chooses it.
  */
-export const logSourceConfigSchema = z.object({
+export const dataSourceConfigSchema = z.object({
   path: z.string().min(1),
   kind: z.enum(["offset", "timestamp"]).default("offset"),
   maxBytes: z.number().int().positive().default(65536),
@@ -647,7 +651,7 @@ export const configV2Schema = z.object({
   network: networkConfigSchema.default({}),
   security: securityConfigSchema.default({}),
   issueTargets: z.record(issueTargetConfigSchema).default({}),
-  logSources: z.record(logSourceConfigSchema).default({}),
+  dataSources: z.record(dataSourceConfigSchema).default({}),
   alertChannels: z.record(alertChannelConfigSchema).default({}),
   experimental: experimentalConfigSchema.default({}),
 });
@@ -657,7 +661,7 @@ export type ModelConfig = z.infer<typeof modelConfigSchema>;
 export type ProviderConfig = z.infer<typeof providerConfigSchema>;
 export type PermissionProfile = z.infer<typeof permissionProfileSchema>;
 export type IssueTargetConfig = z.infer<typeof issueTargetConfigSchema>;
-export type LogSourceConfig = z.infer<typeof logSourceConfigSchema>;
+export type DataSourceConfig = z.infer<typeof dataSourceConfigSchema>;
 export type AlertChannelConfig = z.infer<typeof alertChannelConfigSchema>;
 export type InteractiveProgramRules = z.infer<
   typeof interactiveProgramRulesSchema

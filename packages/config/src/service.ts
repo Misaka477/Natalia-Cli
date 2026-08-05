@@ -129,6 +129,18 @@ export function defaultGlobalConfigPath(
   return resolve(globalConfigHome(input), "natalia-cli", "config.json");
 }
 
+function configFailureReason(error: unknown): string {
+  const issues = (
+    error as { issues?: Array<{ path?: unknown[]; message?: string }> }
+  ).issues;
+  if (Array.isArray(issues) && issues.length) {
+    const first = issues[0]!;
+    const path = (first.path ?? []).join(".");
+    return `${path ? `${path}: ` : ""}${first.message ?? "invalid value"}${issues.length > 1 ? ` (+${issues.length - 1} more)` : ""}`;
+  }
+  return error instanceof Error ? error.message : "parse_error";
+}
+
 export async function resolveConfig(input: {
   workspaceRoot: string;
   globalPath?: string;
@@ -152,11 +164,14 @@ export async function resolveConfig(input: {
       config = mergeConfig(config, raw as Partial<ConfigV2>);
       sources.push({ scope, path, applied: true });
     } catch (error) {
+      // The reason has to travel with the source: an ignored configuration file
+      // silently drops whatever the operator believed was in effect, including
+      // permission profiles and command rules.
       sources.push({
         scope,
         path,
         applied: false,
-        diagnostic: `invalid_config: ${error instanceof Error ? error.name : "parse_error"}`,
+        diagnostic: `invalid_config: ${configFailureReason(error)}`,
       });
     }
   }

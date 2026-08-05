@@ -2333,7 +2333,7 @@ test("CLI task run consumes only new log content and never skips it after a fail
                       index: 0,
                       id: "log_1",
                       function: {
-                        name: "read_log_source",
+                        name: "read_data_source",
                         arguments: "{}",
                       },
                     },
@@ -2442,7 +2442,7 @@ test("CLI task run consumes only new log content and never skips it after a fail
         permissionProfiles: {
           unattended: { approval: "auto", description: "Task profile" },
         },
-        logSources: {
+        dataSources: {
           app: { path: "app.log", kind: "offset", maxBytes: 4096 },
         },
       }),
@@ -2453,7 +2453,7 @@ test("CLI task run consumes only new log content and never skips it after a fail
     );
     await writeFile(
       join(root, ".natalia", "tasks", "nightly.yaml"),
-      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Scan the log.\npermissionProfile: unattended\nlogSource: app\nflow:\n  flowID: flow_scan\nevaluator:\n  provider: local\n  model: evaluator\n",
+      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Scan the log.\npermissionProfile: unattended\ndataSource: app\nflow:\n  flowID: flow_scan\nevaluator:\n  provider: local\n  model: evaluator\n",
     );
     const runTask = async () => {
       const child = Bun.spawn(
@@ -2541,7 +2541,7 @@ test("the shipped unattended examples validate against their example config", as
   const root = await mkdtemp(join(tmpdir(), "natalia-cli-examples-"));
   await mkdir(join(root, ".natalia", "flows"), { recursive: true });
   await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
-  // The example config declares the profiles, the log source and the issue
+  // The example config declares the profiles, the data source and the issue
   // target the example tasks reference. The evaluator model is deployment
   // specific, so it is added here the way an operator would.
   const config = JSON.parse(
@@ -2586,7 +2586,11 @@ test("the shipped unattended examples validate against their example config", as
       defaultModel: "evaluator",
     }),
   );
-  for (const flow of ["log-triage.yaml", "code-quality.yaml"])
+  for (const flow of [
+    "log-triage.yaml",
+    "code-quality.yaml",
+    "release-notes.yaml",
+  ])
     await writeFile(
       join(root, ".natalia", "flows", flow),
       await readFile(join(examples, "flows", flow), "utf8"),
@@ -2600,7 +2604,7 @@ test("the shipped unattended examples validate against their example config", as
       references: {
         permissionProfile: { key: "unattended_read", approval: "auto" },
         issueTarget: { key: "project_issues" },
-        logSource: { key: "app_log" },
+        dataSource: { key: "app_log" },
         alertChannels: [{ key: "journal" }],
       },
     },
@@ -2612,6 +2616,18 @@ test("the shipped unattended examples validate against their example config", as
       references: {
         permissionProfile: { key: "unattended_review", approval: "auto" },
         issueTarget: { key: "project_issues" },
+        alertChannels: [{ key: "journal" }],
+      },
+    },
+    {
+      // A task that resumes nothing and reports nothing externally: both
+      // references are optional, and the job is a write rather than a scan.
+      file: "release-notes.yaml",
+      taskID: "task_release_notes",
+      flowID: "flow_release_notes",
+      modules: 3,
+      references: {
+        permissionProfile: { key: "unattended_author", approval: "auto" },
         alertChannels: [{ key: "journal" }],
       },
     },
@@ -2715,10 +2731,10 @@ test("task validate fails closed on a dangling configuration reference", async (
   );
   await writeFile(
     join(root, ".natalia", "tasks", "missing-source.yaml"),
-    task("permissionProfile: unattended\nlogSource: absent\n"),
+    task("permissionProfile: unattended\ndataSource: absent\n"),
   );
   expect(validate("missing-source.yaml").stderr).toContain(
-    "log source not found",
+    "data source not found",
   );
   await writeFile(
     join(root, ".natalia", "tasks", "disabled-target.yaml"),
@@ -2903,4 +2919,60 @@ test("CLI task run delivers the terminal alert to a configured webhook", async (
   } finally {
     hook.stop(true);
   }
+});
+
+test("a task refuses to run under a configuration that was silently ignored", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-bad-config-"));
+  await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+  await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+  // The profile itself is fine, but one field elsewhere is malformed, so the
+  // whole file is rejected and the command rules the operator wrote would
+  // silently not apply.
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      permissionProfiles: {
+        unattended: {
+          approval: "auto",
+          description: "Task profile",
+          commandRules: {
+            mode: "whitelist",
+            rules: [{ commands: "git diff" }],
+          },
+        },
+      },
+    }),
+  );
+  await writeFile(
+    join(root, ".natalia", "flows", "review.yaml"),
+    "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n",
+  );
+  await writeFile(
+    join(root, ".natalia", "tasks", "nightly.yaml"),
+    "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: /doctor\npermissionProfile: unattended\nflow:\n  flowID: flow_review\n",
+  );
+  for (const action of ["validate", "run"]) {
+    const child = Bun.spawnSync(
+      [
+        process.execPath,
+        join(import.meta.dir, "..", "src", "main.ts"),
+        "task",
+        action,
+        "nightly.yaml",
+        "--workspace",
+        root,
+      ],
+      { cwd: root, stdout: "pipe", stderr: "pipe" },
+    );
+    expect(child.exitCode).not.toBe(0);
+    const stderr = new TextDecoder().decode(child.stderr);
+    expect(stderr).toContain("configuration was rejected and is not in effect");
+    expect(stderr).toContain("commandRules");
+  }
+  // Nothing was executed, so no invocation exists.
+  const workflow = await import("@natalia/workflow");
+  const state = await workflow.NataliaTaskStateStore.open(root);
+  expect(state.invocations("task_nightly")).toEqual([]);
+  state.close();
 });

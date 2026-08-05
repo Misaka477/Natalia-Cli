@@ -115,11 +115,11 @@ export {
   type TaskAlertDeliveryOutcome,
 } from "./natalia-task-alert-delivery";
 export {
-  readLogSourceSince,
-  type NataliaLogSource,
-  type NataliaLogSourceKind,
-  type NataliaLogSourceRead,
-} from "./natalia-log-source";
+  readDataSourceSince,
+  type NataliaDataSource,
+  type NataliaDataSourceKind,
+  type NataliaDataSourceRead,
+} from "./natalia-data-source";
 export { evaluateCondition, interpolate } from "./eval";
 
 export class JsonlWorkflowStore {

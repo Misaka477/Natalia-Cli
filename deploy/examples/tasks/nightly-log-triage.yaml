@@ -12,7 +12,7 @@ permissionProfile: unattended_read
 retry: once
 alerts:
   - journal
-logSource: app_log
+dataSource: app_log
 issueTarget: project_issues
 flow:
   flowID: flow_log_triage

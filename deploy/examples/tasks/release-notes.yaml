@@ -1,0 +1,19 @@
+kind: natalia-task
+version: 1
+taskID: task_release_notes
+displayName: Draft the release notes
+schedule: weekly Fri 18:00
+prompt: >-
+  Draft the release notes for the changes made since the previous tag, based on
+  what the code actually does now.
+permissionProfile: unattended_author
+retry: none
+alerts:
+  - journal
+# This task has no data source and no issue target: it resumes nothing and
+# reports nothing externally. Both references are optional.
+flow:
+  flowID: flow_release_notes
+evaluator:
+  provider: local
+  model: evaluator

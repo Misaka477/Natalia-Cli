@@ -8,7 +8,7 @@ test("module tool policies expose stable capability bundles", () => {
     "glob",
     "grep",
     "read_media_file",
-    "read_log_source",
+    "read_data_source",
   ]);
   expect(moduleToolPolicy("terminal").allow).toContain(
     "interactive_terminal_*",
@@ -22,6 +22,6 @@ test("module tool policies expose stable capability bundles", () => {
   expect(moduleToolPolicy("terminal").allow).not.toContain("report_issue");
   // Incremental log reading is a read capability, not a reporting one.
   expect(moduleToolPolicy("report_output").allow).not.toContain(
-    "read_log_source",
+    "read_data_source",
   );
 });
