@@ -600,6 +600,19 @@ export const logSourceConfigSchema = z.object({
   enabled: z.boolean().default(true),
 });
 
+/**
+ * Where a task alert is delivered. The journal channel is the durable queue and
+ * the process output itself; a webhook is an external endpoint. Credentials stay
+ * here and never enter a task document, a prompt, a systemd unit or the queue.
+ */
+export const alertChannelConfigSchema = z.object({
+  kind: z.enum(["journal", "webhook"]),
+  url: z.string().default(""),
+  token: z.string().default(""),
+  timeoutMs: z.number().int().positive().default(10_000),
+  enabled: z.boolean().default(true),
+});
+
 export const configV2Schema = z.object({
   version: z.literal(2),
   runtime: runtimeConfigSchema.default({}),
@@ -635,6 +648,7 @@ export const configV2Schema = z.object({
   security: securityConfigSchema.default({}),
   issueTargets: z.record(issueTargetConfigSchema).default({}),
   logSources: z.record(logSourceConfigSchema).default({}),
+  alertChannels: z.record(alertChannelConfigSchema).default({}),
   experimental: experimentalConfigSchema.default({}),
 });
 
@@ -644,6 +658,7 @@ export type ProviderConfig = z.infer<typeof providerConfigSchema>;
 export type PermissionProfile = z.infer<typeof permissionProfileSchema>;
 export type IssueTargetConfig = z.infer<typeof issueTargetConfigSchema>;
 export type LogSourceConfig = z.infer<typeof logSourceConfigSchema>;
+export type AlertChannelConfig = z.infer<typeof alertChannelConfigSchema>;
 export type InteractiveProgramRules = z.infer<
   typeof interactiveProgramRulesSchema
 >;

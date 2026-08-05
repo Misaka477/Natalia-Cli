@@ -16,11 +16,22 @@
             "flow_module_complete"
           ]
         },
-        "files": { "writePaths": [] },
-        "network": { "allowedHosts": [] }
+        "files": {
+          "writePaths": []
+        },
+        "network": {
+          "allowedHosts": []
+        }
       },
-      "extensions": { "skills": false, "mcp": false, "plugins": false },
-      "commandRules": { "mode": "whitelist", "rules": [] }
+      "extensions": {
+        "skills": false,
+        "mcp": false,
+        "plugins": false
+      },
+      "commandRules": {
+        "mode": "whitelist",
+        "rules": []
+      }
     },
     "unattended_review": {
       "approval": "auto",
@@ -36,14 +47,26 @@
             "flow_module_complete"
           ]
         },
-        "files": { "writePaths": [] }
+        "files": {
+          "writePaths": []
+        }
       },
-      "extensions": { "skills": false, "mcp": false, "plugins": false },
+      "extensions": {
+        "skills": false,
+        "mcp": false,
+        "plugins": false
+      },
       "commandRules": {
         "mode": "whitelist",
         "rules": [
-          { "command": "npm run typecheck", "reason": "Repository gate" },
-          { "command": "npm run test", "reason": "Repository gate" }
+          {
+            "command": "npm run typecheck",
+            "reason": "Repository gate"
+          },
+          {
+            "command": "npm run test",
+            "reason": "Repository gate"
+          }
         ]
       }
     }
@@ -65,6 +88,19 @@
       "token": "",
       "label": "natalia",
       "enabled": true
+    }
+  },
+  "alertChannels": {
+    "journal": {
+      "kind": "journal",
+      "enabled": true
+    },
+    "ops_webhook": {
+      "kind": "webhook",
+      "url": "https://ops.example/natalia",
+      "token": "",
+      "timeoutMs": 10000,
+      "enabled": false
     }
   }
 }

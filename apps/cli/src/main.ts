@@ -15,6 +15,7 @@ import { agentsFromConfig } from "@natalia/agent";
 import { userStateHome } from "@natalia/platform";
 import {
   createIssueTarget,
+  deliverPendingTaskAlerts,
   evaluateAndRecordModule,
   findingFingerprint,
   readLogSourceSince,
@@ -801,6 +802,7 @@ async function runTaskOnce(input: {
         reason,
         json: input.json,
       });
+      await drainTaskAlerts({ alerts, config, json: input.json });
       await settleUnattendedState({
         workspaceRoot: input.workspaceRoot,
         invocation: result,
@@ -847,6 +849,13 @@ function assertTaskReferences(input: {
         entry: input.config.logSources[input.task.logSource],
       })
     : undefined;
+  const alertChannels = input.task.alerts.map((channel) =>
+    requireEnabledReference({
+      kind: "alert channel",
+      key: channel,
+      entry: input.config.alertChannels[channel],
+    }),
+  );
   if (input.task.evaluator && !input.config.models[input.task.evaluator.model])
     throw new Error(
       `task evaluator model not found in config: ${input.task.evaluator.model}`,
@@ -858,6 +867,7 @@ function assertTaskReferences(input: {
     },
     ...(issueTarget ? { issueTarget } : {}),
     ...(logSource ? { logSource } : {}),
+    ...(alertChannels.length ? { alertChannels } : {}),
     ...(input.task.evaluator ? { evaluator: input.task.evaluator } : {}),
   };
 }
@@ -959,6 +969,39 @@ function taskStatusLines(report: Awaited<ReturnType<typeof taskStatusReport>>) {
       `  ${invocation.startedAt} ${invocation.invocationID} ${invocation.status}${invocation.skipReason ? ` (${invocation.skipReason})` : ""} attempts=${invocation.attempts.length}`,
     );
   return lines;
+}
+
+/**
+ * Delivers what the queue owes. The task has already reached a durable terminal
+ * state, so a failing channel can only leave a visible pending or failed
+ * delivery behind: it never changes or reruns the task.
+ */
+async function drainTaskAlerts(input: {
+  alerts: NataliaTaskAlertQueue;
+  config: Awaited<ReturnType<typeof resolveConfig>>["config"];
+  json: boolean;
+}) {
+  try {
+    const outcomes = await deliverPendingTaskAlerts({
+      queue: input.alerts,
+      channels: input.config.alertChannels,
+    });
+    if (!outcomes.length) return;
+    for (const outcome of outcomes)
+      console.log(
+        input.json
+          ? JSON.stringify({ type: "task.alert_delivery", ...outcome })
+          : `alert ${outcome.channel}: ${outcome.result}${outcome.error ? ` (${outcome.error})` : ""}`,
+      );
+  } catch (error) {
+    console.log(
+      JSON.stringify({
+        type: "diagnostic",
+        level: "warning",
+        message: `task alert delivery failed: ${error instanceof Error ? error.message : String(error)}`,
+      }),
+    );
+  }
 }
 
 /**

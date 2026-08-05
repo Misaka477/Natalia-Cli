@@ -110,6 +110,10 @@ test("CLI task run creates a task-scoped episode but never treats turn completio
       permissionProfiles: {
         unattended: { approval: "auto", description: "Task profile" },
       },
+      alertChannels: {
+        journal: { kind: "journal" },
+        "webhook:ops": { kind: "journal" },
+      },
     }),
   );
   await writeFile(
@@ -169,8 +173,8 @@ test("CLI task run creates a task-scoped episode but never treats turn completio
       .deliveries(queued[0]!.alertID)
       .map((delivery) => [delivery.channel, delivery.state]),
   ).toEqual([
-    ["journal", "pending"],
-    ["webhook:ops", "pending"],
+    ["journal", "delivered"],
+    ["webhook:ops", "delivered"],
   ]);
   alerts.close();
   expect(output.find((event) => event.type === "task.state")).toMatchObject({
@@ -2597,6 +2601,7 @@ test("the shipped unattended examples validate against their example config", as
         permissionProfile: { key: "unattended_read", approval: "auto" },
         issueTarget: { key: "project_issues" },
         logSource: { key: "app_log" },
+        alertChannels: [{ key: "journal" }],
       },
     },
     {
@@ -2607,6 +2612,7 @@ test("the shipped unattended examples validate against their example config", as
       references: {
         permissionProfile: { key: "unattended_review", approval: "auto" },
         issueTarget: { key: "project_issues" },
+        alertChannels: [{ key: "journal" }],
       },
     },
   ];
@@ -2730,12 +2736,20 @@ test("task validate fails closed on a dangling configuration reference", async (
   expect(validate("missing-evaluator.yaml").stderr).toContain(
     "evaluator model not found",
   );
+  await writeFile(
+    join(root, ".natalia", "tasks", "missing-channel.yaml"),
+    task("permissionProfile: unattended\nalerts:\n  - absent\n"),
+  );
+  expect(validate("missing-channel.yaml").stderr).toContain(
+    "alert channel not found",
+  );
   for (const file of [
     "missing-profile.yaml",
     "interactive.yaml",
     "missing-source.yaml",
     "disabled-target.yaml",
     "missing-evaluator.yaml",
+    "missing-channel.yaml",
   ])
     expect(validate(file).exitCode).not.toBe(0);
 });
@@ -2770,5 +2784,123 @@ test("the shipped task units name only the task document", async () => {
     // run from reporting the same content twice.
     expect(timer).toContain("Persistent=true");
     expect(timer).toContain(`Unit=${unit}.service`);
+  }
+});
+
+test("CLI task run delivers the terminal alert to a configured webhook", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-alert-delivery-"));
+  await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+  await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+  const webhookToken = "ops-webhook-token-must-not-leak";
+  const received: Array<{ auth: string; body: Record<string, unknown> }> = [];
+  let respondWith = 204;
+  const hook = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      received.push({
+        auth: request.headers.get("authorization") ?? "",
+        body: (await request.json()) as Record<string, unknown>,
+      });
+      return new Response("", { status: respondWith });
+    },
+  });
+  try {
+    await writeFile(
+      join(root, ".natalia", "config.json"),
+      JSON.stringify({
+        version: 2,
+        permissionProfiles: {
+          unattended: { approval: "auto", description: "Task profile" },
+        },
+        alertChannels: {
+          journal: { kind: "journal" },
+          ops: { kind: "webhook", url: hook.url.href, token: webhookToken },
+        },
+      }),
+    );
+    await writeFile(
+      join(root, ".natalia", "flows", "review.yaml"),
+      "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n",
+    );
+    await writeFile(
+      join(root, ".natalia", "tasks", "nightly.yaml"),
+      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: /doctor\npermissionProfile: unattended\nalerts:\n  - journal\n  - ops\nflow:\n  flowID: flow_review\n",
+    );
+    const runTask = async () => {
+      const child = Bun.spawn(
+        [
+          process.execPath,
+          join(import.meta.dir, "..", "src", "main.ts"),
+          "task",
+          "run",
+          "nightly.yaml",
+          "--workspace",
+          root,
+          "--json",
+        ],
+        { cwd: root, stdout: "pipe", stderr: "pipe" },
+      );
+      const stdout = await new Response(child.stdout).text();
+      await child.exited;
+      return {
+        child,
+        stdout,
+        events: stdout
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line) as Record<string, unknown>),
+      };
+    };
+    const first = await runTask();
+    expect(first.child.exitCode).toBe(0);
+    expect(received).toHaveLength(1);
+    expect(received[0]!.auth).toBe(`Bearer ${webhookToken}`);
+    expect(received[0]!.body).toMatchObject({
+      taskID: "task_nightly",
+      eventKind: "ultimately_failed",
+      status: "stalled",
+    });
+    // The delivered payload is the alert record only.
+    expect(Object.keys(received[0]!.body).sort()).toEqual([
+      "alertID",
+      "attempt",
+      "createdAt",
+      "eventKind",
+      "invocationID",
+      "reason",
+      "status",
+      "taskID",
+    ]);
+    expect(first.stdout).not.toContain(webhookToken);
+    expect(
+      first.events
+        .filter((event) => event.type === "task.alert_delivery")
+        .map((event) => [event.channel, event.result])
+        .sort(),
+    ).toEqual([
+      ["journal", "delivered"],
+      ["ops", "delivered"],
+    ]);
+
+    // A webhook outage must not change the task result: the invocation is still
+    // terminal and the delivery is left visibly pending.
+    respondWith = 503;
+    const second = await runTask();
+    expect(second.child.exitCode).toBe(0);
+    expect(
+      second.events.find((event) => event.type === "task.invocation"),
+    ).toMatchObject({ status: "stalled" });
+    expect(
+      second.events.find(
+        (event) =>
+          event.type === "task.alert_delivery" && event.channel === "ops",
+      ),
+    ).toMatchObject({ result: "retrying", attempts: 1 });
+    const workflow = await import("@natalia/workflow");
+    const queue = await workflow.NataliaTaskAlertQueue.open(root);
+    expect(queue.queuePressure()).toMatchObject({ pending: 1, delivered: 3 });
+    queue.close();
+  } finally {
+    hook.stop(true);
   }
 });

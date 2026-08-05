@@ -110,6 +110,11 @@ export {
   type NataliaRemoteIssue,
 } from "./natalia-issue-target";
 export {
+  deliverPendingTaskAlerts,
+  type NataliaAlertChannel,
+  type TaskAlertDeliveryOutcome,
+} from "./natalia-task-alert-delivery";
+export {
   readLogSourceSince,
   type NataliaLogSource,
   type NataliaLogSourceKind,
