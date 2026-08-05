@@ -18,6 +18,7 @@ import {
   NataliaDocumentStore,
   NataliaTaskAlertQueue,
   NataliaTaskStateStore,
+  NataliaUnattendedStateStore,
   taskAlertEventKindForStatus,
   type EvaluatorModuleContext,
   type NataliaTaskAttemptStatus,
@@ -766,12 +767,62 @@ async function runTaskOnce(input: {
         reason,
         json: input.json,
       });
+      await settleUnattendedState({
+        workspaceRoot: input.workspaceRoot,
+        invocation: result,
+        json: input.json,
+      });
       if (status !== "succeeded" && status !== "stalled") process.exitCode = 1;
       break;
     }
   } finally {
     alerts.close();
     state.close();
+  }
+}
+
+/**
+ * Cross-execution state is settled only after the invocation is terminal and
+ * durable. A success promotes whatever position the execution staged; anything
+ * else keeps the previous watermark so the next run reprocesses the same data
+ * instead of skipping it.
+ */
+async function settleUnattendedState(input: {
+  workspaceRoot: string;
+  invocation: NataliaTaskInvocation;
+  json: boolean;
+}) {
+  try {
+    const store = await NataliaUnattendedStateStore.open(
+      input.workspaceRoot,
+      input.invocation.taskID,
+    );
+    if (input.invocation.status === "succeeded")
+      await store.commit({ invocationID: input.invocation.invocationID });
+    else
+      await store.recordFailure({
+        invocationID: input.invocation.invocationID,
+        status: input.invocation.status,
+      });
+    const state = store.state();
+    const line = {
+      type: "task.state",
+      taskID: state.taskID,
+      consecutiveFailures: state.consecutiveFailures,
+      watermarks: Object.keys(state.watermarks).length,
+      suppressed: Object.keys(state.suppressed).length,
+    };
+    if (input.json) console.log(JSON.stringify(line));
+  } catch (error) {
+    // Failing to settle leaves the previous watermark in place, which only ever
+    // reprocesses data; it must not rewrite the task's terminal result.
+    console.log(
+      JSON.stringify({
+        type: "diagnostic",
+        level: "warning",
+        message: `task state settlement failed: ${error instanceof Error ? error.message : String(error)}`,
+      }),
+    );
   }
 }
 

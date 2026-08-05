@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defaultConfigV2, saveConfigFile } from "@natalia/config";
@@ -161,6 +161,49 @@ test("CLI task run creates a task-scoped episode but never treats turn completio
     ["webhook:ops", "pending"],
   ]);
   alerts.close();
+  expect(output.find((event) => event.type === "task.state")).toMatchObject({
+    taskID: "task_nightly",
+    consecutiveFailures: 1,
+    watermarks: 0,
+  });
+  // A second unsuccessful run accumulates the failure count and still refuses
+  // to advance any cross-execution watermark.
+  const second = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "task",
+      "run",
+      "nightly.yaml",
+      "--workspace",
+      root,
+      "--json",
+    ],
+    { cwd: root, stdout: "pipe", stderr: "pipe" },
+  );
+  expect(second.exitCode).toBe(0);
+  const secondOutput = new TextDecoder()
+    .decode(second.stdout)
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  expect(
+    secondOutput.find((event) => event.type === "task.state"),
+  ).toMatchObject({ consecutiveFailures: 2, watermarks: 0 });
+  const crossExecutionState = JSON.parse(
+    await readFile(
+      join(root, ".natalia", "unattended", "task_nightly", "state.json"),
+      "utf8",
+    ),
+  ) as Record<string, unknown>;
+  expect(crossExecutionState).toMatchObject({
+    version: 1,
+    taskID: "task_nightly",
+    consecutiveFailures: 2,
+    watermarks: {},
+    pending: {},
+  });
+  expect(crossExecutionState.lastResult).toMatchObject({ status: "stalled" });
 });
 
 test("CLI task run enqueues an overlap alert and never runs a second invocation", async () => {
@@ -231,6 +274,15 @@ test("CLI task run enqueues an overlap alert and never runs a second invocation"
       .map((alert) => [alert.invocationID, alert.eventKind, alert.attempt]),
   ).toEqual([[skipped.invocationID as string, "skipped_due_to_overlap", 0]]);
   alerts.close();
+  // A skipped trigger is not an execution, so it must not touch the
+  // cross-execution state of the task that is still running.
+  expect(output.some((event) => event.type === "task.state")).toBe(false);
+  expect(
+    await readFile(
+      join(root, ".natalia", "unattended", "task_nightly", "state.json"),
+      "utf8",
+    ).catch((error: NodeJS.ErrnoException) => error.code),
+  ).toBe("ENOENT");
 });
 
 test("CLI task run evaluates a claimed module without advancing task success", async () => {
@@ -1205,6 +1257,21 @@ test("CLI task run retries a blocked first attempt then succeeds under fresh mod
       1,
     );
     alerts.close();
+    // The final success resets the consecutive failure count even though the
+    // first attempt was blocked.
+    expect(output.find((event) => event.type === "task.state")).toMatchObject({
+      taskID: "task_nightly",
+      consecutiveFailures: 0,
+    });
+    const crossExecutionState = JSON.parse(
+      await readFile(
+        join(root, ".natalia", "unattended", "task_nightly", "state.json"),
+        "utf8",
+      ),
+    ) as Record<string, unknown>;
+    expect(crossExecutionState.lastResult).toMatchObject({
+      status: "succeeded",
+    });
   } finally {
     server.stop(true);
   }

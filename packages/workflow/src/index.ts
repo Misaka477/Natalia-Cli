@@ -87,6 +87,14 @@ export {
   type TaskAlertPruneResult,
   type TaskAlertQueuePressure,
 } from "./natalia-task-alert-queue";
+export {
+  NataliaUnattendedStateStore,
+  type NataliaFingerprintRecord,
+  type NataliaSuppressedFingerprint,
+  type NataliaUnattendedState,
+  type NataliaWatermark,
+  type NataliaWatermarkKind,
+} from "./natalia-unattended-state";
 export { evaluateCondition, interpolate } from "./eval";
 
 export class JsonlWorkflowStore {
