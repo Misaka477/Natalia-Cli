@@ -2804,6 +2804,39 @@ test("task validate fails closed on a dangling configuration reference", async (
     expect(validate(file).exitCode).not.toBe(0);
 });
 
+test("the resident executor units depend on the executor and stay task-free", async () => {
+  const systemd = join(import.meta.dir, "..", "..", "..", "deploy", "systemd");
+  const daemon = await readFile(
+    join(systemd, "natalia-daemon.service"),
+    "utf8",
+  );
+  // The executor unit carries the port and the concurrency bound and nothing
+  // task specific, so one executor serves every task document.
+  expect(daemon).toContain("daemon 8787 --max-concurrent-tasks 1");
+  expect(daemon).toContain("Restart=on-failure");
+  expect(daemon).toContain("NoNewPrivileges=yes");
+  expect(daemon).not.toMatch(/task run|task submit|--prompt|token|apiKey/iu);
+  const service = await readFile(
+    join(systemd, "natalia-task-log-triage-submit.service"),
+    "utf8",
+  );
+  // A delivery that cannot reach the executor must fail, not be recorded as a
+  // successful triage run.
+  expect(service).toContain("Requires=natalia-daemon.service");
+  expect(service).toContain("After=natalia-daemon.service");
+  expect(service).toContain(
+    "task submit .natalia/tasks/nightly-log-triage.yaml --json",
+  );
+  expect(service).not.toMatch(/--prompt|token|apiKey|password/iu);
+  const timer = await readFile(
+    join(systemd, "natalia-task-log-triage-submit.timer"),
+    "utf8",
+  );
+  expect(timer).toContain("OnCalendar=*-*-* 02:15:00");
+  expect(timer).toContain("Persistent=true");
+  expect(timer).toContain("Unit=natalia-task-log-triage-submit.service");
+});
+
 test("the shipped task units name only the task document", async () => {
   const systemd = join(import.meta.dir, "..", "..", "..", "deploy", "systemd");
   for (const [unit, taskFile, calendar] of [

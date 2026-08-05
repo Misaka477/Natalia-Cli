@@ -52,6 +52,25 @@ each stage must achieve, and pick the profile that bounds it.
    unit names only the task document, so no prompt and no credential ever lands
    in a unit file or a command line.
 
+## One-shot or resident
+
+A timer can run a task in either of two ways, and both drive exactly the same
+controller, print the same event stream and return the same exit code:
+
+| Form | Unit | When it fits |
+|---|---|---|
+| one-shot | `natalia-task-log-triage.service` runs `task run` | a few tasks, or no long-lived process wanted |
+| resident | `natalia-task-log-triage-submit.service` runs `task submit` against `natalia-daemon.service` | many tasks, where paying a cold start per task dominates |
+
+The resident form needs `natalia-daemon.service` running; the submitting unit
+declares `Requires=` and `After=` so a delivery that cannot reach the executor
+fails instead of being recorded as a successful run. The executor bounds how many
+tasks run at once (`--max-concurrent-tasks`, default one) because tasks share a
+working tree.
+
+Readiness of the executor is its registration file, not the URL it prints: a
+piped stdout is buffered, so a supervisor waiting for that line would stall.
+
 ## Applying the example configuration
 
 `config.json` here is a fragment showing the profiles, source, issue target and
