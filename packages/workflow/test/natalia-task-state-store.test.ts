@@ -77,6 +77,13 @@ test("task state store retries a blocked attempt under fresh module episodes", a
     episodeID: "epi_read_1" as import("@natalia/contracts").EpisodeID,
     sessionID: "ses_read_1" as import("@natalia/contracts").SessionID,
   });
+  store.recordModuleEvidence({
+    invocationID: "inv_retry",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    ref: "tool:read_evidence",
+  });
   store.claimModule({
     invocationID: "inv_retry",
     attempt: 1,
@@ -124,6 +131,13 @@ test("task state store retries a blocked attempt under fresh module episodes", a
     attempt: 2,
     episodeID: "epi_read_2" as import("@natalia/contracts").EpisodeID,
     sessionID: "ses_read_2" as import("@natalia/contracts").SessionID,
+  });
+  store.recordModuleEvidence({
+    invocationID: "inv_retry",
+    attempt: 2,
+    flowID: "flow_1",
+    moduleID: "read",
+    ref: "tool:read_evidence",
   });
   store.claimModule({
     invocationID: "inv_retry",
@@ -289,6 +303,13 @@ test("module lifecycle records an audited claim and evaluator completion", async
     "flow.module_evaluated",
     "flow.module_continued",
   ]);
+  store.recordModuleEvidence({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    ref: "tool:read_evidence",
+  });
   store.claimModule({
     invocationID: "inv_1",
     attempt: 1,
@@ -388,6 +409,13 @@ test("module plan reports completion only after every module completes under dis
       sessionID: "ses_read" as import("@natalia/contracts").SessionID,
     }),
   ).toMatchObject({ moduleID: "read" });
+  store.recordModuleEvidence({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    ref: "tool:read_evidence",
+  });
   store.claimModule({
     invocationID: "inv_1",
     attempt: 1,
@@ -416,6 +444,13 @@ test("module plan reports completion only after every module completes under dis
       sessionID: "ses_report" as import("@natalia/contracts").SessionID,
     }),
   ).toMatchObject({ moduleID: "report" });
+  store.recordModuleEvidence({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "report",
+    ref: "tool:report_evidence",
+  });
   store.claimModule({
     invocationID: "inv_1",
     attempt: 1,
@@ -491,6 +526,13 @@ test("blocked or incomplete module plans never report completion or advance", as
     ],
   });
   store.activateNextModule({ invocationID: "inv_1", attempt: 1 });
+  store.recordModuleEvidence({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    ref: "tool:read_evidence",
+  });
   store.claimModule({
     invocationID: "inv_1",
     attempt: 1,
@@ -614,6 +656,13 @@ test("module plan advances only after the prior module is explicitly completed",
   expect(() =>
     store.activateNextModule({ invocationID: "inv_1", attempt: 1 }),
   ).toThrow("another flow module is active");
+  store.recordModuleEvidence({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    ref: "tool:read_evidence",
+  });
   store.claimModule({
     invocationID: "inv_1",
     attempt: 1,
@@ -783,5 +832,60 @@ test("task state store exposes read-only invocation and attempt history", async 
     [1, "blocked", "epi_1", "module blocked"],
     [2, "succeeded", "epi_2", undefined],
   ]);
+  store.close();
+});
+
+test("a module with no successful tool call can never be completed", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-task-empty-module-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_1" as import("@natalia/contracts").SessionID,
+  });
+  store.activateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "report",
+    conditionIDs: ["c1"],
+  });
+  store.claimModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    claim: {
+      flowID: "flow_1",
+      moduleID: "report",
+      conditionStatuses: [{ id: "c1", status: "satisfied" }],
+      evidenceRefs: [],
+      gaps: [],
+      recommendedAction: "Evaluate the claim.",
+    },
+  });
+  // The platform floor is independent of the user's conditions and of the
+  // evaluator: nothing happened in this stage, so it cannot be complete.
+  expect(() =>
+    store.evaluateModule({
+      invocationID: "inv_1",
+      attempt: 1,
+      flowID: "flow_1",
+      moduleID: "report",
+      outcome: "complete",
+    }),
+  ).toThrow("cannot complete without recorded evidence");
+  // The stage can still be blocked or continued, and it never completed.
+  store.evaluateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "report",
+    outcome: "blocked",
+  });
+  expect(
+    store.moduleEvents("inv_1", 1).map((event) => event.kind),
+  ).not.toContain("flow.module_completed");
+  expect(store.allModulesCompleted("inv_1", 1)).toBe(false);
+  expect(store.getWaterline("task_1")).toBeUndefined();
   store.close();
 });

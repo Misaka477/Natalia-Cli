@@ -291,6 +291,18 @@ switch (subcommand) {
       flow,
       config: validateConfig,
     });
+    // A stage with no minimum condition gives the evaluator nothing to verify, so
+    // it could be "completed" by an empty claim. That is a vacuous stage, not a
+    // configured one.
+    const conditionless = flow.modules.filter(
+      (module) => module.enabled && !module.minimumConditions.length,
+    );
+    if (conditionless.length)
+      throw new Error(
+        `task flow has stages without a minimum completion condition: ${conditionless
+          .map((module) => module.id)
+          .join(", ")}`,
+      );
     if (permissions.blocked.length)
       throw new Error(
         `task flow cannot complete under ${task.permissionProfile}: ${permissions.blocked

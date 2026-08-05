@@ -43,7 +43,7 @@ test("CLI task validate resolves a workspace task and flow without running it", 
   );
   await writeFile(
     join(root, ".natalia", "flows", "review.yaml"),
-    "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n",
+    "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n    minimumConditions:\n      - id: c1\n        text: Read the changed files\n",
   );
   await writeFile(
     join(root, ".natalia", "tasks", "nightly.yaml"),
@@ -671,7 +671,9 @@ test("CLI task run completes a two-module flow under distinct episodes and advan
                           status: "satisfied",
                           reason: "module evidence is present",
                           evidenceRefs:
-                            conditionID === "c1" ? ["tool:read_1"] : [],
+                            conditionID === "c1"
+                              ? ["tool:read_1"]
+                              : ["tool:report_read"],
                         },
                       ],
                       gaps: [],
@@ -728,7 +730,7 @@ test("CLI task run completes a two-module flow under distinct episodes and advan
         flowID: "flow_review",
         moduleID: "report",
         conditionStatuses: [{ id: "c2", status: "satisfied" }],
-        evidenceRefs: [],
+        evidenceRefs: ["tool:report_read"],
         gaps: [],
         recommendedAction: "Evaluate the report evidence.",
       });
@@ -746,7 +748,15 @@ test("CLI task run completes a two-module flow under distinct episodes and advan
       }
       if (system.includes("Produce the final report.")) {
         reportRequests += 1;
+        // The second stage has to do real work too: a stage where no tool ever
+        // succeeded cannot be completed.
         if (reportRequests === 1)
+          return toolCall(
+            "report_read",
+            "read_file",
+            JSON.stringify({ path: "README.md" }),
+          );
+        if (reportRequests === 2)
           return toolCall("report_claim", "flow_module_complete", reportClaim);
         return stream("data: [DONE]\n\n");
       }
@@ -819,7 +829,7 @@ test("CLI task run completes a two-module flow under distinct episodes and advan
     );
     await writeFile(
       join(root, ".natalia", "flows", "review.yaml"),
-      "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n    instructions: Read only the source evidence.\n    minimumConditions:\n      - id: c1\n        text: Read the source evidence\n  - id: report\n    type: report_output\n    displayName: Report\n    instructions: Produce the final report.\n    minimumConditions:\n      - id: c2\n        text: Produce the final report\n",
+      "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n    instructions: Read only the source evidence.\n    minimumConditions:\n      - id: c1\n        text: Read the source evidence\n  - id: report\n    type: read_search\n    displayName: Report\n    instructions: Produce the final report.\n    minimumConditions:\n      - id: c2\n        text: Produce the final report\n",
     );
     await writeFile(
       join(root, ".natalia", "tasks", "nightly.yaml"),
@@ -3001,6 +3011,47 @@ test("a task refuses to run under a configuration that was silently ignored", as
   state.close();
 });
 
+test("a flow stage with no minimum completion condition is rejected", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-conditionless-"));
+  await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+  await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      permissionProfiles: {
+        unattended: { approval: "auto", description: "Task profile" },
+      },
+    }),
+  );
+  await writeFile(
+    join(root, ".natalia", "flows", "vague.yaml"),
+    "kind: natalia-flow\nversion: 1\nflowID: flow_vague\ndisplayName: Vague\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n    minimumConditions:\n      - id: c1\n        text: Read the sources\n  - id: vague\n    type: read_search\n    displayName: Vague\n",
+  );
+  await writeFile(
+    join(root, ".natalia", "tasks", "vague.yaml"),
+    "kind: natalia-task\nversion: 1\ntaskID: task_vague\ndisplayName: Vague\nschedule: daily 01:00\nprompt: Do it.\npermissionProfile: unattended\nflow:\n  flowID: flow_vague\n",
+  );
+  const validate = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "task",
+      "validate",
+      "vague.yaml",
+      "--workspace",
+      root,
+    ],
+    { cwd: root, stdout: "pipe", stderr: "pipe" },
+  );
+  expect(validate.exitCode).not.toBe(0);
+  // Without a minimum condition the evaluator has nothing to verify, so the
+  // stage could be "completed" by an empty claim.
+  expect(new TextDecoder().decode(validate.stderr)).toContain(
+    "without a minimum completion condition: vague",
+  );
+});
+
 test("CLI task preview shows the effective permissions of each stage", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-cli-preview-"));
   await mkdir(join(root, ".natalia", "flows"), { recursive: true });
@@ -3123,7 +3174,7 @@ test("a flow stage that the profile cannot run is rejected before it is schedule
   );
   await writeFile(
     join(root, ".natalia", "flows", "needs-terminal.yaml"),
-    "kind: natalia-flow\nversion: 1\nflowID: flow_terminal\ndisplayName: Terminal\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n  - id: term\n    type: terminal\n    displayName: Terminal\n",
+    "kind: natalia-flow\nversion: 1\nflowID: flow_terminal\ndisplayName: Terminal\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n    minimumConditions:\n      - id: c1\n        text: Read the sources\n  - id: term\n    type: terminal\n    displayName: Terminal\n    minimumConditions:\n      - id: c2\n        text: Check the working tree\n",
   );
   await writeFile(
     join(root, ".natalia", "tasks", "needs-terminal.yaml"),
@@ -3167,7 +3218,7 @@ test("a flow stage that the profile cannot run is rejected before it is schedule
   // never runs.
   await writeFile(
     join(root, ".natalia", "flows", "needs-terminal.yaml"),
-    "kind: natalia-flow\nversion: 1\nflowID: flow_terminal\ndisplayName: Terminal\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n  - id: term\n    type: terminal\n    displayName: Terminal\n    enabled: false\n",
+    "kind: natalia-flow\nversion: 1\nflowID: flow_terminal\ndisplayName: Terminal\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n    minimumConditions:\n      - id: c1\n        text: Read the sources\n  - id: term\n    type: terminal\n    displayName: Terminal\n    enabled: false\n",
   );
   const revalidated = Bun.spawnSync(
     [

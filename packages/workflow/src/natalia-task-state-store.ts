@@ -600,6 +600,13 @@ export class NataliaTaskStateStore {
         throw new Error(
           `flow module must be claimed before evaluation: ${input.moduleID}`,
         );
+      // Platform floor, independent of the user's own conditions: a stage where
+      // no tool ever succeeded did nothing, so it cannot be complete no matter
+      // what the model claimed or the evaluator concluded.
+      if (input.outcome === "complete" && !this.hasModuleEvidence(input))
+        throw new Error(
+          `flow module cannot complete without recorded evidence: ${input.moduleID}`,
+        );
       this.appendModuleEvent({
         ...input,
         kind: "flow.module_evaluated",
@@ -687,6 +694,23 @@ export class NataliaTaskStateStore {
       )
       .all(invocationID, attempt);
     return rows.length > 0 && rows.every((row) => row.status === "completed");
+  }
+
+  private hasModuleEvidence(input: {
+    invocationID: string;
+    attempt: number;
+    flowID: string;
+    moduleID: string;
+  }) {
+    return Boolean(
+      this.#db
+        .query<
+          { count: number },
+          [string, number, string, string]
+        >("SELECT COUNT(*) AS count FROM task_flow_evidence WHERE invocation_id = ? AND attempt = ? AND flow_id = ? AND module_id = ?")
+        .get(input.invocationID, input.attempt, input.flowID, input.moduleID)
+        ?.count,
+    );
   }
 
   private migrate() {
