@@ -9,6 +9,11 @@ export { compactionDisplayLine } from "./compaction-display";
 export { createFakeBackend } from "./fixture";
 export { createRealRuntimeClient } from "./real-runtime";
 export {
+  scheduledTaskOverview,
+  type ScheduledTaskOverview,
+  type ScheduledTaskRow,
+} from "./task-overview";
+export {
   assertConfigApplied,
   assertTaskReferences,
   newHeadlessExecution,

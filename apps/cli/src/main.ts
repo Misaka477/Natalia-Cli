@@ -1,6 +1,8 @@
 import {
   assertConfigApplied,
   assertTaskReferences,
+  scheduledTaskOverview,
+  type ScheduledTaskOverview,
   createRealRuntimeClient,
   newHeadlessExecution,
   plainRuntimeEvent,
@@ -261,6 +263,28 @@ switch (subcommand) {
   case "task": {
     const action = argv[1];
     const taskPath = argv[2];
+    if (action === "list") {
+      const workspaceRoot = resolve(
+        valueAfter(argv, "--workspace") ?? process.cwd(),
+      );
+      const overview = await scheduledTaskOverview({
+        workspaceRoot,
+        config: assertConfigApplied(await resolveConfig({ workspaceRoot })),
+      });
+      console.log(
+        argv.includes("--json")
+          ? JSON.stringify(overview, null, 2)
+          : taskListLines(overview).join("\n"),
+      );
+      // A broken entry must be visible in the exit code too, or a scheduled
+      // workspace can rot without anyone noticing.
+      if (
+        overview.unreadable.length ||
+        overview.tasks.some((task) => task.problems.length)
+      )
+        process.exitCode = 1;
+      break;
+    }
     if (
       !taskPath ||
       (action !== "validate" &&
@@ -270,7 +294,7 @@ switch (subcommand) {
         action !== "submit")
     )
       throw new Error(
-        "task requires 'validate', 'run', 'status', 'preview' or 'submit' followed by a task path",
+        "task requires 'list', or 'validate', 'run', 'status', 'preview' or 'submit' followed by a task path",
       );
     const workspaceRoot = resolve(
       valueAfter(argv, "--workspace") ?? process.cwd(),
@@ -707,6 +731,34 @@ async function runOnce(
     await client.dispose?.();
   }
   if (failed) process.exitCode = 1;
+}
+
+function taskListLines(overview: ScheduledTaskOverview) {
+  if (!overview.tasks.length && !overview.unreadable.length)
+    return ["no task documents under .natalia/tasks"];
+  const lines: string[] = [];
+  for (const task of overview.tasks) {
+    lines.push(
+      `${task.problems.length ? "!" : " "} ${task.taskID}  ${task.displayName}`,
+      `    schedule: ${task.schedule}  profile: ${task.permissionProfile}  retry: ${task.retry}`,
+      `    flow ${task.flowID}: ${task.enabledModules} enabled stages`,
+      `    last run: ${
+        task.lastRun
+          ? `${task.lastRun.status} at ${task.lastRun.startedAt}${task.lastRun.skipReason ? ` (${task.lastRun.skipReason})` : ""}`
+          : "never"
+      }`,
+    );
+    if (task.consecutiveFailures)
+      lines.push(`    consecutive failures: ${task.consecutiveFailures}`);
+    if (task.pendingAlertDeliveries)
+      lines.push(
+        `    pending alert deliveries: ${task.pendingAlertDeliveries}`,
+      );
+    for (const problem of task.problems) lines.push(`    problem: ${problem}`);
+  }
+  for (const broken of overview.unreadable)
+    lines.push(`! ${broken.path}: ${broken.reason}`);
+  return lines;
 }
 
 function taskPreviewLines(preview: ReturnType<typeof taskPermissionPreview>) {

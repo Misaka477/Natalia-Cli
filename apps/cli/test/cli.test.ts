@@ -3395,3 +3395,70 @@ test("task submit fails closed when no resident executor is running", async () =
     "requires a running Natalia daemon",
   );
 });
+
+test("CLI task list shows every task and fails when one is broken", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-task-list-"));
+  await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+  await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      permissionProfiles: {
+        unattended: { approval: "auto", description: "Task profile" },
+      },
+      alertChannels: { journal: { kind: "journal" } },
+    }),
+  );
+  await writeFile(
+    join(root, ".natalia", "flows", "review.yaml"),
+    "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n    minimumConditions:\n      - id: c1\n        text: Read the sources\n",
+  );
+  const task = (id: string, extra = "") =>
+    `kind: natalia-task\nversion: 1\ntaskID: ${id}\ndisplayName: ${id}\nschedule: daily 01:00\nprompt: Do it.\npermissionProfile: unattended\nalerts:\n  - journal\n${extra}flow:\n  flowID: flow_review\n`;
+  await writeFile(
+    join(root, ".natalia", "tasks", "ready.yaml"),
+    task("task_ready"),
+  );
+  const list = (extra: string[] = []) =>
+    Bun.spawnSync(
+      [
+        process.execPath,
+        join(import.meta.dir, "..", "src", "main.ts"),
+        "task",
+        "list",
+        "--workspace",
+        root,
+        ...extra,
+      ],
+      { cwd: root, stdout: "pipe", stderr: "pipe" },
+    );
+  const ready = list(["--json"]);
+  expect(ready.exitCode).toBe(0);
+  const overview = JSON.parse(new TextDecoder().decode(ready.stdout)) as {
+    tasks: Array<Record<string, unknown>>;
+    unreadable: unknown[];
+  };
+  expect(overview.unreadable).toEqual([]);
+  expect(overview.tasks).toHaveLength(1);
+  expect(overview.tasks[0]).toMatchObject({
+    taskID: "task_ready",
+    schedule: "daily 01:00",
+    enabledModules: 1,
+    problems: [],
+  });
+  const plain = list();
+  expect(new TextDecoder().decode(plain.stdout)).toContain("last run: never");
+
+  // A task whose channel does not exist is listed, marked, and fails the exit
+  // code: a scheduled workspace must not rot silently.
+  await writeFile(
+    join(root, ".natalia", "tasks", "broken.yaml"),
+    task("task_broken").replace("  - journal", "  - absent"),
+  );
+  const broken = list();
+  expect(broken.exitCode).toBe(1);
+  const text = new TextDecoder().decode(broken.stdout);
+  expect(text).toContain("task_ready");
+  expect(text).toContain("problem: alert channel not found: absent");
+});
