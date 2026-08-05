@@ -219,6 +219,28 @@ test("terminal command buffer evaluates the complete pane line on submit", async
   ).resolves.toMatchObject({ allowed: true });
 });
 
+test("terminal command buffer intersects profile and active module rules", async () => {
+  const buffer = new TerminalCommandBuffer();
+  const profile = {
+    mode: "whitelist" as const,
+    rules: [{ command: "git status" }],
+  };
+  const module = {
+    mode: "blacklist" as const,
+    rules: [{ command: "git status", reason: "module only reads diffs" }],
+  };
+  await expect(
+    buffer.evaluate([profile, module], "interactive_terminal_send_line", {
+      id: "pane_a",
+      text: "git status",
+    }),
+  ).resolves.toMatchObject({
+    allowed: false,
+    clearTerminal: true,
+    diagnostics: [expect.stringContaining("active module deny rule")],
+  });
+});
+
 test("terminal command buffer is pane-scoped and fails closed for unsafe input", async () => {
   const buffer = new TerminalCommandBuffer();
   const rules = {

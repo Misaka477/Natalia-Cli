@@ -352,6 +352,7 @@ export type RealRuntimeClientOptions = {
     moduleID: string;
     moduleType: NataliaFlowModuleType;
     moduleInstructions?: string;
+    moduleCommandRules?: import("./tool-policy").PermissionProfileCommandRules;
     /** Controller-owned structured continuation for the active module only. */
     moduleContinuation?: string;
   };
@@ -430,7 +431,15 @@ export function createRealRuntimeClient(
       const args = tryParseToolArguments(event.arguments);
       const bufferedProfileCommandPermission =
         await terminalCommandBuffer.evaluate(
-          selectedPermissionProfile?.commandRules,
+          [
+            selectedPermissionProfile?.commandRules,
+            options.taskModuleContext?.moduleCommandRules,
+          ].filter(
+            (
+              rules,
+            ): rules is import("./tool-policy").PermissionProfileCommandRules =>
+              Boolean(rules),
+          ),
           event.toolName,
           args,
         );
@@ -442,6 +451,16 @@ export function createRealRuntimeClient(
           args,
         ));
       if (!profileCommandPermission.allowed) return profileCommandPermission;
+      if (!bufferedProfileCommandPermission) {
+        const moduleCommandPermission =
+          await evaluatePermissionProfileCommandRules(
+            options.taskModuleContext?.moduleCommandRules,
+            event.toolName,
+            args,
+            "active module",
+          );
+        if (!moduleCommandPermission.allowed) return moduleCommandPermission;
+      }
       return (
         (await options.hooks?.preExecute?.(event)) ?? {
           allowed: true,
@@ -592,8 +611,10 @@ export function createRealRuntimeClient(
         selectedPermissionProfile =
           modePermissionProfile ?? defaultPermissionProfile;
       if (
-        selectedPermissionProfile?.commandRules &&
-        selectedPermissionProfile.commandRules.mode !== "none"
+        (selectedPermissionProfile?.commandRules &&
+          selectedPermissionProfile.commandRules.mode !== "none") ||
+        (options.taskModuleContext?.moduleCommandRules &&
+          options.taskModuleContext.moduleCommandRules.mode !== "none")
       )
         await ensureBashCommandParser();
       if (!options.permissionMode && selectedPermissionProfile)

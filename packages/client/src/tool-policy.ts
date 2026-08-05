@@ -388,6 +388,7 @@ export async function evaluatePermissionProfileCommandRules(
   rules: PermissionProfileCommandRules | undefined,
   toolName: string,
   args: Record<string, unknown>,
+  scope = "profile",
 ): Promise<PermissionCheck> {
   const diagnostics: string[] = [];
   if (!rules || rules.mode === "none") return { allowed: true, diagnostics };
@@ -414,7 +415,7 @@ export async function evaluatePermissionProfileCommandRules(
       allowed: false,
       reason: "command policy configuration is invalid",
       diagnostics: [
-        `invalid profile command rule "${invalidRule.rule.command}": ${parseFailureReason(invalidRule.parsed)}`,
+        `invalid ${scope} command rule "${invalidRule.rule.command}": ${parseFailureReason(invalidRule.parsed)}`,
       ],
     };
   const matched = parsedRules.find(
@@ -426,14 +427,14 @@ export async function evaluatePermissionProfileCommandRules(
       allowed: false,
       reason: "command blocked by policy",
       diagnostics: [
-        `command matches profile deny rule "${matched.rule.command}"${matched.rule.reason ? `: ${matched.rule.reason}` : ""}`,
+        `command matches ${scope} deny rule "${matched.rule.command}"${matched.rule.reason ? `: ${matched.rule.reason}` : ""}`,
       ],
     };
   if (rules.mode === "whitelist" && !matched)
     return {
       allowed: false,
       reason: "command blocked by policy",
-      diagnostics: ["command does not match any profile allow rule"],
+      diagnostics: [`command does not match any ${scope} allow rule`],
     };
   return { allowed: true, diagnostics };
 }
@@ -451,11 +452,18 @@ export class TerminalCommandBuffer {
   }
 
   async evaluate(
-    rules: PermissionProfileCommandRules | undefined,
+    rules:
+      | PermissionProfileCommandRules
+      | readonly PermissionProfileCommandRules[]
+      | undefined,
     toolName: string,
     args: Record<string, unknown>,
   ): Promise<TerminalCommandBufferResult | undefined> {
-    if (!rules || rules.mode === "none") return undefined;
+    const activeRules = (Array.isArray(rules) ? rules : [rules]).filter(
+      (rule): rule is PermissionProfileCommandRules =>
+        Boolean(rule) && rule.mode !== "none",
+    );
+    if (!activeRules.length) return undefined;
     const input = terminalCommandInput(toolName, args);
     if (!input) return undefined;
     if (!input.id)
@@ -479,14 +487,16 @@ export class TerminalCommandBuffer {
       return { allowed: true, diagnostics: [] };
     }
     this.clear(input.id);
-    const check = await evaluatePermissionProfileCommandRules(
-      rules,
-      "run_shell",
-      {
-        command: line,
-      },
-    );
-    return check.allowed ? check : { ...check, clearTerminal: true };
+    for (const [index, rules] of activeRules.entries()) {
+      const check = await evaluatePermissionProfileCommandRules(
+        rules,
+        "run_shell",
+        { command: line },
+        index === 0 ? "profile" : "active module",
+      );
+      if (!check.allowed) return { ...check, clearTerminal: true };
+    }
+    return { allowed: true, diagnostics: [] };
   }
 }
 

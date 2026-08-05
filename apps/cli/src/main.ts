@@ -660,6 +660,9 @@ async function runTaskOnce(input: {
     moduleInstructions:
       input.flow.modules.find((entry) => entry.id === module.moduleID)
         ?.instructions ?? "",
+    moduleCommandRules: input.flow.modules.find(
+      (entry) => entry.id === module.moduleID,
+    )?.commandRules,
   };
   const client = createRealRuntimeClient({
     ...execution,

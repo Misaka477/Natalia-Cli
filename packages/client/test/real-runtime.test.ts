@@ -318,6 +318,78 @@ test("task module policy denies tools outside the active capability bundle", asy
   store.close();
 });
 
+test("task module command rules further restrict shell tools", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-task-module-command-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_1" as SessionID,
+  });
+  store.activateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "shell",
+    conditionIDs: [],
+  });
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_task_module_command" as SessionID,
+    taskModuleContext: {
+      store,
+      invocationID: "inv_1",
+      attempt: 1,
+      flowID: "flow_1",
+      moduleID: "shell",
+      moduleType: "shell_command",
+      moduleCommandRules: {
+        mode: "whitelist",
+        rules: [{ command: "git diff" }],
+      },
+    },
+    provider: {
+      provider: "module-command-policy",
+      model: "module-command-policy-model",
+      async *stream(request) {
+        if (!request.messages.some((message) => message.role === "tool"))
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "blocked_shell",
+                name: "run_shell",
+                arguments: JSON.stringify({ command: "git status" }),
+              },
+            ],
+          };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("inspect status");
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "policy.decision",
+      toolName: "run_shell",
+      decision: "deny",
+      reason: expect.stringContaining("active module allow rule"),
+    }),
+  );
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "tool.update",
+      name: "run_shell",
+      status: "failed",
+    }),
+  );
+  await client.dispose?.();
+  store.close();
+});
+
 test("task module records successful tool calls as attempt-scoped evidence", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-task-evidence-runtime-"));
   await writeFile(join(root, "note.txt"), "evidence");
