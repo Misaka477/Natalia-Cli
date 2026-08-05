@@ -367,11 +367,14 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
         <Show
           when={grouped().length > 0}
           fallback={
-            props.emptyView ?? (
-              <box paddingLeft={4} paddingRight={4} paddingTop={1}>
+            // The caller's empty view gets the same inset as the title, the
+            // filter and the rows. Rendering it raw left every dialog's empty
+            // state hanging off the dialog's left edge.
+            <box paddingLeft={4} paddingRight={4} paddingTop={1}>
+              {props.emptyView ?? (
                 <text fg={darkTheme.muted}>No results found</text>
-              </box>
-            )
+              )}
+            </box>
           }
         >
           <scrollbox

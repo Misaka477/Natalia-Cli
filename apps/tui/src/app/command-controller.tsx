@@ -48,7 +48,10 @@ import {
 } from "../dialog/DialogLayer";
 import { DialogProviderSetup } from "../component/DialogProviderSetup";
 import { DialogModel } from "../component/DialogModel";
-import { DialogScheduledTasks } from "../component/DialogScheduledTasks";
+import {
+  DialogScheduledTasks,
+  runScheduledTaskProcess,
+} from "../component/DialogScheduledTasks";
 import { DialogSkill } from "../component/DialogSkill";
 import { DialogStash } from "../component/DialogStash";
 import { DialogAttachment } from "../component/DialogAttachment";
@@ -859,18 +862,39 @@ export function runCommand(command: string, ctx: CommandContext) {
               break;
             }
             case "tasks": {
-              const overview = await scheduledTaskOverview({
-                workspaceRoot: ctx.workspaceRoot ?? process.cwd(),
-                config: resolved,
-              }).catch((error: unknown) => {
+              const workspaceRoot = ctx.workspaceRoot ?? process.cwd();
+              const loadOverview = () =>
+                scheduledTaskOverview({
+                  workspaceRoot,
+                  config: resolved,
+                });
+              const overview = await loadOverview().catch((error: unknown) => {
                 ctx.toast.error(
                   error instanceof Error ? error.message : String(error),
                 );
                 return undefined;
               });
               if (!overview) break;
+              // The provider unmounts this dialog while the detail view is open,
+              // so the overview is held here and refreshed in place.
+              const [tasks, setTasks] = createSignal(overview);
               ctx.dialog.push(() => (
-                <DialogScheduledTasks overview={overview} />
+                <DialogScheduledTasks
+                  overview={tasks()}
+                  workspaceRoot={workspaceRoot}
+                  reload={async () => {
+                    setTasks(await loadOverview());
+                  }}
+                  runTask={(taskPath) =>
+                    runScheduledTaskProcess({ taskPath, workspaceRoot })
+                  }
+                  notify={(outcome) =>
+                    ctx.toast.show({
+                      variant: outcome.ok ? "success" : "warning",
+                      message: outcome.message,
+                    })
+                  }
+                />
               ));
               break;
             }
