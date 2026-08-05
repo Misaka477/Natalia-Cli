@@ -142,6 +142,7 @@ test("CLI task run evaluates a claimed module without advancing task success", a
   await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
   await writeFile(join(root, "README.md"), "real module evidence\n");
   let evaluatorPayload = "";
+  let executionSystemPrompt = "";
   let executionRequests = 0;
   const server = Bun.serve({
     port: 0,
@@ -152,6 +153,7 @@ test("CLI task run evaluates a claimed module without advancing task success", a
         messages: Array<{ content: string }>;
       };
       const evaluator = body.model === "evaluator-model";
+      if (!evaluator) executionSystemPrompt = body.messages[0]?.content ?? "";
       const readArguments = JSON.stringify({ path: "README.md" });
       const claimArguments = JSON.stringify({
         flowID: "flow_review",
@@ -289,7 +291,7 @@ test("CLI task run evaluates a claimed module without advancing task success", a
     );
     await writeFile(
       join(root, ".natalia", "flows", "review.yaml"),
-      "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n    minimumConditions:\n      - id: c1\n        text: Read the source evidence\n",
+      "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n    instructions: Read only the source evidence.\n    minimumConditions:\n      - id: c1\n        text: Read the source evidence\n",
     );
     await writeFile(
       join(root, ".natalia", "tasks", "nightly.yaml"),
@@ -324,6 +326,10 @@ test("CLI task run evaluates a claimed module without advancing task success", a
     expect(evaluatorPayload).toContain('"redacted":true');
     expect(evaluatorPayload).not.toContain("raw-task-secret");
     expect(evaluatorPayload).toContain("tool:read_1");
+    expect(executionSystemPrompt).toContain(
+      "<active_flow_module_instructions>",
+    );
+    expect(executionSystemPrompt).toContain("Read only the source evidence.");
     const state = await (
       await import("@natalia/workflow")
     ).NataliaTaskStateStore.open(root);

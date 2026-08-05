@@ -351,6 +351,7 @@ export type RealRuntimeClientOptions = {
     flowID: string;
     moduleID: string;
     moduleType: NataliaFlowModuleType;
+    moduleInstructions?: string;
   };
 };
 
@@ -3242,6 +3243,7 @@ export function createRealRuntimeClient(
             ? undefined
             : selectedAgent?.systemPrompt ||
               tsRuntimeConfig?.modes[tsRuntimeConfig.defaultMode]?.systemPrompt,
+        moduleInstructions: options.taskModuleContext?.moduleInstructions,
         skills: skillRegistry?.list(),
         activeSkill,
       }),
@@ -4710,6 +4712,7 @@ function runtimeSystemPrompt(input: {
   permissionMode: "ask" | "auto" | "read_only";
   agentName?: string;
   agentPrompt?: string;
+  moduleInstructions?: string;
   skills?: Skill[];
   activeSkill?: Skill;
 }) {
@@ -4744,6 +4747,13 @@ function runtimeSystemPrompt(input: {
       "<agent_instructions>",
       input.agentPrompt.trim(),
       "</agent_instructions>",
+    );
+  }
+  if (input.moduleInstructions?.trim()) {
+    lines.push(
+      "<active_flow_module_instructions>",
+      input.moduleInstructions.trim(),
+      "</active_flow_module_instructions>",
     );
   }
   // Enumerated from the live skill registry on every turn, so installing or

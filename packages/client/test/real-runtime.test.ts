@@ -157,6 +157,73 @@ test("flow_module_complete is only advertised to an active task module runtime",
   store.close();
 });
 
+test("task runtime injects only its active module instructions", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-task-module-prompt-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_1" as SessionID,
+  });
+  store.activateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    conditionIDs: [],
+  });
+  let taskSystemPrompt = "";
+  const taskClient = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_task_module_prompt" as SessionID,
+    taskModuleContext: {
+      store,
+      invocationID: "inv_1",
+      attempt: 1,
+      flowID: "flow_1",
+      moduleID: "read",
+      moduleType: "read_search",
+      moduleInstructions: "Read only the authentication files.",
+    },
+    provider: {
+      provider: "task-module-prompt",
+      model: "task-module-prompt-model",
+      async *stream(request) {
+        taskSystemPrompt = String(request.messages[0]?.content);
+        yield { type: "done" as const };
+      },
+    },
+  });
+  taskClient.start(() => undefined);
+  await taskClient.submit("begin");
+  expect(taskSystemPrompt).toContain("<active_flow_module_instructions>");
+  expect(taskSystemPrompt).toContain("Read only the authentication files.");
+  await taskClient.dispose?.();
+
+  let ordinarySystemPrompt = "";
+  const ordinaryClient = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ordinary_module_prompt" as SessionID,
+    provider: {
+      provider: "ordinary-module-prompt",
+      model: "ordinary-module-prompt-model",
+      async *stream(request) {
+        ordinarySystemPrompt = String(request.messages[0]?.content);
+        yield { type: "done" as const };
+      },
+    },
+  });
+  ordinaryClient.start(() => undefined);
+  await ordinaryClient.submit("begin");
+  expect(ordinarySystemPrompt).not.toContain("active_flow_module_instructions");
+  expect(ordinarySystemPrompt).not.toContain(
+    "Read only the authentication files.",
+  );
+  await ordinaryClient.dispose?.();
+  store.close();
+});
+
 test("ordinary runtime never advertises flow_module_complete", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ordinary-runtime-"));
   const seenTools: string[][] = [];

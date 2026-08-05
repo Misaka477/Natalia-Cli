@@ -656,6 +656,9 @@ async function runTaskOnce(input: {
       flowID: input.flow.flowID,
       moduleID: module.moduleID,
       moduleType: module.moduleType,
+      moduleInstructions:
+        input.flow.modules.find((entry) => entry.id === module.moduleID)
+          ?.instructions ?? "",
     },
   });
   let stopReason: Extract<
