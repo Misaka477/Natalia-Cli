@@ -256,6 +256,40 @@ function createReportIssueTool(
   };
 }
 
+/**
+ * The runtime owns the read position of an external log, so the model asks for
+ * "what is new" instead of tracking byte offsets itself. The position is staged
+ * by the controller and only becomes durable when the whole task succeeds.
+ */
+function createReadLogSourceTool(
+  readLogSource: NonNullable<
+    NonNullable<RealRuntimeClientOptions["taskModuleContext"]>["readLogSource"]
+  >,
+): RuntimeTool {
+  return {
+    name: "read_log_source",
+    description:
+      "Read the part of the configured log source that has not been consumed yet. The runtime tracks the position; a rotated log restarts from the beginning and the remaining byte count is reported.",
+    requiresApproval: false,
+    parameters: {
+      type: "object",
+      properties: { maxBytes: { type: "number" } },
+      required: [],
+      additionalProperties: false,
+    },
+    async execute(input) {
+      const args =
+        input && typeof input === "object" && !Array.isArray(input)
+          ? (input as Record<string, unknown>)
+          : {};
+      const maxBytes = args.maxBytes;
+      if (maxBytes !== undefined && typeof maxBytes !== "number")
+        throw new Error("maxBytes must be a number");
+      return JSON.stringify(await readLogSource({ maxBytes }));
+    },
+  };
+}
+
 function requireToolObject(input: unknown) {
   if (!input || typeof input !== "object" || Array.isArray(input))
     throw new Error("flow module completion input must be an object");
@@ -417,6 +451,13 @@ export type RealRuntimeClientOptions = {
       body: string;
       labels?: string[];
     }) => Promise<Record<string, unknown>>;
+    /**
+     * Runtime-side incremental read of the task's configured log source. The
+     * controller stages the new position; the model never sees an offset.
+     */
+    readLogSource?: (input: {
+      maxBytes?: number;
+    }) => Promise<Record<string, unknown>>;
   };
 };
 
@@ -457,6 +498,14 @@ export function createRealRuntimeClient(
       tools.set(
         "report_issue",
         createReportIssueTool(options.taskModuleContext.reportIssue),
+      );
+    }
+    if (options.taskModuleContext.readLogSource) {
+      if (tools.has("read_log_source"))
+        throw new Error("task module context cannot replace read_log_source");
+      tools.set(
+        "read_log_source",
+        createReadLogSourceTool(options.taskModuleContext.readLogSource),
       );
     }
   }

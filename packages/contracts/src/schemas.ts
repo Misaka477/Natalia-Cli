@@ -256,6 +256,8 @@ export const nataliaTaskDocumentSchema = z.object({
   alerts: z.array(z.string()).default([]),
   /** Configuration key of the issue target used to reconcile findings. */
   issueTarget: z.string().min(1).optional(),
+  /** Configuration key of the log source this task consumes incrementally. */
+  logSource: z.string().min(1).optional(),
   evaluator: z
     .object({ provider: z.string().min(1), model: z.string().min(1) })
     .optional(),
@@ -586,6 +588,18 @@ export const issueTargetConfigSchema = z.object({
   enabled: z.boolean().default(true),
 });
 
+/**
+ * External data source an unattended task consumes incrementally. The path is
+ * deployment specific, so it lives in configuration rather than in the
+ * version-controlled task document, and the model never chooses it.
+ */
+export const logSourceConfigSchema = z.object({
+  path: z.string().min(1),
+  kind: z.enum(["offset", "timestamp"]).default("offset"),
+  maxBytes: z.number().int().positive().default(65536),
+  enabled: z.boolean().default(true),
+});
+
 export const configV2Schema = z.object({
   version: z.literal(2),
   runtime: runtimeConfigSchema.default({}),
@@ -620,6 +634,7 @@ export const configV2Schema = z.object({
   network: networkConfigSchema.default({}),
   security: securityConfigSchema.default({}),
   issueTargets: z.record(issueTargetConfigSchema).default({}),
+  logSources: z.record(logSourceConfigSchema).default({}),
   experimental: experimentalConfigSchema.default({}),
 });
 
@@ -628,6 +643,7 @@ export type ModelConfig = z.infer<typeof modelConfigSchema>;
 export type ProviderConfig = z.infer<typeof providerConfigSchema>;
 export type PermissionProfile = z.infer<typeof permissionProfileSchema>;
 export type IssueTargetConfig = z.infer<typeof issueTargetConfigSchema>;
+export type LogSourceConfig = z.infer<typeof logSourceConfigSchema>;
 export type InteractiveProgramRules = z.infer<
   typeof interactiveProgramRulesSchema
 >;

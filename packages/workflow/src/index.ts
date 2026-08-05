@@ -109,6 +109,12 @@ export {
   type NataliaIssueTargetKind,
   type NataliaRemoteIssue,
 } from "./natalia-issue-target";
+export {
+  readLogSourceSince,
+  type NataliaLogSource,
+  type NataliaLogSourceKind,
+  type NataliaLogSourceRead,
+} from "./natalia-log-source";
 export { evaluateCondition, interpolate } from "./eval";
 
 export class JsonlWorkflowStore {

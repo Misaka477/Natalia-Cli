@@ -8,7 +8,13 @@ export type NataliaModuleToolPolicy = {
 };
 
 const MODULE_TOOL_ALLOWLISTS: Record<NataliaFlowModuleType, string[]> = {
-  read_search: ["read_file", "glob", "grep", "read_media_file"],
+  read_search: [
+    "read_file",
+    "glob",
+    "grep",
+    "read_media_file",
+    "read_log_source",
+  ],
   terminal: ["interactive_terminal_*", "terminal_observe"],
   shell_command: ["run_shell"],
   workspace_changes: ["read_file", "glob", "grep", "write_file", "edit_file"],

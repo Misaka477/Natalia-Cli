@@ -5886,3 +5886,134 @@ test("report_issue is denied outside the report module bundle", async () => {
   await client.dispose?.();
   store.close();
 });
+
+test("read_log_source is a task module capability the runtime owns", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-log-source-tool-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_1" as SessionID,
+  });
+  store.activateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    conditionIDs: [],
+  });
+  const requests: Array<{ maxBytes?: number }> = [];
+  const seenTools: string[][] = [];
+  let toolResult = "";
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_log_source" as SessionID,
+    taskModuleContext: {
+      store,
+      invocationID: "inv_1",
+      attempt: 1,
+      flowID: "flow_1",
+      moduleID: "read",
+      moduleType: "read_search",
+      async readLogSource(request) {
+        requests.push(request);
+        return { source: "app", from: 0, to: 12, content: "error line\n" };
+      },
+    },
+    provider: {
+      provider: "log-source",
+      model: "log-source-model",
+      async *stream(request) {
+        seenTools.push((request.tools ?? []).map((tool) => tool.name));
+        const toolMessage = request.messages.find(
+          (message) => message.role === "tool",
+        );
+        if (toolMessage) {
+          toolResult = String(toolMessage.content);
+          yield { type: "done" as const };
+          return;
+        }
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            {
+              id: "log_1",
+              name: "read_log_source",
+              arguments: JSON.stringify({ maxBytes: 256 }),
+            },
+          ],
+        };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.submit("scan the log");
+  expect(seenTools[0]).toContain("read_log_source");
+  // The model asks for new content, never for a byte offset.
+  expect(requests).toEqual([{ maxBytes: 256 }]);
+  expect(JSON.parse(toolResult)).toMatchObject({ from: 0, to: 12 });
+  await client.dispose?.();
+  store.close();
+});
+
+test("read_log_source stays out of runtimes without a configured source", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-log-source-absent-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_1" as SessionID,
+  });
+  store.activateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    conditionIDs: [],
+  });
+  const seenTools: string[][] = [];
+  const taskClient = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_log_absent_task" as SessionID,
+    taskModuleContext: {
+      store,
+      invocationID: "inv_1",
+      attempt: 1,
+      flowID: "flow_1",
+      moduleID: "read",
+      moduleType: "read_search",
+    },
+    provider: {
+      provider: "log-absent",
+      model: "log-absent-model",
+      async *stream(request) {
+        seenTools.push((request.tools ?? []).map((tool) => tool.name));
+        yield { type: "done" as const };
+      },
+    },
+  });
+  taskClient.start(() => undefined);
+  await taskClient.submit("begin");
+  expect(seenTools[0]).not.toContain("read_log_source");
+  await taskClient.dispose?.();
+
+  const ordinaryClient = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_log_absent_ordinary" as SessionID,
+    provider: {
+      provider: "log-absent-ordinary",
+      model: "log-absent-ordinary-model",
+      async *stream(request) {
+        seenTools.push((request.tools ?? []).map((tool) => tool.name));
+        yield { type: "done" as const };
+      },
+    },
+  });
+  ordinaryClient.start(() => undefined);
+  await ordinaryClient.submit("begin");
+  expect(seenTools[1]).not.toContain("read_log_source");
+  await ordinaryClient.dispose?.();
+  store.close();
+});
