@@ -2,7 +2,12 @@ import { mkdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { Database } from "bun:sqlite";
-import type { EpisodeID } from "@natalia/contracts";
+import {
+  DEFAULT_TASK_ALERT_EVENTS,
+  TASK_ALERT_EVENT_KINDS,
+  type EpisodeID,
+  type TaskAlertEventKind,
+} from "@natalia/contracts";
 import type { NataliaTaskInvocationStatus } from "./natalia-task-state-store";
 
 const SCHEMA_VERSION = 1;
@@ -16,17 +21,50 @@ const DEFAULT_FAILED_RETENTION_DAYS = 180;
 
 // The vocabulary is frozen by the plan; the queue never invents kinds and never
 // stores evaluator context, tool output, prompts or credentials.
-export const TASK_ALERT_EVENT_KINDS = [
-  "task_started",
-  "attempt_failed",
-  "retry_scheduled",
-  "succeeded",
-  "ultimately_failed",
-  "blocked_by_policy",
-  "skipped_due_to_overlap",
-] as const;
+export { TASK_ALERT_EVENT_KINDS } from "@natalia/contracts";
 
-export type NataliaTaskAlertEventKind = (typeof TASK_ALERT_EVENT_KINDS)[number];
+export type NataliaTaskAlertEventKind = TaskAlertEventKind;
+
+export type NataliaTaskAlertSubscription = {
+  channel: string;
+  on: readonly NataliaTaskAlertEventKind[];
+};
+
+/**
+ * One shape for every consumer: a bare channel name becomes the conservative
+ * default subscription, so the controller, the preflight and the surfaces all
+ * read the same policy instead of each interpreting the shorthand.
+ */
+export function taskAlertSubscriptions(
+  alerts: readonly (
+    | string
+    | { channel: string; on: readonly NataliaTaskAlertEventKind[] }
+  )[],
+): NataliaTaskAlertSubscription[] {
+  const merged = new Map<string, Set<NataliaTaskAlertEventKind>>();
+  for (const entry of alerts) {
+    const channel = typeof entry === "string" ? entry : entry.channel;
+    const kinds =
+      typeof entry === "string" ? DEFAULT_TASK_ALERT_EVENTS : entry.on;
+    const existing = merged.get(channel) ?? new Set();
+    for (const kind of kinds) existing.add(kind);
+    merged.set(channel, existing);
+  }
+  return [...merged].map(([channel, kinds]) => ({
+    channel,
+    on: TASK_ALERT_EVENT_KINDS.filter((kind) => kinds.has(kind)),
+  }));
+}
+
+/** Channels that asked to hear about this event kind. */
+export function channelsForTaskAlertEvent(
+  subscriptions: readonly NataliaTaskAlertSubscription[],
+  eventKind: NataliaTaskAlertEventKind,
+) {
+  return subscriptions
+    .filter((subscription) => subscription.on.includes(eventKind))
+    .map((subscription) => subscription.channel);
+}
 
 export type NataliaTaskAlertDeliveryState = "pending" | "delivered" | "failed";
 

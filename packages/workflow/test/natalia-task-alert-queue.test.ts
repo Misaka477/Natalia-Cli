@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { EpisodeID, SessionID } from "@natalia/contracts";
 import {
+  channelsForTaskAlertEvent,
+  taskAlertSubscriptions,
   NataliaTaskAlertQueue,
   NataliaTaskStateStore,
   taskAlertEventKindForStatus,
@@ -447,4 +449,60 @@ test("task alert queue reopens the same durable workspace database", async () =>
   expect(state.path).not.toBe(reopened.path);
   state.close();
   reopened.close();
+});
+
+test("a bare channel name subscribes to the outcomes a person must know about", () => {
+  expect(taskAlertSubscriptions(["journal"])).toEqual([
+    {
+      channel: "journal",
+      on: ["ultimately_failed", "blocked_by_policy", "skipped_due_to_overlap"],
+    },
+  ]);
+  // Success is silent by default, and a retried attempt does not page anyone:
+  // otherwise one retry produces two messages for a task that then succeeded.
+  const [subscription] = taskAlertSubscriptions(["journal"]);
+  expect(subscription!.on).not.toContain("succeeded");
+  expect(subscription!.on).not.toContain("attempt_failed");
+  expect(subscription!.on).not.toContain("retry_scheduled");
+  expect(subscription!.on).not.toContain("task_started");
+});
+
+test("an explicit policy replaces the default for that channel only", () => {
+  expect(
+    taskAlertSubscriptions([
+      "journal",
+      { channel: "pager", on: ["ultimately_failed"] },
+      { channel: "chat", on: ["succeeded", "task_started"] },
+    ]),
+  ).toEqual([
+    {
+      channel: "journal",
+      on: ["ultimately_failed", "blocked_by_policy", "skipped_due_to_overlap"],
+    },
+    { channel: "pager", on: ["ultimately_failed"] },
+    { channel: "chat", on: ["task_started", "succeeded"] },
+  ]);
+});
+
+test("repeating a channel merges its events in the frozen order", () => {
+  expect(
+    taskAlertSubscriptions([
+      { channel: "chat", on: ["succeeded"] },
+      { channel: "chat", on: ["task_started", "succeeded"] },
+    ]),
+  ).toEqual([{ channel: "chat", on: ["task_started", "succeeded"] }]);
+});
+
+test("only the channels that asked for an event hear it", () => {
+  const subscriptions = taskAlertSubscriptions([
+    "journal",
+    { channel: "chat", on: ["succeeded"] },
+  ]);
+  expect(channelsForTaskAlertEvent(subscriptions, "succeeded")).toEqual([
+    "chat",
+  ]);
+  expect(channelsForTaskAlertEvent(subscriptions, "ultimately_failed")).toEqual(
+    ["journal"],
+  );
+  expect(channelsForTaskAlertEvent(subscriptions, "task_started")).toEqual([]);
 });

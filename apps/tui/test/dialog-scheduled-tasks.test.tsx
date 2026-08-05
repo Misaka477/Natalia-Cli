@@ -89,6 +89,7 @@ function row(overrides: Partial<ScheduledTaskRow> = {}): ScheduledTaskRow {
     enabledModules: 3,
     retry: "once",
     alertChannels: ["journal"],
+    alertEvents: ["journal:ultimately_failed", "journal:blocked_by_policy"],
     consecutiveFailures: 0,
     pendingAlertDeliveries: 0,
     problems: [],

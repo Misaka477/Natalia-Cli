@@ -12,6 +12,7 @@ import type {
 } from "@natalia/contracts";
 import { providerForModel } from "@natalia/runtime";
 import {
+  channelsForTaskAlertEvent,
   deliverPendingTaskAlerts,
   evaluateAndRecordModule,
   createIssueTarget,
@@ -19,11 +20,13 @@ import {
   reconcileFinding,
   readDataSourceSince,
   taskAlertEventKindForStatus,
+  taskAlertSubscriptions,
   NataliaTaskAlertQueue,
   NataliaTaskStateStore,
   NataliaUnattendedStateStore,
   type EvaluatorModuleContext,
   type NataliaPlannedFlowModule,
+  type NataliaTaskAlertEventKind,
   type NataliaTaskAttemptStatus,
   type NataliaTaskInvocation,
   type NataliaTaskInvocationStatus,
@@ -97,11 +100,14 @@ export function assertTaskReferences(input: {
         entry: input.config.dataSources[input.task.dataSource],
       })
     : undefined;
-  const alertChannels = input.task.alerts.map((channel) =>
-    requireEnabledReference({
-      kind: "alert channel",
-      key: channel,
-      entry: input.config.alertChannels[channel],
+  const alertChannels = taskAlertSubscriptions(input.task.alerts).map(
+    (subscription) => ({
+      ...requireEnabledReference({
+        kind: "alert channel",
+        key: subscription.channel,
+        entry: input.config.alertChannels[subscription.channel],
+      }),
+      on: subscription.on,
     }),
   );
   if (input.task.evaluator && !input.config.models[input.task.evaluator.model])
@@ -202,6 +208,9 @@ export async function runTask(input: {
   // The alert queue is a separate durable store on purpose: a saturated or
   // broken notification queue must never rewrite the task's terminal truth.
   const alerts = await NataliaTaskAlertQueue.open(input.workspaceRoot);
+  const alertSubscriptions = taskAlertSubscriptions(input.task.alerts);
+  const alertChannelsFor = (eventKind: NataliaTaskAlertEventKind) =>
+    channelsForTaskAlertEvent(alertSubscriptions, eventKind);
   const controllerExecution = newHeadlessExecution();
   const invocationID = `inv_${crypto.randomUUID().replace(/-/gu, "")}`;
   const started = state.startInvocation({
@@ -230,6 +239,8 @@ export async function runTask(input: {
       reason: started.invocation.skipReason,
       json: input.json,
       emit: input.emit,
+      eventKind: "skipped_due_to_overlap",
+      channels: alertChannelsFor("skipped_due_to_overlap"),
     });
     alerts.close();
     state.close();
@@ -240,6 +251,17 @@ export async function runTask(input: {
       exitCode: 0,
     };
   }
+  enqueueTaskAlert({
+    alerts,
+    task: input.task,
+    invocation: started.invocation,
+    attempt: started.attempt.attempt,
+    episodeID: started.attempt.episodeID,
+    json: input.json,
+    emit: input.emit,
+    eventKind: "task_started",
+    channels: alertChannelsFor("task_started"),
+  });
   const maxAttempts = taskRetryMaxAttempts(input.task.retry);
   const reportIssue = taskIssueReporter({
     workspaceRoot: input.workspaceRoot,
@@ -326,6 +348,23 @@ export async function runTask(input: {
           retry: true,
           reason,
         });
+        // A retried attempt is not a task outcome, so these are only announced
+        // to a channel that explicitly asked for them; the default subscription
+        // stays silent until the task is actually finished.
+        const retrying = state.getInvocation(invocationID)!;
+        for (const eventKind of ["attempt_failed", "retry_scheduled"] as const)
+          enqueueTaskAlert({
+            alerts,
+            task: input.task,
+            invocation: retrying,
+            attempt,
+            episodeID: attemptEpisodeID,
+            reason,
+            json: input.json,
+            emit: input.emit,
+            eventKind,
+            channels: alertChannelsFor(eventKind),
+          });
         attempt += 1;
         const controllerExecution = newHeadlessExecution();
         state.recordAttempt({
@@ -335,8 +374,6 @@ export async function runTask(input: {
           sessionID: controllerExecution.sessionID,
         });
         attemptEpisodeID = controllerExecution.episodeID;
-        // An intermediate retry attempt is not a task outcome, so nothing is
-        // enqueued here: the invocation is durable `retrying`, not terminal.
         continue;
       }
       state.completeAttempt({
@@ -363,6 +400,8 @@ export async function runTask(input: {
         reason,
         json: input.json,
         emit: input.emit,
+        eventKind: taskAlertEventKindForStatus(result.status)!,
+        channels: alertChannelsFor(taskAlertEventKindForStatus(result.status)!),
       });
       await drainTaskAlerts({
         alerts,
@@ -480,9 +519,13 @@ function enqueueTaskAlert(input: {
   reason?: string;
   json: boolean;
   emit: (line: string) => void;
+  channels: string[];
+  eventKind: NataliaTaskAlertEventKind;
 }) {
-  const eventKind = taskAlertEventKindForStatus(input.invocation.status);
-  if (!eventKind) return;
+  const eventKind = input.eventKind;
+  // A channel that did not subscribe to this event hears nothing, and an event
+  // nobody subscribed to is not recorded at all.
+  if (!input.channels.length) return;
   try {
     const enqueued = input.alerts.enqueue({
       taskID: input.invocation.taskID,
@@ -492,7 +535,7 @@ function enqueueTaskAlert(input: {
       eventKind,
       status: input.invocation.status,
       reason: input.reason,
-      channels: input.task.alerts,
+      channels: input.channels,
     });
     const pressure = input.alerts.queuePressure();
     const line = {

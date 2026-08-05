@@ -164,6 +164,29 @@ export const agentPermissionRulesSchema = z.object({
   redactOutput: z.boolean().optional(),
 });
 
+/**
+ * Alert events a task can subscribe to. The vocabulary is frozen: a task chooses
+ * from it, and nothing invents a kind outside it.
+ */
+export const TASK_ALERT_EVENT_KINDS = [
+  "task_started",
+  "attempt_failed",
+  "retry_scheduled",
+  "succeeded",
+  "ultimately_failed",
+  "blocked_by_policy",
+  "skipped_due_to_overlap",
+] as const;
+
+export type TaskAlertEventKind = (typeof TASK_ALERT_EVENT_KINDS)[number];
+
+/** Applied to a bare channel name, so the common case needs no policy at all. */
+export const DEFAULT_TASK_ALERT_EVENTS: readonly TaskAlertEventKind[] = [
+  "ultimately_failed",
+  "blocked_by_policy",
+  "skipped_due_to_overlap",
+];
+
 export const bashCommandRuleSchema = z.object({
   command: z.string().min(1),
   reason: z.string().min(1).optional(),
@@ -253,7 +276,22 @@ export const nataliaTaskDocumentSchema = z.object({
       message: "flow reference requires a path or flowID",
     }),
   retry: z.enum(["none", "once", "twice", "three_times"]).default("none"),
-  alerts: z.array(z.string()).default([]),
+  /**
+   * Where the task's outcome is announced, and for which events. A bare channel
+   * name keeps the conservative default: the outcomes a person has to know about,
+   * without a message per retried attempt and without one for every success.
+   */
+  alerts: z
+    .array(
+      z.union([
+        z.string().min(1),
+        z.object({
+          channel: z.string().min(1),
+          on: z.array(z.enum(TASK_ALERT_EVENT_KINDS)).min(1),
+        }),
+      ]),
+    )
+    .default([]),
   /** Configuration key of the issue target used to reconcile findings. */
   issueTarget: z.string().min(1).optional(),
   /**

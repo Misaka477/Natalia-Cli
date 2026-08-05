@@ -1312,7 +1312,7 @@ test("CLI task run retries a blocked first attempt then succeeds under fresh mod
     );
     await writeFile(
       join(root, ".natalia", "tasks", "nightly.yaml"),
-      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Review the source and produce the report.\npermissionProfile: unattended\nretry: once\nalerts:\n  - journal\nflow:\n  flowID: flow_review\nevaluator:\n  provider: local\n  model: evaluator\n",
+      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Review the source and produce the report.\npermissionProfile: unattended\nretry: once\nalerts:\n  - channel: journal\n    on:\n      - succeeded\n      - attempt_failed\nflow:\n  flowID: flow_review\nevaluator:\n  provider: local\n  model: evaluator\n",
     );
     const child = Bun.spawn(
       [
@@ -1371,7 +1371,8 @@ test("CLI task run retries a blocked first attempt then succeeds under fresh mod
     expect(state.getWaterline("task_nightly")).toMatchObject({ invocationID });
     state.close();
     // The blocked first attempt is an intermediate retry, not a task outcome:
-    // only the final succeeded invocation may reach the alert queue.
+    // this task subscribed to both, so the retried attempt is announced and so is
+    // the eventual success. A bare channel name would have produced neither.
     const alerts = await (
       await import("@natalia/workflow")
     ).NataliaTaskAlertQueue.open(root);
@@ -1379,9 +1380,12 @@ test("CLI task run retries a blocked first attempt then succeeds under fresh mod
       alerts
         .alerts("task_nightly")
         .map((alert) => [alert.attempt, alert.eventKind, alert.status]),
-    ).toEqual([[2, "succeeded", "succeeded"]]);
+    ).toEqual([
+      [1, "attempt_failed", "retrying"],
+      [2, "succeeded", "succeeded"],
+    ]);
     expect(output.filter((event) => event.type === "task.alert")).toHaveLength(
-      1,
+      2,
     );
     alerts.close();
     // The final success resets the consecutive failure count even though the
@@ -3494,4 +3498,98 @@ test("CLI task list shows every task and fails when one is broken", async () => 
   const text = new TextDecoder().decode(broken.stdout);
   expect(text).toContain("task_ready");
   expect(text).toContain("problem: alert channel not found: absent");
+});
+
+test("a bare alert channel stays silent on success and on a retried attempt", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-alert-default-"));
+  await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+  await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      permissionProfiles: {
+        unattended: { approval: "auto", description: "Task profile" },
+      },
+      alertChannels: { journal: { kind: "journal" } },
+    }),
+  );
+  await writeFile(
+    join(root, ".natalia", "flows", "review.yaml"),
+    "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n    minimumConditions:\n      - id: c1\n        text: Read the sources\n",
+  );
+  await writeFile(
+    join(root, ".natalia", "tasks", "nightly.yaml"),
+    "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: /doctor\npermissionProfile: unattended\nalerts:\n  - journal\nflow:\n  flowID: flow_review\n",
+  );
+  const validate = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "task",
+      "validate",
+      "nightly.yaml",
+      "--workspace",
+      root,
+      "--json",
+    ],
+    { cwd: root, stdout: "pipe", stderr: "pipe" },
+  );
+  expect(validate.exitCode).toBe(0);
+  // The preflight reports what each channel actually subscribed to, so the
+  // policy is visible without running the task.
+  expect(
+    JSON.parse(new TextDecoder().decode(validate.stdout)) as {
+      references: { alertChannels: Array<{ key: string; on: string[] }> };
+    },
+  ).toMatchObject({
+    references: {
+      alertChannels: [
+        {
+          key: "journal",
+          on: [
+            "ultimately_failed",
+            "blocked_by_policy",
+            "skipped_due_to_overlap",
+          ],
+        },
+      ],
+    },
+  });
+  const run = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "task",
+      "run",
+      "nightly.yaml",
+      "--workspace",
+      root,
+      "--json",
+    ],
+    { cwd: root, stdout: "pipe", stderr: "pipe" },
+  );
+  expect(run.exitCode).toBe(0);
+  const events = new TextDecoder()
+    .decode(run.stdout)
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  // This run stalls, which the default subscription does want to hear about.
+  expect(events.find((event) => event.type === "task.alert")).toMatchObject({
+    eventKind: "ultimately_failed",
+    channels: 1,
+  });
+  const workflow = await import("@natalia/workflow");
+  const alerts = await workflow.NataliaTaskAlertQueue.open(root);
+  expect(alerts.alerts("task_nightly").map((alert) => alert.eventKind)).toEqual(
+    ["ultimately_failed"],
+  );
+  // Nothing announced the start of the run.
+  expect(
+    alerts
+      .alerts("task_nightly")
+      .some((alert) => alert.eventKind === "task_started"),
+  ).toBe(false);
+  alerts.close();
 });

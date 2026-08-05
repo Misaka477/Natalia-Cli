@@ -1,6 +1,7 @@
 import { readdir } from "node:fs/promises";
 import type { ConfigV2, NataliaTaskDocument } from "@natalia/contracts";
 import {
+  taskAlertSubscriptions,
   NataliaDocumentStore,
   NataliaTaskAlertQueue,
   NataliaTaskStateStore,
@@ -19,6 +20,8 @@ export type ScheduledTaskRow = {
   enabledModules: number;
   retry: NataliaTaskDocument["retry"];
   alertChannels: string[];
+  /** Channel and event pairs the task subscribed to, for the detail surfaces. */
+  alertEvents: string[];
   issueTarget?: string;
   dataSource?: string;
   lastRun?: {
@@ -140,7 +143,8 @@ export async function scheduledTaskOverview(input: {
         else if (!entryConfig.enabled)
           problems.push(`${kind} is disabled: ${key}`);
       }
-      for (const channel of task.alerts) {
+      const subscriptions = taskAlertSubscriptions(task.alerts);
+      for (const { channel } of subscriptions) {
         const configured = input.config.alertChannels[channel];
         if (!configured) problems.push(`alert channel not found: ${channel}`);
         else if (!configured.enabled)
@@ -179,7 +183,12 @@ export async function scheduledTaskOverview(input: {
         enabledModules:
           flow?.modules.filter((module) => module.enabled).length ?? 0,
         retry: task.retry,
-        alertChannels: task.alerts,
+        alertChannels: subscriptions.map(
+          (subscription) => subscription.channel,
+        ),
+        alertEvents: subscriptions.flatMap((subscription) =>
+          subscription.on.map((kind) => `${subscription.channel}:${kind}`),
+        ),
         ...(task.issueTarget ? { issueTarget: task.issueTarget } : {}),
         ...(task.dataSource ? { dataSource: task.dataSource } : {}),
         ...(lastRun

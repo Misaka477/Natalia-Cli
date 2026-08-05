@@ -77,13 +77,16 @@ export {
 export {
   NataliaTaskAlertQueue,
   TASK_ALERT_EVENT_KINDS,
+  channelsForTaskAlertEvent,
   taskAlertEventKindForStatus,
+  taskAlertSubscriptions,
   taskAlertID,
   type EnqueueTaskAlertResult,
   type NataliaTaskAlert,
   type NataliaTaskAlertDelivery,
   type NataliaTaskAlertDeliveryState,
   type NataliaTaskAlertEventKind,
+  type NataliaTaskAlertSubscription,
   type TaskAlertPruneResult,
   type TaskAlertQueuePressure,
 } from "./natalia-task-alert-queue";
