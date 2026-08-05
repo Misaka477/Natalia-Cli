@@ -142,7 +142,7 @@ test("CLI task run evaluates a claimed module without advancing task success", a
   await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
   await writeFile(join(root, "README.md"), "real module evidence\n");
   let evaluatorPayload = "";
-  let executionSystemPrompt = "";
+  const executionSystemPrompts: string[] = [];
   let executionRequests = 0;
   const server = Bun.serve({
     port: 0,
@@ -153,7 +153,8 @@ test("CLI task run evaluates a claimed module without advancing task success", a
         messages: Array<{ content: string }>;
       };
       const evaluator = body.model === "evaluator-model";
-      if (!evaluator) executionSystemPrompt = body.messages[0]?.content ?? "";
+      if (!evaluator)
+        executionSystemPrompts.push(body.messages[0]?.content ?? "");
       const readArguments = JSON.stringify({ path: "README.md" });
       const claimArguments = JSON.stringify({
         flowID: "flow_review",
@@ -326,10 +327,17 @@ test("CLI task run evaluates a claimed module without advancing task success", a
     expect(evaluatorPayload).toContain('"redacted":true');
     expect(evaluatorPayload).not.toContain("raw-task-secret");
     expect(evaluatorPayload).toContain("tool:read_1");
-    expect(executionSystemPrompt).toContain(
+    expect(executionSystemPrompts[0]).toContain(
       "<active_flow_module_instructions>",
     );
-    expect(executionSystemPrompt).toContain("Read only the source evidence.");
+    expect(executionSystemPrompts[0]).toContain(
+      "Read only the source evidence.",
+    );
+    const continuationPrompt = executionSystemPrompts.find((prompt) =>
+      prompt.includes("<active_flow_module_continuation>"),
+    );
+    expect(continuationPrompt).toContain("report output is still missing");
+    expect(continuationPrompt).toContain("produce the report");
     const state = await (
       await import("@natalia/workflow")
     ).NataliaTaskStateStore.open(root);

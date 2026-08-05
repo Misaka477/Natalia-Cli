@@ -1,4 +1,7 @@
-import { createRealRuntimeClient } from "@natalia/client";
+import {
+  createRealRuntimeClient,
+  type RealRuntimeClientOptions,
+} from "@natalia/client";
 import type { EpisodeID, RuntimeEvent, SessionID } from "@natalia/contracts";
 import { resolveConfig } from "@natalia/config";
 import { agentsFromConfig } from "@natalia/agent";
@@ -645,21 +648,24 @@ async function runTaskOnce(input: {
     attempt: started.attempt.attempt,
   });
   if (!module) throw new Error("task module plan has no activatable module");
+  const taskModuleContext: NonNullable<
+    RealRuntimeClientOptions["taskModuleContext"]
+  > = {
+    store: state,
+    invocationID,
+    attempt: started.attempt.attempt,
+    flowID: input.flow.flowID,
+    moduleID: module.moduleID,
+    moduleType: module.moduleType,
+    moduleInstructions:
+      input.flow.modules.find((entry) => entry.id === module.moduleID)
+        ?.instructions ?? "",
+  };
   const client = createRealRuntimeClient({
     ...execution,
     workspaceRoot: input.workspaceRoot,
     permissionProfile: input.task.permissionProfile,
-    taskModuleContext: {
-      store: state,
-      invocationID,
-      attempt: started.attempt.attempt,
-      flowID: input.flow.flowID,
-      moduleID: module.moduleID,
-      moduleType: module.moduleType,
-      moduleInstructions:
-        input.flow.modules.find((entry) => entry.id === module.moduleID)
-          ?.instructions ?? "",
-    },
+    taskModuleContext,
   });
   let stopReason: Extract<
     RuntimeEvent,
@@ -677,16 +683,19 @@ async function runTaskOnce(input: {
       }
     });
     await client.submit(input.task.prompt);
-    const claimed = state
-      .moduleEvents(invocationID, started.attempt.attempt)
-      .some(
-        (event) =>
-          event.kind === "flow.module_claimed" &&
-          event.flowID === input.flow.flowID &&
-          event.moduleID === module.moduleID,
-      );
-    const evaluatorOutcome = claimed
-      ? evaluatorContext.policyDenied
+    let evaluatorOutcome:
+      | Awaited<ReturnType<typeof evaluateClaimedTaskModule>>
+      | { outcome: "stalled" }
+      | undefined;
+    while (
+      hasUnevaluatedModuleClaim(
+        state,
+        invocationID,
+        started.attempt.attempt,
+        module.moduleID,
+      )
+    ) {
+      evaluatorOutcome = evaluatorContext.policyDenied
         ? blockClaimedTaskModule(
             state,
             invocationID,
@@ -712,13 +721,18 @@ async function runTaskOnce(input: {
               reason:
                 "module claim requires an evaluator before the controller can complete it",
             }),
-            "stalled" as const)
-      : undefined;
+            { outcome: "stalled" as const });
+      if (!evaluatorOutcome || evaluatorOutcome.outcome !== "incomplete") break;
+      taskModuleContext.moduleContinuation = evaluatorContinuation(
+        evaluatorOutcome.result,
+      );
+      await client.submit("Continue the active flow module.");
+    }
     const terminalStatus =
-      evaluatorOutcome === "blocked"
+      evaluatorOutcome?.outcome === "blocked"
         ? "blocked"
         : taskTurnTerminalStatus(stopReason);
-    if (terminalStatus === "stalled" && !claimed)
+    if (terminalStatus === "stalled" && evaluatorOutcome === undefined)
       state.stallModule({
         invocationID,
         attempt: started.attempt.attempt,
@@ -733,7 +747,7 @@ async function runTaskOnce(input: {
       status: terminalStatus,
       retry: false,
       reason: evaluatorOutcome
-        ? `evaluator ${evaluatorOutcome}; runtime turn finished: ${stopReason}`
+        ? `evaluator ${evaluatorOutcome.outcome}; runtime turn finished: ${stopReason}`
         : `runtime turn finished: ${stopReason}`,
     });
     const result = state.getInvocation(invocationID)!;
@@ -747,6 +761,36 @@ async function runTaskOnce(input: {
     await client.dispose?.();
     state.close();
   }
+}
+
+function hasUnevaluatedModuleClaim(
+  state: NataliaTaskStateStore,
+  invocationID: string,
+  attempt: number,
+  moduleID: string,
+) {
+  const events = state.moduleEvents(invocationID, attempt);
+  const lastClaim = events.findLastIndex(
+    (event) =>
+      event.kind === "flow.module_claimed" && event.moduleID === moduleID,
+  );
+  const lastEvaluation = events.findLastIndex(
+    (event) =>
+      event.kind === "flow.module_evaluated" && event.moduleID === moduleID,
+  );
+  return lastClaim > lastEvaluation;
+}
+
+function evaluatorContinuation(
+  result: import("@natalia/contracts").EvaluatorResult,
+) {
+  return JSON.stringify({
+    conditions: result.conditions.map(({ id, status }) => ({ id, status })),
+    gaps: result.gaps,
+    forbiddenRepeats: result.forbiddenRepeats,
+    recommendedActions: result.recommendedActions,
+    idealOutcome: result.idealOutcome,
+  });
 }
 
 function taskExecutionProvider(
@@ -841,7 +885,10 @@ async function evaluateClaimedTaskModule(input: {
           "task evaluator selection is unavailable in the resolved config",
       },
     });
-    return "blocked" as const;
+    return {
+      outcome: "blocked" as const,
+      reason: "task evaluator selection is unavailable in the resolved config",
+    };
   }
   const provider = providerForModel(input.config, input.task.evaluator.model);
   if (!provider) {
@@ -853,7 +900,10 @@ async function evaluateClaimedTaskModule(input: {
       outcome: "blocked",
       data: { reason: "task evaluator provider is unavailable" },
     });
-    return "blocked" as const;
+    return {
+      outcome: "blocked" as const,
+      reason: "task evaluator provider is unavailable",
+    };
   }
   const consent = input.task.evaluatorConsent;
   if (consent && consent.provider !== input.task.evaluator.provider) {
@@ -867,7 +917,10 @@ async function evaluateClaimedTaskModule(input: {
         reason: "task evaluator consent does not match evaluator provider",
       },
     });
-    return "blocked" as const;
+    return {
+      outcome: "blocked" as const,
+      reason: "task evaluator consent does not match evaluator provider",
+    };
   }
   const result = await evaluateAndRecordModule({
     store: input.state,
@@ -882,7 +935,7 @@ async function evaluateClaimedTaskModule(input: {
     providerIdentity: input.task.evaluator.provider,
     context: input.context,
   });
-  return result.outcome;
+  return result;
 }
 
 function blockClaimedTaskModule(
@@ -900,7 +953,7 @@ function blockClaimedTaskModule(
     outcome: "blocked",
     data: { reason },
   });
-  return "blocked" as const;
+  return { outcome: "blocked" as const, reason };
 }
 
 function newHeadlessExecution() {

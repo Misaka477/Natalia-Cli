@@ -185,6 +185,8 @@ test("task runtime injects only its active module instructions", async () => {
       moduleID: "read",
       moduleType: "read_search",
       moduleInstructions: "Read only the authentication files.",
+      moduleContinuation:
+        '{"gaps":["Inspect the access redirect"],"forbiddenRepeats":["Do not re-read the index"]}',
     },
     provider: {
       provider: "task-module-prompt",
@@ -199,6 +201,8 @@ test("task runtime injects only its active module instructions", async () => {
   await taskClient.submit("begin");
   expect(taskSystemPrompt).toContain("<active_flow_module_instructions>");
   expect(taskSystemPrompt).toContain("Read only the authentication files.");
+  expect(taskSystemPrompt).toContain("<active_flow_module_continuation>");
+  expect(taskSystemPrompt).toContain("Inspect the access redirect");
   await taskClient.dispose?.();
 
   let ordinarySystemPrompt = "";
@@ -220,6 +224,7 @@ test("task runtime injects only its active module instructions", async () => {
   expect(ordinarySystemPrompt).not.toContain(
     "Read only the authentication files.",
   );
+  expect(ordinarySystemPrompt).not.toContain("active_flow_module_continuation");
   await ordinaryClient.dispose?.();
   store.close();
 });

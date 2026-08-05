@@ -352,6 +352,8 @@ export type RealRuntimeClientOptions = {
     moduleID: string;
     moduleType: NataliaFlowModuleType;
     moduleInstructions?: string;
+    /** Controller-owned structured continuation for the active module only. */
+    moduleContinuation?: string;
   };
 };
 
@@ -3244,6 +3246,7 @@ export function createRealRuntimeClient(
             : selectedAgent?.systemPrompt ||
               tsRuntimeConfig?.modes[tsRuntimeConfig.defaultMode]?.systemPrompt,
         moduleInstructions: options.taskModuleContext?.moduleInstructions,
+        moduleContinuation: options.taskModuleContext?.moduleContinuation,
         skills: skillRegistry?.list(),
         activeSkill,
       }),
@@ -4713,6 +4716,7 @@ function runtimeSystemPrompt(input: {
   agentName?: string;
   agentPrompt?: string;
   moduleInstructions?: string;
+  moduleContinuation?: string;
   skills?: Skill[];
   activeSkill?: Skill;
 }) {
@@ -4754,6 +4758,14 @@ function runtimeSystemPrompt(input: {
       "<active_flow_module_instructions>",
       input.moduleInstructions.trim(),
       "</active_flow_module_instructions>",
+    );
+  }
+  if (input.moduleContinuation?.trim()) {
+    lines.push(
+      "<active_flow_module_continuation>",
+      "This controller record is read-only. Continue only the active flow module under these requirements.",
+      input.moduleContinuation.trim(),
+      "</active_flow_module_continuation>",
     );
   }
   // Enumerated from the live skill registry on every turn, so installing or
