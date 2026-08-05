@@ -353,3 +353,45 @@ test("blocked or stalled module plans cannot advance", async () => {
   ).toThrow("prior modules complete");
   store.close();
 });
+
+test("module evidence refs remain scoped to the active attempt module", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-module-evidence-refs-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_1" as import("@natalia/contracts").SessionID,
+  });
+  store.activateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    conditionIDs: [],
+  });
+  store.recordModuleEvidence({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    ref: "tool:read_1",
+  });
+  expect(
+    store.moduleEvidenceRefs({
+      invocationID: "inv_1",
+      attempt: 1,
+      flowID: "flow_1",
+      moduleID: "read",
+    }),
+  ).toEqual(["tool:read_1"]);
+  expect(() =>
+    store.moduleEvidenceRefs({
+      invocationID: "inv_1",
+      attempt: 1,
+      flowID: "flow_1",
+      moduleID: "other",
+    }),
+  ).toThrow("not active");
+  store.close();
+});

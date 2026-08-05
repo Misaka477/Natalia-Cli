@@ -475,6 +475,22 @@ export class NataliaTaskStateStore {
         );
   }
 
+  moduleEvidenceRefs(input: {
+    invocationID: string;
+    attempt: number;
+    flowID: string;
+    moduleID: string;
+  }) {
+    this.requireRunningAttempt(input.invocationID, input.attempt);
+    this.requireModule(input);
+    return this.#db
+      .query<{ ref: string }, [string, number, string, string]>(
+        "SELECT ref FROM task_flow_evidence WHERE invocation_id = ? AND attempt = ? AND flow_id = ? AND module_id = ? ORDER BY recorded_at, ref",
+      )
+      .all(input.invocationID, input.attempt, input.flowID, input.moduleID)
+      .map((row) => row.ref);
+  }
+
   claimModule(input: {
     invocationID: string;
     attempt: number;

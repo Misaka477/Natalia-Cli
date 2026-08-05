@@ -687,6 +687,10 @@ async function runTaskOnce(input: {
       | Awaited<ReturnType<typeof evaluateClaimedTaskModule>>
       | { outcome: "stalled" }
       | undefined;
+    let continuationProgress = {
+      conditionStatuses: new Map<string, "missing" | "partial" | "satisfied">(),
+      evidenceRefs: new Set<string>(),
+    };
     while (
       hasUnevaluatedModuleClaim(
         state,
@@ -723,6 +727,29 @@ async function runTaskOnce(input: {
             }),
             { outcome: "stalled" as const });
       if (!evaluatorOutcome || evaluatorOutcome.outcome !== "incomplete") break;
+      const progress = moduleContinuationProgress({
+        result: evaluatorOutcome.result,
+        previous: continuationProgress,
+        evidenceRefs: state.moduleEvidenceRefs({
+          invocationID,
+          attempt: started.attempt.attempt,
+          flowID: input.flow.flowID,
+          moduleID: module.moduleID,
+        }),
+      });
+      if (!progress.made) {
+        evaluatorOutcome = { outcome: "stalled" };
+        state.stallModule({
+          invocationID,
+          attempt: started.attempt.attempt,
+          flowID: input.flow.flowID,
+          moduleID: module.moduleID,
+          reason:
+            "evaluator incomplete without new evidence or condition improvement",
+        });
+        break;
+      }
+      continuationProgress = progress.next;
       taskModuleContext.moduleContinuation = evaluatorContinuation(
         evaluatorOutcome.result,
       );
@@ -791,6 +818,36 @@ function evaluatorContinuation(
     recommendedActions: result.recommendedActions,
     idealOutcome: result.idealOutcome,
   });
+}
+
+function moduleContinuationProgress(input: {
+  result: import("@natalia/contracts").EvaluatorResult;
+  previous: {
+    conditionStatuses: Map<string, "missing" | "partial" | "satisfied">;
+    evidenceRefs: Set<string>;
+  };
+  evidenceRefs: string[];
+}) {
+  const rank = { missing: 0, partial: 1, satisfied: 2 } as const;
+  const conditionStatuses = new Map(
+    input.result.conditions.map((condition) => [
+      condition.id,
+      condition.status,
+    ]),
+  );
+  const evidenceRefs = new Set(input.evidenceRefs);
+  const improvedCondition = input.result.conditions.some(
+    (condition) =>
+      rank[condition.status] >
+      rank[input.previous.conditionStatuses.get(condition.id) ?? "missing"],
+  );
+  const newEvidence = input.evidenceRefs.some(
+    (ref) => !input.previous.evidenceRefs.has(ref),
+  );
+  return {
+    made: improvedCondition || newEvidence,
+    next: { conditionStatuses, evidenceRefs },
+  };
 }
 
 function taskExecutionProvider(

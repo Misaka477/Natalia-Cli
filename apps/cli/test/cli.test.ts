@@ -144,6 +144,7 @@ test("CLI task run evaluates a claimed module without advancing task success", a
   let evaluatorPayload = "";
   const executionSystemPrompts: string[] = [];
   let executionRequests = 0;
+  let continuationClaimed = false;
   const server = Bun.serve({
     port: 0,
     async fetch(request) {
@@ -220,7 +221,12 @@ test("CLI task run evaluates a claimed module without advancing task success", a
           ? toolCall("read_1", "read_file", readArguments)
           : executionRequests === 2
             ? toolCall("claim_1", "flow_module_complete", claimArguments)
-            : "data: [DONE]\n\n";
+            : body.messages[0]?.content.includes(
+                  "<active_flow_module_continuation>",
+                ) && !continuationClaimed
+              ? ((continuationClaimed = true),
+                toolCall("claim_2", "flow_module_complete", claimArguments))
+              : "data: [DONE]\n\n";
       return new Response(response, {
         headers: { "content-type": "text/event-stream" },
       });
@@ -348,6 +354,7 @@ test("CLI task run evaluates a claimed module without advancing task success", a
       expect.arrayContaining([
         expect.objectContaining({ kind: "flow.module_claimed" }),
         expect.objectContaining({ kind: "flow.module_continued" }),
+        expect.objectContaining({ kind: "flow.module_stalled" }),
       ]),
     );
     state.close();
