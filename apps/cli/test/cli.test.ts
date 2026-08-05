@@ -2664,6 +2664,30 @@ test("the shipped unattended examples validate against their example config", as
       modules: example.modules,
       references: example.references,
     });
+    // The shipped profiles must actually let every stage of the shipped flows
+    // work, otherwise the samples are parseable but not runnable.
+    const preview = Bun.spawnSync(
+      [
+        process.execPath,
+        join(import.meta.dir, "..", "src", "main.ts"),
+        "task",
+        "preview",
+        example.file,
+        "--workspace",
+        root,
+        "--json",
+      ],
+      { cwd: root, stdout: "pipe", stderr: "pipe" },
+    );
+    expect(new TextDecoder().decode(preview.stderr)).toBe("");
+    expect(preview.exitCode).toBe(0);
+    expect(
+      (
+        JSON.parse(new TextDecoder().decode(preview.stdout)) as {
+          blocked: unknown[];
+        }
+      ).blocked,
+    ).toEqual([]);
   }
 });
 
@@ -2975,4 +2999,187 @@ test("a task refuses to run under a configuration that was silently ignored", as
   const state = await workflow.NataliaTaskStateStore.open(root);
   expect(state.invocations("task_nightly")).toEqual([]);
   state.close();
+});
+
+test("CLI task preview shows the effective permissions of each stage", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-preview-"));
+  await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+  await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      permissionProfiles: {
+        unattended: {
+          approval: "auto",
+          description: "Task profile",
+          permissions: {
+            tools: {
+              allow: ["read_file", "glob", "grep", "run_shell", "report_issue"],
+            },
+          },
+          commandRules: {
+            mode: "whitelist",
+            rules: [{ command: "npm run typecheck" }],
+          },
+        },
+      },
+      issueTargets: {
+        forge: {
+          kind: "gitea",
+          baseURL: "https://forge.example",
+          owner: "n",
+          repo: "app",
+          token: "t",
+        },
+      },
+      alertChannels: { journal: { kind: "journal" } },
+    }),
+  );
+  await writeFile(
+    join(root, ".natalia", "flows", "mixed.yaml"),
+    [
+      "kind: natalia-flow",
+      "version: 1",
+      "flowID: flow_mixed",
+      "displayName: Mixed",
+      "modules:",
+      "  - id: read",
+      "    type: read_search",
+      "    displayName: Read",
+      "  - id: gate",
+      "    type: shell_command",
+      "    displayName: Gate",
+      "    commandRules:",
+      "      mode: whitelist",
+      "      rules:",
+      "        - command: npm run typecheck",
+      "  - id: report",
+      "    type: report_output",
+      "    displayName: Report",
+      "",
+    ].join("\n"),
+  );
+  await writeFile(
+    join(root, ".natalia", "tasks", "mixed.yaml"),
+    "kind: natalia-task\nversion: 1\ntaskID: task_mixed\ndisplayName: Mixed\nschedule: daily 01:00\nprompt: Do it.\npermissionProfile: unattended\nissueTarget: forge\nalerts:\n  - journal\nflow:\n  flowID: flow_mixed\n",
+  );
+  const preview = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "task",
+      "preview",
+      "mixed.yaml",
+      "--workspace",
+      root,
+      "--json",
+    ],
+    { cwd: root, stdout: "pipe", stderr: "pipe" },
+  );
+  expect(preview.exitCode).toBe(0);
+  const report = JSON.parse(new TextDecoder().decode(preview.stdout)) as {
+    modules: Array<{
+      moduleID: string;
+      tools: { allowed: string[]; denied: string[] };
+      commandRules: Record<string, { mode: string; commands: string[] }>;
+      blocked?: string;
+    }>;
+    blocked: unknown[];
+  };
+  expect(report.blocked).toEqual([]);
+  const [read, gate, reportStage] = report.modules;
+  expect(read!.tools.allowed.sort()).toEqual([
+    "flow_module_complete",
+    "glob",
+    "grep",
+    "read_file",
+  ]);
+  expect(gate!.tools.allowed).toContain("run_shell");
+  expect(gate!.commandRules).toEqual({
+    profile: { mode: "whitelist", commands: ["npm run typecheck"] },
+    module: { mode: "whitelist", commands: ["npm run typecheck"] },
+  });
+  // The reporting stage only works because the task configures an issue target.
+  expect(reportStage!.tools.allowed).toContain("report_issue");
+});
+
+test("a flow stage that the profile cannot run is rejected before it is scheduled", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-blocked-stage-"));
+  await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+  await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      permissionProfiles: {
+        readonly_tasks: {
+          approval: "auto",
+          description: "Reads only",
+          permissions: { tools: { allow: ["read_file", "glob", "grep"] } },
+        },
+      },
+    }),
+  );
+  await writeFile(
+    join(root, ".natalia", "flows", "needs-terminal.yaml"),
+    "kind: natalia-flow\nversion: 1\nflowID: flow_terminal\ndisplayName: Terminal\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n  - id: term\n    type: terminal\n    displayName: Terminal\n",
+  );
+  await writeFile(
+    join(root, ".natalia", "tasks", "needs-terminal.yaml"),
+    "kind: natalia-task\nversion: 1\ntaskID: task_terminal\ndisplayName: Terminal\nschedule: daily 01:00\nprompt: Do it.\npermissionProfile: readonly_tasks\nflow:\n  flowID: flow_terminal\n",
+  );
+  const validate = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "task",
+      "validate",
+      "needs-terminal.yaml",
+      "--workspace",
+      root,
+    ],
+    { cwd: root, stdout: "pipe", stderr: "pipe" },
+  );
+  expect(validate.exitCode).not.toBe(0);
+  const stderr = new TextDecoder().decode(validate.stderr);
+  // Discovering this at 02:00 by burning the retry budget is the worst way to
+  // learn that a stage can never satisfy its conditions.
+  expect(stderr).toContain("cannot complete under readonly_tasks");
+  expect(stderr).toContain("term");
+  const preview = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "task",
+      "preview",
+      "needs-terminal.yaml",
+      "--workspace",
+      root,
+    ],
+    { cwd: root, stdout: "pipe", stderr: "pipe" },
+  );
+  expect(preview.exitCode).not.toBe(0);
+  const text = new TextDecoder().decode(preview.stdout);
+  expect(text).toContain("BLOCKED");
+  expect(text).toContain("blocked stages: term");
+  // The disabled variant of the same flow is fine, because a disabled stage
+  // never runs.
+  await writeFile(
+    join(root, ".natalia", "flows", "needs-terminal.yaml"),
+    "kind: natalia-flow\nversion: 1\nflowID: flow_terminal\ndisplayName: Terminal\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n  - id: term\n    type: terminal\n    displayName: Terminal\n    enabled: false\n",
+  );
+  const revalidated = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "task",
+      "validate",
+      "needs-terminal.yaml",
+      "--workspace",
+      root,
+    ],
+    { cwd: root, stdout: "pipe", stderr: "pipe" },
+  );
+  expect(revalidated.exitCode).toBe(0);
 });

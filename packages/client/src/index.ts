@@ -8,6 +8,12 @@ export {
 export { compactionDisplayLine } from "./compaction-display";
 export { createFakeBackend } from "./fixture";
 export { createRealRuntimeClient } from "./real-runtime";
+export {
+  effectiveFlowPermissions,
+  effectiveModulePermissions,
+  type EffectiveFlowPermissions,
+  type EffectiveModulePermissions,
+} from "./effective-policy";
 export type { RealRuntimeClientOptions } from "./real-runtime";
 export { providerErrorHint, retryDisplayLine } from "./retry-display";
 export {

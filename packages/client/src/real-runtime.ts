@@ -540,6 +540,13 @@ export function createRealRuntimeClient(
   });
   const toolLayer = createToolPolicyHookLayer(options.toolPolicy, {
     preExecute: async (event) => {
+      // System control, not a capability: an allow-list that forgets it must not
+      // be able to make module completion impossible.
+      if (
+        options.taskModuleContext &&
+        event.toolName === "flow_module_complete"
+      )
+        return { allowed: true, diagnostics: [] };
       const agentResult = await agentToolLayer.preExecute(event);
       if (!agentResult.allowed) return agentResult;
       const profileResult = await permissionProfileToolLayer.preExecute(event);
@@ -1542,6 +1549,12 @@ export function createRealRuntimeClient(
   }
 
   function isToolAllowed(toolName: string) {
+    // The module completion tool is system control, not a capability: it must
+    // stay available even when a profile, agent or module allow-list forgets to
+    // mention it, otherwise the model can never report completion and every
+    // module stalls for a configuration reason nobody can see.
+    if (options.taskModuleContext && toolName === "flow_module_complete")
+      return true;
     return (
       toolLayer.isToolAllowed(toolName) &&
       agentToolLayer.isToolAllowed(toolName) &&

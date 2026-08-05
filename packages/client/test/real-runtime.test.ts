@@ -6017,3 +6017,95 @@ test("read_data_source stays out of runtimes without a configured source", async
   await ordinaryClient.dispose?.();
   store.close();
 });
+
+test("module completion stays possible when a profile allow-list omits it", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-completion-exempt-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  // A profile that lists only capability tools, which is exactly the mistake the
+  // completion tool has to survive.
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      permissionProfiles: {
+        unattended: {
+          approval: "auto",
+          description: "Task profile",
+          permissions: { tools: { allow: ["read_file"] } },
+        },
+      },
+    }),
+  );
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_1" as SessionID,
+  });
+  store.activateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    conditionIDs: ["c1"],
+  });
+  const seenTools: string[][] = [];
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_completion_exempt" as SessionID,
+    permissionProfile: "unattended",
+    taskModuleContext: {
+      store,
+      invocationID: "inv_1",
+      attempt: 1,
+      flowID: "flow_1",
+      moduleID: "read",
+      moduleType: "read_search",
+    },
+    provider: {
+      provider: "completion-exempt",
+      model: "completion-exempt-model",
+      async *stream(request) {
+        seenTools.push((request.tools ?? []).map((tool) => tool.name));
+        if (request.messages.some((message) => message.role === "tool")) {
+          yield { type: "done" as const };
+          return;
+        }
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            {
+              id: "claim",
+              name: "flow_module_complete",
+              arguments: JSON.stringify({
+                flowID: "flow_1",
+                moduleID: "read",
+                conditionStatuses: [{ id: "c1", status: "satisfied" }],
+                evidenceRefs: [],
+                gaps: [],
+                recommendedAction: "Evaluate the claim.",
+              }),
+            },
+          ],
+        };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("claim the module");
+  expect(seenTools[0]).toContain("flow_module_complete");
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "tool.update",
+      name: "flow_module_complete",
+      status: "succeeded",
+    }),
+  );
+  expect(store.moduleEvents("inv_1", 1).map((event) => event.kind)).toContain(
+    "flow.module_claimed",
+  );
+  await client.dispose?.();
+  store.close();
+});

@@ -1,5 +1,6 @@
 import {
   createRealRuntimeClient,
+  effectiveFlowPermissions,
   type RealRuntimeClientOptions,
 } from "@natalia/client";
 import type {
@@ -232,10 +233,13 @@ switch (subcommand) {
     const taskPath = argv[2];
     if (
       !taskPath ||
-      (action !== "validate" && action !== "run" && action !== "status")
+      (action !== "validate" &&
+        action !== "run" &&
+        action !== "status" &&
+        action !== "preview")
     )
       throw new Error(
-        "task requires 'validate', 'run' or 'status' followed by a task path",
+        "task requires 'validate', 'run', 'status' or 'preview' followed by a task path",
       );
     const workspaceRoot = resolve(
       valueAfter(argv, "--workspace") ?? process.cwd(),
@@ -252,6 +256,20 @@ switch (subcommand) {
       });
       break;
     }
+    if (action === "preview") {
+      const preview = taskPermissionPreview({
+        task,
+        flow,
+        config: assertConfigApplied(await resolveConfig({ workspaceRoot })),
+      });
+      console.log(
+        argv.includes("--json")
+          ? JSON.stringify(preview, null, 2)
+          : taskPreviewLines(preview).join("\n"),
+      );
+      if (preview.blocked.length) process.exitCode = 1;
+      break;
+    }
     if (action === "status") {
       const report = await taskStatusReport({ workspaceRoot, task, flow });
       console.log(
@@ -261,10 +279,24 @@ switch (subcommand) {
       );
       break;
     }
+    const validateConfig = assertConfigApplied(
+      await resolveConfig({ workspaceRoot }),
+    );
     const references = assertTaskReferences({
       task,
-      config: assertConfigApplied(await resolveConfig({ workspaceRoot })),
+      config: validateConfig,
     });
+    const permissions = taskPermissionPreview({
+      task,
+      flow,
+      config: validateConfig,
+    });
+    if (permissions.blocked.length)
+      throw new Error(
+        `task flow cannot complete under ${task.permissionProfile}: ${permissions.blocked
+          .map((entry) => `${entry.moduleID}: ${entry.reason}`)
+          .join("; ")}`,
+      );
     const result = {
       taskID: task.taskID,
       displayName: task.displayName,
@@ -816,6 +848,64 @@ async function runTaskOnce(input: {
     alerts.close();
     state.close();
   }
+}
+
+/**
+ * Effective permissions each stage of the task's flow would get. It is a preview
+ * for the operator, not a boundary: the runtime recomputes every layer before it
+ * executes anything.
+ */
+function taskPermissionPreview(input: {
+  task: NataliaTaskDocument;
+  flow: NataliaFlowDocument;
+  config: Awaited<ReturnType<typeof resolveConfig>>["config"];
+}) {
+  const preview = effectiveFlowPermissions({
+    profile: input.config.permissionProfiles[input.task.permissionProfile],
+    flow: input.flow,
+    taskCapabilities: {
+      reportIssue: Boolean(input.task.issueTarget),
+      readDataSource: Boolean(input.task.dataSource),
+    },
+  });
+  return {
+    taskID: input.task.taskID,
+    permissionProfile: input.task.permissionProfile,
+    ...preview,
+  };
+}
+
+function taskPreviewLines(preview: ReturnType<typeof taskPermissionPreview>) {
+  const lines = [
+    `task ${preview.taskID} under profile ${preview.permissionProfile}`,
+    `flow ${preview.flowID}`,
+  ];
+  for (const module of preview.modules) {
+    lines.push(
+      `  ${module.enabled ? "" : "(disabled) "}${module.moduleID} [${module.moduleType}] ${module.displayName}`,
+      `    tools: ${module.tools.allowed.join(", ") || "none"}`,
+    );
+    if (module.tools.denied.length)
+      lines.push(`    denied: ${module.tools.denied.join(", ")}`);
+    if (module.commandRules.profile)
+      lines.push(
+        `    profile commands (${module.commandRules.profile.mode}): ${module.commandRules.profile.commands.join(", ") || "none"}`,
+      );
+    if (module.commandRules.module)
+      lines.push(
+        `    module commands (${module.commandRules.module.mode}): ${module.commandRules.module.commands.join(", ") || "none"}`,
+      );
+    if (module.interactivePrograms.length)
+      lines.push(
+        `    interactive programs: ${module.interactivePrograms.join(", ")}`,
+      );
+    if (module.blocked) lines.push(`    BLOCKED: ${module.blocked}`);
+  }
+  if (preview.blocked.length)
+    lines.push(
+      `blocked stages: ${preview.blocked.map((entry) => entry.moduleID).join(", ")}`,
+    );
+  return lines;
 }
 
 /**
