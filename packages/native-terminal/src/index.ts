@@ -1434,6 +1434,16 @@ export class NativeTerminalRegistry {
     return this.get(id);
   }
 
+  /**
+   * Terminal device backing a pane. The runtime uses it to confirm which program
+   * is actually in the foreground, instead of inferring that from the screen.
+   */
+  async ttyName(id: string): Promise<string | undefined> {
+    const session = this.get(id);
+    const panes = await this.host.list();
+    return panes.find((pane) => pane.pane_id === session.paneID)?.tty_name;
+  }
+
   markObserved(id: string, text: string, revision: number) {
     const session = this.get(id);
     session.lastObservedText = text;

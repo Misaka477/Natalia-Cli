@@ -174,11 +174,21 @@ export const permissionProfileCommandRulesSchema = z.object({
   rules: z.array(bashCommandRuleSchema).default([]),
 });
 
+/**
+ * Launch commands that may take over a pane as an interactive program, such as
+ * an editor, a REPL or a database client. It is an explicit allowlist: without
+ * an entry, interactive-program mode does not exist for that profile or module.
+ */
+export const interactiveProgramRulesSchema = z.object({
+  allow: z.array(bashCommandRuleSchema).default([]),
+});
+
 export const permissionProfileSchema = z.object({
   approval: z.enum(["ask", "auto", "read_only"]),
   description: z.string().default(""),
   permissions: agentPermissionRulesSchema.optional(),
   commandRules: permissionProfileCommandRulesSchema.optional(),
+  interactivePrograms: interactiveProgramRulesSchema.optional(),
   extensions: z
     .object({
       skills: z.boolean().optional(),
@@ -215,6 +225,7 @@ export const nataliaFlowModuleSchema = z.object({
   minimumConditions: z.array(flowConditionSchema).default([]),
   idealConditions: z.array(flowConditionSchema).default([]),
   commandRules: permissionProfileCommandRulesSchema.optional(),
+  interactivePrograms: interactiveProgramRulesSchema.optional(),
 });
 
 export const nataliaFlowDocumentSchema = z.object({
@@ -617,6 +628,9 @@ export type ModelConfig = z.infer<typeof modelConfigSchema>;
 export type ProviderConfig = z.infer<typeof providerConfigSchema>;
 export type PermissionProfile = z.infer<typeof permissionProfileSchema>;
 export type IssueTargetConfig = z.infer<typeof issueTargetConfigSchema>;
+export type InteractiveProgramRules = z.infer<
+  typeof interactiveProgramRulesSchema
+>;
 export type NataliaFlowDocument = z.infer<typeof nataliaFlowDocumentSchema>;
 export type NataliaTaskDocument = z.infer<typeof nataliaTaskDocumentSchema>;
 export type NataliaFlowDocumentInput = z.input<

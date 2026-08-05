@@ -109,7 +109,11 @@ import {
   writeWezTermNativeDomainConfig,
   type NativeInputBroker,
 } from "@natalia/native-terminal";
-import { globalConfigHome, userRuntimeHome } from "@natalia/platform";
+import {
+  foregroundProcessForTTY,
+  globalConfigHome,
+  userRuntimeHome,
+} from "@natalia/platform";
 import { WorkspaceSandboxManager } from "@natalia/sandbox";
 import { loadNativeMCPTools } from "@natalia/mcp";
 import { createPluginRegistry, loadLocalPlugins } from "@natalia/plugin";
@@ -399,6 +403,8 @@ export type RealRuntimeClientOptions = {
     moduleType: NataliaFlowModuleType;
     moduleInstructions?: string;
     moduleCommandRules?: import("./tool-policy").PermissionProfileCommandRules;
+    /** Interactive programs the active module allows, intersected with the profile. */
+    moduleInteractivePrograms?: import("./tool-policy").InteractiveProgramAuthorization;
     /** Controller-owned structured continuation for the active module only. */
     moduleContinuation?: string;
     /**
@@ -461,7 +467,28 @@ export function createRealRuntimeClient(
       ? moduleToolPolicy(options.taskModuleContext.moduleType)
       : undefined,
   );
-  const terminalCommandBuffer = new TerminalCommandBuffer();
+  const terminalCommandBuffer = new TerminalCommandBuffer({
+    // Confirming the pane's foreground program is what lets an authorized
+    // interactive program own the pane without reopening the shell bypass: the
+    // mode ends as soon as the operating system reports a different program, and
+    // input is refused when the host cannot answer at all.
+    foregroundProgram: async (paneID) => {
+      try {
+        const ttyName = await nativeTerminal?.ttyName(paneID);
+        if (!ttyName)
+          return {
+            supported: false as const,
+            reason: `pane ${paneID} has no terminal device`,
+          };
+        return foregroundProcessForTTY(ttyName);
+      } catch (error) {
+        return {
+          supported: false as const,
+          reason: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
+  });
   const toolLayer = createToolPolicyHookLayer(options.toolPolicy, {
     preExecute: async (event) => {
       const agentResult = await agentToolLayer.preExecute(event);
@@ -506,6 +533,10 @@ export function createRealRuntimeClient(
           ),
           event.toolName,
           args,
+          [
+            selectedPermissionProfile?.interactivePrograms,
+            options.taskModuleContext?.moduleInteractivePrograms,
+          ],
         );
       const profileCommandPermission =
         bufferedProfileCommandPermission ??

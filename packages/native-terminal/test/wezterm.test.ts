@@ -1814,3 +1814,63 @@ test("stale mux runtime directories are reclaimed but live ones are kept", async
   expect(await Bun.file(join(fresh, "wezterm")).exists()).toBe(false);
   expect((await readdir(root)).sort()).toEqual(["fresh", "live", "mine"]);
 });
+
+test("native registry reports the terminal device backing a pane", async () => {
+  const host = {
+    kind: "wezterm" as const,
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 31, window_id: 1, tab_id: 1, rows: 24, cols: 80 };
+    },
+    async list() {
+      return [
+        {
+          pane_id: 31,
+          window_id: 1,
+          tab_id: 1,
+          rows: 24,
+          cols: 80,
+          tty_name: "/dev/pts/9",
+        },
+        { pane_id: 32, window_id: 1, tab_id: 1, rows: 24, cols: 80 },
+      ];
+    },
+    async read() {
+      return "";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  };
+  const registry = new NativeTerminalRegistry(host, { autoOpenHub: false });
+  const session = await registry.start({ command: "bash", cwd: process.cwd() });
+  // The device name is what lets the runtime confirm the foreground program
+  // instead of inferring it from the screen.
+  await expect(registry.ttyName(session.id)).resolves.toBe("/dev/pts/9");
+  await registry.dispose();
+});
+
+test("native registry reports no terminal device when the host omits it", async () => {
+  const host = {
+    kind: "wezterm" as const,
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 41, window_id: 1, tab_id: 1, rows: 24, cols: 80 };
+    },
+    async list() {
+      return [{ pane_id: 41, window_id: 1, tab_id: 1, rows: 24, cols: 80 }];
+    },
+    async read() {
+      return "";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  };
+  const registry = new NativeTerminalRegistry(host, { autoOpenHub: false });
+  const session = await registry.start({ command: "bash", cwd: process.cwd() });
+  await expect(registry.ttyName(session.id)).resolves.toBeUndefined();
+  await registry.dispose();
+});

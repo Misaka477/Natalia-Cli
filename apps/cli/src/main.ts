@@ -1098,6 +1098,9 @@ async function runTaskModule(input: {
     moduleCommandRules: input.flow.modules.find(
       (entry) => entry.id === input.module.moduleID,
     )?.commandRules,
+    moduleInteractivePrograms: input.flow.modules.find(
+      (entry) => entry.id === input.module.moduleID,
+    )?.interactivePrograms,
     reportIssue: input.reportIssue,
   };
   const client = createRealRuntimeClient({

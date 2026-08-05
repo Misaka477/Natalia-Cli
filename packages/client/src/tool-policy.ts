@@ -439,16 +439,60 @@ export async function evaluatePermissionProfileCommandRules(
   return { allowed: true, diagnostics };
 }
 
+/**
+ * Interactive-program mode.
+ *
+ * A pane only leaves Bash-command mode when an explicitly authorized launch
+ * command prefix was submitted and the operating system confirms that the
+ * launched program is the pane's foreground process. The mode is never inferred
+ * from the screen, the prompt or a model claim, and it ends the moment the
+ * foreground is confirmed to be something else. When the foreground cannot be
+ * confirmed at all, input is refused instead of being sent raw.
+ */
+export type InteractiveProgramAuthorization = {
+  allow: readonly BashCommandRule[];
+};
+
+export type ForegroundProgramProbe =
+  | { supported: false; reason: string }
+  | { supported: true; process: { pid: number; name: string } | undefined };
+
+export type TerminalPaneMode =
+  | { mode: "bash" }
+  | { mode: "pending_program"; program: string; launch: string }
+  | {
+      mode: "interactive_program";
+      program: string;
+      launch: string;
+      pid: number;
+    };
+
 /** Keeps one unsubmitted Bash line per managed pane for structured profiles. */
 export class TerminalCommandBuffer {
   #lines = new Map<string, string>();
+  #modes = new Map<string, TerminalPaneMode>();
+  #foreground?: (paneID: string) => Promise<ForegroundProgramProbe>;
+
+  constructor(
+    options: {
+      foregroundProgram?: (paneID: string) => Promise<ForegroundProgramProbe>;
+    } = {},
+  ) {
+    this.#foreground = options.foregroundProgram;
+  }
 
   clear(id: string): void {
     this.#lines.delete(id);
+    this.#modes.delete(id);
   }
 
   clearAll(): void {
     this.#lines.clear();
+    this.#modes.clear();
+  }
+
+  paneMode(id: string): TerminalPaneMode {
+    return this.#modes.get(id) ?? { mode: "bash" };
   }
 
   async evaluate(
@@ -458,6 +502,10 @@ export class TerminalCommandBuffer {
       | undefined,
     toolName: string,
     args: Record<string, unknown>,
+    interactivePrograms:
+      | InteractiveProgramAuthorization
+      | readonly (InteractiveProgramAuthorization | undefined)[]
+      | undefined = undefined,
   ): Promise<TerminalCommandBufferResult | undefined> {
     const activeRules = (Array.isArray(rules) ? rules : [rules]).filter(
       (rule): rule is PermissionProfileCommandRules =>
@@ -468,6 +516,15 @@ export class TerminalCommandBuffer {
     if (!input) return undefined;
     if (!input.id)
       return denyTerminalBuffer("terminal command policy requires a pane id");
+    const authorizedPrograms = interactiveProgramAllowlist(interactivePrograms);
+    const resolved = await this.resolvePaneMode(input.id, authorizedPrograms);
+    if (resolved) return resolved;
+    if (this.paneMode(input.id).mode === "interactive_program") {
+      // The authorized program owns the pane, so its input follows the program's
+      // own protocol rather than Bash syntax. Nothing is buffered or parsed.
+      this.#lines.delete(input.id);
+      return { allowed: true, diagnostics: [] };
+    }
     if (input.unsupported) {
       this.clear(input.id);
       return denyTerminalBuffer(input.unsupported, true);
@@ -486,7 +543,7 @@ export class TerminalCommandBuffer {
       this.#lines.set(input.id, line);
       return { allowed: true, diagnostics: [] };
     }
-    this.clear(input.id);
+    this.#lines.delete(input.id);
     for (const [index, rules] of activeRules.entries()) {
       const check = await evaluatePermissionProfileCommandRules(
         rules,
@@ -496,8 +553,115 @@ export class TerminalCommandBuffer {
       );
       if (!check.allowed) return { ...check, clearTerminal: true };
     }
+    // The command passed policy. If it also launches an authorized interactive
+    // program, the pane waits for the operating system to confirm the takeover;
+    // until then input stays under Bash policy.
+    const launch = await authorizedLaunch(line, authorizedPrograms);
+    if (launch)
+      this.#modes.set(input.id, {
+        mode: "pending_program",
+        program: launch.program,
+        launch: launch.launch,
+      });
     return { allowed: true, diagnostics: [] };
   }
+
+  /**
+   * Confirms or retires the pane's interactive-program mode before any input is
+   * considered. Returns a denial when the mode exists but cannot be confirmed.
+   */
+  private async resolvePaneMode(
+    paneID: string,
+    authorizedPrograms: readonly BashCommandRule[],
+  ): Promise<TerminalCommandBufferResult | undefined> {
+    const current = this.#modes.get(paneID);
+    if (!current || current.mode === "bash") return undefined;
+    if (!authorizedPrograms.length) {
+      // The authorization disappeared, for example on a module switch.
+      this.#modes.delete(paneID);
+      return undefined;
+    }
+    if (!this.#foreground) {
+      this.#modes.delete(paneID);
+      return current.mode === "interactive_program"
+        ? denyTerminalBuffer(
+            `interactive program ${current.program} cannot be confirmed on this host`,
+            true,
+          )
+        : undefined;
+    }
+    const probe = await this.#foreground(paneID);
+    if (!probe.supported) {
+      this.#modes.delete(paneID);
+      return current.mode === "interactive_program"
+        ? denyTerminalBuffer(
+            `interactive program ${current.program} cannot be confirmed: ${probe.reason}`,
+            true,
+          )
+        : undefined;
+    }
+    if (probe.process && programMatches(probe.process.name, current.program)) {
+      this.#modes.set(paneID, {
+        mode: "interactive_program",
+        program: current.program,
+        launch: current.launch,
+        pid: probe.process.pid,
+      });
+      return undefined;
+    }
+    // The operating system confirms the program is no longer in the foreground,
+    // which is the only accepted way to return to Bash policy.
+    this.#modes.delete(paneID);
+    return undefined;
+  }
+}
+
+function interactiveProgramAllowlist(
+  input:
+    | InteractiveProgramAuthorization
+    | readonly (InteractiveProgramAuthorization | undefined)[]
+    | undefined,
+): readonly BashCommandRule[] {
+  const groups = (Array.isArray(input) ? input : [input]).filter(
+    (group): group is InteractiveProgramAuthorization =>
+      Boolean(group?.allow?.length),
+  );
+  if (!groups.length) return [];
+  // A module can only narrow the profile, never widen it, so an interactive
+  // program must be allowed by every configured layer.
+  return groups.reduce<readonly BashCommandRule[]>(
+    (accumulator, group, index) =>
+      index === 0
+        ? group.allow
+        : accumulator.filter((rule) =>
+            group.allow.some((other) => other.command === rule.command),
+          ),
+    [],
+  );
+}
+
+async function authorizedLaunch(
+  line: string,
+  authorizedPrograms: readonly BashCommandRule[],
+): Promise<{ program: string; launch: string } | undefined> {
+  if (!authorizedPrograms.length) return undefined;
+  const command = await parseBashSimpleCommand(line);
+  if (!command.ok) return undefined;
+  for (const rule of authorizedPrograms) {
+    const parsed = await parseBashCommandRule(rule);
+    if (!parsed.ok) continue;
+    if (!commandHasPrefix(command.command, parsed.command)) continue;
+    const program = parsed.command.tokens[0]!;
+    return {
+      program: program.split("/").pop() ?? program,
+      launch: rule.command,
+    };
+  }
+  return undefined;
+}
+
+function programMatches(foreground: string, program: string) {
+  return foreground === program || foreground === program.slice(0, 15);
 }
 
 function denyTerminalBuffer(

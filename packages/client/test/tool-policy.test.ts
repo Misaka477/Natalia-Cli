@@ -1417,3 +1417,264 @@ function blockTestProvider(): StreamingProvider {
     },
   };
 }
+
+/** Foreground program the fake host reports for the pane, one step at a time. */
+function foregroundSequence(
+  steps: Array<
+    { program: string; pid?: number } | { none: true } | { unsupported: string }
+  >,
+) {
+  let index = 0;
+  return async () => {
+    const step = steps[Math.min(index++, steps.length - 1)]!;
+    if ("unsupported" in step)
+      return { supported: false as const, reason: step.unsupported };
+    if ("none" in step) return { supported: true as const, process: undefined };
+    return {
+      supported: true as const,
+      process: { pid: step.pid ?? 4242, name: step.program },
+    };
+  };
+}
+
+const WHITELIST_WITH_VIM = {
+  mode: "whitelist" as const,
+  rules: [{ command: "git diff" }, { command: "vim" }],
+};
+
+test("an unauthorized interactive program never leaves Bash command policy", async () => {
+  const buffer = new TerminalCommandBuffer({
+    foregroundProgram: foregroundSequence([{ program: "vim" }]),
+  });
+  // `vim` is a permitted command but no interactive program is authorized, so
+  // the pane stays in Bash mode and vim's own keystrokes are still policed.
+  await expect(
+    buffer.evaluate(WHITELIST_WITH_VIM, "interactive_terminal_send_line", {
+      id: "pane_a",
+      text: "vim notes.md",
+    }),
+  ).resolves.toMatchObject({ allowed: true });
+  expect(buffer.paneMode("pane_a")).toEqual({ mode: "bash" });
+  await expect(
+    buffer.evaluate(WHITELIST_WITH_VIM, "interactive_terminal_send_line", {
+      id: "pane_a",
+      text: ":wq",
+    }),
+  ).resolves.toMatchObject({ allowed: false, clearTerminal: true });
+});
+
+test("an authorized program takes over the pane only once the host confirms it", async () => {
+  const buffer = new TerminalCommandBuffer({
+    foregroundProgram: foregroundSequence([
+      { program: "bash" },
+      { program: "vim" },
+    ]),
+  });
+  const programs = { allow: [{ command: "vim" }] };
+  await expect(
+    buffer.evaluate(
+      WHITELIST_WITH_VIM,
+      "interactive_terminal_send_line",
+      { id: "pane_a", text: "vim notes.md" },
+      programs,
+    ),
+  ).resolves.toMatchObject({ allowed: true });
+  expect(buffer.paneMode("pane_a")).toMatchObject({
+    mode: "pending_program",
+    program: "vim",
+  });
+  // The shell is still in the foreground, so the takeover is not accepted yet
+  // and the input remains under Bash policy.
+  await expect(
+    buffer.evaluate(
+      WHITELIST_WITH_VIM,
+      "interactive_terminal_send_line",
+      { id: "pane_a", text: ":set number" },
+      programs,
+    ),
+  ).resolves.toMatchObject({ allowed: false });
+  expect(buffer.paneMode("pane_a")).toEqual({ mode: "bash" });
+  await buffer.evaluate(
+    WHITELIST_WITH_VIM,
+    "interactive_terminal_send_line",
+    { id: "pane_a", text: "vim notes.md" },
+    programs,
+  );
+  // Now the host reports vim in the foreground: its protocol input passes
+  // without being parsed as Bash.
+  await expect(
+    buffer.evaluate(
+      WHITELIST_WITH_VIM,
+      "interactive_terminal_send_line",
+      { id: "pane_a", text: ":set number" },
+      programs,
+    ),
+  ).resolves.toMatchObject({ allowed: true });
+  expect(buffer.paneMode("pane_a")).toMatchObject({
+    mode: "interactive_program",
+    program: "vim",
+    pid: 4242,
+  });
+  await expect(
+    buffer.evaluate(
+      WHITELIST_WITH_VIM,
+      "interactive_terminal_input",
+      { id: "pane_a", text: "i some prose | with pipes", submit: true },
+      programs,
+    ),
+  ).resolves.toMatchObject({ allowed: true });
+});
+
+test("a confirmed program exit returns the pane to Bash command policy", async () => {
+  const buffer = new TerminalCommandBuffer({
+    foregroundProgram: foregroundSequence([
+      { program: "vim" },
+      { program: "bash" },
+    ]),
+  });
+  const programs = { allow: [{ command: "vim" }] };
+  await buffer.evaluate(
+    WHITELIST_WITH_VIM,
+    "interactive_terminal_send_line",
+    { id: "pane_a", text: "vim notes.md" },
+    programs,
+  );
+  await expect(
+    buffer.evaluate(
+      WHITELIST_WITH_VIM,
+      "interactive_terminal_send_line",
+      { id: "pane_a", text: ":wq" },
+      programs,
+    ),
+  ).resolves.toMatchObject({ allowed: true });
+  expect(buffer.paneMode("pane_a")).toMatchObject({
+    mode: "interactive_program",
+  });
+  // The host now reports the shell again, which is the only accepted way back.
+  // The dangerous command that follows is policed as Bash again.
+  await expect(
+    buffer.evaluate(
+      { mode: "blacklist", rules: [{ command: "rm" }] },
+      "interactive_terminal_send_line",
+      { id: "pane_a", text: "rm -rf /" },
+      programs,
+    ),
+  ).resolves.toMatchObject({ allowed: false, clearTerminal: true });
+  expect(buffer.paneMode("pane_a")).toEqual({ mode: "bash" });
+});
+
+test("an unconfirmable foreground blocks interactive input instead of sending it raw", async () => {
+  const buffer = new TerminalCommandBuffer({
+    foregroundProgram: foregroundSequence([
+      { program: "vim" },
+      {
+        unsupported: "foreground process confirmation is unavailable on win32",
+      },
+    ]),
+  });
+  const programs = { allow: [{ command: "vim" }] };
+  await buffer.evaluate(
+    WHITELIST_WITH_VIM,
+    "interactive_terminal_send_line",
+    { id: "pane_a", text: "vim notes.md" },
+    programs,
+  );
+  await buffer.evaluate(
+    WHITELIST_WITH_VIM,
+    "interactive_terminal_send_line",
+    { id: "pane_a", text: ":w" },
+    programs,
+  );
+  expect(buffer.paneMode("pane_a")).toMatchObject({
+    mode: "interactive_program",
+  });
+  await expect(
+    buffer.evaluate(
+      WHITELIST_WITH_VIM,
+      "interactive_terminal_send_line",
+      { id: "pane_a", text: ":wq" },
+      programs,
+    ),
+  ).resolves.toMatchObject({
+    allowed: false,
+    clearTerminal: true,
+    diagnostics: [expect.stringContaining("cannot be confirmed")],
+  });
+  expect(buffer.paneMode("pane_a")).toEqual({ mode: "bash" });
+});
+
+test("a host that cannot report the foreground never enters interactive mode", async () => {
+  const buffer = new TerminalCommandBuffer();
+  const programs = { allow: [{ command: "vim" }] };
+  await buffer.evaluate(
+    WHITELIST_WITH_VIM,
+    "interactive_terminal_send_line",
+    { id: "pane_a", text: "vim notes.md" },
+    programs,
+  );
+  await expect(
+    buffer.evaluate(
+      WHITELIST_WITH_VIM,
+      "interactive_terminal_send_line",
+      { id: "pane_a", text: ":wq" },
+      programs,
+    ),
+  ).resolves.toMatchObject({ allowed: false });
+  expect(buffer.paneMode("pane_a")).toEqual({ mode: "bash" });
+});
+
+test("a module can narrow the authorized programs but never widen them", async () => {
+  const buffer = new TerminalCommandBuffer({
+    foregroundProgram: foregroundSequence([{ program: "python3" }]),
+  });
+  const rules = {
+    mode: "whitelist" as const,
+    rules: [{ command: "vim" }, { command: "python3" }],
+  };
+  // The module allows python3, the profile only vim, so the intersection is
+  // empty and no takeover happens.
+  await buffer.evaluate(
+    rules,
+    "interactive_terminal_send_line",
+    { id: "pane_a", text: "python3" },
+    [{ allow: [{ command: "vim" }] }, { allow: [{ command: "python3" }] }],
+  );
+  expect(buffer.paneMode("pane_a")).toEqual({ mode: "bash" });
+  // With both layers allowing python3 the takeover is authorized.
+  await buffer.evaluate(
+    rules,
+    "interactive_terminal_send_line",
+    { id: "pane_a", text: "python3" },
+    [{ allow: [{ command: "python3" }] }, { allow: [{ command: "python3" }] }],
+  );
+  expect(buffer.paneMode("pane_a")).toMatchObject({
+    mode: "pending_program",
+    program: "python3",
+  });
+});
+
+test("stopping a pane clears its interactive program mode", async () => {
+  const buffer = new TerminalCommandBuffer({
+    foregroundProgram: foregroundSequence([{ program: "vim" }]),
+  });
+  const programs = { allow: [{ command: "vim" }] };
+  await buffer.evaluate(
+    WHITELIST_WITH_VIM,
+    "interactive_terminal_send_line",
+    { id: "pane_a", text: "vim notes.md" },
+    programs,
+  );
+  await buffer.evaluate(
+    WHITELIST_WITH_VIM,
+    "interactive_terminal_send_line",
+    { id: "pane_a", text: ":w" },
+    programs,
+  );
+  expect(buffer.paneMode("pane_a")).toMatchObject({
+    mode: "interactive_program",
+  });
+  buffer.clear("pane_a");
+  expect(buffer.paneMode("pane_a")).toEqual({ mode: "bash" });
+  buffer.clearAll();
+  expect(buffer.paneMode("pane_a")).toEqual({ mode: "bash" });
+});

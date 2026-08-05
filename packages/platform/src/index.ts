@@ -427,3 +427,129 @@ function defaultExists(path: string): boolean {
     return false;
   }
 }
+
+/**
+ * Foreground program of a terminal device.
+ *
+ * This exists so the runtime can confirm that an authorized interactive program
+ * is still the one receiving pane input, instead of guessing from the screen,
+ * the prompt or a model claim. It is deliberately OS truth or nothing: when the
+ * platform cannot answer, the caller must fail closed.
+ */
+export type ForegroundProcessProbe =
+  | { supported: false; reason: string }
+  | { supported: true; process: { pid: number; name: string } | undefined };
+
+export type ForegroundProcessIO = {
+  os?: NodeJS.Platform;
+  /** Device number of the tty, as reported by `stat`. */
+  deviceNumber?(ttyName: string): number | undefined;
+  processIDs?(): number[];
+  processStat?(pid: number): string | undefined;
+};
+
+export function foregroundProcessForTTY(
+  ttyName: string,
+  io: ForegroundProcessIO = {},
+): ForegroundProcessProbe {
+  const os = io.os ?? currentPlatform();
+  if (os !== "linux")
+    return {
+      supported: false,
+      reason: `foreground process confirmation is unavailable on ${os}`,
+    };
+  if (!ttyName)
+    return { supported: false, reason: "pane has no tty to inspect" };
+  const deviceNumber = (io.deviceNumber ?? defaultDeviceNumber)(ttyName);
+  if (deviceNumber === undefined)
+    return { supported: false, reason: `tty is not inspectable: ${ttyName}` };
+  const readStat = io.processStat ?? defaultProcessStat;
+  const pids = (io.processIDs ?? defaultProcessIDs)();
+  let foregroundGroup: number | undefined;
+  const names = new Map<number, string>();
+  for (const pid of pids) {
+    const stat = readStat(pid);
+    if (!stat) continue;
+    const parsed = parseProcessStat(stat);
+    if (!parsed) continue;
+    names.set(parsed.pid, parsed.name);
+    if (parsed.tty === deviceNumber && parsed.foregroundGroup > 0)
+      foregroundGroup = parsed.foregroundGroup;
+  }
+  if (foregroundGroup === undefined)
+    return { supported: true, process: undefined };
+  const name = names.get(foregroundGroup);
+  if (name === undefined) {
+    // The group leader is gone or unreadable, so nothing can be confirmed.
+    return {
+      supported: false,
+      reason: `foreground process group ${foregroundGroup} is not inspectable`,
+    };
+  }
+  return { supported: true, process: { pid: foregroundGroup, name } };
+}
+
+/**
+ * Parses `/proc/<pid>/stat`. The command name is brace-delimited and may itself
+ * contain spaces and parentheses, so the numeric fields are read relative to the
+ * final `)`.
+ */
+export function parseProcessStat(stat: string):
+  | {
+      pid: number;
+      name: string;
+      tty: number;
+      foregroundGroup: number;
+    }
+  | undefined {
+  const open = stat.indexOf("(");
+  const close = stat.lastIndexOf(")");
+  if (open < 0 || close < open) return undefined;
+  const pid = Number.parseInt(stat.slice(0, open).trim(), 10);
+  const name = stat.slice(open + 1, close);
+  const rest = stat
+    .slice(close + 1)
+    .trim()
+    .split(/\s+/u);
+  // rest[0] is state (field 3), so tty_nr (field 7) and tpgid (field 8) are at
+  // offsets 4 and 5.
+  const tty = Number.parseInt(rest[4] ?? "", 10);
+  const foregroundGroup = Number.parseInt(rest[5] ?? "", 10);
+  if (
+    !Number.isSafeInteger(pid) ||
+    !Number.isSafeInteger(tty) ||
+    !Number.isSafeInteger(foregroundGroup)
+  )
+    return undefined;
+  return { pid, name, tty, foregroundGroup };
+}
+
+function defaultDeviceNumber(ttyName: string): number | undefined {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { statSync } = require("node:fs") as typeof import("node:fs");
+    return statSync(ttyName).rdev;
+  } catch {
+    return undefined;
+  }
+}
+
+function defaultProcessIDs(): number[] {
+  try {
+    const { readdirSync } = require("node:fs") as typeof import("node:fs");
+    return readdirSync("/proc")
+      .map((entry) => Number.parseInt(entry, 10))
+      .filter((pid) => Number.isSafeInteger(pid) && pid > 0);
+  } catch {
+    return [];
+  }
+}
+
+function defaultProcessStat(pid: number): string | undefined {
+  try {
+    const { readFileSync } = require("node:fs") as typeof import("node:fs");
+    return readFileSync(`/proc/${pid}/stat`, "utf8");
+  } catch {
+    return undefined;
+  }
+}
