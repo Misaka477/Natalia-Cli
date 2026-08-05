@@ -9,6 +9,25 @@ import type {
 } from "@natalia/contracts";
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface ConfigPatch extends Record<string, unknown> {}
+import { scheduledTaskOverview } from "@natalia/client";
+
+/** Every editor the Settings menu can open. */
+type SettingsAction =
+  | "provider"
+  | "edit-provider"
+  | "delete-provider"
+  | "tasks"
+  | "theme"
+  | "mcp"
+  | "model"
+  | "permission"
+  | "mode"
+  | "model.edit"
+  | "web"
+  | "workspace"
+  | "extensions"
+  | "runtime"
+  | "tui";
 import { getPluginCommands } from "@natalia/plugin";
 import { resolveConfig, type ConfigWriteScope } from "@natalia/config";
 import {
@@ -29,6 +48,7 @@ import {
 } from "../dialog/DialogLayer";
 import { DialogProviderSetup } from "../component/DialogProviderSetup";
 import { DialogModel } from "../component/DialogModel";
+import { DialogScheduledTasks } from "../component/DialogScheduledTasks";
 import { DialogSkill } from "../component/DialogSkill";
 import { DialogStash } from "../component/DialogStash";
 import { DialogAttachment } from "../component/DialogAttachment";
@@ -39,7 +59,7 @@ import { DialogThemeList } from "../component/DialogThemeList";
 import { DialogCheckpoint } from "../component/DialogCheckpoint";
 import { DialogSandbox } from "../component/DialogSandbox";
 import { DialogTerminal } from "../component/DialogTerminal";
-import { DialogSelect } from "../dialog/DialogSelect";
+import { DialogSelect, type DialogSelectOption } from "../dialog/DialogSelect";
 import { DialogPrompt } from "../dialog/DialogPrompt";
 import { DialogConfirm } from "../dialog/DialogConfirm";
 import {
@@ -657,81 +677,89 @@ export function runCommand(command: string, ctx: CommandContext) {
     async function saveConfig(next: ConfigPatch) {
       await ctx.persistConfig(next, settingsBase);
     }
+    // The option values and the switch below are the same union, so a typo on
+    // either side is a compile error instead of a menu entry that does nothing.
+    const settingsOptions: DialogSelectOption<SettingsAction>[] = [
+      {
+        title: "Add Provider",
+        value: "provider",
+        description: "Configure a provider and model",
+      },
+      {
+        title: "Edit Provider",
+        value: "edit-provider",
+        description: "Modify key, URL, type",
+      },
+      {
+        title: "Delete Provider",
+        value: "delete-provider",
+        description: "Remove provider and models",
+      },
+      {
+        title: "Theme",
+        value: "theme",
+        description: ctx.preferences().theme || "natalia-dark",
+      },
+      {
+        title: "MCP Servers",
+        value: "mcp",
+        description: "Manage MCP servers",
+      },
+      {
+        title: "Permission Profile",
+        value: "permission",
+        description: "Select permission profile",
+      },
+      {
+        title: "Agent Mode",
+        value: "mode",
+        description: "Select agent mode",
+      },
+      {
+        title: "Select Model",
+        value: "model",
+        description: "Select default model",
+      },
+      {
+        title: "Models",
+        value: "model.edit",
+        description: "Add/edit/delete model configs",
+      },
+      {
+        title: "Web & Network",
+        value: "web",
+        description: "Search, browser, network rules",
+      },
+      {
+        title: "Workspace",
+        value: "workspace",
+        description: "Root, instructions, README, docs",
+      },
+      {
+        title: "Extensions",
+        value: "extensions",
+        description: "Remote skills and local plugin policy",
+      },
+      {
+        title: "Runtime Config",
+        value: "runtime",
+        description: "Max steps, retry, checkpoints",
+      },
+      {
+        title: "Scheduled Tasks",
+        value: "tasks",
+        description: "Unattended tasks, last result, problems",
+      },
+      {
+        title: "TUI Preferences",
+        value: "tui",
+        description: "Density, diff style, keybinds",
+      },
+    ];
     ctx.dialog.push(() => (
       <DialogSelect
         title="Settings"
-        options={[
-          {
-            title: "Add Provider",
-            value: "provider",
-            description: "Configure a provider and model",
-          },
-          {
-            title: "Edit Provider",
-            value: "edit-provider",
-            description: "Modify key, URL, type",
-          },
-          {
-            title: "Delete Provider",
-            value: "delete-provider",
-            description: "Remove provider and models",
-          },
-          {
-            title: "Theme",
-            value: "theme",
-            description: ctx.preferences().theme || "natalia-dark",
-          },
-          {
-            title: "MCP Servers",
-            value: "mcp",
-            description: "Manage MCP servers",
-          },
-          {
-            title: "Permission Profile",
-            value: "permission",
-            description: "Select permission profile",
-          },
-          {
-            title: "Agent Mode",
-            value: "mode",
-            description: "Select agent mode",
-          },
-          {
-            title: "Select Model",
-            value: "model",
-            description: "Select default model",
-          },
-          {
-            title: "Models",
-            value: "model.edit",
-            description: "Add/edit/delete model configs",
-          },
-          {
-            title: "Web & Network",
-            value: "web",
-            description: "Search, browser, network rules",
-          },
-          {
-            title: "Workspace",
-            value: "workspace",
-            description: "Root, instructions, README, docs",
-          },
-          {
-            title: "Extensions",
-            value: "extensions",
-            description: "Remote skills and local plugin policy",
-          },
-          {
-            title: "Runtime Config",
-            value: "runtime",
-            description: "Max steps, retry, checkpoints",
-          },
-          {
-            title: "TUI Preferences",
-            value: "tui",
-            description: "Density, diff style, keybinds",
-          },
-        ]}
+        options={settingsOptions}
         onSelect={async (option) => {
           const resolved = (
             await resolveConfig({
@@ -827,6 +855,22 @@ export function runCommand(command: string, ctx: CommandContext) {
                     ctx.dialog.pop();
                   }}
                 />
+              ));
+              break;
+            }
+            case "tasks": {
+              const overview = await scheduledTaskOverview({
+                workspaceRoot: ctx.workspaceRoot ?? process.cwd(),
+                config: resolved,
+              }).catch((error: unknown) => {
+                ctx.toast.error(
+                  error instanceof Error ? error.message : String(error),
+                );
+                return undefined;
+              });
+              if (!overview) break;
+              ctx.dialog.push(() => (
+                <DialogScheduledTasks overview={overview} />
               ));
               break;
             }
