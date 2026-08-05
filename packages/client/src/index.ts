@@ -9,7 +9,11 @@ export { compactionDisplayLine } from "./compaction-display";
 export { createFakeBackend } from "./fixture";
 export { createRealRuntimeClient } from "./real-runtime";
 export {
+  flowOverview,
   scheduledTaskOverview,
+  type FlowOverview,
+  type FlowRow,
+  type FlowStageRow,
   type ScheduledTaskOverview,
   type ScheduledTaskRow,
 } from "./task-overview";

@@ -137,6 +137,19 @@ export const commands: Record<string, CommandDef> = {
     desc: "Manage interactive terminal sessions",
     overlay: true,
   },
+  // Task and flow documents are work definitions the operator authors and runs,
+  // not tool configuration, so they get their own surfaces instead of living
+  // under Settings next to providers and themes.
+  "task.manage": {
+    id: "task.manage",
+    keys: "ctrl+shift+t",
+    desc: "Manage scheduled tasks",
+  },
+  "flow.manage": {
+    id: "flow.manage",
+    keys: "unset",
+    desc: "Show workflow definitions",
+  },
   "checkpoint.manage": {
     id: "checkpoint.manage",
     keys: "ctrl+shift+k",

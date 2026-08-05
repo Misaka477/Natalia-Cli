@@ -34,6 +34,34 @@ export type ScheduledTaskRow = {
   problems: string[];
 };
 
+export type FlowStageRow = {
+  moduleID: string;
+  moduleType: string;
+  displayName: string;
+  enabled: boolean;
+  minimumConditions: number;
+  idealConditions: number;
+  hasInstructions: boolean;
+  commandRules?: { mode: string; commands: number };
+  interactivePrograms: number;
+};
+
+export type FlowRow = {
+  flowID: string;
+  displayName: string;
+  path: string;
+  stages: FlowStageRow[];
+  enabledStages: number;
+  /** Tasks in this workspace that run this flow. */
+  usedBy: string[];
+  problems: string[];
+};
+
+export type FlowOverview = {
+  flows: FlowRow[];
+  unreadable: Array<{ path: string; reason: string }>;
+};
+
 export type ScheduledTaskOverview = {
   tasks: ScheduledTaskRow[];
   /** Task documents that could not be read at all. */
@@ -180,4 +208,88 @@ export async function scheduledTaskOverview(input: {
     alerts.close();
     state.close();
   }
+}
+
+/**
+ * Every flow in the workspace, its stages, and which tasks run it.
+ *
+ * Like the task overview it reports problems per entry instead of throwing: a
+ * flow that no task can complete has to stay visible and explain itself.
+ */
+export async function flowOverview(input: {
+  workspaceRoot: string;
+}): Promise<FlowOverview> {
+  const documents = new NataliaDocumentStore(input.workspaceRoot);
+  let entries: string[] = [];
+  try {
+    entries = (await readdir(documents.flowsDir)).filter((entry) =>
+      /\.ya?ml$/iu.test(entry),
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const taskFlows = new Map<string, string[]>();
+  try {
+    for (const entry of await readdir(documents.tasksDir)) {
+      if (!/\.ya?ml$/iu.test(entry)) continue;
+      const task = await documents.loadTask(entry).catch(() => undefined);
+      if (!task?.flow.flowID) continue;
+      taskFlows.set(task.flow.flowID, [
+        ...(taskFlows.get(task.flow.flowID) ?? []),
+        task.taskID,
+      ]);
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const flows: FlowRow[] = [];
+  const unreadable: Array<{ path: string; reason: string }> = [];
+  for (const entry of entries.sort()) {
+    const flow = await documents
+      .loadFlow(`.natalia/flows/${entry}`)
+      .catch((error: unknown) => {
+        unreadable.push({
+          path: entry,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+        return undefined;
+      });
+    if (!flow) continue;
+    const stages: FlowStageRow[] = flow.modules.map((module) => ({
+      moduleID: module.id,
+      moduleType: module.type,
+      displayName: module.displayName,
+      enabled: module.enabled,
+      minimumConditions: module.minimumConditions.length,
+      idealConditions: module.idealConditions.length,
+      hasInstructions: Boolean(module.instructions.trim()),
+      ...(module.commandRules
+        ? {
+            commandRules: {
+              mode: module.commandRules.mode,
+              commands: module.commandRules.rules.length,
+            },
+          }
+        : {}),
+      interactivePrograms: module.interactivePrograms?.allow.length ?? 0,
+    }));
+    const problems: string[] = [];
+    if (!stages.some((stage) => stage.enabled))
+      problems.push("no stage is enabled, so the flow can never complete");
+    for (const stage of stages)
+      if (stage.enabled && !stage.minimumConditions)
+        problems.push(
+          `stage has no minimum completion condition: ${stage.moduleID}`,
+        );
+    flows.push({
+      flowID: flow.flowID,
+      displayName: flow.displayName,
+      path: entry,
+      stages,
+      enabledStages: stages.filter((stage) => stage.enabled).length,
+      usedBy: taskFlows.get(flow.flowID) ?? [],
+      problems,
+    });
+  }
+  return { flows, unreadable };
 }

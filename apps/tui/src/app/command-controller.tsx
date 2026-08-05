@@ -9,14 +9,13 @@ import type {
 } from "@natalia/contracts";
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface ConfigPatch extends Record<string, unknown> {}
-import { scheduledTaskOverview } from "@natalia/client";
+import { flowOverview, scheduledTaskOverview } from "@natalia/client";
 
 /** Every editor the Settings menu can open. */
 type SettingsAction =
   | "provider"
   | "edit-provider"
   | "delete-provider"
-  | "tasks"
   | "theme"
   | "mcp"
   | "model"
@@ -48,6 +47,7 @@ import {
 } from "../dialog/DialogLayer";
 import { DialogProviderSetup } from "../component/DialogProviderSetup";
 import { DialogModel } from "../component/DialogModel";
+import { DialogFlows } from "../component/DialogFlows";
 import {
   DialogScheduledTasks,
   runScheduledTaskProcess,
@@ -675,6 +675,56 @@ export function runCommand(command: string, ctx: CommandContext) {
     });
     return;
   }
+  if (command === "task.manage" || command === "flow.manage") {
+    // runCommand stays synchronous, so the load runs detached like the other
+    // dialogs that need configuration before they can be presented.
+    void (async () => {
+      const workspaceRoot = ctx.workspaceRoot ?? process.cwd();
+      if (command === "flow.manage") {
+        const overview = await flowOverview({ workspaceRoot }).catch(
+          (error: unknown) => {
+            ctx.toast.error(
+              error instanceof Error ? error.message : String(error),
+            );
+            return undefined;
+          },
+        );
+        if (overview)
+          ctx.dialog.push(() => <DialogFlows overview={overview} />);
+        return;
+      }
+      const resolved = (await resolveConfig({ workspaceRoot })).config;
+      const loadOverview = () =>
+        scheduledTaskOverview({ workspaceRoot, config: resolved });
+      const overview = await loadOverview().catch((error: unknown) => {
+        ctx.toast.error(error instanceof Error ? error.message : String(error));
+        return undefined;
+      });
+      if (!overview) return;
+      // The provider unmounts this dialog while the detail view is open, so the
+      // overview is held here and refreshed in place.
+      const [tasks, setTasks] = createSignal(overview);
+      ctx.dialog.push(() => (
+        <DialogScheduledTasks
+          overview={tasks()}
+          workspaceRoot={workspaceRoot}
+          reload={async () => {
+            setTasks(await loadOverview());
+          }}
+          runTask={(taskPath) =>
+            runScheduledTaskProcess({ taskPath, workspaceRoot })
+          }
+          notify={(outcome) =>
+            ctx.toast.show({
+              variant: outcome.ok ? "success" : "warning",
+              message: outcome.message,
+            })
+          }
+        />
+      ));
+    })();
+    return;
+  }
   if (command === "settings.open") {
     let settingsBase: ConfigV2 | undefined;
     async function saveConfig(next: ConfigPatch) {
@@ -747,11 +797,6 @@ export function runCommand(command: string, ctx: CommandContext) {
         title: "Runtime Config",
         value: "runtime",
         description: "Max steps, retry, checkpoints",
-      },
-      {
-        title: "Scheduled Tasks",
-        value: "tasks",
-        description: "Unattended tasks, last result, problems",
       },
       {
         title: "TUI Preferences",
@@ -857,43 +902,6 @@ export function runCommand(command: string, ctx: CommandContext) {
                     void saveConfig(resolved);
                     ctx.dialog.pop();
                   }}
-                />
-              ));
-              break;
-            }
-            case "tasks": {
-              const workspaceRoot = ctx.workspaceRoot ?? process.cwd();
-              const loadOverview = () =>
-                scheduledTaskOverview({
-                  workspaceRoot,
-                  config: resolved,
-                });
-              const overview = await loadOverview().catch((error: unknown) => {
-                ctx.toast.error(
-                  error instanceof Error ? error.message : String(error),
-                );
-                return undefined;
-              });
-              if (!overview) break;
-              // The provider unmounts this dialog while the detail view is open,
-              // so the overview is held here and refreshed in place.
-              const [tasks, setTasks] = createSignal(overview);
-              ctx.dialog.push(() => (
-                <DialogScheduledTasks
-                  overview={tasks()}
-                  workspaceRoot={workspaceRoot}
-                  reload={async () => {
-                    setTasks(await loadOverview());
-                  }}
-                  runTask={(taskPath) =>
-                    runScheduledTaskProcess({ taskPath, workspaceRoot })
-                  }
-                  notify={(outcome) =>
-                    ctx.toast.show({
-                      variant: outcome.ok ? "success" : "warning",
-                      message: outcome.message,
-                    })
-                  }
                 />
               ));
               break;

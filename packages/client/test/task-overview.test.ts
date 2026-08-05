@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configV2Schema, type ConfigV2 } from "@natalia/contracts";
 import { NataliaTaskStateStore } from "@natalia/workflow";
-import { scheduledTaskOverview } from "../src";
+import { flowOverview, scheduledTaskOverview } from "../src";
 
 const READY_FLOW =
   "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n    minimumConditions:\n      - id: c1\n        text: Read the sources\n";
@@ -187,4 +187,39 @@ test("a task whose flow is missing is listed with the reason", async () => {
   });
   expect(overview.unreadable).toHaveLength(1);
   expect(overview.unreadable[0]!.reason).toContain("natalia flow not found");
+});
+
+test("the flow overview reports stages, who uses them, and what is wrong", async () => {
+  const root = await workspace("natalia-flow-overview-");
+  await writeFile(
+    join(root, ".natalia", "flows", "empty.yaml"),
+    "kind: natalia-flow\nversion: 1\nflowID: flow_empty\ndisplayName: Empty\nmodules:\n  - id: off\n    type: read_search\n    displayName: Off\n    enabled: false\n    minimumConditions:\n      - id: c1\n        text: Read\n",
+  );
+  await writeFile(
+    join(root, ".natalia", "flows", "vague.yaml"),
+    "kind: natalia-flow\nversion: 1\nflowID: flow_vague\ndisplayName: Vague\nmodules:\n  - id: gate\n    type: shell_command\n    displayName: Gate\n    commandRules:\n      mode: whitelist\n      rules:\n        - command: npm run test\n",
+  );
+  await writeFile(join(root, ".natalia", "tasks", "nightly.yaml"), taskYAML());
+  const overview = await flowOverview({ workspaceRoot: root });
+  const byID = new Map(overview.flows.map((flow) => [flow.flowID, flow]));
+  expect(byID.get("flow_review")).toMatchObject({
+    enabledStages: 1,
+    usedBy: ["task_nightly"],
+    problems: [],
+  });
+  // A flow with every stage disabled can never complete, and a flow nothing
+  // references is reported as unused rather than silently fine.
+  expect(byID.get("flow_empty")).toMatchObject({
+    enabledStages: 0,
+    usedBy: [],
+    problems: ["no stage is enabled, so the flow can never complete"],
+  });
+  expect(byID.get("flow_vague")!.problems).toEqual([
+    "stage has no minimum completion condition: gate",
+  ]);
+  expect(byID.get("flow_vague")!.stages[0]).toMatchObject({
+    moduleType: "shell_command",
+    commandRules: { mode: "whitelist", commands: 1 },
+    hasInstructions: false,
+  });
 });
