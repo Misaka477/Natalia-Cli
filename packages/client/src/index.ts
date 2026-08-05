@@ -9,6 +9,17 @@ export { compactionDisplayLine } from "./compaction-display";
 export { createFakeBackend } from "./fixture";
 export { createRealRuntimeClient } from "./real-runtime";
 export {
+  assertConfigApplied,
+  assertTaskReferences,
+  newHeadlessExecution,
+  plainRuntimeEvent,
+  runTask,
+  taskPermissionPreview,
+  taskRetryMaxAttempts,
+  type HeadlessExecution,
+  type TaskRunResult,
+} from "./task-controller";
+export {
   effectiveFlowPermissions,
   effectiveModulePermissions,
   type EffectiveFlowPermissions,
