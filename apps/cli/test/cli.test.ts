@@ -106,7 +106,7 @@ test("CLI task run creates a task-scoped episode but never treats turn completio
   );
   await writeFile(
     join(root, ".natalia", "tasks", "nightly.yaml"),
-    "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: /doctor\npermissionProfile: unattended\nflow:\n  flowID: flow_review\n",
+    "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: /doctor\npermissionProfile: unattended\nalerts:\n  - journal\n  - webhook:ops\nflow:\n  flowID: flow_review\n",
   );
   const child = Bun.spawnSync(
     [
@@ -134,6 +134,103 @@ test("CLI task run creates a task-scoped episode but never treats turn completio
     waterlineAdvanced: false,
   });
   expect(output.some((event) => event.type === "session.created")).toBe(true);
+  expect(output.find((event) => event.type === "task.alert")).toMatchObject({
+    eventKind: "ultimately_failed",
+    status: "stalled",
+    attempt: 1,
+    enqueued: true,
+    channels: 2,
+  });
+  const alerts = await (
+    await import("@natalia/workflow")
+  ).NataliaTaskAlertQueue.open(root);
+  const queued = alerts.alerts("task_nightly");
+  expect(queued).toHaveLength(1);
+  expect(queued[0]).toMatchObject({
+    invocationID: invocation!.invocationID as string,
+    attempt: 1,
+    eventKind: "ultimately_failed",
+    status: "stalled",
+  });
+  expect(
+    alerts
+      .deliveries(queued[0]!.alertID)
+      .map((delivery) => [delivery.channel, delivery.state]),
+  ).toEqual([
+    ["journal", "pending"],
+    ["webhook:ops", "pending"],
+  ]);
+  alerts.close();
+});
+
+test("CLI task run enqueues an overlap alert and never runs a second invocation", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-task-overlap-"));
+  await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+  await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      permissionProfiles: {
+        unattended: { approval: "auto", description: "Task profile" },
+      },
+    }),
+  );
+  await writeFile(
+    join(root, ".natalia", "flows", "review.yaml"),
+    "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n",
+  );
+  await writeFile(
+    join(root, ".natalia", "tasks", "nightly.yaml"),
+    "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: /doctor\npermissionProfile: unattended\nalerts:\n  - journal\nflow:\n  flowID: flow_review\n",
+  );
+  const workflow = await import("@natalia/workflow");
+  const seeded = await workflow.NataliaTaskStateStore.open(root);
+  seeded.startInvocation({
+    invocationID: "inv_already_running",
+    taskID: "task_nightly",
+    episodeID: "epi_running" as never,
+    sessionID: "ses_running" as never,
+  });
+  seeded.close();
+  const child = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "task",
+      "run",
+      "nightly.yaml",
+      "--workspace",
+      root,
+      "--json",
+    ],
+    { cwd: root, stdout: "pipe", stderr: "pipe" },
+  );
+  expect(child.exitCode).toBe(0);
+  const output = new TextDecoder()
+    .decode(child.stdout)
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  const skipped = output.find(
+    (event) => event.status === "skipped_due_to_overlap",
+  )!;
+  expect(skipped.reason).toContain("inv_already_running");
+  // The overlapping trigger must not create a runtime session at all.
+  expect(output.some((event) => event.type === "session.created")).toBe(false);
+  expect(output.find((event) => event.type === "task.alert")).toMatchObject({
+    eventKind: "skipped_due_to_overlap",
+    status: "skipped_due_to_overlap",
+    attempt: 0,
+    channels: 1,
+  });
+  const alerts = await workflow.NataliaTaskAlertQueue.open(root);
+  expect(
+    alerts
+      .alerts("task_nightly")
+      .map((alert) => [alert.invocationID, alert.eventKind, alert.attempt]),
+  ).toEqual([[skipped.invocationID as string, "skipped_due_to_overlap", 0]]);
+  alerts.close();
 });
 
 test("CLI task run evaluates a claimed module without advancing task success", async () => {
@@ -1036,7 +1133,7 @@ test("CLI task run retries a blocked first attempt then succeeds under fresh mod
     );
     await writeFile(
       join(root, ".natalia", "tasks", "nightly.yaml"),
-      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Review the source and produce the report.\npermissionProfile: unattended\nretry: once\nflow:\n  flowID: flow_review\nevaluator:\n  provider: local\n  model: evaluator\n",
+      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Review the source and produce the report.\npermissionProfile: unattended\nretry: once\nalerts:\n  - journal\nflow:\n  flowID: flow_review\nevaluator:\n  provider: local\n  model: evaluator\n",
     );
     const child = Bun.spawn(
       [
@@ -1094,6 +1191,20 @@ test("CLI task run retries a blocked first attempt then succeeds under fresh mod
     expect(state.allModulesCompleted(invocationID, 2)).toBe(true);
     expect(state.getWaterline("task_nightly")).toMatchObject({ invocationID });
     state.close();
+    // The blocked first attempt is an intermediate retry, not a task outcome:
+    // only the final succeeded invocation may reach the alert queue.
+    const alerts = await (
+      await import("@natalia/workflow")
+    ).NataliaTaskAlertQueue.open(root);
+    expect(
+      alerts
+        .alerts("task_nightly")
+        .map((alert) => [alert.attempt, alert.eventKind, alert.status]),
+    ).toEqual([[2, "succeeded", "succeeded"]]);
+    expect(output.filter((event) => event.type === "task.alert")).toHaveLength(
+      1,
+    );
+    alerts.close();
   } finally {
     server.stop(true);
   }

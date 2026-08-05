@@ -16,7 +16,9 @@ import { userStateHome } from "@natalia/platform";
 import {
   evaluateAndRecordModule,
   NataliaDocumentStore,
+  NataliaTaskAlertQueue,
   NataliaTaskStateStore,
+  taskAlertEventKindForStatus,
   type EvaluatorModuleContext,
   type NataliaTaskAttemptStatus,
   type NataliaPlannedFlowModule,
@@ -620,6 +622,9 @@ async function runTaskOnce(input: {
       "task execution model is unavailable in the resolved config",
     );
   const state = await NataliaTaskStateStore.open(input.workspaceRoot);
+  // The alert queue is a separate durable store on purpose: a saturated or
+  // broken notification queue must never rewrite the task's terminal truth.
+  const alerts = await NataliaTaskAlertQueue.open(input.workspaceRoot);
   const controllerExecution = newHeadlessExecution();
   const invocationID = `inv_${crypto.randomUUID().replace(/-/gu, "")}`;
   const started = state.startInvocation({
@@ -637,11 +642,24 @@ async function runTaskOnce(input: {
         reason: started.invocation.skipReason,
       }),
     );
+    // The overlap contract requires the skip itself to be notifiable; it is a
+    // durable terminal invocation state, not an intermediate retry.
+    enqueueTaskAlert({
+      alerts,
+      task: input.task,
+      invocation: started.invocation,
+      attempt: 0,
+      episodeID: controllerExecution.episodeID,
+      reason: started.invocation.skipReason,
+      json: input.json,
+    });
+    alerts.close();
     state.close();
     return;
   }
   const maxAttempts = taskRetryMaxAttempts(input.task.retry);
   let attempt = started.attempt.attempt;
+  let attemptEpisodeID = started.attempt.episodeID;
   let result: NataliaTaskInvocation | undefined;
   try {
     while (true) {
@@ -719,6 +737,9 @@ async function runTaskOnce(input: {
           episodeID: controllerExecution.episodeID,
           sessionID: controllerExecution.sessionID,
         });
+        attemptEpisodeID = controllerExecution.episodeID;
+        // An intermediate retry attempt is not a task outcome, so nothing is
+        // enqueued here: the invocation is durable `retrying`, not terminal.
         continue;
       }
       state.completeAttempt({
@@ -734,11 +755,80 @@ async function runTaskOnce(input: {
           ? JSON.stringify({ type: "task.invocation", ...result })
           : `task ${input.task.taskID}: ${result.status}`,
       );
+      // The task's own terminal state is already durable at this point, so an
+      // alert enqueue failure is reported and never changes the task result.
+      enqueueTaskAlert({
+        alerts,
+        task: input.task,
+        invocation: result,
+        attempt,
+        episodeID: attemptEpisodeID,
+        reason,
+        json: input.json,
+      });
       if (status !== "succeeded" && status !== "stalled") process.exitCode = 1;
       break;
     }
   } finally {
+    alerts.close();
     state.close();
+  }
+}
+
+function enqueueTaskAlert(input: {
+  alerts: NataliaTaskAlertQueue;
+  task: NataliaTaskDocument;
+  invocation: NataliaTaskInvocation;
+  attempt: number;
+  episodeID: EpisodeID;
+  reason?: string;
+  json: boolean;
+}) {
+  const eventKind = taskAlertEventKindForStatus(input.invocation.status);
+  if (!eventKind) return;
+  try {
+    const enqueued = input.alerts.enqueue({
+      taskID: input.invocation.taskID,
+      invocationID: input.invocation.invocationID,
+      attempt: input.attempt,
+      episodeID: input.episodeID,
+      eventKind,
+      status: input.invocation.status,
+      reason: input.reason,
+      channels: input.task.alerts,
+    });
+    const pressure = input.alerts.queuePressure();
+    const line = {
+      type: "task.alert",
+      alertID: enqueued.alert.alertID,
+      eventKind,
+      status: input.invocation.status,
+      attempt: input.attempt,
+      enqueued: enqueued.enqueued,
+      channels: enqueued.deliveries.length,
+      pendingDeliveries: pressure.pending,
+    };
+    console.log(
+      input.json
+        ? JSON.stringify(line)
+        : `alert ${eventKind}: ${enqueued.deliveries.length} channel(s) queued`,
+    );
+    if (pressure.overLimit)
+      console.log(
+        JSON.stringify({
+          type: "diagnostic",
+          level: "warning",
+          message: `task alert delivery queue is above its bound: ${pressure.pending} pending of ${pressure.limit}`,
+        }),
+      );
+  } catch (error) {
+    console.log(
+      JSON.stringify({
+        type: "diagnostic",
+        level: "warning",
+        message: `task alert enqueue failed: ${error instanceof Error ? error.message : String(error)}`,
+      }),
+    );
   }
 }
 

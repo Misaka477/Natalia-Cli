@@ -74,6 +74,19 @@ export {
   type NataliaPlannedFlowModule,
   type StartTaskInvocationResult,
 } from "./natalia-task-state-store";
+export {
+  NataliaTaskAlertQueue,
+  TASK_ALERT_EVENT_KINDS,
+  taskAlertEventKindForStatus,
+  taskAlertID,
+  type EnqueueTaskAlertResult,
+  type NataliaTaskAlert,
+  type NataliaTaskAlertDelivery,
+  type NataliaTaskAlertDeliveryState,
+  type NataliaTaskAlertEventKind,
+  type TaskAlertPruneResult,
+  type TaskAlertQueuePressure,
+} from "./natalia-task-alert-queue";
 export { evaluateCondition, interpolate } from "./eval";
 
 export class JsonlWorkflowStore {
