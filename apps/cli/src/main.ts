@@ -646,6 +646,8 @@ async function runTaskOnce(input: {
   const module = state.activateNextModule({
     invocationID,
     attempt: started.attempt.attempt,
+    episodeID: execution.episodeID,
+    sessionID: execution.sessionID,
   });
   if (!module) throw new Error("task module plan has no activatable module");
   const taskModuleContext: NonNullable<

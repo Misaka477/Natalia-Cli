@@ -197,6 +197,40 @@ test("module lifecycle records an audited claim and evaluator completion", async
   store.close();
 });
 
+test("module activation durably records its isolated runtime episode", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-module-episode-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_attempt" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_attempt" as import("@natalia/contracts").SessionID,
+  });
+  store.initializeModulePlan({
+    invocationID: "inv_1",
+    attempt: 1,
+    modules: [
+      {
+        flowID: "flow_1",
+        moduleID: "read",
+        moduleType: "read_search",
+        conditionIDs: [],
+      },
+    ],
+  });
+  store.activateNextModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    episodeID: "epi_module" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_module" as import("@natalia/contracts").SessionID,
+  });
+  expect(store.moduleEvents("inv_1", 1)[0]).toMatchObject({
+    kind: "flow.module_activated",
+    data: { episodeID: "epi_module", sessionID: "ses_module" },
+  });
+  store.close();
+});
+
 test("module claims reject missing conditions, foreign evidence, and inactive modules", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-module-claim-"));
   const store = await NataliaTaskStateStore.open(root);

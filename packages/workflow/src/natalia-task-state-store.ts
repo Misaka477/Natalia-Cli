@@ -327,6 +327,8 @@ export class NataliaTaskStateStore {
   activateNextModule(input: {
     invocationID: string;
     attempt: number;
+    episodeID?: EpisodeID;
+    sessionID?: SessionID;
     at?: string;
   }): NataliaPlannedFlowModule | undefined {
     const at = input.at ?? new Date().toISOString();
@@ -368,7 +370,16 @@ export class NataliaTaskStateStore {
           "cannot activate the next module before prior modules complete",
         );
       const module = plannedModuleFromRow(plan);
-      this.insertActivatedModule(input.invocationID, input.attempt, module, at);
+      this.insertActivatedModule(
+        input.invocationID,
+        input.attempt,
+        module,
+        at,
+        {
+          episodeID: input.episodeID,
+          sessionID: input.sessionID,
+        },
+      );
       return module;
     })();
   }
@@ -799,6 +810,7 @@ export class NataliaTaskStateStore {
     attempt: number,
     module: NataliaPlannedFlowModule,
     at: string,
+    execution: { episodeID?: EpisodeID; sessionID?: SessionID } = {},
   ) {
     this.#db
       .query(
@@ -822,6 +834,8 @@ export class NataliaTaskStateStore {
       data: {
         moduleType: module.moduleType,
         ordinal: this.moduleOrdinal(invocationID, attempt, module),
+        ...(execution.episodeID ? { episodeID: execution.episodeID } : {}),
+        ...(execution.sessionID ? { sessionID: execution.sessionID } : {}),
       },
     });
   }
