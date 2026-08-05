@@ -18,6 +18,7 @@ import {
   NataliaDocumentStore,
   NataliaTaskStateStore,
   type EvaluatorModuleContext,
+  type NataliaTaskAttemptStatus,
   type NataliaPlannedFlowModule,
   type NataliaTaskInvocation,
 } from "@natalia/workflow";
@@ -639,85 +640,119 @@ async function runTaskOnce(input: {
     state.close();
     return;
   }
-  const attempt = started.attempt.attempt;
-  state.initializeModulePlan({
-    invocationID,
-    attempt,
-    modules: modules.map((module) => ({
-      flowID: input.flow.flowID,
-      moduleID: module.id,
-      moduleType: module.type,
-      conditionIDs: [
-        ...module.minimumConditions.map((condition) => condition.id),
-        ...module.idealConditions.map((condition) => condition.id),
-      ],
-    })),
-  });
-  let lastOutcome: TaskModuleRunOutcome | undefined;
-  let moduleRuns = 0;
+  const maxAttempts = taskRetryMaxAttempts(input.task.retry);
+  let attempt = started.attempt.attempt;
   let result: NataliaTaskInvocation | undefined;
   try {
-    // The controller advances the linear plan one module at a time. Every
-    // module runs under its own fresh headless episode, and the batch only
-    // reports success after every enabled module completed under evaluator
-    // control. A blocked, failed, cancelled, or stalled module stops the batch.
     while (true) {
-      const moduleExecution = newHeadlessExecution();
-      const module = state.activateNextModule({
+      // Every attempt reinitializes the module plan under the attempt's own
+      // controller episode/session. The controller advances the linear plan
+      // one module at a time, each module runs under its own fresh headless
+      // episode, and the batch only reports success after every enabled module
+      // completed under evaluator control. A blocked, failed, cancelled, or
+      // stalled module stops the batch.
+      state.initializeModulePlan({
         invocationID,
         attempt,
-        episodeID: moduleExecution.episodeID,
-        sessionID: moduleExecution.sessionID,
+        modules: modules.map((module) => ({
+          flowID: input.flow.flowID,
+          moduleID: module.id,
+          moduleType: module.type,
+          conditionIDs: [
+            ...module.minimumConditions.map((condition) => condition.id),
+            ...module.idealConditions.map((condition) => condition.id),
+          ],
+        })),
       });
-      if (!module) break;
-      moduleRuns += 1;
-      lastOutcome = await runTaskModule({
-        workspaceRoot: input.workspaceRoot,
-        task: input.task,
-        flow: input.flow,
-        config,
-        state,
+      let lastOutcome: TaskModuleRunOutcome | undefined;
+      let moduleRuns = 0;
+      while (true) {
+        const moduleExecution = newHeadlessExecution();
+        const module = state.activateNextModule({
+          invocationID,
+          attempt,
+          episodeID: moduleExecution.episodeID,
+          sessionID: moduleExecution.sessionID,
+        });
+        if (!module) break;
+        moduleRuns += 1;
+        lastOutcome = await runTaskModule({
+          workspaceRoot: input.workspaceRoot,
+          task: input.task,
+          flow: input.flow,
+          config,
+          state,
+          invocationID,
+          attempt,
+          executionProvider: executionSelection!,
+          execution: moduleExecution,
+          module,
+          json: input.json,
+        });
+        if (lastOutcome.outcome !== "complete") break;
+      }
+      if (moduleRuns === 0)
+        throw new Error("task module plan has no activatable module");
+      const allCompleted = state.allModulesCompleted(invocationID, attempt);
+      const status: Exclude<NataliaTaskAttemptStatus, "running"> = allCompleted
+        ? "succeeded"
+        : lastOutcome && lastOutcome.outcome !== "complete"
+          ? lastOutcome.outcome
+          : "stalled";
+      const reason = allCompleted
+        ? "all enabled modules completed under evaluator control"
+        : (lastOutcome?.reason ??
+          "module plan did not complete under evaluator control");
+      if (taskStatusRetryable(status) && attempt < maxAttempts) {
+        state.completeAttempt({
+          invocationID,
+          attempt,
+          status,
+          retry: true,
+          reason,
+        });
+        attempt += 1;
+        const controllerExecution = newHeadlessExecution();
+        state.recordAttempt({
+          invocationID,
+          attempt,
+          episodeID: controllerExecution.episodeID,
+          sessionID: controllerExecution.sessionID,
+        });
+        continue;
+      }
+      state.completeAttempt({
         invocationID,
         attempt,
-        executionProvider: executionSelection!,
-        execution: moduleExecution,
-        module,
-        json: input.json,
+        status,
+        retry: false,
+        reason,
       });
-      if (lastOutcome.outcome !== "complete") break;
+      result = state.getInvocation(invocationID)!;
+      console.log(
+        input.json
+          ? JSON.stringify({ type: "task.invocation", ...result })
+          : `task ${input.task.taskID}: ${result.status}`,
+      );
+      if (status !== "succeeded" && status !== "stalled") process.exitCode = 1;
+      break;
     }
-    if (moduleRuns === 0)
-      throw new Error("task module plan has no activatable module");
-    const allCompleted = state.allModulesCompleted(invocationID, attempt);
-    const status: Exclude<
-      import("@natalia/workflow").NataliaTaskAttemptStatus,
-      "running"
-    > = allCompleted
-      ? "succeeded"
-      : lastOutcome && lastOutcome.outcome !== "complete"
-        ? lastOutcome.outcome
-        : "stalled";
-    const reason = allCompleted
-      ? "all enabled modules completed under evaluator control"
-      : (lastOutcome?.reason ??
-        "module plan did not complete under evaluator control");
-    state.completeAttempt({
-      invocationID,
-      attempt,
-      status,
-      retry: false,
-      reason,
-    });
-    result = state.getInvocation(invocationID)!;
-    console.log(
-      input.json
-        ? JSON.stringify({ type: "task.invocation", ...result })
-        : `task ${input.task.taskID}: ${result.status}`,
-    );
-    if (status !== "succeeded" && status !== "stalled") process.exitCode = 1;
   } finally {
     state.close();
   }
+}
+
+function taskRetryMaxAttempts(retry: NataliaTaskDocument["retry"]): number {
+  if (retry === "once") return 2;
+  if (retry === "twice") return 3;
+  if (retry === "three_times") return 4;
+  return 1;
+}
+
+function taskStatusRetryable(
+  status: Exclude<NataliaTaskAttemptStatus, "running">,
+): boolean {
+  return status === "failed" || status === "blocked" || status === "stalled";
 }
 
 type TaskModuleRunOutcome =

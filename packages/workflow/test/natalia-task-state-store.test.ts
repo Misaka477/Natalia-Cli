@@ -49,6 +49,127 @@ test("task state store records attempts and advances waterline only after final 
   store.close();
 });
 
+test("task state store retries a blocked attempt under fresh module episodes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-task-retry-blocked-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_retry",
+    taskID: "task_1",
+    episodeID: "epi_attempt_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_attempt_1" as import("@natalia/contracts").SessionID,
+  });
+  const plan = [
+    {
+      flowID: "flow_1",
+      moduleID: "read",
+      moduleType: "read_search" as const,
+      conditionIDs: ["c1"],
+    },
+  ];
+  store.initializeModulePlan({
+    invocationID: "inv_retry",
+    attempt: 1,
+    modules: plan,
+  });
+  store.activateNextModule({
+    invocationID: "inv_retry",
+    attempt: 1,
+    episodeID: "epi_read_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_read_1" as import("@natalia/contracts").SessionID,
+  });
+  store.claimModule({
+    invocationID: "inv_retry",
+    attempt: 1,
+    claim: {
+      flowID: "flow_1",
+      moduleID: "read",
+      conditionStatuses: [{ id: "c1", status: "satisfied" }],
+      evidenceRefs: [],
+      gaps: [],
+      recommendedAction: "Evaluate.",
+    },
+  });
+  store.evaluateModule({
+    invocationID: "inv_retry",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    outcome: "blocked",
+  });
+  store.completeAttempt({
+    invocationID: "inv_retry",
+    attempt: 1,
+    status: "blocked",
+    retry: true,
+    reason: "first attempt blocked",
+  });
+  expect(store.getInvocation("inv_retry")).toMatchObject({
+    status: "retrying",
+    waterlineAdvanced: false,
+  });
+  expect(store.getWaterline("task_1")).toBeUndefined();
+  store.recordAttempt({
+    invocationID: "inv_retry",
+    attempt: 2,
+    episodeID: "epi_attempt_2" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_attempt_2" as import("@natalia/contracts").SessionID,
+  });
+  store.initializeModulePlan({
+    invocationID: "inv_retry",
+    attempt: 2,
+    modules: plan,
+  });
+  store.activateNextModule({
+    invocationID: "inv_retry",
+    attempt: 2,
+    episodeID: "epi_read_2" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_read_2" as import("@natalia/contracts").SessionID,
+  });
+  store.claimModule({
+    invocationID: "inv_retry",
+    attempt: 2,
+    claim: {
+      flowID: "flow_1",
+      moduleID: "read",
+      conditionStatuses: [{ id: "c1", status: "satisfied" }],
+      evidenceRefs: [],
+      gaps: [],
+      recommendedAction: "Evaluate.",
+    },
+  });
+  store.evaluateModule({
+    invocationID: "inv_retry",
+    attempt: 2,
+    flowID: "flow_1",
+    moduleID: "read",
+    outcome: "complete",
+  });
+  expect(store.allModulesCompleted("inv_retry", 2)).toBe(true);
+  store.completeAttempt({
+    invocationID: "inv_retry",
+    attempt: 2,
+    status: "succeeded",
+    retry: false,
+  });
+  expect(store.getInvocation("inv_retry")).toMatchObject({
+    status: "succeeded",
+    waterlineAdvanced: true,
+  });
+  expect(store.getWaterline("task_1")).toMatchObject({
+    invocationID: "inv_retry",
+  });
+  const activated1 = store
+    .moduleEvents("inv_retry", 1)
+    .filter((event) => event.kind === "flow.module_activated");
+  const activated2 = store
+    .moduleEvents("inv_retry", 2)
+    .filter((event) => event.kind === "flow.module_activated");
+  expect(activated1[0]?.data.episodeID).toBe("epi_read_1");
+  expect(activated2[0]?.data.episodeID).toBe("epi_read_2");
+  expect(activated1[0]?.data.sessionID).not.toBe(activated2[0]?.data.sessionID);
+  store.close();
+});
+
 test("active invocation skips an overlap and terminal non-success does not advance waterline", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-task-overlap-"));
   const store = await NataliaTaskStateStore.open(root);
