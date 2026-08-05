@@ -653,6 +653,21 @@ export class NataliaTaskStateStore {
       .map(moduleEventFromRow);
   }
 
+  allModulesCompleted(invocationID: string, attempt: number): boolean {
+    const rows = this.#db
+      .query<{ status: NataliaFlowModuleStatus | null }, [string, number]>(
+        `SELECT module.status AS status
+         FROM task_flow_module_plan plan
+         LEFT JOIN task_flow_modules module ON module.invocation_id = plan.invocation_id
+           AND module.attempt = plan.attempt AND module.flow_id = plan.flow_id
+           AND module.module_id = plan.module_id
+         WHERE plan.invocation_id = ? AND plan.attempt = ?
+         ORDER BY plan.ordinal`,
+      )
+      .all(invocationID, attempt);
+    return rows.length > 0 && rows.every((row) => row.status === "completed");
+  }
+
   private migrate() {
     const version =
       this.#db.query<{ user_version: number }, []>("PRAGMA user_version").get()

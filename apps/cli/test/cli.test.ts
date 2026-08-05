@@ -363,6 +363,490 @@ test("CLI task run evaluates a claimed module without advancing task success", a
   }
 });
 
+test("CLI task run completes a two-module flow under distinct episodes and advances the waterline", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-task-batch-"));
+  await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+  await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+  await writeFile(join(root, "README.md"), "real module evidence\n");
+  const evaluatorPayloads: string[] = [];
+  const executionSystemPrompts: string[] = [];
+  let readRequests = 0;
+  let reportRequests = 0;
+  const server = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      const body = (await request.json()) as {
+        model: string;
+        messages: Array<{ content: string }>;
+      };
+      const evaluator = body.model === "evaluator-model";
+      const stream = (text: string) =>
+        new Response(text, {
+          headers: { "content-type": "text/event-stream" },
+        });
+      if (evaluator) {
+        evaluatorPayloads.push(body.messages.at(-1)!.content);
+        const context = JSON.parse(body.messages.at(-1)!.content) as {
+          moduleID: string;
+        };
+        const conditionID = context.moduleID === "read" ? "c1" : "c2";
+        return stream(
+          [
+            `data: ${JSON.stringify({
+              choices: [
+                {
+                  delta: {
+                    content: JSON.stringify({
+                      schemaVersion: 1,
+                      outcome: "complete",
+                      conditions: [
+                        {
+                          id: conditionID,
+                          status: "satisfied",
+                          reason: "module evidence is present",
+                          evidenceRefs:
+                            conditionID === "c1" ? ["tool:read_1"] : [],
+                        },
+                      ],
+                      gaps: [],
+                      forbiddenRepeats: [],
+                      recommendedActions: [],
+                      idealOutcome: "satisfied",
+                    }),
+                  },
+                },
+              ],
+            })}`,
+            "",
+            "data: [DONE]",
+            "",
+          ].join("\n"),
+        );
+      }
+      executionSystemPrompts.push(body.messages[0]?.content ?? "");
+      const system = body.messages[0]?.content ?? "";
+      const toolCall = (id: string, name: string, arguments_: string) =>
+        stream(
+          [
+            `data: ${JSON.stringify({
+              choices: [
+                {
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: 0,
+                        id,
+                        function: { name, arguments: arguments_ },
+                      },
+                    ],
+                  },
+                },
+              ],
+            })}`,
+            "",
+            'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+            "",
+            "data: [DONE]",
+            "",
+          ].join("\n"),
+        );
+      const readClaim = JSON.stringify({
+        flowID: "flow_review",
+        moduleID: "read",
+        conditionStatuses: [{ id: "c1", status: "satisfied" }],
+        evidenceRefs: ["tool:read_1"],
+        gaps: [],
+        recommendedAction: "Evaluate the read evidence.",
+      });
+      const reportClaim = JSON.stringify({
+        flowID: "flow_review",
+        moduleID: "report",
+        conditionStatuses: [{ id: "c2", status: "satisfied" }],
+        evidenceRefs: [],
+        gaps: [],
+        recommendedAction: "Evaluate the report evidence.",
+      });
+      if (system.includes("Read only the source evidence.")) {
+        readRequests += 1;
+        if (readRequests === 1)
+          return toolCall(
+            "read_1",
+            "read_file",
+            JSON.stringify({ path: "README.md" }),
+          );
+        if (readRequests === 2)
+          return toolCall("read_claim", "flow_module_complete", readClaim);
+        return stream("data: [DONE]\n\n");
+      }
+      if (system.includes("Produce the final report.")) {
+        reportRequests += 1;
+        if (reportRequests === 1)
+          return toolCall("report_claim", "flow_module_complete", reportClaim);
+        return stream("data: [DONE]\n\n");
+      }
+      return stream("data: [DONE]\n\n");
+    },
+  });
+  try {
+    await writeFile(
+      join(root, ".natalia", "config.json"),
+      JSON.stringify({
+        version: 2,
+        providers: {
+          local: {
+            type: "openai-compatible",
+            apiKey: "test-key",
+            baseURL: server.url,
+            enabled: true,
+            customHeaders: {},
+          },
+        },
+        models: {
+          execution: {
+            provider: "local",
+            model: "execution-model",
+            enabled: true,
+            capabilities: {
+              toolCall: true,
+              reasoning: false,
+              thinking: false,
+              imageInput: false,
+              pdfInput: false,
+            },
+            contextWindow: "auto",
+            maxOutputTokens: null,
+            temperature: null,
+            topP: null,
+            reasoningEffort: null,
+            thinkingEnabled: false,
+            stream: true,
+            requestTimeoutSec: null,
+            variants: {},
+          },
+          evaluator: {
+            provider: "local",
+            model: "evaluator-model",
+            enabled: true,
+            capabilities: {
+              toolCall: false,
+              reasoning: false,
+              thinking: false,
+              imageInput: false,
+              pdfInput: false,
+            },
+            contextWindow: "auto",
+            maxOutputTokens: null,
+            temperature: null,
+            topP: null,
+            reasoningEffort: null,
+            thinkingEnabled: false,
+            stream: true,
+            requestTimeoutSec: null,
+            variants: {},
+          },
+        },
+        defaultModel: "execution",
+        permissionProfiles: {
+          unattended: { approval: "auto", description: "Task profile" },
+        },
+      }),
+    );
+    await writeFile(
+      join(root, ".natalia", "flows", "review.yaml"),
+      "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n    instructions: Read only the source evidence.\n    minimumConditions:\n      - id: c1\n        text: Read the source evidence\n  - id: report\n    type: report_output\n    displayName: Report\n    instructions: Produce the final report.\n    minimumConditions:\n      - id: c2\n        text: Produce the final report\n",
+    );
+    await writeFile(
+      join(root, ".natalia", "tasks", "nightly.yaml"),
+      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Review the source and produce the report.\npermissionProfile: unattended\nflow:\n  flowID: flow_review\nevaluator:\n  provider: local\n  model: evaluator\n",
+    );
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        join(import.meta.dir, "..", "src", "main.ts"),
+        "task",
+        "run",
+        "nightly.yaml",
+        "--workspace",
+        root,
+        "--json",
+      ],
+      { cwd: root, stdout: "pipe", stderr: "pipe" },
+    );
+    await child.exited;
+    expect(child.exitCode).toBe(0);
+    const output = (await new Response(child.stdout).text())
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const invocation = output.find(
+      (event) => event.type === "task.invocation",
+    )!;
+    expect(invocation).toMatchObject({
+      taskID: "task_nightly",
+      status: "succeeded",
+      waterlineAdvanced: true,
+    });
+    const invocationID = invocation.invocationID as string;
+    const sessionIDs = new Set(
+      output
+        .filter((event) => event.type === "session.created")
+        .map((event) => event.sessionID as string),
+    );
+    expect(sessionIDs.size).toBeGreaterThanOrEqual(2);
+    expect(
+      output.filter((event) => event.type === "session.created").length,
+    ).toBeGreaterThanOrEqual(2);
+    const state = await (
+      await import("@natalia/workflow")
+    ).NataliaTaskStateStore.open(root);
+    const activated = state
+      .moduleEvents(invocationID, 1)
+      .filter((event) => event.kind === "flow.module_activated");
+    expect(activated.map((event) => event.moduleID)).toEqual([
+      "read",
+      "report",
+    ]);
+    expect(new Set(activated.map((event) => event.data.episodeID)).size).toBe(
+      2,
+    );
+    expect(new Set(activated.map((event) => event.data.sessionID)).size).toBe(
+      2,
+    );
+    expect(state.allModulesCompleted(invocationID, 1)).toBe(true);
+    expect(state.getWaterline("task_nightly")).toMatchObject({ invocationID });
+    expect(
+      evaluatorPayloads.map(
+        (payload) => (JSON.parse(payload) as { moduleID: string }).moduleID,
+      ),
+    ).toEqual(["read", "report"]);
+    expect(
+      executionSystemPrompts.filter((prompt) =>
+        prompt.includes("<active_flow_module_instructions>"),
+      ).length,
+    ).toBeGreaterThanOrEqual(2);
+    state.close();
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("CLI task run stops the module batch when an evaluator blocks the first module", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-task-batch-block-"));
+  await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+  await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+  await writeFile(join(root, "README.md"), "real module evidence\n");
+  let readRequests = 0;
+  const server = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      const body = (await request.json()) as {
+        model: string;
+        messages: Array<{ content: string }>;
+      };
+      const stream = (text: string) =>
+        new Response(text, {
+          headers: { "content-type": "text/event-stream" },
+        });
+      if (body.model === "evaluator-model") {
+        return stream(
+          [
+            `data: ${JSON.stringify({
+              choices: [
+                {
+                  delta: {
+                    content: JSON.stringify({
+                      schemaVersion: 1,
+                      outcome: "blocked",
+                      conditions: [
+                        {
+                          id: "c1",
+                          status: "satisfied",
+                          reason: "module evidence is present",
+                          evidenceRefs: ["tool:read_1"],
+                        },
+                      ],
+                      gaps: [],
+                      forbiddenRepeats: [],
+                      recommendedActions: [],
+                      idealOutcome: "partial",
+                    }),
+                  },
+                },
+              ],
+            })}`,
+            "",
+            "data: [DONE]",
+            "",
+          ].join("\n"),
+        );
+      }
+      const system = body.messages[0]?.content ?? "";
+      const toolCall = (id: string, name: string, arguments_: string) =>
+        stream(
+          [
+            `data: ${JSON.stringify({
+              choices: [
+                {
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: 0,
+                        id,
+                        function: { name, arguments: arguments_ },
+                      },
+                    ],
+                  },
+                },
+              ],
+            })}`,
+            "",
+            'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+            "",
+            "data: [DONE]",
+            "",
+          ].join("\n"),
+        );
+      if (system.includes("Read only the source evidence.")) {
+        readRequests += 1;
+        if (readRequests === 1)
+          return toolCall(
+            "read_1",
+            "read_file",
+            JSON.stringify({ path: "README.md" }),
+          );
+        if (readRequests === 2)
+          return toolCall(
+            "read_claim",
+            "flow_module_complete",
+            JSON.stringify({
+              flowID: "flow_review",
+              moduleID: "read",
+              conditionStatuses: [{ id: "c1", status: "satisfied" }],
+              evidenceRefs: ["tool:read_1"],
+              gaps: [],
+              recommendedAction: "Evaluate the read evidence.",
+            }),
+          );
+        return stream("data: [DONE]\n\n");
+      }
+      return stream("data: [DONE]\n\n");
+    },
+  });
+  try {
+    await writeFile(
+      join(root, ".natalia", "config.json"),
+      JSON.stringify({
+        version: 2,
+        providers: {
+          local: {
+            type: "openai-compatible",
+            apiKey: "test-key",
+            baseURL: server.url,
+            enabled: true,
+            customHeaders: {},
+          },
+        },
+        models: {
+          execution: {
+            provider: "local",
+            model: "execution-model",
+            enabled: true,
+            capabilities: {
+              toolCall: true,
+              reasoning: false,
+              thinking: false,
+              imageInput: false,
+              pdfInput: false,
+            },
+            contextWindow: "auto",
+            maxOutputTokens: null,
+            temperature: null,
+            topP: null,
+            reasoningEffort: null,
+            thinkingEnabled: false,
+            stream: true,
+            requestTimeoutSec: null,
+            variants: {},
+          },
+          evaluator: {
+            provider: "local",
+            model: "evaluator-model",
+            enabled: true,
+            capabilities: {
+              toolCall: false,
+              reasoning: false,
+              thinking: false,
+              imageInput: false,
+              pdfInput: false,
+            },
+            contextWindow: "auto",
+            maxOutputTokens: null,
+            temperature: null,
+            topP: null,
+            reasoningEffort: null,
+            thinkingEnabled: false,
+            stream: true,
+            requestTimeoutSec: null,
+            variants: {},
+          },
+        },
+        defaultModel: "execution",
+        permissionProfiles: {
+          unattended: { approval: "auto", description: "Task profile" },
+        },
+      }),
+    );
+    await writeFile(
+      join(root, ".natalia", "flows", "review.yaml"),
+      "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n    instructions: Read only the source evidence.\n    minimumConditions:\n      - id: c1\n        text: Read the source evidence\n  - id: report\n    type: report_output\n    displayName: Report\n    instructions: Produce the final report.\n    minimumConditions:\n      - id: c2\n        text: Produce the final report\n",
+    );
+    await writeFile(
+      join(root, ".natalia", "tasks", "nightly.yaml"),
+      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Review the source and produce the report.\npermissionProfile: unattended\nflow:\n  flowID: flow_review\nevaluator:\n  provider: local\n  model: evaluator\n",
+    );
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        join(import.meta.dir, "..", "src", "main.ts"),
+        "task",
+        "run",
+        "nightly.yaml",
+        "--workspace",
+        root,
+        "--json",
+      ],
+      { cwd: root, stdout: "pipe", stderr: "pipe" },
+    );
+    await child.exited;
+    expect(child.exitCode).toBe(1);
+    const output = (await new Response(child.stdout).text())
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const invocation = output.find(
+      (event) => event.type === "task.invocation",
+    )!;
+    expect(invocation).toMatchObject({
+      taskID: "task_nightly",
+      status: "blocked",
+      waterlineAdvanced: false,
+    });
+    const state = await (
+      await import("@natalia/workflow")
+    ).NataliaTaskStateStore.open(root);
+    const invocationID = invocation.invocationID as string;
+    const activated = state
+      .moduleEvents(invocationID, 1)
+      .filter((event) => event.kind === "flow.module_activated");
+    expect(activated.map((event) => event.moduleID)).toEqual(["read"]);
+    expect(state.allModulesCompleted(invocationID, 1)).toBe(false);
+    expect(state.getWaterline("task_nightly")).toBeUndefined();
+    state.close();
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("CLI task run rejects non-auto profiles before creating execution state", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-cli-task-approval-"));
   await mkdir(join(root, ".natalia", "flows"), { recursive: true });

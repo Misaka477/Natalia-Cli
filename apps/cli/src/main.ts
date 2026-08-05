@@ -2,7 +2,14 @@ import {
   createRealRuntimeClient,
   type RealRuntimeClientOptions,
 } from "@natalia/client";
-import type { EpisodeID, RuntimeEvent, SessionID } from "@natalia/contracts";
+import type {
+  EpisodeID,
+  EvaluatorResult,
+  NataliaFlowDocument,
+  NataliaTaskDocument,
+  RuntimeEvent,
+  SessionID,
+} from "@natalia/contracts";
 import { resolveConfig } from "@natalia/config";
 import { agentsFromConfig } from "@natalia/agent";
 import { userStateHome } from "@natalia/platform";
@@ -11,6 +18,8 @@ import {
   NataliaDocumentStore,
   NataliaTaskStateStore,
   type EvaluatorModuleContext,
+  type NataliaPlannedFlowModule,
+  type NataliaTaskInvocation,
 } from "@natalia/workflow";
 import { providerForModel } from "@natalia/runtime";
 import {
@@ -586,8 +595,8 @@ async function runOnce(
 
 async function runTaskOnce(input: {
   workspaceRoot: string;
-  task: import("@natalia/contracts").NataliaTaskDocument;
-  flow: import("@natalia/contracts").NataliaFlowDocument;
+  task: NataliaTaskDocument;
+  flow: NataliaFlowDocument;
   json: boolean;
 }) {
   const config = (await resolveConfig({ workspaceRoot: input.workspaceRoot }))
@@ -610,13 +619,13 @@ async function runTaskOnce(input: {
       "task execution model is unavailable in the resolved config",
     );
   const state = await NataliaTaskStateStore.open(input.workspaceRoot);
-  const execution = newHeadlessExecution();
+  const controllerExecution = newHeadlessExecution();
   const invocationID = `inv_${crypto.randomUUID().replace(/-/gu, "")}`;
   const started = state.startInvocation({
     invocationID,
     taskID: input.task.taskID,
-    episodeID: execution.episodeID,
-    sessionID: execution.sessionID,
+    episodeID: controllerExecution.episodeID,
+    sessionID: controllerExecution.sessionID,
   });
   if (!started.started) {
     console.log(
@@ -630,9 +639,10 @@ async function runTaskOnce(input: {
     state.close();
     return;
   }
+  const attempt = started.attempt.attempt;
   state.initializeModulePlan({
     invocationID,
-    attempt: started.attempt.attempt,
+    attempt,
     modules: modules.map((module) => ({
       flowID: input.flow.flowID,
       moduleID: module.id,
@@ -643,31 +653,108 @@ async function runTaskOnce(input: {
       ],
     })),
   });
-  const module = state.activateNextModule({
-    invocationID,
-    attempt: started.attempt.attempt,
-    episodeID: execution.episodeID,
-    sessionID: execution.sessionID,
-  });
-  if (!module) throw new Error("task module plan has no activatable module");
+  let lastOutcome: TaskModuleRunOutcome | undefined;
+  let moduleRuns = 0;
+  let result: NataliaTaskInvocation | undefined;
+  try {
+    // The controller advances the linear plan one module at a time. Every
+    // module runs under its own fresh headless episode, and the batch only
+    // reports success after every enabled module completed under evaluator
+    // control. A blocked, failed, cancelled, or stalled module stops the batch.
+    while (true) {
+      const moduleExecution = newHeadlessExecution();
+      const module = state.activateNextModule({
+        invocationID,
+        attempt,
+        episodeID: moduleExecution.episodeID,
+        sessionID: moduleExecution.sessionID,
+      });
+      if (!module) break;
+      moduleRuns += 1;
+      lastOutcome = await runTaskModule({
+        workspaceRoot: input.workspaceRoot,
+        task: input.task,
+        flow: input.flow,
+        config,
+        state,
+        invocationID,
+        attempt,
+        executionProvider: executionSelection!,
+        execution: moduleExecution,
+        module,
+        json: input.json,
+      });
+      if (lastOutcome.outcome !== "complete") break;
+    }
+    if (moduleRuns === 0)
+      throw new Error("task module plan has no activatable module");
+    const allCompleted = state.allModulesCompleted(invocationID, attempt);
+    const status: Exclude<
+      import("@natalia/workflow").NataliaTaskAttemptStatus,
+      "running"
+    > = allCompleted
+      ? "succeeded"
+      : lastOutcome && lastOutcome.outcome !== "complete"
+        ? lastOutcome.outcome
+        : "stalled";
+    const reason = allCompleted
+      ? "all enabled modules completed under evaluator control"
+      : (lastOutcome?.reason ??
+        "module plan did not complete under evaluator control");
+    state.completeAttempt({
+      invocationID,
+      attempt,
+      status,
+      retry: false,
+      reason,
+    });
+    result = state.getInvocation(invocationID)!;
+    console.log(
+      input.json
+        ? JSON.stringify({ type: "task.invocation", ...result })
+        : `task ${input.task.taskID}: ${result.status}`,
+    );
+    if (status !== "succeeded" && status !== "stalled") process.exitCode = 1;
+  } finally {
+    state.close();
+  }
+}
+
+type TaskModuleRunOutcome =
+  | { outcome: "complete"; reason: string }
+  | { outcome: "blocked" | "failed" | "cancelled" | "stalled"; reason: string };
+
+async function runTaskModule(input: {
+  workspaceRoot: string;
+  task: NataliaTaskDocument;
+  flow: NataliaFlowDocument;
+  config: Awaited<ReturnType<typeof resolveConfig>>["config"];
+  state: NataliaTaskStateStore;
+  invocationID: string;
+  attempt: number;
+  executionProvider: string;
+  execution: HeadlessExecution;
+  module: NataliaPlannedFlowModule;
+  json: boolean;
+}): Promise<TaskModuleRunOutcome> {
   const taskModuleContext: NonNullable<
     RealRuntimeClientOptions["taskModuleContext"]
   > = {
-    store: state,
-    invocationID,
-    attempt: started.attempt.attempt,
+    store: input.state,
+    invocationID: input.invocationID,
+    attempt: input.attempt,
     flowID: input.flow.flowID,
-    moduleID: module.moduleID,
-    moduleType: module.moduleType,
+    moduleID: input.module.moduleID,
+    moduleType: input.module.moduleType,
     moduleInstructions:
-      input.flow.modules.find((entry) => entry.id === module.moduleID)
+      input.flow.modules.find((entry) => entry.id === input.module.moduleID)
         ?.instructions ?? "",
     moduleCommandRules: input.flow.modules.find(
-      (entry) => entry.id === module.moduleID,
+      (entry) => entry.id === input.module.moduleID,
     )?.commandRules,
   };
   const client = createRealRuntimeClient({
-    ...execution,
+    ...input.execution,
     workspaceRoot: input.workspaceRoot,
     permissionProfile: input.task.permissionProfile,
     taskModuleContext,
@@ -676,7 +763,10 @@ async function runTaskOnce(input: {
     RuntimeEvent,
     { type: "turn.finished" }
   >["stopReason"] = "error";
-  const evaluatorContext = createEvaluatorContext(input.flow.flowID, module);
+  const evaluatorContext = createEvaluatorContext(
+    input.flow.flowID,
+    input.module,
+  );
   try {
     client.start((event) => {
       if (event.type === "turn.finished") stopReason = event.stopReason;
@@ -698,33 +788,33 @@ async function runTaskOnce(input: {
     };
     while (
       hasUnevaluatedModuleClaim(
-        state,
-        invocationID,
-        started.attempt.attempt,
-        module.moduleID,
+        input.state,
+        input.invocationID,
+        input.attempt,
+        input.module.moduleID,
       )
     ) {
       evaluatorOutcome = evaluatorContext.policyDenied
         ? blockClaimedTaskModule(
-            state,
-            invocationID,
-            started.attempt.attempt,
+            input.state,
+            input.invocationID,
+            input.attempt,
             evaluatorContext,
             "module policy denial prevents evaluator completion",
           )
         : input.task.evaluator
           ? await evaluateClaimedTaskModule({
               task: input.task,
-              config,
-              state,
-              invocationID,
-              attempt: started.attempt.attempt,
-              executionProvider: executionSelection!,
+              config: input.config,
+              state: input.state,
+              invocationID: input.invocationID,
+              attempt: input.attempt,
+              executionProvider: input.executionProvider,
               context: evaluatorContext,
             })
-          : (state.stallModule({
-              invocationID,
-              attempt: started.attempt.attempt,
+          : (input.state.stallModule({
+              invocationID: input.invocationID,
+              attempt: input.attempt,
               flowID: evaluatorContext.flowID,
               moduleID: evaluatorContext.moduleID,
               reason:
@@ -735,20 +825,20 @@ async function runTaskOnce(input: {
       const progress = moduleContinuationProgress({
         result: evaluatorOutcome.result,
         previous: continuationProgress,
-        evidenceRefs: state.moduleEvidenceRefs({
-          invocationID,
-          attempt: started.attempt.attempt,
+        evidenceRefs: input.state.moduleEvidenceRefs({
+          invocationID: input.invocationID,
+          attempt: input.attempt,
           flowID: input.flow.flowID,
-          moduleID: module.moduleID,
+          moduleID: input.module.moduleID,
         }),
       });
       if (!progress.made) {
         evaluatorOutcome = { outcome: "stalled" };
-        state.stallModule({
-          invocationID,
-          attempt: started.attempt.attempt,
+        input.state.stallModule({
+          invocationID: input.invocationID,
+          attempt: input.attempt,
           flowID: input.flow.flowID,
-          moduleID: module.moduleID,
+          moduleID: input.module.moduleID,
           reason:
             "evaluator incomplete without new evidence or condition improvement",
         });
@@ -760,38 +850,34 @@ async function runTaskOnce(input: {
       );
       await client.submit("Continue the active flow module.");
     }
+    if (evaluatorOutcome?.outcome === "complete")
+      return {
+        outcome: "complete",
+        reason: "evaluator completed the module under evaluator control",
+      };
     const terminalStatus =
       evaluatorOutcome?.outcome === "blocked"
         ? "blocked"
         : taskTurnTerminalStatus(stopReason);
     if (terminalStatus === "stalled" && evaluatorOutcome === undefined)
-      state.stallModule({
-        invocationID,
-        attempt: started.attempt.attempt,
+      input.state.stallModule({
+        invocationID: input.invocationID,
+        attempt: input.attempt,
         flowID: input.flow.flowID,
-        moduleID: module.moduleID,
+        moduleID: input.module.moduleID,
         reason:
           "turn finished before the completion controller received a module claim",
       });
-    state.completeAttempt({
-      invocationID,
-      attempt: started.attempt.attempt,
-      status: terminalStatus,
-      retry: false,
+    const outcome =
+      evaluatorOutcome?.outcome === "blocked" ? "blocked" : terminalStatus;
+    return {
+      outcome,
       reason: evaluatorOutcome
         ? `evaluator ${evaluatorOutcome.outcome}; runtime turn finished: ${stopReason}`
         : `runtime turn finished: ${stopReason}`,
-    });
-    const result = state.getInvocation(invocationID)!;
-    console.log(
-      input.json
-        ? JSON.stringify({ type: "task.invocation", ...result })
-        : `task ${input.task.taskID}: ${result.status}`,
-    );
-    if (terminalStatus !== "stalled") process.exitCode = 1;
+    };
   } finally {
     await client.dispose?.();
-    state.close();
   }
 }
 
@@ -813,9 +899,7 @@ function hasUnevaluatedModuleClaim(
   return lastClaim > lastEvaluation;
 }
 
-function evaluatorContinuation(
-  result: import("@natalia/contracts").EvaluatorResult,
-) {
+function evaluatorContinuation(result: EvaluatorResult) {
   return JSON.stringify({
     conditions: result.conditions.map(({ id, status }) => ({ id, status })),
     gaps: result.gaps,
@@ -826,7 +910,7 @@ function evaluatorContinuation(
 }
 
 function moduleContinuationProgress(input: {
-  result: import("@natalia/contracts").EvaluatorResult;
+  result: EvaluatorResult;
   previous: {
     conditionStatuses: Map<string, "missing" | "partial" | "satisfied">;
     evidenceRefs: Set<string>;
@@ -920,7 +1004,7 @@ function collectEvaluatorContext(
 }
 
 async function evaluateClaimedTaskModule(input: {
-  task: import("@natalia/contracts").NataliaTaskDocument;
+  task: NataliaTaskDocument;
   config: Awaited<ReturnType<typeof resolveConfig>>["config"];
   state: NataliaTaskStateStore;
   invocationID: string;
@@ -1018,7 +1102,14 @@ function blockClaimedTaskModule(
   return { outcome: "blocked" as const, reason };
 }
 
-function newHeadlessExecution() {
+type HeadlessExecution = {
+  episodeID: EpisodeID;
+  sessionID: SessionID;
+  title: string;
+  useSqliteStore: boolean;
+};
+
+function newHeadlessExecution(): HeadlessExecution {
   const episodeID =
     `epi_${crypto.randomUUID().replace(/-/gu, "")}` as EpisodeID;
   return {

@@ -231,6 +231,178 @@ test("module activation durably records its isolated runtime episode", async () 
   store.close();
 });
 
+test("module plan reports completion only after every module completes under distinct sessions", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-module-batch-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_attempt" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_attempt" as import("@natalia/contracts").SessionID,
+  });
+  store.initializeModulePlan({
+    invocationID: "inv_1",
+    attempt: 1,
+    modules: [
+      {
+        flowID: "flow_1",
+        moduleID: "read",
+        moduleType: "read_search",
+        conditionIDs: ["c1"],
+      },
+      {
+        flowID: "flow_1",
+        moduleID: "report",
+        moduleType: "report_output",
+        conditionIDs: ["c2"],
+      },
+    ],
+  });
+  expect(store.allModulesCompleted("inv_1", 1)).toBe(false);
+  expect(
+    store.activateNextModule({
+      invocationID: "inv_1",
+      attempt: 1,
+      episodeID: "epi_read" as import("@natalia/contracts").EpisodeID,
+      sessionID: "ses_read" as import("@natalia/contracts").SessionID,
+    }),
+  ).toMatchObject({ moduleID: "read" });
+  store.claimModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    claim: {
+      flowID: "flow_1",
+      moduleID: "read",
+      conditionStatuses: [{ id: "c1", status: "satisfied" }],
+      evidenceRefs: [],
+      gaps: [],
+      recommendedAction: "Evaluate.",
+    },
+  });
+  store.evaluateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    outcome: "complete",
+  });
+  expect(store.allModulesCompleted("inv_1", 1)).toBe(false);
+  expect(
+    store.activateNextModule({
+      invocationID: "inv_1",
+      attempt: 1,
+      episodeID: "epi_report" as import("@natalia/contracts").EpisodeID,
+      sessionID: "ses_report" as import("@natalia/contracts").SessionID,
+    }),
+  ).toMatchObject({ moduleID: "report" });
+  store.claimModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    claim: {
+      flowID: "flow_1",
+      moduleID: "report",
+      conditionStatuses: [{ id: "c2", status: "satisfied" }],
+      evidenceRefs: [],
+      gaps: [],
+      recommendedAction: "Evaluate.",
+    },
+  });
+  store.evaluateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "report",
+    outcome: "complete",
+  });
+  expect(store.allModulesCompleted("inv_1", 1)).toBe(true);
+  const activated = store
+    .moduleEvents("inv_1", 1)
+    .filter((event) => event.kind === "flow.module_activated");
+  expect(activated.map((event) => event.moduleID)).toEqual(["read", "report"]);
+  expect(activated.map((event) => event.data.episodeID)).toEqual([
+    "epi_read",
+    "epi_report",
+  ]);
+  expect(activated.map((event) => event.data.sessionID)).toEqual([
+    "ses_read",
+    "ses_report",
+  ]);
+  expect(store.getWaterline("task_1")).toBeUndefined();
+  store.completeAttempt({
+    invocationID: "inv_1",
+    attempt: 1,
+    status: "succeeded",
+    retry: false,
+  });
+  expect(store.getInvocation("inv_1")).toMatchObject({
+    status: "succeeded",
+    waterlineAdvanced: true,
+  });
+  expect(store.getWaterline("task_1")).toMatchObject({ invocationID: "inv_1" });
+  store.close();
+});
+
+test("blocked or incomplete module plans never report completion or advance", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-module-batch-blocked-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_attempt" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_attempt" as import("@natalia/contracts").SessionID,
+  });
+  store.initializeModulePlan({
+    invocationID: "inv_1",
+    attempt: 1,
+    modules: [
+      {
+        flowID: "flow_1",
+        moduleID: "read",
+        moduleType: "read_search",
+        conditionIDs: [],
+      },
+      {
+        flowID: "flow_1",
+        moduleID: "report",
+        moduleType: "report_output",
+        conditionIDs: [],
+      },
+    ],
+  });
+  store.activateNextModule({ invocationID: "inv_1", attempt: 1 });
+  store.claimModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    claim: {
+      flowID: "flow_1",
+      moduleID: "read",
+      conditionStatuses: [],
+      evidenceRefs: [],
+      gaps: [],
+      recommendedAction: "Evaluate.",
+    },
+  });
+  store.evaluateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    outcome: "blocked",
+  });
+  expect(store.allModulesCompleted("inv_1", 1)).toBe(false);
+  expect(() =>
+    store.activateNextModule({ invocationID: "inv_1", attempt: 1 }),
+  ).toThrow("prior modules complete");
+  store.completeAttempt({
+    invocationID: "inv_1",
+    attempt: 1,
+    status: "blocked",
+    retry: false,
+  });
+  expect(store.getWaterline("task_1")).toBeUndefined();
+  store.close();
+});
+
 test("module claims reject missing conditions, foreign evidence, and inactive modules", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-module-claim-"));
   const store = await NataliaTaskStateStore.open(root);
