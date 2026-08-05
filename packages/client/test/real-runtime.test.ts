@@ -5657,3 +5657,232 @@ test("the repeated call guard blocks loops but not waiting reads", async () => {
   // how a caller waits. It used to be cut off mid-wait after twelve polls.
   expect(await blockedCount("terminal_observe", { id: "tty_absent" })).toBe(0);
 });
+
+test("report_issue reaches the forge through the runtime, never through the model", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-report-issue-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_1" as SessionID,
+  });
+  store.activateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "report",
+    conditionIDs: ["c1"],
+  });
+  const reported: Array<Record<string, unknown>> = [];
+  const seenTools: string[][] = [];
+  let toolResult = "";
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_report_issue" as SessionID,
+    taskModuleContext: {
+      store,
+      invocationID: "inv_1",
+      attempt: 1,
+      flowID: "flow_1",
+      moduleID: "report",
+      moduleType: "report_output",
+      async reportIssue(finding) {
+        reported.push(finding as unknown as Record<string, unknown>);
+        return {
+          action: "created",
+          fingerprint: "fp_1",
+          repository: "natalia/logs",
+          issue: 7,
+        };
+      },
+    },
+    provider: {
+      provider: "report-issue",
+      model: "report-issue-model",
+      async *stream(request) {
+        seenTools.push((request.tools ?? []).map((tool) => tool.name));
+        const toolMessage = request.messages.find(
+          (message) => message.role === "tool",
+        );
+        if (toolMessage) {
+          toolResult = String(toolMessage.content);
+          yield { type: "done" as const };
+          return;
+        }
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            {
+              id: "report_1",
+              name: "report_issue",
+              arguments: JSON.stringify({
+                fingerprintParts: ["null pointer", "src/auth.ts"],
+                title: "Null pointer in the auth path",
+                body: "The nightly scan found it again.",
+              }),
+            },
+          ],
+        };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.submit("report the finding");
+  expect(seenTools[0]).toContain("report_issue");
+  expect(reported).toEqual([
+    {
+      fingerprintParts: ["null pointer", "src/auth.ts"],
+      title: "Null pointer in the auth path",
+      body: "The nightly scan found it again.",
+      labels: undefined,
+    },
+  ]);
+  expect(JSON.parse(toolResult)).toMatchObject({
+    action: "created",
+    issue: 7,
+  });
+  await client.dispose?.();
+  store.close();
+});
+
+test("report_issue stays out of runtimes that were not given a reporter", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-report-issue-absent-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_1" as SessionID,
+  });
+  store.activateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "report",
+    conditionIDs: [],
+  });
+  const seenTools: string[][] = [];
+  const taskClient = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_report_absent_task" as SessionID,
+    taskModuleContext: {
+      store,
+      invocationID: "inv_1",
+      attempt: 1,
+      flowID: "flow_1",
+      moduleID: "report",
+      moduleType: "report_output",
+    },
+    provider: {
+      provider: "report-absent",
+      model: "report-absent-model",
+      async *stream(request) {
+        seenTools.push((request.tools ?? []).map((tool) => tool.name));
+        yield { type: "done" as const };
+      },
+    },
+  });
+  taskClient.start(() => undefined);
+  await taskClient.submit("begin");
+  expect(seenTools[0]).not.toContain("report_issue");
+  await taskClient.dispose?.();
+
+  const ordinaryClient = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_report_absent_ordinary" as SessionID,
+    provider: {
+      provider: "report-absent-ordinary",
+      model: "report-absent-ordinary-model",
+      async *stream(request) {
+        seenTools.push((request.tools ?? []).map((tool) => tool.name));
+        yield { type: "done" as const };
+      },
+    },
+  });
+  ordinaryClient.start(() => undefined);
+  await ordinaryClient.submit("begin");
+  expect(seenTools[1]).not.toContain("report_issue");
+  await ordinaryClient.dispose?.();
+  store.close();
+});
+
+test("report_issue is denied outside the report module bundle", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-report-issue-policy-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_1" as SessionID,
+  });
+  store.activateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    conditionIDs: [],
+  });
+  let reporterCalls = 0;
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_report_policy" as SessionID,
+    taskModuleContext: {
+      store,
+      invocationID: "inv_1",
+      attempt: 1,
+      flowID: "flow_1",
+      moduleID: "read",
+      moduleType: "read_search",
+      async reportIssue() {
+        reporterCalls += 1;
+        return { action: "created" };
+      },
+    },
+    provider: {
+      provider: "report-policy",
+      model: "report-policy-model",
+      async *stream(request) {
+        if (request.messages.some((message) => message.role === "tool")) {
+          yield { type: "done" as const };
+          return;
+        }
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            {
+              id: "report_1",
+              name: "report_issue",
+              arguments: JSON.stringify({
+                fingerprintParts: ["a"],
+                title: "t",
+                body: "b",
+              }),
+            },
+          ],
+        };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("report from a read module");
+  expect(reporterCalls).toBe(0);
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "policy.decision",
+      toolName: "report_issue",
+      decision: "deny",
+      reason: expect.stringContaining("outside active read_search module"),
+    }),
+  );
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "tool.update",
+      name: "report_issue",
+      status: "failed",
+    }),
+  );
+  await client.dispose?.();
+  store.close();
+});

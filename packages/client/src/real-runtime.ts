@@ -206,6 +206,52 @@ function createFlowModuleCompleteTool(
   };
 }
 
+/**
+ * The report tool submits a finding to the runtime, which owns the credential
+ * and performs the request. The model never sees the token and never runs
+ * `curl`, so the credential cannot reach the command line, the process list or
+ * the journal.
+ */
+function createReportIssueTool(
+  reportIssue: NonNullable<
+    NonNullable<RealRuntimeClientOptions["taskModuleContext"]>["reportIssue"]
+  >,
+): RuntimeTool {
+  return {
+    name: "report_issue",
+    description:
+      "Report a finding to the configured issue target. The runtime deduplicates by fingerprint, updates an existing issue instead of creating a second one, and refuses to reopen a finding a human closed.",
+    requiresApproval: false,
+    parameters: {
+      type: "object",
+      properties: {
+        fingerprintParts: { type: "array" },
+        title: { type: "string", minLength: 1 },
+        body: { type: "string", minLength: 1 },
+        labels: { type: "array" },
+      },
+      required: ["fingerprintParts", "title", "body"],
+      additionalProperties: false,
+    },
+    async execute(input) {
+      const args = requireToolObject(input);
+      const result = await reportIssue({
+        fingerprintParts: requireStringList(
+          args.fingerprintParts,
+          "fingerprintParts",
+        ),
+        title: requireToolString(args.title, "title"),
+        body: requireToolString(args.body, "body"),
+        labels:
+          args.labels === undefined
+            ? undefined
+            : requireStringList(args.labels, "labels"),
+      });
+      return JSON.stringify(result);
+    },
+  };
+}
+
 function requireToolObject(input: unknown) {
   if (!input || typeof input !== "object" || Array.isArray(input))
     throw new Error("flow module completion input must be an object");
@@ -355,6 +401,16 @@ export type RealRuntimeClientOptions = {
     moduleCommandRules?: import("./tool-policy").PermissionProfileCommandRules;
     /** Controller-owned structured continuation for the active module only. */
     moduleContinuation?: string;
+    /**
+     * Runtime-side finding reconciliation. The controller binds the credential
+     * here so the model can report a finding without ever seeing the token.
+     */
+    reportIssue?: (finding: {
+      fingerprintParts: string[];
+      title: string;
+      body: string;
+      labels?: string[];
+    }) => Promise<Record<string, unknown>>;
   };
 };
 
@@ -389,6 +445,14 @@ export function createRealRuntimeClient(
       "flow_module_complete",
       createFlowModuleCompleteTool(options.taskModuleContext),
     );
+    if (options.taskModuleContext.reportIssue) {
+      if (tools.has("report_issue"))
+        throw new Error("task module context cannot replace report_issue");
+      tools.set(
+        "report_issue",
+        createReportIssueTool(options.taskModuleContext.reportIssue),
+      );
+    }
   }
   let agentToolLayer = createToolPolicyHookLayer();
   let permissionProfileToolLayer = createToolPolicyHookLayer();

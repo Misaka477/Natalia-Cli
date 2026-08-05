@@ -95,6 +95,20 @@ export {
   type NataliaWatermark,
   type NataliaWatermarkKind,
 } from "./natalia-unattended-state";
+export {
+  createIssueTarget,
+  fingerprintFromBody,
+  fingerprintMarker,
+  findingFingerprint,
+  issueBodyWithFingerprint,
+  reconcileFinding,
+  type NataliaIssueFinding,
+  type NataliaIssueReconciliation,
+  type NataliaIssueTarget,
+  type NataliaIssueTargetConfig,
+  type NataliaIssueTargetKind,
+  type NataliaRemoteIssue,
+} from "./natalia-issue-target";
 export { evaluateCondition, interpolate } from "./eval";
 
 export class JsonlWorkflowStore {

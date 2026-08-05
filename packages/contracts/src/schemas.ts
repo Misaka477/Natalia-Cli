@@ -243,6 +243,8 @@ export const nataliaTaskDocumentSchema = z.object({
     }),
   retry: z.enum(["none", "once", "twice", "three_times"]).default("none"),
   alerts: z.array(z.string()).default([]),
+  /** Configuration key of the issue target used to reconcile findings. */
+  issueTarget: z.string().min(1).optional(),
   evaluator: z
     .object({ provider: z.string().min(1), model: z.string().min(1) })
     .optional(),
@@ -562,6 +564,17 @@ export const experimentalConfigSchema = z.object({
   policies: z.array(policyStatementSchema).default([]),
 });
 
+export const issueTargetConfigSchema = z.object({
+  kind: z.enum(["gitea", "github"]),
+  baseURL: z.string().min(1),
+  owner: z.string().min(1),
+  repo: z.string().min(1),
+  /** Bot credential. It stays in configuration and never enters a task, a flow, a prompt or the model context. */
+  token: z.string().default(""),
+  label: z.string().default(""),
+  enabled: z.boolean().default(true),
+});
+
 export const configV2Schema = z.object({
   version: z.literal(2),
   runtime: runtimeConfigSchema.default({}),
@@ -595,6 +608,7 @@ export const configV2Schema = z.object({
   browser: browserConfigSchema.default({}),
   network: networkConfigSchema.default({}),
   security: securityConfigSchema.default({}),
+  issueTargets: z.record(issueTargetConfigSchema).default({}),
   experimental: experimentalConfigSchema.default({}),
 });
 
@@ -602,6 +616,7 @@ export type ConfigV2 = z.infer<typeof configV2Schema>;
 export type ModelConfig = z.infer<typeof modelConfigSchema>;
 export type ProviderConfig = z.infer<typeof providerConfigSchema>;
 export type PermissionProfile = z.infer<typeof permissionProfileSchema>;
+export type IssueTargetConfig = z.infer<typeof issueTargetConfigSchema>;
 export type NataliaFlowDocument = z.infer<typeof nataliaFlowDocumentSchema>;
 export type NataliaTaskDocument = z.infer<typeof nataliaTaskDocumentSchema>;
 export type NataliaFlowDocumentInput = z.input<

@@ -14,5 +14,9 @@ test("module tool policies expose stable capability bundles", () => {
   );
   expect(moduleToolPolicy("report_output").allow).toEqual([
     "flow_module_complete",
+    "report_issue",
   ]);
+  // The reporting capability belongs to the report module only.
+  expect(moduleToolPolicy("read_search").allow).not.toContain("report_issue");
+  expect(moduleToolPolicy("terminal").allow).not.toContain("report_issue");
 });

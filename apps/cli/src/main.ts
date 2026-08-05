@@ -14,11 +14,14 @@ import { resolveConfig } from "@natalia/config";
 import { agentsFromConfig } from "@natalia/agent";
 import { userStateHome } from "@natalia/platform";
 import {
+  createIssueTarget,
   evaluateAndRecordModule,
+  findingFingerprint,
   NataliaDocumentStore,
   NataliaTaskAlertQueue,
   NataliaTaskStateStore,
   NataliaUnattendedStateStore,
+  reconcileFinding,
   taskAlertEventKindForStatus,
   type EvaluatorModuleContext,
   type NataliaTaskAttemptStatus,
@@ -671,6 +674,11 @@ async function runTaskOnce(input: {
     return;
   }
   const maxAttempts = taskRetryMaxAttempts(input.task.retry);
+  const reportIssue = taskIssueReporter({
+    workspaceRoot: input.workspaceRoot,
+    task: input.task,
+    config,
+  });
   let attempt = started.attempt.attempt;
   let attemptEpisodeID = started.attempt.episodeID;
   let result: NataliaTaskInvocation | undefined;
@@ -718,6 +726,7 @@ async function runTaskOnce(input: {
           executionProvider: executionSelection!,
           execution: moduleExecution,
           module,
+          reportIssue,
           json: input.json,
         });
         if (lastOutcome.outcome !== "complete") break;
@@ -822,6 +831,7 @@ async function taskStatusReport(input: {
         .length,
       retry: input.task.retry,
       alertChannels: input.task.alerts,
+      issueTarget: input.task.issueTarget,
       waterline: state.getWaterline(input.task.taskID),
       invocations: invocations.map((invocation) => ({
         ...invocation,
@@ -980,6 +990,66 @@ function enqueueTaskAlert(input: {
   }
 }
 
+/**
+ * Binds the configured issue target credential on the controller side. The
+ * returned reporter is the only path from a module to the forge: the token stays
+ * in configuration and in this closure, so it never reaches a prompt, a tool
+ * argument, a command line, the journal or the model context.
+ */
+function taskIssueReporter(input: {
+  workspaceRoot: string;
+  task: NataliaTaskDocument;
+  config: Awaited<ReturnType<typeof resolveConfig>>["config"];
+}) {
+  if (!input.task.issueTarget) return undefined;
+  const configured = input.config.issueTargets[input.task.issueTarget];
+  if (!configured)
+    throw new Error(`task issue target not found: ${input.task.issueTarget}`);
+  if (!configured.enabled)
+    throw new Error(`task issue target is disabled: ${input.task.issueTarget}`);
+  if (!configured.token)
+    throw new Error(
+      `task issue target has no token configured: ${input.task.issueTarget}`,
+    );
+  const target = createIssueTarget({
+    kind: configured.kind,
+    baseURL: configured.baseURL,
+    owner: configured.owner,
+    repo: configured.repo,
+    token: configured.token,
+    label: configured.label || undefined,
+  });
+  return async (finding: {
+    fingerprintParts: string[];
+    title: string;
+    body: string;
+    labels?: string[];
+  }) => {
+    const state = await NataliaUnattendedStateStore.open(
+      input.workspaceRoot,
+      input.task.taskID,
+    );
+    const result = await reconcileFinding({
+      target,
+      state,
+      finding: {
+        fingerprint: findingFingerprint(finding.fingerprintParts),
+        title: finding.title,
+        body: finding.body,
+        labels: finding.labels,
+      },
+    });
+    return {
+      action: result.action,
+      fingerprint: result.fingerprint,
+      repository: target.repository,
+      ...("issue" in result
+        ? { issue: result.issue.number, url: result.issue.url }
+        : { reason: result.reason }),
+    };
+  };
+}
+
 function taskRetryMaxAttempts(retry: NataliaTaskDocument["retry"]): number {
   if (retry === "once") return 2;
   if (retry === "twice") return 3;
@@ -1008,6 +1078,9 @@ async function runTaskModule(input: {
   executionProvider: string;
   execution: HeadlessExecution;
   module: NataliaPlannedFlowModule;
+  reportIssue?: NonNullable<
+    RealRuntimeClientOptions["taskModuleContext"]
+  >["reportIssue"];
   json: boolean;
 }): Promise<TaskModuleRunOutcome> {
   const taskModuleContext: NonNullable<
@@ -1025,6 +1098,7 @@ async function runTaskModule(input: {
     moduleCommandRules: input.flow.modules.find(
       (entry) => entry.id === input.module.moduleID,
     )?.commandRules,
+    reportIssue: input.reportIssue,
   };
   const client = createRealRuntimeClient({
     ...input.execution,

@@ -17,7 +17,7 @@ const MODULE_TOOL_ALLOWLISTS: Record<NataliaFlowModuleType, string[]> = {
   mcp: ["mcp_*"],
   plugins: ["plugin_*"],
   subagents: ["agent_*"],
-  report_output: [],
+  report_output: ["report_issue"],
 };
 
 export function moduleToolPolicy(

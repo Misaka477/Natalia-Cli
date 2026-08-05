@@ -1918,3 +1918,328 @@ test("CLI external terminal launcher uses platform-specific argument forms", () 
     "--take-control",
   ]);
 });
+
+test("CLI task run files one issue for a finding and updates it the next night", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-task-issue-"));
+  await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+  await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+  const botToken = "gitea-bot-token-must-not-leak";
+  type ForgeIssue = {
+    number: number;
+    title: string;
+    body: string;
+    state: string;
+    labels: string[];
+  };
+  const issues: ForgeIssue[] = [];
+  const forgeAuthorizations: string[] = [];
+  const forge = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      const url = new URL(request.url);
+      forgeAuthorizations.push(request.headers.get("authorization") ?? "");
+      const prefix = "/api/v1/repos/natalia/logs/issues";
+      if (!url.pathname.startsWith(prefix))
+        return Response.json({ message: "not found" }, { status: 404 });
+      if (request.method === "GET")
+        return Response.json(
+          issues.map((issue) => ({
+            number: issue.number,
+            title: issue.title,
+            body: issue.body,
+            state: issue.state,
+            html_url: `${url.origin}/natalia/logs/issues/${issue.number}`,
+          })),
+        );
+      const body = (await request.json()) as Record<string, unknown>;
+      if (request.method === "POST") {
+        const issue: ForgeIssue = {
+          number: issues.length + 1,
+          title: String(body.title ?? ""),
+          body: String(body.body ?? ""),
+          state: "open",
+          labels: (body.labels as string[] | undefined) ?? [],
+        };
+        issues.push(issue);
+        return Response.json({
+          number: issue.number,
+          title: issue.title,
+          body: issue.body,
+          state: issue.state,
+          html_url: `${url.origin}/natalia/logs/issues/${issue.number}`,
+        });
+      }
+      const number = Number(url.pathname.slice(`${prefix}/`.length));
+      const issue = issues.find((entry) => entry.number === number)!;
+      issue.title = String(body.title ?? issue.title);
+      issue.body = String(body.body ?? issue.body);
+      return Response.json({
+        number: issue.number,
+        title: issue.title,
+        body: issue.body,
+        state: issue.state,
+        html_url: `${url.origin}/natalia/logs/issues/${issue.number}`,
+      });
+    },
+  });
+  let reportRequests = 0;
+  const provider = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      const body = (await request.json()) as {
+        model: string;
+        messages: Array<{ content: string; role: string }>;
+      };
+      const stream = (text: string) =>
+        new Response(text, {
+          headers: { "content-type": "text/event-stream" },
+        });
+      const sse = (payload: unknown, finish: string) =>
+        stream(
+          [
+            `data: ${JSON.stringify(payload)}`,
+            "",
+            `data: {"choices":[{"delta":{},"finish_reason":"${finish}"}]}`,
+            "",
+            "data: [DONE]",
+            "",
+          ].join("\n"),
+        );
+      if (body.model === "evaluator-model")
+        return sse(
+          {
+            choices: [
+              {
+                delta: {
+                  content: JSON.stringify({
+                    schemaVersion: 1,
+                    outcome: "complete",
+                    conditions: [
+                      {
+                        id: "c1",
+                        status: "satisfied",
+                        reason: "the finding was reconciled",
+                        evidenceRefs: ["tool:report_1"],
+                      },
+                    ],
+                    gaps: [],
+                    forbiddenRepeats: [],
+                    recommendedActions: [],
+                    idealOutcome: "satisfied",
+                  }),
+                },
+              },
+            ],
+          },
+          "stop",
+        );
+      reportRequests += 1;
+      const phase = (reportRequests - 1) % 3;
+      if (phase === 0)
+        return sse(
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: "report_1",
+                      function: {
+                        name: "report_issue",
+                        arguments: JSON.stringify({
+                          fingerprintParts: ["null pointer", "src/auth.ts"],
+                          title: "Null pointer in the auth path",
+                          body: `Night ${issues.length + 1}: still failing.`,
+                        }),
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+          "tool_calls",
+        );
+      if (phase === 1)
+        return sse(
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: "report_claim",
+                      function: {
+                        name: "flow_module_complete",
+                        arguments: JSON.stringify({
+                          flowID: "flow_scan",
+                          moduleID: "report",
+                          conditionStatuses: [
+                            { id: "c1", status: "satisfied" },
+                          ],
+                          evidenceRefs: ["tool:report_1"],
+                          gaps: [],
+                          recommendedAction: "Evaluate the reconciliation.",
+                        }),
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+          "tool_calls",
+        );
+      return sse(
+        { choices: [{ delta: { content: "Finding reconciled." } }] },
+        "stop",
+      );
+    },
+  });
+  try {
+    await writeFile(
+      join(root, ".natalia", "config.json"),
+      JSON.stringify({
+        version: 2,
+        providers: {
+          local: {
+            type: "openai-compatible",
+            apiKey: "test-key",
+            baseURL: provider.url,
+            enabled: true,
+            customHeaders: {},
+          },
+        },
+        models: {
+          execution: {
+            provider: "local",
+            model: "execution-model",
+            enabled: true,
+            capabilities: {
+              toolCall: true,
+              reasoning: false,
+              thinking: false,
+              imageInput: false,
+              pdfInput: false,
+            },
+            contextWindow: "auto",
+            maxOutputTokens: null,
+            temperature: null,
+            topP: null,
+            reasoningEffort: null,
+            thinkingEnabled: false,
+            stream: true,
+            requestTimeoutSec: null,
+            variants: {},
+          },
+          evaluator: {
+            provider: "local",
+            model: "evaluator-model",
+            enabled: true,
+            capabilities: {
+              toolCall: false,
+              reasoning: false,
+              thinking: false,
+              imageInput: false,
+              pdfInput: false,
+            },
+            contextWindow: "auto",
+            maxOutputTokens: null,
+            temperature: null,
+            topP: null,
+            reasoningEffort: null,
+            thinkingEnabled: false,
+            stream: true,
+            requestTimeoutSec: null,
+            variants: {},
+          },
+        },
+        defaultModel: "execution",
+        permissionProfiles: {
+          unattended: { approval: "auto", description: "Task profile" },
+        },
+        issueTargets: {
+          logs: {
+            kind: "gitea",
+            baseURL: forge.url,
+            owner: "natalia",
+            repo: "logs",
+            token: botToken,
+            label: "natalia",
+          },
+        },
+      }),
+    );
+    await writeFile(
+      join(root, ".natalia", "flows", "scan.yaml"),
+      "kind: natalia-flow\nversion: 1\nflowID: flow_scan\ndisplayName: Scan\nmodules:\n  - id: report\n    type: report_output\n    displayName: Report\n    instructions: Report the finding to the configured issue target.\n    minimumConditions:\n      - id: c1\n        text: File or update the finding\n",
+    );
+    await writeFile(
+      join(root, ".natalia", "tasks", "nightly.yaml"),
+      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Report the nightly finding.\npermissionProfile: unattended\nissueTarget: logs\nflow:\n  flowID: flow_scan\nevaluator:\n  provider: local\n  model: evaluator\n",
+    );
+    // The forge and provider are served in this process, so the child must run
+    // asynchronously: a synchronous spawn would block the event loop that has
+    // to answer its requests.
+    const runTask = async () => {
+      const child = Bun.spawn(
+        [
+          process.execPath,
+          join(import.meta.dir, "..", "src", "main.ts"),
+          "task",
+          "run",
+          "nightly.yaml",
+          "--workspace",
+          root,
+          "--json",
+        ],
+        { cwd: root, stdout: "pipe", stderr: "pipe" },
+      );
+      const stdout = await new Response(child.stdout).text();
+      const stderr = await new Response(child.stderr).text();
+      await child.exited;
+      return { child, stdout, stderr };
+    };
+    const first = await runTask();
+    expect(first.child.exitCode).toBe(0);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.body).toContain("natalia-fingerprint:");
+    expect(issues[0]!.labels).toContain("natalia");
+    // The credential never appears in the event stream, the tool output or the
+    // durable state; only the forge request headers carry it.
+    expect(first.stdout).not.toContain(botToken);
+    expect(first.stderr).not.toContain(botToken);
+    expect(
+      forgeAuthorizations.every((value) => value === `token ${botToken}`),
+    ).toBe(true);
+    const second = await runTask();
+    expect(second.child.exitCode).toBe(0);
+    // Two nights, one issue.
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.body).toContain("Night 2");
+    const workflow = await import("@natalia/workflow");
+    const state = await workflow.NataliaUnattendedStateStore.open(
+      root,
+      "task_nightly",
+    );
+    const persisted = state.state();
+    expect(Object.values(persisted.fingerprints)).toEqual([
+      expect.objectContaining({ issue: "natalia/logs#1" }),
+    ]);
+    expect(JSON.stringify(persisted)).not.toContain(botToken);
+    expect(
+      await readFile(
+        join(root, ".natalia", "unattended", "task_nightly", "state.json"),
+        "utf8",
+      ),
+    ).not.toContain(botToken);
+    const taskState = await workflow.NataliaTaskStateStore.open(root);
+    expect(taskState.getWaterline("task_nightly")).toBeDefined();
+    taskState.close();
+  } finally {
+    provider.stop(true);
+    forge.stop(true);
+  }
+});
