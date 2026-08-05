@@ -7,7 +7,7 @@ export {
 } from "./bash-command-policy";
 export { compactionDisplayLine } from "./compaction-display";
 export { createFakeBackend } from "./fixture";
-export { createRealRuntimeClient } from "./real-runtime";
+export { createRealRuntimeClient, EGRESS_ADVISORY } from "./real-runtime";
 export {
   flowOverview,
   scheduledTaskOverview,

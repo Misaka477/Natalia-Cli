@@ -71,6 +71,22 @@ working tree.
 Readiness of the executor is its registration file, not the URL it prints: a
 piped stdout is buffered, so a supervisor waiting for that line would stall.
 
+## Outbound traffic is yours to bound
+
+Natalia enforces a host allowlist only where fetch-style tools build a request
+URL. A command run through `run_shell`, or typed into a native terminal, opens
+its own sockets and is **not** constrained by that allowlist. Both `/doctor`
+inside the agent and `natalia doctor` state this in one line so it is not a
+surprise.
+
+This is deliberate, not an omission. Blocking `curl` would leave `wget`,
+`python -c`, `nc` and `/dev/tcp`, so a command blocklist buys a false sense of
+safety rather than an egress boundary. If a task must not reach the open
+internet, enforce that where it can actually be enforced: a firewall rule, or a
+container network with an egress ACL as `deploy/run-unattended.sh` requires. A
+permission profile that never allows `run_shell` or terminal input is the other
+way to keep the fetch-tool allowlist meaningful.
+
 ## Applying the example configuration
 
 `config.json` here is a fragment showing the profiles, source, issue target and

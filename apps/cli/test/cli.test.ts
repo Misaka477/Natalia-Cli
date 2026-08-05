@@ -1744,6 +1744,34 @@ test("CLI doctor reports safe config/model/session availability", async () => {
   });
 });
 
+test("CLI doctor states that shell and terminal egress is not bounded here", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-doctor-egress-"));
+  const path = join(root, "config.json");
+  await saveConfigFile(defaultConfigV2(), path);
+  const child = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "doctor",
+      "--workspace",
+      root,
+    ],
+    {
+      cwd: root,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { ...process.env, NATALIA_CONFIG: path },
+    },
+  );
+  expect(child.exitCode).toBe(0);
+  const output = new TextDecoder().decode(child.stdout);
+  expect(output).toContain(
+    "the application-layer host allowlist only covers fetch-style tools",
+  );
+  expect(output).toContain("run_shell and native terminal input");
+  expect(output).toContain("firewall or container network");
+});
+
 test("CLI terminal attach renders a daemon framebuffer read-only", async () => {
   const viewerActions: string[] = [];
   const client = {

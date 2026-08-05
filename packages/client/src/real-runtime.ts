@@ -365,6 +365,18 @@ function releaseSqliteStore(path: string) {
 const WAITING_TOOLS = new Set(["terminal_observe"]);
 
 /**
+ * The application-layer host allowlist is enforced where fetch-style tools
+ * build their request URL; it cannot see traffic a shell command or terminal
+ * keystroke opens on its own. Blocklisting `curl` would only be a false sense
+ * of safety (`python -c`, `nc`, `/dev/tcp` remain), so the boundary is stated
+ * plainly here instead and the real enforcement belongs to the operator's
+ * firewall or container network. Runtime doctor and `natalia doctor` share this
+ * one string so the two surfaces cannot drift apart.
+ */
+export const EGRESS_ADVISORY =
+  "egress: the application-layer host allowlist only covers fetch-style tools; outbound traffic from run_shell and native terminal input is not constrained here, so configure egress in your firewall or container network";
+
+/**
  * Self-protection rules only. These three exist so the agent cannot kill the
  * terminal host it is running under or delete its own runtime directories, and
  * they are deliberately not a general danger list: a blocklist cannot cover an
@@ -3022,6 +3034,7 @@ export function createRealRuntimeClient(
             ? "provider check: configured; submit a short prompt to verify live streaming"
             : "provider check: set NATALIA_OPENAI_API_KEY (or OPENAI_API_KEY), or configure a provider in .natalia/config.json, then restart the TUI",
           "safety: write/shell/process actions require approval unless permissionMode=auto is explicitly configured by a caller",
+          EGRESS_ADVISORY,
         ].join("\n"),
       });
       publish({ type: "content.done", id });

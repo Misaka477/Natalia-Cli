@@ -4698,6 +4698,10 @@ test("real runtime client provides provider-independent doctor and help commands
   expect(output).toContain("Natalia TS7 runtime doctor");
   expect(output).toContain("provider: not configured");
   expect(output).toContain("/checkpoint");
+  expect(output).toContain(
+    "the application-layer host allowlist only covers fetch-style tools",
+  );
+  expect(output).toContain("run_shell and native terminal input");
 });
 
 test("real runtime client records provider usage checkpoints", async () => {

@@ -4,6 +4,7 @@ import {
   scheduledTaskOverview,
   type ScheduledTaskOverview,
   createRealRuntimeClient,
+  EGRESS_ADVISORY,
   newHeadlessExecution,
   plainRuntimeEvent,
   runTask,
@@ -421,6 +422,7 @@ switch (subcommand) {
             `migration: ${report.migration}`,
             `default model: ${report.defaultModel.modelID} (${report.defaultModel.selected ? "selected" : (report.defaultModel.reason ?? "unavailable")})`,
             `sessions: ${report.sessions.count} (${report.sessions.pendingInputs} pending inputs)`,
+            EGRESS_ADVISORY,
           ].join("\n"),
     );
     break;
