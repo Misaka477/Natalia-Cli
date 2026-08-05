@@ -206,6 +206,107 @@ test("CLI task run creates a task-scoped episode but never treats turn completio
   expect(crossExecutionState.lastResult).toMatchObject({ status: "stalled" });
 });
 
+test("CLI task status reports history without creating an execution", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-task-status-"));
+  await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+  await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      permissionProfiles: {
+        unattended: { approval: "auto", description: "Task profile" },
+      },
+    }),
+  );
+  await writeFile(
+    join(root, ".natalia", "flows", "review.yaml"),
+    "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n  - id: report\n    type: report_output\n    displayName: Report\n    enabled: false\n",
+  );
+  await writeFile(
+    join(root, ".natalia", "tasks", "nightly.yaml"),
+    "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: /doctor\npermissionProfile: unattended\nretry: once\nalerts:\n  - journal\nflow:\n  flowID: flow_review\n",
+  );
+  const runStatus = () =>
+    Bun.spawnSync(
+      [
+        process.execPath,
+        join(import.meta.dir, "..", "src", "main.ts"),
+        "task",
+        "status",
+        "nightly.yaml",
+        "--workspace",
+        root,
+        "--json",
+      ],
+      { cwd: root, stdout: "pipe", stderr: "pipe" },
+    );
+  const empty = runStatus();
+  expect(empty.exitCode).toBe(0);
+  expect(
+    JSON.parse(new TextDecoder().decode(empty.stdout)) as Record<
+      string,
+      unknown
+    >,
+  ).toMatchObject({
+    taskID: "task_nightly",
+    flowID: "flow_review",
+    enabledModules: 1,
+    retry: "once",
+    alertChannels: ["journal"],
+    invocations: [],
+    crossExecutionState: { consecutiveFailures: 0, watermarks: [] },
+    alerts: { entries: [] },
+  });
+  const run = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "task",
+      "run",
+      "nightly.yaml",
+      "--workspace",
+      root,
+      "--json",
+    ],
+    { cwd: root, stdout: "pipe", stderr: "pipe" },
+  );
+  expect(run.exitCode).toBe(0);
+  const after = runStatus();
+  const report = JSON.parse(new TextDecoder().decode(after.stdout)) as {
+    invocations: Array<Record<string, unknown>>;
+    alerts: { entries: Array<Record<string, unknown>> };
+    crossExecutionState: Record<string, unknown>;
+    waterline?: unknown;
+  };
+  expect(report.invocations).toHaveLength(1);
+  expect(report.invocations[0]).toMatchObject({
+    status: "stalled",
+    waterlineAdvanced: false,
+  });
+  expect(
+    (report.invocations[0]!.attempts as Array<Record<string, unknown>>)[0],
+  ).toMatchObject({ attempt: 1, status: "stalled" });
+  expect(report.alerts.entries).toHaveLength(1);
+  expect(report.alerts.entries[0]).toMatchObject({
+    eventKind: "ultimately_failed",
+    status: "stalled",
+  });
+  expect(report.crossExecutionState).toMatchObject({
+    consecutiveFailures: 1,
+  });
+  expect(report.waterline).toBeUndefined();
+  // Reading the status must not add another invocation or alert.
+  const again = JSON.parse(new TextDecoder().decode(runStatus().stdout)) as {
+    invocations: unknown[];
+    alerts: { entries: unknown[] };
+    crossExecutionState: { consecutiveFailures: number };
+  };
+  expect(again.invocations).toHaveLength(1);
+  expect(again.alerts.entries).toHaveLength(1);
+  expect(again.crossExecutionState.consecutiveFailures).toBe(1);
+});
+
 test("CLI task run enqueues an overlap alert and never runs a second invocation", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-cli-task-overlap-"));
   await mkdir(join(root, ".natalia", "flows"), { recursive: true });

@@ -281,6 +281,27 @@ export class NataliaTaskStateStore {
       : undefined;
   }
 
+  /** Read-only history for auditing and for the scheduled task surfaces. */
+  invocations(taskID: string, limit = 20): NataliaTaskInvocation[] {
+    return this.#db
+      .query<
+        InvocationRow,
+        [string, number]
+      >("SELECT * FROM task_invocations WHERE task_id = ? ORDER BY started_at DESC, invocation_id DESC LIMIT ?")
+      .all(taskID, limit)
+      .map(invocationFromRow);
+  }
+
+  attempts(invocationID: string): NataliaTaskAttempt[] {
+    return this.#db
+      .query<
+        AttemptRow,
+        [string]
+      >("SELECT * FROM task_attempts WHERE invocation_id = ? ORDER BY attempt")
+      .all(invocationID)
+      .map(attemptFromRow);
+  }
+
   initializeModulePlan(input: {
     invocationID: string;
     attempt: number;
@@ -934,6 +955,30 @@ function invocationFromRow(row: InvocationRow): NataliaTaskInvocation {
     endedAt: row.ended_at ?? undefined,
     waterlineAdvanced: Boolean(row.waterline_advanced),
     skipReason: row.skip_reason ?? undefined,
+  };
+}
+
+type AttemptRow = {
+  invocation_id: string;
+  attempt: number;
+  episode_id: string;
+  session_id: string;
+  status: NataliaTaskAttemptStatus;
+  started_at: string;
+  ended_at: string | null;
+  reason: string | null;
+};
+
+function attemptFromRow(row: AttemptRow): NataliaTaskAttempt {
+  return {
+    invocationID: row.invocation_id,
+    attempt: row.attempt,
+    episodeID: row.episode_id as EpisodeID,
+    sessionID: row.session_id as SessionID,
+    status: row.status,
+    startedAt: row.started_at,
+    endedAt: row.ended_at ?? undefined,
+    reason: row.reason ?? undefined,
   };
 }
 

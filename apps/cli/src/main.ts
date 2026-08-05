@@ -225,9 +225,12 @@ switch (subcommand) {
   case "task": {
     const action = argv[1];
     const taskPath = argv[2];
-    if (!taskPath || (action !== "validate" && action !== "run"))
+    if (
+      !taskPath ||
+      (action !== "validate" && action !== "run" && action !== "status")
+    )
       throw new Error(
-        "task requires 'validate' or 'run' followed by a task path",
+        "task requires 'validate', 'run' or 'status' followed by a task path",
       );
     const workspaceRoot = resolve(
       valueAfter(argv, "--workspace") ?? process.cwd(),
@@ -242,6 +245,15 @@ switch (subcommand) {
         flow,
         json: argv.includes("--json"),
       });
+      break;
+    }
+    if (action === "status") {
+      const report = await taskStatusReport({ workspaceRoot, task, flow });
+      console.log(
+        argv.includes("--json")
+          ? JSON.stringify(report, null, 2)
+          : taskStatusLines(report).join("\n"),
+      );
       break;
     }
     const result = {
@@ -779,6 +791,91 @@ async function runTaskOnce(input: {
     alerts.close();
     state.close();
   }
+}
+
+/**
+ * Read-only history for one task. It opens the durable stores, reports what
+ * actually happened, and never creates an invocation, episode, session,
+ * approval or alert.
+ */
+async function taskStatusReport(input: {
+  workspaceRoot: string;
+  task: NataliaTaskDocument;
+  flow: NataliaFlowDocument;
+}) {
+  const state = await NataliaTaskStateStore.open(input.workspaceRoot);
+  const alerts = await NataliaTaskAlertQueue.open(input.workspaceRoot);
+  const crossExecution = await NataliaUnattendedStateStore.open(
+    input.workspaceRoot,
+    input.task.taskID,
+  );
+  try {
+    const invocations = state.invocations(input.task.taskID);
+    const persisted = crossExecution.state();
+    return {
+      taskID: input.task.taskID,
+      displayName: input.task.displayName,
+      schedule: input.task.schedule,
+      permissionProfile: input.task.permissionProfile,
+      flowID: input.flow.flowID,
+      enabledModules: input.flow.modules.filter((module) => module.enabled)
+        .length,
+      retry: input.task.retry,
+      alertChannels: input.task.alerts,
+      waterline: state.getWaterline(input.task.taskID),
+      invocations: invocations.map((invocation) => ({
+        ...invocation,
+        attempts: state.attempts(invocation.invocationID).map((attempt) => ({
+          attempt: attempt.attempt,
+          status: attempt.status,
+          episodeID: attempt.episodeID,
+          sessionID: attempt.sessionID,
+          reason: attempt.reason,
+        })),
+      })),
+      crossExecutionState: {
+        path: crossExecution.path,
+        consecutiveFailures: persisted.consecutiveFailures,
+        watermarks: Object.values(persisted.watermarks),
+        fingerprints: Object.keys(persisted.fingerprints).length,
+        suppressed: Object.keys(persisted.suppressed).length,
+        lastResult: persisted.lastResult,
+      },
+      alerts: {
+        queue: alerts.queuePressure(),
+        entries: alerts.alerts(input.task.taskID).map((alert) => ({
+          ...alert,
+          deliveries: alerts.deliveries(alert.alertID).map((delivery) => ({
+            channel: delivery.channel,
+            state: delivery.state,
+            attempts: delivery.attempts,
+            lastError: delivery.lastError,
+          })),
+        })),
+      },
+    };
+  } finally {
+    alerts.close();
+    state.close();
+  }
+}
+
+function taskStatusLines(report: Awaited<ReturnType<typeof taskStatusReport>>) {
+  const lines = [
+    `task ${report.taskID}: ${report.displayName}`,
+    `schedule: ${report.schedule}`,
+    `flow ${report.flowID}: ${report.enabledModules} enabled modules`,
+    `profile: ${report.permissionProfile} (retry ${report.retry})`,
+    `waterline: ${report.waterline ? `${report.waterline.invocationID} at ${report.waterline.advancedAt}` : "not advanced"}`,
+    `consecutive failures: ${report.crossExecutionState.consecutiveFailures}`,
+    `watermarks: ${report.crossExecutionState.watermarks.length}, fingerprints: ${report.crossExecutionState.fingerprints}, suppressed: ${report.crossExecutionState.suppressed}`,
+    `alerts: ${report.alerts.entries.length} (${report.alerts.queue.pending} pending deliveries)`,
+  ];
+  for (const invocation of report.invocations)
+    lines.push(
+      `  ${invocation.startedAt} ${invocation.invocationID} ${invocation.status}${invocation.skipReason ? ` (${invocation.skipReason})` : ""} attempts=${invocation.attempts.length}`,
+    );
+  return lines;
 }
 
 /**

@@ -722,3 +722,66 @@ test("module evidence refs remain scoped to the active attempt module", async ()
   ).toThrow("not active");
   store.close();
 });
+
+test("task state store exposes read-only invocation and attempt history", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-task-history-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_first",
+    taskID: "task_1",
+    episodeID: "epi_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_1" as import("@natalia/contracts").SessionID,
+    at: "2026-08-01T00:00:00.000Z",
+  });
+  store.completeAttempt({
+    invocationID: "inv_first",
+    attempt: 1,
+    status: "blocked",
+    retry: true,
+    reason: "module blocked",
+    at: "2026-08-01T00:01:00.000Z",
+  });
+  store.recordAttempt({
+    invocationID: "inv_first",
+    attempt: 2,
+    episodeID: "epi_2" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_2" as import("@natalia/contracts").SessionID,
+    at: "2026-08-01T00:02:00.000Z",
+  });
+  store.completeAttempt({
+    invocationID: "inv_first",
+    attempt: 2,
+    status: "succeeded",
+    retry: false,
+    at: "2026-08-01T00:03:00.000Z",
+  });
+  const overlapped = store.startInvocation({
+    invocationID: "inv_second",
+    taskID: "task_1",
+    episodeID: "epi_3" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_3" as import("@natalia/contracts").SessionID,
+    at: "2026-08-02T00:00:00.000Z",
+  });
+  expect(overlapped.started).toBe(true);
+  const invocations = store.invocations("task_1");
+  expect(invocations.map((invocation) => invocation.invocationID)).toEqual([
+    "inv_second",
+    "inv_first",
+  ]);
+  expect(store.invocations("task_1", 1)).toHaveLength(1);
+  expect(store.invocations("task_other")).toEqual([]);
+  expect(
+    store
+      .attempts("inv_first")
+      .map((attempt) => [
+        attempt.attempt,
+        attempt.status,
+        attempt.episodeID,
+        attempt.reason,
+      ]),
+  ).toEqual([
+    [1, "blocked", "epi_1", "module blocked"],
+    [2, "succeeded", "epi_2", undefined],
+  ]);
+  store.close();
+});
