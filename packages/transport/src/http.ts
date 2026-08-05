@@ -1,6 +1,21 @@
 import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
 import { handleRPCMessage } from "./rpc";
 
+export type TaskDeliveryRequest = {
+  taskPath: string;
+  workspaceRoot?: string;
+  json?: boolean;
+};
+
+export type TaskDeliveryResult = {
+  invocationID: string;
+  status: string;
+  waterlineAdvanced: boolean;
+  exitCode: number;
+  /** Lines the controller emitted, so the submitting client can print them. */
+  output: string[];
+};
+
 export type RuntimeHttpServerOptions = {
   client: RuntimeClient;
   hostname?: string;
@@ -9,6 +24,12 @@ export type RuntimeHttpServerOptions = {
   unix?: string;
   tls?: { cert: string; key: string };
   events?: boolean;
+  /**
+   * Runs a task inside this process. The handler is injected because the task
+   * controller belongs to the runtime, not to the transport: the transport only
+   * carries the delivery.
+   */
+  runTask?: (request: TaskDeliveryRequest) => Promise<TaskDeliveryResult>;
 };
 
 export type RuntimeHttpServer = {
@@ -62,6 +83,39 @@ export function createRuntimeHttpServer(
     if (url.pathname === "/healthz") return Response.json({ ok: true });
     if (!authorized(request, options.token))
       return Response.json({ error: "unauthorized" }, { status: 401 });
+    if (url.pathname === "/tasks/run") {
+      if (request.method !== "POST")
+        return Response.json({ error: "method not allowed" }, { status: 405 });
+      if (!options.runTask)
+        return Response.json(
+          { error: "task delivery is not enabled" },
+          { status: 404 },
+        );
+      let payload: TaskDeliveryRequest;
+      try {
+        payload = (await request.json()) as TaskDeliveryRequest;
+      } catch {
+        return Response.json(
+          { error: "invalid request body" },
+          { status: 400 },
+        );
+      }
+      if (!payload?.taskPath)
+        return Response.json(
+          { error: "taskPath is required" },
+          { status: 400 },
+        );
+      try {
+        return Response.json(await options.runTask(payload));
+      } catch (error) {
+        return Response.json(
+          {
+            error: error instanceof Error ? error.message : String(error),
+          },
+          { status: 422 },
+        );
+      }
+    }
     if (url.pathname === "/events" && options.events === false)
       return Response.json({ error: "event stream disabled" }, { status: 404 });
     if (url.pathname === "/events" && request.method === "GET") {

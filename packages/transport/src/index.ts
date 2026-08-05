@@ -2,6 +2,8 @@ export {
   createRuntimeHttpServer,
   type RuntimeHttpServerOptions,
   type RuntimeHttpServer,
+  type TaskDeliveryRequest,
+  type TaskDeliveryResult,
 } from "./http";
 export {
   createRuntimeWsServer,

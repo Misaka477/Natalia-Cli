@@ -107,20 +107,46 @@ switch (subcommand) {
     const store = createRuntimeDaemonStore({
       dir: valueAfter(argv, "--daemon-dir") ?? daemonDir(),
     });
-    const port = Number(
-      valueAfter(
-        argv,
-        subcommand === "--daemon-serve" ? "--daemon-serve" : "daemon",
-        1,
-      ) ?? "8787",
-    );
-    if (!Number.isInteger(port) || port <= 0 || port > 65535)
+    // The port is the first argument after the subcommand. It used to be read one
+    // position further along, so neither form could actually choose a port.
+    const requestedPort = valueAfter(argv, subcommand);
+    const port = Number(requestedPort ?? "8787");
+    if (!Number.isInteger(port) || port < 0 || port > 65535)
       throw new Error("daemon requires a valid port");
     const token = await daemonToken(store);
+    const maxConcurrentTasks = Number(
+      valueAfter(argv, "--max-concurrent-tasks") ?? "1",
+    );
+    if (!Number.isInteger(maxConcurrentTasks) || maxConcurrentTasks <= 0)
+      throw new Error("daemon requires a positive --max-concurrent-tasks");
+    const taskGate = createTaskGate(maxConcurrentTasks);
     const server = createRuntimeHttpServer({
       client: createRealRuntimeClient(),
       port,
       token,
+      // Delivery reuses the very same controller a one-shot run uses, so the
+      // resident path cannot drift from it or bypass its policy.
+      runTask: (request) =>
+        taskGate(async () => {
+          const workspaceRoot = resolve(request.workspaceRoot ?? process.cwd());
+          const documents = new NataliaDocumentStore(workspaceRoot);
+          const task = await documents.loadTask(request.taskPath);
+          const flow = await documents.resolveTaskFlow(task);
+          const config = assertConfigApplied(
+            await resolveConfig({ workspaceRoot }),
+          );
+          assertTaskReferences({ task, config });
+          const output: string[] = [];
+          const result = await runTask({
+            workspaceRoot,
+            task,
+            flow,
+            config,
+            json: request.json !== false,
+            emit: (line) => output.push(line),
+          });
+          return { ...result, output };
+        }),
     });
     await registerRuntimeDaemon(store, {
       url: server.url,
@@ -240,10 +266,11 @@ switch (subcommand) {
       (action !== "validate" &&
         action !== "run" &&
         action !== "status" &&
-        action !== "preview")
+        action !== "preview" &&
+        action !== "submit")
     )
       throw new Error(
-        "task requires 'validate', 'run', 'status' or 'preview' followed by a task path",
+        "task requires 'validate', 'run', 'status', 'preview' or 'submit' followed by a task path",
       );
     const workspaceRoot = resolve(
       valueAfter(argv, "--workspace") ?? process.cwd(),
@@ -264,6 +291,15 @@ switch (subcommand) {
         emit: (line) => console.log(line),
       });
       if (result.exitCode) process.exitCode = result.exitCode;
+      break;
+    }
+    if (action === "submit") {
+      const submitted = await submitTaskToDaemon({
+        taskPath,
+        workspaceRoot,
+        json: argv.includes("--json"),
+      });
+      if (submitted.exitCode) process.exitCode = submitted.exitCode;
       break;
     }
     if (action === "preview") {
@@ -802,6 +838,65 @@ function withoutRunOption(argv: string[], flag: string) {
   const index = argv.indexOf(flag);
   if (index < 0) return argv;
   return [...argv.slice(0, index), ...argv.slice(index + 2)];
+}
+
+/**
+ * Bounds how many tasks the resident executor runs at once. Tasks share a
+ * workspace, so the default is one: a queued task waits instead of racing
+ * another one through the same working tree.
+ */
+function createTaskGate(limit: number) {
+  let active = 0;
+  const waiting: Array<() => void> = [];
+  return async <T>(work: () => Promise<T>): Promise<T> => {
+    if (active >= limit)
+      await new Promise<void>((release) => waiting.push(release));
+    active += 1;
+    try {
+      return await work();
+    } finally {
+      active -= 1;
+      waiting.shift()?.();
+    }
+  };
+}
+
+/** Submits a task to the resident executor and mirrors its outcome. */
+async function submitTaskToDaemon(input: {
+  taskPath: string;
+  workspaceRoot: string;
+  json: boolean;
+}) {
+  const store = createRuntimeDaemonStore({ dir: daemonDir() });
+  const status = await runtimeDaemonStatus(store);
+  if (status.state !== "running")
+    throw new Error(
+      `task submit requires a running Natalia daemon (${status.state})`,
+    );
+  const token = await daemonToken(store);
+  const response = await fetch(
+    new URL("/tasks/run", status.registration.url).href,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        taskPath: input.taskPath,
+        workspaceRoot: input.workspaceRoot,
+        json: input.json,
+      }),
+    },
+  );
+  const payload = (await response.json()) as Record<string, unknown>;
+  if (!response.ok)
+    throw new Error(
+      `task delivery failed: ${String(payload.error ?? response.status)}`,
+    );
+  for (const line of (payload.output as string[] | undefined) ?? [])
+    console.log(line);
+  return payload as unknown as { exitCode: number };
 }
 
 function daemonDir() {

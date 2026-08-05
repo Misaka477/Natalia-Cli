@@ -3234,3 +3234,164 @@ test("a flow stage that the profile cannot run is rejected before it is schedule
   );
   expect(revalidated.exitCode).toBe(0);
 });
+
+test("task submit carries the task to the resident executor and mirrors it", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-submit-"));
+  const daemonHome = await mkdtemp(join(tmpdir(), "natalia-cli-daemon-home-"));
+  await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+  await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+  await mkdir(join(daemonHome, "natalia-cli", "daemon"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "flows", "review.yaml"),
+    "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n    minimumConditions:\n      - id: c1\n        text: Read the sources\n",
+  );
+  await writeFile(
+    join(root, ".natalia", "tasks", "nightly.yaml"),
+    "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: /doctor\npermissionProfile: unattended\nflow:\n  flowID: flow_review\n",
+  );
+  const requests: Array<{ auth: string; body: Record<string, unknown> }> = [];
+  let respond: () => Response = () =>
+    Response.json({
+      invocationID: "inv_1",
+      status: "stalled",
+      waterlineAdvanced: false,
+      exitCode: 0,
+      output: [
+        '{"type":"task.invocation","taskID":"task_nightly","status":"stalled"}',
+        '{"type":"task.state","taskID":"task_nightly","consecutiveFailures":1}',
+      ],
+    });
+  const executor = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      const url = new URL(request.url);
+      if (url.pathname !== "/tasks/run")
+        return Response.json({ error: "not found" }, { status: 404 });
+      requests.push({
+        auth: request.headers.get("authorization") ?? "",
+        body: (await request.json()) as Record<string, unknown>,
+      });
+      return respond();
+    },
+  });
+  try {
+    await writeFile(
+      join(daemonHome, "natalia-cli", "daemon", "token"),
+      "resident-token\n",
+      { mode: 0o600 },
+    );
+    await writeFile(
+      join(daemonHome, "natalia-cli", "daemon", "daemon.json"),
+      JSON.stringify({
+        version: "0.0.0-ts7",
+        url: executor.url.href,
+        pid: process.pid,
+        tokenFile: join(daemonHome, "natalia-cli", "daemon", "token"),
+        transport: "http",
+        createdAt: new Date().toISOString(),
+      }),
+    );
+    // The executor is served in this process, so the client must run
+    // asynchronously: a synchronous spawn would block the loop that answers it.
+    const submit = async (extra: string[] = []) => {
+      const child = Bun.spawn(
+        [
+          process.execPath,
+          join(import.meta.dir, "..", "src", "main.ts"),
+          "task",
+          "submit",
+          "nightly.yaml",
+          "--workspace",
+          root,
+          ...extra,
+        ],
+        {
+          cwd: root,
+          stdout: "pipe",
+          stderr: "pipe",
+          env: { ...process.env, XDG_STATE_HOME: daemonHome },
+        },
+      );
+      const stdout = await new Response(child.stdout).text();
+      const stderr = await new Response(child.stderr).text();
+      await child.exited;
+      return { exitCode: child.exitCode, stdout, stderr };
+    };
+    const delivered = await submit(["--json"]);
+    expect(delivered.stderr).toBe("");
+    expect(delivered.exitCode).toBe(0);
+    // The submitting client prints exactly what the controller emitted inside the
+    // resident executor, so a timer sees the same stream either way.
+    expect(delivered.stdout.trim().split("\n")).toEqual([
+      '{"type":"task.invocation","taskID":"task_nightly","status":"stalled"}',
+      '{"type":"task.state","taskID":"task_nightly","consecutiveFailures":1}',
+    ]);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.auth).toBe("Bearer resident-token");
+    expect(requests[0]!.body).toEqual({
+      taskPath: "nightly.yaml",
+      workspaceRoot: root,
+      json: true,
+    });
+    // A failing outcome inside the executor has to fail the submitting process
+    // too, otherwise a timer records a success.
+    respond = () =>
+      Response.json({
+        invocationID: "inv_2",
+        status: "blocked",
+        waterlineAdvanced: false,
+        exitCode: 1,
+        output: ['{"type":"task.invocation","status":"blocked"}'],
+      });
+    expect((await submit(["--json"])).exitCode).toBe(1);
+    // A definition error surfaces as a failure with the executor's reason.
+    respond = () =>
+      Response.json(
+        { error: "task issue target not found: forge" },
+        { status: 422 },
+      );
+    const rejected = await submit();
+    expect(rejected.exitCode).not.toBe(0);
+    expect(rejected.stderr).toContain("task issue target not found: forge");
+  } finally {
+    executor.stop(true);
+  }
+});
+
+test("task submit fails closed when no resident executor is running", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-submit-absent-"));
+  await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+  await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "flows", "review.yaml"),
+    "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n    minimumConditions:\n      - id: c1\n        text: Read the sources\n",
+  );
+  await writeFile(
+    join(root, ".natalia", "tasks", "nightly.yaml"),
+    "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: /doctor\npermissionProfile: unattended\nflow:\n  flowID: flow_review\n",
+  );
+  const child = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "task",
+      "submit",
+      "nightly.yaml",
+      "--workspace",
+      root,
+    ],
+    {
+      cwd: root,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        ...process.env,
+        XDG_STATE_HOME: await mkdtemp(join(tmpdir(), "natalia-empty-daemon-")),
+      },
+    },
+  );
+  expect(child.exitCode).not.toBe(0);
+  expect(new TextDecoder().decode(child.stderr)).toContain(
+    "requires a running Natalia daemon",
+  );
+});
