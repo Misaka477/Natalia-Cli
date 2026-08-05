@@ -1,0 +1,21 @@
+kind: natalia-task
+version: 1
+taskID: task_nightly_log_triage
+displayName: Nightly log triage
+# systemd owns the schedule. This field documents the intended cadence for the
+# operator; see deploy/systemd/natalia-task-log-triage.timer.
+schedule: daily 02:15
+prompt: >-
+  Triage the application errors that appeared since the last run and make sure
+  each distinct problem has exactly one open issue.
+permissionProfile: unattended_read
+retry: once
+alerts:
+  - journal
+logSource: app_log
+issueTarget: project_issues
+flow:
+  flowID: flow_log_triage
+evaluator:
+  provider: local
+  model: evaluator

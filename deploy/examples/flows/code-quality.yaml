@@ -1,0 +1,57 @@
+kind: natalia-flow
+version: 1
+flowID: flow_code_quality
+displayName: Nightly code quality review
+modules:
+  - id: survey
+    type: read_search
+    displayName: Survey a slice of the code
+    instructions: >-
+      Review one bounded slice of the repository per run rather than attempting
+      the whole tree. Use glob and grep to select the slice, then read_file to
+      study it. Judge only what the code does: correctness, error handling,
+      resource release, boundary conditions and unsafe defaults. Do not report
+      formatting or naming preferences, and do not propose rewrites of code you
+      have not read.
+    minimumConditions:
+      - id: surveyed
+        text: >-
+          A bounded slice was named, its files were read, and the concrete
+          quality findings in that slice were listed with the file and function
+          each one refers to.
+    idealConditions:
+      - id: severity
+        text: Each finding states the consequence if it is left unfixed.
+  - id: verify
+    type: shell_command
+    displayName: Check the findings against the gate
+    instructions: >-
+      Run only the repository gate commands that confirm or refute the findings.
+      The permission profile restricts which commands exist; if a command you
+      need is denied, report that instead of trying to work around it. A failing
+      gate is evidence, not a reason to stop.
+    commandRules:
+      mode: whitelist
+      rules:
+        - command: npm run typecheck
+          reason: Confirms a type-level finding
+        - command: npm run test
+          reason: Confirms a behavioural finding
+    minimumConditions:
+      - id: verified
+        text: >-
+          Every finding is marked as confirmed by a gate command, refuted by one,
+          or explicitly not verifiable with the available commands.
+  - id: report
+    type: report_output
+    displayName: File or update the issues
+    instructions: >-
+      Report each surviving finding with report_issue. Build fingerprintParts
+      from the durable identity of the problem, for example the file path, the
+      function and the defect class, never from a line number, a date or a
+      metric. Drop findings that the verification stage refuted.
+    minimumConditions:
+      - id: reported
+        text: >-
+          Every confirmed or unverifiable finding was submitted with
+          report_issue and its returned action was recorded.

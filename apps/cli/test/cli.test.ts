@@ -33,6 +33,15 @@ test("CLI task validate resolves a workspace task and flow without running it", 
   await mkdir(join(root, ".natalia", "flows"), { recursive: true });
   await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
   await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      permissionProfiles: {
+        unattended: { approval: "auto", description: "Task profile" },
+      },
+    }),
+  );
+  await writeFile(
     join(root, ".natalia", "flows", "review.yaml"),
     "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n",
   );
@@ -59,6 +68,9 @@ test("CLI task validate resolves a workspace task and flow without running it", 
     taskID: "task_nightly",
     flowID: "flow_review",
     modules: 1,
+    references: {
+      permissionProfile: { key: "unattended", approval: "auto" },
+    },
   });
 });
 
@@ -2241,5 +2253,522 @@ test("CLI task run files one issue for a finding and updates it the next night",
   } finally {
     provider.stop(true);
     forge.stop(true);
+  }
+});
+
+test("CLI task run consumes only new log content and never skips it after a failure", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-task-log-"));
+  await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+  await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+  const logPath = join(root, "app.log");
+  await writeFile(logPath, "night one error\n");
+  const logReads: string[] = [];
+  let evaluatorOutcome = "complete";
+  const provider = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      const body = (await request.json()) as {
+        model: string;
+        messages: Array<{ content: string; role: string; toolName?: string }>;
+      };
+      const sse = (payload: unknown, finish: string) =>
+        new Response(
+          [
+            `data: ${JSON.stringify(payload)}`,
+            "",
+            `data: {"choices":[{"delta":{},"finish_reason":"${finish}"}]}`,
+            "",
+            "data: [DONE]",
+            "",
+          ].join("\n"),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      if (body.model === "evaluator-model")
+        return sse(
+          {
+            choices: [
+              {
+                delta: {
+                  content: JSON.stringify({
+                    schemaVersion: 1,
+                    outcome: evaluatorOutcome,
+                    conditions: [
+                      {
+                        id: "c1",
+                        status:
+                          evaluatorOutcome === "complete"
+                            ? "satisfied"
+                            : "missing",
+                        reason: "log scan evidence",
+                        evidenceRefs:
+                          evaluatorOutcome === "complete" ? ["tool:log_1"] : [],
+                      },
+                    ],
+                    gaps: [],
+                    forbiddenRepeats: [],
+                    recommendedActions: [],
+                    idealOutcome: "satisfied",
+                  }),
+                },
+              },
+            ],
+          },
+          "stop",
+        );
+      const toolMessages = body.messages.filter(
+        (message) => message.role === "tool",
+      );
+      if (!toolMessages.length)
+        return sse(
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: "log_1",
+                      function: {
+                        name: "read_log_source",
+                        arguments: "{}",
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+          "tool_calls",
+        );
+      if (toolMessages.length === 1) {
+        logReads.push(String(toolMessages[0]!.content));
+        return sse(
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: "log_claim",
+                      function: {
+                        name: "flow_module_complete",
+                        arguments: JSON.stringify({
+                          flowID: "flow_scan",
+                          moduleID: "scan",
+                          conditionStatuses: [
+                            { id: "c1", status: "satisfied" },
+                          ],
+                          evidenceRefs: ["tool:log_1"],
+                          gaps: [],
+                          recommendedAction: "Evaluate the log scan.",
+                        }),
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+          "tool_calls",
+        );
+      }
+      return sse({ choices: [{ delta: { content: "Scanned." } }] }, "stop");
+    },
+  });
+  try {
+    await writeFile(
+      join(root, ".natalia", "config.json"),
+      JSON.stringify({
+        version: 2,
+        providers: {
+          local: {
+            type: "openai-compatible",
+            apiKey: "test-key",
+            baseURL: provider.url,
+            enabled: true,
+            customHeaders: {},
+          },
+        },
+        models: {
+          execution: {
+            provider: "local",
+            model: "execution-model",
+            enabled: true,
+            capabilities: {
+              toolCall: true,
+              reasoning: false,
+              thinking: false,
+              imageInput: false,
+              pdfInput: false,
+            },
+            contextWindow: "auto",
+            maxOutputTokens: null,
+            temperature: null,
+            topP: null,
+            reasoningEffort: null,
+            thinkingEnabled: false,
+            stream: true,
+            requestTimeoutSec: null,
+            variants: {},
+          },
+          evaluator: {
+            provider: "local",
+            model: "evaluator-model",
+            enabled: true,
+            capabilities: {
+              toolCall: false,
+              reasoning: false,
+              thinking: false,
+              imageInput: false,
+              pdfInput: false,
+            },
+            contextWindow: "auto",
+            maxOutputTokens: null,
+            temperature: null,
+            topP: null,
+            reasoningEffort: null,
+            thinkingEnabled: false,
+            stream: true,
+            requestTimeoutSec: null,
+            variants: {},
+          },
+        },
+        defaultModel: "execution",
+        permissionProfiles: {
+          unattended: { approval: "auto", description: "Task profile" },
+        },
+        logSources: {
+          app: { path: "app.log", kind: "offset", maxBytes: 4096 },
+        },
+      }),
+    );
+    await writeFile(
+      join(root, ".natalia", "flows", "scan.yaml"),
+      "kind: natalia-flow\nversion: 1\nflowID: flow_scan\ndisplayName: Scan\nmodules:\n  - id: scan\n    type: read_search\n    displayName: Scan\n    instructions: Read the new log content.\n    minimumConditions:\n      - id: c1\n        text: Read the new log content\n",
+    );
+    await writeFile(
+      join(root, ".natalia", "tasks", "nightly.yaml"),
+      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Scan the log.\npermissionProfile: unattended\nlogSource: app\nflow:\n  flowID: flow_scan\nevaluator:\n  provider: local\n  model: evaluator\n",
+    );
+    const runTask = async () => {
+      const child = Bun.spawn(
+        [
+          process.execPath,
+          join(import.meta.dir, "..", "src", "main.ts"),
+          "task",
+          "run",
+          "nightly.yaml",
+          "--workspace",
+          root,
+          "--json",
+        ],
+        { cwd: root, stdout: "pipe", stderr: "pipe" },
+      );
+      const stdout = await new Response(child.stdout).text();
+      await child.exited;
+      return { child, stdout };
+    };
+    const workflow = await import("@natalia/workflow");
+    const first = await runTask();
+    expect(first.child.exitCode).toBe(0);
+    expect(JSON.parse(logReads[0]!)).toMatchObject({
+      from: 0,
+      to: 16,
+      content: "night one error\n",
+    });
+    const afterFirst = await workflow.NataliaUnattendedStateStore.open(
+      root,
+      "task_nightly",
+    );
+    expect(afterFirst.watermark("app")).toMatchObject({
+      kind: "offset",
+      position: "16",
+    });
+
+    // Second night: only the appended line is consumed.
+    await writeFile(logPath, "night one error\nnight two error\n");
+    const second = await runTask();
+    expect(second.child.exitCode).toBe(0);
+    expect(JSON.parse(logReads[1]!)).toMatchObject({
+      from: 16,
+      to: 32,
+      content: "night two error\n",
+    });
+
+    // Third night fails: the watermark must not advance, so the same content is
+    // reprocessed on the next run instead of being skipped.
+    evaluatorOutcome = "incomplete";
+    await writeFile(
+      logPath,
+      "night one error\nnight two error\nnight three error\n",
+    );
+    const third = await runTask();
+    expect(third.child.exitCode).toBe(0);
+    expect(JSON.parse(logReads[2]!)).toMatchObject({ from: 32 });
+    const afterFailure = await workflow.NataliaUnattendedStateStore.open(
+      root,
+      "task_nightly",
+    );
+    expect(afterFailure.watermark("app")).toMatchObject({ position: "32" });
+    expect(afterFailure.state().pending).toEqual({});
+    expect(afterFailure.consecutiveFailures()).toBe(1);
+    evaluatorOutcome = "complete";
+    const fourth = await runTask();
+    expect(fourth.child.exitCode).toBe(0);
+    expect(JSON.parse(logReads[3]!)).toMatchObject({
+      from: 32,
+      content: "night three error\n",
+    });
+    const afterRecovery = await workflow.NataliaUnattendedStateStore.open(
+      root,
+      "task_nightly",
+    );
+    expect(afterRecovery.watermark("app")).toMatchObject({ position: "50" });
+    expect(afterRecovery.consecutiveFailures()).toBe(0);
+  } finally {
+    provider.stop(true);
+  }
+});
+
+test("the shipped unattended examples validate against their example config", async () => {
+  const repoRoot = join(import.meta.dir, "..", "..", "..");
+  const examples = join(repoRoot, "deploy", "examples");
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-examples-"));
+  await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+  await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+  // The example config declares the profiles, the log source and the issue
+  // target the example tasks reference. The evaluator model is deployment
+  // specific, so it is added here the way an operator would.
+  const config = JSON.parse(
+    await readFile(join(examples, "config.json"), "utf8"),
+  ) as Record<string, unknown>;
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      ...config,
+      models: {
+        evaluator: {
+          provider: "local",
+          model: "evaluator-model",
+          enabled: true,
+          capabilities: {
+            toolCall: false,
+            reasoning: false,
+            thinking: false,
+            imageInput: false,
+            pdfInput: false,
+          },
+          contextWindow: "auto",
+          maxOutputTokens: null,
+          temperature: null,
+          topP: null,
+          reasoningEffort: null,
+          thinkingEnabled: false,
+          stream: true,
+          requestTimeoutSec: null,
+          variants: {},
+        },
+      },
+      providers: {
+        local: {
+          type: "openai-compatible",
+          apiKey: "test-key",
+          baseURL: "http://127.0.0.1:1",
+          enabled: true,
+          customHeaders: {},
+        },
+      },
+      defaultModel: "evaluator",
+    }),
+  );
+  for (const flow of ["log-triage.yaml", "code-quality.yaml"])
+    await writeFile(
+      join(root, ".natalia", "flows", flow),
+      await readFile(join(examples, "flows", flow), "utf8"),
+    );
+  const cases = [
+    {
+      file: "nightly-log-triage.yaml",
+      taskID: "task_nightly_log_triage",
+      flowID: "flow_log_triage",
+      modules: 3,
+      references: {
+        permissionProfile: { key: "unattended_read", approval: "auto" },
+        issueTarget: { key: "project_issues" },
+        logSource: { key: "app_log" },
+      },
+    },
+    {
+      file: "nightly-code-quality.yaml",
+      taskID: "task_nightly_code_quality",
+      flowID: "flow_code_quality",
+      modules: 3,
+      references: {
+        permissionProfile: { key: "unattended_review", approval: "auto" },
+        issueTarget: { key: "project_issues" },
+      },
+    },
+  ];
+  for (const example of cases) {
+    await writeFile(
+      join(root, ".natalia", "tasks", example.file),
+      await readFile(join(examples, "tasks", example.file), "utf8"),
+    );
+    const child = Bun.spawnSync(
+      [
+        process.execPath,
+        join(import.meta.dir, "..", "src", "main.ts"),
+        "task",
+        "validate",
+        example.file,
+        "--workspace",
+        root,
+        "--json",
+      ],
+      { cwd: root, stdout: "pipe", stderr: "pipe" },
+    );
+    expect(new TextDecoder().decode(child.stderr)).toBe("");
+    expect(child.exitCode).toBe(0);
+    expect(
+      JSON.parse(new TextDecoder().decode(child.stdout)) as Record<
+        string,
+        unknown
+      >,
+    ).toMatchObject({
+      status: "valid",
+      taskID: example.taskID,
+      flowID: example.flowID,
+      modules: example.modules,
+      references: example.references,
+    });
+  }
+});
+
+test("task validate fails closed on a dangling configuration reference", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-dangling-"));
+  await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+  await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      permissionProfiles: {
+        unattended: { approval: "auto", description: "Task profile" },
+        interactive: { approval: "ask", description: "Interactive" },
+      },
+      issueTargets: {
+        retired: {
+          kind: "gitea",
+          baseURL: "https://forge.example",
+          owner: "natalia",
+          repo: "app",
+          token: "t",
+          enabled: false,
+        },
+      },
+    }),
+  );
+  await writeFile(
+    join(root, ".natalia", "flows", "review.yaml"),
+    "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n",
+  );
+  const validate = (file: string) => {
+    const child = Bun.spawnSync(
+      [
+        process.execPath,
+        join(import.meta.dir, "..", "src", "main.ts"),
+        "task",
+        "validate",
+        file,
+        "--workspace",
+        root,
+      ],
+      { cwd: root, stdout: "pipe", stderr: "pipe" },
+    );
+    return {
+      exitCode: child.exitCode,
+      stderr: new TextDecoder().decode(child.stderr),
+    };
+  };
+  const task = (extra: string) =>
+    `kind: natalia-task\nversion: 1\ntaskID: task_x\ndisplayName: X\nschedule: daily 01:00\nprompt: Do it.\n${extra}flow:\n  flowID: flow_review\n`;
+  await writeFile(
+    join(root, ".natalia", "tasks", "missing-profile.yaml"),
+    task("permissionProfile: absent\n"),
+  );
+  expect(validate("missing-profile.yaml").stderr).toContain(
+    "permission profile not found",
+  );
+  await writeFile(
+    join(root, ".natalia", "tasks", "interactive.yaml"),
+    task("permissionProfile: interactive\n"),
+  );
+  expect(validate("interactive.yaml").stderr).toContain(
+    "must use auto approval",
+  );
+  await writeFile(
+    join(root, ".natalia", "tasks", "missing-source.yaml"),
+    task("permissionProfile: unattended\nlogSource: absent\n"),
+  );
+  expect(validate("missing-source.yaml").stderr).toContain(
+    "log source not found",
+  );
+  await writeFile(
+    join(root, ".natalia", "tasks", "disabled-target.yaml"),
+    task("permissionProfile: unattended\nissueTarget: retired\n"),
+  );
+  expect(validate("disabled-target.yaml").stderr).toContain(
+    "issue target is disabled",
+  );
+  await writeFile(
+    join(root, ".natalia", "tasks", "missing-evaluator.yaml"),
+    task(
+      "permissionProfile: unattended\nevaluator:\n  provider: local\n  model: absent\n",
+    ),
+  );
+  expect(validate("missing-evaluator.yaml").stderr).toContain(
+    "evaluator model not found",
+  );
+  for (const file of [
+    "missing-profile.yaml",
+    "interactive.yaml",
+    "missing-source.yaml",
+    "disabled-target.yaml",
+    "missing-evaluator.yaml",
+  ])
+    expect(validate(file).exitCode).not.toBe(0);
+});
+
+test("the shipped task units name only the task document", async () => {
+  const systemd = join(import.meta.dir, "..", "..", "..", "deploy", "systemd");
+  for (const [unit, taskFile, calendar] of [
+    [
+      "natalia-task-log-triage",
+      ".natalia/tasks/nightly-log-triage.yaml",
+      "OnCalendar=*-*-* 02:15:00",
+    ],
+    [
+      "natalia-task-code-quality",
+      ".natalia/tasks/nightly-code-quality.yaml",
+      "OnCalendar=Sun *-*-* 03:30:00",
+    ],
+  ] as const) {
+    const service = await readFile(join(systemd, `${unit}.service`), "utf8");
+    const timer = await readFile(join(systemd, `${unit}.timer`), "utf8");
+    expect(service).toContain(`task run ${taskFile}`);
+    expect(service).toContain("Type=oneshot");
+    // The task document owns the prompt, the flow, the profile and the alert
+    // policy, so none of it may leak into the unit or the command line, and no
+    // credential may either.
+    expect(service).not.toMatch(
+      /--permission|--prompt|token|apiKey|password/iu,
+    );
+    expect(service).toContain("NoNewPrivileges=yes");
+    expect(timer).toContain(calendar);
+    // A missed run must be caught up, and the watermark is what keeps a catch-up
+    // run from reporting the same content twice.
+    expect(timer).toContain("Persistent=true");
+    expect(timer).toContain(`Unit=${unit}.service`);
   }
 });

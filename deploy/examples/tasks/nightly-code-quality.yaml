@@ -1,0 +1,19 @@
+kind: natalia-task
+version: 1
+taskID: task_nightly_code_quality
+displayName: Nightly code quality review
+schedule: weekly Sun 03:30
+prompt: >-
+  Review one bounded slice of the repository for real defects, verify what can
+  be verified with the repository gate, and make sure each surviving finding has
+  exactly one open issue.
+permissionProfile: unattended_review
+retry: none
+alerts:
+  - journal
+issueTarget: project_issues
+flow:
+  flowID: flow_code_quality
+evaluator:
+  provider: local
+  model: evaluator

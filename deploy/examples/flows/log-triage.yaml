@@ -1,0 +1,57 @@
+kind: natalia-flow
+version: 1
+flowID: flow_log_triage
+displayName: Nightly log triage
+modules:
+  - id: read_log
+    type: read_search
+    displayName: Read the new log content
+    instructions: >-
+      Call read_log_source once to obtain the log content that has not been
+      consumed yet. The runtime owns the read position, so do not try to reason
+      about byte offsets or re-read old content. If the read reports remaining
+      bytes, call it again until nothing remains or the evidence is sufficient.
+      Group the errors you find by their durable shape: the failing component,
+      the error class and the code location. Ignore timestamps, request IDs and
+      other values that change on every occurrence.
+    minimumConditions:
+      - id: log_read
+        text: >-
+          The new log content was read through read_log_source and the distinct
+          error shapes it contains were listed.
+    idealConditions:
+      - id: log_root_cause
+        text: >-
+          Each distinct error shape has a short explanation of what the failing
+          component was doing.
+  - id: locate
+    type: read_search
+    displayName: Locate the failing code
+    instructions: >-
+      For each error shape from the previous stage, find the source location it
+      comes from. Use grep and glob to search, and read_file to confirm. Stay
+      read-only: this stage must not write files or run commands. If a shape
+      cannot be located in the source, say so explicitly instead of guessing.
+    minimumConditions:
+      - id: located
+        text: >-
+          Every error shape was either tied to a concrete file and code path with
+          read evidence, or explicitly reported as not locatable in this
+          repository.
+  - id: report
+    type: report_output
+    displayName: File or update the issues
+    instructions: >-
+      Report each error shape with report_issue. Derive fingerprintParts from
+      the durable identity of the problem only, for example the component, the
+      error class and the file path. Never include a timestamp, a request ID, a
+      line number or a count, otherwise the same problem is filed again every
+      night. Put the occurrence details in the body instead. The runtime
+      deduplicates, updates an existing issue and refuses to reopen anything a
+      human closed, so a returned action of updated or suppressed is a success,
+      not a failure.
+    minimumConditions:
+      - id: reported
+        text: >-
+          Every located error shape was submitted with report_issue and the
+          returned action was recorded for each one.

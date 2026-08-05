@@ -17,6 +17,7 @@ import {
   createIssueTarget,
   evaluateAndRecordModule,
   findingFingerprint,
+  readLogSourceSince,
   NataliaDocumentStore,
   NataliaTaskAlertQueue,
   NataliaTaskStateStore,
@@ -259,6 +260,10 @@ switch (subcommand) {
       );
       break;
     }
+    const references = assertTaskReferences({
+      task,
+      config: (await resolveConfig({ workspaceRoot })).config,
+    });
     const result = {
       taskID: task.taskID,
       displayName: task.displayName,
@@ -266,6 +271,7 @@ switch (subcommand) {
       flowID: flow.flowID,
       flowDisplayName: flow.displayName,
       modules: flow.modules.filter((module) => module.enabled).length,
+      references,
       status: "valid",
     };
     console.log(
@@ -679,6 +685,12 @@ async function runTaskOnce(input: {
     task: input.task,
     config,
   });
+  const readLogSource = taskLogSourceReader({
+    workspaceRoot: input.workspaceRoot,
+    task: input.task,
+    config,
+    invocationID,
+  });
   let attempt = started.attempt.attempt;
   let attemptEpisodeID = started.attempt.episodeID;
   let result: NataliaTaskInvocation | undefined;
@@ -727,6 +739,7 @@ async function runTaskOnce(input: {
           execution: moduleExecution,
           module,
           reportIssue,
+          readLogSource,
           json: input.json,
         });
         if (lastOutcome.outcome !== "complete") break;
@@ -803,6 +816,65 @@ async function runTaskOnce(input: {
 }
 
 /**
+ * Definition preflight for everything the task points at outside its own
+ * document. A dangling or disabled reference fails closed here, because the
+ * runtime would otherwise only discover it in the middle of an unattended run.
+ */
+function assertTaskReferences(input: {
+  task: NataliaTaskDocument;
+  config: Awaited<ReturnType<typeof resolveConfig>>["config"];
+}) {
+  const profile = input.config.permissionProfiles[input.task.permissionProfile];
+  if (!profile)
+    throw new Error(
+      `task permission profile not found: ${input.task.permissionProfile}`,
+    );
+  if (profile.approval !== "auto")
+    throw new Error(
+      `task permission profile must use auto approval: ${input.task.permissionProfile}`,
+    );
+  const issueTarget = input.task.issueTarget
+    ? requireEnabledReference({
+        kind: "issue target",
+        key: input.task.issueTarget,
+        entry: input.config.issueTargets[input.task.issueTarget],
+      })
+    : undefined;
+  const logSource = input.task.logSource
+    ? requireEnabledReference({
+        kind: "log source",
+        key: input.task.logSource,
+        entry: input.config.logSources[input.task.logSource],
+      })
+    : undefined;
+  if (input.task.evaluator && !input.config.models[input.task.evaluator.model])
+    throw new Error(
+      `task evaluator model not found in config: ${input.task.evaluator.model}`,
+    );
+  return {
+    permissionProfile: {
+      key: input.task.permissionProfile,
+      approval: profile.approval,
+    },
+    ...(issueTarget ? { issueTarget } : {}),
+    ...(logSource ? { logSource } : {}),
+    ...(input.task.evaluator ? { evaluator: input.task.evaluator } : {}),
+  };
+}
+
+function requireEnabledReference(input: {
+  kind: string;
+  key: string;
+  entry: { enabled: boolean } | undefined;
+}) {
+  if (!input.entry)
+    throw new Error(`task ${input.kind} not found: ${input.key}`);
+  if (!input.entry.enabled)
+    throw new Error(`task ${input.kind} is disabled: ${input.key}`);
+  return { key: input.key };
+}
+
+/**
  * Read-only history for one task. It opens the durable stores, reports what
  * actually happened, and never creates an invocation, episode, session,
  * approval or alert.
@@ -832,6 +904,7 @@ async function taskStatusReport(input: {
       retry: input.task.retry,
       alertChannels: input.task.alerts,
       issueTarget: input.task.issueTarget,
+      logSource: input.task.logSource,
       waterline: state.getWaterline(input.task.taskID),
       invocations: invocations.map((invocation) => ({
         ...invocation,
@@ -1050,6 +1123,50 @@ function taskIssueReporter(input: {
   };
 }
 
+/**
+ * Binds the configured log source on the controller side. The reader stages the
+ * next position for this invocation only; it becomes the durable watermark when
+ * the whole task succeeds, so a failed run reprocesses the same lines.
+ */
+function taskLogSourceReader(input: {
+  workspaceRoot: string;
+  task: NataliaTaskDocument;
+  config: Awaited<ReturnType<typeof resolveConfig>>["config"];
+  invocationID: string;
+}) {
+  if (!input.task.logSource) return undefined;
+  const configured = input.config.logSources[input.task.logSource];
+  if (!configured)
+    throw new Error(`task log source not found: ${input.task.logSource}`);
+  if (!configured.enabled)
+    throw new Error(`task log source is disabled: ${input.task.logSource}`);
+  const source = {
+    name: input.task.logSource,
+    path: configured.path,
+    kind: configured.kind,
+    maxBytes: configured.maxBytes,
+  };
+  return async (request: { maxBytes?: number }) => {
+    const state = await NataliaUnattendedStateStore.open(
+      input.workspaceRoot,
+      input.task.taskID,
+    );
+    const read = await readLogSourceSince({
+      source,
+      position: state.watermark(source.name)?.position,
+      maxBytes: request.maxBytes,
+      workspaceRoot: input.workspaceRoot,
+    });
+    await state.stagePosition({
+      invocationID: input.invocationID,
+      source: source.name,
+      kind: "offset",
+      position: String(read.to),
+    });
+    return { ...read };
+  };
+}
+
 function taskRetryMaxAttempts(retry: NataliaTaskDocument["retry"]): number {
   if (retry === "once") return 2;
   if (retry === "twice") return 3;
@@ -1081,6 +1198,9 @@ async function runTaskModule(input: {
   reportIssue?: NonNullable<
     RealRuntimeClientOptions["taskModuleContext"]
   >["reportIssue"];
+  readLogSource?: NonNullable<
+    RealRuntimeClientOptions["taskModuleContext"]
+  >["readLogSource"];
   json: boolean;
 }): Promise<TaskModuleRunOutcome> {
   const taskModuleContext: NonNullable<
@@ -1102,6 +1222,7 @@ async function runTaskModule(input: {
       (entry) => entry.id === input.module.moduleID,
     )?.interactivePrograms,
     reportIssue: input.reportIssue,
+    readLogSource: input.readLogSource,
   };
   const client = createRealRuntimeClient({
     ...input.execution,

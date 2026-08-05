@@ -1,0 +1,70 @@
+{
+  "version": 2,
+  "defaultPermission": "ask",
+  "permissionProfiles": {
+    "unattended_read": {
+      "approval": "auto",
+      "description": "Nightly log triage: read the workspace, read the log source, file issues",
+      "permissions": {
+        "tools": {
+          "allow": [
+            "read_file",
+            "glob",
+            "grep",
+            "read_log_source",
+            "report_issue",
+            "flow_module_complete"
+          ]
+        },
+        "files": { "writePaths": [] },
+        "network": { "allowedHosts": [] }
+      },
+      "extensions": { "skills": false, "mcp": false, "plugins": false },
+      "commandRules": { "mode": "whitelist", "rules": [] }
+    },
+    "unattended_review": {
+      "approval": "auto",
+      "description": "Nightly code review: read the workspace, run the repository gate, file issues",
+      "permissions": {
+        "tools": {
+          "allow": [
+            "read_file",
+            "glob",
+            "grep",
+            "run_shell",
+            "report_issue",
+            "flow_module_complete"
+          ]
+        },
+        "files": { "writePaths": [] }
+      },
+      "extensions": { "skills": false, "mcp": false, "plugins": false },
+      "commandRules": {
+        "mode": "whitelist",
+        "rules": [
+          { "command": "npm run typecheck", "reason": "Repository gate" },
+          { "command": "npm run test", "reason": "Repository gate" }
+        ]
+      }
+    }
+  },
+  "logSources": {
+    "app_log": {
+      "path": "/var/log/app/app.log",
+      "kind": "offset",
+      "maxBytes": 262144,
+      "enabled": true
+    }
+  },
+  "issueTargets": {
+    "project_issues": {
+      "kind": "gitea",
+      "baseURL": "https://forge.example",
+      "owner": "natalia",
+      "repo": "app",
+      "token": "",
+      "label": "natalia",
+      "enabled": true
+    }
+  }
+}
