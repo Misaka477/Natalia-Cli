@@ -4131,6 +4131,7 @@ export function createRealRuntimeClient(
           flowID: options.taskModuleContext.flowID,
           moduleID: options.taskModuleContext.moduleID,
           ref: `tool:${call.id}`,
+          tool: tool.name,
         });
       }
       if (

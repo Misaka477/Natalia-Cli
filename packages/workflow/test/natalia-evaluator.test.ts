@@ -292,6 +292,110 @@ test("evaluator provider exceptions block the claimed module", async () => {
   store.close();
 });
 
+test("a reporting stage that never reported is blocked, and says why", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-evaluator-floor-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_1" as import("@natalia/contracts").SessionID,
+  });
+  store.initializeModulePlan({
+    invocationID: "inv_1",
+    attempt: 1,
+    modules: [
+      {
+        flowID: "flow_1",
+        moduleID: "report",
+        moduleType: "report_output",
+        conditionIDs: ["c1"],
+      },
+    ],
+  });
+  store.activateNextModule({ invocationID: "inv_1", attempt: 1 });
+  store.recordModuleEvidence({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "report",
+    ref: "tool:1",
+    tool: "read_file",
+  });
+  store.claimModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    claim: {
+      flowID: "flow_1",
+      moduleID: "report",
+      conditionStatuses: [{ id: "c1", status: "satisfied" }],
+      evidenceRefs: ["tool:1"],
+      gaps: [],
+      recommendedAction: "Evaluate.",
+    },
+  });
+  const provider: StreamingProvider = {
+    provider: "judge",
+    model: "judge-1",
+    async *stream() {
+      yield {
+        type: "content",
+        text: JSON.stringify({
+          schemaVersion: 1,
+          outcome: "complete",
+          conditions: [
+            {
+              id: "c1",
+              status: "satisfied",
+              reason: "the model says the finding was filed",
+              evidenceRefs: ["tool:1"],
+            },
+          ],
+          gaps: [],
+          forbiddenRepeats: [],
+          recommendedActions: [],
+          idealOutcome: "satisfied",
+        }),
+      };
+      yield { type: "done" };
+    },
+  };
+  // The evaluator answered validly and said complete. The platform floor still
+  // wins, and the recorded reason must not send an operator hunting for an
+  // evaluator problem that does not exist.
+  await expect(
+    evaluateAndRecordModule({
+      store,
+      invocationID: "inv_1",
+      attempt: 1,
+      executionProvider: "judge",
+      selection: { provider: "judge", model: "judge-1" },
+      provider,
+      context: {
+        flowID: "flow_1",
+        moduleID: "report",
+        conditionIDs: ["c1"],
+        messages: [],
+        toolRecords: [],
+        terminalOutput: [],
+        executionRecords: [],
+      },
+    }),
+  ).resolves.toMatchObject({
+    outcome: "blocked",
+    reason: expect.stringContaining("platform completion floor"),
+  });
+  expect(store.moduleEvents("inv_1", 1).at(-1)).toMatchObject({
+    kind: "flow.module_blocked",
+  });
+  expect(
+    store.moduleEvents("inv_1", 1).map((event) => event.kind),
+  ).not.toContain("flow.module_completed");
+  expect(store.allModulesCompleted("inv_1", 1)).toBe(false);
+  expect(store.getWaterline("task_1")).toBeUndefined();
+  store.close();
+});
+
 async function claimedModuleStore(root: string) {
   const store = await NataliaTaskStateStore.open(root);
   store.startInvocation({

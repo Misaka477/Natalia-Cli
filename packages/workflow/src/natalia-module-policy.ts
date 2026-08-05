@@ -33,3 +33,21 @@ export function moduleToolPolicy(
     allow: ["flow_module_complete", ...MODULE_TOOL_ALLOWLISTS[type]],
   };
 }
+
+/**
+ * Tools whose success is the only mechanically checkable proof that a stage of
+ * this type produced what the stage exists to produce. Only `report_output`
+ * qualifies today: "the finding left this machine" is decidable from a tool
+ * record, whereas "the required terminal check reached a terminal state" is a
+ * condition the user declares, and the platform does not guess at it. An empty
+ * list means the generic "at least one successful tool call" floor is the whole
+ * platform floor for that type.
+ */
+const MODULE_ARTIFACT_TOOLS: Partial<Record<NataliaFlowModuleType, string[]>> =
+  {
+    report_output: ["report_issue"],
+  };
+
+export function moduleArtifactTools(type: NataliaFlowModuleType): string[] {
+  return MODULE_ARTIFACT_TOOLS[type] ?? [];
+}

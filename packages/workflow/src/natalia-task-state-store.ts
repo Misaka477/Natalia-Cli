@@ -2,9 +2,12 @@ import { mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { Database } from "bun:sqlite";
 import type { EpisodeID, SessionID } from "@natalia/contracts";
-import type { NataliaFlowModuleType } from "./natalia-module-policy";
+import {
+  moduleArtifactTools,
+  type NataliaFlowModuleType,
+} from "./natalia-module-policy";
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 const ACTIVE_STATUSES = ["running", "blocked", "retrying"] as const;
 
 export type NataliaTaskInvocationStatus =
@@ -461,6 +464,7 @@ export class NataliaTaskStateStore {
     flowID: string;
     moduleID: string;
     ref: string;
+    tool?: string;
     at?: string;
   }) {
     const at = input.at ?? new Date().toISOString();
@@ -468,7 +472,9 @@ export class NataliaTaskStateStore {
       this.requireActiveModule(input);
       this.#db
         .query(
-          "INSERT OR IGNORE INTO task_flow_evidence VALUES (?, ?, ?, ?, ?, ?)",
+          `INSERT OR IGNORE INTO task_flow_evidence
+             (invocation_id, attempt, flow_id, module_id, ref, recorded_at, tool_name)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           input.invocationID,
@@ -477,6 +483,7 @@ export class NataliaTaskStateStore {
           input.moduleID,
           input.ref,
           at,
+          input.tool ?? null,
         );
     })();
   }
@@ -607,6 +614,17 @@ export class NataliaTaskStateStore {
         throw new Error(
           `flow module cannot complete without recorded evidence: ${input.moduleID}`,
         );
+      // Second platform floor, per module type: a reporting stage that never
+      // reached the outside world reported nothing, however convincingly the
+      // model summarised it. The required tools come from the capability
+      // bundle, so this cannot drift from what the stage is even allowed to do.
+      if (input.outcome === "complete") {
+        const required = this.moduleArtifactRequirement(input);
+        if (required.length && !this.hasModuleToolEvidence(input, required))
+          throw new Error(
+            `flow module cannot complete without evidence from ${required.join(" or ")}: ${input.moduleID}`,
+          );
+      }
       this.appendModuleEvent({
         ...input,
         kind: "flow.module_evaluated",
@@ -713,6 +731,54 @@ export class NataliaTaskStateStore {
     );
   }
 
+  /**
+   * The tools this stage must be able to show a success from, derived from the
+   * planned module type. A module activated without a plan (the legacy direct
+   * activation path) has no declared type, so only the generic evidence floor
+   * applies to it; every controller-driven attempt plans its modules first.
+   */
+  private moduleArtifactRequirement(input: {
+    invocationID: string;
+    attempt: number;
+    flowID: string;
+    moduleID: string;
+  }) {
+    const planned = this.#db
+      .query<
+        { module_type: NataliaFlowModuleType },
+        [string, number, string, string]
+      >("SELECT module_type FROM task_flow_module_plan WHERE invocation_id = ? AND attempt = ? AND flow_id = ? AND module_id = ?")
+      .get(input.invocationID, input.attempt, input.flowID, input.moduleID);
+    return planned ? moduleArtifactTools(planned.module_type) : [];
+  }
+
+  private hasModuleToolEvidence(
+    input: {
+      invocationID: string;
+      attempt: number;
+      flowID: string;
+      moduleID: string;
+    },
+    tools: string[],
+  ) {
+    const placeholders = tools.map(() => "?").join(", ");
+    return Boolean(
+      this.#db
+        .query<{ count: number }, (string | number)[]>(
+          `SELECT COUNT(*) AS count FROM task_flow_evidence
+           WHERE invocation_id = ? AND attempt = ? AND flow_id = ? AND module_id = ?
+             AND tool_name IN (${placeholders})`,
+        )
+        .get(
+          input.invocationID,
+          input.attempt,
+          input.flowID,
+          input.moduleID,
+          ...tools,
+        )?.count,
+    );
+  }
+
   private migrate() {
     const version =
       this.#db.query<{ user_version: number }, []>("PRAGMA user_version").get()
@@ -802,6 +868,15 @@ export class NataliaTaskStateStore {
         );
       `);
       this.#db.exec("PRAGMA user_version = 3");
+    }
+    if (version <= 3) {
+      // Evidence used to be a bare `tool:<callID>` ref, which records that
+      // something succeeded but not what. A per-type completion floor has to
+      // name the tool, so the tool is now stored alongside the ref. Rows
+      // written before this migration keep a NULL tool: unknown provenance
+      // cannot satisfy a floor, which is the safe direction.
+      this.#db.exec("ALTER TABLE task_flow_evidence ADD COLUMN tool_name TEXT");
+      this.#db.exec("PRAGMA user_version = 4");
     }
   }
 

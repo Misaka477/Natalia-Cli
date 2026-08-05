@@ -450,6 +450,7 @@ test("module plan reports completion only after every module completes under dis
     flowID: "flow_1",
     moduleID: "report",
     ref: "tool:report_evidence",
+    tool: "report_issue",
   });
   store.claimModule({
     invocationID: "inv_1",
@@ -887,5 +888,188 @@ test("a module with no successful tool call can never be completed", async () =>
   ).not.toContain("flow.module_completed");
   expect(store.allModulesCompleted("inv_1", 1)).toBe(false);
   expect(store.getWaterline("task_1")).toBeUndefined();
+  store.close();
+});
+
+test("a reporting stage needs evidence from the reporting tool itself", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-task-report-floor-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_1" as import("@natalia/contracts").SessionID,
+  });
+  store.initializeModulePlan({
+    invocationID: "inv_1",
+    attempt: 1,
+    modules: [
+      {
+        flowID: "flow_1",
+        moduleID: "report",
+        moduleType: "report_output",
+        conditionIDs: ["c1"],
+      },
+    ],
+  });
+  store.activateNextModule({ invocationID: "inv_1", attempt: 1 });
+  // Reading a file inside a reporting stage is real work, so the generic
+  // "something succeeded" floor is satisfied - but nothing left the machine.
+  store.recordModuleEvidence({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "report",
+    ref: "tool:call_read",
+    tool: "read_file",
+  });
+  store.claimModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    claim: {
+      flowID: "flow_1",
+      moduleID: "report",
+      conditionStatuses: [{ id: "c1", status: "satisfied" }],
+      evidenceRefs: ["tool:call_read"],
+      gaps: [],
+      recommendedAction: "Evaluate the claim.",
+    },
+  });
+  expect(() =>
+    store.evaluateModule({
+      invocationID: "inv_1",
+      attempt: 1,
+      flowID: "flow_1",
+      moduleID: "report",
+      outcome: "complete",
+    }),
+  ).toThrow("cannot complete without evidence from report_issue");
+  // The stage can still be blocked, and it never completed.
+  store.evaluateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "report",
+    outcome: "blocked",
+  });
+  expect(
+    store.moduleEvents("inv_1", 1).map((event) => event.kind),
+  ).not.toContain("flow.module_completed");
+  expect(store.allModulesCompleted("inv_1", 1)).toBe(false);
+  expect(store.getWaterline("task_1")).toBeUndefined();
+  store.close();
+});
+
+test("a reporting stage completes once the reporting tool succeeded", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-task-report-ok-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_1" as import("@natalia/contracts").SessionID,
+  });
+  store.initializeModulePlan({
+    invocationID: "inv_1",
+    attempt: 1,
+    modules: [
+      {
+        flowID: "flow_1",
+        moduleID: "report",
+        moduleType: "report_output",
+        conditionIDs: ["c1"],
+      },
+    ],
+  });
+  store.activateNextModule({ invocationID: "inv_1", attempt: 1 });
+  store.recordModuleEvidence({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "report",
+    ref: "tool:call_read",
+    tool: "read_file",
+  });
+  store.recordModuleEvidence({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "report",
+    ref: "tool:call_issue",
+    tool: "report_issue",
+  });
+  store.claimModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    claim: {
+      flowID: "flow_1",
+      moduleID: "report",
+      conditionStatuses: [{ id: "c1", status: "satisfied" }],
+      evidenceRefs: ["tool:call_issue"],
+      gaps: [],
+      recommendedAction: "Evaluate the claim.",
+    },
+  });
+  store.evaluateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "report",
+    outcome: "complete",
+  });
+  expect(store.allModulesCompleted("inv_1", 1)).toBe(true);
+  store.close();
+});
+
+test("a stage of another type is not asked for reporting evidence", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-task-read-floor-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_1" as import("@natalia/contracts").SessionID,
+  });
+  store.initializeModulePlan({
+    invocationID: "inv_1",
+    attempt: 1,
+    modules: [
+      {
+        flowID: "flow_1",
+        moduleID: "read",
+        moduleType: "read_search",
+        conditionIDs: ["c1"],
+      },
+    ],
+  });
+  store.activateNextModule({ invocationID: "inv_1", attempt: 1 });
+  store.recordModuleEvidence({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    ref: "tool:call_read",
+    tool: "read_file",
+  });
+  store.claimModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    claim: {
+      flowID: "flow_1",
+      moduleID: "read",
+      conditionStatuses: [{ id: "c1", status: "satisfied" }],
+      evidenceRefs: ["tool:call_read"],
+      gaps: [],
+      recommendedAction: "Evaluate the claim.",
+    },
+  });
+  store.evaluateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "read",
+    outcome: "complete",
+  });
+  expect(store.allModulesCompleted("inv_1", 1)).toBe(true);
   store.close();
 });

@@ -142,6 +142,7 @@ export async function evaluateAndRecordModule(input: {
     return block(
       "cross-provider evaluator requires confirmed consent for the evaluator provider",
     );
+  let result: EvaluatorResult;
   try {
     let content = "";
     for await (const chunk of input.provider.stream({
@@ -158,7 +159,7 @@ export async function evaluateAndRecordModule(input: {
       if (chunk.type === "tool_call")
         return block("evaluator emitted a forbidden tool call");
     }
-    const result = parseEvaluatorResult(content, redacted.conditionIDs);
+    result = parseEvaluatorResult(content, redacted.conditionIDs);
     for (const condition of result.conditions)
       input.store.validateModuleEvidenceRefs({
         invocationID: input.invocationID,
@@ -167,6 +168,12 @@ export async function evaluateAndRecordModule(input: {
         moduleID: redacted.moduleID,
         refs: condition.evidenceRefs,
       });
+  } catch (error) {
+    return block(
+      `evaluator unavailable or invalid: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  try {
     input.store.evaluateModule({
       invocationID: input.invocationID,
       attempt: input.attempt,
@@ -179,14 +186,17 @@ export async function evaluateAndRecordModule(input: {
         result,
       },
     });
-    return result.outcome === "blocked"
-      ? { outcome: "blocked", reason: "evaluator marked the module blocked" }
-      : { outcome: result.outcome, result };
   } catch (error) {
+    // The evaluator answered, and the platform floor overruled it. Saying so
+    // plainly matters: "evaluator invalid" would send an operator to look at
+    // the wrong thing, when the stage simply never did what its type requires.
     return block(
-      `evaluator unavailable or invalid: ${error instanceof Error ? error.message : String(error)}`,
+      `platform completion floor rejected the evaluator outcome: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+  return result.outcome === "blocked"
+    ? { outcome: "blocked", reason: "evaluator marked the module blocked" }
+    : { outcome: result.outcome, result };
 }
 
 function redactEvaluatorText(text: string): string {
