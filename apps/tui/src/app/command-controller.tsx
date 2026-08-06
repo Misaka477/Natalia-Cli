@@ -10,6 +10,7 @@ import type {
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface ConfigPatch extends Record<string, unknown> {}
 import {
+  deleteTaskDocument,
   flowOverview,
   loadTaskDocument,
   saveTaskDocument,
@@ -730,6 +731,7 @@ export function runCommand(command: string, ctx: CommandContext) {
               () => undefined,
             )
           }
+          deleteTask={(path) => deleteTaskDocument({ workspaceRoot, path })}
           notify={(outcome) =>
             ctx.toast.show({
               variant: outcome.ok ? "success" : "warning",

@@ -35,6 +35,7 @@ export {
   type EffectiveModulePermissions,
 } from "./effective-policy";
 export {
+  deleteTaskDocument,
   loadTaskDocument,
   newScheduledTaskID,
   saveTaskDocument,

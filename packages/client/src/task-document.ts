@@ -27,6 +27,14 @@ export async function saveTaskDocument(input: {
   return documents.saveTask(input.document, input.path);
 }
 
+export async function deleteTaskDocument(input: {
+  workspaceRoot: string;
+  path: string;
+}) {
+  const documents = new NataliaDocumentStore(input.workspaceRoot);
+  await documents.deleteTask(input.path);
+}
+
 export function newScheduledTaskID() {
   return `task_${crypto.randomUUID().replace(/-/gu, "")}`;
 }

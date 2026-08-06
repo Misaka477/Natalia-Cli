@@ -11,6 +11,7 @@ export type DialogConfirmProps = {
   onConfirm?: () => void;
   onCancel?: () => void;
   label?: string;
+  defaultChoice?: "confirm" | "cancel";
 };
 
 export type DialogConfirmResult = boolean | undefined;
@@ -18,7 +19,7 @@ export type DialogConfirmResult = boolean | undefined;
 export function DialogConfirm(props: DialogConfirmProps) {
   const dialog = useDialog();
   const [store, setStore] = createStore({
-    active: "confirm" as "confirm" | "cancel",
+    active: (props.defaultChoice ?? "confirm") as "confirm" | "cancel",
   });
 
   useBindings(() => ({

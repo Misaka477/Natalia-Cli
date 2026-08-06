@@ -54,6 +54,18 @@ export class NataliaDocumentStore {
     return target;
   }
 
+  /** Deletes only the task definition. Durable execution and audit state stay. */
+  async deleteTask(path: string) {
+    const target = this.resolveDocumentPath(this.tasksDir, path);
+    try {
+      await rm(target);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT")
+        throw new Error(`natalia task not found: ${path}`);
+      throw error;
+    }
+  }
+
   async loadFlow(path: string): Promise<NataliaFlowDocument> {
     const document = await this.loadDocument(this.resolveFlowReference(path));
     if (document.kind !== "natalia-flow")

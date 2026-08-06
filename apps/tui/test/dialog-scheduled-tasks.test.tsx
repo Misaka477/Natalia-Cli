@@ -45,6 +45,7 @@ async function mountScheduledTasks(
       document: NataliaTaskDocumentInput,
       path: string,
     ) => Promise<void>;
+    deleteTask: (path: string) => Promise<void>;
   }> = {},
 ) {
   const setup = await createTestRenderer({ width: 160, height: 36 });
@@ -64,6 +65,7 @@ async function mountScheduledTasks(
           runTask={extra.runTask}
           loadTask={extra.loadTask}
           saveTask={extra.saveTask}
+          deleteTask={extra.deleteTask}
           notify={extra.notify}
           reload={async () => {
             if (extra.next) setCurrent(extra.next);
@@ -98,6 +100,11 @@ async function mountScheduledTasks(
       await Bun.sleep(15);
       await setup.renderOnce();
     },
+    async right() {
+      keys.pressArrow("right");
+      await Bun.sleep(15);
+      await setup.renderOnce();
+    },
     async typeAndSubmit(text: string) {
       await keys.typeText(text);
       keys.pressEnter();
@@ -119,6 +126,17 @@ function editorConfig(): ConfigV2 {
     },
     alertChannels: {
       journal: { kind: "journal" },
+    },
+    issueTargets: {
+      project_issues: {
+        kind: "gitea",
+        baseURL: "https://forge.example.test",
+        owner: "team",
+        repo: "project",
+      },
+    },
+    dataSources: {
+      audit_stream: { path: "audit.jsonl", kind: "offset" },
     },
   });
 }
@@ -270,6 +288,7 @@ test("the detail view lists every problem verbatim instead of a summary", () => 
     // A task with a problem cannot be run from here at all.
     "Run now (blocked)",
     "Edit task",
+    "Delete task",
     "Flow: flow_log_triage",
     "Profile: unattended_read · retry once",
     "Alerts: journal",
@@ -325,7 +344,7 @@ test("a long task problem opens in a wrapped detail view", async () => {
   });
   try {
     await mounted.selectFirst();
-    for (let index = 0; index < 5; index++) await mounted.down();
+    for (let index = 0; index < 6; index++) await mounted.down();
     await mounted.selectFirst();
     const frame = mounted.frame();
     expect(frame).toContain("Task problems");
@@ -514,6 +533,17 @@ test("a task can be created through the keyboard wizard and returns to the refre
     expect(mounted.frame()).toContain("Add journal");
     await mounted.selectFirst();
     expect(mounted.frame()).toContain("Alerts: journal");
+    for (let index = 0; index < 8; index++) await mounted.down();
+    await mounted.selectFirst();
+    expect(mounted.frame()).toContain("Issue target");
+    await mounted.down();
+    await mounted.selectFirst();
+    expect(mounted.frame()).toContain("Issue target: project_issues");
+    for (let index = 0; index < 9; index++) await mounted.down();
+    await mounted.selectFirst();
+    expect(mounted.frame()).toContain("Data source");
+    await mounted.down();
+    await mounted.selectFirst();
     await mounted.selectFirst();
 
     expect(saved).toHaveLength(1);
@@ -530,6 +560,8 @@ test("a task can be created through the keyboard wizard and returns to the refre
       },
       retry: "none",
       alerts: ["journal"],
+      issueTarget: "project_issues",
+      dataSource: "audit_stream",
     });
     expect(notices).toEqual([
       { ok: true, message: "Saved Weekly dependency review" },
@@ -641,6 +673,40 @@ test("editing preserves task identity and structured alert subscriptions", async
     ]);
     expect(mounted.frame()).toContain("Scheduled Tasks");
     expect(mounted.frame()).toContain("Existing review");
+  } finally {
+    mounted.dispose();
+  }
+});
+
+test("deleting a task requires confirmation and returns to the refreshed list", async () => {
+  const deleted: string[] = [];
+  const notices: TaskRunOutcome[] = [];
+  const mounted = await mountScheduledTasks(
+    { tasks: [row()], unreadable: [] },
+    {
+      deleteTask: async (path) => {
+        deleted.push(path);
+      },
+      next: { tasks: [], unreadable: [] },
+      notify: (outcome) => notices.push(outcome),
+    },
+  );
+  try {
+    await mounted.selectFirst();
+    await mounted.down();
+    await mounted.down();
+    await mounted.selectFirst();
+    expect(mounted.frame()).toContain("Delete task definition?");
+    expect(mounted.frame()).toContain("Execution");
+    expect(mounted.frame()).toContain("history and audit state will remain");
+    expect(deleted).toEqual([]);
+    await mounted.right();
+    await mounted.selectFirst();
+    expect(deleted).toEqual(["nightly.yaml"]);
+    expect(notices).toEqual([
+      { ok: true, message: "Deleted Nightly log triage" },
+    ]);
+    expect(mounted.frame()).toContain("No task documents");
   } finally {
     mounted.dispose();
   }

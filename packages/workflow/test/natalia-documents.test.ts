@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -134,6 +134,36 @@ test("an editor can load a task with a broken flow, while execution reads fail c
     taskID: "task_broken",
     flow: { flowID: "flow_missing" },
   });
+});
+
+test("deleting a task removes only its definition and keeps durable audit state", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-documents-delete-"));
+  const store = new NataliaDocumentStore(root);
+  const taskPath = await store.saveTask({
+    kind: "natalia-task",
+    version: 1,
+    taskID: "task_delete",
+    displayName: "Delete me",
+    schedule: "daily 01:00",
+    prompt: "Run once.",
+    permissionProfile: "unattended",
+    flow: { flowID: "flow_missing" },
+    retry: "none",
+    alerts: [],
+  });
+  const stateDir = join(root, ".natalia", "unattended", "task_delete");
+  await mkdir(stateDir, { recursive: true });
+  const statePath = join(stateDir, "state.json");
+  await writeFile(statePath, '{"schemaVersion":1}\n');
+  await store.deleteTask("task_delete.yaml");
+  await expect(readFile(taskPath, "utf8")).rejects.toThrow();
+  await expect(readFile(statePath, "utf8")).resolves.toContain("schemaVersion");
+  await expect(store.deleteTask("../outside.yaml")).rejects.toThrow(
+    "must stay under",
+  );
+  await expect(store.deleteTask("task_delete.yaml")).rejects.toThrow(
+    "natalia task not found",
+  );
 });
 
 test("parses a versioned natalia task document", () => {

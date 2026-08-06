@@ -12,11 +12,17 @@ import {
   type ScheduledTaskRow,
 } from "@natalia/client";
 import { DialogPrompt } from "../dialog/DialogPrompt";
+import { DialogConfirm } from "../dialog/DialogConfirm";
 import { DialogSelect, type DialogSelectOption } from "../dialog/DialogSelect";
 import { useDialog } from "../dialog/provider";
 import { darkTheme } from "../theme/theme";
 
-export type ScheduledTaskAction = "run" | "edit" | "problems" | "close";
+export type ScheduledTaskAction =
+  | "run"
+  | "edit"
+  | "delete"
+  | "problems"
+  | "close";
 
 export type TaskRunOutcome = {
   ok: boolean;
@@ -184,6 +190,13 @@ export function buildScheduledTaskDetail(
       category: "Action",
       description:
         "Change the definition; runtime checks still run before execution",
+    },
+    {
+      title: "Delete task",
+      value: "delete" as ScheduledTaskAction,
+      category: "Action",
+      description:
+        "Removes the definition; execution history and audit state remain",
     },
     {
       title: `Flow: ${task.flowID}`,
@@ -384,7 +397,9 @@ function TaskEditor(props: {
     | "schedule"
     | "prompt"
     | "retry"
-    | "alerts";
+    | "alerts"
+    | "issueTarget"
+    | "dataSource";
   flows: FlowOverview;
   config: ConfigV2;
   save: (document: NataliaTaskDocumentInput, path: string) => Promise<void>;
@@ -533,6 +548,43 @@ function TaskEditor(props: {
       />
     );
   }
+  if (editor === "issueTarget" || editor === "dataSource") {
+    const configured =
+      editor === "issueTarget"
+        ? props.config.issueTargets
+        : props.config.dataSources;
+    const current =
+      editor === "issueTarget"
+        ? props.draft.issueTarget
+        : props.draft.dataSource;
+    return (
+      <DialogSelect
+        title={editor === "issueTarget" ? "Issue target" : "Data source"}
+        placeholder="Search configured references"
+        options={[
+          {
+            title: "None",
+            value: "$none",
+            category: current ? "Available" : "Selected",
+          },
+          ...Object.entries(configured).map(([key, value]) => ({
+            title: key,
+            value: key,
+            category: current === key ? "Selected" : "Available",
+            description: value.enabled
+              ? undefined
+              : "Disabled; saving is allowed but the task needs attention",
+          })),
+        ]}
+        onSelect={(option) =>
+          advance({
+            ...props.draft,
+            [editor]: option.value === "$none" ? undefined : option.value,
+          })
+        }
+      />
+    );
+  }
   return (
     <DialogSelect
       title={`${props.draft.displayName} · task editor`}
@@ -580,6 +632,14 @@ function TaskEditor(props: {
           }`,
           value: "alerts",
         },
+        {
+          title: `Issue target: ${props.draft.issueTarget ?? "none"}`,
+          value: "issueTarget",
+        },
+        {
+          title: `Data source: ${props.draft.dataSource ?? "none"}`,
+          value: "dataSource",
+        },
       ]}
       onSelect={async (option) => {
         if (option.value === "save") {
@@ -609,7 +669,9 @@ function TaskEditor(props: {
           option.value === "schedule" ||
           option.value === "prompt" ||
           option.value === "retry" ||
-          option.value === "alerts"
+          option.value === "alerts" ||
+          option.value === "issueTarget" ||
+          option.value === "dataSource"
         )
           advance(props.draft, option.value);
       }}
@@ -669,6 +731,7 @@ export function DialogScheduledTasks(props: {
     document: NataliaTaskDocumentInput,
     path: string,
   ) => Promise<void>;
+  deleteTask?: (path: string) => Promise<void>;
   runTask?: (taskPath: string) => Promise<TaskRunOutcome>;
   notify?: (outcome: TaskRunOutcome) => void;
 }) {
@@ -758,6 +821,45 @@ export function DialogScheduledTasks(props: {
                       error instanceof Error ? error.message : String(error),
                   });
                 }
+                return;
+              }
+              if (detail.value === "delete") {
+                if (!props.deleteTask || !props.reload) {
+                  props.notify?.({
+                    ok: false,
+                    message: "Task deletion is not available in this workspace",
+                  });
+                  return;
+                }
+                dialog.push(() => (
+                  <DialogConfirm
+                    title="Delete task definition?"
+                    message={`Delete ${task.displayName} (${task.path})? Execution history and audit state will remain.`}
+                    label="keep task"
+                    defaultChoice="cancel"
+                    onConfirm={() => {
+                      void (async () => {
+                        try {
+                          await props.deleteTask!(task.path);
+                          await props.reload!();
+                          dialog.pop();
+                          props.notify?.({
+                            ok: true,
+                            message: `Deleted ${task.displayName}`,
+                          });
+                        } catch (error) {
+                          props.notify?.({
+                            ok: false,
+                            message:
+                              error instanceof Error
+                                ? error.message
+                                : String(error),
+                          });
+                        }
+                      })();
+                    }}
+                  />
+                ));
                 return;
               }
               if (detail.value === "problems") {
