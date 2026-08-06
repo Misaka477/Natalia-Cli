@@ -24,6 +24,7 @@ import {
   scheduledTaskSummary,
   taskDocumentForEditor,
   taskRunCommand,
+  workflowRunCommand,
   type ScheduledTaskPermissionPreview,
   type TaskRunOutcome,
 } from "../src/component/DialogScheduledTasks";
@@ -552,6 +553,27 @@ test("a manual run uses the same command a timer would", () => {
       workspaceRoot: "/srv/workspace",
     })[0],
   ).toBe("natalia-ts");
+});
+
+test("workflow run commands distinguish direct flow runs", () => {
+  expect(
+    workflowRunCommand({
+      kind: "flow",
+      execPath: "/usr/bin/bun",
+      cliEntry: "/repo/apps/cli/src/main.ts",
+      path: "review.yaml",
+      workspaceRoot: "/workspace",
+    }),
+  ).toEqual([
+    "/usr/bin/bun",
+    "/repo/apps/cli/src/main.ts",
+    "flow",
+    "run",
+    "review.yaml",
+    "--workspace",
+    "/workspace",
+    "--json",
+  ]);
 });
 
 test("the run result comes from the task's own terminal status", () => {

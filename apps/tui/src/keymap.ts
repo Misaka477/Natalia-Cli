@@ -150,6 +150,24 @@ export const commands: Record<string, CommandDef> = {
     keys: "ctrl+shift+e",
     desc: "Edit flows (create and manage staged agent pipelines)",
   },
+  "flow.module.move-earlier": {
+    id: "flow.module.move-earlier",
+    keys: "shift+up",
+    desc: "Move selected flow module earlier",
+    scope: "dialog",
+  },
+  "flow.module.move-later": {
+    id: "flow.module.move-later",
+    keys: "shift+down",
+    desc: "Move selected flow module later",
+    scope: "dialog",
+  },
+  "flow.module.toggle": {
+    id: "flow.module.toggle",
+    keys: "space",
+    desc: "Enable or disable selected flow module",
+    scope: "dialog",
+  },
   "checkpoint.manage": {
     id: "checkpoint.manage",
     keys: "ctrl+shift+k",

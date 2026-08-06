@@ -8,6 +8,7 @@ import {
   EGRESS_ADVISORY,
   newHeadlessExecution,
   plainRuntimeEvent,
+  manualFlowTask,
   runTask,
   removeTaskSystemd,
   taskPermissionPreview,
@@ -448,6 +449,33 @@ switch (subcommand) {
         ? JSON.stringify(result)
         : `task ${result.taskID}: valid\nflow ${result.flowID}: ${result.modules} enabled modules`,
     );
+    break;
+  }
+
+  case "flow": {
+    const action = argv[1];
+    const flowPath = argv[2];
+    if (action !== "run" || !flowPath)
+      throw new Error("flow requires 'run' followed by a flow path");
+    const workspaceRoot = resolve(
+      valueAfter(argv, "--workspace") ?? process.cwd(),
+    );
+    const documents = new NataliaDocumentStore(workspaceRoot);
+    const flow = await documents.loadFlow(
+      flowPath.startsWith(".natalia/")
+        ? flowPath
+        : `.natalia/flows/${flowPath}`,
+    );
+    const config = assertConfigApplied(await resolveConfig({ workspaceRoot }));
+    const result = await runTask({
+      workspaceRoot,
+      task: manualFlowTask(flow, config),
+      flow,
+      config,
+      json: argv.includes("--json"),
+      emit: (line) => console.log(line),
+    });
+    if (result.exitCode) process.exitCode = result.exitCode;
     break;
   }
 

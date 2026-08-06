@@ -60,6 +60,24 @@ export function taskRunCommand(input: {
   ];
 }
 
+export function workflowRunCommand(input: {
+  kind: "task" | "flow";
+  execPath: string;
+  path: string;
+  workspaceRoot: string;
+  cliEntry?: string;
+}) {
+  return [
+    ...(input.cliEntry ? [input.execPath, input.cliEntry] : ["natalia-ts"]),
+    input.kind,
+    "run",
+    input.path,
+    "--workspace",
+    input.workspaceRoot,
+    "--json",
+  ];
+}
+
 /** Source checkout layout, so a dev launch finds the CLI next to the TUI. */
 export function resolveCliEntry(
   env: NodeJS.ProcessEnv = process.env,
@@ -1082,10 +1100,25 @@ export async function runScheduledTaskProcess(input: {
   workspaceRoot: string;
   env?: NodeJS.ProcessEnv;
 }): Promise<TaskRunOutcome> {
+  return runWorkflowProcess({
+    kind: "task",
+    path: input.taskPath,
+    workspaceRoot: input.workspaceRoot,
+    env: input.env,
+  });
+}
+
+export async function runWorkflowProcess(input: {
+  kind: "task" | "flow";
+  path: string;
+  workspaceRoot: string;
+  env?: NodeJS.ProcessEnv;
+}): Promise<TaskRunOutcome> {
   const cliEntry = resolveCliEntry(input.env);
-  const command = taskRunCommand({
+  const command = workflowRunCommand({
+    kind: input.kind,
     execPath: process.execPath,
-    taskPath: input.taskPath,
+    path: input.path,
     workspaceRoot: input.workspaceRoot,
     cliEntry,
   });
@@ -1098,11 +1131,18 @@ export async function runScheduledTaskProcess(input: {
     const stdout = await new Response(child.stdout).text();
     const stderr = await new Response(child.stderr).text();
     await child.exited;
-    return readTaskRunOutcome({ exitCode: child.exitCode, stdout, stderr });
+    const outcome = readTaskRunOutcome({
+      exitCode: child.exitCode,
+      stdout,
+      stderr,
+    });
+    return input.kind === "flow"
+      ? { ...outcome, message: outcome.message.replace(/^Task/u, "Flow") }
+      : outcome;
   } catch (error) {
     return {
       ok: false,
-      message: `could not start the task run: ${error instanceof Error ? error.message : String(error)}`,
+      message: `could not start the ${input.kind} run: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
 }

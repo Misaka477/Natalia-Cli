@@ -1,8 +1,11 @@
 import type {
+  ConfigV2,
   NataliaFlowDocument,
   NataliaFlowDocumentInput,
   NataliaTaskDocument,
 } from "@natalia/contracts";
+import { agentsFromConfig } from "@natalia/agent";
+import { providerForModel } from "@natalia/runtime";
 import { NataliaDocumentStore } from "@natalia/workflow";
 import { readdir } from "node:fs/promises";
 
@@ -77,4 +80,40 @@ export async function deleteFlowDocument(input: {
 
 export function newFlowID() {
   return `flow_${crypto.randomUUID().replace(/-/gu, "")}`;
+}
+
+export function manualFlowTask(
+  flow: NataliaFlowDocument,
+  config: ConfigV2,
+): NataliaTaskDocument {
+  const permissionProfile = flow.directRun?.permissionProfile;
+  if (!permissionProfile)
+    throw new Error(
+      `flow manual run profile is not configured: ${flow.flowID}`,
+    );
+  const profile = config.permissionProfiles[permissionProfile];
+  if (!profile)
+    throw new Error(`flow manual run profile not found: ${permissionProfile}`);
+  if (profile.approval !== "auto")
+    throw new Error(
+      `flow manual run profile must use auto approval: ${permissionProfile}`,
+    );
+  const agent = agentsFromConfig(config).default();
+  const modelID = agent?.model ?? config.defaultModel;
+  const model = config.models[modelID];
+  if (!model || !providerForModel(config, modelID, agent?.variant))
+    throw new Error("flow manual run requires an available default model");
+  return {
+    kind: "natalia-task",
+    version: 1,
+    taskID: `manual_flow_${flow.flowID}`,
+    displayName: `Manual · ${flow.displayName}`,
+    schedule: "manual",
+    prompt: `Execute the flow "${flow.displayName}" in module order. Follow each active module's instructions and completion conditions.`,
+    permissionProfile,
+    flow: { flowID: flow.flowID },
+    retry: "none",
+    alerts: [],
+    evaluator: { provider: model.provider, model: modelID },
+  };
 }

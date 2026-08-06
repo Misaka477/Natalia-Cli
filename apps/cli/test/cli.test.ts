@@ -99,6 +99,36 @@ test("CLI task validate fails closed for a missing flow", async () => {
   );
 });
 
+test("CLI flow run requires the profile configured on the flow", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-flow-run-"));
+  await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({ version: 2 }),
+  );
+  await writeFile(
+    join(root, ".natalia", "flows", "review.yaml"),
+    "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\ndirectRun:\n  permissionProfile: missing\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n",
+  );
+  const child = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "flow",
+      "run",
+      "review.yaml",
+      "--workspace",
+      root,
+      "--json",
+    ],
+    { cwd: root, stdout: "pipe", stderr: "pipe" },
+  );
+  expect(child.exitCode).not.toBe(0);
+  expect(new TextDecoder().decode(child.stderr)).toContain(
+    "flow manual run profile not found: missing",
+  );
+});
+
 test("CLI task run creates a task-scoped episode but never treats turn completion as success", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-cli-task-run-"));
   await mkdir(join(root, ".natalia", "flows"), { recursive: true });

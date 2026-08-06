@@ -454,6 +454,15 @@ test("flow orchestration owns module order and activation", async () => {
         <DialogFlows
           overview={{ flows: [flow()], unreadable: [] }}
           workspaceRoot="/tmp/natalia-flow-dialog"
+          config={configV2Schema.parse({
+            version: 2,
+            permissionProfiles: {
+              unattended: {
+                approval: "auto",
+                description: "Manual Flow runs",
+              },
+            },
+          })}
           loadFlow={async () => document}
           saveFlow={async () => undefined}
           reload={async () => undefined}
@@ -481,24 +490,29 @@ test("flow orchestration owns module order and activation", async () => {
     await renderOnce();
     keys.pressEnter();
     await renderOnce();
-    await keys.typeText("Reorder modules");
+    await keys.typeText("Manual run profile");
     keys.pressEnter();
     await renderOnce();
-    keys.pressArrow("down");
-    keys.pressArrow("down");
     keys.pressEnter();
     await renderOnce();
-    keys.pressArrow("down");
+    await keys.typeText("Manual run profile");
+    await renderOnce();
+    expect(setup.captureCharFrame()).toContain("Manual run profile unattended");
     keys.pressEnter();
+    await renderOnce();
+    keys.pressEnter();
+    await renderOnce();
+    await keys.typeText("Arrange modules");
+    keys.pressEnter();
+    await renderOnce();
+    expect(setup.captureCharFrame()).toContain("shift+up");
+    expect(setup.captureCharFrame()).toContain("shift+down");
+    expect(setup.captureCharFrame()).toContain("space");
+    keys.pressArrow("down");
+    keys.pressArrow("up", { shift: true });
     await renderOnce();
     expect(setup.captureCharFrame()).toContain("1. Report");
     expect(setup.captureCharFrame()).toContain("2. Read");
-    keys.pressEscape();
-    await renderOnce();
-    await keys.typeText("Enable or disable modules");
-    keys.pressEnter();
-    await renderOnce();
-    keys.pressArrow("down");
     keys.pressEnter();
     await renderOnce();
     expect(setup.captureCharFrame()).toContain("[ ] 1. Report");

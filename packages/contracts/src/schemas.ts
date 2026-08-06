@@ -270,6 +270,7 @@ export const nataliaFlowDocumentSchema = z.object({
   version: z.number().int().positive(),
   flowID: z.string().min(1),
   displayName: z.string().min(1),
+  directRun: z.object({ permissionProfile: z.string().min(1) }).optional(),
   modules: z.array(nataliaFlowModuleSchema).min(1),
 });
 

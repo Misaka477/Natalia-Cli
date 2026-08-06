@@ -113,12 +113,11 @@ type FlowEditorScreen =
     }
   | { kind: "module-interactive-delete"; moduleID: string; command: string }
   | { kind: "permission-preview-profile" }
+  | { kind: "direct-run-profile" }
   | { kind: "permission-preview"; profileName: string }
   | { kind: "runtime-contract" }
   | { kind: "problems" }
-  | { kind: "reorder-modules" }
-  | { kind: "reorder-module"; moduleID: string }
-  | { kind: "module-activation" };
+  | { kind: "arrange-modules"; moduleID?: string };
 
 /**
  * Flows are work definitions, not tool settings, so they get their own surface.
@@ -564,14 +563,11 @@ function FlowEditor(props: {
         return;
       case "add-module":
       case "permission-preview-profile":
+      case "direct-run-profile":
       case "runtime-contract":
       case "problems":
-      case "reorder-modules":
-      case "module-activation":
+      case "arrange-modules":
         advance(props.draft);
-        return;
-      case "reorder-module":
-        advance(props.draft, { kind: "reorder-modules" });
         return;
       case "permission-preview":
         advance(props.draft, { kind: "permission-preview-profile" });
@@ -702,7 +698,7 @@ function FlowEditor(props: {
             category: "Action",
           },
           {
-            title: flowDraftProblems(props.draft).length
+            title: flowDraftProblems(props.draft, props.config).length
               ? "Save flow (needs attention)"
               : "Save flow",
             value: "$confirm",
@@ -710,7 +706,7 @@ function FlowEditor(props: {
             description:
               "Unattended tasks using this flow will not wait for approval. Runtime policy still enforces profile and module boundaries.",
           },
-          ...flowDraftProblems(props.draft).map((problem) => ({
+          ...flowDraftProblems(props.draft, props.config).map((problem) => ({
             title: `Problem: ${problem}`,
             value: `problem:${problem}`,
             category: "Needs attention",
@@ -828,6 +824,50 @@ function FlowEditor(props: {
     );
   }
 
+  if (screen.kind === "direct-run-profile") {
+    const profiles = Object.entries(props.config?.permissionProfiles ?? {})
+      .filter(([, profile]) => profile.approval === "auto")
+      .map(([name, profile]) => ({
+        title: name,
+        value: name,
+        category: "Unattended profiles",
+        description: profile.description || "Auto approval",
+      }));
+    return (
+      <DialogSelect
+        title="Flow Manual Run Profile"
+        options={[
+          ...(props.draft.directRun
+            ? [
+                {
+                  title: "Disable direct run",
+                  value: "$none",
+                  category: "Action",
+                  description: "Hide this flow from /flow launch completion",
+                },
+              ]
+            : []),
+          ...profiles,
+        ]}
+        emptyView={
+          <text>No auto-approval permission profile is configured.</text>
+        }
+        current={props.draft.directRun?.permissionProfile}
+        onSelect={(option) => {
+          if (option.value === "$none") {
+            const next = structuredClone(props.draft);
+            delete next.directRun;
+            advance(next);
+          } else
+            advance({
+              ...props.draft,
+              directRun: { permissionProfile: option.value },
+            });
+        }}
+      />
+    );
+  }
+
   if (screen.kind === "permission-preview") {
     const profile = props.config?.permissionProfiles[screen.profileName];
     if (!profile)
@@ -936,111 +976,88 @@ function FlowEditor(props: {
   if (screen.kind === "runtime-contract") return <FlowRuntimeContractDetail />;
 
   if (screen.kind === "problems") {
-    return <FlowProblemDetail draft={props.draft} />;
+    return <FlowProblemDetail draft={props.draft} config={props.config} />;
   }
 
-  if (screen.kind === "reorder-modules")
+  if (screen.kind === "arrange-modules")
     return (
       <DialogSelect
-        title="Reorder Flow Modules"
-        options={[
-          { title: "Back to flow", value: "$back", category: "Action" },
-          ...props.draft.modules.map((module, index) => ({
-            title: `${index + 1}. ${module.displayName}`,
-            value: module.id,
-            category: "Execution order",
-            description: module.type,
-          })),
-        ]}
+        title="Arrange Flow Modules"
+        options={props.draft.modules.map((module, index) => ({
+          title: `${module.enabled ? "[x]" : "[ ]"} ${index + 1}. ${module.displayName}`,
+          value: module.id,
+          category: "Modules",
+          description: `${module.type} · ${module.enabled ? "enabled" : "disabled"}`,
+        }))}
         skipFilter
-        onSelect={(option) => {
-          if (option.value === "$back") advance(props.draft);
-          else
-            advance(props.draft, {
-              kind: "reorder-module",
-              moduleID: option.value,
-            });
-        }}
-      />
-    );
-
-  if (screen.kind === "reorder-module") {
-    const index = props.draft.modules.findIndex(
-      (module) => module.id === screen.moduleID,
-    );
-    const module = props.draft.modules[index];
-    if (!module) return <MissingModule draft={props.draft} advance={advance} />;
-    return (
-      <DialogSelect
-        title={`Move Module · ${module.displayName}`}
-        options={[
-          {
-            title: "Back to module order",
-            value: "$back",
-            category: "Action",
-          },
-          {
-            title: "Move earlier",
-            value: "$up",
-            category: "Action",
-            disabled: index === 0,
-            description: "Run this module one stage earlier",
-          },
-          {
-            title: "Move later",
-            value: "$down",
-            category: "Action",
-            disabled: index === props.draft.modules.length - 1,
-            description: "Run this module one stage later",
-          },
-        ]}
-        onSelect={(option) => {
-          if (option.value === "$back")
-            advance(props.draft, { kind: "reorder-modules" });
-          else
-            advance(
-              reorderFlowModule(props.draft, index, option.value === "$up"),
-              { kind: "reorder-modules" },
-            );
-        }}
-      />
-    );
-  }
-
-  if (screen.kind === "module-activation")
-    return (
-      <DialogSelect
-        title="Enable or Disable Flow Modules"
-        options={[
-          { title: "Back to flow", value: "$back", category: "Action" },
-          ...props.draft.modules.map((module, index) => ({
-            title: `${module.enabled ? "[x]" : "[ ]"} ${index + 1}. ${module.displayName}`,
-            value: module.id,
-            category: "Modules",
-            description: module.enabled
-              ? "Enabled · Enter to disable"
-              : "Disabled · Enter to enable",
-          })),
-        ]}
-        skipFilter
+        renderFilter={false}
+        current={screen.moduleID}
         preserveSelection
-        onSelect={(option) => {
-          if (option.value === "$back") {
-            advance(props.draft);
-            return;
-          }
-          const module = props.draft.modules.find(
-            (entry) => entry.id === option.value,
-          );
-          if (!module) return;
+        actions={[
+          {
+            command: "flow.module.move-earlier",
+            title: "move earlier",
+            disabled: (option) =>
+              !option ||
+              option.value.startsWith("$") ||
+              props.draft.modules.findIndex(
+                (module) => module.id === option.value,
+              ) === 0,
+            onTrigger: (option) => {
+              const index = props.draft.modules.findIndex(
+                (module) => module.id === option.value,
+              );
+              if (index <= 0) return;
+              advance(reorderFlowModule(props.draft, index, true), {
+                kind: "arrange-modules",
+                moduleID: option.value,
+              });
+            },
+          },
+          {
+            command: "flow.module.move-later",
+            title: "move later",
+            disabled: (option) => {
+              const index = props.draft.modules.findIndex(
+                (module) => module.id === option?.value,
+              );
+              return index < 0 || index === props.draft.modules.length - 1;
+            },
+            onTrigger: (option) => {
+              const index = props.draft.modules.findIndex(
+                (module) => module.id === option.value,
+              );
+              if (index < 0 || index === props.draft.modules.length - 1) return;
+              advance(reorderFlowModule(props.draft, index, false), {
+                kind: "arrange-modules",
+                moduleID: option.value,
+              });
+            },
+          },
+          {
+            command: "flow.module.toggle",
+            title: "toggle enabled",
+            disabled: (option) => !option || option.value.startsWith("$"),
+            onTrigger: (option) => {
+              advance(
+                updateFlowModule(props.draft, option.value, (module) => ({
+                  ...module,
+                  enabled: !module.enabled,
+                })),
+                { kind: "arrange-modules", moduleID: option.value },
+              );
+            },
+          },
+        ]}
+        onSelect={(option) =>
           advance(
-            updateFlowModule(props.draft, module.id, (entry) => ({
-              ...entry,
-              enabled: !entry.enabled,
+            updateFlowModule(props.draft, option.value, (module) => ({
+              ...module,
+              enabled: !module.enabled,
             })),
-            { kind: "module-activation" },
-          );
-        }}
+            { kind: "arrange-modules", moduleID: option.value },
+          )
+        }
       />
     );
 
@@ -1109,13 +1126,13 @@ function FlowEditor(props: {
               },
             ]
           : []),
-        ...(flowDraftProblems(props.draft).length
+        ...(flowDraftProblems(props.draft, props.config).length
           ? [
               {
-                title: `Review problems (${flowDraftProblems(props.draft).length})`,
+                title: `Review problems (${flowDraftProblems(props.draft, props.config).length})`,
                 value: "$problems",
                 category: "Needs attention",
-                description: flowDraftProblems(props.draft)[0],
+                description: flowDraftProblems(props.draft, props.config)[0],
                 footer: "Open for details",
               },
             ]
@@ -1131,6 +1148,17 @@ function FlowEditor(props: {
           value: "$name",
           category: "Definition",
         },
+        ...(props.config
+          ? [
+              {
+                title: "Manual run profile",
+                value: "$direct-profile",
+                category: "Definition",
+                description:
+                  props.draft.directRun?.permissionProfile ?? "Not configured",
+              },
+            ]
+          : []),
         ...props.draft.modules.map((module, index) => ({
           title: `${index + 1}. ${module.displayName}`,
           value: module.id,
@@ -1138,16 +1166,10 @@ function FlowEditor(props: {
           description: `${module.type} · ${module.minimumConditions.length} required`,
         })),
         {
-          title: "Reorder modules",
-          value: "$reorder",
+          title: "Arrange modules",
+          value: "$arrange",
           category: "Action",
-          description: "Change the flow execution order",
-        },
-        {
-          title: "Enable or disable modules",
-          value: "$activation",
-          category: "Action",
-          description: `${props.draft.modules.filter((module) => module.enabled).length}/${props.draft.modules.length} enabled`,
+          description: `Reorder and toggle · ${props.draft.modules.filter((module) => module.enabled).length}/${props.draft.modules.length} enabled`,
         },
         {
           title: "+ Add module",
@@ -1163,6 +1185,8 @@ function FlowEditor(props: {
           advance(props.draft, { kind: "permission-preview-profile" });
         else if (option.value === "$name")
           advance(props.draft, { kind: "flow-name" });
+        else if (option.value === "$direct-profile")
+          advance(props.draft, { kind: "direct-run-profile" });
         else if (option.value === "$delete")
           advance(props.draft, { kind: "delete-confirm" });
         else if (option.value === "$problems")
@@ -1171,10 +1195,8 @@ function FlowEditor(props: {
           advance(props.draft, { kind: "runtime-contract" });
         else if (option.value === "$add")
           advance(props.draft, { kind: "add-module" });
-        else if (option.value === "$reorder")
-          advance(props.draft, { kind: "reorder-modules" });
-        else if (option.value === "$activation")
-          advance(props.draft, { kind: "module-activation" });
+        else if (option.value === "$arrange")
+          advance(props.draft, { kind: "arrange-modules" });
         else if (!option.value.startsWith("$"))
           advance(props.draft, { kind: "module", moduleID: option.value });
       }}
@@ -1182,7 +1204,10 @@ function FlowEditor(props: {
   );
 }
 
-function FlowProblemDetail(props: { draft: NataliaFlowDocument }) {
+function FlowProblemDetail(props: {
+  draft: NataliaFlowDocument;
+  config?: ConfigV2;
+}) {
   const dialog = useDialog();
   return (
     <box paddingLeft={2} paddingRight={2} gap={1}>
@@ -1199,7 +1224,7 @@ function FlowProblemDetail(props: { draft: NataliaFlowDocument }) {
         The YAML is valid, but unattended tasks using this flow will block until
         these problems are fixed.
       </text>
-      {flowDraftProblems(props.draft).map((problem, index) => (
+      {flowDraftProblems(props.draft, props.config).map((problem, index) => (
         <text fg={darkTheme.danger} wrapMode="word">
           {index + 1}. {problem}
         </text>
@@ -2404,8 +2429,21 @@ export function reorderFlowModule(
 }
 
 /** Saveable drafts can still need attention before an unattended task can run. */
-export function flowDraftProblems(draft: NataliaFlowDocument): string[] {
+export function flowDraftProblems(
+  draft: NataliaFlowDocument,
+  config?: ConfigV2,
+): string[] {
   const problems: string[] = [];
+  const directProfile = draft.directRun?.permissionProfile;
+  if (directProfile && config) {
+    const profile = config.permissionProfiles[directProfile];
+    if (!profile)
+      problems.push(`manual run profile not found: ${directProfile}`);
+    else if (profile.approval !== "auto")
+      problems.push(
+        `manual run profile must use auto approval: ${directProfile}`,
+      );
+  }
   if (!draft.modules.some((module) => module.enabled))
     problems.push("no module is enabled, so the flow can never complete");
   for (const module of draft.modules)

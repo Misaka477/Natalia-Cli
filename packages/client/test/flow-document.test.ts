@@ -12,6 +12,7 @@ test("flow document editor APIs atomically save and reload a stable definition",
     version: 1,
     flowID: "flow_stable",
     displayName: "Nightly review",
+    directRun: { permissionProfile: "unattended" },
     modules: [
       {
         id: "module_read",
@@ -36,6 +37,7 @@ test("flow document editor APIs atomically save and reload a stable definition",
   expect(loaded).toMatchObject({
     flowID: "flow_stable",
     displayName: "Nightly review",
+    directRun: { permissionProfile: "unattended" },
     modules: [
       {
         id: "module_read",

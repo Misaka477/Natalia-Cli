@@ -10,6 +10,10 @@ export {
   installExampleDocuments,
   type ExampleDocumentInstallResult,
 } from "./example-documents";
+export {
+  workflowDocumentCatalog,
+  type WorkflowDocumentChoice,
+} from "./workflow-document-catalog";
 export { createFakeBackend } from "./fixture";
 export { createRealRuntimeClient, EGRESS_ADVISORY } from "./real-runtime";
 export {
@@ -24,6 +28,7 @@ export {
 export {
   deleteFlowDocument,
   loadFlowDocument,
+  manualFlowTask,
   newFlowID,
   saveFlowDocument,
 } from "./flow-document";

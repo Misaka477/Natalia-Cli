@@ -22,6 +22,7 @@ import { useClipboard } from "../context/clipboard";
 import { ToastRegion, useToast } from "../context/toast";
 import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
 import type { ConfigV2 } from "@natalia/contracts";
+import { assertConfigApplied, workflowDocumentCatalog } from "@natalia/client";
 import { getPluginCommands } from "@natalia/plugin";
 import {
   buildKeybindMap,
@@ -55,7 +56,11 @@ import { DialogWorkspaceSearch } from "../component/DialogWorkspaceSearch";
 import { DialogTerminal } from "../component/DialogTerminal";
 import { DialogCheckpoint } from "../component/DialogCheckpoint";
 import { DialogSandbox } from "../component/DialogSandbox";
-import { PromptAutocomplete } from "../component/PromptAutocomplete";
+import {
+  PromptAutocomplete,
+  workflowRunRequest,
+} from "../component/PromptAutocomplete";
+import { runWorkflowProcess } from "../component/DialogScheduledTasks";
 import {
   editPromptExternally,
   retainEditorMentions,
@@ -404,6 +409,45 @@ function Shell(props: {
       input?.clear();
       props.backend.resume?.();
       setTimeout(() => composer()?.focus(), 1);
+      return;
+    }
+    const workflowRun = workflowRunRequest(control);
+    if (workflowRun) {
+      if (!props.workspaceRoot) {
+        toast.show({
+          variant: "warning",
+          message: "Task and flow runs require a workspace root",
+        });
+        return;
+      }
+      submitting = true;
+      input?.clear();
+      history.add(text);
+      try {
+        toast.show({
+          variant: "info",
+          message: `Starting ${workflowRun.kind} ${workflowRun.path}`,
+        });
+        const outcome = await runWorkflowProcess({
+          kind: workflowRun.kind,
+          path: workflowRun.path,
+          workspaceRoot: props.workspaceRoot,
+        });
+        toast.show({
+          variant: outcome.ok ? "success" : "warning",
+          message: outcome.message,
+        });
+      } finally {
+        submitting = false;
+        setTimeout(() => composer()?.focus(), 1);
+      }
+      return;
+    }
+    if (control === "/task" || control === "/flow") {
+      toast.show({
+        variant: "warning",
+        message: `Select an existing ${control.slice(1)} from autocomplete`,
+      });
       return;
     }
     const attachments = attachmentPaths();
@@ -952,6 +996,19 @@ function Shell(props: {
               workspaceFiles={props.backend.workspaceFiles}
               agents={props.backend.agents}
               mcpCatalog={props.backend.mcpCatalog}
+              workflows={
+                props.workspaceRoot
+                  ? async () =>
+                      workflowDocumentCatalog(
+                        props.workspaceRoot!,
+                        assertConfigApplied(
+                          await resolveConfig({
+                            workspaceRoot: props.workspaceRoot!,
+                          }),
+                        ),
+                      ).catch(() => [])
+                  : undefined
+              }
               attach={(path) =>
                 setAttachmentPaths((current) =>
                   current.includes(path) ? current : [...current, path],
