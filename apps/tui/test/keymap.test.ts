@@ -79,6 +79,12 @@ describe("command definitions", () => {
     expect(bindings["model.list"]).toEqual(["<leader>m"]);
   });
 
+  test("permission profile actions do not conflict with filter text", () => {
+    const { bindings } = buildKeybindMap();
+    expect(bindings["permission.dialog.edit"]).toEqual(["f2"]);
+    expect(bindings["permission.dialog.delete"]).toEqual(["f4"]);
+  });
+
   test("known command IDs match documented set", () => {
     expect(commands["palette.toggle"]).toBeDefined();
     expect(commands["session.new"]).toBeDefined();

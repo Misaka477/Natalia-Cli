@@ -390,6 +390,154 @@ test("task module command rules further restrict shell tools", async () => {
   store.close();
 });
 
+test("task module extensions deny extension tools before execution", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-task-module-extension-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_1" as SessionID,
+  });
+  store.activateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "mcp",
+    conditionIDs: [],
+  });
+  const tools = createToolRegistry([]);
+  let executed = false;
+  tools.set("mcp_docs_echo", {
+    name: "mcp_docs_echo",
+    description: "test MCP tool",
+    requiresApproval: false,
+    parameters: { type: "object", properties: {} },
+    async execute() {
+      executed = true;
+      return "unexpected";
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_task_module_extension" as SessionID,
+    tools,
+    permissionMode: "auto",
+    taskModuleContext: {
+      store,
+      invocationID: "inv_1",
+      attempt: 1,
+      flowID: "flow_1",
+      moduleID: "mcp",
+      moduleType: "mcp",
+      moduleExtensions: { mcp: false },
+    },
+    provider: {
+      provider: "module-extension-policy",
+      model: "module-extension-policy-model",
+      async *stream(request) {
+        if (!request.messages.some((message) => message.role === "tool"))
+          yield {
+            type: "tool_call" as const,
+            calls: [{ id: "mcp", name: "mcp_docs_echo", arguments: "{}" }],
+          };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("use MCP");
+
+  expect(executed).toBe(false);
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "policy.decision",
+      toolName: "mcp_docs_echo",
+      decision: "deny",
+      reason: "mcp extensions are disabled by active module",
+    }),
+  );
+  await client.dispose?.();
+  store.close();
+});
+
+test("task module path scope denies writes outside the allowed workspace scope", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-task-module-path-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_1",
+    taskID: "task_1",
+    episodeID: "epi_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_1" as SessionID,
+  });
+  store.activateModule({
+    invocationID: "inv_1",
+    attempt: 1,
+    flowID: "flow_1",
+    moduleID: "write",
+    conditionIDs: [],
+  });
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_task_module_path" as SessionID,
+    permissionMode: "auto",
+    taskModuleContext: {
+      store,
+      invocationID: "inv_1",
+      attempt: 1,
+      flowID: "flow_1",
+      moduleID: "write",
+      moduleType: "workspace_changes",
+      modulePermissions: {
+        files: {
+          writePaths: [{ pattern: "docs/**", allow: true }],
+          readPaths: [],
+        },
+      },
+    },
+    provider: {
+      provider: "module-path-policy",
+      model: "module-path-policy-model",
+      async *stream(request) {
+        if (!request.messages.some((message) => message.role === "tool"))
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "write_outside",
+                name: "write_file",
+                arguments: JSON.stringify({ path: "src/leak.ts" }),
+              },
+            ],
+          };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("write outside scope");
+
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "policy.decision",
+      toolName: "write_file",
+      decision: "deny",
+      reason: expect.stringContaining("outside the allowed module scope"),
+    }),
+  );
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "tool.update",
+      name: "write_file",
+      status: "failed",
+    }),
+  );
+  await client.dispose?.();
+  store.close();
+});
+
 test("task module records successful tool calls as attempt-scoped evidence", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-task-evidence-runtime-"));
   await writeFile(join(root, "note.txt"), "evidence");

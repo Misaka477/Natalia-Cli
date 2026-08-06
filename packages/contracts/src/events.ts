@@ -1219,6 +1219,8 @@ export type RuntimeClient = {
   }): Promise<RuntimeMessagePage>;
   pendingInteractive?(): Promise<PendingInteractiveRequests>;
   dispose?(): Promise<void>;
+  canReloadConfig?(): Promise<{ allowed: boolean; reason?: string }>;
+  reloadConfig?(): Promise<void>;
   cancel(reason?: string): void;
   pause?(reason?: string): void;
   resume?(): void;

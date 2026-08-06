@@ -14,8 +14,8 @@ import {
   deleteTaskDocument,
   configureTaskSystemd,
   flowOverview,
+  grantablePermissionTools,
   loadTaskDocument,
-  parseToolAllowList,
   permissionProfileRemovalProblem,
   permissionProfileUsage,
   removeTaskSystemd,
@@ -105,6 +105,7 @@ import {
 import { previewCommandRuleImport } from "./permission-command-rules";
 import { themeTokens as darkTheme } from "../theme/theme";
 import { discoverProviderModels } from "@natalia/config";
+import { DialogToolMultiSelect } from "../component/DialogToolMultiSelect";
 
 export interface CommandContext {
   backend: RuntimeClient;
@@ -696,16 +697,36 @@ export function runCommand(command: string, ctx: CommandContext) {
     void (async () => {
       const workspaceRoot = ctx.workspaceRoot ?? process.cwd();
       if (command === "flow.manage") {
-        const overview = await flowOverview({ workspaceRoot }).catch(
-          (error: unknown) => {
-            ctx.toast.error(
-              error instanceof Error ? error.message : String(error),
-            );
-            return undefined;
-          },
-        );
-        if (overview)
-          ctx.dialog.push(() => <DialogFlows overview={overview} />);
+        const [overview, resolved] = await Promise.all([
+          flowOverview({ workspaceRoot }),
+          resolveConfig({ workspaceRoot }),
+        ]).catch((error: unknown) => {
+          ctx.toast.error(
+            error instanceof Error ? error.message : String(error),
+          );
+          return [undefined, undefined] as const;
+        });
+        if (!overview || !resolved) return;
+        // DialogProvider only renders the top stack entry. Keep the overview in
+        // this owner so returning from an editor sees the save without reopening
+        // the command palette.
+        const [flows, setFlows] = createSignal(overview);
+        ctx.dialog.push(() => (
+          <DialogFlows
+            overview={flows()}
+            workspaceRoot={workspaceRoot}
+            config={resolved.config}
+            reload={async () => {
+              setFlows(await flowOverview({ workspaceRoot }));
+            }}
+            notify={(outcome) =>
+              ctx.toast.show({
+                variant: outcome.ok ? "success" : "error",
+                message: outcome.message,
+              })
+            }
+          />
+        ));
         return;
       }
       const resolved = (await resolveConfig({ workspaceRoot })).config;
@@ -772,7 +793,13 @@ export function runCommand(command: string, ctx: CommandContext) {
   if (command === "settings.open") {
     let settingsBase: ConfigV2 | undefined;
     async function saveConfig(next: ConfigPatch) {
-      await ctx.persistConfig(next, settingsBase);
+      try {
+        await ctx.persistConfig(next, settingsBase);
+        return true;
+      } catch (error) {
+        ctx.toast.error(error);
+        return false;
+      }
     }
     // The option values and the switch below are the same union, so a typo on
     // either side is a compile error instead of a menu entry that does nothing.
@@ -985,322 +1012,570 @@ export function runCommand(command: string, ctx: CommandContext) {
               break;
             case "permission": {
               const workspaceRoot = ctx.workspaceRoot ?? process.cwd();
+              const [profilesRevision, setProfilesRevision] = createSignal(0);
               const openPermissionProfileEditor = (name: string) => {
-                const profile = resolved.permissionProfiles[name];
-                if (!profile) return;
-                ctx.dialog.push(() => (
-                  <DialogSelect
-                    title={`Permission Profile: ${name}`}
-                    options={[
-                      {
-                        title: "Approval Mode",
-                        value: "approval",
-                        description: profile.approval,
-                      },
-                      {
-                        title: "Description",
-                        value: "description",
-                        description: profile.description || "(none)",
-                      },
-                      {
-                        title: "Command Rules",
-                        value: "commandRules",
-                        description: profile.commandRules
-                          ? `${profile.commandRules.mode}, ${profile.commandRules.rules.length} commands`
-                          : "not configured",
-                      },
-                      {
-                        title: "Allowed Tools",
-                        value: "tools",
-                        description: profile.permissions?.tools?.allow?.length
-                          ? profile.permissions.tools.allow.join(", ")
-                          : "every tool the runtime offers (no allow-list)",
-                      },
-                    ]}
-                    onSelect={(field) => {
-                      const next = structuredClone(resolved);
-                      const target = next.permissionProfiles[name];
-                      if (!target) return;
-                      if (field.value === "approval") {
-                        ctx.dialog.push(() => (
-                          <DialogSelect
-                            title="Approval Mode"
-                            options={["ask", "auto", "read_only"].map(
-                              (value) => ({
-                                title: value,
-                                value,
-                              }),
-                            )}
-                            current={target.approval}
-                            onSelect={(choice) => {
-                              target.approval =
-                                choice.value as typeof target.approval;
-                              void saveConfig(next);
-                            }}
-                          />
-                        ));
-                        return;
-                      }
-                      if (field.value === "tools") {
-                        const allowed =
-                          target.permissions?.tools?.allow ?? ([] as string[]);
-                        const writeTools = (tools: string[]) => {
-                          target.permissions = {
-                            ...target.permissions,
-                            tools: {
-                              allow: tools,
-                              exclude:
-                                target.permissions?.tools?.exclude ??
-                                ([] as string[]),
-                            },
+                if (!resolved.permissionProfiles[name]) return;
+                ctx.dialog.push(() => {
+                  const [profile, setProfile] = createSignal(
+                    structuredClone(resolved.permissionProfiles[name]!),
+                  );
+                  const saveProfile = async (next: ConfigV2) => {
+                    const target = next.permissionProfiles[name];
+                    if (!target || !(await saveConfig(next))) return false;
+                    const saved = structuredClone(target);
+                    resolved.permissionProfiles[name] = saved;
+                    setProfile(structuredClone(saved));
+                    setProfilesRevision((revision) => revision + 1);
+                    return true;
+                  };
+                  return (
+                    <DialogSelect
+                      title={`Permission Profile: ${name}`}
+                      options={[
+                        {
+                          title: "Approval Mode",
+                          value: "approval",
+                          description: profile().approval,
+                        },
+                        {
+                          title: "Description",
+                          value: "description",
+                          description: profile().description || "(none)",
+                        },
+                        {
+                          title: "Command Rules",
+                          value: "commandRules",
+                          description: profile().commandRules
+                            ? `${profile().commandRules!.mode}, ${profile().commandRules!.rules.length} commands`
+                            : "not configured",
+                        },
+                        {
+                          title: "Allowed Tools",
+                          value: "tools",
+                          description: profile().permissions?.tools?.allow
+                            ?.length
+                            ? profile().permissions!.tools!.allow!.join(", ")
+                            : "every tool the runtime offers (no allow-list)",
+                        },
+                        {
+                          title: "Excluded Tools",
+                          value: "excludedTools",
+                          description: profile().permissions?.tools?.exclude
+                            ?.length
+                            ? profile().permissions!.tools!.exclude!.join(", ")
+                            : "none",
+                        },
+                        {
+                          title: "Interactive Programs",
+                          value: "interactivePrograms",
+                          description:
+                            profile().interactivePrograms?.allow.length ||
+                            profile().interactivePrograms?.allowAny
+                              ? profile().interactivePrograms?.allowAny
+                                ? "any launch command · high risk"
+                                : `${profile().interactivePrograms!.allow.length} high-risk launch commands`
+                              : "disabled (no launch commands allowed)",
+                        },
+                        {
+                          title: "Extensions",
+                          value: "extensions",
+                          description: ["skills", "mcp", "plugins"]
+                            .map(
+                              (extension) =>
+                                `${extension}=${
+                                  profile().extensions?.[
+                                    extension as "skills" | "mcp" | "plugins"
+                                  ] === false
+                                    ? "off"
+                                    : "on"
+                                }`,
+                            )
+                            .join(", "),
+                        },
+                      ]}
+                      onSelect={(field) => {
+                        const next = structuredClone(resolved);
+                        const target = next.permissionProfiles[name];
+                        if (!target) return;
+                        if (field.value === "approval") {
+                          ctx.dialog.push(() => (
+                            <DialogSelect
+                              title="Approval Mode"
+                              options={["ask", "auto", "read_only"].map(
+                                (value) => ({
+                                  title: value,
+                                  value,
+                                }),
+                              )}
+                              current={target.approval}
+                              onSelect={async (choice) => {
+                                target.approval =
+                                  choice.value as typeof target.approval;
+                                if (await saveProfile(next)) ctx.dialog.pop();
+                              }}
+                            />
+                          ));
+                          return;
+                        }
+                        if (field.value === "tools") {
+                          const allowed =
+                            target.permissions?.tools?.allow ??
+                            ([] as string[]);
+                          const writeTools = (tools: string[]) => {
+                            target.permissions = {
+                              ...target.permissions,
+                              tools: {
+                                allow: tools,
+                                exclude:
+                                  target.permissions?.tools?.exclude ??
+                                  ([] as string[]),
+                              },
+                            };
+                            void saveProfile(next);
                           };
-                          void saveConfig(next);
-                        };
-                        ctx.dialog.push(() => (
-                          <DialogSelect
-                            title={`Allowed Tools: ${name}`}
-                            options={[
-                              {
-                                title: "+ Add tools",
-                                value: "$add",
+                          void (async () => {
+                            const registered =
+                              (await ctx.backend
+                                .registeredTools?.()
+                                .catch(() => [])) ?? [];
+                            const descriptions = new Map(
+                              registered.map((tool) => [
+                                tool.name,
+                                `${tool.owner} · ${tool.requiresApproval ? "approval required" : "no approval"}`,
+                              ]),
+                            );
+                            const tools = [
+                              ...new Set([
+                                ...registered.map((tool) => tool.name),
+                                ...grantablePermissionTools(),
+                                ...allowed,
+                              ]),
+                            ]
+                              .sort((a, b) => a.localeCompare(b))
+                              .map((tool) => ({
+                                name: tool,
                                 description:
-                                  "Paste tool names; only tools a capability bundle can grant are accepted.",
+                                  descriptions.get(tool) ?? "Capability tool",
+                              }));
+                            ctx.dialog.push(() => (
+                              <DialogToolMultiSelect
+                                title={`Allowed Tools: ${name}`}
+                                tools={tools}
+                                selected={allowed}
+                                onSave={writeTools}
+                              />
+                            ));
+                          })();
+                          return;
+                        }
+                        if (field.value === "excludedTools") {
+                          const excluded =
+                            target.permissions?.tools?.exclude ??
+                            ([] as string[]);
+                          const writeExcludedTools = (tools: string[]) => {
+                            target.permissions = {
+                              ...target.permissions,
+                              tools: {
+                                allow:
+                                  target.permissions?.tools?.allow ??
+                                  ([] as string[]),
+                                exclude: tools,
                               },
-                              ...allowed.map((tool) => ({
-                                title: tool,
-                                value: tool,
-                                description: "select to remove",
-                              })),
-                            ]}
-                            emptyView={
-                              <text>
-                                No allow-list: every runtime tool this approval
-                                mode permits is available.
-                              </text>
-                            }
-                            onSelect={(choice) => {
-                              if (choice.value === "$add") {
-                                setTimeout(() => {
-                                  void DialogPrompt.show(
-                                    ctx.dialog,
-                                    "Add Allowed Tools",
-                                    {
-                                      description: () => (
-                                        <text fg={darkTheme.muted}>
-                                          One tool per line or comma separated,
-                                          such as read_file, grep,
-                                          read_data_source, report_issue.
-                                        </text>
-                                      ),
-                                      placeholder:
-                                        "read_file\nglob\ngrep\nreport_issue",
-                                    },
-                                  ).then((input) => {
-                                    if (input === null) return;
-                                    const edit = parseToolAllowList(
-                                      input,
-                                      allowed,
-                                    );
-                                    // A tool no bundle can grant would be
-                                    // denied at run time, so it is refused here
-                                    // instead of being written into a profile.
-                                    if (edit.rejected.length) {
-                                      ctx.toast.error(
-                                        `Unknown tools: ${edit.rejected
-                                          .map((entry) => entry.tool)
-                                          .join(", ")}`,
-                                      );
-                                      return;
-                                    }
-                                    writeTools(edit.tools);
-                                    ctx.dialog.pop();
-                                  });
-                                }, 0);
-                                return;
-                              }
-                              void DialogConfirm.show(
-                                ctx.dialog,
-                                "Remove allowed tool",
-                                `Remove ${choice.value} from ${name}?`,
-                              ).then((confirmed) => {
-                                if (!confirmed) return;
-                                writeTools(
-                                  allowed.filter(
-                                    (tool) => tool !== choice.value,
-                                  ),
-                                );
-                                ctx.dialog.pop();
-                              });
-                            }}
-                          />
-                        ));
-                        return;
-                      }
-                      if (field.value === "commandRules") {
-                        ctx.dialog.push(() => (
-                          <DialogSelect
-                            title="Command Rules"
-                            options={[
-                              {
-                                title: "Mode",
-                                value: "$mode",
+                            };
+                            void saveProfile(next);
+                          };
+                          void (async () => {
+                            const registered =
+                              (await ctx.backend
+                                .registeredTools?.()
+                                .catch(() => [])) ?? [];
+                            const descriptions = new Map(
+                              registered.map((tool) => [
+                                tool.name,
+                                `${tool.owner} · ${tool.requiresApproval ? "approval required" : "no approval"}`,
+                              ]),
+                            );
+                            const tools = [
+                              ...new Set([
+                                ...registered.map((tool) => tool.name),
+                                ...grantablePermissionTools(),
+                                ...excluded,
+                              ]),
+                            ]
+                              .sort((a, b) => a.localeCompare(b))
+                              .map((tool) => ({
+                                name: tool,
                                 description:
-                                  target.commandRules?.mode ?? "none",
-                              },
-                              {
-                                title: "+ Add commands",
-                                value: "$add",
-                                description: "Paste one Bash command per line.",
-                              },
-                              ...(target.commandRules?.rules ?? []).map(
-                                (rule) => ({
+                                  descriptions.get(tool) ?? "Capability tool",
+                              }));
+                            ctx.dialog.push(() => (
+                              <DialogToolMultiSelect
+                                title={`Excluded Tools: ${name}`}
+                                tools={tools}
+                                selected={excluded}
+                                onSave={writeExcludedTools}
+                              />
+                            ));
+                          })();
+                          return;
+                        }
+                        if (field.value === "interactivePrograms") {
+                          ctx.dialog.push(() => (
+                            <DialogSelect
+                              title="Interactive Programs · High Risk"
+                              options={[
+                                {
+                                  title: "Allow any interactive program",
+                                  value: "$allow-any",
+                                  description: target.interactivePrograms
+                                    ?.allowAny
+                                    ? "ON · unrestricted after foreground confirmation"
+                                    : "OFF · use the explicit launch-command list below",
+                                },
+                                {
+                                  title: "+ Add launch commands",
+                                  value: "$add",
+                                  description:
+                                    "Explicitly allow editors, REPLs, or database clients to own terminal input.",
+                                },
+                                ...(
+                                  target.interactivePrograms?.allow ?? []
+                                ).map((rule) => ({
                                   title: rule.command,
                                   value: rule.command,
                                   description:
                                     rule.reason ?? "select to remove",
-                                }),
-                              ),
-                            ]}
-                            onSelect={(choice) => {
-                              if (choice.value === "$mode") {
-                                ctx.dialog.push(() => (
-                                  <DialogSelect
-                                    title="Command Rule Mode"
-                                    current={
-                                      target.commandRules?.mode ?? "none"
-                                    }
-                                    options={[
-                                      {
-                                        title: "Blacklist",
-                                        value: "blacklist",
-                                        description:
-                                          "Block matching commands; other commands pass this layer.",
-                                      },
-                                      {
-                                        title: "Whitelist",
-                                        value: "whitelist",
-                                        description:
-                                          "Only matching commands pass this layer. Recommended for unattended tasks.",
-                                      },
-                                      {
-                                        title: "None",
-                                        value: "none",
-                                        description:
-                                          "Do not apply profile command rules.",
-                                      },
-                                    ]}
-                                    onSelect={(mode) => {
-                                      target.commandRules = {
-                                        mode: mode.value as
-                                          | "blacklist"
-                                          | "whitelist"
-                                          | "none",
-                                        rules: target.commandRules?.rules ?? [],
-                                      };
-                                      void saveConfig(next);
-                                    }}
-                                  />
-                                ));
-                                return;
+                                })),
+                              ]}
+                              emptyView={
+                                <text fg={darkTheme.muted}>
+                                  Disabled. Terminal input remains under Bash
+                                  command policy.
+                                </text>
                               }
-                              if (choice.value === "$add")
-                                setTimeout(() => {
-                                  void DialogPrompt.show(
+                              onSelect={(choice) => {
+                                if (choice.value === "$allow-any") {
+                                  if (target.interactivePrograms?.allowAny) {
+                                    target.interactivePrograms = {
+                                      allowAny: false,
+                                      allow:
+                                        target.interactivePrograms.allow ?? [],
+                                    };
+                                    void saveProfile(next).then((saved) => {
+                                      if (saved) ctx.dialog.pop();
+                                    });
+                                    return;
+                                  }
+                                  void DialogConfirm.show(
                                     ctx.dialog,
-                                    "Add Commands",
-                                    {
-                                      description: () => (
-                                        <text fg={darkTheme.muted}>
-                                          One Bash command per line. Blank lines
-                                          and # comments are ignored. Complex
-                                          shell syntax is rejected before
-                                          saving.
-                                        </text>
-                                      ),
-                                      placeholder: "git diff\ngit status",
-                                    },
-                                  ).then(async (input) => {
-                                    if (input === null) return;
-                                    const preview =
-                                      await previewCommandRuleImport(
-                                        input,
-                                        target.commandRules?.rules,
-                                      );
-                                    ctx.dialog.push(() => (
-                                      <DialogSelect
-                                        title="Command Rule Preview"
-                                        skipFilter
-                                        options={[
-                                          {
-                                            title: preview.rejected
-                                              ? "Fix rejected commands before saving"
-                                              : `Save ${preview.rules.length} commands`,
-                                            value: "$save",
-                                            description: preview.rejected
-                                              ? "Invalid commands are never saved."
-                                              : `${target.commandRules?.mode ?? "none"} mode`,
-                                            disabled: preview.rejected,
-                                          },
-                                          ...preview.previews.map((entry) => ({
-                                            title: `${entry.line}: ${entry.command || "(blank)"}`,
-                                            value: `line:${entry.line}`,
-                                            description: `${entry.status}: ${entry.detail}`,
-                                          })),
-                                        ]}
-                                        onSelect={(choice) => {
-                                          if (choice.value !== "$save") return;
-                                          target.commandRules = {
-                                            mode:
-                                              target.commandRules?.mode ??
-                                              "none",
-                                            rules: [
-                                              ...(target.commandRules?.rules ??
-                                                []),
-                                              ...preview.rules,
-                                            ],
-                                          };
-                                          void saveConfig(next);
-                                        }}
-                                      />
-                                    ));
+                                    "Allow any interactive program?",
+                                    "High risk: any simple launch command that passes command policy may take over the terminal after OS foreground confirmation. Its later input bypasses Bash Command Rules, including shells, REPLs, editors, and database clients.",
+                                  ).then((confirmed) => {
+                                    if (!confirmed) return;
+                                    target.interactivePrograms = {
+                                      allowAny: true,
+                                      allow:
+                                        target.interactivePrograms?.allow ?? [],
+                                    };
+                                    void saveProfile(next).then((saved) => {
+                                      if (saved) ctx.dialog.pop();
+                                    });
                                   });
-                                }, 0);
-                              else {
+                                  return;
+                                }
+                                if (choice.value === "$add") {
+                                  setTimeout(() => {
+                                    void DialogPrompt.show(
+                                      ctx.dialog,
+                                      "Allow Interactive Programs",
+                                      {
+                                        description: () => (
+                                          <text fg={darkTheme.warning}>
+                                            High risk: after a listed launch
+                                            command takes the foreground, its
+                                            input follows that program protocol
+                                            instead of Bash command rules. One
+                                            simple Bash launch command per line;
+                                            complex shell syntax is rejected.
+                                          </text>
+                                        ),
+                                        placeholder: "vim\npython\npsql",
+                                      },
+                                    ).then(async (input) => {
+                                      if (input === null) return;
+                                      const preview =
+                                        await previewCommandRuleImport(
+                                          input,
+                                          target.interactivePrograms?.allow,
+                                        );
+                                      ctx.dialog.push(() => (
+                                        <DialogSelect
+                                          title="Interactive Program Preview · High Risk"
+                                          skipFilter
+                                          options={[
+                                            {
+                                              title: preview.rejected
+                                                ? "Fix rejected launch commands"
+                                                : `Allow ${preview.rules.length} launch commands`,
+                                              value: "$save",
+                                              description: preview.rejected
+                                                ? "Invalid commands are never saved."
+                                                : "Foreground process confirmation is required at runtime.",
+                                              disabled: preview.rejected,
+                                            },
+                                            ...preview.previews.map(
+                                              (entry) => ({
+                                                title: `${entry.line}: ${entry.command || "(blank)"}`,
+                                                value: `line:${entry.line}`,
+                                                description: `${entry.status}: ${entry.detail}`,
+                                              }),
+                                            ),
+                                          ]}
+                                          onSelect={(previewChoice) => {
+                                            if (previewChoice.value !== "$save")
+                                              return;
+                                            target.interactivePrograms = {
+                                              allowAny:
+                                                target.interactivePrograms
+                                                  ?.allowAny ?? false,
+                                              allow: [
+                                                ...(target.interactivePrograms
+                                                  ?.allow ?? []),
+                                                ...preview.rules,
+                                              ],
+                                            };
+                                            void saveProfile(next);
+                                          }}
+                                        />
+                                      ));
+                                    });
+                                  }, 0);
+                                  return;
+                                }
                                 void DialogConfirm.show(
                                   ctx.dialog,
-                                  "Remove command rule",
-                                  `Remove "${choice.value}" from this profile?`,
+                                  "Remove interactive program",
+                                  `Stop allowing "${choice.value}" to own terminal input?`,
                                 ).then((confirmed) => {
                                   if (!confirmed) return;
-                                  target.commandRules = {
-                                    mode: target.commandRules?.mode ?? "none",
-                                    rules: (
-                                      target.commandRules?.rules ?? []
+                                  target.interactivePrograms = {
+                                    allowAny:
+                                      target.interactivePrograms?.allowAny ??
+                                      false,
+                                    allow: (
+                                      target.interactivePrograms?.allow ?? []
                                     ).filter(
                                       (rule) => rule.command !== choice.value,
                                     ),
                                   };
-                                  void saveConfig(next);
+                                  void saveProfile(next);
                                 });
-                              }
+                              }}
+                            />
+                          ));
+                          return;
+                        }
+                        if (field.value === "extensions") {
+                          ctx.dialog.push(() => (
+                            <DialogSelect
+                              title="Profile Extensions"
+                              options={(
+                                ["skills", "mcp", "plugins"] as const
+                              ).map((extension) => ({
+                                title: extension,
+                                value: extension,
+                                description:
+                                  target.extensions?.[extension] === false
+                                    ? "disabled"
+                                    : "enabled",
+                              }))}
+                              onSelect={(choice) => {
+                                const extension = choice.value as
+                                  | "skills"
+                                  | "mcp"
+                                  | "plugins";
+                                target.extensions = {
+                                  ...target.extensions,
+                                  [extension]:
+                                    target.extensions?.[extension] === false,
+                                };
+                                void saveProfile(next);
+                              }}
+                            />
+                          ));
+                          return;
+                        }
+                        if (field.value === "commandRules") {
+                          ctx.dialog.push(() => (
+                            <DialogSelect
+                              title="Command Rules"
+                              options={[
+                                {
+                                  title: "Mode",
+                                  value: "$mode",
+                                  description:
+                                    target.commandRules?.mode ?? "none",
+                                },
+                                {
+                                  title: "+ Add commands",
+                                  value: "$add",
+                                  description:
+                                    "Paste one Bash command per line.",
+                                },
+                                ...(target.commandRules?.rules ?? []).map(
+                                  (rule) => ({
+                                    title: rule.command,
+                                    value: rule.command,
+                                    description:
+                                      rule.reason ?? "select to remove",
+                                  }),
+                                ),
+                              ]}
+                              onSelect={(choice) => {
+                                if (choice.value === "$mode") {
+                                  ctx.dialog.push(() => (
+                                    <DialogSelect
+                                      title="Command Rule Mode"
+                                      current={
+                                        target.commandRules?.mode ?? "none"
+                                      }
+                                      options={[
+                                        {
+                                          title: "Blacklist",
+                                          value: "blacklist",
+                                          description:
+                                            "Block matching commands; other commands pass this layer.",
+                                        },
+                                        {
+                                          title: "Whitelist",
+                                          value: "whitelist",
+                                          description:
+                                            "Only matching commands pass this layer. Recommended for unattended tasks.",
+                                        },
+                                        {
+                                          title: "None",
+                                          value: "none",
+                                          description:
+                                            "Do not apply profile command rules.",
+                                        },
+                                      ]}
+                                      onSelect={(mode) => {
+                                        target.commandRules = {
+                                          mode: mode.value as
+                                            | "blacklist"
+                                            | "whitelist"
+                                            | "none",
+                                          rules:
+                                            target.commandRules?.rules ?? [],
+                                        };
+                                        void saveProfile(next);
+                                      }}
+                                    />
+                                  ));
+                                  return;
+                                }
+                                if (choice.value === "$add")
+                                  setTimeout(() => {
+                                    void DialogPrompt.show(
+                                      ctx.dialog,
+                                      "Add Commands",
+                                      {
+                                        description: () => (
+                                          <text fg={darkTheme.muted}>
+                                            One Bash command per line. Blank
+                                            lines and # comments are ignored.
+                                            Complex shell syntax is rejected
+                                            before saving.
+                                          </text>
+                                        ),
+                                        placeholder: "git diff\ngit status",
+                                      },
+                                    ).then(async (input) => {
+                                      if (input === null) return;
+                                      const preview =
+                                        await previewCommandRuleImport(
+                                          input,
+                                          target.commandRules?.rules,
+                                        );
+                                      ctx.dialog.push(() => (
+                                        <DialogSelect
+                                          title="Command Rule Preview"
+                                          skipFilter
+                                          options={[
+                                            {
+                                              title: preview.rejected
+                                                ? "Fix rejected commands before saving"
+                                                : `Save ${preview.rules.length} commands`,
+                                              value: "$save",
+                                              description: preview.rejected
+                                                ? "Invalid commands are never saved."
+                                                : `${target.commandRules?.mode ?? "none"} mode`,
+                                              disabled: preview.rejected,
+                                            },
+                                            ...preview.previews.map(
+                                              (entry) => ({
+                                                title: `${entry.line}: ${entry.command || "(blank)"}`,
+                                                value: `line:${entry.line}`,
+                                                description: `${entry.status}: ${entry.detail}`,
+                                              }),
+                                            ),
+                                          ]}
+                                          onSelect={(choice) => {
+                                            if (choice.value !== "$save")
+                                              return;
+                                            target.commandRules = {
+                                              mode:
+                                                target.commandRules?.mode ??
+                                                "none",
+                                              rules: [
+                                                ...(target.commandRules
+                                                  ?.rules ?? []),
+                                                ...preview.rules,
+                                              ],
+                                            };
+                                            void saveProfile(next);
+                                          }}
+                                        />
+                                      ));
+                                    });
+                                  }, 0);
+                                else {
+                                  void DialogConfirm.show(
+                                    ctx.dialog,
+                                    "Remove command rule",
+                                    `Remove "${choice.value}" from this profile?`,
+                                  ).then((confirmed) => {
+                                    if (!confirmed) return;
+                                    target.commandRules = {
+                                      mode: target.commandRules?.mode ?? "none",
+                                      rules: (
+                                        target.commandRules?.rules ?? []
+                                      ).filter(
+                                        (rule) => rule.command !== choice.value,
+                                      ),
+                                    };
+                                    void saveProfile(next);
+                                  });
+                                }
+                              }}
+                            />
+                          ));
+                          return;
+                        }
+                        ctx.dialog.push(() => (
+                          <DialogPrompt
+                            title="Permission Profile Description"
+                            placeholder={target.description}
+                            onConfirm={(value) => {
+                              target.description = value.trim();
+                              void saveProfile(next);
                             }}
                           />
                         ));
-                        return;
-                      }
-                      ctx.dialog.push(() => (
-                        <DialogPrompt
-                          title="Permission Profile Description"
-                          placeholder={target.description}
-                          onConfirm={(value) => {
-                            target.description = value.trim();
-                            void saveConfig(next);
-                          }}
-                        />
-                      ));
-                    }}
-                  />
-                ));
+                      }}
+                    />
+                  );
+                });
               };
               const removePermissionProfile = async (name: string) => {
                 const usage = await permissionProfileUsage({
@@ -1339,18 +1614,21 @@ export function runCommand(command: string, ctx: CommandContext) {
                   title="Permission Profiles"
                   current={resolved.defaultPermission}
                   options={[
-                    ...Object.entries(resolved.permissionProfiles ?? {}).map(
-                      ([name, p]) => ({
-                        title: name,
-                        value: name,
-                        description:
-                          (p as any).description ?? (p as any).approval ?? "-",
-                        footer:
-                          name === resolved.defaultPermission
-                            ? `default · ${(p as any).approval}`
-                            : (p as any).approval,
-                      }),
-                    ),
+                    ...Object.entries(
+                      (() => {
+                        profilesRevision();
+                        return resolved.permissionProfiles ?? {};
+                      })(),
+                    ).map(([name, p]) => ({
+                      title: name,
+                      value: name,
+                      description:
+                        (p as any).description ?? (p as any).approval ?? "-",
+                      footer:
+                        name === resolved.defaultPermission
+                          ? `default · ${(p as any).approval}`
+                          : (p as any).approval,
+                    })),
                     {
                       title: "+ Create new profile",
                       value: "$new",
@@ -1360,14 +1638,14 @@ export function runCommand(command: string, ctx: CommandContext) {
                   actions={[
                     {
                       command: "permission.dialog.edit",
-                      title: "e edit",
+                      title: "edit",
                       disabled: (option) => !option || option.value === "$new",
                       onTrigger: (option) =>
                         void openPermissionProfileEditor(option.value),
                     },
                     {
                       command: "permission.dialog.delete",
-                      title: "d delete",
+                      title: "delete",
                       disabled: (option) => !option || option.value === "$new",
                       onTrigger: (option) =>
                         void removePermissionProfile(option.value),
@@ -1408,11 +1686,6 @@ export function runCommand(command: string, ctx: CommandContext) {
                     resolved.defaultPermission = opt.value;
                     void saveConfig(resolved);
                     ctx.dialog.pop();
-                  }}
-                  onExtraKey={(key, opt) => {
-                    if (opt.value === "$new") return;
-                    if (key === "e") openPermissionProfileEditor(opt.value);
-                    if (key === "d") void removePermissionProfile(opt.value);
                   }}
                 />
               ));

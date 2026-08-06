@@ -15,11 +15,13 @@ type WorkerRequest = {
     | "cancel"
     | "pause"
     | "resume"
+    | "runtime.status"
     | "snapshot"
     | "diagnostic"
     | "approval"
     | "question"
     | "interactive.pending"
+    | "config.reload"
     | "dispose"
     | "history"
     | "diagnostics"
@@ -142,6 +144,14 @@ export function createWorkerRuntimeClient(
     async pendingInteractive() {
       return (await request("interactive.pending")) as Awaited<
         ReturnType<NonNullable<RuntimeClient["pendingInteractive"]>>
+      >;
+    },
+    async reloadConfig() {
+      await request("config.reload");
+    },
+    async runtimeStatus() {
+      return (await request("runtime.status")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["runtimeStatus"]>>
       >;
     },
     async history(options) {
@@ -351,15 +361,33 @@ export function createWorkerRuntimeClient(
 export function attachRuntimeClientWorker(
   port: RuntimeWorkerPort,
   client: RuntimeClient,
+  options?: { reload?: () => RuntimeClient },
 ) {
-  client.start((event) => {
+  let activeClient = client;
+  const forwardEvent = (event: RuntimeEvent) => {
     port.postMessage({ type: "runtime.event", event } satisfies WorkerEvent);
-  });
+  };
+  activeClient.start(forwardEvent);
   port.addEventListener("message", async (event: MessageEvent<unknown>) => {
     const request = event.data as WorkerRequest;
     if (request.type !== "runtime.request") return;
     try {
-      const value = await handleWorkerRequest(client, request);
+      let value: unknown;
+      if (request.method === "config.reload") {
+        if (!options?.reload)
+          throw new Error("RuntimeClient does not support config reload");
+        const reload = await activeClient.canReloadConfig?.();
+        if (reload && !reload.allowed)
+          throw new Error(
+            reload.reason ?? "runtime config cannot be applied now",
+          );
+        await activeClient.dispose?.();
+        activeClient = options.reload();
+        activeClient.start(forwardEvent, { replay: "none" });
+        await activeClient.runtimeStatus?.();
+      } else {
+        value = await handleWorkerRequest(activeClient, request);
+      }
       port.postMessage({
         type: "runtime.response",
         id: request.id,
@@ -393,6 +421,8 @@ async function handleWorkerRequest(
       throw new Error("RuntimeClient does not support interactive.pending");
     return await client.pendingInteractive();
   }
+  if (request.method === "runtime.status")
+    return await client.runtimeStatus?.();
   if (request.method === "history") return await client.history?.();
   if (request.method === "messages")
     return await client.messages?.(request.value as never);

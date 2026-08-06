@@ -1653,6 +1653,71 @@ test("a module can narrow the authorized programs but never widen them", async (
   });
 });
 
+test("allowAny authorizes an unlisted simple launch after command policy", async () => {
+  const buffer = new TerminalCommandBuffer({
+    foregroundProgram: foregroundSequence([{ program: "python3" }]),
+  });
+  const rules = {
+    mode: "whitelist" as const,
+    rules: [{ command: "python3" }],
+  };
+  await buffer.evaluate(
+    rules,
+    "interactive_terminal_send_line",
+    { id: "pane_any", text: "python3 -q" },
+    { allowAny: true, allow: [] },
+  );
+  expect(buffer.paneMode("pane_any")).toMatchObject({
+    mode: "pending_program",
+    program: "python3",
+    launch: "python3 -q",
+  });
+  await expect(
+    buffer.evaluate(
+      rules,
+      "interactive_terminal_send_line",
+      { id: "pane_any", text: "print('ready')" },
+      { allowAny: true, allow: [] },
+    ),
+  ).resolves.toMatchObject({ allowed: true });
+  expect(buffer.paneMode("pane_any")).toMatchObject({
+    mode: "interactive_program",
+  });
+});
+
+test("allowAny works without enabling command rules", async () => {
+  const buffer = new TerminalCommandBuffer({
+    foregroundProgram: foregroundSequence([{ program: "python3" }]),
+  });
+  await buffer.evaluate(
+    undefined,
+    "interactive_terminal_send_line",
+    { id: "pane_any", text: "python3" },
+    { allowAny: true, allow: [] },
+  );
+  expect(buffer.paneMode("pane_any")).toMatchObject({
+    mode: "pending_program",
+    program: "python3",
+  });
+});
+
+test("a module allowlist narrows a profile allowAny authorization", async () => {
+  const buffer = new TerminalCommandBuffer({
+    foregroundProgram: foregroundSequence([{ program: "python3" }]),
+  });
+  const rules = {
+    mode: "whitelist" as const,
+    rules: [{ command: "python3" }, { command: "vim" }],
+  };
+  await buffer.evaluate(
+    rules,
+    "interactive_terminal_send_line",
+    { id: "pane_any", text: "python3" },
+    [{ allowAny: true, allow: [] }, { allow: [{ command: "vim" }] }],
+  );
+  expect(buffer.paneMode("pane_any")).toEqual({ mode: "bash" });
+});
+
 test("stopping a pane clears its interactive program mode", async () => {
   const buffer = new TerminalCommandBuffer({
     foregroundProgram: foregroundSequence([{ program: "vim" }]),
@@ -1677,4 +1742,63 @@ test("stopping a pane clears its interactive program mode", async () => {
   expect(buffer.paneMode("pane_a")).toEqual({ mode: "bash" });
   buffer.clearAll();
   expect(buffer.paneMode("pane_a")).toEqual({ mode: "bash" });
+});
+
+test("module path allow rules form a whitelist scope", () => {
+  const rules = {
+    files: {
+      writePaths: [{ pattern: "docs/**", allow: true }],
+      readPaths: [{ pattern: "docs/**", allow: true }],
+    },
+  };
+  expect(
+    evaluatePermissionRules(rules, "write_file", { path: "docs/a.md" }),
+  ).toMatchObject({ allowed: true });
+  expect(
+    evaluatePermissionRules(rules, "write_file", { path: "src/a.ts" }),
+  ).toMatchObject({
+    allowed: false,
+    reason: "path is outside the allowed module scope",
+  });
+  expect(
+    evaluatePermissionRules(rules, "read_file", { path: "docs/a.md" }),
+  ).toMatchObject({ allowed: true });
+  expect(
+    evaluatePermissionRules(rules, "read_file", { path: "README.md" }),
+  ).toMatchObject({ allowed: false });
+});
+
+test("deny path rules win over broad allow scopes", () => {
+  const rules = {
+    files: {
+      writePaths: [
+        { pattern: "docs/**", allow: true },
+        { pattern: "docs/secrets/**", allow: false, reason: "protected" },
+      ],
+    },
+  };
+  expect(
+    evaluatePermissionRules(rules, "write_file", { path: "docs/a.md" }),
+  ).toMatchObject({ allowed: true });
+  expect(
+    evaluatePermissionRules(rules, "write_file", { path: "docs/secrets/key" }),
+  ).toMatchObject({ allowed: false, reason: "protected" });
+});
+
+test("mixed legacy deny-only rules keep deny semantics without a whitelist", () => {
+  const rules = {
+    files: {
+      writePaths: [
+        { pattern: "protected/*", allow: false, reason: "protected" },
+      ],
+    },
+  };
+  expect(
+    evaluatePermissionRules(rules, "write_file", {
+      path: "protected/note.txt",
+    }),
+  ).toMatchObject({ allowed: false, reason: "protected" });
+  expect(
+    evaluatePermissionRules(rules, "write_file", { path: "other/note.txt" }),
+  ).toMatchObject({ allowed: true });
 });

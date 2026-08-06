@@ -250,17 +250,31 @@ function policyPathCandidates(path: string, workspaceRoot?: string): string[] {
   return [...candidates].filter((candidate) => candidate.length > 0);
 }
 
-function matchesResourceRule(
+function evaluateResourceRules(
   rules: ResourceRule[],
   path: string,
   workspaceRoot?: string,
-): ResourceRule | undefined {
+): PermissionCheck {
   const candidates = policyPathCandidates(path, workspaceRoot);
-  return rules.find(
-    (rule) =>
-      !rule.allow &&
-      candidates.some((candidate) => pathMatch(candidate, rule.pattern)),
-  );
+  const matches = (rule: ResourceRule) =>
+    candidates.some((candidate) => pathMatch(candidate, rule.pattern));
+  // Explicit and legacy implicit deny rules win even when a broad allow scope
+  // also matches. This lets a module allow `src/**` while protecting secrets.
+  const denied = rules.find((rule) => rule.allow !== true && matches(rule));
+  if (denied)
+    return {
+      allowed: false,
+      reason: denied.reason ?? "path denied",
+      diagnostics: [],
+    };
+  const allowRules = rules.filter((rule) => rule.allow === true);
+  if (allowRules.length && !allowRules.some(matches))
+    return {
+      allowed: false,
+      reason: "path is outside the allowed module scope",
+      diagnostics: [],
+    };
+  return { allowed: true, diagnostics: [] };
 }
 
 export function evaluatePermissionRules(
@@ -308,29 +322,33 @@ export function evaluatePermissionRules(
     const path = typeof args.path === "string" ? args.path : undefined;
     if (path) {
       if (writesPath && rules.files.writePaths) {
-        const denied = matchesResourceRule(
+        const decision = evaluateResourceRules(
           rules.files.writePaths,
           path,
           workspaceRoot,
         );
-        if (denied) {
-          diags.push(
-            `write to "${path}" blocked: ${denied.reason ?? "path denied"}`,
-          );
-          return { allowed: false, reason: denied.reason, diagnostics: diags };
+        if (!decision.allowed) {
+          diags.push(`write to "${path}" blocked: ${decision.reason}`);
+          return {
+            allowed: false,
+            reason: decision.reason,
+            diagnostics: diags,
+          };
         }
       }
       if (readsPath && rules.files.readPaths) {
-        const denied = matchesResourceRule(
+        const decision = evaluateResourceRules(
           rules.files.readPaths,
           path,
           workspaceRoot,
         );
-        if (denied) {
-          diags.push(
-            `read of "${path}" blocked: ${denied.reason ?? "path denied"}`,
-          );
-          return { allowed: false, reason: denied.reason, diagnostics: diags };
+        if (!decision.allowed) {
+          diags.push(`read of "${path}" blocked: ${decision.reason}`);
+          return {
+            allowed: false,
+            reason: decision.reason,
+            diagnostics: diags,
+          };
         }
       }
     }
@@ -450,6 +468,12 @@ export async function evaluatePermissionProfileCommandRules(
  * confirmed at all, input is refused instead of being sent raw.
  */
 export type InteractiveProgramAuthorization = {
+  allowAny?: boolean;
+  allow: readonly BashCommandRule[];
+};
+
+type EffectiveInteractiveProgramAuthorization = {
+  allowAny: boolean;
   allow: readonly BashCommandRule[];
 };
 
@@ -511,12 +535,18 @@ export class TerminalCommandBuffer {
       (rule): rule is PermissionProfileCommandRules =>
         Boolean(rule) && rule.mode !== "none",
     );
-    if (!activeRules.length) return undefined;
+    const authorizedPrograms =
+      interactiveProgramAuthorization(interactivePrograms);
+    if (
+      !activeRules.length &&
+      !authorizedPrograms.allowAny &&
+      !authorizedPrograms.allow.length
+    )
+      return undefined;
     const input = terminalCommandInput(toolName, args);
     if (!input) return undefined;
     if (!input.id)
       return denyTerminalBuffer("terminal command policy requires a pane id");
-    const authorizedPrograms = interactiveProgramAllowlist(interactivePrograms);
     const resolved = await this.resolvePaneMode(input.id, authorizedPrograms);
     if (resolved) return resolved;
     if (this.paneMode(input.id).mode === "interactive_program") {
@@ -572,11 +602,11 @@ export class TerminalCommandBuffer {
    */
   private async resolvePaneMode(
     paneID: string,
-    authorizedPrograms: readonly BashCommandRule[],
+    authorizedPrograms: EffectiveInteractiveProgramAuthorization,
   ): Promise<TerminalCommandBufferResult | undefined> {
     const current = this.#modes.get(paneID);
     if (!current || current.mode === "bash") return undefined;
-    if (!authorizedPrograms.length) {
+    if (!authorizedPrograms.allowAny && !authorizedPrograms.allow.length) {
       // The authorization disappeared, for example on a module switch.
       this.#modes.delete(paneID);
       return undefined;
@@ -616,38 +646,52 @@ export class TerminalCommandBuffer {
   }
 }
 
-function interactiveProgramAllowlist(
+function interactiveProgramAuthorization(
   input:
     | InteractiveProgramAuthorization
     | readonly (InteractiveProgramAuthorization | undefined)[]
     | undefined,
-): readonly BashCommandRule[] {
+): EffectiveInteractiveProgramAuthorization {
   const groups = (Array.isArray(input) ? input : [input]).filter(
     (group): group is InteractiveProgramAuthorization =>
-      Boolean(group?.allow?.length),
+      Boolean(group && (group.allowAny || group.allow?.length)),
   );
-  if (!groups.length) return [];
+  if (!groups.length) return { allowAny: false, allow: [] };
   // A module can only narrow the profile, never widen it, so an interactive
   // program must be allowed by every configured layer.
-  return groups.reduce<readonly BashCommandRule[]>(
-    (accumulator, group, index) =>
-      index === 0
-        ? group.allow
-        : accumulator.filter((rule) =>
-            group.allow.some((other) => other.command === rule.command),
-          ),
-    [],
+  return groups.reduce<EffectiveInteractiveProgramAuthorization>(
+    (effective, group, index) => {
+      if (index === 0)
+        return { allowAny: group.allowAny === true, allow: group.allow };
+      if (effective.allowAny)
+        return { allowAny: group.allowAny === true, allow: group.allow };
+      if (group.allowAny) return effective;
+      return {
+        allowAny: false,
+        allow: effective.allow.filter((rule) =>
+          group.allow.some((other) => other.command === rule.command),
+        ),
+      };
+    },
+    { allowAny: false, allow: [] },
   );
 }
 
 async function authorizedLaunch(
   line: string,
-  authorizedPrograms: readonly BashCommandRule[],
+  authorization: EffectiveInteractiveProgramAuthorization,
 ): Promise<{ program: string; launch: string } | undefined> {
-  if (!authorizedPrograms.length) return undefined;
+  if (!authorization.allowAny && !authorization.allow.length) return undefined;
   const command = await parseBashSimpleCommand(line);
   if (!command.ok) return undefined;
-  for (const rule of authorizedPrograms) {
+  if (authorization.allowAny) {
+    const executable = command.command.tokens[0]!;
+    return {
+      program: executable.split("/").pop() ?? executable,
+      launch: line,
+    };
+  }
+  for (const rule of authorization.allow) {
     const parsed = await parseBashCommandRule(rule);
     if (!parsed.ok) continue;
     if (!commandHasPrefix(command.command, parsed.command)) continue;

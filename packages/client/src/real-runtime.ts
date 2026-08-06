@@ -451,6 +451,10 @@ export type RealRuntimeClientOptions = {
     moduleCommandRules?: import("./tool-policy").PermissionProfileCommandRules;
     /** Interactive programs the active module allows, intersected with the profile. */
     moduleInteractivePrograms?: import("./tool-policy").InteractiveProgramAuthorization;
+    /** Module-level extension switches can only further narrow the profile. */
+    moduleExtensions?: import("@natalia/contracts").ExtensionRules;
+    /** Module-level file/tool policies can only further narrow the profile. */
+    modulePermissions?: import("./tool-policy").PermissionRules;
     /** Controller-owned structured continuation for the active module only. */
     moduleContinuation?: string;
     /**
@@ -528,6 +532,9 @@ export function createRealRuntimeClient(
       ? moduleToolPolicy(options.taskModuleContext.moduleType)
       : undefined,
   );
+  const modulePermissionToolLayer = createToolPolicyHookLayer(
+    options.taskModuleContext?.modulePermissions?.tools,
+  );
   const terminalCommandBuffer = new TerminalCommandBuffer({
     // Confirming the pane's foreground program is what lets an authorized
     // interactive program own the pane without reopening the shell bypass: the
@@ -571,6 +578,10 @@ export function createRealRuntimeClient(
             `blocked outside active ${options.taskModuleContext?.moduleType} module: ${event.toolName}`,
           ],
         };
+      const modulePermissionToolResult =
+        await modulePermissionToolLayer.preExecute(event);
+      if (!modulePermissionToolResult.allowed)
+        return modulePermissionToolResult;
       const extensionResult = extensionToolPermission(event.toolName);
       if (!extensionResult.allowed) return extensionResult;
       const permission = evaluatePermissionRules(
@@ -588,6 +599,13 @@ export function createRealRuntimeClient(
       );
       if (!profilePermission.allowed) return profilePermission;
       const args = tryParseToolArguments(event.arguments);
+      const modulePermission = evaluatePermissionRules(
+        options.taskModuleContext?.modulePermissions,
+        event.toolName,
+        args,
+        workspaceRoot,
+      );
+      if (!modulePermission.allowed) return modulePermission;
       const bufferedProfileCommandPermission =
         await terminalCommandBuffer.evaluate(
           [
@@ -1572,12 +1590,16 @@ export function createRealRuntimeClient(
       agentToolLayer.isToolAllowed(toolName) &&
       permissionProfileToolLayer.isToolAllowed(toolName) &&
       moduleToolLayer.isToolAllowed(toolName) &&
+      modulePermissionToolLayer.isToolAllowed(toolName) &&
       extensionToolPermission(toolName).allowed
     );
   }
 
   function extensionEnabled(extension: "skills" | "mcp" | "plugins") {
-    return selectedPermissionProfile?.extensions?.[extension] !== false;
+    return (
+      selectedPermissionProfile?.extensions?.[extension] !== false &&
+      options.taskModuleContext?.moduleExtensions?.[extension] !== false
+    );
   }
 
   function extensionToolPermission(toolName: string) {
@@ -1591,11 +1613,13 @@ export function createRealRuntimeClient(
             : undefined;
     if (!extension || extensionEnabled(extension))
       return { allowed: true, diagnostics: [] };
+    const source =
+      options.taskModuleContext?.moduleExtensions?.[extension] === false
+        ? "active module"
+        : "permission profile";
     return {
       allowed: false,
-      diagnostics: [
-        `${extension} extensions are disabled by permission profile`,
-      ],
+      diagnostics: [`${extension} extensions are disabled by ${source}`],
     };
   }
 
@@ -2828,6 +2852,21 @@ export function createRealRuntimeClient(
       await ready;
       return await runtimeStatusSnapshot();
     },
+    async canReloadConfig() {
+      await ready;
+      if (activeTurnID)
+        return {
+          allowed: false,
+          reason: "runtime config cannot be applied while a turn is running",
+        };
+      if (approvalWaiters.size || questionWaiters.size)
+        return {
+          allowed: false,
+          reason:
+            "runtime config cannot be applied while an approval or question is pending",
+        };
+      return { allowed: true };
+    },
     async diagnostics(limit = 100) {
       await ready;
       return runtimeDiagnostics.slice(-Math.min(500, Math.max(1, limit)));
@@ -3776,8 +3815,10 @@ export function createRealRuntimeClient(
                 ? readOnlyToolMessage(call.name)
                 : !moduleToolLayer.isToolAllowed(call.name)
                   ? `blocked outside active ${options.taskModuleContext?.moduleType} module: ${call.name}`
-                  : (extensionToolPermission(call.name).diagnostics[0] ??
-                    "tool is excluded from the runtime catalog by policy"),
+                  : !modulePermissionToolLayer.isToolAllowed(call.name)
+                    ? `blocked by active module policy: ${call.name}`
+                    : (extensionToolPermission(call.name).diagnostics[0] ??
+                      "tool is excluded from the runtime catalog by policy"),
           });
         publish({
           type: "tool.update",

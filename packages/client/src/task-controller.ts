@@ -731,6 +731,9 @@ async function runTaskModule(input: {
   json: boolean;
   emit: (line: string) => void;
 }): Promise<TaskModuleRunOutcome> {
+  const definition = input.flow.modules.find(
+    (entry) => entry.id === input.module.moduleID,
+  );
   const taskModuleContext: NonNullable<
     RealRuntimeClientOptions["taskModuleContext"]
   > = {
@@ -740,15 +743,11 @@ async function runTaskModule(input: {
     flowID: input.flow.flowID,
     moduleID: input.module.moduleID,
     moduleType: input.module.moduleType,
-    moduleInstructions:
-      input.flow.modules.find((entry) => entry.id === input.module.moduleID)
-        ?.instructions ?? "",
-    moduleCommandRules: input.flow.modules.find(
-      (entry) => entry.id === input.module.moduleID,
-    )?.commandRules,
-    moduleInteractivePrograms: input.flow.modules.find(
-      (entry) => entry.id === input.module.moduleID,
-    )?.interactivePrograms,
+    moduleInstructions: definition?.instructions ?? "",
+    moduleCommandRules: definition?.commandRules,
+    moduleInteractivePrograms: definition?.interactivePrograms,
+    moduleExtensions: definition?.extensions,
+    modulePermissions: definition?.permissions,
     reportIssue: input.reportIssue,
     readDataSource: input.readDataSource,
   };

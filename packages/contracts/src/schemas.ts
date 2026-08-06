@@ -199,11 +199,20 @@ export const permissionProfileCommandRulesSchema = z.object({
 
 /**
  * Launch commands that may take over a pane as an interactive program, such as
- * an editor, a REPL or a database client. It is an explicit allowlist: without
- * an entry, interactive-program mode does not exist for that profile or module.
+ * an editor, a REPL or a database client. By default it is an explicit
+ * allowlist. `allowAny` is an intentionally high-risk escape hatch selected by
+ * the user; foreground-process confirmation still applies.
  */
 export const interactiveProgramRulesSchema = z.object({
+  allowAny: z.boolean().default(false),
   allow: z.array(bashCommandRuleSchema).default([]),
+});
+
+/** Extension stages can only narrow the profile's extension boundary. */
+export const extensionRulesSchema = z.object({
+  skills: z.boolean().optional(),
+  mcp: z.boolean().optional(),
+  plugins: z.boolean().optional(),
 });
 
 export const permissionProfileSchema = z.object({
@@ -212,13 +221,7 @@ export const permissionProfileSchema = z.object({
   permissions: agentPermissionRulesSchema.optional(),
   commandRules: permissionProfileCommandRulesSchema.optional(),
   interactivePrograms: interactiveProgramRulesSchema.optional(),
-  extensions: z
-    .object({
-      skills: z.boolean().optional(),
-      mcp: z.boolean().optional(),
-      plugins: z.boolean().optional(),
-    })
-    .optional(),
+  extensions: extensionRulesSchema.optional(),
 });
 
 export const flowModuleTypeSchema = z.enum([
@@ -249,6 +252,8 @@ export const nataliaFlowModuleSchema = z.object({
   idealConditions: z.array(flowConditionSchema).default([]),
   commandRules: permissionProfileCommandRulesSchema.optional(),
   interactivePrograms: interactiveProgramRulesSchema.optional(),
+  extensions: extensionRulesSchema.optional(),
+  permissions: agentPermissionRulesSchema.optional(),
 });
 
 export const nataliaFlowDocumentSchema = z.object({
@@ -723,6 +728,7 @@ export type AlertChannelConfig = z.infer<typeof alertChannelConfigSchema>;
 export type InteractiveProgramRules = z.infer<
   typeof interactiveProgramRulesSchema
 >;
+export type ExtensionRules = z.infer<typeof extensionRulesSchema>;
 export type NataliaFlowDocument = z.infer<typeof nataliaFlowDocumentSchema>;
 export type NataliaTaskDocument = z.infer<typeof nataliaTaskDocumentSchema>;
 export type NataliaFlowDocumentInput = z.input<

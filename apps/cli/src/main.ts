@@ -841,9 +841,16 @@ function taskPreviewLines(preview: ReturnType<typeof taskPermissionPreview>) {
       lines.push(
         `    module commands (${module.commandRules.module.mode}): ${module.commandRules.module.commands.join(", ") || "none"}`,
       );
-    if (module.interactivePrograms.length)
+    if (
+      module.interactivePrograms === "any" ||
+      module.interactivePrograms.length
+    )
       lines.push(
-        `    interactive programs: ${module.interactivePrograms.join(", ")}`,
+        `    interactive programs: ${
+          module.interactivePrograms === "any"
+            ? "any"
+            : module.interactivePrograms.join(", ")
+        }`,
       );
     if (module.blocked) lines.push(`    BLOCKED: ${module.blocked}`);
   }

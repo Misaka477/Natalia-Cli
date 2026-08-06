@@ -22,8 +22,10 @@ export type EffectiveModulePermissions = {
     profile?: { mode: string; commands: string[] };
     module?: { mode: string; commands: string[] };
   };
-  interactivePrograms: string[];
+  interactivePrograms: string[] | "any";
   extensions: { skills: boolean; mcp: boolean; plugins: boolean };
+  /** Workspace path scopes the module itself configured, when any. */
+  pathRules?: { read: string[]; write: string[] };
   /** Set when the module cannot perform any of its own capabilities. */
   blocked?: string;
 };
@@ -81,20 +83,30 @@ export function effectiveModulePermissions(input: {
   const { module, profile } = input;
   const bundle = moduleToolPolicy(module.type).allow;
   const moduleLayer = createToolPolicyHookLayer({ allow: bundle });
+  const modulePermissionLayer = createToolPolicyHookLayer({
+    allow: module.permissions?.tools?.allow,
+    exclude: module.permissions?.tools?.exclude,
+  });
   const profileLayer = createToolPolicyHookLayer({
     allow: profile?.permissions?.tools?.allow,
     exclude: profile?.permissions?.tools?.exclude,
   });
   const extensions = {
-    skills: profile?.extensions?.skills !== false,
-    mcp: profile?.extensions?.mcp !== false,
-    plugins: profile?.extensions?.plugins !== false,
+    skills:
+      profile?.extensions?.skills !== false &&
+      module.extensions?.skills !== false,
+    mcp: profile?.extensions?.mcp !== false && module.extensions?.mcp !== false,
+    plugins:
+      profile?.extensions?.plugins !== false &&
+      module.extensions?.plugins !== false,
   };
   const permitted = (name: string) =>
     // The completion tool is system control: the runtime keeps it available even
     // when a profile allow-list omits it, so the preview must agree.
     name === SYSTEM_MODULE_TOOL ||
-    (profileLayer.isToolAllowed(name) && extensionAllowed(name, extensions));
+    (profileLayer.isToolAllowed(name) &&
+      modulePermissionLayer.isToolAllowed(name) &&
+      extensionAllowed(name, extensions));
   const inBundle = input.toolNames.filter((name) =>
     moduleLayer.isToolAllowed(name),
   );
@@ -102,8 +114,8 @@ export function effectiveModulePermissions(input: {
   const denied = inBundle.filter((name) => !permitted(name));
   const capabilities = allowed.filter((name) => name !== SYSTEM_MODULE_TOOL);
   const interactivePrograms = intersectPrograms(
-    profile?.interactivePrograms?.allow,
-    module.interactivePrograms?.allow,
+    profile?.interactivePrograms,
+    module.interactivePrograms,
   );
   return {
     moduleID: module.id,
@@ -131,6 +143,15 @@ export function effectiveModulePermissions(input: {
     },
     interactivePrograms,
     extensions,
+    ...(module.permissions?.files
+      ? {
+          pathRules: {
+            read: module.permissions.files.readPaths?.map(pathRuleLabel) ?? [],
+            write:
+              module.permissions.files.writePaths?.map(pathRuleLabel) ?? [],
+          },
+        }
+      : {}),
     ...(capabilities.length
       ? {}
       : {
@@ -138,16 +159,28 @@ export function effectiveModulePermissions(input: {
             moduleType: module.type,
             denied,
             bundle: bundle.filter((name) => name !== SYSTEM_MODULE_TOOL),
+            moduleExtensions: module.extensions,
           }),
         }),
   };
+}
+
+function pathRuleLabel(rule: { pattern: string; allow?: boolean }) {
+  return `${rule.allow === true ? "allow" : "deny"} ${rule.pattern}`;
 }
 
 function blockedReason(input: {
   moduleType: NataliaFlowModuleType;
   denied: string[];
   bundle: string[];
+  moduleExtensions?: { skills?: boolean; mcp?: boolean; plugins?: boolean };
 }) {
+  const moduleDisabled = input.denied.filter((tool) => {
+    const extension = extensionForTool(tool);
+    return extension && input.moduleExtensions?.[extension] === false;
+  });
+  if (moduleDisabled.length)
+    return `the ${input.moduleType} module has no usable tool: the active module disables ${moduleDisabled.join(", ")}`;
   if (input.denied.length)
     return `the ${input.moduleType} module has no usable tool: the permission profile denies ${input.denied.join(", ")}`;
   return `the ${input.moduleType} module has no usable tool: nothing matching ${input.bundle.join(", ")} exists for this task`;
@@ -157,20 +190,48 @@ function extensionAllowed(
   name: string,
   extensions: { skills: boolean; mcp: boolean; plugins: boolean },
 ) {
-  if (name === "skill_load") return extensions.skills;
-  if (name.startsWith("mcp_")) return extensions.mcp;
-  if (name.startsWith("plugin_")) return extensions.plugins;
+  const extension = extensionForTool(name);
+  if (extension) return extensions[extension];
   return true;
 }
 
+function extensionForTool(
+  name: string,
+): "skills" | "mcp" | "plugins" | undefined {
+  if (name === "skill_load") return "skills";
+  if (name.startsWith("mcp_")) return "mcp";
+  if (name.startsWith("plugin_")) return "plugins";
+  return undefined;
+}
+
 function intersectPrograms(
-  profile: ReadonlyArray<{ command: string }> | undefined,
-  module: ReadonlyArray<{ command: string }> | undefined,
-) {
-  const profileCommands = (profile ?? []).map((rule) => rule.command);
-  if (!module) return profileCommands;
-  const moduleCommands = new Set(module.map((rule) => rule.command));
-  return profileCommands.filter((command) => moduleCommands.has(command));
+  profile:
+    | { allowAny?: boolean; allow: ReadonlyArray<{ command: string }> }
+    | undefined,
+  module:
+    | { allowAny?: boolean; allow: ReadonlyArray<{ command: string }> }
+    | undefined,
+): string[] | "any" {
+  const layers = [profile, module].filter(
+    (layer): layer is NonNullable<typeof layer> =>
+      Boolean(layer && (layer.allowAny || layer.allow.length)),
+  );
+  if (!layers.length) return [];
+  const first = layers[0]!;
+  let effective: string[] | "any" = first.allowAny
+    ? "any"
+    : first.allow.map((rule) => rule.command);
+  for (const layer of layers.slice(1)) {
+    if (effective === "any")
+      effective = layer.allowAny
+        ? "any"
+        : layer.allow.map((rule) => rule.command);
+    else if (!layer.allowAny) {
+      const commands = new Set(layer.allow.map((rule) => rule.command));
+      effective = effective.filter((command) => commands.has(command));
+    }
+  }
+  return effective;
 }
 
 function runtimeToolNames(capabilities: {

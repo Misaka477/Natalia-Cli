@@ -11,6 +11,7 @@ import {
 import { DialogConfirm } from "../src/dialog/DialogConfirm";
 import { DialogPrompt } from "../src/dialog/DialogPrompt";
 import { DialogSelect } from "../src/dialog/DialogSelect";
+import { DialogToolMultiSelect } from "../src/component/DialogToolMultiSelect";
 import {
   getOrCreateModeStack,
   registerNataliaKeymap,
@@ -171,6 +172,81 @@ const selectResult = await selectPromise;
 if (selectResult !== "c")
   throw new Error(
     `Select test failed: expected "c", got ${JSON.stringify(selectResult)}`,
+  );
+
+// ---- Test 3b: Filtered select keeps scoped actions active on its input ----
+let filteredActionTriggered = false;
+let filteredDeleteTriggered = false;
+globalDialog!.replace(
+  () => (
+    <DialogSelect
+      title="Choose filtered option"
+      options={[{ title: "Edit delete option", value: "a" }]}
+      actions={[
+        {
+          command: "permission.dialog.edit",
+          title: "edit",
+          onTrigger: () => {
+            filteredActionTriggered = true;
+          },
+        },
+        {
+          command: "permission.dialog.delete",
+          title: "delete",
+          onTrigger: () => {
+            filteredDeleteTriggered = true;
+          },
+        },
+      ]}
+    />
+  ),
+  () => {},
+);
+await Bun.sleep(100);
+await keys.typeText("ed");
+await Bun.sleep(30);
+if (filteredActionTriggered || filteredDeleteTriggered)
+  throw new Error("Filter text triggered a permission profile action");
+keys.pressKey("F2");
+await Bun.sleep(30);
+if (!filteredActionTriggered)
+  throw new Error("Filtered selector input did not receive its action binding");
+keys.pressKey("F4");
+await Bun.sleep(30);
+if (!filteredDeleteTriggered)
+  throw new Error("Filtered selector input did not receive delete binding");
+
+// ---- Test 3c: Tool allow-list supports Space toggles and explicit save ----
+let savedTools: string[] | undefined;
+globalDialog!.replace(
+  () => (
+    <DialogToolMultiSelect
+      title="Allowed tools"
+      tools={[{ name: "read_file" }, { name: "glob" }, { name: "grep" }]}
+      selected={["read_file"]}
+      onSave={(tools) => {
+        savedTools = tools;
+      }}
+    />
+  ),
+  () => {},
+);
+await Bun.sleep(100);
+keys.pressArrow("down");
+keys.pressArrow("down");
+keys.pressArrow("down");
+keys.pressKey(" ");
+keys.pressArrow("down");
+keys.pressKey(" ");
+keys.pressArrow("up");
+keys.pressArrow("up");
+keys.pressArrow("up");
+keys.pressArrow("up");
+keys.pressEnter();
+await Bun.sleep(50);
+if (JSON.stringify(savedTools) !== JSON.stringify(["glob"]))
+  throw new Error(
+    `Tool multi-select saved the wrong tools: ${JSON.stringify(savedTools)}`,
   );
 
 // ---- Test 4: Nested dialogs preserve the parent ----

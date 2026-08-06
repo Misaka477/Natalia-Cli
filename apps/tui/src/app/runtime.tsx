@@ -68,12 +68,12 @@ export async function runTuiShell(
     (input.fixture
       ? createFakeBackend()
       : createRealRuntimeClient({ workspaceRoot: input.workspaceRoot }));
+  let activeBackend: RuntimeClient | undefined = backend;
   const events: RuntimeEvent[] = [];
-  let backendDisposed = false;
   const disposeBackend = async () => {
-    if (backendDisposed) return;
-    backendDisposed = true;
-    await backend.dispose?.();
+    const current = activeBackend;
+    activeBackend = undefined;
+    await current?.dispose?.();
   };
   const keymap = createDefaultOpenTuiKeymap(renderer);
   const tuiConfig = input.workspaceRoot
@@ -104,6 +104,9 @@ export async function runTuiShell(
                         <App
                           backend={backend}
                           createBackend={input.createBackend}
+                          onBackendChange={(next) => {
+                            activeBackend = next;
+                          }}
                           workspaceRoot={input.workspaceRoot}
                           onSessionChange={input.onSessionChange}
                           initialRoute={input.initialRoute}

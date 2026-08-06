@@ -100,6 +100,7 @@ import { runCommand } from "./command-controller";
 export function App(props: {
   backend: RuntimeClient;
   createBackend?: (sessionID?: string) => RuntimeClient;
+  onBackendChange?: (backend: RuntimeClient) => void;
   workspaceRoot?: string;
   onSessionChange?: (sessionID?: string) => void;
   onDispatch?: (event: RuntimeEvent) => void;
@@ -121,11 +122,17 @@ export function App(props: {
       ) => boolean)
     | undefined;
 
-  function changeSession(sessionID?: string) {
+  async function changeSession(sessionID?: string) {
     setHistoryCursor(undefined);
     setNewerHistoryCursor(undefined);
     historyHydrate = undefined;
-    if (props.createBackend) setBackend(props.createBackend(sessionID));
+    if (props.createBackend) {
+      const previous = backend();
+      const next = props.createBackend(sessionID);
+      setBackend(next);
+      props.onBackendChange?.(next);
+      await previous.dispose?.();
+    }
     props.onSessionChange?.(sessionID);
   }
 
@@ -153,7 +160,7 @@ export function App(props: {
             <Shell
               backend={activeBackend}
               workspaceRoot={props.workspaceRoot}
-              onSessionChange={changeSession}
+              onSessionChange={(sessionID) => void changeSession(sessionID)}
               initialRoute={props.initialRoute}
               onHistoryControls={props.onHistoryControls}
               onLoadOlderHistory={async () => {
@@ -348,9 +355,12 @@ function Shell(props: {
       base ? configPatch(base, next as ConfigV2) : next,
       scope,
     );
+    if (!props.backend.reloadConfig)
+      throw new Error("Runtime backend does not support config reload");
+    await props.backend.reloadConfig();
     toast.show({
       variant: "success",
-      message: `Runtime config saved to ${scope} config`,
+      message: `Runtime config saved and applied from ${scope} config`,
     });
   }
 

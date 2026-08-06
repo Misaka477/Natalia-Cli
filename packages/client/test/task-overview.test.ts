@@ -66,6 +66,25 @@ test("a ready task is listed with its configuration and no problems", async () =
   expect(overview.tasks[0]!.lastRun).toBeUndefined();
 });
 
+test("flow overview reports tasks that reference a flow by path alone", async () => {
+  const root = await workspace("natalia-overview-flow-path-");
+  await writeFile(
+    join(root, ".natalia", "tasks", "nightly.yaml"),
+    taskYAML().replace(
+      "  flowID: flow_review\n",
+      "  path: .natalia/flows/review.yaml\n",
+    ),
+  );
+  await expect(flowOverview({ workspaceRoot: root })).resolves.toMatchObject({
+    flows: [
+      {
+        flowID: "flow_review",
+        usedBy: ["task_nightly"],
+      },
+    ],
+  });
+});
+
 test("next run is read from the timer unit stored in the task", async () => {
   const root = await workspace("natalia-overview-timer-");
   await writeFile(

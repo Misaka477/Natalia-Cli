@@ -91,6 +91,41 @@ test("a disabled extension blocks the stage that depends on it", () => {
   expect(preview.blocked).toContain("permission profile denies mcp_files_read");
 });
 
+test("a module extension switch narrows but cannot widen the profile", () => {
+  const moduleDisabled = effectiveModulePermissions({
+    profile: profile({ extensions: { mcp: true } }),
+    module: flow([
+      {
+        id: "mcp",
+        type: "mcp",
+        displayName: "MCP",
+        extensions: { mcp: false },
+      },
+    ]).modules[0]!,
+    toolNames: ["mcp_docs_read", "flow_module_complete"],
+  });
+  expect(moduleDisabled.extensions.mcp).toBe(false);
+  expect(moduleDisabled.tools.denied).toEqual(["mcp_docs_read"]);
+  expect(moduleDisabled.blocked).toContain(
+    "active module disables mcp_docs_read",
+  );
+
+  const profileDisabled = effectiveModulePermissions({
+    profile: profile({ extensions: { mcp: false } }),
+    module: flow([
+      {
+        id: "mcp",
+        type: "mcp",
+        displayName: "MCP",
+        extensions: { mcp: true },
+      },
+    ]).modules[0]!,
+    toolNames: ["mcp_docs_read", "flow_module_complete"],
+  });
+  expect(profileDisabled.extensions.mcp).toBe(false);
+  expect(profileDisabled.tools.denied).toEqual(["mcp_docs_read"]);
+});
+
 test("a reporting stage is blocked when the task configures no issue target", () => {
   const withTarget = effectiveFlowPermissions({
     flow: flow([
@@ -159,6 +194,37 @@ test("command rules and interactive programs surface both layers", () => {
   });
   // The module can only narrow the profile's interactive programs.
   expect(preview.interactivePrograms).toEqual(["vim"]);
+});
+
+test("interactive program preview preserves allowAny and module narrowing", () => {
+  const unrestricted = effectiveModulePermissions({
+    profile: profile({ interactivePrograms: { allowAny: true, allow: [] } }),
+    module: flow([{ id: "term", type: "terminal", displayName: "Terminal" }])
+      .modules[0]!,
+    toolNames: ["interactive_terminal_start", "flow_module_complete"],
+  });
+  expect(unrestricted.interactivePrograms).toBe("any");
+
+  const narrowed = effectiveModulePermissions({
+    profile: profile({ interactivePrograms: { allowAny: true, allow: [] } }),
+    module: flow([
+      {
+        id: "term",
+        type: "terminal",
+        displayName: "Terminal",
+        interactivePrograms: { allow: [{ command: "vim" }] },
+      },
+    ]).modules[0]!,
+    toolNames: ["interactive_terminal_start", "flow_module_complete"],
+  });
+  expect(narrowed.interactivePrograms).toEqual(["vim"]);
+});
+
+test("legacy interactive program allowlists default allowAny to false", () => {
+  expect(
+    profile({ interactivePrograms: { allow: [{ command: "vim" }] } })
+      .interactivePrograms,
+  ).toEqual({ allowAny: false, allow: [{ command: "vim" }] });
 });
 
 test("the preview uses the real runtime tool catalog by default", () => {

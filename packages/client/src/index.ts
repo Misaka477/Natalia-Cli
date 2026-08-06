@@ -17,6 +17,7 @@ export {
   type ScheduledTaskOverview,
   type ScheduledTaskRow,
 } from "./task-overview";
+export { loadFlowDocument, newFlowID, saveFlowDocument } from "./flow-document";
 export {
   assertConfigApplied,
   assertTaskReferences,
@@ -36,6 +37,7 @@ export {
 } from "./effective-policy";
 export {
   configWithoutPermissionProfile,
+  grantablePermissionTools,
   parseToolAllowList,
   permissionProfileRemovalProblem,
   permissionProfileUsage,

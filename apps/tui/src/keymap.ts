@@ -140,18 +140,15 @@ export const commands: Record<string, CommandDef> = {
   // Task and flow documents are work definitions the operator authors and runs,
   // not tool configuration, so they get their own surfaces instead of living
   // under Settings next to providers and themes.
-  // No default chord: terminals claim most of ctrl+shift+*, kitty included, so a
-  // default binding here would simply never arrive. It stays reachable from the
-  // palette and can be bound by the user through the keybind config.
   "task.manage": {
     id: "task.manage",
-    keys: "unset",
-    desc: "Manage scheduled tasks",
+    keys: "ctrl+shift+t",
+    desc: "Edit scheduled tasks (create, schedule, configure)",
   },
   "flow.manage": {
     id: "flow.manage",
-    keys: "unset",
-    desc: "Show workflow definitions",
+    keys: "ctrl+shift+e",
+    desc: "Edit flows (create and manage staged agent pipelines)",
   },
   "checkpoint.manage": {
     id: "checkpoint.manage",
@@ -289,14 +286,20 @@ export const commands: Record<string, CommandDef> = {
   },
   "permission.dialog.edit": {
     id: "permission.dialog.edit",
-    keys: "e",
+    keys: "f2",
     desc: "Edit permission profile",
     scope: "dialog",
   },
   "permission.dialog.delete": {
     id: "permission.dialog.delete",
-    keys: "d",
+    keys: "f4",
     desc: "Delete permission profile",
+    scope: "dialog",
+  },
+  "permission.tools.toggle": {
+    id: "permission.tools.toggle",
+    keys: "space",
+    desc: "Toggle allowed tool",
     scope: "dialog",
   },
   "prompt.stash.save": {

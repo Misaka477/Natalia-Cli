@@ -1,14 +1,20 @@
 import { expect, test } from "bun:test";
 import { createSignal, onMount } from "solid-js";
-import { createTestRenderer } from "@opentui/core/testing";
+import { createMockKeys, createTestRenderer } from "@opentui/core/testing";
 import { render } from "@opentui/solid";
 import { KeymapProvider } from "@opentui/keymap/solid";
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
+import type { NataliaFlowDocument } from "@natalia/contracts";
 import type { FlowOverview, FlowRow } from "@natalia/client";
 import {
   buildFlowDetail,
   buildFlowOptions,
   DialogFlows,
+  flowConditionsFromLines,
+  flowDraftProblems,
+  newFlowDraft,
+  parsePathScopeInput,
+  reorderFlowModule,
   flowStageSummary,
   flowSummary,
 } from "../src/component/DialogFlows";
@@ -95,6 +101,64 @@ test("a flow that can never complete is grouped apart and explains itself", () =
   expect(options[2]!.disabled).toBe(true);
 });
 
+test("flow drafts preserve condition IDs and module identity while editing", () => {
+  const draft = newFlowDraft();
+  const first = draft.modules[0]!;
+  const withConditions: NataliaFlowDocument = {
+    ...draft,
+    displayName: "Review",
+    modules: [
+      {
+        ...first,
+        minimumConditions: [
+          { id: "condition_existing", text: "Read every changed file" },
+        ],
+      },
+      {
+        id: "module_report",
+        type: "report_output",
+        displayName: "Report",
+        enabled: true,
+        instructions: "",
+        minimumConditions: [],
+        idealConditions: [],
+      },
+    ],
+  };
+  expect(
+    flowConditionsFromLines(
+      withConditions.modules[0]!.minimumConditions,
+      "Read every changed file\nRecord findings",
+    ),
+  ).toMatchObject([
+    { id: "condition_existing", text: "Read every changed file" },
+    { text: "Record findings" },
+  ]);
+  expect(
+    reorderFlowModule(withConditions, 1, true).modules.map(
+      (module) => module.id,
+    ),
+  ).toEqual(["module_report", first.id]);
+  expect(flowDraftProblems(withConditions)).toEqual([
+    "module has no minimum completion condition: Report",
+  ]);
+});
+
+test("path scope input parses allow and deny globs and rejects garbage", () => {
+  expect(
+    parsePathScopeInput("allow docs/**\ndeny secrets/**\n\nallow tests/**"),
+  ).toEqual({
+    allow: ["docs/**", "tests/**"],
+    deny: ["secrets/**"],
+    rejected: [],
+  });
+  expect(parsePathScopeInput("docs/**\nallow")).toEqual({
+    allow: [],
+    deny: [],
+    rejected: ["docs/**", "allow"],
+  });
+});
+
 test("the detail view lists stages in execution order and separates disabled ones", () => {
   const detail = buildFlowDetail(
     flow({
@@ -144,6 +208,255 @@ test("the flows dialog renders the flows and their stage counts", async () => {
     expect(frame).toContain("Flows");
     expect(frame).toContain("Nightly log triage");
     expect(frame).toContain("2/2 stages");
+  } finally {
+    disposeKeymap();
+    setup.renderer.destroy();
+  }
+});
+
+test("creating a flow keeps a draft until explicit unattended-save confirmation", async () => {
+  const setup = await createTestRenderer({ width: 160, height: 36 });
+  const keymap = createDefaultOpenTuiKeymap(setup.renderer);
+  const disposeKeymap = registerNataliaKeymap(keymap, setup.renderer);
+  const [current, setCurrent] = createSignal<FlowOverview>({
+    flows: [],
+    unreadable: [],
+  });
+  let saved: NataliaFlowDocument | undefined;
+  let reloads = 0;
+  const notifications: string[] = [];
+  function Harness() {
+    const dialog = useDialog();
+    onMount(() =>
+      dialog.push(() => (
+        <DialogFlows
+          overview={current()}
+          workspaceRoot="/tmp/natalia-flow-dialog"
+          saveFlow={async (document) => {
+            saved = structuredClone(document);
+          }}
+          loadFlow={async () => {
+            throw new Error("new flow creation must not load a document");
+          }}
+          reload={async () => {
+            reloads++;
+            if (!saved) return;
+            setCurrent({
+              unreadable: [],
+              flows: [
+                flow({
+                  flowID: saved.flowID,
+                  displayName: saved.displayName,
+                  path: `${saved.flowID}.yaml`,
+                  stages: saved.modules.map((module) => ({
+                    moduleID: module.id,
+                    moduleType: module.type,
+                    displayName: module.displayName,
+                    enabled: module.enabled,
+                    minimumConditions: module.minimumConditions.length,
+                    idealConditions: module.idealConditions.length,
+                    hasInstructions: Boolean(module.instructions),
+                    interactivePrograms: 0,
+                  })),
+                  enabledStages: saved.modules.filter(
+                    (module) => module.enabled,
+                  ).length,
+                  usedBy: [],
+                  problems: [],
+                }),
+              ],
+            });
+          }}
+          notify={(outcome) => notifications.push(outcome.message)}
+        />
+      )),
+    );
+    return null;
+  }
+  const renderOnce = async (delay = 20) => {
+    await Bun.sleep(delay);
+    await setup.renderOnce();
+  };
+  try {
+    await render(
+      () => (
+        <KeymapProvider keymap={keymap}>
+          <DialogProvider>
+            <Harness />
+          </DialogProvider>
+        </KeymapProvider>
+      ),
+      setup.renderer,
+    );
+    const keys = createMockKeys(setup.renderer, { kittyKeyboard: true });
+    await renderOnce();
+    keys.pressEnter();
+    await renderOnce();
+    expect(setup.captureCharFrame()).toContain("Create Flow");
+    await keys.typeText("Nightly review");
+    keys.pressEnter();
+    await renderOnce();
+    expect(setup.captureCharFrame()).toContain("Save flow");
+    expect(saved).toBeUndefined();
+
+    keys.pressEnter();
+    await renderOnce();
+    expect(setup.captureCharFrame()).toContain(
+      "Save Flow for Unattended Execution?",
+    );
+    expect(saved).toBeUndefined();
+    keys.pressArrow("down");
+    keys.pressEnter();
+    await renderOnce(40);
+
+    expect(saved).toMatchObject({
+      displayName: "Nightly review",
+      modules: [expect.objectContaining({ type: "read_search" })],
+    });
+    expect(reloads).toBe(1);
+    expect(notifications).toContain("Saved Nightly review");
+    expect(setup.captureCharFrame()).toContain("Nightly review");
+  } finally {
+    disposeKeymap();
+    setup.renderer.destroy();
+  }
+});
+
+test("Escape returns through flow editor screens before discarding a draft", async () => {
+  const setup = await createTestRenderer({ width: 160, height: 36 });
+  const keymap = createDefaultOpenTuiKeymap(setup.renderer);
+  const disposeKeymap = registerNataliaKeymap(keymap, setup.renderer);
+  let saved = false;
+  function Harness() {
+    const dialog = useDialog();
+    onMount(() =>
+      dialog.push(() => (
+        <DialogFlows
+          overview={{ flows: [], unreadable: [] }}
+          workspaceRoot="/tmp/natalia-flow-dialog"
+          loadFlow={async () => {
+            throw new Error("not used");
+          }}
+          saveFlow={async () => {
+            saved = true;
+          }}
+          reload={async () => undefined}
+        />
+      )),
+    );
+    return null;
+  }
+  const renderOnce = async () => {
+    await Bun.sleep(20);
+    await setup.renderOnce();
+  };
+  try {
+    await render(
+      () => (
+        <KeymapProvider keymap={keymap}>
+          <DialogProvider>
+            <Harness />
+          </DialogProvider>
+        </KeymapProvider>
+      ),
+      setup.renderer,
+    );
+    const keys = createMockKeys(setup.renderer, { kittyKeyboard: true });
+    await renderOnce();
+    keys.pressEnter();
+    await renderOnce();
+    await keys.typeText("Discardable flow");
+    keys.pressEnter();
+    await renderOnce();
+    expect(setup.captureCharFrame()).toContain("Save flow");
+
+    keys.pressEscape();
+    await renderOnce();
+    expect(setup.captureCharFrame()).toContain("Discard Flow Edits?");
+    keys.pressEscape();
+    await renderOnce();
+    expect(setup.captureCharFrame()).toContain("Save flow");
+    keys.pressEscape();
+    await renderOnce();
+    keys.pressArrow("down");
+    keys.pressEnter();
+    await renderOnce();
+
+    expect(saved).toBe(false);
+    expect(setup.captureCharFrame()).toContain("Flows");
+  } finally {
+    disposeKeymap();
+    setup.renderer.destroy();
+  }
+});
+
+test("a completed load cannot reopen a Flow editor after the list is closed", async () => {
+  const setup = await createTestRenderer({ width: 160, height: 36 });
+  const keymap = createDefaultOpenTuiKeymap(setup.renderer);
+  const disposeKeymap = registerNataliaKeymap(keymap, setup.renderer);
+  let resolveLoad: ((flow: NataliaFlowDocument) => void) | undefined;
+  const loading = new Promise<NataliaFlowDocument>((resolve) => {
+    resolveLoad = resolve;
+  });
+  let dialogStackLength = -1;
+  function Harness() {
+    const dialog = useDialog();
+    onMount(() => {
+      dialog.push(() => (
+        <DialogFlows
+          overview={{ flows: [flow()], unreadable: [] }}
+          workspaceRoot="/tmp/natalia-flow-dialog"
+          loadFlow={async () => loading}
+          saveFlow={async () => undefined}
+          reload={async () => undefined}
+        />
+      ));
+      dialogStackLength = dialog.stack.length;
+    });
+    return null;
+  }
+  const renderOnce = async () => {
+    await Bun.sleep(20);
+    await setup.renderOnce();
+  };
+  try {
+    await render(
+      () => (
+        <KeymapProvider keymap={keymap}>
+          <DialogProvider>
+            <Harness />
+          </DialogProvider>
+        </KeymapProvider>
+      ),
+      setup.renderer,
+    );
+    const keys = createMockKeys(setup.renderer, { kittyKeyboard: true });
+    await renderOnce();
+    keys.pressEnter();
+    await renderOnce();
+    keys.pressEscape();
+    await renderOnce();
+    expect(dialogStackLength).toBe(1);
+
+    resolveLoad!({
+      kind: "natalia-flow",
+      version: 1,
+      flowID: "flow_log_triage",
+      displayName: "Nightly log triage",
+      modules: [
+        {
+          id: "read_log",
+          type: "read_search",
+          displayName: "Read the new log content",
+          enabled: true,
+          instructions: "",
+          minimumConditions: [],
+          idealConditions: [],
+        },
+      ],
+    });
+    await renderOnce();
+    expect(setup.captureCharFrame()).not.toContain("flow_log_triage");
   } finally {
     disposeKeymap();
     setup.renderer.destroy();

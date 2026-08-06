@@ -729,6 +729,12 @@ export function createFakeBackend(): FakeBackend {
   }
 
   return {
+    async canReloadConfig() {
+      return activeTurn
+        ? { allowed: false, reason: "fixture turn is running" }
+        : { allowed: true };
+    },
+    async reloadConfig() {},
     start(onEvent) {
       sink = onEvent;
       publish({

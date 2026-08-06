@@ -10,11 +10,13 @@ const input = workerData as {
   sessionID: string;
 };
 
-attachRuntimeClientWorker(
-  input.port,
+const createRuntime = () =>
   createRealRuntimeClient({
     workspaceRoot: input.workspaceRoot,
     sessionID: input.sessionID as never,
     useSqliteStore: true,
-  }),
-);
+  });
+
+attachRuntimeClientWorker(input.port, createRuntime(), {
+  reload: createRuntime,
+});

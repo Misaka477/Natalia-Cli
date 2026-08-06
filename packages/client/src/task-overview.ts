@@ -54,7 +54,7 @@ export type FlowStageRow = {
   idealConditions: number;
   hasInstructions: boolean;
   commandRules?: { mode: string; commands: number };
-  interactivePrograms: number;
+  interactivePrograms: number | "any";
 };
 
 export type FlowRow = {
@@ -278,9 +278,10 @@ export async function flowOverview(input: {
     for (const entry of await readdir(documents.tasksDir)) {
       if (!/\.ya?ml$/iu.test(entry)) continue;
       const task = await documents.loadTask(entry).catch(() => undefined);
-      if (!task?.flow.flowID) continue;
-      taskFlows.set(task.flow.flowID, [
-        ...(taskFlows.get(task.flow.flowID) ?? []),
+      const reference = task?.flow.flowID ?? task?.flow.path;
+      if (!task || !reference) continue;
+      taskFlows.set(reference, [
+        ...(taskFlows.get(reference) ?? []),
         task.taskID,
       ]);
     }
@@ -316,7 +317,9 @@ export async function flowOverview(input: {
             },
           }
         : {}),
-      interactivePrograms: module.interactivePrograms?.allow.length ?? 0,
+      interactivePrograms: module.interactivePrograms?.allowAny
+        ? "any"
+        : (module.interactivePrograms?.allow.length ?? 0),
     }));
     const problems: string[] = [];
     if (!stages.some((stage) => stage.enabled))
@@ -332,7 +335,10 @@ export async function flowOverview(input: {
       path: entry,
       stages,
       enabledStages: stages.filter((stage) => stage.enabled).length,
-      usedBy: taskFlows.get(flow.flowID) ?? [],
+      usedBy: [
+        ...(taskFlows.get(flow.flowID) ?? []),
+        ...(taskFlows.get(`.natalia/flows/${entry}`) ?? []),
+      ],
       problems,
     });
   }

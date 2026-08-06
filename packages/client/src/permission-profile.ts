@@ -1,6 +1,10 @@
 import { readdir } from "node:fs/promises";
 import type { ConfigV2 } from "@natalia/contracts";
-import { isKnownModuleTool, NataliaDocumentStore } from "@natalia/workflow";
+import {
+  isKnownModuleTool,
+  knownModuleTools,
+  NataliaDocumentStore,
+} from "@natalia/workflow";
 
 export type PermissionProfileUsage = Record<string, string[]>;
 
@@ -76,6 +80,10 @@ export type ToolAllowListEdit = {
   tools: string[];
   rejected: Array<{ tool: string; reason: string }>;
 };
+
+export function grantablePermissionTools(): string[] {
+  return knownModuleTools();
+}
 
 /**
  * Parses a pasted tool allow-list. Capability bundles decide which tool names
