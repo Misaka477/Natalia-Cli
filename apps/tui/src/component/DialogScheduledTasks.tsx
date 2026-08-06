@@ -14,6 +14,7 @@ import {
 import { DialogPrompt } from "../dialog/DialogPrompt";
 import { DialogSelect, type DialogSelectOption } from "../dialog/DialogSelect";
 import { useDialog } from "../dialog/provider";
+import { darkTheme } from "../theme/theme";
 
 export type ScheduledTaskAction = "run" | "edit" | "problems" | "close";
 
@@ -255,7 +256,10 @@ export function taskDocumentForEditor(input: {
     schedule: input.schedule.trim(),
     prompt: input.prompt.trim(),
     permissionProfile: input.permissionProfile,
-    flow: { flowID: input.flowID, path: input.flowPath },
+    flow: {
+      flowID: input.flowID,
+      path: taskFlowDocumentPath(input.flowPath),
+    },
     retry: input.retry,
     alerts: input.alerts,
     ...(input.issueTarget ? { issueTarget: input.issueTarget } : {}),
@@ -332,6 +336,32 @@ function taskEditorFlowOptions(flows: FlowOverview) {
   }));
 }
 
+function taskFlowDocumentPath(path: string) {
+  return path.startsWith(".natalia/flows/") ? path : `.natalia/flows/${path}`;
+}
+
+function TaskProblemDetail(props: { task: ScheduledTaskRow }) {
+  const dialog = useDialog();
+  return (
+    <box paddingLeft={2} paddingRight={2} gap={1}>
+      <box flexDirection="row" justifyContent="space-between">
+        <text fg={darkTheme.text}>Task problems</text>
+        <text fg={darkTheme.muted} onMouseUp={() => dialog.pop()}>
+          esc
+        </text>
+      </box>
+      <text fg={darkTheme.muted} wrapMode="word">
+        {props.task.displayName}
+      </text>
+      {props.task.problems.map((problem) => (
+        <text fg={darkTheme.danger} wrapMode="word">
+          {problem}
+        </text>
+      ))}
+    </box>
+  );
+}
+
 function taskEditorProfileOptions(config: ConfigV2) {
   return Object.entries(config.permissionProfiles).map(([key, profile]) => ({
     title: key,
@@ -403,7 +433,7 @@ function TaskEditor(props: {
             advance({
               ...props.draft,
               flowID: flow.flowID,
-              flowPath: flow.path,
+              flowPath: taskFlowDocumentPath(flow.path),
             });
         }}
       />
@@ -728,6 +758,10 @@ export function DialogScheduledTasks(props: {
                       error instanceof Error ? error.message : String(error),
                   });
                 }
+                return;
+              }
+              if (detail.value === "problems") {
+                dialog.push(() => <TaskProblemDetail task={task} />);
                 return;
               }
               if (detail.value !== "run") {

@@ -129,7 +129,7 @@ function editorFlows(): FlowOverview {
       {
         flowID: "flow_review",
         displayName: "Review flow",
-        path: ".natalia/flows/review.yaml",
+        path: "review.yaml",
         stages: [],
         enabledStages: 1,
         usedBy: [],
@@ -311,6 +311,26 @@ test("the scheduled tasks dialog renders the tasks and their problems", async ()
     // opening it.
     expect(frame).toContain("Needs attention");
     expect(frame).toContain("1 problem");
+  } finally {
+    mounted.dispose();
+  }
+});
+
+test("a long task problem opens in a wrapped detail view", async () => {
+  const problem =
+    "flow reference must stay under .natalia/flows: log-triage.yaml and this deliberately long suffix must remain visible";
+  const mounted = await mountScheduledTasks({
+    tasks: [row({ problems: [problem] })],
+    unreadable: [],
+  });
+  try {
+    await mounted.selectFirst();
+    for (let index = 0; index < 5; index++) await mounted.down();
+    await mounted.selectFirst();
+    const frame = mounted.frame();
+    expect(frame).toContain("Task problems");
+    expect(frame).toContain("flow reference must stay under .natalia/flows");
+    expect(frame).toContain("remain visible");
   } finally {
     mounted.dispose();
   }
