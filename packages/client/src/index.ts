@@ -37,6 +37,7 @@ export {
   plainRuntimeEvent,
   runTask,
   taskPermissionPreview,
+  taskPermissionPreviewForDocument,
   taskRetryMaxAttempts,
   type HeadlessExecution,
   type TaskRunResult,

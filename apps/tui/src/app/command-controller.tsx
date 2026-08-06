@@ -23,6 +23,7 @@ import {
   previewSystemdCalendar,
   saveTaskDocument,
   scheduledTaskOverview,
+  taskPermissionPreviewForDocument,
   type PermissionProfileUsage,
 } from "@natalia/client";
 
@@ -764,6 +765,13 @@ export function runCommand(command: string, ctx: CommandContext) {
             )
           }
           deleteTask={(path) => deleteTaskDocument({ workspaceRoot, path })}
+          previewPermissions={(path) =>
+            taskPermissionPreviewForDocument({
+              workspaceRoot,
+              path,
+              config: resolved,
+            })
+          }
           configureSystemd={({ path, calendar, scope }) => {
             const cliEntry = resolveCliEntry();
             return configureTaskSystemd({

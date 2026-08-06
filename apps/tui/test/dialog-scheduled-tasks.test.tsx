@@ -18,11 +18,13 @@ import type {
 import {
   buildScheduledTaskDetail,
   buildScheduledTaskOptions,
+  buildTaskPermissionPreviewOptions,
   DialogScheduledTasks,
   readTaskRunOutcome,
   scheduledTaskSummary,
   taskDocumentForEditor,
   taskRunCommand,
+  type ScheduledTaskPermissionPreview,
   type TaskRunOutcome,
 } from "../src/component/DialogScheduledTasks";
 import { DialogProvider, useDialog } from "../src/dialog/provider";
@@ -46,6 +48,9 @@ async function mountScheduledTasks(
       path: string,
     ) => Promise<void>;
     deleteTask: (path: string) => Promise<void>;
+    previewPermissions: (
+      path: string,
+    ) => Promise<ScheduledTaskPermissionPreview>;
     previewCalendar: (calendar: string) => Promise<{ next: string[] }>;
     configureSystemd: (input: {
       path: string;
@@ -73,6 +78,7 @@ async function mountScheduledTasks(
           loadTask={extra.loadTask}
           saveTask={extra.saveTask}
           deleteTask={extra.deleteTask}
+          previewPermissions={extra.previewPermissions}
           previewCalendar={
             extra.previewCalendar ??
             (async () => ({
@@ -189,6 +195,47 @@ function row(overrides: Partial<ScheduledTaskRow> = {}): ScheduledTaskRow {
     pendingAlertDeliveries: 0,
     problems: [],
     ...overrides,
+  };
+}
+
+function permissionPreview(): ScheduledTaskPermissionPreview {
+  return {
+    taskID: "task_nightly",
+    permissionProfile: "unattended_read",
+    flowID: "flow_log_triage",
+    blocked: [
+      {
+        moduleID: "read_source",
+        reason: "profile denies the required shell capability",
+      },
+    ],
+    modules: [
+      {
+        moduleID: "read_source",
+        moduleType: "read_search",
+        displayName: "Read source",
+        enabled: true,
+        tools: {
+          allowed: ["read_file", "read_data_source", "flow_module_complete"],
+          denied: ["run_shell"],
+        },
+        commandRules: {
+          profile: { mode: "whitelist", commands: ["git status"] },
+          module: { mode: "whitelist", commands: ["git status --short"] },
+        },
+        interactivePrograms: ["vim"],
+        extensions: { skills: false, mcp: false, plugins: false },
+        profilePathRules: {
+          read: ["allow **"],
+          write: ["deny secrets/**"],
+        },
+        pathRules: {
+          read: ["allow src/**", "deny secrets/**"],
+          write: ["deny **"],
+        },
+        blocked: "profile denies the required shell capability",
+      },
+    ],
   };
 }
 
@@ -328,6 +375,7 @@ test("the detail view lists every problem verbatim instead of a summary", () => 
     "Edit task",
     "Install timer",
     "Delete task",
+    "Preview effective permissions",
     "Flow: flow_log_triage",
     "Profile: unattended_read · retry once",
     "Alerts: journal",
@@ -343,6 +391,28 @@ test("the detail view lists every problem verbatim instead of a summary", () => 
     title: "Run now",
     value: "run",
     disabled: false,
+  });
+});
+
+test("task permission preview shows task capabilities and every policy layer", () => {
+  const options = buildTaskPermissionPreviewOptions(permissionPreview());
+  expect(options.map((option) => option.title)).toEqual([
+    "Profile: unattended_read",
+    "1. Read source",
+    "Allowed: read_file, read_data_source, flow_module_complete",
+    "Denied: run_shell",
+    "Profile commands (whitelist): git status",
+    "Module commands (whitelist): git status --short",
+    "Extensions: skills=off, mcp=off, plugins=off",
+    "Interactive programs: vim",
+    "Profile read paths: allow **",
+    "Profile write paths: deny secrets/**",
+    "Read paths: allow src/**, deny secrets/**",
+    "Write paths: deny **",
+  ]);
+  expect(options[1]).toMatchObject({
+    category: "Blocked",
+    description: "profile denies the required shell capability",
   });
 });
 
@@ -383,12 +453,40 @@ test("a long task problem opens in a wrapped detail view", async () => {
   });
   try {
     await mounted.selectFirst();
-    for (let index = 0; index < 6; index++) await mounted.down();
+    for (let index = 0; index < 7; index++) await mounted.down();
     await mounted.selectFirst();
     const frame = mounted.frame();
     expect(frame).toContain("Task problems");
     expect(frame).toContain("flow reference must stay under .natalia/flows");
     expect(frame).toContain("remain visible");
+  } finally {
+    mounted.dispose();
+  }
+});
+
+test("the task detail opens the complete effective permission preview", async () => {
+  const calls: string[] = [];
+  const mounted = await mountScheduledTasks(
+    { tasks: [row()], unreadable: [] },
+    {
+      previewPermissions: async (path) => {
+        calls.push(path);
+        return permissionPreview();
+      },
+    },
+  );
+  try {
+    await mounted.selectFirst();
+    await mounted.down();
+    await mounted.down();
+    await mounted.down();
+    await mounted.selectFirst();
+    expect(calls).toEqual(["nightly.yaml"]);
+    expect(mounted.frame()).toContain("Effective Permissions");
+    expect(mounted.frame()).toContain("read_data_source");
+    for (let index = 0; index < 11; index++) await mounted.down();
+    expect(mounted.frame()).toContain("Workspace path scope");
+    expect(mounted.frame()).toContain("deny secrets/**");
   } finally {
     mounted.dispose();
   }

@@ -1,11 +1,20 @@
 import { expect, test } from "bun:test";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
+  configV2Schema,
   nataliaFlowDocumentSchema,
   permissionProfileSchema,
   type NataliaFlowDocument,
   type PermissionProfile,
 } from "@natalia/contracts";
-import { effectiveFlowPermissions, effectiveModulePermissions } from "../src";
+import { NataliaDocumentStore } from "@natalia/workflow";
+import {
+  effectiveFlowPermissions,
+  effectiveModulePermissions,
+  taskPermissionPreviewForDocument,
+} from "../src";
 
 function flow(
   modules: Array<Record<string, unknown>>,
@@ -196,6 +205,43 @@ test("command rules and interactive programs surface both layers", () => {
   expect(preview.interactivePrograms).toEqual(["vim"]);
 });
 
+test("file path preview surfaces profile and module restrictions separately", () => {
+  const preview = effectiveModulePermissions({
+    profile: profile({
+      permissions: {
+        files: {
+          readPaths: [{ pattern: "**", allow: true }],
+          writePaths: [{ pattern: "secrets/**", allow: false }],
+        },
+      },
+    }),
+    module: flow([
+      {
+        id: "write",
+        type: "workspace_changes",
+        displayName: "Write",
+        permissions: {
+          files: {
+            writePaths: [
+              { pattern: "docs/**", allow: true },
+              { pattern: "docs/private/**", allow: false },
+            ],
+          },
+        },
+      },
+    ]).modules[0]!,
+    toolNames: ["write_file", "flow_module_complete"],
+  });
+  expect(preview.profilePathRules).toEqual({
+    read: ["allow **"],
+    write: ["deny secrets/**"],
+  });
+  expect(preview.pathRules).toEqual({
+    read: [],
+    write: ["allow docs/**", "deny docs/private/**"],
+  });
+});
+
 test("interactive program preview preserves allowAny and module narrowing", () => {
   const unrestricted = effectiveModulePermissions({
     profile: profile({ interactivePrograms: { allowAny: true, allow: [] } }),
@@ -233,5 +279,59 @@ test("the preview uses the real runtime tool catalog by default", () => {
   expect(preview.modules[0]!.tools.allowed).toContain("read_file");
   expect(preview.modules[0]!.tools.allowed).toContain("grep");
   expect(preview.modules[0]!.tools.allowed).not.toContain("run_shell");
+  expect(preview.blocked).toEqual([]);
+});
+
+test("a document preview includes task-scoped issue and data-source tools", async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), "natalia-task-preview-"));
+  const documents = new NataliaDocumentStore(workspaceRoot);
+  await documents.saveFlow({
+    kind: "natalia-flow",
+    version: 1,
+    flowID: "flow_context",
+    displayName: "Context",
+    modules: [
+      { id: "read", type: "read_search", displayName: "Read" },
+      { id: "report", type: "report_output", displayName: "Report" },
+    ],
+  });
+  await documents.saveTask({
+    kind: "natalia-task",
+    version: 1,
+    taskID: "task_context",
+    displayName: "Context task",
+    schedule: "daily",
+    prompt: "Run",
+    permissionProfile: "unattended",
+    flow: { flowID: "flow_context" },
+    dataSource: "source",
+    issueTarget: "issues",
+  });
+  const config = configV2Schema.parse({
+    version: 2,
+    permissionProfiles: {
+      unattended: {
+        approval: "auto",
+        permissions: {
+          tools: {
+            allow: [
+              "read_data_source",
+              "read_file",
+              "report_issue",
+              "flow_module_complete",
+            ],
+          },
+        },
+      },
+    },
+  });
+  const preview = await taskPermissionPreviewForDocument({
+    workspaceRoot,
+    path: "task_context.yaml",
+    config,
+  });
+  expect(preview.taskID).toBe("task_context");
+  expect(preview.modules[0]!.tools.allowed).toContain("read_data_source");
+  expect(preview.modules[1]!.tools.allowed).toContain("report_issue");
   expect(preview.blocked).toEqual([]);
 });

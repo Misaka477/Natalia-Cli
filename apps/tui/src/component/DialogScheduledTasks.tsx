@@ -7,6 +7,7 @@ import type {
 } from "@natalia/contracts";
 import {
   newScheduledTaskID,
+  type EffectiveFlowPermissions,
   type FlowOverview,
   type ScheduledTaskOverview,
   type ScheduledTaskRow,
@@ -20,6 +21,7 @@ import { darkTheme } from "../theme/theme";
 export type ScheduledTaskAction =
   | "run"
   | "edit"
+  | "preview"
   | "timer"
   | "removeTimer"
   | "delete"
@@ -237,6 +239,13 @@ export function buildScheduledTaskDetail(
       disabled: Boolean(task.systemd?.timerUnit),
     },
     {
+      title: "Preview effective permissions",
+      value: "preview" as ScheduledTaskAction,
+      category: "Action",
+      description:
+        "Dry-run the task, profile, flow modules, and task-scoped capabilities",
+    },
+    {
       title: `Flow: ${task.flowID}`,
       value: "close" as ScheduledTaskAction,
       category: "Definition",
@@ -296,6 +305,97 @@ export function buildScheduledTaskDetail(
       value: "problems" as ScheduledTaskAction,
       category: "Needs attention",
     })),
+  ];
+}
+
+export type ScheduledTaskPermissionPreview = EffectiveFlowPermissions & {
+  taskID: string;
+  permissionProfile: string;
+};
+
+export function buildTaskPermissionPreviewOptions(
+  preview: ScheduledTaskPermissionPreview,
+): DialogSelectOption<string>[] {
+  return [
+    {
+      title: `Profile: ${preview.permissionProfile}`,
+      value: "$close",
+      category: "Task context",
+    },
+    ...preview.modules.flatMap((module, index) => [
+      {
+        title: `${index + 1}. ${module.displayName}`,
+        value: `module:${module.moduleID}`,
+        category: module.blocked ? "Blocked" : "Effective permissions",
+        description: module.blocked ?? module.moduleType,
+      },
+      {
+        title: `Allowed: ${module.tools.allowed.join(", ") || "none"}`,
+        value: `allowed:${module.moduleID}`,
+        category: "Tools",
+      },
+      {
+        title: `Denied: ${module.tools.denied.join(", ") || "none"}`,
+        value: `denied:${module.moduleID}`,
+        category: "Tools",
+      },
+      ...(module.commandRules.profile
+        ? [
+            {
+              title: `Profile commands (${module.commandRules.profile.mode}): ${module.commandRules.profile.commands.join(", ") || "none"}`,
+              value: `profile-commands:${module.moduleID}`,
+              category: "Command rules",
+            },
+          ]
+        : []),
+      ...(module.commandRules.module
+        ? [
+            {
+              title: `Module commands (${module.commandRules.module.mode}): ${module.commandRules.module.commands.join(", ") || "none"}`,
+              value: `module-commands:${module.moduleID}`,
+              category: "Command rules",
+            },
+          ]
+        : []),
+      {
+        title: `Extensions: skills=${module.extensions.skills ? "on" : "off"}, mcp=${module.extensions.mcp ? "on" : "off"}, plugins=${module.extensions.plugins ? "on" : "off"}`,
+        value: `extensions:${module.moduleID}`,
+        category: "Restrictions",
+      },
+      {
+        title: `Interactive programs: ${module.interactivePrograms === "any" ? "any" : module.interactivePrograms.join(", ") || "none"}`,
+        value: `interactive:${module.moduleID}`,
+        category: "Restrictions",
+      },
+      ...(module.profilePathRules
+        ? [
+            {
+              title: `Profile read paths: ${module.profilePathRules.read.join(", ") || "default"}`,
+              value: `profile-read-paths:${module.moduleID}`,
+              category: "Workspace path scope",
+            },
+            {
+              title: `Profile write paths: ${module.profilePathRules.write.join(", ") || "default"}`,
+              value: `profile-write-paths:${module.moduleID}`,
+              category: "Workspace path scope",
+            },
+          ]
+        : []),
+      ...(module.pathRules
+        ? [
+            {
+              title: `Read paths: ${module.pathRules.read.join(", ") || "profile/default"}`,
+              value: `read-paths:${module.moduleID}`,
+              category: "Workspace path scope",
+            },
+            {
+              title: `Write paths: ${module.pathRules.write.join(", ") || "profile/default"}`,
+              value: `write-paths:${module.moduleID}`,
+              category: "Workspace path scope",
+            },
+          ]
+        : []),
+    ]),
   ];
 }
 
@@ -1015,6 +1115,9 @@ export function DialogScheduledTasks(props: {
     path: string,
   ) => Promise<void>;
   deleteTask?: (path: string) => Promise<void>;
+  previewPermissions?: (
+    path: string,
+  ) => Promise<ScheduledTaskPermissionPreview>;
   configureSystemd?: (input: {
     path: string;
     calendar: string;
@@ -1104,6 +1207,34 @@ export function DialogScheduledTasks(props: {
                       reload={props.reload!}
                       notify={(outcome) => props.notify?.(outcome)}
                       previewCalendar={props.previewCalendar!}
+                    />
+                  ));
+                } catch (error) {
+                  props.notify?.({
+                    ok: false,
+                    message:
+                      error instanceof Error ? error.message : String(error),
+                  });
+                }
+                return;
+              }
+              if (detail.value === "preview") {
+                if (!props.previewPermissions) {
+                  props.notify?.({
+                    ok: false,
+                    message:
+                      "Task permission preview is not available in this workspace",
+                  });
+                  return;
+                }
+                try {
+                  const preview = await props.previewPermissions(task.path);
+                  dialog.push(() => (
+                    <DialogSelect
+                      title={`Effective Permissions · ${task.displayName}`}
+                      options={buildTaskPermissionPreviewOptions(preview)}
+                      skipFilter
+                      onSelect={() => undefined}
                     />
                   ));
                 } catch (error) {

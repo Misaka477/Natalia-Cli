@@ -26,6 +26,8 @@ export type EffectiveModulePermissions = {
   extensions: { skills: boolean; mcp: boolean; plugins: boolean };
   /** Workspace path scopes the module itself configured, when any. */
   pathRules?: { read: string[]; write: string[] };
+  /** Workspace path scopes inherited from the selected permission profile. */
+  profilePathRules?: { read: string[]; write: string[] };
   /** Set when the module cannot perform any of its own capabilities. */
   blocked?: string;
 };
@@ -149,6 +151,15 @@ export function effectiveModulePermissions(input: {
             read: module.permissions.files.readPaths?.map(pathRuleLabel) ?? [],
             write:
               module.permissions.files.writePaths?.map(pathRuleLabel) ?? [],
+          },
+        }
+      : {}),
+    ...(profile?.permissions?.files
+      ? {
+          profilePathRules: {
+            read: profile.permissions.files.readPaths?.map(pathRuleLabel) ?? [],
+            write:
+              profile.permissions.files.writePaths?.map(pathRuleLabel) ?? [],
           },
         }
       : {}),

@@ -21,6 +21,7 @@ import {
   readDataSourceSince,
   taskAlertEventKindForStatus,
   taskAlertSubscriptions,
+  NataliaDocumentStore,
   NataliaTaskAlertQueue,
   NataliaTaskStateStore,
   NataliaUnattendedStateStore,
@@ -170,6 +171,17 @@ export function taskPermissionPreview(input: {
     permissionProfile: input.task.permissionProfile,
     ...preview,
   };
+}
+
+export async function taskPermissionPreviewForDocument(input: {
+  workspaceRoot: string;
+  path: string;
+  config: ConfigV2;
+}) {
+  const documents = new NataliaDocumentStore(input.workspaceRoot);
+  const task = await documents.loadTaskDocument(input.path);
+  const flow = await documents.resolveTaskFlow(task);
+  return taskPermissionPreview({ task, flow, config: input.config });
 }
 
 export type TaskRunResult = {
