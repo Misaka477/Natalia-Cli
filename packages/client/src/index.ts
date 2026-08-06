@@ -35,6 +35,14 @@ export {
   type EffectiveModulePermissions,
 } from "./effective-policy";
 export {
+  configWithoutPermissionProfile,
+  parseToolAllowList,
+  permissionProfileRemovalProblem,
+  permissionProfileUsage,
+  type PermissionProfileUsage,
+  type ToolAllowListEdit,
+} from "./permission-profile";
+export {
   deleteTaskDocument,
   configureTaskSystemd,
   loadTaskDocument,

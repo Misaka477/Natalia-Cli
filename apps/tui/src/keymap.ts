@@ -287,6 +287,18 @@ export const commands: Record<string, CommandDef> = {
     desc: "Delete MCP server",
     scope: "dialog",
   },
+  "permission.dialog.edit": {
+    id: "permission.dialog.edit",
+    keys: "e",
+    desc: "Edit permission profile",
+    scope: "dialog",
+  },
+  "permission.dialog.delete": {
+    id: "permission.dialog.delete",
+    keys: "d",
+    desc: "Delete permission profile",
+    scope: "dialog",
+  },
   "prompt.stash.save": {
     id: "prompt.stash.save",
     keys: "ctrl+shift+s",
