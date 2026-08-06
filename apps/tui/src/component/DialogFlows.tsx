@@ -9,6 +9,7 @@ import {
   newFlowID,
   saveFlowDocument,
   type FlowOverview,
+  type FlowConditionModel,
   type FlowRow,
   type FlowStageRow,
 } from "@natalia/client";
@@ -154,6 +155,18 @@ export function flowSummary(flow: FlowRow) {
       ? `used by ${flow.usedBy.length} task${flow.usedBy.length > 1 ? "s" : ""}`
       : "used by no task",
   ].join(" · ");
+}
+
+export function conditionEvaluatorOptions(models: FlowConditionModel[]) {
+  return models.map((model) => ({
+    title: model.modelID,
+    value: model.modelID,
+    category:
+      model.providerID === model.modelID
+        ? "Available models"
+        : model.providerID,
+    description: model.model === model.modelID ? undefined : model.model,
+  }));
 }
 
 /** One row per stage, in execution order, plus the reasons it cannot run. */
@@ -1144,12 +1157,7 @@ function FlowModuleEditor(props: ModuleEditorProps) {
       <DialogSelect
         title="Choose Condition Evaluator"
         locked={decomposing()}
-        options={models.map((model) => ({
-          title: model.modelID,
-          value: model.modelID,
-          category: model.providerID,
-          description: model.model,
-        }))}
+        options={conditionEvaluatorOptions(models)}
         emptyView={<text>No enabled evaluator model is configured.</text>}
         onSelect={(option) => {
           const model = models.find((entry) => entry.modelID === option.value);

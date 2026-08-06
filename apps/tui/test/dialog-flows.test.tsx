@@ -9,6 +9,7 @@ import type { FlowOverview, FlowRow } from "@natalia/client";
 import {
   buildFlowDetail,
   buildFlowOptions,
+  conditionEvaluatorOptions,
   DialogFlows,
   flowConditionsFromLines,
   flowDraftProblems,
@@ -77,6 +78,36 @@ test("a stage row exposes what the evaluator and the policy will use", () => {
   ).toBe(
     "read_search · 1 required · no instructions · commands whitelist (2) · 1 interactive programs",
   );
+});
+
+test("condition evaluator choices do not repeat identical provider and model labels", () => {
+  expect(
+    conditionEvaluatorOptions([
+      {
+        modelID: "deepseek-v4-flash",
+        providerID: "deepseek-v4-flash",
+        model: "deepseek-v4-flash",
+      },
+      {
+        modelID: "reviewer",
+        providerID: "deepseek",
+        model: "deepseek-v4-flash",
+      },
+    ]),
+  ).toEqual([
+    {
+      title: "deepseek-v4-flash",
+      value: "deepseek-v4-flash",
+      category: "Available models",
+      description: undefined,
+    },
+    {
+      title: "reviewer",
+      value: "reviewer",
+      category: "deepseek",
+      description: "deepseek-v4-flash",
+    },
+  ]);
 });
 
 test("a flow that can never complete is grouped apart and explains itself", () => {
