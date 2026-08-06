@@ -1,5 +1,6 @@
 import type { ConfigV2, NataliaFlowDocument } from "@natalia/contracts";
 import {
+  deleteFlowDocument,
   effectiveFlowPermissions,
   loadFlowDocument,
   newFlowID,
@@ -39,6 +40,7 @@ type FlowEditorScreen =
   | { kind: "summary" }
   | { kind: "discard-confirm" }
   | { kind: "save-confirm" }
+  | { kind: "delete-confirm" }
   | { kind: "flow-name" }
   | { kind: "add-module" }
   | { kind: "module"; moduleID: string }
@@ -214,6 +216,7 @@ export function DialogFlows(props: {
   reload?: () => Promise<void>;
   loadFlow?: (path: string) => Promise<NataliaFlowDocument>;
   saveFlow?: (document: NataliaFlowDocument, path: string) => Promise<void>;
+  deleteFlow?: (path: string) => Promise<void>;
   notify?: (outcome: FlowNotification) => void;
 }) {
   const dialog = useDialog();
@@ -237,11 +240,16 @@ export function DialogFlows(props: {
         path,
         document,
       }).then(() => undefined));
+  const remove =
+    props.deleteFlow ??
+    (async (path: string) =>
+      deleteFlowDocument({ workspaceRoot: props.workspaceRoot!, path }));
 
   function openEditor(
     path: string,
     draft: NataliaFlowDocument,
     screen?: FlowEditorScreen,
+    existing = true,
   ) {
     if (!active) return;
     dialog.push(() => (
@@ -253,6 +261,8 @@ export function DialogFlows(props: {
         reload={props.reload!}
         notify={props.notify}
         screen={screen}
+        deleteFlow={remove}
+        canDelete={existing && Boolean(props.workspaceRoot || props.deleteFlow)}
       />
     ));
   }
@@ -266,7 +276,12 @@ export function DialogFlows(props: {
       onSelect={(option) => {
         if (option.value === "$create") {
           const draft = newFlowDraft();
-          openEditor(`${draft.flowID}.yaml`, draft, { kind: "flow-name" });
+          openEditor(
+            `${draft.flowID}.yaml`,
+            draft,
+            { kind: "flow-name" },
+            false,
+          );
           return;
         }
         const row = props.overview.flows.find(
@@ -311,12 +326,15 @@ function FlowEditor(props: {
   config?: ConfigV2;
   save: (document: NataliaFlowDocument, path: string) => Promise<void>;
   reload: () => Promise<void>;
+  deleteFlow: (path: string) => Promise<void>;
+  canDelete: boolean;
   notify?: (outcome: FlowNotification) => void;
   screen?: FlowEditorScreen;
 }) {
   const dialog = useDialog();
   const screen = props.screen ?? { kind: "summary" as const };
   const [saving, setSaving] = createSignal(false);
+  const [deleting, setDeleting] = createSignal(false);
   let active = true;
   onCleanup(() => {
     active = false;
@@ -368,14 +386,33 @@ function FlowEditor(props: {
     }
   }
 
+  async function deleteFlow() {
+    if (deleting()) return;
+    setDeleting(true);
+    try {
+      await props.deleteFlow(props.path);
+      await props.reload();
+      props.notify?.({
+        ok: true,
+        message: `Deleted ${props.draft.displayName}`,
+      });
+      if (active) dialog.pop();
+    } catch (error) {
+      if (active) fail(error);
+    } finally {
+      if (active) setDeleting(false);
+    }
+  }
+
   function goBack() {
-    if (!active || saving()) return;
+    if (!active || saving() || deleting()) return;
     switch (screen.kind) {
       case "summary":
         advance(props.draft, { kind: "discard-confirm" });
         return;
       case "discard-confirm":
       case "save-confirm":
+      case "delete-confirm":
         advance(props.draft);
         return;
       case "flow-name":
@@ -509,6 +546,32 @@ function FlowEditor(props: {
         ]}
         onSelect={(option) => {
           if (option.value === "$confirm") void saveFlow();
+          else advance(props.draft);
+        }}
+      />
+    );
+
+  if (screen.kind === "delete-confirm")
+    return (
+      <DialogSelect
+        title="Delete Flow Definition?"
+        locked={deleting()}
+        options={[
+          {
+            title: "Keep flow",
+            value: "$cancel",
+            category: "Action",
+          },
+          {
+            title: "Delete flow definition",
+            value: "$confirm",
+            category: "High impact",
+            description:
+              "Only the YAML definition is removed. Tasks, execution history, waterlines, and alerts remain.",
+          },
+        ]}
+        onSelect={(option) => {
+          if (option.value === "$confirm") void deleteFlow();
           else advance(props.draft);
         }}
       />
@@ -747,6 +810,17 @@ function FlowEditor(props: {
               },
             ]
           : []),
+        ...(props.canDelete
+          ? [
+              {
+                title: "Delete flow",
+                value: "$delete",
+                category: "High impact",
+                description:
+                  "Blocked while any task references this flow definition",
+              },
+            ]
+          : []),
         {
           title: "Unattended execution",
           value: "$notice",
@@ -779,6 +853,8 @@ function FlowEditor(props: {
           advance(props.draft, { kind: "permission-preview-profile" });
         else if (option.value === "$name")
           advance(props.draft, { kind: "flow-name" });
+        else if (option.value === "$delete")
+          advance(props.draft, { kind: "delete-confirm" });
         else if (option.value === "$add")
           advance(props.draft, { kind: "add-module" });
         else if (!option.value.startsWith("$"))

@@ -66,6 +66,18 @@ export class NataliaDocumentStore {
     }
   }
 
+  /** Deletes only the flow definition after callers verify task references. */
+  async deleteFlow(path: string) {
+    const target = this.resolveDocumentPath(this.flowsDir, path);
+    try {
+      await rm(target);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT")
+        throw new Error(`natalia flow not found: ${path}`);
+      throw error;
+    }
+  }
+
   async loadFlow(path: string): Promise<NataliaFlowDocument> {
     const document = await this.loadDocument(this.resolveFlowReference(path));
     if (document.kind !== "natalia-flow")

@@ -17,7 +17,12 @@ export {
   type ScheduledTaskOverview,
   type ScheduledTaskRow,
 } from "./task-overview";
-export { loadFlowDocument, newFlowID, saveFlowDocument } from "./flow-document";
+export {
+  deleteFlowDocument,
+  loadFlowDocument,
+  newFlowID,
+  saveFlowDocument,
+} from "./flow-document";
 export {
   assertConfigApplied,
   assertTaskReferences,

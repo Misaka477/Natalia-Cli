@@ -322,6 +322,99 @@ test("creating a flow keeps a draft until explicit unattended-save confirmation"
   }
 });
 
+test("deleting a flow defaults to keeping it and returns to the refreshed list", async () => {
+  const setup = await createTestRenderer({ width: 160, height: 36 });
+  const keymap = createDefaultOpenTuiKeymap(setup.renderer);
+  const disposeKeymap = registerNataliaKeymap(keymap, setup.renderer);
+  const [current, setCurrent] = createSignal<FlowOverview>({
+    flows: [flow({ usedBy: [] })],
+    unreadable: [],
+  });
+  const deleted: string[] = [];
+  const notifications: string[] = [];
+  const document: NataliaFlowDocument = {
+    kind: "natalia-flow",
+    version: 1,
+    flowID: "flow_log_triage",
+    displayName: "Nightly log triage",
+    modules: [
+      {
+        id: "read_log",
+        type: "read_search",
+        displayName: "Read the new log content",
+        enabled: true,
+        instructions: "",
+        minimumConditions: [{ id: "c1", text: "Read new content" }],
+        idealConditions: [],
+      },
+    ],
+  };
+  function Harness() {
+    const dialog = useDialog();
+    onMount(() =>
+      dialog.push(() => (
+        <DialogFlows
+          overview={current()}
+          workspaceRoot="/tmp/natalia-flow-dialog"
+          loadFlow={async () => document}
+          saveFlow={async () => undefined}
+          deleteFlow={async (path) => {
+            deleted.push(path);
+          }}
+          reload={async () => {
+            setCurrent({ flows: [], unreadable: [] });
+          }}
+          notify={(outcome) => notifications.push(outcome.message)}
+        />
+      )),
+    );
+    return null;
+  }
+  const renderOnce = async () => {
+    await Bun.sleep(20);
+    await setup.renderOnce();
+  };
+  try {
+    await render(
+      () => (
+        <KeymapProvider keymap={keymap}>
+          <DialogProvider>
+            <Harness />
+          </DialogProvider>
+        </KeymapProvider>
+      ),
+      setup.renderer,
+    );
+    const keys = createMockKeys(setup.renderer, { kittyKeyboard: true });
+    await renderOnce();
+    keys.pressEnter();
+    await renderOnce();
+    await keys.typeText("Delete flow");
+    keys.pressEnter();
+    await renderOnce();
+    expect(setup.captureCharFrame()).toContain("Delete Flow Definition?");
+    expect(setup.captureCharFrame()).toContain("Only the YAML definition");
+    keys.pressEnter();
+    await renderOnce();
+    expect(deleted).toEqual([]);
+    expect(setup.captureCharFrame()).toContain("Save flow");
+
+    await keys.typeText("Delete flow");
+    keys.pressEnter();
+    await renderOnce();
+    keys.pressArrow("down");
+    keys.pressEnter();
+    await renderOnce();
+    expect(deleted).toEqual(["log-triage.yaml"]);
+    expect(notifications).toContain("Deleted Nightly log triage");
+    expect(setup.captureCharFrame()).toContain("Create flow");
+    expect(setup.captureCharFrame()).not.toContain("Nightly log triage");
+  } finally {
+    disposeKeymap();
+    setup.renderer.destroy();
+  }
+});
+
 test("Escape returns through flow editor screens before discarding a draft", async () => {
   const setup = await createTestRenderer({ width: 160, height: 36 });
   const keymap = createDefaultOpenTuiKeymap(setup.renderer);

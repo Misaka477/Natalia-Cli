@@ -11,6 +11,7 @@ import type {
 export interface ConfigPatch extends Record<string, unknown> {}
 import {
   configWithoutPermissionProfile,
+  deleteFlowDocument,
   deleteTaskDocument,
   configureTaskSystemd,
   flowOverview,
@@ -716,6 +717,7 @@ export function runCommand(command: string, ctx: CommandContext) {
             overview={flows()}
             workspaceRoot={workspaceRoot}
             config={resolved.config}
+            deleteFlow={(path) => deleteFlowDocument({ workspaceRoot, path })}
             reload={async () => {
               setFlows(await flowOverview({ workspaceRoot }));
             }}
