@@ -4,13 +4,24 @@ import { createMockKeys, createTestRenderer } from "@opentui/core/testing";
 import { render } from "@opentui/solid";
 import { KeymapProvider } from "@opentui/keymap/solid";
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
-import type { ScheduledTaskOverview, ScheduledTaskRow } from "@natalia/client";
+import {
+  configV2Schema,
+  type ConfigV2,
+  type NataliaTaskDocument,
+  type NataliaTaskDocumentInput,
+} from "@natalia/contracts";
+import type {
+  FlowOverview,
+  ScheduledTaskOverview,
+  ScheduledTaskRow,
+} from "@natalia/client";
 import {
   buildScheduledTaskDetail,
   buildScheduledTaskOptions,
   DialogScheduledTasks,
   readTaskRunOutcome,
   scheduledTaskSummary,
+  taskDocumentForEditor,
   taskRunCommand,
   type TaskRunOutcome,
 } from "../src/component/DialogScheduledTasks";
@@ -27,6 +38,13 @@ async function mountScheduledTasks(
     runTask: (taskPath: string) => Promise<TaskRunOutcome>;
     next: ScheduledTaskOverview;
     notify: (outcome: TaskRunOutcome) => void;
+    flows: FlowOverview;
+    config: ConfigV2;
+    loadTask: (path: string) => Promise<NataliaTaskDocument>;
+    saveTask: (
+      document: NataliaTaskDocumentInput,
+      path: string,
+    ) => Promise<void>;
   }> = {},
 ) {
   const setup = await createTestRenderer({ width: 160, height: 36 });
@@ -40,8 +58,12 @@ async function mountScheduledTasks(
       dialog.push(() => (
         <DialogScheduledTasks
           overview={current()}
+          flows={extra.flows}
+          config={extra.config}
           workspaceRoot="/tmp/natalia-demo"
           runTask={extra.runTask}
+          loadTask={extra.loadTask}
+          saveTask={extra.saveTask}
           notify={extra.notify}
           reload={async () => {
             if (extra.next) setCurrent(extra.next);
@@ -71,10 +93,50 @@ async function mountScheduledTasks(
       await Bun.sleep(30);
       await setup.renderOnce();
     },
+    async down() {
+      keys.pressArrow("down");
+      await Bun.sleep(15);
+      await setup.renderOnce();
+    },
+    async typeAndSubmit(text: string) {
+      await keys.typeText(text);
+      keys.pressEnter();
+      await Bun.sleep(30);
+      await setup.renderOnce();
+    },
     dispose() {
       disposeKeymap();
       setup.renderer.destroy();
     },
+  };
+}
+
+function editorConfig(): ConfigV2 {
+  return configV2Schema.parse({
+    version: 2,
+    permissionProfiles: {
+      unattended: { approval: "auto", description: "Task profile" },
+    },
+    alertChannels: {
+      journal: { kind: "journal" },
+    },
+  });
+}
+
+function editorFlows(): FlowOverview {
+  return {
+    flows: [
+      {
+        flowID: "flow_review",
+        displayName: "Review flow",
+        path: ".natalia/flows/review.yaml",
+        stages: [],
+        enabledStages: 1,
+        usedBy: [],
+        problems: [],
+      },
+    ],
+    unreadable: [],
   };
 }
 
@@ -126,6 +188,33 @@ test("a ready task summarizes its cadence, profile, stages and last result", () 
       }),
     ),
   ).toContain("last skipped (overlap)");
+});
+
+test("the editor builds a versioned task document without deriving identity from its name", () => {
+  expect(
+    taskDocumentForEditor({
+      taskID: "task_immutable",
+      displayName: "Renamed every week ",
+      schedule: " daily 02:15 ",
+      prompt: " Review the selected flow. ",
+      flowID: "flow_review",
+      flowPath: ".natalia/flows/review.yaml",
+      permissionProfile: "unattended",
+      retry: "once",
+      alerts: ["journal", "ops"],
+    }),
+  ).toEqual({
+    kind: "natalia-task",
+    version: 1,
+    taskID: "task_immutable",
+    displayName: "Renamed every week",
+    schedule: "daily 02:15",
+    prompt: "Review the selected flow.",
+    permissionProfile: "unattended",
+    flow: { flowID: "flow_review", path: ".natalia/flows/review.yaml" },
+    retry: "once",
+    alerts: ["journal", "ops"],
+  });
 });
 
 test("a task that would refuse to run is grouped apart and counted", () => {
@@ -180,6 +269,7 @@ test("the detail view lists every problem verbatim instead of a summary", () => 
   expect(detail.map((entry) => entry.title)).toEqual([
     // A task with a problem cannot be run from here at all.
     "Run now (blocked)",
+    "Edit task",
     "Flow: flow_log_triage",
     "Profile: unattended_read · retry once",
     "Alerts: journal",
@@ -344,6 +434,193 @@ test("running a task from the detail view reports and refreshes", async () => {
       "Task succeeded",
     ]);
     expect(mounted.frame()).toContain("last succeeded");
+  } finally {
+    mounted.dispose();
+  }
+});
+
+test("a task can be created through the keyboard wizard and returns to the refreshed list", async () => {
+  const saved: Array<{ document: NataliaTaskDocumentInput; path: string }> = [];
+  const notices: TaskRunOutcome[] = [];
+  const after: ScheduledTaskOverview = {
+    tasks: [
+      row({
+        taskID: "task_created",
+        displayName: "Weekly dependency review",
+        path: "task_created.yaml",
+        flowID: "flow_review",
+        permissionProfile: "unattended",
+        schedule: "weekly monday 03:00",
+        retry: "none",
+      }),
+    ],
+    unreadable: [],
+  };
+  const mounted = await mountScheduledTasks(
+    { tasks: [], unreadable: [] },
+    {
+      flows: editorFlows(),
+      config: editorConfig(),
+      loadTask: async () => {
+        throw new Error("not used while creating");
+      },
+      saveTask: async (document, path) => {
+        saved.push({ document, path });
+      },
+      next: after,
+      notify: (outcome) => notices.push(outcome),
+    },
+  );
+  try {
+    expect(mounted.frame()).toContain("Create task");
+    await mounted.selectFirst();
+    expect(mounted.frame()).toContain("Task name");
+    await mounted.typeAndSubmit("Weekly dependency review");
+    expect(mounted.frame()).toContain("Choose flow");
+    await mounted.selectFirst();
+    expect(mounted.frame()).toContain("Choose permission profile");
+    await mounted.selectFirst();
+    expect(mounted.frame()).toContain("Schedule");
+    await mounted.typeAndSubmit("weekly monday 03:00");
+    expect(mounted.frame()).toContain("Task instructions");
+    await mounted.typeAndSubmit(
+      "Review dependency updates and write the configured output.",
+    );
+    expect(mounted.frame()).toContain("Save task");
+    // Alerts is the eighth summary row. Adding a channel writes the bare form,
+    // whose conservative event policy is normalized by the shared runtime.
+    for (let index = 0; index < 7; index++) await mounted.down();
+    await mounted.selectFirst();
+    expect(mounted.frame()).toContain("Add journal");
+    await mounted.selectFirst();
+    expect(mounted.frame()).toContain("Alerts: journal");
+    await mounted.selectFirst();
+
+    expect(saved).toHaveLength(1);
+    expect(saved[0]!.path).toMatch(/^task_[a-f0-9]{32}\.yaml$/u);
+    expect(saved[0]!.document).toMatchObject({
+      kind: "natalia-task",
+      taskID: expect.stringMatching(/^task_[a-f0-9]{32}$/u),
+      displayName: "Weekly dependency review",
+      schedule: "weekly monday 03:00",
+      permissionProfile: "unattended",
+      flow: {
+        flowID: "flow_review",
+        path: ".natalia/flows/review.yaml",
+      },
+      retry: "none",
+      alerts: ["journal"],
+    });
+    expect(notices).toEqual([
+      { ok: true, message: "Saved Weekly dependency review" },
+    ]);
+    expect(mounted.frame()).toContain("Weekly dependency review");
+  } finally {
+    mounted.dispose();
+  }
+});
+
+test("editing preserves task identity and structured alert subscriptions", async () => {
+  const saved: Array<{ document: NataliaTaskDocumentInput; path: string }> = [];
+  const task: NataliaTaskDocument = {
+    kind: "natalia-task",
+    version: 1,
+    taskID: "task_stable",
+    displayName: "Existing review",
+    schedule: "daily 01:00",
+    prompt: "Review the selected workspace slice.",
+    permissionProfile: "unattended",
+    flow: {
+      flowID: "flow_review",
+      path: ".natalia/flows/review.yaml",
+    },
+    retry: "once",
+    alerts: [
+      {
+        channel: "ops",
+        on: ["attempt_failed", "succeeded"],
+      },
+    ],
+    issueTarget: "project_issues",
+    dataSource: "audit_stream",
+    evaluator: { provider: "local", model: "evaluator" },
+    evaluatorConsent: {
+      provider: "local",
+      confirmedAt: "2026-08-06T00:00:00.000Z",
+    },
+  };
+  const mounted = await mountScheduledTasks(
+    {
+      tasks: [
+        row({
+          taskID: task.taskID,
+          displayName: task.displayName,
+          path: "existing.yaml",
+          flowID: "flow_review",
+          permissionProfile: "unattended",
+        }),
+      ],
+      unreadable: [],
+    },
+    {
+      flows: editorFlows(),
+      config: editorConfig(),
+      loadTask: async () => task,
+      saveTask: async (document, path) => {
+        saved.push({ document, path });
+      },
+      next: {
+        tasks: [
+          row({
+            taskID: task.taskID,
+            displayName: task.displayName,
+            path: "existing.yaml",
+            flowID: "flow_review",
+            permissionProfile: "unattended",
+          }),
+        ],
+        unreadable: [],
+      },
+    },
+  );
+  try {
+    await mounted.selectFirst();
+    expect(mounted.frame()).toContain("Edit task");
+    await mounted.down();
+    await mounted.selectFirst();
+    expect(mounted.frame()).toContain("Existing review · task editor");
+    for (let index = 0; index < 6; index++) await mounted.down();
+    await mounted.selectFirst();
+    expect(mounted.frame()).toContain("Retry policy");
+    await mounted.down();
+    await mounted.down();
+    await mounted.selectFirst();
+    expect(mounted.frame()).toContain("Retry: twice");
+    await mounted.selectFirst();
+    expect(saved).toEqual([
+      {
+        path: "existing.yaml",
+        document: expect.objectContaining({
+          taskID: "task_stable",
+          retry: "twice",
+          alerts: [
+            {
+              channel: "ops",
+              on: ["attempt_failed", "succeeded"],
+            },
+          ],
+          issueTarget: "project_issues",
+          dataSource: "audit_stream",
+          evaluator: { provider: "local", model: "evaluator" },
+          evaluatorConsent: {
+            provider: "local",
+            confirmedAt: "2026-08-06T00:00:00.000Z",
+          },
+        }),
+      },
+    ]);
+    expect(mounted.frame()).toContain("Scheduled Tasks");
+    expect(mounted.frame()).toContain("Existing review");
   } finally {
     mounted.dispose();
   }

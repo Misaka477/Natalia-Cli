@@ -9,7 +9,12 @@ import type {
 } from "@natalia/contracts";
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface ConfigPatch extends Record<string, unknown> {}
-import { flowOverview, scheduledTaskOverview } from "@natalia/client";
+import {
+  flowOverview,
+  loadTaskDocument,
+  saveTaskDocument,
+  scheduledTaskOverview,
+} from "@natalia/client";
 
 /** Every editor the Settings menu can open. */
 type SettingsAction =
@@ -696,23 +701,34 @@ export function runCommand(command: string, ctx: CommandContext) {
       const resolved = (await resolveConfig({ workspaceRoot })).config;
       const loadOverview = () =>
         scheduledTaskOverview({ workspaceRoot, config: resolved });
-      const overview = await loadOverview().catch((error: unknown) => {
+      const [overview, flows] = await Promise.all([
+        loadOverview(),
+        flowOverview({ workspaceRoot }),
+      ]).catch((error: unknown) => {
         ctx.toast.error(error instanceof Error ? error.message : String(error));
-        return undefined;
+        return [undefined, undefined] as const;
       });
-      if (!overview) return;
+      if (!overview || !flows) return;
       // The provider unmounts this dialog while the detail view is open, so the
       // overview is held here and refreshed in place.
       const [tasks, setTasks] = createSignal(overview);
       ctx.dialog.push(() => (
         <DialogScheduledTasks
           overview={tasks()}
+          flows={flows}
+          config={resolved}
           workspaceRoot={workspaceRoot}
           reload={async () => {
             setTasks(await loadOverview());
           }}
           runTask={(taskPath) =>
             runScheduledTaskProcess({ taskPath, workspaceRoot })
+          }
+          loadTask={(path) => loadTaskDocument({ workspaceRoot, path })}
+          saveTask={(document, path) =>
+            saveTaskDocument({ workspaceRoot, document, path }).then(
+              () => undefined,
+            )
           }
           notify={(outcome) =>
             ctx.toast.show({

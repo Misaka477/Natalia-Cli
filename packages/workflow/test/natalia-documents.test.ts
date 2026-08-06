@@ -108,6 +108,34 @@ test("workspace document store fails closed for missing, escaped, and mismatched
   ).rejects.toThrow("flow reference mismatch");
 });
 
+test("an editor can load a task with a broken flow, while execution reads fail closed", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-documents-edit-broken-"));
+  const store = new NataliaDocumentStore(root);
+  await store.saveTask({
+    kind: "natalia-task",
+    version: 1,
+    taskID: "task_broken",
+    displayName: "Broken draft",
+    schedule: "daily 01:00",
+    prompt: "Repair this task.",
+    permissionProfile: "unattended",
+    flow: { path: ".natalia/flows/missing.yaml", flowID: "flow_missing" },
+    retry: "none",
+    alerts: [],
+  });
+  await expect(store.loadTask("task_broken.yaml")).rejects.toThrow(
+    "natalia document not found",
+  );
+  // The editor needs the document's own fields to repair this reference; it
+  // cannot do that if the read path eagerly applies execution validation.
+  await expect(
+    store.loadTaskDocument("task_broken.yaml"),
+  ).resolves.toMatchObject({
+    taskID: "task_broken",
+    flow: { flowID: "flow_missing" },
+  });
+});
+
 test("parses a versioned natalia task document", () => {
   expect(
     parseNataliaDocumentJSON(

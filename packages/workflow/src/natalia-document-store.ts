@@ -64,12 +64,23 @@ export class NataliaDocumentStore {
   }
 
   async loadTask(path: string): Promise<NataliaTaskDocument> {
+    const document = await this.loadTaskDocument(path);
+    await this.resolveTaskFlow(document);
+    return document;
+  }
+
+  /**
+   * Reads and schema-validates a task definition without resolving its flow.
+   * Editors need this narrower read so a task with a temporarily broken
+   * reference remains editable; execution still calls loadTask() and fails
+   * closed on that reference.
+   */
+  async loadTaskDocument(path: string): Promise<NataliaTaskDocument> {
     const document = await this.loadDocument(
       this.resolveDocumentPath(this.tasksDir, path),
     );
     if (document.kind !== "natalia-task")
       throw new Error(`task path does not point to a natalia-task: ${path}`);
-    await this.resolveTaskFlow(document);
     return document;
   }
 

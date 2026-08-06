@@ -34,6 +34,11 @@ export {
   type EffectiveFlowPermissions,
   type EffectiveModulePermissions,
 } from "./effective-policy";
+export {
+  loadTaskDocument,
+  newScheduledTaskID,
+  saveTaskDocument,
+} from "./task-document";
 export type { RealRuntimeClientOptions } from "./real-runtime";
 export { providerErrorHint, retryDisplayLine } from "./retry-display";
 export {

@@ -185,8 +185,13 @@ test("a task whose flow is missing is listed with the reason", async () => {
     workspaceRoot: root,
     config: config(),
   });
-  expect(overview.unreadable).toHaveLength(1);
-  expect(overview.unreadable[0]!.reason).toContain("natalia flow not found");
+  expect(overview.unreadable).toEqual([]);
+  expect(overview.tasks).toHaveLength(1);
+  expect(overview.tasks[0]).toMatchObject({
+    taskID: "task_nightly",
+    enabledModules: 0,
+    problems: [expect.stringContaining("natalia flow not found")],
+  });
 });
 
 test("the flow overview reports stages, who uses them, and what is wrong", async () => {

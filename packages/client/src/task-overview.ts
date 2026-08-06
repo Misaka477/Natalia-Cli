@@ -100,7 +100,7 @@ export async function scheduledTaskOverview(input: {
     for (const entry of entries.sort()) {
       let task: NataliaTaskDocument;
       try {
-        task = await documents.loadTask(entry);
+        task = await documents.loadTaskDocument(entry);
       } catch (error) {
         unreadable.push({
           path: entry,
