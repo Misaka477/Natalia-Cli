@@ -57,18 +57,19 @@ test("evaluator context redacts secrets and omits secure input", () => {
   expect(JSON.stringify(context)).not.toContain("super-secret");
   expect(JSON.stringify(context)).not.toContain("hunter2");
   expect(context.redacted).toBe(true);
-  expect(
-    buildRedactedEvaluatorContext({
-      flowID: "flow_1",
-      moduleID: "read",
-      conditionIDs: [],
-      messages: ["raw secret"],
-      toolRecords: [],
-      terminalOutput: [],
-      executionRecords: [],
-      secureInput: true,
-    }).messages,
-  ).toEqual(["[secure input omitted]"]);
+  const secure = buildRedactedEvaluatorContext({
+    flowID: "flow_1",
+    moduleID: "read",
+    conditionIDs: [],
+    messages: ["raw secret"],
+    toolRecords: [],
+    terminalOutput: [],
+    executionRecords: [],
+    pendingOperations: ["terminal pane_1 is running"],
+    secureInput: true,
+  });
+  expect(secure.messages).toEqual(["[secure input omitted]"]);
+  expect(secure.pendingOperations).toEqual(["terminal pane_1 is running"]);
 });
 
 test("evaluator result records incomplete outcome from redacted context", async () => {
@@ -385,6 +386,51 @@ test("a reporting stage that never reported is blocked, and says why", async () 
     outcome: "blocked",
     reason: expect.stringContaining("platform completion floor"),
   });
+  expect(store.moduleEvents("inv_1", 1).at(-1)).toMatchObject({
+    kind: "flow.module_blocked",
+  });
+  expect(
+    store.moduleEvents("inv_1", 1).map((event) => event.kind),
+  ).not.toContain("flow.module_completed");
+  expect(store.allModulesCompleted("inv_1", 1)).toBe(false);
+  expect(store.getWaterline("task_1")).toBeUndefined();
+  store.close();
+});
+
+test("unresolved module operations block before the evaluator provider is called", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-evaluator-pending-"));
+  const store = await claimedModuleStore(root);
+  let called = false;
+  const provider: StreamingProvider = {
+    provider: "judge",
+    model: "judge-1",
+    async *stream() {
+      called = true;
+      yield { type: "done" };
+    },
+  };
+  await expect(
+    evaluateAndRecordModule({
+      store,
+      invocationID: "inv_1",
+      attempt: 1,
+      executionProvider: "judge",
+      selection: { provider: "judge", model: "judge-1" },
+      provider,
+      context: {
+        ...evaluatorContext(),
+        pendingOperations: [
+          "tool read_file (call_1) is running",
+          "approval approval_1 is awaiting a response",
+        ],
+      },
+    }),
+  ).resolves.toEqual({
+    outcome: "blocked",
+    reason:
+      "platform completion floor found unresolved operations: tool read_file (call_1) is running; approval approval_1 is awaiting a response",
+  });
+  expect(called).toBe(false);
   expect(store.moduleEvents("inv_1", 1).at(-1)).toMatchObject({
     kind: "flow.module_blocked",
   });

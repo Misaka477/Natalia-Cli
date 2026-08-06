@@ -13,6 +13,7 @@ export type EvaluatorModuleContext = {
   toolRecords: string[];
   terminalOutput: string[];
   executionRecords: string[];
+  pendingOperations?: string[];
   secureInput?: boolean;
 };
 
@@ -53,6 +54,7 @@ export function buildRedactedEvaluatorContext(
       toolRecords: ["[secure input omitted]"],
       terminalOutput: ["[secure input omitted]"],
       executionRecords: ["[secure input omitted]"],
+      pendingOperations: [...(context.pendingOperations ?? [])],
       redacted: true,
     };
   return {
@@ -63,6 +65,7 @@ export function buildRedactedEvaluatorContext(
     toolRecords: context.toolRecords.map(redactEvaluatorText),
     terminalOutput: context.terminalOutput.map(redactEvaluatorText),
     executionRecords: context.executionRecords.map(redactEvaluatorText),
+    pendingOperations: [...(context.pendingOperations ?? [])],
     redacted: true,
   };
 }
@@ -141,6 +144,10 @@ export async function evaluateAndRecordModule(input: {
   )
     return block(
       "cross-provider evaluator requires confirmed consent for the evaluator provider",
+    );
+  if (redacted.pendingOperations?.length)
+    return block(
+      `platform completion floor found unresolved operations: ${redacted.pendingOperations.join("; ")}`,
     );
   let result: EvaluatorResult;
   try {

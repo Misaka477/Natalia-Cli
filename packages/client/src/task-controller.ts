@@ -192,6 +192,65 @@ export type TaskRunResult = {
   exitCode: number;
 };
 
+export type ModuleCompletionOperations = {
+  tools: Map<string, RuntimeEvent & { type: "tool.update" }>;
+  terminals: Map<string, RuntimeEvent & { type: "terminal.update" }>;
+  approvals: Set<string>;
+};
+
+export function newModuleCompletionOperations(): ModuleCompletionOperations {
+  return { tools: new Map(), terminals: new Map(), approvals: new Set() };
+}
+
+export function trackModuleCompletionOperation(
+  operations: ModuleCompletionOperations,
+  event: RuntimeEvent,
+) {
+  if (event.type === "tool.update") {
+    const id = event.callID ?? event.id;
+    if (
+      [
+        "receiving_arguments",
+        "queued",
+        "awaiting_approval",
+        "running",
+      ].includes(event.status)
+    )
+      operations.tools.set(id, event);
+    else operations.tools.delete(id);
+    return;
+  }
+  if (event.type === "terminal.update") {
+    if (["starting", "running", "awaiting_approval"].includes(event.status))
+      operations.terminals.set(event.id, event);
+    else operations.terminals.delete(event.id);
+    return;
+  }
+  if (event.type === "approval.request") operations.approvals.add(event.id);
+  if (event.type === "approval.response") operations.approvals.delete(event.id);
+  if (event.type === "terminal.approval") {
+    if (event.state === "awaiting") operations.approvals.add(event.approvalID);
+    else operations.approvals.delete(event.approvalID);
+  }
+}
+
+export function moduleCompletionOperationProblem(
+  operations: ModuleCompletionOperations,
+) {
+  const pending = [
+    ...[...operations.tools.entries()].map(
+      ([id, event]) => `tool ${event.name} (${id}) is ${event.status}`,
+    ),
+    ...[...operations.terminals.entries()].map(
+      ([id, event]) => `terminal ${id} is ${event.status}`,
+    ),
+    ...[...operations.approvals].map(
+      (id) => `approval ${id} is awaiting a response`,
+    ),
+  ];
+  return pending.length ? pending.join("; ") : undefined;
+}
+
 /**
  * Runs one task invocation to a durable terminal state.
  *
@@ -777,10 +836,12 @@ async function runTaskModule(input: {
     input.flow.flowID,
     input.module,
   );
+  const completionOperations = newModuleCompletionOperations();
   try {
     client.start((event) => {
       if (event.type === "turn.finished") stopReason = event.stopReason;
       collectEvaluatorContext(evaluatorContext, event);
+      trackModuleCompletionOperation(completionOperations, event);
       if (input.json) input.emit(JSON.stringify(event));
       else {
         const line = plainRuntimeEvent(event);
@@ -804,6 +865,11 @@ async function runTaskModule(input: {
         input.module.moduleID,
       )
     ) {
+      const operationProblem =
+        moduleCompletionOperationProblem(completionOperations);
+      evaluatorContext.pendingOperations = operationProblem
+        ? [operationProblem]
+        : [];
       evaluatorOutcome = evaluatorContext.policyDenied
         ? blockClaimedTaskModule(
             input.state,
