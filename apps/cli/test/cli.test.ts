@@ -3020,6 +3020,31 @@ test("the shipped unattended examples validate against their example config", as
   }
 });
 
+test("the shipped example profiles only name tools a capability bundle can grant", async () => {
+  const repoRoot = join(import.meta.dir, "..", "..", "..");
+  const config = JSON.parse(
+    await readFile(join(repoRoot, "deploy", "examples", "config.json"), "utf8"),
+  ) as {
+    permissionProfiles: Record<
+      string,
+      { permissions?: { tools?: { allow?: string[] } } }
+    >;
+  };
+  const { isKnownModuleTool } = await import("@natalia/workflow");
+  const named = Object.entries(config.permissionProfiles).flatMap(
+    ([profile, entry]) =>
+      (entry.permissions?.tools?.allow ?? []).map((tool) => ({
+        profile,
+        tool,
+      })),
+  );
+  expect(named.length).toBeGreaterThan(0);
+  // A tool rename that misses the samples leaves them parseable and even
+  // previewable, while the run is denied at two in the morning: the profile
+  // grants a name no bundle can hand out, and withholds the real one.
+  expect(named.filter((entry) => !isKnownModuleTool(entry.tool))).toEqual([]);
+});
+
 test("task validate fails closed on a dangling configuration reference", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-cli-dangling-"));
   await mkdir(join(root, ".natalia", "flows"), { recursive: true });

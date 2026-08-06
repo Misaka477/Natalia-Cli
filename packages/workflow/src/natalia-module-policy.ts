@@ -51,3 +51,25 @@ const MODULE_ARTIFACT_TOOLS: Partial<Record<NataliaFlowModuleType, string[]>> =
 export function moduleArtifactTools(type: NataliaFlowModuleType): string[] {
   return MODULE_ARTIFACT_TOOLS[type] ?? [];
 }
+
+/**
+ * Every tool name a capability bundle can grant, including the wildcard
+ * patterns. Configuration that names a tool outside this set can never be
+ * exercised by a staged flow, so shipped examples and profile documents can be
+ * checked against it instead of discovering a rename at two in the morning.
+ */
+export function knownModuleTools(): string[] {
+  return [
+    ...new Set([
+      "flow_module_complete",
+      ...Object.values(MODULE_TOOL_ALLOWLISTS).flat(),
+    ]),
+  ];
+}
+
+/** True when a configured tool name is grantable by some capability bundle. */
+export function isKnownModuleTool(tool: string): boolean {
+  return knownModuleTools().some((known) =>
+    known.endsWith("*") ? tool.startsWith(known.slice(0, -1)) : known === tool,
+  );
+}

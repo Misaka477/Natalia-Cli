@@ -7,7 +7,7 @@ modules:
     type: read_search
     displayName: Read the new log content
     instructions: >-
-      Call read_log_source once to obtain the log content that has not been
+      Call read_data_source once to obtain the log content that has not been
       consumed yet. The runtime owns the read position, so do not try to reason
       about byte offsets or re-read old content. If the read reports remaining
       bytes, call it again until nothing remains or the evidence is sufficient.
@@ -17,7 +17,7 @@ modules:
     minimumConditions:
       - id: log_read
         text: >-
-          The new log content was read through read_log_source and the distinct
+          The new log content was read through read_data_source and the distinct
           error shapes it contains were listed.
     idealConditions:
       - id: log_root_cause

@@ -57,6 +57,8 @@ export {
   type RedactedEvaluatorModuleContext,
 } from "./natalia-evaluator";
 export {
+  isKnownModuleTool,
+  knownModuleTools,
   moduleToolPolicy,
   type NataliaFlowModuleType,
   type NataliaModuleToolPolicy,

@@ -11,7 +11,7 @@
             "read_file",
             "glob",
             "grep",
-            "read_log_source",
+            "read_data_source",
             "report_issue",
             "flow_module_complete"
           ]
