@@ -214,6 +214,101 @@ test("the flows dialog renders the flows and their stage counts", async () => {
   }
 });
 
+test("the flow summary opens the runtime contract and explains draft problems", async () => {
+  const setup = await createTestRenderer({ width: 160, height: 36 });
+  const keymap = createDefaultOpenTuiKeymap(setup.renderer);
+  const disposeKeymap = registerNataliaKeymap(keymap, setup.renderer);
+  const document: NataliaFlowDocument = {
+    kind: "natalia-flow",
+    version: 1,
+    flowID: "flow_attention",
+    displayName: "Needs attention",
+    modules: [
+      {
+        id: "write",
+        type: "workspace_changes",
+        displayName: "Workspace Changes",
+        enabled: true,
+        instructions: "",
+        minimumConditions: [],
+        idealConditions: [],
+      },
+    ],
+  };
+  function Harness() {
+    const dialog = useDialog();
+    onMount(() =>
+      dialog.push(() => (
+        <DialogFlows
+          overview={{
+            flows: [
+              flow({
+                flowID: document.flowID,
+                displayName: document.displayName,
+                path: "attention.yaml",
+                problems: [
+                  "module has no minimum completion condition: Workspace Changes",
+                ],
+              }),
+            ],
+            unreadable: [],
+          }}
+          workspaceRoot="/tmp/natalia-flow-dialog"
+          loadFlow={async () => document}
+          saveFlow={async () => undefined}
+          reload={async () => undefined}
+        />
+      )),
+    );
+    return null;
+  }
+  const renderOnce = async () => {
+    await Bun.sleep(20);
+    await setup.renderOnce();
+  };
+  try {
+    await render(
+      () => (
+        <KeymapProvider keymap={keymap}>
+          <DialogProvider>
+            <Harness />
+          </DialogProvider>
+        </KeymapProvider>
+      ),
+      setup.renderer,
+    );
+    const keys = createMockKeys(setup.renderer, { kittyKeyboard: true });
+    await renderOnce();
+    keys.pressEnter();
+    await renderOnce();
+    await keys.typeText("Unattended execution");
+    keys.pressEnter();
+    await renderOnce();
+    expect(setup.captureCharFrame()).toContain("Runtime Contract");
+    expect(setup.captureCharFrame()).toContain("Unattended execution");
+    expect(setup.captureCharFrame()).toContain("Disallowed or");
+    expect(setup.captureCharFrame()).toContain(
+      "approval-only actions fail closed",
+    );
+    expect(setup.captureCharFrame()).toContain(
+      "Foreground confirmation stays enforced",
+    );
+    keys.pressEscape();
+    await renderOnce();
+    await keys.typeText("Review problems");
+    keys.pressEnter();
+    await renderOnce();
+    expect(setup.captureCharFrame()).toContain("Flow Problems");
+    expect(setup.captureCharFrame()).toContain(
+      "module has no minimum completion condition",
+    );
+    expect(setup.captureCharFrame()).toContain("Workspace Changes");
+  } finally {
+    disposeKeymap();
+    setup.renderer.destroy();
+  }
+});
+
 test("creating a flow keeps a draft until explicit unattended-save confirmation", async () => {
   const setup = await createTestRenderer({ width: 160, height: 36 });
   const keymap = createDefaultOpenTuiKeymap(setup.renderer);

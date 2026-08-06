@@ -21,6 +21,7 @@ import {
 import { DialogPrompt } from "../dialog/DialogPrompt";
 import { DialogSelect, type DialogSelectOption } from "../dialog/DialogSelect";
 import { useDialog } from "../dialog/provider";
+import { darkTheme } from "../theme/theme";
 
 const MODULE_TYPES = [
   "read_search",
@@ -103,7 +104,9 @@ type FlowEditorScreen =
     }
   | { kind: "module-interactive-delete"; moduleID: string; command: string }
   | { kind: "permission-preview-profile" }
-  | { kind: "permission-preview"; profileName: string };
+  | { kind: "permission-preview"; profileName: string }
+  | { kind: "runtime-contract" }
+  | { kind: "problems" };
 
 /**
  * Flows are work definitions, not tool settings, so they get their own surface.
@@ -458,6 +461,8 @@ function FlowEditor(props: {
         return;
       case "add-module":
       case "permission-preview-profile":
+      case "runtime-contract":
+      case "problems":
         advance(props.draft);
         return;
       case "permission-preview":
@@ -811,6 +816,12 @@ function FlowEditor(props: {
     );
   }
 
+  if (screen.kind === "runtime-contract") return <FlowRuntimeContractDetail />;
+
+  if (screen.kind === "problems") {
+    return <FlowProblemDetail draft={props.draft} />;
+  }
+
   if (screen.kind !== "summary") {
     const module = props.draft.modules.find(
       (item) => "moduleID" in screen && item.id === screen.moduleID,
@@ -876,12 +887,22 @@ function FlowEditor(props: {
               },
             ]
           : []),
+        ...(flowDraftProblems(props.draft).length
+          ? [
+              {
+                title: `Review problems (${flowDraftProblems(props.draft).length})`,
+                value: "$problems",
+                category: "Needs attention",
+                description: flowDraftProblems(props.draft)[0],
+                footer: "Open for details",
+              },
+            ]
+          : []),
         {
           title: "Unattended execution",
           value: "$notice",
           category: "Runtime contract",
           description: "Task runs will not wait for approval",
-          readonly: true,
         },
         {
           title: `Flow Name: ${props.draft.displayName}`,
@@ -910,12 +931,77 @@ function FlowEditor(props: {
           advance(props.draft, { kind: "flow-name" });
         else if (option.value === "$delete")
           advance(props.draft, { kind: "delete-confirm" });
+        else if (option.value === "$problems")
+          advance(props.draft, { kind: "problems" });
+        else if (option.value === "$notice")
+          advance(props.draft, { kind: "runtime-contract" });
         else if (option.value === "$add")
           advance(props.draft, { kind: "add-module" });
         else if (!option.value.startsWith("$"))
           advance(props.draft, { kind: "module", moduleID: option.value });
       }}
     />
+  );
+}
+
+function FlowProblemDetail(props: { draft: NataliaFlowDocument }) {
+  const dialog = useDialog();
+  return (
+    <box paddingLeft={2} paddingRight={2} gap={1}>
+      <box flexDirection="row" justifyContent="space-between">
+        <text fg={darkTheme.text}>Flow Problems</text>
+        <text fg={darkTheme.muted} onMouseUp={() => dialog.pop()}>
+          esc
+        </text>
+      </box>
+      <text fg={darkTheme.muted} wrapMode="word">
+        {props.draft.displayName}
+      </text>
+      <text fg={darkTheme.muted} wrapMode="word">
+        The YAML is valid, but unattended tasks using this flow will block until
+        these problems are fixed.
+      </text>
+      {flowDraftProblems(props.draft).map((problem, index) => (
+        <text fg={darkTheme.danger} wrapMode="word">
+          {index + 1}. {problem}
+        </text>
+      ))}
+    </box>
+  );
+}
+
+function FlowRuntimeContractDetail() {
+  const dialog = useDialog();
+  return (
+    <box paddingLeft={2} paddingRight={2} gap={1}>
+      <box flexDirection="row" justifyContent="space-between">
+        <text fg={darkTheme.text}>Runtime Contract</text>
+        <text fg={darkTheme.muted} onMouseUp={() => dialog.pop()}>
+          esc
+        </text>
+      </box>
+      <text fg={darkTheme.text} wrapMode="word">
+        Unattended execution
+      </text>
+      <text fg={darkTheme.muted} wrapMode="word">
+        Task runs do not pause for app approval. Disallowed or approval-only
+        actions fail closed.
+      </text>
+      <text fg={darkTheme.text} wrapMode="word">
+        Foreground confirmation stays enforced
+      </text>
+      <text fg={darkTheme.muted} wrapMode="word">
+        OS foreground confirmation cannot be disabled by a flow, task, profile,
+        or module.
+      </text>
+      <text fg={darkTheme.text} wrapMode="word">
+        Permission intersections still apply
+      </text>
+      <text fg={darkTheme.muted} wrapMode="word">
+        Global, profile, agent, module, and runtime restrictions are intersected
+        before execution.
+      </text>
+    </box>
   );
 }
 
