@@ -638,6 +638,12 @@ export const issueTargetConfigSchema = z.object({
 export const dataSourceConfigSchema = z.object({
   path: z.string().min(1),
   kind: z.enum(["offset", "timestamp"]).default("offset"),
+  /**
+   * Required by `kind: "timestamp"`: the JSON field each line carries its own
+   * time in. The operator names it, because guessing at log formats would mean
+   * shipping a vendor adapter per source. Ignored by `kind: "offset"`.
+   */
+  timestampField: z.string().default(""),
   maxBytes: z.number().int().positive().default(65536),
   enabled: z.boolean().default(true),
 });

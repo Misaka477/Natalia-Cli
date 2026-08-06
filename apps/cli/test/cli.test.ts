@@ -2577,6 +2577,293 @@ test("CLI task run consumes only new log content and never skips it after a fail
   }
 });
 
+test("CLI task run follows a timestamp watermark through a rotation and a failure", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-task-ts-"));
+  await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+  await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+  const logPath = join(root, "app.jsonl");
+  const line = (at: string, message: string) =>
+    `${JSON.stringify({ at, message })}\n`;
+  await writeFile(
+    logPath,
+    line("2026-08-05T01:00:00.000Z", "one") +
+      line("2026-08-05T02:00:00.000Z", "two"),
+  );
+  const reads: string[] = [];
+  let evaluatorOutcome = "complete";
+  const provider = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      const body = (await request.json()) as {
+        model: string;
+        messages: Array<{ content: string; role: string }>;
+      };
+      const sse = (payload: unknown, finish: string) =>
+        new Response(
+          [
+            `data: ${JSON.stringify(payload)}`,
+            "",
+            `data: {"choices":[{"delta":{},"finish_reason":"${finish}"}]}`,
+            "",
+            "data: [DONE]",
+            "",
+          ].join("\n"),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      if (body.model === "evaluator-model")
+        return sse(
+          {
+            choices: [
+              {
+                delta: {
+                  content: JSON.stringify({
+                    schemaVersion: 1,
+                    outcome: evaluatorOutcome,
+                    conditions: [
+                      {
+                        id: "c1",
+                        status:
+                          evaluatorOutcome === "complete"
+                            ? "satisfied"
+                            : "missing",
+                        reason: "scan evidence",
+                        evidenceRefs:
+                          evaluatorOutcome === "complete" ? ["tool:log_1"] : [],
+                      },
+                    ],
+                    gaps: [],
+                    forbiddenRepeats: [],
+                    recommendedActions: [],
+                    idealOutcome: "satisfied",
+                  }),
+                },
+              },
+            ],
+          },
+          "stop",
+        );
+      const toolMessages = body.messages.filter(
+        (message) => message.role === "tool",
+      );
+      if (!toolMessages.length)
+        return sse(
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: "log_1",
+                      function: { name: "read_data_source", arguments: "{}" },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+          "tool_calls",
+        );
+      if (toolMessages.length === 1) {
+        reads.push(String(toolMessages[0]!.content));
+        return sse(
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: "log_claim",
+                      function: {
+                        name: "flow_module_complete",
+                        arguments: JSON.stringify({
+                          flowID: "flow_scan",
+                          moduleID: "scan",
+                          conditionStatuses: [
+                            { id: "c1", status: "satisfied" },
+                          ],
+                          evidenceRefs: ["tool:log_1"],
+                          gaps: [],
+                          recommendedAction: "Evaluate the scan.",
+                        }),
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+          "tool_calls",
+        );
+      }
+      return sse({ choices: [{ delta: { content: "Scanned." } }] }, "stop");
+    },
+  });
+  const model = (name: string) => ({
+    provider: "local",
+    model: name,
+    enabled: true,
+    capabilities: {
+      toolCall: true,
+      reasoning: false,
+      thinking: false,
+      imageInput: false,
+      pdfInput: false,
+    },
+    contextWindow: "auto" as const,
+    maxOutputTokens: null,
+    temperature: null,
+    topP: null,
+    reasoningEffort: null,
+    thinkingEnabled: false,
+    stream: true,
+    requestTimeoutSec: null,
+    variants: {},
+  });
+  try {
+    await writeFile(
+      join(root, ".natalia", "config.json"),
+      JSON.stringify({
+        version: 2,
+        providers: {
+          local: {
+            type: "openai-compatible",
+            apiKey: "test-key",
+            baseURL: provider.url,
+            enabled: true,
+            customHeaders: {},
+          },
+        },
+        models: {
+          execution: model("execution-model"),
+          evaluator: model("evaluator-model"),
+        },
+        defaultModel: "execution",
+        permissionProfiles: {
+          unattended: { approval: "auto", description: "Task profile" },
+        },
+        dataSources: {
+          app: {
+            path: "app.jsonl",
+            kind: "timestamp",
+            timestampField: "at",
+            maxBytes: 4096,
+          },
+        },
+      }),
+    );
+    await writeFile(
+      join(root, ".natalia", "flows", "scan.yaml"),
+      "kind: natalia-flow\nversion: 1\nflowID: flow_scan\ndisplayName: Scan\nmodules:\n  - id: scan\n    type: read_search\n    displayName: Scan\n    instructions: Read the new entries.\n    minimumConditions:\n      - id: c1\n        text: Read the new entries\n",
+    );
+    await writeFile(
+      join(root, ".natalia", "tasks", "nightly.yaml"),
+      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Scan the entries.\npermissionProfile: unattended\ndataSource: app\nflow:\n  flowID: flow_scan\nevaluator:\n  provider: local\n  model: evaluator\n",
+    );
+    const runTask = async () => {
+      const child = Bun.spawn(
+        [
+          process.execPath,
+          join(import.meta.dir, "..", "src", "main.ts"),
+          "task",
+          "run",
+          "nightly.yaml",
+          "--workspace",
+          root,
+          "--json",
+        ],
+        { cwd: root, stdout: "pipe", stderr: "pipe" },
+      );
+      const stdout = await new Response(child.stdout).text();
+      await child.exited;
+      return { child, stdout };
+    };
+    const workflow = await import("@natalia/workflow");
+    const openState = () =>
+      workflow.NataliaUnattendedStateStore.open(root, "task_nightly");
+
+    expect((await runTask()).child.exitCode).toBe(0);
+    expect(JSON.parse(reads[0]!)).toMatchObject({
+      kind: "timestamp",
+      position: "2026-08-05T02:00:00.000Z",
+    });
+    expect((await openState()).watermark("app")).toMatchObject({
+      kind: "timestamp",
+      position: "2026-08-05T02:00:00.000Z",
+    });
+
+    // Rotation: the file is replaced by a shorter one, which is what a byte
+    // offset cannot survive. The entries carry their own time, so the old ones
+    // are simply behind the watermark.
+    evaluatorOutcome = "incomplete";
+    await writeFile(
+      logPath,
+      line("2026-08-05T02:00:00.000Z", "two") +
+        line("2026-08-05T03:00:00.000Z", "three"),
+    );
+    expect((await runTask()).child.exitCode).toBe(0);
+    expect(JSON.parse(reads[1]!).content).toContain("three");
+    // The run failed, so the watermark stays put and the same entries are read
+    // again next time rather than being skipped.
+    const afterFailure = await openState();
+    expect(afterFailure.watermark("app")).toMatchObject({
+      position: "2026-08-05T02:00:00.000Z",
+    });
+    expect(afterFailure.state().pending).toEqual({});
+    expect(afterFailure.consecutiveFailures()).toBe(1);
+
+    evaluatorOutcome = "complete";
+    expect((await runTask()).child.exitCode).toBe(0);
+    expect(JSON.parse(reads[2]!).content).toContain("three");
+    const afterRecovery = await openState();
+    expect(afterRecovery.watermark("app")).toMatchObject({
+      position: "2026-08-05T03:00:00.000Z",
+    });
+    expect(afterRecovery.consecutiveFailures()).toBe(0);
+  } finally {
+    provider.stop(true);
+  }
+});
+
+test("CLI task validate rejects a timestamp source without a field name", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-task-ts-field-"));
+  await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+  await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      permissionProfiles: {
+        unattended: { approval: "auto", description: "Task profile" },
+      },
+      dataSources: { app: { path: "app.jsonl", kind: "timestamp" } },
+    }),
+  );
+  await writeFile(
+    join(root, ".natalia", "flows", "scan.yaml"),
+    "kind: natalia-flow\nversion: 1\nflowID: flow_scan\ndisplayName: Scan\nmodules:\n  - id: scan\n    type: read_search\n    displayName: Scan\n    minimumConditions:\n      - id: c1\n        text: Read the new entries\n",
+  );
+  await writeFile(
+    join(root, ".natalia", "tasks", "nightly.yaml"),
+    "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Scan.\npermissionProfile: unattended\ndataSource: app\nflow:\n  flowID: flow_scan\n",
+  );
+  const child = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "task",
+      "validate",
+      "nightly.yaml",
+      "--workspace",
+      root,
+    ],
+    { cwd: root, stdout: "pipe", stderr: "pipe" },
+  );
+  expect(child.exitCode).not.toBe(0);
+  expect(new TextDecoder().decode(child.stderr)).toContain("timestampField");
+});
+
 test("the shipped unattended examples validate against their example config", async () => {
   const repoRoot = join(import.meta.dir, "..", "..", "..");
   const examples = join(repoRoot, "deploy", "examples");

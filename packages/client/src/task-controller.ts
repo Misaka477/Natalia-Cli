@@ -100,6 +100,15 @@ export function assertTaskReferences(input: {
         entry: input.config.dataSources[input.task.dataSource],
       })
     : undefined;
+  const dataSourceEntry = input.task.dataSource
+    ? input.config.dataSources[input.task.dataSource]
+    : undefined;
+  if (dataSourceEntry?.kind === "timestamp" && !dataSourceEntry.timestampField)
+    // Caught here rather than at 02:00: a timestamp watermark without a field
+    // name has nothing to read, and the task could never advance.
+    throw new Error(
+      `task data source uses timestamp watermarks without a timestampField: ${input.task.dataSource}`,
+    );
   const alertChannels = taskAlertSubscriptions(input.task.alerts).map(
     (subscription) => ({
       ...requireEnabledReference({
@@ -655,6 +664,9 @@ function taskDataSourceReader(input: {
     path: configured.path,
     kind: configured.kind,
     maxBytes: configured.maxBytes,
+    ...(configured.timestampField
+      ? { timestampField: configured.timestampField }
+      : {}),
   };
   return async (request: { maxBytes?: number }) => {
     const state = await NataliaUnattendedStateStore.open(
@@ -667,12 +679,15 @@ function taskDataSourceReader(input: {
       maxBytes: request.maxBytes,
       workspaceRoot: input.workspaceRoot,
     });
-    await state.stagePosition({
-      invocationID: input.invocationID,
-      source: source.name,
-      kind: "offset",
-      position: String(read.to),
-    });
+    // Staging is not committing: the watermark only moves if the whole task
+    // succeeds, so a failed run reads the same content again.
+    if (read.position)
+      await state.stagePosition({
+        invocationID: input.invocationID,
+        source: source.name,
+        kind: source.kind,
+        position: read.position,
+      });
     return { ...read };
   };
 }

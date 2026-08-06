@@ -19,6 +19,28 @@ A task is assembled from general building blocks:
 Every optional block is genuinely optional. `release-notes.yaml` declares no
 source and no issue target: it resumes nothing and reports nothing externally.
 
+## How a task resumes: two watermark kinds
+
+An append-only source is declared with `kind`, and the choice is about which
+failure you expect:
+
+| Kind | Position | Fits | Costs |
+|---|---|---|---|
+| `offset` (default) | byte count | any growing text file | a rotated file invalidates the position, so the source is reread from the start |
+| `timestamp` | each entry's own time | rotated files, and sources copied between machines | requires JSON lines and a `timestampField` naming the ISO-8601 field |
+
+`timestamp` deliberately supports nothing but JSON lines with an operator-named
+field. Sniffing plain-text log formats would mean one adapter per vendor, and a
+misread timestamp moves a watermark by days. Delivery is at-least-once: entries
+sharing the watermark's exact instant are read again, because dropping a sibling
+written in the same millisecond is the one loss that cannot be recovered. A line
+that is not JSON, is missing the field, or carries an unparsable time fails the
+run instead of being skipped, and a bounded read that cannot see all the way
+back to the watermark fails as well - raise `maxBytes` or schedule more often.
+
+In both kinds the watermark only advances when the whole task succeeds, so a
+failed run reprocesses the same content rather than skipping it.
+
 ## The three examples, and why they differ
 
 | Example | Shape it demonstrates |

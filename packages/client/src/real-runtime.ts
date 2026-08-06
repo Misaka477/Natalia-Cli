@@ -269,7 +269,7 @@ function createReadDataSourceTool(
   return {
     name: "read_data_source",
     description:
-      "Read the part of the configured data source that has not been consumed yet. The runtime tracks the position; a rotated log restarts from the beginning and the remaining byte count is reported.",
+      "Read the part of the configured data source that has not been consumed yet. The runtime owns the position: the response reports what it read and the position the next read continues from. Depending on the source, a rotated file is either reread from the beginning or resumed from the last entry time.",
     requiresApproval: false,
     parameters: {
       type: "object",
