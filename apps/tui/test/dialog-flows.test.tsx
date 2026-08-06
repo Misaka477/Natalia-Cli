@@ -417,6 +417,106 @@ test("example flows install only after explicit confirmation", async () => {
   }
 });
 
+test("flow orchestration owns module order and activation", async () => {
+  const setup = await createTestRenderer({ width: 150, height: 36 });
+  const keymap = createDefaultOpenTuiKeymap(setup.renderer);
+  const disposeKeymap = registerNataliaKeymap(keymap, setup.renderer);
+  const document: NataliaFlowDocument = {
+    kind: "natalia-flow",
+    version: 1,
+    flowID: "flow_orchestration",
+    displayName: "Orchestration",
+    modules: [
+      {
+        id: "read",
+        type: "read_search",
+        displayName: "Read",
+        enabled: true,
+        instructions: "",
+        minimumConditions: [{ id: "read_done", text: "Read" }],
+        idealConditions: [],
+      },
+      {
+        id: "report",
+        type: "report_output",
+        displayName: "Report",
+        enabled: true,
+        instructions: "",
+        minimumConditions: [{ id: "report_done", text: "Report" }],
+        idealConditions: [],
+      },
+    ],
+  };
+  function Harness() {
+    const dialog = useDialog();
+    onMount(() =>
+      dialog.push(() => (
+        <DialogFlows
+          overview={{ flows: [flow()], unreadable: [] }}
+          workspaceRoot="/tmp/natalia-flow-dialog"
+          loadFlow={async () => document}
+          saveFlow={async () => undefined}
+          reload={async () => undefined}
+        />
+      )),
+    );
+    return null;
+  }
+  const renderOnce = async () => {
+    await Bun.sleep(20);
+    await setup.renderOnce();
+  };
+  try {
+    await render(
+      () => (
+        <KeymapProvider keymap={keymap}>
+          <DialogProvider>
+            <Harness />
+          </DialogProvider>
+        </KeymapProvider>
+      ),
+      setup.renderer,
+    );
+    const keys = createMockKeys(setup.renderer, { kittyKeyboard: true });
+    await renderOnce();
+    keys.pressEnter();
+    await renderOnce();
+    await keys.typeText("Reorder modules");
+    keys.pressEnter();
+    await renderOnce();
+    keys.pressArrow("down");
+    keys.pressArrow("down");
+    keys.pressEnter();
+    await renderOnce();
+    keys.pressArrow("down");
+    keys.pressEnter();
+    await renderOnce();
+    expect(setup.captureCharFrame()).toContain("1. Report");
+    expect(setup.captureCharFrame()).toContain("2. Read");
+    keys.pressEscape();
+    await renderOnce();
+    await keys.typeText("Enable or disable modules");
+    keys.pressEnter();
+    await renderOnce();
+    keys.pressArrow("down");
+    keys.pressEnter();
+    await renderOnce();
+    expect(setup.captureCharFrame()).toContain("[ ] 1. Report");
+    keys.pressEscape();
+    await renderOnce();
+    await keys.typeText("Report");
+    keys.pressEnter();
+    await renderOnce();
+    expect(setup.captureCharFrame()).not.toContain("Move Up");
+    expect(setup.captureCharFrame()).not.toContain("Move Down");
+    expect(setup.captureCharFrame()).not.toContain("Enabled yes");
+    expect(setup.captureCharFrame()).not.toContain("High impact");
+  } finally {
+    disposeKeymap();
+    setup.renderer.destroy();
+  }
+});
+
 test("creating a flow keeps a draft until explicit unattended-save confirmation", async () => {
   const setup = await createTestRenderer({ width: 160, height: 36 });
   const keymap = createDefaultOpenTuiKeymap(setup.renderer);

@@ -115,7 +115,10 @@ type FlowEditorScreen =
   | { kind: "permission-preview-profile" }
   | { kind: "permission-preview"; profileName: string }
   | { kind: "runtime-contract" }
-  | { kind: "problems" };
+  | { kind: "problems" }
+  | { kind: "reorder-modules" }
+  | { kind: "reorder-module"; moduleID: string }
+  | { kind: "module-activation" };
 
 /**
  * Flows are work definitions, not tool settings, so they get their own surface.
@@ -563,7 +566,12 @@ function FlowEditor(props: {
       case "permission-preview-profile":
       case "runtime-contract":
       case "problems":
+      case "reorder-modules":
+      case "module-activation":
         advance(props.draft);
+        return;
+      case "reorder-module":
+        advance(props.draft, { kind: "reorder-modules" });
         return;
       case "permission-preview":
         advance(props.draft, { kind: "permission-preview-profile" });
@@ -671,7 +679,7 @@ function FlowEditor(props: {
           {
             title: "Discard unsaved edits",
             value: "$confirm",
-            category: "High impact",
+            category: "Discard",
             description: "The YAML definition has not been changed.",
           },
         ]}
@@ -732,7 +740,7 @@ function FlowEditor(props: {
           {
             title: "Delete flow definition",
             value: "$confirm",
-            category: "High impact",
+            category: "Delete",
             description:
               "Only the YAML definition is removed. Tasks, execution history, waterlines, and alerts remain.",
           },
@@ -931,6 +939,111 @@ function FlowEditor(props: {
     return <FlowProblemDetail draft={props.draft} />;
   }
 
+  if (screen.kind === "reorder-modules")
+    return (
+      <DialogSelect
+        title="Reorder Flow Modules"
+        options={[
+          { title: "Back to flow", value: "$back", category: "Action" },
+          ...props.draft.modules.map((module, index) => ({
+            title: `${index + 1}. ${module.displayName}`,
+            value: module.id,
+            category: "Execution order",
+            description: module.type,
+          })),
+        ]}
+        skipFilter
+        onSelect={(option) => {
+          if (option.value === "$back") advance(props.draft);
+          else
+            advance(props.draft, {
+              kind: "reorder-module",
+              moduleID: option.value,
+            });
+        }}
+      />
+    );
+
+  if (screen.kind === "reorder-module") {
+    const index = props.draft.modules.findIndex(
+      (module) => module.id === screen.moduleID,
+    );
+    const module = props.draft.modules[index];
+    if (!module) return <MissingModule draft={props.draft} advance={advance} />;
+    return (
+      <DialogSelect
+        title={`Move Module · ${module.displayName}`}
+        options={[
+          {
+            title: "Back to module order",
+            value: "$back",
+            category: "Action",
+          },
+          {
+            title: "Move earlier",
+            value: "$up",
+            category: "Action",
+            disabled: index === 0,
+            description: "Run this module one stage earlier",
+          },
+          {
+            title: "Move later",
+            value: "$down",
+            category: "Action",
+            disabled: index === props.draft.modules.length - 1,
+            description: "Run this module one stage later",
+          },
+        ]}
+        onSelect={(option) => {
+          if (option.value === "$back")
+            advance(props.draft, { kind: "reorder-modules" });
+          else
+            advance(
+              reorderFlowModule(props.draft, index, option.value === "$up"),
+              { kind: "reorder-modules" },
+            );
+        }}
+      />
+    );
+  }
+
+  if (screen.kind === "module-activation")
+    return (
+      <DialogSelect
+        title="Enable or Disable Flow Modules"
+        options={[
+          { title: "Back to flow", value: "$back", category: "Action" },
+          ...props.draft.modules.map((module, index) => ({
+            title: `${module.enabled ? "[x]" : "[ ]"} ${index + 1}. ${module.displayName}`,
+            value: module.id,
+            category: "Modules",
+            description: module.enabled
+              ? "Enabled · Enter to disable"
+              : "Disabled · Enter to enable",
+          })),
+        ]}
+        skipFilter
+        preserveSelection
+        onSelect={(option) => {
+          if (option.value === "$back") {
+            advance(props.draft);
+            return;
+          }
+          const module = props.draft.modules.find(
+            (entry) => entry.id === option.value,
+          );
+          if (!module) return;
+          advance(
+            updateFlowModule(props.draft, module.id, (entry) => ({
+              ...entry,
+              enabled: !entry.enabled,
+            })),
+            { kind: "module-activation" },
+          );
+        }}
+      />
+    );
+
   if (screen.kind !== "summary") {
     const module = props.draft.modules.find(
       (item) => "moduleID" in screen && item.id === screen.moduleID,
@@ -990,7 +1103,7 @@ function FlowEditor(props: {
               {
                 title: "Delete flow",
                 value: "$delete",
-                category: "High impact",
+                category: "Action",
                 description:
                   "Blocked while any task references this flow definition",
               },
@@ -1025,6 +1138,18 @@ function FlowEditor(props: {
           description: `${module.type} · ${module.minimumConditions.length} required`,
         })),
         {
+          title: "Reorder modules",
+          value: "$reorder",
+          category: "Action",
+          description: "Change the flow execution order",
+        },
+        {
+          title: "Enable or disable modules",
+          value: "$activation",
+          category: "Action",
+          description: `${props.draft.modules.filter((module) => module.enabled).length}/${props.draft.modules.length} enabled`,
+        },
+        {
           title: "+ Add module",
           value: "$add",
           category: "Action",
@@ -1046,6 +1171,10 @@ function FlowEditor(props: {
           advance(props.draft, { kind: "runtime-contract" });
         else if (option.value === "$add")
           advance(props.draft, { kind: "add-module" });
+        else if (option.value === "$reorder")
+          advance(props.draft, { kind: "reorder-modules" });
+        else if (option.value === "$activation")
+          advance(props.draft, { kind: "module-activation" });
         else if (!option.value.startsWith("$"))
           advance(props.draft, { kind: "module", moduleID: option.value });
       }}
@@ -1430,7 +1559,7 @@ function FlowModuleEditor(props: ModuleEditorProps) {
           {
             title: "Delete module",
             value: "$confirm",
-            category: "High impact",
+            category: "Delete",
             description: `Remove ${props.module.displayName} from the execution pipeline`,
           },
         ]}
@@ -1476,9 +1605,6 @@ function FlowModuleEditor(props: ModuleEditorProps) {
   if (props.screen.kind === "module-interactive-delete")
     return <ModuleInteractiveDelete {...props} />;
 
-  const index = props.draft.modules.findIndex(
-    (module) => module.id === props.module.id,
-  );
   const supportsCommands =
     props.module.type === "terminal" || props.module.type === "shell_command";
   const supportsInteractive = props.module.type === "terminal";
@@ -1493,11 +1619,6 @@ function FlowModuleEditor(props: ModuleEditorProps) {
           value: "$type",
           category: "Definition",
           description: moduleTypeTitle(props.module.type),
-        },
-        {
-          title: "Enabled",
-          value: "$enabled",
-          description: props.module.enabled ? "yes" : "no",
         },
         {
           title: "Display Name",
@@ -1556,21 +1677,9 @@ function FlowModuleEditor(props: ModuleEditorProps) {
             ]
           : []),
         {
-          title: "Move Up",
-          value: "$up",
-          category: "Order",
-          disabled: index === 0,
-        },
-        {
-          title: "Move Down",
-          value: "$down",
-          category: "Order",
-          disabled: index === props.draft.modules.length - 1,
-        },
-        {
           title: "Delete Module",
           value: "$delete",
-          category: "High impact",
+          category: "Action",
           description:
             props.draft.modules.length === 1
               ? "A flow must keep at least one module"
@@ -1585,10 +1694,6 @@ function FlowModuleEditor(props: ModuleEditorProps) {
             kind: "module-type",
             moduleID: props.module.id,
           });
-        else if (option.value === "$enabled")
-          returnToModule(
-            update((module) => ({ ...module, enabled: !module.enabled })),
-          );
         else if (option.value === "$name")
           props.advance(props.draft, {
             kind: "module-name",
@@ -1631,10 +1736,6 @@ function FlowModuleEditor(props: ModuleEditorProps) {
             kind: "module-interactive",
             moduleID: props.module.id,
           });
-        else if (option.value === "$up" || option.value === "$down")
-          props.advance(
-            reorderFlowModule(props.draft, index, option.value === "$up"),
-          );
         else if (option.value === "$delete")
           props.advance(props.draft, {
             kind: "module-delete",
@@ -1829,7 +1930,7 @@ function ModuleCommandDelete(props: ModuleEditorProps) {
         {
           title: `Remove ${screen.command}`,
           value: "$confirm",
-          category: "High impact",
+          category: "Remove",
         },
       ]}
       onSelect={(option) => {
@@ -2229,7 +2330,7 @@ function ModuleInteractiveDelete(props: ModuleEditorProps) {
         {
           title: `Stop allowing ${screen.command}`,
           value: "$confirm",
-          category: "High impact",
+          category: "Remove",
         },
       ]}
       onSelect={(option) => {
