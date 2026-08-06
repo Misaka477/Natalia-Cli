@@ -356,6 +356,20 @@ test("a task that would refuse to run is grouped apart and counted", () => {
   });
 });
 
+test("the task list exposes example installation as an in-product action", () => {
+  expect(
+    buildScheduledTaskOptions(
+      { tasks: [], unreadable: [] },
+      { canInstallExamples: true },
+    ),
+  ).toContainEqual({
+    title: "Install example tasks",
+    value: "$examples",
+    category: "Action",
+    description: "Add code quality, log triage, and release notes",
+  });
+});
+
 test("the detail view lists every problem verbatim instead of a summary", () => {
   const detail = buildScheduledTaskDetail(
     row({

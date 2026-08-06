@@ -15,6 +15,7 @@ import {
   deleteTaskDocument,
   configureTaskSystemd,
   flowOverview,
+  installExampleDocuments,
   grantablePermissionTools,
   loadTaskDocument,
   permissionProfileRemovalProblem,
@@ -719,6 +720,7 @@ export function runCommand(command: string, ctx: CommandContext) {
             workspaceRoot={workspaceRoot}
             config={resolved.config}
             deleteFlow={(path) => deleteFlowDocument({ workspaceRoot, path })}
+            installExamples={() => installExampleDocuments({ workspaceRoot })}
             reload={async () => {
               setFlows(await flowOverview({ workspaceRoot }));
             }}
@@ -735,25 +737,31 @@ export function runCommand(command: string, ctx: CommandContext) {
       const resolved = (await resolveConfig({ workspaceRoot })).config;
       const loadOverview = () =>
         scheduledTaskOverview({ workspaceRoot, config: resolved });
-      const [overview, flows] = await Promise.all([
+      const [overview, initialFlows] = await Promise.all([
         loadOverview(),
         flowOverview({ workspaceRoot }),
       ]).catch((error: unknown) => {
         ctx.toast.error(error instanceof Error ? error.message : String(error));
         return [undefined, undefined] as const;
       });
-      if (!overview || !flows) return;
+      if (!overview || !initialFlows) return;
       // The provider unmounts this dialog while the detail view is open, so the
       // overview is held here and refreshed in place.
       const [tasks, setTasks] = createSignal(overview);
+      const [flows, setFlows] = createSignal(initialFlows);
       ctx.dialog.push(() => (
         <DialogScheduledTasks
           overview={tasks()}
-          flows={flows}
+          flows={flows()}
           config={resolved}
           workspaceRoot={workspaceRoot}
           reload={async () => {
-            setTasks(await loadOverview());
+            const [nextTasks, nextFlows] = await Promise.all([
+              loadOverview(),
+              flowOverview({ workspaceRoot }),
+            ]);
+            setTasks(nextTasks);
+            setFlows(nextFlows);
           }}
           runTask={(taskPath) =>
             runScheduledTaskProcess({ taskPath, workspaceRoot })
@@ -765,6 +773,9 @@ export function runCommand(command: string, ctx: CommandContext) {
             )
           }
           deleteTask={(path) => deleteTaskDocument({ workspaceRoot, path })}
+          installExamples={() =>
+            installExampleDocuments({ workspaceRoot, includeTasks: true })
+          }
           previewPermissions={(path) =>
             taskPermissionPreviewForDocument({
               workspaceRoot,

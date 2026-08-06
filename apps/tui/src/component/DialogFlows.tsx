@@ -123,7 +123,7 @@ type FlowEditorScreen =
  */
 export function buildFlowOptions(
   overview: FlowOverview,
-  options: { canCreate?: boolean } = {},
+  options: { canCreate?: boolean; canInstallExamples?: boolean } = {},
 ): DialogSelectOption<string>[] {
   return [
     ...overview.flows.map((flow) => ({
@@ -149,6 +149,16 @@ export function buildFlowOptions(
             value: "$create",
             category: "Action",
             description: "Define a new staged agent pipeline",
+          },
+        ]
+      : []),
+    ...(options.canInstallExamples
+      ? [
+          {
+            title: "Install example flows",
+            value: "$examples",
+            category: "Action",
+            description: "Add code quality, log triage, and release notes",
           },
         ]
       : []),
@@ -266,6 +276,7 @@ export function DialogFlows(props: {
   loadFlow?: (path: string) => Promise<NataliaFlowDocument>;
   saveFlow?: (document: NataliaFlowDocument, path: string) => Promise<void>;
   deleteFlow?: (path: string) => Promise<void>;
+  installExamples?: () => Promise<{ installed: string[] }>;
   decomposeConditions?: (input: {
     modelID: string;
     objective: string;
@@ -329,13 +340,11 @@ export function DialogFlows(props: {
     <DialogSelect
       title="Flows"
       placeholder="Search flows"
-      options={buildFlowOptions(props.overview, { canCreate: canEdit })}
-      emptyView={
-        <text wrapMode="word">
-          No flow documents under .natalia/flows. Reference examples remain in
-          deploy/examples/flows and are not installed automatically.
-        </text>
-      }
+      options={buildFlowOptions(props.overview, {
+        canCreate: canEdit,
+        canInstallExamples: Boolean(props.installExamples),
+      })}
+      emptyView={<text>No flow documents yet.</text>}
       onSelect={(option) => {
         if (option.value === "$create") {
           const draft = newFlowDraft();
@@ -345,6 +354,18 @@ export function DialogFlows(props: {
             { kind: "flow-name" },
             false,
           );
+          return;
+        }
+        if (option.value === "$examples") {
+          dialog.push(() => (
+            <ExampleInstallConfirm
+              title="Install Example Flows?"
+              description="Creates three editable flow documents. Existing files are never overwritten."
+              install={props.installExamples!}
+              reload={props.reload!}
+              notify={props.notify}
+            />
+          ));
           return;
         }
         const row = props.overview.flows.find(
@@ -378,6 +399,58 @@ export function DialogFlows(props: {
           .finally(() => {
             if (active && loadingPath === row.path) loadingPath = undefined;
           });
+      }}
+    />
+  );
+}
+
+function ExampleInstallConfirm(props: {
+  title: string;
+  description: string;
+  install: () => Promise<{ installed: string[] }>;
+  reload: () => Promise<void>;
+  notify?: (outcome: FlowNotification) => void;
+}) {
+  const dialog = useDialog();
+  const [installing, setInstalling] = createSignal(false);
+  return (
+    <DialogSelect
+      title={props.title}
+      locked={installing()}
+      options={[
+        { title: "Cancel", value: "$cancel", category: "Action" },
+        {
+          title: "Install examples",
+          value: "$confirm",
+          category: "Workspace documents",
+          description: props.description,
+        },
+      ]}
+      onSelect={(option) => {
+        if (option.value !== "$confirm") {
+          dialog.pop();
+          return;
+        }
+        setInstalling(true);
+        void props
+          .install()
+          .then(async (result) => {
+            await props.reload();
+            props.notify?.({
+              ok: true,
+              message: result.installed.length
+                ? `Installed ${result.installed.length} example document${result.installed.length === 1 ? "" : "s"}`
+                : "Example flows are already installed",
+            });
+            dialog.pop();
+          })
+          .catch((error) => {
+            props.notify?.({
+              ok: false,
+              message: error instanceof Error ? error.message : String(error),
+            });
+          })
+          .finally(() => setInstalling(false));
       }}
     />
   );

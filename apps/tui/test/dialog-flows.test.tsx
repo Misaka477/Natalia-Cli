@@ -354,6 +354,69 @@ test("the flow summary opens the runtime contract and explains draft problems", 
   }
 });
 
+test("example flows install only after explicit confirmation", async () => {
+  const setup = await createTestRenderer({ width: 120, height: 30 });
+  const keymap = createDefaultOpenTuiKeymap(setup.renderer);
+  const disposeKeymap = registerNataliaKeymap(keymap, setup.renderer);
+  let installs = 0;
+  let reloads = 0;
+  function Harness() {
+    const dialog = useDialog();
+    onMount(() =>
+      dialog.push(() => (
+        <DialogFlows
+          overview={{ flows: [], unreadable: [] }}
+          workspaceRoot="/tmp/natalia-flow-dialog"
+          installExamples={async () => {
+            installs += 1;
+            return { installed: [".natalia/flows/log-triage.yaml"] };
+          }}
+          reload={async () => {
+            reloads += 1;
+          }}
+        />
+      )),
+    );
+    return null;
+  }
+  const renderOnce = async () => {
+    await Bun.sleep(20);
+    await setup.renderOnce();
+  };
+  try {
+    await render(
+      () => (
+        <KeymapProvider keymap={keymap}>
+          <DialogProvider>
+            <Harness />
+          </DialogProvider>
+        </KeymapProvider>
+      ),
+      setup.renderer,
+    );
+    const keys = createMockKeys(setup.renderer, { kittyKeyboard: true });
+    await renderOnce();
+    await keys.typeText("Install example flows");
+    keys.pressEnter();
+    await renderOnce();
+    expect(setup.captureCharFrame()).toContain("Install Example Flows?");
+    keys.pressEnter();
+    await renderOnce();
+    expect(installs).toBe(0);
+    await keys.typeText("Install example flows");
+    keys.pressEnter();
+    await renderOnce();
+    keys.pressArrow("down");
+    keys.pressEnter();
+    await renderOnce();
+    expect(installs).toBe(1);
+    expect(reloads).toBe(1);
+  } finally {
+    disposeKeymap();
+    setup.renderer.destroy();
+  }
+});
+
 test("creating a flow keeps a draft until explicit unattended-save confirmation", async () => {
   const setup = await createTestRenderer({ width: 160, height: 36 });
   const keymap = createDefaultOpenTuiKeymap(setup.renderer);

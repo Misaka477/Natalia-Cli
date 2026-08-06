@@ -12,6 +12,7 @@ import {
   type ScheduledTaskOverview,
   type ScheduledTaskRow,
 } from "@natalia/client";
+import { createSignal } from "solid-js";
 import { DialogPrompt } from "../dialog/DialogPrompt";
 import { DialogConfirm } from "../dialog/DialogConfirm";
 import { DialogSelect, type DialogSelectOption } from "../dialog/DialogSelect";
@@ -119,7 +120,7 @@ export function readTaskRunOutcome(input: {
  */
 export function buildScheduledTaskOptions(
   overview: ScheduledTaskOverview,
-  options: { canCreate?: boolean } = {},
+  options: { canCreate?: boolean; canInstallExamples?: boolean } = {},
 ): DialogSelectOption<string>[] {
   return [
     ...overview.tasks.map((task) => ({
@@ -147,6 +148,16 @@ export function buildScheduledTaskOptions(
             value: "$create",
             category: "Action",
             description: "Define a new unattended task",
+          },
+        ]
+      : []),
+    ...(options.canInstallExamples
+      ? [
+          {
+            title: "Install example tasks",
+            value: "$examples",
+            category: "Action",
+            description: "Add code quality, log triage, and release notes",
           },
         ]
       : []),
@@ -1118,6 +1129,7 @@ export function DialogScheduledTasks(props: {
   previewPermissions?: (
     path: string,
   ) => Promise<ScheduledTaskPermissionPreview>;
+  installExamples?: () => Promise<{ installed: string[] }>;
   configureSystemd?: (input: {
     path: string;
     calendar: string;
@@ -1142,13 +1154,9 @@ export function DialogScheduledTasks(props: {
       placeholder="Search tasks"
       options={buildScheduledTaskOptions(props.overview, {
         canCreate: canEdit,
+        canInstallExamples: Boolean(props.installExamples),
       })}
-      emptyView={
-        <text wrapMode="word">
-          No task documents under .natalia/tasks. Reference examples remain in
-          deploy/examples/tasks and are not installed automatically.
-        </text>
-      }
+      emptyView={<text>No task documents yet.</text>}
       onSelect={(option) => {
         if (option.value === "$create") {
           if (
@@ -1172,6 +1180,16 @@ export function DialogScheduledTasks(props: {
               reload={props.reload!}
               notify={(outcome) => props.notify?.(outcome)}
               previewCalendar={props.previewCalendar!}
+            />
+          ));
+          return;
+        }
+        if (option.value === "$examples") {
+          dialog.push(() => (
+            <TaskExampleInstallConfirm
+              install={props.installExamples!}
+              reload={props.reload!}
+              notify={props.notify}
             />
           ));
           return;
@@ -1377,6 +1395,57 @@ export function DialogScheduledTasks(props: {
             }}
           />
         ));
+      }}
+    />
+  );
+}
+
+function TaskExampleInstallConfirm(props: {
+  install: () => Promise<{ installed: string[] }>;
+  reload: () => Promise<void>;
+  notify?: (outcome: TaskRunOutcome) => void;
+}) {
+  const dialog = useDialog();
+  const [installing, setInstalling] = createSignal(false);
+  return (
+    <DialogSelect
+      title="Install Example Tasks and Flows?"
+      locked={installing()}
+      options={[
+        { title: "Cancel", value: "$cancel", category: "Action" },
+        {
+          title: "Install examples",
+          value: "$confirm",
+          category: "Workspace documents",
+          description:
+            "No overwrite; missing dependencies stay Needs attention",
+        },
+      ]}
+      onSelect={(option) => {
+        if (option.value !== "$confirm") {
+          dialog.pop();
+          return;
+        }
+        setInstalling(true);
+        void props
+          .install()
+          .then(async (result) => {
+            await props.reload();
+            props.notify?.({
+              ok: true,
+              message: result.installed.length
+                ? `Installed ${result.installed.length} example document${result.installed.length === 1 ? "" : "s"}`
+                : "Example tasks and flows are already installed",
+            });
+            dialog.pop();
+          })
+          .catch((error) => {
+            props.notify?.({
+              ok: false,
+              message: error instanceof Error ? error.message : String(error),
+            });
+          })
+          .finally(() => setInstalling(false));
       }}
     />
   );

@@ -6,6 +6,10 @@ export {
   type BashCommandRule,
 } from "./bash-command-policy";
 export { compactionDisplayLine } from "./compaction-display";
+export {
+  installExampleDocuments,
+  type ExampleDocumentInstallResult,
+} from "./example-documents";
 export { createFakeBackend } from "./fixture";
 export { createRealRuntimeClient, EGRESS_ADVISORY } from "./real-runtime";
 export {
