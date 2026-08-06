@@ -18,6 +18,7 @@ import {
   reorderFlowModule,
   flowStageSummary,
   flowSummary,
+  soleConditionEvaluator,
 } from "../src/component/DialogFlows";
 import { DialogProvider, useDialog } from "../src/dialog/provider";
 import { registerNataliaKeymap } from "../src/modal/mode-stack";
@@ -98,16 +99,29 @@ test("condition evaluator choices do not repeat identical provider and model lab
     {
       title: "deepseek-v4-flash",
       value: "deepseek-v4-flash",
-      category: "Available models",
       description: undefined,
+      footer: undefined,
     },
     {
       title: "reviewer",
       value: "reviewer",
-      category: "deepseek",
       description: "deepseek-v4-flash",
+      footer: "deepseek",
     },
   ]);
+});
+
+test("a sole condition evaluator is selected without showing a chooser", () => {
+  const model = {
+    modelID: "deepseek-v4-flash",
+    providerID: "deepseek-v4-flash",
+    model: "deepseek-v4-flash",
+  };
+  expect(soleConditionEvaluator([])).toBeUndefined();
+  expect(soleConditionEvaluator([model])).toBe(model);
+  expect(
+    soleConditionEvaluator([model, { ...model, modelID: "reviewer" }]),
+  ).toBeUndefined();
 });
 
 test("a flow that can never complete is grouped apart and explains itself", () => {

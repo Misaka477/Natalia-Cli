@@ -161,12 +161,13 @@ export function conditionEvaluatorOptions(models: FlowConditionModel[]) {
   return models.map((model) => ({
     title: model.modelID,
     value: model.modelID,
-    category:
-      model.providerID === model.modelID
-        ? "Available models"
-        : model.providerID,
     description: model.model === model.modelID ? undefined : model.model,
+    footer: model.providerID === model.modelID ? undefined : model.providerID,
   }));
+}
+
+export function soleConditionEvaluator(models: FlowConditionModel[]) {
+  return models.length === 1 ? models[0] : undefined;
 }
 
 /** One row per stage, in execution order, plus the reasons it cannot run. */
@@ -1138,14 +1139,32 @@ function FlowModuleEditor(props: ModuleEditorProps) {
         validate={(value) =>
           value.trim() ? undefined : "A completion objective is required"
         }
-        onConfirm={(value) =>
-          props.advance(props.draft, {
+        onConfirm={(value) => {
+          const screen = {
             kind: "module-condition-model",
             moduleID: props.module.id,
             conditions: key,
             objective: value.trim(),
-          })
-        }
+          } as const;
+          const models = props.config ? flowConditionModels(props.config) : [];
+          const model = soleConditionEvaluator(models);
+          if (!model) {
+            props.advance(props.draft, screen);
+            return;
+          }
+          const executionProvider = props.config
+            ? defaultExecutionProviderID(props.config)
+            : undefined;
+          if (executionProvider && executionProvider !== model.providerID)
+            props.advance(props.draft, {
+              kind: "module-condition-consent",
+              moduleID: screen.moduleID,
+              conditions: screen.conditions,
+              objective: screen.objective,
+              modelID: model.modelID,
+            });
+          else void decompose(screen, model.modelID);
+        }}
       />
     );
   }
@@ -1158,6 +1177,7 @@ function FlowModuleEditor(props: ModuleEditorProps) {
         title="Choose Condition Evaluator"
         locked={decomposing()}
         options={conditionEvaluatorOptions(models)}
+        flat
         emptyView={<text>No enabled evaluator model is configured.</text>}
         onSelect={(option) => {
           const model = models.find((entry) => entry.modelID === option.value);
