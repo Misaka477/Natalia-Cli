@@ -242,6 +242,15 @@ export const flowConditionSchema = z.object({
   text: z.string().min(1),
 });
 
+export const flowConditionDecompositionSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    conditions: z
+      .array(z.object({ text: z.string().trim().min(1) }).strict())
+      .min(1),
+  })
+  .strict();
+
 export const nataliaFlowModuleSchema = z.object({
   id: z.string().min(1),
   type: flowModuleTypeSchema,
@@ -736,6 +745,9 @@ export type NataliaFlowDocumentInput = z.input<
 >;
 export type NataliaTaskDocumentInput = z.input<
   typeof nataliaTaskDocumentSchema
+>;
+export type FlowConditionDecomposition = z.infer<
+  typeof flowConditionDecompositionSchema
 >;
 export type EvaluatorResult = z.infer<typeof evaluatorResultSchema>;
 export type ModeConfig = z.infer<typeof modeConfigSchema>;

@@ -1,7 +1,10 @@
 import type { ConfigV2, NataliaFlowDocument } from "@natalia/contracts";
 import {
+  decomposeFlowConditions,
+  defaultExecutionProviderID,
   deleteFlowDocument,
   effectiveFlowPermissions,
+  flowConditionModels,
   loadFlowDocument,
   newFlowID,
   saveFlowDocument,
@@ -51,6 +54,27 @@ type FlowEditorScreen =
       kind: "module-conditions";
       moduleID: string;
       conditions: "minimumConditions" | "idealConditions";
+    }
+  | {
+      kind: "module-condition-model";
+      moduleID: string;
+      conditions: "minimumConditions" | "idealConditions";
+      objective: string;
+    }
+  | {
+      kind: "module-condition-consent";
+      moduleID: string;
+      conditions: "minimumConditions" | "idealConditions";
+      objective: string;
+      modelID: string;
+    }
+  | {
+      kind: "module-condition-preview";
+      moduleID: string;
+      conditions: "minimumConditions" | "idealConditions";
+      objective: string;
+      modelID: string;
+      proposed: string[];
     }
   | { kind: "module-delete"; moduleID: string }
   | { kind: "module-command-rules"; moduleID: string }
@@ -217,6 +241,10 @@ export function DialogFlows(props: {
   loadFlow?: (path: string) => Promise<NataliaFlowDocument>;
   saveFlow?: (document: NataliaFlowDocument, path: string) => Promise<void>;
   deleteFlow?: (path: string) => Promise<void>;
+  decomposeConditions?: (input: {
+    modelID: string;
+    objective: string;
+  }) => Promise<{ conditions: Array<{ text: string }> }>;
   notify?: (outcome: FlowNotification) => void;
 }) {
   const dialog = useDialog();
@@ -263,6 +291,11 @@ export function DialogFlows(props: {
         screen={screen}
         deleteFlow={remove}
         canDelete={existing && Boolean(props.workspaceRoot || props.deleteFlow)}
+        decomposeConditions={
+          props.decomposeConditions ??
+          ((input) =>
+            decomposeFlowConditions({ ...input, config: props.config! }))
+        }
       />
     ));
   }
@@ -328,6 +361,10 @@ function FlowEditor(props: {
   reload: () => Promise<void>;
   deleteFlow: (path: string) => Promise<void>;
   canDelete: boolean;
+  decomposeConditions: (input: {
+    modelID: string;
+    objective: string;
+  }) => Promise<{ conditions: Array<{ text: string }> }>;
   notify?: (outcome: FlowNotification) => void;
   screen?: FlowEditorScreen;
 }) {
@@ -435,6 +472,22 @@ function FlowEditor(props: {
       case "module-conditions":
       case "module-delete":
         advance(props.draft, { kind: "module", moduleID: screen.moduleID });
+        return;
+      case "module-condition-model":
+        advance(props.draft, {
+          kind: "module-conditions",
+          moduleID: screen.moduleID,
+          conditions: screen.conditions,
+        });
+        return;
+      case "module-condition-consent":
+      case "module-condition-preview":
+        advance(props.draft, {
+          kind: "module-condition-model",
+          moduleID: screen.moduleID,
+          conditions: screen.conditions,
+          objective: screen.objective,
+        });
         return;
       case "module-command-rules":
       case "module-extensions":
@@ -780,6 +833,8 @@ function FlowEditor(props: {
         screen={screen}
         advance={advance}
         fail={fail}
+        config={props.config}
+        decomposeConditions={props.decomposeConditions}
         update={update}
         returnToModule={returnToModule}
         returnToCommandRules={returnToCommandRules}
@@ -885,6 +940,36 @@ function MissingModule(props: {
 
 function FlowModuleEditor(props: ModuleEditorProps) {
   const { update, returnToModule } = props;
+  const [decomposing, setDecomposing] = createSignal(false);
+
+  async function decompose(
+    screen: Extract<
+      FlowEditorScreen,
+      { kind: "module-condition-model" | "module-condition-consent" }
+    >,
+    modelID: string,
+  ) {
+    if (decomposing()) return;
+    setDecomposing(true);
+    try {
+      const result = await props.decomposeConditions({
+        modelID,
+        objective: screen.objective,
+      });
+      props.advance(props.draft, {
+        kind: "module-condition-preview",
+        moduleID: screen.moduleID,
+        conditions: screen.conditions,
+        objective: screen.objective,
+        modelID,
+        proposed: result.conditions.map((condition) => condition.text),
+      });
+    } catch (error) {
+      props.fail(error);
+    } finally {
+      setDecomposing(false);
+    }
+  }
 
   if (props.screen.kind === "module-type")
     return (
@@ -945,17 +1030,139 @@ function FlowModuleEditor(props: ModuleEditorProps) {
       <DialogPrompt
         title={title}
         description={() => (
-          <text>One natural-language condition per line.</text>
+          <text>
+            Describe the goal naturally. An evaluator model will split it into
+            auditable conditions for you to confirm.
+          </text>
         )}
         value={props.module[key].map((condition) => condition.text).join("\n")}
-        onConfirm={(value) =>
-          returnToModule(
-            update((module) => ({
-              ...module,
-              [key]: flowConditionsFromLines(module[key], value),
-            })),
-          )
+        validate={(value) =>
+          value.trim() ? undefined : "A completion objective is required"
         }
+        onConfirm={(value) =>
+          props.advance(props.draft, {
+            kind: "module-condition-model",
+            moduleID: props.module.id,
+            conditions: key,
+            objective: value.trim(),
+          })
+        }
+      />
+    );
+  }
+
+  if (props.screen.kind === "module-condition-model") {
+    const screen = props.screen;
+    const models = props.config ? flowConditionModels(props.config) : [];
+    return (
+      <DialogSelect
+        title="Choose Condition Evaluator"
+        locked={decomposing()}
+        options={models.map((model) => ({
+          title: model.modelID,
+          value: model.modelID,
+          category: model.providerID,
+          description: model.model,
+        }))}
+        emptyView={<text>No enabled evaluator model is configured.</text>}
+        onSelect={(option) => {
+          const model = models.find((entry) => entry.modelID === option.value);
+          if (!model) return;
+          const executionProvider = props.config
+            ? defaultExecutionProviderID(props.config)
+            : undefined;
+          if (executionProvider && executionProvider !== model.providerID)
+            props.advance(props.draft, {
+              kind: "module-condition-consent",
+              moduleID: screen.moduleID,
+              conditions: screen.conditions,
+              objective: screen.objective,
+              modelID: model.modelID,
+            });
+          else void decompose(screen, model.modelID);
+        }}
+      />
+    );
+  }
+
+  if (props.screen.kind === "module-condition-consent") {
+    const screen = props.screen;
+    const providerID = props.config?.models[screen.modelID]?.provider;
+    return (
+      <DialogSelect
+        title="Send Goal to Another Provider?"
+        locked={decomposing()}
+        options={[
+          {
+            title: "Choose another model",
+            value: "$cancel",
+            category: "Action",
+          },
+          {
+            title: `Send goal to ${providerID ?? "selected provider"}`,
+            value: "$confirm",
+            category: "External data",
+            description:
+              "Only this completion-goal text is sent. Runtime messages, tool output, terminal output, secrets, and task consent are not included.",
+          },
+        ]}
+        onSelect={(option) => {
+          if (option.value === "$confirm")
+            void decompose(screen, screen.modelID);
+          else
+            props.advance(props.draft, {
+              kind: "module-condition-model",
+              moduleID: screen.moduleID,
+              conditions: screen.conditions,
+              objective: screen.objective,
+            });
+        }}
+      />
+    );
+  }
+
+  if (props.screen.kind === "module-condition-preview") {
+    const screen = props.screen;
+    const title =
+      screen.conditions === "minimumConditions"
+        ? "Confirm Minimum Conditions"
+        : "Confirm Ideal Conditions";
+    return (
+      <DialogSelect
+        title={title}
+        options={[
+          { title: "Revise objective", value: "$back", category: "Action" },
+          {
+            title: "Use these conditions",
+            value: "$confirm",
+            category: "Action",
+            description: `${screen.proposed.length} conditions from ${screen.modelID}`,
+          },
+          ...screen.proposed.map((condition, index) => ({
+            title: `${index + 1}. ${condition}`,
+            value: `condition:${index}`,
+            category: "Proposed conditions",
+            readonly: true,
+          })),
+        ]}
+        onSelect={(option) => {
+          if (option.value === "$back")
+            props.advance(props.draft, {
+              kind: "module-conditions",
+              moduleID: screen.moduleID,
+              conditions: screen.conditions,
+            });
+          else if (option.value === "$confirm")
+            returnToModule(
+              update((module) => ({
+                ...module,
+                [screen.conditions]: flowConditionsFromLines(
+                  module[screen.conditions],
+                  screen.proposed.join("\n"),
+                ),
+              })),
+            );
+        }}
       />
     );
   }
@@ -1784,6 +1991,11 @@ type ModuleEditorProps = {
   >;
   advance: (draft: NataliaFlowDocument, screen?: FlowEditorScreen) => void;
   fail: (error: unknown) => void;
+  config?: ConfigV2;
+  decomposeConditions: (input: {
+    modelID: string;
+    objective: string;
+  }) => Promise<{ conditions: Array<{ text: string }> }>;
   update: (change: (module: FlowModule) => FlowModule) => NataliaFlowDocument;
   returnToModule: (draft: NataliaFlowDocument) => void;
   returnToCommandRules: (draft: NataliaFlowDocument) => void;

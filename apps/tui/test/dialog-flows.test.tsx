@@ -4,7 +4,7 @@ import { createMockKeys, createTestRenderer } from "@opentui/core/testing";
 import { render } from "@opentui/solid";
 import { KeymapProvider } from "@opentui/keymap/solid";
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
-import type { NataliaFlowDocument } from "@natalia/contracts";
+import { configV2Schema, type NataliaFlowDocument } from "@natalia/contracts";
 import type { FlowOverview, FlowRow } from "@natalia/client";
 import {
   buildFlowDetail,
@@ -316,6 +316,143 @@ test("creating a flow keeps a draft until explicit unattended-save confirmation"
     expect(reloads).toBe(1);
     expect(notifications).toContain("Saved Nightly review");
     expect(setup.captureCharFrame()).toContain("Nightly review");
+  } finally {
+    disposeKeymap();
+    setup.renderer.destroy();
+  }
+});
+
+test("condition authoring confirms cross-provider decomposition before saving", async () => {
+  const setup = await createTestRenderer({ width: 160, height: 36 });
+  const keymap = createDefaultOpenTuiKeymap(setup.renderer);
+  const disposeKeymap = registerNataliaKeymap(keymap, setup.renderer);
+  const config = configV2Schema.parse({
+    version: 2,
+    defaultModel: "execution",
+    providers: {
+      local: { type: "openai-compatible", apiKey: "local-key" },
+      external: { type: "anthropic", apiKey: "external-key" },
+    },
+    models: {
+      execution: { provider: "local", model: "execution-model" },
+      evaluator: { provider: "external", model: "evaluator-model" },
+    },
+  });
+  const document: NataliaFlowDocument = {
+    kind: "natalia-flow",
+    version: 1,
+    flowID: "flow_review",
+    displayName: "Review",
+    modules: [
+      {
+        id: "module_read",
+        type: "read_search",
+        displayName: "Read",
+        enabled: true,
+        instructions: "",
+        minimumConditions: [],
+        idealConditions: [],
+      },
+    ],
+  };
+  const calls: Array<{ modelID: string; objective: string }> = [];
+  let saved: NataliaFlowDocument | undefined;
+  function Harness() {
+    const dialog = useDialog();
+    onMount(() =>
+      dialog.push(() => (
+        <DialogFlows
+          overview={{ flows: [flow({ usedBy: [] })], unreadable: [] }}
+          workspaceRoot="/tmp/natalia-flow-dialog"
+          config={config}
+          loadFlow={async () => document}
+          saveFlow={async (next) => {
+            saved = structuredClone(next);
+          }}
+          decomposeConditions={async (input) => {
+            calls.push(input);
+            return {
+              conditions: [
+                { text: "Read every changed file" },
+                { text: "Record evidence for each finding" },
+              ],
+            };
+          }}
+          reload={async () => undefined}
+        />
+      )),
+    );
+    return null;
+  }
+  const renderOnce = async () => {
+    await Bun.sleep(30);
+    await setup.renderOnce();
+  };
+  try {
+    await render(
+      () => (
+        <KeymapProvider keymap={keymap}>
+          <DialogProvider>
+            <Harness />
+          </DialogProvider>
+        </KeymapProvider>
+      ),
+      setup.renderer,
+    );
+    const keys = createMockKeys(setup.renderer, { kittyKeyboard: true });
+    await renderOnce();
+    keys.pressEnter();
+    await renderOnce();
+    await keys.typeText("Read");
+    keys.pressEnter();
+    await renderOnce();
+    await keys.typeText("Minimum Completion");
+    keys.pressEnter();
+    await renderOnce();
+    await keys.typeText("Read changes and record evidence");
+    keys.pressEnter();
+    await renderOnce();
+    await keys.typeText("evaluator");
+    keys.pressEnter();
+    await renderOnce();
+    expect(setup.captureCharFrame()).toContain(
+      "Send Goal to Another Provider?",
+    );
+    expect(setup.captureCharFrame()).toContain(
+      "Only this completion-goal text",
+    );
+    expect(calls).toEqual([]);
+    keys.pressArrow("down");
+    keys.pressEnter();
+    await renderOnce();
+    expect(calls).toEqual([
+      {
+        modelID: "evaluator",
+        objective: "Read changes and record evidence",
+      },
+    ]);
+    expect(setup.captureCharFrame()).toContain("Confirm Minimum Conditions");
+    expect(setup.captureCharFrame()).toContain("Read every changed file");
+    expect(saved).toBeUndefined();
+    keys.pressArrow("down");
+    keys.pressEnter();
+    await renderOnce();
+    expect(setup.captureCharFrame()).toContain("2 required conditions");
+    keys.pressEscape();
+    await renderOnce();
+    await keys.typeText("Save flow");
+    keys.pressEnter();
+    await renderOnce();
+    keys.pressArrow("down");
+    keys.pressEnter();
+    await renderOnce();
+    expect(saved?.modules[0]?.minimumConditions).toMatchObject([
+      { text: "Read every changed file" },
+      { text: "Record evidence for each finding" },
+    ]);
+    expect(
+      saved?.modules[0]?.minimumConditions.every((entry) => entry.id),
+    ).toBe(true);
   } finally {
     disposeKeymap();
     setup.renderer.destroy();

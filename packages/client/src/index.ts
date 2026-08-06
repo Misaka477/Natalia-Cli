@@ -24,6 +24,13 @@ export {
   saveFlowDocument,
 } from "./flow-document";
 export {
+  decomposeFlowConditions,
+  defaultExecutionProviderID,
+  flowConditionModels,
+  parseFlowConditionDecomposition,
+  type FlowConditionModel,
+} from "./flow-condition-decomposition";
+export {
   assertConfigApplied,
   assertTaskReferences,
   newHeadlessExecution,
