@@ -166,6 +166,43 @@ test("deleting a task removes only its definition and keeps durable audit state"
   );
 });
 
+test("a scheduler resolves a task by immutable ID rather than its filename", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-documents-task-id-"));
+  const store = new NataliaDocumentStore(root);
+  await store.saveFlow({
+    kind: "natalia-flow",
+    version: 1,
+    flowID: "flow_review",
+    displayName: "Review",
+    modules: [
+      {
+        id: "read",
+        type: "read_search",
+        displayName: "Read",
+        minimumConditions: [{ id: "c1", text: "Read" }],
+      },
+    ],
+  });
+  const document = {
+    kind: "natalia-task" as const,
+    version: 1,
+    taskID: "task_stable",
+    displayName: "Renamed",
+    schedule: "daily 01:00",
+    prompt: "Review.",
+    permissionProfile: "unattended",
+    flow: { flowID: "flow_review" },
+  };
+  await store.saveTask(document, "a-human-filename.yaml");
+  await expect(store.loadTaskByID("task_stable")).resolves.toMatchObject({
+    displayName: "Renamed",
+  });
+  await store.saveTask(document, "duplicate.yaml");
+  await expect(store.loadTaskByID("task_stable")).rejects.toThrow(
+    "task ID is ambiguous",
+  );
+});
+
 test("parses a versioned natalia task document", () => {
   expect(
     parseNataliaDocumentJSON(

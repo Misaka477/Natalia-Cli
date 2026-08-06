@@ -81,6 +81,28 @@ export class NataliaDocumentStore {
     return document;
   }
 
+  async loadTaskByID(taskID: string): Promise<NataliaTaskDocument> {
+    let entries: string[];
+    try {
+      entries = await readdir(this.tasksDir);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT")
+        throw new Error(`natalia task not found: ${taskID}`);
+      throw error;
+    }
+    const matches: NataliaTaskDocument[] = [];
+    for (const entry of entries) {
+      if (!/\.ya?ml$/iu.test(entry)) continue;
+      const task = await this.loadTaskDocument(entry).catch(() => undefined);
+      if (task?.taskID === taskID) matches.push(task);
+    }
+    if (!matches.length) throw new Error(`natalia task not found: ${taskID}`);
+    if (matches.length > 1)
+      throw new Error(`natalia task ID is ambiguous: ${taskID}`);
+    await this.resolveTaskFlow(matches[0]!);
+    return matches[0]!;
+  }
+
   /**
    * Reads and schema-validates a task definition without resolving its flow.
    * Editors need this narrower read so a task with a temporarily broken

@@ -8,6 +8,7 @@ import {
   NataliaUnattendedStateStore,
 } from "@natalia/workflow";
 import { effectiveFlowPermissions } from "./effective-policy";
+import { nextSystemdRun } from "./systemd-adapter";
 
 export type ScheduledTaskRow = {
   taskID: string;
@@ -24,6 +25,13 @@ export type ScheduledTaskRow = {
   alertEvents: string[];
   issueTarget?: string;
   dataSource?: string;
+  systemd?: {
+    calendar: string;
+    scope: "user" | "system";
+    timerUnit?: string;
+    nextRun?: string;
+    generatedCalendar?: string;
+  };
   lastRun?: {
     invocationID: string;
     status: string;
@@ -82,6 +90,7 @@ export type ScheduledTaskOverview = {
 export async function scheduledTaskOverview(input: {
   workspaceRoot: string;
   config: ConfigV2;
+  readNextRun?: typeof nextSystemdRun;
 }): Promise<ScheduledTaskOverview> {
   const documents = new NataliaDocumentStore(input.workspaceRoot);
   let entries: string[] = [];
@@ -152,6 +161,12 @@ export async function scheduledTaskOverview(input: {
       }
       if (task.evaluator && !input.config.models[task.evaluator.model])
         problems.push(`evaluator model not found: ${task.evaluator.model}`);
+      if (
+        task.systemd?.timerUnit &&
+        task.systemd.generatedCalendar &&
+        task.systemd.generatedCalendar !== task.systemd.calendar
+      )
+        problems.push("timer calendar changed; update timer");
       if (flow) {
         for (const module of flow.modules)
           if (module.enabled && !module.minimumConditions.length)
@@ -173,6 +188,12 @@ export async function scheduledTaskOverview(input: {
         task.taskID,
       ).catch(() => undefined);
       const lastRun = state.invocations(task.taskID, 1)[0];
+      const nextRun = task.systemd?.timerUnit
+        ? await (input.readNextRun ?? nextSystemdRun)({
+            timerUnit: task.systemd.timerUnit,
+            scope: task.systemd.scope,
+          })
+        : undefined;
       tasks.push({
         taskID: task.taskID,
         displayName: task.displayName,
@@ -191,6 +212,21 @@ export async function scheduledTaskOverview(input: {
         ),
         ...(task.issueTarget ? { issueTarget: task.issueTarget } : {}),
         ...(task.dataSource ? { dataSource: task.dataSource } : {}),
+        ...(task.systemd
+          ? {
+              systemd: {
+                calendar: task.systemd.calendar,
+                scope: task.systemd.scope,
+                ...(task.systemd.timerUnit
+                  ? { timerUnit: task.systemd.timerUnit }
+                  : {}),
+                ...(task.systemd.generatedCalendar
+                  ? { generatedCalendar: task.systemd.generatedCalendar }
+                  : {}),
+                ...(nextRun ? { nextRun } : {}),
+              },
+            }
+          : {}),
         ...(lastRun
           ? {
               lastRun: {

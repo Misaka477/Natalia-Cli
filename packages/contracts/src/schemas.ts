@@ -305,6 +305,19 @@ export const nataliaTaskDocumentSchema = z.object({
   evaluatorConsent: z
     .object({ provider: z.string().min(1), confirmedAt: z.string().datetime() })
     .optional(),
+  /**
+   * Explicit scheduler input and the installed timer identity. `schedule`
+   * remains the human-readable label; no runtime code derives a calendar from
+   * that free text.
+   */
+  systemd: z
+    .object({
+      calendar: z.string().min(1),
+      scope: z.enum(["user", "system"]).default("user"),
+      timerUnit: z.string().min(1).optional(),
+      generatedCalendar: z.string().min(1).optional(),
+    })
+    .optional(),
 });
 
 export const evaluatorConditionStatusSchema = z

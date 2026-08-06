@@ -20,6 +20,8 @@ import { darkTheme } from "../theme/theme";
 export type ScheduledTaskAction =
   | "run"
   | "edit"
+  | "timer"
+  | "removeTimer"
   | "delete"
   | "problems"
   | "close";
@@ -160,6 +162,15 @@ export function scheduledTaskSummary(task: ScheduledTaskRow) {
     : "never run";
   return [
     task.schedule,
+    ...(task.systemd
+      ? [
+          task.systemd.nextRun
+            ? `next ${task.systemd.nextRun}`
+            : task.systemd.timerUnit
+              ? "timer not active"
+              : "timer not generated",
+        ]
+      : []),
     lastRun,
     ...(task.consecutiveFailures
       ? [`${task.consecutiveFailures} failures in a row`]
@@ -174,6 +185,9 @@ export function scheduledTaskSummary(task: ScheduledTaskRow) {
 export function buildScheduledTaskDetail(
   task: ScheduledTaskRow,
 ): DialogSelectOption<ScheduledTaskAction>[] {
+  const timerBlocked = task.problems.some(
+    (problem) => problem !== "timer calendar changed; update timer",
+  );
   return [
     {
       title: task.problems.length ? "Run now (blocked)" : "Run now",
@@ -192,11 +206,35 @@ export function buildScheduledTaskDetail(
         "Change the definition; runtime checks still run before execution",
     },
     {
+      title: task.systemd?.timerUnit ? "Update timer" : "Install timer",
+      value: "timer" as ScheduledTaskAction,
+      category: "Action",
+      description: task.systemd
+        ? `${task.systemd.scope} timer · ${task.systemd.calendar}`
+        : "Edit the schedule first to choose a precise timer cadence",
+      disabled: !task.systemd || timerBlocked,
+    },
+    ...(task.systemd?.timerUnit
+      ? [
+          {
+            title: "Remove timer",
+            value: "removeTimer" as ScheduledTaskAction,
+            category: "Action",
+            description:
+              task.systemd.scope === "user"
+                ? "Disable and remove the user timer"
+                : "Generate removal commands; Natalia never invokes sudo",
+          },
+        ]
+      : []),
+    {
       title: "Delete task",
       value: "delete" as ScheduledTaskAction,
       category: "Action",
-      description:
-        "Removes the definition; execution history and audit state remain",
+      description: task.systemd?.timerUnit
+        ? "Remove the timer before deleting the task definition"
+        : "Removes the definition; execution history and audit state remain",
+      disabled: Boolean(task.systemd?.timerUnit),
     },
     {
       title: `Flow: ${task.flowID}`,
@@ -220,6 +258,21 @@ export function buildScheduledTaskDetail(
           {
             title: `Source: ${task.dataSource}`,
             value: "close" as ScheduledTaskAction,
+          },
+        ]
+      : []),
+    ...(task.systemd
+      ? [
+          {
+            title: `Timer: ${task.systemd.timerUnit ?? "not generated"}`,
+            value: "close" as ScheduledTaskAction,
+            category: "Schedule",
+            description: `${task.systemd.scope} · ${task.systemd.calendar}`,
+          },
+          {
+            title: `Next run: ${task.systemd.nextRun ?? "not active"}`,
+            value: "close" as ScheduledTaskAction,
+            category: "Schedule",
           },
         ]
       : []),
@@ -260,6 +313,7 @@ export function taskDocumentForEditor(input: {
   dataSource?: string;
   evaluator?: NataliaTaskDocument["evaluator"];
   evaluatorConsent?: NataliaTaskDocument["evaluatorConsent"];
+  systemd?: NataliaTaskDocument["systemd"];
 }): NataliaTaskDocumentInput {
   return {
     kind: "natalia-task",
@@ -281,6 +335,7 @@ export function taskDocumentForEditor(input: {
     ...(input.evaluatorConsent
       ? { evaluatorConsent: input.evaluatorConsent }
       : {}),
+    ...(input.systemd ? { systemd: input.systemd } : {}),
   };
 }
 
@@ -299,6 +354,9 @@ type TaskEditorDraft = {
   dataSource?: string;
   evaluator?: NataliaTaskDocument["evaluator"];
   evaluatorConsent?: NataliaTaskDocument["evaluatorConsent"];
+  systemd?: NataliaTaskDocument["systemd"];
+  pendingWeekday?: string;
+  schedulePreview?: string[];
 };
 
 function draftFromTask(input: { path: string; task: NataliaTaskDocument }) {
@@ -319,6 +377,7 @@ function draftFromTask(input: { path: string; task: NataliaTaskDocument }) {
     ...(input.task.evaluatorConsent
       ? { evaluatorConsent: input.task.evaluatorConsent }
       : {}),
+    ...(input.task.systemd ? { systemd: input.task.systemd } : {}),
   } satisfies TaskEditorDraft;
 }
 
@@ -375,6 +434,36 @@ function TaskProblemDetail(props: { task: ScheduledTaskRow }) {
   );
 }
 
+function SystemCommandInstructions(props: {
+  task: ScheduledTaskRow;
+  commands: string[];
+  operation: "Install" | "Remove";
+}) {
+  const dialog = useDialog();
+  return (
+    <box paddingLeft={2} paddingRight={2} gap={1}>
+      <box flexDirection="row" justifyContent="space-between">
+        <text fg={darkTheme.text}>{props.operation} system timer</text>
+        <text fg={darkTheme.muted} onMouseUp={() => dialog.pop()}>
+          esc
+        </text>
+      </box>
+      <text fg={darkTheme.muted} wrapMode="word">
+        Review and run these commands for {props.task.displayName} yourself;
+        Natalia will not invoke sudo.
+        {props.operation === "Remove"
+          ? " After they succeed, choose Remove timer again so Natalia can verify it is gone and clear the task metadata."
+          : ""}
+      </text>
+      {props.commands.map((command) => (
+        <text fg={darkTheme.text} wrapMode="word">
+          {command}
+        </text>
+      ))}
+    </box>
+  );
+}
+
 function taskEditorProfileOptions(config: ConfigV2) {
   return Object.entries(config.permissionProfiles).map(([key, profile]) => ({
     title: key,
@@ -395,16 +484,23 @@ function TaskEditor(props: {
     | "flow"
     | "profile"
     | "schedule"
+    | "dailyTime"
+    | "weeklyDay"
+    | "weeklyTime"
+    | "advancedCalendar"
+    | "schedulePreview"
     | "prompt"
     | "retry"
     | "alerts"
     | "issueTarget"
-    | "dataSource";
+    | "dataSource"
+    | "systemdScope";
   flows: FlowOverview;
   config: ConfigV2;
   save: (document: NataliaTaskDocumentInput, path: string) => Promise<void>;
   reload: () => Promise<void>;
   notify: (outcome: TaskRunOutcome) => void;
+  previewCalendar: (calendar: string) => Promise<{ next: string[] }>;
 }) {
   const dialog = useDialog();
   const editor = props.editor ?? "summary";
@@ -419,6 +515,29 @@ function TaskEditor(props: {
   };
   const flowOptions = taskEditorFlowOptions(props.flows);
   const profileOptions = taskEditorProfileOptions(props.config);
+  if (editor === "schedulePreview")
+    return (
+      <DialogSelect
+        title="Next three runs"
+        skipFilter
+        options={[
+          {
+            title: "Use this schedule",
+            value: "$accept",
+            category: "Action",
+          },
+          ...(props.draft.schedulePreview ?? []).map((next, index) => ({
+            title: `${index + 1}. ${next}`,
+            value: `next-${index}`,
+            category: "Preview",
+          })),
+        ]}
+        onSelect={(option) => {
+          if (option.value === "$accept")
+            advance({ ...props.draft, schedulePreview: undefined });
+        }}
+      />
+    );
   if (!props.draft.displayName || editor === "name")
     return (
       <DialogPrompt
@@ -467,16 +586,130 @@ function TaskEditor(props: {
         }
       />
     );
-  if (!props.draft.schedule || editor === "schedule")
+  if ((editor === "summary" && !props.draft.schedule) || editor === "schedule")
+    return (
+      <DialogSelect
+        title="Schedule"
+        options={[
+          {
+            title: "Daily",
+            value: "dailyTime",
+            description: "Run every day at a chosen time",
+          },
+          {
+            title: "Weekly",
+            value: "weeklyDay",
+            description: "Run on one weekday at a chosen time",
+          },
+          {
+            title: "Advanced calendar",
+            value: "advancedCalendar",
+            description: "Use an explicit systemd calendar expression",
+          },
+        ]}
+        onSelect={(option) =>
+          advance(props.draft, option.value as typeof editor)
+        }
+      />
+    );
+  if (editor === "dailyTime" || editor === "weeklyTime")
     return (
       <DialogPrompt
-        title="Schedule"
-        value={props.draft.schedule}
-        placeholder="daily 02:15"
-        validate={(value) =>
-          !value.trim() ? "A schedule is required" : undefined
+        title={
+          editor === "dailyTime"
+            ? "Daily time"
+            : `${props.draft.pendingWeekday} time`
         }
-        onConfirm={(value) => advance({ ...props.draft, schedule: value })}
+        value=""
+        placeholder="02:15"
+        validate={(value) =>
+          /^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(value.trim())
+            ? undefined
+            : "Use a 24-hour time such as 02:15"
+        }
+        onConfirm={(value) => {
+          const time = value.trim();
+          const day = props.draft.pendingWeekday;
+          const calendar = day ? `${day} *-*-* ${time}:00` : `*-*-* ${time}:00`;
+          void props
+            .previewCalendar(calendar)
+            .then((preview) =>
+              advance(
+                {
+                  ...props.draft,
+                  schedule: day ? `weekly ${day} ${time}` : `daily ${time}`,
+                  systemd: {
+                    ...props.draft.systemd,
+                    calendar,
+                    scope: props.draft.systemd?.scope ?? "user",
+                  },
+                  pendingWeekday: undefined,
+                  schedulePreview: preview.next,
+                },
+                "schedulePreview",
+              ),
+            )
+            .catch((error) =>
+              props.notify({
+                ok: false,
+                message: error instanceof Error ? error.message : String(error),
+              }),
+            );
+        }}
+      />
+    );
+  if (editor === "weeklyDay")
+    return (
+      <DialogSelect
+        title="Weekday"
+        options={["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(
+          (day) => ({ title: day, value: day }),
+        )}
+        onSelect={(option) =>
+          advance(
+            { ...props.draft, pendingWeekday: option.value },
+            "weeklyTime",
+          )
+        }
+      />
+    );
+  if (editor === "advancedCalendar")
+    return (
+      <DialogPrompt
+        title="Advanced systemd calendar"
+        value={props.draft.systemd?.calendar ?? ""}
+        placeholder="Mon..Fri *-*-* 03:00:00"
+        validate={(value) =>
+          value.trim() && !/[\r\n\0]/u.test(value)
+            ? undefined
+            : "A one-line calendar expression is required"
+        }
+        onConfirm={(value) => {
+          const calendar = value.trim();
+          void props
+            .previewCalendar(calendar)
+            .then((preview) =>
+              advance(
+                {
+                  ...props.draft,
+                  schedule: `advanced ${calendar}`,
+                  systemd: {
+                    ...props.draft.systemd,
+                    calendar,
+                    scope: props.draft.systemd?.scope ?? "user",
+                  },
+                  schedulePreview: preview.next,
+                },
+                "schedulePreview",
+              ),
+            )
+            .catch((error) =>
+              props.notify({
+                ok: false,
+                message: error instanceof Error ? error.message : String(error),
+              }),
+            );
+        }}
       />
     );
   if (!props.draft.prompt || editor === "prompt")
@@ -585,6 +818,47 @@ function TaskEditor(props: {
       />
     );
   }
+  if (editor === "systemdScope")
+    return (
+      <DialogSelect
+        title="Timer installation"
+        options={[
+          {
+            title: "This user",
+            value: "user" as const,
+            description: "Install and manage with systemctl --user",
+            disabled: Boolean(
+              props.draft.systemd?.timerUnit &&
+                props.draft.systemd.scope !== "user",
+            ),
+          },
+          {
+            title: "System service",
+            value: "system" as const,
+            description: "Generate files and sudo commands for your review",
+            disabled: Boolean(
+              props.draft.systemd?.timerUnit &&
+                props.draft.systemd.scope !== "system",
+            ),
+          },
+        ]}
+        onSelect={(option) =>
+          advance({
+            ...props.draft,
+            systemd: {
+              calendar: props.draft.systemd?.calendar ?? "",
+              scope: option.value,
+              ...(props.draft.systemd?.timerUnit
+                ? { timerUnit: props.draft.systemd.timerUnit }
+                : {}),
+              ...(props.draft.systemd?.generatedCalendar
+                ? { generatedCalendar: props.draft.systemd.generatedCalendar }
+                : {}),
+            },
+          })
+        }
+      />
+    );
   return (
     <DialogSelect
       title={`${props.draft.displayName} · task editor`}
@@ -640,6 +914,14 @@ function TaskEditor(props: {
           title: `Data source: ${props.draft.dataSource ?? "none"}`,
           value: "dataSource",
         },
+        ...(props.draft.systemd
+          ? [
+              {
+                title: `Timer scope: ${props.draft.systemd.scope}`,
+                value: "systemdScope",
+              },
+            ]
+          : []),
       ]}
       onSelect={async (option) => {
         if (option.value === "save") {
@@ -671,7 +953,8 @@ function TaskEditor(props: {
           option.value === "retry" ||
           option.value === "alerts" ||
           option.value === "issueTarget" ||
-          option.value === "dataSource"
+          option.value === "dataSource" ||
+          option.value === "systemdScope"
         )
           advance(props.draft, option.value);
       }}
@@ -732,6 +1015,13 @@ export function DialogScheduledTasks(props: {
     path: string,
   ) => Promise<void>;
   deleteTask?: (path: string) => Promise<void>;
+  configureSystemd?: (input: {
+    path: string;
+    calendar: string;
+    scope: "user" | "system";
+  }) => Promise<{ commands: string[] }>;
+  removeSystemd?: (path: string) => Promise<{ commands: string[] }>;
+  previewCalendar?: (calendar: string) => Promise<{ next: string[] }>;
   runTask?: (taskPath: string) => Promise<TaskRunOutcome>;
   notify?: (outcome: TaskRunOutcome) => void;
 }) {
@@ -773,6 +1063,7 @@ export function DialogScheduledTasks(props: {
               save={props.saveTask!}
               reload={props.reload!}
               notify={(outcome) => props.notify?.(outcome)}
+              previewCalendar={props.previewCalendar!}
             />
           ));
           return;
@@ -812,6 +1103,7 @@ export function DialogScheduledTasks(props: {
                       save={props.saveTask!}
                       reload={props.reload!}
                       notify={(outcome) => props.notify?.(outcome)}
+                      previewCalendar={props.previewCalendar!}
                     />
                   ));
                 } catch (error) {
@@ -860,6 +1152,74 @@ export function DialogScheduledTasks(props: {
                     }}
                   />
                 ));
+                return;
+              }
+              if (detail.value === "timer") {
+                if (!task.systemd || !props.configureSystemd || !props.reload) {
+                  props.notify?.({
+                    ok: false,
+                    message: "Edit the schedule before installing a timer",
+                  });
+                  return;
+                }
+                try {
+                  const result = await props.configureSystemd({
+                    path: task.path,
+                    calendar: task.systemd.calendar,
+                    scope: task.systemd.scope,
+                  });
+                  await props.reload();
+                  if (result.commands.length)
+                    dialog.push(() => (
+                      <SystemCommandInstructions
+                        task={task}
+                        commands={result.commands}
+                        operation="Install"
+                      />
+                    ));
+                  else {
+                    dialog.pop();
+                    props.notify?.({
+                      ok: true,
+                      message: `Installed timer for ${task.displayName}`,
+                    });
+                  }
+                } catch (error) {
+                  props.notify?.({
+                    ok: false,
+                    message:
+                      error instanceof Error ? error.message : String(error),
+                  });
+                }
+                return;
+              }
+              if (detail.value === "removeTimer") {
+                if (!props.removeSystemd || !props.reload) return;
+                try {
+                  const result = await props.removeSystemd(task.path);
+                  await props.reload();
+                  if (result.commands.length)
+                    dialog.push(() => (
+                      <SystemCommandInstructions
+                        task={task}
+                        commands={result.commands}
+                        operation="Remove"
+                      />
+                    ));
+                  else {
+                    dialog.pop();
+                    props.notify?.({
+                      ok: true,
+                      message: `Removed timer for ${task.displayName}`,
+                    });
+                  }
+                } catch (error) {
+                  props.notify?.({
+                    ok: false,
+                    message:
+                      error instanceof Error ? error.message : String(error),
+                  });
+                }
                 return;
               }
               if (detail.value === "problems") {

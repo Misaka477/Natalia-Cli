@@ -1,6 +1,7 @@
 import {
   assertConfigApplied,
   assertTaskReferences,
+  configureTaskSystemd,
   scheduledTaskOverview,
   type ScheduledTaskOverview,
   createRealRuntimeClient,
@@ -8,6 +9,7 @@ import {
   newHeadlessExecution,
   plainRuntimeEvent,
   runTask,
+  removeTaskSystemd,
   taskPermissionPreview,
 } from "@natalia/client";
 import type {
@@ -290,20 +292,71 @@ switch (subcommand) {
       !taskPath ||
       (action !== "validate" &&
         action !== "run" &&
+        action !== "run-id" &&
+        action !== "timer" &&
+        action !== "timer-remove" &&
         action !== "status" &&
         action !== "preview" &&
         action !== "submit")
     )
       throw new Error(
-        "task requires 'list', or 'validate', 'run', 'status', 'preview' or 'submit' followed by a task path",
+        "task requires 'list', or 'validate', 'run', 'run-id', 'status', 'preview', 'submit', 'timer' or 'timer-remove' followed by a task path or ID",
       );
     const workspaceRoot = resolve(
       valueAfter(argv, "--workspace") ?? process.cwd(),
     );
     const store = new NataliaDocumentStore(workspaceRoot);
-    const task = await store.loadTask(taskPath);
+    const task =
+      action === "run-id"
+        ? await store.loadTaskByID(taskPath)
+        : action === "timer" || action === "timer-remove"
+          ? await store.loadTaskDocument(taskPath)
+          : await store.loadTask(taskPath);
+    if (action === "timer-remove") {
+      const result = await removeTaskSystemd({ workspaceRoot, path: taskPath });
+      console.log(
+        argv.includes("--json")
+          ? JSON.stringify(result)
+          : result.commands.length
+            ? result.commands.join("\n")
+            : `removed timer metadata for ${task.taskID}`,
+      );
+      break;
+    }
+    if (action === "timer") {
+      if (!task.systemd)
+        throw new Error(
+          `task ${task.taskID} has no explicit systemd calendar; edit its schedule first`,
+        );
+      const timerConfig = assertConfigApplied(
+        await resolveConfig({ workspaceRoot }),
+      );
+      const row = (
+        await scheduledTaskOverview({ workspaceRoot, config: timerConfig })
+      ).tasks.find((entry) => entry.path === taskPath);
+      if (!row) throw new Error(`task not found in overview: ${taskPath}`);
+      if (row.problems.length)
+        throw new Error(
+          `task timer cannot be installed while the task needs attention: ${row.problems.join("; ")}`,
+        );
+      const result = await configureTaskSystemd({
+        workspaceRoot,
+        path: taskPath,
+        calendar: task.systemd.calendar,
+        scope: task.systemd.scope,
+        executable: "natalia-ts",
+      });
+      console.log(
+        argv.includes("--json")
+          ? JSON.stringify(result)
+          : result.commands.length
+            ? result.commands.join("\n")
+            : `installed ${result.units.timerUnit}`,
+      );
+      break;
+    }
     const flow = await store.resolveTaskFlow(task);
-    if (action === "run") {
+    if (action === "run" || action === "run-id") {
       const runConfig = assertConfigApplied(
         await resolveConfig({ workspaceRoot }),
       );
@@ -755,6 +808,11 @@ function taskListLines(overview: ScheduledTaskOverview) {
     if (task.pendingAlertDeliveries)
       lines.push(
         `    pending alert deliveries: ${task.pendingAlertDeliveries}`,
+      );
+    if (task.systemd)
+      lines.push(
+        `    timer: ${task.systemd.timerUnit ?? "not generated"} (${task.systemd.scope})`,
+        `    next run: ${task.systemd.nextRun ?? "not active"}`,
       );
     for (const problem of task.problems) lines.push(`    problem: ${problem}`);
   }

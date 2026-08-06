@@ -36,10 +36,27 @@ export {
 } from "./effective-policy";
 export {
   deleteTaskDocument,
+  configureTaskSystemd,
   loadTaskDocument,
   newScheduledTaskID,
+  removeTaskSystemd,
   saveTaskDocument,
 } from "./task-document";
+export {
+  generateTaskUnits,
+  installUserTaskUnits,
+  nextSystemdRun,
+  previewSystemdCalendar,
+  removeUserTaskUnits,
+  runSystemctl,
+  systemInstallCommands,
+  systemRemoveCommands,
+  type GeneratedTaskUnits,
+  type SystemdCommandResult,
+  type SystemdCalendarPreview,
+  type SystemdCommandRunner,
+  writeGeneratedTaskUnits,
+} from "./systemd-adapter";
 export type { RealRuntimeClientOptions } from "./real-runtime";
 export { providerErrorHint, retryDisplayLine } from "./retry-display";
 export {

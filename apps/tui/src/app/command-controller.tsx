@@ -11,8 +11,11 @@ import type {
 export interface ConfigPatch extends Record<string, unknown> {}
 import {
   deleteTaskDocument,
+  configureTaskSystemd,
   flowOverview,
   loadTaskDocument,
+  removeTaskSystemd,
+  previewSystemdCalendar,
   saveTaskDocument,
   scheduledTaskOverview,
 } from "@natalia/client";
@@ -56,6 +59,7 @@ import { DialogModel } from "../component/DialogModel";
 import { DialogFlows } from "../component/DialogFlows";
 import {
   DialogScheduledTasks,
+  resolveCliEntry,
   runScheduledTaskProcess,
 } from "../component/DialogScheduledTasks";
 import { DialogSkill } from "../component/DialogSkill";
@@ -732,6 +736,23 @@ export function runCommand(command: string, ctx: CommandContext) {
             )
           }
           deleteTask={(path) => deleteTaskDocument({ workspaceRoot, path })}
+          configureSystemd={({ path, calendar, scope }) => {
+            const cliEntry = resolveCliEntry();
+            return configureTaskSystemd({
+              workspaceRoot,
+              path,
+              calendar,
+              scope,
+              executable: cliEntry ? process.execPath : "natalia-ts",
+              ...(cliEntry ? { cliEntry } : {}),
+            }).then(({ commands }) => ({ commands }));
+          }}
+          removeSystemd={(path) =>
+            removeTaskSystemd({ workspaceRoot, path }).then(({ commands }) => ({
+              commands,
+            }))
+          }
+          previewCalendar={(calendar) => previewSystemdCalendar(calendar)}
           notify={(outcome) =>
             ctx.toast.show({
               variant: outcome.ok ? "success" : "warning",

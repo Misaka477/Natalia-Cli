@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defaultConfigV2, saveConfigFile } from "@natalia/config";
@@ -129,8 +129,8 @@ test("CLI task run creates a task-scoped episode but never treats turn completio
       process.execPath,
       join(import.meta.dir, "..", "src", "main.ts"),
       "task",
-      "run",
-      "nightly.yaml",
+      "run-id",
+      "task_nightly",
       "--workspace",
       root,
       "--json",
@@ -3187,6 +3187,70 @@ test("the shipped task units name only the task document", async () => {
     expect(timer).toContain("Persistent=true");
     expect(timer).toContain(`Unit=${unit}.service`);
   }
+});
+
+test("CLI task timer generates reviewable system units and writes back the unit identity", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-systemd-"));
+  await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+  await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      permissionProfiles: {
+        unattended: { approval: "auto", description: "Task profile" },
+      },
+    }),
+  );
+  await writeFile(
+    join(root, ".natalia", "flows", "review.yaml"),
+    "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n    minimumConditions:\n      - id: c1\n        text: Read the workspace\n",
+  );
+  await writeFile(
+    join(root, ".natalia", "tasks", "review.yaml"),
+    "kind: natalia-task\nversion: 1\ntaskID: task_review\ndisplayName: Review\nschedule: daily 02:15\nprompt: Do not put this prompt in a unit.\npermissionProfile: unattended\nflow:\n  flowID: flow_review\nsystemd:\n  calendar: '*-*-* 02:15:00'\n  scope: system\n",
+  );
+  const bin = join(root, "bin");
+  await mkdir(bin);
+  const analyze = join(bin, "systemd-analyze");
+  await writeFile(
+    analyze,
+    "#!/bin/sh\nprintf '%s\\n' 'Normalized form: *-*-* 02:15:00' 'Next elapse: Fri 2026-08-07 02:15:00 CST' 'Iteration #2: Sat 2026-08-08 02:15:00 CST' 'Iteration #3: Sun 2026-08-09 02:15:00 CST'\n",
+  );
+  await chmod(analyze, 0o755);
+  const child = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "task",
+      "timer",
+      "review.yaml",
+      "--workspace",
+      root,
+    ],
+    {
+      cwd: root,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` },
+    },
+  );
+  expect(child.exitCode).toBe(0);
+  expect(new TextDecoder().decode(child.stdout)).toContain(
+    "sudo systemctl enable --now natalia-task-task_review.timer",
+  );
+  const service = await readFile(
+    join(root, ".natalia", "systemd", "natalia-task-task_review.service"),
+    "utf8",
+  );
+  expect(service).toContain('"task" "run-id" "task_review"');
+  expect(service).not.toContain("Do not put this prompt");
+  const saved = await readFile(
+    join(root, ".natalia", "tasks", "review.yaml"),
+    "utf8",
+  );
+  expect(saved).toContain("timerUnit: natalia-task-task_review.timer");
+  expect(saved).toContain('generatedCalendar: "*-*-* 02:15:00"');
 });
 
 test("CLI task run delivers the terminal alert to a configured webhook", async () => {

@@ -46,6 +46,13 @@ async function mountScheduledTasks(
       path: string,
     ) => Promise<void>;
     deleteTask: (path: string) => Promise<void>;
+    previewCalendar: (calendar: string) => Promise<{ next: string[] }>;
+    configureSystemd: (input: {
+      path: string;
+      calendar: string;
+      scope: "user" | "system";
+    }) => Promise<{ commands: string[] }>;
+    removeSystemd: (path: string) => Promise<{ commands: string[] }>;
   }> = {},
 ) {
   const setup = await createTestRenderer({ width: 160, height: 36 });
@@ -66,6 +73,14 @@ async function mountScheduledTasks(
           loadTask={extra.loadTask}
           saveTask={extra.saveTask}
           deleteTask={extra.deleteTask}
+          previewCalendar={
+            extra.previewCalendar ??
+            (async () => ({
+              next: ["first run", "second run", "third run"],
+            }))
+          }
+          configureSystemd={extra.configureSystemd}
+          removeSystemd={extra.removeSystemd}
           notify={extra.notify}
           reload={async () => {
             if (extra.next) setCurrent(extra.next);
@@ -208,6 +223,29 @@ test("a ready task summarizes its cadence, profile, stages and last result", () 
   ).toContain("last skipped (overlap)");
 });
 
+test("a generated timer shows its next run and must be removed before task deletion", () => {
+  const detail = buildScheduledTaskDetail(
+    row({
+      systemd: {
+        calendar: "*-*-* 02:15:00",
+        scope: "user",
+        timerUnit: "natalia-task-task_nightly.timer",
+        nextRun: "2026-08-07T02:15:00.000Z",
+      },
+    }),
+  );
+  expect(detail.map((entry) => entry.title)).toContain(
+    "Timer: natalia-task-task_nightly.timer",
+  );
+  expect(detail.map((entry) => entry.title)).toContain(
+    "Next run: 2026-08-07T02:15:00.000Z",
+  );
+  expect(detail.find((entry) => entry.value === "delete")).toMatchObject({
+    disabled: true,
+  });
+  expect(detail.find((entry) => entry.value === "removeTimer")).toBeDefined();
+});
+
 test("the editor builds a versioned task document without deriving identity from its name", () => {
   expect(
     taskDocumentForEditor({
@@ -288,6 +326,7 @@ test("the detail view lists every problem verbatim instead of a summary", () => 
     // A task with a problem cannot be run from here at all.
     "Run now (blocked)",
     "Edit task",
+    "Install timer",
     "Delete task",
     "Flow: flow_log_triage",
     "Profile: unattended_read · retry once",
@@ -489,7 +528,7 @@ test("a task can be created through the keyboard wizard and returns to the refre
         path: "task_created.yaml",
         flowID: "flow_review",
         permissionProfile: "unattended",
-        schedule: "weekly monday 03:00",
+        schedule: "weekly Mon 03:00",
         retry: "none",
       }),
     ],
@@ -520,7 +559,14 @@ test("a task can be created through the keyboard wizard and returns to the refre
     expect(mounted.frame()).toContain("Choose permission profile");
     await mounted.selectFirst();
     expect(mounted.frame()).toContain("Schedule");
-    await mounted.typeAndSubmit("weekly monday 03:00");
+    await mounted.down();
+    await mounted.selectFirst();
+    expect(mounted.frame()).toContain("Weekday");
+    await mounted.selectFirst();
+    await mounted.typeAndSubmit("03:00");
+    expect(mounted.frame()).toContain("Next three runs");
+    expect(mounted.frame()).toContain("third run");
+    await mounted.selectFirst();
     expect(mounted.frame()).toContain("Task instructions");
     await mounted.typeAndSubmit(
       "Review dependency updates and write the configured output.",
@@ -552,7 +598,7 @@ test("a task can be created through the keyboard wizard and returns to the refre
       kind: "natalia-task",
       taskID: expect.stringMatching(/^task_[a-f0-9]{32}$/u),
       displayName: "Weekly dependency review",
-      schedule: "weekly monday 03:00",
+      schedule: "weekly Mon 03:00",
       permissionProfile: "unattended",
       flow: {
         flowID: "flow_review",
@@ -562,6 +608,10 @@ test("a task can be created through the keyboard wizard and returns to the refre
       alerts: ["journal"],
       issueTarget: "project_issues",
       dataSource: "audit_stream",
+      systemd: {
+        calendar: "Mon *-*-* 03:00:00",
+        scope: "user",
+      },
     });
     expect(notices).toEqual([
       { ok: true, message: "Saved Weekly dependency review" },
@@ -599,6 +649,12 @@ test("editing preserves task identity and structured alert subscriptions", async
     evaluatorConsent: {
       provider: "local",
       confirmedAt: "2026-08-06T00:00:00.000Z",
+    },
+    systemd: {
+      calendar: "*-*-* 01:00:00",
+      scope: "user",
+      timerUnit: "natalia-task-task_stable.timer",
+      generatedCalendar: "*-*-* 01:00:00",
     },
   };
   const mounted = await mountScheduledTasks(
@@ -668,6 +724,12 @@ test("editing preserves task identity and structured alert subscriptions", async
             provider: "local",
             confirmedAt: "2026-08-06T00:00:00.000Z",
           },
+          systemd: {
+            calendar: "*-*-* 01:00:00",
+            scope: "user",
+            timerUnit: "natalia-task-task_stable.timer",
+            generatedCalendar: "*-*-* 01:00:00",
+          },
         }),
       },
     ]);
@@ -707,6 +769,99 @@ test("deleting a task requires confirmation and returns to the refreshed list", 
       { ok: true, message: "Deleted Nightly log triage" },
     ]);
     expect(mounted.frame()).toContain("No task documents");
+  } finally {
+    mounted.dispose();
+  }
+});
+
+test("a user timer can be updated and removed from the task detail", async () => {
+  const configured: unknown[] = [];
+  const removed: string[] = [];
+  const notices: TaskRunOutcome[] = [];
+  const scheduled = row({
+    systemd: {
+      calendar: "*-*-* 02:15:00",
+      scope: "user",
+      timerUnit: "natalia-task-task_nightly.timer",
+      nextRun: "2026-08-07T02:15:00.000Z",
+    },
+  });
+  const mounted = await mountScheduledTasks(
+    { tasks: [scheduled], unreadable: [] },
+    {
+      configureSystemd: async (input) => {
+        configured.push(input);
+        return { commands: [] };
+      },
+      removeSystemd: async (path) => {
+        removed.push(path);
+        return { commands: [] };
+      },
+      next: { tasks: [scheduled], unreadable: [] },
+      notify: (outcome) => notices.push(outcome),
+    },
+  );
+  try {
+    await mounted.selectFirst();
+    await mounted.down();
+    await mounted.down();
+    await mounted.selectFirst();
+    expect(configured).toEqual([
+      {
+        path: "nightly.yaml",
+        calendar: "*-*-* 02:15:00",
+        scope: "user",
+      },
+    ]);
+    expect(notices.at(-1)).toEqual({
+      ok: true,
+      message: "Installed timer for Nightly log triage",
+    });
+
+    await mounted.selectFirst();
+    await mounted.down();
+    await mounted.down();
+    await mounted.down();
+    await mounted.selectFirst();
+    expect(removed).toEqual(["nightly.yaml"]);
+    expect(notices.at(-1)).toEqual({
+      ok: true,
+      message: "Removed timer for Nightly log triage",
+    });
+  } finally {
+    mounted.dispose();
+  }
+});
+
+test("system timer installation shows sudo commands instead of executing them", async () => {
+  const scheduled = row({
+    systemd: {
+      calendar: "Mon *-*-* 03:00:00",
+      scope: "system",
+      timerUnit: "natalia-task-task_nightly.timer",
+    },
+  });
+  const mounted = await mountScheduledTasks(
+    { tasks: [scheduled], unreadable: [] },
+    {
+      configureSystemd: async () => ({
+        commands: [
+          "sudo install -m 0644 generated.service /etc/systemd/system/task.service",
+          "sudo systemctl enable --now natalia-task-task_nightly.timer",
+        ],
+      }),
+      next: { tasks: [scheduled], unreadable: [] },
+    },
+  );
+  try {
+    await mounted.selectFirst();
+    await mounted.down();
+    await mounted.down();
+    await mounted.selectFirst();
+    const frame = mounted.frame();
+    expect(frame).toContain("Install system timer");
+    expect(frame).toContain("Natalia will not invoke sudo");
+    expect(frame).toContain("sudo systemctl enable --now");
   } finally {
     mounted.dispose();
   }

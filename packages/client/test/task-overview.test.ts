@@ -66,6 +66,55 @@ test("a ready task is listed with its configuration and no problems", async () =
   expect(overview.tasks[0]!.lastRun).toBeUndefined();
 });
 
+test("next run is read from the timer unit stored in the task", async () => {
+  const root = await workspace("natalia-overview-timer-");
+  await writeFile(
+    join(root, ".natalia", "tasks", "nightly.yaml"),
+    taskYAML(
+      "systemd:\n  calendar: '*-*-* 01:00:00'\n  scope: user\n  timerUnit: natalia-task-task_nightly.timer\n",
+    ),
+  );
+  const calls: unknown[] = [];
+  const overview = await scheduledTaskOverview({
+    workspaceRoot: root,
+    config: config(),
+    readNextRun: async (input) => {
+      calls.push(input);
+      return "2026-08-07T01:00:00.000Z";
+    },
+  });
+  expect(calls).toEqual([
+    {
+      timerUnit: "natalia-task-task_nightly.timer",
+      scope: "user",
+    },
+  ]);
+  expect(overview.tasks[0]!.systemd).toEqual({
+    calendar: "*-*-* 01:00:00",
+    scope: "user",
+    timerUnit: "natalia-task-task_nightly.timer",
+    nextRun: "2026-08-07T01:00:00.000Z",
+  });
+});
+
+test("editing a generated calendar marks the timer stale until it is updated", async () => {
+  const root = await workspace("natalia-overview-timer-stale-");
+  await writeFile(
+    join(root, ".natalia", "tasks", "nightly.yaml"),
+    taskYAML(
+      "systemd:\n  calendar: '*-*-* 02:00:00'\n  scope: user\n  timerUnit: natalia-task-task_nightly.timer\n  generatedCalendar: '*-*-* 01:00:00'\n",
+    ),
+  );
+  const overview = await scheduledTaskOverview({
+    workspaceRoot: root,
+    config: config(),
+    readNextRun: async () => undefined,
+  });
+  expect(overview.tasks[0]!.problems).toContain(
+    "timer calendar changed; update timer",
+  );
+});
+
 test("the last run and failure count come from durable state", async () => {
   const root = await workspace("natalia-overview-history-");
   await writeFile(join(root, ".natalia", "tasks", "nightly.yaml"), taskYAML());
