@@ -1143,7 +1143,12 @@ export function DialogScheduledTasks(props: {
       options={buildScheduledTaskOptions(props.overview, {
         canCreate: canEdit,
       })}
-      emptyView={<text>No task documents under .natalia/tasks.</text>}
+      emptyView={
+        <text wrapMode="word">
+          No task documents under .natalia/tasks. Reference examples remain in
+          deploy/examples/tasks and are not installed automatically.
+        </text>
+      }
       onSelect={(option) => {
         if (option.value === "$create") {
           if (

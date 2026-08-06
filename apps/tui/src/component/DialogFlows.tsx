@@ -13,7 +13,7 @@ import {
   type FlowRow,
   type FlowStageRow,
 } from "@natalia/client";
-import { createSignal, onCleanup } from "solid-js";
+import { createSignal, onCleanup, onMount } from "solid-js";
 import { useBindings } from "@opentui/keymap/solid";
 import {
   previewCommandRuleImport,
@@ -56,6 +56,7 @@ type FlowEditorScreen =
       kind: "module-conditions";
       moduleID: string;
       conditions: "minimumConditions" | "idealConditions";
+      objective?: string;
     }
   | {
       kind: "module-condition-model";
@@ -77,6 +78,13 @@ type FlowEditorScreen =
       objective: string;
       modelID: string;
       proposed: string[];
+    }
+  | {
+      kind: "module-condition-loading";
+      moduleID: string;
+      conditions: "minimumConditions" | "idealConditions";
+      objective: string;
+      modelID: string;
     }
   | { kind: "module-delete"; moduleID: string }
   | { kind: "module-command-rules"; moduleID: string }
@@ -322,7 +330,12 @@ export function DialogFlows(props: {
       title="Flows"
       placeholder="Search flows"
       options={buildFlowOptions(props.overview, { canCreate: canEdit })}
-      emptyView={<text>No flow documents under .natalia/flows.</text>}
+      emptyView={
+        <text wrapMode="word">
+          No flow documents under .natalia/flows. Reference examples remain in
+          deploy/examples/flows and are not installed automatically.
+        </text>
+      }
       onSelect={(option) => {
         if (option.value === "$create") {
           const draft = newFlowDraft();
@@ -497,12 +510,21 @@ function FlowEditor(props: {
           kind: "module-conditions",
           moduleID: screen.moduleID,
           conditions: screen.conditions,
+          objective: screen.objective,
         });
         return;
       case "module-condition-consent":
       case "module-condition-preview":
         advance(props.draft, {
           kind: "module-condition-model",
+          moduleID: screen.moduleID,
+          conditions: screen.conditions,
+          objective: screen.objective,
+        });
+        return;
+      case "module-condition-loading":
+        advance(props.draft, {
+          kind: "module-conditions",
           moduleID: screen.moduleID,
           conditions: screen.conditions,
           objective: screen.objective,
@@ -1045,7 +1067,12 @@ function FlowModuleEditor(props: ModuleEditorProps) {
   async function decompose(
     screen: Extract<
       FlowEditorScreen,
-      { kind: "module-condition-model" | "module-condition-consent" }
+      {
+        kind:
+          | "module-condition-model"
+          | "module-condition-consent"
+          | "module-condition-loading";
+      }
     >,
     modelID: string,
   ) {
@@ -1066,6 +1093,12 @@ function FlowModuleEditor(props: ModuleEditorProps) {
       });
     } catch (error) {
       props.fail(error);
+      props.advance(props.draft, {
+        kind: "module-conditions",
+        moduleID: screen.moduleID,
+        conditions: screen.conditions,
+        objective: screen.objective,
+      });
     } finally {
       setDecomposing(false);
     }
@@ -1135,7 +1168,10 @@ function FlowModuleEditor(props: ModuleEditorProps) {
             auditable conditions for you to confirm.
           </text>
         )}
-        value={props.module[key].map((condition) => condition.text).join("\n")}
+        value={
+          props.screen.objective ??
+          props.module[key].map((condition) => condition.text).join("\n")
+        }
         validate={(value) =>
           value.trim() ? undefined : "A completion objective is required"
         }
@@ -1163,7 +1199,14 @@ function FlowModuleEditor(props: ModuleEditorProps) {
               objective: screen.objective,
               modelID: model.modelID,
             });
-          else void decompose(screen, model.modelID);
+          else
+            props.advance(props.draft, {
+              kind: "module-condition-loading",
+              moduleID: screen.moduleID,
+              conditions: screen.conditions,
+              objective: screen.objective,
+              modelID: model.modelID,
+            });
         }}
       />
     );
@@ -1193,7 +1236,14 @@ function FlowModuleEditor(props: ModuleEditorProps) {
               objective: screen.objective,
               modelID: model.modelID,
             });
-          else void decompose(screen, model.modelID);
+          else
+            props.advance(props.draft, {
+              kind: "module-condition-loading",
+              moduleID: screen.moduleID,
+              conditions: screen.conditions,
+              objective: screen.objective,
+              modelID: model.modelID,
+            });
         }}
       />
     );
@@ -1222,7 +1272,13 @@ function FlowModuleEditor(props: ModuleEditorProps) {
         ]}
         onSelect={(option) => {
           if (option.value === "$confirm")
-            void decompose(screen, screen.modelID);
+            props.advance(props.draft, {
+              kind: "module-condition-loading",
+              moduleID: screen.moduleID,
+              conditions: screen.conditions,
+              objective: screen.objective,
+              modelID: screen.modelID,
+            });
           else
             props.advance(props.draft, {
               kind: "module-condition-model",
@@ -1231,6 +1287,16 @@ function FlowModuleEditor(props: ModuleEditorProps) {
               objective: screen.objective,
             });
         }}
+      />
+    );
+  }
+
+  if (props.screen.kind === "module-condition-loading") {
+    const screen = props.screen;
+    return (
+      <ConditionDecompositionLoading
+        modelID={screen.modelID}
+        onStart={() => decompose(screen, screen.modelID)}
       />
     );
   }
@@ -1265,6 +1331,7 @@ function FlowModuleEditor(props: ModuleEditorProps) {
               kind: "module-conditions",
               moduleID: screen.moduleID,
               conditions: screen.conditions,
+              objective: screen.objective,
             });
           else if (option.value === "$confirm")
             returnToModule(
@@ -1502,6 +1569,25 @@ function FlowModuleEditor(props: ModuleEditorProps) {
           });
       }}
     />
+  );
+}
+
+function ConditionDecompositionLoading(props: {
+  modelID: string;
+  onStart: () => Promise<void>;
+}) {
+  onMount(() => void props.onStart());
+  return (
+    <box paddingLeft={2} paddingRight={2} gap={1}>
+      <text fg={darkTheme.text}>Decomposing Conditions</text>
+      <text fg={darkTheme.muted} wrapMode="word">
+        Waiting for {props.modelID} to split the completion goal into auditable
+        conditions.
+      </text>
+      <text fg={darkTheme.muted} wrapMode="word">
+        Escape returns to the objective. A late response will be ignored.
+      </text>
+    </box>
   );
 }
 

@@ -599,6 +599,101 @@ test("condition authoring confirms cross-provider decomposition before saving", 
   }
 });
 
+test("condition decomposition shows progress while the evaluator is pending", async () => {
+  const setup = await createTestRenderer({ width: 160, height: 36 });
+  const keymap = createDefaultOpenTuiKeymap(setup.renderer);
+  const disposeKeymap = registerNataliaKeymap(keymap, setup.renderer);
+  const config = configV2Schema.parse({
+    version: 2,
+    defaultModel: "evaluator",
+    providers: {
+      local: { type: "openai-compatible", apiKey: "local-key" },
+    },
+    models: {
+      evaluator: { provider: "local", model: "evaluator-model" },
+    },
+  });
+  let resolve!: (value: { conditions: Array<{ text: string }> }) => void;
+  const pending = new Promise<{ conditions: Array<{ text: string }> }>(
+    (done) => (resolve = done),
+  );
+  const document: NataliaFlowDocument = {
+    kind: "natalia-flow",
+    version: 1,
+    flowID: "flow_pending",
+    displayName: "Pending",
+    modules: [
+      {
+        id: "read",
+        type: "read_search",
+        displayName: "Read",
+        enabled: true,
+        instructions: "",
+        minimumConditions: [],
+        idealConditions: [],
+      },
+    ],
+  };
+  function Harness() {
+    const dialog = useDialog();
+    onMount(() =>
+      dialog.push(() => (
+        <DialogFlows
+          overview={{ flows: [flow()], unreadable: [] }}
+          workspaceRoot="/tmp/natalia-flow-dialog"
+          config={config}
+          loadFlow={async () => document}
+          saveFlow={async () => undefined}
+          decomposeConditions={() => pending}
+          reload={async () => undefined}
+        />
+      )),
+    );
+    return null;
+  }
+  const renderOnce = async () => {
+    await Bun.sleep(20);
+    await setup.renderOnce();
+  };
+  try {
+    await render(
+      () => (
+        <KeymapProvider keymap={keymap}>
+          <DialogProvider>
+            <Harness />
+          </DialogProvider>
+        </KeymapProvider>
+      ),
+      setup.renderer,
+    );
+    const keys = createMockKeys(setup.renderer, { kittyKeyboard: true });
+    await renderOnce();
+    keys.pressEnter();
+    await renderOnce();
+    await keys.typeText("Read");
+    keys.pressEnter();
+    await renderOnce();
+    await keys.typeText("Minimum Completion");
+    keys.pressEnter();
+    await renderOnce();
+    await keys.typeText("Read the changed files");
+    keys.pressEnter();
+    await renderOnce();
+    expect(setup.captureCharFrame()).toContain("Decomposing Conditions");
+    expect(setup.captureCharFrame()).toContain("Waiting for evaluator");
+    resolve({ conditions: [{ text: "Read every changed file" }] });
+    await renderOnce();
+    expect(setup.captureCharFrame()).toContain("Confirm Minimum Conditions");
+    expect(setup.captureCharFrame()).toContain("Read every changed file");
+    keys.pressEnter();
+    await renderOnce();
+    expect(setup.captureCharFrame()).toContain("Read the changed files");
+  } finally {
+    disposeKeymap();
+    setup.renderer.destroy();
+  }
+});
+
 test("deleting a flow defaults to keeping it and returns to the refreshed list", async () => {
   const setup = await createTestRenderer({ width: 160, height: 36 });
   const keymap = createDefaultOpenTuiKeymap(setup.renderer);
