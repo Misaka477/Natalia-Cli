@@ -42,16 +42,15 @@ import {
   type NataliaTaskInvocation,
 } from "@natalia/workflow";
 import { providerForModel } from "@natalia/runtime";
+import { createRecordedFetch, readCassette } from "@natalia/transport";
 import {
   createRuntimeDaemonStore,
   createRuntimeHttpServer,
-  createRecordedFetch,
-  readCassette,
   daemonToken,
   registerRuntimeDaemon,
   runtimeDaemonStatus,
   stopRuntimeDaemon,
-} from "@natalia/transport";
+} from "@natalia/transport/host";
 import { resolve } from "node:path";
 import { readFile } from "node:fs/promises";
 

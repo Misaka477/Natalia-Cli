@@ -49,7 +49,6 @@
     "@natalia/session": "workspace:*",
     "@natalia/testing": "workspace:*",
     "@natalia/terminal": "workspace:*",
-    "@natalia/transport": "workspace:*",
     "@natalia/ui-model": "workspace:*",
     "@opentui/core": "0.4.3",
     "@opentui/keymap": "0.4.3",

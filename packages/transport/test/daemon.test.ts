@@ -11,7 +11,7 @@ import {
   runtimeDaemonStatus,
   stopRuntimeDaemon,
   spawnRuntimeDaemon,
-} from "../src";
+} from "../src/host";
 
 test("native TS daemon store writes private token registration and stale cleanup", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-daemon-"));

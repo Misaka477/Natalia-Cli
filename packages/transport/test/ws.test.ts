@@ -4,7 +4,7 @@ import type {
   RuntimeEvent,
   SubmittedTurn,
 } from "@natalia/contracts";
-import { createRuntimeWsServer } from "../src";
+import { createRuntimeWsServer } from "../src/host";
 
 function collectMessages(ws: WebSocket): {
   messages: any[];

@@ -1,50 +1,5 @@
 import type { RuntimeClient } from "@natalia/contracts";
-
-export type RPCRequest = {
-  id?: string | number | null;
-  method?: string;
-  params?: Record<string, unknown>;
-};
-
-export type RPCResponse = {
-  jsonrpc: "2.0";
-  id: string | number | null;
-  result?: unknown;
-  error?: { code: number; message: string };
-};
-
-export async function callRuntimeRPC<T>(input: {
-  url: string;
-  token?: string;
-  method: string;
-  params?: Record<string, unknown>;
-  fetch?: typeof globalThis.fetch;
-  signal?: AbortSignal;
-}): Promise<T> {
-  const response = await (input.fetch ?? globalThis.fetch)(
-    new URL("/rpc", input.url),
-    {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(input.token ? { authorization: `Bearer ${input.token}` } : {}),
-      },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: input.method,
-        params: input.params,
-      }),
-      signal: input.signal,
-    },
-  );
-  const body = (await response.json()) as RPCResponse;
-  if (!response.ok || body.error)
-    throw new Error(
-      body.error?.message ?? `runtime RPC failed with HTTP ${response.status}`,
-    );
-  return body.result as T;
-}
+import type { RPCRequest, RPCResponse } from "./rpc-client";
 
 export function stringParam(
   params: Record<string, unknown> | undefined,

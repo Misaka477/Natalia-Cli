@@ -9,7 +9,7 @@ import {
   createSessionRecord,
 } from "@natalia/session";
 import type { RuntimeClient } from "@natalia/contracts";
-import { createRuntimeHttpServer } from "@natalia/transport";
+import { createRuntimeHttpServer } from "@natalia/transport/host";
 import {
   attachTerminalReadOnly,
   deleteLocalSession,

@@ -1,6 +1,7 @@
 import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
 import type { ServerWebSocket } from "bun";
-import { handleRPCMessage, type RPCRequest } from "./rpc";
+import { handleRPCMessage } from "./rpc";
+import type { RPCRequest } from "./rpc-client";
 
 export type RuntimeWsServerOptions = {
   client: RuntimeClient;

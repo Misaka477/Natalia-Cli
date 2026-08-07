@@ -85,8 +85,28 @@ const forbiddenConsumerContractImports = kernelPackages.map(
   (name) => new RegExp(`from\\s+["']@natalia/${name}["']`, "u"),
 );
 /**
+ * Subpath entry points a package deliberately declares in its `exports`. They
+ * are not deep imports into private internals: the split is the contract. Keep
+ * this list in step with the `exports` maps, so an undeclared subpath still
+ * fails the deep-import rule below.
+ */
+const declaredSubpathExports = ["@natalia/transport/host"];
+/**
+ * Host-side transport (`createRuntimeHttpServer`, `createRuntimeWsServer`, the
+ * daemon store/token/spawn) opens sockets, mints bearer tokens and spawns
+ * processes. Only whoever runs the runtime may import it. A UI that merely
+ * speaks the protocol must not gain the ability to host one.
+ */
+const transportHostImport = /from\s+["']@natalia\/transport\/host["']/u;
+const transportHostAllowedRoots = ["apps/cli", "packages/transport"];
+/**
+ * Tests legitimately stand up a real server to verify the protocol against it,
+ * so the host rule applies to shipped source rather than to test files.
+ */
+const testPath = /(?:^|\/)test\//u;
+/**
  * Deep imports into another package bypass its public index and therefore its
- * contract. `@natalia/<pkg>/src/...` and `../../packages/<pkg>/...` are both
+ * contract. `@natalia/<pkg>/...` and `../../packages/<pkg>/...` are both
  * banned for shipped code; `scripts/` is dev tooling and stays out of scope.
  */
 const deepImportRoots = ["apps", "packages"];
@@ -128,8 +148,21 @@ for (const dir of consumerContractRoots)
   });
 for (const dir of deepImportRoots)
   await scan(join(root, dir), sourceExtensions, (full, text) => {
+    const relative = full.slice(root.length + 1);
+    if (
+      transportHostImport.test(text) &&
+      !testPath.test(relative) &&
+      !transportHostAllowedRoots.some((allowed) => relative.startsWith(allowed))
+    )
+      failures.push(
+        `${full}: only the runtime host may import @natalia/transport/host`,
+      );
+    const withoutDeclaredSubpaths = declaredSubpathExports.reduce(
+      (acc, subpath) => acc.split(subpath).join("@natalia/declared-subpath"),
+      text,
+    );
     for (const pattern of forbiddenDeepImports) {
-      if (pattern.test(text))
+      if (pattern.test(withoutDeclaredSubpaths))
         failures.push(`${full}: deep import bypasses package index ${pattern}`);
     }
   });

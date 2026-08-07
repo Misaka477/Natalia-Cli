@@ -7,7 +7,7 @@ import type {
   RuntimeEvent,
   SubmittedTurn,
 } from "@natalia/contracts";
-import { createRuntimeHttpServer } from "../src";
+import { createRuntimeHttpServer } from "../src/host";
 
 test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", async () => {
   const events: RuntimeEvent[] = [];

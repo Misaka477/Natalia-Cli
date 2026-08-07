@@ -4,7 +4,7 @@ import type {
   RuntimeEvent,
   SubmittedTurn,
 } from "@natalia/contracts";
-import { createRuntimeHttpServer } from "@natalia/transport";
+import { createRuntimeHttpServer } from "@natalia/transport/host";
 import { createNataliaSDK } from "../src";
 
 test("SDK uses the TS RPC transport rather than runtime internals", async () => {
