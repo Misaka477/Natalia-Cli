@@ -16,6 +16,7 @@
     { "path": "../../packages/session" },
     { "path": "../../packages/ui-model" },
     { "path": "../../packages/testing" },
-    { "path": "../../packages/terminal" }
+    { "path": "../../packages/terminal" },
+    { "path": "../../packages/view-store" }
   ]
 }
