@@ -657,7 +657,7 @@ export function createRealRuntimeClient(
         ReturnType<typeof resolveConfig>
       >["config"]["permissionProfiles"][string]
     | undefined;
-  let maxSteps = 10;
+  let maxSteps: number | undefined;
   let subagents: SubagentRegistry | undefined;
   let terminalRegistry: TerminalRegistry | undefined;
   let nativeTerminal: NativeTerminalRegistry | undefined =
@@ -744,6 +744,7 @@ export function createRealRuntimeClient(
       const tsConfig = await resolveConfig({ workspaceRoot });
       tsRuntimeConfig = tsConfig.config;
       runtimeContextConfig = contextStatusConfig(tsConfig.config);
+      maxSteps = tsConfig.config.runtime.maxStepsPerTurn;
       if (!options.provider) {
         const configured = providerForModel(
           tsConfig.config,
@@ -753,7 +754,6 @@ export function createRealRuntimeClient(
         if (configured) {
           provider = configured;
           providerSource = "ts_config";
-          maxSteps = tsConfig.config.runtime.maxStepsPerTurn;
           return true;
         }
       }
@@ -774,6 +774,7 @@ export function createRealRuntimeClient(
         maxBackoffMs: tsConfig.config.runtime.retry.maxBackoffMs,
         jitterMs: tsConfig.config.runtime.retry.jitterMs,
       };
+      maxSteps = tsConfig.config.runtime.maxStepsPerTurn;
       const requestedPermissionProfile = options.permissionProfile;
       const defaultPermissionProfile =
         tsConfig.config.permissionProfiles[tsConfig.config.defaultPermission];
@@ -818,7 +819,6 @@ export function createRealRuntimeClient(
         if (configured) {
           provider = configured;
           providerSource = "ts_config";
-          maxSteps = tsConfig.config.runtime.maxStepsPerTurn;
           publish({
             type: "diagnostic",
             level: "info",
@@ -1748,7 +1748,7 @@ export function createRealRuntimeClient(
   }
 
   function effectiveMaxSteps() {
-    return selectedAgent?.maxSteps ?? maxSteps;
+    return selectedAgent?.maxSteps ?? maxSteps ?? Number.POSITIVE_INFINITY;
   }
 
   /**

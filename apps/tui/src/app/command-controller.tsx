@@ -2389,7 +2389,7 @@ export function runCommand(command: string, ctx: CommandContext) {
                       title: "Max Steps",
                       value: "steps",
                       description: String(
-                        resolved.runtime?.maxStepsPerTurn ?? 25,
+                        resolved.runtime?.maxStepsPerTurn ?? "unlimited",
                       ),
                     },
                     {
@@ -2430,7 +2430,9 @@ export function runCommand(command: string, ctx: CommandContext) {
                       {
                         placeholder:
                           opt.value === "steps"
-                            ? String(next.runtime!.maxStepsPerTurn)
+                            ? String(
+                                next.runtime?.maxStepsPerTurn ?? "unlimited",
+                              )
                             : opt.value === "retry"
                               ? String(next.runtime!.maxAttemptsPerStep)
                               : String(
@@ -2439,8 +2441,11 @@ export function runCommand(command: string, ctx: CommandContext) {
                       },
                     );
                     if (v) {
-                      if (opt.value === "steps")
-                        next.runtime!.maxStepsPerTurn = Number(v) || 25;
+                      if (opt.value === "steps") {
+                        if (v && Number(v) > 0)
+                          next.runtime!.maxStepsPerTurn = Number(v);
+                        else delete next.runtime!.maxStepsPerTurn;
+                      }
                       if (opt.value === "retry")
                         next.runtime!.maxAttemptsPerStep = Number(v) || 3;
                       if (opt.value === "timeout")

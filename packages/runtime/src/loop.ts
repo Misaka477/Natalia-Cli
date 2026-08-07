@@ -11,7 +11,7 @@ export class HeadlessRuntime {
   private listeners = new Set<(event: RuntimeEvent) => void>();
 
   constructor(options: HeadlessRuntimeOptions = {}) {
-    this.maxStepsPerTurn = options.maxStepsPerTurn ?? 1000;
+    this.maxStepsPerTurn = options.maxStepsPerTurn ?? Number.POSITIVE_INFINITY;
     this.requestTimeoutSec = options.requestTimeoutSec ?? 120;
   }
 

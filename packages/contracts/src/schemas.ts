@@ -15,7 +15,7 @@ export const timeoutSchema = z.object({
 });
 
 export const runtimeConfigSchema = z.object({
-  maxStepsPerTurn: z.number().int().positive().default(1000),
+  maxStepsPerTurn: z.number().int().positive().optional(),
   subagentDepth: z.number().int().min(1).max(8).default(1),
   timeouts: timeoutSchema.default({}),
   maxAttemptsPerStep: z.number().int().positive().default(3),

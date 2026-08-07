@@ -1272,6 +1272,51 @@ test("TS config applies retry/context/checkpoint policy to an explicit provider"
   ).toBe(true);
 });
 
+test("runtime does not cap steps when no maximum is configured", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-unlimited-steps-"));
+  let calls = 0;
+  const provider: StreamingProvider = {
+    provider: "scripted-unlimited",
+    model: "scripted-unlimited-model",
+    async *stream(request: ProviderStreamRequest) {
+      calls += 1;
+      const toolMessages = request.messages.filter(
+        (message) => message.role === "tool",
+      ).length;
+      if (toolMessages < 12)
+        yield {
+          type: "tool_call",
+          calls: [
+            {
+              id: `read_${calls}`,
+              name: "read_file",
+              arguments: JSON.stringify({ path: "/tmp/natalia-read" }),
+            },
+          ],
+        };
+      else yield { type: "content", text: "finished after many steps" };
+      yield { type: "done" };
+    },
+  };
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_unlimited_steps",
+    provider,
+    permissionMode: "auto",
+  });
+  client.start((event) => events.push(event));
+  await client.submit("keep going");
+  expect(calls).toBeGreaterThan(10);
+  expect(
+    events.some(
+      (event) =>
+        event.type === "content.delta" &&
+        event.text.includes("finished after many steps"),
+    ),
+  ).toBe(true);
+});
+
 test("configured agent selection supplies the provider system prompt and tool policy", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-agent-selection-"));
   await mkdir(join(root, ".natalia"), { recursive: true });
@@ -2161,6 +2206,11 @@ test("runtime exposes checkpoint list, preview, dry-run, and safety rollback", a
 
 test("runtime reports malformed provider tool calls without rendering an empty tool", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-empty-tool-call-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({ version: 2, runtime: { maxStepsPerTurn: 3 } }),
+  );
   const events: RuntimeEvent[] = [];
   const provider: StreamingProvider = {
     provider: "malformed",
@@ -3573,6 +3623,11 @@ test("run_shell constitution checks allow ordinary cat commands", async () => {
 test("real runtime requests a final response after exhausting tool steps", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-tool-finalize-"));
   await writeFile(join(root, "input.txt"), "tool data\n");
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({ version: 2, runtime: { maxStepsPerTurn: 10 } }),
+  );
   const requests: ProviderStreamRequest[] = [];
   const provider: StreamingProvider = {
     provider: "scripted-tool-finalize",
@@ -5763,6 +5818,11 @@ test("a rejection without feedback still audits the decision and continues", asy
 test("the repeated call guard blocks loops but not waiting reads", async () => {
   async function blockedCount(name: string, args: Record<string, unknown>) {
     const root = await mkdtemp(join(tmpdir(), "natalia-repeat-guard-"));
+    await mkdir(join(root, ".natalia"), { recursive: true });
+    await writeFile(
+      join(root, ".natalia", "config.json"),
+      JSON.stringify({ version: 2, runtime: { maxStepsPerTurn: 6 } }),
+    );
     const events: RuntimeEvent[] = [];
     const client = createRealRuntimeClient({
       workspaceRoot: root,
