@@ -1728,215 +1728,11 @@ test("read-only runtime permits workspace trusted read-only plugin tools", async
   );
 });
 
-test("runtime persists workflow lifecycle events from workflow_run", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-workflow-runtime-"));
-  const workflow = JSON.stringify({
-    version: 1,
-    name: "runtime-workflow",
-    steps: [{ id: "set", kind: "set", key: "result", value: "ok" }],
-  });
-  const events: RuntimeEvent[] = [];
-  const client = createRealRuntimeClient({
-    workspaceRoot: root,
-    sessionID: "ses_workflow_runtime",
-    permissionMode: "auto",
-    provider: {
-      provider: "test",
-      model: "test",
-      async *stream(request) {
-        if (!request.messages.some((message) => message.role === "tool"))
-          yield {
-            type: "tool_call" as const,
-            calls: [
-              {
-                id: "workflow",
-                name: "workflow_run",
-                arguments: JSON.stringify({ workflow, runID: "wf_runtime" }),
-              },
-            ],
-          };
-        yield { type: "done" as const };
-      },
-    },
-  });
-  client.start((event) => events.push(event));
-  await client.submit("run workflow");
-  const lifecycle = events.filter(
-    (event): event is Extract<RuntimeEvent, { type: "workflow.update" }> =>
-      event.type === "workflow.update",
-  );
-  expect(lifecycle.map((event) => event.event)).toEqual([
-    "run_started",
-    "step_started",
-    "step_completed",
-    "run_completed",
-  ]);
-  expect(lifecycle.at(-1)).toMatchObject({
-    runID: "wf_runtime",
-    workflow: "runtime-workflow",
-    status: "completed",
-  });
-  const history = await client.history?.();
-  expect(
-    history?.events.some(
-      (item) =>
-        item.event.type === "workflow.update" &&
-        item.event.runID === "wf_runtime",
-    ),
-  ).toBe(true);
-});
-
-test("workflow inner tools require their own runtime approval", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-workflow-approval-"));
-  const workflow = JSON.stringify({
-    version: 1,
-    name: "workflow-approval",
-    steps: [
-      {
-        id: "write",
-        kind: "tool",
-        tool: "write_file",
-        arguments: { path: "workflow.txt", content: "approved" },
-      },
-    ],
-  });
-  const approvals: string[] = [];
-  const client = createRealRuntimeClient({
-    workspaceRoot: root,
-    sessionID: "ses_workflow_approval",
-    provider: {
-      provider: "test",
-      model: "test",
-      async *stream(request) {
-        if (!request.messages.some((message) => message.role === "tool"))
-          yield {
-            type: "tool_call" as const,
-            calls: [
-              {
-                id: "workflow",
-                name: "workflow_run",
-                arguments: JSON.stringify({ workflow }),
-              },
-            ],
-          };
-        yield { type: "done" as const };
-      },
-    },
-  });
-  client.start((event) => {
-    if (event.type !== "approval.request") return;
-    approvals.push(event.title);
-    client.respondApproval({ requestID: event.id, decision: "once" });
-  });
-  await client.submit("run write workflow");
-
-  expect(approvals).toEqual(["Approve workflow_run", "Approve write_file"]);
-  expect(await readFile(join(root, "workflow.txt"), "utf8")).toBe("approved");
-});
-
-test("rejecting a workflow step approval stops the step from running", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-workflow-reject-"));
-  const workflow = JSON.stringify({
-    version: 1,
-    name: "workflow-reject",
-    steps: [
-      {
-        id: "write",
-        kind: "tool",
-        tool: "write_file",
-        arguments: { path: "workflow-rejected.txt", content: "should not run" },
-      },
-    ],
-  });
-  const client = createRealRuntimeClient({
-    workspaceRoot: root,
-    sessionID: "ses_workflow_reject",
-    provider: {
-      provider: "test",
-      model: "test",
-      async *stream(request) {
-        if (!request.messages.some((message) => message.role === "tool"))
-          yield {
-            type: "tool_call" as const,
-            calls: [
-              {
-                id: "workflow",
-                name: "workflow_run",
-                arguments: JSON.stringify({ workflow }),
-              },
-            ],
-          };
-        yield { type: "done" as const };
-      },
-    },
-  });
-  client.start((event) => {
-    if (event.type !== "approval.request") return;
-    // Allow the workflow itself, refuse the step it wants to run.
-    client.respondApproval({
-      requestID: event.id,
-      decision: event.title === "Approve workflow_run" ? "once" : "reject",
-      feedback: event.title === "Approve workflow_run" ? undefined : "not this",
-    });
-  });
-  await client.submit("run write workflow");
-
-  // A refused approval must not fall through to execution.
-  expect(await readdir(root)).not.toContain("workflow-rejected.txt");
-  await client.dispose?.();
-});
-
-test("workflow script steps require runtime shell approval", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-workflow-script-"));
-  const workflow = JSON.stringify({
-    version: 1,
-    name: "workflow-script",
-    steps: [
-      {
-        id: "script",
-        kind: "script",
-        command: "printf approved > workflow-script.txt",
-      },
-    ],
-  });
-  const approvals: string[] = [];
-  const client = createRealRuntimeClient({
-    workspaceRoot: root,
-    sessionID: "ses_workflow_script",
-    provider: {
-      provider: "test",
-      model: "test",
-      async *stream(request) {
-        if (!request.messages.some((message) => message.role === "tool"))
-          yield {
-            type: "tool_call" as const,
-            calls: [
-              {
-                id: "workflow",
-                name: "workflow_run",
-                arguments: JSON.stringify({ workflow }),
-              },
-            ],
-          };
-        yield { type: "done" as const };
-      },
-    },
-  });
-  client.start((event) => {
-    if (event.type !== "approval.request") return;
-    approvals.push(event.title);
-    client.respondApproval({ requestID: event.id, decision: "once" });
-  });
-  await client.submit("run script workflow");
-
-  expect(approvals).toEqual(["Approve workflow_run", "Approve run_shell"]);
-  expect(await readFile(join(root, "workflow-script.txt"), "utf8")).toBe(
-    "approved",
-  );
-});
-
-test("workflow sandbox merge retains manifest path authorization", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-workflow-sandbox-merge-"));
+// The standalone workflow engine is gone, so a workflow step can no longer be
+// the carrier for these two protections. They are still real for direct tool
+// calls, so the coverage moves to the direct path instead of disappearing.
+test("sandbox merge retains manifest path authorization", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-sandbox-merge-policy-"));
   await mkdir(join(root, ".natalia"), { recursive: true });
   await writeFile(
     join(root, ".natalia", "config.json"),
@@ -1967,38 +1763,24 @@ test("workflow sandbox merge retains manifest path authorization", async () => {
   await sandboxes.create("box");
   await sandboxes.write("box", "allowed.txt", "allowed");
   await sandboxes.write("box", "protected.txt", "protected");
-  const workflow = JSON.stringify({
-    version: 1,
-    name: "sandbox-merge-policy",
-    steps: [
-      {
-        id: "merge",
-        kind: "tool",
-        tool: "sandbox_merge",
-        arguments: { id: "box" },
-      },
-    ],
-  });
   const events: RuntimeEvent[] = [];
   const client = createRealRuntimeClient({
     workspaceRoot: root,
-    sessionID: "ses_workflow_sandbox_merge",
+    sessionID: "ses_sandbox_merge_policy",
     permissionMode: "auto",
-    provider: workflowProvider(workflow),
+    provider: singleToolProvider("sandbox_merge", { id: "box" }),
   });
   client.start((event) => events.push(event));
-  await client.submit("run sandbox merge workflow");
+  await client.submit("merge the sandbox");
 
-  expect(events).toContainEqual(
-    expect.objectContaining({
-      type: "workflow.update",
-      workflow: "sandbox-merge-policy",
-      status: "failed",
-      event: "step_failed",
-      stepID: "merge",
-      error: expect.stringContaining("protected by agent policy"),
-    }),
+  const failure = events.find(
+    (event): event is Extract<RuntimeEvent, { type: "tool.update" }> =>
+      event.type === "tool.update" &&
+      event.name === "sandbox_merge" &&
+      event.status === "failed",
   );
+  expect(failure?.summary).toContain("protected by agent policy");
+  // A refused path must not let the rest of the merge land either.
   await expect(
     readFile(join(root, "allowed.txt"), "utf8"),
   ).rejects.toMatchObject({
@@ -2009,10 +1791,11 @@ test("workflow sandbox merge retains manifest path authorization", async () => {
   ).rejects.toMatchObject({
     code: "ENOENT",
   });
+  await client.dispose?.();
 });
 
-test("workflow grep retains workspace read path authorization", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-workflow-grep-policy-"));
+test("grep retains workspace read path authorization", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-grep-read-policy-"));
   await mkdir(join(root, ".natalia"), { recursive: true });
   await writeFile(join(root, "allowed.ts"), "const value = 'needle';\n");
   await writeFile(join(root, "protected.ts"), "const secret = 'needle';\n");
@@ -2039,38 +1822,27 @@ test("workflow grep retains workspace read path authorization", async () => {
       },
     }),
   );
-  const workflow = JSON.stringify({
-    version: 1,
-    name: "grep-read-policy",
-    steps: [
-      {
-        id: "grep",
-        kind: "tool",
-        tool: "grep",
-        arguments: { pattern: "needle", include: "*.ts" },
-      },
-    ],
-  });
   const events: RuntimeEvent[] = [];
   const client = createRealRuntimeClient({
     workspaceRoot: root,
-    sessionID: "ses_workflow_grep_policy",
+    sessionID: "ses_grep_read_policy",
     permissionMode: "auto",
-    provider: workflowProvider(workflow),
+    provider: singleToolProvider("grep", {
+      pattern: "needle",
+      include: "*.ts",
+    }),
   });
   client.start((event) => events.push(event));
-  await client.submit("run grep workflow");
+  await client.submit("grep for the needle");
 
-  expect(events).toContainEqual(
-    expect.objectContaining({
-      type: "workflow.update",
-      workflow: "grep-read-policy",
-      status: "failed",
-      event: "step_failed",
-      stepID: "grep",
-      error: expect.stringContaining("protected read path"),
-    }),
+  const failure = events.find(
+    (event): event is Extract<RuntimeEvent, { type: "tool.update" }> =>
+      event.type === "tool.update" &&
+      event.name === "grep" &&
+      event.status === "failed",
   );
+  expect(failure?.summary).toContain("protected read path");
+  await client.dispose?.();
 });
 
 test("runtime executes canonical interactive Terminal tools on one native pane", async () => {
@@ -5305,19 +5077,22 @@ function scriptedProvider(text: string): StreamingProvider {
   };
 }
 
-function workflowProvider(workflow: string): StreamingProvider {
+function singleToolProvider(
+  name: string,
+  arguments_: unknown,
+): StreamingProvider {
   return {
-    provider: "scripted-workflow",
-    model: "scripted-workflow-model",
+    provider: "scripted-single-tool",
+    model: "scripted-single-tool-model",
     async *stream(request: ProviderStreamRequest) {
       if (!request.messages.some((message) => message.role === "tool"))
         yield {
           type: "tool_call",
           calls: [
             {
-              id: "workflow",
-              name: "workflow_run",
-              arguments: JSON.stringify({ workflow }),
+              id: "single",
+              name,
+              arguments: JSON.stringify(arguments_),
             },
           ],
         };

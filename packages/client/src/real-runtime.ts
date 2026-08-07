@@ -968,9 +968,6 @@ export function createRealRuntimeClient(
               parentSessionID: sessionID,
               parentAgentID: runner.agentId,
               maxSubagentDepth: tsRuntimeConfig?.runtime.subagentDepth,
-              onWorkflowEvent: (event) =>
-                publish({ type: "workflow.update", ...event }),
-              workflowAuthorize: authorizeWorkflowStep,
             });
             await toolLayer.postExecute({ ...hookEvent, result });
             runner.log(`tool ${tool.name}: ${result.slice(0, 240)}`);
@@ -4138,9 +4135,6 @@ export function createRealRuntimeClient(
           settings: toolSettings(),
           parentSessionID: sessionID,
           maxSubagentDepth: tsRuntimeConfig?.runtime.subagentDepth,
-          onWorkflowEvent: (event) =>
-            publish({ type: "workflow.update", ...event }),
-          workflowAuthorize: authorizeWorkflowStep,
           onSandboxEvent: (event) => {
             const update = event as Extract<
               RuntimeEvent,
@@ -4304,93 +4298,6 @@ export function createRealRuntimeClient(
       pendingApprovalRequests.delete(approvalID);
       approvalToolByID.delete(approvalID);
       terminalApprovalByID.delete(approvalID);
-    }
-  }
-
-  async function authorizeWorkflowStep(request: {
-    kind: "tool" | "script";
-    stepID: string;
-    toolName?: string;
-    arguments?: unknown;
-    command?: string;
-    timeoutMs?: number;
-  }) {
-    const toolName = request.kind === "script" ? "run_shell" : request.toolName;
-    if (!toolName) throw new Error("workflow tool name is required");
-    const tool = tools.get(toolName);
-    if (!tool) throw new Error(`workflow tool not found: ${toolName}`);
-    const arguments_ =
-      request.kind === "script"
-        ? request.timeoutMs
-          ? { command: request.command, timeoutSec: request.timeoutMs / 1000 }
-          : { command: request.command }
-        : request.arguments;
-    const rawArguments = JSON.stringify(arguments_ ?? {});
-    const hookEvent: ToolHookEvent = {
-      turnID: activeTurnID ?? `workflow:${sessionID}`,
-      toolName,
-      toolCallID: `workflow:${request.stepID}`,
-      arguments: rawArguments,
-    };
-    const preResult = await toolLayer.preExecute(hookEvent);
-    if (!preResult.allowed) {
-      publish({
-        type: "policy.decision",
-        turnID: hookEvent.turnID,
-        toolName,
-        toolCallID: hookEvent.toolCallID,
-        decision: "deny",
-        reason: preResult.diagnostics.join("; "),
-      });
-      throw new Error(preResult.diagnostics.join("; "));
-    }
-    if (permissionMode === "read_only" && tool.requiresApproval) {
-      publish({
-        type: "policy.decision",
-        turnID: hookEvent.turnID,
-        toolName,
-        toolCallID: hookEvent.toolCallID,
-        decision: "deny",
-        reason: readOnlyToolMessage(toolName),
-      });
-      throw new Error(readOnlyToolMessage(toolName));
-    }
-    const errors = validateToolParameters(tool.parameters, arguments_);
-    if (errors.length)
-      throw new Error(
-        `workflow tool "${toolName}" parameter validation failed: ${errors.map((error) => `${error.path}: ${error.message}`).join("; ")}`,
-      );
-    publish({
-      type: "policy.decision",
-      turnID: hookEvent.turnID,
-      toolName,
-      toolCallID: hookEvent.toolCallID,
-      decision: tool.requiresApproval ? "approval_required" : "allow",
-    });
-    if (tool.requiresApproval) {
-      // Workflow authorization reports every denial by throwing, and the caller
-      // treats a returning call as authorized. A refusal must therefore throw,
-      // or the step would execute after the user refused it.
-      const refusal = await requireApproval(
-        `workflow:${activeTurnID ?? sessionID}:${request.stepID}`,
-        tool,
-        {
-          id: `workflow:${request.stepID}`,
-          name: toolName,
-          arguments: rawArguments,
-        },
-      );
-      if (refusal) {
-        publish({
-          type: "policy.decision",
-          turnID: hookEvent.turnID,
-          toolName,
-          toolCallID: hookEvent.toolCallID,
-          decision: "rejected",
-          reason: refusal.reason,
-        });
-        throw new Error(refusal.reason);
-      }
     }
   }
 

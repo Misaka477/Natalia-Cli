@@ -14,7 +14,6 @@
     "@natalia/native-terminal": "workspace:*",
     "@natalia/platform": "workspace:*",
     "@natalia/sandbox": "workspace:*",
-    "@natalia/subagent": "workspace:*",
-    "@natalia/workflow": "workspace:*"
+    "@natalia/subagent": "workspace:*"
   }
 }

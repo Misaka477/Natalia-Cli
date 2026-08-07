@@ -186,7 +186,7 @@ export function createFakeBackend(): FakeBackend {
       const toolName = [
         "apply_patch",
         "todowrite",
-        "workflow_run",
+        "run_shell",
         "background_process",
         "task",
         "pty_session",

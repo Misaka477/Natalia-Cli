@@ -6,7 +6,6 @@ import {
   NataliaDocumentStore,
   parseNataliaDocumentJSON,
   parseNataliaDocumentYAML,
-  parseWorkflowYAML,
 } from "../src";
 
 test("parses a versioned natalia flow YAML document", () => {
@@ -244,15 +243,13 @@ modules:
   ).toThrow("duplicate flow module id");
 });
 
-test("new document parsing does not alter legacy WorkflowDocument YAML", () => {
-  expect(
-    parseWorkflowYAML(
+test("legacy step-based workflow YAML is rejected, never silently converted", () => {
+  // The standalone workflow engine and its parser are gone. A legacy document
+  // must fail loudly: silently reinterpreting it as a natalia-flow would run
+  // something the author never described.
+  expect(() =>
+    parseNataliaDocumentYAML(
       "version: 1\nname: legacy\nsteps:\n  - id: result\n    kind: set\n    key: done\n    value: yes\n",
     ),
-  ).toEqual({
-    version: 1,
-    name: "legacy",
-    description: undefined,
-    steps: [{ id: "result", kind: "set", key: "done", value: "yes" }],
-  });
+  ).toThrow();
 });

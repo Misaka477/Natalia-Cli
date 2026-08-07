@@ -18,8 +18,6 @@ import {
 } from "@natalia/native-terminal";
 import { WorkspaceSandboxManager } from "@natalia/sandbox";
 
-import { createWorkflowTools } from "./workflow-tools";
-export { createWorkflowTools };
 export { validateToolParameters, assertValidToolParameters } from "./validate";
 export {
   boundToolOutput,
@@ -101,29 +99,6 @@ export type ToolExecutionContext = {
   parentSessionID?: string;
   parentAgentID?: string;
   maxSubagentDepth?: number;
-  onWorkflowEvent?: (event: {
-    runID: string;
-    workflow: string;
-    status: "running" | "completed" | "failed" | "cancelled";
-    event:
-      | "run_started"
-      | "run_completed"
-      | "run_cancelled"
-      | "step_started"
-      | "step_completed"
-      | "step_failed";
-    stepID?: string;
-    result?: string;
-    error?: string;
-  }) => void;
-  workflowAuthorize?: (request: {
-    kind: "tool" | "script";
-    stepID: string;
-    toolName?: string;
-    arguments?: unknown;
-    command?: string;
-    timeoutMs?: number;
-  }) => Promise<void>;
 };
 
 export class ToolRegistry extends Map<string, RuntimeTool> {
@@ -468,12 +443,6 @@ const interactiveTerminalToolAliases = {
 export function defaultTools(
   processRegistry = new ManagedProcessRegistry(),
 ): RuntimeTool[] {
-  let registryRef: ToolRegistry | undefined;
-  const lazyWorkflowTools = createWorkflowTools(() => {
-    if (!registryRef) throw new Error("tool registry not initialized");
-    return registryRef;
-  });
-
   const tools: RuntimeTool[] = [
     readFileTool(),
     writeFileTool(),
@@ -541,10 +510,8 @@ export function defaultTools(
     readMediaFileTool(),
     browserVisitTool(),
     browserScreenshotTool(),
-    ...lazyWorkflowTools,
   ];
 
-  registryRef = new ToolRegistry(tools.map((t) => [t.name, t]));
   return tools;
 }
 
