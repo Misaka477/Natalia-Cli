@@ -16,9 +16,21 @@ const dependencyGuarded = [
   "packages/workflow",
   "packages/plugin",
 ];
-const capabilityRoots = [
-  "packages/capabilities",
-  "packages/client/src/capabilities",
+const capabilityRoots = ["packages/capabilities"];
+/**
+ * Capability factory modules that live inside the client package. They are not
+ * yet decoupled capability packages — they still use kernel types such as
+ * `RuntimeTool` — so the enforceable rule is narrower: a factory must never
+ * import the composition root back, or the extraction is circular and buys
+ * nothing, and it must stay free of presentation code.
+ */
+const capabilityFactoryRoots = ["packages/client/src/capabilities"];
+const forbiddenCapabilityFactoryImports = [
+  /from\s+["']\.\.\/real-runtime["']/u,
+  /from\s+["']@natalia\/client["']/u,
+  /from\s+["'](?:\.\.\/)+apps\//u,
+  /from\s+["']@opentui\//u,
+  /from\s+["']solid-js/u,
 ];
 const productionRoots = ["apps", "packages", "cmd", "internal", "scripts"];
 /**
@@ -134,6 +146,15 @@ for (const dir of capabilityRoots)
       if (pattern.test(text))
         failures.push(
           `${full}: capability bypasses kernel or presentation boundary ${pattern}`,
+        );
+    }
+  });
+for (const dir of capabilityFactoryRoots)
+  await scan(join(root, dir), sourceExtensions, (full, text) => {
+    for (const pattern of forbiddenCapabilityFactoryImports) {
+      if (pattern.test(text))
+        failures.push(
+          `${full}: capability factory must not depend on the composition root or presentation ${pattern}`,
         );
     }
   });
