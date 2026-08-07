@@ -16,8 +16,42 @@ const dependencyGuarded = [
   "packages/workflow",
   "packages/plugin",
 ];
-const capabilityRoots = ["packages/capabilities"];
+const capabilityRoots = [
+  "packages/capabilities",
+  "packages/client/src/capabilities",
+];
 const productionRoots = ["apps", "packages", "cmd", "internal", "scripts"];
+/**
+ * Packages an externally built UI is allowed to depend on (mainline plan §2.1).
+ * They must stay leaf-ward: importing a kernel package here would drag the whole
+ * runtime into every consumer and silently make the consumer contract untestable.
+ */
+const consumerContractRoots = [
+  "packages/contracts/src",
+  "packages/sdk/src",
+  "packages/view-store/src",
+  "packages/ui-model/src",
+  "packages/capability/src",
+];
+const kernelPackages = [
+  "agent",
+  "client",
+  "config",
+  "mcp",
+  "native-terminal",
+  "platform",
+  "plugin",
+  "runtime",
+  "sandbox",
+  "session",
+  "skills",
+  "subagent",
+  "terminal",
+  "testing",
+  "tools",
+  "transport",
+  "workflow",
+];
 const sourceExtensions = /\.(ts|tsx|js|jsx|go|json|toml|ya?ml)$/u;
 const skippedDirs = new Set([
   ".git",
@@ -47,6 +81,20 @@ const forbiddenAccountFlowNames = [
   ),
 ];
 
+const forbiddenConsumerContractImports = kernelPackages.map(
+  (name) => new RegExp(`from\\s+["']@natalia/${name}["']`, "u"),
+);
+/**
+ * Deep imports into another package bypass its public index and therefore its
+ * contract. `@natalia/<pkg>/src/...` and `../../packages/<pkg>/...` are both
+ * banned for shipped code; `scripts/` is dev tooling and stays out of scope.
+ */
+const deepImportRoots = ["apps", "packages"];
+const forbiddenDeepImports = [
+  /from\s+["']@natalia\/[a-z-]+\//u,
+  /from\s+["'](?:\.\.\/){2,}packages\//u,
+];
+
 const failures: string[] = [];
 for (const dir of dependencyGuarded)
   await scan(join(root, dir), sourceExtensions, (full, text) => {
@@ -67,6 +115,22 @@ for (const dir of capabilityRoots)
         failures.push(
           `${full}: capability bypasses kernel or presentation boundary ${pattern}`,
         );
+    }
+  });
+for (const dir of consumerContractRoots)
+  await scan(join(root, dir), sourceExtensions, (full, text) => {
+    for (const pattern of forbiddenConsumerContractImports) {
+      if (pattern.test(text))
+        failures.push(
+          `${full}: consumer contract package depends on kernel ${pattern}`,
+        );
+    }
+  });
+for (const dir of deepImportRoots)
+  await scan(join(root, dir), sourceExtensions, (full, text) => {
+    for (const pattern of forbiddenDeepImports) {
+      if (pattern.test(text))
+        failures.push(`${full}: deep import bypasses package index ${pattern}`);
     }
   });
 for (const dir of productionRoots)
