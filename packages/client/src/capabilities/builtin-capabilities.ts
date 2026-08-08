@@ -1,19 +1,19 @@
 /**
  * Registration records for the built-in subsystems.
  *
- * Honest scope: this is a **catalogue**, not a wiring mechanism. Terminal,
- * sandbox, checkpoint and MCP are still constructed directly by the runtime;
- * these records only make them visible and auditable through the capability
- * registry. `CapabilityRegistry` does not enforce `scope`, does not resolve
- * `dependencies`, and does not check that a contribution matches its `grants`
- * subsystem nothing and removing it takes nothing away.
+ * Scope, honestly: terminal, sandbox, checkpoint and MCP are still constructed
+ * directly by the runtime, so these records make them visible and auditable
+ * through the capability registry rather than owning their wiring. They declare
+ * no contributions, which is why they need no grants beyond the ones they name.
  *
- * The value of extracting it is narrow and real: the records are now data a
- * test can assert against, and adding one no longer means editing the runtime
- * closure. Making registration actually own the wiring is a later slice and
- * requires grant enforcement in `@natalia/capability` first.
+ * The task-module capability in `task-module-capability.ts` is the opposite case
+ * and the one to copy: it contributes its tools through the kernel, so the
+ * runtime never names them.
  */
-import type { CapabilityRegistration } from "@natalia/capability";
+import type {
+  CapabilityRegistration,
+  CapabilityRegistry,
+} from "@natalia/capability";
 
 export function builtinCapabilities(): CapabilityRegistration[] {
   return [
@@ -58,18 +58,34 @@ export type CapabilityLoadedEvent = {
   grants: CapabilityRegistration["grants"];
 };
 
+export type CapabilityFailedEvent = {
+  type: "capability.failed";
+  id: string;
+  reason: string;
+};
+
 /**
- * Loads each record and returns one durable event per capability that actually
- * loaded. A record that fails to load produces no event, so the journal never
- * claims a capability is present when it is not.
+ * Loads each record and returns one durable event per outcome. A capability that
+ * fails to load reports why instead of vanishing, so the journal never implies a
+ * capability is present when it is not.
  */
-export function registerBuiltinCapabilities(registry: {
-  tryLoad(registration: CapabilityRegistration): unknown;
-}): CapabilityLoadedEvent[] {
-  const events: CapabilityLoadedEvent[] = [];
+export function registerBuiltinCapabilities(registry: CapabilityRegistry): {
+  loaded: CapabilityLoadedEvent[];
+  failed: CapabilityFailedEvent[];
+} {
+  const loaded: CapabilityLoadedEvent[] = [];
+  const failed: CapabilityFailedEvent[] = [];
   for (const registration of builtinCapabilities()) {
-    if (!registry.tryLoad(registration)) continue;
-    events.push({
+    const result = registry.tryLoad(registration);
+    if (!result.ok) {
+      failed.push({
+        type: "capability.failed",
+        id: `cap:${registration.id}`,
+        reason: result.reason,
+      });
+      continue;
+    }
+    loaded.push({
       type: "capability.loaded",
       id: `cap:${registration.id}`,
       apiVersion: 1,
@@ -79,5 +95,5 @@ export function registerBuiltinCapabilities(registry: {
       grants: registration.grants,
     });
   }
-  return events;
+  return { loaded, failed };
 }

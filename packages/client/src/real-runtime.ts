@@ -118,10 +118,8 @@ import {
   type NataliaFlowModuleType,
 } from "@natalia/workflow";
 import { registerBuiltinCapabilities } from "./capabilities/builtin-capabilities";
-import {
-  taskModuleTools,
-  type TaskModuleContext,
-} from "./capabilities/task-module-tools";
+import { registerTaskModuleCapability } from "./capabilities/task-module-capability";
+import type { TaskModuleContext } from "./capabilities/task-module-tools";
 import {
   flowOverview as flowOverviewForWorkspace,
   scheduledTaskOverview,
@@ -290,13 +288,30 @@ export function createRealRuntimeClient(
     ? undefined
     : new ManagedProcessRegistry();
   const tools = options.tools ?? createToolRegistry(undefined, processRegistry);
+  /**
+   * Created here, not in `initialize`, because capabilities contribute tools
+   * while the client is being constructed.
+   */
+  const capabilityRegistry = new CapabilityRegistry();
   if (options.taskModuleContext) {
-    // A task-scoped tool may never shadow a registered tool: that would let a
-    // flow silently replace a policy-checked implementation.
-    for (const tool of taskModuleTools(options.taskModuleContext)) {
-      if (tools.has(tool.name))
-        throw new Error(`task module context cannot replace ${tool.name}`);
-      tools.set(tool.name, tool);
+    const registered = registerTaskModuleCapability(
+      capabilityRegistry,
+      options.taskModuleContext,
+    );
+    if (!registered.ok)
+      throw new Error(`task module capability failed: ${registered.reason}`);
+    // The capability owns its tool names; the runtime only moves what the kernel
+    // accepted into the registry the executor reads. A task-scoped tool may never
+    // shadow a registered one, or a flow could silently replace a policy-checked
+    // implementation.
+    for (const contribution of capabilityRegistry.contributions<RuntimeTool>(
+      "tools",
+    )) {
+      if (tools.has(contribution.name))
+        throw new Error(
+          `task module context cannot replace ${contribution.name}`,
+        );
+      tools.set(contribution.name, contribution.payload);
     }
   }
   let agentToolLayer = createToolPolicyHookLayer();
@@ -482,7 +497,6 @@ export function createRealRuntimeClient(
   let pauseWaiters: Array<() => void> = [];
   let ready: Promise<void> | undefined;
   let skillRegistry: SkillRegistry | undefined;
-  let capabilityRegistry: CapabilityRegistry | undefined;
   let activeSkill: Skill | undefined;
   const attachmentReferences = new Map<
     string,
@@ -1277,7 +1291,6 @@ export function createRealRuntimeClient(
     if (checkpointStore.isEnabled())
       await checkpointStore.ensureBaseline(context, 0);
     publish({ type: "session.ready", sessionID });
-    capabilityRegistry = new CapabilityRegistry();
     publishBuiltinCapabilities();
     publish(contextStatusEvent(context.status(runtimeContextConfig)));
     publish(await runtimeStatusSnapshot());
@@ -1289,9 +1302,16 @@ export function createRealRuntimeClient(
    * forwards the resulting durable events.
    */
   function publishBuiltinCapabilities() {
-    if (!capabilityRegistry) return;
-    for (const event of registerBuiltinCapabilities(capabilityRegistry))
-      publish(event);
+    const outcome = registerBuiltinCapabilities(capabilityRegistry);
+    for (const event of outcome.loaded) publish(event);
+    // A capability that refused to load says so, rather than being absent for no
+    // stated reason.
+    for (const event of outcome.failed)
+      publish({
+        type: "diagnostic",
+        level: "warning",
+        message: `capability ${event.id} failed: ${event.reason}`,
+      });
   }
 
   function applyAgentPolicy() {

@@ -9,7 +9,12 @@ import {
   taskModuleTools,
   type TaskModuleContext,
 } from "../src/capabilities/task-module-tools";
-import type { CapabilityRegistration } from "@natalia/capability";
+import { CapabilityRegistry } from "@natalia/capability";
+import {
+  registerTaskModuleCapability,
+  taskModuleCapability,
+  TASK_MODULE_CAPABILITY_ID,
+} from "../src/capabilities/task-module-capability";
 
 // The point of extracting these factories is that they can be exercised without
 // standing up a runtime. If any of these tests needed a real client, the
@@ -32,36 +37,86 @@ test("built-in capability records are stable data", () => {
 });
 
 test("registration emits one durable event per capability that loaded", () => {
-  const loaded: string[] = [];
-  const events = registerBuiltinCapabilities({
-    tryLoad(registration: CapabilityRegistration) {
-      loaded.push(registration.id);
-      return {};
-    },
-  });
-  expect(loaded).toEqual(builtinCapabilities().map((record) => record.id));
-  expect(events).toHaveLength(4);
-  expect(events[0]).toMatchObject({
+  // Against the real registry, not a stand-in: a fake that accepts everything
+  // would not notice if the kernel started refusing these records.
+  const registry = new CapabilityRegistry();
+  const outcome = registerBuiltinCapabilities(registry);
+  expect(outcome.failed).toEqual([]);
+  expect(outcome.loaded).toHaveLength(4);
+  expect(outcome.loaded[0]).toMatchObject({
     type: "capability.loaded",
     id: "cap:natalia-terminal",
     apiVersion: 1,
     scope: "session",
   });
+  expect(registry.list().map((record) => record.id)).toEqual(
+    builtinCapabilities().map((record) => record.id),
+  );
 });
 
-test("a capability that fails to load produces no event", () => {
+test("a capability that fails to load is reported with a reason", () => {
   // The journal must never claim a capability is present when loading refused
-  // it, so a failed load is silent rather than optimistic.
-  const events = registerBuiltinCapabilities({
-    tryLoad(registration: CapabilityRegistration) {
-      return registration.id === "natalia-sandbox" ? undefined : {};
-    },
+  // it, and "absent for no stated reason" is just as bad.
+  const registry = new CapabilityRegistry();
+  registry.load({
+    id: "natalia-sandbox",
+    name: "Squatter",
+    version: "0.0.1",
+    scope: "workspace",
+    grants: [],
   });
-  expect(events.map((event) => event.id)).toEqual([
+  const outcome = registerBuiltinCapabilities(registry);
+  expect(outcome.loaded.map((event) => event.id)).toEqual([
     "cap:natalia-terminal",
     "cap:natalia-checkpoint",
     "cap:natalia-mcp",
   ]);
+  expect(outcome.failed).toHaveLength(1);
+  expect(outcome.failed[0]).toMatchObject({ id: "cap:natalia-sandbox" });
+  expect(outcome.failed[0]!.reason).toContain("already loaded");
+});
+
+test("the task module capability owns its tools through the kernel", () => {
+  const registry = new CapabilityRegistry();
+  const result = registerTaskModuleCapability(
+    registry,
+    moduleContext({
+      reportIssue: async () => ({}),
+      readDataSource: async () => ({}),
+    }),
+  );
+  expect(result.ok).toBe(true);
+
+  // The runtime never names these tools; it reads whatever the kernel accepted.
+  const contributed = registry
+    .contributions<{ name: string }>("tools")
+    .map((entry) => entry.name);
+  expect(contributed).toEqual([
+    "flow_module_complete",
+    "report_issue",
+    "read_data_source",
+  ]);
+  expect(registry.ownerOf("tools", "report_issue")).toBe(
+    TASK_MODULE_CAPABILITY_ID,
+  );
+
+  // Unloading releases them, which is the property the runtime depends on when a
+  // session ends.
+  expect(registry.unloadScope("session")).toEqual([TASK_MODULE_CAPABILITY_ID]);
+  expect(registry.contributions("tools")).toEqual([]);
+});
+
+test("the task module capability may only contribute tools", () => {
+  // It declares the "tools" grant alone, so the kernel is what stops it from
+  // quietly acquiring a command or a settings surface later.
+  expect(taskModuleCapability().grants).toEqual(["tools"]);
+  const registry = new CapabilityRegistry();
+  const result = registry.tryLoad(taskModuleCapability(), (capability) => {
+    capability.contribute("commands", "/sneaky", () => {});
+  });
+  expect(result.ok).toBe(false);
+  if (!result.ok)
+    expect(result.reason).toContain('without the "commands" grant');
 });
 
 function moduleContext(
