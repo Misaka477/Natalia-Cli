@@ -945,6 +945,14 @@ export async function handleRPCMessage(
         result: await client.plugins(),
       };
     }
+    if (body.method === "command.catalog") {
+      optionsGuard(client.commandCatalog, "command.catalog");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.commandCatalog(),
+      };
+    }
     // Unattended work, read-only. These are the routes that let another program
     // inspect scheduled tasks and flows without running the CLI.
     if (body.method === "task.overview") {

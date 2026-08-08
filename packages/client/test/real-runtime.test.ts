@@ -10,6 +10,7 @@ import type {
 } from "@natalia/runtime";
 import { providerError } from "@natalia/runtime";
 import { createToolRegistry } from "@natalia/tools";
+import { getPluginCommands } from "@natalia/plugin";
 import { resolveConfig } from "@natalia/config";
 import { SqliteSessionStore } from "@natalia/session";
 import { WorkspaceSandboxManager } from "@natalia/sandbox";
@@ -1726,6 +1727,58 @@ test("read-only runtime permits workspace trusted read-only plugin tools", async
   expect(requests[0]?.tools?.map((tool) => tool.name)).toContain(
     "plugin_trusted_plugin_observe",
   );
+});
+
+test("a plugin command reaches the command catalog and the palette bridge", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-plugin-command-"));
+  const pluginRoot = join(root, ".natalia", "plugins", "paletteplugin");
+  await mkdir(pluginRoot, { recursive: true });
+  await writeFile(
+    join(pluginRoot, "natalia.plugin.json"),
+    JSON.stringify({
+      apiVersion: 1,
+      id: "palette.plugin",
+      version: "1.0.0",
+      name: "Palette",
+      description: "",
+      entry: "index.ts",
+      capabilities: ["commands"],
+    }),
+  );
+  await writeFile(
+    join(pluginRoot, "index.ts"),
+    "export default { setup(api) { api.commands.register({ name: 'sync', title: 'Sync everything', run() {} }) } }",
+  );
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_plugin_command",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.submit("load plugins");
+
+  // The authoritative surface, which an external UI reads over RPC.
+  const catalog = await client.commandCatalog?.();
+  expect(catalog?.map((command) => command.name)).toContain(
+    "plugin_palette_plugin_sync",
+  );
+  expect(
+    catalog?.find((command) => command.name === "plugin_palette_plugin_sync"),
+  ).toMatchObject({ title: "Sync everything", category: "Palette" });
+
+  // The synchronous bridge the TUI palette renders from. It was permanently
+  // empty before, so the palette could never show a plugin command.
+  expect(getPluginCommands().map((command) => command.name)).toContain(
+    "plugin_palette_plugin_sync",
+  );
+  await client.dispose?.();
 });
 
 // The standalone workflow engine is gone, so a workflow step can no longer be

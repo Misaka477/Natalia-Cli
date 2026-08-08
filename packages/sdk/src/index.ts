@@ -184,6 +184,8 @@ export type NataliaSDK = {
    * Unattended work, read-only. Each entry reports its own problems rather than
    * failing the whole list, so a broken document does not blank the view.
    */
+  /** Commands contributed by capabilities and plugins. */
+  commandCatalog(): Promise<import("@natalia/contracts").ContributedCommand[]>;
   taskOverview(): Promise<import("@natalia/contracts").ScheduledTaskOverview>;
   flowOverview(): Promise<import("@natalia/contracts").FlowOverview>;
   documentCatalog(): Promise<
@@ -326,6 +328,7 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     mcpResource: async (server, uri) =>
       await call("mcp.resource", { server, uri }),
     plugins: async () => await call("plugin.list", {}),
+    commandCatalog: async () => await call("command.catalog", {}),
     taskOverview: async () => await call("task.overview", {}),
     flowOverview: async () => await call("flow.overview", {}),
     documentCatalog: async () => await call("document.catalog", {}),

@@ -13,7 +13,7 @@ export const pluginManifestSchema = z.object({
   name: z.string().min(1),
   description: z.string().default(""),
   entry: z.string().default("index.ts"),
-  capabilities: z.array(z.enum(["tools", "events"])).default([]),
+  capabilities: z.array(z.enum(["tools", "events", "commands"])).default([]),
 });
 export type PluginManifest = z.infer<typeof pluginManifestSchema>;
 export type PluginAudit = {
@@ -30,6 +30,12 @@ export type Plugin = {
 export type PluginAPI = {
   tools: { register(tool: RuntimeTool): () => void };
   events: { on(listener: (event: unknown) => void): () => void };
+  /**
+   * Commands a plugin adds to the palette. Gated on the "commands" capability
+   * like everything else, and owned by the registry so unloading a plugin also
+   * removes its commands.
+   */
+  commands: { register(command: PluginCommand): () => void };
 };
 export type PluginCommand = {
   name: string;
@@ -37,6 +43,16 @@ export type PluginCommand = {
   category?: string;
   run(): void | Promise<void>;
 };
+/**
+ * Process-wide bridge for UIs that render a command palette synchronously.
+ *
+ * This is a bridge, not the source of truth: the registry owns commands, and the
+ * authoritative surface is `registry.commands()` plus the runtime's
+ * `commandCatalog()` and its `command.catalog` RPC route, which a remote UI can
+ * read. The global exists because a palette renders synchronously and cannot
+ * await; it therefore assumes one runtime per process, which is true for the CLI
+ * and the TUI worker.
+ */
 let globalCommands: PluginCommand[] = [];
 export function setGlobalPluginCommands(commands: PluginCommand[]) {
   globalCommands = [...commands];
@@ -60,10 +76,13 @@ export function createPluginRegistry(input: {
     {
       plugin: Plugin;
       listeners: Set<(event: unknown) => void>;
+      commands: Map<string, PluginCommand>;
       dispose: Array<() => void>;
     }
   >();
   const audit: PluginAudit[] = [];
+  /** Command name -> owning plugin, so a collision names the current owner. */
+  const commandOwners = new Map<string, string>();
   const allowed = new Set(input.allowed ?? []);
   const writeAudit = (
     pluginID: string,
@@ -76,7 +95,7 @@ export function createPluginRegistry(input: {
   };
   const assertCapability = (
     manifest: PluginManifest,
-    capability: "tools" | "events",
+    capability: "tools" | "events" | "commands",
     allowedOverride?: string[],
   ) => {
     const granted = allowedOverride ? new Set(allowedOverride) : allowed;
@@ -96,6 +115,7 @@ export function createPluginRegistry(input: {
       if (plugins.has(manifest.id))
         throw new Error(`plugin already loaded: ${manifest.id}`);
       const listeners = new Set<(event: unknown) => void>();
+      const commands = new Map<string, PluginCommand>();
       const disposers: Array<() => void> = [];
       const api: PluginAPI = {
         tools: {
@@ -127,6 +147,29 @@ export function createPluginRegistry(input: {
             return dispose;
           },
         },
+        commands: {
+          register(command) {
+            assertCapability(manifest, "commands", allowedOverride);
+            // Namespaced like plugin tools, so a plugin cannot shadow a built-in
+            // command by choosing its name.
+            const name = `plugin_${manifest.id.replace(/[^a-z0-9_]/giu, "_")}_${command.name}`;
+            if (commandOwners.has(name))
+              throw new Error(`plugin command already registered: ${name}`);
+            const owned: PluginCommand = {
+              ...command,
+              name,
+              category: command.category ?? manifest.name,
+            };
+            commands.set(name, owned);
+            commandOwners.set(name, manifest.id);
+            const dispose = () => {
+              commands.delete(name);
+              commandOwners.delete(name);
+            };
+            disposers.push(dispose);
+            return dispose;
+          },
+        },
       };
       try {
         await plugin.setup(api);
@@ -142,6 +185,7 @@ export function createPluginRegistry(input: {
       plugins.set(manifest.id, {
         plugin: { ...plugin, manifest },
         listeners,
+        commands,
         dispose: disposers,
       });
       writeAudit(manifest.id, "loaded");
@@ -163,6 +207,12 @@ export function createPluginRegistry(input: {
     },
     list() {
       return [...plugins.values()].map((entry) => entry.plugin.manifest);
+    },
+    /** Every command currently contributed, in stable plugin order. */
+    commands(): PluginCommand[] {
+      return [...plugins.values()].flatMap((entry) => [
+        ...entry.commands.values(),
+      ]);
     },
     audit() {
       return [...audit];

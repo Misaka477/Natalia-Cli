@@ -111,7 +111,12 @@ import {
 } from "@natalia/platform";
 import { WorkspaceSandboxManager } from "@natalia/sandbox";
 import { loadNativeMCPTools } from "@natalia/mcp";
-import { createPluginRegistry, loadLocalPlugins } from "@natalia/plugin";
+import {
+  createPluginRegistry,
+  loadLocalPlugins,
+  setGlobalPluginCommands,
+  type PluginCommand,
+} from "@natalia/plugin";
 import {
   moduleToolPolicy,
   NataliaTaskStateStore,
@@ -841,6 +846,9 @@ export function createRealRuntimeClient(
             message: `plugin ${id} failed to load: ${error instanceof Error ? error.message : String(error)}`,
           }),
       });
+      // A palette renders synchronously, so the process-wide bridge is populated
+      // here. `commandCatalog()` stays the authoritative surface.
+      setGlobalPluginCommands(commandCatalogEntries());
     }
     terminalRegistry = new TerminalRegistry(
       join(workspaceRoot, ".natalia", "terminal", "interactive"),
@@ -1312,6 +1320,20 @@ export function createRealRuntimeClient(
         level: "warning",
         message: `capability ${event.id} failed: ${event.reason}`,
       });
+  }
+
+  /**
+   * Every command a capability or plugin contributed.
+   *
+   * Two sources, one list: plugins register through the plugin registry, and any
+   * capability holding the "commands" grant contributes through the kernel. A UI
+   * renders this without knowing which produced what.
+   */
+  function commandCatalogEntries(): PluginCommand[] {
+    const contributed = capabilityRegistry
+      .contributions<PluginCommand>("commands")
+      .map((entry) => entry.payload);
+    return [...(plugins?.commands() ?? []), ...contributed];
   }
 
   function applyAgentPolicy() {
@@ -2113,6 +2135,13 @@ export function createRealRuntimeClient(
         name: plugin.name,
         description: plugin.description,
         capabilities: plugin.capabilities,
+      }));
+    },
+    async commandCatalog() {
+      return commandCatalogEntries().map((command) => ({
+        name: command.name,
+        title: command.title,
+        category: command.category,
       }));
     },
     async taskOverview() {

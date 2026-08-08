@@ -875,6 +875,12 @@ export type MCPCatalogSnapshot = {
   prompts: MCPPromptCatalog[];
   resources: MCPResourceCatalog[];
 };
+/** A command a capability or plugin contributed, as a UI sees it. */
+export type ContributedCommand = {
+  name: string;
+  title: string;
+  category?: string;
+};
 export type PluginStatus = {
   id: string;
   version: string;
@@ -1418,6 +1424,11 @@ export type RuntimeClient = {
    * deliberately not here: it is a long, side-effecting operation with its own
    * preflight, and belongs to the task controller rather than a read API.
    */
+  /**
+   * Commands contributed by capabilities and plugins, so a UI can render them
+   * without knowing which extension produced each one.
+   */
+  commandCatalog?(): Promise<ContributedCommand[]>;
   taskOverview?(): Promise<import("./schemas").ScheduledTaskOverview>;
   flowOverview?(): Promise<import("./schemas").FlowOverview>;
   documentCatalog?(): Promise<import("./schemas").WorkflowDocumentChoice[]>;

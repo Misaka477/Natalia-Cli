@@ -230,6 +230,20 @@ test("a consumer can inspect real unattended work over the SDK", async () => {
   );
 }, 60_000);
 
+test("a consumer can discover contributed commands", async () => {
+  await withRuntime(async ({ baseURL }) => {
+    const sdk = createNataliaSDK({ baseURL, token: "secret" });
+    // The catalog is the surface a UI renders a palette from, and it exists even
+    // when nothing has contributed yet, so a consumer never indexes into undefined.
+    const commands = await sdk.commandCatalog();
+    expect(Array.isArray(commands)).toBe(true);
+    for (const command of commands) {
+      expect(command.name).toBeString();
+      expect(command.title).toBeString();
+    }
+  });
+}, 60_000);
+
 test("an unauthenticated consumer is refused", async () => {
   await withRuntime(async ({ baseURL }) => {
     const sdk = createNataliaSDK({ baseURL, token: "wrong" });

@@ -173,3 +173,108 @@ function pluginWithReadOnlyTool(id: string) {
     },
   });
 }
+
+test("a plugin command is namespaced, listed, and removed on unload", async () => {
+  const tools = createToolRegistry([]);
+  const registry = createPluginRegistry({ tools, allowed: ["commands"] });
+  const ran: string[] = [];
+  await registry.load(
+    definePlugin({
+      manifest: {
+        apiVersion: 1,
+        id: "demo.plugin",
+        version: "1.0.0",
+        name: "Demo",
+        description: "",
+        entry: "index.ts",
+        capabilities: ["commands"],
+      },
+      setup(api) {
+        api.commands.register({
+          name: "sync",
+          title: "Sync everything",
+          run: () => {
+            ran.push("sync");
+          },
+        });
+      },
+    }),
+  );
+
+  const commands = registry.commands();
+  expect(commands).toHaveLength(1);
+  // Namespaced, so a plugin cannot shadow a built-in command by naming.
+  expect(commands[0]!.name).toBe("plugin_demo_plugin_sync");
+  expect(commands[0]!.category).toBe("Demo");
+  await commands[0]!.run();
+  expect(ran).toEqual(["sync"]);
+
+  await registry.unload("demo.plugin");
+  expect(registry.commands()).toEqual([]);
+});
+
+test("a plugin without the commands capability cannot register one", async () => {
+  const tools = createToolRegistry([]);
+  const registry = createPluginRegistry({ tools, allowed: ["tools"] });
+  await expect(
+    registry.load(
+      definePlugin({
+        manifest: {
+          apiVersion: 1,
+          id: "sneaky.plugin",
+          version: "1.0.0",
+          name: "Sneaky",
+          description: "",
+          entry: "index.ts",
+          capabilities: ["tools"],
+        },
+        setup(api) {
+          api.commands.register({
+            name: "escalate",
+            title: "Escalate",
+            run: () => {},
+          });
+        },
+      }),
+    ),
+  ).rejects.toThrow(/capability denied: sneaky.plugin\/commands/u);
+  // The refused load leaves nothing behind.
+  expect(registry.commands()).toEqual([]);
+  expect(registry.list()).toEqual([]);
+});
+
+test("two plugins cannot register the same command name", async () => {
+  const tools = createToolRegistry([]);
+  const registry = createPluginRegistry({ tools, allowed: ["commands"] });
+  const manifest = (id: string) => ({
+    apiVersion: 1 as const,
+    id,
+    version: "1.0.0",
+    name: id,
+    description: "",
+    entry: "index.ts",
+    capabilities: ["commands" as const],
+  });
+  await registry.load(
+    definePlugin({
+      manifest: manifest("first.plugin"),
+      setup(api) {
+        api.commands.register({ name: "go", title: "Go", run: () => {} });
+      },
+    }),
+  );
+  // Same plugin id would collide; different ids are namespaced apart, so this
+  // asserts the namespacing actually separates them.
+  await registry.load(
+    definePlugin({
+      manifest: manifest("second.plugin"),
+      setup(api) {
+        api.commands.register({ name: "go", title: "Go", run: () => {} });
+      },
+    }),
+  );
+  expect(registry.commands().map((command) => command.name)).toEqual([
+    "plugin_first_plugin_go",
+    "plugin_second_plugin_go",
+  ]);
+});
