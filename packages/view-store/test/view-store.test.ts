@@ -387,3 +387,95 @@ test("a turn that mixes hidden and visible reasoning keeps them apart", () => {
   const thinking = state.messages.find((block) => block.role === "thinking");
   expect(displayText(thinking!)).toBe("shown part");
 });
+
+test("a retry that resends everything does not duplicate the response", () => {
+  // A retrying provider restarts its stream. Without skipping the overlap the
+  // user sees the answer twice.
+  const state = projectEvents([
+    submitted("t1", "q"),
+    { type: "content.delta", id: "t1", text: "Hello" },
+    {
+      type: "turn.retry",
+      id: "t1",
+      attempt: 2,
+      maxAttempts: 3,
+      reason: "timeout",
+      retryAfterMs: 10,
+    },
+    { type: "content.delta", id: "t1", text: "Hello world" },
+    { type: "content.done", id: "t1", text: "Hello world" },
+  ]);
+  const assistant = state.messages.filter(
+    (block) => block.role === "assistant",
+  );
+  expect(assistant).toHaveLength(1);
+  expect(displayText(assistant[0]!)).toBe("Hello world");
+});
+
+test("a retry that resends in different chunk boundaries still reads once", () => {
+  // The resend is not guaranteed to arrive in the same chunks, so the overlap has
+  // to be tracked across chunks rather than compared per chunk.
+  const state = projectEvents([
+    submitted("t1", "q"),
+    { type: "content.delta", id: "t1", text: "Hello" },
+    {
+      type: "step.retry",
+      id: "t1",
+      operation: "llm_step",
+      step: 1,
+      attempt: 2,
+      maxAttempts: 3,
+      waitMs: 10,
+      reason: "timeout",
+    },
+    { type: "content.delta", id: "t1", text: "Hel" },
+    { type: "content.delta", id: "t1", text: "lo wor" },
+    { type: "content.delta", id: "t1", text: "ld" },
+    { type: "content.done", id: "t1", text: "Hello world" },
+  ]);
+  expect(
+    displayText(state.messages.find((block) => block.role === "assistant")!),
+  ).toBe("Hello world");
+});
+
+test("a retry that resumes instead of restarting keeps the earlier text", () => {
+  // Dropping the confirmed text on retry would lose it whenever the provider
+  // continues rather than starting over.
+  const state = projectEvents([
+    submitted("t1", "q"),
+    { type: "content.delta", id: "t1", text: "Hello" },
+    {
+      type: "turn.retry",
+      id: "t1",
+      attempt: 2,
+      maxAttempts: 3,
+      reason: "timeout",
+      retryAfterMs: 10,
+    },
+    { type: "content.delta", id: "t1", text: " world" },
+    { type: "content.done", id: "t1", text: "Hello world" },
+  ]);
+  expect(
+    displayText(state.messages.find((block) => block.role === "assistant")!),
+  ).toBe("Hello world");
+});
+
+test("a retry also clears unconfirmed text so it cannot be shown twice", () => {
+  const state = projectEvents([
+    submitted("t1", "q"),
+    { type: "content.delta", id: "t1", text: "Hello" },
+    { type: "content.delta", id: "t1", text: " partial" },
+    {
+      type: "turn.retry",
+      id: "t1",
+      attempt: 2,
+      maxAttempts: 3,
+      reason: "timeout",
+      retryAfterMs: 10,
+    },
+  ]);
+  const assistant = state.messages.find((block) => block.role === "assistant");
+  // The banner is up and the unconfirmed tail is gone.
+  expect(assistant?.pendingText).toBe("");
+  expect(state.retryBanner?.kind).toBe("turn_retry");
+});

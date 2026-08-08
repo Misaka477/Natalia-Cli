@@ -64,6 +64,11 @@ export type StreamState = {
   committed: string;
   /** Text streamed but not yet confirmed. */
   tail: string;
+  /**
+   * Text a retry is expected to send again. A provider that retries restarts its
+   * stream, so the overlap has to be skipped or the response renders twice.
+   */
+  retrySkip: string;
   attempt: number;
   segmentIndex: number;
 };

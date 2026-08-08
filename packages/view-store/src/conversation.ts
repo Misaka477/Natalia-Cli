@@ -11,6 +11,7 @@
  */
 import type { RuntimeEvent } from "@natalia/contracts";
 import {
+  appendWithRetrySkip,
   parseToolArguments,
   parseTodoItems,
   classifyTool,
@@ -20,11 +21,47 @@ import {
   streamSegmentChars,
   upsertBlock,
   type AppState,
+  type StreamState,
   type ToolBlock,
 } from "./state";
 
-export function newStream() {
-  return { committed: "", tail: "", attempt: 1, segmentIndex: 0 };
+export function newStream(): StreamState {
+  return {
+    committed: "",
+    tail: "",
+    retrySkip: "",
+    attempt: 1,
+    segmentIndex: 0,
+  };
+}
+
+/**
+ * Prepares a turn's streams for a retry.
+ *
+ * A retrying provider restarts its stream and re-sends what it already sent, so
+ * the text already confirmed is remembered as the overlap to skip. Dropping the
+ * confirmed text instead would lose it whenever the retry resumes rather than
+ * restarts, and keeping it without skipping renders the response twice.
+ */
+export function resetStreamsForRetry(state: AppState, turnID: string): void {
+  for (const role of ["thinking", "assistant"] as const) {
+    const id = streamID(turnID, role);
+    const stream = state.streams[id];
+    if (!stream) continue;
+    // Text already streamed has been seen by the reader, so it is confirmed here
+    // rather than discarded, and becomes the overlap the resend must skip.
+    // Using only `committed` would drop whatever was still unconfirmed.
+    stream.committed += stream.tail;
+    stream.tail = "";
+    stream.retrySkip = stream.committed;
+    const block = state.messages.find(
+      (item) => item.id === segmentID(id, stream.segmentIndex),
+    );
+    if (block) {
+      block.text = stream.committed;
+      block.pendingText = "";
+    }
+  }
 }
 
 export function streamID(turnID: string, role: "thinking" | "assistant") {
@@ -290,7 +327,14 @@ function appendStream(
     stream.tail = "";
     removeStreamBlocks(state, input.id);
   }
-  stream.tail += input.text;
+  const applied = appendWithRetrySkip(input.text, stream.retrySkip);
+  stream.retrySkip = applied.retrySkip;
+  if (!applied.text && applied.retrySkip) {
+    // The whole chunk was text we already have; nothing to render yet.
+    writeStreamBlock(state, input.id, input.role, input.reasoningVisible);
+    return;
+  }
+  stream.tail += applied.text;
   if (stream.committed.length + stream.tail.length > streamSegmentChars) {
     // Confirm what we have and start a new segment, so one enormous response
     // does not become a single unbounded block.
