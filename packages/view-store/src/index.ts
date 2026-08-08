@@ -50,6 +50,7 @@ export {
   streamSegmentChars,
   subagentHistoryLimit,
   terminalTimelineLimit,
+  terminalTranscriptChars,
   upsertBlock,
   type AppState,
   type Banner,

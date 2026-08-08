@@ -10,11 +10,52 @@ import type { RuntimeEvent } from "@natalia/contracts";
 import {
   appendBounded,
   checkpointLimit,
+  terminalTranscriptChars,
+  type TerminalView,
   subagentHistoryLimit,
   terminalTimelineLimit,
   upsertBlock,
   type AppState,
 } from "./state";
+
+/**
+ * Keeps the visible tail of a transcript and says how much was dropped, so a
+ * consumer never silently renders a truncated scrollback as if it were complete.
+ */
+function boundTerminalTranscript(event: TerminalView): TerminalView {
+  const transcript = event.transcript;
+  if (!transcript || transcript.length <= terminalTranscriptChars) return event;
+  const omitted = transcript.length - terminalTranscriptChars;
+  return {
+    ...event,
+    transcript: `... ${omitted} earlier chars omitted from live pane ...\n${transcript.slice(
+      -terminalTranscriptChars,
+    )}`,
+  };
+}
+
+/** Every field a consumer can observe. Compared to skip no-op republishes. */
+function sameTerminalState(
+  previous: TerminalView,
+  next: TerminalView,
+): boolean {
+  return (
+    previous.status === next.status &&
+    previous.attached === next.attached &&
+    previous.rows === next.rows &&
+    previous.cols === next.cols &&
+    previous.activity === next.activity &&
+    previous.tail === next.tail &&
+    previous.transcript === next.transcript &&
+    previous.command === next.command &&
+    previous.cwd === next.cwd &&
+    previous.prompt === next.prompt &&
+    previous.lastAction === next.lastAction &&
+    previous.ownership === next.ownership &&
+    previous.revision === next.revision &&
+    previous.lastOutputAt === next.lastOutputAt
+  );
+}
 
 /** Returns true when the event belongs to this projection. */
 export function applyResourceEvent(
@@ -22,9 +63,15 @@ export function applyResourceEvent(
   event: RuntimeEvent,
 ): boolean {
   switch (event.type) {
-    case "terminal.update":
-      state.terminals = { ...state.terminals, [event.id]: event };
+    case "terminal.update": {
+      const previous = state.terminals[event.id];
+      const next = boundTerminalTranscript(event);
+      // A pane republishes on every keystroke, so an update that changes nothing
+      // a consumer can see is dropped rather than forcing a re-render.
+      if (previous && sameTerminalState(previous, next)) return true;
+      state.terminals = { ...state.terminals, [event.id]: next };
       return true;
+    }
     case "terminal.timeline":
       state.terminalTimeline = {
         ...state.terminalTimeline,

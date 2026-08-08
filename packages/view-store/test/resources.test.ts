@@ -6,6 +6,7 @@ import {
   projectEvents,
   subagentHistoryLimit,
   terminalTimelineLimit,
+  terminalTranscriptChars,
   type AppState,
 } from "../src";
 
@@ -556,4 +557,41 @@ test("initialState has every slice a consumer will read", () => {
   expect(state.paused).toBe(false);
   expect(state.rollback).toBeUndefined();
   expect(state.context).toBeUndefined();
+});
+
+test("a terminal transcript is bounded and says what was dropped", () => {
+  // A pane's scrollback grows for the life of the session. Keeping it whole would
+  // grow the projection without limit in every consumer that holds it.
+  const long = "x".repeat(terminalTranscriptChars + 5_000);
+  const state = projectEvents([terminalUpdate("t_a", { transcript: long })]);
+  const stored = state.terminals.t_a?.transcript ?? "";
+
+  expect(stored.length).toBeLessThan(long.length);
+  // A consumer must not render a truncated scrollback as though it were complete.
+  expect(stored).toContain("earlier chars omitted");
+  expect(stored).toContain("5000");
+  // The visible part is the most recent output, which is what a pane shows.
+  expect(stored.endsWith("x".repeat(100))).toBe(true);
+});
+
+test("a short transcript is kept exactly as published", () => {
+  const state = projectEvents([
+    terminalUpdate("t_a", { transcript: "short output" }),
+  ]);
+  expect(state.terminals.t_a?.transcript).toBe("short output");
+});
+
+test("a republished terminal update that changes nothing is dropped", () => {
+  // Panes republish on every keystroke; an identical update must not churn the
+  // projection and force consumers to re-render.
+  const state = projectEvents([terminalUpdate("t_a", { tail: "$ ls" })]);
+  const before = state.terminals;
+
+  applyEvent(state, terminalUpdate("t_a", { tail: "$ ls" }));
+  // Same identity: the no-op update did not rebuild the record.
+  expect(state.terminals).toBe(before);
+
+  applyEvent(state, terminalUpdate("t_a", { tail: "$ ls -l" }));
+  expect(state.terminals).not.toBe(before);
+  expect(state.terminals.t_a?.tail).toBe("$ ls -l");
 });

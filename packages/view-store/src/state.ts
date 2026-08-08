@@ -22,6 +22,12 @@ export const terminalTimelineLimit = 200;
 export const subagentHistoryLimit = 100;
 export const policyDecisionLimit = 200;
 export const checkpointLimit = 200;
+/**
+ * A terminal's transcript grows for as long as the pane lives, so the projection
+ * keeps a bounded tail with an explicit note about what was dropped. Storing the
+ * event as-is would grow without limit for the whole session.
+ */
+export const terminalTranscriptChars = 12_000;
 
 export type MessageBlock = {
   id: string;
