@@ -14,6 +14,7 @@ import {
   parseToolArguments,
   parseTodoItems,
   classifyTool,
+  providerSafeThinkingSummary,
 } from "@natalia/ui-model";
 import {
   streamSegmentChars,
@@ -79,12 +80,19 @@ export function applyConversationEvent(
       return true;
     case "thinking.delta":
       prepareStreamPhase(state, event.id, "thinking");
+      // A provider that forbids showing its reasoning is obeyed by never
+      // retaining the text: not in the block, and not in the stream either, so
+      // there is nowhere for a consumer to read it from.
+      if (event.visible === false) {
+        recordHiddenThinking(state, streamID(event.id, "thinking"));
+        return true;
+      }
       appendStream(state, {
         id: streamID(event.id, "thinking"),
         role: "thinking",
         text: event.text,
         attempt: event.attempt,
-        reasoningVisible: event.visible !== false,
+        reasoningVisible: true,
       });
       return true;
     case "thinking.done":
@@ -233,6 +241,23 @@ function upsertTool(
   } catch {
     // Partial or redacted arguments simply leave the previous list in place.
   }
+}
+
+/**
+ * Notes that hidden reasoning arrived, without keeping any of it. The block shows
+ * the provider-safe summary so a consumer can tell thinking happened, and
+ * `reasoningVisible: false` lets it hide the row entirely if it prefers.
+ */
+function recordHiddenThinking(state: AppState, id: string): void {
+  const stream = (state.streams[id] ??= newStream());
+  upsertBlock(
+    state,
+    segmentID(id, stream.segmentIndex),
+    "thinking",
+    providerSafeThinkingSummary(false, "x"),
+    undefined,
+    { pendingText: "", reasoningVisible: false },
+  );
 }
 
 function prepareStreamPhase(

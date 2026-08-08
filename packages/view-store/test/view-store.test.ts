@@ -326,3 +326,64 @@ test("a long response segments instead of growing one unbounded block", () => {
   // No text is lost across the segment boundary.
   expect(assistant.map(displayText).join("")).toBe(chunk.repeat(4));
 });
+
+test("provider-hidden reasoning is never retained anywhere in the projection", () => {
+  // The consumer guide tells a UI to render `displayText(block)`. If the raw
+  // reasoning were stored, following that advice would display exactly what the
+  // provider forbade showing — so it must not be stored at all, in the block or
+  // the stream.
+  const secret = "SECRET-CHAIN-OF-THOUGHT";
+  const events: RuntimeEvent[] = [
+    submitted("t1", "q"),
+    { type: "thinking.delta", id: "t1", text: secret, visible: false },
+    {
+      type: "thinking.delta",
+      id: "t1",
+      text: `${secret}-more`,
+      visible: false,
+    },
+    { type: "thinking.done", id: "t1" },
+    { type: "content.delta", id: "t1", text: "answer" },
+    { type: "content.done", id: "t1", text: "answer" },
+    { type: "turn.finished", id: "t1", stopReason: "done" },
+  ];
+  const state = projectEvents(events);
+
+  expect(JSON.stringify(state)).not.toContain(secret);
+
+  const thinking = state.messages.find((block) => block.role === "thinking");
+  // A consumer can still tell that thinking happened, and can hide the row.
+  expect(thinking?.reasoningVisible).toBe(false);
+  expect(displayText(thinking!)).toContain("hidden by provider policy");
+
+  // Visible content is unaffected.
+  expect(state.messages.find((block) => block.role === "assistant")?.text).toBe(
+    "answer",
+  );
+});
+
+test("visible reasoning is still projected in full", () => {
+  const state = projectEvents([
+    submitted("t1", "q"),
+    { type: "thinking.delta", id: "t1", text: "step one, " },
+    { type: "thinking.delta", id: "t1", text: "step two" },
+  ]);
+  const thinking = state.messages.find((block) => block.role === "thinking");
+  expect(displayText(thinking!)).toBe("step one, step two");
+  expect(thinking?.reasoningVisible).toBe(true);
+});
+
+test("a turn that mixes hidden and visible reasoning keeps them apart", () => {
+  // Providers can change policy mid-turn. The hidden part must not leak because a
+  // later chunk was allowed.
+  const state = projectEvents([
+    submitted("t1", "q"),
+    { type: "thinking.delta", id: "t1", text: "HIDDEN-PART", visible: false },
+    { type: "thinking.delta", id: "t1", text: "shown part" },
+  ]);
+  expect(JSON.stringify(state)).not.toContain("HIDDEN-PART");
+  // The allowed chunk still renders; it simply replaces the placeholder, because
+  // there is no hidden text to interleave it with.
+  const thinking = state.messages.find((block) => block.role === "thinking");
+  expect(displayText(thinking!)).toBe("shown part");
+});
