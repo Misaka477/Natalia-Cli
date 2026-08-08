@@ -12,6 +12,7 @@
 import type { RuntimeEvent } from "@natalia/contracts";
 import {
   appendWithRetrySkip,
+  splitMarkdownAtSafeBoundary,
   parseToolArguments,
   parseTodoItems,
   classifyTool,
@@ -297,6 +298,17 @@ function recordHiddenThinking(state: AppState, id: string): void {
   );
 }
 
+/**
+ * Whether the text ends inside an unclosed fenced block. Counting fence openers is
+ * enough: they alternate open/close, so an odd count means one is still open.
+ */
+function insideFence(text: string): boolean {
+  let open = 0;
+  for (const line of text.split("\n"))
+    if (/^\s*(?:```+|~~~+)/u.test(line)) open += 1;
+  return open % 2 === 1;
+}
+
 function prepareStreamPhase(
   state: AppState,
   turnID: string,
@@ -336,12 +348,30 @@ function appendStream(
   }
   stream.tail += applied.text;
   if (stream.committed.length + stream.tail.length > streamSegmentChars) {
-    // Confirm what we have and start a new segment, so one enormous response
-    // does not become a single unbounded block.
-    commitStream(state, input.id, input.role, input.reasoningVisible);
-    stream.segmentIndex += 1;
-    stream.committed = "";
-    return;
+    // One enormous response must not become a single unbounded block, but the
+    // split has to land outside a markdown construct: cutting inside a fenced
+    // block leaves both segments with an unpaired fence, and a renderer then
+    // swallows everything after it.
+    const split = splitMarkdownAtSafeBoundary(stream.tail);
+    // Prefer a markdown-safe boundary. Failing that, a hard split is still safe
+    // while we are outside a fence, which keeps the size bound real for prose that
+    // offers no boundary at all. Inside an open fence, keep accumulating: a
+    // readable block beats an exactly sized one, and the fence must close.
+    const cut = split.committed
+      ? split.committed.length
+      : insideFence(stream.tail)
+        ? 0
+        : Math.max(0, streamSegmentChars - stream.committed.length);
+    if (cut > 0) {
+      const carried = stream.tail.slice(cut);
+      stream.tail = stream.tail.slice(0, cut);
+      commitStream(state, input.id, input.role, input.reasoningVisible);
+      stream.segmentIndex += 1;
+      stream.committed = "";
+      stream.tail = carried;
+      writeStreamBlock(state, input.id, input.role, input.reasoningVisible);
+      return;
+    }
   }
   writeStreamBlock(state, input.id, input.role, input.reasoningVisible);
 }

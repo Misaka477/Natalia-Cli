@@ -479,3 +479,74 @@ test("a retry also clears unconfirmed text so it cannot be shown twice", () => {
   expect(assistant?.pendingText).toBe("");
   expect(state.retryBanner?.kind).toBe("turn_retry");
 });
+
+test("a long response does not split a fenced code block across segments", () => {
+  // Segmentation triggers exactly on long responses, which is when code blocks
+  // appear. Cutting inside a fence leaves both segments with an unpaired fence and
+  // a markdown renderer then swallows everything after it.
+  const filler = "word ".repeat(1200);
+  const body = `${filler}\n\`\`\`ts\nconst a = 1;\n`;
+  const rest = "const b = 2;\n```\ndone\n";
+  const state = projectEvents([
+    submitted("t1", "q"),
+    { type: "content.delta", id: "t1", text: body },
+    { type: "content.delta", id: "t1", text: rest },
+  ]);
+
+  const assistant = state.messages.filter(
+    (block) => block.role === "assistant",
+  );
+  expect(assistant.length).toBeGreaterThan(1);
+  for (const block of assistant) {
+    const fences = (displayText(block).match(/```/gu) ?? []).length;
+    expect(fences % 2).toBe(0);
+  }
+  // No text is lost or duplicated by moving the split.
+  expect(assistant.map(displayText).join("")).toBe(body + rest);
+});
+
+test("a fence still open at the threshold is not split", () => {
+  // The dangerous case: the size threshold is crossed while a fenced block has not
+  // closed yet. There is no safe boundary inside a fence, and a hard split here
+  // would leave one segment with an unpaired fence.
+  const open = `\`\`\`ts\n${"const x = 1;\n".repeat(700)}`;
+  const state = projectEvents([
+    submitted("t1", "q"),
+    { type: "content.delta", id: "t1", text: open },
+  ]);
+  const assistant = state.messages.filter(
+    (block) => block.role === "assistant",
+  );
+  // Kept whole: a readable block beats an exactly sized one.
+  expect(assistant).toHaveLength(1);
+  expect(displayText(assistant[0]!)).toBe(open);
+
+  // Once the fence closes, later output can segment normally again.
+  const closed = projectEvents(
+    [
+      { type: "content.delta", id: "t1", text: "```\n" },
+      { type: "content.delta", id: "t1", text: "after. ".repeat(1200) },
+    ],
+    state,
+  );
+  const blocks = closed.messages.filter((block) => block.role === "assistant");
+  expect(blocks.length).toBeGreaterThan(1);
+  for (const block of blocks) {
+    const fences = (displayText(block).match(/```/gu) ?? []).length;
+    expect(fences % 2).toBe(0);
+  }
+});
+
+test("plain long prose still segments", () => {
+  // The bound must still do its job when there is no markdown to protect.
+  const prose = "sentence. ".repeat(2000);
+  const state = projectEvents([
+    submitted("t1", "q"),
+    { type: "content.delta", id: "t1", text: prose },
+  ]);
+  const assistant = state.messages.filter(
+    (block) => block.role === "assistant",
+  );
+  expect(assistant.length).toBeGreaterThan(1);
+  expect(assistant.map(displayText).join("")).toBe(prose);
+});
