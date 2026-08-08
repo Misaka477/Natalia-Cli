@@ -2,11 +2,14 @@ import { expect, test } from "bun:test";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import {
   applyEvent,
+  boundTranscript,
   initialState,
   projectEvents,
   subagentHistoryLimit,
   terminalTimelineLimit,
   terminalTranscriptChars,
+  transcriptLimit,
+  transcriptWatermark,
   type AppState,
 } from "../src";
 
@@ -594,4 +597,40 @@ test("a republished terminal update that changes nothing is dropped", () => {
   applyEvent(state, terminalUpdate("t_a", { tail: "$ ls -l" }));
   expect(state.terminals).not.toBe(before);
   expect(state.terminals.t_a?.tail).toBe("$ ls -l");
+});
+
+test("transcript eviction cuts on a user turn boundary, not at the watermark", () => {
+  // Turns are 7 rows long so the naive cutoff (exactly `excess` rows) lands on an
+  // assistant row. A cut there would leave a reply with no prompt above it, which
+  // reads as the assistant answering nothing. The layout is chosen so a correct
+  // implementation and a naive one give different answers.
+  const period = 7;
+  const messages = Array.from({ length: transcriptLimit + 40 }, (_, index) => ({
+    id: `m${index}`,
+    role: index % period === 0 ? ("user" as const) : ("assistant" as const),
+    text: "x",
+    pendingText: "",
+  }));
+  const naiveKept = transcriptWatermark;
+  expect(messages[naiveKept]?.role).toBe("assistant");
+
+  const older = boundTranscript(messages, "older");
+  expect(older.evicted).toBe(true);
+  // The row just past the kept slice begins a turn, so nothing was cut mid-turn.
+  expect(messages[older.messages.length]?.role).toBe("user");
+  expect(older.messages.length).not.toBe(naiveKept);
+
+  const newer = boundTranscript(messages, "newer");
+  expect(newer.evicted).toBe(true);
+  expect(newer.messages[0]?.role).toBe("user");
+  expect(newer.messages.length).not.toBe(naiveKept);
+});
+
+test("a transcript under the limit is returned untouched", () => {
+  const messages = [
+    { id: "a", role: "user" as const, text: "q", pendingText: "" },
+  ];
+  const result = boundTranscript(messages, "older");
+  expect(result.evicted).toBe(false);
+  expect(result.messages).toBe(messages);
 });

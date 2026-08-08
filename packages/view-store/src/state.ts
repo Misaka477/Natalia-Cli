@@ -272,3 +272,56 @@ function mapRecord<T>(
   for (const key in record) next[key] = map(record[key] as T);
   return next;
 }
+
+/**
+ * Transcript eviction.
+ *
+ * `messages` is deliberately unbounded: a transcript is the record, and silently
+ * dropping conversation is a policy decision that belongs to the consumer, not to
+ * a shared projection. A long-lived UI does need to evict, so the rule that makes
+ * eviction safe lives here rather than being re-derived by every consumer:
+ * **evict whole user turns only**. Dropping a partial turn leaves an assistant
+ * reply with no prompt above it, which reads as the assistant answering nothing.
+ *
+ * Durable history stays reloadable by cursor, so eviction loses nothing permanent.
+ */
+export const transcriptLimit = 300;
+export const transcriptWatermark = 240;
+
+export type TranscriptBound<T> = {
+  messages: T[];
+  evicted: boolean;
+};
+
+/**
+ * Generic over the row type: eviction only needs to know which rows begin a user
+ * turn, so a consumer with a richer block shape can use this without converting.
+ */
+export function boundTranscript<T extends { role: string }>(
+  messages: T[],
+  direction: "older" | "newer",
+  limit = transcriptLimit,
+  watermark = transcriptWatermark,
+): TranscriptBound<T> {
+  if (messages.length <= limit) return { messages, evicted: false };
+  const excess = messages.length - watermark;
+  if (direction === "older") {
+    // Trimming the oldest end: walk back to a user turn boundary.
+    let start = messages.length;
+    let removed = 0;
+    while (start > 0) {
+      start--;
+      removed++;
+      if (removed >= excess && messages[start]?.role === "user") break;
+    }
+    return { messages: messages.slice(0, start), evicted: true };
+  }
+  let end = 0;
+  let removed = 0;
+  while (end < messages.length) {
+    if (removed >= excess && end > 0 && messages[end]?.role === "user") break;
+    end++;
+    removed++;
+  }
+  return { messages: messages.slice(end), evicted: true };
+}

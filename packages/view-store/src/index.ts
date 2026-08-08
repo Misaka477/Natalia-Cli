@@ -42,6 +42,7 @@ import { cloneState, initialState, type AppState } from "./state";
 
 export {
   appendBounded,
+  boundTranscript,
   checkpointLimit,
   cloneState,
   displayText,
@@ -51,6 +52,8 @@ export {
   subagentHistoryLimit,
   terminalTimelineLimit,
   terminalTranscriptChars,
+  transcriptLimit,
+  transcriptWatermark,
   upsertBlock,
   type AppState,
   type Banner,
@@ -73,6 +76,7 @@ export {
   type TerminalTimelineEntry,
   type TerminalView,
   type ToolBlock,
+  type TranscriptBound,
 } from "./state";
 export {
   flushStream,
