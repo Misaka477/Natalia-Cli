@@ -6,6 +6,7 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "dependencies": {
-    "@natalia/contracts": "workspace:*"
+    "@natalia/contracts": "workspace:*",
+    "@natalia/ui-model": "workspace:*"
   }
 }

@@ -39,6 +39,12 @@ type Comparable = {
   statusSegments: string[];
   pendingApprovalIDs: string[];
   pendingQuestionIDs: string[];
+  /** Resource identities and current status, not their rendered presentation. */
+  terminals: Array<{ id: string; status: string }>;
+  sandboxes: Array<{ id: string; status: string }>;
+  subagents: Array<{ id: string; status: string }>;
+  mcp: Array<{ server: string; status: string }>;
+  todos: Array<{ content: string; status: string }>;
 };
 
 /**
@@ -57,17 +63,30 @@ function comparableText(block: {
 }
 
 /**
- * The TUI renders approval and question prompts as inline rows in the transcript;
- * view-store reports them structurally in `pendingApprovals`/`pendingQuestions`
- * and lets a consumer decide where to show them. Both are correct, so the rows
- * are excluded here and the identities are compared instead.
+ * The TUI narrates some things inline in the transcript that view-store exposes
+ * structurally instead: approval and question prompts, and a per-resource
+ * summary line for sandboxes and subagents. Both are correct — narrating a
+ * resource is a presentation choice, and view-store deliberately leaves it to
+ * the consumer — so those rows are excluded here and the structured slices are
+ * compared instead (`terminals`, `sandboxes`, `subagents`, `mcp`, `todos`).
+ *
+ * System blocks for turn-level facts (cancellation, compaction outcome, retry
+ * exhaustion) are *not* excluded: both layers must agree on those.
  */
-const inlineInteractiveRoles = new Set(["approval", "question"]);
+const inlineInteractiveRoles = new Set(["approval", "question", "subagent"]);
+const inlineResourcePrefixes = ["sandbox:", "subagent:", "terminal:"];
+
+function isInlineResourceRow(block: { id: string; role: string }): boolean {
+  return (
+    inlineInteractiveRoles.has(block.role) ||
+    inlineResourcePrefixes.some((prefix) => block.id.startsWith(prefix))
+  );
+}
 
 function fromView(state: ViewAppState): Comparable {
   return {
     messages: state.messages
-      .filter((block) => !inlineInteractiveRoles.has(block.role))
+      .filter((block) => !isInlineResourceRow(block))
       .map((block) => ({
         role: block.role,
         text: comparableText(block),
@@ -78,13 +97,31 @@ function fromView(state: ViewAppState): Comparable {
     statusSegments: state.statusSegments,
     pendingApprovalIDs: state.pendingApprovals.map((item) => item.id),
     pendingQuestionIDs: state.pendingQuestions.map((item) => item.id),
+    terminals: resourceRows(state.terminals),
+    sandboxes: resourceRows(state.sandboxes),
+    subagents: resourceRows(state.subagents),
+    mcp: Object.values(state.mcp)
+      .map((item) => ({ server: item.server, status: item.status }))
+      .sort((a, b) => a.server.localeCompare(b.server)),
+    todos: state.todos.map((todo) => ({
+      content: todo.content,
+      status: todo.status,
+    })),
   };
+}
+
+function resourceRows(
+  record: Record<string, { id: string; status: string }>,
+): Array<{ id: string; status: string }> {
+  return Object.values(record)
+    .map((item) => ({ id: item.id, status: item.status }))
+    .sort((a, b) => a.id.localeCompare(b.id));
 }
 
 function fromTui(state: TuiAppState): Comparable {
   return {
     messages: state.messages
-      .filter((block) => !inlineInteractiveRoles.has(block.role))
+      .filter((block) => !isInlineResourceRow(block))
       .map((block) => ({
         role: block.role,
         text: comparableText(block),
@@ -101,6 +138,16 @@ function fromTui(state: TuiAppState): Comparable {
     pendingQuestionIDs: state.modal.queue
       .filter((item) => item.kind === "question")
       .map((item) => item.id),
+    terminals: resourceRows(state.terminals),
+    sandboxes: resourceRows(state.sandboxes),
+    subagents: resourceRows(state.subagents),
+    mcp: Object.values(state.mcp)
+      .map((item) => ({ server: item.server, status: item.status }))
+      .sort((a, b) => a.server.localeCompare(b.server)),
+    todos: state.todos.map((todo) => ({
+      content: todo.content,
+      status: todo.status,
+    })),
   };
 }
 
@@ -206,6 +253,77 @@ const streams: Array<{ name: string; events: RuntimeEvent[] }> = [
     ],
   },
   {
+    name: "a terminal, a sandbox and a subagent appearing",
+    events: [
+      submitted("t1", "set things up"),
+      {
+        type: "terminal.update",
+        id: "term_a",
+        command: "bash",
+        cwd: "/work",
+        status: "running",
+        attached: true,
+        rows: 24,
+        cols: 80,
+        activity: "running",
+        tail: "",
+        transcript: "",
+        target: { kind: "host", cwd: "/work" },
+      },
+      {
+        type: "sandbox.update",
+        id: "box",
+        status: "created",
+        root: "/work/.natalia/sandboxes/box",
+        isolationLevel: "workspace",
+        changedFiles: 0,
+        runningResources: 0,
+        target: {
+          kind: "sandbox",
+          sandboxID: "box",
+          root: "/work/.natalia/sandboxes/box",
+          isolationLevel: "workspace",
+        },
+        resourcePolicy: "sandbox_manifest",
+      },
+      {
+        type: "subagent.update",
+        id: "child",
+        status: "running",
+        attached: false,
+        event: "created",
+        continuation: 0,
+      },
+      { type: "mcp.status", server: "docs", status: "connected", tools: 3 },
+      { type: "content.delta", id: "t1", text: "ready" },
+      { type: "content.done", id: "t1", text: "ready" },
+      { type: "turn.finished", id: "t1", stopReason: "done" },
+    ],
+  },
+  {
+    name: "a todo list written by the todo tool",
+    events: [
+      submitted("t1", "plan the work"),
+      {
+        type: "tool.update",
+        id: "t1",
+        name: "todowrite",
+        callID: "c1",
+        status: "succeeded",
+        summary: "2 todos",
+        argumentsDelta: JSON.stringify({
+          todos: [
+            { content: "first", status: "completed" },
+            { content: "second", status: "in_progress" },
+          ],
+        }),
+      },
+      { type: "content.delta", id: "t1", text: "planned" },
+      { type: "content.done", id: "t1", text: "planned" },
+      { type: "turn.finished", id: "t1", stopReason: "done" },
+    ],
+  },
+  {
     name: "two consecutive turns",
     events: [
       submitted("t1", "first"),
@@ -228,6 +346,11 @@ for (const stream of streams) {
     expect(view.activeTurn).toEqual(tui.activeTurn);
     expect(view.pendingApprovalIDs).toEqual(tui.pendingApprovalIDs);
     expect(view.pendingQuestionIDs).toEqual(tui.pendingQuestionIDs);
+    expect(view.terminals).toEqual(tui.terminals);
+    expect(view.sandboxes).toEqual(tui.sandboxes);
+    expect(view.subagents).toEqual(tui.subagents);
+    expect(view.mcp).toEqual(tui.mcp);
+    expect(view.todos).toEqual(tui.todos);
   });
 }
 

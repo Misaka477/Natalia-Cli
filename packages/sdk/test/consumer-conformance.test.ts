@@ -150,6 +150,19 @@ test("a consumer can drive a turn and render it from the public surface alone", 
     expect(state.activeTurn).toBeUndefined();
     expect(state.lastStopReason).toBe("done");
 
+    // Resource and status surfaces must be readable from the projection too, or
+    // a UI still has to parse raw events to render anything but the transcript.
+    expect(Object.keys(state.capabilities).length).toBeGreaterThan(0);
+    expect(state.checkpoints.length).toBeGreaterThan(0);
+    expect(state.policyDecisions.length).toBeGreaterThan(0);
+    expect(state.statusSegments.some((s) => s.startsWith("model:"))).toBe(true);
+    // Every slice a consumer indexes into exists even when nothing filled it.
+    expect(state.terminals).toBeDefined();
+    expect(state.sandboxes).toBeDefined();
+    expect(state.subagents).toBeDefined();
+    expect(state.mcp).toBeDefined();
+    expect(state.todos).toBeDefined();
+
     // Note for consumers: `RuntimeClient.start()` holds a single sink, and the
     // HTTP server claims it. Fan-out to more than one observer is the server's
     // job (SSE `/events`), not the client's, so `events` here is not asserted.

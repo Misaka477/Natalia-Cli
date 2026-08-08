@@ -1,0 +1,559 @@
+import { expect, test } from "bun:test";
+import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import {
+  applyEvent,
+  initialState,
+  projectEvents,
+  subagentHistoryLimit,
+  terminalTimelineLimit,
+  type AppState,
+} from "../src";
+
+// These cover the surfaces beyond the conversation core, so a UI can render
+// terminals, sandboxes, checkpoints, subagents and status without reading raw
+// events. Each assertion is about a fact the runtime produced, never about how a
+// particular UI chooses to draw it.
+
+const terminalUpdate = (
+  id: string,
+  overrides: Record<string, unknown> = {},
+): RuntimeEvent =>
+  ({
+    type: "terminal.update",
+    id,
+    command: "bash",
+    cwd: "/work",
+    status: "running",
+    attached: true,
+    rows: 24,
+    cols: 80,
+    activity: "running",
+    tail: "",
+    transcript: "",
+    target: { kind: "host", cwd: "/work" },
+    ...overrides,
+  }) as RuntimeEvent;
+
+test("the latest terminal state is kept per pane", () => {
+  const state = projectEvents([
+    terminalUpdate("t_a"),
+    terminalUpdate("t_b", { command: "vim" }),
+    terminalUpdate("t_a", { status: "exited", activity: "waiting" }),
+  ]);
+  expect(Object.keys(state.terminals).sort()).toEqual(["t_a", "t_b"]);
+  expect(state.terminals.t_a).toMatchObject({ status: "exited" });
+  expect(state.terminals.t_b).toMatchObject({ command: "vim" });
+});
+
+test("terminal timeline is per pane and bounded", () => {
+  const events: RuntimeEvent[] = [];
+  for (let index = 0; index < terminalTimelineLimit + 40; index += 1)
+    events.push({
+      type: "terminal.timeline",
+      id: "t_a",
+      actor: "model",
+      action: "created",
+      status: "executed",
+      summary: `entry ${index}`,
+      at: new Date(index).toISOString(),
+    } as RuntimeEvent);
+  const state = projectEvents(events);
+  // A projection that grows without limit is a leak in every consumer.
+  expect(state.terminalTimeline.t_a).toHaveLength(terminalTimelineLimit);
+  expect(state.terminalTimeline.t_a?.at(-1)).toMatchObject({
+    summary: `entry ${terminalTimelineLimit + 39}`,
+  });
+});
+
+test("terminal approvals are keyed by approval, not by pane", () => {
+  const state = projectEvents([
+    {
+      type: "terminal.approval",
+      id: "t_a",
+      approvalID: "ap_1",
+      state: "awaiting",
+      action: "write",
+      reason: "risky",
+      target: { kind: "host", cwd: "/work" },
+    } as RuntimeEvent,
+    {
+      type: "terminal.approval",
+      id: "t_a",
+      approvalID: "ap_2",
+      state: "approved",
+      action: "write",
+      reason: "second",
+      target: { kind: "host", cwd: "/work" },
+    } as RuntimeEvent,
+  ]);
+  // One pane can accumulate several approvals; a UI must resolve the right one.
+  expect(Object.keys(state.terminalApprovals).sort()).toEqual(["ap_1", "ap_2"]);
+  expect(state.terminalApprovals.ap_1).toMatchObject({ state: "awaiting" });
+});
+
+test("sandbox state and diffs project separately", () => {
+  const state = projectEvents([
+    {
+      type: "sandbox.update",
+      id: "box",
+      status: "created",
+      root: "/work/.natalia/sandboxes/box",
+      isolationLevel: "workspace",
+      changedFiles: 2,
+      runningResources: 0,
+      target: {
+        kind: "sandbox",
+        sandboxID: "box",
+        root: "/work/.natalia/sandboxes/box",
+        isolationLevel: "workspace",
+      },
+      resourcePolicy: "sandbox_manifest",
+    } as RuntimeEvent,
+    {
+      type: "sandbox.diff",
+      id: "box",
+      changes: [{ kind: "add", path: "a.txt" }],
+    } as RuntimeEvent,
+  ]);
+  expect(state.sandboxes.box).toMatchObject({ changedFiles: 2 });
+  expect(state.sandboxDiffs.box?.changes).toHaveLength(1);
+});
+
+test("a sandbox audit that requires approval is visible in the transcript", () => {
+  const state = projectEvents([
+    {
+      type: "sandbox.audit",
+      id: "box",
+      action: "merge",
+      target: {
+        kind: "sandbox",
+        sandboxID: "box",
+        root: "/work/.natalia/sandboxes/box",
+        isolationLevel: "workspace",
+      },
+      approvalRequired: true,
+      checkpointPolicy: "sandbox_manifest",
+      message: "merge needs approval",
+    } as RuntimeEvent,
+  ]);
+  const block = state.messages.find((item) => item.role === "system");
+  expect(block?.text).toBe("merge needs approval");
+  expect(block?.status).toBe("approval_required");
+});
+
+test("subagents keep a current state and a bounded history", () => {
+  const events: RuntimeEvent[] = [];
+  for (let index = 0; index < subagentHistoryLimit + 10; index += 1)
+    events.push({
+      type: "subagent.update",
+      id: "child",
+      status: index === subagentHistoryLimit + 9 ? "completed" : "running",
+      attached: false,
+      event: "status",
+      continuation: index,
+    } as RuntimeEvent);
+  const state = projectEvents(events);
+  expect(state.subagents.child).toMatchObject({ status: "completed" });
+  expect(state.subagentHistory.child).toHaveLength(subagentHistoryLimit);
+});
+
+test("checkpoints accumulate and rollback tracks one operation", () => {
+  let state = projectEvents([
+    {
+      type: "checkpoint.created",
+      id: "cp_1",
+      reason: "turn_begin",
+      sequence: 1,
+      complete: true,
+      files: 3,
+      changes: 1,
+      contextJournalOffset: 0,
+      step: 1,
+      tokenEstimate: 10,
+      diskUsageBytes: 100,
+    } as RuntimeEvent,
+  ]);
+  expect(state.checkpoints).toHaveLength(1);
+
+  state = projectEvents(
+    [
+      {
+        type: "rollback.begin",
+        checkpointID: "cp_1",
+        safetyCheckpointID: "cp_safety",
+      } as RuntimeEvent,
+    ],
+    state,
+  );
+  expect(state.rollback).toMatchObject({ state: "running" });
+
+  state = projectEvents(
+    [
+      {
+        type: "rollback.end",
+        checkpointID: "cp_1",
+        safetyCheckpointID: "cp_safety",
+        restoredFiles: 3,
+        deletedFiles: 1,
+        contextJournalOffset: 0,
+        step: 1,
+      } as RuntimeEvent,
+    ],
+    state,
+  );
+  expect(state.rollback).toMatchObject({
+    state: "completed",
+    restoredFiles: 3,
+    deletedFiles: 1,
+  });
+});
+
+test("an incomplete checkpoint is reported, not silently dropped", () => {
+  // Rollback safety depends on knowing a checkpoint did not finish.
+  const state = projectEvents([
+    {
+      type: "checkpoint.failed",
+      reason: "disk_full",
+      message: "no space",
+      incomplete: true,
+    } as RuntimeEvent,
+  ]);
+  expect(
+    state.messages.some((block) => block.text.includes("incomplete")),
+  ).toBe(true);
+});
+
+test("a failed rollback records whether it recovered", () => {
+  const state = projectEvents([
+    {
+      type: "rollback.failed",
+      checkpointID: "cp_1",
+      message: "conflict",
+      recovered: false,
+    } as RuntimeEvent,
+  ]);
+  expect(state.rollback).toMatchObject({ state: "failed", recovered: false });
+});
+
+test("mcp, plugin and capability states project by identity", () => {
+  const state = projectEvents([
+    {
+      type: "mcp.status",
+      server: "docs",
+      status: "connected",
+      tools: 4,
+    } as RuntimeEvent,
+    { type: "plugin.update", id: "p1", status: "loaded" } as RuntimeEvent,
+    {
+      type: "capability.loaded",
+      id: "cap:natalia-terminal",
+      apiVersion: 1,
+      name: "Terminal",
+      version: "1.0.0",
+      scope: "session",
+      grants: ["tools"],
+    } as RuntimeEvent,
+  ]);
+  expect(state.mcp.docs).toMatchObject({ tools: 4 });
+  expect(state.plugins.p1).toMatchObject({ status: "loaded" });
+  expect(state.capabilities["cap:natalia-terminal"]).toMatchObject({
+    name: "Terminal",
+  });
+});
+
+test("an unloaded capability is removed rather than left as loaded", () => {
+  const loaded: RuntimeEvent = {
+    type: "capability.loaded",
+    id: "cap:x",
+    apiVersion: 1,
+    name: "X",
+    version: "1.0.0",
+    scope: "session",
+    grants: ["tools"],
+  } as RuntimeEvent;
+  const state = projectEvents([
+    loaded,
+    { type: "capability.unloaded", id: "cap:x" } as RuntimeEvent,
+  ]);
+  expect(state.capabilities).toEqual({});
+});
+
+test("context status and compaction banner follow the runtime", () => {
+  let state = projectEvents([
+    {
+      type: "context.status",
+      used: 100,
+      max: 200,
+      source: "exact_checkpoint",
+      thresholdPercent: 80,
+      reserved: 20,
+    } as RuntimeEvent,
+    {
+      type: "compaction.begin",
+      id: "c1",
+      trigger: "manual",
+      beforeTokens: 100,
+      maxTokens: 200,
+      thresholdPercent: 80,
+      reservedTokens: 20,
+      attempt: 1,
+      startedAt: "now",
+    } as RuntimeEvent,
+  ]);
+  expect(state.context).toMatchObject({ used: 100, max: 200 });
+  expect(state.compactionBanner?.kind).toBe("compacting");
+
+  state = projectEvents(
+    [
+      {
+        type: "compaction.end",
+        id: "c1",
+        trigger: "manual",
+        success: true,
+        beforeTokens: 100,
+        afterTokens: 40,
+        durationMs: 30,
+        attempts: 1,
+      } as RuntimeEvent,
+    ],
+    state,
+  );
+  // The banner clears, but the outcome stays in the transcript because
+  // compaction changed what the model can still see.
+  expect(state.compactionBanner).toBeUndefined();
+  expect(
+    state.messages.some((block) => block.text.includes("100 -> 40 tokens")),
+  ).toBe(true);
+});
+
+test("retry banner appears and clears, exhaustion is recorded", () => {
+  let state = projectEvents([
+    {
+      type: "step.retry",
+      id: "t1",
+      operation: "llm_step",
+      step: 1,
+      attempt: 2,
+      maxAttempts: 3,
+      waitMs: 300,
+      reason: "timeout",
+    } as RuntimeEvent,
+  ]);
+  expect(state.retryBanner?.text).toContain("attempt 2/3");
+
+  state = projectEvents(
+    [
+      {
+        type: "step.retry.cleared",
+        id: "t1",
+        operation: "llm_step",
+        step: 1,
+        attempts: 2,
+      } as RuntimeEvent,
+    ],
+    state,
+  );
+  expect(state.retryBanner).toBeUndefined();
+
+  const exhausted = projectEvents([
+    {
+      type: "step.retry.exhausted",
+      id: "t1",
+      operation: "llm_step",
+      step: 1,
+      attempts: 3,
+      maxAttempts: 3,
+      reason: "timeout",
+      message: "gave up after 3 attempts",
+      retryable: false,
+    } as RuntimeEvent,
+  ]);
+  expect(exhausted.retryBanner).toBeUndefined();
+  expect(
+    exhausted.messages.some((block) => block.status === "retry_exhausted"),
+  ).toBe(true);
+  expect(exhausted.footer).toContain("not retryable");
+});
+
+test("pause and resume are reflected and cleared by a terminal turn", () => {
+  let state = projectEvents([
+    { type: "turn.paused", id: "t1", reason: "user pause" } as RuntimeEvent,
+  ]);
+  expect(state.paused).toBe(true);
+
+  state = projectEvents(
+    [{ type: "turn.resumed", id: "t1" } as RuntimeEvent],
+    state,
+  );
+  expect(state.paused).toBe(false);
+
+  // A turn that ends while paused must not leave the UI showing "paused".
+  const stuck = projectEvents([
+    { type: "turn.paused", id: "t1", reason: "user pause" } as RuntimeEvent,
+    { type: "turn.finished", id: "t1", stopReason: "done" } as RuntimeEvent,
+  ]);
+  expect(stuck.paused).toBe(false);
+});
+
+test("policy decisions are retained so a UI can explain a refusal", () => {
+  const state = projectEvents([
+    {
+      type: "policy.decision",
+      turnID: "t1",
+      toolName: "write_file",
+      decision: "deny",
+      reason: "protected path",
+    } as RuntimeEvent,
+  ]);
+  expect(state.policyDecisions).toHaveLength(1);
+  expect(state.policyDecisions[0]).toMatchObject({
+    decision: "deny",
+    reason: "protected path",
+  });
+});
+
+test("agent and model selections project", () => {
+  const state = projectEvents([
+    { type: "agent.selection", name: "review", pending: true } as RuntimeEvent,
+    {
+      type: "model.selection",
+      modelID: "m1",
+      variant: "high",
+    } as RuntimeEvent,
+  ]);
+  expect(state.agentSelection).toEqual({ name: "review", pending: true });
+  expect(state.modelSelection).toEqual({ modelID: "m1", variant: "high" });
+});
+
+test("todos project from the todo tool's own arguments", () => {
+  const args = JSON.stringify({
+    todos: [
+      { content: "first", status: "completed" },
+      { content: "second", status: "in_progress" },
+    ],
+  });
+  const state = projectEvents([
+    {
+      type: "turn.submitted",
+      id: "t1",
+      text: "plan",
+      byteLength: 4,
+      lineCount: 1,
+      sha256: "x",
+    },
+    {
+      type: "tool.update",
+      id: "t1",
+      name: "todowrite",
+      callID: "c1",
+      status: "succeeded",
+      summary: "2 todos",
+      argumentsDelta: args,
+    },
+  ]);
+  expect(state.todos).toEqual([
+    { content: "first", status: "completed" },
+    { content: "second", status: "in_progress" },
+  ]);
+});
+
+test("streamed tool arguments are reassembled before being parsed", () => {
+  const args = JSON.stringify({ todos: [{ content: "x", status: "pending" }] });
+  const half = Math.floor(args.length / 2);
+  const state = projectEvents([
+    {
+      type: "turn.submitted",
+      id: "t1",
+      text: "plan",
+      byteLength: 4,
+      lineCount: 1,
+      sha256: "x",
+    },
+    {
+      type: "tool.update",
+      id: "t1",
+      name: "todowrite",
+      callID: "c1",
+      status: "running",
+      summary: "…",
+      argumentsDelta: args.slice(0, half),
+    },
+    {
+      type: "tool.update",
+      id: "t1",
+      name: "todowrite",
+      callID: "c1",
+      status: "succeeded",
+      summary: "1 todo",
+      argumentsDelta: args.slice(half),
+    },
+  ]);
+  // A half-received argument string must not be parsed or discarded.
+  expect(state.todos).toEqual([{ content: "x", status: "pending" }]);
+  const tool = Object.values(state.tools)[0];
+  expect(tool?.argumentsRaw).toBe(args);
+});
+
+test("session intelligence snapshot projects", () => {
+  const state = projectEvents([
+    {
+      type: "session.snapshot",
+      id: "s1",
+      agentStatus: "working",
+      changedFiles: 3,
+      unvalidatedChanges: 1,
+      hasPTY: true,
+      hasSandbox: false,
+    } as RuntimeEvent,
+  ]);
+  expect(state.intelligence).toMatchObject({
+    agentStatus: "working",
+    changedFiles: 3,
+  });
+});
+
+test("UI-only events are ignored, because they are not runtime facts", () => {
+  // Dialog stacks and pane focus belong to whichever UI renders them. Projecting
+  // them here would create UI-only durable truth in a shared layer.
+  const state = initialState();
+  const before = JSON.stringify(state);
+  for (const event of [
+    { type: "dialog.open", id: "d1" },
+    { type: "dialog.close", id: "d1" },
+    { type: "terminal.pane.focus", focus: "terminal" },
+    { type: "terminal.pane.select", id: "t_a" },
+  ] as RuntimeEvent[])
+    applyEvent(state, event);
+  expect(JSON.stringify(state)).toBe(before);
+});
+
+test("reduceState does not mutate the resource slices it copies", () => {
+  const before = projectEvents([terminalUpdate("t_a")]);
+  const snapshot = JSON.stringify(before);
+  const after = projectEvents([terminalUpdate("t_b")], before);
+  expect(JSON.stringify(before)).toBe(snapshot);
+  expect(after.terminals).not.toBe(before.terminals);
+  expect(Object.keys(after.terminals).sort()).toEqual(["t_a", "t_b"]);
+});
+
+test("initialState has every slice a consumer will read", () => {
+  // A consumer indexing into an undefined slice is a crash, so the shape must be
+  // complete from the start rather than appearing with the first event.
+  const state: AppState = initialState();
+  expect(state.terminals).toEqual({});
+  expect(state.terminalTimeline).toEqual({});
+  expect(state.terminalApprovals).toEqual({});
+  expect(state.sandboxes).toEqual({});
+  expect(state.sandboxDiffs).toEqual({});
+  expect(state.subagents).toEqual({});
+  expect(state.subagentHistory).toEqual({});
+  expect(state.mcp).toEqual({});
+  expect(state.plugins).toEqual({});
+  expect(state.capabilities).toEqual({});
+  expect(state.checkpoints).toEqual([]);
+  expect(state.policyDecisions).toEqual([]);
+  expect(state.todos).toEqual([]);
+  expect(state.paused).toBe(false);
+  expect(state.rollback).toBeUndefined();
+  expect(state.context).toBeUndefined();
+});
