@@ -965,6 +965,12 @@ function flushStreamBlock(state: AppState, id: string) {
     (item) => item.id === segmentID(id, stream.segmentIndex),
   );
   if (!block) return;
+  // A stream that produced nothing must not rewrite the block sitting at its
+  // segment key. `content.done` writes there when a provider returns a whole
+  // response without streaming a delta, and overwriting it with the stream's
+  // empty `segmentText` silently drops the entire reply. `appendStreamBlock`
+  // already refuses to write in this case; this keeps the two symmetric.
+  if (!stream.segmentText && !stream.tail && !stream.committed) return;
   block.text =
     block.role === "thinking" && block.providerPolicy === "hidden"
       ? providerSafeThinkingSummary(false, stream.committed)

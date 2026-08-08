@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import type { RuntimeEvent } from "@natalia/contracts";
 import {
   splitMarkdownAtSafeBoundary,
   parseToolArguments,
@@ -851,4 +852,52 @@ test("missing final model responses remain completed with a system notice", () =
     text: "任务已执行完成，但模型未提供最终回复。工具执行结果已保留。",
     status: "completed",
   });
+});
+
+test("a response arriving only in content.done is not lost", () => {
+  // Some providers return a whole message without streaming a single delta.
+  // `turn.submitted` still opens a stream, so the flush on `content.done` and
+  // again on `turn.finished` used to rewrite the block that `content.done` had
+  // just filled, wiping the reply. A stream that produced nothing must leave
+  // that block alone.
+  let state = structuredClone(initialState);
+  const events: RuntimeEvent[] = [
+    {
+      type: "turn.submitted",
+      id: "t1",
+      text: "hi",
+      byteLength: 2,
+      lineCount: 1,
+      sha256: "x",
+    },
+    { type: "content.done", id: "t1", text: "the whole answer" },
+    { type: "turn.finished", id: "t1", stopReason: "done" },
+  ];
+  for (const event of events) state = reduceState(state, event);
+
+  const assistant = state.messages.filter(
+    (block) => block.role === "assistant",
+  );
+  expect(assistant).toHaveLength(1);
+  expect(assistant[0]!.text).toBe("the whole answer");
+});
+
+test("an empty content.done still does not invent a block", () => {
+  let state = structuredClone(initialState);
+  const events: RuntimeEvent[] = [
+    {
+      type: "turn.submitted",
+      id: "t1",
+      text: "hi",
+      byteLength: 2,
+      lineCount: 1,
+      sha256: "x",
+    },
+    { type: "content.done", id: "t1", text: "" },
+    { type: "turn.finished", id: "t1", stopReason: "done" },
+  ];
+  for (const event of events) state = reduceState(state, event);
+  expect(state.messages.filter((block) => block.role === "assistant")).toEqual(
+    [],
+  );
 });

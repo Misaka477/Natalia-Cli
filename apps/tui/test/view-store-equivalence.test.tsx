@@ -187,6 +187,14 @@ const streams: Array<{ name: string; events: RuntimeEvent[] }> = [
     ],
   },
   {
+    name: "an unstreamed answer delivered only by content.done",
+    events: [
+      submitted("t1", "hi"),
+      { type: "content.done", id: "t1", text: "hello" },
+      { type: "turn.finished", id: "t1", stopReason: "done" },
+    ],
+  },
+  {
     name: "a cancelled turn",
     events: [
       submitted("t1", "long job"),
@@ -222,37 +230,6 @@ for (const stream of streams) {
     expect(view.pendingQuestionIDs).toEqual(tui.pendingQuestionIDs);
   });
 }
-
-/**
- * A known, deliberate divergence, found by this test.
- *
- * When a provider delivers a whole response in `content.done` without streaming
- * a single delta, the TUI reducer loses the text: `turn.submitted` creates the
- * stream, the flush on `content.done` materializes an empty block for it, and
- * the "did anything stream?" check then suppresses the real text.
- *
- * view-store does not reproduce that. Copying a defect for the sake of symmetry
- * would be the wrong trade, so this test pins both behaviours: it fails if
- * view-store regresses, and it also fails once the TUI is fixed, which is the
- * signal to delete this test and fold the case back into the shared list above.
- */
-test("known divergence: the TUI loses an unstreamed response, view-store does not", () => {
-  const events: RuntimeEvent[] = [
-    submitted("t1", "hi"),
-    { type: "content.done", id: "t1", text: "hello" },
-    { type: "turn.finished", id: "t1", stopReason: "done" },
-  ];
-  const view = projectEvents(events);
-  const tui = tuiProject(events);
-
-  expect(view.messages.find((block) => block.role === "assistant")?.text).toBe(
-    "hello",
-  );
-  // The TUI materializes the block but with no text in it.
-  expect(tui.messages.find((block) => block.role === "assistant")?.text).toBe(
-    "",
-  );
-});
 
 test("both layers agree on session identity and status segments", () => {
   const events: RuntimeEvent[] = [
