@@ -488,3 +488,216 @@ test("every emitted fact validates against the canonical WG1 schema", async () =
   }
   await client.dispose?.();
 }, 60_000);
+
+test("a workspace change is attributable to the call and turn that made it", async () => {
+  // This is the question the Work Graph exists to answer: why did this file
+  // change, and who authorized it.
+  const root = await workspace("change");
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_wg_change",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request: ProviderStreamRequest) {
+        if (
+          request.messages.some(
+            (message: { role: string }) => message.role === "tool",
+          )
+        ) {
+          yield { type: "done" as const };
+          return;
+        }
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            {
+              id: "call_1",
+              name: "write_file",
+              arguments: JSON.stringify({
+                path: "notes.md",
+                content: "SECRETFILEBODY",
+              }),
+            },
+          ],
+        };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  const submitted = await client.submit("write the notes");
+
+  const nodes = projectedWorkGraphNodes(events);
+  const change = nodes.find((node) => node.kind === "workspace_change");
+  expect(change).toMatchObject({
+    target: "notes.md",
+    actor: "write_file",
+    turnID: submitted.id,
+  });
+
+  // Walk the chain a reader would: change -> call -> turn.
+  const edges = projectedWorkGraphEdges(events);
+  const modified = edges.find(
+    (edge) => edge.kind === "modified" && edge.targetID === change!.nodeID,
+  );
+  expect(modified?.sourceID).toBe(toolCallNodeID(submitted.id, "call_1"));
+  expect(
+    edges.some(
+      (edge) =>
+        edge.kind === "caused" &&
+        edge.sourceID === agentActionNodeID(submitted.id) &&
+        edge.targetID === modified!.sourceID,
+    ),
+  ).toBe(true);
+
+  // The path is the fact; the content written is not.
+  const graph = JSON.stringify([...nodes, ...edges]);
+  expect(graph).toContain("notes.md");
+  expect(graph).not.toContain("SECRETFILEBODY");
+  await client.dispose?.();
+}, 60_000);
+
+test("a write that failed records no workspace change", async () => {
+  // A graph that claims a change which never happened sends a reader looking for
+  // something that is not there.
+  const root = await workspace("change-failed");
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_wg_change_failed",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request: ProviderStreamRequest) {
+        if (
+          request.messages.some(
+            (message: { role: string }) => message.role === "tool",
+          )
+        ) {
+          yield { type: "done" as const };
+          return;
+        }
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            {
+              id: "call_1",
+              name: "write_file",
+              arguments: JSON.stringify({
+                path: "../outside-the-workspace.md",
+                content: "nope",
+              }),
+            },
+          ],
+        };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("write outside the workspace");
+
+  const nodes = projectedWorkGraphNodes(events);
+  expect(nodes.some((node) => node.kind === "workspace_change")).toBe(false);
+  // The attempt is still recorded as a settled call.
+  expect(nodes.some((node) => node.kind === "tool_call")).toBe(true);
+  await client.dispose?.();
+}, 60_000);
+
+test("a write that throws during execution records no workspace change", async () => {
+  // The previous test is blocked by policy before the tool runs. This one reaches
+  // the tool and fails inside it, which is a different code path — mutation
+  // testing showed the policy case alone did not cover it.
+  const root = await workspace("change-threw");
+  await mkdir(join(root, "occupied"), { recursive: true });
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_wg_change_threw",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request: ProviderStreamRequest) {
+        if (
+          request.messages.some(
+            (message: { role: string }) => message.role === "tool",
+          )
+        ) {
+          yield { type: "done" as const };
+          return;
+        }
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            {
+              id: "call_1",
+              name: "write_file",
+              // A directory already occupies this path, so the write throws.
+              arguments: JSON.stringify({
+                path: "occupied",
+                content: "nope",
+              }),
+            },
+          ],
+        };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  const submitted = await client.submit("write onto a directory");
+
+  const nodes = projectedWorkGraphNodes(events);
+  const tool = nodes.find(
+    (node) => node.nodeID === toolCallNodeID(submitted.id, "call_1"),
+  );
+  // The call is recorded as failed, and no change is claimed.
+  expect(tool?.summary).toContain("failed");
+  expect(nodes.some((node) => node.kind === "workspace_change")).toBe(false);
+  await client.dispose?.();
+}, 60_000);
+
+test("a read records no workspace change", async () => {
+  const root = await workspace("change-read");
+  await writeFile(join(root, "a.md"), "x\n");
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_wg_change_read",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request: ProviderStreamRequest) {
+        if (
+          request.messages.some(
+            (message: { role: string }) => message.role === "tool",
+          )
+        ) {
+          yield { type: "done" as const };
+          return;
+        }
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            {
+              id: "call_1",
+              name: "read_file",
+              arguments: JSON.stringify({ path: "a.md" }),
+            },
+          ],
+        };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("read it");
+  expect(
+    projectedWorkGraphNodes(events).some(
+      (node) => node.kind === "workspace_change",
+    ),
+  ).toBe(false);
+  await client.dispose?.();
+}, 60_000);

@@ -188,6 +188,34 @@ export function commandTextForTool(
 }
 
 /**
+ * Tools whose `path` argument names a file in the workspace that the call will
+ * write. `sandbox_write` is absent on purpose: it writes inside a sandbox, not the
+ * workspace. `sandbox_merge` is also absent because a merge does not name its
+ * paths in its own arguments — `authorizeSandboxMerge` authorizes each merged path
+ * individually and is the only place those paths are known.
+ */
+const WORKSPACE_WRITE_TOOLS = ["write_file", "edit_file", "browser_screenshot"];
+
+/**
+ * The workspace file one tool call will write, or undefined when the call writes
+ * nothing there.
+ *
+ * Exported so the permission layer, the constitution check and the Work Graph
+ * writer all answer "does this call change a workspace file, and which one?" from
+ * one place. Three private copies of that list would drift, and the copy that
+ * drifted would be the one enforcing policy.
+ */
+export function workspaceWritePathForTool(
+  toolName: string,
+  args: Record<string, unknown>,
+): string | undefined {
+  if (!WORKSPACE_WRITE_TOOLS.includes(toolName)) return undefined;
+  return typeof args.path === "string" && args.path.trim()
+    ? args.path
+    : undefined;
+}
+
+/**
  * Key sequences are joined without a separator because a model can type a
  * command one key at a time, and only the reconstructed string shows what was
  * typed. Separate sources are joined by newline so they cannot merge into a
@@ -311,13 +339,13 @@ export function evaluatePermissionRules(
   const readsPath = ["read_file", "read_media_file", "glob", "grep"].includes(
     toolName,
   );
-  const writesPath = [
-    "write_file",
-    "edit_file",
-    "sandbox_write",
-    "sandbox_merge",
-    "browser_screenshot",
-  ].includes(toolName);
+  // `sandbox_write` and `sandbox_merge` stay in this check even though they are
+  // not workspace writes: a sandbox path is still a path a profile may restrict,
+  // and merge arrives here through `authorizeSandboxMerge` with a synthesized
+  // per-path argument.
+  const writesPath =
+    workspaceWritePathForTool(toolName, args) !== undefined ||
+    ["sandbox_write", "sandbox_merge"].includes(toolName);
   if (rules.files && (readsPath || writesPath)) {
     const path = typeof args.path === "string" ? args.path : undefined;
     if (path) {

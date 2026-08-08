@@ -136,11 +136,14 @@ import {
   approvalNode,
   toolCallEdge,
   toolCallNode,
+  workspaceChangeEdge,
+  workspaceChangeNode,
 } from "./work-graph";
 import { ensureBashCommandParser } from "./bash-command-policy";
 import { RuntimePerformanceTrace } from "./performance-trace";
 import {
   commandTextForTool,
+  workspaceWritePathForTool,
   createToolPolicyHookLayer,
   evaluatePermissionRules,
   evaluatePermissionProfileCommandRules,
@@ -3915,9 +3918,14 @@ export function createRealRuntimeClient(
       turnID,
       tool.name,
       tool.name,
-      tool.name === "write" || tool.name === "apply_patch"
-        ? (call.arguments ?? "")
-        : "global",
+      // `write`/`apply_patch` were named here but no such tools exist — the real
+      // ones are `write_file`/`edit_file`, so this always fell through to
+      // "global" and a path-scoped constitution rule could never match. Latent
+      // rather than exploited, because constitution rules still have no writer.
+      workspaceWritePathForTool(
+        tool.name,
+        tryParseToolArguments(call.arguments),
+      ) ?? "global",
       commandTextForTool(tool.name, tryParseToolArguments(call.arguments)),
     );
     if (blocked) {
@@ -4073,6 +4081,26 @@ export function createRealRuntimeClient(
         endedAt: Date.now(),
       });
       publishWorkGraphToolCall(turnID, call.id, tool.name, "succeeded");
+      // Only after success: a write that failed did not change the workspace, and
+      // a graph that says otherwise sends a reader looking for a change that is
+      // not there.
+      const changedPath = workspaceWritePathForTool(
+        tool.name,
+        tryParseToolArguments(call.arguments),
+      );
+      if (changedPath) {
+        publish(
+          workspaceChangeNode({
+            turnID,
+            path: changedPath,
+            toolName: tool.name,
+            sessionID,
+          }),
+        );
+        publish(
+          workspaceChangeEdge({ turnID, callID: call.id, path: changedPath }),
+        );
+      }
       if (isManagedResourceTool(tool.name)) scheduleRuntimeStatusSnapshot();
       await toolLayer.postExecute({ ...hookEvent, result });
       return result;

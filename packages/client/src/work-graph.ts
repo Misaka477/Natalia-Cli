@@ -42,6 +42,7 @@ export const WORK_GRAPH_KIND = {
   agentAction: "agent_action",
   toolCall: "tool_call",
   approval: "approval",
+  workspaceChange: "workspace_change",
 } as const;
 
 /** Edge vocabulary, likewise from `workGraphEdgeSchema`. */
@@ -49,6 +50,7 @@ export const WORK_GRAPH_EDGE_KIND = {
   caused: "caused",
   approvedBy: "approved_by",
   rejectedBy: "rejected_by",
+  modified: "modified",
 } as const;
 
 export function agentActionNodeID(turnID: string): string {
@@ -173,5 +175,52 @@ export function approvalEdge(input: {
       input.decision === "reject"
         ? WORK_GRAPH_EDGE_KIND.rejectedBy
         : WORK_GRAPH_EDGE_KIND.approvedBy,
+  };
+}
+
+export function workspaceChangeNodeID(turnID: string, path: string): string {
+  return `wg:change:${turnID}:${path}`;
+}
+
+/**
+ * One node per workspace file a call changed.
+ *
+ * The path is recorded here, unlike everywhere else in this module, because it is
+ * the fact: a graph that cannot say which file changed cannot answer the question
+ * it exists for. What stays out is still everything sensitive — the content
+ * written, the arguments, the diff and the output. A workspace-relative path is
+ * the identity of the changed thing, not its contents.
+ */
+export function workspaceChangeNode(input: {
+  turnID: string;
+  path: string;
+  toolName: string;
+  sessionID: string;
+}): WorkGraphNodeEvent {
+  return {
+    type: "workgraph.node_added",
+    id: workspaceChangeNodeID(input.turnID, input.path),
+    nodeID: workspaceChangeNodeID(input.turnID, input.path),
+    kind: WORK_GRAPH_KIND.workspaceChange,
+    summary: workGraphSummary([input.toolName, "changed"]),
+    target: input.path,
+    actor: input.toolName,
+    sessionID: input.sessionID,
+    turnID: input.turnID,
+  };
+}
+
+/** Links the tool call to the file it changed. */
+export function workspaceChangeEdge(input: {
+  turnID: string;
+  callID: string;
+  path: string;
+}): WorkGraphEdgeEvent {
+  return {
+    type: "workgraph.edge_added",
+    id: `wg:edge:tool-change:${input.turnID}:${input.callID}:${input.path}`,
+    sourceID: toolCallNodeID(input.turnID, input.callID),
+    targetID: workspaceChangeNodeID(input.turnID, input.path),
+    kind: WORK_GRAPH_EDGE_KIND.modified,
   };
 }
