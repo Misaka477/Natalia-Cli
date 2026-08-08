@@ -1154,7 +1154,12 @@ function turnIDForToolEvent(
     : event.id;
 }
 
-function toolText(tool: ToolBlockState) {
+/**
+ * The tool row's rendered line. Exported so the view-store adapter can produce
+ * the identical text instead of reimplementing it, which is what keeps the P6
+ * convergence from changing what a user sees.
+ */
+export function toolText(tool: ToolBlockState) {
   const args = tool.argumentsComplete
     ? tool.keyArguments.join(" ") || "arguments ready"
     : "receiving arguments";
