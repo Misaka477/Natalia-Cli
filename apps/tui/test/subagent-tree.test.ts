@@ -17,27 +17,6 @@ test("subagent state preserves parent-agent tree provenance", () => {
   expect(state.subagents.child?.parentSessionID).toBe("ses_parent");
 });
 
-test("workflow lifecycle projects to one stable TUI block per run", () => {
-  let state = reduceState(initialState, {
-    type: "workflow.update",
-    runID: "wf_tui",
-    workflow: "build",
-    status: "running",
-    event: "step_started",
-    stepID: "compile",
-  });
-  state = reduceState(state, {
-    type: "workflow.update",
-    runID: "wf_tui",
-    workflow: "build",
-    status: "completed",
-    event: "run_completed",
-  });
-  const block = state.messages.find((item) => item.id === "workflow:wf_tui");
-  expect(block?.text).toContain("Workflow build · completed");
-  expect(block?.text).toContain("run_completed");
-});
-
 test("submitted turns render safe attachment metadata without private paths", () => {
   const state = reduceState(initialState, {
     type: "turn.submitted",

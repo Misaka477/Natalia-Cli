@@ -589,21 +589,6 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
         event.event,
       );
       return;
-    case "workflow.update":
-      upsertBlock(
-        state,
-        `workflow:${event.runID}`,
-        "tool",
-        [
-          `Workflow ${event.workflow} · ${event.status}`,
-          event.stepID ? `${event.event}: ${event.stepID}` : event.event,
-          event.error ?? event.result ?? "",
-        ]
-          .filter(Boolean)
-          .join("\n"),
-        event.status,
-      );
-      return;
     case "approval.request":
       enqueueApproval(state.modal, event);
       state.dialog = activeModal(state.modal)?.kind;

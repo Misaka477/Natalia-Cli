@@ -365,22 +365,6 @@ type RuntimeEventData =
       detail?: string;
     }
   | {
-      type: "workflow.update";
-      runID: string;
-      workflow: string;
-      status: "running" | "completed" | "failed" | "cancelled";
-      event:
-        | "run_started"
-        | "run_completed"
-        | "run_cancelled"
-        | "step_started"
-        | "step_completed"
-        | "step_failed";
-      stepID?: string;
-      result?: string;
-      error?: string;
-    }
-  | {
       type: "session.snapshot";
       id: string;
       agentStatus: string;
@@ -897,13 +881,6 @@ export type PluginStatus = {
   name: string;
   description: string;
   capabilities: string[];
-};
-export type WorkflowSnapshot = {
-  id: string;
-  workflow: string;
-  status: "running" | "completed" | "failed" | "cancelled";
-  completedStepIDs: string[];
-  values: Record<string, string>;
 };
 export type RuntimeStatusSnapshot = Extract<
   RuntimeEvent,
@@ -1432,11 +1409,6 @@ export type RuntimeClient = {
   ): Promise<unknown>;
   readMcpResource?(server: string, uri: string): Promise<unknown>;
   plugins?(): Promise<PluginStatus[]>;
-  runWorkflow?(input: {
-    workflow: string;
-    runID?: string;
-  }): Promise<WorkflowSnapshot>;
-  workflowStatus?(runID: string): Promise<WorkflowSnapshot | undefined>;
   runtimeStatus?(): Promise<RuntimeStatusSnapshot>;
   diagnostics?(limit?: number): Promise<RuntimeDiagnostic[]>;
   snapshot(): RuntimeEvent;
