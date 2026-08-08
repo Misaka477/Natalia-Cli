@@ -205,6 +205,18 @@ export function applyResourceEvent(
       state.capabilities = rest;
       return true;
     }
+    case "workgraph.node_added":
+      state.workGraphNodes = {
+        ...state.workGraphNodes,
+        [event.nodeID]: event,
+      };
+      return true;
+    case "workgraph.edge_added":
+      state.workGraphEdges = {
+        ...state.workGraphEdges,
+        [event.id]: event,
+      };
+      return true;
     default:
       return false;
   }

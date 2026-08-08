@@ -433,7 +433,7 @@ type RuntimeEventData =
       type: "workgraph.node_added";
       id: string;
       nodeID: string;
-      kind: string;
+      kind: import("./schemas").WorkGraphNodeKind;
       summary: string;
       actor?: string;
       target?: string;
@@ -445,7 +445,7 @@ type RuntimeEventData =
       id: string;
       sourceID: string;
       targetID: string;
-      kind: string;
+      kind: import("./schemas").WorkGraphEdgeKind;
       reason?: string;
     }
   | {
@@ -880,6 +880,34 @@ export type ContributedCommand = {
   name: string;
   title: string;
   category?: string;
+};
+
+/**
+ * Work Graph read models exposed over RuntimeClient/RPC/SDK.
+ *
+ * Derived from the canonical `workGraphNodeSchema` / `workGraphEdgeSchema` rather
+ * than redeclared, so the query surface cannot drift from the vocabulary the
+ * writer emits. Only `episodeID` is added: it is the correlation id the runtime
+ * already stamps on every event, and a consumer needs it to group facts by
+ * execution.
+ */
+export type WorkGraphNodeView = {
+  nodeID: string;
+  kind: import("./schemas").WorkGraphNodeKind;
+  summary: string;
+  actor?: string;
+  target?: string;
+  sessionID?: string;
+  turnID?: string;
+  episodeID?: EpisodeID;
+};
+
+export type WorkGraphEdgeView = {
+  sourceID: string;
+  targetID: string;
+  kind: import("./schemas").WorkGraphEdgeKind;
+  reason?: string;
+  episodeID?: EpisodeID;
 };
 export type PluginStatus = {
   id: string;
@@ -1509,23 +1537,8 @@ export type RuntimeClient = {
       grants: string[];
     }>
   >;
-  workGraphNodes?(): Promise<
-    Array<{
-      nodeID: string;
-      kind: string;
-      summary: string;
-      actor?: string;
-      target?: string;
-    }>
-  >;
-  workGraphEdges?(): Promise<
-    Array<{
-      sourceID: string;
-      targetID: string;
-      kind: string;
-      reason?: string;
-    }>
-  >;
+  workGraphNodes?(): Promise<WorkGraphNodeView[]>;
+  workGraphEdges?(): Promise<WorkGraphEdgeView[]>;
 };
 
 export type FakeBackend = RuntimeClient;

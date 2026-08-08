@@ -516,6 +516,53 @@ test("session intelligence snapshot projects", () => {
   });
 });
 
+test("Work Graph events project into stable node and edge indexes", () => {
+  const state = projectEvents([
+    {
+      type: "workgraph.node_added",
+      id: "wg:action:t1",
+      nodeID: "wg:action:t1",
+      kind: "agent_action",
+      summary: "turn",
+      sessionID: "ses_1",
+      turnID: "t1",
+      episodeID: "epi_1",
+    },
+    {
+      type: "workgraph.node_added",
+      id: "wg:tool:t1:c1",
+      nodeID: "wg:tool:t1:c1",
+      kind: "tool_call",
+      summary: "read_file · succeeded",
+      actor: "read_file",
+      sessionID: "ses_1",
+      turnID: "t1",
+      episodeID: "epi_1",
+    },
+    {
+      type: "workgraph.edge_added",
+      id: "wg:edge:t1:c1",
+      sourceID: "wg:action:t1",
+      targetID: "wg:tool:t1:c1",
+      kind: "caused",
+      episodeID: "epi_1",
+    },
+  ] as RuntimeEvent[]);
+
+  expect(Object.keys(state.workGraphNodes).sort()).toEqual([
+    "wg:action:t1",
+    "wg:tool:t1:c1",
+  ]);
+  expect(state.workGraphNodes["wg:tool:t1:c1"]).toMatchObject({
+    kind: "tool_call",
+    episodeID: "epi_1",
+  });
+  expect(state.workGraphEdges["wg:edge:t1:c1"]).toMatchObject({
+    kind: "caused",
+    episodeID: "epi_1",
+  });
+});
+
 test("UI-only events are ignored, because they are not runtime facts", () => {
   // Dialog stacks and pane focus belong to whichever UI renders them. Projecting
   // them here would create UI-only durable truth in a shared layer.
@@ -556,6 +603,8 @@ test("initialState has every slice a consumer will read", () => {
   expect(state.capabilities).toEqual({});
   expect(state.checkpoints).toEqual([]);
   expect(state.policyDecisions).toEqual([]);
+  expect(state.workGraphNodes).toEqual({});
+  expect(state.workGraphEdges).toEqual({});
   expect(state.todos).toEqual([]);
   expect(state.paused).toBe(false);
   expect(state.rollback).toBeUndefined();

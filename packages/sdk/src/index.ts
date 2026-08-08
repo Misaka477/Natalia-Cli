@@ -186,6 +186,9 @@ export type NataliaSDK = {
    */
   /** Commands contributed by capabilities and plugins. */
   commandCatalog(): Promise<import("@natalia/contracts").ContributedCommand[]>;
+  /** Replayable causal facts, including the existing epi_* correlation id. */
+  workGraphNodes(): Promise<import("@natalia/contracts").WorkGraphNodeView[]>;
+  workGraphEdges(): Promise<import("@natalia/contracts").WorkGraphEdgeView[]>;
   taskOverview(): Promise<import("@natalia/contracts").ScheduledTaskOverview>;
   flowOverview(): Promise<import("@natalia/contracts").FlowOverview>;
   documentCatalog(): Promise<
@@ -329,6 +332,8 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       await call("mcp.resource", { server, uri }),
     plugins: async () => await call("plugin.list", {}),
     commandCatalog: async () => await call("command.catalog", {}),
+    workGraphNodes: async () => await call("workgraph.nodes", {}),
+    workGraphEdges: async () => await call("workgraph.edges", {}),
     taskOverview: async () => await call("task.overview", {}),
     flowOverview: async () => await call("flow.overview", {}),
     documentCatalog: async () => await call("document.catalog", {}),

@@ -100,6 +100,14 @@ export type PolicyDecisionView = Extract<
   RuntimeEvent,
   { type: "policy.decision" }
 >;
+export type WorkGraphNodeView = Extract<
+  RuntimeEvent,
+  { type: "workgraph.node_added" }
+>;
+export type WorkGraphEdgeView = Extract<
+  RuntimeEvent,
+  { type: "workgraph.edge_added" }
+>;
 export type SessionIntelligenceView = Extract<
   RuntimeEvent,
   { type: "session.snapshot" }
@@ -169,6 +177,8 @@ export type AppState = {
   modelSelection?: { modelID?: string; variant?: string };
   /** Recent policy outcomes, so a UI can explain why a tool did not run. */
   policyDecisions: PolicyDecisionView[];
+  workGraphNodes: Record<string, WorkGraphNodeView>;
+  workGraphEdges: Record<string, WorkGraphEdgeView>;
   intelligence?: SessionIntelligenceView;
 };
 
@@ -202,6 +212,8 @@ export function initialState(): AppState {
     capabilities: {},
     checkpoints: [],
     policyDecisions: [],
+    workGraphNodes: {},
+    workGraphEdges: {},
   };
 }
 
@@ -236,6 +248,8 @@ export function cloneState(state: AppState): AppState {
     capabilities: { ...state.capabilities },
     checkpoints: [...state.checkpoints],
     policyDecisions: [...state.policyDecisions],
+    workGraphNodes: { ...state.workGraphNodes },
+    workGraphEdges: { ...state.workGraphEdges },
     ...(state.rollback ? { rollback: { ...state.rollback } } : {}),
   };
 }

@@ -617,6 +617,9 @@ export const workGraphEdgeSchema = z.object({
     "modified",
     "validated_by",
     "approved_by",
+    // A refusal is a fact too. Recording one as `approved_by` would make the
+    // graph answer "who authorized this side effect" with someone who refused it.
+    "rejected_by",
     "checkpointed_by",
     "superseded_by",
     "rolled_back_by",
@@ -855,3 +858,11 @@ export type WorkflowDocumentChoice = {
   id: string;
   displayName: string;
 };
+
+/**
+ * The Work Graph vocabulary as types, so a writer cannot invent its own spelling.
+ * `workgraph.node_added` / `workgraph.edge_added` declared `kind: string`, which
+ * is how a parallel CamelCase vocabulary once reached the journal unnoticed.
+ */
+export type WorkGraphNodeKind = WorkGraphNode["kind"];
+export type WorkGraphEdgeKind = WorkGraphEdge["kind"];

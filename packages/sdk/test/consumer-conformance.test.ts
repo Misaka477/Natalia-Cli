@@ -173,6 +173,27 @@ test("a consumer can drive a turn and render it from the public surface alone", 
     expect(state.mcp).toBeDefined();
     expect(state.todos).toBeDefined();
 
+    // Work Graph is a public integration surface, not only an internal
+    // projector. The same turn and tool must be causally connected over HTTP.
+    const graphNodes = await sdk.workGraphNodes();
+    const graphEdges = await sdk.workGraphEdges();
+    const action = graphNodes.find(
+      (node) => node.kind === "agent_action" && node.turnID === submitted.id,
+    );
+    const tool = graphNodes.find(
+      (node) => node.kind === "tool_call" && node.turnID === submitted.id,
+    );
+    expect(action).toBeDefined();
+    expect(tool).toMatchObject({ actor: "write_file" });
+    expect(
+      graphEdges.some(
+        (edge) =>
+          edge.sourceID === action!.nodeID &&
+          edge.targetID === tool!.nodeID &&
+          edge.kind === "caused",
+      ),
+    ).toBe(true);
+
     // Note for consumers: `RuntimeClient.start()` holds a single sink, and the
     // HTTP server claims it. Fan-out to more than one observer is the server's
     // job (SSE `/events`), not the client's, so `events` here is not asserted.

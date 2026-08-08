@@ -77,6 +77,8 @@ export {
   type TerminalView,
   type ToolBlock,
   type TranscriptBound,
+  type WorkGraphEdgeView,
+  type WorkGraphNodeView,
 } from "./state";
 export {
   flushStream,

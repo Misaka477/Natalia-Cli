@@ -130,6 +130,13 @@ import {
   scheduledTaskOverview,
 } from "./task-overview";
 import { workflowDocumentCatalog } from "./workflow-document-catalog";
+import {
+  agentActionNode,
+  approvalEdge,
+  approvalNode,
+  toolCallEdge,
+  toolCallNode,
+} from "./work-graph";
 import { ensureBashCommandParser } from "./bash-command-policy";
 import { RuntimePerformanceTrace } from "./performance-trace";
 import {
@@ -477,6 +484,10 @@ export function createRealRuntimeClient(
   // durable session must never silently restore side-effecting permissions.
   const sessionApprovedTools = new Set<string>();
   const approvalToolByID = new Map<string, string>();
+  const approvalWorkGraphContext = new Map<
+    string,
+    { turnID: string; callID: string; toolName: string }
+  >();
   const terminalApprovalByID = new Map<
     string,
     { scope: string; expiresAt: number }
@@ -738,7 +749,12 @@ export function createRealRuntimeClient(
               // This path reports denials by throwing, so a refusal has to
               // throw too. Returning it would let the subagent run a call the
               // user just refused.
-              const refusal = await requireApproval(toolID, tool, call);
+              const refusal = await requireApproval(
+                toolID,
+                tool,
+                call,
+                hookEvent.turnID,
+              );
               if (refusal) throw new Error(refusal.reason);
             }
             const parsed = parseToolArguments(call.arguments);
@@ -1323,6 +1339,21 @@ export function createRealRuntimeClient(
   }
 
   /**
+   * Records a settled tool call in the Work Graph, with the edge to the turn that
+   * caused it. Only settled calls: an in-flight call is not yet a fact. The tool
+   * name and status are recorded, never arguments or output.
+   */
+  function publishWorkGraphToolCall(
+    turnID: string,
+    callID: string,
+    toolName: string,
+    status: string,
+  ) {
+    publish(toolCallNode({ turnID, callID, toolName, status, sessionID }));
+    publish(toolCallEdge({ turnID, callID }));
+  }
+
+  /**
    * Every command a capability or plugin contributed.
    *
    * Two sources, one list: plugins register through the plugin registry, and any
@@ -1839,6 +1870,15 @@ export function createRealRuntimeClient(
     }
     lastSubmitted = submitted;
     publish(submitted);
+    // One Work Graph node per turn. The prompt itself is not recorded: it can
+    // contain anything, and the graph is replayable and shareable.
+    publish(
+      agentActionNode({
+        turnID: id,
+        sessionID,
+        agent: selectedAgent?.name,
+      }),
+    );
     // Persist admission before a command or provider can observe this turn.
     await sessionPersistence;
     if (delivery === "queue") {
@@ -2757,6 +2797,9 @@ export function createRealRuntimeClient(
         summary: r.summary,
         actor: r.actor,
         target: r.target,
+        sessionID: r.sessionID,
+        turnID: r.turnID,
+        episodeID: r.episodeID,
       }));
     },
     async workGraphEdges() {
@@ -2766,6 +2809,7 @@ export function createRealRuntimeClient(
         targetID: r.targetID,
         kind: r.kind,
         reason: r.reason,
+        episodeID: r.episodeID,
       }));
     },
     respondApproval(response) {
@@ -2783,6 +2827,29 @@ export function createRealRuntimeClient(
         decision: response.decision,
         feedback: response.feedback,
       });
+      const graphContext = approvalWorkGraphContext.get(response.requestID);
+      // A resolved approval is a Work Graph fact: who authorized a side effect.
+      // The decision is recorded; the preview text is not, because it can carry a
+      // command line.
+      publish(
+        approvalNode({
+          approvalID: response.requestID,
+          decision: response.decision,
+          toolName:
+            graphContext?.toolName ?? approvalToolByID.get(response.requestID),
+          sessionID,
+          turnID: graphContext?.turnID,
+        }),
+      );
+      if (graphContext)
+        publish(
+          approvalEdge({
+            approvalID: response.requestID,
+            decision: response.decision,
+            turnID: graphContext.turnID,
+            callID: graphContext.callID,
+          }),
+        );
       if (response.decision === "session") {
         const terminalApproval = terminalApprovalByID.get(response.requestID);
         if (terminalApproval)
@@ -3576,6 +3643,12 @@ export function createRealRuntimeClient(
           result: reason,
           endedAt: Date.now(),
         });
+        publishWorkGraphToolCall(
+          turnID,
+          call.id,
+          "invalid_tool_call",
+          "failed",
+        );
         messages.push({
           role: "tool",
           toolCallID: call.id,
@@ -3625,6 +3698,12 @@ export function createRealRuntimeClient(
           result: reason,
           endedAt: Date.now(),
         });
+        publishWorkGraphToolCall(
+          turnID,
+          call.id,
+          call.name,
+          registered && permissionMode === "read_only" ? "rejected" : "failed",
+        );
         messages.push({
           role: "tool",
           toolCallID: call.id,
@@ -3735,6 +3814,7 @@ export function createRealRuntimeClient(
         result: message,
         endedAt: Date.now(),
       });
+      publishWorkGraphToolCall(turnID, call.id, tool.name, "failed");
       return `ERROR: ${message}`;
     }
     const hookEvent: ToolHookEvent = {
@@ -3789,6 +3869,7 @@ export function createRealRuntimeClient(
         result: preResult.diagnostics.join("; "),
         endedAt: Date.now(),
       });
+      publishWorkGraphToolCall(turnID, call.id, tool.name, "failed");
       return `ERROR: ${preResult.diagnostics.join("; ")}`;
     }
     if (permissionMode === "read_only" && tool.requiresApproval) {
@@ -3811,6 +3892,7 @@ export function createRealRuntimeClient(
         result: message,
         endedAt: Date.now(),
       });
+      publishWorkGraphToolCall(turnID, call.id, tool.name, "rejected");
       return `ERROR: ${message}`;
     }
     publish({
@@ -3848,10 +3930,11 @@ export function createRealRuntimeClient(
         summary: blocked,
         argumentsDelta: call.arguments,
       });
+      publishWorkGraphToolCall(turnID, call.id, tool.name, "failed");
       return blocked;
     }
     if (tool.requiresApproval) {
-      const refusal = await requireApproval(toolID, tool, call);
+      const refusal = await requireApproval(toolID, tool, call, turnID);
       if (refusal) {
         // Reported like a policy denial: the call did not run, the turn keeps
         // going, and the model receives the reason as this call's result.
@@ -3865,6 +3948,7 @@ export function createRealRuntimeClient(
           result: refusal.reason,
           endedAt: Date.now(),
         });
+        publishWorkGraphToolCall(turnID, call.id, tool.name, "rejected");
         await toolLayer.postExecute({ ...hookEvent, error: refusal.reason });
         return `ERROR: ${refusal.reason}`;
       }
@@ -3988,6 +4072,7 @@ export function createRealRuntimeClient(
           : undefined,
         endedAt: Date.now(),
       });
+      publishWorkGraphToolCall(turnID, call.id, tool.name, "succeeded");
       if (isManagedResourceTool(tool.name)) scheduleRuntimeStatusSnapshot();
       await toolLayer.postExecute({ ...hookEvent, result });
       return result;
@@ -4003,6 +4088,9 @@ export function createRealRuntimeClient(
         result: message,
         endedAt: Date.now(),
       });
+      // A failed call is as much a fact as a successful one; the error text stays
+      // out of the graph.
+      publishWorkGraphToolCall(turnID, call.id, tool.name, "failed");
       await toolLayer.postExecute({ ...hookEvent, error: message });
       return `ERROR: ${message}`;
     } finally {
@@ -4023,6 +4111,7 @@ export function createRealRuntimeClient(
     approvalID: string,
     tool: RuntimeTool,
     call: ProviderToolCall,
+    turnID: string,
   ): Promise<{ reason: string } | undefined> {
     if (permissionMode === "auto") return undefined;
     if (permissionMode === "read_only")
@@ -4040,6 +4129,21 @@ export function createRealRuntimeClient(
       terminalApproval?.risk === "terminal_low"
         ? Date.now() + terminalApproval.ttlMs
         : undefined;
+    // Establish every lookup before publishing. Event sinks are allowed to reply
+    // synchronously; publishing first made an immediate `respondApproval()` look
+    // like a response to a non-pending request and silently ignored it.
+    pendingApprovalRequests.add(approvalID);
+    approvalWorkGraphContext.set(approvalID, {
+      turnID,
+      callID: call.id,
+      toolName: tool.name,
+    });
+    if (terminalApproval?.risk === "terminal_low" && expiresAt)
+      terminalApprovalByID.set(approvalID, {
+        scope: terminalApproval.scope,
+        expiresAt,
+      });
+    else approvalToolByID.set(approvalID, tool.name);
     publish({
       type: "approval.request",
       id: approvalID,
@@ -4053,13 +4157,6 @@ export function createRealRuntimeClient(
       expiresAt: expiresAt ? new Date(expiresAt).toISOString() : undefined,
       revocable: terminalApproval ? true : undefined,
     });
-    pendingApprovalRequests.add(approvalID);
-    if (terminalApproval?.risk === "terminal_low" && expiresAt)
-      terminalApprovalByID.set(approvalID, {
-        scope: terminalApproval.scope,
-        expiresAt,
-      });
-    else approvalToolByID.set(approvalID, tool.name);
     try {
       const response = await waitForResponse(
         approvalID,
@@ -4095,6 +4192,7 @@ export function createRealRuntimeClient(
     } finally {
       pendingApprovalRequests.delete(approvalID);
       approvalToolByID.delete(approvalID);
+      approvalWorkGraphContext.delete(approvalID);
       terminalApprovalByID.delete(approvalID);
     }
   }
