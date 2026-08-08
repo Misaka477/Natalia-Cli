@@ -11,5 +11,9 @@
   "dependencies": {
     "@natalia/contracts": "workspace:*",
     "@natalia/transport": "workspace:*"
+  },
+  "devDependencies": {
+    "@natalia/client": "workspace:*",
+    "@natalia/view-store": "workspace:*"
   }
 }

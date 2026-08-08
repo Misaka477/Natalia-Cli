@@ -1,7 +1,22 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "rootDir": "../.." },
+  "compilerOptions": {
+    "rootDir": "../.."
+  },
   "include": ["src", "test"],
-  "references": [{ "path": "../contracts" }, { "path": "../transport" }]
+  "references": [
+    {
+      "path": "../contracts"
+    },
+    {
+      "path": "../transport"
+    },
+    {
+      "path": "../client"
+    },
+    {
+      "path": "../view-store"
+    }
+  ]
 }

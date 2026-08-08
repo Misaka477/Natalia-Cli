@@ -227,17 +227,31 @@ export function applyEvent(state: AppState, event: RuntimeEvent): void {
       });
       return;
     case "content.done": {
-      const stream = streamID(event.id, "assistant");
-      flushStream(state, stream);
-      // Deltas commit into `segmentID(stream, n)`, which is `stream` itself at
-      // n = 0. Only synthesize a block when nothing streamed, and reuse the same
-      // key so a later `content.done` cannot duplicate it.
-      const streamed = state.messages.some(
-        (block) =>
-          block.id === stream || block.id.startsWith(`${stream}:segment:`),
+      const key = streamID(event.id, "assistant");
+      flushStream(state, key);
+      const stream = state.streams[key];
+      const currentID = stream ? segmentID(key, stream.segmentIndex) : key;
+      const current = state.messages.find((block) => block.id === currentID);
+      // Live streaming has already filled this segment from deltas, so there is
+      // nothing to synthesize. Durable history is the opposite case: deltas are
+      // live-only events and never journaled, so a replaying consumer sees a
+      // bare `content.done` per provider step and this is the only place the
+      // text can come from.
+      const alreadyRendered = Boolean(
+        current && (current.text || current.pendingText),
       );
-      if (event.text && !streamed)
-        upsertBlock(state, stream, "assistant", event.text);
+      if (event.text && !alreadyRendered) {
+        upsertBlock(state, currentID, "assistant", event.text);
+        // One `content.done` is one message. Advance so the next step's text
+        // becomes its own block instead of overwriting this one — a turn that
+        // calls tools produces several, and on replay they would otherwise
+        // collapse into the first.
+        if (stream) {
+          stream.segmentIndex += 1;
+          stream.committed = "";
+          stream.tail = "";
+        }
+      }
       return;
     }
     case "tool.update": {
