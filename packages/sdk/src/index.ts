@@ -180,6 +180,15 @@ export type NataliaSDK = {
   ): Promise<unknown>;
   mcpResource(server: string, uri: string): Promise<unknown>;
   plugins(): Promise<import("@natalia/contracts").PluginStatus[]>;
+  /**
+   * Unattended work, read-only. Each entry reports its own problems rather than
+   * failing the whole list, so a broken document does not blank the view.
+   */
+  taskOverview(): Promise<import("@natalia/contracts").ScheduledTaskOverview>;
+  flowOverview(): Promise<import("@natalia/contracts").FlowOverview>;
+  documentCatalog(): Promise<
+    import("@natalia/contracts").WorkflowDocumentChoice[]
+  >;
   runtimeStatus(): Promise<import("@natalia/contracts").RuntimeStatusSnapshot>;
   diagnostics(
     limit?: number,
@@ -317,6 +326,9 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     mcpResource: async (server, uri) =>
       await call("mcp.resource", { server, uri }),
     plugins: async () => await call("plugin.list", {}),
+    taskOverview: async () => await call("task.overview", {}),
+    flowOverview: async () => await call("flow.overview", {}),
+    documentCatalog: async () => await call("document.catalog", {}),
     runtimeStatus: async () => await call("runtime.status", {}),
     diagnostics: async (limit) =>
       await call("diagnostics.list", limit === undefined ? {} : { limit }),

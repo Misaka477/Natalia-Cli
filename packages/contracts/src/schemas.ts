@@ -770,3 +770,88 @@ export type ToolCanonicalRegistration = z.infer<
 export type ConstitutionRule = z.infer<typeof constitutionRuleSchema>;
 export type DecisionRecord = z.infer<typeof decisionRecordSchema>;
 export type ScopedOverride = z.infer<typeof scopedOverrideSchema>;
+
+/**
+ * Task and flow overview shapes.
+ *
+ * These live in contracts rather than in the client because they are wire types:
+ * they cross the RPC boundary so an external integration can list and inspect
+ * unattended work without running the CLI. The runtime computes them; nobody
+ * else may invent them.
+ */
+export type ScheduledTaskRow = {
+  taskID: string;
+  displayName: string;
+  path: string;
+  /** The task's own human-readable cadence. The real schedule belongs to the scheduler. */
+  schedule: string;
+  permissionProfile: string;
+  flowID: string;
+  enabledModules: number;
+  retry: NataliaTaskDocument["retry"];
+  alertChannels: string[];
+  /** Channel and event pairs the task subscribed to, for the detail surfaces. */
+  alertEvents: string[];
+  issueTarget?: string;
+  dataSource?: string;
+  systemd?: {
+    calendar: string;
+    scope: "user" | "system";
+    timerUnit?: string;
+    nextRun?: string;
+    generatedCalendar?: string;
+  };
+  lastRun?: {
+    invocationID: string;
+    status: string;
+    startedAt: string;
+    endedAt?: string;
+    skipReason?: string;
+  };
+  consecutiveFailures: number;
+  pendingAlertDeliveries: number;
+  /** Reasons this task would refuse to run right now, empty when it is ready. */
+  problems: string[];
+};
+
+export type FlowStageRow = {
+  moduleID: string;
+  moduleType: string;
+  displayName: string;
+  enabled: boolean;
+  minimumConditions: number;
+  idealConditions: number;
+  hasInstructions: boolean;
+  commandRules?: { mode: string; commands: number };
+  interactivePrograms: number | "any";
+};
+
+export type FlowRow = {
+  flowID: string;
+  displayName: string;
+  path: string;
+  stages: FlowStageRow[];
+  enabledStages: number;
+  /** Tasks in this workspace that run this flow. */
+  usedBy: string[];
+  problems: string[];
+};
+
+export type FlowOverview = {
+  flows: FlowRow[];
+  unreadable: Array<{ path: string; reason: string }>;
+};
+
+export type ScheduledTaskOverview = {
+  tasks: ScheduledTaskRow[];
+  /** Task documents that could not be read at all. */
+  unreadable: Array<{ path: string; reason: string }>;
+};
+
+/** A task or flow document offered for selection. */
+export type WorkflowDocumentChoice = {
+  kind: "task" | "flow";
+  path: string;
+  id: string;
+  displayName: string;
+};

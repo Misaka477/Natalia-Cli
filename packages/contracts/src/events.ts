@@ -1409,6 +1409,18 @@ export type RuntimeClient = {
   ): Promise<unknown>;
   readMcpResource?(server: string, uri: string): Promise<unknown>;
   plugins?(): Promise<PluginStatus[]>;
+  /**
+   * Unattended work, read-only.
+   *
+   * These exist so an integration can list and inspect scheduled tasks and flows
+   * without shelling out to the CLI. They report problems per entry instead of
+   * throwing, so one broken document cannot blank the list. Running a task is
+   * deliberately not here: it is a long, side-effecting operation with its own
+   * preflight, and belongs to the task controller rather than a read API.
+   */
+  taskOverview?(): Promise<import("./schemas").ScheduledTaskOverview>;
+  flowOverview?(): Promise<import("./schemas").FlowOverview>;
+  documentCatalog?(): Promise<import("./schemas").WorkflowDocumentChoice[]>;
   runtimeStatus?(): Promise<RuntimeStatusSnapshot>;
   diagnostics?(limit?: number): Promise<RuntimeDiagnostic[]>;
   snapshot(): RuntimeEvent;

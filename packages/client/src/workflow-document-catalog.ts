@@ -3,12 +3,8 @@ import { readdir } from "node:fs/promises";
 import type { ConfigV2 } from "@natalia/contracts";
 import { manualFlowTask } from "./flow-document";
 
-export type WorkflowDocumentChoice = {
-  kind: "task" | "flow";
-  path: string;
-  id: string;
-  displayName: string;
-};
+import type { WorkflowDocumentChoice } from "@natalia/contracts";
+export type { WorkflowDocumentChoice } from "@natalia/contracts";
 
 export async function workflowDocumentCatalog(
   workspaceRoot: string,

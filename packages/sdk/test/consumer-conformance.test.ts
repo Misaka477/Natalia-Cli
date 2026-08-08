@@ -3,7 +3,10 @@ import { mkdtemp } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { RuntimeEvent } from "@natalia/contracts";
-import { createRealRuntimeClient } from "@natalia/client";
+import {
+  createRealRuntimeClient,
+  installExampleDocuments,
+} from "@natalia/client";
 import { createRuntimeHttpServer } from "@natalia/transport/host";
 import { projectEvents, displayText, type AppState } from "@natalia/view-store";
 import { createNataliaSDK } from "../src";
@@ -34,9 +37,16 @@ import { createNataliaSDK } from "../src";
  */
 
 async function withRuntime<T>(
-  scenario: (input: { baseURL: string; events: RuntimeEvent[] }) => Promise<T>,
+  scenario: (input: {
+    baseURL: string;
+    events: RuntimeEvent[];
+    root: string;
+  }) => Promise<T>,
+  options: { withDocuments?: boolean } = {},
 ): Promise<T> {
   const root = await mkdtemp(join(tmpdir(), "natalia-consumer-"));
+  if (options.withDocuments)
+    await installExampleDocuments({ workspaceRoot: root, includeTasks: true });
   const events: RuntimeEvent[] = [];
   const runtime = createRealRuntimeClient({
     workspaceRoot: root,
@@ -76,7 +86,7 @@ async function withRuntime<T>(
 
   const server = createRuntimeHttpServer({ client: runtime, token: "secret" });
   try {
-    return await scenario({ baseURL: server.url, events });
+    return await scenario({ baseURL: server.url, events, root });
   } finally {
     server.stop();
     await runtime.dispose?.();
@@ -183,6 +193,41 @@ test("a consumer can read catalogues and workspace facts over the SDK", async ()
     const status = await sdk.runtimeStatus?.();
     if (status) expect(status.type).toBe("status.snapshot");
   });
+}, 60_000);
+
+test("a consumer can inspect real unattended work over the SDK", async () => {
+  await withRuntime(
+    async ({ baseURL }) => {
+      const sdk = createNataliaSDK({ baseURL, token: "secret" });
+
+      // Scheduled tasks and flows were previously reachable only by running the
+      // CLI, so a remote integration could not list unattended work at all.
+      // Assert against installed documents, because empty lists would pass
+      // whether the routes worked or not.
+      const tasks = await sdk.taskOverview();
+      expect(tasks.tasks.length).toBeGreaterThan(0);
+      expect(tasks.unreadable).toEqual([]);
+      const task = tasks.tasks[0]!;
+      expect(task.taskID).toBeString();
+      expect(task.flowID).toBeString();
+      expect(task.permissionProfile).toBeString();
+
+      const flows = await sdk.flowOverview();
+      expect(flows.flows.length).toBeGreaterThan(0);
+      expect(flows.flows[0]!.stages.length).toBeGreaterThan(0);
+      // A flow reports which tasks run it, so an integration can show impact.
+      expect(Array.isArray(flows.flows[0]!.usedBy)).toBe(true);
+
+      // The catalog is for launching, so it lists every task but only flows that
+      // declare `directRun` — a flow without one cannot be run on its own. The
+      // example flows have no `directRun`, which is why only tasks appear here.
+      const catalog = await sdk.documentCatalog();
+      expect(catalog.some((entry) => entry.kind === "task")).toBe(true);
+      expect(catalog.every((entry) => entry.id.length > 0)).toBe(true);
+      expect(catalog.length).toBe(tasks.tasks.length);
+    },
+    { withDocuments: true },
+  );
 }, 60_000);
 
 test("an unauthenticated consumer is refused", async () => {

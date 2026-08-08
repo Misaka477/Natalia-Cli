@@ -770,3 +770,42 @@ function transportClient(): RuntimeClient {
     respondQuestion() {},
   };
 }
+
+test("unattended read routes are refused when the runtime does not implement them", async () => {
+  // The routes are optional on RuntimeClient, so a host that does not provide
+  // them must say so rather than answering with an empty result that a consumer
+  // would read as "no scheduled tasks".
+  const client = {
+    start() {},
+    async submit() {
+      throw new Error("not used");
+    },
+    cancel() {},
+    pause() {},
+    resume() {},
+    snapshot: () => ({ type: "session.ready", sessionID: "ses_x" }),
+    diagnostic() {},
+    lastSubmission: () => undefined,
+  } as unknown as RuntimeClient;
+  const server = createRuntimeHttpServer({ client, token: "secret" });
+  try {
+    for (const method of [
+      "task.overview",
+      "flow.overview",
+      "document.catalog",
+    ]) {
+      const response = await fetch(new URL("/rpc", server.url), {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer secret",
+        },
+        body: JSON.stringify({ id: 1, method, params: {} }),
+      });
+      const body = (await response.json()) as { error?: { message: string } };
+      expect(body.error?.message).toContain(method);
+    }
+  } finally {
+    server.stop();
+  }
+});

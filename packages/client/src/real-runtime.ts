@@ -122,6 +122,11 @@ import {
   taskModuleTools,
   type TaskModuleContext,
 } from "./capabilities/task-module-tools";
+import {
+  flowOverview as flowOverviewForWorkspace,
+  scheduledTaskOverview,
+} from "./task-overview";
+import { workflowDocumentCatalog } from "./workflow-document-catalog";
 import { ensureBashCommandParser } from "./bash-command-policy";
 import { RuntimePerformanceTrace } from "./performance-trace";
 import {
@@ -2089,6 +2094,19 @@ export function createRealRuntimeClient(
         description: plugin.description,
         capabilities: plugin.capabilities,
       }));
+    },
+    async taskOverview() {
+      // The overview needs resolved config to compute effective permissions, so
+      // it is only answerable once the runtime has initialized.
+      const config =
+        tsRuntimeConfig ?? (await resolveConfig({ workspaceRoot })).config;
+      return await scheduledTaskOverview({ workspaceRoot, config });
+    },
+    async flowOverview() {
+      return await flowOverviewForWorkspace({ workspaceRoot });
+    },
+    async documentCatalog() {
+      return await workflowDocumentCatalog(workspaceRoot, tsRuntimeConfig);
     },
     async modelCatalog() {
       return await clientModelCatalog();

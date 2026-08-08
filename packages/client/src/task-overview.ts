@@ -1,5 +1,20 @@
 import { readdir } from "node:fs/promises";
-import type { ConfigV2, NataliaTaskDocument } from "@natalia/contracts";
+import type {
+  ConfigV2,
+  FlowOverview,
+  FlowRow,
+  FlowStageRow,
+  NataliaTaskDocument,
+  ScheduledTaskOverview,
+  ScheduledTaskRow,
+} from "@natalia/contracts";
+export type {
+  FlowOverview,
+  FlowRow,
+  FlowStageRow,
+  ScheduledTaskOverview,
+  ScheduledTaskRow,
+} from "@natalia/contracts";
 import {
   taskAlertSubscriptions,
   NataliaDocumentStore,
@@ -9,75 +24,6 @@ import {
 } from "@natalia/workflow";
 import { effectiveFlowPermissions } from "./effective-policy";
 import { nextSystemdRun } from "./systemd-adapter";
-
-export type ScheduledTaskRow = {
-  taskID: string;
-  displayName: string;
-  path: string;
-  /** The task's own human-readable cadence. The real schedule belongs to the scheduler. */
-  schedule: string;
-  permissionProfile: string;
-  flowID: string;
-  enabledModules: number;
-  retry: NataliaTaskDocument["retry"];
-  alertChannels: string[];
-  /** Channel and event pairs the task subscribed to, for the detail surfaces. */
-  alertEvents: string[];
-  issueTarget?: string;
-  dataSource?: string;
-  systemd?: {
-    calendar: string;
-    scope: "user" | "system";
-    timerUnit?: string;
-    nextRun?: string;
-    generatedCalendar?: string;
-  };
-  lastRun?: {
-    invocationID: string;
-    status: string;
-    startedAt: string;
-    endedAt?: string;
-    skipReason?: string;
-  };
-  consecutiveFailures: number;
-  pendingAlertDeliveries: number;
-  /** Reasons this task would refuse to run right now, empty when it is ready. */
-  problems: string[];
-};
-
-export type FlowStageRow = {
-  moduleID: string;
-  moduleType: string;
-  displayName: string;
-  enabled: boolean;
-  minimumConditions: number;
-  idealConditions: number;
-  hasInstructions: boolean;
-  commandRules?: { mode: string; commands: number };
-  interactivePrograms: number | "any";
-};
-
-export type FlowRow = {
-  flowID: string;
-  displayName: string;
-  path: string;
-  stages: FlowStageRow[];
-  enabledStages: number;
-  /** Tasks in this workspace that run this flow. */
-  usedBy: string[];
-  problems: string[];
-};
-
-export type FlowOverview = {
-  flows: FlowRow[];
-  unreadable: Array<{ path: string; reason: string }>;
-};
-
-export type ScheduledTaskOverview = {
-  tasks: ScheduledTaskRow[];
-  /** Task documents that could not be read at all. */
-  unreadable: Array<{ path: string; reason: string }>;
-};
 
 /**
  * Everything a scheduled-task surface needs about every task in a workspace: how
