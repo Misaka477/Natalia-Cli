@@ -8,7 +8,7 @@ test("MCP status events project lifecycle state for dialogs", () => {
     status: "connected",
     tools: 3,
   });
-  expect(state.mcp.docs).toEqual({
+  expect(state.facts.mcp.docs).toEqual({
     type: "mcp.status",
     server: "docs",
     status: "connected",

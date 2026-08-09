@@ -331,7 +331,7 @@ test("Terminal events stay out of chat while Sandbox renders stable blocks", () 
   expect(
     state.messages.find((item) => item.id === "terminal:pty_1"),
   ).toBeUndefined();
-  expect(state.terminals.pty_1.tail).toBe("ready\n$");
+  expect(state.facts.terminals.pty_1?.tail).toBe("ready\n$");
   expect(
     state.messages.find((item) => item.id === "sandbox:box_m11")?.text,
   ).toContain("isolation=workspace");
@@ -380,9 +380,11 @@ test("model-owned terminal persists approval wait and action timeline for fixed 
     reason: "install requires approval",
     target,
   });
-  expect(state.terminals.pty_model.ownership).toBe("model");
-  expect(state.terminals.pty_model.approvalID).toBe("apr_pty_model_1");
-  expect(state.terminalTimeline.pty_model[0]?.status).toBe("awaiting_approval");
+  expect(state.facts.terminals.pty_model?.ownership).toBe("model");
+  expect(state.facts.terminals.pty_model?.approvalID).toBe("apr_pty_model_1");
+  expect(state.facts.terminalTimeline.pty_model?.[0]?.status).toBe(
+    "awaiting_approval",
+  );
   expect(state.footer).toContain("awaiting");
   expect(
     state.messages.some((message) => message.id.startsWith("terminal:")),
@@ -723,7 +725,7 @@ test("typed subagent updates remain available outside transcript text", () => {
     task: "Audit stream ownership",
     text: "Inspecting the local adapter",
   });
-  expect(state.subagents.agent_a).toMatchObject({
+  expect(state.facts.subagents.agent_a).toMatchObject({
     status: "running",
     attached: true,
     task: "Audit stream ownership",

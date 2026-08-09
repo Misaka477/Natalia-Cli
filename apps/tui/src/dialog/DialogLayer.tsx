@@ -121,8 +121,8 @@ export function DialogStatus(props: {
         )}
       </Show>
       <text fg={darkTheme.muted}>
-        Terminal sessions: {Object.keys(state.terminals).length} · Messages:{" "}
-        {state.messages.length}
+        Terminal sessions: {Object.keys(state.facts.terminals).length} ·
+        Messages: {state.messages.length}
       </text>
       <text fg={darkTheme.muted}>
         {loading() ? "Refreshing... · " : ""}R refresh · Escape close

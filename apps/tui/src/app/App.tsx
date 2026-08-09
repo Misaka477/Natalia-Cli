@@ -809,7 +809,7 @@ function Shell(props: {
   }
 
   function moveTerminalSelection(direction: -1 | 1) {
-    const sessions = Object.values(state.terminals).filter(
+    const sessions = Object.values(state.facts.terminals).filter(
       (terminal) =>
         terminal.ownership === "model" &&
         terminal.status !== "exited" &&

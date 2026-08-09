@@ -13,8 +13,8 @@ test("subagent state preserves parent-agent tree provenance", () => {
     parentAgentID: "root",
     continuation: 0,
   });
-  expect(state.subagents.child?.parentAgentID).toBe("root");
-  expect(state.subagents.child?.parentSessionID).toBe("ses_parent");
+  expect(state.facts.subagents.child?.parentAgentID).toBe("root");
+  expect(state.facts.subagents.child?.parentSessionID).toBe("ses_parent");
 });
 
 test("submitted turns render safe attachment metadata without private paths", () => {

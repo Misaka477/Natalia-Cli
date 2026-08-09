@@ -685,7 +685,7 @@ export function runCommand(command: string, ctx: CommandContext) {
       ctx.dialog.push(() => (
         <DialogMcp
           config={resolved}
-          statuses={ctx.state.mcp}
+          statuses={ctx.state.facts.mcp}
           onPersist={(next) =>
             void ctx.persistConfig(next, resolved).catch(ctx.toast.error)
           }
@@ -1016,7 +1016,7 @@ export function runCommand(command: string, ctx: CommandContext) {
               ctx.dialog.push(() => (
                 <DialogMcp
                   config={resolved}
-                  statuses={ctx.state.mcp}
+                  statuses={ctx.state.facts.mcp}
                   onPersist={(next) => void saveConfig(next)}
                 />
               ));

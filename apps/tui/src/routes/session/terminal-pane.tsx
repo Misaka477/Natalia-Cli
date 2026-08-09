@@ -1,22 +1,13 @@
 import { TextAttributes } from "@opentui/core";
 import { For, Show } from "solid-js";
-import { useAppState } from "../../context/state";
+import type { TerminalTimelineEntry, TerminalView } from "@natalia/view-store";
 import { themeTokens as darkTheme } from "../../theme/theme";
 import { terminalPreview } from "../../terminal-preview";
 
 export function ModelTerminalPane(props: {
-  terminal: Extract<
-    ReturnType<typeof useAppState>["state"]["terminals"][string],
-    { type: "terminal.update" }
-  >;
-  timeline: Extract<
-    ReturnType<typeof useAppState>["state"]["terminalTimeline"][string][number],
-    { type: "terminal.timeline" }
-  >[];
-  sessions: Extract<
-    ReturnType<typeof useAppState>["state"]["terminals"][string],
-    { type: "terminal.update" }
-  >[];
+  terminal: TerminalView;
+  timeline: TerminalTimelineEntry[];
+  sessions: TerminalView[];
   onSelect(id: string): void;
   focus: "chat" | "terminal";
   onFocus(): void;

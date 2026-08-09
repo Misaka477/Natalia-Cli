@@ -307,13 +307,13 @@ export function SessionRoute(props: {
       </Show>
       <Show when={state.terminalPane.selectedID}>
         {(selectedID) => {
-          const terminal = () => state.terminals[selectedID()];
+          const terminal = () => state.facts.terminals[selectedID()];
           return (
             <Show when={terminal()}>
               <ModelTerminalPane
                 terminal={terminal()!}
-                timeline={state.terminalTimeline[selectedID()] ?? []}
-                sessions={Object.values(state.terminals).filter(
+                timeline={state.facts.terminalTimeline[selectedID()] ?? []}
+                sessions={Object.values(state.facts.terminals).filter(
                   (item) =>
                     item.ownership === "model" &&
                     item.status !== "exited" &&
@@ -367,16 +367,16 @@ export function SessionFooter(props: { workspaceRoot?: string }) {
         <Show when={pending}>
           <text fg={darkTheme.warning}>△ Action required</text>
         </Show>
-        <Show when={Object.keys(state.terminals).length > 0}>
+        <Show when={Object.keys(state.facts.terminals).length > 0}>
           <text fg={darkTheme.text}>
             <span style={{ fg: darkTheme.success }}>•</span>{" "}
-            {Object.keys(state.terminals).length} terminal
+            {Object.keys(state.facts.terminals).length} terminal
           </text>
         </Show>
-        <Show when={Object.keys(state.sandboxes).length > 0}>
+        <Show when={Object.keys(state.facts.sandboxes).length > 0}>
           <text fg={darkTheme.text}>
             <span style={{ fg: darkTheme.success }}>•</span>{" "}
-            {Object.keys(state.sandboxes).length} Sandbox
+            {Object.keys(state.facts.sandboxes).length} Sandbox
           </text>
         </Show>
         <text fg={state.status === "ready" ? darkTheme.text : darkTheme.muted}>
@@ -479,7 +479,7 @@ export function SessionSidebar(props: {
           </Show>
           <Show
             when={
-              Object.values(state.subagents).filter(
+              Object.values(state.facts.subagents).filter(
                 (agent) => !agent.parentAgentID,
               ).length > 0
             }
@@ -489,7 +489,7 @@ export function SessionSidebar(props: {
                 Agents
               </text>
               <For
-                each={Object.values(state.subagents).filter(
+                each={Object.values(state.facts.subagents).filter(
                   (agent) => !agent.parentAgentID,
                 )}
               >
@@ -532,13 +532,15 @@ export function SessionSidebar(props: {
             </box>
           </Show>
           <Show
-            when={Object.values(state.sandboxes).length > 0 && !props.compact}
+            when={
+              Object.values(state.facts.sandboxes).length > 0 && !props.compact
+            }
           >
             <box marginTop={1} flexDirection="column">
               <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
                 Workspace
               </text>
-              <For each={Object.values(state.sandboxes)}>
+              <For each={Object.values(state.facts.sandboxes)}>
                 {(sandbox) => (
                   <text fg={darkTheme.muted}>
                     {sandbox.changedFiles} changed · {sandbox.runningResources}{" "}
@@ -559,10 +561,10 @@ export function SessionSidebar(props: {
 
 export function SubagentRoute(props: { agentID: string; onBack(): void }) {
   const { state } = useAppState();
-  const agent = () => state.subagents[props.agentID];
-  const history = () => state.subagentHistory[props.agentID] ?? [];
+  const agent = () => state.facts.subagents[props.agentID];
+  const history = () => state.facts.subagentHistory[props.agentID] ?? [];
   const children = () =>
-    Object.values(state.subagents).filter(
+    Object.values(state.facts.subagents).filter(
       (candidate) => candidate.parentAgentID === props.agentID,
     );
   const route = useRouteController();

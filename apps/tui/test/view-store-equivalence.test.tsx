@@ -11,19 +11,25 @@ import {
 } from "@natalia/view-store";
 
 /**
- * `@natalia/view-store` and the TUI reducer currently project the same event
- * stream independently: the TUI has not been switched over yet, because that
- * means editing `context/state.tsx`, which is under a standing change
- * restriction.
+ * `@natalia/view-store` and the TUI reducer still project the conversation core
+ * independently: the TUI owns its own transcript, streams and tool display, and
+ * adopting the shared one changes what a user sees (footer wording, inline
+ * narration), so it is a separate slice.
  *
  * Two reducers that are allowed to drift are worse than one, so this test pins
- * the overlap. It compares only what both layers claim to project — the
- * conversation core — and deliberately ignores what view-store states it does
- * not project (terminals, sandboxes, checkpoints, subagents, banners, todos)
- * and what it must never project (dialog and modal state, which are UI-only).
+ * the overlap. It compares only what both layers claim to project and
+ * deliberately ignores what view-store must never project (dialog and modal
+ * state, which are UI-only).
  *
- * If this test fails, the two projections have diverged and the convergence
- * slice has to reconcile them before the TUI can adopt view-store.
+ * Resource facts are no longer projected twice: since E3 step 1 the TUI holds
+ * `state.facts`, the view-store projection, and reads terminals, sandboxes,
+ * subagents and MCP from it. The resource assertions below therefore changed
+ * meaning — they now prove the TUI routes those events into the projection at
+ * all, rather than proving two implementations agree. That is weaker, and it is
+ * stated here rather than left to look like equivalence.
+ *
+ * If the transcript comparison fails, the two projections have diverged and the
+ * convergence slice has to reconcile them before the TUI can adopt view-store.
  */
 
 /**
@@ -138,10 +144,15 @@ function fromTui(state: TuiAppState): Comparable {
     pendingQuestionIDs: state.modal.queue
       .filter((item) => item.kind === "question")
       .map((item) => item.id),
-    terminals: resourceRows(state.terminals),
-    sandboxes: resourceRows(state.sandboxes),
-    subagents: resourceRows(state.subagents),
-    mcp: Object.values(state.mcp)
+    // Resource slices now come from view-store itself (`state.facts`), so these
+    // four are no longer two reducers agreeing — they assert the wiring: every
+    // resource event the TUI receives is actually routed into the projection.
+    // A missed `case` in the TUI reducer turns them red, which is the only way
+    // this can now break.
+    terminals: resourceRows(state.facts.terminals),
+    sandboxes: resourceRows(state.facts.sandboxes),
+    subagents: resourceRows(state.facts.subagents),
+    mcp: Object.values(state.facts.mcp)
       .map((item) => ({ server: item.server, status: item.status }))
       .sort((a, b) => a.server.localeCompare(b.server)),
     todos: state.todos.map((todo) => ({

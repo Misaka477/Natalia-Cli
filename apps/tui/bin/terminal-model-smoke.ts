@@ -21,8 +21,8 @@ if (!approval) throw new Error("model terminal smoke missed approval request");
 handle.renderer.destroy();
 
 const summary = {
-  terminal: firstState.terminals.terminal_model_1,
-  timeline: firstState.terminalTimeline.terminal_model_1,
+  terminal: firstState.facts.terminals.terminal_model_1,
+  timeline: firstState.facts.terminalTimeline.terminal_model_1,
   approval,
   observerMode: "user writes disabled",
 };

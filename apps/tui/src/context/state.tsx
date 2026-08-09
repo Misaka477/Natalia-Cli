@@ -45,6 +45,11 @@ import {
   resolveQuestion,
   type ModalControllerState,
 } from "@natalia/ui-model";
+import {
+  applyResourceEvent,
+  initialState as initialFacts,
+  type AppState as ViewAppState,
+} from "@natalia/view-store";
 
 export type MessageBlock = {
   id: string;
@@ -93,7 +98,7 @@ export type ToolBlockState = {
   detailAvailable: boolean;
 };
 
-export type SubagentView = Extract<RuntimeEvent, { type: "subagent.update" }>;
+export type SubagentView = ViewAppState["subagents"][string];
 
 type StreamState = {
   committed: string;
@@ -107,7 +112,6 @@ type StreamState = {
 
 const streamSegmentChars = 6000;
 const eventBatchMs = 16;
-const maxTerminalTranscriptChars = 12000;
 
 export type AppState = {
   sessionID?: SessionID;
@@ -129,19 +133,23 @@ export type AppState = {
   streams: Record<string, StreamState>;
   streamPhases: Record<string, "thinking" | "assistant">;
   tools: Record<string, ToolBlockState>;
-  subagents: Record<string, SubagentView>;
-  subagentHistory: Record<string, SubagentView[]>;
   todos: TodoView[];
   retryBanner?: string;
   compactionBanner?: string;
-  terminals: Record<string, Extract<RuntimeEvent, { type: "terminal.update" }>>;
-  terminalTimeline: Record<
-    string,
-    Extract<RuntimeEvent, { type: "terminal.timeline" }>[]
-  >;
+  /**
+   * Resource facts as projected by `@natalia/view-store`: terminals, their
+   * timelines, sandboxes, subagents and MCP servers. The TUI used to keep its own
+   * copy of each, with its own transcript trimming, republish dedupe and history
+   * bounds; those now live in the shared projection so every consumer gets them,
+   * and there is one reducer for a resource fact instead of two that may drift.
+   *
+   * Only the events whose state is read from here are routed into it (see
+   * `applyEvent`). What stays in the TUI is presentation: the terminal pane
+   * selection, and the transcript rows the TUI narrates for sandboxes and
+   * subagents.
+   */
+  facts: ViewAppState;
   terminalPane: { selectedID?: string; focus: "chat" | "terminal" };
-  sandboxes: Record<string, Extract<RuntimeEvent, { type: "sandbox.update" }>>;
-  mcp: Record<string, Extract<RuntimeEvent, { type: "mcp.status" }>>;
 };
 
 export const initialState: AppState = {
@@ -157,14 +165,9 @@ export const initialState: AppState = {
   streams: {},
   streamPhases: {},
   tools: {},
-  subagents: {},
-  subagentHistory: {},
   todos: [],
-  terminals: {},
-  terminalTimeline: {},
+  facts: initialFacts(),
   terminalPane: { focus: "chat" },
-  sandboxes: {},
-  mcp: {},
   messages: [],
 };
 
@@ -353,35 +356,32 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
     case "rollback.failed":
       handleCheckpointEvent(state, event);
       return;
-    case "terminal.update":
-      const terminalEvent = compactTerminalEvent(event);
-      const previousTerminal = state.terminals[terminalEvent.id];
+    case "terminal.update": {
+      const previousTerminal = state.facts.terminals[event.id];
+      applyResourceEvent(state.facts, event);
+      const terminal = state.facts.terminals[event.id];
+      // The projection drops a republish that changes nothing observable, and
+      // then there is nothing for the pane to react to either.
+      if (terminal === previousTerminal) return;
       if (
-        previousTerminal &&
-        sameTerminalUpdate(previousTerminal, terminalEvent)
-      )
-        return;
-      const isNewTerminal = !state.terminals[terminalEvent.id];
-      state.terminals[terminalEvent.id] = terminalEvent;
-      if (
-        terminalEvent.ownership === "model" &&
-        (isNewTerminal || !state.terminalPane.selectedID) &&
-        terminalEvent.status !== "exited" &&
-        terminalEvent.status !== "failed"
+        terminal &&
+        terminal.ownership === "model" &&
+        (!previousTerminal || !state.terminalPane.selectedID) &&
+        terminal.status !== "exited" &&
+        terminal.status !== "failed"
       ) {
-        state.terminalPane.selectedID = terminalEvent.id;
+        state.terminalPane.selectedID = terminal.id;
       }
       if (
-        state.terminalPane.selectedID === terminalEvent.id &&
-        (terminalEvent.status === "exited" || terminalEvent.status === "failed")
+        terminal &&
+        state.terminalPane.selectedID === terminal.id &&
+        (terminal.status === "exited" || terminal.status === "failed")
       ) {
-        state.terminalPane.selectedID = nextActiveTerminal(
-          state,
-          terminalEvent.id,
-        );
+        state.terminalPane.selectedID = nextActiveTerminal(state, terminal.id);
         if (!state.terminalPane.selectedID) state.terminalPane.focus = "chat";
       }
       return;
+    }
     case "terminal.pane.select":
       if (activeTerminalIDs(state).includes(event.id)) {
         state.terminalPane.selectedID = event.id;
@@ -393,19 +393,7 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
       state.terminalPane.selectedID ??= nextActiveTerminal(state);
       return;
     case "terminal.timeline":
-      const timeline = (state.terminalTimeline[event.id] ??= []);
-      if (
-        !timeline.some(
-          (item) =>
-            item.at === event.at &&
-            item.action === event.action &&
-            item.status === event.status &&
-            item.actor === event.actor,
-        )
-      ) {
-        timeline.push(event);
-        state.terminalTimeline[event.id] = timeline.slice(-40);
-      }
+      applyResourceEvent(state.facts, event);
       return;
     case "terminal.approval":
       state.footer = `Terminal ${event.id} ${event.state}: ${event.reason}`;
@@ -415,7 +403,7 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
         `terminal ${event.id} ${event.action} ${event.redacted ? "[redacted]" : ""}`.trim();
       return;
     case "sandbox.update":
-      state.sandboxes[event.id] = event;
+      applyResourceEvent(state.facts, event);
       upsertBlock(
         state,
         `sandbox:${event.id}`,
@@ -448,7 +436,7 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
       );
       return;
     case "mcp.status":
-      state.mcp[event.server] = event;
+      applyResourceEvent(state.facts, event);
       state.footer = `MCP ${event.server}: ${event.status}`;
       return;
     case "diagnostic":
@@ -570,11 +558,7 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
       upsertTool(state, event);
       return;
     case "subagent.update":
-      state.subagents[event.id] = event;
-      state.subagentHistory[event.id] = [
-        ...(state.subagentHistory[event.id] ?? []),
-        event,
-      ].slice(-100);
+      applyResourceEvent(state.facts, event);
       upsertBlock(
         state,
         `subagent:${event.id}`,
@@ -1063,7 +1047,7 @@ function targetLabel(
 }
 
 function activeTerminalIDs(state: AppState) {
-  return Object.values(state.terminals)
+  return Object.values(state.facts.terminals)
     .filter(
       (terminal) =>
         terminal.ownership === "model" &&
@@ -1256,50 +1240,6 @@ function isUrgentEvent(event: RuntimeEvent) {
     event.type === "question.request" ||
     event.type === "turn.finished" ||
     event.type === "turn.cancelled"
-  );
-}
-
-function compactTerminalEvent(
-  event: Extract<RuntimeEvent, { type: "terminal.update" }>,
-) {
-  const transcript = event.transcript;
-  if (!transcript || transcript.length <= maxTerminalTranscriptChars)
-    return event;
-  return {
-    ...event,
-    transcript: `... ${transcript.length - maxTerminalTranscriptChars} earlier chars omitted from live pane ...\n${transcript.slice(-maxTerminalTranscriptChars)}`,
-  };
-}
-
-function sameTerminalUpdate(
-  previous: Extract<RuntimeEvent, { type: "terminal.update" }>,
-  next: Extract<RuntimeEvent, { type: "terminal.update" }>,
-) {
-  return (
-    previous.status === next.status &&
-    previous.attached === next.attached &&
-    previous.rows === next.rows &&
-    previous.cols === next.cols &&
-    previous.activity === next.activity &&
-    previous.tail === next.tail &&
-    previous.lastAction === next.lastAction &&
-    previous.ownership === next.ownership &&
-    previous.revision === next.revision &&
-    previous.lastOutputAt === next.lastOutputAt &&
-    sameTerminalOwner(previous.inputOwner, next.inputOwner) &&
-    sameTerminalOwner(previous.geometryOwner, next.geometryOwner)
-  );
-}
-
-function sameTerminalOwner(
-  previous: Extract<RuntimeEvent, { type: "terminal.update" }>["inputOwner"],
-  next: Extract<RuntimeEvent, { type: "terminal.update" }>["inputOwner"],
-) {
-  return (
-    previous?.type === next?.type &&
-    (previous?.type !== "viewer" ||
-      next?.type !== "viewer" ||
-      previous.viewerID === next.viewerID)
   );
 }
 
