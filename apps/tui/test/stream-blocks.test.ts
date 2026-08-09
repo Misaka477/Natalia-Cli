@@ -50,6 +50,56 @@ test("thinking and final streams remain separate with provider-safe hidden mode"
   expect(final?.text).toBe("final answer\n\n");
 });
 
+test("provider-hidden reasoning is still hidden once the turn finishes", () => {
+  // A finished turn settles its reasoning block: it commits the buffer, marks it
+  // completed and lifts it above the answer. That pass used to also rewrite the
+  // block with the stream's raw text and mark it visible, so reasoning the
+  // provider forbade showing was printed the moment the turn ended — and the row
+  // is copyable. Settling must not change who may read the text.
+  const secret = "SECRET-CHAIN-OF-THOUGHT";
+  let state = structuredClone(initialState);
+  const events: RuntimeEvent[] = [
+    {
+      type: "turn.submitted",
+      id: "turn_hidden_end",
+      text: "hi",
+      byteLength: 2,
+      lineCount: 1,
+      sha256: "sha",
+    },
+    {
+      type: "thinking.delta",
+      id: "turn_hidden_end",
+      // No trailing blank line: a chunk that reaches no markdown boundary is the
+      // common shape, and it is the one the leak survived in, because nothing was
+      // written to the transcript for the settle pass to check the policy on.
+      text: secret,
+      visible: false,
+    },
+    {
+      type: "thinking.delta",
+      id: "turn_hidden_end",
+      text: `${secret}-more`,
+      visible: false,
+    },
+    { type: "content.delta", id: "turn_hidden_end", text: "the answer\n\n" },
+    { type: "turn.finished", id: "turn_hidden_end", stopReason: "done" },
+  ];
+  for (const event of events) state = reduceState(state, event);
+
+  const thinking = state.messages.find((item) => item.role === "thinking");
+  expect(thinking?.text).toBe("Thinking details hidden by provider policy.");
+  expect(thinking?.providerPolicy).toBe("hidden");
+  // The streams are released at turn end, so by now the text must be gone from
+  // every slice of the state, not merely absent from the rendered block.
+  expect(JSON.stringify(state)).not.toContain(secret);
+  // Visible output is untouched, and the reasoning row still settles above it.
+  expect(state.messages.find((item) => item.role === "assistant")?.text).toBe(
+    "the answer\n\n",
+  );
+  expect(thinking?.status).toBe("completed");
+});
+
 test("streaming tail is rendered once while markdown is incomplete", () => {
   let state = reduceState(structuredClone(initialState), {
     type: "content.delta",

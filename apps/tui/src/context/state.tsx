@@ -841,6 +841,25 @@ function appendStreamBlock(
   const stream = (state.streams[input.id] ??= newStream());
   stream.deferVisible = input.deferVisible === true;
   stream.attempt = input.attempt ?? stream.attempt;
+  // Reasoning a provider forbids showing is obeyed by never keeping it: not in
+  // the block, and not in the stream either, so there is nowhere left for a
+  // later pass to read it from. This is the single place thinking text enters a
+  // stream, which is what makes that an invariant rather than a hope — the
+  // settle-on-finish pass used to commit the stream's raw text and mark it
+  // visible, printing exactly what the provider had refused.
+  if (input.role === "thinking" && !input.reasoningVisible) {
+    upsertBlock(
+      state,
+      segmentID(input.id, stream.segmentIndex),
+      "thinking",
+      // Derived from the arriving chunk, which is not retained: it only decides
+      // whether to say thinking happened at all.
+      providerSafeThinkingSummary(false, input.text),
+      undefined,
+      { pendingText: "", reasoningVisible: false, providerPolicy: "hidden" },
+    );
+    return;
+  }
   const retryApplied = appendWithRetrySkip(input.text, stream.retrySkip);
   stream.retrySkip = retryApplied.retrySkip;
   if (!retryApplied.text) return;
@@ -850,17 +869,13 @@ function appendStreamBlock(
   if (split.committed)
     appendCommittedSegment(state, input, stream, split.committed);
   if (stream.deferVisible) return;
-  const pendingText = input.reasoningVisible ? stream.tail : "";
+  const pendingText = stream.tail;
   if (!stream.segmentText && !pendingText) return;
-  const visibleText =
-    input.role === "thinking" && !input.reasoningVisible
-      ? providerSafeThinkingSummary(false, stream.committed)
-      : stream.segmentText;
   upsertBlock(
     state,
     segmentID(input.id, stream.segmentIndex),
     input.role,
-    visibleText,
+    stream.segmentText,
     undefined,
     {
       pendingText,
@@ -893,7 +908,16 @@ function revealDeferredStreamBlock(state: AppState, id: string) {
     stream.segmentText += stream.tail;
     stream.tail = "";
   }
-  if (!stream.segmentText) return;
+  if (!stream.segmentText) {
+    // Nothing to reveal. That is now the normal case for reasoning the provider
+    // hid, because none of it was retained — but the row did settle, so it still
+    // says so rather than silently losing its marker.
+    const settled = state.messages.find(
+      (item) => item.id === segmentID(id, stream.segmentIndex),
+    );
+    if (settled) settled.status = "completed";
+    return;
+  }
   upsertBlockBefore(
     state,
     segmentID(id, stream.segmentIndex),
@@ -1187,15 +1211,12 @@ function appendCommittedSegment(
 ) {
   stream.committed += text;
   stream.segmentText += text;
-  const hiddenThinking = input.role === "thinking" && !input.reasoningVisible;
   if (stream.deferVisible && !forceVisible) return;
   upsertBlock(
     state,
     segmentID(input.id, stream.segmentIndex),
     input.role,
-    hiddenThinking
-      ? providerSafeThinkingSummary(false, stream.committed)
-      : stream.segmentText,
+    stream.segmentText,
     undefined,
     {
       pendingText: "",
