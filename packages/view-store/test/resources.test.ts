@@ -648,6 +648,86 @@ test("a republished terminal update that changes nothing is dropped", () => {
   expect(state.terminals.t_a?.tail).toBe("$ ls -l");
 });
 
+test("a terminal update that only hands input to a viewer is kept", () => {
+  // Who holds the keyboard is rendered ("user control (…)" in the TUI's pane), so
+  // dropping this update would tell the reader the model is typing while a person
+  // actually is. Nothing else about the pane changes on a takeover.
+  const state = projectEvents([
+    terminalUpdate("t_a", {
+      ownership: "model",
+      inputOwner: { type: "model" },
+      geometryOwner: { type: "model" },
+      viewers: [
+        {
+          id: "v1",
+          kind: "embedded",
+          connectedAt: "2026-08-09T00:00:00.000Z",
+          lastSeenAt: "2026-08-09T00:00:00.000Z",
+        },
+      ],
+    }),
+  ]);
+  const before = state.terminals.t_a;
+
+  applyEvent(
+    state,
+    terminalUpdate("t_a", {
+      ownership: "model",
+      inputOwner: { type: "viewer", viewerID: "v1" },
+      geometryOwner: { type: "model" },
+      viewers: [
+        {
+          id: "v1",
+          kind: "embedded",
+          connectedAt: "2026-08-09T00:00:00.000Z",
+          lastSeenAt: "2026-08-09T00:00:00.000Z",
+        },
+      ],
+    }),
+  );
+  expect(state.terminals.t_a).not.toBe(before);
+  expect(state.terminals.t_a?.inputOwner).toEqual({
+    type: "viewer",
+    viewerID: "v1",
+  });
+});
+
+test("a terminal update that only changes the viewer list is kept", () => {
+  const viewer = (id: string) => ({
+    id,
+    kind: "external" as const,
+    connectedAt: "2026-08-09T00:00:00.000Z",
+    lastSeenAt: "2026-08-09T00:00:00.000Z",
+  });
+  const state = projectEvents([
+    terminalUpdate("t_a", { viewers: [viewer("v1")] }),
+  ]);
+  const before = state.terminals.t_a;
+
+  applyEvent(
+    state,
+    terminalUpdate("t_a", { viewers: [viewer("v1"), viewer("v2")] }),
+  );
+  expect(state.terminals.t_a).not.toBe(before);
+  expect(state.terminals.t_a?.viewers).toHaveLength(2);
+
+  // Structural, not by identity: an equal list republished is still a no-op.
+  const kept = state.terminals.t_a;
+  applyEvent(
+    state,
+    terminalUpdate("t_a", { viewers: [viewer("v1"), viewer("v2")] }),
+  );
+  expect(state.terminals.t_a).toBe(kept);
+});
+
+test("a terminal update that only changes the pending approval is kept", () => {
+  const state = projectEvents([terminalUpdate("t_a")]);
+  const before = state.terminals.t_a;
+  applyEvent(state, terminalUpdate("t_a", { approvalID: "apr_1" }));
+  expect(state.terminals.t_a).not.toBe(before);
+  expect(state.terminals.t_a?.approvalID).toBe("apr_1");
+});
+
 test("transcript eviction cuts on a user turn boundary, not at the watermark", () => {
   // Turns are 7 rows long so the naive cutoff (exactly `excess` rows) lands on an
   // assistant row. A cut there would leave a reply with no prompt above it, which

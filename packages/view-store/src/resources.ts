@@ -47,26 +47,102 @@ function sameTimelineEntry(
   );
 }
 
-/** Every field a consumer can observe. Compared to skip no-op republishes. */
+/**
+ * The fields a republished update is compared on. This list is load-bearing: the
+ * comparison below is built from it, so a field that is not listed is not
+ * compared and a change to it would be dropped.
+ */
+const comparedTerminalFields = [
+  "status",
+  "attached",
+  "rows",
+  "cols",
+  "activity",
+  "tail",
+  "transcript",
+  "command",
+  "cwd",
+  "prompt",
+  "lastAction",
+  "target",
+  "ownership",
+  "approvalID",
+  "revision",
+  "lastOutputAt",
+  "viewers",
+  "inputOwner",
+  "geometryOwner",
+  // The execution this pane state was published from. A record left on a stale
+  // episode attributes the pane to the wrong run.
+  "episodeID",
+] as const;
+
+/**
+ * Fields deliberately left out of the comparison, each with a reason:
+ *   - `type` and `id` select the record; two updates being compared always agree.
+ *   - `screen` is a pure function of `revision`: the terminal registry's
+ *     `screenSnapshot()` caches one snapshot per revision, so the frame cannot
+ *     change without `revision` changing, and `revision` is compared.
+ *     Deep-comparing a cell grid on every keystroke would cost more than the
+ *     dedupe saves.
+ */
+const uncomparedTerminalFields = ["type", "id", "screen"] as const;
+
+type ClassifiedTerminalField =
+  | (typeof comparedTerminalFields)[number]
+  | (typeof uncomparedTerminalFields)[number];
+
+type AssertNever<T extends never> = T;
+/**
+ * Compile-time completeness. Adding a field to `terminal.update` without
+ * classifying it above fails typecheck, so the dedupe cannot silently start
+ * ignoring an observable fact — the failure mode this guard exists to prevent.
+ */
+export type UnclassifiedTerminalField = AssertNever<
+  Exclude<keyof TerminalView, ClassifiedTerminalField>
+>;
+
+/** Structural equality for the small JSON values these fields hold. */
+function sameObservedValue(previous: unknown, next: unknown): boolean {
+  if (previous === next) return true;
+  if (
+    typeof previous !== "object" ||
+    typeof next !== "object" ||
+    previous === null ||
+    next === null
+  )
+    return false;
+  if (Array.isArray(previous) !== Array.isArray(next)) return false;
+  if (Array.isArray(previous) && Array.isArray(next))
+    return (
+      previous.length === next.length &&
+      previous.every((item, index) => sameObservedValue(item, next[index]))
+    );
+  const previousKeys = Object.keys(previous as Record<string, unknown>);
+  const nextKeys = Object.keys(next as Record<string, unknown>);
+  if (previousKeys.length !== nextKeys.length) return false;
+  return previousKeys.every(
+    (key) =>
+      key in (next as Record<string, unknown>) &&
+      sameObservedValue(
+        (previous as Record<string, unknown>)[key],
+        (next as Record<string, unknown>)[key],
+      ),
+  );
+}
+
+/**
+ * True when nothing a consumer can observe changed, so the republish can be
+ * dropped. Input and geometry ownership are part of this: a UI renders who holds
+ * the keyboard, and a projection that stored a stale owner would tell the user
+ * the model is typing when a person is.
+ */
 function sameTerminalState(
   previous: TerminalView,
   next: TerminalView,
 ): boolean {
-  return (
-    previous.status === next.status &&
-    previous.attached === next.attached &&
-    previous.rows === next.rows &&
-    previous.cols === next.cols &&
-    previous.activity === next.activity &&
-    previous.tail === next.tail &&
-    previous.transcript === next.transcript &&
-    previous.command === next.command &&
-    previous.cwd === next.cwd &&
-    previous.prompt === next.prompt &&
-    previous.lastAction === next.lastAction &&
-    previous.ownership === next.ownership &&
-    previous.revision === next.revision &&
-    previous.lastOutputAt === next.lastOutputAt
+  return comparedTerminalFields.every((field) =>
+    sameObservedValue(previous[field], next[field]),
   );
 }
 
