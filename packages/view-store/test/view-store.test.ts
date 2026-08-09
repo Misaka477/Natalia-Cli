@@ -361,6 +361,30 @@ test("an announced retry that resumes with a stamped delta keeps the earlier tex
   ).toBe("Hello world");
 });
 
+test("alternating reasoning and answering keeps the order the model produced", () => {
+  // A model may think, answer, think again and answer again within one turn, with
+  // no tool call in between to separate the blocks. Each phase used to keep
+  // growing its single block, so the second thought merged into the first and the
+  // first answer was rendered *above* the thought that came before the second
+  // one — a transcript in an order the model never produced.
+  const state = projectEvents([
+    submitted("t1", "q"),
+    { type: "thinking.delta", id: "t1", text: "first thought" },
+    { type: "content.delta", id: "t1", text: "first answer" },
+    { type: "thinking.delta", id: "t1", text: "second thought" },
+    { type: "content.delta", id: "t1", text: "final answer" },
+  ]);
+  expect(
+    state.messages.map((block) => [block.role, displayText(block)]),
+  ).toEqual([
+    ["user", "q"],
+    ["thinking", "first thought"],
+    ["assistant", "first answer"],
+    ["thinking", "second thought"],
+    ["assistant", "final answer"],
+  ]);
+});
+
 test("a cancelled or failed turn leaves no request nobody will answer", () => {
   const pending: RuntimeEvent[] = [
     submitted("t1", "write it"),

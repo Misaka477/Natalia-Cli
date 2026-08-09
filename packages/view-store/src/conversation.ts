@@ -326,8 +326,20 @@ function prepareStreamPhase(
   phase: "thinking" | "assistant",
 ): void {
   const previous = state.streamPhases[turnID];
-  if (previous && previous !== phase)
-    flushStream(state, streamID(turnID, previous));
+  if (previous === phase) return;
+  if (previous) flushStream(state, streamID(turnID, previous));
+  // Returning to a phase that already rendered text means the model alternated
+  // between reasoning and answering. The new text belongs *below* whatever the
+  // other phase wrote in between, so it opens a new segment instead of growing
+  // the block above it — otherwise a second thought merges into the first and the
+  // answer that came before it ends up rendered underneath, which is no longer
+  // the order the model produced them in.
+  const stream = state.streams[streamID(turnID, phase)];
+  if (stream && (stream.committed || stream.tail)) {
+    stream.segmentIndex += 1;
+    stream.committed = "";
+    stream.tail = "";
+  }
   state.streamPhases[turnID] = phase;
 }
 
