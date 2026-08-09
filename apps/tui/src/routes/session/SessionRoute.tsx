@@ -312,7 +312,6 @@ export function SessionRoute(props: {
             <Show when={terminal()}>
               <ModelTerminalPane
                 terminal={terminal()!}
-                timeline={state.facts.terminalTimeline[selectedID()] ?? []}
                 sessions={Object.values(state.facts.terminals).filter(
                   (item) =>
                     item.ownership === "model" &&

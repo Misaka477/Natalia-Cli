@@ -1,12 +1,11 @@
 import { TextAttributes } from "@opentui/core";
 import { For, Show } from "solid-js";
-import type { TerminalTimelineEntry, TerminalView } from "@natalia/view-store";
+import type { TerminalView } from "@natalia/view-store";
 import { themeTokens as darkTheme } from "../../theme/theme";
 import { terminalPreview } from "../../terminal-preview";
 
 export function ModelTerminalPane(props: {
   terminal: TerminalView;
-  timeline: TerminalTimelineEntry[];
   sessions: TerminalView[];
   onSelect(id: string): void;
   focus: "chat" | "terminal";
