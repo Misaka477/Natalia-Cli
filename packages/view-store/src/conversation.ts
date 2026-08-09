@@ -85,12 +85,32 @@ export function segmentID(baseID: string, index: number) {
   return `${baseID}:segment:${index}`;
 }
 
+/**
+ * The turn a tool event belongs to.
+ *
+ * The runtime publishes tool events with `id` set to `${turnID}:${callID}` and
+ * the call id repeated in `callID`, so the id has to be normalised before it can
+ * be used to reach the turn's streams. Taking `id` at face value files the card
+ * under a turn that does not exist: the model text streaming above the call is
+ * never committed and no new segment opens, so the card sinks below text that
+ * arrived after it and the text from before and after the call merge into one
+ * block.
+ */
+export function turnIDForTool(event: { id: string; callID?: string }): string {
+  // Only a suffix that is actually there is stripped, so a producer that already
+  // publishes the bare turn id is left alone.
+  const suffix = `:${event.callID}`;
+  return event.callID && event.id.endsWith(suffix)
+    ? event.id.slice(0, -suffix.length)
+    : event.id;
+}
+
 export function toolStateID(event: {
   id: string;
   name: string;
   callID?: string;
 }) {
-  return `${event.id}:tool:${event.callID ?? event.name}`;
+  return `${turnIDForTool(event)}:tool:${event.callID ?? event.name}`;
 }
 
 /** Returns true when the event belongs to this projection. */
@@ -184,7 +204,7 @@ export function applyConversationEvent(
       return true;
     }
     case "tool.update": {
-      const turnID = event.id;
+      const turnID = turnIDForTool(event);
       // Model output is committed before its tool card, so a tool update never
       // reorders text around itself.
       flushStream(state, streamID(turnID, "thinking"));

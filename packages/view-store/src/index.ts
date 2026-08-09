@@ -86,6 +86,7 @@ export {
   segmentID,
   streamID,
   toolStateID,
+  turnIDForTool,
 } from "./conversation";
 /**
  * The projection composed in pieces, for a consumer migrating onto this layer one

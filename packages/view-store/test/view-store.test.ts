@@ -6,6 +6,7 @@ import {
   initialState,
   projectEvents,
   reduceState,
+  segmentID,
   streamID,
   toolStateID,
   type AppState,
@@ -383,6 +384,57 @@ test("alternating reasoning and answering keeps the order the model produced", (
     ["thinking", "second thought"],
     ["assistant", "final answer"],
   ]);
+});
+
+test("a tool event carrying the runtime's own id shape still belongs to its turn", () => {
+  // The runtime publishes tool events as `${turnID}:${callID}`, with the call id
+  // repeated in `callID`. Read literally, the card was filed under a turn that
+  // does not exist: the text above the call was never committed, no new segment
+  // opened, so the card sank below text that arrived after it and the text from
+  // before and after the call merged into one block. Every real tool call took
+  // this path — only fixtures that pass a bare turn id did not.
+  const state = projectEvents([
+    submitted("t1", "read it"),
+    { type: "content.delta", id: "t1", text: "Reading now." },
+    {
+      type: "tool.update",
+      id: "t1:call_1",
+      name: "read_file",
+      callID: "call_1",
+      status: "succeeded",
+      summary: "read 42 lines",
+      result: "contents",
+    },
+    { type: "content.delta", id: "t1", text: "It configures the server." },
+  ]);
+  expect(state.messages.map((block) => block.id)).toEqual([
+    "t1:user",
+    streamID("t1", "assistant"),
+    "t1:tool:call_1",
+    segmentID(streamID("t1", "assistant"), 1),
+  ]);
+  expect(Object.keys(state.tools)).toEqual(["t1:tool:call_1"]);
+  expect(text(state, streamID("t1", "assistant"))).toBe("Reading now.");
+  expect(text(state, segmentID(streamID("t1", "assistant"), 1))).toBe(
+    "It configures the server.",
+  );
+});
+
+test("a tool event whose id is already the turn id is left alone", () => {
+  // Not every producer repeats the call id in the event id, so normalising must
+  // only strip a suffix that is actually there.
+  const state = projectEvents([
+    submitted("t1", "read it"),
+    {
+      type: "tool.update",
+      id: "t1",
+      name: "read_file",
+      callID: "call_1",
+      status: "succeeded",
+      summary: "read 42 lines",
+    },
+  ]);
+  expect(Object.keys(state.tools)).toEqual(["t1:tool:call_1"]);
 });
 
 test("a cancelled or failed turn leaves no request nobody will answer", () => {
