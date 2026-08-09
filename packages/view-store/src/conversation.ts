@@ -256,6 +256,7 @@ export function applyConversationEvent(
     case "turn.finished":
       flushStream(state, streamID(event.id, "thinking"));
       flushStream(state, streamID(event.id, "assistant"));
+      releaseStreams(state, event.id);
       if (state.activeTurn === event.id) state.activeTurn = undefined;
       state.paused = false;
       state.lastStopReason = event.stopReason;
@@ -506,6 +507,22 @@ function beginPostToolSegment(state: AppState, turnID: string): void {
     stream.committed = "";
     stream.tail = "";
   }
+}
+
+/**
+ * Releases a settled turn's streaming buffers.
+ *
+ * A stream holds the confirmed text of its turn, which the transcript already
+ * has. Keeping it after the turn ends means the projection carries a second copy
+ * of every response for the life of the session, growing with two entries per
+ * turn and untouched by transcript eviction, because eviction bounds `messages`
+ * and nothing bounds this. The phase marker goes too: it only describes a turn in
+ * progress.
+ */
+function releaseStreams(state: AppState, turnID: string): void {
+  for (const role of ["thinking", "assistant"] as const)
+    delete state.streams[streamID(turnID, role)];
+  delete state.streamPhases[turnID];
 }
 
 /**

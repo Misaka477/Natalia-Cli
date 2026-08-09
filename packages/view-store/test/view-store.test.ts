@@ -437,6 +437,36 @@ test("a tool event whose id is already the turn id is left alone", () => {
   expect(Object.keys(state.tools)).toEqual(["t1:tool:call_1"]);
 });
 
+test("a settled turn releases its streaming buffers", () => {
+  // A stream holds its turn's confirmed text, which the transcript already has.
+  // Keeping it after the turn ends leaves a second copy of every response in the
+  // projection, two entries per turn, that transcript eviction never reaches.
+  const answered = projectEvents([
+    submitted("t1", "hi"),
+    { type: "thinking.delta", id: "t1", text: "considering" },
+    { type: "content.delta", id: "t1", text: "the answer" },
+    { type: "turn.finished", id: "t1", stopReason: "done" },
+  ]);
+  expect(answered.streams).toEqual({});
+  expect(answered.streamPhases).toEqual({});
+  // The text itself is kept where it belongs.
+  expect(text(answered, streamID("t1", "assistant"))).toBe("the answer");
+
+  // A turn still running keeps its buffers, and a second turn does not disturb
+  // the first one's release.
+  const running = projectEvents([
+    submitted("t1", "hi"),
+    { type: "content.delta", id: "t1", text: "one" },
+    { type: "turn.finished", id: "t1", stopReason: "done" },
+    submitted("t2", "again"),
+    { type: "content.delta", id: "t2", text: "two" },
+  ]);
+  expect(Object.keys(running.streams).sort()).toEqual([
+    streamID("t2", "assistant"),
+    streamID("t2", "thinking"),
+  ]);
+});
+
 test("a cancelled or failed turn leaves no request nobody will answer", () => {
   const pending: RuntimeEvent[] = [
     submitted("t1", "write it"),
