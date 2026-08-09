@@ -217,6 +217,66 @@ test("pending approvals and questions appear and clear on response", () => {
   expect(state.pendingQuestions).toEqual([]);
 });
 
+test("streamed text is confirmed as markdown completes it, not only at the end", () => {
+  // `text` is documented as the confirmed record and `pendingText` as the part
+  // not confirmed yet. A consumer renders the first as markdown and the second as
+  // provisional, so the boundary has to move while the answer streams.
+  const state = projectEvents([
+    submitted("t1", "explain"),
+    { type: "content.delta", id: "t1", text: "First paragraph.\n\n" },
+    { type: "content.delta", id: "t1", text: "second, still unfinished" },
+  ]);
+  const assistant = state.messages.find((block) => block.role === "assistant");
+  expect(assistant?.text).toBe("First paragraph.\n\n");
+  expect(assistant?.pendingText).toBe("second, still unfinished");
+  // Nothing is duplicated by confirming early.
+  expect(displayText(assistant!)).toBe(
+    "First paragraph.\n\nsecond, still unfinished",
+  );
+});
+
+test("cancelling a turn keeps the answer already read and drops only the unfinished tail", () => {
+  // Cancelling discards unconfirmed output, which is right — but with nothing
+  // confirmed until the turn ended, the unconfirmed part was the entire response,
+  // so a user who cancelled a long answer watched all of it disappear from the
+  // transcript.
+  const state = projectEvents([
+    submitted("t1", "long job"),
+    { type: "content.delta", id: "t1", text: "Para one.\n\nPara two.\n\n" },
+    { type: "content.delta", id: "t1", text: "half a sen" },
+    { type: "turn.cancelled", id: "t1", reason: "user cancelled" },
+    { type: "turn.finished", id: "t1", stopReason: "cancelled" },
+  ]);
+  const assistant = state.messages.find((block) => block.role === "assistant");
+  expect(assistant?.text).toBe("Para one.\n\nPara two.\n\n");
+  // The half sentence is not kept as though the model had said it.
+  expect(assistant?.pendingText).toBe("");
+  expect(displayText(assistant!)).not.toContain("half a sen");
+});
+
+test("closing a segment confirms only what markdown had completed", () => {
+  // A segment closes at the boundary already confirmed, so the block left behind
+  // holds exactly the confirmed record and the unfinished remainder moves on to
+  // the next segment. Cutting the remainder instead would sweep unconfirmed text
+  // into a block a consumer is told is safe to keep, and split it mid-word.
+  const paragraph = `${"word ".repeat(1180)}\n\n`;
+  const unfinished = "x".repeat(200);
+  const state = projectEvents([
+    submitted("t1", "q"),
+    { type: "content.delta", id: "t1", text: paragraph },
+    { type: "content.delta", id: "t1", text: unfinished },
+  ]);
+  const assistant = state.messages.filter(
+    (block) => block.role === "assistant",
+  );
+  expect(assistant).toHaveLength(2);
+  expect(assistant[0]?.text).toBe(paragraph);
+  expect(assistant[0]?.pendingText).toBe("");
+  expect(assistant[1]?.text).toBe("");
+  expect(assistant[1]?.pendingText).toBe(unfinished);
+  expect(assistant.map(displayText).join("")).toBe(paragraph + unfinished);
+});
+
 test("a cancelled or failed turn leaves no request nobody will answer", () => {
   const pending: RuntimeEvent[] = [
     submitted("t1", "write it"),

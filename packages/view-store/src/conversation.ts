@@ -347,22 +347,36 @@ function appendStream(
     return;
   }
   stream.tail += applied.text;
+  // Confirm as much as markdown says is complete, as it arrives. `text` claims to
+  // be the confirmed record and `pendingText` the part not confirmed yet, and
+  // nothing else in this layer moves text between them until some later event
+  // flushes the stream. Without this the claim was false for the whole of a live
+  // response: it stayed unconfirmed to the end, so cancelling a turn discarded an
+  // answer the reader had already read, and a consumer rendering `text` as
+  // markdown and `pendingText` as provisional had nothing to render until the
+  // turn was over.
+  const settled = splitMarkdownAtSafeBoundary(stream.tail);
+  if (settled.committed) {
+    stream.committed += settled.committed;
+    stream.tail = settled.tail;
+  }
   if (stream.committed.length + stream.tail.length > streamSegmentChars) {
-    // One enormous response must not become a single unbounded block, but the
-    // split has to land outside a markdown construct: cutting inside a fenced
-    // block leaves both segments with an unpaired fence, and a renderer then
-    // swallows everything after it.
-    const split = splitMarkdownAtSafeBoundary(stream.tail);
-    // Prefer a markdown-safe boundary. Failing that, a hard split is still safe
-    // while we are outside a fence, which keeps the size bound real for prose that
-    // offers no boundary at all. Inside an open fence, keep accumulating: a
-    // readable block beats an exactly sized one, and the fence must close.
-    const cut = split.committed
-      ? split.committed.length
+    // One enormous response must not become a single unbounded block. Close the
+    // segment at the boundary already confirmed above; that is by construction
+    // outside any markdown construct, so neither segment is left holding an
+    // unpaired fence that would make a renderer swallow the rest.
+    //
+    // With nothing confirmed there is no boundary to use: a hard split is still
+    // safe while we are outside a fence, which keeps the size bound real for
+    // prose that offers no boundary at all. Inside an open fence, keep
+    // accumulating — a readable block beats an exactly sized one, and the fence
+    // must close.
+    const cut = stream.committed
+      ? 0
       : insideFence(stream.tail)
-        ? 0
+        ? -1
         : Math.max(0, streamSegmentChars - stream.committed.length);
-    if (cut > 0) {
+    if (cut >= 0) {
       const carried = stream.tail.slice(cut);
       stream.tail = stream.tail.slice(0, cut);
       commitStream(state, input.id, input.role, input.reasoningVisible);
