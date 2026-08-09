@@ -87,6 +87,14 @@ export {
   streamID,
   toolStateID,
 } from "./conversation";
+/**
+ * The projection composed in pieces, for a consumer migrating onto this layer one
+ * concern at a time. A UI that still owns its own transcript can take the resource
+ * facts from here without also taking the conversation model.
+ */
+export { applyResourceEvent } from "./resources";
+export { applyStatusEvent } from "./status";
+export { applyConversationEvent } from "./conversation";
 
 /**
  * Mutates `state` in place. Unknown and deliberately unprojected events are

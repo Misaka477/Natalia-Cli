@@ -683,3 +683,35 @@ test("a transcript under the limit is returned untouched", () => {
   expect(result.evicted).toBe(false);
   expect(result.messages).toBe(messages);
 });
+
+test("replaying a terminal timeline entry does not duplicate it", () => {
+  // A reconnecting consumer replays durable history, so it receives entries it may
+  // already hold. Counting those twice would make the timeline grow on every
+  // reconnect and show each action repeatedly.
+  const entry = {
+    type: "terminal.timeline",
+    id: "t_a",
+    actor: "model",
+    action: "created",
+    status: "executed",
+    summary: "started bash",
+    at: "2026-08-09T00:00:00.000Z",
+  } as RuntimeEvent;
+
+  const state = projectEvents([entry, entry, entry]);
+  expect(state.terminalTimeline.t_a).toHaveLength(1);
+
+  // A genuinely later entry still appends, so dedupe is not swallowing history.
+  const later = projectEvents(
+    [{ ...entry, at: "2026-08-09T00:00:01.000Z" } as RuntimeEvent],
+    state,
+  );
+  expect(later.terminalTimeline.t_a).toHaveLength(2);
+
+  // Same instant but a different outcome is a different fact.
+  const other = projectEvents(
+    [{ ...entry, status: "denied" } as RuntimeEvent],
+    state,
+  );
+  expect(other.terminalTimeline.t_a).toHaveLength(2);
+});

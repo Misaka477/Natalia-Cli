@@ -11,6 +11,7 @@ import {
   appendBounded,
   checkpointLimit,
   terminalTranscriptChars,
+  type TerminalTimelineEntry,
   type TerminalView,
   subagentHistoryLimit,
   terminalTimelineLimit,
@@ -32,6 +33,18 @@ function boundTerminalTranscript(event: TerminalView): TerminalView {
       -terminalTranscriptChars,
     )}`,
   };
+}
+
+function sameTimelineEntry(
+  previous: TerminalTimelineEntry,
+  next: TerminalTimelineEntry,
+): boolean {
+  return (
+    previous.at === next.at &&
+    previous.actor === next.actor &&
+    previous.action === next.action &&
+    previous.status === next.status
+  );
 }
 
 /** Every field a consumer can observe. Compared to skip no-op republishes. */
@@ -72,16 +85,19 @@ export function applyResourceEvent(
       state.terminals = { ...state.terminals, [event.id]: next };
       return true;
     }
-    case "terminal.timeline":
+    case "terminal.timeline": {
+      const existing = state.terminalTimeline[event.id] ?? [];
+      // Replaying history re-delivers events a consumer may already hold, so an
+      // entry identical in time, actor, action and outcome is the same entry, not a
+      // second occurrence. Without this, every reconnect doubles the timeline.
+      if (existing.some((entry) => sameTimelineEntry(entry, event)))
+        return true;
       state.terminalTimeline = {
         ...state.terminalTimeline,
-        [event.id]: appendBounded(
-          state.terminalTimeline[event.id] ?? [],
-          event,
-          terminalTimelineLimit,
-        ),
+        [event.id]: appendBounded(existing, event, terminalTimelineLimit),
       };
       return true;
+    }
     case "terminal.approval":
       // Keyed by approval id, not terminal id: one pane can have several
       // approvals over its life and a UI needs to resolve the right one.
