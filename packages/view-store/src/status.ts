@@ -80,14 +80,14 @@ export function applyStatusEvent(
       );
       return true;
     case "turn.retry":
-      resetStreamsForRetry(state, event.id);
+      resetStreamsForRetry(state, event.id, event.attempt);
       state.retryBanner = {
         kind: "turn_retry",
         text: `Retrying after ${event.reason} · attempt ${event.attempt}/${event.maxAttempts} · waiting ${event.retryAfterMs}ms`,
       };
       return true;
     case "step.retry":
-      resetStreamsForRetry(state, event.id);
+      resetStreamsForRetry(state, event.id, event.attempt);
       // Stated from the event's own fields. Turning a retry into friendlier
       // prose is presentation, and belongs to whichever UI renders it.
       state.retryBanner = {

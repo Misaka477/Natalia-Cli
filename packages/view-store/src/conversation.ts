@@ -37,14 +37,24 @@ export function newStream(): StreamState {
 }
 
 /**
- * Prepares a turn's streams for a retry.
+ * Prepares a turn's streams for a retry the runtime has announced.
  *
  * A retrying provider restarts its stream and re-sends what it already sent, so
  * the text already confirmed is remembered as the overlap to skip. Dropping the
  * confirmed text instead would lose it whenever the retry resumes rather than
  * restarts, and keeping it without skipping renders the response twice.
+ *
+ * The announced attempt is recorded on the stream because the resent deltas may
+ * carry an `attempt` stamp. That stamp is the *other* way a supersede can be
+ * signalled — for a retry nobody announced — and the two must not both act: the
+ * stamp discards the confirmed text while the overlap skip assumes it is still
+ * there, which drops everything up to the point where the resend diverges.
  */
-export function resetStreamsForRetry(state: AppState, turnID: string): void {
+export function resetStreamsForRetry(
+  state: AppState,
+  turnID: string,
+  attempt?: number,
+): void {
   for (const role of ["thinking", "assistant"] as const) {
     const id = streamID(turnID, role);
     const stream = state.streams[id];
@@ -55,6 +65,7 @@ export function resetStreamsForRetry(state: AppState, turnID: string): void {
     stream.committed += stream.tail;
     stream.tail = "";
     stream.retrySkip = stream.committed;
+    if (attempt !== undefined) stream.attempt = attempt;
     const block = state.messages.find(
       (item) => item.id === segmentID(id, stream.segmentIndex),
     );

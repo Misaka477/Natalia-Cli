@@ -277,6 +277,90 @@ test("closing a segment confirms only what markdown had completed", () => {
   expect(assistant.map(displayText).join("")).toBe(paragraph + unfinished);
 });
 
+test("an announced retry whose resend is attempt-stamped keeps the whole answer", () => {
+  // This is the shape the shipped fixture runtime emits, and what a provider is
+  // allowed to emit: the retry is announced *and* the resent deltas carry the new
+  // attempt number. Two supersede mechanisms then fired at once — the stamp
+  // discarded the confirmed text while the overlap skip assumed it was still
+  // there — so everything up to the point where the resend diverged was lost and
+  // the reader saw the answer start mid-sentence.
+  const state = projectEvents([
+    submitted("t1", "q"),
+    {
+      type: "content.delta",
+      id: "t1",
+      attempt: 1,
+      text: "# Retry demo\n\npartial duplicate",
+    },
+    {
+      type: "step.retry",
+      id: "t1",
+      operation: "llm_step",
+      step: 1,
+      attempt: 2,
+      maxAttempts: 3,
+      waitMs: 10,
+      reason: "timeout",
+    },
+    {
+      type: "content.delta",
+      id: "t1",
+      attempt: 2,
+      text: "# Retry demo\n\npartial duplicate",
+    },
+    {
+      type: "content.delta",
+      id: "t1",
+      attempt: 2,
+      text: " content committed once.\n",
+    },
+    { type: "content.done", id: "t1", attempt: 2 },
+  ]);
+  const assistant = state.messages.filter(
+    (block) => block.role === "assistant",
+  );
+  expect(assistant).toHaveLength(1);
+  expect(displayText(assistant[0]!)).toBe(
+    "# Retry demo\n\npartial duplicate content committed once.\n",
+  );
+});
+
+test("an attempt stamp still supersedes a retry nobody announced", () => {
+  // With no retry event, the stamp is the only signal that this attempt replaces
+  // the last one, so it has to keep working.
+  const state = projectEvents([
+    submitted("t1", "q"),
+    { type: "content.delta", id: "t1", text: "first try", attempt: 1 },
+    { type: "content.delta", id: "t1", text: "second try", attempt: 2 },
+  ]);
+  const assistant = state.messages.filter(
+    (block) => block.role === "assistant",
+  );
+  expect(assistant).toHaveLength(1);
+  expect(displayText(assistant[0]!)).toBe("second try");
+});
+
+test("an announced retry that resumes with a stamped delta keeps the earlier text", () => {
+  // The provider continues instead of restarting, and stamps the continuation.
+  // Discarding the confirmed text on the stamp would lose the beginning.
+  const state = projectEvents([
+    submitted("t1", "q"),
+    { type: "content.delta", id: "t1", attempt: 1, text: "Hello" },
+    {
+      type: "turn.retry",
+      id: "t1",
+      attempt: 2,
+      maxAttempts: 3,
+      reason: "timeout",
+      retryAfterMs: 10,
+    },
+    { type: "content.delta", id: "t1", attempt: 2, text: " world" },
+  ]);
+  expect(
+    displayText(state.messages.find((block) => block.role === "assistant")!),
+  ).toBe("Hello world");
+});
+
 test("a cancelled or failed turn leaves no request nobody will answer", () => {
   const pending: RuntimeEvent[] = [
     submitted("t1", "write it"),
