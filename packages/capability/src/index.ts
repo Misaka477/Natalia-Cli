@@ -26,10 +26,11 @@
  * Extension precedence and override contract.
  * Lower number = higher priority (applied first).
  *
- * Informational only: this registry refuses duplicate contribution names outright
- * rather than letting a later capability shadow an earlier one. Silent shadowing
- * is how a plugin would replace a policy-checked built-in tool, so an explicit
- * override protocol has to be designed before precedence can decide anything.
+ * Decided: precedence decides. A duplicate contribution name is resolved by
+ * `precedence`: the higher value (applied later) replaces the lower one, and
+ * the replacement is recorded so the runtime can surface it. Equal precedence
+ * refuses the newcomer — the pre-protocol behaviour, kept. A capability that
+ * declares no precedence is 0 and cannot replace anything.
  */
 export type ExtensionPrecedence = {
   base: number;
@@ -69,6 +70,11 @@ export type CapabilityRegistration = {
   /** Capability ids that must already be loaded. Refused if any is missing. */
   dependencies?: string[];
   grants: CapabilityGrant[];
+  /**
+   * Rank against other capabilities for the same contribution name. Higher
+   * wins and replaces; equal or lower is refused. Absent means 0.
+   */
+  precedence?: number;
 };
 
 /** Controlled API the runtime provides to each loaded capability. */
@@ -112,6 +118,17 @@ export class CapabilityRegistry {
   private byGrant = new Map<CapabilityGrant, Set<string>>();
   /** `kind\u0000name` -> owning capability id, so collisions are cheap to detect. */
   private owners = new Map<string, string>();
+  /** `kind\u0000name` -> precedence of the current owner. */
+  private ownerPrecedence = new Map<string, number>();
+  /** Every override that happened, in order: loser replaced by winner. */
+  private overrideLog: Array<{
+    kind: CapabilityGrant;
+    name: string;
+    winner: string;
+    winnerPrecedence: number;
+    loser: string;
+    loserPrecedence: number;
+  }> = [];
 
   /**
    * Registers a capability and runs `activate` to collect its contributions.
@@ -172,12 +189,29 @@ export class CapabilityRegistry {
           );
         const key = contributionKey(kind, name);
         const existing = this.owners.get(key);
-        if (existing !== undefined)
-          throw new CapabilityLoadError(
-            registration.id,
-            `capability "${registration.id}" cannot contribute ${kind} "${name}": already provided by "${existing}"`,
-          );
+        if (existing !== undefined) {
+          // Override protocol: the higher precedence wins and replaces, the
+          // equal or lower is refused. The loser's contribution stays on its
+          // instance record so unload still releases it — but only when it is
+          // still the owner.
+          const newPrecedence = registration.precedence ?? 0;
+          const existingPrecedence = this.ownerPrecedence.get(key) ?? 0;
+          if (newPrecedence <= existingPrecedence)
+            throw new CapabilityLoadError(
+              registration.id,
+              `capability "${registration.id}" cannot contribute ${kind} "${name}": already provided by "${existing}" at precedence ${existingPrecedence}`,
+            );
+          this.overrideLog.push({
+            kind,
+            name,
+            winner: registration.id,
+            winnerPrecedence: newPrecedence,
+            loser: existing,
+            loserPrecedence: existingPrecedence,
+          });
+        }
         this.owners.set(key, registration.id);
+        this.ownerPrecedence.set(key, registration.precedence ?? 0);
         instance.contributions.push({
           capabilityID: registration.id,
           kind,
@@ -284,8 +318,15 @@ export class CapabilityRegistry {
         // its contributions from being released.
       }
     }
-    for (const contribution of instance.contributions)
-      this.owners.delete(contributionKey(contribution.kind, contribution.name));
+    for (const contribution of instance.contributions) {
+      const key = contributionKey(contribution.kind, contribution.name);
+      // An overridden contribution's owner is someone else now: unloading the
+      // loser must not delete the winner's record.
+      if (this.owners.get(key) === id) {
+        this.owners.delete(key);
+        this.ownerPrecedence.delete(key);
+      }
+    }
     for (const grant of instance.registration.grants)
       this.byGrant.get(grant)?.delete(id);
     this.instances.delete(id);
@@ -331,13 +372,26 @@ export class CapabilityRegistry {
     return [...(this.byGrant.get(grant) ?? [])];
   }
 
-  /** Every contribution of one kind, typed by the host that knows the payload. */
+  /** What replaced what, in order. The runtime surfaces these so overrides stay visible. */
+  overrides() {
+    return [...this.overrideLog];
+  }
+
+  /**
+   * Every *effective* contribution of one kind, typed by the host that knows
+   * the payload. A contribution that lost an override stays on its instance
+   * record (so unload can release it) but is not effective: the winner is the
+   * owner, and only the owner's contribution is returned.
+   */
   contributions<T>(kind: CapabilityGrant): Array<CapabilityContribution<T>> {
     const all: Array<CapabilityContribution<T>> = [];
     for (const instance of this.instances.values()) {
-      for (const contribution of instance.contributions)
-        if (contribution.kind === kind)
-          all.push(contribution as CapabilityContribution<T>);
+      for (const contribution of instance.contributions) {
+        if (contribution.kind !== kind) continue;
+        const key = contributionKey(contribution.kind, contribution.name);
+        if (this.owners.get(key) !== contribution.capabilityID) continue;
+        all.push(contribution as CapabilityContribution<T>);
+      }
     }
     return all;
   }

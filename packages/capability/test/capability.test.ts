@@ -302,3 +302,65 @@ test("resolveLoadOrder reports a dependency that is nowhere to be found", () => 
   expect(order.order).toEqual([]);
   expect(order.unresolvable[0]?.reason).toContain("cap.missing");
 });
+
+test("a duplicate contribution is refused at equal or lower precedence", () => {
+  const registry = new CapabilityRegistry();
+  registry.load(registration("cap.a"), (ctx) => {
+    ctx.contribute("tools", "shared_tool", { run: () => "a" });
+  });
+  // Same name, no precedence declared (0): refused, as before the protocol.
+  expect(() =>
+    registry.load(registration("cap.b"), (ctx) => {
+      ctx.contribute("tools", "shared_tool", { run: () => "b" });
+    }),
+  ).toThrow(CapabilityLoadError);
+  // Lower declared precedence: refused too.
+  expect(() =>
+    registry.load(registration("cap.c", { precedence: 0 }), (ctx) => {
+      ctx.contribute("tools", "shared_tool", { run: () => "c" });
+    }),
+  ).toThrow(CapabilityLoadError);
+});
+
+test("a higher precedence contribution replaces the lower one, and records it", () => {
+  const registry = new CapabilityRegistry();
+  registry.load(registration("cap.base"), (ctx) => {
+    ctx.contribute("tools", "policy_tool", { run: () => "base" });
+  });
+  registry.load(registration("cap.high", { precedence: 200 }), (ctx) => {
+    ctx.contribute("tools", "policy_tool", { run: () => "high" });
+  });
+
+  const tools = registry.contributions<{ run: () => string }>("tools");
+  expect(tools).toHaveLength(1);
+  // The host applies contributions in registration order, so the winner is
+  // last — which is how a higher precedence tool wins the registry.
+  expect(tools[0]!.name).toBe("policy_tool");
+  expect((tools[0]!.payload as { run: () => string }).run()).toBe("high");
+
+  expect(registry.overrides()).toEqual([
+    {
+      kind: "tools",
+      name: "policy_tool",
+      winner: "cap.high",
+      winnerPrecedence: 200,
+      loser: "cap.base",
+      loserPrecedence: 0,
+    },
+  ]);
+});
+
+test("unloading the loser does not remove the winner's contribution", () => {
+  const registry = new CapabilityRegistry();
+  registry.load(registration("cap.base"), (ctx) => {
+    ctx.contribute("tools", "policy_tool", { run: () => "base" });
+  });
+  registry.load(registration("cap.high", { precedence: 200 }), (ctx) => {
+    ctx.contribute("tools", "policy_tool", { run: () => "high" });
+  });
+  registry.unload("cap.base");
+
+  const tools = registry.contributions<{ run: () => string }>("tools");
+  expect(tools).toHaveLength(1);
+  expect((tools[0]!.payload as { run: () => string }).run()).toBe("high");
+});

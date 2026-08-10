@@ -1379,6 +1379,14 @@ export function createRealRuntimeClient(
     if (checkpointStore.isEnabled())
       await checkpointStore.ensureBaseline(context, 0);
     publish({ type: "session.ready", sessionID });
+    // Overrides are visible, not silent: a plugin that replaced a built-in
+    // tool shows up in diagnostics so nobody discovers it by surprise.
+    for (const override of capabilityRegistry.overrides())
+      publish({
+        type: "diagnostic",
+        level: "warning",
+        message: `capability "${override.winner}" (precedence ${override.winnerPrecedence}) replaced "${override.loser}" (precedence ${override.loserPrecedence}) for ${override.kind} "${override.name}"`,
+      });
     publishBuiltinCapabilities();
     publish(contextStatusEvent(context.status(runtimeContextConfig)));
     publish(await runtimeStatusSnapshot());
