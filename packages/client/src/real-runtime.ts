@@ -131,6 +131,17 @@ import {
 } from "./task-overview";
 import { workflowDocumentCatalog } from "./workflow-document-catalog";
 import {
+  createInteractiveWaiter,
+  readOnlyToolMessage,
+  terminalApprovalScope,
+  terminalInputRisk,
+} from "./interactive-waiter";
+import { parseToolArguments, tryParseToolArguments } from "./tool-arguments";
+
+// Re-exported because the policy tests reach for the risk classifier directly and
+// this file is the package's runtime entry point.
+export { terminalApprovalScope, terminalInputRisk };
+import {
   agentActionNode,
   approvalEdge,
   approvalNode,
@@ -481,30 +492,20 @@ export function createRealRuntimeClient(
   }> = [];
   const toolCalls = new Map<string, number>();
   const context = new ContextLedger();
-  const pendingApprovals = new Map<string, ApprovalResponse>();
-  const pendingApprovalRequests = new Set<string>();
-  // These grants only live in this RuntimeClient instance. Reopening a
-  // durable session must never silently restore side-effecting permissions.
-  const sessionApprovedTools = new Set<string>();
-  const approvalToolByID = new Map<string, string>();
-  const approvalWorkGraphContext = new Map<
-    string,
-    { turnID: string; callID: string; toolName: string }
-  >();
-  const terminalApprovalByID = new Map<
-    string,
-    { scope: string; expiresAt: number }
-  >();
-  const terminalApprovalScopes = new Map<string, number>();
-  const approvalWaiters = new Map<
-    string,
-    (response: ApprovalResponse) => void
-  >();
-  const pendingQuestions = new Map<string, QuestionResponse>();
-  const questionWaiters = new Map<
-    string,
-    (response: QuestionResponse) => void
-  >();
+  /**
+   * Approvals and questions, and everything that belongs to them. The runtime
+   * hands over only what changes underneath the waiter, as accessors rather than
+   * values: a captured permission mode or abort signal would go stale the moment
+   * the mode changed or the turn ended.
+   */
+  const interactive = createInteractiveWaiter({
+    publish: (event) => publish(event),
+    sessionID: () => sessionID,
+    permissionMode: () => permissionMode,
+    abortSignal: () => activeAbort?.signal,
+    activeTurnID: () => activeTurnID,
+    isPending: (id, kind) => isPendingInteractiveRequest(id, kind),
+  });
   let sink: ((event: RuntimeEvent) => void) | undefined;
   let replayMode: "all" | "none" = "all";
   let session: SessionRecord | undefined;
@@ -752,7 +753,7 @@ export function createRealRuntimeClient(
               // This path reports denials by throwing, so a refusal has to
               // throw too. Returning it would let the subagent run a call the
               // user just refused.
-              const refusal = await requireApproval(
+              const refusal = await interactive.requireApproval(
                 toolID,
                 tool,
                 call,
@@ -770,7 +771,10 @@ export function createRealRuntimeClient(
               workspaceRoot,
               signal: runner.signal,
               askQuestion: async (question) =>
-                await requireQuestion(`${toolID}:question`, question),
+                await interactive.requireQuestion(
+                  `${toolID}:question`,
+                  question,
+                ),
               subagents,
               nativeTerminal,
               sandboxes,
@@ -1261,7 +1265,7 @@ export function createRealRuntimeClient(
     });
     if (replayMode === "all") for (const event of session.events) sink?.(event);
     if (sqliteRecovery)
-      restoreRecoveredInteractiveState(
+      interactive.restoreRecoveredInteractiveState(
         sqliteRecovery.approvals.filter(
           (request) =>
             !interrupted.some(
@@ -1277,7 +1281,7 @@ export function createRealRuntimeClient(
             ),
         ),
       );
-    else restoreInteractiveState(session.events);
+    else interactive.restoreInteractiveState(session.events);
     if (replayMode === "none") {
       const pending = sqliteRecovery
         ? {
@@ -2275,15 +2279,7 @@ export function createRealRuntimeClient(
       await ready;
       if (!nativeTerminal)
         throw new Error("Native Terminal Host is unavailable");
-      const scope = `terminal:${id}:low-risk`;
-      const revoked = terminalApprovalScopes.delete(scope);
-      if (revoked)
-        publish({
-          type: "diagnostic",
-          level: "info",
-          message: `revoked terminal approval scope: ${scope}`,
-        });
-      return { id, scope, revoked };
+      return interactive.revokeTerminalApprovalScope(id);
     },
     async nativeTerminalReleaseHumanControl(id) {
       await ready;
@@ -2697,7 +2693,7 @@ export function createRealRuntimeClient(
           allowed: false,
           reason: "runtime config cannot be applied while a turn is running",
         };
-      if (approvalWaiters.size || questionWaiters.size)
+      if (interactive.hasPendingWaiters())
         return {
           allowed: false,
           reason:
@@ -2816,76 +2812,10 @@ export function createRealRuntimeClient(
       }));
     },
     respondApproval(response) {
-      if (!isPendingInteractiveRequest(response.requestID, "approval")) {
-        publish({
-          type: "diagnostic",
-          level: "warning",
-          message: "ignored approval response for a non-pending request",
-        });
-        return;
-      }
-      publish({
-        type: "approval.response",
-        id: response.requestID,
-        decision: response.decision,
-        feedback: response.feedback,
-      });
-      const graphContext = approvalWorkGraphContext.get(response.requestID);
-      // A resolved approval is a Work Graph fact: who authorized a side effect.
-      // The decision is recorded; the preview text is not, because it can carry a
-      // command line.
-      publish(
-        approvalNode({
-          approvalID: response.requestID,
-          decision: response.decision,
-          toolName:
-            graphContext?.toolName ?? approvalToolByID.get(response.requestID),
-          sessionID,
-          turnID: graphContext?.turnID,
-        }),
-      );
-      if (graphContext)
-        publish(
-          approvalEdge({
-            approvalID: response.requestID,
-            decision: response.decision,
-            turnID: graphContext.turnID,
-            callID: graphContext.callID,
-          }),
-        );
-      if (response.decision === "session") {
-        const terminalApproval = terminalApprovalByID.get(response.requestID);
-        if (terminalApproval)
-          terminalApprovalScopes.set(
-            terminalApproval.scope,
-            terminalApproval.expiresAt,
-          );
-        else {
-          const toolName = approvalToolByID.get(response.requestID);
-          if (toolName) sessionApprovedTools.add(toolName);
-        }
-      }
-      pendingApprovals.set(response.requestID, response);
-      pendingApprovalRequests.delete(response.requestID);
-      approvalWaiters.get(response.requestID)?.(response);
+      interactive.respondApproval(response);
     },
     respondQuestion(response) {
-      if (!isPendingInteractiveRequest(response.requestID, "question")) {
-        publish({
-          type: "diagnostic",
-          level: "warning",
-          message: "ignored question response for a non-pending request",
-        });
-        return;
-      }
-      publish({
-        type: "question.response",
-        id: response.requestID,
-        answers: response.answers,
-        rejected: response.rejected,
-      });
-      pendingQuestions.set(response.requestID, response);
-      questionWaiters.get(response.requestID)?.(response);
+      interactive.respondQuestion(response);
     },
   };
 
@@ -3942,7 +3872,12 @@ export function createRealRuntimeClient(
       return blocked;
     }
     if (tool.requiresApproval) {
-      const refusal = await requireApproval(toolID, tool, call, turnID);
+      const refusal = await interactive.requireApproval(
+        toolID,
+        tool,
+        call,
+        turnID,
+      );
       if (refusal) {
         // Reported like a policy denial: the call did not run, the turn keeps
         // going, and the model receives the reason as this call's result.
@@ -4016,7 +3951,7 @@ export function createRealRuntimeClient(
           workspaceRoot,
           signal,
           askQuestion: async (question) =>
-            await requireQuestion(`${toolID}:question`, question),
+            await interactive.requireQuestion(`${toolID}:question`, question),
           subagents,
           nativeTerminal,
           sandboxes,
@@ -4135,96 +4070,6 @@ export function createRealRuntimeClient(
    * decision to act on. Returning instead of throwing is what lets the model
    * read why it was refused and choose a different approach.
    */
-  async function requireApproval(
-    approvalID: string,
-    tool: RuntimeTool,
-    call: ProviderToolCall,
-    turnID: string,
-  ): Promise<{ reason: string } | undefined> {
-    if (permissionMode === "auto") return undefined;
-    if (permissionMode === "read_only")
-      return { reason: readOnlyToolMessage(tool.name) };
-    const terminalApproval = terminalApprovalScope(tool.name, call.arguments);
-    if (terminalApproval) {
-      if (terminalApproval.risk === "terminal_low") {
-        const expiresAt = terminalApprovalScopes.get(terminalApproval.scope);
-        if (expiresAt && expiresAt > Date.now()) return undefined;
-        terminalApprovalScopes.delete(terminalApproval.scope);
-      }
-    } else if (sessionApprovedTools.has(tool.name)) return undefined;
-    const presentation = approvalPresentation(tool.name, call.arguments);
-    const expiresAt =
-      terminalApproval?.risk === "terminal_low"
-        ? Date.now() + terminalApproval.ttlMs
-        : undefined;
-    // Establish every lookup before publishing. Event sinks are allowed to reply
-    // synchronously; publishing first made an immediate `respondApproval()` look
-    // like a response to a non-pending request and silently ignored it.
-    pendingApprovalRequests.add(approvalID);
-    approvalWorkGraphContext.set(approvalID, {
-      turnID,
-      callID: call.id,
-      toolName: tool.name,
-    });
-    if (terminalApproval?.risk === "terminal_low" && expiresAt)
-      terminalApprovalByID.set(approvalID, {
-        scope: terminalApproval.scope,
-        expiresAt,
-      });
-    else approvalToolByID.set(approvalID, tool.name);
-    publish({
-      type: "approval.request",
-      id: approvalID,
-      title: `Approve ${tool.name}`,
-      preview: presentation.preview,
-      detail: presentation.detail,
-      keyArguments: presentation.keyArguments,
-      sensitive: presentation.sensitive,
-      risk: terminalApproval?.risk,
-      scope: terminalApproval?.scope,
-      expiresAt: expiresAt ? new Date(expiresAt).toISOString() : undefined,
-      revocable: terminalApproval ? true : undefined,
-    });
-    try {
-      const response = await waitForResponse(
-        approvalID,
-        pendingApprovals,
-        approvalWaiters,
-        activeAbort?.signal,
-        `approval timed out: ${tool.name}`,
-      );
-      if (response.decision !== "reject") return undefined;
-      publish({
-        type: "policy.decision",
-        turnID: activeTurnID ?? `approval:${sessionID}`,
-        toolName: tool.name,
-        toolCallID: call.id,
-        decision: "rejected",
-        reason: response.feedback,
-      });
-      return { reason: rejectedToolMessage(tool.name, response.feedback) };
-    } catch (error) {
-      // A cancellation is a deliberate stop and still ends the turn. A timeout
-      // is not: nobody answered, and discarding the whole turn after a long
-      // wait loses more work than telling the model the request expired.
-      if (activeAbort?.signal.aborted) throw error;
-      publish({
-        type: "policy.decision",
-        turnID: activeTurnID ?? `approval:${sessionID}`,
-        toolName: tool.name,
-        toolCallID: call.id,
-        decision: "rejected",
-        reason: "approval expired without an answer",
-      });
-      return { reason: expiredToolMessage(tool.name) };
-    } finally {
-      pendingApprovalRequests.delete(approvalID);
-      approvalToolByID.delete(approvalID);
-      approvalWorkGraphContext.delete(approvalID);
-      terminalApprovalByID.delete(approvalID);
-    }
-  }
-
   async function authorizeSandboxMerge(input: { id: string; paths: string[] }) {
     for (const path of input.paths) {
       const hookEvent: ToolHookEvent = {
@@ -4282,63 +4127,12 @@ export function createRealRuntimeClient(
     }
   }
 
-  async function requireQuestion(
-    requestID: string,
-    request: {
-      title: string;
-      questions: Array<{
-        id: string;
-        header: string;
-        question: string;
-        options: Array<{ label: string; description?: string }>;
-        multiple?: boolean;
-        custom?: boolean;
-      }>;
-    },
-  ) {
-    publish({ type: "question.request", id: requestID, ...request });
-    const response = await waitForResponse(
-      requestID,
-      pendingQuestions,
-      questionWaiters,
-      activeAbort?.signal,
-      "question timed out",
-    );
-    if (response.rejected) throw new Error("user rejected question");
-    return response.answers;
-  }
-
   async function waitIfPaused() {
     while (paused) {
       await new Promise<void>((resolveWaiter) => {
         pauseWaiters.push(resolveWaiter);
       });
     }
-  }
-
-  function restoreInteractiveState(events: RuntimeEvent[]) {
-    const pending = projectInteractiveRequests(events);
-    restoreRecoveredInteractiveState(pending.approvals, pending.questions);
-  }
-
-  function restoreRecoveredInteractiveState(
-    approvals: Array<Extract<RuntimeEvent, { type: "approval.request" }>>,
-    questions: Array<Extract<RuntimeEvent, { type: "question.request" }>>,
-  ) {
-    for (const request of approvals) {
-      pendingApprovalRequests.add(request.id);
-      publish({
-        type: "diagnostic",
-        level: "warning",
-        message: `Recovered unresolved approval record ${request.id}; active tool execution was not replayed and must be resubmitted after a response.`,
-      });
-    }
-    for (const request of questions)
-      publish({
-        type: "diagnostic",
-        level: "warning",
-        message: `Recovered unresolved question record ${request.id}; active tool execution was not replayed and must be resubmitted after an answer.`,
-      });
   }
 
   function lastProviderUsageSnapshot() {
@@ -4437,61 +4231,6 @@ function extractiveCompactor() {
   };
 }
 
-function waitForResponse<T>(
-  id: string,
-  responses: Map<string, T>,
-  waiters: Map<string, (response: T) => void>,
-  signal: AbortSignal | undefined,
-  timeoutMessage: string,
-) {
-  const existing = responses.get(id);
-  if (existing) {
-    responses.delete(id);
-    return Promise.resolve(existing);
-  }
-  return new Promise<T>((resolve, reject) => {
-    const timeout = setTimeout(
-      () => finish(() => reject(new Error(timeoutMessage))),
-      5 * 60_000,
-    );
-    const abort = () =>
-      finish(() => reject(signal?.reason ?? new Error("request cancelled")));
-    const finish = (settle: () => void) => {
-      clearTimeout(timeout);
-      waiters.delete(id);
-      signal?.removeEventListener("abort", abort);
-      settle();
-    };
-    waiters.set(id, (response) => {
-      responses.delete(id);
-      finish(() => resolve(response));
-    });
-    signal?.addEventListener("abort", abort, { once: true });
-    if (signal?.aborted) {
-      abort();
-      return;
-    }
-    const raced = responses.get(id);
-    if (raced) waiters.get(id)?.(raced);
-  });
-}
-
-function parseToolArguments(input: string) {
-  if (!input.trim()) return {};
-  return JSON.parse(input) as unknown;
-}
-
-function tryParseToolArguments(input: string) {
-  try {
-    const parsed = parseToolArguments(input);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
-      return parsed as Record<string, unknown>;
-  } catch {
-    // Detailed malformed-input validation happens at the normal tool boundary.
-  }
-  return {};
-}
-
 function redactToolOutput(output: string, redact: boolean | undefined) {
   if (!redact) return output;
   return output.replace(
@@ -4499,101 +4238,6 @@ function redactToolOutput(output: string, redact: boolean | undefined) {
     (match) =>
       `${match.slice(0, match.indexOf("=") >= 0 ? match.indexOf("=") + 1 : match.indexOf(":") + 1)}[REDACTED]`,
   );
-}
-
-function approvalPresentation(toolName: string, rawArguments: string) {
-  let args: Record<string, unknown> | undefined;
-  try {
-    const parsed = parseToolArguments(rawArguments);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
-      args = parsed as Record<string, unknown>;
-  } catch {
-    // Keep malformed raw arguments only in the explicit detail pane.
-  }
-  const keyArguments = [`tool=${toolName}`];
-  const terminalID = typeof args?.id === "string" ? args.id : undefined;
-  if (terminalID && toolName.startsWith("interactive_terminal_"))
-    keyArguments.push(`terminal=${terminalID}`);
-  const path = typeof args?.path === "string" ? args.path : undefined;
-  if (path) keyArguments.push(`path=${path}`);
-  const sensitive = Object.keys(args ?? {}).some((key) =>
-    /api[_-]?key|token|secret|password|authorization|cookie/iu.test(key),
-  );
-  const content = typeof args?.content === "string" ? args.content : undefined;
-  const command = typeof args?.command === "string" ? args.command : undefined;
-  const preview =
-    toolName === "write_file" && path
-      ? [
-          `Write ${path}`,
-          content === undefined
-            ? "Content: unavailable"
-            : `Content: ${Array.from(content).length} chars${content.trim() ? ` · ${singleLine(content, 160)}` : ""}`,
-        ].join("\n")
-      : command
-        ? `Run command: ${singleLine(command, 220)}`
-        : path
-          ? `${toolName}: ${path}`
-          : `${toolName} requires approval`;
-  return { preview, detail: rawArguments, keyArguments, sensitive };
-}
-
-export function terminalApprovalScope(toolName: string, rawArguments: string) {
-  const args = tryParseToolArguments(rawArguments);
-  const terminalID = typeof args.id === "string" ? args.id : undefined;
-  if (!terminalID) return undefined;
-  if (
-    ![
-      "interactive_terminal_write",
-      "interactive_terminal_send_line",
-      "interactive_terminal_keys",
-    ].includes(toolName)
-  )
-    return undefined;
-  const risk = terminalInputRisk(toolName, args);
-  return {
-    terminalID,
-    risk,
-    scope: `terminal:${terminalID}:${risk === "terminal_low" ? "low-risk" : "high-risk"}`,
-    ttlMs: 30 * 60 * 1_000,
-  } as const;
-}
-
-export function terminalInputRisk(
-  toolName: string,
-  args: Record<string, unknown>,
-) {
-  if (toolName === "interactive_terminal_keys") {
-    const keys = Array.isArray(args.keys)
-      ? args.keys
-      : args.key === undefined
-        ? []
-        : [{ key: args.key, modifiers: args.modifiers }];
-    return keys.every((value) => {
-      if (!value || typeof value !== "object") return false;
-      const key = value as Record<string, unknown>;
-      const modifiers = Array.isArray(key.modifiers) ? key.modifiers : [];
-      return (
-        modifiers.length === 0 &&
-        typeof key.key === "string" &&
-        /^[\p{L}\p{N}\p{P}\p{S}\s]$/u.test(key.key)
-      );
-    })
-      ? "terminal_low"
-      : "terminal_high";
-  }
-  const input = typeof args.text === "string" ? args.text : args.input;
-  if (typeof input !== "string") return "terminal_high";
-  return /(?:\brm\b|\bsudo\b|\bcurl\b|\bwget\b|\bssh\b|\bscp\b|\b(?:git\s+push|npm\s+publish)\b|>|\bchmod\b|\bkill\b)/iu.test(
-    input,
-  )
-    ? "terminal_high"
-    : "terminal_low";
-}
-
-function singleLine(value: string, max: number) {
-  const compact = value.replace(/\s+/gu, " ").trim();
-  const chars = Array.from(compact);
-  return chars.length > max ? `${chars.slice(0, max).join("")}...` : compact;
 }
 
 function statusSnapshot(
@@ -4614,29 +4258,6 @@ function statusSnapshot(
     cwd,
     background: `${running} running`,
   };
-}
-
-function readOnlyToolMessage(toolName: string) {
-  return `tool denied by read-only permission mode: ${toolName}`;
-}
-
-/**
- * The refusal the model reads. The reason has to be actionable, because the
- * turn continues: repeating the same call would only be refused again.
- */
-function rejectedToolMessage(toolName: string, feedback?: string) {
-  const reason = feedback?.trim();
-  return reason
-    ? `tool "${toolName}" was rejected by the user: ${reason}. Do not retry the same call; take this into account and continue.`
-    : `tool "${toolName}" was rejected by the user without a reason. Do not retry the same call; consider a different approach or ask what to do instead.`;
-}
-
-/**
- * An unanswered approval must never read as permission. The model is told the
- * call did not run so it can continue without it rather than assume success.
- */
-function expiredToolMessage(toolName: string) {
-  return `approval for tool "${toolName}" expired without an answer, so the call did not run. Do not assume it was allowed; continue without it or state what you need.`;
 }
 
 function waitForToolExecution<T>(execution: Promise<T>, signal?: AbortSignal) {
