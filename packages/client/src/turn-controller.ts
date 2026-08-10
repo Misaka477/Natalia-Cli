@@ -110,5 +110,10 @@ export function createTurnController(input: {
     await input.runTurn({ id, text, attachments, resources, agents });
   }
 
-  return { drain, drainQueue, admit };
+  /** Persists the promoted-inbox snapshot (used by the runtime's own submit path). */
+  async function persistPromotion() {
+    await persistInboxPromotion();
+  }
+
+  return { drain, drainQueue, admit, persistPromotion };
 }

@@ -1732,9 +1732,7 @@ export function createRealRuntimeClient(
   }
 
   async function persistInboxPromotion() {
-    // The ordering and persistence of inbox promotion live in the turn
-    // controller; this wrapper is retained for the call sites in the
-    // admission flow.
+    await turnController.persistPromotion();
   }
 
   return {
