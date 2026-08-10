@@ -491,7 +491,7 @@ async function* eventStream(input: {
   signal?: AbortSignal;
 }): AsyncIterable<RuntimeEvent> {
   const response = await input.fetchImpl(
-    `${input.baseURL}/events${input.since ? `?since=${input.since}` : ""}`,
+    `${input.baseURL}/events${input.since !== undefined ? `?since=${input.since}` : ""}`,
     {
       headers: input.token ? { authorization: `Bearer ${input.token}` } : {},
       signal: input.signal,

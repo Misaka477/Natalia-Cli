@@ -327,20 +327,34 @@ export function createRuntimeHttpServer(
     if (result.error) return Response.json(result, { status: 400 });
     return Response.json(result);
   };
+  // Bun's default idle timeout is 10s, which would kill an SSE subscription
+  // that goes quiet — the runtime's default is to stay silent until it has
+  // something to say. A quiet event stream must outlive a quiet terminal.
+  // Bun's default idle timeout is 10s, which would kill an SSE subscription
+  // that goes quiet — the runtime's default is to stay silent until it has
+  // something to say. A quiet event stream must outlive a quiet terminal.
+  // `idleTimeout` exists at runtime (Bun 1.3.14) but is missing from the
+  // published bun-types; the cast carries it without losing the rest.
+  const serveOptions = (base: Parameters<typeof Bun.serve>[0]) =>
+    ({ ...base, idleTimeout: 255 }) as Parameters<typeof Bun.serve>[0];
   const server = options.unix
-    ? Bun.serve({ unix: options.unix, fetch: fetchHandler })
+    ? Bun.serve(serveOptions({ unix: options.unix, fetch: fetchHandler }))
     : options.tls
-      ? Bun.serve({
-          hostname: options.hostname ?? "127.0.0.1",
-          port: options.port ?? 0,
-          tls: options.tls,
-          fetch: fetchHandler,
-        })
-      : Bun.serve({
-          hostname: options.hostname ?? "127.0.0.1",
-          port: options.port ?? 0,
-          fetch: fetchHandler,
-        });
+      ? Bun.serve(
+          serveOptions({
+            hostname: options.hostname ?? "127.0.0.1",
+            port: options.port ?? 0,
+            tls: options.tls,
+            fetch: fetchHandler,
+          }),
+        )
+      : Bun.serve(
+          serveOptions({
+            hostname: options.hostname ?? "127.0.0.1",
+            port: options.port ?? 0,
+            fetch: fetchHandler,
+          }),
+        );
   return {
     url: options.unix
       ? `unix://${options.unix}`

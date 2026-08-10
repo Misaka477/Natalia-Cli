@@ -529,6 +529,20 @@ test("a runtime implementing only the required set still answers, and says which
     // And the runtime still answers what it can, so a consumer is never left
     // guessing whether the connection itself works.
     expect((await sdk.prompt("hello")).text).toBe("hello");
+
+    // P0-F scenario 5: graceful degradation. The consumer reads the report
+    // and *decides* — a required-set-only runtime is usable, and a consumer
+    // that consults availability never calls the missing surface and never
+    // has to catch a -32000. That decision path is the point of the scenario.
+    const report = await sdk.availability();
+    expect(report.usable).toBe(true);
+    const checkpointGroup = report.groups.find(
+      (group) => group.name === "checkpoint",
+    )!;
+    expect(checkpointGroup.available).toBe(false);
+    // The consumer's decision: render the session, skip checkpoint UI, no
+    // probing of the absent surface.
+    expect(checkpointGroup.missing).toContain("checkpointList");
   } finally {
     server.stop();
   }
@@ -672,4 +686,198 @@ test("a read-only integration renders the session and cannot write a byte", asyn
     server.stop();
     await runtime.dispose?.();
   }
+}, 60_000);
+
+/**
+ * Collects events from the SDK stream, starting the subscription *before*
+ * `trigger` runs so no live event can slip between the two. Replay (since 0)
+ * covers events that happened before the subscription existed.
+ */
+async function collectEventsWhileTriggering(
+  sdk: ReturnType<typeof createNataliaSDK>,
+  trigger: () => void,
+  predicate: (event: RuntimeEvent) => boolean,
+  timeoutMs = 15_000,
+): Promise<RuntimeEvent[]> {
+  const collected: RuntimeEvent[] = [];
+  const iterator = sdk.events({ since: 0 })[Symbol.asyncIterator]();
+  const deadline = Date.now() + timeoutMs;
+  const pending = iterator.next();
+  trigger();
+  let result = await withDeadline(pending, deadline);
+  while (!result.done && Date.now() < deadline) {
+    collected.push(result.value);
+    if (predicate(result.value)) break;
+    result = await withDeadline(iterator.next(), deadline);
+  }
+  return collected;
+}
+
+/** An SSE stream stays open forever by design; reads must not hang a test. */
+function withDeadline(
+  pending: Promise<IteratorResult<RuntimeEvent>>,
+  deadline: number,
+): Promise<IteratorResult<RuntimeEvent>> {
+  return Promise.race([
+    pending,
+    new Promise<IteratorResult<RuntimeEvent>>((resolve) =>
+      setTimeout(
+        () => resolve({ done: true, value: undefined }),
+        Math.max(1, deadline - Date.now()),
+      ),
+    ),
+  ]);
+}
+
+test("an external UI takes over approvals and answers questions", async () => {
+  // P0-F scenario 1: the first integration scenario there is. A UI subscribes
+  // to events, sees an approval.request, renders it, answers it, and the turn
+  // continues. The runtime defaults to permissionMode "ask", and the `plan`
+  // tool requires approval, so the model's tool call cannot proceed without
+  // the UI. The UI is told the truth about what happened: `accepted: true`
+  // when the answer took effect, and a `policy.decision` event when a
+  // rejection is delivered back to the model.
+  const root = await mkdtemp(join(tmpdir(), "natalia-approval-consumer-"));
+  let streamCalls = 0;
+  const runtime = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_approval",
+    provider: {
+      provider: "scripted",
+      model: "scripted",
+      async *stream() {
+        // One provider serves both turns of this test. Session history carries
+        // the previous turn's tool result, so "has a tool message" cannot
+        // tell the turns apart; alternating per stream call can: every odd
+        // call asks for the plan tool (needing approval), every even call
+        // finishes the turn.
+        streamCalls++;
+        if (streamCalls % 2 === 1) {
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: `call_plan_${streamCalls}`,
+                name: "plan",
+                arguments: JSON.stringify({
+                  items: [{ id: "step_1", text: "first step" }],
+                }),
+              },
+            ],
+          };
+          return;
+        }
+        yield { type: "content" as const, text: "The plan is made." };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  runtime.start(() => undefined);
+  const server = createRuntimeHttpServer({ client: runtime, token: "secret" });
+  try {
+    const sdk = createNataliaSDK({ baseURL: server.url, token: "secret" });
+
+    // Approve: the turn blocks on the request until the UI answers. The
+    // prompt promise is saved so the test can await the turn *after* the
+    // approval resolves — a second prompt would block on its own request.
+    let approvedTurn: Promise<unknown> | undefined;
+    const approvedEvents = await collectEventsWhileTriggering(
+      sdk,
+      () => {
+        approvedTurn = sdk.prompt("make a plan");
+      },
+      (event) => event.type === "approval.request",
+    );
+    const request = approvedEvents.find(
+      (event): event is Extract<RuntimeEvent, { type: "approval.request" }> =>
+        event.type === "approval.request",
+    )!;
+    expect(request.title).toContain("plan");
+    expect(typeof request.id).toBe("string");
+
+    const outcome = await sdk.respondApproval({
+      requestID: request.id,
+      decision: "once",
+    });
+    expect(outcome).toEqual({ accepted: true });
+    await approvedTurn;
+
+    // Reject: the model is told, via a policy.decision event, that the call
+    // was refused — a rejection is an answer, not a silent drop. The order
+    // matters: the UI answers the request first, then the decision event is
+    // produced, so this phase waits for the request, answers it, and a second
+    // phase collects the decision.
+    let rejectedTurn: Promise<unknown> | undefined;
+    // Replay contains the first turn's approval.request; the live request for
+    // this turn has a different id, so the predicate waits for that one.
+    const rejectedEvents = await collectEventsWhileTriggering(
+      sdk,
+      () => {
+        rejectedTurn = sdk.prompt("make another plan");
+      },
+      (event) => event.type === "approval.request" && event.id !== request.id,
+    );
+
+    const secondRequest = rejectedEvents
+      .filter(
+        (event): event is Extract<RuntimeEvent, { type: "approval.request" }> =>
+          event.type === "approval.request",
+      )
+      .at(-1);
+    expect(secondRequest).toBeDefined();
+    const refused = await sdk.respondApproval({
+      requestID: secondRequest!.id,
+      decision: "reject",
+      feedback: "not now",
+    });
+    expect(refused).toEqual({ accepted: true });
+    await rejectedTurn;
+    const decisions = await collectEventsWhileTriggering(
+      sdk,
+      () => undefined,
+      (event) =>
+        event.type === "policy.decision" && event.decision === "rejected",
+    );
+    expect(
+      decisions.some(
+        (entry) =>
+          (entry as Extract<RuntimeEvent, { type: "policy.decision" }>)
+            .reason === "not now",
+      ),
+    ).toBe(true);
+  } finally {
+    server.stop();
+    await runtime.dispose?.();
+  }
+}, 60_000);
+
+test("an external orchestrator drives a turn and reads the work graph", async () => {
+  // P0-F scenario 2: submit, watch the event stream, then read the Work
+  // Graph to confirm causality and the task overview for the durable side.
+  await withRuntime(async ({ baseURL }) => {
+    const sdk = createNataliaSDK({ baseURL, token: "secret" });
+
+    const submitted = await sdk.prompt("write notes.md");
+    const events = await collectEventsWhileTriggering(
+      sdk,
+      () => undefined,
+      (event) => event.type === "turn.finished",
+    );
+    expect(events.some((event) => event.type === "turn.submitted")).toBe(true);
+    expect(events.some((event) => event.type === "tool.update")).toBe(true);
+
+    // The Work Graph confirms causality: the tool call that ran is recorded
+    // as a node, and the turn is linked to it.
+    const nodes = await sdk.workGraphNodes();
+    expect(nodes.length).toBeGreaterThan(0);
+    const edges = await sdk.workGraphEdges();
+    expect(Array.isArray(edges)).toBe(true);
+    expect(nodes.some((node) => node.turnID === submitted.id)).toBe(true);
+
+    // The durable side answers with shape, whatever its contents: the
+    // orchestrator can render the overview without knowing what tasks exist.
+    const overview = await sdk.taskOverview();
+    expect(Array.isArray(overview.tasks)).toBe(true);
+    expect(Array.isArray(overview.unreadable)).toBe(true);
+  });
 }, 60_000);
