@@ -536,7 +536,6 @@ export function createRealRuntimeClient(
     | { inputTokens: number; outputTokens: number }
     | undefined;
   let sessionPersistence = Promise.resolve();
-  let initializationError: Error | undefined;
   const nativeRuntimeID = randomUUID();
   let tsRuntimeConfig:
     | Awaited<ReturnType<typeof resolveConfig>>["config"]
@@ -1848,7 +1847,6 @@ export function createRealRuntimeClient(
 
   async function submitInput(input: SubmitInput) {
     await ready;
-    if (initializationError) throw initializationError;
     const text = input.text;
     const attachments = input.attachments?.length
       ? await storeLocalAttachments({ workspaceRoot, paths: input.attachments })
@@ -2028,14 +2026,23 @@ export function createRealRuntimeClient(
       sink = onEvent;
       replayMode = startOptions?.replay ?? "all";
       ready = initialize().catch((error) => {
-        initializationError =
+        const failure =
           error instanceof Error ? error : new Error(String(error));
         publish({
           type: "diagnostic",
           level: "error",
-          message: initializationError.message,
+          message: failure.message,
         });
+        // Rethrow, so every member's `await ready` fails with the *cause*,
+        // not with a derived symptom ("checkpoint store is not initialized").
+        // The single guard below existed because this used to resolve after
+        // swallowing; it is gone with the swallow.
+        throw failure;
       });
+      // Members still `await ready` and receive the rejection; this catch
+      // only keeps a runtime nobody calls from tripping unhandled-rejection
+      // reporting.
+      void ready.catch(() => undefined);
     },
     async submit(text) {
       return await submitInput({ text });
@@ -2374,9 +2381,9 @@ export function createRealRuntimeClient(
     },
     async checkpointList() {
       await ready;
-      if (!checkpointStore)
-        throw new Error("checkpoint store is not initialized");
-      return (await checkpointStore.list()).map((record) => ({
+      // initialize() assigns checkpointStore or fails; if it failed, the
+      // `await ready` above already threw the cause.
+      return (await checkpointStore!.list()).map((record) => ({
         id: record.id,
         sequence: record.sequence,
         turnID: record.turnID,
@@ -2394,9 +2401,7 @@ export function createRealRuntimeClient(
     },
     async checkpointPreview(id) {
       await ready;
-      if (!checkpointStore)
-        throw new Error("checkpoint store is not initialized");
-      return await checkpointStore.previewRollback(
+      return await checkpointStore!.previewRollback(
         id,
         context,
         checkpointResources(),
@@ -2405,9 +2410,7 @@ export function createRealRuntimeClient(
     },
     async checkpointRollback(input) {
       await ready;
-      if (!checkpointStore)
-        throw new Error("checkpoint store is not initialized");
-      const preview = await checkpointStore.rollbackTo(input.id, {
+      const preview = await checkpointStore!.rollbackTo(input.id, {
         context,
         dryRun: input.dryRun,
         ...checkpointRollbackOptions(),

@@ -431,15 +431,18 @@ async function watchDirectories(
   const children = await readdir(directory, { withFileTypes: true }).catch(
     () => [],
   );
-  try {
-    watchers.push(
-      watch(directory, { persistent: false }, (eventType, filename) =>
-        onChange(directory, eventType, filename?.toString()),
-      ),
-    );
-  } catch {
-    return watchers;
-  }
+  // A watcher that cannot be established must not come back looking healthy:
+  // the caller relies on `onChange` for catalog invalidation, and a silently
+  // missing watcher turns stale data into a silent lie. `watch` fails with
+  // ENOSPC when the system's inotify budget is exhausted (per-user
+  // fs.inotify.max_user_watches), which is exactly the situation that must
+  // surface. The runtime caller tolerates the failure explicitly with its own
+  // `.catch`; it does not rely on this one.
+  watchers.push(
+    watch(directory, { persistent: false }, (eventType, filename) =>
+      onChange(directory, eventType, filename?.toString()),
+    ),
+  );
   for (const child of children) {
     if (!child.isDirectory()) continue;
     const path = resolve(directory, child.name);

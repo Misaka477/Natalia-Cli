@@ -6316,3 +6316,36 @@ test("selecting an agent during a turn reports the selection as deferred, not ap
   expect((await client.selectAgent?.())?.outcome).toBe("applied");
   await client.dispose?.();
 }, 30_000);
+
+test("an initialization failure surfaces its cause, not a derived symptom", async () => {
+  // Before this fix, `start()` swallowed the failure into one diagnostic and
+  // every member then answered with a derived symptom ("checkpoint store is
+  // not initialized"), so a remote caller saw a pile of unrelated internal
+  // errors with no way to find the cause. The failure must travel.
+  const root = await mkdtemp(join(tmpdir(), "natalia-init-failure-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_init_failure",
+    // resolveConfig succeeds; the profile lookup is the controllable failure.
+    permissionProfile: "no_such_profile",
+    provider: scriptedProvider("unused"),
+  });
+  client.start(() => undefined);
+
+  // Members that await initialization all fail with the *cause*. (snapshot
+  // is a pure in-memory event constructor and correctly still answers.)
+  const attempts: Array<() => Promise<unknown>> = [
+    () => client.history!({ limit: 10 }),
+    async () => {
+      await client.checkpointList!();
+    },
+  ];
+  for (const attempt of attempts) {
+    const error = await attempt().catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(Error);
+    expect(String(error)).toContain("permission profile not found");
+  }
+  // The pure constructor keeps working; nothing derived was invented.
+  expect(client.snapshot().type).toBe("snapshot.created");
+  await client.dispose?.();
+}, 30_000);

@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
+import { watch } from "node:fs";
 import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -347,24 +349,55 @@ test("workspace search validates regex and honors complete include globs", async
   );
 });
 
-test("workspace watcher invalidates the catalog and watches new directories", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-workspace-watch-"));
-  await writeFile(join(root, "first.ts"), "export {}\n");
-  await findWorkspaceFiles({ workspaceRoot: root });
-  let changes = 0;
-  const stop = await watchWorkspaceFiles(root, () => changes++);
-  await mkdir(join(root, "src"));
-  await Bun.sleep(150);
-  await writeFile(join(root, "src", "second.ts"), "export {}\n");
-  await Bun.sleep(150);
-  expect(changes).toBeGreaterThan(0);
-  expect(await findWorkspaceFiles({ workspaceRoot: root })).toEqual(
-    expect.arrayContaining([{ path: "src/second.ts", type: "file" }]),
-  );
-  stop();
-});
+/**
+ * inotify budget is per-user and shared with everything the desktop runs
+ * (flatpak apps have been observed holding 80k+ watches, VS Code 50k); when
+ * the pool is exhausted, fs.watch fails with ENOSPC no matter how correct the
+ * code is. Probe with one real watch: budget present -> the tests really run,
+ * budget gone -> skip with the reason instead of a fake "0 changes" failure.
+ */
+function inotifyBudgetAvailable(): boolean {
+  const probeRoot = mkdtempSync(join(tmpdir(), "natalia-inotify-probe-"));
+  let watcher: ReturnType<typeof watch> | undefined;
+  try {
+    watcher = watch(probeRoot, { persistent: false }, () => undefined);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    watcher?.close();
+  }
+}
 
-test("workspace watcher ignores Natalia runtime writes", async () => {
+const watcherBudgetAvailable = inotifyBudgetAvailable();
+const watcherTest = watcherBudgetAvailable ? test : test.skip;
+if (!watcherBudgetAvailable)
+  console.error(
+    "workspace watcher tests skipped: per-user inotify watch budget exhausted (fs.inotify.max_user_watches); " +
+      "raise it with: sudo sysctl fs.inotify.max_user_watches=524288",
+  );
+
+watcherTest(
+  "workspace watcher invalidates the catalog and watches new directories",
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), "natalia-workspace-watch-"));
+    await writeFile(join(root, "first.ts"), "export {}\n");
+    await findWorkspaceFiles({ workspaceRoot: root });
+    let changes = 0;
+    const stop = await watchWorkspaceFiles(root, () => changes++);
+    await mkdir(join(root, "src"));
+    await Bun.sleep(150);
+    await writeFile(join(root, "src", "second.ts"), "export {}\n");
+    await Bun.sleep(150);
+    expect(changes).toBeGreaterThan(0);
+    expect(await findWorkspaceFiles({ workspaceRoot: root })).toEqual(
+      expect.arrayContaining([{ path: "src/second.ts", type: "file" }]),
+    );
+    stop();
+  },
+);
+
+watcherTest("workspace watcher ignores Natalia runtime writes", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-workspace-watch-ignore-"));
   await mkdir(join(root, ".natalia", "perf"), { recursive: true });
   let changes = 0;
