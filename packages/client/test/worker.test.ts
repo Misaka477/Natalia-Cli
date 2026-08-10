@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
+  MCPCatalogSnapshot,
   RuntimeClient,
   RuntimeEvent,
   SubmittedTurn,
@@ -363,5 +364,63 @@ test("the worker channel carries the runtime's answer instead of assuming one", 
       rejected: false,
     }),
   ).toMatchObject({ accepted: false });
+  await client.dispose?.();
+});
+
+test("the worker channel routes the MCP surface", async () => {
+  // The TUI's @-resource autocomplete calls backend.mcpCatalog; before the
+  // channel routed it, the proxy object simply had no such method, so the
+  // autocomplete silently returned empty. The method must exist and round-trip.
+  const channel = new MessageChannel();
+  const catalog: MCPCatalogSnapshot = {
+    prompts: [{ server: "fixture", name: "review" }],
+    resources: [],
+  };
+  const host: RuntimeClient = {
+    start() {},
+    async submit(text) {
+      return {
+        type: "turn.submitted",
+        id: "turn_mcp",
+        text,
+        byteLength: text.length,
+        lineCount: 1,
+        sha256: "test",
+      };
+    },
+    cancel() {},
+    snapshot: () => ({ type: "snapshot.created", id: "snap_mcp", files: [] }),
+    diagnostic() {},
+    lastSubmission: () => undefined,
+    async mcpCatalog() {
+      return catalog;
+    },
+    async getMcpPrompt(server, name) {
+      return { server, name };
+    },
+    async readMcpResource(server, uri) {
+      return { server, uri };
+    },
+    respondApproval() {
+      return { accepted: true };
+    },
+    respondQuestion() {
+      return { accepted: true };
+    },
+  };
+  attachRuntimeClientWorker(channel.port1, host);
+  const client = createWorkerRuntimeClient(channel.port2);
+  client.start(() => undefined);
+
+  expect(typeof client.mcpCatalog).toBe("function");
+  expect(await client.mcpCatalog!()).toEqual(catalog);
+  expect(await client.getMcpPrompt!("fixture", "review")).toEqual({
+    server: "fixture",
+    name: "review",
+  });
+  expect(await client.readMcpResource!("fixture", "x://y")).toEqual({
+    server: "fixture",
+    uri: "x://y",
+  });
   await client.dispose?.();
 });

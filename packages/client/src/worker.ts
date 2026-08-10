@@ -44,6 +44,9 @@ export const WORKER_ROUTE_MEMBERS = {
   "workspace.list": "workspaceList",
   "workspace.read": "workspaceRead",
   "workspace.glob": "workspaceGlob",
+  "mcp.catalog": "mcpCatalog",
+  "mcp.prompt": "getMcpPrompt",
+  "mcp.resource": "readMcpResource",
   "native-terminal.list": "nativeTerminalList",
   "native-terminal.read": "nativeTerminalRead",
   "native-terminal.open-hub": "nativeTerminalOpenHub",
@@ -99,6 +102,9 @@ type WorkerRequest = {
     | "workspace.list"
     | "workspace.read"
     | "workspace.glob"
+    | "mcp.catalog"
+    | "mcp.prompt"
+    | "mcp.resource"
     | "native-terminal.list"
     | "native-terminal.read"
     | "native-terminal.open-hub"
@@ -285,6 +291,23 @@ export function createWorkerRuntimeClient(
     async workspaceGlob(input) {
       return (await request("workspace.glob", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["workspaceGlob"]>>
+      >;
+    },
+    async mcpCatalog() {
+      return (await request("mcp.catalog")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["mcpCatalog"]>>
+      >;
+    },
+    async getMcpPrompt(server, name, arguments_) {
+      return (await request("mcp.prompt", {
+        server,
+        name,
+        arguments_,
+      })) as Awaited<ReturnType<NonNullable<RuntimeClient["getMcpPrompt"]>>>;
+    },
+    async readMcpResource(server, uri) {
+      return (await request("mcp.resource", { server, uri })) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["readMcpResource"]>>
       >;
     },
 
@@ -531,6 +554,18 @@ export async function handleWorkerRequest(
     return await client.workspaceRead?.(request.value as never);
   if (request.method === "workspace.glob")
     return await client.workspaceGlob?.(request.value as never);
+  if (request.method === "mcp.catalog") return await client.mcpCatalog?.();
+  if (request.method === "mcp.prompt")
+    return await client.getMcpPrompt?.(
+      (request.value as { server: string }).server,
+      (request.value as { name: string }).name,
+      (request.value as { arguments_?: Record<string, string> }).arguments_,
+    );
+  if (request.method === "mcp.resource")
+    return await client.readMcpResource?.(
+      (request.value as { server: string }).server,
+      (request.value as { uri: string }).uri,
+    );
   if (request.method === "native-terminal.list")
     return await client.nativeTerminalList?.();
   if (request.method === "native-terminal.read")

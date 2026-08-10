@@ -297,9 +297,12 @@ test("the worker channel reports its own gaps instead of hiding them", async () 
   );
   expect(byMember.get("checkpointList")).toBe("implemented_reachable");
   expect(byMember.get("checkpointRollback")).toBe("implemented_reachable");
-  expect(byMember.get("mcpCatalog")).toBe("implemented_unreachable");
+  expect(byMember.get("mcpCatalog")).toBe("implemented_reachable");
+  expect(byMember.get("getMcpPrompt")).toBe("implemented_reachable");
+  expect(byMember.get("readMcpResource")).toBe("implemented_reachable");
   expect(byMember.get("sessionFork")).toBe("implemented_unreachable");
   expect(byMember.get("constitutionRules")).toBe("implemented_unreachable");
+  expect(byMember.get("workGraphNodes")).toBe("implemented_unreachable");
 });
 
 test("a member the runtime lacks is not_implemented, with its own reason", async () => {
