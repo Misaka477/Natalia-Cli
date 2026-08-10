@@ -1,4 +1,8 @@
-import { RuntimeRPCError } from "@natalia/contracts";
+import {
+  API_VERSION,
+  RuntimeRPCError,
+  RuntimeVersionMismatchError,
+} from "@natalia/contracts";
 import type {
   ApprovalResponse,
   QuestionResponse,
@@ -270,7 +274,7 @@ export type NataliaSDK = {
   diagnostics(
     limit?: number,
   ): Promise<import("@natalia/contracts").RuntimeDiagnostic[]>;
-  health(): Promise<{ ok: boolean }>;
+  health(): Promise<{ ok: boolean; apiVersion: number }>;
   events(options?: {
     since?: number;
     signal?: AbortSignal;
@@ -281,7 +285,39 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
   const baseURL = options.baseURL.replace(/\/+$/u, "");
   const fetchImpl = options.fetch ?? fetch;
   let nextID = 1;
+  let versionCheck: Promise<void> | undefined;
+
+  /**
+   * One check per SDK instance, before the first call: ask /healthz what API
+   * version this runtime speaks, and refuse to guess when it is newer than
+   * this SDK knows. A consumer that keeps going would silently misread a
+   * changed protocol; the error names both versions instead.
+   */
+  async function ensureProtocolVersion() {
+    try {
+      const response = await fetchImpl(`${baseURL}/healthz`);
+      if (!response.ok)
+        throw new Error(`protocol check failed: ${response.status}`);
+      const body = (await response.json()) as { apiVersion?: number };
+      const serverVersion = body.apiVersion;
+      if (typeof serverVersion === "number" && serverVersion > API_VERSION)
+        throw new RuntimeVersionMismatchError({
+          serverVersion,
+          supportedVersion: API_VERSION,
+        });
+    } catch (error) {
+      // A version mismatch is permanent; a failed probe is not. Only the
+      // former stays cached, so a transient network blip does not poison the
+      // SDK for the rest of its life.
+      if (error instanceof RuntimeVersionMismatchError) throw error;
+      versionCheck = undefined;
+      throw error;
+    }
+  }
+
   async function call<T>(method: string, params: Record<string, unknown>) {
+    versionCheck ??= ensureProtocolVersion();
+    await versionCheck;
     const response = await fetchImpl(`${baseURL}/rpc`, {
       method: "POST",
       headers: {
@@ -435,7 +471,7 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     health: async () => {
       const response = await fetchImpl(`${baseURL}/healthz`);
       if (!response.ok) throw new Error(`health failed: ${response.status}`);
-      return (await response.json()) as { ok: boolean };
+      return (await response.json()) as { ok: boolean; apiVersion: number };
     },
     events: (eventOptions = {}) =>
       eventStream({

@@ -1,3 +1,4 @@
+import { API_VERSION } from "@natalia/contracts";
 import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
 import type { ServerWebSocket } from "bun";
 import { handleRPCMessage } from "./rpc";
@@ -60,7 +61,8 @@ export function createRuntimeWsServer(
     port: options.port ?? 0,
     fetch(req, server) {
       const url = new URL(req.url);
-      if (url.pathname === "/healthz") return Response.json({ ok: true });
+      if (url.pathname === "/healthz")
+        return Response.json({ ok: true, apiVersion: API_VERSION });
       const authorization = resolveAuthorization(
         req,
         options.authorization,

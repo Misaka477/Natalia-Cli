@@ -353,9 +353,7 @@ test("events are filtered server-side by session grant", async () => {
         });
       },
     );
-    expect(received.map((event) => event.type)).toEqual([
-      "session.created",
-    ]);
+    expect(received.map((event) => event.type)).toEqual(["session.created"]);
     expect(
       received.map((event) => (event as { sessionID?: string }).sessionID),
     ).toEqual(["ses_A"]);
@@ -398,6 +396,32 @@ test("an unconstrained credential sees runtime-level events of every session", a
       },
     );
     expect(received.map((event) => event.type)).toEqual(["session.created"]);
+  } finally {
+    server.stop();
+  }
+});
+
+test("healthz carries the API version without a credential", async () => {
+  const client = controllableClient();
+  const server = fullServer(client, false);
+  try {
+    const response = await fetch(new URL("/healthz", server.url));
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { ok: boolean; apiVersion: number };
+    expect(body.ok).toBe(true);
+    expect(body.apiVersion).toBe(1);
+  } finally {
+    server.stop();
+  }
+});
+
+test("the availability report carries the API version", async () => {
+  const client = controllableClient();
+  const server = fullServer(client, false);
+  try {
+    const { result } = await rpc(server, "readonly", "runtime.availability");
+    const report = result as RuntimeCapabilityReport;
+    expect(report.apiVersion).toBe(1);
   } finally {
     server.stop();
   }

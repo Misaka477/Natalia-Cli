@@ -200,3 +200,22 @@ export function failureKindOfCode(
 ): RuntimeFailureKind | undefined {
   return KIND_BY_CODE.get(code);
 }
+
+/**
+ * The SDK understands API version N, and the runtime speaks a newer one. The
+ * SDK refuses to guess: a changed protocol read with old assumptions is the
+ * silent-breakage class this error exists to make loud. Both versions are on
+ * the error so a consumer can decide (upgrade the SDK, or accept the gap).
+ */
+export class RuntimeVersionMismatchError extends Error {
+  readonly serverVersion: number;
+  readonly supportedVersion: number;
+  constructor(input: { serverVersion: number; supportedVersion: number }) {
+    super(
+      `runtime API version ${input.serverVersion} is newer than this SDK supports (${input.supportedVersion})`,
+    );
+    this.name = "RuntimeVersionMismatchError";
+    this.serverVersion = input.serverVersion;
+    this.supportedVersion = input.supportedVersion;
+  }
+}

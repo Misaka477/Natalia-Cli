@@ -28,22 +28,55 @@
 import type { RuntimeClient } from "./events";
 
 /**
+ * The API version of this contract, as a single integer. It appears in
+ * `runtime.availability` and in `/healthz`, and it is bound to the stable
+ * surface below: a change to the required members is a breaking change and
+ * must bump this number. A consumer reads it and refuses to guess when it
+ * meets a version it does not know.
+ */
+export const API_VERSION = 1 as const;
+
+/**
+ * The stable surface: the required members and the version they are promised
+ * under. This is the one place a breaking change is declared — moving a member
+ * out of the required set (or changing its meaning) without bumping
+ * `apiVersion` here is exactly the silent breakage this module exists to
+ * prevent. `REQUIRED_RUNTIME_MEMBERS` is derived from it, so the promise and
+ * the code cannot disagree.
+ */
+export const API_STABLE_SURFACE = {
+  apiVersion: API_VERSION,
+  requiredMembers: [
+    "start",
+    "submit",
+    "cancel",
+    "snapshot",
+    "diagnostic",
+    "lastSubmission",
+    "respondApproval",
+    "respondQuestion",
+  ],
+} as const;
+
+/**
  * The minimum a runtime must implement to be usable at all: open a session, take a
  * turn, stop it, read the current state, report a problem, and answer the two
  * prompts a turn can block on.
  */
-export const REQUIRED_RUNTIME_MEMBERS = [
-  "start",
-  "submit",
-  "cancel",
-  "snapshot",
-  "diagnostic",
-  "lastSubmission",
-  "respondApproval",
-  "respondQuestion",
-] as const satisfies readonly (keyof RuntimeClient)[];
+export const REQUIRED_RUNTIME_MEMBERS = API_STABLE_SURFACE.requiredMembers;
 
 export type RequiredRuntimeMember = (typeof REQUIRED_RUNTIME_MEMBERS)[number];
+
+/**
+ * Members marked deprecated, with the replacement a consumer should move to.
+ * Empty today; the mechanism exists so a future deprecation shows up in the
+ * availability report (`deprecated` on the channel member) instead of being
+ * learned from a changelog. Removing a member's meaning is a breaking change:
+ * it requires the version machinery, not just this table.
+ */
+export const DEPRECATED_RUNTIME_MEMBERS: Readonly<
+  Record<string, { replacement?: string; since?: number }>
+> = {};
 
 /**
  * Optional members grouped by the capability they belong to. A consumer checks a
@@ -203,6 +236,8 @@ export type ChannelCapabilityMember = {
   state: ChannelMemberState;
   /** Why. Absent when the state speaks for itself. */
   reason?: string;
+  /** Set when the member is deprecated; names what to move to. */
+  deprecated?: { replacement?: string; since?: number };
 };
 
 export type ChannelCapabilityGroup = {
@@ -232,6 +267,8 @@ export type ChannelCapabilityReport = {
 };
 
 export type RuntimeCapabilityReport = {
+  /** The API version this runtime speaks. Bound to the stable surface. */
+  apiVersion: number;
   /** True when every required member is present; false means unusable, not degraded. */
   usable: boolean;
   missingRequired: RequiredRuntimeMember[];
@@ -256,6 +293,18 @@ export type RuntimeCapabilityReport = {
   channel?: ChannelCapabilityReport;
 };
 
+function withDeprecation(
+  member: string,
+  entry: { member: string; state: ChannelMemberState; reason?: string },
+  deprecated: Readonly<
+    Record<string, { replacement?: string; since?: number }>
+  >,
+): ChannelCapabilityMember {
+  const annotation = deprecated[member];
+  if (!annotation) return entry;
+  return { ...entry, deprecated: annotation };
+}
+
 /**
  * Describes what a specific runtime can do, by looking at what it actually
  * implements rather than what it claims.
@@ -269,6 +318,9 @@ export function describeRuntimeCapabilities(
     /** Optional per-member reason for the unreachable state. */
     unreachableReasons?: Readonly<Record<string, string>>;
   },
+  deprecated: Readonly<
+    Record<string, { replacement?: string; since?: number }>
+  > = DEPRECATED_RUNTIME_MEMBERS,
 ): RuntimeCapabilityReport {
   const has = (member: string) =>
     typeof (client as unknown as Record<string, unknown>)[member] ===
@@ -293,20 +345,35 @@ export function describeRuntimeCapabilities(
         name: channel.name,
         requiredMembers: REQUIRED_RUNTIME_MEMBERS.map((member) => {
           if (!has(member))
-            return {
+            return withDeprecation(
               member,
-              state: "not_implemented" as const,
-              reason: "this runtime does not implement it",
-            };
+              {
+                member,
+                state: "not_implemented" as const,
+                reason: "this runtime does not implement it",
+              },
+              deprecated,
+            );
           if (channel.routedMembers.has(member))
-            return { member, state: "implemented_reachable" as const };
-          return {
+            return withDeprecation(
+              member,
+              {
+                member,
+                state: "implemented_reachable" as const,
+              },
+              deprecated,
+            );
+          return withDeprecation(
             member,
-            state: "implemented_unreachable" as const,
-            reason:
-              channel.unreachableReasons?.[member] ??
-              "this transport does not route it",
-          };
+            {
+              member,
+              state: "implemented_unreachable" as const,
+              reason:
+                channel.unreachableReasons?.[member] ??
+                "this transport does not route it",
+            },
+            deprecated,
+          );
         }),
         groups: (
           Object.keys(RUNTIME_CAPABILITY_GROUPS) as RuntimeCapabilityGroup[]
@@ -314,20 +381,35 @@ export function describeRuntimeCapabilities(
           const members = RUNTIME_CAPABILITY_GROUPS[name] as readonly string[];
           const memberStates = members.map((member) => {
             if (!has(member))
-              return {
+              return withDeprecation(
                 member,
-                state: "not_implemented" as const,
-                reason: "this runtime does not implement it",
-              };
+                {
+                  member,
+                  state: "not_implemented" as const,
+                  reason: "this runtime does not implement it",
+                },
+                deprecated,
+              );
             if (channel.routedMembers.has(member))
-              return { member, state: "implemented_reachable" as const };
-            return {
+              return withDeprecation(
+                member,
+                {
+                  member,
+                  state: "implemented_reachable" as const,
+                },
+                deprecated,
+              );
+            return withDeprecation(
               member,
-              state: "implemented_unreachable" as const,
-              reason:
-                channel.unreachableReasons?.[member] ??
-                "this transport does not route it",
-            };
+              {
+                member,
+                state: "implemented_unreachable" as const,
+                reason:
+                  channel.unreachableReasons?.[member] ??
+                  "this transport does not route it",
+              },
+              deprecated,
+            );
           });
           const reachable = memberStates.every(
             (member) => member.state === "implemented_reachable",
@@ -346,6 +428,7 @@ export function describeRuntimeCapabilities(
       }
     : undefined;
   return {
+    apiVersion: API_STABLE_SURFACE.apiVersion,
     usable: missingRequired.length === 0,
     missingRequired: [...missingRequired],
     groups,

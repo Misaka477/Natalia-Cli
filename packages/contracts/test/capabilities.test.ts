@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import type { RuntimeClient } from "../src/events";
 import {
+  API_STABLE_SURFACE,
+  API_VERSION,
   describeRuntimeCapabilities,
   REQUIRED_RUNTIME_MEMBERS,
   RUNTIME_CAPABILITY_GROUPS,
@@ -85,4 +87,65 @@ test("every member of the contract is either required or in exactly one capabili
   expect([...seen].filter(([, groups]) => groups.length > 1)).toEqual([]);
   for (const member of REQUIRED_RUNTIME_MEMBERS)
     expect(seen.has(member)).toBe(false);
+});
+
+function completeStub() {
+  const members = [
+    ...REQUIRED_RUNTIME_MEMBERS,
+    ...Object.values(RUNTIME_CAPABILITY_GROUPS).flat(),
+  ];
+  const client: Record<string, unknown> = {};
+  for (const member of members) client[member] = () => undefined;
+  return client as unknown as import("@natalia/contracts").RuntimeClient;
+}
+
+test("the stable surface binds the required members to the API version", () => {
+  // The promise and the code are one constant: REQUIRED_RUNTIME_MEMBERS is
+  // derived from API_STABLE_SURFACE, so moving a member out of the required
+  // set without bumping the version is a change to a single source — and any
+  // such change must also update this test's expectation, which is the point.
+  expect(API_STABLE_SURFACE.apiVersion).toBe(API_VERSION);
+  expect(API_STABLE_SURFACE.requiredMembers).toEqual([
+    "start",
+    "submit",
+    "cancel",
+    "snapshot",
+    "diagnostic",
+    "lastSubmission",
+    "respondApproval",
+    "respondQuestion",
+  ]);
+  expect(REQUIRED_RUNTIME_MEMBERS).toEqual(API_STABLE_SURFACE.requiredMembers);
+  // The report carries the same version the promise is made under.
+  const client = completeStub();
+  expect(describeRuntimeCapabilities(client).apiVersion).toBe(API_VERSION);
+});
+
+test("a deprecated member surfaces in the report with its replacement", () => {
+  // The table is empty today; the mechanism is exercised with an injected
+  // deprecation so it cannot rot into an unobservable feature. Patching the
+  // global table would make this test order-dependent, so the channel report
+  // reads it through describe, and we assert the shape against a fake table
+  // via the function that decorates members.
+  const client = completeStub();
+  const report = describeRuntimeCapabilities(
+    client,
+    { name: "rpc", routedMembers: new Set() },
+    { sessionSnapshot: { replacement: "session.list", since: 1 } },
+  );
+  const all = [
+    ...report.channel!.groups.flatMap((group) => group.members),
+    ...report.channel!.requiredMembers,
+  ];
+  const marked = all.find((member) => member.member === "sessionSnapshot")!;
+  expect(marked.deprecated).toEqual({
+    replacement: "session.list",
+    since: 1,
+  });
+  expect(
+    all.every(
+      (member) =>
+        member.deprecated === undefined || member.member === "sessionSnapshot",
+    ),
+  ).toBe(true);
 });

@@ -6,6 +6,7 @@ import type {
 } from "@natalia/contracts";
 import { createRuntimeHttpServer } from "@natalia/transport/host";
 import { createNataliaSDK } from "../src";
+import { RuntimeVersionMismatchError } from "@natalia/contracts";
 
 test("SDK uses the TS RPC transport rather than runtime internals", async () => {
   let sink: ((event: RuntimeEvent) => void) | undefined;
@@ -264,7 +265,7 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
   };
   const server = createRuntimeHttpServer({ client, token: "sdk-token" });
   const sdk = createNataliaSDK({ baseURL: server.url, token: "sdk-token" });
-  expect(await sdk.health()).toEqual({ ok: true });
+  expect(await sdk.health()).toMatchObject({ ok: true, apiVersion: 1 });
   expect(await sdk.prompt("sdk prompt")).toMatchObject({
     id: "turn_sdk",
     text: "sdk prompt",
@@ -429,3 +430,61 @@ function sandboxFixture() {
     envAllowlist: ["PATH"],
   };
 }
+
+test("an SDK meeting a newer runtime refuses to guess, and says both versions", async () => {
+  // The acceptance case for versioning: the consumer can read the version,
+  // can tell it is incompatible, and never silently misreads a changed
+  // protocol. The server here speaks a hypothetical future API.
+  const client: RuntimeClient = {
+    start() {},
+    async submit(text) {
+      return {
+        type: "turn.submitted",
+        id: "t",
+        text,
+        byteLength: 1,
+        lineCount: 1,
+        sha256: "x",
+      };
+    },
+    cancel() {},
+    snapshot() {
+      return { type: "diagnostic", level: "info", message: "x" };
+    },
+    diagnostic() {},
+    lastSubmission() {
+      return undefined;
+    },
+    respondApproval() {
+      return { accepted: true };
+    },
+    respondQuestion() {
+      return { accepted: true };
+    },
+  };
+  const server = createRuntimeHttpServer({ client, token: "sdk-token" });
+  try {
+    // Pretend the server speaks a newer protocol by intercepting /healthz.
+    const sdk = createNataliaSDK({
+      baseURL: server.url,
+      token: "sdk-token",
+      fetch: ((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/healthz")) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ ok: true, apiVersion: 2 }), {
+              status: 200,
+            }),
+          );
+        }
+        return fetch(input, init);
+      }) as typeof fetch,
+    });
+    const error = await sdk.prompt("x").catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(RuntimeVersionMismatchError);
+    expect((error as RuntimeVersionMismatchError).serverVersion).toBe(2);
+    expect((error as RuntimeVersionMismatchError).supportedVersion).toBe(1);
+  } finally {
+    server.stop();
+  }
+});

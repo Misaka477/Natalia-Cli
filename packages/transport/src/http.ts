@@ -1,3 +1,4 @@
+import { API_VERSION } from "@natalia/contracts";
 import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
 import { handleRPCMessage, RPC_WRITE_METHODS } from "./rpc";
 import type { RuntimeAuthorizationContext } from "./rpc";
@@ -180,7 +181,8 @@ export function createRuntimeHttpServer(
     });
   const fetchHandler = async (request: Request) => {
     const url = new URL(request.url);
-    if (url.pathname === "/healthz") return Response.json({ ok: true });
+    if (url.pathname === "/healthz")
+      return Response.json({ ok: true, apiVersion: API_VERSION });
     const authorization = resolveAuthorization(
       request,
       options.authorization,

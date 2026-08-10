@@ -645,9 +645,9 @@ test("a read-only integration renders the session and cannot write a byte", asyn
     });
 
     // Render: read the history and the workspace.
-    const submitted = await integration.prompt(
-      "describe the workspace",
-    ).catch(() => undefined);
+    const submitted = await integration
+      .prompt("describe the workspace")
+      .catch(() => undefined);
     // A read-only credential cannot submit — that is the point.
     expect(submitted).toBeUndefined();
     const page = await integration.workspaceList({ path: "." });
