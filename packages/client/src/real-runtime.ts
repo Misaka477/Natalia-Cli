@@ -4,6 +4,9 @@ import { isAbsolute, dirname, join, resolve } from "node:path";
 import { createStatusSnapshotController } from "./status-controller";
 import { createSessionStoreController } from "./session-store-controller";
 import { createTurnController } from "./turn-controller";
+import { createSkillsController } from "./skills-controller";
+import { createSubagentsController } from "./subagents-controller";
+import { createTerminalController } from "./terminal-controller";
 import { createSandboxController } from "./sandbox-controller";
 import { createCheckpointController } from "./checkpoint-controller";
 import { createMcpController } from "./mcp-controller";
@@ -103,21 +106,12 @@ import {
 import {
   authorizeSkillTool,
   createSkillLoadTool,
-  discoverSkills,
   readSkillResource,
   runSkillScript,
   type Skill,
-  type SkillRegistry,
 } from "@natalia/skills";
-import { SubagentRegistry } from "@natalia/subagent";
-import {
-  createWezTermHost,
-  NativeTerminalRegistry,
-  startNativeInputBroker,
-  reclaimStaleMuxRuntimeDirs,
-  writeWezTermNativeDomainConfig,
-  type NativeInputBroker,
-} from "@natalia/native-terminal";
+import type { SubagentRegistry } from "@natalia/subagent";
+import type { NativeTerminalRegistry } from "@natalia/native-terminal";
 import {
   foregroundProcessForTTY,
   globalConfigHome,
@@ -362,7 +356,7 @@ export function createRealRuntimeClient(
     // input is refused when the host cannot answer at all.
     foregroundProgram: async (paneID) => {
       try {
-        const ttyName = await nativeTerminal?.ttyName(paneID);
+        const ttyName = await terminalController.get()?.ttyName(paneID);
         if (!ttyName)
           return {
             supported: false as const,
@@ -478,10 +472,18 @@ export function createRealRuntimeClient(
       >["config"]["permissionProfiles"][string]
     | undefined;
   let maxSteps: number | undefined;
-  let subagents: SubagentRegistry | undefined;
-  let nativeTerminal: NativeTerminalRegistry | undefined =
-    options.nativeTerminal;
-  let nativeInputBroker: NativeInputBroker | undefined;
+  const subagentsController = createSubagentsController({
+    workDir: workspaceRoot,
+  });
+  const terminalController = createTerminalController({
+    workspaceRoot,
+    publish,
+    onPerformance: (name, durationMs) =>
+      performanceTrace.mark(name, durationMs),
+    runtimeID: () => nativeRuntimeID,
+    userRuntimeHome: () => userRuntimeHome(),
+    external: options.nativeTerminal,
+  });
   const sandboxController = createSandboxController({ workspaceRoot });
   const checkpointController = createCheckpointController({
     sessionID: () => sessionID,
@@ -490,7 +492,8 @@ export function createRealRuntimeClient(
     workspace: () => tsRuntimeConfig?.workspace,
     publish,
     context: () => context,
-    subagents: () => subagents,
+    subagents: () =>
+      subagentsController.enabled() ? subagentsController.get() : undefined,
     activeAbort: () => activeAbort,
   });
   const pluginsController = createPluginsController({
@@ -536,7 +539,11 @@ export function createRealRuntimeClient(
   let paused = false;
   let pauseWaiters: Array<() => void> = [];
   let ready: Promise<void> | undefined;
-  let skillRegistry: SkillRegistry | undefined;
+  const skillsController = createSkillsController({
+    workspaceRoot,
+    userRoot: () => userSkillRoot(),
+    remoteURLs: () => tsRuntimeConfig?.skills.urls,
+  });
   let activeSkill: Skill | undefined;
   const attachmentReferences = new Map<
     string,
@@ -568,7 +575,7 @@ export function createRealRuntimeClient(
     workspaceRoot,
     permissionMode: () => permissionMode,
     runningCount: async () =>
-      (subagents?.runningCount() ?? 0) +
+      subagentsController.runningCount() +
       sandboxController.runningResourceCount() +
       (processRegistry
         ? await processRegistry.runningCount({ workspaceRoot })
@@ -751,130 +758,124 @@ export function createRealRuntimeClient(
     sessionID =
       options.sessionID ?? (`ses_${sessionSeed(workspaceRoot)}` as SessionID);
     await sessionStoreController.init();
-    subagents = new SubagentRegistry({
-      workDir: workspaceRoot,
-      runner: async (task, runner) => {
-        if (!provider) throw new Error("provider unavailable for subagent");
-        const record = subagents?.get(runner.agentId);
-        const allowed = record?.allowedTools ?? [];
-        const excluded = new Set(record?.excludeTools ?? []);
-        const messages: ProviderMessage[] = [
-          {
-            role: "system",
-            content:
-              "You are a focused Natalia TS/Bun subagent. Use the provided native tools for filesystem work. Return a concise factual final result. Never claim a tool action you did not run. Do not reveal private reasoning.",
-          },
-          { role: "user", content: task },
-        ];
-        runner.log(`accepted: ${task}`);
-        for (let step = 1; step <= effectiveMaxSteps(); step++) {
-          let output = "";
-          const calls: ProviderToolCall[] = [];
-          const visibleTools = [...tools.values()].filter(
-            (tool) =>
-              isToolAllowed(tool.name) &&
-              (permissionMode !== "read_only" || !tool.requiresApproval) &&
-              !excluded.has(tool.name) &&
-              (!allowed.length || allowed.includes(tool.name)),
-          );
-          for await (const chunk of provider.stream({
-            messages,
-            tools: visibleTools.map((tool) => ({
-              name: tool.name,
-              description: tool.description,
-              parameters: tool.parameters,
-            })),
-            signal: runner.signal,
-          })) {
-            if (chunk.type === "content") output += chunk.text;
-            if (chunk.type === "tool_call") calls.push(...chunk.calls);
-          }
-          if (!calls.length) {
-            runner.log(output.trim() || "completed without text output");
-            return;
-          }
-          messages.push({
-            role: "assistant",
-            content: output,
-            toolCalls: calls,
-          });
-          for (const call of calls) {
-            const tool = tools.get(call.name);
-            if (!tool)
-              throw new Error(
-                `subagent requested unavailable tool: ${call.name}`,
-              );
-            if (
-              !isToolAllowed(tool.name) ||
-              excluded.has(tool.name) ||
-              (allowed.length && !allowed.includes(tool.name))
-            )
-              throw new Error(`subagent tool denied by policy: ${tool.name}`);
-            const toolID = `subagent:${runner.agentId}:${step}:${call.id}`;
-            const hookEvent: ToolHookEvent = {
-              turnID: `subagent:${runner.agentId}`,
-              toolName: tool.name,
-              toolCallID: call.id,
-              arguments: call.arguments,
-            };
-            const preResult = await toolLayer.preExecute(hookEvent);
-            if (!preResult.allowed)
-              throw new Error(
-                `subagent tool denied by policy: ${preResult.diagnostics.join("; ")}`,
-              );
-            if (permissionMode === "read_only" && tool.requiresApproval)
-              throw new Error(readOnlyToolMessage(tool.name));
-            if (tool.requiresApproval) {
-              // This path reports denials by throwing, so a refusal has to
-              // throw too. Returning it would let the subagent run a call the
-              // user just refused.
-              const refusal = await interactive.requireApproval(
-                toolID,
-                tool,
-                call,
-                hookEvent.turnID,
-              );
-              if (refusal) throw new Error(refusal.reason);
-            }
-            const parsed = parseToolArguments(call.arguments);
-            const paramErrors = validateToolParameters(tool.parameters, parsed);
-            if (paramErrors.length)
-              throw new Error(
-                `tool "${tool.name}" parameter validation failed: ${paramErrors.map((error) => `${error.path}: ${error.message}`).join("; ")}`,
-              );
-            const result = await tool.execute(parsed, {
-              workspaceRoot,
-              signal: runner.signal,
-              askQuestion: async (question) =>
-                await interactive.requireQuestion(
-                  `${toolID}:question`,
-                  question,
-                ),
-              subagents,
-              nativeTerminal,
-              sandboxes: sandboxController.get(),
-              workspaceReadAuthorize: authorizeWorkspaceRead,
-              sandboxMergeAuthorize: authorizeSandboxMerge,
-              settings: toolSettings(),
-              parentSessionID: sessionID,
-              parentAgentID: runner.agentId,
-              maxSubagentDepth: tsRuntimeConfig?.runtime.subagentDepth,
-            });
-            await toolLayer.postExecute({ ...hookEvent, result });
-            runner.log(`tool ${tool.name}: ${result.slice(0, 240)}`);
-            messages.push({
-              role: "tool",
-              content: result,
-              toolCallID: call.id,
-            });
-          }
+    await subagentsController.init(async (task, runner) => {
+      if (!provider) throw new Error("provider unavailable for subagent");
+      const record = subagentsController.get().get(runner.agentId);
+      const allowed = record?.allowedTools ?? [];
+      const excluded = new Set(record?.excludeTools ?? []);
+      const messages: ProviderMessage[] = [
+        {
+          role: "system",
+          content:
+            "You are a focused Natalia TS/Bun subagent. Use the provided native tools for filesystem work. Return a concise factual final result. Never claim a tool action you did not run. Do not reveal private reasoning.",
+        },
+        { role: "user", content: task },
+      ];
+      runner.log(`accepted: ${task}`);
+      for (let step = 1; step <= effectiveMaxSteps(); step++) {
+        let output = "";
+        const calls: ProviderToolCall[] = [];
+        const visibleTools = [...tools.values()].filter(
+          (tool) =>
+            isToolAllowed(tool.name) &&
+            (permissionMode !== "read_only" || !tool.requiresApproval) &&
+            !excluded.has(tool.name) &&
+            (!allowed.length || allowed.includes(tool.name)),
+        );
+        for await (const chunk of provider.stream({
+          messages,
+          tools: visibleTools.map((tool) => ({
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.parameters,
+          })),
+          signal: runner.signal,
+        })) {
+          if (chunk.type === "content") output += chunk.text;
+          if (chunk.type === "tool_call") calls.push(...chunk.calls);
         }
-        throw new Error("subagent step limit reached");
-      },
+        if (!calls.length) {
+          runner.log(output.trim() || "completed without text output");
+          return;
+        }
+        messages.push({
+          role: "assistant",
+          content: output,
+          toolCalls: calls,
+        });
+        for (const call of calls) {
+          const tool = tools.get(call.name);
+          if (!tool)
+            throw new Error(
+              `subagent requested unavailable tool: ${call.name}`,
+            );
+          if (
+            !isToolAllowed(tool.name) ||
+            excluded.has(tool.name) ||
+            (allowed.length && !allowed.includes(tool.name))
+          )
+            throw new Error(`subagent tool denied by policy: ${tool.name}`);
+          const toolID = `subagent:${runner.agentId}:${step}:${call.id}`;
+          const hookEvent: ToolHookEvent = {
+            turnID: `subagent:${runner.agentId}`,
+            toolName: tool.name,
+            toolCallID: call.id,
+            arguments: call.arguments,
+          };
+          const preResult = await toolLayer.preExecute(hookEvent);
+          if (!preResult.allowed)
+            throw new Error(
+              `subagent tool denied by policy: ${preResult.diagnostics.join("; ")}`,
+            );
+          if (permissionMode === "read_only" && tool.requiresApproval)
+            throw new Error(readOnlyToolMessage(tool.name));
+          if (tool.requiresApproval) {
+            // This path reports denials by throwing, so a refusal has to
+            // throw too. Returning it would let the subagent run a call the
+            // user just refused.
+            const refusal = await interactive.requireApproval(
+              toolID,
+              tool,
+              call,
+              hookEvent.turnID,
+            );
+            if (refusal) throw new Error(refusal.reason);
+          }
+          const parsed = parseToolArguments(call.arguments);
+          const paramErrors = validateToolParameters(tool.parameters, parsed);
+          if (paramErrors.length)
+            throw new Error(
+              `tool "${tool.name}" parameter validation failed: ${paramErrors.map((error) => `${error.path}: ${error.message}`).join("; ")}`,
+            );
+          const result = await tool.execute(parsed, {
+            workspaceRoot,
+            signal: runner.signal,
+            askQuestion: async (question) =>
+              await interactive.requireQuestion(`${toolID}:question`, question),
+            subagents: subagentsController.get(),
+            nativeTerminal: terminalController.get(),
+            sandboxes: sandboxController.get(),
+            workspaceReadAuthorize: authorizeWorkspaceRead,
+            sandboxMergeAuthorize: authorizeSandboxMerge,
+            settings: toolSettings(),
+            parentSessionID: sessionID,
+            parentAgentID: runner.agentId,
+            maxSubagentDepth: tsRuntimeConfig?.runtime.subagentDepth,
+          });
+          await toolLayer.postExecute({ ...hookEvent, result });
+          runner.log(`tool ${tool.name}: ${result.slice(0, 240)}`);
+          messages.push({
+            role: "tool",
+            content: result,
+            toolCallID: call.id,
+          });
+        }
+      }
+      throw new Error("subagent step limit reached");
     });
-    await subagents.load();
-    subagents.subscribe((event) => {
-      const record = subagents?.get(event.agentId);
+    const subagentRegistry = subagentsController.get();
+    subagentRegistry.subscribe((event) => {
+      const record = subagentRegistry.get(event.agentId);
       publish({
         type: "subagent.update",
         id: event.agentId,
@@ -902,185 +903,8 @@ export function createRealRuntimeClient(
     if (extensionEnabled("plugins")) {
       await pluginsController.init();
     }
-    if (!nativeTerminal) {
-      const runtimeHome = userRuntimeHome();
-      const nativeRuntimeDir = runtimeHome
-        ? join(runtimeHome, "natalia")
-        : join(workspaceRoot, ".natalia", "native-input");
-      const nativeMuxRuntimeDir = join(
-        nativeRuntimeDir,
-        "wezterm-runtime",
-        nativeRuntimeID,
-      );
-      const nativeMuxSocket = join(nativeMuxRuntimeDir, "wezterm", "sock");
-      let nativeDomain: Awaited<
-        ReturnType<typeof writeWezTermNativeDomainConfig>
-      >;
-      try {
-        await mkdir(nativeRuntimeDir, { recursive: true, mode: 0o700 });
-        await mkdir(nativeMuxRuntimeDir, { recursive: true, mode: 0o700 });
-        // Each runtime owns one of these directories and removes it on dispose,
-        // so anything left from a runtime that was killed accumulates for as
-        // long as the host stays up. Reclaiming is best effort and must not
-        // delay or fail startup.
-        void reclaimStaleMuxRuntimeDirs({
-          root: join(nativeRuntimeDir, "wezterm-runtime"),
-          keep: nativeRuntimeID,
-        }).catch(() => undefined);
-        nativeDomain = await writeWezTermNativeDomainConfig({
-          directory: nativeMuxRuntimeDir,
-          socketPath: nativeMuxSocket,
-        });
-        nativeTerminal = new NativeTerminalRegistry(
-          createWezTermHost({
-            // The GUI, CLI, and mux server must share this socket. Otherwise
-            // Open terminal can attach a real window to the user's unrelated
-            // default mux while Natalia controls a different pane.
-            environment: { WEZTERM_UNIX_SOCKET: nativeMuxSocket },
-            muxRuntimeDir: nativeMuxRuntimeDir,
-            nativeDomain,
-            onPerformance: (name, durationMs) =>
-              performanceTrace.mark(name, durationMs),
-          }),
-          {
-            onAudit: (event) => {
-              publish({
-                type: "terminal.action",
-                id: event.id,
-                action: event.action,
-                redacted: event.redacted,
-                target: { kind: "host", cwd: event.cwd },
-              });
-              publish({
-                type: "terminal.timeline",
-                id: event.id,
-                actor: event.actor === "human" ? "user" : event.actor,
-                action: event.action,
-                status: "executed",
-                summary:
-                  event.action === "write"
-                    ? "native terminal input accepted"
-                    : event.action === "secure_input"
-                      ? "native terminal secure input state changed"
-                      : `native terminal ${event.action} executed`,
-                at: event.at,
-              });
-            },
-            autoOpenHub: true,
-            persistPath: join(
-              nativeMuxRuntimeDir,
-              "native-terminal-sessions.json",
-            ),
-          },
-        );
-        nativeInputBroker = await startNativeInputBroker({
-          registry: nativeTerminal,
-          runtimeDir: nativeRuntimeDir,
-          daemonID: randomUUID(),
-          onInput: ({ terminalID, paneID, kind, byteLength }) => {
-            const summary = `native human input claim accepted: terminal=${terminalID} pane=${paneID} kind=${kind} bytes=${byteLength}`;
-            publish({ type: "diagnostic", level: "info", message: summary });
-            publish({
-              type: "terminal.timeline",
-              id: terminalID,
-              actor: "user",
-              action: "write",
-              status: "executed",
-              summary,
-              at: new Date().toISOString(),
-            });
-          },
-          onDenied: ({ terminalID, paneID, tokenAccepted, paneAccepted }) =>
-            publish({
-              type: "diagnostic",
-              level: "warning",
-              message: `native input claim denied: terminal=${terminalID} pane=${paneID} token=${tokenAccepted} paneKnown=${paneAccepted}`,
-            }),
-        });
-        nativeTerminal.setHumanInputBridge(nativeInputBroker);
-      } catch {
-        // Native Terminal recovery: if the mux server was killed or runtime
-        // dirs were deleted (e.g. by rm -rf), recreate dirs and retry once.
-        publish({
-          type: "diagnostic",
-          level: "info",
-          message: "native terminal first init failed; attempting recovery",
-        });
-        try {
-          await mkdir(nativeRuntimeDir, { recursive: true, mode: 0o700 });
-          await mkdir(nativeMuxRuntimeDir, { recursive: true, mode: 0o700 });
-          nativeDomain = await writeWezTermNativeDomainConfig({
-            directory: nativeMuxRuntimeDir,
-            socketPath: nativeMuxSocket,
-          });
-          nativeTerminal = new NativeTerminalRegistry(
-            createWezTermHost({
-              environment: { WEZTERM_UNIX_SOCKET: nativeMuxSocket },
-              muxRuntimeDir: nativeMuxRuntimeDir,
-              nativeDomain,
-              onPerformance: (name, durationMs) =>
-                performanceTrace.mark(name, durationMs),
-            }),
-            {
-              onAudit: (event) => {
-                publish({
-                  type: "terminal.action",
-                  id: event.id,
-                  action: event.action,
-                  redacted: event.redacted,
-                  target: { kind: "host", cwd: event.cwd },
-                });
-                publish({
-                  type: "terminal.timeline",
-                  id: event.id,
-                  actor: event.actor === "human" ? "user" : event.actor,
-                  action: event.action,
-                  status: "executed",
-                  summary: `native terminal ${event.action} executed`,
-                  at: event.at,
-                });
-              },
-              autoOpenHub: true,
-              persistPath: join(
-                nativeMuxRuntimeDir,
-                "native-terminal-sessions.json",
-              ),
-            },
-          );
-          nativeInputBroker = await startNativeInputBroker({
-            registry: nativeTerminal,
-            runtimeDir: nativeRuntimeDir,
-            daemonID: randomUUID(),
-            onInput: ({ terminalID, paneID, kind, byteLength }) => {
-              publish({
-                type: "terminal.timeline",
-                id: terminalID,
-                actor: "user",
-                action: "write",
-                status: "executed",
-                summary: `native human input accepted: terminal=${terminalID} pane=${paneID} kind=${kind} bytes=${byteLength}`,
-                at: new Date().toISOString(),
-              });
-            },
-            onDenied: ({ terminalID, paneID }) =>
-              publish({
-                type: "diagnostic",
-                level: "warning",
-                message: `native input claim denied: terminal=${terminalID} pane=${paneID}`,
-              }),
-          });
-          nativeTerminal.setHumanInputBridge(nativeInputBroker);
-          publish({
-            type: "diagnostic",
-            level: "info",
-            message: "Native terminal recovered after reinitialization",
-          });
-        } catch {
-          // Recovery failed; native terminal remains unavailable for this session.
-          // Its canonical tools report an actionable error when invoked.
-        }
-      }
-    }
+    await terminalController.init();
+
     await sandboxController.init();
     session = sessionStoreController.sqlite()
       ? ((await sessionStoreController.json().load(sessionID)) ??
@@ -1254,16 +1078,7 @@ export function createRealRuntimeClient(
       (input) => input.delivery === "queue",
     );
     if (queued) void turnCoordinator().wake(drainSession);
-    if (extensionEnabled("skills"))
-      skillRegistry = await discoverSkills({
-        workspaceRoot,
-        // `$HOME/.config/natalia-cli/skills` on POSIX, unchanged. Windows has no
-        // HOME, so the previous guard left user skills permanently undiscovered
-        // there; globalConfigHome resolves %APPDATA% instead. The absolute check
-        // preserves the old "skip when the home is unresolvable" behaviour.
-        userRoot: userSkillRoot(),
-        remoteURLs: tsRuntimeConfig?.skills.urls,
-      });
+    if (extensionEnabled("skills")) await skillsController.init();
     const activeSkillEntry = [...context.snapshot().entries]
       .reverse()
       .find(
@@ -1272,9 +1087,9 @@ export function createRealRuntimeClient(
     const qualifiedName = activeSkillEntry?.id.match(
       /^skill:((?:project|remote|user):[^:]+):/u,
     )?.[1];
-    if (qualifiedName && skillRegistry) {
+    if (qualifiedName && skillsController.enabled()) {
       try {
-        activeSkill = skillRegistry.resolve(qualifiedName);
+        activeSkill = skillsController.resolve(qualifiedName);
       } catch {
         // A removed skill must not prevent durable session recovery.
       }
@@ -1283,7 +1098,8 @@ export function createRealRuntimeClient(
       tools.set(
         "skill_load",
         createSkillLoadTool({
-          registry: () => skillRegistry,
+          registry: () =>
+            skillsController.enabled() ? skillsController.get() : undefined,
           onLoad: (skill, output) => {
             activeSkill = skill;
             context.add({
@@ -1990,10 +1806,7 @@ export function createRealRuntimeClient(
       workspaceFilesController.close();
       await pluginsController.close();
       await mcpController.close();
-      await nativeTerminal?.dispose();
-      nativeTerminal = undefined;
-      await nativeInputBroker?.stop();
-      nativeInputBroker = undefined;
+      await terminalController.close();
       await performanceTrace.stop();
     },
     cancel(reason = "user cancel") {
@@ -2244,7 +2057,7 @@ export function createRealRuntimeClient(
     },
     async skills() {
       await ready;
-      return (skillRegistry?.list() ?? []).map((skill) => ({
+      return skillsController.list().map((skill) => ({
         name: skill.name,
         qualifiedName: skill.qualifiedName,
         description: skill.description,
@@ -2275,12 +2088,13 @@ export function createRealRuntimeClient(
     },
     async nativeTerminalList() {
       await ready;
-      return ((await nativeTerminal?.reconcile()) ?? []).map(
+      return ((await terminalController.get()?.reconcile()) ?? []).map(
         publicNativeTerminal,
       );
     },
     async nativeTerminalRead(id) {
       await ready;
+      const nativeTerminal = terminalController.get();
       if (!nativeTerminal)
         throw new Error("Native Terminal Host is unavailable");
       const { text } = await nativeTerminal.read(id, { maxLines: 200 });
@@ -2288,6 +2102,7 @@ export function createRealRuntimeClient(
     },
     async nativeTerminalOpenHub() {
       await ready;
+      const nativeTerminal = terminalController.get();
       if (!nativeTerminal)
         throw new Error("Native Terminal Host is unavailable");
       const hub = await nativeTerminal.openHub();
@@ -2295,30 +2110,35 @@ export function createRealRuntimeClient(
     },
     async nativeTerminalRevokeApprovalScope(id) {
       await ready;
+      const nativeTerminal = terminalController.get();
       if (!nativeTerminal)
         throw new Error("Native Terminal Host is unavailable");
       return interactive.revokeTerminalApprovalScope(id);
     },
     async nativeTerminalReleaseHumanControl(id) {
       await ready;
+      const nativeTerminal = terminalController.get();
       if (!nativeTerminal)
         throw new Error("Native Terminal Host is unavailable");
       return publicNativeTerminal(nativeTerminal.releaseHumanControl(id));
     },
     async nativeTerminalBeginSecureInput(id) {
       await ready;
+      const nativeTerminal = terminalController.get();
       if (!nativeTerminal)
         throw new Error("Native Terminal Host is unavailable");
       return publicNativeTerminal(nativeTerminal.beginSecureInput(id));
     },
     async nativeTerminalEndSecureInput(id) {
       await ready;
+      const nativeTerminal = terminalController.get();
       if (!nativeTerminal)
         throw new Error("Native Terminal Host is unavailable");
       return publicNativeTerminal(nativeTerminal.endSecureInput(id));
     },
     async nativeTerminalStop(id) {
       await ready;
+      const nativeTerminal = terminalController.get();
       if (!nativeTerminal)
         throw new Error("Native Terminal Host is unavailable");
       return {
@@ -2331,6 +2151,7 @@ export function createRealRuntimeClient(
     // and geometry arbitration are the same ones the model tools go through.
     async nativeTerminalStart(input) {
       await ready;
+      const nativeTerminal = terminalController.get();
       if (!nativeTerminal)
         throw new RuntimeRefusal("Native Terminal Host is unavailable");
       try {
@@ -2347,6 +2168,7 @@ export function createRealRuntimeClient(
     },
     async nativeTerminalWrite(input) {
       await ready;
+      const nativeTerminal = terminalController.get();
       if (!nativeTerminal)
         throw new RuntimeRefusal("Native Terminal Host is unavailable");
       try {
@@ -2360,6 +2182,7 @@ export function createRealRuntimeClient(
     },
     async nativeTerminalResize(input) {
       await ready;
+      const nativeTerminal = terminalController.get();
       if (!nativeTerminal)
         throw new RuntimeRefusal("Native Terminal Host is unavailable");
       try {
@@ -2857,7 +2680,7 @@ export function createRealRuntimeClient(
           `session: ${sessionID}`,
           `native tools: ${tools.size}`,
           `agent: ${selectedAgent?.name ?? "default"}`,
-          `skills: ${skillRegistry?.list().length ?? 0}`,
+          `skills: ${skillsController.list().length}`,
           provider
             ? "provider check: configured; submit a short prompt to verify live streaming"
             : "provider check: set NATALIA_OPENAI_API_KEY (or OPENAI_API_KEY), or configure a provider in .natalia/config.json, then restart the TUI",
@@ -2954,7 +2777,7 @@ export function createRealRuntimeClient(
       return true;
     }
     if (trimmed === "/skills") {
-      const skills = skillRegistry?.list() ?? [];
+      const skills = skillsController.list();
       publish({
         type: "content.delta",
         id,
@@ -3103,8 +2926,7 @@ export function createRealRuntimeClient(
       return true;
     }
     if (trimmed.startsWith("/skill ")) {
-      if (!skillRegistry) throw new Error("skill registry is not initialized");
-      activeSkill = skillRegistry.resolve(
+      activeSkill = skillsController.resolve(
         trimmed.slice("/skill ".length).trim(),
       );
       context.add({
@@ -3276,7 +3098,7 @@ export function createRealRuntimeClient(
                   ?.systemPrompt,
           moduleInstructions: options.taskModuleContext?.moduleInstructions,
           moduleContinuation: options.taskModuleContext?.moduleContinuation,
-          skills: skillRegistry?.list(),
+          skills: skillsController.list(),
           activeSkill,
         }),
       });
@@ -3772,7 +3594,7 @@ export function createRealRuntimeClient(
         const terminalID = tryParseToolArguments(call.arguments).id;
         if (typeof terminalID === "string") {
           try {
-            await nativeTerminal?.write(terminalID, "\x15");
+            await terminalController.get()?.write(terminalID, "\x15");
             publish({
               type: "diagnostic",
               level: "warning",
@@ -3955,8 +3777,8 @@ export function createRealRuntimeClient(
           signal,
           askQuestion: async (question) =>
             await interactive.requireQuestion(`${toolID}:question`, question),
-          subagents,
-          nativeTerminal,
+          subagents: subagentsController.get(),
+          nativeTerminal: terminalController.get(),
           sandboxes: sandboxController.get(),
           workspaceReadAuthorize: authorizeWorkspaceRead,
           sandboxMergeAuthorize: authorizeSandboxMerge,
