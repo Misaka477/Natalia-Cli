@@ -47,8 +47,12 @@ function stubClient(
     lastSubmission() {
       return undefined;
     },
-    respondApproval() {},
-    respondQuestion() {},
+    respondApproval() {
+      return { accepted: true };
+    },
+    respondQuestion() {
+      return { accepted: true };
+    },
     ...overrides,
   };
   return client;

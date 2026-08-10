@@ -63,6 +63,7 @@ function backend(): RuntimeClient {
         id: response.requestID,
         decision: response.decision,
       });
+      return { accepted: true };
     },
     cancel() {},
     snapshot() {
@@ -72,6 +73,8 @@ function backend(): RuntimeClient {
     lastSubmission() {
       return undefined;
     },
-    respondQuestion() {},
+    respondQuestion() {
+      return { accepted: true };
+    },
   };
 }

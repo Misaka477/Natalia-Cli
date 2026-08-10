@@ -227,15 +227,21 @@ test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", as
     cancel() {},
     pause(reason) {
       sink?.({ type: "turn.paused", id: "turn_1", reason: reason ?? "test" });
+      return { paused: true };
     },
     resume() {
       sink?.({ type: "turn.resumed", id: "turn_1" });
+      return { resumed: true };
     },
     snapshot: () => ({ type: "snapshot.created", id: "snap_1", files: [] }),
     diagnostic() {},
     lastSubmission: () => undefined,
-    respondApproval() {},
-    respondQuestion() {},
+    respondApproval() {
+      return { accepted: true };
+    },
+    respondQuestion() {
+      return { accepted: true };
+    },
   };
   const server = createRuntimeHttpServer({ client, token: "secret" });
   const unauthorized = await fetch(`${server.url}/rpc`, { method: "POST" });
@@ -626,8 +632,12 @@ test("HTTP transport returns JSON-RPC errors for malformed request bodies", asyn
     snapshot: () => ({ type: "snapshot.created", id: "snap", files: [] }),
     diagnostic() {},
     lastSubmission: () => undefined,
-    respondApproval() {},
-    respondQuestion() {},
+    respondApproval() {
+      return { accepted: true };
+    },
+    respondQuestion() {
+      return { accepted: true };
+    },
   };
   const server = createRuntimeHttpServer({ client });
   try {
@@ -766,8 +776,12 @@ function transportClient(): RuntimeClient {
     snapshot: () => ({ type: "snapshot.created", id: "snap", files: [] }),
     diagnostic() {},
     lastSubmission: () => undefined,
-    respondApproval() {},
-    respondQuestion() {},
+    respondApproval() {
+      return { accepted: true };
+    },
+    respondQuestion() {
+      return { accepted: true };
+    },
   };
 }
 
@@ -781,8 +795,12 @@ test("unattended read routes are refused when the runtime does not implement the
       throw new Error("not used");
     },
     cancel() {},
-    pause() {},
-    resume() {},
+    pause() {
+      return { paused: true };
+    },
+    resume() {
+      return { resumed: true };
+    },
     snapshot: () => ({ type: "session.ready", sessionID: "ses_x" }),
     diagnostic() {},
     lastSubmission: () => undefined,

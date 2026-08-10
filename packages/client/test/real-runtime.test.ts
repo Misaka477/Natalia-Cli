@@ -6199,3 +6199,120 @@ test("config is not applied underneath a running turn, even if the precheck said
   expect((await client.reloadConfig?.())?.applied).toBe(true);
   await client.dispose?.();
 }, 30_000);
+
+test("answering a request that is no longer pending is reported, not swallowed", async () => {
+  // The waiter already knew this — it published a warning diagnostic and returned
+  // — but the caller was told nothing, and over RPC it was told `responded: true`.
+  // An external UI has to know its answer arrived too late, because the model was
+  // told the call did not run.
+  const root = await mkdtemp(join(tmpdir(), "natalia-stale-response-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_stale_response",
+    provider: scriptedProvider("nothing to approve"),
+  });
+  client.start(() => undefined);
+
+  expect(
+    await client.respondApproval({ requestID: "apr_never", decision: "once" }),
+  ).toEqual({
+    accepted: false,
+    reason: "the approval request is no longer pending",
+  });
+  expect(
+    await client.respondQuestion({
+      requestID: "qst_never",
+      answers: [["no"]],
+      rejected: false,
+    }),
+  ).toEqual({
+    accepted: false,
+    reason: "the question request is no longer pending",
+  });
+  await client.dispose?.();
+}, 30_000);
+
+test("pause, resume and agent selection answer what the runtime did", async () => {
+  // Each of these used to return nothing, so the RPC route replied with a
+  // hard-coded success. A caller could pause a runtime with no turn and be told
+  // the turn was held; it could select an agent that does not exist and be told
+  // it was selected.
+  const root = await mkdtemp(join(tmpdir(), "natalia-turn-control-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_turn_control",
+    permissionMode: "auto",
+    provider: scriptedProvider("done"),
+  });
+  client.start(() => undefined);
+
+  expect(await client.pause?.()).toEqual({
+    paused: false,
+    reason: "no turn has been submitted",
+  });
+  expect(await client.resume?.()).toEqual({
+    resumed: false,
+    reason: "no turn has been submitted",
+  });
+
+  await client.submit("hello");
+  expect(await client.pause?.("user pause")).toEqual({ paused: true });
+  expect(await client.pause?.("user pause")).toEqual({
+    paused: true,
+    reason: "already paused",
+  });
+  expect(await client.resume?.()).toEqual({ resumed: true });
+  expect(await client.resume?.()).toEqual({
+    resumed: false,
+    reason: "the turn is not paused",
+  });
+
+  const unknown = await client.selectAgent?.("no-such-agent");
+  expect(unknown).toEqual({
+    outcome: "rejected",
+    reason: "agent not found: no-such-agent",
+  });
+  expect((await client.selectAgent?.())?.outcome).toBe("applied");
+  await client.dispose?.();
+}, 30_000);
+
+test("selecting an agent during a turn reports the selection as deferred, not applied", async () => {
+  // Changing the agent underneath a running turn would change the rules it
+  // started under, so the runtime defers it. That is a third outcome, and a
+  // consumer that is told "applied" will show the new agent for a turn that is
+  // still running under the old one.
+  const root = await mkdtemp(join(tmpdir(), "natalia-agent-pending-"));
+  let providerReached: (() => void) | undefined;
+  const reached = new Promise<void>((resolve) => {
+    providerReached = resolve;
+  });
+  let releaseProvider: (() => void) | undefined;
+  const held = new Promise<void>((resolve) => {
+    releaseProvider = resolve;
+  });
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_agent_pending",
+    permissionMode: "auto",
+    provider: {
+      provider: "scripted",
+      model: "scripted",
+      async *stream() {
+        providerReached?.();
+        await held;
+        yield { type: "content" as const, text: "done" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  const turn = client.submit("hold the turn open");
+  await reached;
+
+  expect(await client.selectAgent?.()).toMatchObject({ outcome: "pending" });
+
+  releaseProvider?.();
+  await turn;
+  expect((await client.selectAgent?.())?.outcome).toBe("applied");
+  await client.dispose?.();
+}, 30_000);

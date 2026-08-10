@@ -2113,19 +2113,27 @@ export function createRealRuntimeClient(
         publish({ type: "turn.cancelled", id: activeTurnID, reason });
     },
     pause(reason = "user pause") {
-      if (!lastSubmitted || paused) return;
+      // Refusing is a value: a caller that gets `paused: true` when nothing was
+      // paused has been told the turn is held when it is not.
+      if (!lastSubmitted)
+        return { paused: false, reason: "no turn has been submitted" };
+      if (paused) return { paused: true, reason: "already paused" };
       paused = true;
       publish({ type: "turn.paused", id: lastSubmitted.id, reason });
       publish({ type: "status.update", status: "paused", detail: reason });
+      return { paused: true };
     },
     resume() {
-      if (!lastSubmitted || !paused) return;
+      if (!lastSubmitted)
+        return { resumed: false, reason: "no turn has been submitted" };
+      if (!paused) return { resumed: false, reason: "the turn is not paused" };
       paused = false;
       const waiters = pauseWaiters;
       pauseWaiters = [];
       for (const resolveWaiter of waiters) resolveWaiter();
       publish({ type: "turn.resumed", id: lastSubmitted.id });
       publish({ type: "status.update", status: "running", detail: "resumed" });
+      return { resumed: true };
     },
     selectAgent(name) {
       const agent = agentRegistry?.select(name);
@@ -2135,17 +2143,26 @@ export function createRealRuntimeClient(
           level: "error",
           message: `agent not found: ${name}`,
         });
-        return;
+        // A diagnostic is not an answer to the caller: a remote UI used to be
+        // told the agent was selected and then render the wrong one.
+        return { outcome: "rejected", reason: `agent not found: ${name}` };
       }
       if (activeAbort) {
         pendingAgent = agent;
         publish({ type: "agent.selection", name: agent?.name, pending: true });
-        return;
+        // Deferred, not applied: switching agents mid-turn would change the rules
+        // the turn started under.
+        return {
+          outcome: "pending",
+          selected: agent?.name,
+          reason: "a turn is running; the selection applies when it ends",
+        };
       }
       selectedAgent = agent;
       applyAgentPolicy();
       applyAgentProvider();
       publish({ type: "agent.selection", name: agent?.name, pending: false });
+      return { outcome: "applied", selected: agent?.name };
     },
     async agents() {
       await ready;
@@ -2849,10 +2866,10 @@ export function createRealRuntimeClient(
       }));
     },
     respondApproval(response) {
-      interactive.respondApproval(response);
+      return interactive.respondApproval(response);
     },
     respondQuestion(response) {
-      interactive.respondQuestion(response);
+      return interactive.respondQuestion(response);
     },
   };
 

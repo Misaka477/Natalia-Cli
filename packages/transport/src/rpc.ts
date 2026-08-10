@@ -192,24 +192,25 @@ export async function handleRPCMessage(
     }
     if (body.method === "pause") {
       optionsGuard(client, "pause");
-      client.pause(
-        typeof body.params?.reason === "string"
-          ? body.params.reason
-          : undefined,
-      );
+      // The runtime's answer, not an assumption. This route used to reply
+      // `paused: true` even when nothing was running and the runtime had done
+      // nothing at all.
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: { paused: true },
+        result: await client.pause(
+          typeof body.params?.reason === "string"
+            ? body.params.reason
+            : undefined,
+        ),
       };
     }
     if (body.method === "resume") {
       optionsGuard(client, "resume");
-      client.resume();
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: { resumed: true },
+        result: await client.resume(),
       };
     }
     if (body.method === "agent.select") {
@@ -217,11 +218,13 @@ export async function handleRPCMessage(
       const name = body.params?.name;
       if (name !== undefined && typeof name !== "string")
         throw invalidParams("agent.select.params.name must be a string");
-      client.selectAgent(name);
+      // Reports whether the selection applied, was deferred to the end of the
+      // running turn, or was rejected — all three happen, and the old reply
+      // claimed the first one every time.
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: { selected: name ?? null },
+        result: await client.selectAgent(name),
       };
     }
     if (body.method === "agent.list") {
@@ -822,30 +825,30 @@ export async function handleRPCMessage(
       const decision = stringParam(body.params, "decision");
       if (!["once", "session", "reject"].includes(decision))
         throw invalidParams("approval.respond.params.decision is invalid");
-      client.respondApproval({
-        requestID,
-        decision: decision as "once" | "session" | "reject",
-        feedback:
-          typeof body.params?.feedback === "string"
-            ? body.params.feedback
-            : undefined,
-      });
+      // An answer to a request that already timed out is dropped by the runtime,
+      // and an external UI has to be told: it used to get `responded: true`.
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: { responded: true },
+        result: await client.respondApproval({
+          requestID,
+          decision: decision as "once" | "session" | "reject",
+          feedback:
+            typeof body.params?.feedback === "string"
+              ? body.params.feedback
+              : undefined,
+        }),
       };
     }
     if (body.method === "question.respond") {
-      client.respondQuestion({
-        requestID: stringParam(body.params, "requestID"),
-        answers: arrayParam(body.params, "answers"),
-        rejected: Boolean(body.params?.rejected),
-      });
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: { responded: true },
+        result: await client.respondQuestion({
+          requestID: stringParam(body.params, "requestID"),
+          answers: arrayParam(body.params, "answers"),
+          rejected: Boolean(body.params?.rejected),
+        }),
       };
     }
     if (body.method === "interactive.pending") {

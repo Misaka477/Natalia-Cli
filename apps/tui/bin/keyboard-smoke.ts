@@ -331,6 +331,7 @@ function makeBackend(): RuntimeClient {
     },
     selectAgent(name) {
       selectedAgents.push(name);
+      return { outcome: "applied" as const, selected: name };
     },
     async runtimeStatus() {
       statusLoads++;
@@ -434,7 +435,11 @@ function makeBackend(): RuntimeClient {
     },
     diagnostic() {},
     lastSubmission: () => lastSubmission,
-    respondApproval() {},
-    respondQuestion() {},
+    respondApproval() {
+      return { accepted: true };
+    },
+    respondQuestion() {
+      return { accepted: true };
+    },
   };
 }

@@ -23,9 +23,17 @@ export type NataliaSDK = {
     },
   ): Promise<SubmittedTurn>;
   cancel(reason?: string): Promise<void>;
-  pause(reason?: string): Promise<void>;
-  resume(): Promise<void>;
-  selectAgent(name?: string): Promise<void>;
+  /**
+   * These report what the runtime did rather than resolving on the assumption it
+   * worked. Nothing running, already paused, an unknown agent, or a selection
+   * deferred until the current turn ends are all ordinary answers, and a caller
+   * that cannot see them will render the wrong thing.
+   */
+  pause(reason?: string): Promise<import("@natalia/contracts").PauseOutcome>;
+  resume(): Promise<import("@natalia/contracts").ResumeOutcome>;
+  selectAgent(
+    name?: string,
+  ): Promise<import("@natalia/contracts").AgentSelectionOutcome>;
   agents(): Promise<import("@natalia/contracts").RuntimeAgentCatalogEntry[]>;
   modelCatalog(): Promise<
     import("@natalia/contracts").RuntimeModelCatalogEntry[]
@@ -120,8 +128,18 @@ export type NataliaSDK = {
   deleteSession(
     id: string,
   ): Promise<{ id: string; removedAttachments: number }>;
-  respondApproval(response: ApprovalResponse): Promise<void>;
-  respondQuestion(response: QuestionResponse): Promise<void>;
+  /**
+   * Answering a request that already timed out or was answered elsewhere is
+   * dropped by the runtime, and `accepted: false` is how a UI learns that — the
+   * model was told the call did not run, so re-rendering it as approved would be
+   * wrong.
+   */
+  respondApproval(
+    response: ApprovalResponse,
+  ): Promise<import("@natalia/contracts").InteractiveResponseOutcome>;
+  respondQuestion(
+    response: QuestionResponse,
+  ): Promise<import("@natalia/contracts").InteractiveResponseOutcome>;
   pendingInteractive(): Promise<{
     approvals: Array<Extract<RuntimeEvent, { type: "approval.request" }>>;
     questions: Array<Extract<RuntimeEvent, { type: "question.request" }>>;
@@ -263,15 +281,10 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     cancel: async (reason) => {
       await call("cancel", reason ? { reason } : {});
     },
-    pause: async (reason) => {
-      await call("pause", reason ? { reason } : {});
-    },
-    resume: async () => {
-      await call("resume", {});
-    },
-    selectAgent: async (name) => {
-      await call("agent.select", name === undefined ? {} : { name });
-    },
+    pause: async (reason) => await call("pause", reason ? { reason } : {}),
+    resume: async () => await call("resume", {}),
+    selectAgent: async (name) =>
+      await call("agent.select", name === undefined ? {} : { name }),
     agents: async () => await call("agent.list", {}),
     modelCatalog: async () => await call("model.catalog", {}),
     modelSelection: async () => await call("model.selection", {}),
@@ -313,18 +326,16 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         title === undefined ? { id, turnID } : { id, turnID, title },
       ),
     deleteSession: async (id) => await call("session.delete", { id }),
-    respondApproval: async (response) => {
+    respondApproval: async (response) =>
       await call(
         "approval.respond",
         response as unknown as Record<string, unknown>,
-      );
-    },
-    respondQuestion: async (response) => {
+      ),
+    respondQuestion: async (response) =>
       await call(
         "question.respond",
         response as unknown as Record<string, unknown>,
-      );
-    },
+      ),
     pendingInteractive: async () => await call("interactive.pending", {}),
     checkpoint: async () =>
       await call<SubmittedTurn>("prompt", { text: "/checkpoint" }),

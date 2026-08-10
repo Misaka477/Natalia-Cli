@@ -89,8 +89,11 @@ function backend(): RuntimeClient {
         answers: response.answers,
         rejected: response.rejected,
       });
+      return { accepted: true };
     },
-    respondApproval() {},
+    respondApproval() {
+      return { accepted: true };
+    },
     cancel() {},
     snapshot() {
       return { type: "snapshot.created", id: "snapshot", files: [] };

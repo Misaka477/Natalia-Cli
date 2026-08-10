@@ -72,7 +72,11 @@ function backend(): RuntimeClient {
     }),
     diagnostic() {},
     lastSubmission: () => undefined,
-    respondApproval() {},
-    respondQuestion() {},
+    respondApproval() {
+      return { accepted: true };
+    },
+    respondQuestion() {
+      return { accepted: true };
+    },
   };
 }

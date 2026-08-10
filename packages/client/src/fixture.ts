@@ -876,6 +876,10 @@ export function createFakeBackend(): FakeBackend {
             }
           });
       }
+      // The fixture keeps no register of pending requests, so it accepts whatever
+      // it is handed. Saying so is the point: a scripted backend that reported
+      // refusals it cannot detect would be inventing them.
+      return { accepted: true };
     },
     respondQuestion(response: QuestionResponse) {
       publish({
@@ -884,6 +888,7 @@ export function createFakeBackend(): FakeBackend {
         answers: response.answers,
         rejected: response.rejected,
       });
+      return { accepted: true };
     },
   };
 }

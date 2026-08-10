@@ -32,10 +32,15 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
       return event;
     },
     cancel() {},
-    pause() {},
-    resume() {},
+    pause() {
+      return { paused: true };
+    },
+    resume() {
+      return { resumed: true };
+    },
     selectAgent(name) {
       selectedAgents.push(name);
+      return { outcome: "applied" as const, selected: name };
     },
     async agents() {
       return [
@@ -280,9 +285,11 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
     lastSubmission: () => undefined,
     respondApproval(response) {
       approvalResponses.push(response);
+      return { accepted: true };
     },
     respondQuestion(response) {
       questionResponses.push(response);
+      return { accepted: true };
     },
   };
   const server = createRuntimeHttpServer({ client, token: "sdk-token" });

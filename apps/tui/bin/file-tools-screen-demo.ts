@@ -98,8 +98,12 @@ function makeDemoBackend(): RuntimeClient {
       sink?.({ type: "diagnostic", message, level });
     },
     lastSubmission: () => submission,
-    respondApproval() {},
-    respondQuestion() {},
+    respondApproval() {
+      return { accepted: true };
+    },
+    respondQuestion() {
+      return { accepted: true };
+    },
   };
 
   function emitTool(

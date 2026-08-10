@@ -329,11 +329,18 @@ export function createWorkerRuntimeClient(
     cancel(reason) {
       notify("cancel", reason);
     },
-    pause(reason) {
-      notify("pause", reason);
+    // A round trip rather than a notification: these answer whether the runtime
+    // actually paused, and a channel that cannot see the answer would have to
+    // make one up.
+    async pause(reason) {
+      return (await request("pause", reason)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["pause"]>>
+      >;
     },
-    resume() {
-      notify("resume");
+    async resume() {
+      return (await request("resume")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["resume"]>>
+      >;
     },
     snapshot() {
       const id = `snap_worker_${Date.now().toString(36)}`;
@@ -351,11 +358,15 @@ export function createWorkerRuntimeClient(
     lastSubmission() {
       return undefined;
     },
-    respondApproval(response) {
-      notify("approval", response);
+    async respondApproval(response) {
+      return (await request("approval", response)) as Awaited<
+        ReturnType<RuntimeClient["respondApproval"]>
+      >;
     },
-    respondQuestion(response) {
-      notify("question", response);
+    async respondQuestion(response) {
+      return (await request("question", response)) as Awaited<
+        ReturnType<RuntimeClient["respondQuestion"]>
+      >;
     },
   };
 }

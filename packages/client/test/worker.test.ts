@@ -40,8 +40,12 @@ test("worker RuntimeClient transport remains behind contracts boundary", async (
     }),
     diagnostic() {},
     lastSubmission: () => undefined,
-    respondApproval() {},
-    respondQuestion() {},
+    respondApproval() {
+      return { accepted: true };
+    },
+    respondQuestion() {
+      return { accepted: true };
+    },
   };
   attachRuntimeClientWorker(channel.port1, host);
   const client = createWorkerRuntimeClient(channel.port2);
@@ -85,8 +89,12 @@ test("a failing notification is reported instead of crashing the host", async ()
     }),
     diagnostic() {},
     lastSubmission: () => undefined,
-    respondApproval() {},
-    respondQuestion() {},
+    respondApproval() {
+      return { accepted: true };
+    },
+    respondQuestion() {
+      return { accepted: true };
+    },
   };
   attachRuntimeClientWorker(channel.port1, host);
   const client = createWorkerRuntimeClient(channel.port2);
@@ -151,8 +159,12 @@ test("config reload replaces the worker runtime and keeps event forwarding", asy
       }),
       diagnostic() {},
       lastSubmission: () => undefined,
-      respondApproval() {},
-      respondQuestion() {},
+      respondApproval() {
+        return { accepted: true };
+      },
+      respondQuestion() {
+        return { accepted: true };
+      },
     };
   };
   const first = createHost();
@@ -208,8 +220,12 @@ test("config reload preserves a busy runtime instead of cancelling it", async ()
     }),
     diagnostic() {},
     lastSubmission: () => undefined,
-    respondApproval() {},
-    respondQuestion() {},
+    respondApproval() {
+      return { accepted: true };
+    },
+    respondQuestion() {
+      return { accepted: true };
+    },
   } satisfies RuntimeClient;
   attachRuntimeClientWorker(channel.port1, host, { reload: () => host });
   const client = createWorkerRuntimeClient(channel.port2);
@@ -278,5 +294,74 @@ test("config reload applies changed permission profiles to the same worker clien
       description: "Reloaded reviewer",
     }),
   );
+  await client.dispose?.();
+});
+
+test("the worker channel carries the runtime's answer instead of assuming one", async () => {
+  // These were fire-and-forget notifications, so the worker-backed client had no
+  // way to know what happened and would have had to make an outcome up. They are
+  // round trips now: the host already returned the value, nothing was reading it.
+  const channel = new MessageChannel();
+  const host: RuntimeClient = {
+    start() {},
+    async submit(text) {
+      return {
+        type: "turn.submitted",
+        id: "turn_outcome",
+        text,
+        byteLength: text.length,
+        lineCount: 1,
+        sha256: "test",
+      };
+    },
+    cancel() {},
+    pause() {
+      return { paused: false, reason: "no turn has been submitted" };
+    },
+    resume() {
+      return { resumed: false, reason: "the turn is not paused" };
+    },
+    snapshot: () => ({
+      type: "snapshot.created",
+      id: "snapshot_outcome",
+      files: [],
+    }),
+    diagnostic() {},
+    lastSubmission: () => undefined,
+    respondApproval() {
+      return {
+        accepted: false,
+        reason: "the approval request is no longer pending",
+      };
+    },
+    respondQuestion() {
+      return {
+        accepted: false,
+        reason: "the question request is no longer pending",
+      };
+    },
+  };
+  attachRuntimeClientWorker(channel.port1, host);
+  const client = createWorkerRuntimeClient(channel.port2);
+  client.start(() => undefined);
+
+  expect(await client.pause?.()).toEqual({
+    paused: false,
+    reason: "no turn has been submitted",
+  });
+  expect(await client.resume?.()).toMatchObject({ resumed: false });
+  expect(
+    await client.respondApproval({ requestID: "apr_gone", decision: "once" }),
+  ).toEqual({
+    accepted: false,
+    reason: "the approval request is no longer pending",
+  });
+  expect(
+    await client.respondQuestion({
+      requestID: "qst_gone",
+      answers: [["no"]],
+      rejected: false,
+    }),
+  ).toMatchObject({ accepted: false });
   await client.dispose?.();
 });

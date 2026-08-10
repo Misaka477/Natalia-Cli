@@ -23,6 +23,7 @@
  */
 import type {
   ApprovalResponse,
+  InteractiveResponseOutcome,
   QuestionResponse,
   RuntimeEvent,
   SessionID,
@@ -221,14 +222,22 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
    * Answers an approval. Everything is published before the waiter is settled, so
    * a sink that replies synchronously cannot observe a half-resolved request.
    */
-  function respondApproval(response: ApprovalResponse) {
+  function respondApproval(
+    response: ApprovalResponse,
+  ): InteractiveResponseOutcome {
     if (!deps.isPending(response.requestID, "approval")) {
       publish({
         type: "diagnostic",
         level: "warning",
         message: "ignored approval response for a non-pending request",
       });
-      return;
+      // The waiter already knew this; the caller did not. An external UI has to
+      // learn that its answer arrived too late, because "the model was told this
+      // call did not run" is a different fact from "your answer took effect".
+      return {
+        accepted: false,
+        reason: "the approval request is no longer pending",
+      };
     }
     publish({
       type: "approval.response",
@@ -274,16 +283,22 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
     pendingApprovals.set(response.requestID, response);
     pendingApprovalRequests.delete(response.requestID);
     approvalWaiters.get(response.requestID)?.(response);
+    return { accepted: true };
   }
 
-  function respondQuestion(response: QuestionResponse) {
+  function respondQuestion(
+    response: QuestionResponse,
+  ): InteractiveResponseOutcome {
     if (!deps.isPending(response.requestID, "question")) {
       publish({
         type: "diagnostic",
         level: "warning",
         message: "ignored question response for a non-pending request",
       });
-      return;
+      return {
+        accepted: false,
+        reason: "the question request is no longer pending",
+      };
     }
     publish({
       type: "question.response",
@@ -293,6 +308,7 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
     });
     pendingQuestions.set(response.requestID, response);
     questionWaiters.get(response.requestID)?.(response);
+    return { accepted: true };
   }
 
   /**

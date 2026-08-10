@@ -90,15 +90,21 @@ test("native WS RPC transport behind RuntimeClient contract", async () => {
     cancel() {},
     pause(reason) {
       sink?.({ type: "turn.paused", id: "turn_1", reason: reason ?? "test" });
+      return { paused: true };
     },
     resume() {
       sink?.({ type: "turn.resumed", id: "turn_1" });
+      return { resumed: true };
     },
     snapshot: () => ({ type: "snapshot.created", id: "snap_1", files: [] }),
     diagnostic() {},
     lastSubmission: () => undefined,
-    respondApproval() {},
-    respondQuestion() {},
+    respondApproval() {
+      return { accepted: true };
+    },
+    respondQuestion() {
+      return { accepted: true };
+    },
   };
 
   const server = createRuntimeWsServer({ client, token: "secret" });
@@ -255,7 +261,9 @@ test("native WS RPC transport behind RuntimeClient contract", async () => {
   expect(approvalResp).toMatchObject({
     jsonrpc: "2.0",
     id: 7,
-    result: { responded: true },
+    // The runtime's own answer: an answer to a request that is no longer
+    // pending comes back `accepted: false` instead of a blanket acknowledgement.
+    result: { accepted: true },
   });
 
   // --- question.respond RPC ---
@@ -276,7 +284,9 @@ test("native WS RPC transport behind RuntimeClient contract", async () => {
   expect(questionResp).toMatchObject({
     jsonrpc: "2.0",
     id: 8,
-    result: { responded: true },
+    // The runtime's own answer: an answer to a request that is no longer
+    // pending comes back `accepted: false` instead of a blanket acknowledgement.
+    result: { accepted: true },
   });
 
   ws.close();
@@ -293,8 +303,12 @@ test("WS unauthorized upgrade rejected", async () => {
     snapshot: () => ({ type: "snapshot.created", id: "x", files: [] }),
     diagnostic() {},
     lastSubmission: () => undefined,
-    respondApproval() {},
-    respondQuestion() {},
+    respondApproval() {
+      return { accepted: true };
+    },
+    respondQuestion() {
+      return { accepted: true };
+    },
   };
 
   const server = createRuntimeWsServer({ client, token: "secret" });
@@ -316,8 +330,12 @@ test("WS /healthz returns ok", async () => {
     snapshot: () => ({ type: "snapshot.created", id: "x", files: [] }),
     diagnostic() {},
     lastSubmission: () => undefined,
-    respondApproval() {},
-    respondQuestion() {},
+    respondApproval() {
+      return { accepted: true };
+    },
+    respondQuestion() {
+      return { accepted: true };
+    },
   };
 
   const server = createRuntimeWsServer({ client, token: "secret" });

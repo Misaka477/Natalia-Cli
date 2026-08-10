@@ -378,6 +378,38 @@ test("a consumer can tell the kinds of failure apart without reading messages", 
   });
 }, 60_000);
 
+test("a consumer is told when its answer or its turn control did not take effect", async () => {
+  await withRuntime(async ({ baseURL }) => {
+    const sdk = createNataliaSDK({ baseURL, token: "secret" });
+
+    // An external UI answering approvals is the first integration scenario there
+    // is, and it has to distinguish "your answer took effect" from "that request
+    // had already timed out and the model was told the call did not run". Both
+    // used to arrive as `responded: true`.
+    expect(
+      await sdk.respondApproval({ requestID: "apr_gone", decision: "once" }),
+    ).toEqual({
+      accepted: false,
+      reason: "the approval request is no longer pending",
+    });
+    expect(
+      await sdk.respondQuestion({
+        requestID: "qst_gone",
+        answers: [["no"]],
+        rejected: false,
+      }),
+    ).toMatchObject({ accepted: false });
+
+    // Same shape for turn control and agent selection: refusing is a value, so a
+    // consumer never has to infer it from the absence of an exception.
+    expect(await sdk.pause()).toMatchObject({ paused: false });
+    expect(await sdk.resume()).toMatchObject({ resumed: false });
+    expect(await sdk.selectAgent("no-such-agent")).toMatchObject({
+      outcome: "rejected",
+    });
+  });
+}, 60_000);
+
 test("a runtime implementing only the required set still answers, and says which capability is missing", async () => {
   // The other half of "not supported": the route exists, the member does not. A
   // consumer must be able to switch off a whole feature area from one failure
@@ -415,8 +447,12 @@ test("a runtime implementing only the required set still answers, and says which
     lastSubmission() {
       return undefined;
     },
-    respondApproval() {},
-    respondQuestion() {},
+    respondApproval() {
+      return { accepted: true };
+    },
+    respondQuestion() {
+      return { accepted: true };
+    },
     async sessionList() {
       // What a real runtime failure looks like: an fs error whose text carries an
       // absolute path nobody meant to publish.

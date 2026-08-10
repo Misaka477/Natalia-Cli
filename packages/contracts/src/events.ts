@@ -1212,6 +1212,40 @@ export function runtimeEventDurability(
   }
 }
 
+/**
+ * Outcomes of operations that can decline for an ordinary reason.
+ *
+ * `Promise<void>` and `void` cannot say "I did not do that, and here is why", so
+ * a caller was left inferring success from the absence of an exception — and over
+ * RPC, from a hard-coded `{ok: true}`. Which members must answer this way is
+ * recorded per member in `refusals.ts`.
+ */
+export type PauseOutcome = { paused: boolean; reason?: string };
+export type ResumeOutcome = { resumed: boolean; reason?: string };
+
+export type AgentSelectionOutcome = {
+  /**
+   * `pending` means a turn is running and the selection applies when it ends:
+   * changing the agent underneath a running turn would change the rules it
+   * started under.
+   */
+  outcome: "applied" | "pending" | "rejected";
+  selected?: string;
+  reason?: string;
+};
+
+/**
+ * These outcomes may arrive synchronously or over a hop: the in-process runtime
+ * answers immediately, while the worker channel has to ask the runtime thread.
+ * A channel that cannot see the outcome must not invent one, so the type admits
+ * a promise rather than forcing a guess.
+ */
+export type InteractiveResponseOutcome = {
+  /** False when the request was no longer pending, with the reason. */
+  accepted: boolean;
+  reason?: string;
+};
+
 export type RuntimeClient = {
   start(
     onEvent: (event: RuntimeEvent) => void,
@@ -1243,9 +1277,23 @@ export type RuntimeClient = {
    */
   reloadConfig?(): Promise<{ applied: boolean; reason?: string }>;
   cancel(reason?: string): void;
-  pause?(reason?: string): void;
-  resume?(): void;
-  selectAgent?(name?: string): void;
+  /**
+   * Pauses the running turn. Refusal is a value: there may be nothing running, or
+   * it may already be paused, and both are ordinary answers. Returning nothing
+   * made the RPC reply claim `paused: true` in every case, including when the
+   * runtime had done nothing at all.
+   */
+  pause?(reason?: string): PauseOutcome | Promise<PauseOutcome>;
+  /** Resumes a paused turn. Refusal is a value, as with `pause`. */
+  resume?(): ResumeOutcome | Promise<ResumeOutcome>;
+  /**
+   * Selects the agent for subsequent turns. Three outcomes are real and were all
+   * invisible to a caller: applied now, deferred until the running turn ends, or
+   * rejected because no such agent exists.
+   */
+  selectAgent?(
+    name?: string,
+  ): AgentSelectionOutcome | Promise<AgentSelectionOutcome>;
   agents?(): Promise<RuntimeAgentCatalogEntry[]>;
   modelCatalog?(): Promise<RuntimeModelCatalogEntry[]>;
   modelSelection?(): Promise<RuntimeModelSelection>;
@@ -1475,8 +1523,20 @@ export type RuntimeClient = {
   snapshot(): RuntimeEvent;
   diagnostic(message: string, level?: "info" | "warning" | "error"): void;
   lastSubmission(): SubmittedTurn | undefined;
-  respondApproval(response: ApprovalResponse): void;
-  respondQuestion(response: QuestionResponse): void;
+  /**
+   * Answers a pending approval. Refusal is a value: a request that timed out or
+   * was already answered is dropped, which an external UI has to know about —
+   * "the model was told this call did not run" and "your answer arrived" are
+   * different facts. This used to return nothing and the RPC reply said
+   * `responded: true` either way.
+   */
+  respondApproval(
+    response: ApprovalResponse,
+  ): InteractiveResponseOutcome | Promise<InteractiveResponseOutcome>;
+  /** Answers a pending question. Refusal is a value, as with `respondApproval`. */
+  respondQuestion(
+    response: QuestionResponse,
+  ): InteractiveResponseOutcome | Promise<InteractiveResponseOutcome>;
   constitutionRules?(): Promise<
     Array<{
       ruleID: string;
