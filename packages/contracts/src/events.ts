@@ -1012,45 +1012,6 @@ export type TerminalScreenSnapshot = {
   }>;
 };
 
-export type TerminalScreenPatch = {
-  baseRevision: number;
-  revision: number;
-  rows: number;
-  cols: number;
-  buffer: "normal" | "alternate";
-  cursor: TerminalScreenSnapshot["cursor"];
-  modes?: TerminalScreenSnapshot["modes"];
-  changes: Array<[row: number, start: number, cells: TerminalCell[]]>;
-};
-export type TerminalScreenUpdate =
-  | { kind: "full"; revision: number; screen: TerminalScreenSnapshot }
-  | { kind: "patch"; patch: TerminalScreenPatch };
-export type TerminalScreenDelivery = {
-  mode: "full" | "patch";
-  reason:
-    | "differential"
-    | "missing_base"
-    | "incompatible_frame"
-    | "patch_not_smaller";
-  payloadBytes: number;
-  fullBytes: number;
-};
-export type TerminalScrollbackPage = {
-  offsetFromBottom: number;
-  start: number;
-  end: number;
-  totalLines: number;
-  lines: TerminalCell[][];
-  text: string;
-  cursorRow: number;
-  cursorCol: number;
-  highlightRanges?: Array<{
-    startRow: number;
-    startCol: number;
-    endRow: number;
-    endCol: number;
-  }>;
-};
 export type TerminalViewer = {
   id: string;
   kind: "external" | "embedded";

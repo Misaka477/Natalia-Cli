@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@natalia/contracts": "workspace:*",
-    "@natalia/terminal": "workspace:*",
     "@natalia/native-terminal": "workspace:*",
     "@natalia/platform": "workspace:*",
     "@natalia/sandbox": "workspace:*",
