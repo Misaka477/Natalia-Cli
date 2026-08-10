@@ -145,7 +145,13 @@ export const RUNTIME_CAPABILITY_GROUPS = {
   /** What has been loaded into this runtime. */
   extensions: ["plugins", "commandCatalog", "capabilities"],
   /** Durable task and flow documents. */
-  automation: ["taskOverview", "flowOverview", "documentCatalog"],
+  automation: [
+    "taskOverview",
+    "flowOverview",
+    "documentCatalog",
+    "saveFlowDocument",
+    "deleteFlowDocument",
+  ],
   /** Runtime health and its own diagnostics. */
   observability: ["runtimeStatus", "diagnostics", "sessionSnapshot"],
   /** The Work Graph: what happened and what caused it. */

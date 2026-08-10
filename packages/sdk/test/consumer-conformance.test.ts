@@ -881,3 +881,85 @@ test("an external orchestrator drives a turn and reads the work graph", async ()
     expect(Array.isArray(overview.unreadable)).toBe(true);
   });
 }, 60_000);
+
+test("an external orchestrator writes flow documents, idempotently", async () => {
+  // P0-G: the write surface, previously CLI-only. The orchestrator creates a
+  // flow document, sees the result say "created", replays the same request
+  // (network retry) and gets "updated" — no second document, no double side
+  // effect. Delete is idempotent the same way: deleting what is already gone
+  // answers alreadyDeleted instead of failing. Path policy refuses like the
+  // workspace surface.
+  await withRuntime(async ({ baseURL }) => {
+    const sdk = createNataliaSDK({ baseURL, token: "secret" });
+    const document = {
+      kind: "natalia-flow" as const,
+      version: 1,
+      flowID: "flow_remote_1",
+      displayName: "Remote flow",
+      directRun: { permissionProfile: "auto" },
+      modules: [
+        {
+          id: "m1",
+          type: "report_output" as const,
+          displayName: "Instructions",
+          instructions: "do the thing",
+        },
+      ],
+    };
+
+    const created = await sdk.saveFlowDocument({
+      path: "remote.yaml",
+      document,
+    });
+    expect(created).toEqual({
+      path: "remote.yaml",
+      flowID: "flow_remote_1",
+      created: true,
+      updated: false,
+    });
+
+    // Replay of the same request: the retry of a dropped network call. No
+    // second side effect — the document exists once, the outcome says updated.
+    const replayed = await sdk.saveFlowDocument({
+      path: "remote.yaml",
+      document,
+    });
+    expect(replayed.created).toBe(false);
+    expect(replayed.updated).toBe(true);
+
+    // The read surface answers by shape. This environment has no real
+    // provider, and the catalog only lists flows that can be run (its
+    // manual-run check requires an available default model), so the flow is
+    // honestly absent here; the write itself is proven by the created ->
+    // updated transition above, which cannot happen without the document
+    // being on disk.
+    const catalog = await sdk.documentCatalog();
+    expect(Array.isArray(catalog)).toBe(true);
+    for (const entry of catalog) {
+      expect(typeof entry.id).toBe("string");
+      expect(typeof entry.path).toBe("string");
+    }
+
+    // A path outside the flow editor is refused with a reason, like the
+    // workspace surface.
+    const refused = await sdk
+      .saveFlowDocument({ path: "../../escape.yaml", document })
+      .catch((error: unknown) => error);
+    expect(failureKind(refused)).toBe("refused");
+
+    const deleted = await sdk.deleteFlowDocument({ path: "remote.yaml" });
+    expect(deleted).toEqual({
+      path: "remote.yaml",
+      deleted: true,
+      alreadyDeleted: false,
+    });
+
+    // Idempotent delete: the retry of the same request.
+    const deletedAgain = await sdk.deleteFlowDocument({ path: "remote.yaml" });
+    expect(deletedAgain).toEqual({
+      path: "remote.yaml",
+      deleted: false,
+      alreadyDeleted: true,
+    });
+  });
+}, 60_000);

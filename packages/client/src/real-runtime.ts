@@ -121,6 +121,11 @@ import {
   NataliaTaskStateStore,
   type NataliaFlowModuleType,
 } from "@natalia/workflow";
+import { NataliaDocumentStore } from "@natalia/workflow";
+import {
+  deleteFlowDocument as deleteFlowDocumentFile,
+  saveFlowDocument as saveFlowDocumentFile,
+} from "./flow-document";
 import { registerBuiltinCapabilities } from "./capabilities/builtin-capabilities";
 import { registerTaskModuleCapability } from "./capabilities/task-module-capability";
 import type { TaskModuleContext } from "./capabilities/task-module-tools";
@@ -2223,6 +2228,49 @@ export function createRealRuntimeClient(
     },
     async documentCatalog() {
       return await workflowDocumentCatalog(workspaceRoot, tsRuntimeConfig);
+    },
+    async saveFlowDocument(input) {
+      // P0-G: the flow write surface, previously CLI-only. Idempotent by
+      // path: replaying the same request reproduces the same outcome. The
+      // path is validated (and refused) by flowPath inside saveFlowDocument.
+      const documents = new NataliaDocumentStore(workspaceRoot);
+      const resolved = input.path ?? `${input.document.flowID}.yaml`;
+      let existed = false;
+      try {
+        await documents.loadFlow(`.natalia/flows/${resolved}`);
+        existed = true;
+      } catch {
+        existed = false;
+      }
+      await saveFlowDocumentFile({
+        workspaceRoot,
+        path: input.path,
+        document: input.document,
+      });
+      return {
+        // The editor-relative name, not the resolved absolute path: the
+        // caller named this path and should get it back as named.
+        path: resolved,
+        flowID: input.document.flowID,
+        created: !existed,
+        updated: existed,
+      };
+    },
+    async deleteFlowDocument(input) {
+      // Idempotent delete: a document that is already gone answers
+      // `alreadyDeleted: true` instead of failing; a flow still referenced
+      // by task documents is refused with the referencing tasks.
+      let existed = true;
+      try {
+        const documents = new NataliaDocumentStore(workspaceRoot);
+        await documents.loadFlow(`.natalia/flows/${input.path}`);
+      } catch {
+        existed = false;
+      }
+      if (!existed)
+        return { path: input.path, deleted: false, alreadyDeleted: true };
+      await deleteFlowDocumentFile({ workspaceRoot, path: input.path });
+      return { path: input.path, deleted: true, alreadyDeleted: false };
     },
     async modelCatalog() {
       return await clientModelCatalog();

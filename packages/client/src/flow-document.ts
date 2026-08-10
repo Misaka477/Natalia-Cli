@@ -1,3 +1,4 @@
+import { RuntimeRefusal } from "@natalia/contracts";
 import type {
   ConfigV2,
   NataliaFlowDocument,
@@ -17,7 +18,7 @@ function flowPath(path: string) {
     path.includes("/") ||
     path.includes("\\")
   )
-    throw new Error(
+    throw new RuntimeRefusal(
       "flow editor paths must stay under .natalia/flows as a relative file name without a .natalia prefix",
     );
   return path;

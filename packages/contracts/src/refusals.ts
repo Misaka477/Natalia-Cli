@@ -248,6 +248,14 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
   taskOverview: { refusal: "none", note: "pure read; problems are per entry" },
   flowOverview: { refusal: "none", note: "pure read; problems are per entry" },
   documentCatalog: { refusal: "none", note: "pure read" },
+  saveFlowDocument: {
+    refusal: "error",
+    note: "a path outside .natalia/flows is refused, like workspace paths",
+  },
+  deleteFlowDocument: {
+    refusal: "error",
+    note: "a flow still referenced by tasks is refused with the referencing tasks; already-deleted is a value",
+  },
 
   // --- observability ---
   runtimeStatus: { refusal: "none", note: "pure read" },

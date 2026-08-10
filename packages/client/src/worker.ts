@@ -22,6 +22,8 @@ export const WORKER_ROUTE_MEMBERS = {
   resume: "resume",
   "runtime.status": "runtimeStatus",
   "runtime.availability": null,
+  "flow.save": "saveFlowDocument",
+  "flow.delete": "deleteFlowDocument",
   snapshot: "snapshot",
   diagnostic: "diagnostic",
   approval: "respondApproval",
@@ -114,7 +116,9 @@ type WorkerRequest = {
     | "session.pin"
     | "session.duplicate"
     | "session.delete"
-    | "runtime.availability";
+    | "runtime.availability"
+    | "flow.save"
+    | "flow.delete";
   value?: unknown;
 };
 
@@ -605,5 +609,14 @@ export async function handleWorkerRequest(
       name: "worker",
       routedMembers: WORKER_ROUTED_MEMBERS,
     });
+  if (request.method === "flow.save")
+    return await client.saveFlowDocument?.(
+      request.value as {
+        path?: string;
+        document: import("@natalia/contracts").NataliaFlowDocumentInput;
+      },
+    );
+  if (request.method === "flow.delete")
+    return await client.deleteFlowDocument?.(request.value as { path: string });
   throw new Error(`worker channel does not route ${request.method}`);
 }

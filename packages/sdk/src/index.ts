@@ -249,6 +249,22 @@ export type NataliaSDK = {
   submitInput(
     input: import("@natalia/contracts").SubmitInput,
   ): Promise<import("@natalia/contracts").SubmittedTurn>;
+  /** Creates or updates a flow document. Idempotent by path. */
+  saveFlowDocument(input: {
+    path?: string;
+    document: import("@natalia/contracts").NataliaFlowDocumentInput;
+  }): Promise<{
+    path: string;
+    flowID: string;
+    created: boolean;
+    updated: boolean;
+  }>;
+  /** Deletes a flow document. Idempotent: already-gone answers true. */
+  deleteFlowDocument(input: { path: string }): Promise<{
+    path: string;
+    deleted: boolean;
+    alreadyDeleted: boolean;
+  }>;
   taskOverview(): Promise<import("@natalia/contracts").ScheduledTaskOverview>;
   flowOverview(): Promise<import("@natalia/contracts").FlowOverview>;
   documentCatalog(): Promise<
@@ -459,6 +475,8 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     capabilities: async () => await call("capabilities", {}),
     sessionSnapshot: async () => await call("session.snapshot", {}),
     submitInput: async (input) => await call("submit.input", input),
+    saveFlowDocument: async (input) => await call("flow.save", input),
+    deleteFlowDocument: async (input) => await call("flow.delete", input),
     taskOverview: async () => await call("task.overview", {}),
     flowOverview: async () => await call("flow.overview", {}),
     documentCatalog: async () => await call("document.catalog", {}),

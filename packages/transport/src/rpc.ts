@@ -179,6 +179,9 @@ export const RPC_ROUTE_MEMBERS = {
   capabilities: "capabilities",
   "session.snapshot": "sessionSnapshot",
   "submit.input": "submitInput",
+  // P0-G: the flow write surface, previously CLI-only.
+  "flow.save": "saveFlowDocument",
+  "flow.delete": "deleteFlowDocument",
 } as const satisfies Readonly<Record<string, keyof RuntimeClient | null>>;
 
 /**
@@ -245,6 +248,8 @@ export const RPC_WRITE_METHODS: ReadonlySet<string> = new Set([
   "nativeTerminal.beginSecureInput",
   "nativeTerminal.endSecureInput",
   "nativeTerminal.openHub",
+  "flow.save",
+  "flow.delete",
 ]);
 
 /**
@@ -1154,6 +1159,35 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.sessionSnapshot(),
+      };
+    }
+    // --- P0-G: flow document writes (previously CLI-only) ---
+    if (body.method === "flow.save") {
+      const params = body.params;
+      if (!params || typeof params !== "object")
+        throw invalidParams("flow.save.params must be an object");
+      const document = (params as { document?: unknown }).document;
+      if (!document || typeof document !== "object")
+        throw invalidParams("flow.save.params.document must be an object");
+      const path =
+        typeof (params as { path?: unknown }).path === "string"
+          ? (params as { path: string }).path
+          : undefined;
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.saveFlowDocument?.({
+          path,
+          document: document as never,
+        }),
+      };
+    }
+    if (body.method === "flow.delete") {
+      const path = stringParam(body.params, "path");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.deleteFlowDocument?.({ path }),
       };
     }
     // --- P0-C: submission with attachments, resources and agent mentions ---

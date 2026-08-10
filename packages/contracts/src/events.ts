@@ -1365,6 +1365,31 @@ export type RuntimeClient = {
   taskOverview?(): Promise<import("./schemas").ScheduledTaskOverview>;
   flowOverview?(): Promise<import("./schemas").FlowOverview>;
   documentCatalog?(): Promise<import("./schemas").WorkflowDocumentChoice[]>;
+  /**
+   * Creates or updates a flow document. Refusal is a value: a path outside
+   * `.natalia/flows` is refused, and the result says whether the document was
+   * created or updated. Idempotent by path: replaying the same request with
+   * the same document produces the same outcome, not a second side effect.
+   */
+  saveFlowDocument?(input: {
+    path?: string;
+    document: import("./schemas").NataliaFlowDocumentInput;
+  }): Promise<{
+    path: string;
+    flowID: string;
+    created: boolean;
+    updated: boolean;
+  }>;
+  /**
+   * Deletes a flow document. Idempotent: deleting what is already gone
+   * answers `alreadyDeleted: true` instead of failing. A flow still
+   * referenced by task documents is refused with the referencing tasks.
+   */
+  deleteFlowDocument?(input: { path: string }): Promise<{
+    path: string;
+    deleted: boolean;
+    alreadyDeleted: boolean;
+  }>;
   runtimeStatus?(): Promise<RuntimeStatusSnapshot>;
   diagnostics?(limit?: number): Promise<RuntimeDiagnostic[]>;
   snapshot(): RuntimeEvent;
