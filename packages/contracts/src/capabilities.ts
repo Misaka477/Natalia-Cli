@@ -1,7 +1,7 @@
 /**
  * What a runtime is required to do, and how a consumer finds out what else it can.
  *
- * `RuntimeClient` has 95 members and only eight of them are required, so on its own
+ * `RuntimeClient` has 87 members and only eight of them are required, so on its own
  * the type says almost nothing: an implementer cannot tell what the minimum is, and
  * a consumer has to feature-detect nearly every call. Worse, `optional` cannot
  * express *why* something is absent — "this runtime does not do terminals" and
