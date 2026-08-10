@@ -1,10 +1,16 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { isAbsolute, dirname, join, resolve } from "node:path";
+import { RuntimeRefusal } from "@natalia/contracts";
 import {
   runtimeEventDurability,
   runtimeSlashCommands,
 } from "@natalia/contracts";
+import {
+  assertConfigApplied,
+  assertTaskReferences,
+  taskPermissionPreview,
+} from "./task-controller";
 import {
   findWorkspaceFiles,
   globWorkspaceFiles,
@@ -2261,6 +2267,53 @@ export function createRealRuntimeClient(
         flowID: input.document.flowID,
         created: !existed,
         updated: existed,
+      };
+    },
+    async taskPermissionPreview(input) {
+      // Validation problems are a value, not an exception: an orchestrator
+      // validates a task document before delivering it, and decides on the
+      // result. Only the path policy throws (refused, like workspace paths).
+      const config = assertConfigApplied(
+        await resolveConfig({ workspaceRoot }),
+      );
+      const path = input.path;
+      if (
+        !path ||
+        path.startsWith("/") ||
+        path.includes("..") ||
+        path.includes("\\")
+      )
+        throw new RuntimeRefusal(
+          "task document path must stay under .natalia/tasks as a relative file name",
+        );
+      const documents = new NataliaDocumentStore(workspaceRoot);
+      const task = await documents.loadTaskDocument(path);
+      const flow = await documents.resolveTaskFlow(task);
+      const problems: string[] = [];
+      try {
+        assertTaskReferences({ task, config });
+      } catch (error) {
+        problems.push(error instanceof Error ? error.message : String(error));
+      }
+      const permissions = taskPermissionPreview({ task, flow, config });
+      for (const entry of permissions.blocked)
+        problems.push(`${entry.moduleID}: ${entry.reason}`);
+      const conditionless = flow.modules
+        .filter((module) => module.enabled && !module.minimumConditions.length)
+        .map((module) => module.id);
+      for (const moduleID of conditionless)
+        problems.push(`${moduleID}: stage has no minimum completion condition`);
+      return {
+        taskID: task.taskID,
+        displayName: task.displayName,
+        permissionProfile: task.permissionProfile,
+        flowID: flow.flowID,
+        flowDisplayName: flow.displayName,
+        enabledModules: flow.modules.filter((module) => module.enabled).length,
+        blocked: permissions.blocked,
+        conditionlessModules: conditionless,
+        problems,
+        valid: problems.length === 0,
       };
     },
     async deleteFlowDocument(input) {

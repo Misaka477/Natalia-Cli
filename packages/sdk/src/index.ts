@@ -265,6 +265,22 @@ export type NataliaSDK = {
     deleted: boolean;
     alreadyDeleted: boolean;
   }>;
+  /**
+   * Validates a task document and previews its permissions before delivery.
+   * Problems are a value, not an exception.
+   */
+  taskPermissionPreview(input: { path: string }): Promise<{
+    taskID: string;
+    displayName: string;
+    permissionProfile: string;
+    flowID: string;
+    flowDisplayName: string;
+    enabledModules: number;
+    blocked: Array<{ moduleID: string; reason: string }>;
+    conditionlessModules: string[];
+    problems: string[];
+    valid: boolean;
+  }>;
   taskOverview(): Promise<import("@natalia/contracts").ScheduledTaskOverview>;
   flowOverview(): Promise<import("@natalia/contracts").FlowOverview>;
   documentCatalog(): Promise<
@@ -477,6 +493,7 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     submitInput: async (input) => await call("submit.input", input),
     saveFlowDocument: async (input) => await call("flow.save", input),
     deleteFlowDocument: async (input) => await call("flow.delete", input),
+    taskPermissionPreview: async (input) => await call("task.preview", input),
     taskOverview: async () => await call("task.overview", {}),
     flowOverview: async () => await call("flow.overview", {}),
     documentCatalog: async () => await call("document.catalog", {}),

@@ -1390,6 +1390,24 @@ export type RuntimeClient = {
     deleted: boolean;
     alreadyDeleted: boolean;
   }>;
+  /**
+   * Validates a task document and previews its permissions before it is ever
+   * delivered to a runtime. Problems are a value, not an exception: an
+   * orchestrator validates first and decides, instead of catching. The path
+   * must stay under `.natalia/tasks`.
+   */
+  taskPermissionPreview?(input: { path: string }): Promise<{
+    taskID: string;
+    displayName: string;
+    permissionProfile: string;
+    flowID: string;
+    flowDisplayName: string;
+    enabledModules: number;
+    blocked: Array<{ moduleID: string; reason: string }>;
+    conditionlessModules: string[];
+    problems: string[];
+    valid: boolean;
+  }>;
   runtimeStatus?(): Promise<RuntimeStatusSnapshot>;
   diagnostics?(limit?: number): Promise<RuntimeDiagnostic[]>;
   snapshot(): RuntimeEvent;

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { failureKind } from "@natalia/contracts";
@@ -961,5 +961,111 @@ test("an external orchestrator writes flow documents, idempotently", async () =>
       deleted: false,
       alreadyDeleted: true,
     });
+  });
+}, 60_000);
+
+test("an external orchestrator validates a task document before delivering it", async () => {
+  // P0-G follow-up: task document validation was CLI-only, so an orchestrator
+  // could deliver a broken task and find out at 02:00. Validation problems
+  // are a value, not an exception: the orchestrator validates, reads the
+  // result, and decides.
+  await withRuntime(async ({ baseURL, root }) => {
+    const sdk = createNataliaSDK({ baseURL, token: "secret" });
+
+    // A well-formed task: its flow has a minimum condition, its profile and
+    // references exist in the default config. Fixtures are written to the
+    // workspace like any other test data; the API under test is the preview.
+    await mkdir(join(root, ".natalia", "flows"), { recursive: true });
+    await mkdir(join(root, ".natalia", "tasks"), { recursive: true });
+    await writeFile(
+      join(root, ".natalia", "flows", "validated.yaml"),
+      [
+        "kind: natalia-flow",
+        "version: 1",
+        "flowID: flow_validate_1",
+        "displayName: Validated flow",
+        "modules:",
+        "  - id: m1",
+        "    type: read_search",
+        "    displayName: Survey",
+        "    minimumConditions:",
+        "      - id: done",
+        "        text: the survey was completed",
+      ].join("\n"),
+    );
+    await writeFile(
+      join(root, ".natalia", "tasks", "validated-task.yaml"),
+      [
+        "kind: natalia-task",
+        "version: 1",
+        "taskID: task_validate_1",
+        "displayName: Validated task",
+        "schedule: manual",
+        "prompt: run",
+        "permissionProfile: auto",
+        "flow:",
+        "  flowID: flow_validate_1",
+        "retry: none",
+        "alerts: []",
+      ].join("\n"),
+    );
+
+    const valid = await sdk.taskPermissionPreview({
+      path: "validated-task.yaml",
+    });
+    expect(valid.valid).toBe(true);
+    expect(valid.taskID).toBe("task_validate_1");
+    expect(valid.flowID).toBe("flow_validate_1");
+    expect(valid.problems).toEqual([]);
+    expect(valid.enabledModules).toBe(1);
+
+    // A broken task: no minimum condition anywhere in its flow. The result
+    // says invalid with the reason; the orchestrator never delivers it.
+    await writeFile(
+      join(root, ".natalia", "flows", "conditionless.yaml"),
+      [
+        "kind: natalia-flow",
+        "version: 1",
+        "flowID: flow_validate_2",
+        "displayName: Conditionless flow",
+        "modules:",
+        "  - id: m1",
+        "    type: read_search",
+        "    displayName: Survey",
+      ].join("\n"),
+    );
+    await writeFile(
+      join(root, ".natalia", "tasks", "conditionless-task.yaml"),
+      [
+        "kind: natalia-task",
+        "version: 1",
+        "taskID: task_validate_3",
+        "displayName: Conditionless task",
+        "schedule: manual",
+        "prompt: run",
+        "permissionProfile: auto",
+        "flow:",
+        "  flowID: flow_validate_2",
+        "retry: none",
+        "alerts: []",
+      ].join("\n"),
+    );
+
+    const invalid = await sdk.taskPermissionPreview({
+      path: "conditionless-task.yaml",
+    });
+    expect(invalid.valid).toBe(false);
+    expect(invalid.conditionlessModules).toContain("m1");
+    expect(
+      invalid.problems.some((problem) =>
+        problem.includes("no minimum completion condition"),
+      ),
+    ).toBe(true);
+
+    // A path outside the task directory is refused, like workspace paths.
+    const refused = await sdk
+      .taskPermissionPreview({ path: "../../escape.yaml" })
+      .catch((error: unknown) => error);
+    expect(failureKind(refused)).toBe("refused");
   });
 }, 60_000);

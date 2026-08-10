@@ -24,6 +24,7 @@ export const WORKER_ROUTE_MEMBERS = {
   "runtime.availability": null,
   "flow.save": "saveFlowDocument",
   "flow.delete": "deleteFlowDocument",
+  "task.preview": "taskPermissionPreview",
   snapshot: "snapshot",
   diagnostic: "diagnostic",
   approval: "respondApproval",
@@ -124,7 +125,8 @@ type WorkerRequest = {
     | "session.delete"
     | "runtime.availability"
     | "flow.save"
-    | "flow.delete";
+    | "flow.delete"
+    | "task.preview";
   value?: unknown;
 };
 
@@ -308,6 +310,21 @@ export function createWorkerRuntimeClient(
     async readMcpResource(server, uri) {
       return (await request("mcp.resource", { server, uri })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["readMcpResource"]>>
+      >;
+    },
+    async saveFlowDocument(input) {
+      return (await request("flow.save", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["saveFlowDocument"]>>
+      >;
+    },
+    async deleteFlowDocument(input) {
+      return (await request("flow.delete", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["deleteFlowDocument"]>>
+      >;
+    },
+    async taskPermissionPreview(input) {
+      return (await request("task.preview", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["taskPermissionPreview"]>>
       >;
     },
 
@@ -653,5 +670,9 @@ export async function handleWorkerRequest(
     );
   if (request.method === "flow.delete")
     return await client.deleteFlowDocument?.(request.value as { path: string });
+  if (request.method === "task.preview")
+    return await client.taskPermissionPreview?.(
+      request.value as { path: string },
+    );
   throw new Error(`worker channel does not route ${request.method}`);
 }

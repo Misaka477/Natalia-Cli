@@ -151,6 +151,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "documentCatalog",
     "saveFlowDocument",
     "deleteFlowDocument",
+    "taskPermissionPreview",
   ],
   /** Runtime health and its own diagnostics. */
   observability: ["runtimeStatus", "diagnostics", "sessionSnapshot"],

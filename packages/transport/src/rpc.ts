@@ -182,6 +182,7 @@ export const RPC_ROUTE_MEMBERS = {
   // P0-G: the flow write surface, previously CLI-only.
   "flow.save": "saveFlowDocument",
   "flow.delete": "deleteFlowDocument",
+  "task.preview": "taskPermissionPreview",
 } as const satisfies Readonly<Record<string, keyof RuntimeClient | null>>;
 
 /**
@@ -1159,6 +1160,15 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.sessionSnapshot(),
+      };
+    }
+    // --- P0-G follow-up: task document validation (previously CLI-only) ---
+    if (body.method === "task.preview") {
+      const path = stringParam(body.params, "path");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.taskPermissionPreview?.({ path }),
       };
     }
     // --- P0-G: flow document writes (previously CLI-only) ---

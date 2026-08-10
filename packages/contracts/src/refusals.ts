@@ -256,6 +256,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "error",
     note: "a flow still referenced by tasks is refused with the referencing tasks; already-deleted is a value",
   },
+  taskPermissionPreview: {
+    refusal: "error",
+    note: "a path outside .natalia/tasks is refused; validation problems are a value in the result",
+  },
 
   // --- observability ---
   runtimeStatus: { refusal: "none", note: "pure read" },
