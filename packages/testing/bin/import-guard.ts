@@ -199,6 +199,42 @@ for (const dir of productionRoots)
     }
   });
 
+/**
+ * Every package that has tests must have them in the gate.
+ *
+ * A test directory missing from the root `test` script is worse than having no
+ * tests: the tests exist, they are maintained, they look like coverage in review,
+ * and nothing runs them. This has happened three times — twice with new packages,
+ * once with `packages/contracts`, whose tests had never run — so the rule is
+ * enforced here instead of being written down again.
+ *
+ * The check is on the workspace's own script text rather than on a list kept here,
+ * because a list kept here is the same kind of thing that went stale.
+ */
+const testScript = JSON.parse(
+  await readFile(join(root, "package.json"), "utf8"),
+) as { scripts?: Record<string, string> };
+const gatedTests = testScript.scripts?.test ?? "";
+for (const entry of await readdir(join(root, "packages"), {
+  withFileTypes: true,
+})) {
+  if (!entry.isDirectory()) continue;
+  const testDir = join(root, "packages", entry.name, "test");
+  let hasTests = false;
+  try {
+    hasTests = (await readdir(testDir)).some((file) =>
+      /\.test\.tsx?$/u.test(file),
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  if (!hasTests) continue;
+  if (!gatedTests.includes(`packages/${entry.name}/test/`))
+    failures.push(
+      `packages/${entry.name}/test has tests that the root "test" script never runs`,
+    );
+}
+
 if (failures.length) {
   console.error(failures.join("\n"));
   process.exit(1);
