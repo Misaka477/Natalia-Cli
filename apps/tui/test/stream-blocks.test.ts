@@ -5,7 +5,16 @@ import {
   parseToolArguments,
   resultView,
 } from "@natalia/ui-model";
-import { reduceState, initialState } from "../src/context/state";
+import { reduceState, initialState, type AppState } from "../src/context/state";
+
+/**
+ * A tool's display state now reaches the transcript through the view-store
+ * adapter rather than a second copy kept by the TUI, so it is read off the row
+ * that renders it.
+ */
+function toolRow(state: AppState, id: string) {
+  return state.messages.find((block) => block.id === id)?.tool;
+}
 
 test("stream chunk boundaries preserve markdown fences lists and unicode", () => {
   const first = splitMarkdownAtSafeBoundary(
@@ -507,7 +516,9 @@ test("partial tool arguments are hidden until complete and sensitive keys redact
     summary: "receiving",
     argumentsDelta: '{"path":"apps/tui",',
   });
-  expect(state.tools["turn_tool:tool:call_1"].argumentsComplete).toBe(false);
+  expect(toolRow(state, "turn_tool:tool:call_1")?.argumentsComplete).toBe(
+    false,
+  );
   state = reduceState(state, {
     type: "tool.update",
     id: "turn_tool",
@@ -517,8 +528,8 @@ test("partial tool arguments are hidden until complete and sensitive keys redact
     summary: "queued",
     argumentsDelta: '"password":"secret"}',
   });
-  expect(state.tools["turn_tool:tool:call_1"].argumentsComplete).toBe(true);
-  expect(state.tools["turn_tool:tool:call_1"].redactedArguments).toContain(
+  expect(toolRow(state, "turn_tool:tool:call_1")?.argumentsComplete).toBe(true);
+  expect(toolRow(state, "turn_tool:tool:call_1")?.redactedArguments).toContain(
     "[REDACTED]",
   );
 });
@@ -798,7 +809,7 @@ test("todo tool arguments project into shared sidebar state", () => {
     }),
     result: "saved 2 todo items",
   });
-  expect(state.todos).toEqual([
+  expect(state.facts.todos).toEqual([
     { content: "Patch ownership", status: "in_progress" },
     { content: "Run smoke", status: "pending" },
   ]);
@@ -813,18 +824,18 @@ test("turn finished returns the TUI to idle so Ctrl+C can exit demos", () => {
     lineCount: 1,
     sha256: "sha",
   });
-  expect(state.activeTurn).toBe("turn_demo");
+  expect(state.facts.activeTurn).toBe("turn_demo");
   state = reduceState(state, {
     type: "turn.finished",
     id: "turn_demo",
     stopReason: "done",
   });
-  expect(state.activeTurn).toBeUndefined();
+  expect(state.facts.activeTurn).toBeUndefined();
   expect(state.footer).toBe("本轮任务已完成");
   expect(state.messages.some((item) => item.id === "turn_demo:finished")).toBe(
     false,
   );
-  expect(Object.keys(state.streams)).toHaveLength(0);
+  expect(Object.keys(state.facts.streams)).toHaveLength(0);
 });
 
 test("turn settlement releases all transient streaming buffers", () => {
@@ -846,14 +857,14 @@ test("turn settlement releases all transient streaming buffers", () => {
     id: "turn_release",
     text: "assistant tail without a final boundary",
   });
-  expect(Object.keys(state.streams)).toHaveLength(2);
+  expect(Object.keys(state.facts.streams)).toHaveLength(2);
   state = reduceState(state, {
     type: "turn.finished",
     id: "turn_release",
     stopReason: "done",
   });
-  expect(state.activeTurn).toBeUndefined();
-  expect(state.streams).toEqual({});
+  expect(state.facts.activeTurn).toBeUndefined();
+  expect(state.facts.streams).toEqual({});
   expect(state.messages).toContainEqual(
     expect.objectContaining({ id: "turn_release:assistant" }),
   );
@@ -873,7 +884,7 @@ test("failed turns show an explicit terminal message", () => {
     id: "turn_failed",
     stopReason: "error",
   });
-  expect(state.activeTurn).toBeUndefined();
+  expect(state.facts.activeTurn).toBeUndefined();
   expect(state.footer).toBe("本轮任务执行失败");
   expect(state.messages.at(-1)).toMatchObject({
     role: "system",

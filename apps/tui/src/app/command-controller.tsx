@@ -2635,18 +2635,18 @@ export function runCommand(command: string, ctx: CommandContext) {
     return;
   }
   if (command === "session.fork.last") {
-    const turnID = ctx.state.lastSubmission?.id;
-    if (!ctx.state.sessionID || !turnID || !ctx.backend.sessionFork) {
+    const turnID = ctx.state.facts.lastSubmission?.id;
+    if (!ctx.state.facts.sessionID || !turnID || !ctx.backend.sessionFork) {
       ctx.toast.show({
         variant: "warning",
         message: "No submitted message or fork-capable runtime is available",
       });
       return;
     }
-    void ctx.backend.sessionFork(ctx.state.sessionID, turnID).then(
+    void ctx.backend.sessionFork(ctx.state.facts.sessionID, turnID).then(
       (fork) => {
-        ctx.composer()?.setText(ctx.state.lastSubmission!.text);
-        ctx.setComposerText(ctx.state.lastSubmission!.text);
+        ctx.composer()?.setText(ctx.state.facts.lastSubmission!.text);
+        ctx.setComposerText(ctx.state.facts.lastSubmission!.text);
         ctx.composer()?.gotoBufferEnd();
         ctx.toast.show({
           variant: "success",

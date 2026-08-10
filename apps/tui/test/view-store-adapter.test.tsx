@@ -219,11 +219,12 @@ test("a redacted secret never reaches the adapted arguments", () => {
   );
 });
 
-test("the adapted elapsed label survives a completion event that omits startedAt", () => {
+test("the elapsed label survives a completion event that omits startedAt", () => {
   // The runtime publishes `startedAt` on the first update and only `endedAt` on
-  // the last, so a projection that keeps the start time can label the duration
-  // while a per-event read cannot. This is the one place the adapter is better
-  // than what it replaces, and it is stated rather than hidden.
+  // the last, so a duration can only be labelled by something that kept the start
+  // time. The TUI's own reducer read each event on its own and lost it; it now
+  // reads the projection, so the label is there — this test used to record that
+  // divergence and now records that it is gone.
   const events: RuntimeEvent[] = [
     submitted("t1", "read it"),
     {
@@ -251,22 +252,18 @@ test("the adapted elapsed label survives a completion event that omits startedAt
 
   const tui = tuiProject(events);
   const tuiTool = tui.messages.find((block) => block.tool)?.tool;
-  expect(tuiTool?.elapsed).toBe("");
+  expect(tuiTool?.elapsed).toBe("1.5s");
 });
 
 /**
- * A known divergence, found here.
- *
- * `thinking.done` should mark the thinking block completed. The TUI marks the
- * stream's *current segment*, so when a tool call follows the thinking block the
- * segment index has moved on and the mark lands nowhere — the block ends with no
- * status. view-store marks it when thinking finishes, which is stable.
- *
- * view-store is the more correct of the two, so this is not copied backwards. The
- * divergence is pinned in both directions: it fails if view-store regresses, and
- * it fails once the TUI is fixed, which is the signal to delete this test.
+ * This was a known divergence: the TUI marked the thinking block completed by
+ * marking the stream's *current* segment, so a tool call following the reasoning
+ * had already moved the segment index on and the mark landed nowhere. The
+ * projection marks the row when reasoning finishes, which is stable, and the TUI
+ * now reads the projection — so the assertion is that both agree, which is what
+ * the divergence being gone looks like.
  */
-test("known divergence: the TUI loses the thinking status when a tool follows", () => {
+test("the thinking status survives a tool call following the reasoning", () => {
   const events: RuntimeEvent[] = [
     submitted("t1", "explain"),
     { type: "thinking.delta", id: "t1", text: "considering" },
@@ -289,7 +286,7 @@ test("known divergence: the TUI loses the thinking status when a tool follows", 
     (block) => block.role === "thinking",
   );
   expect(adapted?.status).toBe("completed");
-  expect(tui?.status).toBeUndefined();
+  expect(tui?.status).toBe("completed");
 });
 
 test("the adapted transcript matches the TUI's on roles, text and status", () => {

@@ -341,12 +341,12 @@ test("an attempt stamp still supersedes a retry nobody announced", () => {
   expect(displayText(assistant[0]!)).toBe("second try");
 });
 
-test("an announced retry that resumes with a stamped delta keeps the earlier text", () => {
-  // The provider continues instead of restarting, and stamps the continuation.
+test("an announced retry that continues with a stamped delta keeps the earlier text", () => {
+  // The provider carries on instead of restarting, and stamps the continuation.
   // Discarding the confirmed text on the stamp would lose the beginning.
   const state = projectEvents([
     submitted("t1", "q"),
-    { type: "content.delta", id: "t1", attempt: 1, text: "Hello" },
+    { type: "content.delta", id: "t1", attempt: 1, text: "Hello.\n\n" },
     {
       type: "turn.retry",
       id: "t1",
@@ -355,11 +355,11 @@ test("an announced retry that resumes with a stamped delta keeps the earlier tex
       reason: "timeout",
       retryAfterMs: 10,
     },
-    { type: "content.delta", id: "t1", attempt: 2, text: " world" },
+    { type: "content.delta", id: "t1", attempt: 2, text: "World." },
   ]);
   expect(
     displayText(state.messages.find((block) => block.role === "assistant")!),
-  ).toBe("Hello world");
+  ).toBe("Hello.\n\nWorld.");
 });
 
 test("alternating reasoning and answering keeps the order the model produced", () => {
@@ -688,12 +688,12 @@ test("a retry that resends in different chunk boundaries still reads once", () =
   ).toBe("Hello world");
 });
 
-test("a retry that resumes instead of restarting keeps the earlier text", () => {
-  // Dropping the confirmed text on retry would lose it whenever the provider
-  // continues rather than starting over.
+test("a retry keeps confirmed text and continues from it", () => {
+  // Dropping confirmed text on retry would lose it whenever the provider carries
+  // on from where it stopped instead of starting over.
   const state = projectEvents([
     submitted("t1", "q"),
-    { type: "content.delta", id: "t1", text: "Hello" },
+    { type: "content.delta", id: "t1", text: "Hello.\n\n" },
     {
       type: "turn.retry",
       id: "t1",
@@ -702,12 +702,39 @@ test("a retry that resumes instead of restarting keeps the earlier text", () => 
       reason: "timeout",
       retryAfterMs: 10,
     },
-    { type: "content.delta", id: "t1", text: " world" },
-    { type: "content.done", id: "t1", text: "Hello world" },
+    { type: "content.delta", id: "t1", text: "World." },
+    { type: "content.done", id: "t1", text: "Hello.\n\nWorld." },
   ]);
   expect(
     displayText(state.messages.find((block) => block.role === "assistant")!),
-  ).toBe("Hello world");
+  ).toBe("Hello.\n\nWorld.");
+});
+
+test("a retry does not glue the failed attempt's unfinished fragment onto the answer", () => {
+  // The attempt that failed left half a sentence in flight. The retry is a new
+  // completion and generally words things differently, so that fragment belongs
+  // to nothing: keeping it prefixes the new answer with the tail of the old one.
+  // This is why the fragment is dropped while confirmed text is kept — the two
+  // halves of a stream mean different things once an attempt has failed.
+  const state = projectEvents([
+    submitted("t1", "q"),
+    { type: "content.delta", id: "t1", text: "failed transient tail" },
+    {
+      type: "step.retry",
+      id: "t1",
+      operation: "llm_step",
+      step: 1,
+      attempt: 2,
+      maxAttempts: 3,
+      waitMs: 10,
+      reason: "timeout",
+    },
+    { type: "content.delta", id: "t1", text: "clean final" },
+    { type: "content.done", id: "t1" },
+  ]);
+  expect(
+    displayText(state.messages.find((block) => block.role === "assistant")!),
+  ).toBe("clean final");
 });
 
 test("a retry also clears unconfirmed text so it cannot be shown twice", () => {

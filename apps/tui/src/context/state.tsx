@@ -12,28 +12,14 @@ import { TuiPerformanceTrace } from "../performance-trace";
 import type {
   RuntimeEvent,
   RuntimeProjectedMessage,
-  SessionID,
-  SubmittedTurn,
   ToolStatus,
 } from "@natalia/contracts";
 import {
-  appendWithRetrySkip,
   checkpointProgressView,
-  flushMarkdown,
-  splitMarkdownAtSafeBoundary,
-} from "@natalia/ui-model";
-import { boundHistoryCache } from "../history-page-cache";
-import {
-  classifyTool,
-  elapsedLabel,
-  parseToolArguments,
-  parseTodoItems,
-  providerSafeThinkingSummary,
-  resultView,
   type ToolKind,
-  type TodoView,
   type ToolResultView,
 } from "@natalia/ui-model";
+import { boundHistoryCache } from "../history-page-cache";
 import {
   activeModal,
   cancelPendingModals,
@@ -46,10 +32,14 @@ import {
   type ModalControllerState,
 } from "@natalia/ui-model";
 import {
+  applyConversationEvent,
   applyResourceEvent,
+  applyStatusEvent,
   initialState as initialFacts,
+  streamID,
   type AppState as ViewAppState,
 } from "@natalia/view-store";
+import { messageBlockFromProjection } from "./view-store-adapter";
 
 export type MessageBlock = {
   id: string;
@@ -69,6 +59,17 @@ export type MessageBlock = {
   reasoningVisible?: boolean;
   providerPolicy?: "visible" | "hidden";
   tool?: ToolBlockState;
+  /**
+   * Which layer owns this row.
+   *
+   * `projection` rows are derived from `facts` on every event and are removed
+   * when the projection drops them. `ui` rows are the TUI's own narration —
+   * inline approvals, resource summaries, localised turn outcomes — which the
+   * shared layer deliberately exposes structurally instead. The narration layer
+   * may also claim a projected row by writing over it, which is how a localised
+   * or friendlier wording survives the next reconcile; see `syncProjectedRows`.
+   */
+  owner: "projection" | "ui";
   interactive?:
     | {
         kind: "approval";
@@ -100,28 +101,26 @@ export type ToolBlockState = {
 
 export type SubagentView = ViewAppState["subagents"][string];
 
-type StreamState = {
-  committed: string;
-  tail: string;
-  retrySkip: string;
-  attempt: number;
-  segmentIndex: number;
-  segmentText: string;
-  deferVisible: boolean;
-};
-
-const streamSegmentChars = 6000;
 const eventBatchMs = 16;
 
 export type AppState = {
-  sessionID?: SessionID;
-  title: string;
+  /**
+   * Session status and footer text.
+   *
+   * Kept by the TUI rather than read from `facts` because they are localised and
+   * carry TUI wording: the shared layer states a turn's outcome in English and
+   * leaves `status` alone, and silently adopting that would change what a user
+   * reads. Localisation is a UI concern.
+   */
   status: string;
   footer: string;
   statusSegments: string[];
+  /**
+   * The rendered transcript: rows derived from `facts.messages` merged with the
+   * TUI's own narration rows, in arrival order. Written only by
+   * `syncProjectedRows` and the narration layer.
+   */
   messages: MessageBlock[];
-  activeTurn?: string;
-  lastSubmission?: SubmittedTurn;
   dialog?:
     | "palette"
     | "approval"
@@ -130,46 +129,52 @@ export type AppState = {
     | "settings"
     | "status";
   modal: ModalControllerState;
-  streams: Record<string, StreamState>;
-  streamPhases: Record<string, "thinking" | "assistant">;
-  tools: Record<string, ToolBlockState>;
-  todos: TodoView[];
   retryBanner?: string;
   compactionBanner?: string;
   /**
-   * Resource facts as projected by `@natalia/view-store`: terminals, their
-   * timelines, sandboxes, subagents and MCP servers. The TUI used to keep its own
-   * copy of each, with its own transcript trimming, republish dedupe and history
-   * bounds; those now live in the shared projection so every consumer gets them,
-   * and there is one reducer for a resource fact instead of two that may drift.
+   * The session's facts as projected by `@natalia/view-store`: the conversation
+   * core (turns, streaming text, tool cards, todos, pending requests) and the
+   * resources whose state the TUI reads (terminals, their timelines, sandboxes,
+   * subagents, MCP servers).
    *
-   * Only the events whose state is read from here are routed into it (see
-   * `applyEvent`). What stays in the TUI is presentation: the terminal pane
-   * selection, and the transcript rows the TUI narrates for sandboxes and
-   * subagents.
+   * There is one implementation of a session fact, in the layer every consumer
+   * shares, instead of two that may drift. What stays in the TUI is presentation:
+   * the terminal pane selection, the modal queue, localised status and footer
+   * text, and the transcript rows it narrates itself.
    */
   facts: ViewAppState;
   terminalPane: { selectedID?: string; focus: "chat" | "terminal" };
 };
 
-export const initialState: AppState = {
-  title: "New session",
-  status: "booting",
-  footer: "Ready",
-  statusSegments: [
-    "mode:runtime",
-    "model:not-connected",
-    "provider:not-connected",
-  ],
-  modal: structuredClone(initialModalState),
-  streams: {},
-  streamPhases: {},
-  tools: {},
-  todos: [],
-  facts: initialFacts(),
-  terminalPane: { focus: "chat" },
-  messages: [],
-};
+/**
+ * A fresh state.
+ *
+ * A factory rather than a shared value because `createStore` wraps the object it
+ * is given and writes through to it: handing it one shared constant means the
+ * first session mutates the constant every later reader starts from.
+ */
+export function createInitialState(): AppState {
+  return {
+    status: "booting",
+    footer: "Ready",
+    statusSegments: [
+      "mode:runtime",
+      "model:not-connected",
+      "provider:not-connected",
+    ],
+    modal: structuredClone(initialModalState),
+    facts: initialFacts(),
+    terminalPane: { focus: "chat" },
+    messages: [],
+  };
+}
+
+/**
+ * A template to fold events onto. Callers must not mutate it — `reduceState`
+ * copies first, and anything holding state for real should call
+ * `createInitialState()`.
+ */
+export const initialState: AppState = createInitialState();
 
 export function reduceState(state: AppState, event: RuntimeEvent): AppState {
   const next = structuredClone(state) as AppState;
@@ -187,7 +192,7 @@ export function StateProvider(props: {
     ) => boolean;
   }) => void;
 }) {
-  const [state, setState] = createStore<AppState>(initialState);
+  const [state, setState] = createStore<AppState>(createInitialState());
   const performanceTrace = new TuiPerformanceTrace();
   const pendingEvents: RuntimeEvent[] = [];
   let flushTimer: ReturnType<typeof setTimeout> | undefined;
@@ -223,7 +228,7 @@ export function StateProvider(props: {
     direction: "older" | "newer" = "older",
   ) => {
     flush();
-    const projected = structuredClone(initialState);
+    const projected = createInitialState();
     const existingTurnIDs = new Set(
       state.messages
         .filter((message) => message.role === "user")
@@ -232,7 +237,13 @@ export function StateProvider(props: {
     for (const message of messages)
       if (!existingTurnIDs.has(message.turnID))
         for (const row of message.rows) applyEvent(projected, row.event);
-    const incoming = projected.messages;
+    // Replayed history is a finished record, so the rows are handed over as the
+    // TUI's own. The live projection knows nothing about those turns, and a row it
+    // does not know is a row the reconcile would delete.
+    const incoming = projected.messages.map((row) => ({
+      ...row,
+      owner: "ui" as const,
+    }));
     if (!incoming.length) return false;
     const incomingIDs = new Set(incoming.map((message) => message.id));
     let evicted = false;
@@ -271,12 +282,102 @@ export function useAppState() {
   return context;
 }
 
+/**
+ * Folds one event into the TUI's state.
+ *
+ * Three steps, in this order:
+ *   1. the shared projection takes the event, so the conversation core has one
+ *      implementation instead of the TUI keeping a second one;
+ *   2. the transcript's projected rows are reconciled from it;
+ *   3. the TUI applies what is genuinely its own — pane selection, the modal
+ *      queue, localised status and footer text — and narrates the rows the shared
+ *      layer exposes structurally instead.
+ *
+ * Narration runs last so a row it adds for this event lands after the rows the
+ * projection produced for the same event, which is the order they happened in.
+ */
 function applyEvent(state: AppState, event: RuntimeEvent) {
+  projectFacts(state, event);
+  syncProjectedRows(state);
+  applyTuiEvent(state, event);
+}
+
+/**
+ * Routes an event into the shared projection.
+ *
+ * Conversation and status events go in whole. Resource events are routed by the
+ * cases in `applyTuiEvent` that read them back, because those need the state
+ * before and after the update; the rest are deliberately not projected here,
+ * since the TUI still narrates resources in its own wording and routing them
+ * would produce two rows for one fact.
+ */
+function projectFacts(state: AppState, event: RuntimeEvent) {
+  if (applyConversationEvent(state.facts, event)) return;
+  applyStatusEvent(state.facts, event);
+}
+
+/**
+ * Brings the transcript's projected rows in line with `facts.messages`.
+ *
+ * Rows are matched by id, updated in place and appended in projection order, so
+ * an unchanged row keeps its object identity — the renderer reconciles rows by
+ * identity and the timeline virtualizer caches measured heights by group key, so
+ * rebuilding the array would remount and re-measure the visible transcript on
+ * every event.
+ *
+ * A row the narration layer has claimed is left alone: the TUI states some
+ * turn-level facts in its own wording, and the projection must not overwrite that
+ * on the next event.
+ */
+function syncProjectedRows(state: AppState) {
+  const projected = state.facts.messages;
+  const index = new Map<string, number>();
+  for (let position = 0; position < state.messages.length; position++)
+    index.set(state.messages[position]!.id, position);
+  for (const source of projected) {
+    const position = index.get(source.id);
+    if (position === undefined) {
+      state.messages.push(messageBlockFromProjection(source));
+      index.set(source.id, state.messages.length - 1);
+      continue;
+    }
+    const target = state.messages[position]!;
+    if (target.owner !== "projection") continue;
+    updateProjectedRow(target, messageBlockFromProjection(source));
+  }
+  // A superseded attempt removes its blocks from the projection, and a row the
+  // projection no longer has must not linger in the transcript.
+  if (projected.length >= projectedRowCount(state)) return;
+  const live = new Set(projected.map((source) => source.id));
+  state.messages = state.messages.filter(
+    (row) => row.owner !== "projection" || live.has(row.id),
+  );
+}
+
+function projectedRowCount(state: AppState) {
+  let count = 0;
+  for (const row of state.messages) if (row.owner === "projection") count++;
+  return count;
+}
+
+/** Copies a derived row onto the rendered one, touching only what changed. */
+function updateProjectedRow(target: MessageBlock, next: MessageBlock) {
+  if (target.role !== next.role) target.role = next.role;
+  if (target.text !== next.text) target.text = next.text;
+  if (target.pendingText !== next.pendingText)
+    target.pendingText = next.pendingText;
+  if (target.status !== next.status) target.status = next.status;
+  if (target.reasoningVisible !== next.reasoningVisible)
+    target.reasoningVisible = next.reasoningVisible;
+  if (target.providerPolicy !== next.providerPolicy)
+    target.providerPolicy = next.providerPolicy;
+  // The derived tool view is cached on the projected fact it came from, so an
+  // unchanged tool is the same object and the row keeps its identity.
+  if (target.tool !== next.tool) target.tool = next.tool;
+}
+
+function applyTuiEvent(state: AppState, event: RuntimeEvent) {
   switch (event.type) {
-    case "session.created":
-      state.sessionID = event.sessionID;
-      state.title = event.title;
-      return;
     case "session.ready":
       state.status = "ready";
       return;
@@ -323,6 +424,10 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
       return;
     case "compaction.end":
       state.compactionBanner = undefined;
+      // Same row the "compacting" line above wrote, so the reader watches one row
+      // reach its outcome instead of collecting a second one. The projection
+      // states this too, in the same words; the row is written here because the
+      // narration layer owns it from `compaction.begin` onwards.
       upsertBlock(
         state,
         event.id,
@@ -335,17 +440,6 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
       state.footer = event.success
         ? "compaction complete"
         : "compaction failed";
-      return;
-    case "context.limit.recovery":
-      upsertBlock(
-        state,
-        `${event.id}:context-limit`,
-        "system",
-        event.compacted
-          ? "context-limit recovery compacted once; retrying original step"
-          : "context-limit recovery requested",
-        "context_limit",
-      );
       return;
     case "checkpoint.created":
     case "checkpoint.failed":
@@ -454,32 +548,23 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
     case "dialog.close":
       state.dialog = undefined;
       return;
-    case "turn.submitted":
-      state.activeTurn = event.id;
-      state.lastSubmission = event;
-      state.streams[streamID(event.id, "thinking")] = newStream();
-      state.streams[streamID(event.id, "assistant")] = newStream();
-      state.messages.push({
-        id: `${event.id}:user`,
-        role: "user",
-        text: `${event.text}${
-          event.attachments?.length
-            ? `\n\nAttachments: ${event.attachments
-                .map(
-                  (attachment) =>
-                    `${attachment.filename} (${attachment.mediaType}, ${attachment.byteLength} bytes)`,
-                )
-                .join(", ")}`
-            : ""
-        }`,
-      });
-      return;
     case "turn.retry":
-      handleRetry(state, event);
+      upsertBlockBefore(
+        state,
+        `${event.id}:retry:${event.attempt}`,
+        streamID(event.id, "assistant"),
+        "system",
+        `retry ${event.attempt}/${event.maxAttempts}: ${event.reason}; waiting ${event.retryAfterMs}ms`,
+        "retry",
+      );
       return;
-    case "step.retry":
-      handleStepRetry(state, event);
+    case "step.retry": {
+      const text = `Retrying after ${event.reason}${event.statusCode ? ` (${event.statusCode})` : ""} · attempt ${event.attempt}/${event.maxAttempts} · waiting ${formatWait(event.waitMs)}`;
+      state.retryBanner = text;
+      state.footer = text;
+      upsertBlock(state, retryBlockID(event.id), "system", text, "retry");
       return;
+    }
     case "step.retry.cleared":
       removeBlock(state, retryBlockID(event.id));
       state.retryBanner = undefined;
@@ -488,6 +573,8 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
     case "step.retry.exhausted":
       removeBlock(state, retryBlockID(event.id));
       state.retryBanner = undefined;
+      // Claims the projected row to say the same thing in the TUI's wording,
+      // which names the failure kind and what to do about it.
       upsertBlock(
         state,
         `${event.id}:retry:exhausted`,
@@ -499,63 +586,6 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
         event.retryable === false
           ? `not retryable: ${event.reason}`
           : `retry exhausted: ${event.reason}`;
-      return;
-    case "thinking.delta":
-      prepareStreamPhase(state, event.id, "thinking");
-      appendStreamBlock(state, {
-        id: streamID(event.id, "thinking"),
-        role: "thinking",
-        text: event.text,
-        attempt: event.attempt,
-        reasoningVisible: event.visible !== false,
-        deferVisible: false,
-      });
-      return;
-    case "thinking.done":
-      flushStreamBlock(state, streamID(event.id, "thinking"));
-      return;
-    case "content.delta":
-      prepareStreamPhase(state, event.id, "assistant");
-      appendStreamBlock(state, {
-        id: streamID(event.id, "assistant"),
-        role: "assistant",
-        text: event.text,
-        attempt: event.attempt,
-        reasoningVisible: true,
-      });
-      return;
-    case "content.done": {
-      const assistantStream = streamID(event.id, "assistant");
-      flushStreamBlock(state, assistantStream);
-      // Streaming deltas commit into segmentID(assistantStream, n), which is
-      // `assistantStream` for n=0 and `assistantStream:segment:n` beyond it.
-      // Only synthesize a block when no segment of this stream rendered, and
-      // write it under the same key family so a later done cannot duplicate it.
-      const streamed = state.messages.some(
-        (block) =>
-          block.id === assistantStream ||
-          block.id.startsWith(`${assistantStream}:segment:`),
-      );
-      if (event.text && !streamed)
-        upsertBlock(
-          state,
-          assistantStream,
-          "assistant",
-          event.text,
-          undefined,
-          { reasoningVisible: true },
-        );
-      return;
-    }
-    case "tool.update":
-      const toolTurnID = turnIDForToolEvent(event);
-      // Complete the active model output before its tool card. Tool updates
-      // mutate their own card but never reorder model output around it.
-      flushStreamBlock(state, streamID(toolTurnID, "thinking"));
-      flushStreamBlock(state, streamID(toolTurnID, "assistant"));
-      beginPostToolStreamSegment(state, toolTurnID);
-      delete state.streamPhases[toolTurnID];
-      upsertTool(state, event);
       return;
     case "subagent.update":
       applyResourceEvent(state.facts, event);
@@ -601,7 +631,7 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
         { interactive: resolvedApproval(state, event) },
       );
       return;
-    case "question.request":
+    case "question.request": {
       const normalizedQuestion = normalizeQuestionRequest(event);
       enqueueQuestion(state.modal, normalizedQuestion);
       state.dialog = activeModal(state.modal)?.kind;
@@ -619,6 +649,7 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
         },
       );
       return;
+    }
     case "question.response":
       resolveQuestion(state.modal, {
         requestID: event.id,
@@ -644,24 +675,11 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
       );
       return;
     case "turn.cancelled":
-      removeStreamTail(state, event.id);
-      delete state.streams[streamID(event.id, "thinking")];
-      delete state.streams[streamID(event.id, "assistant")];
+      // The cancellation row itself comes from the projection.
       cancelPendingModals(state.modal, event.reason);
       state.dialog = undefined;
-      upsertBlock(
-        state,
-        `${event.id}:cancelled`,
-        "system",
-        `cancelled: ${event.reason}`,
-      );
       return;
     case "turn.finished":
-      revealDeferredStreamBlock(state, streamID(event.id, "thinking"));
-      flushStreamBlock(state, streamID(event.id, "assistant"));
-      delete state.streams[streamID(event.id, "thinking")];
-      delete state.streams[streamID(event.id, "assistant")];
-      state.activeTurn = undefined;
       state.status = event.stopReason === "done" ? "ready" : event.stopReason;
       if (event.stopReason === "done") {
         if (event.reason === "missing_final_response") {
@@ -827,233 +845,6 @@ function interactiveQuestionText(
   return `${title}: ${questionResponseText(response.answers, response.rejected)}`;
 }
 
-function appendStreamBlock(
-  state: AppState,
-  input: {
-    id: string;
-    role: "thinking" | "assistant";
-    text: string;
-    attempt?: number;
-    reasoningVisible: boolean;
-    deferVisible?: boolean;
-  },
-) {
-  const stream = (state.streams[input.id] ??= newStream());
-  stream.deferVisible = input.deferVisible === true;
-  stream.attempt = input.attempt ?? stream.attempt;
-  // Reasoning a provider forbids showing is obeyed by never keeping it: not in
-  // the block, and not in the stream either, so there is nowhere left for a
-  // later pass to read it from. This is the single place thinking text enters a
-  // stream, which is what makes that an invariant rather than a hope — the
-  // settle-on-finish pass used to commit the stream's raw text and mark it
-  // visible, printing exactly what the provider had refused.
-  if (input.role === "thinking" && !input.reasoningVisible) {
-    upsertBlock(
-      state,
-      segmentID(input.id, stream.segmentIndex),
-      "thinking",
-      // Derived from the arriving chunk, which is not retained: it only decides
-      // whether to say thinking happened at all.
-      providerSafeThinkingSummary(false, input.text),
-      undefined,
-      { pendingText: "", reasoningVisible: false, providerPolicy: "hidden" },
-    );
-    return;
-  }
-  const retryApplied = appendWithRetrySkip(input.text, stream.retrySkip);
-  stream.retrySkip = retryApplied.retrySkip;
-  if (!retryApplied.text) return;
-
-  const split = splitMarkdownAtSafeBoundary(stream.tail + retryApplied.text);
-  stream.tail = split.tail;
-  if (split.committed)
-    appendCommittedSegment(state, input, stream, split.committed);
-  if (stream.deferVisible) return;
-  const pendingText = stream.tail;
-  if (!stream.segmentText && !pendingText) return;
-  upsertBlock(
-    state,
-    segmentID(input.id, stream.segmentIndex),
-    input.role,
-    stream.segmentText,
-    undefined,
-    {
-      pendingText,
-      reasoningVisible: input.reasoningVisible,
-      providerPolicy: input.reasoningVisible ? "visible" : "hidden",
-    },
-  );
-}
-
-function revealDeferredStreamBlock(state: AppState, id: string) {
-  const stream = state.streams[id];
-  if (!stream) return;
-  const flushed = flushMarkdown(stream.tail);
-  if (flushed.committed)
-    appendCommittedSegment(
-      state,
-      {
-        id,
-        role: "thinking",
-        text: flushed.committed,
-        reasoningVisible: true,
-      },
-      stream,
-      flushed.committed,
-      true,
-    );
-  stream.tail = flushed.tail;
-  if (stream.tail) {
-    stream.committed += stream.tail;
-    stream.segmentText += stream.tail;
-    stream.tail = "";
-  }
-  if (!stream.segmentText) {
-    // Nothing to reveal. That is now the normal case for reasoning the provider
-    // hid, because none of it was retained — but the row did settle, so it still
-    // says so rather than silently losing its marker.
-    const settled = state.messages.find(
-      (item) => item.id === segmentID(id, stream.segmentIndex),
-    );
-    if (settled) settled.status = "completed";
-    return;
-  }
-  upsertBlockBefore(
-    state,
-    segmentID(id, stream.segmentIndex),
-    segmentID(
-      streamID(id.slice(0, -":thinking".length), "assistant"),
-      stream.segmentIndex,
-    ),
-    "thinking",
-    stream.segmentText,
-    "completed",
-    { pendingText: "", reasoningVisible: true, providerPolicy: "visible" },
-  );
-  stream.deferVisible = false;
-}
-
-function flushStreamBlock(state: AppState, id: string) {
-  const stream = state.streams[id];
-  if (!stream) return;
-  const flushed = flushMarkdown(stream.tail);
-  if (flushed.committed) {
-    appendCommittedSegment(
-      state,
-      {
-        id,
-        role: id.endsWith(":thinking") ? "thinking" : "assistant",
-        text: flushed.committed,
-        reasoningVisible:
-          state.messages.find(
-            (item) => item.id === segmentID(id, stream.segmentIndex),
-          )?.providerPolicy !== "hidden",
-      },
-      stream,
-      flushed.committed,
-    );
-  }
-  stream.tail = flushed.tail;
-  const block = state.messages.find(
-    (item) => item.id === segmentID(id, stream.segmentIndex),
-  );
-  if (!block) return;
-  // A stream that produced nothing must not rewrite the block sitting at its
-  // segment key. `content.done` writes there when a provider returns a whole
-  // response without streaming a delta, and overwriting it with the stream's
-  // empty `segmentText` silently drops the entire reply. `appendStreamBlock`
-  // already refuses to write in this case; this keeps the two symmetric.
-  if (!stream.segmentText && !stream.tail && !stream.committed) return;
-  block.text =
-    block.role === "thinking" && block.providerPolicy === "hidden"
-      ? providerSafeThinkingSummary(false, stream.committed)
-      : stream.segmentText;
-  block.pendingText = "";
-}
-
-function beginPostToolStreamSegment(state: AppState, turnID: string) {
-  for (const role of ["thinking", "assistant"] as const) {
-    const stream = state.streams[streamID(turnID, role)];
-    if (!stream) continue;
-    // Only open a new segment when the current one actually rendered text.
-    // A tool-first turn must keep segment 0 so content.done can match it
-    // instead of synthesizing a second identical block.
-    if (!stream.segmentText && !stream.tail) continue;
-    stream.segmentIndex += 1;
-    stream.segmentText = "";
-    stream.tail = "";
-  }
-}
-
-function prepareStreamPhase(
-  state: AppState,
-  turnID: string,
-  role: "thinking" | "assistant",
-) {
-  const previous = state.streamPhases[turnID];
-  if (previous === role) return;
-  if (previous) flushStreamBlock(state, streamID(turnID, previous));
-  const stream = state.streams[streamID(turnID, role)];
-  if (stream && (stream.segmentText || stream.tail)) {
-    stream.segmentIndex += 1;
-    stream.segmentText = "";
-    stream.tail = "";
-  }
-  state.streamPhases[turnID] = role;
-}
-
-function handleRetry(
-  state: AppState,
-  event: Extract<RuntimeEvent, { type: "turn.retry" }>,
-) {
-  removeStreamTail(state, event.id);
-  for (const role of ["thinking", "assistant"] as const) {
-    const id = streamID(event.id, role);
-    const stream = (state.streams[id] ??= newStream());
-    stream.retrySkip = stream.committed;
-    stream.tail = "";
-    stream.attempt = event.attempt;
-    const block = state.messages.find((item) => item.id === id);
-    if (block) {
-      block.pendingText = "";
-    }
-    const segment = state.messages.find(
-      (item) => item.id === segmentID(id, stream.segmentIndex),
-    );
-    if (segment) segment.pendingText = "";
-  }
-  upsertBlockBefore(
-    state,
-    `${event.id}:retry:${event.attempt}`,
-    streamID(event.id, "assistant"),
-    "system",
-    `retry ${event.attempt}/${event.maxAttempts}: ${event.reason}; waiting ${event.retryAfterMs}ms`,
-    "retry",
-  );
-}
-
-function handleStepRetry(
-  state: AppState,
-  event: Extract<RuntimeEvent, { type: "step.retry" }>,
-) {
-  removeStreamTail(state, event.id);
-  for (const role of ["thinking", "assistant"] as const) {
-    const id = streamID(event.id, role);
-    const stream = (state.streams[id] ??= newStream());
-    stream.retrySkip = stream.committed;
-    stream.tail = "";
-    stream.attempt = event.attempt;
-    const segment = state.messages.find(
-      (item) => item.id === segmentID(id, stream.segmentIndex),
-    );
-    if (segment) segment.pendingText = "";
-  }
-  const text = `Retrying after ${event.reason}${event.statusCode ? ` (${event.statusCode})` : ""} · attempt ${event.attempt}/${event.maxAttempts} · waiting ${formatWait(event.waitMs)}`;
-  state.retryBanner = text;
-  state.footer = text;
-  upsertBlock(state, retryBlockID(event.id), "system", text, "retry");
-}
-
 function retryBlockID(turnID: string) {
   return `${turnID}:retry:live`;
 }
@@ -1089,146 +880,6 @@ function removeBlock(state: AppState, id: string) {
   state.messages = state.messages.filter((item) => item.id !== id);
 }
 
-function removeStreamTail(state: AppState, turnID: string) {
-  for (const role of ["thinking", "assistant"] as const) {
-    const stream = state.streams[streamID(turnID, role)];
-    if (stream) stream.tail = "";
-    const block = state.messages.find(
-      (item) => item.id === streamID(turnID, role),
-    );
-    if (block) block.pendingText = "";
-    if (stream) {
-      const segment = state.messages.find(
-        (item) =>
-          item.id === segmentID(streamID(turnID, role), stream.segmentIndex),
-      );
-      if (segment) segment.pendingText = "";
-    }
-  }
-}
-
-function upsertTool(
-  state: AppState,
-  event: Extract<RuntimeEvent, { type: "tool.update" }>,
-) {
-  const id = toolStateID(event);
-  const current = state.tools[id];
-  const raw = (current?.argumentsRaw ?? "") + (event.argumentsDelta ?? "");
-  const args = parseToolArguments(raw);
-  const kind = classifyTool(event.name, event.metadata);
-  const result =
-    event.result === undefined
-      ? current?.result
-      : resultView(event.result, 8, 1200, { kind, name: event.name });
-  const tool: ToolBlockState = {
-    id,
-    name: event.name,
-    kind,
-    status: event.status,
-    summary: event.summary,
-    argumentsRaw: raw,
-    argumentsComplete: args.complete,
-    keyArguments: args.keyArguments,
-    redactedArguments: args.redactedJson,
-    elapsed: elapsedLabel(event.startedAt, event.endedAt),
-    result,
-    metadata: event.metadata ?? current?.metadata ?? {},
-    detailAvailable: Boolean(args.redactedJson || result?.detail),
-  };
-  state.tools[id] = tool;
-  if (kind === "todo" && args.redactedJson) {
-    try {
-      const input = JSON.parse(args.redactedJson) as Record<string, unknown>;
-      const todos = parseTodoItems(input.items ?? input.todos);
-      if (todos.length) state.todos = todos;
-    } catch {
-      // Partial arguments stay hidden until valid JSON is available.
-    }
-  }
-  upsertBlock(state, id, "tool", toolText(tool), event.status, { tool });
-}
-
-function toolStateID(event: Extract<RuntimeEvent, { type: "tool.update" }>) {
-  return `${turnIDForToolEvent(event)}:tool:${event.callID ?? event.name}`;
-}
-
-function turnIDForToolEvent(
-  event: Extract<RuntimeEvent, { type: "tool.update" }>,
-) {
-  if (!event.callID) return event.id;
-  const suffix = `:${event.callID}`;
-  return event.id.endsWith(suffix)
-    ? event.id.slice(0, -suffix.length)
-    : event.id;
-}
-
-/**
- * The tool row's rendered line. Exported so the view-store adapter can produce
- * the identical text instead of reimplementing it, which is what keeps the P6
- * convergence from changing what a user sees.
- */
-export function toolText(tool: ToolBlockState) {
-  const args = tool.argumentsComplete
-    ? tool.keyArguments.join(" ") || "arguments ready"
-    : "receiving arguments";
-  const elapsed = tool.elapsed ? ` · ${tool.elapsed}` : "";
-  const summary = tool.result ? tool.result.summary : tool.summary;
-  return `${tool.kind}:${tool.name} ${args} · ${summary}${elapsed}`;
-}
-
-function newStream(): StreamState {
-  return {
-    committed: "",
-    tail: "",
-    retrySkip: "",
-    attempt: 1,
-    segmentIndex: 0,
-    segmentText: "",
-    deferVisible: false,
-  };
-}
-
-function streamID(turnID: string, role: "thinking" | "assistant") {
-  return `${turnID}:${role}`;
-}
-
-function segmentID(baseID: string, index: number) {
-  if (index === 0) return baseID;
-  return `${baseID}:segment:${index}`;
-}
-
-function appendCommittedSegment(
-  state: AppState,
-  input: {
-    id: string;
-    role: "thinking" | "assistant";
-    text: string;
-    reasoningVisible: boolean;
-  },
-  stream: StreamState,
-  text: string,
-  forceVisible = false,
-) {
-  stream.committed += text;
-  stream.segmentText += text;
-  if (stream.deferVisible && !forceVisible) return;
-  upsertBlock(
-    state,
-    segmentID(input.id, stream.segmentIndex),
-    input.role,
-    stream.segmentText,
-    undefined,
-    {
-      pendingText: "",
-      reasoningVisible: input.reasoningVisible,
-      providerPolicy: input.reasoningVisible ? "visible" : "hidden",
-    },
-  );
-  if (stream.segmentText.length < streamSegmentChars) return;
-  stream.segmentIndex += 1;
-  stream.segmentText = "";
-}
-
 function upsertBlock(
   state: AppState,
   id: string,
@@ -1239,6 +890,9 @@ function upsertBlock(
 ) {
   const block = state.messages.find((item) => item.id === id);
   if (block) {
+    // Writing a row claims it: a projected row the TUI restates in its own
+    // wording must not be reverted by the next reconcile.
+    if (block.owner !== "ui") block.owner = "ui";
     if (block.text !== text) block.text = text;
     if (block.status !== status) block.status = status;
     if (block.pendingText !== extra.pendingText)
@@ -1252,7 +906,7 @@ function upsertBlock(
       block.interactive = extra.interactive;
     return;
   }
-  state.messages.push({ id, role, text, status, ...extra });
+  state.messages.push({ id, role, text, status, owner: "ui", ...extra });
 }
 
 function isUrgentEvent(event: RuntimeEvent) {

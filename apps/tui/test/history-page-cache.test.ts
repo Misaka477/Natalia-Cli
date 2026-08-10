@@ -8,8 +8,13 @@ import type { MessageBlock } from "../src/context/state";
 
 function turn(id: number): MessageBlock[] {
   return [
-    { id: `turn_${id}:user`, role: "user", text: `user ${id}` },
-    { id: `turn_${id}:assistant`, role: "assistant", text: `assistant ${id}` },
+    { id: `turn_${id}:user`, role: "user", text: `user ${id}`, owner: "ui" },
+    {
+      id: `turn_${id}:assistant`,
+      role: "assistant",
+      text: `assistant ${id}`,
+      owner: "ui",
+    },
   ];
 }
 

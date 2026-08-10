@@ -262,7 +262,7 @@ export function SessionRoute(props: {
             gap={1}
           >
             <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
-              {state.title}
+              {state.facts.title}
             </text>
             <text fg={darkTheme.muted}>Start a new task below</text>
           </box>
@@ -408,7 +408,7 @@ export function SessionSidebar(props: {
   const { state } = useAppState();
   const route = useRouteController();
   const values = () => statusValues(state.statusSegments);
-  const tools = () => Object.values(state.tools);
+  const tools = () => Object.values(state.facts.tools);
   return (
     <box
       width={props.width ?? 42}
@@ -428,10 +428,10 @@ export function SessionSidebar(props: {
       <scrollbox flexGrow={1}>
         <box flexDirection="column" gap={1} paddingRight={1}>
           <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
-            {state.title}
+            {state.facts.title}
           </text>
-          <Show when={state.sessionID}>
-            <text fg={darkTheme.muted}>{state.sessionID}</text>
+          <Show when={state.facts.sessionID}>
+            <text fg={darkTheme.muted}>{state.facts.sessionID}</text>
           </Show>
           <Show when={props.workspaceRoot && !props.compact}>
             <text fg={darkTheme.muted}>{compactPath(props.workspaceRoot)}</text>
@@ -450,12 +450,12 @@ export function SessionSidebar(props: {
               </text>
             </Show>
           </box>
-          <Show when={state.todos.length > 0}>
+          <Show when={state.facts.todos.length > 0}>
             <box marginTop={1} flexDirection="column">
               <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
                 Todo
               </text>
-              <For each={state.todos}>
+              <For each={state.facts.todos}>
                 {(todo) => (
                   <text
                     fg={

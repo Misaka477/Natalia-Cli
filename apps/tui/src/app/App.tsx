@@ -523,7 +523,7 @@ function Shell(props: {
   }
 
   function exitOrCancel() {
-    if (state.activeTurn) {
+    if (state.facts.activeTurn) {
       props.backend.cancel();
     } else if (composer()?.plainText) {
       composer()?.clear();
@@ -533,7 +533,7 @@ function Shell(props: {
   }
 
   function changeSession(sessionID?: string) {
-    if (state.activeTurn || submitting) {
+    if (state.facts.activeTurn || submitting) {
       props.backend.diagnostic(
         "Finish or cancel the current turn before switching sessions.",
       );
@@ -883,7 +883,7 @@ function Shell(props: {
               );
             }}
             onMessageFork={(turnID, prompt) => {
-              if (!state.sessionID || !props.backend.sessionFork) {
+              if (!state.facts.sessionID || !props.backend.sessionFork) {
                 toast.show({
                   variant: "warning",
                   message: "No fork-capable runtime is available",
@@ -897,7 +897,7 @@ function Shell(props: {
               ).then((confirmed) => {
                 if (!confirmed) return;
                 return props.backend.sessionFork!(
-                  state.sessionID!,
+                  state.facts.sessionID!,
                   turnID,
                 ).then(
                   (fork) => {

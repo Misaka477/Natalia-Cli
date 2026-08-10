@@ -39,10 +39,13 @@ export function newStream(): StreamState {
 /**
  * Prepares a turn's streams for a retry the runtime has announced.
  *
- * A retrying provider restarts its stream and re-sends what it already sent, so
- * the text already confirmed is remembered as the overlap to skip. Dropping the
- * confirmed text instead would lose it whenever the retry resumes rather than
- * restarts, and keeping it without skipping renders the response twice.
+ * A retry means the attempt did not finish, so the two halves of a stream are
+ * treated differently. Text markdown had already completed stays: a provider that
+ * resumes rather than restarts continues from it, and it becomes the overlap a
+ * provider that restarts will re-send and must have skipped. Text still in flight
+ * is dropped, because it is a fragment of an attempt that failed — keeping it
+ * would glue half of the failed attempt onto the front of the new answer whenever
+ * the retry does not happen to re-send exactly that fragment.
  *
  * The announced attempt is recorded on the stream because the resent deltas may
  * carry an `attempt` stamp. That stamp is the *other* way a supersede can be
@@ -59,10 +62,6 @@ export function resetStreamsForRetry(
     const id = streamID(turnID, role);
     const stream = state.streams[id];
     if (!stream) continue;
-    // Text already streamed has been seen by the reader, so it is confirmed here
-    // rather than discarded, and becomes the overlap the resend must skip.
-    // Using only `committed` would drop whatever was still unconfirmed.
-    stream.committed += stream.tail;
     stream.tail = "";
     stream.retrySkip = stream.committed;
     if (attempt !== undefined) stream.attempt = attempt;
@@ -256,6 +255,10 @@ export function applyConversationEvent(
     case "turn.finished":
       flushStream(state, streamID(event.id, "thinking"));
       flushStream(state, streamID(event.id, "assistant"));
+      // A turn that has finished has finished reasoning, whether or not the
+      // provider bothered to send `thinking.done` — many do not, and the row would
+      // otherwise sit there unmarked for the rest of the session.
+      markBlockStatus(state, streamID(event.id, "thinking"), "completed");
       releaseStreams(state, event.id);
       if (state.activeTurn === event.id) state.activeTurn = undefined;
       state.paused = false;
@@ -443,6 +446,9 @@ function writeStreamBlock(
 ): void {
   const stream = state.streams[id];
   if (!stream) return;
+  // A segment that has just opened with nothing carried into it has nothing to
+  // show, and a block with no text renders as an empty gap in the transcript.
+  if (!stream.committed && !stream.tail) return;
   upsertBlock(
     state,
     segmentID(id, stream.segmentIndex),

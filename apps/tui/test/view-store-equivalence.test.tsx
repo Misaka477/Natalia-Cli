@@ -11,25 +11,32 @@ import {
 } from "@natalia/view-store";
 
 /**
- * `@natalia/view-store` and the TUI reducer still project the conversation core
- * independently: the TUI owns its own transcript, streams and tool display, and
- * adopting the shared one changes what a user sees (footer wording, inline
- * narration), so it is a separate slice.
+ * What this file pins, after the TUI stopped keeping its own conversation
+ * reducer.
  *
- * Two reducers that are allowed to drift are worse than one, so this test pins
- * the overlap. It compares only what both layers claim to project and
- * deliberately ignores what view-store must never project (dialog and modal
- * state, which are UI-only).
+ * The TUI's transcript is now *derived* from `@natalia/view-store`: projected
+ * rows are reconciled into `state.messages` by id, and the TUI adds only the rows
+ * the shared layer deliberately exposes structurally instead — inline approvals
+ * and questions, per-resource summaries, localised turn outcomes and live retry
+ * lines. Comparing the two transcripts row for row would therefore compare the
+ * same code against itself.
  *
- * Resource facts are no longer projected twice: since E3 step 1 the TUI holds
- * `state.facts`, the view-store projection, and reads terminals, sandboxes,
- * subagents and MCP from it. The resource assertions below therefore changed
- * meaning — they now prove the TUI routes those events into the projection at
- * all, rather than proving two implementations agree. That is weaker, and it is
- * stated here rather than left to look like equivalence.
+ * So this file no longer claims that two reducers agree. It pins the properties
+ * of the merge, each of which can actually break:
  *
- * If the transcript comparison fails, the two projections have diverged and the
- * convergence slice has to reconcile them before the TUI can adopt view-store.
+ *   - every row the projection has appears in the rendered transcript, so the
+ *     reconcile cannot drop one;
+ *   - projection-owned rows appear in the projection's order, so the reconcile
+ *     cannot reorder or misplace an insertion;
+ *   - no id appears twice, so the narration layer cannot add a second row for a
+ *     fact the projection already stated;
+ *   - the resource, todo and pending-request slices are reachable, which is what
+ *     turns a missed routing `case` red.
+ *
+ * That is weaker than the equivalence it replaces, and it is stated here rather
+ * than left looking like equivalence. What the derivation itself produces is
+ * pinned against explicit expectations in `view-store-adapter.test.tsx`, and the
+ * transcript a user sees is pinned by `stream-blocks.test.ts`.
  */
 
 /**
@@ -40,6 +47,7 @@ import {
  */
 type Comparable = {
   messages: Array<{ role: string; text: string; status?: string }>;
+  ids: string[];
   activeTurn?: string;
   status: string;
   statusSegments: string[];
@@ -98,6 +106,7 @@ function fromView(state: ViewAppState): Comparable {
         text: comparableText(block),
         status: block.status,
       })),
+    ids: state.messages.map((block) => block.id),
     activeTurn: state.activeTurn,
     status: state.status,
     statusSegments: state.statusSegments,
@@ -126,14 +135,21 @@ function resourceRows(
 
 function fromTui(state: TuiAppState): Comparable {
   return {
+    // Only the rows the projection owns: a row the narration layer has claimed
+    // says the same thing in the TUI's own wording, which is a deliberate
+    // difference rather than a drift.
     messages: state.messages
+      .filter((block) => block.owner === "projection")
       .filter((block) => !isInlineResourceRow(block))
       .map((block) => ({
         role: block.role,
         text: comparableText(block),
         status: block.status,
       })),
-    activeTurn: state.activeTurn,
+    ids: state.messages
+      .filter((block) => block.owner === "projection")
+      .map((block) => block.id),
+    activeTurn: state.facts.activeTurn,
     status: state.status,
     statusSegments: state.statusSegments,
     // The TUI keeps interactive requests in one prioritized modal queue, while
@@ -155,7 +171,7 @@ function fromTui(state: TuiAppState): Comparable {
     mcp: Object.values(state.facts.mcp)
       .map((item) => ({ server: item.server, status: item.status }))
       .sort((a, b) => a.server.localeCompare(b.server)),
-    todos: state.todos.map((todo) => ({
+    todos: state.facts.todos.map((todo) => ({
       content: todo.content,
       status: todo.status,
     })),
@@ -350,10 +366,28 @@ const streams: Array<{ name: string; events: RuntimeEvent[] }> = [
 ];
 
 for (const stream of streams) {
-  test(`view-store matches the TUI reducer for ${stream.name}`, () => {
-    const view = fromView(projectEvents(stream.events));
-    const tui = fromTui(tuiProject(stream.events));
+  test(`the TUI transcript is derived faithfully for ${stream.name}`, () => {
+    const projected = projectEvents(stream.events);
+    const rendered = tuiProject(stream.events);
+    const view = fromView(projected);
+    const tui = fromTui(rendered);
     expect(view.messages).toEqual(tui.messages);
+    // Projection order is preserved, and no projected row goes missing: a row the
+    // TUI restated in its own wording still has to be there, by id.
+    expect(tui.ids).toEqual(
+      view.ids.filter((id) =>
+        rendered.messages.some(
+          (block) => block.id === id && block.owner === "projection",
+        ),
+      ),
+    );
+    for (const id of view.ids)
+      expect(rendered.messages.some((block) => block.id === id)).toBe(true);
+    // One fact, one row: the narration layer must not add a second row for
+    // something the projection already stated.
+    expect(new Set(rendered.messages.map((block) => block.id)).size).toBe(
+      rendered.messages.length,
+    );
     expect(view.activeTurn).toEqual(tui.activeTurn);
     expect(view.pendingApprovalIDs).toEqual(tui.pendingApprovalIDs);
     expect(view.pendingQuestionIDs).toEqual(tui.pendingQuestionIDs);
