@@ -304,13 +304,13 @@ export const commands: Record<string, CommandDef> = {
   },
   "permission.dialog.edit": {
     id: "permission.dialog.edit",
-    keys: "f2",
+    keys: "alt+e",
     desc: "Edit permission profile",
     scope: "dialog",
   },
   "permission.dialog.delete": {
     id: "permission.dialog.delete",
-    keys: "f4",
+    keys: "alt+d",
     desc: "Delete permission profile",
     scope: "dialog",
   },
@@ -338,19 +338,23 @@ export const commands: Record<string, CommandDef> = {
   },
   "prompt.attachment.add": {
     id: "prompt.attachment.add",
-    keys: "ctrl+shift+a",
+    keys: "alt+a",
     desc: "Queue workspace attachment",
+  },
+  "prompt.attachment.paste-image": {
+    id: "prompt.attachment.paste-image",
+    keys: "alt+y",
+    desc: "Paste image from the system clipboard as an attachment",
   },
   "prompt.attachment.list": {
     id: "prompt.attachment.list",
-    keys: "ctrl+shift+o",
+    keys: "alt+o",
     desc: "List queued attachments",
   },
   "prompt.attachment.remove": {
     id: "prompt.attachment.remove",
-    keys: "d",
-    desc: "Remove queued attachment",
-    scope: "dialog",
+    keys: "alt+x",
+    desc: "Remove the most recent attachment (or the selected one in the list)",
   },
   "prompt.autocomplete.prev": {
     id: "prompt.autocomplete.prev",

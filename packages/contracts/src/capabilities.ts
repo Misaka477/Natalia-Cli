@@ -98,6 +98,12 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "modelSelection",
     "selectModel",
     "skills",
+    "agentCreate",
+    "agentUpdate",
+    "agentDelete",
+    "providerDiscover",
+    "providerAdd",
+    "providerRemove",
   ],
   /** Reading and searching the workspace. */
   workspace: [
@@ -117,6 +123,9 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "nativeTerminalBeginSecureInput",
     "nativeTerminalEndSecureInput",
     "nativeTerminalStop",
+    "nativeTerminalStart",
+    "nativeTerminalWrite",
+    "nativeTerminalResize",
   ],
   /** Snapshotting the workspace and rolling it back. */
   checkpoint: ["checkpointList", "checkpointPreview", "checkpointRollback"],
@@ -139,11 +148,28 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "sessionDuplicate",
     "sessionFork",
     "sessionDelete",
+    "sessionNew",
+    "sessionArchive",
+    "sessionExport",
   ],
   /** Tools and prompts contributed by MCP servers. */
-  mcp: ["mcpCatalog", "getMcpPrompt", "readMcpResource"],
+  mcp: [
+    "mcpCatalog",
+    "getMcpPrompt",
+    "readMcpResource",
+    "mcpServerAdd",
+    "mcpServerRemove",
+  ],
   /** What has been loaded into this runtime. */
-  extensions: ["plugins", "commandCatalog", "capabilities"],
+  extensions: [
+    "plugins",
+    "commandCatalog",
+    "capabilities",
+    "pluginUnload",
+    "pluginReload",
+  ],
+  /** Security and configuration management (permission profiles). */
+  management: ["permissionList", "permissionSave", "permissionDelete"],
   /** Durable task and flow documents. */
   automation: [
     "taskOverview",

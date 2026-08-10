@@ -150,9 +150,25 @@ export const RPC_ROUTE_MEMBERS = {
   "session.duplicate": "sessionDuplicate",
   "session.fork": "sessionFork",
   "session.delete": "sessionDelete",
+  "session.new": "sessionNew",
+  "session.archive": "sessionArchive",
+  "session.export": "sessionExport",
   "mcp.catalog": "mcpCatalog",
   "mcp.prompt": "getMcpPrompt",
   "mcp.resource": "readMcpResource",
+  "mcp.server.add": "mcpServerAdd",
+  "mcp.server.remove": "mcpServerRemove",
+  "permission.list": "permissionList",
+  "permission.save": "permissionSave",
+  "permission.delete": "permissionDelete",
+  "agent.create": "agentCreate",
+  "agent.update": "agentUpdate",
+  "agent.delete": "agentDelete",
+  "provider.discover": "providerDiscover",
+  "provider.add": "providerAdd",
+  "provider.remove": "providerRemove",
+  "plugin.unload": "pluginUnload",
+  "plugin.reload": "pluginReload",
   "plugin.list": "plugins",
   "command.catalog": "commandCatalog",
   "task.overview": "taskOverview",
@@ -172,6 +188,9 @@ export const RPC_ROUTE_MEMBERS = {
   "nativeTerminal.releaseHumanControl": "nativeTerminalReleaseHumanControl",
   "nativeTerminal.beginSecureInput": "nativeTerminalBeginSecureInput",
   "nativeTerminal.endSecureInput": "nativeTerminalEndSecureInput",
+  "nativeTerminal.start": "nativeTerminalStart",
+  "nativeTerminal.write": "nativeTerminalWrite",
+  "nativeTerminal.resize": "nativeTerminalResize",
   "constitution.rules": "constitutionRules",
   "decision.records": "decisionRecords",
   "evidence.records": "evidenceRecords",
@@ -245,12 +264,28 @@ export const RPC_WRITE_METHODS: ReadonlySet<string> = new Set([
   "session.duplicate",
   "session.fork",
   "session.delete",
+  "session.new",
+  "session.archive",
+  "mcp.server.add",
+  "mcp.server.remove",
+  "permission.save",
+  "permission.delete",
+  "agent.create",
+  "agent.update",
+  "agent.delete",
+  "provider.add",
+  "provider.remove",
+  "plugin.unload",
+  "plugin.reload",
   "nativeTerminal.stop",
   "nativeTerminal.revokeApprovalScope",
   "nativeTerminal.releaseHumanControl",
   "nativeTerminal.beginSecureInput",
   "nativeTerminal.endSecureInput",
   "nativeTerminal.openHub",
+  "nativeTerminal.start",
+  "nativeTerminal.write",
+  "nativeTerminal.resize",
   "flow.save",
   "flow.delete",
 ]);
@@ -988,6 +1023,43 @@ export async function handleRPCMessage(
         result: await client.sessionDelete(stringParam(body.params, "id")),
       };
     }
+    if (body.method === "session.new") {
+      optionsGuard(client, "sessionNew");
+      const params = body.params;
+      const id =
+        params &&
+        typeof params === "object" &&
+        typeof (params as { id?: unknown }).id === "string"
+          ? (params as { id: string }).id
+          : undefined;
+      const title =
+        params &&
+        typeof params === "object" &&
+        typeof (params as { title?: unknown }).title === "string"
+          ? (params as { title: string }).title
+          : undefined;
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.sessionNew?.({ id, title }),
+      };
+    }
+    if (body.method === "session.archive") {
+      optionsGuard(client, "sessionArchive");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.sessionArchive(stringParam(body.params, "id")),
+      };
+    }
+    if (body.method === "session.export") {
+      optionsGuard(client, "sessionExport");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.sessionExport(stringParam(body.params, "id")),
+      };
+    }
     if (body.method === "mcp.catalog") {
       optionsGuard(client, "mcpCatalog");
       return {
@@ -1103,6 +1175,87 @@ export async function handleRPCMessage(
         result: await client.nativeTerminalEndSecureInput(
           stringParam(body.params, "id"),
         ),
+      };
+    }
+    // --- P0-H: the terminal write surface (host-gated, see http.ts) ---
+    if (body.method === "nativeTerminal.start") {
+      optionsGuard(client, "nativeTerminalStart");
+      const params = body.params;
+      if (!params || typeof params !== "object")
+        throw invalidParams("nativeTerminal.start.params must be an object");
+      const command = (params as { command?: unknown }).command;
+      if (typeof command !== "string" || !command)
+        throw invalidParams(
+          "nativeTerminal.start.params.command must be a non-empty string",
+        );
+      const cwd =
+        typeof (params as { cwd?: unknown }).cwd === "string"
+          ? (params as { cwd: string }).cwd
+          : undefined;
+      const id =
+        typeof (params as { id?: unknown }).id === "string"
+          ? (params as { id: string }).id
+          : undefined;
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.nativeTerminalStart?.({ command, cwd, id }),
+      };
+    }
+    if (body.method === "nativeTerminal.write") {
+      optionsGuard(client, "nativeTerminalWrite");
+      const params = body.params;
+      if (!params || typeof params !== "object")
+        throw invalidParams("nativeTerminal.write.params must be an object");
+      const id = (params as { id?: unknown }).id;
+      const input = (params as { input?: unknown }).input;
+      if (typeof id !== "string" || !id)
+        throw invalidParams(
+          "nativeTerminal.write.params.id must be a non-empty string",
+        );
+      if (typeof input !== "string")
+        throw invalidParams(
+          "nativeTerminal.write.params.input must be a string",
+        );
+      const idempotencyKey =
+        typeof (params as { idempotencyKey?: unknown }).idempotencyKey ===
+        "string"
+          ? (params as { idempotencyKey: string }).idempotencyKey
+          : undefined;
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.nativeTerminalWrite?.({
+          id,
+          input,
+          idempotencyKey,
+        }),
+      };
+    }
+    if (body.method === "nativeTerminal.resize") {
+      optionsGuard(client, "nativeTerminalResize");
+      const params = body.params;
+      if (!params || typeof params !== "object")
+        throw invalidParams("nativeTerminal.resize.params must be an object");
+      const id = (params as { id?: unknown }).id;
+      const rows = (params as { rows?: unknown }).rows;
+      const cols = (params as { cols?: unknown }).cols;
+      if (typeof id !== "string" || !id)
+        throw invalidParams(
+          "nativeTerminal.resize.params.id must be a non-empty string",
+        );
+      if (typeof rows !== "number" || !Number.isInteger(rows))
+        throw invalidParams(
+          "nativeTerminal.resize.params.rows must be an integer",
+        );
+      if (typeof cols !== "number" || !Number.isInteger(cols))
+        throw invalidParams(
+          "nativeTerminal.resize.params.cols must be an integer",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.nativeTerminalResize?.({ id, rows, cols }),
       };
     }
     // --- P0-C: intelligence queries and capability records ---
@@ -1369,6 +1522,194 @@ export async function handleRPCMessage(
           stringParam(body.params, "server"),
           stringParam(body.params, "uri"),
         ),
+      };
+    }
+    if (body.method === "mcp.server.add") {
+      optionsGuard(client, "mcpServerAdd");
+      const params = body.params;
+      if (!params || typeof params !== "object")
+        throw invalidParams("mcp.server.add.params must be an object");
+      const name = (params as { name?: unknown }).name;
+      const config = (params as { config?: unknown }).config;
+      if (typeof name !== "string" || !name)
+        throw invalidParams(
+          "mcp.server.add.params.name must be a non-empty string",
+        );
+      if (!config || typeof config !== "object")
+        throw invalidParams("mcp.server.add.params.config must be an object");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.mcpServerAdd?.({
+          name,
+          config: config as never,
+        }),
+      };
+    }
+    if (body.method === "mcp.server.remove") {
+      optionsGuard(client, "mcpServerRemove");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.mcpServerRemove(stringParam(body.params, "name")),
+      };
+    }
+    if (body.method === "permission.list") {
+      optionsGuard(client, "permissionList");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.permissionList?.(),
+      };
+    }
+    if (body.method === "permission.save") {
+      optionsGuard(client, "permissionSave");
+      const params = body.params;
+      if (!params || typeof params !== "object")
+        throw invalidParams("permission.save.params must be an object");
+      const name = (params as { name?: unknown }).name;
+      const profile = (params as { profile?: unknown }).profile;
+      if (typeof name !== "string" || !name)
+        throw invalidParams(
+          "permission.save.params.name must be a non-empty string",
+        );
+      if (!profile || typeof profile !== "object")
+        throw invalidParams("permission.save.params.profile must be an object");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.permissionSave?.({
+          name,
+          profile: profile as never,
+        }),
+      };
+    }
+    if (body.method === "permission.delete") {
+      optionsGuard(client, "permissionDelete");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.permissionDelete(stringParam(body.params, "name")),
+      };
+    }
+    // --- P0-K: agent, provider and plugin management ---
+    const managementName = (params: unknown, method: string) => {
+      const value = (params as { name?: unknown })?.name;
+      if (typeof value !== "string" || !value)
+        throw invalidParams(`${method}.params.name must be a non-empty string`);
+      return value;
+    };
+    const managementObject = (params: unknown, method: string) => {
+      const value = (params as { config?: unknown })?.config;
+      if (!value || typeof value !== "object")
+        throw invalidParams(`${method}.params.config must be an object`);
+      return value as never;
+    };
+    if (body.method === "agent.create" || body.method === "agent.update") {
+      const member =
+        body.method === "agent.create" ? "agentCreate" : "agentUpdate";
+      optionsGuard(client, member);
+      const name = managementName(body.params, body.method);
+      const config = managementObject(body.params, body.method);
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result:
+          body.method === "agent.create"
+            ? await client.agentCreate?.({ name, config })
+            : await client.agentUpdate?.({ name, config }),
+      };
+    }
+    if (body.method === "agent.delete") {
+      optionsGuard(client, "agentDelete");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.agentDelete(
+          managementName(body.params, "agent.delete"),
+        ),
+      };
+    }
+    if (body.method === "provider.discover") {
+      optionsGuard(client, "providerDiscover");
+      const params = body.params;
+      if (!params || typeof params !== "object")
+        throw invalidParams("provider.discover.params must be an object");
+      const type = (params as { type?: unknown }).type;
+      const baseURL = (params as { baseURL?: unknown }).baseURL;
+      const apiKey = (params as { apiKey?: unknown }).apiKey;
+      if (typeof type !== "string" || !type)
+        throw invalidParams(
+          "provider.discover.params.type must be a non-empty string",
+        );
+      if (typeof baseURL !== "string" || !baseURL)
+        throw invalidParams(
+          "provider.discover.params.baseURL must be a non-empty string",
+        );
+      if (typeof apiKey !== "string" || !apiKey)
+        throw invalidParams(
+          "provider.discover.params.apiKey must be a non-empty string",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.providerDiscover?.({ type, baseURL, apiKey }),
+      };
+    }
+    if (body.method === "provider.add") {
+      optionsGuard(client, "providerAdd");
+      const params = body.params;
+      if (!params || typeof params !== "object")
+        throw invalidParams("provider.add.params must be an object");
+      const name = (params as { name?: unknown }).name;
+      const type = (params as { type?: unknown }).type;
+      const apiKey = (params as { apiKey?: unknown }).apiKey;
+      const baseURL = (params as { baseURL?: unknown }).baseURL;
+      if (typeof name !== "string" || !name)
+        throw invalidParams(
+          "provider.add.params.name must be a non-empty string",
+        );
+      if (typeof type !== "string" || !type)
+        throw invalidParams(
+          "provider.add.params.type must be a non-empty string",
+        );
+      if (typeof apiKey !== "string" || !apiKey)
+        throw invalidParams(
+          "provider.add.params.apiKey must be a non-empty string",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.providerAdd?.({
+          name,
+          type,
+          apiKey,
+          baseURL: typeof baseURL === "string" && baseURL ? baseURL : undefined,
+        }),
+      };
+    }
+    if (body.method === "provider.remove") {
+      optionsGuard(client, "providerRemove");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.providerRemove(
+          managementName(body.params, "provider.remove"),
+        ),
+      };
+    }
+    if (body.method === "plugin.unload" || body.method === "plugin.reload") {
+      const member =
+        body.method === "plugin.unload" ? "pluginUnload" : "pluginReload";
+      optionsGuard(client, member);
+      const id = managementName(body.params, body.method);
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result:
+          body.method === "plugin.unload"
+            ? await client.pluginUnload?.(id)
+            : await client.pluginReload?.(id),
       };
     }
     // A name the route table accepted but no dispatch block serves: the table

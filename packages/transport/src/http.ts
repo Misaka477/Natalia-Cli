@@ -57,6 +57,14 @@ export type RuntimeHttpServerOptions = {
   tls?: { cert: string; key: string };
   events?: boolean;
   /**
+   * Gates the P0-H terminal write surface (`nativeTerminal.start` /
+   * `nativeTerminal.write` / `nativeTerminal.resize`). Default is `false`:
+   * without it those three routes answer `-32001 refused` — remote terminal
+   * write is remote shell, so it must be an explicit deployment decision,
+   * exactly like `runTask`.
+   */
+  terminalWrite?: boolean;
+  /**
    * Runs a task inside this process. The handler is injected because the task
    * controller belongs to the runtime, not to the transport: the transport only
    * carries the delivery.
@@ -314,6 +322,38 @@ export function createRuntimeHttpServer(
           jsonrpc: "2.0",
           id: null,
           error: { code: -32700, message: "Parse error" },
+        },
+        { status: 400 },
+      );
+    }
+    // P0-H: the terminal write surface is gated here, at the deployment layer,
+    // like /tasks/run. The routes exist and are writes; without the explicit
+    // `terminalWrite: true` option they answer refused, so a host that never
+    // opted in cannot be reached remotely through a terminal write. A caller
+    // without write scope is left to the authorization layer ("no write
+    // scope"): the gate answers only for callers who would otherwise get
+    // through.
+    const method = (body as { method?: unknown })?.method;
+    if (
+      typeof method === "string" &&
+      (method === "nativeTerminal.start" ||
+        method === "nativeTerminal.write" ||
+        method === "nativeTerminal.resize") &&
+      !options.terminalWrite &&
+      authorization?.write !== false
+    ) {
+      return Response.json(
+        {
+          jsonrpc: "2.0",
+          id: (body as { id?: unknown })?.id ?? null,
+          error: {
+            code: -32001,
+            message: "terminal write is not enabled by this host",
+            data: {
+              kind: "refused",
+              reason: "terminal write is not enabled by this host",
+            },
+          },
         },
         { status: 400 },
       );

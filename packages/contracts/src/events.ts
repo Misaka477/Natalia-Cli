@@ -3,7 +3,12 @@ import type {
   QuestionItem,
   QuestionResponse,
 } from "@natalia/ui-model";
-import type { AgentPermissionRules } from "./schemas";
+import type {
+  AgentConfig,
+  AgentPermissionRules,
+  MCPServerConfig,
+  PermissionProfile,
+} from "./schemas";
 export type { ApprovalResponse, QuestionResponse } from "@natalia/ui-model";
 
 export type SessionID = `ses_${string}`;
@@ -797,6 +802,10 @@ export type LocalAttachment = {
   mediaType:
     | "image/png"
     | "image/jpeg"
+    | "image/webp"
+    | "image/gif"
+    | "video/mp4"
+    | "video/webm"
     | "application/pdf"
     | "text/plain"
     | "text/markdown"
@@ -1081,6 +1090,7 @@ export type RuntimeSessionSummary = {
   createdAt: string;
   lastAccessedAt?: string;
   pinned: boolean;
+  archived?: boolean;
   events: number;
   pendingInputs: number;
   cancelled: boolean;
@@ -1315,6 +1325,43 @@ export type RuntimeClient = {
     id: string,
   ): Promise<RuntimeNativeTerminalSession>;
   nativeTerminalStop?(id: string): Promise<RuntimeNativeTerminalSession>;
+  /**
+   * Starts a native terminal session remotely. The route exists and is a write;
+   * the host must explicitly enable terminal writes (`terminalWrite: true`),
+   * otherwise the call is refused. `cwd` defaults to the runtime's workspace
+   * root. Remote callers are treated as model-side actors for ownership and
+   * secure-input arbitration.
+   */
+  nativeTerminalStart?(input: {
+    command: string;
+    cwd?: string;
+    id?: string;
+  }): Promise<RuntimeNativeTerminalSession>;
+  /**
+   * Writes input bytes (including control bytes such as Enter, Ctrl-C, Esc) to
+   * a native terminal session. Refused while a human holds input, while secure
+   * input is active, or when the host has not enabled terminal writes.
+   * `idempotencyKey` makes a replay answer `delivery: "duplicate"` instead of
+   * writing again.
+   */
+  nativeTerminalWrite?(input: {
+    id: string;
+    input: string;
+    idempotencyKey?: string;
+  }): Promise<{
+    id: string;
+    writtenBytes: number;
+    delivery: "accepted" | "duplicate" | "cancelled";
+  }>;
+  /**
+   * Resizes a native terminal session. Subject to the same secure-input
+   * interlock as the model-side tool; geometry itself stays human-owned.
+   */
+  nativeTerminalResize?(input: {
+    id: string;
+    rows: number;
+    cols: number;
+  }): Promise<RuntimeNativeTerminalSession>;
   checkpointList?(): Promise<RuntimeCheckpoint[]>;
   checkpointPreview?(id: string): Promise<CheckpointPreview>;
   checkpointRollback?(input: {
@@ -1351,7 +1398,136 @@ export type RuntimeClient = {
   sessionDelete?(
     id: string,
   ): Promise<{ id: string; removedAttachments: number }>;
+  /**
+   * Creates a session record. Idempotent by id: creating an existing id
+   * answers `created: false` with the existing summary instead of failing.
+   * With no id the runtime mints one. A write.
+   */
+  sessionNew?(input?: {
+    id?: string;
+    title?: string;
+  }): Promise<{ sessionID: string; created: boolean }>;
+  /**
+   * Archives a session record: it stays listable with `archived: true` and
+   * can still be exported, but is no longer a candidate for new work. A
+   * write; idempotent (archiving an archived session answers
+   * `archived: true`).
+   */
+  sessionArchive?(id: string): Promise<{ id: string; archived: boolean }>;
+  /**
+   * Exports a session's journal: the record header plus every event in
+   * sequence. Read-only; an unknown session id is an argument error.
+   */
+  sessionExport?(id: string): Promise<{
+    sessionID: string;
+    title: string;
+    createdAt: string;
+    archived: boolean;
+    events: Array<{ seq: number; event: RuntimeEvent }>;
+  }>;
   mcpCatalog?(): Promise<MCPCatalogSnapshot>;
+  /**
+   * Lists permission profiles with the active default. Read-only.
+   */
+  permissionList?(): Promise<{
+    default: string;
+    profiles: Array<{ name: string } & PermissionProfile>;
+  }>;
+  /**
+   * Creates or replaces a permission profile. Validated against the config
+   * schema; the config file is written either way and the runtime reloads
+   * it — `applied: false` with a reason when a running turn blocks the
+   * reload. A write.
+   */
+  permissionSave?(input: {
+    name: string;
+    profile: PermissionProfile;
+  }): Promise<{ saved: boolean; applied: boolean; reason?: string }>;
+  /**
+   * Deletes a permission profile. Idempotent: an unknown name answers
+   * `deleted: true`. The profile currently selected as default is refused
+   * (`deleted: false` with a reason). A write.
+   */
+  permissionDelete?(name: string): Promise<{
+    deleted: boolean;
+    reason?: string;
+  }>;
+  /**
+   * Adds or replaces an MCP server from its config (the MCP official field
+   * set: type/command/args/url/headers/environment/…). The runtime writes
+   * the config and reconnects the server; connection failures surface as
+   * diagnostics. A write.
+   */
+  mcpServerAdd?(input: {
+    name: string;
+    config: MCPServerConfig;
+  }): Promise<{ saved: boolean }>;
+  /**
+   * Removes an MCP server. Idempotent: an unknown name answers
+   * `removed: true`. The runtime writes the config and disconnects. A write.
+   */
+  mcpServerRemove?(name: string): Promise<{ removed: boolean }>;
+  /**
+   * Creates an agent definition. A write; creating an existing name answers
+   * `created: false` with a reason.
+   */
+  agentCreate?(input: {
+    name: string;
+    config: AgentConfig;
+  }): Promise<{ created: boolean; reason?: string }>;
+  /**
+   * Replaces an agent definition. A write; an unknown name is an argument
+   * error.
+   */
+  agentUpdate?(input: {
+    name: string;
+    config: AgentConfig;
+  }): Promise<{ updated: boolean }>;
+  /**
+   * Deletes an agent definition. A write; idempotent (unknown answers
+   * `deleted: true`); the default agent refuses deletion.
+   */
+  agentDelete?(name: string): Promise<{
+    deleted: boolean;
+    reason?: string;
+  }>;
+  /**
+   * Discovers the models a provider endpoint offers, without configuring it.
+   * Read-only, but carries the api key for the probe.
+   */
+  providerDiscover?(input: {
+    type: string;
+    baseURL: string;
+    apiKey: string;
+  }): Promise<{ models: string[] }>;
+  /**
+   * Adds or replaces a provider by type, endpoint and key, and applies the
+   * config. A write.
+   */
+  providerAdd?(input: {
+    name: string;
+    type: string;
+    baseURL?: string;
+    apiKey: string;
+  }): Promise<{ saved: boolean }>;
+  /**
+   * Removes a provider. A write; idempotent; a provider referenced by a model
+   * refuses deletion.
+   */
+  providerRemove?(name: string): Promise<{
+    removed: boolean;
+    reason?: string;
+  }>;
+  /**
+   * Unloads a plugin. A write; idempotent (unknown answers `unloaded: true`).
+   */
+  pluginUnload?(id: string): Promise<{ unloaded: boolean }>;
+  /**
+   * Reloads a plugin from its manifest path: unloads the current instance and
+   * re-imports the module. A write; an unknown plugin id is an argument
+   * error.
+   */
+  pluginReload?(id: string): Promise<{ reloaded: boolean }>;
   getMcpPrompt?(
     server: string,
     name: string,

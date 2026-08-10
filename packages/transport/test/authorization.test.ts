@@ -71,6 +71,22 @@ function controllableClient() {
     "sessionDuplicate",
     "sessionFork",
     "sessionDelete",
+    "sessionNew",
+    "sessionArchive",
+    "sessionExport",
+    "permissionList",
+    "permissionSave",
+    "permissionDelete",
+    "agentCreate",
+    "agentUpdate",
+    "agentDelete",
+    "providerDiscover",
+    "providerAdd",
+    "providerRemove",
+    "pluginUnload",
+    "pluginReload",
+    "mcpServerAdd",
+    "mcpServerRemove",
     "mcpCatalog",
     "getMcpPrompt",
     "readMcpResource",
@@ -93,6 +109,9 @@ function controllableClient() {
     "nativeTerminalBeginSecureInput",
     "nativeTerminalEndSecureInput",
     "nativeTerminalStop",
+    "nativeTerminalStart",
+    "nativeTerminalWrite",
+    "nativeTerminalResize",
     "constitutionRules",
     "decisionRecords",
     "evidenceRecords",
@@ -234,7 +253,23 @@ test("a read-only credential cannot write, and the refusal does not leak existen
       "checkpoint.rollback",
       "sandbox.merge",
       "session.delete",
+      "session.new",
+      "session.archive",
+      "mcp.server.add",
+      "mcp.server.remove",
+      "permission.save",
+      "permission.delete",
+      "agent.create",
+      "agent.update",
+      "agent.delete",
+      "provider.add",
+      "provider.remove",
+      "plugin.unload",
+      "plugin.reload",
       "nativeTerminal.stop",
+      "nativeTerminal.start",
+      "nativeTerminal.write",
+      "nativeTerminal.resize",
     ]) {
       const { error } = await rpc(server, "readonly", method, { id: "x" });
       expect(error?.code, `${method} must be refused`).toBe(
@@ -265,6 +300,25 @@ test("the write surface is an enumerated, test-pinned list", () => {
   expect(RPC_WRITE_METHODS.has("config.reload")).toBe(true);
   expect(RPC_WRITE_METHODS.has("checkpoint.rollback")).toBe(true);
   expect(RPC_WRITE_METHODS.has("session.delete")).toBe(true);
+  expect(RPC_WRITE_METHODS.has("session.new")).toBe(true);
+  expect(RPC_WRITE_METHODS.has("session.archive")).toBe(true);
+  expect(RPC_WRITE_METHODS.has("session.export")).toBe(false);
+  expect(RPC_WRITE_METHODS.has("permission.save")).toBe(true);
+  expect(RPC_WRITE_METHODS.has("permission.delete")).toBe(true);
+  expect(RPC_WRITE_METHODS.has("permission.list")).toBe(false);
+  expect(RPC_WRITE_METHODS.has("mcp.server.add")).toBe(true);
+  expect(RPC_WRITE_METHODS.has("mcp.server.remove")).toBe(true);
+  expect(RPC_WRITE_METHODS.has("agent.create")).toBe(true);
+  expect(RPC_WRITE_METHODS.has("agent.update")).toBe(true);
+  expect(RPC_WRITE_METHODS.has("agent.delete")).toBe(true);
+  expect(RPC_WRITE_METHODS.has("provider.discover")).toBe(false);
+  expect(RPC_WRITE_METHODS.has("provider.add")).toBe(true);
+  expect(RPC_WRITE_METHODS.has("provider.remove")).toBe(true);
+  expect(RPC_WRITE_METHODS.has("plugin.unload")).toBe(true);
+  expect(RPC_WRITE_METHODS.has("plugin.reload")).toBe(true);
+  expect(RPC_WRITE_METHODS.has("nativeTerminal.write")).toBe(true);
+  expect(RPC_WRITE_METHODS.has("nativeTerminal.start")).toBe(true);
+  expect(RPC_WRITE_METHODS.has("nativeTerminal.resize")).toBe(true);
   expect(RPC_WRITE_METHODS.has("history")).toBe(false);
 });
 

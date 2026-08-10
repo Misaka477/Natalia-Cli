@@ -2,6 +2,9 @@
 import { type TextareaRenderable } from "@opentui/core";
 import { useRenderer } from "@opentui/solid";
 import { useKeymap, useKeymapSelector } from "@opentui/keymap/solid";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { readClipboardImage } from "../clipboard";
 import type {
   ConfigV2,
   MCPResourceCatalog,
@@ -148,7 +151,7 @@ export interface CommandContext {
   updatePreferences: (next: TuiPreferences, scope?: any) => void;
 }
 
-export function runCommand(command: string, ctx: CommandContext) {
+export async function runCommand(command: string, ctx: CommandContext) {
   if (command === "palette.toggle") {
     ctx.dialog.replace(() => (
       <CommandPalette onRun={(cmd) => runCommand(cmd, ctx)} />
@@ -282,6 +285,38 @@ export function runCommand(command: string, ctx: CommandContext) {
         }}
       />
     ));
+    return;
+  }
+  if (command === "prompt.attachment.paste-image") {
+    const root = ctx.workspaceRoot ?? process.cwd();
+    const bytes = await readClipboardImage();
+    if (!bytes || bytes.length === 0) {
+      ctx.toast.error(
+        "no image on the system clipboard (needs wl-paste/xclip on Linux, osascript on macOS, or PowerShell on Windows)",
+      );
+      return;
+    }
+    const dir = join(root, ".natalia", "attachments");
+    await mkdir(dir, { recursive: true, mode: 0o700 });
+    const filename = `pasted-${Date.now()}.png`;
+    await Bun.write(join(dir, filename), bytes);
+    const relative = `.natalia/attachments/${filename}`;
+    ctx.setAttachmentPaths((current) =>
+      current.includes(relative) ? current : [...current, relative],
+    );
+    ctx.toast.show(`queued clipboard image: ${relative}`);
+    setTimeout(() => ctx.composer()?.focus(), 1);
+    return;
+  }
+  if (command === "prompt.attachment.remove") {
+    const current = ctx.attachmentPaths();
+    if (current.length === 0) return;
+    const removed = current[current.length - 1]!;
+    ctx.setAttachmentPaths((items) => items.filter((item) => item !== removed));
+    ctx.toast.show(
+      `removed attachment: ${removed.split("/").at(-1) ?? removed} (Alt+O lists all)`,
+    );
+    setTimeout(() => ctx.composer()?.focus(), 1);
     return;
   }
   if (command === "prompt.attachment.list") {
@@ -580,6 +615,7 @@ export function runCommand(command: string, ctx: CommandContext) {
                           reasoning: true,
                           thinking: true,
                           imageInput: false,
+                          videoInput: false,
                           pdfInput: false,
                         },
                         model: mid.trim(),
@@ -618,6 +654,7 @@ export function runCommand(command: string, ctx: CommandContext) {
                                 reasoning: true,
                                 thinking: true,
                                 imageInput: false,
+                                videoInput: false,
                                 pdfInput: false,
                               },
                               model: sel.value,
@@ -650,6 +687,7 @@ export function runCommand(command: string, ctx: CommandContext) {
                           reasoning: true,
                           thinking: true,
                           imageInput: false,
+                          videoInput: false,
                           pdfInput: false,
                         },
                         model: mid.trim(),

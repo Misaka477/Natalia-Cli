@@ -74,6 +74,8 @@ import {
   type ConfigWriteScope,
 } from "@natalia/config";
 import { discoverProviderModels } from "@natalia/config";
+import { statSync } from "node:fs";
+import { relative as relativePath, resolve } from "node:path";
 import { decidePaste } from "../prompt/paste";
 import { PromptHistory, shouldUseHistory } from "../prompt/history";
 import {
@@ -521,6 +523,50 @@ function Shell(props: {
       return;
     }
     if (decision.preview) setPastePreview(decision.preview);
+    detectPastedFilePaths(event.bytes);
+  }
+
+  /**
+   * Terminals paste a dragged-in file as its path text, so "drag a screenshot
+   * or a video into the composer" arrives here as lines of text. When every
+   * non-empty line is an existing file inside the workspace, queue them as
+   * attachments instead of leaving the user to notice the paths in the text.
+   * Partial matches are left alone: the paste may be prose mentioning paths.
+   */
+  function detectPastedFilePaths(bytes: Uint8Array) {
+    const root = props.workspaceRoot;
+    if (!root) return;
+    const lines = new TextDecoder("utf-8")
+      .decode(bytes)
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (lines.length === 0) return;
+    const resolved = lines.map((line) => resolve(root, line));
+    const inside = resolved.map((path) => {
+      const relative = relativePath(root, path);
+      return relative !== "" && !relative.startsWith("..");
+    });
+    if (!inside.every(Boolean)) return;
+    const files = resolved.filter((path) => {
+      try {
+        return statSync(path).isFile();
+      } catch {
+        return false;
+      }
+    });
+    if (files.length !== resolved.length) return;
+    setAttachmentPaths((current) => {
+      const next = [...current];
+      for (const path of resolved) {
+        const relative = relativePath(root, path);
+        if (!next.includes(relative)) next.push(relative);
+      }
+      return next;
+    });
+    setPastePreview(
+      `queued ${files.length} pasted ${files.length === 1 ? "file" : "files"} as attachments`,
+    );
   }
 
   function restoreHistory(direction: -1 | 1) {
@@ -557,7 +603,7 @@ function Shell(props: {
   }
 
   function onCommand(command: string) {
-    runCommand(command, {
+    void runCommand(command, {
       backend: props.backend,
       workspaceRoot: props.workspaceRoot,
       composer: () => composer(),
@@ -1051,7 +1097,7 @@ function Shell(props: {
                 {attachmentPaths()
                   .map((path) => path.split("/").at(-1) ?? path)
                   .join(", ")}
-                {" · Ctrl+Shift+O manage"}
+                {" · Alt+X removes last, Alt+O manage"}
               </text>
             </Show>
             <Show when={layout().showComposerHints}>

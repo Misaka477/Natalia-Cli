@@ -94,6 +94,79 @@ export type NataliaSDK = {
     id: string,
   ): Promise<{ id: string; removedAttachments: number }>;
   /**
+   * Creates a session record. Idempotent by id: an existing id answers
+   * `created: false`. A write.
+   */
+  newSession(
+    input?: Parameters<NonNullable<RuntimeClient["sessionNew"]>>[0],
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["sessionNew"]>>>>;
+  /** Archives a session record. A write; idempotent. */
+  archiveSession(
+    id: string,
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["sessionArchive"]>>>>;
+  /** Exports a session's journal, every event in sequence. Read-only. */
+  exportSession(
+    id: string,
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["sessionExport"]>>>>;
+  /** Lists permission profiles with the active default. Read-only. */
+  permissionList(): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["permissionList"]>>>
+  >;
+  /** Creates or replaces a permission profile. A write. */
+  permissionSave(
+    input: Parameters<NonNullable<RuntimeClient["permissionSave"]>>[0],
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["permissionSave"]>>>>;
+  /** Deletes a permission profile. A write; idempotent; the default refuses. */
+  permissionDelete(
+    name: string,
+  ): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["permissionDelete"]>>>
+  >;
+  /** Adds or replaces an MCP server and reconnects it. A write. */
+  mcpServerAdd(
+    input: Parameters<NonNullable<RuntimeClient["mcpServerAdd"]>>[0],
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["mcpServerAdd"]>>>>;
+  /** Removes an MCP server and disconnects it. A write; idempotent. */
+  mcpServerRemove(
+    name: string,
+  ): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["mcpServerRemove"]>>>
+  >;
+  /** Creates an agent definition. A write. */
+  createAgent(
+    input: Parameters<NonNullable<RuntimeClient["agentCreate"]>>[0],
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["agentCreate"]>>>>;
+  /** Replaces an agent definition. A write. */
+  updateAgent(
+    input: Parameters<NonNullable<RuntimeClient["agentUpdate"]>>[0],
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["agentUpdate"]>>>>;
+  /** Deletes an agent definition. A write; idempotent; the default refuses. */
+  deleteAgent(
+    name: string,
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["agentDelete"]>>>>;
+  /** Discovers the models a provider endpoint offers. Read-only. */
+  discoverProvider(
+    input: Parameters<NonNullable<RuntimeClient["providerDiscover"]>>[0],
+  ): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["providerDiscover"]>>>
+  >;
+  /** Adds or replaces a provider. A write. */
+  addProvider(
+    input: Parameters<NonNullable<RuntimeClient["providerAdd"]>>[0],
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["providerAdd"]>>>>;
+  /** Removes a provider. A write; idempotent; referenced providers refuse. */
+  removeProvider(
+    name: string,
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["providerRemove"]>>>>;
+  /** Unloads a plugin. A write; idempotent. */
+  unloadPlugin(
+    id: string,
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["pluginUnload"]>>>>;
+  /** Reloads a plugin from its manifest path. A write. */
+  reloadPlugin(
+    id: string,
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["pluginReload"]>>>>;
+  /**
    * Answering a request that already timed out or was answered elsewhere is
    * dropped by the runtime, and `accepted: false` is how a UI learns that — the
    * model was told the call did not run, so re-rendering it as approved would be
@@ -221,6 +294,32 @@ export type NataliaSDK = {
     Awaited<
       ReturnType<NonNullable<RuntimeClient["nativeTerminalEndSecureInput"]>>
     >
+  >;
+  /**
+   * Starts a native terminal session. A write: the host must enable terminal
+   * writes (`terminalWrite: true`), otherwise this is refused. Remote callers
+   * are model-side actors for ownership and secure-input arbitration.
+   */
+  nativeTerminalStart(
+    input: Parameters<NonNullable<RuntimeClient["nativeTerminalStart"]>>[0],
+  ): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["nativeTerminalStart"]>>>
+  >;
+  /**
+   * Writes input bytes (control bytes included) to a native terminal session.
+   * Refused while a human holds input or secure input is active; a replayed
+   * `idempotencyKey` answers `delivery: "duplicate"` instead of writing again.
+   */
+  nativeTerminalWrite(
+    input: Parameters<NonNullable<RuntimeClient["nativeTerminalWrite"]>>[0],
+  ): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["nativeTerminalWrite"]>>>
+  >;
+  /** Resizes a native terminal session. Subject to the secure-input interlock. */
+  nativeTerminalResize(
+    input: Parameters<NonNullable<RuntimeClient["nativeTerminalResize"]>>[0],
+  ): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["nativeTerminalResize"]>>>
   >;
   /** Intelligence queries. Routed and reachable; answer empty until there are writers. */
   constitutionRules(): Promise<
@@ -416,6 +515,22 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     },
     renameSession: async (id, title) =>
       await call("session.rename", { id, title }),
+    newSession: async (input = {}) => await call("session.new", input),
+    archiveSession: async (id) => await call("session.archive", { id }),
+    exportSession: async (id) => await call("session.export", { id }),
+    permissionList: async () => await call("permission.list", {}),
+    permissionSave: async (input) => await call("permission.save", input),
+    permissionDelete: async (name) => await call("permission.delete", { name }),
+    mcpServerAdd: async (input) => await call("mcp.server.add", input),
+    mcpServerRemove: async (name) => await call("mcp.server.remove", { name }),
+    createAgent: async (input) => await call("agent.create", input),
+    updateAgent: async (input) => await call("agent.update", input),
+    deleteAgent: async (name) => await call("agent.delete", { name }),
+    discoverProvider: async (input) => await call("provider.discover", input),
+    addProvider: async (input) => await call("provider.add", input),
+    removeProvider: async (name) => await call("provider.remove", { name }),
+    unloadPlugin: async (id) => await call("plugin.unload", { name: id }),
+    reloadPlugin: async (id) => await call("plugin.reload", { name: id }),
     pinSession: async (id, pinned) => await call("session.pin", { id, pinned }),
     duplicateSession: async (id, title) =>
       await call(
@@ -488,6 +603,12 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       await call("nativeTerminal.beginSecureInput", { id }),
     nativeTerminalEndSecureInput: async (id) =>
       await call("nativeTerminal.endSecureInput", { id }),
+    nativeTerminalStart: async (input) =>
+      await call("nativeTerminal.start", input),
+    nativeTerminalWrite: async (input) =>
+      await call("nativeTerminal.write", input),
+    nativeTerminalResize: async (input) =>
+      await call("nativeTerminal.resize", input),
     constitutionRules: async () => await call("constitution.rules", {}),
     decisionRecords: async () => await call("decision.records", {}),
     evidenceRecords: async () => await call("evidence.records", {}),

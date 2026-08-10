@@ -79,10 +79,10 @@ describe("command definitions", () => {
     expect(bindings["model.list"]).toEqual(["<leader>m"]);
   });
 
-  test("permission profile actions do not conflict with filter text", () => {
+  test("permission profile actions use Alt chords, away from filter text", () => {
     const { bindings } = buildKeybindMap();
-    expect(bindings["permission.dialog.edit"]).toEqual(["f2"]);
-    expect(bindings["permission.dialog.delete"]).toEqual(["f4"]);
+    expect(bindings["permission.dialog.edit"]).toEqual(["alt+e"]);
+    expect(bindings["permission.dialog.delete"]).toEqual(["alt+d"]);
   });
 
   test("known command IDs match documented set", () => {
@@ -108,7 +108,16 @@ describe("command definitions", () => {
       keys: "ctrl+shift+s",
     });
     expect(commands["prompt.attachment.add"]).toMatchObject({
-      keys: "ctrl+shift+a",
+      keys: "alt+a",
+    });
+    expect(commands["prompt.attachment.list"]).toMatchObject({
+      keys: "alt+o",
+    });
+    expect(commands["prompt.attachment.paste-image"]).toMatchObject({
+      keys: "alt+y",
+    });
+    expect(commands["prompt.attachment.remove"]).toMatchObject({
+      keys: "alt+x",
     });
     expect(commands["prompt.autocomplete.select"]).toMatchObject({
       keys: "return",

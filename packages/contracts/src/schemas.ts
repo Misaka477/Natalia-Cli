@@ -64,6 +64,7 @@ export const modelConfigSchema = z.object({
       thinking: z.boolean().default(true),
       imageInput: z.boolean().default(false),
       pdfInput: z.boolean().default(false),
+      videoInput: z.boolean().default(false),
     })
     .default({}),
   contextWindow: z

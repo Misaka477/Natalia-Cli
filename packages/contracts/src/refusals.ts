@@ -177,6 +177,18 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "error",
     note: "the interlock refuses while a human is entering a secret",
   },
+  nativeTerminalStart: {
+    refusal: "error",
+    note: "refused when the host has not enabled terminal writes, or the terminal host is unavailable",
+  },
+  nativeTerminalWrite: {
+    refusal: "error",
+    note: "refused while a human holds input or secure input is active; an idempotency key replay answers delivery:duplicate instead",
+  },
+  nativeTerminalResize: {
+    refusal: "error",
+    note: "refused by the secure-input interlock, like the model-side resize",
+  },
 
   // --- checkpoint ---
   checkpointList: { refusal: "none", note: "pure read" },
@@ -230,9 +242,81 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "error",
     note: "an unknown session is an argument error",
   },
+  sessionNew: {
+    refusal: "value",
+    expressedBy: "created",
+    note: "creating an existing id answers created:false with the existing summary",
+  },
+  sessionArchive: {
+    refusal: "value",
+    expressedBy: "archived",
+    note: "archiving an archived session answers archived:true; an unknown session is an argument error",
+  },
+  sessionExport: {
+    refusal: "error",
+    note: "pure read; an unknown session is an argument error",
+  },
 
   // --- mcp ---
   mcpCatalog: { refusal: "none", note: "pure read" },
+  permissionList: { refusal: "none", note: "pure read" },
+  permissionSave: {
+    refusal: "value",
+    expressedBy: "saved",
+    note: "the config file is written either way; a running turn blocks the reload and answers applied:false",
+  },
+  permissionDelete: {
+    refusal: "value",
+    expressedBy: "deleted",
+    note: "the default profile refuses deletion; an unknown name is an idempotent success",
+  },
+  mcpServerAdd: {
+    refusal: "value",
+    expressedBy: "saved",
+    note: "config write and reconnect; connection failures surface as diagnostics",
+  },
+  mcpServerRemove: {
+    refusal: "value",
+    expressedBy: "removed",
+    note: "an unknown server is an idempotent success",
+  },
+  agentCreate: {
+    refusal: "value",
+    expressedBy: "created",
+    note: "creating an existing name answers created:false with a reason",
+  },
+  agentUpdate: {
+    refusal: "error",
+    note: "an unknown agent name is an argument error",
+  },
+  agentDelete: {
+    refusal: "value",
+    expressedBy: "deleted",
+    note: "the default agent refuses deletion; an unknown name is an idempotent success",
+  },
+  providerDiscover: {
+    refusal: "error",
+    note: "a failed probe is an error; carries the api key only for the probe",
+  },
+  providerAdd: {
+    refusal: "value",
+    expressedBy: "saved",
+    note: "config write and apply; apply may be blocked by a running turn",
+  },
+  providerRemove: {
+    refusal: "value",
+    expressedBy: "removed",
+    note: "a provider referenced by a model refuses deletion; an unknown name is an idempotent success",
+  },
+  pluginUnload: {
+    refusal: "value",
+    expressedBy: "unloaded",
+    note: "an unknown plugin id is an idempotent success",
+  },
+  pluginReload: {
+    refusal: "error",
+    note: "an unknown plugin id is an argument error",
+  },
   getMcpPrompt: {
     refusal: "error",
     note: "a disconnected server refuses; there is no prompt to return",

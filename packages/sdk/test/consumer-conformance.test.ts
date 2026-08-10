@@ -682,6 +682,26 @@ test("a read-only integration renders the session and cannot write a byte", asyn
     });
     const turned = await operator.prompt("hello operator");
     expect(turned.text).toBe("hello operator");
+
+    // P0-H: the terminal write surface exists as routes but is gated at the
+    // host. A read-only credential is refused by authorization ("no write
+    // scope") before the gate; an operator with write scope is refused by the
+    // gate itself ("terminal write is not enabled") because this server never
+    // opted in. Both are `refused`, with the reason naming the rule.
+    const readOnlyTerminal = await integration
+      .nativeTerminalStart({ command: "bash" })
+      .catch((error: unknown) => error);
+    expect(failureKind(readOnlyTerminal)).toBe("refused");
+    expect((readOnlyTerminal as RuntimeRPCError).message).toContain(
+      "no write scope",
+    );
+    const gatedTerminal = await operator
+      .nativeTerminalStart({ command: "bash" })
+      .catch((error: unknown) => error);
+    expect(failureKind(gatedTerminal)).toBe("refused");
+    expect((gatedTerminal as RuntimeRPCError).message).toContain(
+      "terminal write is not enabled",
+    );
   } finally {
     server.stop();
     await runtime.dispose?.();
@@ -1110,4 +1130,93 @@ test("an external integration configures the runtime the way the TUI does", asyn
       .catch((error: unknown) => error);
     expect(failureKind(badScope)).toBe("invalidParams");
   });
+}, 60_000);
+
+test("an external integration manages sessions, policy, agents and plugins over RPC", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-conformance-management-"));
+  await mkdir(join(root, ".natalia", "plugins", "demo.plugin"), {
+    recursive: true,
+  });
+  await writeFile(
+    join(root, ".natalia", "plugins", "demo.plugin", "natalia.plugin.json"),
+    JSON.stringify({
+      apiVersion: 1,
+      id: "demo.plugin",
+      version: "1.0.0",
+      name: "Demo",
+      capabilities: ["commands"],
+    }),
+  );
+  await writeFile(
+    join(root, ".natalia", "plugins", "demo.plugin", "index.ts"),
+    `import { definePlugin } from "@natalia/plugin";
+export default definePlugin({
+  manifest: { apiVersion: 1, id: "demo.plugin", version: "1.0.0", name: "Demo", capabilities: ["commands"] },
+  setup(api) { api.commands.register({ name: "hello", title: "Hello", run() {} }); },
+});`,
+  );
+  const runtime = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_management",
+  });
+  const server = createRuntimeHttpServer({
+    client: runtime,
+    token: "token",
+  });
+  runtime.start(() => undefined);
+  const sdk = createNataliaSDK({ baseURL: server.url, token: "token" });
+  try {
+    const created = await sdk.newSession({
+      id: "ses_external",
+      title: "External",
+    });
+    expect(created).toEqual({ sessionID: "ses_external", created: true });
+    const replay = await sdk.newSession({ id: "ses_external" });
+    expect(replay.created).toBe(false);
+
+    const saved = await sdk.permissionSave({
+      name: "strict",
+      profile: {
+        approval: "ask",
+        description: "Strict",
+        permissions: { tools: { allow: ["echo"], exclude: [] } },
+      },
+    });
+    expect(saved.saved).toBe(true);
+    const list = await sdk.permissionList();
+    expect(
+      list.profiles.find((profile) => profile.name === "strict"),
+    ).toBeDefined();
+    const refused = await sdk.permissionDelete("ask");
+    expect(refused.deleted).toBe(false);
+
+    const agent = await sdk.createAgent({
+      name: "reviewer",
+      config: {
+        description: "Reviews",
+        mode: "subagent",
+        systemPrompt: "",
+        allowedTools: [],
+        excludedTools: [],
+        mcpServers: [],
+        hidden: false,
+      },
+    });
+    expect(agent.created).toBe(true);
+    const removed = await sdk.deleteAgent("reviewer");
+    expect(removed.deleted).toBe(true);
+
+    const exported = await sdk.exportSession("ses_external");
+    expect(exported.events).toEqual([]);
+    const archived = await sdk.archiveSession("ses_external");
+    expect(archived.archived).toBe(true);
+
+    const unloaded = await sdk.unloadPlugin("demo.plugin");
+    expect(unloaded.unloaded).toBe(true);
+    const reloaded = await sdk.reloadPlugin("demo.plugin");
+    expect(reloaded.reloaded).toBe(true);
+  } finally {
+    server.stop();
+    await runtime.dispose?.();
+  }
 }, 60_000);

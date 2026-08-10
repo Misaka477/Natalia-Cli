@@ -44,6 +44,54 @@ export async function readClipboardText() {
   )?.toString();
 }
 
+export function imageReadCommand(
+  os: NodeJS.Platform,
+  wayland: boolean,
+  has: (name: string) => boolean,
+): string[] | undefined {
+  if (os === "linux" && wayland && has("wl-paste"))
+    return ["wl-paste", "-t", "image/png"];
+  if (os === "linux" && has("xclip"))
+    return ["xclip", "-selection", "clipboard", "-t", "image/png", "-o"];
+  if (os === "darwin" && has("osascript"))
+    return ["osascript", "-e", "the clipboard as «class PNGf»"];
+  if (os === "win32" && has("powershell.exe"))
+    return [
+      "powershell.exe",
+      "-NoProfile",
+      "-Command",
+      "$i = Get-Clipboard -Format Image; if ($i) { $ms = New-Object IO.MemoryStream; $i.Save($ms, [Drawing.Imaging.ImageFormat]::Png); [Convert]::ToBase64String($ms.ToArray()) }",
+    ];
+}
+
+/**
+ * Reads an image from the system clipboard as raw PNG bytes, or `undefined`
+ * when no tool is available or the clipboard holds no image. On macOS and
+ * Windows the tools emit base64, which is decoded here so callers always get
+ * bytes. The tool choice is injectable, exactly like `readCommand`, so tests
+ * can pin the command per platform without spawning anything.
+ */
+export async function readClipboardImage(
+  os: NodeJS.Platform = platform(),
+  wayland: boolean = Boolean(process.env.WAYLAND_DISPLAY),
+  has: (name: string) => boolean = (name) => Boolean(Bun.which(name)),
+): Promise<Buffer | undefined> {
+  const command = imageReadCommand(os, wayland, has);
+  if (!command) return undefined;
+  const output = await run(command[0]!, command.slice(1)).catch(
+    () => undefined,
+  );
+  if (!output || output.length === 0) return undefined;
+  if (os === "darwin" || os === "win32") {
+    try {
+      return Buffer.from(output.toString().trim(), "base64");
+    } catch {
+      return undefined;
+    }
+  }
+  return output;
+}
+
 function readCommand(
   os: NodeJS.Platform,
   wayland: boolean,

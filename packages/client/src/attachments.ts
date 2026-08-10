@@ -5,9 +5,6 @@ import type { LocalAttachment } from "@natalia/contracts";
 import type { SessionRecord } from "@natalia/session";
 import { modelVisibleEvents } from "@natalia/session";
 
-const maxAttachmentBytes = 8 * 1024 * 1024;
-const maxTextAttachmentBytes = 1024 * 1024;
-
 export async function storeLocalAttachments(input: {
   workspaceRoot: string;
   paths: string[];
@@ -22,10 +19,6 @@ export async function storeLocalAttachments(input: {
         throw new Error(`attachment path escapes workspace: ${path}`);
       const info = await stat(source);
       if (!info.isFile()) throw new Error(`attachment is not a file: ${path}`);
-      if (info.size > maxAttachmentBytes)
-        throw new Error(
-          `attachment exceeds ${maxAttachmentBytes} bytes: ${path}`,
-        );
       const bytes = new Uint8Array(await Bun.file(source).arrayBuffer());
       const mediaType = mediaTypeForBytes(bytes, basename(source));
       if (!mediaType)
@@ -63,10 +56,6 @@ export async function attachmentText(
 ) {
   if (!isTextAttachment(attachment))
     throw new Error(`attachment is not text: ${attachment.id}`);
-  if (attachment.byteLength > maxTextAttachmentBytes)
-    throw new Error(
-      `text attachment exceeds ${maxTextAttachmentBytes} bytes: ${attachment.filename}`,
-    );
   const root = resolve(workspaceRoot);
   const path = await realpath(resolve(root, attachment.path));
   if (relative(join(root, ".natalia", "attachments"), path).startsWith(".."))
@@ -136,6 +125,40 @@ function mediaTypeForBytes(
   if (header === "89504e470d0a1a0a") return "image/png";
   if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff)
     return "image/jpeg";
+  if (
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  )
+    return "image/webp";
+  if (
+    bytes[0] === 0x47 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x38 &&
+    (bytes[4] === 0x37 || bytes[4] === 0x39) &&
+    bytes[5] === 0x61
+  )
+    return "image/gif";
+  if (
+    bytes[4] === 0x66 &&
+    bytes[5] === 0x74 &&
+    bytes[6] === 0x79 &&
+    bytes[7] === 0x70
+  )
+    return "video/mp4";
+  if (
+    bytes[0] === 0x1a &&
+    bytes[1] === 0x45 &&
+    bytes[2] === 0xdf &&
+    bytes[3] === 0xa3
+  )
+    return "video/webm";
   if (
     bytes[0] === 0x25 &&
     bytes[1] === 0x50 &&

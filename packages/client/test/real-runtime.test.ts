@@ -16,6 +16,10 @@ import { SqliteSessionStore } from "@natalia/session";
 import { WorkspaceSandboxManager } from "@natalia/sandbox";
 import { NativeTerminalRegistry } from "@natalia/native-terminal";
 import { NataliaTaskStateStore } from "@natalia/workflow";
+import {
+  installPluginSdkLinks,
+  pluginSdkImportPath,
+} from "./plugin-test-helpers";
 
 test("real runtime client streams provider output and persists replayable session", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-real-"));
@@ -3088,6 +3092,91 @@ test("workspace image attachment is stored privately and lowered for OpenAI-comp
       ]),
     );
     await reopened.dispose?.();
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("video attachments are refused by a model or adapter without video input", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-video-attachment-"));
+  const server = Bun.serve({
+    port: 0,
+    fetch: async () =>
+      new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      }),
+  });
+  try {
+    await mkdir(join(root, ".natalia"), { recursive: true });
+    await writeFile(
+      join(root, "clip.mp4"),
+      Buffer.from("0000001866747970", "hex"),
+    );
+    await writeFile(
+      join(root, ".natalia", "config.json"),
+      JSON.stringify({
+        version: 2,
+        providers: {
+          local: {
+            type: "openai",
+            apiKey: "key",
+            baseURL: server.url.toString(),
+          },
+        },
+        models: {
+          plain: {
+            provider: "local",
+            model: "plain",
+            capabilities: { imageInput: true },
+          },
+          vision: {
+            provider: "local",
+            model: "vision",
+            capabilities: { imageInput: true, videoInput: true },
+          },
+        },
+        defaultModel: "plain",
+      }),
+    );
+    const client = createRealRuntimeClient({
+      workspaceRoot: root,
+      sessionID: "ses_video_attachment",
+    });
+    client.start(() => undefined);
+    const finishedWithError = async (): Promise<boolean> => {
+      for (let elapsed = 0; elapsed < 10_000; elapsed += 20) {
+        const history = await client.history?.();
+        if (
+          history?.events.some(
+            (item) =>
+              item.event.type === "turn.finished" &&
+              (item.event as { stopReason?: string }).stopReason === "error",
+          )
+        )
+          return true;
+        await Bun.sleep(20);
+      }
+      return false;
+    };
+    await client.submitInput?.({ text: "watch", attachments: ["clip.mp4"] });
+    expect(await finishedWithError()).toBe(true);
+    const firstHistory = await client.history?.();
+    expect(
+      firstHistory?.events.find((item) => item.event.type === "turn.finished")
+        ?.event,
+    ).toMatchObject({ stopReason: "error" });
+    await client.updateConfig?.({
+      patch: { defaultModel: "vision" },
+    });
+    await client.submitInput?.({ text: "watch", attachments: ["clip.mp4"] });
+    expect(await finishedWithError()).toBe(true);
+    const diagnostics = await client.diagnostics?.(50);
+    expect(
+      diagnostics?.some((entry) =>
+        entry.message.includes("does not support video attachment lowering"),
+      ),
+    ).toBe(true);
+    await client.dispose?.();
   } finally {
     server.stop(true);
   }
@@ -6349,3 +6438,271 @@ test("an initialization failure surfaces its cause, not a derived symptom", asyn
   expect(client.snapshot().type).toBe("snapshot.created");
   await client.dispose?.();
 }, 30_000);
+
+test("session lifecycle: new is idempotent, archive marks, export dumps the journal", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-session-lifecycle-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_lifecycle_host",
+  });
+  client.start(() => undefined);
+  try {
+    const created = await client.sessionNew?.({
+      id: "ses_managed_1",
+      title: "Managed",
+    });
+    expect(created).toEqual({ sessionID: "ses_managed_1", created: true });
+    const replay = await client.sessionNew?.({ id: "ses_managed_1" });
+    expect(replay).toEqual({ sessionID: "ses_managed_1", created: false });
+
+    const minted = await client.sessionNew?.({});
+    expect(minted?.sessionID).toMatch(/^ses_/u);
+    expect(minted?.created).toBe(true);
+
+    const archived = await client.sessionArchive?.("ses_managed_1");
+    expect(archived).toEqual({ id: "ses_managed_1", archived: true });
+    const again = await client.sessionArchive?.("ses_managed_1");
+    expect(again).toEqual({ id: "ses_managed_1", archived: true });
+
+    const list = await client.sessionList?.();
+    const managed = list?.find((summary) => summary.id === "ses_managed_1");
+    expect(managed?.archived).toBe(true);
+
+    const exported = await client.sessionExport?.("ses_managed_1");
+    expect(exported?.sessionID).toBe("ses_managed_1");
+    expect(exported?.title).toBe("Managed");
+    expect(exported?.archived).toBe(true);
+    expect(exported?.events).toEqual([]);
+
+    const missing = await client
+      .sessionArchive?.("ses_does_not_exist")
+      .catch((error: unknown) => error);
+    expect((missing as Error).message).toContain("session not found");
+  } finally {
+    await client.dispose?.();
+  }
+});
+
+test("permission management: save validates, delete refuses the default, both persist", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-permission-manage-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({ version: 2 }),
+  );
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_permission_host",
+  });
+  client.start(() => undefined);
+  try {
+    const saved = await client.permissionSave?.({
+      name: "strict",
+      profile: {
+        approval: "ask",
+        description: "Strict profile",
+        permissions: { tools: { allow: ["echo"], exclude: [] } },
+      },
+    });
+    expect(saved?.saved).toBe(true);
+
+    const list = await client.permissionList?.();
+    expect(list?.default).toBe("ask");
+    expect(
+      list?.profiles.find((profile) => profile.name === "strict"),
+    ).toMatchObject({
+      approval: "ask",
+    });
+
+    const refusedDefault = await client.permissionDelete?.("ask");
+    expect(refusedDefault).toEqual({
+      deleted: false,
+      reason: "permission profile is the active default: ask",
+    });
+
+    const removed = await client.permissionDelete?.("strict");
+    expect(removed?.deleted).toBe(true);
+    const after = await client.permissionList?.();
+    expect(
+      after?.profiles.find((profile) => profile.name === "strict"),
+    ).toBeUndefined();
+
+    const configText = await Bun.file(
+      join(root, ".natalia", "config.json"),
+    ).text();
+    expect(configText).not.toContain('"strict"');
+  } finally {
+    await client.dispose?.();
+  }
+});
+
+test("mcp server management persists config and survives failed connections", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-mcp-manage-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({ version: 2 }),
+  );
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_mcp_host",
+  });
+  client.start(() => undefined);
+  try {
+    const added = await client.mcpServerAdd?.({
+      name: "demo",
+      config: {
+        type: "stdio",
+        command: "false",
+        args: [],
+        enabled: true,
+        allowedTools: [],
+        excludedTools: [],
+        readOnly: false,
+        headers: {},
+        environment: {},
+        timeoutSec: 30,
+      },
+    });
+    expect(added?.saved).toBe(true);
+    const configText = await Bun.file(
+      join(root, ".natalia", "config.json"),
+    ).text();
+    expect(configText).toContain('"demo"');
+
+    const removed = await client.mcpServerRemove?.("demo");
+    expect(removed?.removed).toBe(true);
+    const again = await client.mcpServerRemove?.("demo");
+    expect(again?.removed).toBe(true);
+    const after = await Bun.file(join(root, ".natalia", "config.json")).text();
+    expect(after).not.toContain('"demo"');
+  } finally {
+    await client.dispose?.();
+  }
+});
+
+test("agent and provider management persist, validate references and survive apply", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-agent-provider-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({ version: 2 }),
+  );
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_agent_provider_host",
+  });
+  client.start(() => undefined);
+  try {
+    const plannerConfig = {
+      description: "Plans first",
+      mode: "primary" as const,
+      systemPrompt: "Plan before acting.",
+      allowedTools: [],
+      excludedTools: [],
+      mcpServers: [],
+      hidden: false,
+    };
+    const created = await client.agentCreate?.({
+      name: "planner",
+      config: plannerConfig,
+    });
+    expect(created?.created).toBe(true);
+    const dup = await client.agentCreate?.({
+      name: "planner",
+      config: plannerConfig,
+    });
+    expect(dup?.created).toBe(false);
+    expect(dup?.reason).toContain("already exists");
+    const updated = await client.agentUpdate?.({
+      name: "planner",
+      config: { ...plannerConfig, description: "New" },
+    });
+    expect(updated?.updated).toBe(true);
+    const missing = await client
+      .agentUpdate?.({
+        name: "nope",
+        config: plannerConfig,
+      })
+      .catch((error: unknown) => error);
+    expect((missing as Error).message).toContain("agent not found");
+
+    const added = await client.providerAdd?.({
+      name: "gw",
+      type: "openai",
+      baseURL: "http://127.0.0.1:1/v1",
+      apiKey: "key",
+    });
+    expect(added?.saved).toBe(true);
+    const removed = await client.providerRemove?.("gw");
+    expect(removed?.removed).toBe(true);
+    const again = await client.providerRemove?.("gw");
+    expect(again?.removed).toBe(true);
+  } finally {
+    await client.dispose?.();
+  }
+});
+
+test("plugin lifecycle: unload is idempotent, reload re-imports the module", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-plugin-lifecycle-"));
+  await mkdir(join(root, ".natalia", "plugins", "demo.plugin"), {
+    recursive: true,
+  });
+  await installPluginSdkLinks(root);
+  await writeFile(
+    join(root, ".natalia", "plugins", "demo.plugin", "natalia.plugin.json"),
+    JSON.stringify({
+      apiVersion: 1,
+      id: "demo.plugin",
+      version: "1.0.0",
+      name: "Demo",
+      capabilities: ["commands"],
+    }),
+  );
+  await writeFile(
+    join(root, ".natalia", "plugins", "demo.plugin", "index.ts"),
+    `import { definePlugin } from "${pluginSdkImportPath()}";
+export default definePlugin({
+  manifest: { apiVersion: 1, id: "demo.plugin", version: "1.0.0", name: "Demo", capabilities: ["commands"] },
+  setup(api) {
+    api.commands.register({ name: "hello", title: "Hello", run() {} });
+  },
+});`,
+  );
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({ version: 2 }),
+  );
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_plugin_host",
+  });
+  client.start(() => undefined);
+  try {
+    const catalog = await client.plugins?.();
+    expect(catalog?.some((plugin) => plugin.id === "demo.plugin")).toBe(true);
+
+    const unloaded = await client.pluginUnload?.("demo.plugin");
+    expect(unloaded?.unloaded).toBe(true);
+    const again = await client.pluginUnload?.("demo.plugin");
+    expect(again?.unloaded).toBe(true);
+    const afterUnload = await client.plugins?.();
+    expect(afterUnload?.some((plugin) => plugin.id === "demo.plugin")).toBe(
+      false,
+    );
+
+    const reloaded = await client.pluginReload?.("demo.plugin");
+    expect(reloaded?.reloaded).toBe(true);
+    const afterReload = await client.plugins?.();
+    expect(afterReload?.some((plugin) => plugin.id === "demo.plugin")).toBe(
+      true,
+    );
+
+    const missing = await client
+      .pluginReload?.("missing.plugin")
+      .catch((error: unknown) => error);
+    expect((missing as Error).message).toContain("plugin not found");
+  } finally {
+    await client.dispose?.();
+  }
+});

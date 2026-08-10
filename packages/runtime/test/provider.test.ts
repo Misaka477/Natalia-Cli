@@ -60,6 +60,7 @@ test("configured provider resolution preserves the adapter provider identity", (
       thinking: false,
       imageInput: false,
       pdfInput: false,
+      videoInput: false,
     },
     contextWindow: "auto",
     maxOutputTokens: null,
@@ -505,6 +506,63 @@ test("Anthropic and Gemini lower PDF documents while OpenAI-compatible declares 
   });
   expect(gemini[0]?.parts.find((part) => part.inlineData)).toMatchObject({
     inlineData: { mimeType: "application/pdf", data: "cGRm" },
+  });
+});
+
+test("Gemini lowers videos while Anthropic and OpenAI-compatible declare no video support", async () => {
+  const request = {
+    messages: [
+      {
+        role: "user" as const,
+        content: "watch",
+        videos: [
+          {
+            mediaType: "video/mp4" as const,
+            dataURL: "data:video/mp4;base64,bXA0",
+          },
+        ],
+      },
+    ],
+  };
+  let geminiBody: Record<string, unknown> | undefined;
+  const fetchFor = (name: string) =>
+    Object.assign(
+      async (_input: URL | RequestInfo, init?: RequestInit) => {
+        if (name === "gemini")
+          geminiBody = JSON.parse(String(init?.body)) as Record<
+            string,
+            unknown
+          >;
+        return new Response("data: [DONE]\n\n", {
+          headers: { "content-type": "text/event-stream" },
+        });
+      },
+      { preconnect: fetch.preconnect },
+    ) as typeof fetch;
+  expect(
+    new OpenAICompatibleProvider({ apiKey: "key", model: "model" }).videoInput,
+  ).toBe(false);
+  expect(
+    new AnthropicProvider({
+      apiKey: "key",
+      model: "model",
+      fetch: fetchFor("anthropic"),
+    }).videoInput,
+  ).toBe(false);
+  for await (const _chunk of new GeminiProvider({
+    apiKey: "key",
+    model: "model",
+    fetch: fetchFor("gemini"),
+  }).stream(request)) {
+    // Drain.
+  }
+  const gemini = (geminiBody as { contents?: Array<{ parts?: unknown[] }> })
+    ?.contents;
+  const parts = (gemini?.[0]?.parts ?? []) as Array<{
+    inlineData?: { mimeType?: string; data?: string };
+  }>;
+  expect(parts.find((part) => part.inlineData)).toMatchObject({
+    inlineData: { mimeType: "video/mp4", data: "bXA0" },
   });
 });
 

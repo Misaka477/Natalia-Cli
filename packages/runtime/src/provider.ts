@@ -6,8 +6,12 @@ import { providerError, providerErrorFromHttp } from "./errors";
 export type ProviderMessage = {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
-  images?: Array<{ mediaType: "image/png" | "image/jpeg"; dataURL: string }>;
+  images?: Array<{
+    mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+    dataURL: string;
+  }>;
   pdfs?: Array<{ mediaType: "application/pdf"; dataURL: string }>;
+  videos?: Array<{ mediaType: "video/mp4" | "video/webm"; dataURL: string }>;
   toolCallID?: string;
   toolName?: string;
   toolCalls?: ProviderToolCall[];
@@ -43,6 +47,7 @@ export type StreamingProvider = {
   model: string;
   imageInput?: boolean;
   pdfInput?: boolean;
+  videoInput?: boolean;
   stream(request: ProviderStreamRequest): AsyncIterable<ProviderStreamChunk>;
 };
 
@@ -93,6 +98,7 @@ export class OpenAICompatibleProvider implements StreamingProvider {
   readonly model: string;
   readonly imageInput = true;
   readonly pdfInput = false;
+  readonly videoInput = false;
   private readonly apiKey: string;
   private readonly baseURL: string;
   private readonly fetchImpl: typeof fetch;
@@ -251,6 +257,7 @@ export class AnthropicProvider implements StreamingProvider {
   readonly model: string;
   readonly imageInput = true;
   readonly pdfInput = true;
+  readonly videoInput = false;
   private readonly apiKey: string;
   private readonly baseURL: string;
   private readonly fetchImpl: typeof fetch;
@@ -333,6 +340,7 @@ export class GeminiProvider implements StreamingProvider {
   readonly model: string;
   readonly imageInput = true;
   readonly pdfInput = true;
+  readonly videoInput = true;
   private readonly apiKey: string;
   private readonly baseURL: string;
   private readonly fetchImpl: typeof fetch;
@@ -1101,6 +1109,12 @@ function toGeminiContent(message: ProviderMessage) {
         inlineData: {
           mimeType: pdf.mediaType,
           data: dataURLPayload(pdf.dataURL),
+        },
+      })) ?? []),
+      ...(message.videos?.map((video) => ({
+        inlineData: {
+          mimeType: video.mediaType,
+          data: dataURLPayload(video.dataURL),
         },
       })) ?? []),
     ],

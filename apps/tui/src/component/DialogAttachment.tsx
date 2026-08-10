@@ -9,6 +9,7 @@ export function DialogAttachment(props: {
   return (
     <DialogSelect
       title="Attachments"
+      renderFilter={false}
       options={props.paths().map((path) => ({
         title: path.split("/").at(-1) ?? path,
         value: path,

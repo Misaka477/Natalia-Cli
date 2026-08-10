@@ -1,6 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { isAbsolute, dirname, join, resolve } from "node:path";
+import { createStatusSnapshotController } from "./status-controller";
+import { createSandboxController } from "./sandbox-controller";
+import { createCheckpointController } from "./checkpoint-controller";
+import { createMcpController } from "./mcp-controller";
+import { createWorkspaceFilesController } from "./workspace-files-controller";
+import { createPluginsController } from "./plugins-controller";
 import { RuntimeRefusal } from "@natalia/contracts";
 import {
   runtimeEventDurability,
@@ -17,7 +23,6 @@ import {
   listWorkspaceFiles,
   readWorkspaceFile,
   searchWorkspaceFiles,
-  watchWorkspaceFiles,
 } from "./workspace-files";
 import type {
   ApprovalResponse,
@@ -30,7 +35,6 @@ import type {
   QuestionResponse,
 } from "@natalia/contracts";
 import {
-  CheckpointStore,
   ContextLedger,
   compactContext,
   contextStatusEvent,
@@ -46,6 +50,7 @@ import {
   providerCompactor,
 } from "@natalia/runtime";
 import {
+  discoverProviderModels,
   modelSelectionStatus,
   resolveConfig,
   updateConfigAtScope,
@@ -118,14 +123,7 @@ import {
   globalConfigHome,
   userRuntimeHome,
 } from "@natalia/platform";
-import { WorkspaceSandboxManager } from "@natalia/sandbox";
-import { loadNativeMCPTools } from "@natalia/mcp";
-import {
-  createPluginRegistry,
-  loadLocalPlugins,
-  setGlobalPluginCommands,
-  type PluginCommand,
-} from "@natalia/plugin";
+import { setGlobalPluginCommands, type PluginCommand } from "@natalia/plugin";
 import {
   moduleToolPolicy,
   NataliaTaskStateStore,
@@ -265,6 +263,20 @@ const SELF_PROTECTION_PATTERNS = [
     statement: "禁止删除 Natalia 临时目录",
   },
 ];
+
+/**
+ * The native-terminal registry refuses with plain `Error`s ("terminal input is
+ * controlled by a human", "terminal is accepting secure human input", …). Over
+ * RPC those would land as `-32603 internal` with no machine-readable reason.
+ * The P0-H members classify them as `refused` with the registry's own text as
+ * the reason, so a consumer can tell "not now, a human is using it" from "the
+ * channel broke" and act on it.
+ */
+function refusalFromRegistry(error: unknown): RuntimeRefusal {
+  return new RuntimeRefusal(
+    error instanceof Error ? error.message : String(error),
+  );
+}
 
 function publicNativeTerminal(
   session: import("@natalia/native-terminal").NativeTerminalSession,
@@ -491,18 +503,35 @@ export function createRealRuntimeClient(
   let nativeTerminal: NativeTerminalRegistry | undefined =
     options.nativeTerminal;
   let nativeInputBroker: NativeInputBroker | undefined;
-  let sandboxes: WorkspaceSandboxManager | undefined;
-  let plugins: ReturnType<typeof createPluginRegistry> | undefined;
-  const cleanupMCP: Array<() => Promise<void>> = [];
-  const mcpAccess: Array<{
-    catalog(): Promise<import("@natalia/contracts").MCPCatalogSnapshot>;
-    getPrompt(
-      server: string,
-      name: string,
-      arguments_?: Record<string, string>,
-    ): Promise<unknown>;
-    readResource(server: string, uri: string): Promise<unknown>;
-  }> = [];
+  const sandboxController = createSandboxController({ workspaceRoot });
+  const checkpointController = createCheckpointController({
+    sessionID: () => sessionID,
+    workspaceRoot,
+    checkpoint: () => tsRuntimeConfig?.checkpoint,
+    workspace: () => tsRuntimeConfig?.workspace,
+    publish,
+    context: () => context,
+    subagents: () => subagents,
+    activeAbort: () => activeAbort,
+  });
+  const pluginsController = createPluginsController({
+    workspaceRoot,
+    tools,
+    pluginPaths: () => tsRuntimeConfig?.plugins.paths ?? [],
+    pluginEnabled: () => tsRuntimeConfig?.plugins.enabled,
+    pluginCapabilities: () => tsRuntimeConfig?.plugins.capabilities,
+    pluginReadOnly: () => tsRuntimeConfig?.plugins.readOnly,
+    publish,
+    syncGlobalCommands: () => setGlobalPluginCommands(commandCatalogEntries()),
+  });
+  const mcpController = createMcpController({
+    servers: () => tsRuntimeConfig?.mcpServers ?? {},
+    workspaceRoot,
+    tools,
+    enabled: () => extensionEnabled("mcp"),
+    publish,
+  });
+  const mcpAccess = mcpController.access;
   const toolCalls = new Map<string, number>();
   const context = new ContextLedger();
   /**
@@ -522,7 +551,6 @@ export function createRealRuntimeClient(
   let sink: ((event: RuntimeEvent) => void) | undefined;
   let replayMode: "all" | "none" = "all";
   let session: SessionRecord | undefined;
-  let checkpointStore: CheckpointStore | undefined;
   let lastSubmitted: SubmittedTurn | undefined;
   let activeAbort: AbortController | undefined;
   let activeTurnID: string | undefined;
@@ -552,8 +580,29 @@ export function createRealRuntimeClient(
     | undefined;
   let runtimeContextConfig = contextStatusConfig();
   let retryPolicy: NonNullable<Parameters<typeof runWithRetry>[2]>["policy"];
-  let cleanupWorkspaceFiles: (() => void) | undefined;
-  let statusRefreshQueued = false;
+  const workspaceFilesController = createWorkspaceFilesController({
+    workspaceRoot,
+  });
+  const statusController = createStatusSnapshotController({
+    provider: () => provider,
+    context: () => context,
+    workspaceRoot,
+    permissionMode: () => permissionMode,
+    runningCount: async () =>
+      (subagents?.runningCount() ?? 0) +
+      sandboxController.runningResourceCount() +
+      (processRegistry
+        ? await processRegistry.runningCount({ workspaceRoot })
+        : 0),
+    publish,
+  });
+  async function runtimeStatusSnapshot() {
+    return await statusController.snapshot();
+  }
+
+  function scheduleRuntimeStatusSnapshot() {
+    statusController.schedule();
+  }
   const terminalStatusByID = new Map<string, string>();
   const performanceTrace = new RuntimePerformanceTrace();
   const sandboxResourcesByID = new Map<string, number>();
@@ -719,10 +768,7 @@ export function createRealRuntimeClient(
       });
       if (options.permissionProfile) throw error;
     }
-    cleanupWorkspaceFiles = await watchWorkspaceFiles(
-      workspaceRoot,
-      () => undefined,
-    ).catch(() => undefined);
+    await workspaceFilesController.init();
     sessionID =
       options.sessionID ?? (`ses_${sessionSeed(workspaceRoot)}` as SessionID);
     sessionStore = new JsonSessionStore(
@@ -841,7 +887,7 @@ export function createRealRuntimeClient(
                 ),
               subagents,
               nativeTerminal,
-              sandboxes,
+              sandboxes: sandboxController.get(),
               workspaceReadAuthorize: authorizeWorkspaceRead,
               sandboxMergeAuthorize: authorizeSandboxMerge,
               settings: toolSettings(),
@@ -886,56 +932,10 @@ export function createRealRuntimeClient(
         scheduleRuntimeStatusSnapshot();
     });
     if (tsRuntimeConfig && extensionEnabled("mcp")) {
-      const nativeMCP = await loadNativeMCPTools({
-        registry: tools,
-        servers: tsRuntimeConfig.mcpServers,
-        workspaceRoot,
-        onDiagnostic: (message) =>
-          publish({ type: "diagnostic", level: "info", message }),
-      });
-      cleanupMCP.push(nativeMCP.close);
-      mcpAccess.push(nativeMCP);
-      for (const [server, status] of Object.entries(nativeMCP.statuses))
-        publish({ type: "mcp.status", server, ...status });
-      if (nativeMCP.loaded)
-        publish({
-          type: "diagnostic",
-          level: "info",
-          message: `Loaded ${nativeMCP.loaded} native MCP tool(s) from TS config.`,
-        });
+      await mcpController.reload();
     }
     if (extensionEnabled("plugins")) {
-      plugins = createPluginRegistry({
-        tools,
-        readOnly: tsRuntimeConfig?.plugins.readOnly,
-        onAudit: (entry) =>
-          publish({
-            type: "plugin.update",
-            id: entry.pluginID,
-            status: entry.action,
-            detail: entry.detail,
-          }),
-      });
-      await loadLocalPlugins({
-        roots: [
-          join(workspaceRoot, ".natalia", "plugins"),
-          ...(tsRuntimeConfig?.plugins.paths.map((path) =>
-            resolve(workspaceRoot, path),
-          ) ?? []),
-        ],
-        registry: plugins,
-        enabled: tsRuntimeConfig?.plugins.enabled,
-        capabilities: tsRuntimeConfig?.plugins.capabilities,
-        onError: (id, error) =>
-          publish({
-            type: "diagnostic",
-            level: "warning",
-            message: `plugin ${id} failed to load: ${error instanceof Error ? error.message : String(error)}`,
-          }),
-      });
-      // A palette renders synchronously, so the process-wide bridge is populated
-      // here. `commandCatalog()` stays the authoritative surface.
-      setGlobalPluginCommands(commandCatalogEntries());
+      await pluginsController.init();
     }
     if (!nativeTerminal) {
       const runtimeHome = userRuntimeHome();
@@ -1116,10 +1116,7 @@ export function createRealRuntimeClient(
         }
       }
     }
-    sandboxes = new WorkspaceSandboxManager(
-      join(workspaceRoot, ".natalia", "sandboxes"),
-    );
-    await sandboxes.initialize();
+    await sandboxController.init();
     session = sqliteStore
       ? ((await sessionStore.load(sessionID)) ??
         createSessionRecord(
@@ -1363,21 +1360,7 @@ export function createRealRuntimeClient(
       for (const request of pending.approvals) sink?.(request);
       for (const request of pending.questions) sink?.(request);
     }
-    checkpointStore = await CheckpointStore.open({
-      sessionID,
-      workspaceRoot,
-      enabled: tsRuntimeConfig?.checkpoint.enabled,
-      maxFiles: tsRuntimeConfig?.checkpoint.maxFiles,
-      maxBytes: tsRuntimeConfig?.checkpoint.maxBytes,
-      ignore: tsRuntimeConfig?.checkpoint.ignore,
-      additionalDirs: [
-        ...(tsRuntimeConfig?.checkpoint.additionalDirs ?? []),
-        ...(tsRuntimeConfig?.workspace.additionalDirs ?? []),
-      ],
-      onEvent: publish,
-    });
-    if (checkpointStore.isEnabled())
-      await checkpointStore.ensureBaseline(context, 0);
+    await checkpointController.init();
     publish({ type: "session.ready", sessionID });
     // Overrides are visible, not silent: a plugin that replaced a built-in
     // tool shows up in diagnostics so nobody discovers it by surprise.
@@ -1436,7 +1419,7 @@ export function createRealRuntimeClient(
     const contributed = capabilityRegistry
       .contributions<PluginCommand>("commands")
       .map((entry) => entry.payload);
-    return [...(plugins?.commands() ?? []), ...contributed];
+    return [...pluginsController.get().commands(), ...contributed];
   }
 
   function applyAgentPolicy() {
@@ -1501,32 +1484,6 @@ export function createRealRuntimeClient(
     };
   }
 
-  function checkpointResources() {
-    return [
-      ...(subagents?.list().map((agent) => ({
-        kind: "subagent" as const,
-        id: agent.id,
-        status:
-          agent.status === "running"
-            ? ("running" as const)
-            : agent.status === "paused"
-              ? ("waiting" as const)
-              : ("stopped" as const),
-        summary: agent.task,
-      })) ?? []),
-      ...(activeAbort
-        ? [
-            {
-              kind: "tool" as const,
-              id: "active_turn",
-              status: "running" as const,
-              summary: "active provider turn",
-            },
-          ]
-        : []),
-    ];
-  }
-
   async function lowerContextAttachments(
     messages: import("@natalia/runtime").ProviderMessage[],
     entries: import("@natalia/runtime").ContextEntry[],
@@ -1548,10 +1505,17 @@ export function createRealRuntimeClient(
       const imageAttachments = attachments.filter(
         (attachment) =>
           !isTextAttachment(attachment) &&
-          attachment.mediaType !== "application/pdf",
+          attachment.mediaType !== "application/pdf" &&
+          attachment.mediaType !== "video/mp4" &&
+          attachment.mediaType !== "video/webm",
       );
       const pdfAttachments = attachments.filter(
         (attachment) => attachment.mediaType === "application/pdf",
+      );
+      const videoAttachments = attachments.filter(
+        (attachment) =>
+          attachment.mediaType === "video/mp4" ||
+          attachment.mediaType === "video/webm",
       );
       if (textAttachments.length)
         user.content = `${user.content}\n\n${(
@@ -1567,6 +1531,8 @@ export function createRealRuntimeClient(
         throw new Error("selected model does not support image attachments");
       if (pdfAttachments.length && !capabilities.pdfInput)
         throw new Error("selected model does not support PDF attachments");
+      if (videoAttachments.length && !capabilities.videoInput)
+        throw new Error("selected model does not support video attachments");
       if (imageAttachments.length && !provider?.imageInput)
         throw new Error(
           "selected provider adapter does not support image attachment lowering",
@@ -1575,15 +1541,29 @@ export function createRealRuntimeClient(
         throw new Error(
           "selected provider adapter does not support PDF attachment lowering",
         );
+      if (videoAttachments.length && !provider?.videoInput)
+        throw new Error(
+          "selected provider adapter does not support video attachment lowering",
+        );
       user.images = await Promise.all(
         imageAttachments.map(async (attachment) => ({
-          mediaType: attachment.mediaType as "image/png" | "image/jpeg",
+          mediaType: attachment.mediaType as
+            | "image/png"
+            | "image/jpeg"
+            | "image/webp"
+            | "image/gif",
           dataURL: await attachmentDataURL(workspaceRoot, attachment),
         })),
       );
       user.pdfs = await Promise.all(
         pdfAttachments.map(async (attachment) => ({
           mediaType: "application/pdf" as const,
+          dataURL: await attachmentDataURL(workspaceRoot, attachment),
+        })),
+      );
+      user.videos = await Promise.all(
+        videoAttachments.map(async (attachment) => ({
+          mediaType: attachment.mediaType as "video/mp4" | "video/webm",
           dataURL: await attachmentDataURL(workspaceRoot, attachment),
         })),
       );
@@ -1705,7 +1685,7 @@ export function createRealRuntimeClient(
         });
     }
     const pluginStartedAt = performance.now();
-    plugins?.dispatch(event);
+    pluginsController.dispatch(event);
     const pluginMs = performance.now() - pluginStartedAt;
     const sinkStartedAt = performance.now();
     sink?.(event);
@@ -1751,39 +1731,6 @@ export function createRealRuntimeClient(
         }),
       );
     await sessionPersistence;
-  }
-
-  async function runtimeStatusSnapshot() {
-    const running =
-      (subagents?.runningCount() ?? 0) +
-      (sandboxes?.runningResourceCount() ?? 0) +
-      (processRegistry
-        ? await processRegistry.runningCount({ workspaceRoot })
-        : 0);
-    return statusSnapshot(
-      provider,
-      context,
-      workspaceRoot,
-      permissionMode,
-      running,
-    );
-  }
-
-  function scheduleRuntimeStatusSnapshot() {
-    if (statusRefreshQueued) return;
-    statusRefreshQueued = true;
-    queueMicrotask(() => {
-      statusRefreshQueued = false;
-      void runtimeStatusSnapshot()
-        .then(publish)
-        .catch((error) =>
-          publish({
-            type: "diagnostic",
-            level: "warning",
-            message: `runtime status refresh failed: ${error instanceof Error ? error.message : String(error)}`,
-          }),
-        );
-    });
   }
 
   function publishTerminalSession(
@@ -1867,28 +1814,6 @@ export function createRealRuntimeClient(
       geometryOwner: terminal.geometryOwner ?? { type: "model" },
       at: new Date().toISOString(),
     });
-  }
-
-  function checkpointRollbackOptions() {
-    return {
-      resources: checkpointResources(),
-      onResourcePolicy: async (
-        policy: import("@natalia/contracts").CheckpointResourcePolicy,
-      ) => {
-        if (policy.action !== "stop" && policy.action !== "cancel") return;
-        if (policy.kind === "subagent") await subagents?.stop(policy.id);
-        if (policy.kind === "tool")
-          activeAbort?.abort(new Error("checkpoint rollback"));
-      },
-      onContextRestored: async (
-        snapshot: import("@natalia/runtime").DurableContextCheckpoint,
-      ) =>
-        publish({
-          type: "context.checkpoint",
-          id: `rollback:${snapshot.journalOffset}`,
-          snapshot,
-        }),
-    };
   }
 
   async function submitInput(input: SubmitInput) {
@@ -2036,6 +1961,7 @@ export function createRealRuntimeClient(
       createdAt: record.createdAt,
       lastAccessedAt: record.metadata?.lastAccessedAt,
       pinned: Boolean(record.metadata?.pinned),
+      archived: Boolean(record.metadata?.archived),
       events: record.events.length,
       pendingInputs:
         record.inbox?.filter((input) => !input.promotedAt).length ?? 0,
@@ -2065,6 +1991,10 @@ export function createRealRuntimeClient(
     const record = await sessionStore.load(id as SessionID);
     if (!record) throw new Error(`session not found: ${id}`);
     return record;
+  }
+
+  async function sessionByIDOptional(id: string) {
+    return await sessionStore.load(id as SessionID);
   }
 
   return {
@@ -2132,11 +2062,9 @@ export function createRealRuntimeClient(
         sqliteStorePath = undefined;
         sqliteStore = undefined;
       }
-      cleanupWorkspaceFiles?.();
-      cleanupWorkspaceFiles = undefined;
-      for (const plugin of plugins?.list() ?? [])
-        await plugins!.unload(plugin.id);
-      await Promise.all(cleanupMCP.splice(0).map((close) => close()));
+      workspaceFilesController.close();
+      await pluginsController.close();
+      await mcpController.close();
       await nativeTerminal?.dispose();
       nativeTerminal = undefined;
       await nativeInputBroker?.stop();
@@ -2254,7 +2182,8 @@ export function createRealRuntimeClient(
       throw new Error(`MCP server is not connected: ${server}`);
     },
     async plugins() {
-      return (plugins?.list() ?? []).map((plugin) => ({
+      await ready;
+      return pluginsController.list().map((plugin) => ({
         id: plugin.id,
         version: plugin.version,
         name: plugin.name,
@@ -2472,11 +2401,58 @@ export function createRealRuntimeClient(
         status: "exited",
       };
     },
+    // --- P0-H: the terminal write surface, host-gated at the transport ---
+    // Remote callers are treated as model-side actors: ownership, secure-input
+    // and geometry arbitration are the same ones the model tools go through.
+    async nativeTerminalStart(input) {
+      await ready;
+      if (!nativeTerminal)
+        throw new RuntimeRefusal("Native Terminal Host is unavailable");
+      try {
+        return publicNativeTerminal(
+          await nativeTerminal.start({
+            command: input.command,
+            cwd: input.cwd ?? workspaceRoot,
+            id: input.id,
+          }),
+        );
+      } catch (error) {
+        throw refusalFromRegistry(error);
+      }
+    },
+    async nativeTerminalWrite(input) {
+      await ready;
+      if (!nativeTerminal)
+        throw new RuntimeRefusal("Native Terminal Host is unavailable");
+      try {
+        const result = await nativeTerminal.write(input.id, input.input, {
+          idempotencyKey: input.idempotencyKey,
+        });
+        return { id: input.id, ...result };
+      } catch (error) {
+        throw refusalFromRegistry(error);
+      }
+    },
+    async nativeTerminalResize(input) {
+      await ready;
+      if (!nativeTerminal)
+        throw new RuntimeRefusal("Native Terminal Host is unavailable");
+      try {
+        return publicNativeTerminal(
+          await nativeTerminal.resize(
+            input.id,
+            input.rows,
+            input.cols,
+            "model",
+          ),
+        );
+      } catch (error) {
+        throw refusalFromRegistry(error);
+      }
+    },
     async checkpointList() {
       await ready;
-      // initialize() assigns checkpointStore or fails; if it failed, the
-      // `await ready` above already threw the cause.
-      return (await checkpointStore!.list()).map((record) => ({
+      return (await checkpointController.get().list()).map((record) => ({
         id: record.id,
         sequence: record.sequence,
         turnID: record.turnID,
@@ -2494,26 +2470,23 @@ export function createRealRuntimeClient(
     },
     async checkpointPreview(id) {
       await ready;
-      return await checkpointStore!.previewRollback(
-        id,
-        context,
-        checkpointResources(),
-        true,
-      );
+      return await checkpointController
+        .get()
+        .previewRollback(id, context, checkpointController.resources(), true);
     },
     async checkpointRollback(input) {
       await ready;
-      const preview = await checkpointStore!.rollbackTo(input.id, {
+      const preview = await checkpointController.get().rollbackTo(input.id, {
         context,
         dryRun: input.dryRun,
-        ...checkpointRollbackOptions(),
+        ...checkpointController.rollbackOptions(),
       });
       publish(await runtimeStatusSnapshot());
       return preview;
     },
     async sandboxList() {
       await ready;
-      if (!sandboxes) throw new Error("sandbox manager is not initialized");
+      const sandboxes = sandboxController.get();
       return (await sandboxes.list()).map((sandbox) => ({
         id: sandbox.id,
         root: sandbox.root,
@@ -2525,17 +2498,17 @@ export function createRealRuntimeClient(
     },
     async sandboxDiff(id) {
       await ready;
-      if (!sandboxes) throw new Error("sandbox manager is not initialized");
+      const sandboxes = sandboxController.get();
       return await sandboxes.previewMerge(id);
     },
     async sandboxResources(id) {
       await ready;
-      if (!sandboxes) throw new Error("sandbox manager is not initialized");
+      const sandboxes = sandboxController.get();
       return sandboxes.resourcesFor(id);
     },
     async sandboxResourceOutput(input) {
       await ready;
-      if (!sandboxes) throw new Error("sandbox manager is not initialized");
+      const sandboxes = sandboxController.get();
       return await sandboxes.resourceOutput(
         input.id,
         input.resourceID,
@@ -2544,7 +2517,7 @@ export function createRealRuntimeClient(
     },
     async sandboxMerge(id) {
       await ready;
-      if (!sandboxes) throw new Error("sandbox manager is not initialized");
+      const sandboxes = sandboxController.get();
       await authorizeSandboxManagement("sandbox_merge", { id });
       const changes = await sandboxes.merge(
         id,
@@ -2557,7 +2530,7 @@ export function createRealRuntimeClient(
     },
     async sandboxDelete(id) {
       await ready;
-      if (!sandboxes) throw new Error("sandbox manager is not initialized");
+      const sandboxes = sandboxController.get();
       await authorizeSandboxManagement("sandbox_delete", { id });
       const result = await sandboxes.delete(id);
       publish({
@@ -2575,7 +2548,7 @@ export function createRealRuntimeClient(
     },
     async sandboxResourceStop(input) {
       await ready;
-      if (!sandboxes) throw new Error("sandbox manager is not initialized");
+      const sandboxes = sandboxController.get();
       await authorizeSandboxManagement("sandbox_resource_stop", input);
       const resource = await sandboxes.stopResource(input.id, input.resourceID);
       publish(sandboxes.updateEvent(input.id));
@@ -2684,6 +2657,189 @@ export function createRealRuntimeClient(
         ),
       });
       return { id, removedAttachments: removedAttachments.length };
+    },
+    async sessionNew(input = {}) {
+      await ready;
+      const id =
+        input.id ??
+        `ses_${crypto.randomUUID().replace(/-/gu, "").slice(0, 16)}`;
+      if (input.id) {
+        const existing = await sessionByIDOptional(id);
+        if (existing) return { sessionID: id, created: false };
+      }
+      const record = createSessionRecord(
+        id as SessionID,
+        input.title ?? "Untitled session",
+      );
+      await sessionStore.save(record);
+      return { sessionID: id, created: true };
+    },
+    async sessionArchive(id) {
+      await ready;
+      const record = await sessionByIDOptional(id);
+      if (!record) throw new Error(`session not found: ${id}`);
+      if (record.metadata?.archived) return { id, archived: true };
+      record.metadata = { ...record.metadata, archived: true };
+      await sessionStore.save(record);
+      return { id, archived: true };
+    },
+    async sessionExport(id) {
+      await ready;
+      const record = await sessionByIDOptional(id);
+      if (!record) throw new Error(`session not found: ${id}`);
+      return {
+        sessionID: record.id,
+        title: record.title,
+        createdAt: record.createdAt,
+        archived: Boolean(record.metadata?.archived),
+        events: record.events.map((event, index) => ({
+          seq: index + 1,
+          event,
+        })),
+      };
+    },
+    async permissionList() {
+      await ready;
+      const config = tsRuntimeConfig;
+      if (!config) return { default: "ask", profiles: [] };
+      return {
+        default: config.defaultPermission,
+        profiles: Object.entries(config.permissionProfiles).map(
+          ([name, profile]) => ({ name, ...profile }),
+        ),
+      };
+    },
+    async permissionSave(input) {
+      await ready;
+      await updateConfigAtScope(workspaceRoot, {
+        permissionProfiles: { [input.name]: input.profile },
+      } as never);
+      const result = await applyConfigFromDisk();
+      return {
+        saved: true,
+        applied: result.applied,
+        reason: result.reason,
+      };
+    },
+    async permissionDelete(name) {
+      await ready;
+      const config = tsRuntimeConfig;
+      if (config && config.defaultPermission === name)
+        return {
+          deleted: false,
+          reason: `permission profile is the active default: ${name}`,
+        };
+      await updateConfigAtScope(workspaceRoot, {
+        permissionProfiles: { [name]: undefined },
+      } as never);
+      await applyConfigFromDisk();
+      return { deleted: true };
+    },
+    async mcpServerAdd(input) {
+      await ready;
+      await updateConfigAtScope(workspaceRoot, {
+        mcpServers: { [input.name]: input.config },
+      } as never);
+      await applyConfigFromDisk();
+      await mcpController.reload();
+      return { saved: true };
+    },
+    async mcpServerRemove(name) {
+      await ready;
+      await updateConfigAtScope(workspaceRoot, {
+        mcpServers: { [name]: undefined },
+      } as never);
+      await applyConfigFromDisk();
+      await mcpController.reload();
+      return { removed: true };
+    },
+    async agentCreate(input) {
+      await ready;
+      const config = tsRuntimeConfig;
+      if (config && config.agents[input.name])
+        return {
+          created: false,
+          reason: `agent already exists: ${input.name}`,
+        };
+      await updateConfigAtScope(workspaceRoot, {
+        agents: { [input.name]: input.config },
+      } as never);
+      await applyConfigFromDisk();
+      return { created: true };
+    },
+    async agentUpdate(input) {
+      await ready;
+      if (!tsRuntimeConfig || !tsRuntimeConfig.agents[input.name])
+        throw new Error(`agent not found: ${input.name}`);
+      await updateConfigAtScope(workspaceRoot, {
+        agents: { [input.name]: input.config },
+      } as never);
+      await applyConfigFromDisk();
+      return { updated: true };
+    },
+    async agentDelete(name) {
+      await ready;
+      const config = tsRuntimeConfig;
+      if (config && config.defaultAgent === name)
+        return {
+          deleted: false,
+          reason: `agent is the default agent: ${name}`,
+        };
+      await updateConfigAtScope(workspaceRoot, {
+        agents: { [name]: undefined },
+      } as never);
+      await applyConfigFromDisk();
+      return { deleted: true };
+    },
+    async providerDiscover(input) {
+      await ready;
+      const models = await discoverProviderModels(
+        input.type,
+        input.baseURL,
+        input.apiKey,
+      );
+      return { models };
+    },
+    async providerAdd(input) {
+      await ready;
+      await updateConfigAtScope(workspaceRoot, {
+        providers: {
+          [input.name]: {
+            type: input.type,
+            baseURL: input.baseURL ?? "",
+            apiKey: input.apiKey,
+          },
+        },
+      } as never);
+      await applyConfigFromDisk();
+      return { saved: true };
+    },
+    async providerRemove(name) {
+      await ready;
+      const config = tsRuntimeConfig;
+      const referenced = config
+        ? Object.entries(config.models).find(
+            ([, model]) => model.provider === name,
+          )
+        : undefined;
+      if (referenced)
+        return {
+          removed: false,
+          reason: `provider is referenced by model: ${referenced[0]}`,
+        };
+      await updateConfigAtScope(workspaceRoot, {
+        providers: { [name]: undefined },
+      } as never);
+      await applyConfigFromDisk();
+      return { removed: true };
+    },
+    async pluginUnload(id) {
+      await ready;
+      return await pluginsController.unload(id);
+    },
+    async pluginReload(id) {
+      await ready;
+      return await pluginsController.reload(id);
     },
     async runtimeStatus() {
       await ready;
@@ -2956,13 +3112,13 @@ export function createRealRuntimeClient(
       return true;
     }
     if (/^\/(?:checkpoint|checkpoints|rollback)\b/u.test(trimmed)) {
-      if (!checkpointStore)
+      if (!checkpointController.isEnabled())
         throw new Error("checkpoint store is not initialized");
       const result = await runCheckpointCommand(
-        checkpointStore,
+        checkpointController.get(),
         context,
         trimmed,
-        checkpointRollbackOptions(),
+        checkpointController.rollbackOptions(),
       );
       publish({ type: "content.delta", id, text: result.output });
       publish({ type: "content.done", id });
@@ -3211,89 +3367,96 @@ export function createRealRuntimeClient(
     if (session && promoteSteers(session).length) await persistInboxPromotion();
     lastProviderUsage = undefined;
     toolCalls.clear();
-    context.add({ id: `${id}:user`, role: "user", content: text });
-    if (checkpointStore?.isEnabled())
-      await checkpointStore.createCheckpoint({
-        reason: "turn_begin",
-        context,
-        step: context.journalStatus().messageCount,
-        status: "turn_begin",
-        model: activeProvider.model,
-      });
-    const messages = contextEntriesToProviderMessages(
-      context.snapshot().entries,
-    );
-    await lowerContextAttachments(messages, context.snapshot().entries);
-    const user = messages.findLast(
-      (message) => message.role === "user" && message.content === text,
-    );
-    if (resources.length && user) {
-      const contents = await Promise.all(
-        resources.map(async (resource) => {
-          let result: unknown;
-          for (const access of mcpAccess) {
-            try {
-              result = await access.readResource(resource.server, resource.uri);
-              break;
-            } catch (error) {
-              if (
-                !(error instanceof Error) ||
-                !error.message.includes("not connected")
-              )
-                throw error;
-            }
-          }
-          if (result === undefined)
-            throw new Error(`MCP server is not connected: ${resource.server}`);
-          const contents =
-            result && typeof result === "object" && "contents" in result
-              ? (result as { contents?: unknown }).contents
-              : result;
-          const text = Array.isArray(contents)
-            ? contents
-                .flatMap((item) =>
-                  item &&
-                  typeof item === "object" &&
-                  typeof (item as { text?: unknown }).text === "string"
-                    ? [(item as { text: string }).text]
-                    : [],
-                )
-                .join("\n")
-            : typeof contents === "string"
-              ? contents
-              : JSON.stringify(contents);
-          return `[MCP resource: ${resource.name} (${resource.uri})]\n${text}`;
-        }),
-      );
-      user.content = `${user.content}\n\n${contents.join("\n\n")}`;
-    }
-    if (agents.length) {
-      const invalid = agents.find(
-        (mention) => !agentRegistry?.get(mention.name),
-      );
-      if (invalid) throw new Error(`agent mention not found: ${invalid.name}`);
-      if (user)
-        user.content = `${user.content}\n\n${agents.map((mention) => `@${mention.name}`).join(" ")}`;
-    }
-    messages.unshift({
-      role: "system",
-      content: runtimeSystemPrompt({
-        workspaceRoot,
-        permissionMode,
-        agentName: selectedAgent?.name,
-        agentPrompt:
-          tsRuntimeConfig?.instructions.enabled === false
-            ? undefined
-            : selectedAgent?.systemPrompt ||
-              tsRuntimeConfig?.modes[tsRuntimeConfig.defaultMode]?.systemPrompt,
-        moduleInstructions: options.taskModuleContext?.moduleInstructions,
-        moduleContinuation: options.taskModuleContext?.moduleContinuation,
-        skills: skillRegistry?.list(),
-        activeSkill,
-      }),
-    });
     let assistant = "";
     try {
+      context.add({ id: `${id}:user`, role: "user", content: text });
+      if (checkpointController.isEnabled())
+        await checkpointController.get().createCheckpoint({
+          reason: "turn_begin",
+          context,
+          step: context.journalStatus().messageCount,
+          status: "turn_begin",
+          model: activeProvider.model,
+        });
+      const messages = contextEntriesToProviderMessages(
+        context.snapshot().entries,
+      );
+      await lowerContextAttachments(messages, context.snapshot().entries);
+      const user = messages.findLast(
+        (message) => message.role === "user" && message.content === text,
+      );
+      if (resources.length && user) {
+        const contents = await Promise.all(
+          resources.map(async (resource) => {
+            let result: unknown;
+            for (const access of mcpAccess) {
+              try {
+                result = await access.readResource(
+                  resource.server,
+                  resource.uri,
+                );
+                break;
+              } catch (error) {
+                if (
+                  !(error instanceof Error) ||
+                  !error.message.includes("not connected")
+                )
+                  throw error;
+              }
+            }
+            if (result === undefined)
+              throw new Error(
+                `MCP server is not connected: ${resource.server}`,
+              );
+            const contents =
+              result && typeof result === "object" && "contents" in result
+                ? (result as { contents?: unknown }).contents
+                : result;
+            const text = Array.isArray(contents)
+              ? contents
+                  .flatMap((item) =>
+                    item &&
+                    typeof item === "object" &&
+                    typeof (item as { text?: unknown }).text === "string"
+                      ? [(item as { text: string }).text]
+                      : [],
+                  )
+                  .join("\n")
+              : typeof contents === "string"
+                ? contents
+                : JSON.stringify(contents);
+            return `[MCP resource: ${resource.name} (${resource.uri})]\n${text}`;
+          }),
+        );
+        user.content = `${user.content}\n\n${contents.join("\n\n")}`;
+      }
+      if (agents.length) {
+        const invalid = agents.find(
+          (mention) => !agentRegistry?.get(mention.name),
+        );
+        if (invalid)
+          throw new Error(`agent mention not found: ${invalid.name}`);
+        if (user)
+          user.content = `${user.content}\n\n${agents.map((mention) => `@${mention.name}`).join(" ")}`;
+      }
+      messages.unshift({
+        role: "system",
+        content: runtimeSystemPrompt({
+          workspaceRoot,
+          permissionMode,
+          agentName: selectedAgent?.name,
+          agentPrompt:
+            tsRuntimeConfig?.instructions.enabled === false
+              ? undefined
+              : selectedAgent?.systemPrompt ||
+                tsRuntimeConfig?.modes[tsRuntimeConfig.defaultMode]
+                  ?.systemPrompt,
+          moduleInstructions: options.taskModuleContext?.moduleInstructions,
+          moduleContinuation: options.taskModuleContext?.moduleContinuation,
+          skills: skillRegistry?.list(),
+          activeSkill,
+        }),
+      });
       let usedTools = false;
       let needsFinalResponse = false;
       let finalResponse = "";
@@ -3483,6 +3646,7 @@ export function createRealRuntimeClient(
           thinking: true,
           imageInput: false,
           pdfInput: false,
+          videoInput: false,
         };
   }
 
@@ -3970,7 +4134,7 @@ export function createRealRuntimeClient(
             await interactive.requireQuestion(`${toolID}:question`, question),
           subagents,
           nativeTerminal,
-          sandboxes,
+          sandboxes: sandboxController.get(),
           workspaceReadAuthorize: authorizeWorkspaceRead,
           sandboxMergeAuthorize: authorizeSandboxMerge,
           settings: toolSettings(),
@@ -4254,26 +4418,6 @@ function redactToolOutput(output: string, redact: boolean | undefined) {
     (match) =>
       `${match.slice(0, match.indexOf("=") >= 0 ? match.indexOf("=") + 1 : match.indexOf(":") + 1)}[REDACTED]`,
   );
-}
-
-function statusSnapshot(
-  provider: StreamingProvider | undefined,
-  context: ContextLedger,
-  cwd: string,
-  permissionMode: "ask" | "auto" | "read_only",
-  running: number,
-): Extract<RuntimeEvent, { type: "status.snapshot" }> {
-  const status = context.journalStatus();
-  return {
-    type: "status.snapshot",
-    model: provider?.model ?? "not-configured",
-    provider: provider?.provider ?? "not-configured",
-    context: `${status.tokenEstimate} tokens`,
-    step: `${status.messageCount}`,
-    permissions: permissionMode,
-    cwd,
-    background: `${running} running`,
-  };
 }
 
 function waitForToolExecution<T>(execution: Promise<T>, signal?: AbortSignal) {
