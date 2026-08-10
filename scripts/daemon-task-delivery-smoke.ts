@@ -164,5 +164,14 @@ try {
   );
 } finally {
   daemon.kill();
+  // The daemon does not always exit on SIGTERM (observed: it survives with
+  // its server socket and timers after `server.stop`), and the smoke must not
+  // hang on a teardown defect. SIGKILL is the reaper of last resort.
+  await Promise.race([
+    daemon.exited,
+    Bun.sleep(5_000).then(() => {
+      daemon.kill("SIGKILL");
+    }),
+  ]);
   await daemon.exited;
 }

@@ -47,7 +47,8 @@
     "licenses:check": "npx bun scripts/license-check.ts",
     "licenses:generate": "npx bun scripts/generate-third-party-licenses.ts",
     "verify": "npm run format && npm run typecheck && npm run test && npm run guard:imports",
-    "smoke:daemon:task-delivery": "npx bun scripts/daemon-task-delivery-smoke.ts"
+    "smoke:daemon:task-delivery": "npx bun scripts/daemon-task-delivery-smoke.ts",
+    "cleanup:test-tmp": "bun scripts/cleanup-test-tmp.ts"
   },
   "dependencies": {
     "zod": "3.25.76"
