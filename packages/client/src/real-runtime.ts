@@ -2,6 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { isAbsolute, dirname, join, resolve } from "node:path";
 import { createStatusSnapshotController } from "./status-controller";
+import { createSessionStoreController } from "./session-store-controller";
+import { createTurnController } from "./turn-controller";
 import { createSandboxController } from "./sandbox-controller";
 import { createCheckpointController } from "./checkpoint-controller";
 import { createMcpController } from "./mcp-controller";
@@ -64,8 +66,6 @@ import {
 import {
   appendSessionEvent,
   createSessionRecord,
-  JsonSessionStore,
-  SqliteSessionStore,
   admitInput,
   admissionCutoff,
   admittedInputs,
@@ -185,34 +185,9 @@ import {
   storeLocalAttachments,
 } from "./attachments";
 
-const sqliteStores = new Map<string, SqliteSessionStore>();
-
 function userSkillRoot() {
   const root = join(globalConfigHome(), "natalia-cli", "skills");
   return isAbsolute(root) ? root : undefined;
-}
-// Stores are shared by database path across runtime clients, so the handle may
-// only be closed once the last client releases it. Leaving it open keeps
-// `sessions.db`, `-wal`, and `-shm` locked for the whole process, which on
-// Windows makes the enclosing `.natalia` directory and the workspace root
-// undeletable long after dispose().
-const sqliteStoreUsers = new Map<string, number>();
-
-function retainSqliteStore(path: string, store: SqliteSessionStore) {
-  sqliteStores.set(path, store);
-  sqliteStoreUsers.set(path, (sqliteStoreUsers.get(path) ?? 0) + 1);
-}
-
-function releaseSqliteStore(path: string) {
-  const remaining = (sqliteStoreUsers.get(path) ?? 1) - 1;
-  if (remaining > 0) {
-    sqliteStoreUsers.set(path, remaining);
-    return;
-  }
-  sqliteStoreUsers.delete(path);
-  const store = sqliteStores.get(path);
-  sqliteStores.delete(path);
-  store?.close();
 }
 
 /**
@@ -323,9 +298,13 @@ export function createRealRuntimeClient(
 ): RuntimeClient {
   let workspaceRoot = resolve(options.workspaceRoot ?? process.cwd());
   let sessionID: SessionID;
-  let sessionStore: JsonSessionStore;
-  let sqliteStore: SqliteSessionStore | undefined;
-  let sqliteStorePath: string | undefined;
+  const sessionStoreController = createSessionStoreController({
+    workspaceRoot,
+    sessionID: () => sessionID,
+    sessionDir: options.sessionDir,
+    useSqliteStore: options.useSqliteStore,
+    title: options.title,
+  });
   let provider = options.provider ?? providerFromEnvironment();
   let providerSource:
     | "explicit"
@@ -771,21 +750,7 @@ export function createRealRuntimeClient(
     await workspaceFilesController.init();
     sessionID =
       options.sessionID ?? (`ses_${sessionSeed(workspaceRoot)}` as SessionID);
-    sessionStore = new JsonSessionStore(
-      options.sessionDir ?? join(workspaceRoot, ".natalia", "sessions"),
-    );
-    if (options.useSqliteStore) {
-      const databasePath = join(workspaceRoot, ".natalia", "sessions.db");
-      await mkdir(dirname(databasePath), { recursive: true });
-      sqliteStore = sqliteStores.get(databasePath);
-      if (!sqliteStore) sqliteStore = new SqliteSessionStore(databasePath);
-      retainSqliteStore(databasePath, sqliteStore);
-      sqliteStorePath = databasePath;
-      sqliteStore.create(
-        sessionID,
-        options.title ?? `Natalia TS session ${sessionID}`,
-      );
-    }
+    await sessionStoreController.init();
     subagents = new SubagentRegistry({
       workDir: workspaceRoot,
       runner: async (task, runner) => {
@@ -1117,35 +1082,46 @@ export function createRealRuntimeClient(
       }
     }
     await sandboxController.init();
-    session = sqliteStore
-      ? ((await sessionStore.load(sessionID)) ??
+    session = sessionStoreController.sqlite()
+      ? ((await sessionStoreController.json().load(sessionID)) ??
         createSessionRecord(
           sessionID,
           options.title ?? `Natalia TS session ${sessionID}`,
         ))
-      : await sessionStore.loadOrCreate(
-          sessionID,
-          options.title ?? `Natalia TS session ${sessionID}`,
-        );
+      : await sessionStoreController
+          .json()
+          .loadOrCreate(
+            sessionID,
+            options.title ?? `Natalia TS session ${sessionID}`,
+          );
     if (!session) throw new Error("session initialization did not complete");
     let sqliteRecovery:
-      | ReturnType<SqliteSessionStore["loadRecoveryProjection"]>
+      | ReturnType<
+          NonNullable<
+            ReturnType<typeof sessionStoreController.sqlite>
+          >["loadRecoveryProjection"]
+        >
       | undefined;
-    let sqliteEpoch: ReturnType<SqliteSessionStore["loadContextEpoch"]>;
+    let sqliteEpoch: ReturnType<
+      NonNullable<
+        ReturnType<typeof sessionStoreController.sqlite>
+      >["loadContextEpoch"]
+    >;
     let indexedPagedRecovery = false;
-    if (sqliteStore) {
-      let durable = sqliteStore.get(sessionID);
-      sqliteEpoch = sqliteStore.loadContextEpoch(sessionID);
+    const sessionSqlite = sessionStoreController.sqlite();
+    if (sessionSqlite) {
+      let durable = sessionSqlite.get(sessionID);
+      sqliteEpoch = sessionSqlite.loadContextEpoch(sessionID);
       indexedPagedRecovery = replayMode === "none" && Boolean(sqliteEpoch);
       let events = indexedPagedRecovery
         ? []
-        : sqliteStore.loadEvents(sessionID);
+        : sessionSqlite.loadEvents(sessionID);
       if (!events.length && !indexedPagedRecovery && session.events.length) {
         // Migrate an existing JSON-only session once, before SQLite becomes the
         // event authority. New SQLite sessions never mirror durable events back.
-        sqliteStore.replace(session);
-        durable = sqliteStore.get(sessionID);
-        events = sqliteStore.loadEvents(sessionID);
+        sessionSqlite.replace(session);
+        durable = sessionSqlite.get(sessionID);
+        events = sessionSqlite.loadEvents(sessionID);
       }
       if (durable) {
         session = {
@@ -1158,19 +1134,21 @@ export function createRealRuntimeClient(
           // SQLite is the durable event authority in SQLite mode. Preserve a
           // legacy JSON-only session only until it is explicitly imported.
           events: events.length ? events : session.events,
-          inbox: sqliteStore.loadInbox(sessionID).length
-            ? sqliteStore.loadInbox(sessionID)
+          inbox: sessionSqlite.loadInbox(sessionID).length
+            ? sessionSqlite.loadInbox(sessionID)
             : session.inbox,
         };
       }
       if (indexedPagedRecovery)
-        sqliteRecovery = sqliteStore.loadRecoveryProjection(sessionID);
+        sqliteRecovery = sessionSqlite.loadRecoveryProjection(sessionID);
     }
     await cleanupUnreferencedAttachments({
       workspaceRoot,
-      attachments: sqliteStore
-        ? sqliteStore.referencedAttachments()
-        : referencedAttachmentsForSessions(await sessionStore.list()),
+      attachments: sessionStoreController.sqlite()
+        ? sessionStoreController.sqlite()!.referencedAttachments()
+        : referencedAttachmentsForSessions(
+            await sessionStoreController.json().list(),
+          ),
     }).catch((error) =>
       publish({
         type: "diagnostic",
@@ -1196,11 +1174,14 @@ export function createRealRuntimeClient(
     );
     if (interruptedOperation) {
       delete session.metadata?.inFlightOperation;
-      sqliteStore?.updateMetadata(sessionID, { inFlightOperation: undefined });
+      sessionStoreController
+        .sqlite()
+        ?.updateMetadata(sessionID, { inFlightOperation: undefined });
     }
     if (interrupted.length || interruptedOperation) {
-      if (sqliteStore) sqliteStore.appendEvents(sessionID, interrupted);
-      else await sessionStore.save(session);
+      if (sessionStoreController.sqlite())
+        sessionStoreController.sqlite()!.appendEvents(sessionID, interrupted);
+      else await sessionStoreController.json().save(session);
       publish({
         type: "diagnostic",
         level: "warning",
@@ -1262,7 +1243,9 @@ export function createRealRuntimeClient(
     restoreContextFromEvents(
       context,
       sqliteEpoch
-        ? sqliteStore!.loadEventsAfter(sessionID, sqliteEpoch.baselineSeq)
+        ? sessionStoreController
+            .sqlite()!
+            .loadEventsAfter(sessionID, sqliteEpoch.baselineSeq)
         : modelVisibleEvents(projection.replayableEvents),
     );
     for (const [turnID, attachments] of sqliteRecovery?.attachments ?? [])
@@ -1668,13 +1651,16 @@ export function createRealRuntimeClient(
       runtimeEventDurability(event) === "durable"
     ) {
       appendSessionEvent(session, event);
-      const sessionSnapshot = sqliteStore
+      const sessionSnapshot = sessionStoreController.sqlite()
         ? undefined
         : structuredClone(session);
       sessionPersistence = sessionPersistence
         .then(async () => {
-          if (sqliteStore) await sqliteStore.appendEventAsync(sessionID, event);
-          else await sessionStore.save(sessionSnapshot!);
+          if (sessionStoreController.sqlite())
+            await sessionStoreController
+              .sqlite()!
+              .appendEventAsync(sessionID, event);
+          else await sessionStoreController.json().save(sessionSnapshot!);
         })
         .catch((error) => {
           sink?.({
@@ -1714,14 +1700,16 @@ export function createRealRuntimeClient(
     session.metadata = { ...session.metadata };
     if (operation) session.metadata.inFlightOperation = operation;
     else delete session.metadata.inFlightOperation;
-    const sessionSnapshot = sqliteStore ? undefined : structuredClone(session);
+    const sessionSnapshot = sessionStoreController.sqlite()
+      ? undefined
+      : structuredClone(session);
     sessionPersistence = sessionPersistence
       .then(async () => {
-        if (sqliteStore)
-          sqliteStore.updateMetadata(sessionID, {
+        if (sessionStoreController.sqlite())
+          sessionStoreController.sqlite()!.updateMetadata(sessionID, {
             inFlightOperation: operation,
           });
-        else await sessionStore.save(sessionSnapshot!);
+        else await sessionStoreController.json().save(sessionSnapshot!);
       })
       .catch((error) =>
         publish({
@@ -1876,49 +1864,45 @@ export function createRealRuntimeClient(
     return submitted;
   }
 
+  const turnController = createTurnController({
+    session: () => session,
+    activeAbort: () => activeAbort,
+    persist: (fn) => {
+      sessionPersistence = sessionPersistence.then(fn).catch((error) =>
+        publish({
+          type: "diagnostic",
+          level: "warning",
+          message: `session persistence deferred/failed: ${error instanceof Error ? error.message : String(error)}`,
+        }),
+      );
+      return sessionPersistence;
+    },
+    saveInbox: async (snapshot) => {
+      if (sessionStoreController.sqlite())
+        sessionStoreController
+          .sqlite()!
+          .replaceInbox(sessionID, snapshot.inbox ?? []);
+      else await sessionStoreController.json().save(snapshot);
+    },
+    flush: async () => {
+      await sessionPersistence;
+    },
+    runCommand: async (id, text) => await handleCommand(id, text),
+    runTurn: async (input) =>
+      await runProviderTurn(
+        input.id,
+        input.text,
+        input.attachments,
+        input.resources,
+        input.agents,
+      ),
+  });
   async function drainSession(signal: AbortSignal) {
-    if (!session) return;
-    const abort = () => activeAbort?.abort(signal.reason);
-    signal.addEventListener("abort", abort, { once: true });
-    try {
-      if (signal.aborted) throw signal.reason;
-      // Inputs admitted after this boundary wake a single successor drain.
-      const inputs = promoteSteers(session, admissionCutoff(session));
-      if (inputs.length) await persistInboxPromotion();
-      for (const input of inputs) {
-        if (signal.aborted) throw signal.reason;
-        await runAdmittedInput(
-          input.id,
-          input.text,
-          input.attachments,
-          input.resources,
-          input.agents,
-        );
-      }
-      if (
-        !admittedInputs(session).some(
-          (input) => !input.promotedAt && input.delivery === "steer",
-        )
-      )
-        await drainPendingQueue(signal);
-    } finally {
-      signal.removeEventListener("abort", abort);
-    }
+    await turnController.drain(signal);
   }
 
   async function drainPendingQueue(signal?: AbortSignal) {
-    if (!session) return;
-    if (signal?.aborted) throw signal.reason;
-    const [next] = promoteNextQueued(session);
-    if (!next) return;
-    await persistInboxPromotion();
-    await runAdmittedInput(
-      next.id,
-      next.text,
-      next.attachments,
-      next.resources,
-      next.agents,
-    );
+    await turnController.drainQueue(signal);
   }
 
   async function runAdmittedInput(
@@ -1928,73 +1912,13 @@ export function createRealRuntimeClient(
     resources: import("@natalia/contracts").PromptResourceMention[] = [],
     agents: import("@natalia/contracts").PromptAgentMention[] = [],
   ) {
-    if (await handleCommand(id, text)) {
-      await sessionPersistence;
-      return;
-    }
-    await runProviderTurn(id, text, attachments, resources, agents);
+    await turnController.admit(id, text, attachments, resources, agents);
   }
 
   async function persistInboxPromotion() {
-    if (!session) return;
-    const snapshot = structuredClone(session);
-    sessionPersistence = sessionPersistence
-      .then(() => {
-        if (sqliteStore)
-          sqliteStore.replaceInbox(sessionID, snapshot.inbox ?? []);
-        else return sessionStore.save(snapshot);
-      })
-      .catch((error) =>
-        publish({
-          type: "diagnostic",
-          level: "warning",
-          message: `session inbox promotion persistence failed: ${error instanceof Error ? error.message : String(error)}`,
-        }),
-      );
-    await sessionPersistence;
-  }
-
-  function sessionSummary(record: SessionRecord): RuntimeSessionSummary {
-    return {
-      id: record.id,
-      title: record.title,
-      createdAt: record.createdAt,
-      lastAccessedAt: record.metadata?.lastAccessedAt,
-      pinned: Boolean(record.metadata?.pinned),
-      archived: Boolean(record.metadata?.archived),
-      events: record.events.length,
-      pendingInputs:
-        record.inbox?.filter((input) => !input.promotedAt).length ?? 0,
-      cancelled: record.cancelled,
-      resumable: record.resumable,
-    };
-  }
-
-  function sqliteSessionSummary(
-    record: import("@natalia/session").SessionRow,
-    store: SqliteSessionStore,
-  ): RuntimeSessionSummary {
-    return {
-      id: record.id,
-      title: record.title,
-      createdAt: record.createdAt,
-      lastAccessedAt: record.metadata.lastAccessedAt as string | undefined,
-      pinned: record.pinned,
-      events: store.eventCount(record.id),
-      pendingInputs: 0,
-      cancelled: record.cancelled,
-      resumable: record.resumable,
-    };
-  }
-
-  async function sessionByID(id: string) {
-    const record = await sessionStore.load(id as SessionID);
-    if (!record) throw new Error(`session not found: ${id}`);
-    return record;
-  }
-
-  async function sessionByIDOptional(id: string) {
-    return await sessionStore.load(id as SessionID);
+    // The ordering and persistence of inbox promotion live in the turn
+    // controller; this wrapper is retained for the call sites in the
+    // admission flow.
   }
 
   return {
@@ -2028,8 +1952,10 @@ export function createRealRuntimeClient(
       await ready;
       const after = Math.max(0, options.after ?? 0);
       const limit = Math.min(500, Math.max(1, options.limit ?? 100));
-      if (sqliteStore)
-        return sqliteStore.loadEventPage(sessionID, { after, limit });
+      if (sessionStoreController.sqlite())
+        return sessionStoreController
+          .sqlite()!
+          .loadEventPage(sessionID, { after, limit });
       const events = session?.events ?? [];
       const page = events.slice(after, after + limit + 1);
       return {
@@ -2042,7 +1968,10 @@ export function createRealRuntimeClient(
     async messages(options = {}) {
       await ready;
       if (!session) throw new Error("session initialization did not complete");
-      if (sqliteStore) return sqliteStore.loadMessagePage(sessionID, options);
+      if (sessionStoreController.sqlite())
+        return sessionStoreController
+          .sqlite()!
+          .loadMessagePage(sessionID, options);
       return projectSessionMessages(session, options);
     },
     async pendingInteractive() {
@@ -2056,12 +1985,8 @@ export function createRealRuntimeClient(
       // A committed selection and other durable controls must reach disk before
       // a caller opens the same session in a replacement runtime.
       await sessionPersistence;
-      if (sqliteStore) await sqliteStore.flushPendingWrites(sessionID);
-      if (sqliteStorePath) {
-        releaseSqliteStore(sqliteStorePath);
-        sqliteStorePath = undefined;
-        sqliteStore = undefined;
-      }
+      await sessionStoreController.sqlite()?.flushPendingWrites(sessionID);
+      await sessionStoreController.close();
       workspaceFilesController.close();
       await pluginsController.close();
       await mcpController.close();
@@ -2557,146 +2482,43 @@ export function createRealRuntimeClient(
     },
     async sessionList() {
       await ready;
-      const store = sqliteStore;
-      if (store)
-        return store.list().map((record) => ({
-          id: record.id,
-          title: record.title,
-          createdAt: record.createdAt,
-          lastAccessedAt: record.metadata.lastAccessedAt as string | undefined,
-          pinned: record.pinned,
-          events: store.eventCount(record.id),
-          pendingInputs: store.pendingInputCount(record.id),
-          cancelled: record.cancelled,
-          resumable: record.resumable,
-        }));
-      return (await sessionStore.list()).map(sessionSummary);
+      return await sessionStoreController.list();
     },
     async sessionTouch(id) {
       await ready;
-      const store = sqliteStore as SqliteSessionStore | undefined;
-      if (store) {
-        store.touch(id as SessionID);
-        return;
-      }
-      const session = await sessionStore.updateMetadata(id as SessionID, {
-        lastAccessedAt: new Date().toISOString(),
-      });
+      await sessionStoreController.touch(id);
     },
     async sessionRename(id, title) {
       await ready;
-      const store = sqliteStore as SqliteSessionStore | undefined;
-      if (store)
-        return sqliteSessionSummary(
-          store.rename(id as SessionID, title),
-          store,
-        );
-      const session = await sessionStore.rename(id as SessionID, title);
-      return sessionSummary(session);
+      return await sessionStoreController.rename(id, title);
     },
     async sessionPin(id, pinned) {
       await ready;
-      const store = sqliteStore as SqliteSessionStore | undefined;
-      if (store)
-        return sqliteSessionSummary(store.pin(id as SessionID, pinned), store);
-      const session = await sessionStore.updateMetadata(id as SessionID, {
-        pinned,
-      });
-      return sessionSummary(session);
+      return await sessionStoreController.pin(id, pinned);
     },
     async sessionDuplicate(id, title) {
       await ready;
-      const store = sqliteStore as SqliteSessionStore | undefined;
-      if (store)
-        return sessionSummary(
-          store.duplicate(id as SessionID, undefined, title),
-        );
-      const session = await sessionStore.duplicate(
-        id as SessionID,
-        undefined,
-        title,
-      );
-      return sessionSummary(session);
+      return await sessionStoreController.duplicate(id, title);
     },
     async sessionFork(id, turnID, title) {
       await ready;
-      const store = sqliteStore as SqliteSessionStore | undefined;
-      if (store)
-        return sessionSummary(
-          store.fork(id as SessionID, turnID, undefined, title),
-        );
-      const session = await sessionStore.fork(
-        id as SessionID,
-        turnID,
-        undefined,
-        title,
-      );
-      return sessionSummary(session);
+      return await sessionStoreController.fork(id, turnID, title);
     },
     async sessionDelete(id) {
       await ready;
-      if (id === sessionID)
-        throw new Error("cannot delete the active runtime session");
-      const store = sqliteStore as SqliteSessionStore | undefined;
-      if (store) {
-        if (!store.get(id as SessionID))
-          throw new Error(`session not found: ${id}`);
-        store.delete(id as SessionID);
-        const removedAttachments = await cleanupUnreferencedAttachments({
-          workspaceRoot,
-          attachments: store.referencedAttachments(),
-        });
-        return { id, removedAttachments: removedAttachments.length };
-      }
-      await sessionByID(id);
-      await sessionStore.delete(id as SessionID);
-      const removedAttachments = await cleanupUnreferencedAttachments({
-        workspaceRoot,
-        attachments: referencedAttachmentsForSessions(
-          await sessionStore.list(),
-        ),
-      });
-      return { id, removedAttachments: removedAttachments.length };
+      return await sessionStoreController.delete(id);
     },
     async sessionNew(input = {}) {
       await ready;
-      const id =
-        input.id ??
-        `ses_${crypto.randomUUID().replace(/-/gu, "").slice(0, 16)}`;
-      if (input.id) {
-        const existing = await sessionByIDOptional(id);
-        if (existing) return { sessionID: id, created: false };
-      }
-      const record = createSessionRecord(
-        id as SessionID,
-        input.title ?? "Untitled session",
-      );
-      await sessionStore.save(record);
-      return { sessionID: id, created: true };
+      return await sessionStoreController.create(input);
     },
     async sessionArchive(id) {
       await ready;
-      const record = await sessionByIDOptional(id);
-      if (!record) throw new Error(`session not found: ${id}`);
-      if (record.metadata?.archived) return { id, archived: true };
-      record.metadata = { ...record.metadata, archived: true };
-      await sessionStore.save(record);
-      return { id, archived: true };
+      return await sessionStoreController.archive(id);
     },
     async sessionExport(id) {
       await ready;
-      const record = await sessionByIDOptional(id);
-      if (!record) throw new Error(`session not found: ${id}`);
-      return {
-        sessionID: record.id,
-        title: record.title,
-        createdAt: record.createdAt,
-        archived: Boolean(record.metadata?.archived),
-        events: record.events.map((event, index) => ({
-          seq: index + 1,
-          event,
-        })),
-      };
+      return await sessionStoreController.export(id);
     },
     async permissionList() {
       await ready;
@@ -3088,15 +2910,16 @@ export function createRealRuntimeClient(
       return true;
     }
     if (trimmed === "/sessions") {
-      const listing = sqliteStore
-        ? sqliteStore
+      const store = sessionStoreController.sqlite();
+      const listing = store
+        ? store
             .list()
             .map(
               (item) =>
-                `${item.id}  ${item.title}  ${sqliteStore!.eventCount(item.id)} events`,
+                `${item.id}  ${item.title}  ${store.eventCount(item.id)} events`,
             )
             .join("\n")
-        : (await sessionStore.list())
+        : (await sessionStoreController.json().list())
             .map(
               (item) =>
                 `${item.id}  ${item.title}  ${item.events.length} events`,
