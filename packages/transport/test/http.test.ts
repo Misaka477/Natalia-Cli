@@ -11,7 +11,6 @@ import { createRuntimeHttpServer } from "../src/host";
 
 test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", async () => {
   const events: RuntimeEvent[] = [];
-  const terminalViewerActions: string[] = [];
   let sink: ((event: RuntimeEvent) => void) | undefined;
   const client: RuntimeClient = {
     start(handler) {
@@ -67,80 +66,6 @@ test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", as
         ],
         cursor: { next: "opaque-next" },
       };
-    },
-    async terminalList() {
-      return [ptyFixture()];
-    },
-    async terminalRead() {
-      return {
-        ...ptyFixture(),
-        offset: 0,
-        nextOffset: 3,
-        totalChars: 3,
-        truncated: false,
-      };
-    },
-    async terminalObserve(input) {
-      return {
-        session: ptyFixture(),
-        afterRevision: input.afterRevision,
-        changed: false,
-        reason: "timeout" as const,
-      };
-    },
-    async terminalViewerRegister(input) {
-      terminalViewerActions.push(`register:${input.viewerID}`);
-      return ptyFixture();
-    },
-    async terminalViewerHeartbeat(input) {
-      terminalViewerActions.push(`heartbeat:${input.viewerID}`);
-      return ptyFixture();
-    },
-    async terminalViewerControl(input) {
-      terminalViewerActions.push(`${input.action}:${input.viewerID}`);
-      return ptyFixture();
-    },
-    async terminalViewerWrite(input) {
-      terminalViewerActions.push(
-        `write:${input.viewerID}:${input.data}:${input.sensitive ?? false}`,
-      );
-      return ptyFixture();
-    },
-    async terminalViewerResize(input) {
-      terminalViewerActions.push(
-        `resize:${input.viewerID}:${input.rows}x${input.cols}`,
-      );
-      return { ...ptyFixture(), rows: input.rows, cols: input.cols };
-    },
-    async terminalScrollback(input) {
-      return {
-        offsetFromBottom: input.offsetFromBottom ?? 0,
-        start: 0,
-        end: 1,
-        totalLines: 1,
-        lines: [[["history", 1]]],
-        text: "history",
-        cursorRow: 0,
-        cursorCol: 0,
-      };
-    },
-    async terminalWrite() {
-      return ptyFixture();
-    },
-    async terminalKey() {
-      return ptyFixture();
-    },
-    async terminalResize() {
-      return { ...ptyFixture(), rows: 32, cols: 120 };
-    },
-    async terminalAttach() {
-      return ptyFixture();
-    },
-    async terminalDetach() {
-      return { ...ptyFixture(), attached: false };
-    },
-    async terminalStop() {
-      return { ...ptyFixture(), status: "exited" as const };
     },
     async checkpointList() {
       return [checkpointFixture()];
@@ -364,125 +289,6 @@ test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", as
   expect(replayed).toContain("id: 7");
   expect(replayed).toContain("durable replay");
   await reader.cancel();
-  const terminal = await fetch(`${server.url}/rpc`, {
-    method: "POST",
-    headers: {
-      authorization: "Bearer secret",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 14,
-      method: "terminal.resize",
-      params: { id: "tty_fixture", rows: 32, cols: 120 },
-    }),
-  });
-  expect(
-    (await terminal.json()) as { result: { rows: number; cols: number } },
-  ).toMatchObject({
-    result: { rows: 32, cols: 120 },
-  });
-  const terminal2 = await fetch(`${server.url}/rpc`, {
-    method: "POST",
-    headers: {
-      authorization: "Bearer secret",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 140,
-      method: "terminal.resize",
-      params: { id: "tty_fixture", rows: 32, cols: 120 },
-    }),
-  });
-  expect(
-    (await terminal2.json()) as { result: { rows: number; cols: number } },
-  ).toMatchObject({
-    result: { rows: 32, cols: 120 },
-  });
-  const terminalObserve = await fetch(`${server.url}/rpc`, {
-    method: "POST",
-    headers: {
-      authorization: "Bearer secret",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 141,
-      method: "terminal.observe",
-      params: { id: "tty_fixture", afterRevision: 0, timeoutMs: 10 },
-    }),
-  });
-  expect(
-    (await terminalObserve.json()) as {
-      result: { reason: string; afterRevision: number };
-    },
-  ).toMatchObject({ result: { reason: "timeout", afterRevision: 0 } });
-  for (const [method, params] of [
-    [
-      "terminal.viewer.register",
-      { id: "tty_fixture", viewerID: "viewer_http", kind: "external" },
-    ],
-    [
-      "terminal.viewer.control",
-      { id: "tty_fixture", viewerID: "viewer_http", action: "takeover" },
-    ],
-    [
-      "terminal.viewer.write",
-      {
-        id: "tty_fixture",
-        viewerID: "viewer_http",
-        data: "x",
-        sensitive: true,
-      },
-    ],
-    [
-      "terminal.viewer.resize",
-      { id: "tty_fixture", viewerID: "viewer_http", rows: 30, cols: 100 },
-    ],
-    [
-      "terminal.viewer.heartbeat",
-      { id: "tty_fixture", viewerID: "viewer_http" },
-    ],
-    [
-      "terminal.viewer.control",
-      { id: "tty_fixture", viewerID: "viewer_http", action: "unregister" },
-    ],
-  ] as const) {
-    const response = await fetch(`${server.url}/rpc`, {
-      method: "POST",
-      headers: {
-        authorization: "Bearer secret",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 142, method, params }),
-    });
-    expect(response.ok).toBe(true);
-  }
-  expect(terminalViewerActions).toEqual([
-    "register:viewer_http",
-    "takeover:viewer_http",
-    "write:viewer_http:x:true",
-    "resize:viewer_http:30x100",
-    "heartbeat:viewer_http",
-    "unregister:viewer_http",
-  ]);
-  const scrollback = await fetch(`${server.url}/rpc`, {
-    method: "POST",
-    headers: {
-      authorization: "Bearer secret",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 143,
-      method: "terminal.scrollback",
-      params: { id: "tty_fixture", offsetFromBottom: 20, maxRows: 10 },
-    }),
-  });
-  expect(await scrollback.json()).toMatchObject({
-    result: { offsetFromBottom: 20, text: "history" },
-  });
   const checkpoint = await fetch(`${server.url}/rpc`, {
     method: "POST",
     headers: {
@@ -551,22 +357,6 @@ test("native HTTP RPC and SSE transport stays behind RuntimeClient contract", as
   );
   server.stop(true);
 });
-
-function ptyFixture() {
-  return {
-    id: "tty_fixture",
-    command: "cat",
-    cwd: "/tmp",
-    status: "running" as const,
-    attached: true,
-    rows: 24,
-    cols: 80,
-    transcript: "ok\n",
-    tail: "ok\n",
-    startedAt: "2026-07-23T00:00:00.000Z",
-    secretAudit: [],
-  };
-}
 
 function checkpointFixture() {
   return {

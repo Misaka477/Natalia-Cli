@@ -95,7 +95,6 @@ import {
   type SkillRegistry,
 } from "@natalia/skills";
 import { SubagentRegistry } from "@natalia/subagent";
-import { TerminalRegistry } from "@natalia/terminal";
 import {
   createWezTermHost,
   NativeTerminalRegistry,
@@ -474,7 +473,6 @@ export function createRealRuntimeClient(
     | undefined;
   let maxSteps: number | undefined;
   let subagents: SubagentRegistry | undefined;
-  let terminalRegistry: TerminalRegistry | undefined;
   let nativeTerminal: NativeTerminalRegistry | undefined =
     options.nativeTerminal;
   let nativeInputBroker: NativeInputBroker | undefined;
@@ -897,13 +895,6 @@ export function createRealRuntimeClient(
       // here. `commandCatalog()` stays the authoritative surface.
       setGlobalPluginCommands(commandCatalogEntries());
     }
-    terminalRegistry = new TerminalRegistry(
-      join(workspaceRoot, ".natalia", "terminal", "interactive"),
-      {
-        onViewerExpired: (session, viewerID) =>
-          publishTerminalViewer(session, viewerID, "expired"),
-      },
-    );
     if (!nativeTerminal) {
       const runtimeHome = userRuntimeHome();
       const nativeRuntimeDir = runtimeHome
@@ -1473,15 +1464,6 @@ export function createRealRuntimeClient(
               : ("stopped" as const),
         summary: agent.task,
       })) ?? []),
-      ...(terminalRegistry?.list().map((terminal) => ({
-        kind: "terminal" as const,
-        id: terminal.id,
-        status:
-          terminal.status === "running"
-            ? ("running" as const)
-            : ("stopped" as const),
-        summary: terminal.command,
-      })) ?? []),
       ...(activeAbort
         ? [
             {
@@ -1724,7 +1706,6 @@ export function createRealRuntimeClient(
   async function runtimeStatusSnapshot() {
     const running =
       (subagents?.runningCount() ?? 0) +
-      (terminalRegistry?.runningCount() ?? 0) +
       (sandboxes?.runningResourceCount() ?? 0) +
       (processRegistry
         ? await processRegistry.runningCount({ workspaceRoot })
@@ -1846,7 +1827,6 @@ export function createRealRuntimeClient(
       ) => {
         if (policy.action !== "stop" && policy.action !== "cancel") return;
         if (policy.kind === "subagent") await subagents?.stop(policy.id);
-        if (policy.kind === "terminal") await terminalRegistry?.stop(policy.id);
         if (policy.kind === "tool")
           activeAbort?.abort(new Error("checkpoint rollback"));
       },
@@ -2104,7 +2084,6 @@ export function createRealRuntimeClient(
       await nativeInputBroker?.stop();
       nativeInputBroker = undefined;
       await performanceTrace.stop();
-      terminalRegistry?.dispose();
     },
     cancel(reason = "user cancel") {
       activeAbort?.abort(reason);
@@ -2292,10 +2271,6 @@ export function createRealRuntimeClient(
       await ready;
       return await globWorkspaceFiles({ workspaceRoot, ...input });
     },
-    async terminalList() {
-      await ready;
-      return terminalRegistry?.list() ?? [];
-    },
     async nativeTerminalList() {
       await ready;
       return ((await nativeTerminal?.reconcile()) ?? []).map(
@@ -2348,163 +2323,6 @@ export function createRealRuntimeClient(
         ...publicNativeTerminal(await nativeTerminal.stop(id, "human")),
         status: "exited",
       };
-    },
-    async terminalRead(input) {
-      await ready;
-      if (!terminalRegistry)
-        throw new Error("interactive terminal is unavailable");
-      return terminalRegistry.read(input.id, input);
-    },
-    async terminalObserve(input) {
-      await ready;
-      if (!terminalRegistry)
-        throw new Error("interactive terminal is unavailable");
-      return await terminalRegistry.observe(input.id, input);
-    },
-    async terminalViewerRegister(input) {
-      await ready;
-      if (!terminalRegistry)
-        throw new Error("interactive terminal is unavailable");
-      const terminalSession = terminalRegistry.registerViewer(input.id, input);
-      publishTerminalViewer(
-        terminalSession,
-        input.viewerID,
-        "registered",
-        input.kind,
-      );
-      return terminalSession;
-    },
-    async terminalViewerHeartbeat(input) {
-      await ready;
-      if (!terminalRegistry)
-        throw new Error("interactive terminal is unavailable");
-      return terminalRegistry.heartbeatViewer(input.id, input.viewerID);
-    },
-    async terminalViewerControl(input) {
-      await ready;
-      if (!terminalRegistry)
-        throw new Error("interactive terminal is unavailable");
-      const terminalSession =
-        input.action === "takeover"
-          ? terminalRegistry.takeoverViewer(input.id, input.viewerID)
-          : input.action === "take_geometry"
-            ? terminalRegistry.takeGeometryViewer(input.id, input.viewerID)
-            : input.action === "release_input"
-              ? terminalRegistry.releaseInputViewer(input.id, input.viewerID)
-              : input.action === "release"
-                ? await terminalRegistry.releaseViewer(input.id, input.viewerID)
-                : await terminalRegistry.unregisterViewer(
-                    input.id,
-                    input.viewerID,
-                  );
-      publishTerminalViewer(
-        terminalSession,
-        input.viewerID,
-        input.action === "unregister"
-          ? "unregistered"
-          : input.action === "take_geometry"
-            ? "takeover"
-            : input.action === "release_input"
-              ? "release"
-              : input.action,
-      );
-      return terminalSession;
-    },
-    async terminalViewerWrite(input) {
-      await ready;
-      if (!terminalRegistry)
-        throw new Error("interactive terminal is unavailable");
-      const terminalSession = await terminalRegistry.viewerWrite(
-        input.id,
-        input.viewerID,
-        input.data,
-        {
-          sensitive: input.sensitive,
-          idempotencyKey: input.idempotencyKey,
-        },
-      );
-      // The framebuffer is delivered by terminal.observe; returning it per key
-      // stalls input behind a full screen snapshot serialization.
-      return { ...terminalSession, screen: undefined };
-    },
-    async terminalViewerResize(input) {
-      await ready;
-      if (!terminalRegistry)
-        throw new Error("interactive terminal is unavailable");
-      const terminalSession = await terminalRegistry.viewerResize(
-        input.id,
-        input.viewerID,
-        input.rows,
-        input.cols,
-      );
-      publishTerminalSession(terminalSession);
-      return terminalSession;
-    },
-    async terminalScrollback(input) {
-      await ready;
-      if (!terminalRegistry)
-        throw new Error("interactive terminal is unavailable");
-      return terminalRegistry.scrollback(input.id, input);
-    },
-    async terminalWrite(input) {
-      await ready;
-      if (!terminalRegistry)
-        throw new Error("interactive terminal is unavailable");
-      const terminal = await terminalRegistry.write(input.id, input.text, {
-        submit: input.submit,
-        sensitive: input.sensitive,
-        idempotencyKey: input.idempotencyKey,
-      });
-      publishTerminalSession(
-        terminal,
-        input.submit === false ? "write" : "submit",
-        Boolean(input.sensitive),
-      );
-      return terminal;
-    },
-    async terminalKey(input) {
-      await ready;
-      if (!terminalRegistry)
-        throw new Error("interactive terminal is unavailable");
-      const terminal = await terminalRegistry.specialKey(input.id, input.key);
-      publishTerminalSession(terminal, "special_key");
-      return terminal;
-    },
-    async terminalResize(input) {
-      await ready;
-      if (!terminalRegistry)
-        throw new Error("interactive terminal is unavailable");
-      const terminal = await terminalRegistry.resize(
-        input.id,
-        input.rows,
-        input.cols,
-      );
-      publishTerminalSession(terminal, "resize");
-      return terminal;
-    },
-    async terminalAttach(id) {
-      await ready;
-      if (!terminalRegistry)
-        throw new Error("interactive terminal is unavailable");
-      const terminal = await terminalRegistry.attach(id);
-      publishTerminalSession(terminal, "attach");
-      return terminal;
-    },
-    async terminalDetach(id) {
-      await ready;
-      if (!terminalRegistry)
-        throw new Error("interactive terminal is unavailable");
-      const terminal = await terminalRegistry.detach(id);
-      publishTerminalSession(terminal, "detach");
-      return terminal;
-    },
-    async terminalStop(id) {
-      await ready;
-      if (!terminalRegistry)
-        throw new Error("interactive terminal is unavailable");
-      const terminal = await terminalRegistry.stop(id);
-      publishTerminalSession(terminal, "exit");
-      return terminal;
     },
     async checkpointList() {
       await ready;

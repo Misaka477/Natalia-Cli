@@ -74,27 +74,6 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "workspaceRead",
     "workspaceGlob",
   ],
-  /** Driving terminals the model owns. */
-  terminal: [
-    "terminalList",
-    "terminalRead",
-    "terminalObserve",
-    "terminalScrollback",
-    "terminalWrite",
-    "terminalKey",
-    "terminalResize",
-    "terminalAttach",
-    "terminalDetach",
-    "terminalStop",
-  ],
-  /** Sharing a terminal with other viewers. */
-  terminalSharing: [
-    "terminalViewerRegister",
-    "terminalViewerHeartbeat",
-    "terminalViewerControl",
-    "terminalViewerWrite",
-    "terminalViewerResize",
-  ],
   /** The native terminal host, including secure input and approval scopes. */
   nativeTerminal: [
     "nativeTerminalList",

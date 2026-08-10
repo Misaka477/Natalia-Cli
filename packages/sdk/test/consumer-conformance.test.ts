@@ -286,7 +286,9 @@ test("a consumer can ask what this runtime implements, without guessing", async 
       .map((group) => group.name);
     expect(available).toContain("sessions");
     expect(available).toContain("checkpoint");
-    expect(available).toContain("terminal");
+    // The xterm `terminal` group is retired; the live terminal surface is the
+    // native host, which the in-process report still describes accurately.
+    expect(available).toContain("nativeTerminal");
     expect(available).toContain("workGraph");
 
     // This capability was reported partial when the report first ran — the

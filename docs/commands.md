@@ -81,25 +81,6 @@ npm run ts:cli -- fs search 'createRuntime' --include '*.ts' --limit 100
 
 The `fs` commands stay within the selected workspace and return JSON.
 
-## Terminal Sessions
-
-```bash
-npm run ts:cli -- terminal attach <id>
-npm run ts:cli -- terminal attach <id> --take-control
-npm run ts:cli -- terminal attach <id> --take-control --secure-input
-npm run ts:cli -- terminal open <id>
-npm run ts:cli -- terminal open <id> --terminal kitty --take-control
-npm run ts:cli -- terminal open <id> --take-control --secure-input
-```
-
-- `terminal attach <id>` opens a read-only full-screen view of a Terminal Session hosted by the running Natalia daemon.
-- `--take-control` transfers input and geometry ownership to the external viewer. Press `Ctrl+]` to close it and return ownership to the model.
-- `--secure-input` marks all external viewer input as sensitive for that attach session; input bytes are hashed/audited but excluded from transcript projection.
-- `terminal open <id>` launches a supported external terminal and runs the attach frontend there.
-- Linux launcher detection currently covers Kitty, WezTerm, foot, Alacritty, GNOME Terminal, Konsole, and xterm.
-- A running shared daemon is used by default. An in-process TUI may instead launch the viewer with a private `NATALIA_TERMINAL_URL` and `NATALIA_TERMINAL_TOKEN` bridge.
-- Viewers remain read-only unless `--take-control` is supplied.
-
 ## Transport Recording
 
 ```bash

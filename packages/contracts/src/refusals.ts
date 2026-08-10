@@ -28,12 +28,14 @@
  *     surfaces as a tool result, not as an RPC failure.
  *   - the secure-input interlock (terminal plan TERM-M.2 I2) is implemented and
  *     refuses, but the `nativeTerminal*` members have no route yet, so its
- *     refusal is still an untyped `Error`. It gets typed with those routes.
+ *     refusal is still an untyped `Error` in `packages/native-terminal`. It gets
+ *     typed with those routes.
  *   - focus may not be stolen by a background session (I1) and terminals must be
- *     addressed per session (I3) — both land with multi-session, and I3 is why
- *     `interactive terminal not found` is currently an argument error rather than
- *     a refusal: the distinction only becomes load-bearing once a terminal can
- *     belong to somebody else.
+ *     addressed per session (I3) — both land with multi-session. The
+ *     `terminal`/`terminalSharing` members this table used to cover for them are
+ *     gone: they belonged to the xterm emulator line, which is retired (no
+ *     production code can create a session in it), and the live terminal line is
+ *     `nativeTerminal*`.
  */
 import type { RuntimeClient } from "./events";
 
@@ -136,43 +138,6 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
   workspaceGlob: {
     refusal: "error",
     note: "path and pattern policy refuse",
-  },
-
-  // --- terminal ---
-  terminalList: { refusal: "none", note: "pure read" },
-  terminalRead: { refusal: "error", note: "an exited terminal refuses" },
-  terminalObserve: { refusal: "error", note: "an exited terminal refuses" },
-  terminalScrollback: { refusal: "error", note: "an exited terminal refuses" },
-  terminalWrite: {
-    refusal: "error",
-    note: "human ownership and the secure-input interlock refuse",
-  },
-  terminalKey: { refusal: "error", note: "as terminalWrite" },
-  terminalResize: { refusal: "error", note: "as terminalWrite" },
-  terminalAttach: { refusal: "error", note: "an exited terminal refuses" },
-  terminalDetach: { refusal: "error", note: "an exited terminal refuses" },
-  terminalStop: { refusal: "error", note: "an exited terminal refuses" },
-
-  // --- terminalSharing ---
-  terminalViewerRegister: {
-    refusal: "error",
-    note: "an exited terminal refuses",
-  },
-  terminalViewerHeartbeat: {
-    refusal: "error",
-    note: "an unregistered viewer is an argument error, a dead terminal a refusal",
-  },
-  terminalViewerControl: {
-    refusal: "error",
-    note: "taking input or geometry is refused while somebody else holds it",
-  },
-  terminalViewerWrite: {
-    refusal: "error",
-    note: "writing without input ownership is refused",
-  },
-  terminalViewerResize: {
-    refusal: "error",
-    note: "resizing without geometry ownership is refused",
   },
 
   // --- nativeTerminal ---

@@ -181,36 +181,6 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
         cursor: {},
       };
     },
-    async terminalList() {
-      return [ptyFixture()];
-    },
-    async terminalRead() {
-      return {
-        ...ptyFixture(),
-        offset: 0,
-        nextOffset: 3,
-        totalChars: 3,
-        truncated: false,
-      };
-    },
-    async terminalWrite() {
-      return ptyFixture();
-    },
-    async terminalKey() {
-      return ptyFixture();
-    },
-    async terminalResize() {
-      return { ...ptyFixture(), rows: 32, cols: 120 };
-    },
-    async terminalAttach() {
-      return ptyFixture();
-    },
-    async terminalDetach() {
-      return { ...ptyFixture(), attached: false };
-    },
-    async terminalStop() {
-      return { ...ptyFixture(), status: "exited" as const };
-    },
     async checkpointList() {
       return [checkpointFixture()];
     },
@@ -364,35 +334,7 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
   expect(await sdk.messages({ order: "asc" })).toMatchObject({
     data: [{ id: "turn_message" }],
   });
-  expect(await sdk.terminalSessions()).toMatchObject([{ id: "tty_fixture" }]);
-  expect(await sdk.terminalRead({ id: "tty_fixture" })).toMatchObject({
-    nextOffset: 3,
-  });
-  expect(
-    await sdk.terminalWrite({ id: "tty_fixture", text: "hello" }),
-  ).toMatchObject({
-    id: "tty_fixture",
-  });
-  expect(
-    await sdk.terminalKey({ id: "tty_fixture", key: "ctrl-c" }),
-  ).toMatchObject({
-    id: "tty_fixture",
-  });
-  expect(
-    await sdk.terminalResize({ id: "tty_fixture", rows: 32, cols: 120 }),
-  ).toMatchObject({
-    rows: 32,
-    cols: 120,
-  });
-  expect(await sdk.terminalDetach("tty_fixture")).toMatchObject({
-    attached: false,
-  });
-  expect(await sdk.terminalAttach("tty_fixture")).toMatchObject({
-    attached: true,
-  });
-  expect(await sdk.terminalStop("tty_fixture")).toMatchObject({
-    status: "exited",
-  });
+
   expect(await sdk.checkpointList()).toMatchObject([{ id: "checkpoint_0" }]);
   expect(await sdk.checkpointPreview("checkpoint_0")).toMatchObject({
     dryRun: true,
@@ -440,22 +382,6 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
   });
   server.stop(true);
 });
-
-function ptyFixture() {
-  return {
-    id: "tty_fixture",
-    command: "cat",
-    cwd: "/tmp",
-    status: "running" as const,
-    attached: true,
-    rows: 24,
-    cols: 80,
-    transcript: "ok\n",
-    tail: "ok\n",
-    startedAt: "2026-07-23T00:00:00.000Z",
-    secretAudit: [],
-  };
-}
 
 function checkpointFixture() {
   return {

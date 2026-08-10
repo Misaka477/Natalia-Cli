@@ -1011,6 +1011,7 @@ export type TerminalScreenSnapshot = {
     endCol: number;
   }>;
 };
+
 export type TerminalScreenPatch = {
   baseRevision: number;
   revision: number;
@@ -1324,38 +1325,6 @@ export type RuntimeClient = {
     path?: string;
     limit?: number;
   }): Promise<RuntimeWorkspaceFileEntry[]>;
-  terminalList?(): Promise<RuntimeTerminalSession[]>;
-  terminalRead?(input: {
-    id: string;
-    offset?: number;
-    maxChars?: number;
-  }): Promise<
-    RuntimeTerminalSession & {
-      offset: number;
-      nextOffset: number;
-      totalChars: number;
-      truncated: boolean;
-    }
-  >;
-  terminalWrite?(input: {
-    id: string;
-    text: string;
-    submit?: boolean;
-    sensitive?: boolean;
-    idempotencyKey?: string;
-  }): Promise<RuntimeTerminalSession>;
-  terminalKey?(input: {
-    id: string;
-    key: "enter" | "ctrl-c" | "ctrl-d" | "tab" | "esc";
-  }): Promise<RuntimeTerminalSession>;
-  terminalResize?(input: {
-    id: string;
-    rows: number;
-    cols: number;
-  }): Promise<RuntimeTerminalSession>;
-  terminalAttach?(id: string): Promise<RuntimeTerminalSession>;
-  terminalDetach?(id: string): Promise<RuntimeTerminalSession>;
-  terminalStop?(id: string): Promise<RuntimeTerminalSession>;
   nativeTerminalList?(): Promise<RuntimeNativeTerminalSession[]>;
   nativeTerminalRead?(id: string): Promise<{ id: string; text: string }>;
   nativeTerminalOpenHub?(): Promise<{ muxWindowID: number }>;
@@ -1374,89 +1343,6 @@ export type RuntimeClient = {
     id: string,
   ): Promise<RuntimeNativeTerminalSession>;
   nativeTerminalStop?(id: string): Promise<RuntimeNativeTerminalSession>;
-  terminalList?(): Promise<RuntimeTerminalSession[]>;
-  terminalRead?(input: {
-    id: string;
-    offset?: number;
-    maxChars?: number;
-  }): Promise<
-    RuntimeTerminalSession & {
-      offset: number;
-      nextOffset: number;
-      totalChars: number;
-      truncated: boolean;
-    }
-  >;
-  terminalObserve?(input: {
-    id: string;
-    afterRevision: number;
-    timeoutMs?: number;
-    signal?: AbortSignal;
-    differential?: boolean;
-  }): Promise<{
-    session: RuntimeTerminalObservationSession;
-    afterRevision: number;
-    changed: boolean;
-    reason: "changed" | "timeout" | "exited";
-    screenUpdate?: TerminalScreenUpdate;
-    screenDelivery?: TerminalScreenDelivery;
-  }>;
-  terminalViewerRegister?(input: {
-    id: string;
-    viewerID: string;
-    kind: "external" | "embedded";
-  }): Promise<RuntimeTerminalSession>;
-  terminalViewerHeartbeat?(input: {
-    id: string;
-    viewerID: string;
-  }): Promise<RuntimeTerminalSession>;
-  terminalViewerControl?(input: {
-    id: string;
-    viewerID: string;
-    action:
-      | "takeover"
-      | "take_geometry"
-      | "release_input"
-      | "release"
-      | "unregister";
-  }): Promise<RuntimeTerminalSession>;
-  terminalViewerWrite?(input: {
-    id: string;
-    viewerID: string;
-    data: string;
-    sensitive?: boolean;
-    idempotencyKey?: string;
-  }): Promise<RuntimeTerminalSession>;
-  terminalViewerResize?(input: {
-    id: string;
-    viewerID: string;
-    rows: number;
-    cols: number;
-  }): Promise<RuntimeTerminalSession>;
-  terminalScrollback?(input: {
-    id: string;
-    offsetFromBottom?: number;
-    maxRows?: number;
-  }): Promise<TerminalScrollbackPage>;
-  terminalWrite?(input: {
-    id: string;
-    text: string;
-    submit?: boolean;
-    sensitive?: boolean;
-    idempotencyKey?: string;
-  }): Promise<RuntimeTerminalSession>;
-  terminalKey?(input: {
-    id: string;
-    key: "enter" | "ctrl-c" | "ctrl-d" | "tab" | "esc";
-  }): Promise<RuntimeTerminalSession>;
-  terminalResize?(input: {
-    id: string;
-    rows: number;
-    cols: number;
-  }): Promise<RuntimeTerminalSession>;
-  terminalAttach?(id: string): Promise<RuntimeTerminalSession>;
-  terminalDetach?(id: string): Promise<RuntimeTerminalSession>;
-  terminalStop?(id: string): Promise<RuntimeTerminalSession>;
   checkpointList?(): Promise<RuntimeCheckpoint[]>;
   checkpointPreview?(id: string): Promise<CheckpointPreview>;
   checkpointRollback?(input: {

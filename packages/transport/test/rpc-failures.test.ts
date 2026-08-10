@@ -107,20 +107,20 @@ test("the capability travels with every not-supported member, so a consumer can 
 });
 
 test("bad arguments are invalid params, and only bad arguments are", async () => {
-  const withTerminal: Partial<RuntimeClient> = {
-    async terminalRead() {
+  const withRead: Partial<RuntimeClient> = {
+    async workspaceRead() {
       throw new Error("must not be reached");
     },
   };
   const { error } = await fail(
-    "terminal.read",
-    { id: "term_1", offset: -1 },
-    withTerminal,
+    "workspace.read",
+    { path: "a.txt", offset: -1 },
+    withRead,
   );
   expect(error.code).toBe(RUNTIME_RPC_ERROR_CODES.invalidParams);
   expect(error.data).toEqual({ kind: "invalidParams" });
   // A missing required argument is the same kind, and the member is never called.
-  const missing = await fail("terminal.read", {}, withTerminal);
+  const missing = await fail("workspace.read", {}, withRead);
   expect(missing.error.code).toBe(RUNTIME_RPC_ERROR_CODES.invalidParams);
 });
 

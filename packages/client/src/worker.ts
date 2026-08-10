@@ -36,14 +36,6 @@ type WorkerRequest = {
     | "workspace.list"
     | "workspace.read"
     | "workspace.glob"
-    | "terminal.list"
-    | "terminal.read"
-    | "terminal.write"
-    | "terminal.key"
-    | "terminal.resize"
-    | "terminal.attach"
-    | "terminal.detach"
-    | "terminal.stop"
     | "native-terminal.list"
     | "native-terminal.read"
     | "native-terminal.open-hub"
@@ -214,46 +206,7 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["workspaceGlob"]>>
       >;
     },
-    async terminalList() {
-      return (await request("terminal.list")) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["terminalList"]>>
-      >;
-    },
-    async terminalRead(input) {
-      return (await request("terminal.read", input)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["terminalRead"]>>
-      >;
-    },
-    async terminalWrite(input) {
-      return (await request("terminal.write", input)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["terminalWrite"]>>
-      >;
-    },
-    async terminalKey(input) {
-      return (await request("terminal.key", input)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["terminalKey"]>>
-      >;
-    },
-    async terminalResize(input) {
-      return (await request("terminal.resize", input)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["terminalResize"]>>
-      >;
-    },
-    async terminalAttach(id) {
-      return (await request("terminal.attach", id)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["terminalAttach"]>>
-      >;
-    },
-    async terminalDetach(id) {
-      return (await request("terminal.detach", id)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["terminalDetach"]>>
-      >;
-    },
-    async terminalStop(id) {
-      return (await request("terminal.stop", id)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["terminalStop"]>>
-      >;
-    },
+
     async nativeTerminalList() {
       return (await request("native-terminal.list")) as Awaited<
         ReturnType<NonNullable<RuntimeClient["nativeTerminalList"]>>
@@ -469,21 +422,6 @@ async function handleWorkerRequest(
     return await client.workspaceRead?.(request.value as never);
   if (request.method === "workspace.glob")
     return await client.workspaceGlob?.(request.value as never);
-  if (request.method === "terminal.list") return await client.terminalList?.();
-  if (request.method === "terminal.read")
-    return await client.terminalRead?.(request.value as never);
-  if (request.method === "terminal.write")
-    return await client.terminalWrite?.(request.value as never);
-  if (request.method === "terminal.key")
-    return await client.terminalKey?.(request.value as never);
-  if (request.method === "terminal.resize")
-    return await client.terminalResize?.(request.value as never);
-  if (request.method === "terminal.attach")
-    return await client.terminalAttach?.(request.value as string);
-  if (request.method === "terminal.detach")
-    return await client.terminalDetach?.(request.value as string);
-  if (request.method === "terminal.stop")
-    return await client.terminalStop?.(request.value as string);
   if (request.method === "native-terminal.list")
     return await client.nativeTerminalList?.();
   if (request.method === "native-terminal.read")
