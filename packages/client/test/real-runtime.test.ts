@@ -6149,3 +6149,53 @@ test("module completion stays possible when a profile allow-list omits it", asyn
   await client.dispose?.();
   store.close();
 });
+
+test("config is not applied underneath a running turn, even if the precheck said yes", async () => {
+  // `canReloadConfig()` is advisory: a turn can start between asking and acting.
+  // So the action re-checks for itself, and refuses as a value rather than
+  // applying new policy to a turn that started under the old policy.
+  const root = await mkdtemp(join(tmpdir(), "natalia-reload-race-"));
+  let releaseProvider: (() => void) | undefined;
+  const providerReached = new Promise<void>((resolve) => {
+    releaseProvider = resolve;
+  });
+  let letProviderFinish: (() => void) | undefined;
+  const providerHeld = new Promise<void>((resolve) => {
+    letProviderFinish = resolve;
+  });
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_reload_race",
+    permissionMode: "auto",
+    provider: {
+      provider: "scripted",
+      model: "scripted",
+      async *stream() {
+        releaseProvider?.();
+        await providerHeld;
+        yield { type: "content" as const, text: "done" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+
+  // Ask before the turn: allowed.
+  expect(await client.canReloadConfig?.()).toEqual({ allowed: true });
+
+  const turn = client.submit("hold the provider open");
+  await providerReached;
+
+  // The same question now answers no, and so does the action.
+  expect((await client.canReloadConfig?.())?.allowed).toBe(false);
+  const refused = await client.reloadConfig?.();
+  expect(refused?.applied).toBe(false);
+  expect(refused?.reason).toMatch(/while a turn is running/u);
+
+  letProviderFinish?.();
+  await turn;
+
+  // Once the turn has settled it applies normally.
+  expect((await client.reloadConfig?.())?.applied).toBe(true);
+  await client.dispose?.();
+}, 30_000);

@@ -547,7 +547,30 @@ export function createRealRuntimeClient(
   const sandboxResourcesByID = new Map<string, number>();
   const turnCoordinator = () => sessionRunCoordinator(sessionID);
 
-  async function reloadConfigFromDisk(): Promise<boolean> {
+  /**
+   * Re-reads the config and re-resolves the provider from it.
+   *
+   * Reports both facts separately because they are separately interesting: the
+   * file may be readable and applied while naming the same provider as before,
+   * and a caller that only learns "false" cannot tell that from "the file could
+   * not be read at all".
+   */
+  /**
+   * Why a config reload cannot be applied at this instant, or nothing when it can.
+   * Shared by the query and the action so the two can never disagree.
+   */
+  function configReloadBlockedReason() {
+    if (activeTurnID)
+      return "runtime config cannot be applied while a turn is running";
+    if (interactive.hasPendingWaiters())
+      return "runtime config cannot be applied while an approval or question is pending";
+    return undefined;
+  }
+
+  async function reloadConfigFromDisk(): Promise<{
+    read: boolean;
+    providerReconfigured: boolean;
+  }> {
     try {
       const tsConfig = await resolveConfig({ workspaceRoot });
       tsRuntimeConfig = tsConfig.config;
@@ -562,13 +585,14 @@ export function createRealRuntimeClient(
         if (configured) {
           provider = configured;
           providerSource = "ts_config";
-          return true;
+          return { read: true, providerReconfigured: true };
         }
       }
+      return { read: true, providerReconfigured: false };
     } catch {
       /* config file not readable yet */
     }
-    return false;
+    return { read: false, providerReconfigured: false };
   }
 
   async function initialize() {
@@ -2688,18 +2712,31 @@ export function createRealRuntimeClient(
     },
     async canReloadConfig() {
       await ready;
-      if (activeTurnID)
-        return {
-          allowed: false,
-          reason: "runtime config cannot be applied while a turn is running",
-        };
-      if (interactive.hasPendingWaiters())
-        return {
-          allowed: false,
-          reason:
-            "runtime config cannot be applied while an approval or question is pending",
-        };
-      return { allowed: true };
+      const blocked = configReloadBlockedReason();
+      return blocked ? { allowed: false, reason: blocked } : { allowed: true };
+    },
+    async reloadConfig() {
+      await ready;
+      // Re-checked here rather than trusting `canReloadConfig`: a turn can start
+      // between the two calls, and applying new policy underneath a running turn
+      // would change the rules it started under.
+      const blocked = configReloadBlockedReason();
+      if (blocked) return { applied: false, reason: blocked };
+      const reloaded = await reloadConfigFromDisk();
+      if (!reloaded.read) {
+        const reason = "runtime config on disk could not be read";
+        publish({ type: "diagnostic", level: "warning", message: reason });
+        return { applied: false, reason };
+      }
+      publish({
+        type: "diagnostic",
+        level: "info",
+        message: reloaded.providerReconfigured
+          ? "runtime config reloaded; provider reconfigured from disk"
+          : "runtime config reloaded; provider unchanged",
+      });
+      scheduleRuntimeStatusSnapshot();
+      return { applied: true };
     },
     async diagnostics(limit = 100) {
       await ready;
@@ -3166,7 +3203,7 @@ export function createRealRuntimeClient(
   ) {
     if (!provider) {
       const reloaded = await reloadConfigFromDisk();
-      if (!reloaded) {
+      if (!reloaded.providerReconfigured) {
         publish({
           type: "diagnostic",
           level: "error",

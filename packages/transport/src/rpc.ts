@@ -996,6 +996,22 @@ export async function handleRPCMessage(
         result: await client.documentCatalog(),
       };
     }
+    if (body.method === "config.reload") {
+      optionsGuard(client.reloadConfig, "config.reload");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.reloadConfig!(),
+      };
+    }
+    if (body.method === "config.canReload") {
+      optionsGuard(client.canReloadConfig, "config.canReload");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.canReloadConfig!(),
+      };
+    }
     if (body.method === "runtime.availability") {
       // Derived from the client, so there is deliberately no options guard: this
       // answers "what does this runtime implement", and a runtime that implements

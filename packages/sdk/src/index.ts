@@ -201,6 +201,14 @@ export type NataliaSDK = {
    * it is the only way to tell "not supported" from "not implemented yet" from
    * "nothing recorded".
    */
+  /**
+   * Applies the configuration on disk. Refusal is a value, not an exception: a
+   * turn running or a prompt pending is an ordinary reason to be told "not now",
+   * and re-checked at the moment of application rather than trusted from
+   * `canReloadConfig()`, which a turn can invalidate between the two calls.
+   */
+  reloadConfig(): Promise<{ applied: boolean; reason?: string }>;
+  canReloadConfig(): Promise<{ allowed: boolean; reason?: string }>;
   availability(): Promise<import("@natalia/contracts").RuntimeCapabilityReport>;
   runtimeStatus(): Promise<import("@natalia/contracts").RuntimeStatusSnapshot>;
   diagnostics(
@@ -345,6 +353,8 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     taskOverview: async () => await call("task.overview", {}),
     flowOverview: async () => await call("flow.overview", {}),
     documentCatalog: async () => await call("document.catalog", {}),
+    reloadConfig: async () => await call("config.reload", {}),
+    canReloadConfig: async () => await call("config.canReload", {}),
     availability: async () => await call("runtime.availability", {}),
     runtimeStatus: async () => await call("runtime.status", {}),
     diagnostics: async (limit) =>

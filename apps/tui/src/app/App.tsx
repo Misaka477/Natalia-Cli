@@ -362,7 +362,19 @@ function Shell(props: {
     );
     if (!props.backend.reloadConfig)
       throw new Error("Runtime backend does not support config reload");
-    await props.backend.reloadConfig();
+    const reload = await props.backend.reloadConfig();
+    // Refusal is an ordinary answer now, not an exception, so it has to be said:
+    // the file was written either way, and reporting "applied" when the runtime
+    // declined would tell the user their change is live when it is not.
+    if (!reload.applied) {
+      toast.show({
+        variant: "warning",
+        message: `Runtime config saved to ${scope} config but not applied: ${
+          reload.reason ?? "the runtime declined to apply it"
+        }`,
+      });
+      return;
+    }
     toast.show({
       variant: "success",
       message: `Runtime config saved and applied from ${scope} config`,

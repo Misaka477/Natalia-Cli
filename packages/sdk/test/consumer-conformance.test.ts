@@ -282,18 +282,11 @@ test("a consumer can ask what this runtime implements, without guessing", async 
     expect(available).toContain("terminal");
     expect(available).toContain("workGraph");
 
-    // The report has to be able to say no, or it says nothing. This runtime really
-    // is missing one member, and the report names it rather than rounding the
-    // capability up to "available":
-    //
-    // `canReloadConfig()` is implemented — a consumer can ask whether a config
-    // reload is allowed right now — but `reloadConfig()` is declared in the
-    // contract and implemented nowhere, and no RPC route or SDK method exposes it.
-    // So the precheck exists and the action does not, which is precisely what a
-    // consumer would otherwise discover at runtime.
-    const lifecycle = report.groups.find((group) => group.name === "lifecycle");
-    expect(lifecycle).toMatchObject({ available: false, partial: true });
-    expect(lifecycle?.missing).toEqual(["reloadConfig"]);
+    // This capability was reported partial when the report first ran — the
+    // precheck `canReloadConfig` existed and the action did not — which is what
+    // led to implementing it. It is whole now, and asserting that keeps the pair
+    // together: adding a precheck without its action fails here.
+    expect(available).toContain("lifecycle");
 
     // A half-implemented capability is called out, never counted as present.
     for (const group of report.groups)
@@ -310,6 +303,21 @@ test("a consumer can ask what this runtime implements, without guessing", async 
     ]);
     for (const entry of report.unimplemented)
       expect(entry.reason).toMatch(/yet/u);
+  });
+}, 60_000);
+
+test("a consumer can ask whether config may be applied, and apply it", async () => {
+  await withRuntime(async ({ baseURL }) => {
+    const sdk = createNataliaSDK({ baseURL, token: "secret" });
+
+    // Nothing is running, so the answer is yes...
+    expect(await sdk.canReloadConfig()).toEqual({ allowed: true });
+    // ...and the action reports what it did, rather than returning nothing and
+    // leaving the caller to assume. A refusal would arrive the same way, as a
+    // value, because "a turn is running" is an answer and not a failure.
+    const applied = await sdk.reloadConfig();
+    expect(applied.applied).toBe(true);
+    expect(applied.reason).toBeUndefined();
   });
 }, 60_000);
 

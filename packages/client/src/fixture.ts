@@ -734,7 +734,15 @@ export function createFakeBackend(): FakeBackend {
         ? { allowed: false, reason: "fixture turn is running" }
         : { allowed: true };
     },
-    async reloadConfig() {},
+    async reloadConfig() {
+      // The precheck says "allowed" because nothing is running; the action says
+      // "nothing to apply" because a fixture has no configuration on disk. Two
+      // different answers, which is the point of reporting them separately.
+      return {
+        applied: false,
+        reason: "the fixture runtime has no configuration on disk",
+      };
+    },
     start(onEvent) {
       sink = onEvent;
       publish({

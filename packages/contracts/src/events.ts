@@ -1230,8 +1230,18 @@ export type RuntimeClient = {
   }): Promise<RuntimeMessagePage>;
   pendingInteractive?(): Promise<PendingInteractiveRequests>;
   dispose?(): Promise<void>;
+  /**
+   * Whether config could be applied right now. Advisory only: a turn can start
+   * between asking and acting, which is why `reloadConfig` re-checks and reports
+   * for itself rather than trusting a caller to have asked.
+   */
   canReloadConfig?(): Promise<{ allowed: boolean; reason?: string }>;
-  reloadConfig?(): Promise<void>;
+  /**
+   * Applies the config on disk. Refusal is a value rather than an exception,
+   * because refusing is a normal outcome — applying new policy underneath a
+   * running turn would change the rules the turn started under.
+   */
+  reloadConfig?(): Promise<{ applied: boolean; reason?: string }>;
   cancel(reason?: string): void;
   pause?(reason?: string): void;
   resume?(): void;

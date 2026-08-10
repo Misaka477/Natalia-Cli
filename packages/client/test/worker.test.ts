@@ -215,7 +215,14 @@ test("config reload preserves a busy runtime instead of cancelling it", async ()
   const client = createWorkerRuntimeClient(channel.port2);
   client.start(() => undefined);
 
-  await expect(client.reloadConfig?.()).rejects.toThrow("turn is running");
+  // Being told "not now" is an ordinary answer, so it arrives as a value. It used
+  // to be thrown, which made a busy runtime indistinguishable from a broken
+  // channel for any caller that only saw the rejection.
+  await expect(client.reloadConfig?.()).resolves.toEqual({
+    applied: false,
+    reason: "turn is running",
+  });
+  // The point of the test is unchanged: a busy runtime is preserved, not rebuilt.
   expect(disposed).toBe(false);
 });
 
