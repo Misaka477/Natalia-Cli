@@ -2328,7 +2328,7 @@ export function createRealRuntimeClient(
       if (!nativeTerminal)
         throw new Error("Native Terminal Host is unavailable");
       return {
-        ...publicNativeTerminal(await nativeTerminal.stop(id)),
+        ...publicNativeTerminal(await nativeTerminal.stop(id, "human")),
         status: "exited",
       };
     },

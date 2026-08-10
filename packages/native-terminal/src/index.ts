@@ -855,6 +855,9 @@ export class NativeTerminalRegistry {
   }
 
   async start(input: { command: string; cwd: string; id?: string }) {
+    // Creating a pane is only ever requested by the model, and it lands in the
+    // window the human is attached to.
+    this.assertNoHumanSecureInput("starting a terminal", "model");
     // A restarted mux server numbers panes from scratch, so stale session
     // records can collide with the pane about to be created. Recovery marks
     // them exited first, which also clears the host readiness cache.
@@ -1242,6 +1245,29 @@ export class NativeTerminalRegistry {
     return pane;
   }
 
+  /**
+   * Refuses an action that would disturb a human who is entering a secret.
+   *
+   * `secureInput` already guarantees the bytes are never seen by us — the native
+   * host writes them through its own path. It did not guarantee the *surroundings*:
+   * a pane appearing, a pane dying or a resize all re-lay out the multiplexer window
+   * the human is typing into, which can move the prompt, redraw over it, or steal
+   * the focus mid-password.
+   *
+   * Writing to another pane is deliberately still allowed: it changes no layout, and
+   * refusing all model output during a password prompt would stall unrelated work.
+   */
+  private assertNoHumanSecureInput(action: string, actor: "model" | "human") {
+    if (actor !== "model") return;
+    const holder = this.list().find(
+      (session) => session.secureInput && session.inputOwner === "human",
+    );
+    if (holder)
+      throw new Error(
+        `${action} refused while a human is entering secure input on terminal ${holder.id}`,
+      );
+  }
+
   async claimHumanInput(id: string) {
     const session = this.get(id);
     this.assertRunning(session);
@@ -1378,12 +1404,31 @@ export class NativeTerminalRegistry {
     }
   }
 
-  async resize(id: string, rows: number, cols: number) {
+  /**
+   * Resizes a pane on behalf of `actor`.
+   *
+   * The actor is passed in rather than assumed. It used to be recorded as `human`
+   * unconditionally while the only caller was the model's resize tool, so every
+   * model-driven resize appeared in the audit trail as something a person did —
+   * an audit that answers "who did this" wrongly is worse than one that says
+   * nothing.
+   *
+   * The check this replaces (`geometryOwner !== "human"`) could never fire:
+   * `geometryOwner` is typed as the literal `"human"` and only ever assigned it. A
+   * guard that cannot run reads like protection while providing none. If geometry
+   * ownership should actually restrict the model, that is a product decision and
+   * has to be modelled as a transition like `inputOwner` is, not as a constant.
+   */
+  async resize(
+    id: string,
+    rows: number,
+    cols: number,
+    actor: "model" | "human" = "model",
+  ) {
     const session = this.get(id);
     await this.reconcile();
     this.assertRunning(session);
-    if (session.geometryOwner !== "human")
-      throw new Error("terminal geometry is controlled by a human");
+    this.assertNoHumanSecureInput("resizing a terminal", actor);
     if (!Number.isInteger(rows) || rows < 1 || rows > 500)
       throw new Error("terminal rows must be an integer between 1 and 500");
     if (!Number.isInteger(cols) || cols < 1 || cols > 500)
@@ -1393,12 +1438,16 @@ export class NativeTerminalRegistry {
     session.cols = cols;
     session.revision += 1;
     this.notifyRevision(session.id);
-    this.audit(session, "resize", "human");
+    this.audit(session, "resize", actor);
     return session;
   }
 
-  async stop(id: string) {
+  async stop(id: string, actor: "model" | "human" | "system" = "system") {
     const session = this.get(id);
+    this.assertNoHumanSecureInput(
+      "stopping a terminal",
+      actor === "system" ? "human" : actor,
+    );
     if (session.status === "running")
       try {
         await this.host.stop(session.paneID);
@@ -1411,7 +1460,7 @@ export class NativeTerminalRegistry {
     this.notifyRevision(session.id);
     this.idempotency.delete(id);
     this.modelWrites.delete(id);
-    this.audit(session, "exit", "system");
+    this.audit(session, "exit", actor);
     await this.persistSessions();
     return session;
   }

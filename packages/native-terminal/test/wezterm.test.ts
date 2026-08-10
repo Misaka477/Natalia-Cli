@@ -966,19 +966,26 @@ test("native registry attaches, detaches, and resizes the same pane", async () =
   await registry.claimHumanInput(session.id);
   expect(registry.list()).toMatchObject([{ inputOwner: "human" }]);
   expect(registry.detach(session.id)).toMatchObject({ inputOwner: "model" });
+  // A resize is attributed to whoever asked for it. This used to be recorded as
+  // `human` unconditionally while the only caller was the model's resize tool, so
+  // the audit answered "who did this" wrongly — worse than not answering.
   await expect(registry.resize(session.id, 30, 100)).resolves.toMatchObject({
     rows: 30,
     cols: 100,
   });
   expect(resized).toEqual([[37, 30, 100]]);
-  await registry.stop(session.id);
+  await expect(
+    registry.resize(session.id, 31, 101, "human"),
+  ).resolves.toMatchObject({ rows: 31, cols: 101 });
+  await registry.stop(session.id, "human");
   expect(audit.map(({ action, actor }) => ({ action, actor }))).toEqual([
     { action: "write", actor: "model" },
     { action: "attach", actor: "human" },
     { action: "write", actor: "human" },
     { action: "detach", actor: "human" },
+    { action: "resize", actor: "model" },
     { action: "resize", actor: "human" },
-    { action: "exit", actor: "system" },
+    { action: "exit", actor: "human" },
   ]);
 });
 
@@ -1873,4 +1880,73 @@ test("native registry reports no terminal device when the host omits it", async 
   const session = await registry.start({ command: "bash", cwd: process.cwd() });
   await expect(registry.ttyName(session.id)).resolves.toBeUndefined();
   await registry.dispose();
+});
+
+test("a human entering a secret is not disturbed by the model", async () => {
+  // `secureInput` already guarantees the bytes are never seen by us. It did not
+  // guarantee the surroundings: a pane appearing, a pane dying or a resize all
+  // re-lay out the multiplexer window the human is typing into, which can move the
+  // prompt, redraw over it, or steal focus mid-password. Nothing stopped the model
+  // from doing any of those while a password was being typed.
+  const spawned: number[] = [];
+  let paneID = 40;
+  const registry = new NativeTerminalRegistry({
+    kind: "wezterm",
+    executable: "wezterm",
+    async spawn() {
+      paneID += 1;
+      spawned.push(paneID);
+      return { pane_id: paneID, window_id: 2, tab_id: 3, rows: 24, cols: 80 };
+    },
+    async list() {
+      return spawned.map((pane) => ({
+        pane_id: pane,
+        window_id: 2,
+        tab_id: 3,
+        rows: 24,
+        cols: 80,
+      }));
+    },
+    async read() {
+      return "";
+    },
+    async write() {},
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  });
+
+  const secret = await registry.start({ cwd: "/repo", command: "ssh host" });
+  const other = await registry.start({ cwd: "/repo", command: "cat" });
+  await registry.claimHumanInput(secret.id);
+  registry.beginSecureInput(secret.id);
+
+  // Everything that would move the window under the human's hands is refused,
+  // including on a *different* pane, because the layout is shared.
+  await expect(
+    registry.start({ cwd: "/repo", command: "top" }),
+  ).rejects.toThrow(/secure input/u);
+  await expect(registry.resize(other.id, 30, 100, "model")).rejects.toThrow(
+    /secure input/u,
+  );
+  await expect(registry.stop(other.id, "model")).rejects.toThrow(
+    /secure input/u,
+  );
+
+  // Writing to another pane stays allowed: it changes no layout, and refusing all
+  // model output during a password prompt would stall unrelated work.
+  await expect(
+    registry.write(other.id, "still working\n"),
+  ).resolves.toBeDefined();
+
+  // The human is never blocked from their own actions, including ending it.
+  await expect(
+    registry.resize(other.id, 30, 100, "human"),
+  ).resolves.toBeDefined();
+  registry.endSecureInput(secret.id);
+
+  // Once the secret is entered, the model can act again.
+  await expect(
+    registry.start({ cwd: "/repo", command: "top" }),
+  ).resolves.toBeDefined();
 });

@@ -557,7 +557,7 @@ function interactiveResizeTool(): RuntimeTool {
       const cols = numberOr(args.cols, 120);
       return JSON.stringify(
         modelNativeTerminalInfo(
-          await requireNativeTerminal(context).resize(id, rows, cols),
+          await requireNativeTerminal(context).resize(id, rows, cols, "model"),
         ),
         null,
         2,
@@ -580,6 +580,7 @@ function interactiveStopTool(): RuntimeTool {
     async execute(input, context) {
       const session = await requireNativeTerminal(context).stop(
         requireString(requireObject(input).id, "id"),
+        "model",
       );
       return JSON.stringify({
         ...modelNativeTerminalInfo(session),
