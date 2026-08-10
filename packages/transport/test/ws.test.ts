@@ -197,7 +197,7 @@ test("native WS RPC transport behind RuntimeClient contract", async () => {
     result: { type: "snapshot.created", id: "snap_1" },
   });
 
-  // --- unsupported method ---
+  // --- a method with no route ---
   ws.send(
     JSON.stringify({
       jsonrpc: "2.0",
@@ -207,10 +207,12 @@ test("native WS RPC transport behind RuntimeClient contract", async () => {
   );
 
   const errResp = await waitFor((m) => m.id === 5);
+  // `-32601`, not `-32602`: the WebSocket channel classifies failures through the
+  // same dispatcher as HTTP, so a consumer gets the same answer on either.
   expect(errResp).toMatchObject({
     jsonrpc: "2.0",
     id: 5,
-    error: { code: -32602 },
+    error: { code: -32601, data: { kind: "methodNotFound", method: "bogus" } },
   });
 
   // --- invalid JSON ---

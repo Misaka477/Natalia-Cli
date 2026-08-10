@@ -153,6 +153,30 @@ export const RUNTIME_CAPABILITY_GROUPS = {
 
 export type RuntimeCapabilityGroup = keyof typeof RUNTIME_CAPABILITY_GROUPS;
 
+const GROUP_BY_MEMBER = new Map<string, RuntimeCapabilityGroup>(
+  (Object.keys(RUNTIME_CAPABILITY_GROUPS) as RuntimeCapabilityGroup[]).flatMap(
+    (group) =>
+      (RUNTIME_CAPABILITY_GROUPS[group] as readonly string[]).map(
+        (member) => [member, group] as const,
+      ),
+  ),
+);
+
+/**
+ * Which capability a member belongs to, so a caller told "not supported" can
+ * switch off the whole group instead of discovering it one member at a time.
+ * Required members belong to no group and answer `undefined`, because a runtime
+ * missing one of those is unusable rather than degraded.
+ *
+ * Derived from `RUNTIME_CAPABILITY_GROUPS`; a second hand-written mapping is
+ * exactly the thing that would rot.
+ */
+export function capabilityGroupOf(
+  member: string,
+): RuntimeCapabilityGroup | undefined {
+  return GROUP_BY_MEMBER.get(member);
+}
+
 type ClassifiedMember =
   | RequiredRuntimeMember
   | (typeof RUNTIME_CAPABILITY_GROUPS)[RuntimeCapabilityGroup][number];

@@ -1,3 +1,4 @@
+import { RuntimeInvalidParams, RuntimeRefusal } from "@natalia/contracts";
 import type {
   ExecutionTarget,
   TerminalAction,
@@ -943,20 +944,31 @@ export class TerminalRegistry {
 
   private mustGet(id: string) {
     const session = this.sessions.get(id);
-    if (!session) throw new Error(`interactive terminal not found: ${id}`);
+    // Not found is the caller naming something that does not exist, so it is an
+    // invalid argument rather than a refusal. When terminals become per-session
+    // (terminal plan TERM-M.2 I3) this is the site that has to start refusing
+    // instead — "not found" would otherwise turn into a probe for other
+    // sessions' terminals.
+    if (!session)
+      throw new RuntimeInvalidParams(`interactive terminal not found: ${id}`);
     return session;
   }
 
   private mustRunning(id: string) {
     const session = this.mustGet(id);
+    // State, not breakage: the terminal exists and has exited. A consumer should
+    // say so and offer to start another one, not retry.
     if (session.status !== "running" && session.status !== "starting")
-      throw new Error(`interactive terminal is not running: ${id}`);
+      throw new RuntimeRefusal(`interactive terminal is not running: ${id}`);
     return session;
   }
 
   private mustViewer(session: TerminalSessionRuntime, viewerID: string) {
     const viewer = session.viewers.get(viewerID);
-    if (!viewer) throw new Error(`terminal viewer not registered: ${viewerID}`);
+    if (!viewer)
+      throw new RuntimeInvalidParams(
+        `terminal viewer not registered: ${viewerID}`,
+      );
     return viewer;
   }
 
@@ -968,8 +980,14 @@ export class TerminalRegistry {
     this.mustViewer(session, viewerID);
     const current =
       owner === "input" ? session.inputOwner : session.geometryOwner;
+    // Somebody else holds the terminal. This is the ordinary answer to a viewer
+    // that has not taken over, and the external CLI viewer shows it to a person,
+    // so it must arrive as a refusal with its reason rather than as an opaque
+    // internal failure.
     if (current.type !== "viewer" || current.viewerID !== viewerID)
-      throw new Error(`terminal ${owner} ownership required: ${viewerID}`);
+      throw new RuntimeRefusal(
+        `terminal ${owner} ownership required: ${viewerID}`,
+      );
   }
 
   private restoreModelOwnership(

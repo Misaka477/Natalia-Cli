@@ -2,11 +2,18 @@ import { expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { RuntimeEvent } from "@natalia/contracts";
+import { failureKind } from "@natalia/contracts";
+import type {
+  RuntimeClient,
+  RuntimeDiagnostic,
+  RuntimeEvent,
+  RuntimeRPCError,
+} from "@natalia/contracts";
 import {
   createRealRuntimeClient,
   installExampleDocuments,
 } from "@natalia/client";
+import { callRuntimeRPC } from "@natalia/transport";
 import { createRuntimeHttpServer } from "@natalia/transport/host";
 import { projectEvents, displayText, type AppState } from "@natalia/view-store";
 import { createNataliaSDK } from "../src";
@@ -327,4 +334,130 @@ test("an unauthenticated consumer is refused", async () => {
     // The transport must not be usable without the token a deployment issued.
     await expect(sdk.prompt("should not run")).rejects.toThrow();
   });
+}, 60_000);
+
+test("a consumer can tell the kinds of failure apart without reading messages", async () => {
+  await withRuntime(async ({ baseURL, root }) => {
+    const sdk = createNataliaSDK({ baseURL, token: "secret" });
+
+    // Each kind calls for a different reaction — report a bug, hide the feature,
+    // fix the call, tell the user, retry — so a consumer that cannot tell them
+    // apart has to treat every failure as the worst case. Nothing below matches
+    // on message text; that is the practice being replaced.
+
+    // 1. No such method: this consumer and this runtime disagree about the protocol.
+    const unknown = await callRuntimeRPC({
+      url: baseURL,
+      token: "secret",
+      method: "no.such.method",
+    }).catch((error: unknown) => error);
+    expect(failureKind(unknown)).toBe("methodNotFound");
+
+    // 2. Wrong argument: the call is fixable by the caller.
+    const badArgument = await sdk
+      .workspaceRead({ path: "notes.md", offset: -1 })
+      .catch((error: unknown) => error);
+    expect(failureKind(badArgument)).toBe("invalidParams");
+
+    // 3. Policy says no. A path outside the workspace is a refusal, not a fault,
+    // and the reason is machine-readable so a UI can explain it.
+    const refused = await sdk
+      .workspaceRead({ path: "../outside" })
+      .catch((error: unknown) => error);
+    expect(failureKind(refused)).toBe("refused");
+    expect((refused as RuntimeRPCError).data).toMatchObject({
+      kind: "refused",
+      reason: expect.stringContaining("workspace"),
+    });
+    // A refusal must not describe the boundary it enforced: handing the caller the
+    // absolute directory it failed to escape gives away the thing it was refused.
+    expect((refused as RuntimeRPCError).message).not.toContain(root);
+    expect(JSON.stringify((refused as RuntimeRPCError).data)).not.toContain(
+      root,
+    );
+  });
+}, 60_000);
+
+test("a runtime implementing only the required set still answers, and says which capability is missing", async () => {
+  // The other half of "not supported": the route exists, the member does not. A
+  // consumer must be able to switch off a whole feature area from one failure
+  // instead of discovering it member by member — so the capability group has to
+  // arrive with the error. This stub is also the proof that the required set is
+  // enough to stand a server up.
+  const recorded: RuntimeDiagnostic[] = [];
+  const stub: RuntimeClient = {
+    start() {},
+    async submit(text) {
+      return {
+        type: "turn.submitted",
+        id: "turn_stub",
+        text,
+        byteLength: text.length,
+        lineCount: 1,
+        sha256: "stub",
+      };
+    },
+    cancel() {},
+    snapshot() {
+      return { type: "diagnostic", level: "info", message: "stub" };
+    },
+    diagnostic(message, level = "warning") {
+      recorded.push({
+        type: "diagnostic",
+        level,
+        message,
+        at: new Date().toISOString(),
+      });
+    },
+    async diagnostics() {
+      return recorded;
+    },
+    lastSubmission() {
+      return undefined;
+    },
+    respondApproval() {},
+    respondQuestion() {},
+    async sessionList() {
+      // What a real runtime failure looks like: an fs error whose text carries an
+      // absolute path nobody meant to publish.
+      throw new Error(
+        "ENOENT: no such file or directory, open '/home/someone/project/.env'",
+      );
+    },
+  };
+  const server = createRuntimeHttpServer({ client: stub, events: false });
+  try {
+    const sdk = createNataliaSDK({ baseURL: server.url });
+
+    const notSupported = await sdk
+      .checkpointList()
+      .catch((error: unknown) => error);
+    expect(failureKind(notSupported)).toBe("notSupported");
+    expect((notSupported as RuntimeRPCError).data).toEqual({
+      kind: "notSupported",
+      member: "checkpointList",
+      capability: "checkpoint",
+    });
+
+    // An unclassified failure arrives as internal and carries no detail at all.
+    const internal = await sdk.sessions().catch((error: unknown) => error);
+    expect(failureKind(internal)).toBe("internal");
+    expect((internal as RuntimeRPCError).message).not.toContain(".env");
+    const errorID = ((internal as RuntimeRPCError).data as { errorID: string })
+      .errorID;
+    expect(errorID).toBeString();
+    // The detail is moved, not lost: a consumer already authorized to read
+    // diagnostics can correlate by the ID it was handed.
+    const diagnostics = await sdk.diagnostics(50);
+    const entry = diagnostics.find((item) => item.message.includes(errorID));
+    expect(entry).toBeDefined();
+    expect(entry!.level).toBe("error");
+    expect(entry!.message).toContain(".env");
+
+    // And the runtime still answers what it can, so a consumer is never left
+    // guessing whether the connection itself works.
+    expect((await sdk.prompt("hello")).text).toBe("hello");
+  } finally {
+    server.stop();
+  }
 }, 60_000);

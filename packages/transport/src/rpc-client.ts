@@ -4,6 +4,9 @@
  * that answers these calls lives in `rpc.ts` behind the `./host` entry point,
  * so importing the protocol does not pull in a server.
  */
+import { RuntimeRPCError } from "@natalia/contracts";
+import type { RuntimeFailureData } from "@natalia/contracts";
+
 export type RPCRequest = {
   id?: string | number | null;
   method?: string;
@@ -14,7 +17,11 @@ export type RPCResponse = {
   jsonrpc: "2.0";
   id: string | number | null;
   result?: unknown;
-  error?: { code: number; message: string };
+  /**
+   * `code` and `data` are the part a program acts on; `message` is for humans and
+   * is redacted for internal failures. See `failures.ts` in `@natalia/contracts`.
+   */
+  error?: { code: number; message: string; data?: RuntimeFailureData };
 };
 
 export async function callRuntimeRPC<T>(input: {
@@ -43,9 +50,17 @@ export async function callRuntimeRPC<T>(input: {
     },
   );
   const body = (await response.json()) as RPCResponse;
-  if (!response.ok || body.error)
-    throw new Error(
-      body.error?.message ?? `runtime RPC failed with HTTP ${response.status}`,
-    );
+  // The failure is rethrown with its code and data intact. Throwing a plain
+  // Error here would put the caller straight back to matching message text,
+  // which is the thing the server side stopped doing.
+  if (body.error)
+    throw new RuntimeRPCError({
+      code: body.error.code,
+      message: body.error.message,
+      method: input.method,
+      data: body.error.data,
+    });
+  if (!response.ok)
+    throw new Error(`runtime RPC failed with HTTP ${response.status}`);
   return body.result as T;
 }

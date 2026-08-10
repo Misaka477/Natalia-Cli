@@ -1,3 +1,4 @@
+import { RuntimeRPCError } from "@natalia/contracts";
 import type {
   ApprovalResponse,
   QuestionResponse,
@@ -236,12 +237,24 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     });
     const body = (await response.json()) as {
       result?: T;
-      error?: { message: string };
+      error?: {
+        code: number;
+        message: string;
+        data?: import("@natalia/contracts").RuntimeFailureData;
+      };
     };
-    if (!response.ok || body.error)
-      throw new Error(
-        body.error?.message ?? `SDK request failed: ${response.status}`,
-      );
+    // A failure arrives as a `RuntimeRPCError` carrying the JSON-RPC code and its
+    // structured data, so a consumer can tell "this runtime cannot do it" from
+    // "my arguments are wrong" from "policy says no" with `failureKind(error)`
+    // instead of matching on message text.
+    if (body.error)
+      throw new RuntimeRPCError({
+        code: body.error.code,
+        message: body.error.message,
+        method,
+        data: body.error.data,
+      });
+    if (!response.ok) throw new Error(`SDK request failed: ${response.status}`);
     return body.result as T;
   }
   return {

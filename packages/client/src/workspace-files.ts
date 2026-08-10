@@ -2,6 +2,7 @@ import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { watch, type FSWatcher } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import fuzzysort from "fuzzysort";
+import { RuntimeInvalidParams, RuntimeRefusal } from "@natalia/contracts";
 import type {
   RuntimeWorkspaceContent,
   RuntimeWorkspaceFileEntry,
@@ -90,7 +91,9 @@ export async function listWorkspaceFiles(input: {
   const catalog = await workspaceCatalog(root);
   const directory = await resolveWorkspacePath(root, input.path ?? ".");
   if (!(await stat(directory)).isDirectory())
-    throw new Error(`workspace path is not a directory: ${input.path ?? "."}`);
+    throw new RuntimeInvalidParams(
+      `workspace path is not a directory: ${input.path ?? "."}`,
+    );
   const children = await readdir(directory, { withFileTypes: true });
   const entries = (
     await Promise.all(
@@ -140,17 +143,19 @@ export async function readWorkspaceFile(input: {
   const path = await resolveWorkspacePath(root, input.path);
   const info = await stat(path);
   if (!info.isFile())
-    throw new Error(`workspace path is not a file: ${input.path}`);
+    throw new RuntimeInvalidParams(
+      `workspace path is not a file: ${input.path}`,
+    );
   const header = new Uint8Array(
     await Bun.file(path).slice(0, 12).arrayBuffer(),
   );
   const media = imageMime(header);
   if (media && info.size > maxMediaIngestBytes)
-    throw new Error(
+    throw new RuntimeRefusal(
       `workspace media exceeds ${maxMediaIngestBytes} bytes: ${input.path}`,
     );
   if (!media && info.size > maxReadFileBytes)
-    throw new Error(
+    throw new RuntimeRefusal(
       `workspace file exceeds ${maxReadFileBytes} bytes: ${input.path}`,
     );
   const bytes = new Uint8Array(await Bun.file(path).arrayBuffer());
@@ -193,7 +198,9 @@ export async function readWorkspaceFile(input: {
       usedBytes += lineBytes;
     }
     if (!selected.length && offset > lines.length)
-      throw new Error(`workspace read offset is out of range: ${offset}`);
+      throw new RuntimeInvalidParams(
+        `workspace read offset is out of range: ${offset}`,
+      );
     return {
       path: relative(root, path).split(sep).join("/"),
       content: selected.join("\n"),
@@ -223,11 +230,15 @@ export async function globWorkspaceFiles(input: {
     input.pattern.includes("..") ||
     input.pattern.startsWith("/")
   )
-    throw new Error("workspace glob pattern must remain inside workspace");
+    throw new RuntimeRefusal(
+      "workspace glob pattern must remain inside workspace",
+    );
   const root = await realpath(input.workspaceRoot);
   const directory = await resolveWorkspacePath(root, input.path ?? ".");
   if (!(await stat(directory)).isDirectory())
-    throw new Error(`workspace path is not a directory: ${input.path ?? "."}`);
+    throw new RuntimeInvalidParams(
+      `workspace path is not a directory: ${input.path ?? "."}`,
+    );
   const limit = Math.min(200, Math.max(1, input.limit ?? 50));
   const catalog = await workspaceCatalog(root);
   const entries: RuntimeWorkspaceFileEntry[] = [];
@@ -324,12 +335,12 @@ export async function searchWorkspaceFiles(input: {
   limit?: number;
 }) {
   if (!input.query.trim())
-    throw new Error("workspace search query is required");
+    throw new RuntimeInvalidParams("workspace search query is required");
   let expression: RegExp;
   try {
     expression = new RegExp(input.query, "u");
   } catch {
-    throw new Error(
+    throw new RuntimeInvalidParams(
       "workspace search query must be a valid regular expression",
     );
   }
@@ -453,18 +464,22 @@ function contains(root: string, target: string) {
 }
 
 async function resolveWorkspacePath(root: string, input: string) {
+  // Refusals, not failures: the caller asked for something policy does not allow,
+  // which a remote consumer must be able to tell apart from a broken runtime. The
+  // reason names the rule and never the resolved path — the absolute path is the
+  // one thing that must not travel back out of here.
   if (!input || input.startsWith("/") || input.split(/[\\/]/u).includes(".."))
-    throw new Error("workspace path must remain inside workspace");
+    throw new RuntimeRefusal("workspace path must remain inside workspace");
   const path = resolve(root, input);
   if (!contains(root, path))
-    throw new Error("workspace path must remain inside workspace");
+    throw new RuntimeRefusal("workspace path must remain inside workspace");
   const real = await realpath(path).catch(() => undefined);
   if (!real || !contains(root, real))
-    throw new Error("workspace path must remain inside workspace");
+    throw new RuntimeRefusal("workspace path must remain inside workspace");
   const catalog = await workspaceCatalog(root);
   const info = await stat(real);
   if (isIgnored(relative(root, real), info.isDirectory(), catalog.ignoreRules))
-    throw new Error("workspace path is ignored by filesystem policy");
+    throw new RuntimeRefusal("workspace path is ignored by filesystem policy");
   return real;
 }
 

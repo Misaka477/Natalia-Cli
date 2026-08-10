@@ -789,11 +789,11 @@ test("unattended read routes are refused when the runtime does not implement the
   } as unknown as RuntimeClient;
   const server = createRuntimeHttpServer({ client, token: "secret" });
   try {
-    for (const method of [
-      "task.overview",
-      "flow.overview",
-      "document.catalog",
-    ]) {
+    for (const [method, member] of [
+      ["task.overview", "taskOverview"],
+      ["flow.overview", "flowOverview"],
+      ["document.catalog", "documentCatalog"],
+    ] as const) {
       const response = await fetch(new URL("/rpc", server.url), {
         method: "POST",
         headers: {
@@ -802,8 +802,18 @@ test("unattended read routes are refused when the runtime does not implement the
         },
         body: JSON.stringify({ id: 1, method, params: {} }),
       });
-      const body = (await response.json()) as { error?: { message: string } };
-      expect(body.error?.message).toContain(method);
+      const body = (await response.json()) as {
+        error?: { code: number; data?: unknown };
+      };
+      // Asserted on the code and the structured data rather than the message: a
+      // route this runtime cannot serve is `-32000 not supported`, and the member
+      // plus its capability let a consumer disable the whole group at once.
+      expect(body.error?.code).toBe(-32000);
+      expect(body.error?.data).toEqual({
+        kind: "notSupported",
+        member,
+        capability: "automation",
+      });
     }
   } finally {
     server.stop();
