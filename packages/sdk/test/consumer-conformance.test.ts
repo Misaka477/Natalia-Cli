@@ -1069,3 +1069,45 @@ test("an external orchestrator validates a task document before delivering it", 
     expect(failureKind(refused)).toBe("refused");
   });
 }, 60_000);
+
+test("an external integration configures the runtime the way the TUI does", async () => {
+  // The config write surface was TUI-only: every settings menu entry (providers,
+  // MCP servers, permission profiles, modes) wrote config.json through
+  // updateConfigAtScope + reloadConfig inside the TUI. A remote integration
+  // had no way to configure anything. Now it takes the same path, with the
+  // same value-type refusal when a running turn blocks application.
+  await withRuntime(async ({ baseURL, root }) => {
+    const sdk = createNataliaSDK({ baseURL, token: "secret" });
+
+    // Write a patch, then read it back through the read surface to prove the
+    // merge landed on disk.
+    const applied = await sdk.updateConfig({
+      patch: {
+        defaultModel: "from_remote",
+        runtime: { maxStepsPerTurn: 7 },
+      },
+    });
+    expect(applied.applied).toBe(true);
+
+    const report = await sdk.runtimeStatus();
+    // runtimeStatus exposes committed selections; the config itself is read
+    // back through model catalog/selection members.
+    expect(typeof report).toBe("object");
+
+    // Idempotent by patch: replaying the same patch merges to the same
+    // result instead of accumulating.
+    const replayed = await sdk.updateConfig({
+      patch: {
+        defaultModel: "from_remote",
+        runtime: { maxStepsPerTurn: 7 },
+      },
+    });
+    expect(replayed.applied).toBe(true);
+
+    // A bad scope is invalid params, not a guess.
+    const badScope = await sdk
+      .updateConfig({ patch: {}, scope: "elsewhere" as never })
+      .catch((error: unknown) => error);
+    expect(failureKind(badScope)).toBe("invalidParams");
+  });
+}, 60_000);

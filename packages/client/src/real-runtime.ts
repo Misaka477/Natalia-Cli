@@ -45,7 +45,11 @@ import {
   type StreamingProvider,
   providerCompactor,
 } from "@natalia/runtime";
-import { modelSelectionStatus, resolveConfig } from "@natalia/config";
+import {
+  modelSelectionStatus,
+  resolveConfig,
+  updateConfigAtScope,
+} from "@natalia/config";
 import { CapabilityRegistry } from "@natalia/capability";
 import {
   agentsFromConfig,
@@ -573,6 +577,34 @@ export function createRealRuntimeClient(
     if (interactive.hasPendingWaiters())
       return "runtime config cannot be applied while an approval or question is pending";
     return undefined;
+  }
+
+  /**
+   * Reloads config from disk and applies it, answering value-style. Shared by
+   * `reloadConfig` and `updateConfig` so the two write-apply paths cannot
+   * drift.
+   */
+  async function applyConfigFromDisk(): Promise<{
+    applied: boolean;
+    reason?: string;
+  }> {
+    const blocked = configReloadBlockedReason();
+    if (blocked) return { applied: false, reason: blocked };
+    const reloaded = await reloadConfigFromDisk();
+    if (!reloaded.read) {
+      const reason = "runtime config on disk could not be read";
+      publish({ type: "diagnostic", level: "warning", message: reason });
+      return { applied: false, reason };
+    }
+    publish({
+      type: "diagnostic",
+      level: "info",
+      message: reloaded.providerReconfigured
+        ? "runtime config reloaded; provider reconfigured from disk"
+        : "runtime config reloaded; provider unchanged",
+    });
+    scheduleRuntimeStatusSnapshot();
+    return { applied: true };
   }
 
   async function reloadConfigFromDisk(): Promise<{
@@ -2659,23 +2691,23 @@ export function createRealRuntimeClient(
       // Re-checked here rather than trusting `canReloadConfig`: a turn can start
       // between the two calls, and applying new policy underneath a running turn
       // would change the rules it started under.
-      const blocked = configReloadBlockedReason();
-      if (blocked) return { applied: false, reason: blocked };
-      const reloaded = await reloadConfigFromDisk();
-      if (!reloaded.read) {
-        const reason = "runtime config on disk could not be read";
-        publish({ type: "diagnostic", level: "warning", message: reason });
-        return { applied: false, reason };
-      }
-      publish({
-        type: "diagnostic",
-        level: "info",
-        message: reloaded.providerReconfigured
-          ? "runtime config reloaded; provider reconfigured from disk"
-          : "runtime config reloaded; provider unchanged",
-      });
-      scheduleRuntimeStatusSnapshot();
-      return { applied: true };
+      return await applyConfigFromDisk();
+    },
+    async updateConfig(input) {
+      await ready;
+      // The TUI settings menu path, now a public surface: merge the patch onto
+      // disk, then apply. The file is written either way; whether it takes
+      // effect under a running turn is an ordinary answer, not an exception.
+      // Idempotent by patch: the same patch merged twice produces the same
+      // merged config.
+      await updateConfigAtScope(
+        workspaceRoot,
+        input.patch as never,
+        input.scope ?? "project",
+      );
+      // Applying is the same operation as a reload, with the same value-type
+      // refusal; share it so the two paths cannot drift.
+      return await applyConfigFromDisk();
     },
     async diagnostics(limit = 100) {
       await ready;

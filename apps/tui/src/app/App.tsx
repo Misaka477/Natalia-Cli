@@ -70,7 +70,6 @@ import { CommandPalette } from "../component/CommandPalette";
 import {
   resolveConfig,
   configPatch,
-  updateConfigAtScope,
   type ConfigPatch,
   type ConfigWriteScope,
 } from "@natalia/config";
@@ -354,15 +353,18 @@ function Shell(props: {
   }
 
   async function persistConfig(next: ConfigPatch, base?: ConfigV2) {
+    // The same path a remote consumer takes: write via the public config
+    // surface, so the TUI and an external integration cannot drift apart.
     const scope = configWriteScope();
-    await updateConfigAtScope(
-      props.workspaceRoot ?? process.cwd(),
-      base ? configPatch(base, next as ConfigV2) : next,
+    if (!props.backend.updateConfig)
+      throw new Error("Runtime backend does not support config updates");
+    const reload = await props.backend.updateConfig({
+      patch: (base ? configPatch(base, next as ConfigV2) : next) as Record<
+        string,
+        unknown
+      >,
       scope,
-    );
-    if (!props.backend.reloadConfig)
-      throw new Error("Runtime backend does not support config reload");
-    const reload = await props.backend.reloadConfig();
+    });
     // Refusal is an ordinary answer now, not an exception, so it has to be said:
     // the file was written either way, and reporting "applied" when the runtime
     // declined would tell the user their change is live when it is not.

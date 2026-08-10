@@ -265,6 +265,11 @@ export type NataliaSDK = {
     deleted: boolean;
     alreadyDeleted: boolean;
   }>;
+  /** Writes a config patch (the TUI settings menu path) and applies it. */
+  updateConfig(input: {
+    patch: Record<string, unknown>;
+    scope?: "project" | "global";
+  }): Promise<{ applied: boolean; reason?: string }>;
   /**
    * Validates a task document and previews its permissions before delivery.
    * Problems are a value, not an exception.
@@ -494,6 +499,7 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     saveFlowDocument: async (input) => await call("flow.save", input),
     deleteFlowDocument: async (input) => await call("flow.delete", input),
     taskPermissionPreview: async (input) => await call("task.preview", input),
+    updateConfig: async (input) => await call("config.update", input),
     taskOverview: async () => await call("task.overview", {}),
     flowOverview: async () => await call("flow.overview", {}),
     documentCatalog: async () => await call("document.catalog", {}),

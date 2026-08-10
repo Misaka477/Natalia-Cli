@@ -89,7 +89,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
   /** Pausing and resuming a running turn. */
   turnControl: ["pause", "resume"],
   /** Lifecycle beyond a single session. */
-  lifecycle: ["dispose", "canReloadConfig", "reloadConfig"],
+  lifecycle: ["dispose", "canReloadConfig", "reloadConfig", "updateConfig"],
   /** Choosing the agent and model a turn runs as. */
   selection: [
     "agents",

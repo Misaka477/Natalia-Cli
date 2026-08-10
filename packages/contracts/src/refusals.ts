@@ -108,6 +108,11 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "applied",
     note: "the reference case: applying new policy under a running turn is refused, and refusing is normal",
   },
+  updateConfig: {
+    refusal: "value",
+    expressedBy: "applied",
+    note: "the file may be written while a running turn prevents application, and that is an ordinary answer",
+  },
 
   // --- selection ---
   agents: { refusal: "none", note: "pure read" },

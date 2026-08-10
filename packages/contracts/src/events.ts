@@ -1233,6 +1233,17 @@ export type RuntimeClient = {
    */
   canReloadConfig?(): Promise<{ allowed: boolean; reason?: string }>;
   /**
+   * Writes a config patch to disk (merged over the current config, like the
+   * TUI settings menu) and applies it. Refusal is a value with a reason, like
+   * `reloadConfig`: the file may be written while a running turn prevents
+   * application. Idempotent by patch: replaying the same patch reproduces the
+   * same merged result.
+   */
+  updateConfig?(input: {
+    patch: Record<string, unknown>;
+    scope?: "project" | "global";
+  }): Promise<{ applied: boolean; reason?: string }>;
+  /**
    * Applies the config on disk. Refusal is a value rather than an exception,
    * because refusing is a normal outcome — applying new policy underneath a
    * running turn would change the rules the turn started under.

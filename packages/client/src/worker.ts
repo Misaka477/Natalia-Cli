@@ -31,6 +31,7 @@ export const WORKER_ROUTE_MEMBERS = {
   question: "respondQuestion",
   "interactive.pending": "pendingInteractive",
   "config.reload": "reloadConfig",
+  "config.update": "updateConfig",
   dispose: "dispose",
   history: "history",
   diagnostics: "diagnostics",
@@ -89,6 +90,7 @@ type WorkerRequest = {
     | "question"
     | "interactive.pending"
     | "config.reload"
+    | "config.update"
     | "dispose"
     | "history"
     | "diagnostics"
@@ -327,6 +329,11 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["taskPermissionPreview"]>>
       >;
     },
+    async updateConfig(input) {
+      return (await request("config.update", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["updateConfig"]>>
+      >;
+    },
 
     async nativeTerminalList() {
       return (await request("native-terminal.list")) as Awaited<
@@ -511,6 +518,15 @@ export function attachRuntimeClientWorker(
           await activeClient.runtimeStatus?.();
           value = { applied: true };
         }
+      } else if (request.method === "config.update") {
+        // The write-apply path, unlike the rebuild path above: the patch lands
+        // on disk and the runtime applies it in place.
+        value = await activeClient.updateConfig?.(
+          request.value as {
+            patch: Record<string, unknown>;
+            scope?: "project" | "global";
+          },
+        );
       } else {
         value = await handleWorkerRequest(activeClient, request);
       }

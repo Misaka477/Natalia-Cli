@@ -121,6 +121,7 @@ export const RPC_ROUTE_MEMBERS = {
   resume: "resume",
   "config.canReload": "canReloadConfig",
   "config.reload": "reloadConfig",
+  "config.update": "updateConfig",
   "agent.list": "agents",
   "agent.select": "selectAgent",
   "model.catalog": "modelCatalog",
@@ -233,6 +234,7 @@ export const RPC_WRITE_METHODS: ReadonlySet<string> = new Set([
   "agent.select",
   "model.select",
   "config.reload",
+  "config.update",
   "checkpoint.rollback",
   "sandbox.merge",
   "sandbox.delete",
@@ -1160,6 +1162,28 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.sessionSnapshot(),
+      };
+    }
+    // --- P0-G follow-up: the config write surface (previously TUI-only) ---
+    if (body.method === "config.update") {
+      const params = body.params;
+      if (!params || typeof params !== "object")
+        throw invalidParams("config.update.params must be an object");
+      const patch = (params as { patch?: unknown }).patch;
+      if (!patch || typeof patch !== "object" || Array.isArray(patch))
+        throw invalidParams("config.update.params.patch must be an object");
+      const scope = (params as { scope?: unknown }).scope;
+      if (scope !== undefined && scope !== "project" && scope !== "global")
+        throw invalidParams(
+          'config.update.params.scope must be "project" or "global"',
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.updateConfig?.({
+          patch: patch as Record<string, unknown>,
+          scope: scope as "project" | "global" | undefined,
+        }),
       };
     }
     // --- P0-G follow-up: task document validation (previously CLI-only) ---
