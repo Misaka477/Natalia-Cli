@@ -1,5 +1,7 @@
 import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
-import { handleRPCMessage } from "./rpc";
+import { handleRPCMessage, RPC_WRITE_METHODS } from "./rpc";
+import type { RuntimeAuthorizationContext } from "./rpc";
+import type { RuntimeCapabilityGroup } from "@natalia/contracts";
 
 export type TaskDeliveryRequest = {
   taskPath: string;
@@ -16,11 +18,40 @@ export type TaskDeliveryResult = {
   output: string[];
 };
 
+/**
+ * One credential and what it may do. The grant is expressed in the same terms
+ * as the rest of the API: capability groups (the units the availability report
+ * already uses) plus a single write dimension. Sessions constrain which
+ * sessions' events the credential may subscribe to.
+ */
+export type RuntimeCredential = {
+  token: string;
+  write?: boolean;
+  groups?: readonly RuntimeCapabilityGroup[];
+  sessions?: readonly string[];
+};
+
+/**
+ * The P0-D policy: default deny. A request without a credential is refused
+ * unless `open` is explicitly true (which logs a startup warning), and a
+ * credential only reaches what its grant names.
+ */
+export type RuntimeAuthorizationPolicy = {
+  open?: boolean;
+  credentials: RuntimeCredential[];
+};
+
 export type RuntimeHttpServerOptions = {
   client: RuntimeClient;
   hostname?: string;
   port?: number;
+  /**
+   * Shorthand for `authorization: { credentials: [{ token, write: true }] }`
+   * with `open: false`. Kept for the daemon and existing callers; the full
+   * policy is `authorization`.
+   */
   token?: string;
+  authorization?: RuntimeAuthorizationPolicy;
   unix?: string;
   tls?: { cert: string; key: string };
   events?: boolean;
@@ -37,9 +68,53 @@ export type RuntimeHttpServer = {
   stop(closeActiveConnections?: boolean): void;
 };
 
-function authorized(request: Request, token: string | undefined): boolean {
-  if (!token) return true;
-  return request.headers.get("authorization") === `Bearer ${token}`;
+/**
+ * Resolves a request's credential to an authorization context. Returns
+ * `"denied"` when the request must be refused outright (no credential and no
+ * open policy, or a token that matches nothing). The refusal is the same for
+ * a missing credential and for a wrong one, so a caller cannot tell "no such
+ * token" from "no token allowed".
+ */
+export function resolveAuthorization(
+  request: Request,
+  policy: RuntimeAuthorizationPolicy | undefined,
+  token: string | undefined,
+): RuntimeAuthorizationContext | "denied" {
+  const header = request.headers.get("authorization");
+  const bearer = header?.startsWith("Bearer ") ? header.slice(7) : undefined;
+  const presented =
+    bearer ?? new URL(request.url).searchParams.get("token") ?? undefined;
+  if (presented) {
+    // The `token` shorthand means one full-write credential — the daemon's
+    // token semantics are unchanged; scoped credentials come from the policy.
+    const credentials =
+      policy?.credentials ?? (token ? [{ token, write: true }] : []);
+    const match = credentials.find(
+      (candidate) => candidate.token === presented,
+    );
+    if (!match) return "denied";
+    return {
+      write: match.write ?? false,
+      groups: match.groups
+        ? new Set(match.groups as readonly string[])
+        : undefined,
+      sessions: match.sessions
+        ? new Set(match.sessions as readonly string[])
+        : undefined,
+    };
+  }
+  if (policy?.open) return { write: true, groups: undefined };
+  if (!policy && !token) return { write: true, groups: undefined };
+  return "denied";
+}
+
+/**
+ * The sessions a credential may see events for. Undefined means unrestricted.
+ */
+export function credentialSessions(
+  context: RuntimeAuthorizationContext | undefined,
+): ReadonlySet<string> | undefined {
+  return (context as { sessions?: ReadonlySet<string> } | undefined)?.sessions;
 }
 
 function replayEvents(
@@ -63,10 +138,30 @@ function encodeSSE(encoder: TextEncoder, id: number, event: RuntimeEvent) {
   );
 }
 
+type EventSubscriber = {
+  controller: ReadableStreamDefaultController<Uint8Array>;
+  /** Session the subscriber asked for; undefined = all sessions (as credentialed). */
+  session?: string;
+};
+
+/**
+ * Whether an event belongs to a subscriber's session. Events carrying an
+ * explicit session id belong to that session and no other; events without one
+ * are runtime-level and reach every subscriber.
+ */
+function eventInSession(
+  event: RuntimeEvent,
+  subscriber: EventSubscriber,
+): boolean {
+  const own = (event as { sessionID?: unknown }).sessionID;
+  if (typeof own !== "string") return true;
+  return subscriber.session === undefined || own === subscriber.session;
+}
+
 export function createRuntimeHttpServer(
   options: RuntimeHttpServerOptions,
 ): RuntimeHttpServer {
-  const subscribers = new Set<ReadableStreamDefaultController<Uint8Array>>();
+  const subscribers = new Set<EventSubscriber>();
   const encoder = new TextEncoder();
   const eventBuffer: Array<{ id: number; event: RuntimeEvent }> = [];
   let nextEventID = 1;
@@ -75,13 +170,23 @@ export function createRuntimeHttpServer(
       const id = nextEventID++;
       eventBuffer.push({ id, event });
       if (eventBuffer.length > 500) eventBuffer.shift();
-      const payload = encodeSSE(encoder, id, event);
-      for (const subscriber of subscribers) subscriber.enqueue(payload);
+      for (const subscriber of subscribers) {
+        // Session filtering happens here, server-side: a subscriber that asked
+        // for session A never sees an event carrying session B, not even its
+        // count or type (the acceptance criterion for P0-D).
+        if (!eventInSession(event, subscriber)) continue;
+        subscriber.controller.enqueue(encodeSSE(encoder, id, event));
+      }
     });
   const fetchHandler = async (request: Request) => {
     const url = new URL(request.url);
     if (url.pathname === "/healthz") return Response.json({ ok: true });
-    if (!authorized(request, options.token))
+    const authorization = resolveAuthorization(
+      request,
+      options.authorization,
+      options.token,
+    );
+    if (authorization === "denied")
       return Response.json({ error: "unauthorized" }, { status: 401 });
     if (url.pathname === "/tasks/run") {
       if (request.method !== "POST")
@@ -119,12 +224,28 @@ export function createRuntimeHttpServer(
     if (url.pathname === "/events" && options.events === false)
       return Response.json({ error: "event stream disabled" }, { status: 404 });
     if (url.pathname === "/events" && request.method === "GET") {
+      const requestedSession = url.searchParams.get("session") ?? undefined;
+      const allowedSessions = credentialSessions(authorization);
+      // A credential with a session grant may only subscribe to sessions it
+      // names — the subscription itself is checked, not the data.
+      if (
+        requestedSession &&
+        allowedSessions &&
+        !allowedSessions.has(requestedSession)
+      )
+        return Response.json({ error: "forbidden" }, { status: 403 });
       let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
+      const subscriber: EventSubscriber = {
+        controller:
+          null as unknown as ReadableStreamDefaultController<Uint8Array>,
+        session: requestedSession,
+      };
       return new Response(
         new ReadableStream({
           start(nextController) {
             controller = nextController;
-            subscribers.add(controller);
+            subscriber.controller = nextController;
+            subscribers.add(subscriber);
             controller.enqueue(encoder.encode(SSE_PREAMBLE));
             const marker =
               request.headers.get("last-event-id") ??
@@ -135,7 +256,8 @@ export function createRuntimeHttpServer(
                 | Array<{ id: number; event: RuntimeEvent }>
                 | Array<{ seq: number; event: RuntimeEvent }>,
             ) => {
-              for (const item of items)
+              for (const item of items) {
+                if (!eventInSession(item.event, subscriber)) continue;
                 controller?.enqueue(
                   encodeSSE(
                     encoder,
@@ -143,6 +265,7 @@ export function createRuntimeHttpServer(
                     item.event,
                   ),
                 );
+              }
             };
             if (
               typeof since === "number" &&
@@ -167,7 +290,7 @@ export function createRuntimeHttpServer(
             replay(replayEvents(eventBuffer, request));
           },
           cancel() {
-            if (controller) subscribers.delete(controller);
+            subscribers.delete(subscriber);
           },
         }),
         {
@@ -193,7 +316,12 @@ export function createRuntimeHttpServer(
         { status: 400 },
       );
     }
-    const result = await handleRPCMessage(body, options.client, request.signal);
+    const result = await handleRPCMessage(
+      body,
+      options.client,
+      request.signal,
+      authorization,
+    );
     if (result.error) return Response.json(result, { status: 400 });
     return Response.json(result);
   };

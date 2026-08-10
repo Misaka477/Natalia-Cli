@@ -23,6 +23,7 @@ import {
   RuntimeInvalidRequest,
   RuntimeMethodNotFound,
   RuntimeNotSupported,
+  RuntimeRefusal,
   RUNTIME_RPC_ERROR_CODES,
   capabilityGroupOf,
   describeRuntimeCapabilities,
@@ -205,10 +206,157 @@ export const RPC_ROUTED_MEMBERS: ReadonlySet<string> = new Set(
   ),
 );
 
+/**
+ * The write surface, as route names. A credential without the `write`
+ * dimension may call anything not on this list and nothing on it. The list is
+ * code and is pinned by a test: removing an entry makes a write reachable by a
+ * read-only credential, which fails.
+ *
+ * The xterm-era terminal writes are gone with the line that hosted them; the
+ * live write surface is submissions, turn control, approvals, config,
+ * checkpoints, sandboxes, session management and the native terminal controls
+ * (whose security note from P0-C still stands: ending a human's secure input
+ * remotely is a write of the strongest kind).
+ */
+export const RPC_WRITE_METHODS: ReadonlySet<string> = new Set([
+  "prompt",
+  "cancel",
+  "submit.input",
+  "approval.respond",
+  "question.respond",
+  "pause",
+  "resume",
+  "agent.select",
+  "model.select",
+  "config.reload",
+  "checkpoint.rollback",
+  "sandbox.merge",
+  "sandbox.delete",
+  "sandbox.resource.stop",
+  "session.touch",
+  "session.rename",
+  "session.pin",
+  "session.duplicate",
+  "session.fork",
+  "session.delete",
+  "nativeTerminal.stop",
+  "nativeTerminal.revokeApprovalScope",
+  "nativeTerminal.releaseHumanControl",
+  "nativeTerminal.beginSecureInput",
+  "nativeTerminal.endSecureInput",
+  "nativeTerminal.openHub",
+]);
+
+/**
+ * Who is calling, resolved by the transport from the credential. Absent means
+ * an unrestricted in-process caller (or an explicitly opened server).
+ */
+export type RuntimeAuthorizationContext = {
+  /** May the caller use the write surface? */
+  write: boolean;
+  /** Capability groups the caller may reach; absent = every group. */
+  groups?: ReadonlySet<string>;
+  /** Sessions the caller may subscribe events for; absent = unrestricted. */
+  sessions?: ReadonlySet<string>;
+};
+
+/**
+ * Whether a route is inside the caller's grant. Checked before the route
+ * table, so a credential that cannot call a method gets `-32001 refused`
+ * whether or not the method exists — an authorization error must not double
+ * as an existence probe.
+ */
+export function isAuthorized(
+  context: RuntimeAuthorizationContext | undefined,
+  method: string,
+): boolean {
+  if (!context) return true;
+  if (!context.write && RPC_WRITE_METHODS.has(method)) return false;
+  if (context.groups) {
+    const member = (RPC_ROUTE_MEMBERS as Record<string, string | null>)[method];
+    const group =
+      typeof member === "string" ? capabilityGroupOf(member) : undefined;
+    if (group && !context.groups.has(group)) return false;
+  }
+  return true;
+}
+
+/**
+ * The reason a granted-but-denied call should carry. Kept separate from
+ * `isAuthorized` so the refusal path can name the rule that fired.
+ */
+export function authorizationRefusalReason(
+  context: RuntimeAuthorizationContext,
+  method: string,
+): string {
+  if (!context.write && RPC_WRITE_METHODS.has(method))
+    return "authorization refused: this credential has no write scope";
+  const member = (RPC_ROUTE_MEMBERS as Record<string, string | null>)[method];
+  const group =
+    typeof member === "string" ? capabilityGroupOf(member) : undefined;
+  if (group && context.groups && !context.groups.has(group))
+    return `authorization refused: this credential has no access to the ${group} group`;
+  return "authorization refused";
+}
+
+/**
+ * A report the caller can act on: reachable members outside the credential's
+ * grant are marked unreachable with an authorization reason, never with "not
+ * implemented". The report must not over-promise to a read-only integration —
+ * the same mistake G2 made, at a different layer.
+ */
+export function cullAvailabilityReport(
+  report: import("@natalia/contracts").RuntimeCapabilityReport,
+  authorization: RuntimeAuthorizationContext | undefined,
+): import("@natalia/contracts").RuntimeCapabilityReport {
+  if (!authorization || !report.channel) return report;
+  const cullMember = (
+    member: import("@natalia/contracts").ChannelCapabilityMember,
+  ) => {
+    if (member.state !== "implemented_reachable") return member;
+    const method = Object.keys(RPC_ROUTE_MEMBERS).find(
+      (name) =>
+        (RPC_ROUTE_MEMBERS as Record<string, string | null>)[name] ===
+        member.member,
+    );
+    if (!method) return member;
+    if (!isAuthorized(authorization, method))
+      return {
+        ...member,
+        state: "implemented_unreachable" as const,
+        reason: authorizationRefusalReason(authorization, method),
+      };
+    return member;
+  };
+  return {
+    ...report,
+    channel: {
+      ...report.channel,
+      groups: report.channel.groups.map((group) => {
+        const members = group.members.map(cullMember);
+        const reachable = members.every(
+          (member) => member.state === "implemented_reachable",
+        );
+        const unreachableCount = members.filter(
+          (member) => member.state === "implemented_unreachable",
+        ).length;
+        return {
+          ...group,
+          members,
+          reachable,
+          partial: unreachableCount > 0 && unreachableCount < members.length,
+        };
+      }),
+      requiredMembers: report.channel.requiredMembers.map(cullMember),
+    },
+  };
+}
+
 export async function handleRPCMessage(
   raw: unknown,
   client: RuntimeClient,
   signal?: AbortSignal,
+  authorization?: RuntimeAuthorizationContext,
 ): Promise<RPCResponse> {
   const request =
     raw && typeof raw === "object" && !Array.isArray(raw)
@@ -217,6 +365,13 @@ export async function handleRPCMessage(
   try {
     if (!request) throw new RuntimeInvalidRequest();
     const body = request;
+    // Authorization before existence: a credential outside its grant gets
+    // `-32001 refused` whether or not the method exists, so an authorization
+    // error can never be used to probe the surface.
+    if (body.method && !isAuthorized(authorization, body.method))
+      throw new RuntimeRefusal(
+        authorizationRefusalReason(authorization!, body.method),
+      );
     // The route table is the authority for what a method is: a name with no row
     // here is `-32601 method not found`, before any dispatch block runs. The
     // table also feeds the availability report, so reachability is computed from
@@ -1076,13 +1231,16 @@ export async function handleRPCMessage(
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: describeRuntimeCapabilities(client, {
-          name: "rpc",
-          routedMembers: RPC_ROUTED_MEMBERS,
-          // Members routed away on purpose keep their reason, so the report
-          // distinguishes "forgotten" from "intentionally local".
-          unreachableReasons: RPC_INTENTIONALLY_LOCAL,
-        }),
+        result: cullAvailabilityReport(
+          describeRuntimeCapabilities(client, {
+            name: "rpc",
+            routedMembers: RPC_ROUTED_MEMBERS,
+            // Members routed away on purpose keep their reason, so the report
+            // distinguishes "forgotten" from "intentionally local".
+            unreachableReasons: RPC_INTENTIONALLY_LOCAL,
+          }),
+          authorization,
+        ),
       };
     }
     if (body.method === "runtime.status") {

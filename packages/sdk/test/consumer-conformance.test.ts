@@ -606,3 +606,70 @@ test("the P0-C route surface answers over HTTP: native terminal, intelligence, c
     expect(byMember.get("dispose")).toBe("implemented_unreachable");
   });
 }, 60_000);
+
+test("a read-only integration renders the session and cannot write a byte", async () => {
+  // P0-D on the consumer side, and the seed of the P0-F "read-only
+  // integration" scenario: one server, two credentials — the operator's
+  // full-write one and an integration's read-only one. The integration must
+  // render everything and cause no side effect, and the report it sees must
+  // say so (write surface unreachable *by authorization*, never by lie).
+  const root = await mkdtemp(join(tmpdir(), "natalia-readonly-consumer-"));
+  const events: RuntimeEvent[] = [];
+  const runtime = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_consumer",
+    permissionMode: "auto",
+    provider: {
+      provider: "scripted",
+      model: "scripted",
+      async *stream() {
+        yield { type: "content" as const, text: "ready" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  runtime.start((event) => events.push(event));
+  const server = createRuntimeHttpServer({
+    client: runtime,
+    authorization: {
+      credentials: [
+        { token: "operator", write: true },
+        { token: "integration", write: false },
+      ],
+    },
+  });
+  try {
+    const integration = createNataliaSDK({
+      baseURL: server.url,
+      token: "integration",
+    });
+
+    // Render: read the history and the workspace.
+    const submitted = await integration.prompt(
+      "describe the workspace",
+    ).catch(() => undefined);
+    // A read-only credential cannot submit — that is the point.
+    expect(submitted).toBeUndefined();
+    const page = await integration.workspaceList({ path: "." });
+    expect(Array.isArray(page.entries)).toBe(true);
+    const report = await integration.availability();
+    const byMember = new Map(
+      report.channel!.groups.flatMap((group) =>
+        group.members.map((member) => [member.member, member.state] as const),
+      ),
+    );
+    expect(byMember.get("reloadConfig")).toBe("implemented_unreachable");
+    expect(byMember.get("sessionList")).toBe("implemented_reachable");
+
+    // The operator's credential still has the whole surface.
+    const operator = createNataliaSDK({
+      baseURL: server.url,
+      token: "operator",
+    });
+    const turned = await operator.prompt("hello operator");
+    expect(turned.text).toBe("hello operator");
+  } finally {
+    server.stop();
+    await runtime.dispose?.();
+  }
+}, 60_000);
