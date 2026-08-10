@@ -107,7 +107,10 @@ export {
 export {
   attachRuntimeClientWorker,
   createWorkerRuntimeClient,
+  handleWorkerRequest,
+  WORKER_ROUTE_MEMBERS,
   type RuntimeWorkerPort,
+  type WorkerRuntimeClient,
 } from "./worker";
 export {
   createToolPolicyHookLayer,

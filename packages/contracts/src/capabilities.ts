@@ -188,6 +188,42 @@ export const UNIMPLEMENTED_QUERIES = {
 
 export type UnimplementedQuery = keyof typeof UNIMPLEMENTED_QUERIES;
 
+/**
+ * How one member fares on one channel. The distinction this whole report
+ * exists for: a runtime implements a member, but the connection you are on may
+ * not route it. "This runtime can do it" and "I can call it" are two facts.
+ */
+export type ChannelMemberState =
+  | "implemented_reachable"
+  | "implemented_unreachable"
+  | "not_implemented";
+
+export type ChannelCapabilityMember = {
+  member: string;
+  state: ChannelMemberState;
+  /** Why. Absent when the state speaks for itself. */
+  reason?: string;
+};
+
+export type ChannelCapabilityGroup = {
+  name: RuntimeCapabilityGroup;
+  /** Every member of the group is implemented on this runtime and routed on this channel. */
+  reachable: boolean;
+  /** Some but not all — usually a mistake worth looking at. */
+  partial: boolean;
+  members: ChannelCapabilityMember[];
+};
+
+/**
+ * The channel a report describes, when the caller asked about one. Absent means
+ * the report answers "what this runtime implements"; present means "what I can
+ * reach over this channel".
+ */
+export type ChannelCapabilityReport = {
+  name: string;
+  groups: ChannelCapabilityGroup[];
+};
+
 export type RuntimeCapabilityReport = {
   /** True when every required member is present; false means unusable, not degraded. */
   usable: boolean;
@@ -205,6 +241,12 @@ export type RuntimeCapabilityReport = {
    * build a feature on these.
    */
   unimplemented: Array<{ member: UnimplementedQuery; reason: string }>;
+  /**
+   * Per-channel reachability. The host computes it by intersecting what this
+   * runtime implements with the channel's route table — the route table is the
+   * only fact source, there is no second hand-maintained list.
+   */
+  channel?: ChannelCapabilityReport;
 };
 
 /**
@@ -213,6 +255,13 @@ export type RuntimeCapabilityReport = {
  */
 export function describeRuntimeCapabilities(
   client: RuntimeClient,
+  channel?: {
+    name: string;
+    /** The channel's route table, as member names. The caller owns this. */
+    routedMembers: ReadonlySet<string>;
+    /** Optional per-member reason for the unreachable state. */
+    unreachableReasons?: Readonly<Record<string, string>>;
+  },
 ): RuntimeCapabilityReport {
   const has = (member: string) =>
     typeof (client as unknown as Record<string, unknown>)[member] ===
@@ -232,10 +281,51 @@ export function describeRuntimeCapabilities(
       missing,
     };
   });
+  const channelReport = channel
+    ? {
+        name: channel.name,
+        groups: (
+          Object.keys(RUNTIME_CAPABILITY_GROUPS) as RuntimeCapabilityGroup[]
+        ).map((name) => {
+          const members = RUNTIME_CAPABILITY_GROUPS[name] as readonly string[];
+          const memberStates = members.map((member) => {
+            if (!has(member))
+              return {
+                member,
+                state: "not_implemented" as const,
+                reason: "this runtime does not implement it",
+              };
+            if (channel.routedMembers.has(member))
+              return { member, state: "implemented_reachable" as const };
+            return {
+              member,
+              state: "implemented_unreachable" as const,
+              reason:
+                channel.unreachableReasons?.[member] ??
+                "this transport does not route it",
+            };
+          });
+          const reachable = memberStates.every(
+            (member) => member.state === "implemented_reachable",
+          );
+          const unreachableCount = memberStates.filter(
+            (member) => member.state === "implemented_unreachable",
+          ).length;
+          return {
+            name,
+            reachable,
+            partial:
+              unreachableCount > 0 && unreachableCount < memberStates.length,
+            members: memberStates,
+          };
+        }),
+      }
+    : undefined;
   return {
     usable: missingRequired.length === 0,
     missingRequired: [...missingRequired],
     groups,
+    channel: channelReport,
     unimplemented: (Object.keys(UNIMPLEMENTED_QUERIES) as UnimplementedQuery[])
       .filter((member) => has(member))
       .map((member) => ({ member, reason: UNIMPLEMENTED_QUERIES[member] })),

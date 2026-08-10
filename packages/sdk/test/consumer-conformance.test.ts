@@ -312,6 +312,31 @@ test("a consumer can ask what this runtime implements, without guessing", async 
     ]);
     for (const entry of report.unimplemented)
       expect(entry.reason).toMatch(/yet/u);
+
+    // The channel dimension (P0-B): what this connection can reach is a
+    // separate fact from what the runtime implements. A consumer driving the
+    // runtime over RPC must not build on the native terminal or intelligence
+    // surfaces yet — the report says so instead of letting it fail at runtime.
+    expect(report.channel?.name).toBe("rpc");
+    const channelByMember = new Map(
+      report.channel!.groups.flatMap((group) =>
+        group.members.map((member) => [member.member, member.state] as const),
+      ),
+    );
+    for (const member of [
+      "nativeTerminalList",
+      "nativeTerminalOpenHub",
+      "constitutionRules",
+      "capabilities",
+    ])
+      expect(channelByMember.get(member)).toBe("implemented_unreachable");
+    const nativeGroup = report.channel!.groups.find(
+      (group) => group.name === "nativeTerminal",
+    )!;
+    expect(nativeGroup.reachable).toBe(false);
+    // What the RPC channel does reach is ordinary and healthy.
+    expect(channelByMember.get("sessionList")).toBe("implemented_reachable");
+    expect(channelByMember.get("history")).toBe("implemented_reachable");
   });
 }, 60_000);
 

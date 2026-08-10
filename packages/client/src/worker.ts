@@ -1,3 +1,4 @@
+import { describeRuntimeCapabilities } from "@natalia/contracts";
 import type {
   ApprovalResponse,
   QuestionResponse,
@@ -6,6 +7,61 @@ import type {
   SubmitInput,
   SubmittedTurn,
 } from "@natalia/contracts";
+
+/**
+ * The worker channel's route table, mirroring `handleWorkerRequest` below.
+ * Same discipline as the RPC route table: reachability for the worker channel
+ * is computed from this, and the channel's gaps (checkpoint, secure-input
+ * control, MCP, work graph...) show up in the report instead of being silent.
+ * A test asserts this table matches the handler dispatch.
+ */
+export const WORKER_ROUTE_MEMBERS = {
+  submit: "submit",
+  cancel: "cancel",
+  pause: "pause",
+  resume: "resume",
+  "runtime.status": "runtimeStatus",
+  "runtime.availability": null,
+  snapshot: "snapshot",
+  diagnostic: "diagnostic",
+  approval: "respondApproval",
+  question: "respondQuestion",
+  "interactive.pending": "pendingInteractive",
+  "config.reload": "reloadConfig",
+  dispose: "dispose",
+  history: "history",
+  diagnostics: "diagnostics",
+  messages: "messages",
+  agents: "agents",
+  "model.catalog": "modelCatalog",
+  "model.selection": "modelSelection",
+  "model.select": "selectModel",
+  skills: "skills",
+  "workspace.files": "workspaceFiles",
+  "workspace.search": "workspaceSearch",
+  "workspace.list": "workspaceList",
+  "workspace.read": "workspaceRead",
+  "workspace.glob": "workspaceGlob",
+  "native-terminal.list": "nativeTerminalList",
+  "native-terminal.read": "nativeTerminalRead",
+  "native-terminal.open-hub": "nativeTerminalOpenHub",
+  "native-terminal.release-human-control": "nativeTerminalReleaseHumanControl",
+  "native-terminal.revoke-approval-scope": "nativeTerminalRevokeApprovalScope",
+  "native-terminal.stop": "nativeTerminalStop",
+  "session.list": "sessionList",
+  "session.touch": "sessionTouch",
+  "session.rename": "sessionRename",
+  "session.pin": "sessionPin",
+  "session.duplicate": "sessionDuplicate",
+  "session.delete": "sessionDelete",
+} as const satisfies Readonly<Record<string, keyof RuntimeClient | null>>;
+
+/** The member names this channel routes, for reachability reporting. */
+export const WORKER_ROUTED_MEMBERS: ReadonlySet<string> = new Set(
+  (Object.values(WORKER_ROUTE_MEMBERS) as Array<string | null>).filter(
+    (member): member is string => typeof member === "string",
+  ),
+);
 
 type WorkerRequest = {
   type: "runtime.request";
@@ -47,7 +103,8 @@ type WorkerRequest = {
     | "session.rename"
     | "session.pin"
     | "session.duplicate"
-    | "session.delete";
+    | "session.delete"
+    | "runtime.availability";
   value?: unknown;
 };
 
@@ -72,9 +129,13 @@ export type RuntimeWorkerPort = {
   ): void;
 };
 
+export type WorkerRuntimeClient = RuntimeClient & {
+  availability(): Promise<import("@natalia/contracts").RuntimeCapabilityReport>;
+};
+
 export function createWorkerRuntimeClient(
   port: RuntimeWorkerPort,
-): RuntimeClient {
+): WorkerRuntimeClient {
   const pending = new Map<
     string,
     { resolve(value: unknown): void; reject(error: Error): void }
@@ -126,6 +187,12 @@ export function createWorkerRuntimeClient(
   return {
     start(onEvent) {
       sink = onEvent;
+    },
+    /** What this channel can reach: the worker route table intersected with the runtime. */
+    async availability() {
+      return (await request("runtime.availability")) as Awaited<
+        ReturnType<typeof describeRuntimeCapabilities>
+      >;
     },
     async submit(text) {
       return (await request("submit", { text })) as SubmittedTurn;
@@ -380,7 +447,7 @@ export function attachRuntimeClientWorker(
   });
 }
 
-async function handleWorkerRequest(
+export async function handleWorkerRequest(
   client: RuntimeClient,
   request: WorkerRequest,
 ) {
@@ -479,5 +546,12 @@ async function handleWorkerRequest(
     return await client.sessionDelete?.(request.value as string);
   if (request.method === "approval")
     return client.respondApproval(request.value as ApprovalResponse);
-  return client.respondQuestion(request.value as QuestionResponse);
+  if (request.method === "question")
+    return client.respondQuestion(request.value as QuestionResponse);
+  if (request.method === "runtime.availability")
+    return describeRuntimeCapabilities(client, {
+      name: "worker",
+      routedMembers: WORKER_ROUTED_MEMBERS,
+    });
+  throw new Error(`worker channel does not route ${request.method}`);
 }

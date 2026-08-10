@@ -99,6 +99,77 @@ function optionsGuard<K extends OptionalRuntimeMember>(
   requireMember(client, member);
 }
 
+/**
+ * The route table: every JSON-RPC method this transport serves, and the
+ * `RuntimeClient` member behind it. This is the single fact source for
+ * per-channel reachability — the availability report intersects what the
+ * runtime implements with this table, so "I can call it" is computed from the
+ * dispatch code itself and cannot drift from it. A test scans this file and
+ * fails when a route block appears without a row here, or a row has no block.
+ */
+export const RPC_ROUTE_MEMBERS = {
+  prompt: "submit",
+  cancel: "cancel",
+  snapshot: "snapshot",
+  "approval.respond": "respondApproval",
+  "question.respond": "respondQuestion",
+  "interactive.pending": "pendingInteractive",
+  "session.history": "history",
+  "session.messages": "messages",
+  pause: "pause",
+  resume: "resume",
+  "config.canReload": "canReloadConfig",
+  "config.reload": "reloadConfig",
+  "agent.list": "agents",
+  "agent.select": "selectAgent",
+  "model.catalog": "modelCatalog",
+  "model.selection": "modelSelection",
+  "model.select": "selectModel",
+  "skills.list": "skills",
+  "workspace.files": "workspaceFiles",
+  "workspace.search": "workspaceSearch",
+  "workspace.list": "workspaceList",
+  "workspace.read": "workspaceRead",
+  "workspace.glob": "workspaceGlob",
+  "checkpoint.list": "checkpointList",
+  "checkpoint.preview": "checkpointPreview",
+  "checkpoint.rollback": "checkpointRollback",
+  "sandbox.list": "sandboxList",
+  "sandbox.diff": "sandboxDiff",
+  "sandbox.resources": "sandboxResources",
+  "sandbox.resource.output": "sandboxResourceOutput",
+  "sandbox.merge": "sandboxMerge",
+  "sandbox.delete": "sandboxDelete",
+  "sandbox.resource.stop": "sandboxResourceStop",
+  "session.list": "sessionList",
+  "session.touch": "sessionTouch",
+  "session.rename": "sessionRename",
+  "session.pin": "sessionPin",
+  "session.duplicate": "sessionDuplicate",
+  "session.fork": "sessionFork",
+  "session.delete": "sessionDelete",
+  "mcp.catalog": "mcpCatalog",
+  "mcp.prompt": "getMcpPrompt",
+  "mcp.resource": "readMcpResource",
+  "plugin.list": "plugins",
+  "command.catalog": "commandCatalog",
+  "task.overview": "taskOverview",
+  "flow.overview": "flowOverview",
+  "document.catalog": "documentCatalog",
+  "runtime.availability": null,
+  "runtime.status": "runtimeStatus",
+  "diagnostics.list": "diagnostics",
+  "workgraph.nodes": "workGraphNodes",
+  "workgraph.edges": "workGraphEdges",
+} as const satisfies Readonly<Record<string, keyof RuntimeClient | null>>;
+
+/** The member names this transport routes. `null` rows (availability itself) excluded. */
+export const RPC_ROUTED_MEMBERS: ReadonlySet<string> = new Set(
+  (Object.values(RPC_ROUTE_MEMBERS) as Array<string | null>).filter(
+    (member): member is string => typeof member === "string",
+  ),
+);
+
 export async function handleRPCMessage(
   raw: unknown,
   client: RuntimeClient,
@@ -111,6 +182,12 @@ export async function handleRPCMessage(
   try {
     if (!request) throw new RuntimeInvalidRequest();
     const body = request;
+    // The route table is the authority for what a method is: a name with no row
+    // here is `-32601 method not found`, before any dispatch block runs. The
+    // table also feeds the availability report, so reachability is computed from
+    // the same fact.
+    if (!(body.method && body.method in RPC_ROUTE_MEMBERS))
+      throw new RuntimeMethodNotFound(body.method ?? "");
     if (request.method === "prompt") {
       const text = request.params?.text;
       if (typeof text !== "string")
@@ -800,10 +877,19 @@ export async function handleRPCMessage(
       // answers "what does this runtime implement", and a runtime that implements
       // little must still be able to say so. Asking the runtime to declare it
       // would let the declaration drift from the code.
+      //
+      // The report carries the RPC channel's own reachability: what the runtime
+      // implements intersected with the route table above. A consumer can now
+      // tell "this runtime cannot" from "this connection cannot reach it" — the
+      // `terminal`/`terminalSharing` retirement and the P0-B gap list both show
+      // up here before any code outside this package does.
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: describeRuntimeCapabilities(client),
+        result: describeRuntimeCapabilities(client, {
+          name: "rpc",
+          routedMembers: RPC_ROUTED_MEMBERS,
+        }),
       };
     }
     if (body.method === "runtime.status") {
@@ -866,9 +952,9 @@ export async function handleRPCMessage(
         ),
       };
     }
-    // No route by that name. `-32601`, not `-32602`: a consumer that gets this
-    // is talking to a runtime older or newer than it expects, or has a typo —
-    // both call for a different reaction than fixing an argument.
+    // A name the route table accepted but no dispatch block serves: the table
+    // and the code drifted. `-32601` still, so a consumer gets the same answer
+    // it would for a truly unknown name.
     throw new RuntimeMethodNotFound(body.method ?? "");
   } catch (error) {
     return {
