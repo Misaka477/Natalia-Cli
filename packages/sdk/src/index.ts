@@ -194,6 +194,14 @@ export type NataliaSDK = {
   documentCatalog(): Promise<
     import("@natalia/contracts").WorkflowDocumentChoice[]
   >;
+  /**
+   * What this runtime implements: the required members it has, which capability
+   * groups are complete, and which queries answer with nothing because their facts
+   * have no producer yet. Ask this instead of feature-detecting member by member —
+   * it is the only way to tell "not supported" from "not implemented yet" from
+   * "nothing recorded".
+   */
+  availability(): Promise<import("@natalia/contracts").RuntimeCapabilityReport>;
   runtimeStatus(): Promise<import("@natalia/contracts").RuntimeStatusSnapshot>;
   diagnostics(
     limit?: number,
@@ -337,6 +345,7 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     taskOverview: async () => await call("task.overview", {}),
     flowOverview: async () => await call("flow.overview", {}),
     documentCatalog: async () => await call("document.catalog", {}),
+    availability: async () => await call("runtime.availability", {}),
     runtimeStatus: async () => await call("runtime.status", {}),
     diagnostics: async (limit) =>
       await call("diagnostics.list", limit === undefined ? {} : { limit }),

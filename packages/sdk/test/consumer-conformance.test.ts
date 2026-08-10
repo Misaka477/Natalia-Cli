@@ -265,6 +265,54 @@ test("a consumer can discover contributed commands", async () => {
   });
 }, 60_000);
 
+test("a consumer can ask what this runtime implements, without guessing", async () => {
+  await withRuntime(async ({ baseURL }) => {
+    const sdk = createNataliaSDK({ baseURL, token: "secret" });
+    const report = await sdk.availability();
+
+    // A usable runtime says so, without the consumer probing 95 members one by one.
+    expect(report.usable).toBe(true);
+    expect(report.missingRequired).toEqual([]);
+
+    const available = report.groups
+      .filter((group) => group.available)
+      .map((group) => group.name);
+    expect(available).toContain("sessions");
+    expect(available).toContain("checkpoint");
+    expect(available).toContain("terminal");
+    expect(available).toContain("workGraph");
+
+    // The report has to be able to say no, or it says nothing. This runtime really
+    // is missing one member, and the report names it rather than rounding the
+    // capability up to "available":
+    //
+    // `canReloadConfig()` is implemented — a consumer can ask whether a config
+    // reload is allowed right now — but `reloadConfig()` is declared in the
+    // contract and implemented nowhere, and no RPC route or SDK method exposes it.
+    // So the precheck exists and the action does not, which is precisely what a
+    // consumer would otherwise discover at runtime.
+    const lifecycle = report.groups.find((group) => group.name === "lifecycle");
+    expect(lifecycle).toMatchObject({ available: false, partial: true });
+    expect(lifecycle?.missing).toEqual(["reloadConfig"]);
+
+    // A half-implemented capability is called out, never counted as present.
+    for (const group of report.groups)
+      expect(group.available && group.partial).toBe(false);
+
+    // And the five queries that answer with nothing are named, with a reason, so an
+    // empty array is not mistaken for "nothing recorded".
+    expect(report.unimplemented.map((entry) => entry.member).sort()).toEqual([
+      "constitutionRules",
+      "decisionRecords",
+      "driftFindings",
+      "evidenceRecords",
+      "registeredTools",
+    ]);
+    for (const entry of report.unimplemented)
+      expect(entry.reason).toMatch(/yet/u);
+  });
+}, 60_000);
+
 test("an unauthenticated consumer is refused", async () => {
   await withRuntime(async ({ baseURL }) => {
     const sdk = createNataliaSDK({ baseURL, token: "wrong" });

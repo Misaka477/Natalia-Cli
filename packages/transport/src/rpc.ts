@@ -1,3 +1,4 @@
+import { describeRuntimeCapabilities } from "@natalia/contracts";
 import type { RuntimeClient } from "@natalia/contracts";
 import type { RPCRequest, RPCResponse } from "./rpc-client";
 
@@ -993,6 +994,17 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.documentCatalog(),
+      };
+    }
+    if (body.method === "runtime.availability") {
+      // Derived from the client, so there is deliberately no options guard: this
+      // answers "what does this runtime implement", and a runtime that implements
+      // little must still be able to say so. Asking the runtime to declare it
+      // would let the declaration drift from the code.
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: describeRuntimeCapabilities(client),
       };
     }
     if (body.method === "runtime.status") {
