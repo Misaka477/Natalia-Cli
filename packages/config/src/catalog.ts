@@ -10,6 +10,7 @@ export interface CatalogModel {
     thinking: boolean;
     imageInput: boolean;
     pdfInput: boolean;
+    videoInput: boolean;
   };
 }
 

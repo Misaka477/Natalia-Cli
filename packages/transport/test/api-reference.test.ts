@@ -462,7 +462,9 @@ function resultTypeDictionary(): Array<{ name: string; fields: string }> {
   for (const file of readdirSync(dir)) {
     if (!file.endsWith(".ts")) continue;
     const text = readFileSync(join(dir, file), "utf8");
-    for (const match of text.matchAll(/export type ([A-Z][A-Za-z0-9_]*) = \{/gu)) {
+    for (const match of text.matchAll(
+      /export type ([A-Z][A-Za-z0-9_]*) = \{/gu,
+    )) {
       const name = match[1] ?? "";
       if (definitions.has(name)) continue;
       const start = match.index ?? 0;

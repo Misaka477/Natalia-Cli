@@ -16,6 +16,13 @@ function makeController(workspaceRoot: string, enabled: boolean) {
     context: () =>
       ({
         journalStatus: () => ({ tokenEstimate: 0, messageCount: 0 }),
+        durableCheckpoint: (step: number) => ({
+          entries: [],
+          journalOffset: step,
+          step,
+          tokenEstimate: 0,
+          compactionGeneration: 0,
+        }),
       }) as never,
     subagents: () => undefined,
     activeAbort: () => undefined,

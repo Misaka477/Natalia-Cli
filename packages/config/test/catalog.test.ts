@@ -392,6 +392,7 @@ test("catalog excludes providers denied by the configured policy", () => {
             thinking: true,
             imageInput: false,
             pdfInput: false,
+            videoInput: false,
           },
         },
       ],
@@ -422,6 +423,7 @@ test("catalog filters disabled and policy-denied models while preserving capabil
         thinking: false,
         imageInput: false,
         pdfInput: false,
+        videoInput: false,
       },
     },
   ]);

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { failureKind } from "@natalia/contracts";
@@ -1134,6 +1134,20 @@ test("an external integration configures the runtime the way the TUI does", asyn
 
 test("an external integration manages sessions, policy, agents and plugins over RPC", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-conformance-management-"));
+  // The demo plugin lives under a /tmp workspace; bun resolves bare
+  // specifiers by walking up from the importing file, so `@natalia/plugin`
+  // needs the same node_modules links the plugin test helpers install
+  // (plugin-test-helpers.ts). Without them this scenario is at the mercy of
+  // the process's resolution cache and fails in a fresh test run.
+  const scoped = join(root, "node_modules", "@natalia");
+  await mkdir(scoped, { recursive: true });
+  for (const pkg of ["plugin", "contracts"]) {
+    await symlink(
+      join(process.cwd(), "packages", pkg),
+      join(scoped, pkg),
+      "dir",
+    ).catch(() => undefined);
+  }
   await mkdir(join(root, ".natalia", "plugins", "demo.plugin"), {
     recursive: true,
   });
