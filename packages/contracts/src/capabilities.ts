@@ -222,6 +222,13 @@ export type ChannelCapabilityGroup = {
 export type ChannelCapabilityReport = {
   name: string;
   groups: ChannelCapabilityGroup[];
+  /**
+   * The required members on this channel, with the same three states. They are
+   * not part of any capability group, so this is where a consumer learns that
+   * `start` or `lastSubmission` is intentionally local (or, on a broken
+   * channel, missing).
+   */
+  requiredMembers: ChannelCapabilityMember[];
 };
 
 export type RuntimeCapabilityReport = {
@@ -284,6 +291,23 @@ export function describeRuntimeCapabilities(
   const channelReport = channel
     ? {
         name: channel.name,
+        requiredMembers: REQUIRED_RUNTIME_MEMBERS.map((member) => {
+          if (!has(member))
+            return {
+              member,
+              state: "not_implemented" as const,
+              reason: "this runtime does not implement it",
+            };
+          if (channel.routedMembers.has(member))
+            return { member, state: "implemented_reachable" as const };
+          return {
+            member,
+            state: "implemented_unreachable" as const,
+            reason:
+              channel.unreachableReasons?.[member] ??
+              "this transport does not route it",
+          };
+        }),
         groups: (
           Object.keys(RUNTIME_CAPABILITY_GROUPS) as RuntimeCapabilityGroup[]
         ).map((name) => {

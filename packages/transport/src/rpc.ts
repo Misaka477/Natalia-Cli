@@ -161,7 +161,42 @@ export const RPC_ROUTE_MEMBERS = {
   "diagnostics.list": "diagnostics",
   "workgraph.nodes": "workGraphNodes",
   "workgraph.edges": "workGraphEdges",
+  // --- P0-C: the reachability gap closed (audit list in the API plan §8.10) ---
+  "nativeTerminal.list": "nativeTerminalList",
+  "nativeTerminal.read": "nativeTerminalRead",
+  "nativeTerminal.stop": "nativeTerminalStop",
+  "nativeTerminal.openHub": "nativeTerminalOpenHub",
+  "nativeTerminal.revokeApprovalScope": "nativeTerminalRevokeApprovalScope",
+  "nativeTerminal.releaseHumanControl": "nativeTerminalReleaseHumanControl",
+  "nativeTerminal.beginSecureInput": "nativeTerminalBeginSecureInput",
+  "nativeTerminal.endSecureInput": "nativeTerminalEndSecureInput",
+  "constitution.rules": "constitutionRules",
+  "decision.records": "decisionRecords",
+  "evidence.records": "evidenceRecords",
+  "drift.findings": "driftFindings",
+  "tools.registered": "registeredTools",
+  capabilities: "capabilities",
+  "session.snapshot": "sessionSnapshot",
+  "submit.input": "submitInput",
 } as const satisfies Readonly<Record<string, keyof RuntimeClient | null>>;
+
+/**
+ * Members a remote caller must not reach, and why. These are routed *away* on
+ * purpose: a member here is reported as `implemented_unreachable` with this
+ * reason, so the availability report distinguishes "forgotten" from
+ * "intentionally local" — the P0-C invariant is that every unreachable member
+ * has a row in this table or does not exist on the runtime.
+ */
+export const RPC_INTENTIONALLY_LOCAL: Readonly<Record<string, string>> = {
+  dispose:
+    "intentionally local: a remote caller must not dispose another party's runtime",
+  start:
+    "intentionally local: remote consumers subscribe to /events instead of calling start",
+  lastSubmission:
+    "intentionally local: a local read of the most recent submission",
+  diagnostic:
+    "intentionally local: one-way publishing from a local caller, not a query",
+};
 
 /** The member names this transport routes. `null` rows (availability itself) excluded. */
 export const RPC_ROUTED_MEMBERS: ReadonlySet<string> = new Set(
@@ -830,6 +865,161 @@ export async function handleRPCMessage(
         result: await client.workGraphEdges(),
       };
     }
+    // --- P0-C: native terminal host ---
+    // Secure-input control and human-control release are authorization
+    // semantics: ending a human's secure input remotely is as strong as writing
+    // to the terminal. P0-D must scope them; until then they are routed but a
+    // no-host runtime refuses them anyway.
+    if (body.method === "nativeTerminal.list") {
+      optionsGuard(client, "nativeTerminalList");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.nativeTerminalList(),
+      };
+    }
+    if (body.method === "nativeTerminal.read") {
+      optionsGuard(client, "nativeTerminalRead");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.nativeTerminalRead(stringParam(body.params, "id")),
+      };
+    }
+    if (body.method === "nativeTerminal.stop") {
+      optionsGuard(client, "nativeTerminalStop");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.nativeTerminalStop(stringParam(body.params, "id")),
+      };
+    }
+    if (body.method === "nativeTerminal.openHub") {
+      optionsGuard(client, "nativeTerminalOpenHub");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.nativeTerminalOpenHub(),
+      };
+    }
+    if (body.method === "nativeTerminal.revokeApprovalScope") {
+      optionsGuard(client, "nativeTerminalRevokeApprovalScope");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.nativeTerminalRevokeApprovalScope(
+          stringParam(body.params, "id"),
+        ),
+      };
+    }
+    if (body.method === "nativeTerminal.releaseHumanControl") {
+      optionsGuard(client, "nativeTerminalReleaseHumanControl");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.nativeTerminalReleaseHumanControl(
+          stringParam(body.params, "id"),
+        ),
+      };
+    }
+    if (body.method === "nativeTerminal.beginSecureInput") {
+      optionsGuard(client, "nativeTerminalBeginSecureInput");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.nativeTerminalBeginSecureInput(
+          stringParam(body.params, "id"),
+        ),
+      };
+    }
+    if (body.method === "nativeTerminal.endSecureInput") {
+      optionsGuard(client, "nativeTerminalEndSecureInput");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.nativeTerminalEndSecureInput(
+          stringParam(body.params, "id"),
+        ),
+      };
+    }
+    // --- P0-C: intelligence queries and capability records ---
+    // These exist on the runtime, are routed now, and answer with nothing
+    // until there are writers — the report says so via `unimplemented`.
+    if (body.method === "constitution.rules") {
+      optionsGuard(client, "constitutionRules");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.constitutionRules(),
+      };
+    }
+    if (body.method === "decision.records") {
+      optionsGuard(client, "decisionRecords");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.decisionRecords(),
+      };
+    }
+    if (body.method === "evidence.records") {
+      optionsGuard(client, "evidenceRecords");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.evidenceRecords(),
+      };
+    }
+    if (body.method === "drift.findings") {
+      optionsGuard(client, "driftFindings");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.driftFindings(),
+      };
+    }
+    if (body.method === "tools.registered") {
+      optionsGuard(client, "registeredTools");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.registeredTools(),
+      };
+    }
+    if (body.method === "capabilities") {
+      optionsGuard(client, "capabilities");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.capabilities(),
+      };
+    }
+    if (body.method === "session.snapshot") {
+      optionsGuard(client, "sessionSnapshot");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.sessionSnapshot(),
+      };
+    }
+    // --- P0-C: submission with attachments, resources and agent mentions ---
+    if (body.method === "submit.input") {
+      const params = body.params;
+      if (!params || typeof params !== "object")
+        throw invalidParams("submit.input.params must be an object");
+      if (typeof params.text !== "string")
+        throw invalidParams("submit.input.params.text must be a string");
+      const input = params as Record<string, unknown>;
+      for (const field of ["attachments", "resources", "agents"] as const) {
+        const value = input[field];
+        if (value !== undefined && !Array.isArray(value))
+          throw invalidParams(`submit.input.params.${field} must be an array`);
+      }
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.submitInput?.(input as never),
+      };
+    }
     // Unattended work, read-only. These are the routes that let another program
     // inspect scheduled tasks and flows without running the CLI.
     if (body.method === "task.overview") {
@@ -889,6 +1079,9 @@ export async function handleRPCMessage(
         result: describeRuntimeCapabilities(client, {
           name: "rpc",
           routedMembers: RPC_ROUTED_MEMBERS,
+          // Members routed away on purpose keep their reason, so the report
+          // distinguishes "forgotten" from "intentionally local".
+          unreachableReasons: RPC_INTENTIONALLY_LOCAL,
         }),
       };
     }

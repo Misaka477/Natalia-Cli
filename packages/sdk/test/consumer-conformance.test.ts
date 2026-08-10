@@ -323,17 +323,26 @@ test("a consumer can ask what this runtime implements, without guessing", async 
         group.members.map((member) => [member.member, member.state] as const),
       ),
     );
+    // P0-C closed the gap: these are routed now. The whitelist members are the
+    // only implemented-but-unreachable surface left, and each says why.
     for (const member of [
       "nativeTerminalList",
       "nativeTerminalOpenHub",
       "constitutionRules",
       "capabilities",
+      "submitInput",
+      "sessionSnapshot",
     ])
-      expect(channelByMember.get(member)).toBe("implemented_unreachable");
+      expect(channelByMember.get(member)).toBe("implemented_reachable");
     const nativeGroup = report.channel!.groups.find(
       (group) => group.name === "nativeTerminal",
     )!;
-    expect(nativeGroup.reachable).toBe(false);
+    expect(nativeGroup.reachable).toBe(true);
+    expect(
+      report.channel!.requiredMembers.find(
+        (member) => member.member === "dispose",
+      ),
+    ).toBeUndefined();
     // What the RPC channel does reach is ordinary and healthy.
     expect(channelByMember.get("sessionList")).toBe("implemented_reachable");
     expect(channelByMember.get("history")).toBe("implemented_reachable");
@@ -523,4 +532,77 @@ test("a runtime implementing only the required set still answers, and says which
   } finally {
     server.stop();
   }
+}, 60_000);
+
+test("the P0-C route surface answers over HTTP: native terminal, intelligence, capabilities", async () => {
+  await withRuntime(async ({ baseURL }) => {
+    const sdk = createNataliaSDK({ baseURL, token: "secret" });
+    const failureKindOr = (promise: Promise<unknown>) =>
+      promise.then(
+        () => undefined,
+        (error: unknown) => failureKind(error),
+      );
+
+    // Native terminal without a host: every route exists (never -32601) and
+    // answers either empty or a refusal/internal — the route is there, the
+    // environment is not. Each call is awaited as it is made: a batch of
+    // already-started promises would be reported unhandled by bun while the
+    // earlier ones are still in flight.
+    expect(await sdk.nativeTerminalList()).toEqual([]);
+    for (const call of [
+      () => sdk.nativeTerminalRead("term_x"),
+      () => sdk.nativeTerminalStop("term_x"),
+      () => sdk.nativeTerminalOpenHub(),
+      () => sdk.nativeTerminalRevokeApprovalScope("term_x"),
+      () => sdk.nativeTerminalReleaseHumanControl("term_x"),
+      () => sdk.nativeTerminalBeginSecureInput("term_x"),
+      () => sdk.nativeTerminalEndSecureInput("term_x"),
+    ]) {
+      const kind = await failureKindOr(call());
+      expect(kind, "native terminal route must exist, not be -32601").not.toBe(
+        "methodNotFound",
+      );
+    }
+
+    // Intelligence queries and capability records: routed and answering with
+    // nothing, exactly as the availability report promises via `unimplemented`.
+    expect(await sdk.constitutionRules()).toEqual([]);
+    expect(await sdk.decisionRecords()).toEqual([]);
+    expect(await sdk.evidenceRecords()).toEqual([]);
+    expect(await sdk.driftFindings()).toEqual([]);
+    expect(await sdk.registeredTools()).toEqual([]);
+    // Capability records: the runtime registers real ones (the MCP server, the
+    // platform surface), so the shape is the assertion, not emptiness.
+    const capabilityRecords = await sdk.capabilities();
+    expect(capabilityRecords.length).toBeGreaterThan(0);
+    for (const record of capabilityRecords) {
+      expect(typeof record.id).toBe("string");
+      expect(typeof record.name).toBe("string");
+      expect(typeof record.version).toBe("string");
+      expect(Array.isArray(record.grants)).toBe(true);
+    }
+
+    // sessionSnapshot answers undefined or a snapshot — a value either way.
+    const snapshot = await sdk.sessionSnapshot();
+    expect(snapshot === undefined || typeof snapshot === "object").toBe(true);
+
+    // submitInput is a real submission with the richer input shape.
+    const submitted = await sdk.submitInput({ text: "via submit.input" });
+    expect(submitted.type).toBe("turn.submitted");
+    expect(submitted.text).toBe("via submit.input");
+
+    // And the report agrees: these are reachable now, whitelist members are not.
+    const report = await sdk.availability();
+    const byMember = new Map([
+      ...report.channel!.groups.flatMap((group) =>
+        group.members.map((member) => [member.member, member.state] as const),
+      ),
+      ...report.channel!.requiredMembers.map(
+        (member) => [member.member, member.state] as const,
+      ),
+    ]);
+    expect(byMember.get("nativeTerminalList")).toBe("implemented_reachable");
+    expect(byMember.get("constitutionRules")).toBe("implemented_reachable");
+    expect(byMember.get("dispose")).toBe("implemented_unreachable");
+  });
 }, 60_000);

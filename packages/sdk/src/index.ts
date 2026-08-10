@@ -2,6 +2,7 @@ import { RuntimeRPCError } from "@natalia/contracts";
 import type {
   ApprovalResponse,
   QuestionResponse,
+  RuntimeClient,
   RuntimeEvent,
   SubmittedTurn,
 } from "@natalia/contracts";
@@ -168,6 +169,82 @@ export type NataliaSDK = {
   /** Replayable causal facts, including the existing epi_* correlation id. */
   workGraphNodes(): Promise<import("@natalia/contracts").WorkGraphNodeView[]>;
   workGraphEdges(): Promise<import("@natalia/contracts").WorkGraphEdgeView[]>;
+  /** The native terminal host. P0-D scopes the secure-input members. */
+  nativeTerminalList(): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["nativeTerminalList"]>>>
+  >;
+  nativeTerminalRead(
+    id: string,
+  ): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["nativeTerminalRead"]>>>
+  >;
+  nativeTerminalStop(
+    id: string,
+  ): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["nativeTerminalStop"]>>>
+  >;
+  nativeTerminalOpenHub(): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["nativeTerminalOpenHub"]>>>
+  >;
+  nativeTerminalRevokeApprovalScope(
+    id: string,
+  ): Promise<
+    Awaited<
+      ReturnType<
+        NonNullable<RuntimeClient["nativeTerminalRevokeApprovalScope"]>
+      >
+    >
+  >;
+  nativeTerminalReleaseHumanControl(
+    id: string,
+  ): Promise<
+    Awaited<
+      ReturnType<
+        NonNullable<RuntimeClient["nativeTerminalReleaseHumanControl"]>
+      >
+    >
+  >;
+  nativeTerminalBeginSecureInput(
+    id: string,
+  ): Promise<
+    Awaited<
+      ReturnType<NonNullable<RuntimeClient["nativeTerminalBeginSecureInput"]>>
+    >
+  >;
+  nativeTerminalEndSecureInput(
+    id: string,
+  ): Promise<
+    Awaited<
+      ReturnType<NonNullable<RuntimeClient["nativeTerminalEndSecureInput"]>>
+    >
+  >;
+  /** Intelligence queries. Routed and reachable; answer empty until there are writers. */
+  constitutionRules(): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["constitutionRules"]>>>
+  >;
+  decisionRecords(): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["decisionRecords"]>>>
+  >;
+  evidenceRecords(): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["evidenceRecords"]>>>
+  >;
+  driftFindings(): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["driftFindings"]>>>
+  >;
+  registeredTools(): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["registeredTools"]>>>
+  >;
+  /** Loaded capability records, distinct from `availability()` (what is implemented). */
+  capabilities(): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["capabilities"]>>>
+  >;
+  sessionSnapshot(): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["sessionSnapshot"]>>>
+  >;
+  /** Submits a turn with attachments, resources and agent mentions. */
+  submitInput(
+    input: import("@natalia/contracts").SubmitInput,
+  ): Promise<import("@natalia/contracts").SubmittedTurn>;
   taskOverview(): Promise<import("@natalia/contracts").ScheduledTaskOverview>;
   flowOverview(): Promise<import("@natalia/contracts").FlowOverview>;
   documentCatalog(): Promise<
@@ -326,6 +403,26 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     commandCatalog: async () => await call("command.catalog", {}),
     workGraphNodes: async () => await call("workgraph.nodes", {}),
     workGraphEdges: async () => await call("workgraph.edges", {}),
+    nativeTerminalList: async () => await call("nativeTerminal.list", {}),
+    nativeTerminalRead: async (id) => await call("nativeTerminal.read", { id }),
+    nativeTerminalStop: async (id) => await call("nativeTerminal.stop", { id }),
+    nativeTerminalOpenHub: async () => await call("nativeTerminal.openHub", {}),
+    nativeTerminalRevokeApprovalScope: async (id) =>
+      await call("nativeTerminal.revokeApprovalScope", { id }),
+    nativeTerminalReleaseHumanControl: async (id) =>
+      await call("nativeTerminal.releaseHumanControl", { id }),
+    nativeTerminalBeginSecureInput: async (id) =>
+      await call("nativeTerminal.beginSecureInput", { id }),
+    nativeTerminalEndSecureInput: async (id) =>
+      await call("nativeTerminal.endSecureInput", { id }),
+    constitutionRules: async () => await call("constitution.rules", {}),
+    decisionRecords: async () => await call("decision.records", {}),
+    evidenceRecords: async () => await call("evidence.records", {}),
+    driftFindings: async () => await call("drift.findings", {}),
+    registeredTools: async () => await call("tools.registered", {}),
+    capabilities: async () => await call("capabilities", {}),
+    sessionSnapshot: async () => await call("session.snapshot", {}),
+    submitInput: async (input) => await call("submit.input", input),
     taskOverview: async () => await call("task.overview", {}),
     flowOverview: async () => await call("flow.overview", {}),
     documentCatalog: async () => await call("document.catalog", {}),

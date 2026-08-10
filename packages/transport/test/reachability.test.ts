@@ -7,9 +7,10 @@ import {
 } from "@natalia/contracts";
 import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
 import {
-  handleRPCMessage,
+  RPC_INTENTIONALLY_LOCAL,
   RPC_ROUTE_MEMBERS,
   RPC_ROUTED_MEMBERS,
+  handleRPCMessage,
 } from "../src/rpc";
 import { WORKER_ROUTE_MEMBERS } from "@natalia/client";
 
@@ -167,9 +168,9 @@ test("the remote report says implemented-but-unrouted for the P0-C work list", a
     ),
   );
 
-  // The P0-C work list: native terminal (8), intelligence queries (5),
-  // `capabilities`, plus the three this audit found (submitInput,
-  // sessionSnapshot, dispose).
+  // P0-C closed the gap: every member the runtime implements is routed now,
+  // including native terminal, the intelligence queries, capabilities,
+  // submitInput and sessionSnapshot.
   for (const member of [
     "nativeTerminalList",
     "nativeTerminalRead",
@@ -187,25 +188,44 @@ test("the remote report says implemented-but-unrouted for the P0-C work list", a
     "capabilities",
     "submitInput",
     "sessionSnapshot",
-    "dispose",
   ])
     expect(
       byMember.get(member),
-      `${member} should be implemented but unrouted`,
-    ).toBe("implemented_unreachable");
+      `${member} should be implemented and reachable after P0-C`,
+    ).toBe("implemented_reachable");
 
-  // The reasons are machine-readable, and the group conclusions follow: a
-  // group is reachable only when every member is.
+  // The only implemented-but-unreachable members are the whitelist, each with
+  // its own reason — the P0-C invariant: no unexplained unreachable members.
+  // `start`, `lastSubmission` and `diagnostic` are required members, so they
+  // live in `requiredMembers` rather than a capability group.
+  const allChannelMembers = [
+    ...report.channel!.groups.flatMap((group) => group.members),
+    ...report.channel!.requiredMembers,
+  ];
+  for (const [member, reason] of Object.entries(RPC_INTENTIONALLY_LOCAL)) {
+    expect(
+      allChannelMembers.find((entry) => entry.member === member)?.state,
+      `${member} must stay intentionally local`,
+    ).toBe("implemented_unreachable");
+    expect(
+      allChannelMembers.find((entry) => entry.member === member)!.reason,
+    ).toContain("intentionally local");
+    expect(reason.length).toBeGreaterThan(0);
+  }
+  expect(
+    allChannelMembers.find((entry) => entry.member === "start")!.state,
+  ).toBe("implemented_unreachable");
+
+  // Group conclusions follow: a group is reachable only when every member is.
   const native = report.channel!.groups.find(
     (group) => group.name === "nativeTerminal",
   )!;
-  expect(native.reachable).toBe(false);
-  expect(
-    native.members.every(
-      (member) => member.state === "implemented_unreachable",
-    ),
-  ).toBe(true);
-  expect(native.members[0]!.reason).toBe("this transport does not route it");
+  expect(native.reachable).toBe(true);
+  const lifecycle = report.channel!.groups.find(
+    (group) => group.name === "lifecycle",
+  )!;
+  expect(lifecycle.reachable).toBe(false);
+  expect(lifecycle.partial).toBe(true);
 });
 
 test("the in-process report is unchanged by the channel dimension", () => {
@@ -244,35 +264,10 @@ test("the implemented-unreachable set is exactly the P0-C input, and is reported
   const unreachable = (allMembers as string[])
     .filter((member) => !routed.has(member))
     .sort();
-  expect(unreachable).toEqual(
-    [
-      // P0-C: native terminal routes.
-      "nativeTerminalBeginSecureInput",
-      "nativeTerminalEndSecureInput",
-      "nativeTerminalList",
-      "nativeTerminalOpenHub",
-      "nativeTerminalRead",
-      "nativeTerminalReleaseHumanControl",
-      "nativeTerminalRevokeApprovalScope",
-      "nativeTerminalStop",
-      // P0-C: intelligence queries and capability records.
-      "capabilities",
-      "constitutionRules",
-      "decisionRecords",
-      "evidenceRecords",
-      "driftFindings",
-      "registeredTools",
-      // Found by this audit, not in the plan's original list.
-      "dispose",
-      "sessionSnapshot",
-      "submitInput",
-      // Required members that are deliberately not queries: local reads and
-      // one-way publishing. P0-C gives these an `intentionally local` reason.
-      "diagnostic",
-      "lastSubmission",
-      "start",
-    ].sort(),
-  );
+  // P0-C: every implemented member has a route except the whitelist. The
+  // diff-set is now exactly the whitelist — anything else appearing here is a
+  // regression (a member implemented but forgotten) and fails this test.
+  expect(unreachable).toEqual(Object.keys(RPC_INTENTIONALLY_LOCAL).sort());
 });
 
 test("the worker channel reports its own gaps instead of hiding them", async () => {
@@ -294,15 +289,17 @@ test("the worker channel reports its own gaps instead of hiding them", async () 
       group.members.map((member) => [member.member, member.state] as const),
     ),
   );
-  // The worker channel routes the native terminal *reads* but not the
-  // secure-input control — the gap P0-C closes on the RPC side shows up here
-  // with the same mechanism.
+  // P0-C aligned the worker channel: checkpoint and the secure-input control
+  // are routed now. The channel's remaining gaps (MCP, work graph, the
+  // intelligence surface) are still reported — that is the point, no silence.
   expect(byMember.get("nativeTerminalBeginSecureInput")).toBe(
-    "implemented_unreachable",
+    "implemented_reachable",
   );
-  expect(byMember.get("checkpointList")).toBe("implemented_unreachable");
+  expect(byMember.get("checkpointList")).toBe("implemented_reachable");
+  expect(byMember.get("checkpointRollback")).toBe("implemented_reachable");
   expect(byMember.get("mcpCatalog")).toBe("implemented_unreachable");
   expect(byMember.get("sessionFork")).toBe("implemented_unreachable");
+  expect(byMember.get("constitutionRules")).toBe("implemented_unreachable");
 });
 
 test("a member the runtime lacks is not_implemented, with its own reason", async () => {

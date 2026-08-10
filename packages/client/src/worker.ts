@@ -48,6 +48,11 @@ export const WORKER_ROUTE_MEMBERS = {
   "native-terminal.release-human-control": "nativeTerminalReleaseHumanControl",
   "native-terminal.revoke-approval-scope": "nativeTerminalRevokeApprovalScope",
   "native-terminal.stop": "nativeTerminalStop",
+  "native-terminal.begin-secure-input": "nativeTerminalBeginSecureInput",
+  "native-terminal.end-secure-input": "nativeTerminalEndSecureInput",
+  "checkpoint.list": "checkpointList",
+  "checkpoint.preview": "checkpointPreview",
+  "checkpoint.rollback": "checkpointRollback",
   "session.list": "sessionList",
   "session.touch": "sessionTouch",
   "session.rename": "sessionRename",
@@ -98,6 +103,11 @@ type WorkerRequest = {
     | "native-terminal.release-human-control"
     | "native-terminal.revoke-approval-scope"
     | "native-terminal.stop"
+    | "native-terminal.begin-secure-input"
+    | "native-terminal.end-secure-input"
+    | "checkpoint.list"
+    | "checkpoint.preview"
+    | "checkpoint.rollback"
     | "session.list"
     | "session.touch"
     | "session.rename"
@@ -314,6 +324,34 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["nativeTerminalStop"]>>
       >;
     },
+    async nativeTerminalBeginSecureInput(id) {
+      return (await request(
+        "native-terminal.begin-secure-input",
+        id,
+      )) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["nativeTerminalBeginSecureInput"]>>
+      >;
+    },
+    async nativeTerminalEndSecureInput(id) {
+      return (await request("native-terminal.end-secure-input", id)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["nativeTerminalEndSecureInput"]>>
+      >;
+    },
+    async checkpointList() {
+      return (await request("checkpoint.list")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["checkpointList"]>>
+      >;
+    },
+    async checkpointPreview(id) {
+      return (await request("checkpoint.preview", id)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["checkpointPreview"]>>
+      >;
+    },
+    async checkpointRollback(input) {
+      return (await request("checkpoint.rollback", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["checkpointRollback"]>>
+      >;
+    },
     async sessionList() {
       return (await request("session.list")) as Awaited<
         ReturnType<NonNullable<RuntimeClient["sessionList"]>>
@@ -507,6 +545,20 @@ export async function handleWorkerRequest(
     );
   if (request.method === "native-terminal.stop")
     return await client.nativeTerminalStop?.(request.value as string);
+  if (request.method === "native-terminal.begin-secure-input")
+    return await client.nativeTerminalBeginSecureInput?.(
+      request.value as string,
+    );
+  if (request.method === "native-terminal.end-secure-input")
+    return await client.nativeTerminalEndSecureInput?.(request.value as string);
+  if (request.method === "checkpoint.list")
+    return await client.checkpointList?.();
+  if (request.method === "checkpoint.preview")
+    return await client.checkpointPreview?.(request.value as string);
+  if (request.method === "checkpoint.rollback")
+    return await client.checkpointRollback?.(
+      request.value as { id: string; dryRun?: boolean },
+    );
   if (request.method === "cancel")
     return client.cancel(
       typeof request.value === "string" ? request.value : undefined,
