@@ -388,11 +388,12 @@ Three behaviours worth knowing before you build on them:
   listable and exportable); `exportSession` (`session.export`) dumps the
   journal as `{ seq, event }` pairs. `attachSession(id)` (`session.attach`)
   makes an existing record the active session without rebuilding the host
-  process. It refuses while a turn, approval, or question is active, so a
-  completion cannot land in the wrong journal; session-scoped approvals are
-  cleared rather than carried across. Attach is the first multi-session
-  control-plane step, **not** parallel multi-session execution yet: this
-  runtime still has one active session at a time.
+  process. It switches the session presented to the UI and direct calls; a
+  turn, approval, or question already owned by another session continues in
+  the background and records to that session's own journal. Session-scoped
+  approvals remain with their owning session. Attach is therefore a
+  multi-session focus operation, not a cancellation or migration of in-flight
+  work.
 - **The remaining session-record members are metadata operations; they never
   touch the journal.** `sessionTouch(id)` refreshes `lastAccessedAt`;
   `sessionRename(id, title)` changes the title (an empty title is refused);
@@ -602,8 +603,10 @@ plan around them rather than discover them:
   only. Plugins can contribute tools, commands and event listeners, but a
   plugin is `import()`ed in-process with path containment, no VM, no
   filesystem restriction and no timeout — **a plugin is trusted code, not a
-  sandbox**. The `settings`, `workflows` and `projection` grants are declared
-  but no host code reads them yet; contributing them is currently inert.
+  sandbox**. The public `settings` RPC surface is active; the extension grants
+  for plugin-contributed `settings`, `workflows` and `projection` still have
+  no host-side contribution handlers, so declaring those grants alone adds no
+  plugin behavior yet.
 - **Five fact queries answer empty** until their production writers exist
   (§6). Do not build a feature on them.
 - **Terminal writes are host-gated, off by default.** The `nativeTerminal`
@@ -872,7 +875,7 @@ Deployment notes:
 | `config.canReload`                   | `canReloadConfig`                   | lifecycle        | read  |
 | `config.reload`                      | `reloadConfig`                      | lifecycle        | write |
 | `config.update`                      | `updateConfig`                      | lifecycle        | write |
-| `settings.get`                       | `settingsGet`                       | settings         | write |
+| `settings.get`                       | `settingsGet`                       | settings         | read  |
 | `settings.set`                       | `settingsSet`                       | settings         | write |
 | `agent.list`                         | `agents`                            | selection        | read  |
 | `agent.select`                       | `selectAgent`                       | selection        | write |
@@ -955,7 +958,7 @@ Deployment notes:
 | `flow.delete`                        | `deleteFlowDocument`                | automation       | write |
 | `task.preview`                       | `taskPermissionPreview`             | automation       | read  |
 
-### Write surface (`RPC_WRITE_METHODS`, 48 methods; read-only credentials get `-32001 refused`)
+### Write surface (`RPC_WRITE_METHODS`, 47 methods; read-only credentials get `-32001 refused`)
 
 - `prompt`
 - `cancel`
@@ -968,7 +971,6 @@ Deployment notes:
 - `model.select`
 - `config.reload`
 - `config.update`
-- `settings.get`
 - `settings.set`
 - `checkpoint.rollback`
 - `sandbox.merge`

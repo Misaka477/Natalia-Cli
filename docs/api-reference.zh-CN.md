@@ -320,10 +320,10 @@ transcript 与 session 记录可按游标、按序列读取：
   铸造 `ses_…` id）。`archiveSession`（`session.archive`）标记
   `archived: true`（仍可列出与导出）；`exportSession`（`session.export`）
   以 `{ seq, event }` 对导出 journal。`attachSession(id)`（`session.attach`）可在不重建
-  host 进程的前提下，把已有记录设为活动 session。回合、审批或提问仍在进行时会拒绝，
-  避免完成结果落进错误的 journal；会话级审批不会跨 session 继承。attach 是多会话
-  控制面的第一步，**尚不是**并行多会话执行：当前 runtime 同一时间仍只有一个活动
-  session。
+  host 进程的前提下，把已有记录设为活动 session。它只切换 UI 与直接调用所呈现的
+  session；已经由另一 session 所有的回合、审批或提问在后台继续，并落入其自己的
+  journal。会话级审批保留在所属 session。attach 因而是多会话焦点操作，不取消也不
+  迁移在途工作。
 - **其余会话记录成员是元数据操作，不动 journal。** `sessionTouch(id)` 刷新
   `lastAccessedAt`；`sessionRename(id, title)` 改标题（空标题拒绝）；
   `sessionPin(id, pinned)` 设置/取消置顶。`sessionDuplicate(id, title?)` 复制
@@ -483,8 +483,9 @@ conformance 套件 `packages/sdk/test/consumer-conformance.test.ts` 是本文档
 - **无 out-of-tree capability 加载。** 能力仅在仓库内注册。plugin 可贡献 tools、
   commands 与事件监听，但 plugin 是进程内 `import()` 加载，仅路径包含与扩展名
   白名单，无 VM、无文件系统限制、无超时——**plugin 是可信代码，不是沙箱**。
-  `settings`、`workflows`、`projection` 三个 grant 已声明但 host 无代码读取；
-  贡献它们目前是惰性的。
+  公开 `settings` RPC 面已经生效；但供 plugin 贡献 `settings`、`workflows`、
+  `projection` 的 extension grant 仍没有 host 侧贡献处理器，因此仅声明这些 grant
+  目前不会增加 plugin 行为。
 - **五个事实查询恒空**，直到其生产写入方出现（§6）。不要基于它们构建功能。
 - **终端写面由 host 门控，默认关闭。** `nativeTerminal` 组经 RPC 暴露完整的
   交互式终端面：`list`、`read`、`start`、`write`、`resize`、`stop`、`openHub`、
@@ -729,7 +730,7 @@ createRuntimeHttpServer({
 | `config.canReload`                   | `canReloadConfig`                   | lifecycle        | read  |
 | `config.reload`                      | `reloadConfig`                      | lifecycle        | write |
 | `config.update`                      | `updateConfig`                      | lifecycle        | write |
-| `settings.get`                       | `settingsGet`                       | settings         | write |
+| `settings.get`                       | `settingsGet`                       | settings         | read  |
 | `settings.set`                       | `settingsSet`                       | settings         | write |
 | `agent.list`                         | `agents`                            | selection        | read  |
 | `agent.select`                       | `selectAgent`                       | selection        | write |
@@ -812,7 +813,7 @@ createRuntimeHttpServer({
 | `flow.delete`                        | `deleteFlowDocument`                | automation       | write |
 | `task.preview`                       | `taskPermissionPreview`             | automation       | read  |
 
-### Write surface (`RPC_WRITE_METHODS`, 48 methods; read-only credentials get `-32001 refused`)
+### Write surface (`RPC_WRITE_METHODS`, 47 methods; read-only credentials get `-32001 refused`)
 
 - `prompt`
 - `cancel`
@@ -825,7 +826,6 @@ createRuntimeHttpServer({
 - `model.select`
 - `config.reload`
 - `config.update`
-- `settings.get`
 - `settings.set`
 - `checkpoint.rollback`
 - `sandbox.merge`

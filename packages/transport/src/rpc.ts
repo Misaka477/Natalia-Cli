@@ -257,7 +257,6 @@ export const RPC_WRITE_METHODS: ReadonlySet<string> = new Set([
   "model.select",
   "config.reload",
   "config.update",
-  "settings.get",
   "settings.set",
   "checkpoint.rollback",
   "sandbox.merge",

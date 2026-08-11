@@ -1496,9 +1496,9 @@ export type RuntimeClient = {
   }>;
   /**
    * Makes an existing durable session the active session of this runtime without
-   * rebuilding the host process. It is refused while this runtime has a turn or
-   * interactive request in flight: switching the closure underneath either would
-   * make the completion land in the wrong journal.
+   * rebuilding the host process. An in-flight turn remains owned by its current
+   * session and continues in the background; attach switches only the session
+   * this runtime presents to its UI and direct calls.
    */
   sessionAttach?(id: string): Promise<{ sessionID: string }>;
   mcpCatalog?(): Promise<MCPCatalogSnapshot>;

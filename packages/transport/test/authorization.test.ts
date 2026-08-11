@@ -117,6 +117,7 @@ function controllableClient() {
     "evidenceRecords",
     "driftFindings",
     "registeredTools",
+    "settingsGet",
   ])
     client[member] = () => undefined;
   client.start = (handler: (event: RuntimeEvent) => void) => {
@@ -138,6 +139,7 @@ function controllableClient() {
   client.publish = (event: RuntimeEvent) => sink?.(event);
   client.workspaceList = async () => [];
   client.sessionList = async () => [];
+  client.settingsGet = async () => ({ config: {}, sources: [] });
   return client as RuntimeClient & {
     publish(event: RuntimeEvent): void;
   };
@@ -285,6 +287,9 @@ test("a read-only credential cannot write, and the refusal does not leak existen
     // Reads still work with the same credential.
     const { result } = await rpc(server, "readonly", "session.list");
     expect(result).toEqual([]);
+    const settings = await rpc(server, "readonly", "settings.get");
+    expect(settings.error).toBeUndefined();
+    expect(settings.result).toEqual({ config: {}, sources: [] });
   } finally {
     server.stop();
   }
@@ -299,6 +304,8 @@ test("the write surface is an enumerated, test-pinned list", () => {
     expect(method.length).toBeGreaterThan(0);
   expect(RPC_WRITE_METHODS.has("sandbox.merge")).toBe(true);
   expect(RPC_WRITE_METHODS.has("config.reload")).toBe(true);
+  expect(RPC_WRITE_METHODS.has("settings.get")).toBe(false);
+  expect(RPC_WRITE_METHODS.has("settings.set")).toBe(true);
   expect(RPC_WRITE_METHODS.has("checkpoint.rollback")).toBe(true);
   expect(RPC_WRITE_METHODS.has("session.delete")).toBe(true);
   expect(RPC_WRITE_METHODS.has("session.new")).toBe(true);
