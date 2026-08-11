@@ -6973,6 +6973,57 @@ test("releasing a pane that is not the pending one does not resume or clear stat
   }
 }, 30_000);
 
+test("D5.3: a session approval stays with its session across attach", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-d53-grants-"));
+  let approvalCount = 0;
+  const provider: StreamingProvider = {
+    provider: "d53",
+    model: "d53",
+    async *stream(request) {
+      if (!request.messages.some((message) => message.role === "tool"))
+        yield {
+          type: "tool_call",
+          calls: [
+            {
+              id: `call_${crypto.randomUUID()}`,
+              name: "run_shell",
+              arguments: JSON.stringify({ command: "pwd" }),
+            },
+          ],
+        };
+      yield { type: "done" };
+    },
+  };
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_d53_a",
+    provider,
+  });
+  client.start((event) => {
+    if (event.type !== "approval.request") return;
+    approvalCount++;
+    client.respondApproval({ requestID: event.id, decision: "session" });
+  });
+  try {
+    await client.sessionNew?.({ id: "ses_d53_b", title: "B" });
+    await client.submit("a1");
+    await client.submit("a2");
+    expect(approvalCount).toBe(1);
+
+    // Session B has no grants: its first call asks again.
+    await client.sessionAttach?.("ses_d53_b");
+    await client.submit("b1");
+    expect(approvalCount).toBe(2);
+
+    // Attaching back to A restores A's grant: it was A's, never B's.
+    await client.sessionAttach?.("ses_d53_a");
+    await client.submit("a3");
+    expect(approvalCount).toBe(2);
+  } finally {
+    await client.dispose?.();
+  }
+}, 30_000);
+
 test("permission management: save validates, delete refuses the default, both persist", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-permission-manage-"));
   await mkdir(join(root, ".natalia"), { recursive: true });

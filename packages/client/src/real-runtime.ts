@@ -525,6 +525,7 @@ export function createRealRuntimeClient(
     abortSignal: () => activeAbort?.signal,
     activeTurnID: () => activeTurnID,
     isPending: (id, kind) => isPendingInteractiveRequest(id, kind),
+    sessionIDForTurn: (turnID) => turnSession.get(turnID) ?? sessionID,
   });
   let sink: ((event: RuntimeEvent) => void) | undefined;
   let replayMode: "all" | "none" = "all";
@@ -537,6 +538,12 @@ export function createRealRuntimeClient(
    * purpose; consumed by the turn-finish path in `publish`.
    */
   let endTurnWaitingHuman: { terminalID: string; reason: string } | undefined;
+  /**
+   * Which session each turn was submitted to. With parallel sessions a turn
+   * keeps running after the UI attaches elsewhere, and its approvals must be
+   * judged against the session it belongs to — never the attached one.
+   */
+  const turnSession = new Map<string, SessionID>();
   let paused = false;
   let pauseWaiters: Array<() => void> = [];
   let ready: Promise<void> | undefined;
@@ -1416,11 +1423,13 @@ export function createRealRuntimeClient(
     ) {
       const pending = endTurnWaitingHuman;
       endTurnWaitingHuman = undefined;
+      turnSession.delete(event.id);
       if (pending && session) void setPendingHumanTerminal(pending);
     } else if (event.type === "turn.finished") {
       // Any other settlement discards a stale marker: a request_human call
       // from a turn that later failed must not bleed into the next turn.
       endTurnWaitingHuman = undefined;
+      turnSession.delete(event.id);
     }
     // TERM-M.3 (c): when the human releases the requested pane, the runtime
     // starts the continuation turn automatically. Replay never passes through
@@ -1716,6 +1725,7 @@ export function createRealRuntimeClient(
       return submitted;
     }
     lastSubmitted = submitted;
+    turnSession.set(id, sessionID);
     publish(submitted);
     // One Work Graph node per turn. The prompt itself is not recorded: it can
     // contain anything, and the graph is replayable and shareable.
@@ -1904,7 +1914,6 @@ export function createRealRuntimeClient(
     toolCalls.clear();
     attachmentReferences.clear();
     runtimeDiagnostics.splice(0);
-    interactive.reset();
     context.restore({ entries: [], resources: [] });
     applyAgentPolicy();
     applyAgentProvider();

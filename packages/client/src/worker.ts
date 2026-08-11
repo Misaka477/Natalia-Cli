@@ -133,7 +133,7 @@ type WorkerRequest = {
     | "session.touch"
     | "session.rename"
     | "session.pin"
-    |     "session.duplicate"
+    | "session.duplicate"
     | "session.delete"
     | "session.attach"
     | "session.fork"
@@ -748,8 +748,7 @@ export async function handleWorkerRequest(
     };
     return await client.sessionFork?.(input.id, input.turnID, input.title);
   }
-  if (request.method === "sandbox.list")
-    return await client.sandboxList?.();
+  if (request.method === "sandbox.list") return await client.sandboxList?.();
   if (request.method === "sandbox.diff")
     return await client.sandboxDiff?.(request.value as string);
   if (request.method === "sandbox.resources")

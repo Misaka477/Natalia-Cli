@@ -46,6 +46,13 @@ export type InteractiveWaiterDeps = {
    * is judged against the durable record.
    */
   isPending: (id: string, kind: "approval" | "question") => boolean;
+  /**
+   * The session a turn belongs to. Parallel sessions make "the session" a
+   * per-turn fact: a background turn keeps running after the UI attaches to
+   * another session, and its approvals must be judged against the session it
+   * was submitted to, never the currently attached one.
+   */
+  sessionIDForTurn: (turnID: string) => SessionID;
 };
 
 export type InteractiveWaiter = ReturnType<typeof createInteractiveWaiter>;
@@ -56,7 +63,10 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
   const pendingApprovalRequests = new Set<string>();
   // These grants only live in this RuntimeClient instance. Reopening a
   // durable session must never silently restore side-effecting permissions.
-  const sessionApprovedTools = new Set<string>();
+  // D5.3: they are keyed per session — what session A approved never grants
+  // session B, and a background turn of A keeps its grants when the UI
+  // attaches to B.
+  const sessionApprovedTools = new Map<SessionID, Set<string>>();
   const approvalToolByID = new Map<string, string>();
   const approvalWorkGraphContext = new Map<
     string,
@@ -66,7 +76,7 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
     string,
     { scope: string; expiresAt: number }
   >();
-  const terminalApprovalScopes = new Map<string, number>();
+  const terminalApprovalScopes = new Map<SessionID, Map<string, number>>();
   const approvalWaiters = new Map<
     string,
     (response: ApprovalResponse) => void
@@ -86,14 +96,17 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
     if (deps.permissionMode() === "auto") return undefined;
     if (deps.permissionMode() === "read_only")
       return { reason: readOnlyToolMessage(tool.name) };
+    const session = deps.sessionIDForTurn(turnID);
     const terminalApproval = terminalApprovalScope(tool.name, call.arguments);
     if (terminalApproval) {
       if (terminalApproval.risk === "terminal_low") {
-        const expiresAt = terminalApprovalScopes.get(terminalApproval.scope);
+        const scopes = terminalApprovalScopes.get(session);
+        const expiresAt = scopes?.get(terminalApproval.scope);
         if (expiresAt && expiresAt > Date.now()) return undefined;
-        terminalApprovalScopes.delete(terminalApproval.scope);
+        scopes?.delete(terminalApproval.scope);
       }
-    } else if (sessionApprovedTools.has(tool.name)) return undefined;
+    } else if (sessionApprovedTools.get(session)?.has(tool.name))
+      return undefined;
     const presentation = approvalPresentation(tool.name, call.arguments);
     const expiresAt =
       terminalApproval?.risk === "terminal_low"
@@ -198,24 +211,6 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
     restoreRecoveredInteractiveState(pending.approvals, pending.questions);
   }
 
-  /**
-   * Session grants are deliberately process-local. Attaching a different durable
-   * session must never carry approvals, terminal scopes, or stale waiter state
-   * across that security boundary.
-   */
-  function reset() {
-    pendingApprovals.clear();
-    pendingApprovalRequests.clear();
-    sessionApprovedTools.clear();
-    approvalToolByID.clear();
-    approvalWorkGraphContext.clear();
-    terminalApprovalByID.clear();
-    terminalApprovalScopes.clear();
-    approvalWaiters.clear();
-    pendingQuestions.clear();
-    questionWaiters.clear();
-  }
-
   function restoreRecoveredInteractiveState(
     approvals: Array<Extract<RuntimeEvent, { type: "approval.request" }>>,
     questions: Array<Extract<RuntimeEvent, { type: "question.request" }>>,
@@ -288,14 +283,21 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
       );
     if (response.decision === "session") {
       const terminalApproval = terminalApprovalByID.get(response.requestID);
-      if (terminalApproval)
-        terminalApprovalScopes.set(
-          terminalApproval.scope,
-          terminalApproval.expiresAt,
-        );
-      else {
+      const session = deps.sessionIDForTurn(
+        graphContext?.turnID ?? `approval:${deps.sessionID()}`,
+      );
+      if (terminalApproval) {
+        const scopes =
+          terminalApprovalScopes.get(session) ?? new Map<string, number>();
+        scopes.set(terminalApproval.scope, terminalApproval.expiresAt);
+        terminalApprovalScopes.set(session, scopes);
+      } else {
         const toolName = approvalToolByID.get(response.requestID);
-        if (toolName) sessionApprovedTools.add(toolName);
+        if (toolName) {
+          const approved = sessionApprovedTools.get(session) ?? new Set();
+          approved.add(toolName);
+          sessionApprovedTools.set(session, approved);
+        }
       }
     }
     pendingApprovals.set(response.requestID, response);
@@ -332,10 +334,12 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
   /**
    * Drops a terminal's low-risk grant. Someone revoking it expects the model's
    * next keystroke to ask again, so it takes effect now rather than on expiry.
+   * Revocation is a UI action, so it targets the currently attached session.
    */
   function revokeTerminalApprovalScope(terminalID: string) {
     const scope = `terminal:${terminalID}:low-risk`;
-    const revoked = terminalApprovalScopes.delete(scope);
+    const revoked =
+      terminalApprovalScopes.get(deps.sessionID())?.delete(scope) === true;
     if (revoked)
       publish({
         type: "diagnostic",
@@ -351,7 +355,6 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
   }
 
   return {
-    reset,
     requireApproval,
     requireQuestion,
     respondApproval,

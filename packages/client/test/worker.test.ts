@@ -443,23 +443,54 @@ test("the worker channel routes the sandbox, agent-select and fork surface", asy
       };
     },
     cancel() {},
-    snapshot: () => ({ type: "snapshot.created", id: "snap_surface", files: [] }),
+    snapshot: () => ({
+      type: "snapshot.created",
+      id: "snap_surface",
+      files: [],
+    }),
     diagnostic() {},
     lastSubmission: () => undefined,
     async sandboxList() {
-      return [{ id: "box_1", status: "running", paths: 2 }];
+      return [
+        {
+          id: "box_1",
+          root: "/r/box_1",
+          isolationLevel: "workspace" as const,
+          changedFiles: 2,
+          runningResources: 1,
+          envAllowlist: [],
+        },
+      ];
     },
     async sandboxDiff(id) {
       return [{ kind: "modify", path: `${id}/a.ts`, oldPath: undefined }];
     },
     async sandboxResources(id) {
-      return [{ id: `${id}/srv`, name: "srv", status: "running" }];
+      return [
+        {
+          id: "srv",
+          sandboxID: id,
+          command: "sleep 60",
+          pid: 42,
+          status: "running" as const,
+          outputPath: "/r/srv.out",
+          startedAt: "2026-08-12T00:00:00.000Z",
+        },
+      ];
     },
     async sandboxResourceOutput(input) {
       return `output of ${input.resourceID}`;
     },
     async sandboxResourceStop(input) {
-      return { id: input.id, resourceID: input.resourceID, status: "stopped" };
+      return {
+        id: input.resourceID,
+        sandboxID: input.id,
+        command: "sleep 60",
+        pid: 42,
+        status: "stopped" as const,
+        outputPath: "/r/srv.out",
+        startedAt: "2026-08-12T00:00:00.000Z",
+      };
     },
     async sandboxMerge(id) {
       return [{ kind: "add", path: `${id}/b.ts`, oldPath: undefined }];
@@ -468,10 +499,19 @@ test("the worker channel routes the sandbox, agent-select and fork surface", asy
       return { pendingChanges: [], runningResources: [] };
     },
     async selectAgent(name) {
-      return { selectedAgent: name };
+      return { outcome: "applied" as const, selected: name };
     },
     async sessionFork(id, turnID) {
-      return { id: `${id}_fork`, title: "fork", createdAt: "", cancelled: false, resumable: true };
+      return {
+        id: `${id}_fork`,
+        title: "fork",
+        createdAt: "2026-08-12T00:00:00.000Z",
+        pinned: false,
+        events: 0,
+        pendingInputs: 0,
+        cancelled: false,
+        resumable: true,
+      };
     },
     respondApproval() {
       return { accepted: true };
@@ -487,7 +527,14 @@ test("the worker channel routes the sandbox, agent-select and fork surface", asy
   expect(typeof client.sandboxList).toBe("function");
   expect(typeof client.sessionFork).toBe("function");
   expect(await client.sandboxList!()).toEqual([
-    { id: "box_1", status: "running", paths: 2 },
+    {
+      id: "box_1",
+      root: "/r/box_1",
+      isolationLevel: "workspace",
+      changedFiles: 2,
+      runningResources: 1,
+      envAllowlist: [],
+    },
   ]);
   expect(await client.sandboxMerge!("box_1")).toEqual([
     { kind: "add", path: "box_1/b.ts", oldPath: undefined },
@@ -496,12 +543,16 @@ test("the worker channel routes the sandbox, agent-select and fork surface", asy
     await client.sandboxResourceOutput!({ id: "box_1", resourceID: "srv" }),
   ).toBe("output of srv");
   expect(await client.selectAgent!("helper")).toEqual({
-    selectedAgent: "helper",
+    outcome: "applied",
+    selected: "helper",
   });
   expect(await client.sessionFork!("ses_a", "turn_1")).toEqual({
     id: "ses_a_fork",
     title: "fork",
-    createdAt: "",
+    createdAt: "2026-08-12T00:00:00.000Z",
+    pinned: false,
+    events: 0,
+    pendingInputs: 0,
     cancelled: false,
     resumable: true,
   });
