@@ -5,6 +5,9 @@ import type {
   SubmittedTurn,
 } from "@natalia/contracts";
 import { lineCount, makeDigest } from "@natalia/testing";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { runTuiShell } from "../src/app/runtime";
 
 const submissions: string[] = [];
@@ -22,10 +25,17 @@ let terminalLoads = 0;
 let checkpointLoads = 0;
 let sandboxLoads = 0;
 const statusLoadCount = () => statusLoads;
+// The pasted-path flow detects real files inside the workspace: a workspace
+// root and a genuine fixtures/sample.png must exist or the path stays plain
+// text and the attachment assertions never run.
+const workspaceRoot = await mkdtemp(join(tmpdir(), "natalia-keyboard-smoke-"));
+await mkdir(join(workspaceRoot, "fixtures"), { recursive: true });
+await writeFile(join(workspaceRoot, "fixtures", "sample.png"), "fake-png");
 const handle = await runTuiShell({
   backend: makeBackend(),
   closeAfterInitialTurn: false,
   rendererSize: { width: 100, height: 28 },
+  workspaceRoot,
 });
 const keys = createMockKeys(handle.renderer, { kittyKeyboard: true });
 await Bun.sleep(100);
@@ -83,10 +93,10 @@ if (submissions.at(-1) !== "stashed prompt")
     `Prompt stash restore failed: got ${JSON.stringify(submissions.at(-1))}`,
   );
 
-keys.pressKey("a", { ctrl: true, shift: true });
-await Bun.sleep(80);
-await keys.typeText("fixtures/sample.png");
-keys.pressEnter();
+// A terminal pastes a dragged-in file as its path. A paste whose every line
+// is an existing workspace file is queued as an attachment and its text is
+// not inserted, so the follow-up message is submitted alongside the file.
+await keys.pasteBracketedText("fixtures/sample.png");
 await Bun.sleep(150);
 await keys.pasteBracketedText("with attachment");
 await Bun.sleep(80);
@@ -247,17 +257,19 @@ if (
   ])
 )
   throw new Error(`Session fork shortcut failed: ${JSON.stringify(forkCalls)}`);
-keys.pressCtrlC();
-await Bun.sleep(80);
-
+// Fork re-filled the composer with the last message; submitting it empties the
+// composer, and Ctrl+D then exits the idle renderer (Ctrl+C is the cancel
+// command and does not exit).
+keys.pressEnter();
+await Bun.sleep(200);
 const destroyed = new Promise<void>((resolve) =>
   handle.renderer.once("destroy", resolve),
 );
-keys.pressCtrlC();
+keys.pressKey("d", { ctrl: true });
 await Promise.race([
   destroyed,
   Bun.sleep(3_000).then(() => {
-    throw new Error("Ctrl+C did not destroy the idle renderer");
+    throw new Error("Ctrl+D did not destroy the idle renderer");
   }),
 ]);
 

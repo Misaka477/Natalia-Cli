@@ -577,7 +577,13 @@ function Shell(props: {
       return;
     }
     if (decision.preview) setPastePreview(decision.preview);
-    detectPastedFilePaths(event.bytes);
+    // A paste whose every non-empty line is an existing workspace file is
+    // queued as attachments and never inserted into the composer: the user
+    // dragged files in, and the paths are not what they wanted to send.
+    if (detectPastedFilePaths(event.bytes)) {
+      event.preventDefault();
+      return;
+    }
   }
 
   /**
@@ -587,21 +593,21 @@ function Shell(props: {
    * attachments instead of leaving the user to notice the paths in the text.
    * Partial matches are left alone: the paste may be prose mentioning paths.
    */
-  function detectPastedFilePaths(bytes: Uint8Array) {
+  function detectPastedFilePaths(bytes: Uint8Array): boolean {
     const root = props.workspaceRoot;
-    if (!root) return;
+    if (!root) return false;
     const lines = new TextDecoder("utf-8")
       .decode(bytes)
       .split("\n")
       .map((line) => line.trim())
       .filter(Boolean);
-    if (lines.length === 0) return;
+    if (lines.length === 0) return false;
     const resolved = lines.map((line) => resolve(root, line));
     const inside = resolved.map((path) => {
       const relative = relativePath(root, path);
       return relative !== "" && !relative.startsWith("..");
     });
-    if (!inside.every(Boolean)) return;
+    if (!inside.every(Boolean)) return false;
     const files = resolved.filter((path) => {
       try {
         return statSync(path).isFile();
@@ -609,7 +615,7 @@ function Shell(props: {
         return false;
       }
     });
-    if (files.length !== resolved.length) return;
+    if (files.length !== resolved.length) return false;
     setAttachmentPaths((current) => {
       const next = [...current];
       for (const path of resolved) {
@@ -621,6 +627,7 @@ function Shell(props: {
     setPastePreview(
       `queued ${files.length} pasted ${files.length === 1 ? "file" : "files"} as attachments`,
     );
+    return true;
   }
 
   function restoreHistory(direction: -1 | 1) {
