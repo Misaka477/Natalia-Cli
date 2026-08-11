@@ -61,6 +61,7 @@ import {
 } from "@natalia/config";
 import type { ConfigV2 } from "@natalia/contracts";
 import { CapabilityRegistry } from "@natalia/capability";
+import { mergeContributedToolSettings } from "./capability-settings";
 import {
   agentsFromConfig,
   type AgentDefinition,
@@ -4119,7 +4120,7 @@ export function createRealRuntimeClient(
       profileNetwork?.allowedHosts,
       agentAllowedHosts,
     ].filter((hosts): hosts is string[] => Boolean(hosts?.length));
-    return {
+    const base = {
       webSearchEndpoint: tsRuntimeConfig?.webSearch.endpoint ?? undefined,
       webSearchProviderPriority: tsRuntimeConfig?.webSearch.providerPriority,
       browserEnabled: tsRuntimeConfig?.browser.enabled,
@@ -4155,6 +4156,12 @@ export function createRealRuntimeClient(
         selectedAgent?.permissions?.env?.allowlist ??
         tsRuntimeConfig?.security.envAllowlist,
     };
+    // The `settings` grant's first host consumer: capability contributions
+    // provide defaults that explicit config and permission values override.
+    return mergeContributedToolSettings(
+      base,
+      capabilityRegistry.contributions("settings"),
+    );
   }
 }
 
