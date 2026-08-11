@@ -424,3 +424,89 @@ test("the worker channel routes the MCP surface", async () => {
   });
   await client.dispose?.();
 });
+
+test("the worker channel routes the sandbox, agent-select and fork surface", async () => {
+  // DialogSandbox guards every call (`if (!backend.sandboxList)`), so a missing
+  // route degrades the whole sandbox dialog silently; App.tsx uses selectAgent
+  // and sessionFork the same guarded way. The methods must exist and round-trip.
+  const channel = new MessageChannel();
+  const host: RuntimeClient = {
+    start() {},
+    async submit(text) {
+      return {
+        type: "turn.submitted",
+        id: "turn_surface",
+        text,
+        byteLength: text.length,
+        lineCount: 1,
+        sha256: "test",
+      };
+    },
+    cancel() {},
+    snapshot: () => ({ type: "snapshot.created", id: "snap_surface", files: [] }),
+    diagnostic() {},
+    lastSubmission: () => undefined,
+    async sandboxList() {
+      return [{ id: "box_1", status: "running", paths: 2 }];
+    },
+    async sandboxDiff(id) {
+      return [{ kind: "modify", path: `${id}/a.ts`, oldPath: undefined }];
+    },
+    async sandboxResources(id) {
+      return [{ id: `${id}/srv`, name: "srv", status: "running" }];
+    },
+    async sandboxResourceOutput(input) {
+      return `output of ${input.resourceID}`;
+    },
+    async sandboxResourceStop(input) {
+      return { id: input.id, resourceID: input.resourceID, status: "stopped" };
+    },
+    async sandboxMerge(id) {
+      return [{ kind: "add", path: `${id}/b.ts`, oldPath: undefined }];
+    },
+    async sandboxDelete(id) {
+      return { pendingChanges: [], runningResources: [] };
+    },
+    async selectAgent(name) {
+      return { selectedAgent: name };
+    },
+    async sessionFork(id, turnID) {
+      return { id: `${id}_fork`, title: "fork", createdAt: "", cancelled: false, resumable: true };
+    },
+    respondApproval() {
+      return { accepted: true };
+    },
+    respondQuestion() {
+      return { accepted: true };
+    },
+  };
+  attachRuntimeClientWorker(channel.port1, host);
+  const client = createWorkerRuntimeClient(channel.port2);
+  client.start(() => undefined);
+
+  expect(typeof client.sandboxList).toBe("function");
+  expect(typeof client.sessionFork).toBe("function");
+  expect(await client.sandboxList!()).toEqual([
+    { id: "box_1", status: "running", paths: 2 },
+  ]);
+  expect(await client.sandboxMerge!("box_1")).toEqual([
+    { kind: "add", path: "box_1/b.ts", oldPath: undefined },
+  ]);
+  expect(
+    await client.sandboxResourceOutput!({ id: "box_1", resourceID: "srv" }),
+  ).toBe("output of srv");
+  expect(await client.selectAgent!("helper")).toEqual({
+    selectedAgent: "helper",
+  });
+  expect(await client.sessionFork!("ses_a", "turn_1")).toEqual({
+    id: "ses_a_fork",
+    title: "fork",
+    createdAt: "",
+    cancelled: false,
+    resumable: true,
+  });
+  expect(await client.sandboxDelete!("box_1")).toEqual({
+    pendingChanges: [],
+    runningResources: [],
+  });
+});

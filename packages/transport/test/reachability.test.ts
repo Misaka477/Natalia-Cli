@@ -300,7 +300,9 @@ test("the worker channel reports its own gaps instead of hiding them", async () 
   expect(byMember.get("mcpCatalog")).toBe("implemented_reachable");
   expect(byMember.get("getMcpPrompt")).toBe("implemented_reachable");
   expect(byMember.get("readMcpResource")).toBe("implemented_reachable");
-  expect(byMember.get("sessionFork")).toBe("implemented_unreachable");
+  expect(byMember.get("sessionFork")).toBe("implemented_reachable");
+  expect(byMember.get("sandboxList")).toBe("implemented_reachable");
+  expect(byMember.get("selectAgent")).toBe("implemented_reachable");
   expect(byMember.get("constitutionRules")).toBe("implemented_unreachable");
   expect(byMember.get("workGraphNodes")).toBe("implemented_unreachable");
 });

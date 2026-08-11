@@ -67,6 +67,15 @@ export const WORKER_ROUTE_MEMBERS = {
   "session.duplicate": "sessionDuplicate",
   "session.delete": "sessionDelete",
   "session.attach": "sessionAttach",
+  "session.fork": "sessionFork",
+  "sandbox.list": "sandboxList",
+  "sandbox.diff": "sandboxDiff",
+  "sandbox.resources": "sandboxResources",
+  "sandbox.resource-output": "sandboxResourceOutput",
+  "sandbox.resource-stop": "sandboxResourceStop",
+  "sandbox.merge": "sandboxMerge",
+  "sandbox.delete": "sandboxDelete",
+  "agent.select": "selectAgent",
 } as const satisfies Readonly<Record<string, keyof RuntimeClient | null>>;
 
 /** The member names this channel routes, for reachability reporting. */
@@ -124,9 +133,18 @@ type WorkerRequest = {
     | "session.touch"
     | "session.rename"
     | "session.pin"
-    | "session.duplicate"
+    |     "session.duplicate"
     | "session.delete"
     | "session.attach"
+    | "session.fork"
+    | "sandbox.list"
+    | "sandbox.diff"
+    | "sandbox.resources"
+    | "sandbox.resource-output"
+    | "sandbox.resource-stop"
+    | "sandbox.merge"
+    | "sandbox.delete"
+    | "agent.select"
     | "runtime.availability"
     | "flow.save"
     | "flow.delete"
@@ -438,6 +456,51 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["sessionAttach"]>>
       >;
     },
+    async sessionFork(id, turnID, title) {
+      return (await request("session.fork", { id, turnID, title })) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["sessionFork"]>>
+      >;
+    },
+    async sandboxList() {
+      return (await request("sandbox.list")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["sandboxList"]>>
+      >;
+    },
+    async sandboxDiff(id) {
+      return (await request("sandbox.diff", id)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["sandboxDiff"]>>
+      >;
+    },
+    async sandboxResources(id) {
+      return (await request("sandbox.resources", id)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["sandboxResources"]>>
+      >;
+    },
+    async sandboxResourceOutput(input) {
+      return (await request("sandbox.resource-output", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["sandboxResourceOutput"]>>
+      >;
+    },
+    async sandboxResourceStop(input) {
+      return (await request("sandbox.resource-stop", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["sandboxResourceStop"]>>
+      >;
+    },
+    async sandboxMerge(id) {
+      return (await request("sandbox.merge", id)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["sandboxMerge"]>>
+      >;
+    },
+    async sandboxDelete(id) {
+      return (await request("sandbox.delete", id)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["sandboxDelete"]>>
+      >;
+    },
+    async selectAgent(name) {
+      return (await request("agent.select", name)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["selectAgent"]>>
+      >;
+    },
     async dispose() {
       await request("dispose");
       port.removeEventListener("message", onMessage);
@@ -677,6 +740,34 @@ export async function handleWorkerRequest(
     return await client.sessionDelete?.(request.value as string);
   if (request.method === "session.attach")
     return await client.sessionAttach?.(request.value as string);
+  if (request.method === "session.fork") {
+    const input = request.value as {
+      id: string;
+      turnID: string;
+      title?: string;
+    };
+    return await client.sessionFork?.(input.id, input.turnID, input.title);
+  }
+  if (request.method === "sandbox.list")
+    return await client.sandboxList?.();
+  if (request.method === "sandbox.diff")
+    return await client.sandboxDiff?.(request.value as string);
+  if (request.method === "sandbox.resources")
+    return await client.sandboxResources?.(request.value as string);
+  if (request.method === "sandbox.resource-output")
+    return await client.sandboxResourceOutput?.(
+      request.value as { id: string; resourceID: string; maxBytes?: number },
+    );
+  if (request.method === "sandbox.resource-stop")
+    return await client.sandboxResourceStop?.(
+      request.value as { id: string; resourceID: string },
+    );
+  if (request.method === "sandbox.merge")
+    return await client.sandboxMerge?.(request.value as string);
+  if (request.method === "sandbox.delete")
+    return await client.sandboxDelete?.(request.value as string);
+  if (request.method === "agent.select")
+    return await client.selectAgent?.(request.value as string);
   if (request.method === "approval")
     return client.respondApproval(request.value as ApprovalResponse);
   if (request.method === "question")
