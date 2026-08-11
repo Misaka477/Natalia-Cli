@@ -7423,3 +7423,62 @@ test("a background turn starting a terminal does not steal focus (I1)", async ()
     await client.dispose?.();
   }
 }, 30_000);
+
+test("settings surface: set writes the scope file, get resolves it, set announces", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-settings-"));
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_settings",
+    provider: scriptedProvider("settings"),
+  });
+  client.start((event) => events.push(event));
+  try {
+    const before = await client.settingsGet?.();
+    expect(before?.config).toMatchObject({
+      theme: "natalia-dark",
+      density: "comfortable",
+    });
+    expect(before?.sources.map((source) => source.scope)).toEqual([
+      "defaults",
+      "global",
+      "project",
+    ]);
+
+    expect(
+      await client.settingsSet?.(
+        { theme: "solarized", density: "compact" },
+        "project",
+      ),
+    ).toEqual({ applied: true });
+    expect(events.at(-1)).toMatchObject({
+      type: "settings.updated",
+      scope: "project",
+    });
+
+    const after = await client.settingsGet?.();
+    expect(after?.config).toMatchObject({
+      theme: "solarized",
+      density: "compact",
+    });
+    const projectSource = after?.sources.find(
+      (source) => source.scope === "project",
+    );
+    expect(projectSource?.applied).toBe(true);
+
+    // The project file actually holds the patch.
+    const onDisk = JSON.parse(
+      await readFile(join(root, ".natalia", "tui.json"), "utf8"),
+    ) as Record<string, unknown>;
+    expect(onDisk).toMatchObject({ theme: "solarized", density: "compact" });
+
+    // An invalid patch is an argument error, never a partial write.
+    await expect(
+      client.settingsSet?.({ density: "bogus" }, "project"),
+    ).rejects.toThrow();
+    const stillValid = await client.settingsGet?.();
+    expect(stillValid?.config).toMatchObject({ density: "compact" });
+  } finally {
+    await client.dispose?.();
+  }
+}, 30_000);

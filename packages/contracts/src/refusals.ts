@@ -113,6 +113,14 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "applied",
     note: "the file may be written while a running turn prevents application, and that is an ordinary answer",
   },
+  settingsGet: {
+    refusal: "error",
+    note: "pure read; an unreadable settings file is a file error",
+  },
+  settingsSet: {
+    refusal: "error",
+    note: "an invalid patch or unwritable file leaves no safe partial write",
+  },
 
   // --- selection ---
   agents: { refusal: "none", note: "pure read" },

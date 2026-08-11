@@ -16,6 +16,7 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
   const selectedAgents: Array<string | undefined> = [];
   const selectedModels: Array<{ modelID?: string; variant?: string }> = [];
   const attachedSessions: string[] = [];
+  const setCalls: Array<{ patch: Record<string, unknown>; scope: string }> = [];
   const client: RuntimeClient = {
     start(handler) {
       sink = handler;
@@ -211,6 +212,20 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
       attachedSessions.push(id);
       return { sessionID: id };
     },
+    async settingsGet() {
+      return {
+        config: { theme: "stub-dark" },
+        sources: [
+          { scope: "defaults", applied: true },
+          { scope: "global", applied: false, diagnostic: "missing" },
+          { scope: "project", applied: true },
+        ],
+      };
+    },
+    async settingsSet(patch, scope) {
+      setCalls.push({ patch, scope });
+      return { applied: true };
+    },
     async mcpCatalog() {
       return {
         prompts: [{ server: "fixture", name: "review" }],
@@ -341,6 +356,14 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
     sessionID: "ses_two",
   });
   expect(attachedSessions).toEqual(["ses_two"]);
+
+  expect(await sdk.settingsGet()).toMatchObject({
+    config: { theme: "stub-dark" },
+  });
+  expect(await sdk.settingsSet({ theme: "paper" }, "global")).toEqual({
+    applied: true,
+  });
+  expect(setCalls).toEqual([{ patch: { theme: "paper" }, scope: "global" }]);
   expect(await sdk.messages({ order: "asc" })).toMatchObject({
     data: [{ id: "turn_message" }],
   });

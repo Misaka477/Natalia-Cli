@@ -373,6 +373,21 @@ export type NataliaSDK = {
     patch: Record<string, unknown>;
     scope?: "project" | "global";
   }): Promise<{ applied: boolean; reason?: string }>;
+  /** Reads the effective interface-preference settings and their sources. */
+  settingsGet(): Promise<{
+    config: Record<string, unknown>;
+    sources: Array<{
+      scope: "defaults" | "global" | "project";
+      path?: string;
+      applied: boolean;
+      diagnostic?: string;
+    }>;
+  }>;
+  /** Writes an interface-preference patch to the given scope's file. */
+  settingsSet(
+    patch: Record<string, unknown>,
+    scope: "global" | "project",
+  ): Promise<{ applied: boolean }>;
   /**
    * Validates a task document and previews its permissions before delivery.
    * Problems are a value, not an exception.
@@ -626,6 +641,9 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     deleteFlowDocument: async (input) => await call("flow.delete", input),
     taskPermissionPreview: async (input) => await call("task.preview", input),
     updateConfig: async (input) => await call("config.update", input),
+    settingsGet: async () => await call("settings.get", {}),
+    settingsSet: async (patch, scope) =>
+      await call("settings.set", { patch, scope }),
     taskOverview: async () => await call("task.overview", {}),
     flowOverview: async () => await call("flow.overview", {}),
     documentCatalog: async () => await call("document.catalog", {}),

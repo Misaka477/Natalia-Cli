@@ -225,3 +225,49 @@
 | `policyStatementSchema`               | `action`                              | string                                                                           |          |                                                                                  |
 | `policyStatementSchema`               | `resource`                            | string                                                                           |          |                                                                                  |
 <!-- /config-reference:generated -->
+
+<!-- config-reference:tui-settings -->
+
+## 界面偏好设置（`tui.json`）
+
+主题、键位等界面偏好存放在 `tui.json`，以 0600 权限原子写入：
+
+- **项目作用域**：`.natalia/tui.json`
+- **全局作用域**：`$HOME/.config/natalia-cli/tui.json`（POSIX）/
+  `%APPDATA%\natalia-cli\tui.json`（Windows）
+
+解析顺序为 defaults → global → project（project 优先）。完整 schema 见
+`@natalia/config` 的 `tuiConfigSchema`；字段如下：
+
+| 字段 | 类型 | 默认 |
+|---|---|---|
+| `theme` | string | `natalia-dark` |
+| `themeMode` | `"dark" \| "light" \| "system"` | `dark` |
+| `keybinds` | string / string[] / false 的 record | `{}` |
+| `leaderKey` | string | `ctrl+x` |
+| `leaderTimeoutMs` | number | `2000` |
+| `toolDetails` | `"collapsed" \| "expanded"` | `collapsed` |
+| `reasoning` | `"step" \| "hidden"` | `step` |
+| `density` | `"comfortable" \| "compact"` | `comfortable` |
+| `followBottom` | boolean | `true` |
+| `scrollSpeed` | number | `1` |
+| `scrollAcceleration` | boolean | `true` |
+| `mouse` | boolean | `true` |
+| `prompt.maxHeight` | number | `8` |
+| `diffStyle` | `"auto" \| "stacked"` | `auto` |
+| `attention.enabled` | boolean | `false` |
+| `attention.notifications` | boolean | `true` |
+| `attention.sound` | boolean | `false` |
+| `attention.volume` | number | `0.4` |
+
+文件是部分配置：缺省键沿用低优先级的值。写入接受 schema 的任意子集
+（`deepPartial`），消费者无需先读再写。
+
+### 经 RPC 读写
+
+`settingsGet()` 返回完全解析后的生效配置与来源列表（`defaults` /
+`global` / `project`，含路径与 applied 状态）。`settingsSet(patch, scope)`
+按共享 schema 校验（非法 patch 是参数错误，绝不会产生部分写入），原子写
+入对应作用域文件，并发布 `settings.updated` 事件（携带 scope），订阅者
+据此重新读取而非盲目缓存。
+<!-- /config-reference:tui-settings -->

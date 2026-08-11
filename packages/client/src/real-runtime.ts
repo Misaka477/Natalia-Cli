@@ -55,6 +55,8 @@ import {
   discoverProviderModels,
   modelSelectionStatus,
   resolveConfig,
+  resolveTuiConfig,
+  saveTuiConfig,
   updateConfigAtScope,
 } from "@natalia/config";
 import type { ConfigV2 } from "@natalia/contracts";
@@ -2915,6 +2917,24 @@ export function createRealRuntimeClient(
       // Applying is the same operation as a reload, with the same value-type
       // refusal; share it so the two paths cannot drift.
       return await applyConfigFromDisk();
+    },
+    async settingsGet() {
+      await ready;
+      const resolved = await resolveTuiConfig(workspaceRoot);
+      return {
+        config: resolved.config as unknown as Record<string, unknown>,
+        sources: resolved.sources,
+      };
+    },
+    async settingsSet(patch, scope) {
+      await ready;
+      // The interface-preference file, served publicly now that the TUI no
+      // longer owns it privately. Validated by the shared schema (an invalid
+      // patch is an argument error, not a partial write), written atomically,
+      // then announced so subscribers can re-read.
+      await saveTuiConfig(workspaceRoot, patch, scope);
+      publish({ type: "settings.updated", scope });
+      return { applied: true };
     },
     async diagnostics(limit = 100) {
       await ready;

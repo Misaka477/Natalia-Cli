@@ -122,6 +122,8 @@ export const RPC_ROUTE_MEMBERS = {
   "config.canReload": "canReloadConfig",
   "config.reload": "reloadConfig",
   "config.update": "updateConfig",
+  "settings.get": "settingsGet",
+  "settings.set": "settingsSet",
   "agent.list": "agents",
   "agent.select": "selectAgent",
   "model.catalog": "modelCatalog",
@@ -255,6 +257,8 @@ export const RPC_WRITE_METHODS: ReadonlySet<string> = new Set([
   "model.select",
   "config.reload",
   "config.update",
+  "settings.get",
+  "settings.set",
   "checkpoint.rollback",
   "sandbox.merge",
   "sandbox.delete",
@@ -1347,6 +1351,37 @@ export async function handleRPCMessage(
           patch: patch as Record<string, unknown>,
           scope: scope as "project" | "global" | undefined,
         }),
+      };
+    }
+    // --- P0-G follow-up: task document validation (previously CLI-only) ---
+    if (body.method === "settings.get") {
+      optionsGuard(client, "settingsGet");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.settingsGet?.(),
+      };
+    }
+    if (body.method === "settings.set") {
+      const params = body.params;
+      if (!params || typeof params !== "object")
+        throw invalidParams("settings.set.params must be an object");
+      const patch = (params as { patch?: unknown }).patch;
+      if (!patch || typeof patch !== "object" || Array.isArray(patch))
+        throw invalidParams("settings.set.params.patch must be an object");
+      const scope = (params as { scope?: unknown }).scope;
+      if (scope !== "project" && scope !== "global")
+        throw invalidParams(
+          'settings.set.params.scope must be "project" or "global"',
+        );
+      optionsGuard(client, "settingsSet");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.settingsSet?.(
+          patch as Record<string, unknown>,
+          scope as "project" | "global",
+        ),
       };
     }
     // --- P0-G follow-up: task document validation (previously CLI-only) ---

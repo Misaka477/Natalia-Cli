@@ -833,13 +833,14 @@ Deployment notes:
   `start`, `submit`, `cancel`, `snapshot`, `diagnostic`, `lastSubmission`, `respondApproval`, `respondQuestion`.
 - Deprecated members (`DEPRECATED_RUNTIME_MEMBERS`): none (mechanism in place, table empty).
 
-### Capability groups (16 groups · 88 optional members)
+### Capability groups (17 groups · 90 optional members)
 
 | Group          | Members (RuntimeClient names)                                                                                                                                                                                                                                                                                         |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | transcript     | `history` · `messages` · `pendingInteractive` · `submitInput`                                                                                                                                                                                                                                                         |
 | turnControl    | `pause` · `resume`                                                                                                                                                                                                                                                                                                    |
 | lifecycle      | `dispose` · `canReloadConfig` · `reloadConfig` · `updateConfig`                                                                                                                                                                                                                                                       |
+| settings       | `settingsGet` · `settingsSet`                                                                                                                                                                                                                                                                                         |
 | selection      | `agents` · `selectAgent` · `modelCatalog` · `modelSelection` · `selectModel` · `skills` · `agentCreate` · `agentUpdate` · `agentDelete` · `providerDiscover` · `providerAdd` · `providerRemove`                                                                                                                       |
 | workspace      | `workspaceFiles` · `workspaceSearch` · `workspaceList` · `workspaceRead` · `workspaceGlob`                                                                                                                                                                                                                            |
 | nativeTerminal | `nativeTerminalList` · `nativeTerminalRead` · `nativeTerminalOpenHub` · `nativeTerminalRevokeApprovalScope` · `nativeTerminalReleaseHumanControl` · `nativeTerminalBeginSecureInput` · `nativeTerminalEndSecureInput` · `nativeTerminalStop` · `nativeTerminalStart` · `nativeTerminalWrite` · `nativeTerminalResize` |
@@ -854,7 +855,7 @@ Deployment notes:
 | workGraph      | `workGraphNodes` · `workGraphEdges`                                                                                                                                                                                                                                                                                   |
 | intelligence   | `constitutionRules` · `decisionRecords` · `evidenceRecords` · `driftFindings` · `registeredTools`                                                                                                                                                                                                                     |
 
-### RPC route table (93 methods → members)
+### RPC route table (95 methods → members)
 
 | RPC method                           | RuntimeClient member                | Capability group | Write |
 | ------------------------------------ | ----------------------------------- | ---------------- | ----- |
@@ -871,6 +872,8 @@ Deployment notes:
 | `config.canReload`                   | `canReloadConfig`                   | lifecycle        | read  |
 | `config.reload`                      | `reloadConfig`                      | lifecycle        | write |
 | `config.update`                      | `updateConfig`                      | lifecycle        | write |
+| `settings.get`                       | `settingsGet`                       | settings         | write |
+| `settings.set`                       | `settingsSet`                       | settings         | write |
 | `agent.list`                         | `agents`                            | selection        | read  |
 | `agent.select`                       | `selectAgent`                       | selection        | write |
 | `model.catalog`                      | `modelCatalog`                      | selection        | read  |
@@ -952,7 +955,7 @@ Deployment notes:
 | `flow.delete`                        | `deleteFlowDocument`                | automation       | write |
 | `task.preview`                       | `taskPermissionPreview`             | automation       | read  |
 
-### Write surface (`RPC_WRITE_METHODS`, 46 methods; read-only credentials get `-32001 refused`)
+### Write surface (`RPC_WRITE_METHODS`, 48 methods; read-only credentials get `-32001 refused`)
 
 - `prompt`
 - `cancel`
@@ -965,6 +968,8 @@ Deployment notes:
 - `model.select`
 - `config.reload`
 - `config.update`
+- `settings.get`
+- `settings.set`
 - `checkpoint.rollback`
 - `sandbox.merge`
 - `sandbox.delete`
@@ -1059,7 +1064,7 @@ Deployment notes:
 
 ### Events and projection (source scan)
 
-- Runtime event types (`RuntimeEventData` union): 72.
+- Runtime event types (`RuntimeEventData` union): 73.
 - view-store projections (`case` labels in `packages/view-store/src`): 57.
 
 ### SDK methods → RPC routes (source scan of `packages/sdk/src/index.ts`)
@@ -1150,6 +1155,8 @@ Deployment notes:
 | `sessionSnapshot`                   | `session.snapshot`                   | —                                                                          | | { agentStatus: string; currentStep?: string; activeTool?: string; changedFiles: number; unvalidatedChanges: number; hasPTY: boolean; hasSandbox: boolean; } | undefined                                                                                                                                           |
 | `deleteFlowDocument`                | `flow.delete`                        | `input`: { path: string }                                                  | { path: string; deleted: boolean; alreadyDeleted: boolean; }                                                                                                                                                                                                                                                        |
 | `updateConfig`                      | `config.update`                      | `input`: { patch: Record<string, unknown>; scope?: "project" | "global"; } | { applied: boolean; reason?: string }                                                                                                                                                                                                                                                                               |
+| `settingsGet`                       | `settings.get`                       | —                                                                          | { config: Record<string, unknown>; sources: Array<{ scope: "defaults" | "global" | "project"; path?: string; applied: boolean; diagnostic?: string; }>; }                                                                                                                                                           |
+| `settingsSet`                       | `settings.set`                       | `patch`: Record<string, `scope`: "global" | "project"                      | { applied: boolean }                                                                                                                                                                                                                                                                                                |
 | `taskPermissionPreview`             | `task.preview`                       | `input`: { path: string }                                                  | { taskID: string; displayName: string; permissionProfile: string; flowID: string; flowDisplayName: string; enabledModules: number; blocked: Array<{ moduleID: string; reason: string }>; conditionlessModules: string[]; problems: string[]; valid: boolean; }                                                      |
 | `taskOverview`                      | `task.overview`                      | —                                                                          | ScheduledTaskOverview                                                                                                                                                                                                                                                                                               |
 | `flowOverview`                      | `flow.overview`                      | —                                                                          | FlowOverview                                                                                                                                                                                                                                                                                                        |
@@ -1237,4 +1244,5 @@ Deployment notes:
 | `flow.module_event`         | `moduleID`: string, `moduleType?`: string, `outcome?`: "complete" | "incomplete" | "blocked", `reason?`: string                                                                                                                                                                                                                                                                                                                                                                                                            | a flow module's arbitration lifecycle changed (activated, claimed, evaluated, completed, blocked, stalled, continued); streamed from task delivery so the TUI can render arbitration |
 | `flow.finished`             | `outcome`: "succeeded" | "failed" | "skipped", `reason?`: string                                                                                                                                                                                                                                                                                                                                                                                                                                                           | a flow task finished (succeeded, failed or skipped); emitted by the flow submit path                                                                                                 |
 | `flow.evaluator`            | `moduleID?`: string, `phase`: "thinking" | "content", `text`: string                                                                                                                                                                                                                                                                                                                                                                                                                                                       | streaming reasoning/content text from a flow module evaluator (task delivery only)                                                                                                   |
+| `settings.updated`          | `scope`: "global" | "project"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | —                                                                                                                                                                                    |
 <!-- /api-reference:generated -->

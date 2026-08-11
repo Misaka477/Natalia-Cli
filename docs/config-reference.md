@@ -231,3 +231,52 @@
 | `policyStatementSchema`               | `action`                              | string                                                                           |          |                                                                                  |
 | `policyStatementSchema`               | `resource`                            | string                                                                           |          |                                                                                  |
 <!-- /config-reference:generated -->
+
+<!-- config-reference:tui-settings -->
+
+## Interface-preference settings (`tui.json`)
+
+The theme, keybindings and other interface preferences live in `tui.json`,
+written atomically with mode 0600:
+
+- **Project scope**: `.natalia/tui.json`
+- **Global scope**: `$HOME/.config/natalia-cli/tui.json` (POSIX) /
+  `%APPDATA%\natalia-cli\tui.json` (Windows)
+
+Resolution is defaults → global → project (project wins). The full schema is
+`tuiConfigSchema` in `@natalia/config`; the fields are:
+
+| Field | Type | Default |
+|---|---|---|
+| `theme` | string | `natalia-dark` |
+| `themeMode` | `"dark" \| "light" \| "system"` | `dark` |
+| `keybinds` | record of string / string[] / false | `{}` |
+| `leaderKey` | string | `ctrl+x` |
+| `leaderTimeoutMs` | number | `2000` |
+| `toolDetails` | `"collapsed" \| "expanded"` | `collapsed` |
+| `reasoning` | `"step" \| "hidden"` | `step` |
+| `density` | `"comfortable" \| "compact"` | `comfortable` |
+| `followBottom` | boolean | `true` |
+| `scrollSpeed` | number | `1` |
+| `scrollAcceleration` | boolean | `true` |
+| `mouse` | boolean | `true` |
+| `prompt.maxHeight` | number | `8` |
+| `diffStyle` | `"auto" \| "stacked"` | `auto` |
+| `attention.enabled` | boolean | `false` |
+| `attention.notifications` | boolean | `true` |
+| `attention.sound` | boolean | `false` |
+| `attention.volume` | number | `0.4` |
+
+The file is a partial: absent keys keep the lower-precedence value. Writes
+accept any subset of the schema (`deepPartial`), so a consumer never needs to
+read before writing.
+
+### Reading and writing over RPC
+
+`settingsGet()` returns the fully resolved effective config plus the source
+list (`defaults` / `global` / `project` with their paths and applied state).
+`settingsSet(patch, scope)` validates against the shared schema (an invalid
+patch is an argument error, never a partial write), writes the scope's file
+atomically, and announces the change with a `settings.updated` event
+(carrying the scope), so subscribers re-read rather than cache blindly.
+<!-- /config-reference:tui-settings -->

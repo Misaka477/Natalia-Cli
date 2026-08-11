@@ -5,3 +5,4 @@ export * from "./policy";
 export * from "./registry";
 export * from "./setup";
 export * from "./service";
+export * from "./tui-config";

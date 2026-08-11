@@ -813,6 +813,10 @@ type RuntimeEventData =
       moduleID?: string;
       phase: "thinking" | "content";
       text: string;
+    }
+  | {
+      type: "settings.updated";
+      scope: "global" | "project";
     };
 
 /**
@@ -1298,6 +1302,26 @@ export type RuntimeClient = {
     patch: Record<string, unknown>;
     scope?: "project" | "global";
   }): Promise<{ applied: boolean; reason?: string }>;
+  /**
+   * The interface-preference settings (`tui.json`). The TUI used to own this
+   * file privately; the runtime now serves it so any consumer reads and
+   * writes the same settings the TUI renders. `config` is the fully resolved
+   * effective value (defaults + global + project), `sources` says what came
+   * from where.
+   */
+  settingsGet?(): Promise<{
+    config: Record<string, unknown>;
+    sources: Array<{
+      scope: "defaults" | "global" | "project";
+      path?: string;
+      applied: boolean;
+      diagnostic?: string;
+    }>;
+  }>;
+  settingsSet?(
+    patch: Record<string, unknown>,
+    scope: "global" | "project",
+  ): Promise<{ applied: boolean }>;
   /**
    * Applies the config on disk. Refusal is a value rather than an exception,
    * because refusing is a normal outcome — applying new policy underneath a

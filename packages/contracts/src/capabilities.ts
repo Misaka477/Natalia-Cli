@@ -90,6 +90,8 @@ export const RUNTIME_CAPABILITY_GROUPS = {
   turnControl: ["pause", "resume"],
   /** Lifecycle beyond a single session. */
   lifecycle: ["dispose", "canReloadConfig", "reloadConfig", "updateConfig"],
+  /** The interface-preference settings file served over RPC. */
+  settings: ["settingsGet", "settingsSet"],
   /** Choosing the agent and model a turn runs as. */
   selection: [
     "agents",
