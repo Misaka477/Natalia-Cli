@@ -1013,6 +1013,12 @@ export function createRealRuntimeClient(
       if (indexedPagedRecovery)
         sqliteRecovery = sessionSqlite.loadRecoveryProjection(sessionID);
     }
+    // The startup exec was created before durable recovery replaced the session
+    // record. Point it at the recovered record, or per-session reads through the
+    // exec (durable metadata like `pendingHumanTerminal`, the inbox, the event
+    // list) would silently see the pre-recovery shell instead of the restored
+    // state.
+    if (activeExec) activeExec.session = session;
     await cleanupUnreferencedAttachments({
       workspaceRoot,
       attachments: sessionStoreController.sqlite()

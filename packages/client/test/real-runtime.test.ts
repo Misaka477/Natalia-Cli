@@ -7587,3 +7587,187 @@ test("cancelling the attached session does not abort a background session's pend
     await client.dispose?.();
   }
 }, 30_000);
+
+function sqliteContinueProvider(): StreamingProvider {
+  return {
+    provider: "sqlite-continue",
+    model: "sqlite-continue",
+    async *stream(request) {
+      const userText = String(
+        [...request.messages]
+          .reverse()
+          .find((message) => message.role === "user")?.content ?? "",
+      );
+      if (userText.includes("automated continuation")) {
+        yield { type: "content" as const, text: "Continuing after the human." };
+        yield { type: "done" as const };
+        return;
+      }
+      if (!request.messages.some((message) => message.role === "tool")) {
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            {
+              id: "call_rh",
+              name: "interactive_terminal_request_human",
+              arguments: JSON.stringify({
+                id: "rh_sqlite",
+                reason: "needs the sudo password",
+                endTurn: true,
+              }),
+            },
+          ],
+        };
+        return;
+      }
+      yield { type: "content" as const, text: "Waiting for the human." };
+      yield { type: "done" as const };
+    },
+  };
+}
+
+function sqliteContinueRegistry() {
+  return new NativeTerminalRegistry(
+    {
+      kind: "wezterm",
+      executable: "wezterm",
+      async spawn() {
+        return { pane_id: 991, window_id: 1, tab_id: 991 };
+      },
+      async list() {
+        return [
+          { pane_id: 991, window_id: 1, tab_id: 991, rows: 24, cols: 80 },
+        ];
+      },
+      async read() {
+        return "Password: ";
+      },
+      async write() {},
+      async open() {
+        return { pane_id: 991, window_id: 1, tab_id: 991, rows: 24, cols: 80 };
+      },
+      async focus() {},
+      async resize() {},
+      async stop() {},
+    },
+    { autoOpenHub: false },
+  );
+}
+
+test("SQLite restart recovers the pending human terminal and resumes exactly once after release", async () => {
+  // TERM-M.3(c) continuation is already covered on the JSON path; SQLite keeps
+  // the pending-human state in durable metadata, so a restart must restore it
+  // and release must continue the task exactly once — never twice, and never
+  // on its own before the human acts.
+  const root = await mkdtemp(join(tmpdir(), "natalia-sqlite-continue-"));
+  const sessionID = "ses_sqlite_continue" as SessionID;
+  const databasePath = join(root, ".natalia", "sessions.db");
+
+  // Phase 1: the model asks a human, the turn settles waiting_human, and the
+  // pending state is durable in SQLite before the human acts.
+  const firstEvents: RuntimeEvent[] = [];
+  const firstRegistry = sqliteContinueRegistry();
+  const first = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    useSqliteStore: true,
+    nativeTerminal: firstRegistry,
+    provider: sqliteContinueProvider(),
+  });
+  first.start((event) => {
+    firstEvents.push(event);
+    if (event.type === "approval.request")
+      first.respondApproval({ requestID: event.id, decision: "once" });
+  });
+  try {
+    await firstRegistry.start({
+      id: "rh_sqlite",
+      cwd: root,
+      command: "ssh host",
+    });
+    await first.submit("ask the human");
+    expect(
+      firstEvents.filter((event) => event.type === "turn.finished").at(-1),
+    ).toMatchObject({ stopReason: "waiting_human" });
+    const durable = new SqliteSessionStore(databasePath);
+    try {
+      expect(
+        durable.get(sessionID)?.metadata?.pendingHumanTerminal,
+      ).toMatchObject({
+        terminalID: "rh_sqlite",
+        reason: "needs the sudo password",
+      });
+    } finally {
+      durable.close();
+    }
+  } finally {
+    await first.dispose?.();
+  }
+
+  // Phase 2: restart the runtime against the same SQLite database. Nothing may
+  // resume on its own, and one release resumes exactly one continuation turn.
+  const reopenedEvents: RuntimeEvent[] = [];
+  const reopenedRegistry = sqliteContinueRegistry();
+  const reopened = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    useSqliteStore: true,
+    nativeTerminal: reopenedRegistry,
+    provider: sqliteContinueProvider(),
+  });
+  reopened.start((event) => reopenedEvents.push(event), { replay: "none" });
+  try {
+    await waitFor(() =>
+      reopenedEvents.some((event) => event.type === "session.ready"),
+    );
+    await Bun.sleep(100);
+    expect(
+      reopenedEvents.filter((event) => event.type === "turn.submitted"),
+    ).toHaveLength(0);
+
+    // The mux is still alive after restart: the pane record is rebuilt, then
+    // the human releases it.
+    await reopenedRegistry.start({
+      id: "rh_sqlite",
+      cwd: root,
+      command: "ssh host",
+    });
+    await reopened.nativeTerminalReleaseHumanControl?.("rh_sqlite");
+    await waitFor(
+      () =>
+        reopenedEvents.some(
+          (event) =>
+            event.type === "turn.finished" && event.stopReason === "done",
+        ),
+      2000,
+    );
+    expect(
+      reopenedEvents.filter((event) => event.type === "turn.submitted"),
+    ).toHaveLength(1);
+    expect(
+      reopenedEvents.some(
+        (event) =>
+          event.type === "turn.submitted" &&
+          event.text.includes("[automated continuation]"),
+      ),
+    ).toBe(true);
+
+    // A second release finds no pending state and must not resume again.
+    await reopened.nativeTerminalReleaseHumanControl?.("rh_sqlite");
+    await Bun.sleep(100);
+    expect(
+      reopenedEvents.filter((event) => event.type === "turn.submitted"),
+    ).toHaveLength(1);
+
+    const after = new SqliteSessionStore(databasePath);
+    try {
+      expect(
+        after.get(sessionID)?.metadata?.pendingHumanTerminal,
+      ).toBeUndefined();
+    } finally {
+      after.close();
+    }
+  } finally {
+    await reopened.dispose?.();
+  }
+}, 30_000);
