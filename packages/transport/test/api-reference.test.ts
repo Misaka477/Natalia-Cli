@@ -403,7 +403,7 @@ function eventDictionary(): Array<{ type: string; fields: string }> {
       .replace(/^\s*\|\s*\{/u, "")
       .replace(/\}\s*$/u, "")
       .trim();
-    for (const part of body.split(";")) {
+    for (const part of splitTypeFields(body)) {
       const field = part
         .trim()
         .match(/^([a-zA-Z][a-zA-Z0-9]*)(\??):\s*(.+?)\s*$/u);
@@ -420,10 +420,39 @@ function eventDictionary(): Array<{ type: string; fields: string }> {
   return rows;
 }
 
+/**
+ * Splits a `{ ... }` type body into field declarations: comments are
+ * stripped first (a field preceded by a JSDoc comment must not take the whole
+ * preceding chunk down with it), then semicolons are honored only at brace
+ * depth zero so the fields of an inline object/array type do not leak to the
+ * top level (an `Array<{ name; description? }>` must not surface its inner
+ * `description` as if the outer type had it twice).
+ */
+function splitTypeFields(body: string): string[] {
+  const cleaned = body
+    .replace(/\/\*\*[\s\S]*?\*\//gu, "")
+    .replace(/\/\/[^\n]*/gu, "");
+  const parts: string[] = [];
+  let depth = 0;
+  let current = "";
+  for (const ch of cleaned) {
+    if (ch === "{") depth++;
+    else if (ch === "}") depth--;
+    if (ch === ";" && depth === 0) {
+      parts.push(current);
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  if (current.trim()) parts.push(current);
+  return parts;
+}
+
 /** Extracts `name?: Type` fields from a `{ ... }` type body. */
 function extractTypeFields(body: string): string {
   const fields: string[] = [];
-  for (const part of body.split(";")) {
+  for (const part of splitTypeFields(body)) {
     const field = part
       .trim()
       .match(/^([a-zA-Z][a-zA-Z0-9]*)(\??):\s*(.+?)\s*$/u);
