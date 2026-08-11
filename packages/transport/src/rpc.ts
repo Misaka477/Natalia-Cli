@@ -153,6 +153,7 @@ export const RPC_ROUTE_MEMBERS = {
   "session.new": "sessionNew",
   "session.archive": "sessionArchive",
   "session.export": "sessionExport",
+  "session.attach": "sessionAttach",
   "mcp.catalog": "mcpCatalog",
   "mcp.prompt": "getMcpPrompt",
   "mcp.resource": "readMcpResource",
@@ -266,6 +267,7 @@ export const RPC_WRITE_METHODS: ReadonlySet<string> = new Set([
   "session.delete",
   "session.new",
   "session.archive",
+  "session.attach",
   "mcp.server.add",
   "mcp.server.remove",
   "permission.save",
@@ -1058,6 +1060,14 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.sessionExport(stringParam(body.params, "id")),
+      };
+    }
+    if (body.method === "session.attach") {
+      optionsGuard(client, "sessionAttach");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.sessionAttach(stringParam(body.params, "id")),
       };
     }
     if (body.method === "mcp.catalog") {

@@ -190,6 +190,14 @@ export function createTerminalController(input: {
     return nativeTerminal;
   }
 
+  /**
+   * I3: the registry's model-visible surface addresses only the active
+   * session's panes. Called when a session is established and again on attach.
+   */
+  function setActiveSession(sessionID: string | undefined) {
+    nativeTerminal?.setActiveSession(sessionID);
+  }
+
   async function close() {
     await nativeTerminal?.dispose();
     nativeTerminal = undefined;
@@ -197,5 +205,5 @@ export function createTerminalController(input: {
     nativeInputBroker = undefined;
   }
 
-  return { init, get, close };
+  return { init, get, setActiveSession, close };
 }

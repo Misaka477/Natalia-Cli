@@ -108,6 +108,10 @@ export type NataliaSDK = {
   exportSession(
     id: string,
   ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["sessionExport"]>>>>;
+  /** Makes an existing durable session active in this hosted runtime. A write. */
+  attachSession(
+    id: string,
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["sessionAttach"]>>>>;
   /** Lists permission profiles with the active default. Read-only. */
   permissionList(): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["permissionList"]>>>
@@ -518,6 +522,7 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     newSession: async (input = {}) => await call("session.new", input),
     archiveSession: async (id) => await call("session.archive", { id }),
     exportSession: async (id) => await call("session.export", { id }),
+    attachSession: async (id) => await call("session.attach", { id }),
     permissionList: async () => await call("permission.list", {}),
     permissionSave: async (input) => await call("permission.save", input),
     permissionDelete: async (name) => await call("permission.delete", { name }),

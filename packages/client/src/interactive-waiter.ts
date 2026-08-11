@@ -198,6 +198,24 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
     restoreRecoveredInteractiveState(pending.approvals, pending.questions);
   }
 
+  /**
+   * Session grants are deliberately process-local. Attaching a different durable
+   * session must never carry approvals, terminal scopes, or stale waiter state
+   * across that security boundary.
+   */
+  function reset() {
+    pendingApprovals.clear();
+    pendingApprovalRequests.clear();
+    sessionApprovedTools.clear();
+    approvalToolByID.clear();
+    approvalWorkGraphContext.clear();
+    terminalApprovalByID.clear();
+    terminalApprovalScopes.clear();
+    approvalWaiters.clear();
+    pendingQuestions.clear();
+    questionWaiters.clear();
+  }
+
   function restoreRecoveredInteractiveState(
     approvals: Array<Extract<RuntimeEvent, { type: "approval.request" }>>,
     questions: Array<Extract<RuntimeEvent, { type: "question.request" }>>,
@@ -333,6 +351,7 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
   }
 
   return {
+    reset,
     requireApproval,
     requireQuestion,
     respondApproval,

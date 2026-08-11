@@ -787,6 +787,8 @@ async function withTimeout<T>(
 
 export type NativeTerminalSession = {
   id: string;
+  /** The session that started this pane; absent for pre-I3 recovered panes. */
+  sessionID?: string;
   host: "wezterm";
   paneID: number;
   windowID: number;
@@ -843,6 +845,13 @@ export class NativeTerminalRegistry {
   private humanInputBridge?: { endpoint: string; token: string };
   private lastReconcileAt = -Infinity;
   private reconcileInFlight?: Promise<NativeTerminalSession[]>;
+  /**
+   * I3: the session whose panes the model-visible surface (list and every
+   * id-addressed entry) may see. Unset keeps the legacy behaviour — every
+   * pane is visible — which is what an externally provided registry (host
+   * owns it, no sessions) expects.
+   */
+  private activeSession: string | undefined;
 
   constructor(
     private readonly host: NativeTerminalHost,
@@ -859,7 +868,17 @@ export class NativeTerminalRegistry {
     this.humanInputBridge = bridge;
   }
 
-  async start(input: { command: string; cwd: string; id?: string }) {
+  /** I3: switch whose panes the model-visible surface addresses. */
+  setActiveSession(sessionID: string | undefined) {
+    this.activeSession = sessionID;
+  }
+
+  async start(input: {
+    command: string;
+    cwd: string;
+    id?: string;
+    sessionID?: string;
+  }) {
     // Creating a pane is only ever requested by the model, and it lands in the
     // window the human is attached to.
     this.assertNoHumanSecureInput("starting a terminal", "model");
@@ -892,6 +911,10 @@ export class NativeTerminalRegistry {
     }
     const session: NativeTerminalSession = {
       id: input.id ?? `terminal_${randomUUID()}`,
+      // Model-side starts (tools and remote callers) belong to the active
+      // session; an explicit id wins once parallel sessions can start panes
+      // for a background session.
+      sessionID: input.sessionID ?? this.activeSession,
       host: "wezterm",
       paneID: pane.pane_id,
       windowID: pane.window_id,
@@ -940,8 +963,18 @@ export class NativeTerminalRegistry {
     return session;
   }
 
+  /** I3: only the active session's panes are visible to the model surface. */
+  private sessionVisible(session: NativeTerminalSession): boolean {
+    return (
+      this.activeSession === undefined ||
+      session.sessionID === this.activeSession
+    );
+  }
+
   list() {
-    return [...this.sessions.values()];
+    return [...this.sessions.values()].filter((session) =>
+      this.sessionVisible(session),
+    );
   }
 
   private loadPersistedSessions() {
@@ -960,6 +993,9 @@ export class NativeTerminalRegistry {
         const paneID = (raw as Record<string, unknown>).paneID;
         const session: NativeTerminalSession = {
           id: (raw as Record<string, unknown>).id as string,
+          sessionID: (raw as Record<string, unknown>).sessionID as
+            | string
+            | undefined,
           host: "wezterm",
           paneID: typeof paneID === "number" ? paneID : 0,
           windowID: (raw as Record<string, unknown>).windowID as number,
@@ -1003,6 +1039,7 @@ export class NativeTerminalRegistry {
       const data = JSON.stringify({
         sessions: Array.from(this.sessions.values()).map((s) => ({
           id: s.id,
+          sessionID: s.sessionID,
           paneID: s.paneID,
           windowID: s.windowID,
           muxWindowID: s.muxWindowID,
@@ -1482,7 +1519,9 @@ export class NativeTerminalRegistry {
   }
 
   async dispose() {
-    const running = this.list().filter(
+    // I3: teardown is registry lifecycle, not a session-scoped view — every
+    // pane must stop, including panes of sessions that are not active now.
+    const running = [...this.sessions.values()].filter(
       (session) => session.status === "running",
     );
     await Promise.allSettled(running.map((session) => this.stop(session.id)));
@@ -1517,7 +1556,10 @@ export class NativeTerminalRegistry {
 
   private get(id: string): NativeTerminalSession {
     const session = this.sessions.get(id);
-    if (!session) throw new Error(`native terminal session not found: ${id}`);
+    // I3: a pane that exists but belongs to another session is indistinguishable
+    // from an unknown id, so cross-session probing cannot even learn existence.
+    if (!session || !this.sessionVisible(session))
+      throw new Error(`native terminal session not found: ${id}`);
     return session;
   }
 

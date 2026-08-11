@@ -66,6 +66,7 @@ export const WORKER_ROUTE_MEMBERS = {
   "session.pin": "sessionPin",
   "session.duplicate": "sessionDuplicate",
   "session.delete": "sessionDelete",
+  "session.attach": "sessionAttach",
 } as const satisfies Readonly<Record<string, keyof RuntimeClient | null>>;
 
 /** The member names this channel routes, for reachability reporting. */
@@ -125,6 +126,7 @@ type WorkerRequest = {
     | "session.pin"
     | "session.duplicate"
     | "session.delete"
+    | "session.attach"
     | "runtime.availability"
     | "flow.save"
     | "flow.delete"
@@ -431,6 +433,11 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["sessionDelete"]>>
       >;
     },
+    async sessionAttach(id) {
+      return (await request("session.attach", id)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["sessionAttach"]>>
+      >;
+    },
     async dispose() {
       await request("dispose");
       port.removeEventListener("message", onMessage);
@@ -668,6 +675,8 @@ export async function handleWorkerRequest(
   }
   if (request.method === "session.delete")
     return await client.sessionDelete?.(request.value as string);
+  if (request.method === "session.attach")
+    return await client.sessionAttach?.(request.value as string);
   if (request.method === "approval")
     return client.respondApproval(request.value as ApprovalResponse);
   if (request.method === "question")

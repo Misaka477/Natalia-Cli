@@ -15,6 +15,7 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
   const prompts: string[] = [];
   const selectedAgents: Array<string | undefined> = [];
   const selectedModels: Array<{ modelID?: string; variant?: string }> = [];
+  const attachedSessions: string[] = [];
   const client: RuntimeClient = {
     start(handler) {
       sink = handler;
@@ -206,6 +207,10 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
     async sessionDelete(id) {
       return { id, removedAttachments: 0 };
     },
+    async sessionAttach(id) {
+      attachedSessions.push(id);
+      return { sessionID: id };
+    },
     async mcpCatalog() {
       return {
         prompts: [{ server: "fixture", name: "review" }],
@@ -332,6 +337,10 @@ test("SDK uses the TS RPC transport rather than runtime internals", async () => 
     id: "ses_one_fork_turn_sdk",
     title: "One (fork)",
   });
+  expect(await sdk.attachSession("ses_two")).toEqual({
+    sessionID: "ses_two",
+  });
+  expect(attachedSessions).toEqual(["ses_two"]);
   expect(await sdk.messages({ order: "asc" })).toMatchObject({
     data: [{ id: "turn_message" }],
   });

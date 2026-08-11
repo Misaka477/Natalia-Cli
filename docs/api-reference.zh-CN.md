@@ -246,8 +246,10 @@ runtime 事件类型，刻意跳过其余（dialog 与 terminal-pane-focus 事�
 `view-store` 将其归一化并导出 `turnIDForTool`，让自行按键的状态与它一致。
 
 **不带 `sessionID` 的事件是 runtime 级事件，任何被授权的 session 订阅者可见。**
-今天多数事件类型不带 `sessionID`；规则是"无 session id = runtime 级"。这是当前单
-runtime 形态的事实，多会话落地时复查。
+runtime 会给会话建立后发布的每个事件盖上该会话的 id，因此回合、工具、审批与终端
+事件只属于一个会话。只有会话建立前发布的事件（启动早期诊断）或自带 id 的事件
+（`session.created`、`session.ready`、work graph 节点）不盖章——"无 session id =
+runtime 级"现在只适用于这些。
 
 ### 回合生命周期
 
@@ -317,9 +319,11 @@ transcript 与 session 记录可按游标、按序列读取：
   （`session.new`）创建记录——按 id 幂等（已存在答 `created: false`，否则
   铸造 `ses_…` id）。`archiveSession`（`session.archive`）标记
   `archived: true`（仍可列出与导出）；`exportSession`（`session.export`）
-  以 `{ seq, event }` 对导出 journal。RPC 仍不能做的是*激活*运行中 runtime
-  的另一个会话——runtime 构造时绑定一个 session id；切换属于多会话设计，
-  不是配置开关。
+  以 `{ seq, event }` 对导出 journal。`attachSession(id)`（`session.attach`）可在不重建
+  host 进程的前提下，把已有记录设为活动 session。回合、审批或提问仍在进行时会拒绝，
+  避免完成结果落进错误的 journal；会话级审批不会跨 session 继承。attach 是多会话
+  控制面的第一步，**尚不是**并行多会话执行：当前 runtime 同一时间仍只有一个活动
+  session。
 - **其余会话记录成员是元数据操作，不动 journal。** `sessionTouch(id)` 刷新
   `lastAccessedAt`；`sessionRename(id, title)` 改标题（空标题拒绝）；
   `sessionPin(id, pinned)` 设置/取消置顶。`sessionDuplicate(id, title?)` 复制
@@ -437,7 +441,9 @@ provider 请求：
 `nativeTerminal` 组除 `start`/`write`/`resize` 外的成员不需要 host 门控，但
 host 必须存在（否则报 "Native Terminal Host is unavailable"）：
 
-- `nativeTerminalList()` — 现有会话（与 mux server 对账后）。
+- `nativeTerminalList()` — 当前会话的现有 pane（与 mux server 对账后）。pane
+  按会话隔离寻址（I3）：`attachSession` 之后只能看到所挂接会话的 pane，其他会话
+  的 pane 与未知 id 无差别。
 - `nativeTerminalRead(id)` — 读会话文本（最多 200 行）。
 - `nativeTerminalOpenHub()` — 打开 mux 窗口，返回 `{ muxWindowID }`。
 - `nativeTerminalStop(id)` — 终止会话（答 `status: "exited"`）。
@@ -491,8 +497,8 @@ conformance 套件 `packages/sdk/test/consumer-conformance.test.ts` 是本文档
   写入；重放 `idempotencyKey` 答 `delivery: "duplicate"` 而不是写两次。
 - **worker 通道**（TUI 进程内代理）路由 API 子集并如实报告其余；它不是第二个公开
   集成目标。
-- **多数事件今天不带 `sessionID`**；"runtime 级、任何被授权订阅者可见"的规则在
-  多会话落地时复查。
+- **会话建立后发布的每个事件都盖上该会话的 id**；"runtime 级、任何被授权订阅者
+  可见"的规则只适用于会话建立前发布的事件——实际只有启动早期诊断。
 - **视频附件目前仅 Gemini。** Gemini 适配器把 `video/mp4` 与 `video/webm`
   降级为 inline 视频；Anthropic 与 OpenAI 兼容适配器答 `videoInput: false`，
   视频附件会被拒绝，消息点名适配器。
@@ -684,7 +690,7 @@ createRuntimeHttpServer({
   `start`, `submit`, `cancel`, `snapshot`, `diagnostic`, `lastSubmission`, `respondApproval`, `respondQuestion`.
 - Deprecated members (`DEPRECATED_RUNTIME_MEMBERS`): none (mechanism in place, table empty).
 
-### Capability groups (16 groups · 87 optional members)
+### Capability groups (16 groups · 88 optional members)
 
 | Group          | Members (RuntimeClient names)                                                                                                                                                                                                                                                                                         |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -696,7 +702,7 @@ createRuntimeHttpServer({
 | nativeTerminal | `nativeTerminalList` · `nativeTerminalRead` · `nativeTerminalOpenHub` · `nativeTerminalRevokeApprovalScope` · `nativeTerminalReleaseHumanControl` · `nativeTerminalBeginSecureInput` · `nativeTerminalEndSecureInput` · `nativeTerminalStop` · `nativeTerminalStart` · `nativeTerminalWrite` · `nativeTerminalResize` |
 | checkpoint     | `checkpointList` · `checkpointPreview` · `checkpointRollback`                                                                                                                                                                                                                                                         |
 | sandbox        | `sandboxList` · `sandboxDiff` · `sandboxResources` · `sandboxResourceOutput` · `sandboxMerge` · `sandboxDelete` · `sandboxResourceStop`                                                                                                                                                                               |
-| sessions       | `sessionList` · `sessionTouch` · `sessionRename` · `sessionPin` · `sessionDuplicate` · `sessionFork` · `sessionDelete` · `sessionNew` · `sessionArchive` · `sessionExport`                                                                                                                                            |
+| sessions       | `sessionList` · `sessionTouch` · `sessionRename` · `sessionPin` · `sessionDuplicate` · `sessionFork` · `sessionDelete` · `sessionNew` · `sessionArchive` · `sessionExport` · `sessionAttach`                                                                                                                          |
 | mcp            | `mcpCatalog` · `getMcpPrompt` · `readMcpResource` · `mcpServerAdd` · `mcpServerRemove`                                                                                                                                                                                                                                |
 | extensions     | `plugins` · `commandCatalog` · `capabilities` · `pluginUnload` · `pluginReload`                                                                                                                                                                                                                                       |
 | management     | `permissionList` · `permissionSave` · `permissionDelete`                                                                                                                                                                                                                                                              |
@@ -705,7 +711,7 @@ createRuntimeHttpServer({
 | workGraph      | `workGraphNodes` · `workGraphEdges`                                                                                                                                                                                                                                                                                   |
 | intelligence   | `constitutionRules` · `decisionRecords` · `evidenceRecords` · `driftFindings` · `registeredTools`                                                                                                                                                                                                                     |
 
-### RPC route table (92 methods → members)
+### RPC route table (93 methods → members)
 
 | RPC method                           | RuntimeClient member                | Capability group | Write |
 | ------------------------------------ | ----------------------------------- | ---------------- | ----- |
@@ -753,6 +759,7 @@ createRuntimeHttpServer({
 | `session.new`                        | `sessionNew`                        | sessions         | write |
 | `session.archive`                    | `sessionArchive`                    | sessions         | write |
 | `session.export`                     | `sessionExport`                     | sessions         | read  |
+| `session.attach`                     | `sessionAttach`                     | sessions         | write |
 | `mcp.catalog`                        | `mcpCatalog`                        | mcp              | read  |
 | `mcp.prompt`                         | `getMcpPrompt`                      | mcp              | read  |
 | `mcp.resource`                       | `readMcpResource`                   | mcp              | read  |
@@ -802,7 +809,7 @@ createRuntimeHttpServer({
 | `flow.delete`                        | `deleteFlowDocument`                | automation       | write |
 | `task.preview`                       | `taskPermissionPreview`             | automation       | read  |
 
-### Write surface (`RPC_WRITE_METHODS`, 45 methods; read-only credentials get `-32001 refused`)
+### Write surface (`RPC_WRITE_METHODS`, 46 methods; read-only credentials get `-32001 refused`)
 
 - `prompt`
 - `cancel`
@@ -827,6 +834,7 @@ createRuntimeHttpServer({
 - `session.delete`
 - `session.new`
 - `session.archive`
+- `session.attach`
 - `mcp.server.add`
 - `mcp.server.remove`
 - `permission.save`
@@ -939,6 +947,7 @@ createRuntimeHttpServer({
 | `newSession`                        | `session.new`                        | `input?`: { id?: string; title?: string; }                                 | { sessionID: string; created: boolean }                                                                                                                                                                                                                                                                             |
 | `archiveSession`                    | `session.archive`                    | `id`: string                                                               | { id: string; archived: boolean }                                                                                                                                                                                                                                                                                   |
 | `exportSession`                     | `session.export`                     | `id`: string                                                               | { sessionID: string; title: string; createdAt: string; archived: boolean; events: Array<{ seq: number; event: RuntimeEvent }>; }                                                                                                                                                                                    |
+| `attachSession`                     | `session.attach`                     | `id`: string                                                               | { sessionID: string }                                                                                                                                                                                                                                                                                               |
 | `permissionList`                    | `permission.list`                    | —                                                                          | { default: string; profiles: Array<{ name: string } & PermissionProfile>; }                                                                                                                                                                                                                                         |
 | `permissionSave`                    | `permission.save`                    | `input`: { name: string; profile: PermissionProfile; }                     | { saved: boolean; applied: boolean; reason?: string }                                                                                                                                                                                                                                                               |
 | `permissionDelete`                  | `permission.delete`                  | `name`: string                                                             | { deleted: boolean; reason?: string; }                                                                                                                                                                                                                                                                              |

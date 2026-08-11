@@ -18,7 +18,7 @@
  *    would be permanent. `workGraphSummary` is the only place a summary is
  *    constructed, so that rule has one enforcement point.
  */
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 
 export type WorkGraphNodeEvent = Extract<
   RuntimeEvent,
@@ -80,7 +80,7 @@ function workGraphSummary(parts: Array<string | undefined>): string {
 /** One node per turn: the agent acted. */
 export function agentActionNode(input: {
   turnID: string;
-  sessionID: string;
+  sessionID: SessionID;
   agent?: string;
 }): WorkGraphNodeEvent {
   return {
@@ -105,7 +105,7 @@ export function toolCallNode(input: {
   callID: string;
   toolName: string;
   status: string;
-  sessionID: string;
+  sessionID: SessionID;
 }): WorkGraphNodeEvent {
   return {
     type: "workgraph.node_added",
@@ -140,7 +140,7 @@ export function approvalNode(input: {
   approvalID: string;
   decision: string;
   toolName?: string;
-  sessionID: string;
+  sessionID: SessionID;
   turnID?: string;
 }): WorkGraphNodeEvent {
   return {
@@ -195,7 +195,7 @@ export function workspaceChangeNode(input: {
   turnID: string;
   path: string;
   toolName: string;
-  sessionID: string;
+  sessionID: SessionID;
 }): WorkGraphNodeEvent {
   return {
     type: "workgraph.node_added",

@@ -294,9 +294,12 @@ A tool event's `id` is not the turn id: the runtime publishes tool events as
 `turnIDForTool` so state you key yourself agrees.
 
 **Events without `sessionID` are runtime-level and visible to any authorized
-session subscriber.** Today most event types carry no `sessionID`; the rule is
-"no session id = runtime level". This is the current single-runtime fact and
-will be revisited when multi-session lands.
+session subscriber.** The runtime stamps every event published while a session
+is active with that session's id, so turn, tool, approval and terminal events
+belong to exactly one session. Only events published before the session exists
+(early diagnostics) or events that carry their own id (`session.created`,
+`session.ready`, work-graph nodes) escape the stamp — the "no session id =
+runtime level" rule now applies to those alone.
 
 ### The turn lifecycle
 
@@ -383,9 +386,13 @@ Three behaviours worth knowing before you build on them:
   by id (`created: false` for an existing id, otherwise a minted `ses_…` id).
   `archiveSession` (`session.archive`) marks it `archived: true` (it stays
   listable and exportable); `exportSession` (`session.export`) dumps the
-  journal as `{ seq, event }` pairs. What RPC still cannot do is _activate_ a
-  different session in a running runtime — a runtime binds one session id at
-  construction; switching is the multi-session design, not a config flag.
+  journal as `{ seq, event }` pairs. `attachSession(id)` (`session.attach`)
+  makes an existing record the active session without rebuilding the host
+  process. It refuses while a turn, approval, or question is active, so a
+  completion cannot land in the wrong journal; session-scoped approvals are
+  cleared rather than carried across. Attach is the first multi-session
+  control-plane step, **not** parallel multi-session execution yet: this
+  runtime still has one active session at a time.
 - **The remaining session-record members are metadata operations; they never
   touch the journal.** `sessionTouch(id)` refreshes `lastAccessedAt`;
   `sessionRename(id, title)` changes the title (an empty title is refused);
@@ -537,8 +544,10 @@ The `nativeTerminal` members other than `start`/`write`/`resize` need no host
 gating, but the host must exist (they fail with "Native Terminal Host is
 unavailable" otherwise):
 
-- `nativeTerminalList()` — the existing sessions (reconciled with the mux
-  server).
+- `nativeTerminalList()` — the existing sessions of the current session
+  (reconciled with the mux server). Panes are addressed per session (I3):
+  after `attachSession`, only the attached session's panes are visible, and a
+  pane of another session is indistinguishable from an unknown id.
 - `nativeTerminalRead(id)` — the session's text (at most 200 lines).
 - `nativeTerminalOpenHub()` — opens a mux window, returns `{ muxWindowID }`.
 - `nativeTerminalStop(id)` — terminates the session (answers
@@ -612,9 +621,10 @@ plan around them rather than discover them:
   `delivery: "duplicate"` instead of writing twice.
 - **The worker channel** (TUI in-process proxy) routes a subset of the API and
   reports the rest honestly; it is not a second public integration target.
-- **Session events carry no `sessionID` in most cases today**; the
-  "runtime-level, visible to any authorized subscriber" rule is reviewed when
-  multi-session lands.
+- **Every event published while a session is active is stamped with that
+  session's id**; the "runtime-level, visible to any authorized subscriber"
+  rule applies only to events published before the session exists, which in
+  practice is early startup diagnostics.
 - **Video attachments are Gemini-only today.** The Gemini adapter lowers
   `video/mp4` and `video/webm` to inline video; the Anthropic and
   OpenAI-compatible adapters answer `videoInput: false`, so a video attachment
@@ -823,7 +833,7 @@ Deployment notes:
   `start`, `submit`, `cancel`, `snapshot`, `diagnostic`, `lastSubmission`, `respondApproval`, `respondQuestion`.
 - Deprecated members (`DEPRECATED_RUNTIME_MEMBERS`): none (mechanism in place, table empty).
 
-### Capability groups (16 groups · 87 optional members)
+### Capability groups (16 groups · 88 optional members)
 
 | Group          | Members (RuntimeClient names)                                                                                                                                                                                                                                                                                         |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -835,7 +845,7 @@ Deployment notes:
 | nativeTerminal | `nativeTerminalList` · `nativeTerminalRead` · `nativeTerminalOpenHub` · `nativeTerminalRevokeApprovalScope` · `nativeTerminalReleaseHumanControl` · `nativeTerminalBeginSecureInput` · `nativeTerminalEndSecureInput` · `nativeTerminalStop` · `nativeTerminalStart` · `nativeTerminalWrite` · `nativeTerminalResize` |
 | checkpoint     | `checkpointList` · `checkpointPreview` · `checkpointRollback`                                                                                                                                                                                                                                                         |
 | sandbox        | `sandboxList` · `sandboxDiff` · `sandboxResources` · `sandboxResourceOutput` · `sandboxMerge` · `sandboxDelete` · `sandboxResourceStop`                                                                                                                                                                               |
-| sessions       | `sessionList` · `sessionTouch` · `sessionRename` · `sessionPin` · `sessionDuplicate` · `sessionFork` · `sessionDelete` · `sessionNew` · `sessionArchive` · `sessionExport`                                                                                                                                            |
+| sessions       | `sessionList` · `sessionTouch` · `sessionRename` · `sessionPin` · `sessionDuplicate` · `sessionFork` · `sessionDelete` · `sessionNew` · `sessionArchive` · `sessionExport` · `sessionAttach`                                                                                                                          |
 | mcp            | `mcpCatalog` · `getMcpPrompt` · `readMcpResource` · `mcpServerAdd` · `mcpServerRemove`                                                                                                                                                                                                                                |
 | extensions     | `plugins` · `commandCatalog` · `capabilities` · `pluginUnload` · `pluginReload`                                                                                                                                                                                                                                       |
 | management     | `permissionList` · `permissionSave` · `permissionDelete`                                                                                                                                                                                                                                                              |
@@ -844,7 +854,7 @@ Deployment notes:
 | workGraph      | `workGraphNodes` · `workGraphEdges`                                                                                                                                                                                                                                                                                   |
 | intelligence   | `constitutionRules` · `decisionRecords` · `evidenceRecords` · `driftFindings` · `registeredTools`                                                                                                                                                                                                                     |
 
-### RPC route table (92 methods → members)
+### RPC route table (93 methods → members)
 
 | RPC method                           | RuntimeClient member                | Capability group | Write |
 | ------------------------------------ | ----------------------------------- | ---------------- | ----- |
@@ -892,6 +902,7 @@ Deployment notes:
 | `session.new`                        | `sessionNew`                        | sessions         | write |
 | `session.archive`                    | `sessionArchive`                    | sessions         | write |
 | `session.export`                     | `sessionExport`                     | sessions         | read  |
+| `session.attach`                     | `sessionAttach`                     | sessions         | write |
 | `mcp.catalog`                        | `mcpCatalog`                        | mcp              | read  |
 | `mcp.prompt`                         | `getMcpPrompt`                      | mcp              | read  |
 | `mcp.resource`                       | `readMcpResource`                   | mcp              | read  |
@@ -941,7 +952,7 @@ Deployment notes:
 | `flow.delete`                        | `deleteFlowDocument`                | automation       | write |
 | `task.preview`                       | `taskPermissionPreview`             | automation       | read  |
 
-### Write surface (`RPC_WRITE_METHODS`, 45 methods; read-only credentials get `-32001 refused`)
+### Write surface (`RPC_WRITE_METHODS`, 46 methods; read-only credentials get `-32001 refused`)
 
 - `prompt`
 - `cancel`
@@ -966,6 +977,7 @@ Deployment notes:
 - `session.delete`
 - `session.new`
 - `session.archive`
+- `session.attach`
 - `mcp.server.add`
 - `mcp.server.remove`
 - `permission.save`
@@ -1078,6 +1090,7 @@ Deployment notes:
 | `newSession`                        | `session.new`                        | `input?`: { id?: string; title?: string; }                                 | { sessionID: string; created: boolean }                                                                                                                                                                                                                                                                             |
 | `archiveSession`                    | `session.archive`                    | `id`: string                                                               | { id: string; archived: boolean }                                                                                                                                                                                                                                                                                   |
 | `exportSession`                     | `session.export`                     | `id`: string                                                               | { sessionID: string; title: string; createdAt: string; archived: boolean; events: Array<{ seq: number; event: RuntimeEvent }>; }                                                                                                                                                                                    |
+| `attachSession`                     | `session.attach`                     | `id`: string                                                               | { sessionID: string }                                                                                                                                                                                                                                                                                               |
 | `permissionList`                    | `permission.list`                    | —                                                                          | { default: string; profiles: Array<{ name: string } & PermissionProfile>; }                                                                                                                                                                                                                                         |
 | `permissionSave`                    | `permission.save`                    | `input`: { name: string; profile: PermissionProfile; }                     | { saved: boolean; applied: boolean; reason?: string }                                                                                                                                                                                                                                                               |
 | `permissionDelete`                  | `permission.delete`                  | `name`: string                                                             | { deleted: boolean; reason?: string; }                                                                                                                                                                                                                                                                              |

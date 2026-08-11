@@ -255,6 +255,7 @@ test("a read-only credential cannot write, and the refusal does not leak existen
       "session.delete",
       "session.new",
       "session.archive",
+      "session.attach",
       "mcp.server.add",
       "mcp.server.remove",
       "permission.save",
@@ -302,6 +303,7 @@ test("the write surface is an enumerated, test-pinned list", () => {
   expect(RPC_WRITE_METHODS.has("session.delete")).toBe(true);
   expect(RPC_WRITE_METHODS.has("session.new")).toBe(true);
   expect(RPC_WRITE_METHODS.has("session.archive")).toBe(true);
+  expect(RPC_WRITE_METHODS.has("session.attach")).toBe(true);
   expect(RPC_WRITE_METHODS.has("session.export")).toBe(false);
   expect(RPC_WRITE_METHODS.has("permission.save")).toBe(true);
   expect(RPC_WRITE_METHODS.has("permission.delete")).toBe(true);

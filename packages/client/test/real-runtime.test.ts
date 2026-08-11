@@ -1525,6 +1525,7 @@ test("runtime loads a local manifest plugin and exposes its owned tool", async (
     id: "demo.plugin",
     status: "unloaded",
     detail: undefined,
+    sessionID: "ses_plugin_runtime",
   });
 });
 
@@ -2487,6 +2488,7 @@ test("runtime agent selection applies only at the next provider turn boundary", 
     type: "agent.selection",
     name: "second",
     pending: true,
+    sessionID: "ses_agent_boundary",
   });
   release();
   await first;
@@ -2497,6 +2499,7 @@ test("runtime agent selection applies only at the next provider turn boundary", 
     type: "agent.selection",
     name: "second",
     pending: false,
+    sessionID: "ses_agent_boundary",
   });
 });
 
@@ -2907,6 +2910,7 @@ test("model slash commands share catalog and durable selection behavior", async 
     type: "model.selection",
     modelID: "beta",
     variant: "fast",
+    sessionID: "ses_runtime_model_command",
   });
 });
 
@@ -3639,6 +3643,7 @@ test("tool turns require a non-empty final assistant response", async () => {
     type: "turn.finished",
     id: expect.any(String),
     stopReason: "done",
+    sessionID: "ses_ts7_final_response",
   });
 });
 
@@ -3678,6 +3683,7 @@ test("tool turns complete with a reason when the model omits its final response"
     id: expect.any(String),
     stopReason: "done",
     reason: "missing_final_response",
+    sessionID: "ses_ts7_missing_final",
   });
   expect(
     events.some(
@@ -3741,6 +3747,7 @@ test("ordinary tools settle as failed when their execution timeout expires", asy
     type: "turn.finished",
     id: expect.any(String),
     stopReason: "done",
+    sessionID: "ses_ts7_tool_timeout",
   });
 });
 
@@ -6482,6 +6489,166 @@ test("session lifecycle: new is idempotent, archive marks, export dumps the jour
     await client.dispose?.();
   }
 });
+
+test("session attach switches the active durable journal and refuses mid-turn", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-session-attach-"));
+  let release: (() => void) | undefined;
+  let calls = 0;
+  const provider: StreamingProvider = {
+    provider: "attach",
+    model: "attach",
+    async *stream() {
+      calls += 1;
+      if (calls === 1)
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      yield { type: "content" as const, text: "first session" };
+      yield { type: "done" as const };
+    },
+  };
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_attach_a",
+    provider,
+  });
+  client.start(() => undefined);
+  try {
+    await client.sessionNew?.({ id: "ses_attach_b", title: "Second" });
+    const turn = client.submit("wait");
+    await waitFor(() => release !== undefined);
+    const refused = await client
+      .sessionAttach?.("ses_attach_b")
+      .catch((error: unknown) => error);
+    expect(String(refused)).toContain(
+      "cannot attach a session while a turn is running",
+    );
+    release?.();
+    await turn;
+
+    expect(await client.sessionAttach?.("ses_attach_b")).toEqual({
+      sessionID: "ses_attach_b",
+    });
+    await client.submit("second");
+    const second = await client.history?.({ limit: 100 });
+    expect(
+      second?.events.some((entry) => entry.event.type === "turn.submitted"),
+    ).toBe(true);
+
+    expect(await client.sessionAttach?.("ses_attach_a")).toEqual({
+      sessionID: "ses_attach_a",
+    });
+    const first = await client.history?.({ limit: 100 });
+    expect(
+      first?.events.some((entry) => entry.event.type === "turn.submitted"),
+    ).toBe(true);
+  } finally {
+    await client.dispose?.();
+  }
+}, 30_000);
+
+test("published events are stamped with the active session and re-stamped on attach", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-event-stamp-"));
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_stamp_a",
+    provider: scriptedProvider("stamped"),
+  });
+  client.start((event) => events.push(event));
+  try {
+    await client.submit("hello");
+    const first = events.filter(
+      (event) =>
+        event.type === "turn.submitted" ||
+        event.type === "content.done" ||
+        event.type === "turn.finished",
+    );
+    expect(first.length).toBeGreaterThan(0);
+    for (const event of first)
+      expect((event as { sessionID?: string }).sessionID).toBe("ses_stamp_a");
+    // session.created carries its own id and is not double-stamped.
+    const created = events.find((event) => event.type === "session.created");
+    expect(created).toMatchObject({ sessionID: "ses_stamp_a" });
+
+    await client.sessionNew?.({ id: "ses_stamp_b", title: "Second" });
+    await client.sessionAttach?.("ses_stamp_b");
+    events.splice(0);
+    await client.submit("again");
+    const second = events.filter((event) => event.type === "turn.submitted");
+    expect(second).toHaveLength(1);
+    expect((second[0] as { sessionID?: string }).sessionID).toBe("ses_stamp_b");
+  } finally {
+    await client.dispose?.();
+  }
+}, 30_000);
+
+test("terminal panes are isolated per session across attach (I3)", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-i3-runtime-"));
+  let nextPane = 501;
+  const registry = new NativeTerminalRegistry(
+    {
+      kind: "wezterm",
+      executable: "wezterm",
+      async spawn() {
+        const paneID = nextPane++;
+        return { pane_id: paneID, window_id: 1, tab_id: paneID };
+      },
+      async list() {
+        return [];
+      },
+      async read() {
+        return "";
+      },
+      async write() {},
+      async focus() {},
+      async resize() {},
+      async stop() {},
+    },
+    { autoOpenHub: false },
+  );
+  const paneA = await registry.start({
+    id: "i3_runtime_a",
+    cwd: "/a",
+    command: "cat",
+    sessionID: "ses_i3_runtime_a",
+  });
+  const paneB = await registry.start({
+    id: "i3_runtime_b",
+    cwd: "/b",
+    command: "cat",
+    sessionID: "ses_i3_runtime_b",
+  });
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_i3_runtime_a",
+    nativeTerminal: registry,
+    provider: scriptedProvider("i3"),
+  });
+  client.start(() => undefined);
+  try {
+    await client.sessionNew?.({ id: "ses_i3_runtime_b", title: "B" });
+    await client.sessionNew?.({ id: "ses_i3_runtime_c", title: "C" });
+
+    const visibleA = (await client.nativeTerminalList?.()) ?? [];
+    expect(visibleA.map((session) => session.id)).toEqual([paneA.id]);
+
+    await client.sessionAttach?.("ses_i3_runtime_b");
+    const visibleB = (await client.nativeTerminalList?.()) ?? [];
+    expect(visibleB.map((session) => session.id)).toEqual([paneB.id]);
+
+    // A session without panes sees none; an unowned pane is never exposed.
+    await client.sessionAttach?.("ses_i3_runtime_c");
+    expect(await client.nativeTerminalList?.()).toEqual([]);
+
+    // Attaching back restores the original session's panes.
+    await client.sessionAttach?.("ses_i3_runtime_a");
+    const visibleAgain = (await client.nativeTerminalList?.()) ?? [];
+    expect(visibleAgain.map((session) => session.id)).toEqual([paneA.id]);
+  } finally {
+    await client.dispose?.();
+  }
+}, 30_000);
 
 test("permission management: save validates, delete refuses the default, both persist", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-permission-manage-"));

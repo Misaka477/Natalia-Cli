@@ -817,8 +817,18 @@ type RuntimeEventData =
  * An episode groups all events emitted by one isolated execution without
  * changing the durable workspace-level session identity used by interactive
  * clients. It is intentionally a correlation field, not a Work Graph event.
+ *
+ * `sessionID` is stamped by the runtime on every event published while a
+ * session is active, so a transport subscriber can isolate one session's
+ * stream server-side (the D6 rule: an event carrying a session id belongs to
+ * that session and no other; one without it is runtime-level and reaches every
+ * subscriber). Events that already carry a session id (`session.created`,
+ * `session.ready`, work-graph nodes) keep their own.
  */
-export type RuntimeEvent = RuntimeEventData & { episodeID?: EpisodeID };
+export type RuntimeEvent = RuntimeEventData & {
+  episodeID?: EpisodeID;
+  sessionID?: SessionID;
+};
 
 export type SubmittedTurn = Extract<RuntimeEvent, { type: "turn.submitted" }>;
 export type LocalAttachment = {
@@ -1451,6 +1461,13 @@ export type RuntimeClient = {
     archived: boolean;
     events: Array<{ seq: number; event: RuntimeEvent }>;
   }>;
+  /**
+   * Makes an existing durable session the active session of this runtime without
+   * rebuilding the host process. It is refused while this runtime has a turn or
+   * interactive request in flight: switching the closure underneath either would
+   * make the completion land in the wrong journal.
+   */
+  sessionAttach?(id: string): Promise<{ sessionID: string }>;
   mcpCatalog?(): Promise<MCPCatalogSnapshot>;
   /**
    * Lists permission profiles with the active default. Read-only.

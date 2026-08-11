@@ -898,6 +898,7 @@ export function createRealRuntimeClient(
       await pluginsController.init();
     }
     await terminalController.init();
+    terminalController.setActiveSession(sessionID);
 
     await sandboxController.init();
     session = sessionStoreController.sqlite()
@@ -1387,6 +1388,11 @@ export function createRealRuntimeClient(
     const publishStartedAt = performance.now();
     if (options.episodeID && !event.episodeID)
       event = { ...event, episodeID: options.episodeID };
+    // D6: while a session is active every event belongs to it. Events that
+    // already carry a session id keep their own; events published before the
+    // session exists are runtime-level and reach every subscriber.
+    if (session && event.sessionID === undefined)
+      event = { ...event, sessionID };
     if (event.type === "diagnostic")
       event = { ...event, at: event.at ?? new Date().toISOString() };
     if (event.type === "diagnostic") {
@@ -1718,6 +1724,109 @@ export function createRealRuntimeClient(
     await turnController.persistPromotion();
   }
 
+  async function loadSessionForAttach(id: SessionID): Promise<SessionRecord> {
+    const loaded = await sessionStoreController.json().load(id);
+    if (!loaded) throw new Error(`session not found: ${id}`);
+    const sessionSqlite = sessionStoreController.sqlite();
+    if (!sessionSqlite) return loaded;
+    const durable = sessionSqlite.get(id);
+    if (!durable) {
+      // A JSON session can predate SQLite mode. Register it before attach so
+      // later durable publishes cannot target a missing SQLite session row.
+      sessionSqlite.replace(loaded);
+      return loaded;
+    }
+    const events = sessionSqlite.loadEvents(id);
+    return {
+      ...loaded,
+      title: durable.title,
+      createdAt: durable.createdAt,
+      cancelled: durable.cancelled,
+      resumable: durable.resumable,
+      metadata: durable.metadata,
+      events: events.length ? events : loaded.events,
+      inbox: sessionSqlite.loadInbox(id).length
+        ? sessionSqlite.loadInbox(id)
+        : loaded.inbox,
+    };
+  }
+
+  async function attachSession(id: string) {
+    await ready;
+    if (activeTurnID || activeAbort)
+      throw new RuntimeRefusal(
+        "cannot attach a session while a turn is running",
+      );
+    if (interactive.hasPendingWaiters())
+      throw new RuntimeRefusal(
+        "cannot attach a session while an approval or question is pending",
+      );
+    const nextID = id as SessionID;
+    if (nextID === sessionID) return { sessionID: nextID };
+
+    // A replacement runtime can open the old session as soon as attach returns.
+    await sessionPersistence;
+    await sessionStoreController.sqlite()?.flushPendingWrites(sessionID);
+
+    const next = await loadSessionForAttach(nextID);
+    if (next.metadata?.archived)
+      throw new RuntimeRefusal("cannot attach an archived session");
+    sessionID = nextID;
+    session = next;
+    terminalController.setActiveSession(nextID);
+    lastSubmitted = undefined;
+    activeAbort = undefined;
+    activeTurnID = undefined;
+    paused = false;
+    pauseWaiters = [];
+    activeSkill = undefined;
+    selectedAgent = undefined;
+    selectedModel = undefined;
+    pendingAgent = undefined;
+    lastProviderUsage = undefined;
+    toolCalls.clear();
+    attachmentReferences.clear();
+    runtimeDiagnostics.splice(0);
+    interactive.reset();
+    context.restore({ entries: [], resources: [] });
+    applyAgentPolicy();
+    applyAgentProvider();
+
+    const projection = projectSession(next);
+    for (const event of projection.replayableEvents) {
+      if (event.type === "diagnostic")
+        runtimeDiagnostics.push({ ...event, at: event.at ?? next.createdAt });
+      if (event.type === "turn.submitted" && event.attachments?.length)
+        attachmentReferences.set(`${event.id}:user`, event.attachments);
+    }
+    const restoredAgent = projection.selectedAgent
+      ? agentRegistry?.select(projection.selectedAgent)
+      : undefined;
+    if (projection.selectedAgent && restoredAgent) {
+      selectedAgent = restoredAgent;
+      applyAgentPolicy();
+      applyAgentProvider();
+    }
+    if (projection.selectedModel) {
+      selectedModel = projection.selectedModel;
+      applyAgentProvider();
+    }
+    const sessionSqlite = sessionStoreController.sqlite();
+    const epoch = sessionSqlite?.loadContextEpoch(sessionID);
+    if (epoch) context.restoreDurableCheckpoint(epoch.snapshot);
+    restoreContextFromEvents(
+      context,
+      epoch
+        ? sessionSqlite!.loadEventsAfter(sessionID, epoch.baselineSeq)
+        : modelVisibleEvents(projection.replayableEvents),
+    );
+    await checkpointController.init();
+    publish({ type: "session.ready", sessionID });
+    publish(contextStatusEvent(context.status(runtimeContextConfig)));
+    publish(await runtimeStatusSnapshot());
+    return { sessionID };
+  }
+
   return {
     start(onEvent, startOptions) {
       sink = onEvent;
@@ -1787,6 +1896,7 @@ export function createRealRuntimeClient(
       await ready;
       return projectInteractiveRequests(session?.events ?? []);
     },
+    sessionAttach: attachSession,
     async dispose() {
       terminalCommandBuffer.clearAll();
       activeAbort?.abort(new Error("runtime disposed"));

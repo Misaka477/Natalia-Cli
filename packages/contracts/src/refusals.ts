@@ -256,6 +256,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "error",
     note: "pure read; an unknown session is an argument error",
   },
+  sessionAttach: {
+    refusal: "error",
+    note: "an unknown session, active turn, or pending interactive request leaves no safe partial attach",
+  },
 
   // --- mcp ---
   mcpCatalog: { refusal: "none", note: "pure read" },

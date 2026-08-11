@@ -1978,3 +1978,76 @@ arbitrationTest(
     ).resolves.toBeDefined();
   },
 );
+
+test("native registry isolates panes per active session (I3)", async () => {
+  let nextPane = 401;
+  const registry = new NativeTerminalRegistry(
+    {
+      kind: "wezterm",
+      executable: "wezterm",
+      async spawn() {
+        const paneID = nextPane++;
+        return { pane_id: paneID, window_id: 1, tab_id: paneID };
+      },
+      async list() {
+        return [];
+      },
+      async read() {
+        return "";
+      },
+      async write() {},
+      async focus() {},
+      async resize() {},
+      async stop() {},
+    },
+    { autoOpenHub: false },
+  );
+  const a = await registry.start({
+    id: "i3_pane_a",
+    cwd: "/a",
+    command: "cat",
+    sessionID: "ses_i3_a",
+  });
+  const b = await registry.start({
+    id: "i3_pane_b",
+    cwd: "/b",
+    command: "cat",
+    sessionID: "ses_i3_b",
+  });
+
+  // Unset active session keeps the legacy behaviour: everything visible.
+  expect(registry.list().map((session) => session.id)).toEqual([
+    "i3_pane_a",
+    "i3_pane_b",
+  ]);
+
+  registry.setActiveSession("ses_i3_a");
+  expect(registry.list().map((session) => session.id)).toEqual(["i3_pane_a"]);
+  // A pane of another session is indistinguishable from an unknown id: no
+  // existence probe, no leak of which session owns what.
+  await expect(registry.read("i3_pane_b")).rejects.toThrow(
+    "native terminal session not found",
+  );
+
+  registry.setActiveSession("ses_i3_b");
+  expect(registry.list().map((session) => session.id)).toEqual(["i3_pane_b"]);
+  await expect(registry.read("i3_pane_a")).rejects.toThrow(
+    "native terminal session not found",
+  );
+
+  // A model-side start without an explicit id belongs to the active session.
+  const c = await registry.start({
+    id: "i3_pane_c",
+    cwd: "/c",
+    command: "cat",
+  });
+  expect(c.sessionID).toBe("ses_i3_b");
+  expect(registry.list().map((session) => session.id)).toEqual([
+    "i3_pane_b",
+    "i3_pane_c",
+  ]);
+
+  registry.setActiveSession(undefined);
+  expect(registry.list()).toHaveLength(3);
+  await registry.dispose();
+});

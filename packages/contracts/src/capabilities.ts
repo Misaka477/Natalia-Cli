@@ -151,6 +151,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "sessionNew",
     "sessionArchive",
     "sessionExport",
+    "sessionAttach",
   ],
   /** Tools and prompts contributed by MCP servers. */
   mcp: [

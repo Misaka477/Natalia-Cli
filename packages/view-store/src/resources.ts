@@ -75,6 +75,9 @@ const comparedTerminalFields = [
   // The execution this pane state was published from. A record left on a stale
   // episode attributes the pane to the wrong run.
   "episodeID",
+  // The session that published the update; a pane left on a stale session
+  // would render under the wrong ownership.
+  "sessionID",
 ] as const;
 
 /**

@@ -1101,6 +1101,7 @@ test("runtime persists safe policy decisions without tool arguments", async () =
     toolCallID: "call_write",
     decision: "deny",
     reason: 'write to "protected.txt" blocked: protected by agent policy',
+    sessionID: "ses_ts7_policy_audit",
   });
   expect(JSON.stringify(decision)).not.toContain("content");
 });
