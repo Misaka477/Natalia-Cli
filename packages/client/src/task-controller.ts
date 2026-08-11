@@ -324,6 +324,7 @@ export async function runTask(input: {
   if (!started.started) {
     input.emit(
       JSON.stringify({
+        type: "task.invocation",
         invocationID,
         taskID: input.task.taskID,
         status: "skipped_due_to_overlap",
@@ -488,8 +489,16 @@ export async function runTask(input: {
       result = state.getInvocation(invocationID)!;
       input.emit(
         input.json
-          ? JSON.stringify({ type: "task.invocation", ...result })
-          : `task ${input.task.taskID}: ${result.status}`,
+          ? JSON.stringify({
+              type: "task.invocation",
+              ...result,
+              // The invocation row has no reason column; the terminal reason
+              // lives on the last attempt. Carrying it here is what lets a
+              // client tell the user why the run ended instead of showing a
+              // bare status.
+              reason,
+            })
+          : `task ${input.task.taskID}: ${result.status}${reason ? ` — ${reason}` : ""}`,
       );
       // The task's own terminal state is already durable at this point, so an
       // alert enqueue failure is reported and never changes the task result.
@@ -804,6 +813,30 @@ type TaskModuleRunOutcome =
   | { outcome: "complete"; reason: string }
   | { outcome: "blocked" | "failed" | "cancelled" | "stalled"; reason: string };
 
+/**
+ * A fresh module runs in a brand-new episode, so the base task prompt — which
+ * describes the whole flow — would otherwise make the model re-run earlier
+ * modules (the classic "module 2 redoes module 1" trap). The active module's
+ * instructions, conditions and IDs are injected by the runtime system prompt;
+ * here we only scope the instruction to the current module.
+ */
+function moduleRunPrompt(input: {
+  task: NataliaTaskDocument;
+  flow: NataliaFlowDocument;
+  module: NataliaPlannedFlowModule;
+}): string {
+  const total = input.flow.modules.length;
+  const ordinal = input.flow.modules.findIndex(
+    (entry) => entry.id === input.module.moduleID,
+  );
+  const position =
+    ordinal >= 0 && total > 1 ? ` (module ${ordinal + 1} of ${total})` : "";
+  return `${input.task.prompt}
+
+Current active module: ${input.module.moduleID}${position}, type ${input.module.moduleType}.
+Work only on this module's instructions and completion conditions, which are in your system context. Earlier modules in the flow are already complete — do not redo their work.`;
+}
+
 async function runTaskModule(input: {
   workspaceRoot: string;
   task: NataliaTaskDocument;
@@ -884,7 +917,7 @@ async function runTaskModule(input: {
         if (line) input.emit(line);
       }
     });
-    await client.submit(input.task.prompt);
+    await client.submit(moduleRunPrompt(input));
     let evaluatorOutcome:
       | Awaited<ReturnType<typeof evaluateClaimedTaskModule>>
       | { outcome: "stalled" }
@@ -928,6 +961,7 @@ async function runTaskModule(input: {
                   input.emit(
                     JSON.stringify({
                       type: "flow.evaluator",
+                      moduleID: evaluatorContext.moduleID,
                       phase: chunk.type === "thinking" ? "thinking" : "content",
                       text: chunk.text,
                     }),

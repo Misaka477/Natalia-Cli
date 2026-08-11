@@ -110,7 +110,11 @@ export function readTaskRunOutcome(input: {
         return undefined;
       }
     })
-    .find((event) => event?.type === "task.invocation" || event?.status);
+    // Only the terminal task.invocation line carries the run's status. Every
+    // other JSON line (tool.update etc.) also has a `status` field, so a
+    // broad match would pick the first queued tool call and report the run
+    // as "queued" instead of its real outcome.
+    .find((event) => event?.type === "task.invocation");
   const status =
     typeof invocation?.status === "string" ? invocation.status : undefined;
   if (!status)
@@ -120,15 +124,21 @@ export function readTaskRunOutcome(input: {
         input.stderr.trim().split("\n").at(-1) ??
         `the task run exited with code ${String(input.exitCode)}`,
     };
+  const reason =
+    typeof invocation?.reason === "string" ? invocation.reason : undefined;
   if (status === "succeeded")
-    return { ok: true, status, message: "Task succeeded" };
+    return { ok: true, status, message: reason ?? "Task succeeded" };
   if (status === "skipped_due_to_overlap")
     return {
       ok: true,
       status,
-      message: "Skipped: the previous run is still going",
+      message: reason ?? "Skipped: the previous run is still going",
     };
-  return { ok: false, status, message: `Task ${status.replace(/_/gu, " ")}` };
+  return {
+    ok: false,
+    status,
+    message: reason ?? `Task ${status.replace(/_/gu, " ")}`,
+  };
 }
 
 /**

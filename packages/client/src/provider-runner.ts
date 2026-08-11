@@ -704,10 +704,10 @@ function runtimeSystemPrompt(input: {
       "<active_flow_module>",
       `Flow: ${input.flowID ?? "unknown"}`,
       `Module ID: ${input.moduleID}`,
-      "When claiming completion with flow_module_complete, pass exactly this flowID and moduleID, and the condition IDs below.",
+      "The flowID above is the exact identifier — never the flow's display name. When claiming completion with flow_module_complete, pass exactly this flowID and moduleID, and the condition IDs below.",
       "You MUST call flow_module_complete to claim completion before ending the turn — never finish the module by answering without it. If a condition is not fully met, claim with the honest status and gaps instead of ending silently.",
       "For each condition, set status to one of: missing (not met), partial (partly met), satisfied (fully met).",
-      "In evidenceRefs, copy the tool call ID verbatim from a tool call you actually made this module, keeping the exact tool:<callID> form (for example tool:call_01_xxx). Never invent, abbreviate, re-type or decorate a callID; never use a file name, a path, or prose as a ref. Leave evidenceRefs empty when a condition is met without tool evidence. An unmatched ref is rejected.",
+      "In evidenceRefs, copy the tool call ID verbatim from the [tool call ID: ...] prefix of a tool result you received this module, keeping the exact tool:<callID> form (for example tool:call_01_xxx). Never invent, abbreviate, re-type or decorate a callID; never use a file name, a path, or prose as a ref. Leave evidenceRefs empty when a condition is met without tool evidence. An unmatched ref is rejected.",
       input.moduleConditions?.length
         ? [
             "Completion conditions:",

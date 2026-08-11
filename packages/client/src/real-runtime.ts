@@ -2993,7 +2993,11 @@ export function createRealRuntimeClient(
           role: "tool",
           toolCallID: call.id,
           toolName: "invalid_tool_call",
-          content: `ERROR: ${reason}`,
+          content: toolResultContent(
+            `ERROR: ${reason}`,
+            call.id,
+            options.taskModuleContext,
+          ),
         });
         context.add({
           id: `${turnID}:${call.id}:result`,
@@ -3048,7 +3052,11 @@ export function createRealRuntimeClient(
           role: "tool",
           toolCallID: call.id,
           toolName: call.name,
-          content: `ERROR: ${reason}`,
+          content: toolResultContent(
+            `ERROR: ${reason}`,
+            call.id,
+            options.taskModuleContext,
+          ),
         });
         context.add({
           id: `${turnID}:${call.id}:result`,
@@ -3063,7 +3071,7 @@ export function createRealRuntimeClient(
         role: "tool",
         toolCallID: call.id,
         toolName: call.name,
-        content: result,
+        content: toolResultContent(result, call.id, options.taskModuleContext),
       });
       context.add({
         id: `${turnID}:${call.id}:result`,
@@ -3073,6 +3081,20 @@ export function createRealRuntimeClient(
       });
     }
     return messages;
+  }
+
+  /**
+   * The tool result the model actually reads. In a flow module episode the
+   * call ID is prepended to the content, because models reliably read content
+   * but routinely ignore the protocol-level tool_call_id — without this the
+   * model cannot know its own call ID and guesses evidenceRefs.
+   */
+  function toolResultContent(
+    content: string,
+    callID: string,
+    moduleContext: unknown,
+  ): string {
+    return moduleContext ? `[tool call ID: ${callID}] ${content}` : content;
   }
 
   /**
