@@ -2051,3 +2051,182 @@ test("native registry isolates panes per active session (I3)", async () => {
   expect(registry.list()).toHaveLength(3);
   await registry.dispose();
 });
+
+test("native registry request_human audits the explicit call with a bounded reason", async () => {
+  const audit: Array<{
+    action: string;
+    actor: string;
+    detail?: string;
+    id?: string;
+    cwd?: string;
+    at?: string;
+  }> = [];
+  let output = "";
+  const registry = new NativeTerminalRegistry(
+    {
+      kind: "wezterm",
+      executable: "wezterm",
+      async spawn() {
+        return { pane_id: 601, window_id: 1, tab_id: 601 };
+      },
+      async list() {
+        return [
+          { pane_id: 601, window_id: 1, tab_id: 601, rows: 24, cols: 80 },
+        ];
+      },
+      async read() {
+        return output;
+      },
+      async write() {},
+      async focus() {},
+      async resize() {},
+      async stop() {},
+    },
+    {
+      autoOpenHub: false,
+      onAudit: (event) => audit.push(event),
+    },
+  );
+  const session = await registry.start({
+    id: "rh_1",
+    cwd: "/repo",
+    command: "ssh host",
+  });
+  await registry.requestHuman(session.id, "needs the sudo password");
+  expect(audit.at(-1)).toEqual({
+    id: "rh_1",
+    cwd: "/repo",
+    action: "request_human",
+    actor: "model",
+    at: expect.any(String),
+    detail: "needs the sudo password",
+  });
+  // The model's own statement is not an output fact: requesting a human does
+  // not count as the pane producing output.
+  expect(session.mayWaitForHuman).toBeUndefined();
+  await registry.dispose();
+});
+
+test("native registry request_human rejects empty, oversized, and exited-pane reasons", async () => {
+  let nextPane = 602;
+  const registry = new NativeTerminalRegistry(
+    {
+      kind: "wezterm",
+      executable: "wezterm",
+      async spawn() {
+        const paneID = nextPane++;
+        return { pane_id: paneID, window_id: 1, tab_id: paneID };
+      },
+      async list() {
+        return [];
+      },
+      async read() {
+        return "";
+      },
+      async write() {},
+      async focus() {},
+      async resize() {},
+      async stop() {},
+    },
+    { autoOpenHub: false },
+  );
+  const session = await registry.start({
+    id: "rh_2",
+    cwd: "/repo",
+    command: "cat",
+  });
+  await expect(registry.requestHuman(session.id, "")).rejects.toThrow(
+    "requires a reason",
+  );
+  await expect(
+    registry.requestHuman(session.id, "x".repeat(241)),
+  ).rejects.toThrow("240 characters or fewer");
+  // A 240-character reason is exactly at the limit and accepted.
+  await expect(
+    registry.requestHuman(session.id, "x".repeat(240)),
+  ).resolves.toBeDefined();
+  await registry.stop(session.id);
+  await expect(
+    registry.requestHuman(session.id, "still needs input"),
+  ).rejects.toThrow("exited");
+  await registry.dispose();
+});
+
+test("native registry mayWaitForHuman is a conservative weak fact", async () => {
+  let output = "";
+  let paneID = 603;
+  const registry = new NativeTerminalRegistry(
+    {
+      kind: "wezterm",
+      executable: "wezterm",
+      async spawn() {
+        const id = paneID++;
+        return { pane_id: id, window_id: 1, tab_id: id };
+      },
+      async list() {
+        return [
+          {
+            pane_id: paneID - 1,
+            window_id: 1,
+            tab_id: paneID - 1,
+            rows: 24,
+            cols: 80,
+          },
+        ];
+      },
+      async read() {
+        return output;
+      },
+      async write() {},
+      async focus() {},
+      async resize() {},
+      async stop() {},
+    },
+    { autoOpenHub: false, mayWaitGraceMs: 30 },
+  );
+  const session = await registry.start({
+    id: "mw_1",
+    cwd: "/repo",
+    command: "ssh host",
+  });
+
+  // No model write yet: never suggests.
+  output = "Password: ";
+  await registry.read(session.id);
+  await registry.reconcile({ force: true });
+  expect(session.mayWaitForHuman).toBe(false);
+
+  // Model writes; output arrives after; the pane is silent past the grace.
+  await registry.write(session.id, "\r");
+  output = "Password: \nenter password: ";
+  await registry.read(session.id);
+  await registry.reconcile({ force: true });
+  expect(session.mayWaitForHuman).toBe(false);
+  await Bun.sleep(60);
+  await registry.reconcile({ force: true });
+  expect(session.mayWaitForHuman).toBe(true);
+
+  // The model writes again: the fact clears.
+  await registry.write(session.id, "hunter2\n");
+  await registry.reconcile({ force: true });
+  expect(session.mayWaitForHuman).toBe(false);
+
+  // Output again, grace passes, but a human now holds input: no suggestion.
+  output = "Welcome to host";
+  await registry.read(session.id);
+  await Bun.sleep(60);
+  registry.claimHumanInput(session.id);
+  await registry.reconcile({ force: true });
+  expect(session.mayWaitForHuman).toBe(false);
+  registry.releaseHumanControl(session.id);
+
+  // A computation that outlives the grace reads true too — content is never
+  // inspected, which is exactly why the fact says "may".
+  await registry.write(session.id, "make -j8\n");
+  output = "Compiling...";
+  await registry.read(session.id);
+  await Bun.sleep(60);
+  await registry.reconcile({ force: true });
+  expect(session.mayWaitForHuman).toBe(true);
+  await registry.dispose();
+});

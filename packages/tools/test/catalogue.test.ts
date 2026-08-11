@@ -46,6 +46,7 @@ const catalogue: Array<
   ["interactive_terminal_keys", true],
   ["interactive_terminal_list", false],
   ["interactive_terminal_read", false],
+  ["interactive_terminal_request_human", false],
   ["interactive_terminal_resize", false],
   ["interactive_terminal_search", false],
   ["interactive_terminal_send_line", true],

@@ -810,6 +810,12 @@ export type NativeTerminalSession = {
   cursor_y?: number;
   rows?: number;
   cols?: number;
+  /** When the model last wrote input, for the TERM-M.3 route-3 weak fact. */
+  lastModelWriteAt?: number;
+  /** When the pane last produced output, for the same weak fact. */
+  lastOutputAt?: number;
+  /** Re-derived on reconcile; never inspects content. */
+  mayWaitForHuman?: boolean;
 };
 
 export type NativeTerminalHub = {
@@ -825,10 +831,19 @@ export type NativeTerminalWriteResult = {
 export type NativeTerminalAuditEvent = {
   id: string;
   cwd: string;
-  action: "write" | "attach" | "detach" | "resize" | "secure_input" | "exit";
+  action:
+    | "write"
+    | "attach"
+    | "detach"
+    | "resize"
+    | "secure_input"
+    | "exit"
+    | "request_human";
   actor: "model" | "human" | "system";
   at: string;
   redacted?: boolean;
+  /** Carried only by request_human: the model's reason, bounded and content-free. */
+  detail?: string;
 };
 
 /**
@@ -859,6 +874,12 @@ export class NativeTerminalRegistry {
       onAudit?: (event: NativeTerminalAuditEvent) => void;
       autoOpenHub?: boolean;
       persistPath?: string;
+      /**
+       * TERM-M.3 route 3: how long a pane must be silent (after model-write
+       * followed by output) before the weak "may wait for human" fact reads
+       * true. Content is never inspected; a long computation also reads true.
+       */
+      mayWaitGraceMs?: number;
     } = {},
   ) {
     this.loadPersistedSessions();
@@ -868,8 +889,17 @@ export class NativeTerminalRegistry {
     this.humanInputBridge = bridge;
   }
 
-  /** I3: switch whose panes the model-visible surface addresses. */
+  /**
+   * I3: switch whose panes the model-visible surface addresses. Pane records
+   * without an owning session (a host-injected registry that started panes
+   * before the runtime had a session) are claimed by the new active session;
+   * explicitly owned panes never move.
+   */
   setActiveSession(sessionID: string | undefined) {
+    if (sessionID !== undefined)
+      for (const session of this.sessions.values())
+        if (session.sessionID === undefined && session.status === "running")
+          session.sessionID = sessionID;
     this.activeSession = sessionID;
   }
 
@@ -1121,6 +1151,7 @@ export class NativeTerminalRegistry {
         }
         session.status = "exited";
         session.attached = false;
+        session.mayWaitForHuman = false;
         continue;
       }
       session.rows = pane.rows;
@@ -1128,9 +1159,31 @@ export class NativeTerminalRegistry {
       session.cursor_x = pane.cursor_x;
       session.cursor_y = pane.cursor_y;
       session.attached = attached.has(session.paneID);
+      session.mayWaitForHuman = this.deriveMayWaitForHuman(session);
     }
     await this.persistSessions();
     return this.list();
+  }
+
+  /**
+   * TERM-M.3 route 3: the conservative weak fact. The model wrote, the pane
+   * produced output after that write, that output was the last activity, and
+   * the pane has been silent for the grace period. Deliberately no content
+   * inspection: a long-running computation also reads true, which is why the
+   * fact says "may".
+   */
+  private deriveMayWaitForHuman(session: NativeTerminalSession): boolean {
+    if (session.status !== "running") return false;
+    if (session.inputOwner !== "model") return false;
+    const lastModelWriteAt = session.lastModelWriteAt;
+    const lastOutputAt = session.lastOutputAt;
+    if (!lastModelWriteAt || !lastOutputAt) return false;
+    // Output found at or after the model's write counts; a strict `<=` would
+    // make the fact depend on millisecond ordering between the write and the
+    // read that discovers the output.
+    if (lastOutputAt < lastModelWriteAt) return false;
+    const graceMs = this.options.mayWaitGraceMs ?? 15_000;
+    return Date.now() - lastOutputAt >= graceMs;
   }
 
   async read(
@@ -1216,6 +1269,7 @@ export class NativeTerminalRegistry {
       return { writtenBytes, delivery: "cancelled" };
     }
     session.revision += 1;
+    session.lastModelWriteAt = Date.now();
     this.audit(session, "write", "model");
     this.notifyRevision(session.id);
     return { writtenBytes, delivery: "accepted" };
@@ -1518,6 +1572,27 @@ export class NativeTerminalRegistry {
     return session;
   }
 
+  /**
+   * TERM-M.3 route 2: the model explicitly declares that a pane needs a
+   * human. Publishes the request as an audit fact and returns immediately —
+   * the model is expected to go do something else and observe later (the (b)
+   * semantics). `reason` is a fact that may reach the journal, so it is
+   * bounded and must describe the kind of input needed, never screen content,
+   * file content, or anything that looks like a secret.
+   */
+  async requestHuman(id: string, reason: string) {
+    const session = this.get(id);
+    this.assertRunning(session);
+    if (typeof reason !== "string" || reason.length === 0)
+      throw new Error("request_human requires a reason");
+    if (reason.length > 240)
+      throw new Error(
+        "request_human reason must be 240 characters or fewer; describe the kind of input needed, never screen content or secrets",
+      );
+    this.audit(session, "request_human", "model", undefined, reason);
+    return session;
+  }
+
   async dispose() {
     // I3: teardown is registry lifecycle, not a session-scoped view — every
     // pane must stop, including panes of sessions that are not active now.
@@ -1602,6 +1677,9 @@ export class NativeTerminalRegistry {
     if (text !== session.lastText) {
       session.lastText = text;
       session.revision += 1;
+      // The pane produced output after the model's last write: this is the
+      // timestamp the TERM-M.3 route-3 weak fact keys on.
+      session.lastOutputAt = Date.now();
       this.notifyRevision(session.id);
     }
     const highlightRanges: Array<{
@@ -1699,6 +1777,7 @@ export class NativeTerminalRegistry {
     action: NativeTerminalAuditEvent["action"],
     actor: NativeTerminalAuditEvent["actor"],
     redacted = false,
+    detail?: string,
   ) {
     this.options.onAudit?.({
       id: session.id,
@@ -1707,6 +1786,7 @@ export class NativeTerminalRegistry {
       actor,
       at: new Date().toISOString(),
       redacted: action === "write" ? redacted : undefined,
+      detail,
     });
   }
 }

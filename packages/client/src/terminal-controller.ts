@@ -86,11 +86,13 @@ export function createTerminalController(input: {
             action: event.action,
             status: "executed",
             summary:
-              event.action === "write"
-                ? "native terminal input accepted"
-                : event.action === "secure_input"
-                  ? "native terminal secure input state changed"
-                  : `native terminal ${event.action} executed`,
+              event.action === "request_human"
+                ? (event.detail ?? "native terminal requests human attention")
+                : event.action === "write"
+                  ? "native terminal input accepted"
+                  : event.action === "secure_input"
+                    ? "native terminal secure input state changed"
+                    : `native terminal ${event.action} executed`,
             at: event.at,
           });
         },

@@ -66,7 +66,8 @@ export type TerminalAction =
   | "exit"
   | "attach"
   | "detach"
-  | "secure_input";
+  | "secure_input"
+  | "request_human";
 export type SandboxStatus =
   | "created"
   | "running"
@@ -1111,6 +1112,13 @@ export type RuntimeNativeTerminalSession = {
   cols?: number;
   startedAt: string;
   attached: boolean;
+  /**
+   * TERM-M.3 route 3: a conservative "this pane may be waiting for a human"
+   * weak fact. True only when the model wrote, the pane produced output after
+   * that write, and no new output or model write has happened for the grace
+   * period. It never inspects content — a long computation also reads true.
+   */
+  mayWaitForHuman?: boolean;
 };
 
 export type RuntimeTerminalObservationSession = Omit<

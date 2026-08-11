@@ -6650,6 +6650,91 @@ test("terminal panes are isolated per session across attach (I3)", async () => {
   }
 }, 30_000);
 
+test("terminal_request_human reaches the registry audit with the bounded reason", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-request-human-"));
+  const audit: Array<{ action: string; actor: string; detail?: string }> = [];
+  const registry = new NativeTerminalRegistry(
+    {
+      kind: "wezterm",
+      executable: "wezterm",
+      async spawn() {
+        return { pane_id: 701, window_id: 1, tab_id: 701 };
+      },
+      async list() {
+        return [
+          { pane_id: 701, window_id: 1, tab_id: 701, rows: 24, cols: 80 },
+        ];
+      },
+      async read() {
+        return "Password: ";
+      },
+      async write() {},
+      async focus() {},
+      async resize() {},
+      async stop() {},
+    },
+    {
+      autoOpenHub: false,
+      onAudit: (event) => audit.push(event),
+    },
+  );
+  const pane = await registry.start({
+    id: "rh_runtime_1",
+    cwd: root,
+    command: "ssh host",
+  });
+  let requested = false;
+  const provider: StreamingProvider = {
+    provider: "request-human",
+    model: "request-human",
+    async *stream(request) {
+      if (!request.messages.some((message) => message.role === "tool")) {
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            {
+              id: "call_rh",
+              name: "interactive_terminal_request_human",
+              arguments: JSON.stringify({
+                id: pane.id,
+                reason: "needs the sudo password",
+              }),
+            },
+          ],
+        };
+        return;
+      }
+      requested = true;
+      yield { type: "content" as const, text: "Waiting for the human." };
+      yield { type: "done" as const };
+    },
+  };
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_request_human",
+    nativeTerminal: registry,
+    provider,
+  });
+  client.start((event) => {
+    events.push(event);
+    if (event.type === "approval.request")
+      client.respondApproval({ requestID: event.id, decision: "once" });
+  });
+  try {
+    await client.submit("ask the human");
+    expect(requested).toBe(true);
+    expect(audit.at(-1)).toMatchObject({
+      id: "rh_runtime_1",
+      action: "request_human",
+      actor: "model",
+      detail: "needs the sudo password",
+    });
+  } finally {
+    await client.dispose?.();
+  }
+}, 30_000);
+
 test("permission management: save validates, delete refuses the default, both persist", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-permission-manage-"));
   await mkdir(join(root, ".natalia"), { recursive: true });

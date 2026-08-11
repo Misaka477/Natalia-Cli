@@ -262,6 +262,7 @@ function publicNativeTerminal(
     cols: session.cols,
     startedAt: session.startedAt,
     attached: session.attached,
+    mayWaitForHuman: session.mayWaitForHuman,
   };
 }
 

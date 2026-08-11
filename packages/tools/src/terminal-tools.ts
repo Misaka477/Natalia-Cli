@@ -566,6 +566,42 @@ function interactiveResizeTool(): RuntimeTool {
   };
 }
 
+function interactiveRequestHumanTool(): RuntimeTool {
+  return {
+    name: "interactive_terminal_request_human",
+    description:
+      'Ask a human to take over the given native Terminal pane: call this when the pane is asking for something the model cannot and must not supply — a password, a secret, a yes/no judgment, an editor session. The reason must be 240 characters or fewer and state only the kind of input needed (e.g. "needs the sudo password"); never repeat screen content, file content, or anything that looks like a secret. The call returns immediately; continue with other work and check back with interactive_terminal_observe.',
+    requiresApproval: false,
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        reason: { type: "string", maxLength: 240 },
+      },
+      required: ["id", "reason"],
+      additionalProperties: false,
+    },
+    async execute(input, context) {
+      const args = requireObject(input);
+      const id = requireString(args.id, "id");
+      const reason = requireString(args.reason, "reason");
+      const session = await requireNativeTerminal(context).requestHuman(
+        id,
+        reason,
+      );
+      return JSON.stringify(
+        {
+          ...modelNativeTerminalInfo(session),
+          humanRequested: true,
+          reason,
+        },
+        null,
+        2,
+      );
+    },
+  };
+}
+
 function interactiveStopTool(): RuntimeTool {
   return {
     name: "interactive_terminal_stop",
@@ -619,6 +655,7 @@ export function terminalTools(): RuntimeTool[] {
     interactiveInputTool(),
     interactiveSnapshotTool(),
     interactiveResizeTool(),
+    interactiveRequestHumanTool(),
     interactiveStopTool(),
     interactiveListTool(),
   ];
