@@ -5558,6 +5558,20 @@ async function waitFor(predicate: () => boolean, timeoutMs = 500) {
   throw new Error("timed out waiting for condition");
 }
 
+/** Polls the attached session's history until a turn has settled on disk. */
+async function pollHistoryForFinished(
+  client: ReturnType<typeof createRealRuntimeClient>,
+  timeoutMs = 3000,
+) {
+  for (let elapsed = 0; elapsed < timeoutMs; elapsed += 50) {
+    const history = await client.history?.({ limit: 100 });
+    if (history?.events.some((entry) => entry.event.type === "turn.finished"))
+      return;
+    await Bun.sleep(50);
+  }
+  throw new Error("timed out waiting for a settled turn in history");
+}
+
 test("the system prompt enumerates installed skills dynamically", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-prompt-skills-"));
   const requests: ProviderStreamRequest[] = [];
@@ -6490,7 +6504,7 @@ test("session lifecycle: new is idempotent, archive marks, export dumps the jour
   }
 });
 
-test("session attach switches the active durable journal and refuses mid-turn", async () => {
+test("session attach switches the active journal while a background turn keeps running", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-session-attach-"));
   let release: (() => void) | undefined;
   let calls = 0;
@@ -6515,32 +6529,40 @@ test("session attach switches the active durable journal and refuses mid-turn", 
   client.start(() => undefined);
   try {
     await client.sessionNew?.({ id: "ses_attach_b", title: "Second" });
-    const turn = client.submit("wait");
+    const turnA = client.submit("wait");
     await waitFor(() => release !== undefined);
-    const refused = await client
-      .sessionAttach?.("ses_attach_b")
-      .catch((error: unknown) => error);
-    expect(String(refused)).toContain(
-      "cannot attach a session while a turn is running",
-    );
-    release?.();
-    await turn;
 
+    // D2: a turn in flight is no longer a refusal — it belongs to its own
+    // session and keeps running in the background.
     expect(await client.sessionAttach?.("ses_attach_b")).toEqual({
       sessionID: "ses_attach_b",
     });
+    // Session B runs its own turn while A's is still parked.
     await client.submit("second");
+    await pollHistoryForFinished(client);
     const second = await client.history?.({ limit: 100 });
     expect(
       second?.events.some((entry) => entry.event.type === "turn.submitted"),
     ).toBe(true);
 
+    // The background turn of A settles into A's journal.
+    release?.();
+    await turnA;
+
     expect(await client.sessionAttach?.("ses_attach_a")).toEqual({
       sessionID: "ses_attach_a",
     });
+    await pollHistoryForFinished(client);
     const first = await client.history?.({ limit: 100 });
     expect(
       first?.events.some((entry) => entry.event.type === "turn.submitted"),
+    ).toBe(true);
+    expect(
+      first?.events.some(
+        (entry) =>
+          entry.event.type === "turn.finished" &&
+          (entry.event as { sessionID?: string }).sessionID === "ses_attach_a",
+      ),
     ).toBe(true);
   } finally {
     await client.dispose?.();

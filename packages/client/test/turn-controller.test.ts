@@ -26,6 +26,9 @@ function makeController(session: SessionRecord) {
   const controller = createTurnController({
     session: () => session,
     activeAbort: () => undefined,
+    sessionFor: (sessionID) =>
+      sessionID === (session.id as unknown as string) ? session : undefined,
+    activeAbortFor: () => undefined,
     persist: async (fn) => {
       await fn();
       persisted.push(persisted.length);
@@ -53,7 +56,10 @@ test("steer inputs drain in admission order, queued only after steers", async ()
     { id: "s2", text: "second", delivery: "steer" },
   ]);
   const { controller, turns } = makeController(session);
-  await controller.drain(new AbortController().signal);
+  await controller.drain(
+    new AbortController().signal,
+    session.id as unknown as string,
+  );
   expect(turns).toEqual(["s1", "s2", "q1"]);
 });
 
@@ -63,7 +69,10 @@ test("commands short-circuit turns and flush persistence", async () => {
     { id: "s1", text: "real", delivery: "steer" },
   ]);
   const { controller, turns, commands, persisted } = makeController(session);
-  await controller.drain(new AbortController().signal);
+  await controller.drain(
+    new AbortController().signal,
+    session.id as unknown as string,
+  );
   expect(commands).toEqual(["c1"]);
   expect(turns).toEqual(["s1"]);
   expect(persisted.length).toBeGreaterThan(0);
@@ -79,6 +88,9 @@ test("an aborted drain stops admitting further inputs", async () => {
   const controller2 = createTurnController({
     session: () => session,
     activeAbort: () => undefined,
+    sessionFor: (sessionID) =>
+      sessionID === (session.id as unknown as string) ? session : undefined,
+    activeAbortFor: () => undefined,
     persist: async () => undefined,
     saveInbox: async () => undefined,
     flush: async () => undefined,
@@ -88,9 +100,12 @@ test("an aborted drain stops admitting further inputs", async () => {
       throw new Error("turn aborted");
     },
   });
-  await expect(controller2.drain(new AbortController().signal)).rejects.toThrow(
-    "turn aborted",
-  );
+  await expect(
+    controller2.drain(
+      new AbortController().signal,
+      session.id as unknown as string,
+    ),
+  ).rejects.toThrow("turn aborted");
   // Only the first input ran; the loop stops at the first failure.
   expect(turns).toEqual(["ran"]);
 });

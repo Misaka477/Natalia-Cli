@@ -487,7 +487,7 @@ export function createRealRuntimeClient(
     checkpoint: () => tsRuntimeConfig?.checkpoint,
     workspace: () => tsRuntimeConfig?.workspace,
     publish,
-    context: () => context,
+    context: () => runtimeContext,
     subagents: () =>
       subagentsController.enabled() ? subagentsController.get() : undefined,
     activeAbort: () => activeAbort,
@@ -511,7 +511,7 @@ export function createRealRuntimeClient(
   });
   const mcpAccess = mcpController.access;
   const toolCalls = new Map<string, number>();
-  const context = new ContextLedger();
+  let runtimeContext = new ContextLedger();
   /**
    * Approvals and questions, and everything that belongs to them. The runtime
    * hands over only what changes underneath the waiter, as accessors rather than
@@ -522,8 +522,8 @@ export function createRealRuntimeClient(
     publish: (event) => publish(event),
     sessionID: () => sessionID,
     permissionMode: () => permissionMode,
-    abortSignal: () => activeAbort?.signal,
-    activeTurnID: () => activeTurnID,
+    abortSignal: () => activeExec?.activeAbort?.signal,
+    activeTurnID: () => activeExec?.activeTurnID,
     isPending: (id, kind) => isPendingInteractiveRequest(id, kind),
     sessionIDForTurn: (turnID) => turnSession.get(turnID) ?? sessionID,
   });
@@ -544,6 +544,27 @@ export function createRealRuntimeClient(
    * judged against the session it belongs to — never the attached one.
    */
   const turnSession = new Map<string, SessionID>();
+  /**
+   * Everything a running turn reads and writes, keyed per session (D2: one
+   * turn per session, sessions in parallel). The runtime keeps one activity
+   * exec — the session the UI is attached to — and one exec per session that
+   * has background work. Plan §41.9: state is reached by session, never
+   * captured as a single value.
+   */
+  type SessionExecutionState = {
+    session: SessionRecord;
+    context: ContextLedger;
+    activeAbort?: AbortController;
+    activeTurnID?: string;
+    selectedAgent?: AgentDefinition;
+    pendingAgent?: AgentDefinition;
+    selectedModel?: { modelID?: string; variant?: string };
+    lastProviderUsage?: { inputTokens: number; outputTokens: number };
+    activeSkill?: Skill;
+    endTurnWaitingHuman?: { terminalID: string; reason: string };
+  };
+  const executionBySession = new Map<SessionID, SessionExecutionState>();
+  let activeExec: SessionExecutionState | undefined;
   let paused = false;
   let pauseWaiters: Array<() => void> = [];
   let ready: Promise<void> | undefined;
@@ -580,7 +601,7 @@ export function createRealRuntimeClient(
   });
   const statusController = createStatusSnapshotController({
     provider: () => provider,
-    context: () => context,
+    context: () => runtimeContext,
     workspaceRoot,
     permissionMode: () => permissionMode,
     runningCount: async () =>
@@ -616,7 +637,7 @@ export function createRealRuntimeClient(
    * Shared by the query and the action so the two can never disagree.
    */
   function configReloadBlockedReason() {
-    if (activeTurnID)
+    if (activeExec?.activeTurnID)
       return "runtime config cannot be applied while a turn is running";
     if (interactive.hasPendingWaiters())
       return "runtime config cannot be applied while an approval or question is pending";
@@ -927,6 +948,10 @@ export function createRealRuntimeClient(
             options.title ?? `Natalia TS session ${sessionID}`,
           );
     if (!session) throw new Error("session initialization did not complete");
+    // D2: the startup session is the first exec; the activity view (the
+    // `session`/`runtimeContext` closures) aliases it until an attach switches.
+    activeExec = { session, context: runtimeContext };
+    executionBySession.set(sessionID, activeExec);
     let sqliteRecovery:
       | ReturnType<
           NonNullable<
@@ -1069,11 +1094,12 @@ export function createRealRuntimeClient(
     const latestContextCheckpoint = [...projection.replayableEvents]
       .reverse()
       .find((event) => event.type === "context.checkpoint");
-    if (sqliteEpoch) context.restoreDurableCheckpoint(sqliteEpoch.snapshot);
+    if (sqliteEpoch)
+      runtimeContext.restoreDurableCheckpoint(sqliteEpoch.snapshot);
     else if (latestContextCheckpoint)
-      context.restoreDurableCheckpoint(latestContextCheckpoint.snapshot);
+      runtimeContext.restoreDurableCheckpoint(latestContextCheckpoint.snapshot);
     restoreContextFromEvents(
-      context,
+      runtimeContext,
       sqliteEpoch
         ? sessionStoreController
             .sqlite()!
@@ -1087,7 +1113,7 @@ export function createRealRuntimeClient(
     );
     if (queued) void turnCoordinator().wake(drainSession);
     if (extensionEnabled("skills")) await skillsController.init();
-    const activeSkillEntry = [...context.snapshot().entries]
+    const activeSkillEntry = [...runtimeContext.snapshot().entries]
       .reverse()
       .find(
         (entry) => entry.role === "system" && entry.id.startsWith("skill:"),
@@ -1110,8 +1136,8 @@ export function createRealRuntimeClient(
             skillsController.enabled() ? skillsController.get() : undefined,
           onLoad: (skill, output) => {
             activeSkill = skill;
-            context.add({
-              id: `skill:${skill.qualifiedName}:${context.journalStatus().journalOffset}`,
+            runtimeContext.add({
+              id: `skill:${skill.qualifiedName}:${runtimeContext.journalStatus().journalOffset}`,
               role: "system",
               content: output,
             });
@@ -1168,6 +1194,12 @@ export function createRealRuntimeClient(
       for (const request of pending.questions) sink?.(request);
     }
     await checkpointController.init();
+    // The exec is the turn's view of agent/model state; the closures were the
+    // source of truth during init, so mirror them before any turn can run.
+    if (activeExec) {
+      activeExec.selectedAgent = selectedAgent;
+      activeExec.selectedModel = selectedModel;
+    }
     publish({ type: "session.ready", sessionID });
     // Overrides are visible, not silent: a plugin that replaced a built-in
     // tool shows up in diagnostics so nobody discovers it by surprise.
@@ -1178,7 +1210,7 @@ export function createRealRuntimeClient(
         message: `capability "${override.winner}" (precedence ${override.winnerPrecedence}) replaced "${override.loser}" (precedence ${override.loserPrecedence}) for ${override.kind} "${override.name}"`,
       });
     publishBuiltinCapabilities();
-    publish(contextStatusEvent(context.status(runtimeContextConfig)));
+    publish(contextStatusEvent(runtimeContext.status(runtimeContextConfig)));
     publish(await runtimeStatusSnapshot());
   }
 
@@ -1398,14 +1430,23 @@ export function createRealRuntimeClient(
   }
 
   function publish(event: RuntimeEvent) {
+    publishForSession(activeExec, event);
+  }
+
+  function publishForSession(
+    exec: SessionExecutionState | undefined,
+    event: RuntimeEvent,
+  ) {
     const publishStartedAt = performance.now();
     if (options.episodeID && !event.episodeID)
       event = { ...event, episodeID: options.episodeID };
     // D6: while a session is active every event belongs to it. Events that
     // already carry a session id keep their own; events published before the
-    // session exists are runtime-level and reach every subscriber.
-    if (session && event.sessionID === undefined)
-      event = { ...event, sessionID };
+    // session exists are runtime-level and reach every subscriber. The stamp
+    // follows the exec the event is published for — a background turn stamps
+    // its own session even when the UI is attached to another.
+    if (exec?.session && event.sessionID === undefined)
+      event = { ...event, sessionID: exec.session.id };
     if (event.type === "diagnostic")
       event = { ...event, at: event.at ?? new Date().toISOString() };
     if (event.type === "diagnostic") {
@@ -1421,14 +1462,15 @@ export function createRealRuntimeClient(
       event.type === "turn.finished" &&
       event.stopReason === "waiting_human"
     ) {
-      const pending = endTurnWaitingHuman;
-      endTurnWaitingHuman = undefined;
+      const pending = exec?.endTurnWaitingHuman;
+      if (exec) exec.endTurnWaitingHuman = undefined;
       turnSession.delete(event.id);
-      if (pending && session) void setPendingHumanTerminal(pending);
+      if (pending && exec?.session)
+        void setPendingHumanTerminal(exec.session.id, pending);
     } else if (event.type === "turn.finished") {
       // Any other settlement discards a stale marker: a request_human call
       // from a turn that later failed must not bleed into the next turn.
-      endTurnWaitingHuman = undefined;
+      if (exec) exec.endTurnWaitingHuman = undefined;
       turnSession.delete(event.id);
     }
     // TERM-M.3 (c): when the human releases the requested pane, the runtime
@@ -1439,23 +1481,27 @@ export function createRealRuntimeClient(
       event.actor === "user" &&
       event.action === "detach"
     )
-      void maybeContinueAfterHumanInput(event.id);
+      void maybeContinueAfterHumanInput(
+        event.id,
+        exec?.session.id ?? event.sessionID,
+      );
     if (
-      session &&
+      exec?.session &&
       event.type !== "session.created" &&
       event.type !== "session.ready" &&
       runtimeEventDurability(event) === "durable"
     ) {
-      appendSessionEvent(session, event);
+      appendSessionEvent(exec.session, event);
       const sessionSnapshot = sessionStoreController.sqlite()
         ? undefined
-        : structuredClone(session);
+        : structuredClone(exec.session);
+      const execSessionID = exec.session.id;
       sessionPersistence = sessionPersistence
         .then(async () => {
           if (sessionStoreController.sqlite())
             await sessionStoreController
               .sqlite()!
-              .appendEventAsync(sessionID, event);
+              .appendEventAsync(execSessionID, event);
           else await sessionStoreController.json().save(sessionSnapshot!);
         })
         .catch((error) => {
@@ -1522,25 +1568,27 @@ export function createRealRuntimeClient(
    * asked a human to take over, with the turn ended. Written exactly like the
    * in-flight operation audit so restart sees the same typed contract.
    */
-  async function setPendingHumanTerminal(input: {
-    terminalID: string;
-    reason: string;
-  }) {
-    if (!session) return;
-    session.metadata = { ...session.metadata };
-    session.metadata.pendingHumanTerminal = {
+  async function setPendingHumanTerminal(
+    forSessionID: SessionID,
+    input: { terminalID: string; reason: string },
+  ) {
+    const target = executionBySession.get(forSessionID);
+    const targetSession = target?.session ?? session;
+    if (!targetSession) return;
+    targetSession.metadata = { ...targetSession.metadata };
+    targetSession.metadata.pendingHumanTerminal = {
       terminalID: input.terminalID,
       reason: input.reason,
       since: new Date().toISOString(),
     };
     const sessionSnapshot = sessionStoreController.sqlite()
       ? undefined
-      : structuredClone(session);
-    const pendingSnapshot = session.metadata.pendingHumanTerminal;
+      : structuredClone(targetSession);
+    const pendingSnapshot = targetSession.metadata.pendingHumanTerminal;
     sessionPersistence = sessionPersistence
       .then(async () => {
         if (sessionStoreController.sqlite())
-          sessionStoreController.sqlite()!.updateMetadata(sessionID, {
+          sessionStoreController.sqlite()!.updateMetadata(forSessionID, {
             pendingHumanTerminal: pendingSnapshot,
           });
         else await sessionStoreController.json().save(sessionSnapshot!);
@@ -1555,19 +1603,19 @@ export function createRealRuntimeClient(
     await sessionPersistence;
   }
 
-  async function clearPendingHumanTerminal(terminalID: string) {
-    if (!session?.metadata?.pendingHumanTerminal) return false;
-    if (session.metadata.pendingHumanTerminal.terminalID !== terminalID)
-      return false;
-    session.metadata = { ...session.metadata };
-    delete session.metadata.pendingHumanTerminal;
+  async function clearPendingHumanTerminal(forSessionID: SessionID) {
+    const target = executionBySession.get(forSessionID);
+    const targetSession = target?.session ?? session;
+    if (!targetSession?.metadata?.pendingHumanTerminal) return false;
+    targetSession.metadata = { ...targetSession.metadata };
+    delete targetSession.metadata.pendingHumanTerminal;
     const sessionSnapshot = sessionStoreController.sqlite()
       ? undefined
-      : structuredClone(session);
+      : structuredClone(targetSession);
     sessionPersistence = sessionPersistence
       .then(async () => {
         if (sessionStoreController.sqlite())
-          sessionStoreController.sqlite()!.updateMetadata(sessionID, {
+          sessionStoreController.sqlite()!.updateMetadata(forSessionID, {
             pendingHumanTerminal: undefined,
           });
         else await sessionStoreController.json().save(sessionSnapshot!);
@@ -1589,19 +1637,29 @@ export function createRealRuntimeClient(
    * construction: the pending state is cleared first, so a second release
    * cannot double-resume.
    */
-  async function maybeContinueAfterHumanInput(terminalID: string) {
-    const pending = session?.metadata?.pendingHumanTerminal;
+  async function maybeContinueAfterHumanInput(
+    terminalID: string,
+    forSessionID?: SessionID,
+  ) {
+    const exec = forSessionID
+      ? executionBySession.get(forSessionID)
+      : activeExec;
+    if (!exec) return;
+    const pending = exec.session.metadata?.pendingHumanTerminal;
     if (!pending || pending.terminalID !== terminalID) return;
-    await clearPendingHumanTerminal(terminalID);
-    publish({
+    await clearPendingHumanTerminal(exec.session.id);
+    publishForSession(exec, {
       type: "diagnostic",
       level: "info",
       message: `human completed input on terminal ${terminalID}; continuing the task`,
     });
-    await submitInput({
-      text: `[automated continuation] The human finished providing input on terminal ${terminalID}. Check the terminal output and continue the original task.`,
-      delivery: "steer",
-    });
+    await submitInput(
+      {
+        text: `[automated continuation] The human finished providing input on terminal ${terminalID}. Check the terminal output and continue the original task.`,
+        delivery: "steer",
+      },
+      exec.session.id,
+    );
   }
 
   function publishTerminalSession(
@@ -1687,8 +1745,12 @@ export function createRealRuntimeClient(
     });
   }
 
-  async function submitInput(input: SubmitInput) {
+  async function submitInput(input: SubmitInput, forSessionID?: SessionID) {
     await ready;
+    const targetSessionID = forSessionID ?? sessionID;
+    const targetExec =
+      executionBySession.get(targetSessionID) ?? activeExec ?? undefined;
+    const targetSession = targetExec?.session ?? session;
     const text = input.text;
     const attachments = input.attachments?.length
       ? await storeLocalAttachments({ workspaceRoot, paths: input.attachments })
@@ -1706,10 +1768,13 @@ export function createRealRuntimeClient(
       agents: input.agents?.length ? input.agents : undefined,
     };
     if (attachments.length) attachmentReferences.set(`${id}:user`, attachments);
-    if (!session) throw new Error("session initialization did not complete");
+    if (!targetSession)
+      throw new Error("session initialization did not complete");
     const delivery = input.delivery ?? "steer";
-    const existing = admittedInputs(session).find((item) => item.id === id);
-    admitInput(session, {
+    const existing = admittedInputs(targetSession).find(
+      (item) => item.id === id,
+    );
+    admitInput(targetSession, {
       id,
       text,
       delivery,
@@ -1717,95 +1782,120 @@ export function createRealRuntimeClient(
       resources: input.resources,
       agents: input.agents,
     });
+    const targetCoordinator = () => sessionRunCoordinator(targetSessionID);
     if (existing) {
       if (!existing.promotedAt && delivery === "steer") {
-        void turnCoordinator().wake(drainSession);
-        await turnCoordinator().run(drainSession);
+        void targetCoordinator().wake(drainSessionFor(targetSessionID));
+        await targetCoordinator().run(drainSessionFor(targetSessionID));
       }
       return submitted;
     }
     lastSubmitted = submitted;
-    turnSession.set(id, sessionID);
-    publish(submitted);
+    turnSession.set(id, targetSessionID);
+    publishForSession(targetExec, submitted);
     // One Work Graph node per turn. The prompt itself is not recorded: it can
     // contain anything, and the graph is replayable and shareable.
-    publish(
+    publishForSession(
+      targetExec,
       agentActionNode({
         turnID: id,
-        sessionID,
-        agent: selectedAgent?.name,
+        sessionID: targetSessionID,
+        agent: targetExec?.selectedAgent?.name,
       }),
     );
     // Persist admission before a command or provider can observe this turn.
     await sessionPersistence;
     if (delivery === "queue") {
-      void turnCoordinator().wake(drainSession);
+      void targetCoordinator().wake(drainSessionFor(targetSessionID));
       return submitted;
     }
-    void turnCoordinator().wake(drainSession);
-    await turnCoordinator().run(drainSession);
+    void targetCoordinator().wake(drainSessionFor(targetSessionID));
+    await targetCoordinator().run(drainSessionFor(targetSessionID));
     await sessionPersistence;
     return submitted;
   }
 
-  const providerRunner = createProviderRunner({
-    provider: () => provider,
-    session: () => session,
-    context: () => context,
-    tools: () => tools,
-    attachmentReferences: () => attachmentReferences,
-    mcpAccess: () => mcpAccess,
-    agentRegistry: () => agentRegistry,
-    activeAbort: () => activeAbort,
-    setActiveAbort: (controller) => {
-      activeAbort = controller;
-    },
-    activeTurnID: () => activeTurnID,
-    setActiveTurnID: (id) => {
-      activeTurnID = id;
-    },
-    selectedAgent: () => selectedAgent,
-    setSelectedAgent: (agent) => {
-      selectedAgent = agent;
-    },
-    pendingAgent: () => pendingAgent,
-    setPendingAgent: (agent) => {
-      pendingAgent = agent;
-    },
-    selectedModel: () => selectedModel,
-    permissionMode: () => permissionMode,
-    workspaceRoot: () => workspaceRoot,
-    tsRuntimeConfig: () => tsRuntimeConfig,
-    runtimeContextConfig: () => runtimeContextConfig,
-    activeSkill: () => activeSkill,
-    skillsList: () => skillsController.list(),
-    retryPolicy: () => retryPolicy,
-    lastProviderUsage: () => lastProviderUsage,
-    setLastProviderUsage: (usage) => {
-      lastProviderUsage = usage;
-    },
-    taskModuleContext: () => options.taskModuleContext,
-    publish: (event) => publish(event),
-    applyAgentPolicy,
-    applyAgentProvider,
-    persistInboxPromotion: () => persistInboxPromotion(),
-    createTurnCheckpoint: async (input) => {
-      if (checkpointController.isEnabled())
-        await checkpointController.get().createCheckpoint(input);
-    },
-    isToolAllowed,
-    setInFlightOperation,
-    executeToolCalls,
-    reloadConfig: async () => await reloadConfigFromDisk(),
-    runtimeStatusSnapshot,
-    effectiveMaxSteps,
-    waitIfPaused,
-    waitingHuman: () => endTurnWaitingHuman,
-  });
+  /**
+   * D2: one provider runner per session. Every per-session accessor resolves
+   * through that session's exec, so a background turn keeps reading and
+   * writing its own session record, context ledger and turn markers while the
+   * UI is attached to another session. Shared machinery (tools, permissions,
+   * config) stays activity-scoped by design.
+   */
+  const runnerBySession = new Map<
+    SessionID,
+    ReturnType<typeof createProviderRunner>
+  >();
+  function providerRunnerFor(sessionID: string) {
+    const existing = runnerBySession.get(sessionID as SessionID);
+    if (existing) return existing;
+    const exec = executionBySession.get(sessionID as SessionID);
+    if (!exec) throw new Error(`no execution state for session ${sessionID}`);
+    const runner = createProviderRunner({
+      provider: () => provider,
+      session: () => exec.session,
+      context: () => exec.context,
+      tools: () => tools,
+      attachmentReferences: () => attachmentReferences,
+      mcpAccess: () => mcpAccess,
+      agentRegistry: () => agentRegistry,
+      activeAbort: () => exec.activeAbort,
+      setActiveAbort: (controller) => {
+        exec.activeAbort = controller;
+      },
+      activeTurnID: () => exec.activeTurnID,
+      setActiveTurnID: (id) => {
+        exec.activeTurnID = id;
+      },
+      selectedAgent: () => exec.selectedAgent,
+      setSelectedAgent: (agent) => {
+        exec.selectedAgent = agent;
+      },
+      pendingAgent: () => exec.pendingAgent,
+      setPendingAgent: (agent) => {
+        exec.pendingAgent = agent;
+      },
+      selectedModel: () => exec.selectedModel,
+      permissionMode: () => permissionMode,
+      workspaceRoot: () => workspaceRoot,
+      tsRuntimeConfig: () => tsRuntimeConfig,
+      runtimeContextConfig: () => runtimeContextConfig,
+      activeSkill: () => exec.activeSkill,
+      skillsList: () => skillsController.list(),
+      retryPolicy: () => retryPolicy,
+      lastProviderUsage: () => exec.lastProviderUsage,
+      setLastProviderUsage: (usage) => {
+        exec.lastProviderUsage = usage;
+      },
+      taskModuleContext: () => options.taskModuleContext,
+      publish: (event) => publishForSession(exec, event),
+      applyAgentPolicy,
+      applyAgentProvider,
+      persistInboxPromotion: () => persistInboxPromotion(),
+      createTurnCheckpoint: async (input) => {
+        if (checkpointController.isEnabled())
+          await checkpointController.get().createCheckpoint(input);
+      },
+      isToolAllowed,
+      setInFlightOperation,
+      executeToolCalls,
+      reloadConfig: async () => await reloadConfigFromDisk(),
+      runtimeStatusSnapshot,
+      effectiveMaxSteps,
+      waitIfPaused,
+      waitingHuman: () => exec.endTurnWaitingHuman,
+    });
+    runnerBySession.set(sessionID as SessionID, runner);
+    return runner;
+  }
 
   const turnController = createTurnController({
     session: () => session,
     activeAbort: () => activeAbort,
+    sessionFor: (sessionID) =>
+      executionBySession.get(sessionID as SessionID)?.session ?? session,
+    activeAbortFor: (sessionID) =>
+      executionBySession.get(sessionID as SessionID)?.activeAbort,
     persist: (fn) => {
       sessionPersistence = sessionPersistence.then(fn).catch((error) =>
         publish({
@@ -1827,14 +1917,27 @@ export function createRealRuntimeClient(
       await sessionPersistence;
     },
     runCommand: async (id, text) => await handleCommand(id, text),
-    runTurn: async (input) => await providerRunner.runTurn(input),
+    runTurn: async (input) =>
+      await providerRunnerFor(input.sessionID).runTurn(input),
   });
   async function drainSession(signal: AbortSignal) {
-    await turnController.drain(signal);
+    await turnController.drain(signal, sessionID);
+  }
+
+  /**
+   * D2: the drain callback bound to one session. Each session's coordinator
+   * runs its own drains, so turns of different sessions proceed in parallel;
+   * everything the turn touches is resolved through that session's exec.
+   */
+  function drainSessionFor(sessionID: SessionID) {
+    return async (signal: AbortSignal) => {
+      await ensureExecution(sessionID);
+      await turnController.drain(signal, sessionID);
+    };
   }
 
   async function drainPendingQueue(signal?: AbortSignal) {
-    await turnController.drainQueue(signal);
+    await turnController.drainQueue(signal, sessionID);
   }
 
   async function runAdmittedInput(
@@ -1844,7 +1947,14 @@ export function createRealRuntimeClient(
     resources: import("@natalia/contracts").PromptResourceMention[] = [],
     agents: import("@natalia/contracts").PromptAgentMention[] = [],
   ) {
-    await turnController.admit(id, text, attachments, resources, agents);
+    await turnController.admit(
+      sessionID,
+      id,
+      text,
+      attachments,
+      resources,
+      agents,
+    );
   }
 
   async function persistInboxPromotion() {
@@ -1878,16 +1988,46 @@ export function createRealRuntimeClient(
     };
   }
 
+  /**
+   * D2: the execution state for a session — its record, its context ledger and
+   * its in-flight turn markers. Created lazily the first time the session runs
+   * work (init, attach or a background submission) and kept for the client's
+   * life, so a background turn of A survives attaching to B and back.
+   */
+  async function ensureExecution(
+    sessionID: SessionID,
+  ): Promise<SessionExecutionState> {
+    const existing = executionBySession.get(sessionID);
+    if (existing) return existing;
+    const loaded = await loadSessionForAttach(sessionID);
+    const execContext = new ContextLedger();
+    const projection = projectSession(loaded);
+    const sessionSqlite = sessionStoreController.sqlite();
+    const epoch = sessionSqlite?.loadContextEpoch(sessionID);
+    if (epoch) execContext.restoreDurableCheckpoint(epoch.snapshot);
+    restoreContextFromEvents(
+      execContext,
+      epoch
+        ? sessionSqlite!.loadEventsAfter(sessionID, epoch.baselineSeq)
+        : modelVisibleEvents(projection.replayableEvents),
+    );
+    const exec: SessionExecutionState = {
+      session: loaded,
+      context: execContext,
+      selectedAgent: projection.selectedAgent
+        ? agentRegistry?.select(projection.selectedAgent)
+        : undefined,
+      selectedModel: projection.selectedModel,
+    };
+    executionBySession.set(sessionID, exec);
+    return exec;
+  }
+
   async function attachSession(id: string) {
     await ready;
-    if (activeTurnID || activeAbort)
-      throw new RuntimeRefusal(
-        "cannot attach a session while a turn is running",
-      );
-    if (interactive.hasPendingWaiters())
-      throw new RuntimeRefusal(
-        "cannot attach a session while an approval or question is pending",
-      );
+    // D2: a running turn is no longer a reason to refuse. The turn belongs to
+    // its own session's exec and keeps running in the background; attach only
+    // switches which session the UI is attached to.
     const nextID = id as SessionID;
     if (nextID === sessionID) return { sessionID: nextID };
 
@@ -1895,11 +2035,16 @@ export function createRealRuntimeClient(
     await sessionPersistence;
     await sessionStoreController.sqlite()?.flushPendingWrites(sessionID);
 
-    const next = await loadSessionForAttach(nextID);
-    if (next.metadata?.archived)
+    // D2: the attached session becomes the activity exec. Its ledger is its
+    // own — restoring into the shared one would clobber the previous session's
+    // ledger, which a background turn may still be writing to.
+    const exec = await ensureExecution(nextID);
+    if (exec.session.metadata?.archived)
       throw new RuntimeRefusal("cannot attach an archived session");
     sessionID = nextID;
-    session = next;
+    session = exec.session;
+    runtimeContext = exec.context;
+    activeExec = exec;
     terminalController.setActiveSession(nextID);
     lastSubmitted = undefined;
     activeAbort = undefined;
@@ -1914,41 +2059,34 @@ export function createRealRuntimeClient(
     toolCalls.clear();
     attachmentReferences.clear();
     runtimeDiagnostics.splice(0);
-    context.restore({ entries: [], resources: [] });
+    runtimeContext.restore({ entries: [], resources: [] });
     applyAgentPolicy();
     applyAgentProvider();
 
-    const projection = projectSession(next);
+    const projection = projectSession(exec.session);
     for (const event of projection.replayableEvents) {
       if (event.type === "diagnostic")
-        runtimeDiagnostics.push({ ...event, at: event.at ?? next.createdAt });
+        runtimeDiagnostics.push({
+          ...event,
+          at: event.at ?? exec.session.createdAt,
+        });
       if (event.type === "turn.submitted" && event.attachments?.length)
         attachmentReferences.set(`${event.id}:user`, event.attachments);
     }
-    const restoredAgent = projection.selectedAgent
-      ? agentRegistry?.select(projection.selectedAgent)
-      : undefined;
-    if (projection.selectedAgent && restoredAgent) {
-      selectedAgent = restoredAgent;
+    // The exec already restored its own ledger, agent and model selection
+    // (`ensureExecution`); here the activity closures take the same values so
+    // UI reads and the next attach start from them.
+    selectedAgent = exec.selectedAgent;
+    selectedModel = exec.selectedModel;
+    if (selectedAgent) {
       applyAgentPolicy();
       applyAgentProvider();
-    }
-    if (projection.selectedModel) {
-      selectedModel = projection.selectedModel;
+    } else if (selectedModel) {
       applyAgentProvider();
     }
-    const sessionSqlite = sessionStoreController.sqlite();
-    const epoch = sessionSqlite?.loadContextEpoch(sessionID);
-    if (epoch) context.restoreDurableCheckpoint(epoch.snapshot);
-    restoreContextFromEvents(
-      context,
-      epoch
-        ? sessionSqlite!.loadEventsAfter(sessionID, epoch.baselineSeq)
-        : modelVisibleEvents(projection.replayableEvents),
-    );
     await checkpointController.init();
     publish({ type: "session.ready", sessionID });
-    publish(contextStatusEvent(context.status(runtimeContextConfig)));
+    publish(contextStatusEvent(runtimeContext.status(runtimeContextConfig)));
     publish(await runtimeStatusSnapshot());
     return { sessionID };
   }
@@ -2025,7 +2163,7 @@ export function createRealRuntimeClient(
     sessionAttach: attachSession,
     async dispose() {
       terminalCommandBuffer.clearAll();
-      activeAbort?.abort(new Error("runtime disposed"));
+      activeExec?.activeAbort?.abort(new Error("runtime disposed"));
       await turnCoordinator().interrupt();
       // A committed selection and other durable controls must reach disk before
       // a caller opens the same session in a replacement runtime.
@@ -2039,10 +2177,14 @@ export function createRealRuntimeClient(
       await performanceTrace.stop();
     },
     cancel(reason = "user cancel") {
-      activeAbort?.abort(reason);
+      activeExec?.activeAbort?.abort(reason);
       void turnCoordinator().interrupt();
-      if (activeTurnID)
-        publish({ type: "turn.cancelled", id: activeTurnID, reason });
+      if (activeExec?.activeTurnID)
+        publish({
+          type: "turn.cancelled",
+          id: activeExec.activeTurnID,
+          reason,
+        });
     },
     pause(reason = "user pause") {
       // Refusing is a value: a caller that gets `paused: true` when nothing was
@@ -2079,8 +2221,9 @@ export function createRealRuntimeClient(
         // told the agent was selected and then render the wrong one.
         return { outcome: "rejected", reason: `agent not found: ${name}` };
       }
-      if (activeAbort) {
+      if (activeExec?.activeAbort) {
         pendingAgent = agent;
+        if (activeExec) activeExec.pendingAgent = agent;
         publish({ type: "agent.selection", name: agent?.name, pending: true });
         // Deferred, not applied: switching agents mid-turn would change the rules
         // the turn started under.
@@ -2091,6 +2234,7 @@ export function createRealRuntimeClient(
         };
       }
       selectedAgent = agent;
+      if (activeExec) activeExec.selectedAgent = agent;
       applyAgentPolicy();
       applyAgentProvider();
       publish({ type: "agent.selection", name: agent?.name, pending: false });
@@ -2459,12 +2603,17 @@ export function createRealRuntimeClient(
       await ready;
       return await checkpointController
         .get()
-        .previewRollback(id, context, checkpointController.resources(), true);
+        .previewRollback(
+          id,
+          runtimeContext,
+          checkpointController.resources(),
+          true,
+        );
     },
     async checkpointRollback(input) {
       await ready;
       const preview = await checkpointController.get().rollbackTo(input.id, {
-        context,
+        context: runtimeContext,
         dryRun: input.dryRun,
         ...checkpointController.rollbackOptions(),
       });
@@ -3001,7 +3150,7 @@ export function createRealRuntimeClient(
         throw new Error("checkpoint store is not initialized");
       const result = await runCheckpointCommand(
         checkpointController.get(),
-        context,
+        runtimeContext,
         trimmed,
         checkpointController.rollbackOptions(),
       );
@@ -3133,6 +3282,7 @@ export function createRealRuntimeClient(
       const agent = agentRegistry?.select(name);
       if (!agent) throw new Error(`agent not found: ${name}`);
       selectedAgent = agent;
+      if (activeExec) activeExec.selectedAgent = agent;
       applyAgentPolicy();
       applyAgentProvider();
       publish({ type: "agent.selection", name: agent.name, pending: false });
@@ -3168,8 +3318,8 @@ export function createRealRuntimeClient(
       activeSkill = skillsController.resolve(
         trimmed.slice("/skill ".length).trim(),
       );
-      context.add({
-        id: `skill:${activeSkill.qualifiedName}:${context.journalStatus().journalOffset}`,
+      runtimeContext.add({
+        id: `skill:${activeSkill.qualifiedName}:${runtimeContext.journalStatus().journalOffset}`,
         role: "system",
         content: `Active skill ${activeSkill.name}: ${activeSkill.description}\n${activeSkill.body}`,
       });
@@ -3219,6 +3369,15 @@ export function createRealRuntimeClient(
     assistant: string,
     materialized: ToolMaterialization,
   ): Promise<ProviderMessage[]> {
+    // D2: a tool segment belongs to the session its turn was submitted to. The
+    // local bindings shadow the activity-scoped globals for the whole segment,
+    // so every publish lands in that session's journal with its stamp, and the
+    // context ledger touched is the turn's own.
+    const exec =
+      executionBySession.get(turnSession.get(turnID) ?? sessionID) ??
+      activeExec;
+    const publish = (event: RuntimeEvent) => publishForSession(exec, event);
+    const execContext = exec?.context ?? runtimeContext;
     const assistantMessage: ProviderMessage = {
       role: "assistant",
       content: assistant,
@@ -3226,7 +3385,7 @@ export function createRealRuntimeClient(
     };
     const messages: ProviderMessage[] = [assistantMessage];
     for (const call of calls) {
-      context.add({
+      runtimeContext.add({
         id: `${turnID}:${call.id}:call`,
         role: "tool_call",
         content: `${call.name} ${call.arguments}`,
@@ -3268,7 +3427,7 @@ export function createRealRuntimeClient(
             options.taskModuleContext,
           ),
         });
-        context.add({
+        runtimeContext.add({
           id: `${turnID}:${call.id}:result`,
           role: "tool_result",
           content: `ERROR: ${reason}`,
@@ -3327,7 +3486,7 @@ export function createRealRuntimeClient(
             options.taskModuleContext,
           ),
         });
-        context.add({
+        runtimeContext.add({
           id: `${turnID}:${call.id}:result`,
           role: "tool_result",
           content: `ERROR: ${reason}`,
@@ -3342,7 +3501,7 @@ export function createRealRuntimeClient(
         toolName: call.name,
         content: toolResultContent(result, call.id, options.taskModuleContext),
       });
-      context.add({
+      runtimeContext.add({
         id: `${turnID}:${call.id}:result`,
         role: "tool_result",
         content: result,
@@ -3434,6 +3593,13 @@ export function createRealRuntimeClient(
     call: ProviderToolCall,
     tool: RuntimeTool,
   ) {
+    // D2: same shadowing as `executeToolCalls` — this segment's events and
+    // ledger belong to the turn's session.
+    const exec =
+      executionBySession.get(turnSession.get(turnID) ?? sessionID) ??
+      activeExec;
+    const publish = (event: RuntimeEvent) => publishForSession(exec, event);
+    const execContext = exec?.context ?? runtimeContext;
     const toolID = `${turnID}:${call.id}`;
     const dedupKey = `${call.name}\u0000${call.arguments}`;
     const occurrences = (toolCalls.get(dedupKey) ?? 0) + 1;
@@ -3753,11 +3919,14 @@ export function createRealRuntimeClient(
           requestArgs?.endTurn === true &&
           typeof requestArgs.id === "string" &&
           typeof requestArgs.reason === "string"
-        )
-          endTurnWaitingHuman = {
+        ) {
+          const marker = {
             terminalID: requestArgs.id,
             reason: requestArgs.reason,
           };
+          if (exec) exec.endTurnWaitingHuman = marker;
+          else endTurnWaitingHuman = marker;
+        }
       }
       await toolLayer.postExecute({ ...hookEvent, result });
       return result;
@@ -3971,6 +4140,10 @@ function isManagedResourceTool(toolName: string) {
   ].includes(toolName);
 }
 
+/**
+ * Rebuilds a context ledger from a session's durable events. Used when a
+ * session's exec is created (attach, background work) and at startup.
+ */
 function restoreContextFromEvents(
   context: ContextLedger,
   events: RuntimeEvent[],

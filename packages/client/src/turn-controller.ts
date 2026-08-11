@@ -28,6 +28,9 @@ import type { SessionRecord } from "@natalia/session";
 export function createTurnController(input: {
   session(): SessionRecord | undefined;
   activeAbort(): AbortController | undefined;
+  /** D2: the session a drain belongs to — parallel sessions have their own. */
+  sessionFor(sessionID: string): SessionRecord | undefined;
+  activeAbortFor(sessionID: string): AbortController | undefined;
   /** Queues a persistence step on the runtime's durable-write chain. */
   persist(fn: () => Promise<void>): Promise<void>;
   /** Persists the promoted inbox state (sqlite vs JSON decided by the runtime). */
@@ -38,30 +41,32 @@ export function createTurnController(input: {
   runTurn(input: {
     id: string;
     text: string;
+    sessionID: string;
     attachments: LocalAttachment[];
     resources: PromptResourceMention[];
     agents: PromptAgentMention[];
   }): Promise<void>;
 }) {
-  async function persistInboxPromotion() {
-    const session = input.session();
+  async function persistInboxPromotion(sessionID: string) {
+    const session = input.sessionFor(sessionID);
     if (!session) return;
     const snapshot = structuredClone(session);
     await input.persist(() => input.saveInbox(snapshot));
   }
 
-  async function drain(signal: AbortSignal) {
-    const session = input.session();
+  async function drain(signal: AbortSignal, sessionID: string) {
+    const session = input.sessionFor(sessionID);
     if (!session) return;
-    const abort = () => input.activeAbort()?.abort(signal.reason);
+    const abort = () => input.activeAbortFor(sessionID)?.abort(signal.reason);
     signal.addEventListener("abort", abort, { once: true });
     try {
       if (signal.aborted) throw signal.reason;
       const inputs = promoteSteers(session, admissionCutoff(session));
-      if (inputs.length) await persistInboxPromotion();
+      if (inputs.length) await persistInboxPromotion(sessionID);
       for (const item of inputs) {
         if (signal.aborted) throw signal.reason;
         await admit(
+          sessionID,
           item.id,
           item.text,
           item.attachments,
@@ -74,20 +79,24 @@ export function createTurnController(input: {
           (entry) => !entry.promotedAt && entry.delivery === "steer",
         )
       )
-        await drainQueue(signal);
+        await drainQueue(signal, sessionID);
     } finally {
       signal.removeEventListener("abort", abort);
     }
   }
 
-  async function drainQueue(signal?: AbortSignal) {
-    const session = input.session();
+  async function drainQueue(
+    signal: AbortSignal | undefined,
+    sessionID: string,
+  ) {
+    const session = input.sessionFor(sessionID);
     if (!session) return;
     if (signal?.aborted) throw signal.reason;
     const [next] = promoteNextQueued(session);
     if (!next) return;
-    await persistInboxPromotion();
+    await persistInboxPromotion(sessionID);
     await admit(
+      sessionID,
       next.id,
       next.text,
       next.attachments,
@@ -97,6 +106,7 @@ export function createTurnController(input: {
   }
 
   async function admit(
+    sessionID: string,
     id: string,
     text: string,
     attachments: LocalAttachment[] = [],
@@ -107,12 +117,19 @@ export function createTurnController(input: {
       await input.flush();
       return;
     }
-    await input.runTurn({ id, text, attachments, resources, agents });
+    await input.runTurn({
+      id,
+      text,
+      sessionID,
+      attachments,
+      resources,
+      agents,
+    });
   }
 
   /** Persists the promoted-inbox snapshot (used by the runtime's own submit path). */
   async function persistPromotion() {
-    await persistInboxPromotion();
+    await persistInboxPromotion(input.session()?.id ?? "");
   }
 
   return { drain, drainQueue, admit, persistPromotion };
