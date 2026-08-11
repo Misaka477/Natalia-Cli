@@ -54,3 +54,85 @@ test("session store: the active session refuses deletion", async () => {
   );
   await controller.close();
 });
+
+test("session store: JSON summaries project the pending human terminal", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-session-store-pending-"));
+  const controller = createSessionStoreController({
+    workspaceRoot: root,
+    sessionID: () => "ses_host" as const,
+  });
+  await controller.init();
+  try {
+    await controller.create({ id: "ses_wait", title: "Waiting" });
+    const store = controller.json();
+    const record = await store.load("ses_wait" as const);
+    record!.metadata = {
+      pendingHumanTerminal: {
+        terminalID: "tty_wait",
+        reason: "needs the sudo password",
+        since: "2026-08-12T00:00:00.000Z",
+      },
+    };
+    await store.save(record!);
+
+    const summary = (await controller.list()).find(
+      (entry) => entry.id === "ses_wait",
+    );
+    expect(summary?.pendingHumanTerminal).toMatchObject({
+      terminalID: "tty_wait",
+      reason: "needs the sudo password",
+      since: "2026-08-12T00:00:00.000Z",
+    });
+
+    delete record!.metadata!.pendingHumanTerminal;
+    await store.save(record!);
+    const after = await controller.list();
+    expect(
+      after.find((entry) => entry.id === "ses_wait")?.pendingHumanTerminal,
+    ).toBeUndefined();
+  } finally {
+    await controller.close();
+  }
+});
+
+test("session store: SQLite summaries project the pending human terminal", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-session-store-pending-db"),
+  );
+  const controller = createSessionStoreController({
+    workspaceRoot: root,
+    sessionID: () => "ses_host" as const,
+    useSqliteStore: true,
+  });
+  await controller.init();
+  try {
+    const store = controller.sqlite()!;
+    store.create("ses_wait_sqlite", "Waiting");
+    store.updateMetadata("ses_wait_sqlite", {
+      pendingHumanTerminal: {
+        terminalID: "tty_wait_sqlite",
+        reason: "needs the sudo password",
+        since: "2026-08-12T00:00:00.000Z",
+      },
+    });
+
+    const summary = (await controller.list()).find(
+      (entry) => entry.id === "ses_wait_sqlite",
+    );
+    expect(summary?.pendingHumanTerminal).toMatchObject({
+      terminalID: "tty_wait_sqlite",
+      reason: "needs the sudo password",
+    });
+
+    store.updateMetadata("ses_wait_sqlite", {
+      pendingHumanTerminal: undefined,
+    });
+    const after = await controller.list();
+    expect(
+      after.find((entry) => entry.id === "ses_wait_sqlite")
+        ?.pendingHumanTerminal,
+    ).toBeUndefined();
+  } finally {
+    await controller.close();
+  }
+});

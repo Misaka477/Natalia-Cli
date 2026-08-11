@@ -1144,6 +1144,18 @@ export type RuntimeSessionSummary = {
   pendingInputs: number;
   cancelled: boolean;
   resumable: boolean;
+  /**
+   * TERM-M.3 (c): a terminal the model asked a human to take over, with the
+   * turn ended. Present while the runtime is waiting for the human to finish
+   * input before it resumes the task, so any consumer (session list, remote
+   * UI) can see the session is waiting for a human instead of inferring it
+   * from the timeline.
+   */
+  pendingHumanTerminal?: {
+    terminalID: string;
+    reason: string;
+    since: string;
+  };
 };
 // Keep TUI completion and runtime command handling on one local vocabulary.
 export const runtimeSlashCommands: RuntimeSlashCommand[] = [

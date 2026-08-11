@@ -44,6 +44,26 @@ function releaseSqliteStore(path: string) {
 }
 
 /**
+ * The pending-human-terminal metadata as a typed value, or undefined. SQLite
+ * rows carry metadata as a loose record, so the shape is checked before it is
+ * projected into the public summary.
+ */
+function pendingHumanTerminalOf(
+  metadata: Record<string, unknown>,
+): RuntimeSessionSummary["pendingHumanTerminal"] | undefined {
+  const pending = metadata.pendingHumanTerminal;
+  if (
+    !pending ||
+    typeof pending !== "object" ||
+    typeof (pending as { terminalID?: unknown }).terminalID !== "string" ||
+    typeof (pending as { reason?: unknown }).reason !== "string" ||
+    typeof (pending as { since?: unknown }).since !== "string"
+  )
+    return undefined;
+  return pending as RuntimeSessionSummary["pendingHumanTerminal"];
+}
+
+/**
  * The session store resource controller — the first cut of the session /
  * recovery split (mainline plan §15, knife 5). It owns the store selection
  * (JSON files vs the shared SQLite handle), the session-management surface
@@ -109,6 +129,13 @@ export function createSessionStoreController(input: {
         record.inbox?.filter((input) => !input.promotedAt).length ?? 0,
       cancelled: record.cancelled,
       resumable: record.resumable,
+      ...(pendingHumanTerminalOf(record.metadata ?? {})
+        ? {
+            pendingHumanTerminal: pendingHumanTerminalOf(
+              record.metadata ?? {},
+            )!,
+          }
+        : {}),
     };
   }
 
@@ -126,6 +153,9 @@ export function createSessionStoreController(input: {
       pendingInputs: 0,
       cancelled: record.cancelled,
       resumable: record.resumable,
+      ...(pendingHumanTerminalOf(record.metadata)
+        ? { pendingHumanTerminal: pendingHumanTerminalOf(record.metadata)! }
+        : {}),
     };
   }
 
@@ -154,6 +184,9 @@ export function createSessionStoreController(input: {
         pendingInputs: store.pendingInputCount(record.id),
         cancelled: record.cancelled,
         resumable: record.resumable,
+        ...(pendingHumanTerminalOf(record.metadata)
+          ? { pendingHumanTerminal: pendingHumanTerminalOf(record.metadata)! }
+          : {}),
       }));
     return (await sessionStore.list()).map(summary);
   }

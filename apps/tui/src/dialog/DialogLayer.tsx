@@ -499,6 +499,7 @@ export function DialogSessionList(props: {
                   {index() === selected() ? ">" : " "}
                   {session.pinned ? "* " : "  "}
                   {session.title} · {session.id} · {session.events}
+                  {session.pendingHumanTerminal ? " · waiting for human" : ""}
                 </text>
               </box>
             )}
