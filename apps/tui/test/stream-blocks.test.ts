@@ -258,8 +258,8 @@ test("typed step retry shows live banner, clears after success, and drops failed
     reason: "timeout",
     statusCode: 504,
   });
-  expect(state.retryBanner).toContain("attempt 2/3");
-  expect(state.retryBanner).toContain("504");
+  expect(state.facts.retryBanner?.text).toContain("attempt 2/3");
+  expect(state.footer).toContain("504");
   expect(
     state.messages.find((item) => item.id === "turn_step_retry:retry:live")
       ?.text,
@@ -282,7 +282,7 @@ test("typed step retry shows live banner, clears after success, and drops failed
     step: 1,
     attempts: 2,
   });
-  expect(state.retryBanner).toBeUndefined();
+  expect(state.facts.retryBanner).toBeUndefined();
   expect(
     state.messages.find((item) => item.id === "turn_step_retry:retry:live"),
   ).toBeUndefined();
@@ -398,7 +398,8 @@ test("Terminal events stay out of chat while Sandbox renders stable blocks", () 
     state.messages.find((item) => item.id === "sandbox:box_m11:diff")?.text,
   ).toContain("a.ts -> b.ts");
   expect(
-    state.messages.find((item) => item.id.includes("audit"))?.text,
+    state.messages.find((item) => item.id === "sandbox:box_m11:skill-script")
+      ?.text,
   ).toContain("approval: required");
 });
 

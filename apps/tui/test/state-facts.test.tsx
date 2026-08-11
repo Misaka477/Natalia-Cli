@@ -176,10 +176,11 @@ test("subagent and MCP facts land in the projection while the TUI keeps its narr
     state().messages.find((block) => block.id === "subagent:agent_a")?.text,
   ).toContain("audit");
   expect(
-    state().messages.find((block) => block.id.includes("audit"))?.text,
+    state().messages.find((block) => block.id === "sandbox:box:skill-script")
+      ?.text,
   ).toContain("approval: required");
   expect(
-    state().messages.find((block) => block.id === "snap_1")?.text,
+    state().messages.find((block) => block.id === "snapshot:snap_1")?.text,
   ).toContain("snapshot snap_1");
 
   // Only the events whose state is read from the projection are routed into it.

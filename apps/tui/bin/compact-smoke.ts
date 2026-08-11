@@ -34,7 +34,7 @@ const summary = {
   retry,
   end,
   statuses,
-  compactionBanner: finalState.compactionBanner,
+  compactionBanner: finalState.facts.compactionBanner,
   finalFooter: finalState.footer,
   eventCount: handle.events.length,
 };

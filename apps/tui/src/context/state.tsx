@@ -129,8 +129,11 @@ export type AppState = {
     | "settings"
     | "status";
   modal: ModalControllerState;
-  retryBanner?: string;
-  compactionBanner?: string;
+  /**
+   * Banners live in `facts` (`Banner{text,kind}`), not here: the shared
+   * projection is their single writer and this string-shaped duplicate is the
+   * E3 Step 3 removal. The TUI only renders them.
+   */
   /**
    * The session's facts as projected by `@natalia/view-store`: the conversation
    * core (turns, streaming text, tool cards, todos, pending requests) and the
@@ -439,18 +442,18 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
       state.footer = `context ${event.used}/${event.max} source=${event.source}${event.trigger ? ` trigger=${event.trigger}` : ""}`;
       return;
     case "compaction.begin":
-      state.compactionBanner = `Compacting after ${event.trigger} · before ${event.beforeTokens}/${event.maxTokens} · reserved ${event.reservedTokens}`;
-      state.footer = state.compactionBanner;
+      // The projection owns the banner (`facts.compactionBanner`); the TUI
+      // still narrates the row and the footer in its own wording.
       upsertBlock(
         state,
         event.id,
         "system",
-        state.compactionBanner,
+        `Compacting after ${event.trigger} · before ${event.beforeTokens}/${event.maxTokens} · reserved ${event.reservedTokens}`,
         "compacting",
       );
+      state.footer = `compacting after ${event.trigger}`;
       return;
     case "compaction.end":
-      state.compactionBanner = undefined;
       // Same row the "compacting" line above wrote, so the reader watches one row
       // reach its outcome instead of collecting a second one. The projection
       // states this too, in the same words; the row is written here because the
@@ -548,9 +551,12 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
       );
       return;
     case "sandbox.audit":
+      // Row id aligned with the shared projection's (`sandbox:<id>:<action>`)
+      // so a second UI folding the same event stream renders the same id the
+      // official TUI narrates; the richer text stays TUI-side.
       upsertBlock(
         state,
-        `sandbox:${event.id}:audit:${event.action}`,
+        `sandbox:${event.id}:${event.action}`,
         "system",
         `audit ${event.action}: ${event.message}\ntarget: ${targetLabel(event.target)}\napproval: ${event.approvalRequired ? "required" : "not required"}\ncheckpoint: ${event.checkpointPolicy}`,
         "audit",
@@ -587,19 +593,16 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
       return;
     case "step.retry": {
       const text = `Retrying after ${event.reason}${event.statusCode ? ` (${event.statusCode})` : ""} · attempt ${event.attempt}/${event.maxAttempts} · waiting ${formatWait(event.waitMs)}`;
-      state.retryBanner = text;
       state.footer = text;
       upsertBlock(state, retryBlockID(event.id), "system", text, "retry");
       return;
     }
     case "step.retry.cleared":
       removeBlock(state, retryBlockID(event.id));
-      state.retryBanner = undefined;
       state.footer = `retry recovered after ${event.attempts} attempts`;
       return;
     case "step.retry.exhausted":
       removeBlock(state, retryBlockID(event.id));
-      state.retryBanner = undefined;
       // Claims the projected row to say the same thing in the TUI's wording,
       // which names the failure kind and what to do about it.
       upsertBlock(
@@ -694,9 +697,11 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
       );
       return;
     case "snapshot.created":
+      // Row id aligned with the shared projection's (`snapshot:<id>`); the
+      // `snapshot` role label is a TUI rendering choice.
       upsertBlock(
         state,
-        event.id,
+        `snapshot:${event.id}`,
         "snapshot",
         `snapshot ${event.id}: ${event.files.join(", ")}`,
       );
@@ -752,17 +757,20 @@ function handleCheckpointEvent(
   >,
 ) {
   const view = checkpointProgressView(event);
-  const sequence = state.messages.length;
+  // Ids align with the shared projection where it also narrates a row
+  // (checkpoint.failed / checkpoint.unavailable), so a second UI folding the
+  // same stream sees the same row ids; the other five event kinds are narrated
+  // only here, with stable ids that never depend on transcript length.
   const id =
     event.type === "checkpoint.created"
-      ? `checkpoint:${event.id}:${sequence}`
-      : event.type === "rollback.previewed"
-        ? `rollback:${event.preview.checkpointID}:preview:${sequence}`
-        : event.type === "rollback.begin" ||
-            event.type === "rollback.end" ||
-            event.type === "rollback.failed"
-          ? `rollback:${event.checkpointID}:${event.type}:${sequence}`
-          : `checkpoint:${event.type}:${sequence}`;
+      ? `checkpoint:${event.id}`
+      : event.type === "checkpoint.failed"
+        ? `checkpoint:failed:${event.reason}`
+        : event.type === "checkpoint.unavailable"
+          ? "checkpoint:unavailable"
+          : event.type === "rollback.previewed"
+            ? `rollback:${event.preview.checkpointID}:preview`
+            : `rollback:${event.checkpointID}:${event.type}`;
   const detail = checkpointEventDetail(event, view?.detail ?? event.type);
   upsertBlock(
     state,

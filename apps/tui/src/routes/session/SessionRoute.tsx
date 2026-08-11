@@ -331,17 +331,17 @@ export function SessionRoute(props: {
           );
         }}
       </Show>
-      <Show when={state.retryBanner}>
+      <Show when={state.facts.retryBanner}>
         {(retry) => (
           <box flexShrink={0} paddingLeft={1} backgroundColor={darkTheme.panel}>
-            <text fg={darkTheme.warning}>{retry()}</text>
+            <text fg={darkTheme.warning}>{retry().text}</text>
           </box>
         )}
       </Show>
-      <Show when={state.compactionBanner}>
+      <Show when={state.facts.compactionBanner}>
         {(banner) => (
           <box flexShrink={0} paddingLeft={1} backgroundColor={darkTheme.panel}>
-            <text fg={darkTheme.accent}>{banner()}</text>
+            <text fg={darkTheme.accent}>{banner().text}</text>
           </box>
         )}
       </Show>
