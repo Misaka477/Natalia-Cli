@@ -7771,3 +7771,88 @@ test("SQLite restart recovers the pending human terminal and resumes exactly onc
     await reopened.dispose?.();
   }
 }, 30_000);
+
+test("cancelling a turn aborts a tool currently executing", async () => {
+  // The tool-execution cancellation listener used to read an activity-scoped
+  // `activeAbort` closure that is never assigned, so a cancelled turn never
+  // aborted the in-flight tool: it kept running to completion (or timeout)
+  // even though the turn had been cancelled. The listener must bind the turn's
+  // own exec's abort signal.
+  const root = await mkdtemp(join(tmpdir(), "natalia-tool-cancel-"));
+  let toolAborted = false;
+  let toolRuns = 0;
+  const tools = createToolRegistry([]);
+  tools.set("wait_for_cancel", {
+    name: "wait_for_cancel",
+    description: "Wait until the turn is cancelled.",
+    requiresApproval: false,
+    timeoutSec: 30,
+    parameters: { type: "object", properties: {} },
+    async execute(_args, context) {
+      toolRuns += 1;
+      return await new Promise<string>((resolve) => {
+        const signal = context.signal;
+        if (signal?.aborted) {
+          toolAborted = true;
+          resolve("aborted");
+          return;
+        }
+        signal?.addEventListener(
+          "abort",
+          () => {
+            toolAborted = true;
+            resolve("aborted");
+          },
+          { once: true },
+        );
+      });
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_tool_cancel",
+    tools,
+    provider: {
+      provider: "tool-cancel",
+      model: "tool-cancel",
+      async *stream(request) {
+        if (request.signal?.aborted) throw new Error("cancelled");
+        if (!request.messages.some((message) => message.role === "tool"))
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "call_cancel",
+                name: "wait_for_cancel",
+                arguments: "{}",
+              },
+            ],
+          };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => {
+    events.push(event);
+    if (event.type === "tool.update" && event.status === "running")
+      setTimeout(() => client.cancel("stop the tool"), 10);
+  });
+  try {
+    await client.submit("run the waiting tool");
+    expect(toolRuns).toBe(1);
+    // The in-flight tool observed the cancellation and settled.
+    expect(toolAborted).toBe(true);
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "turn.cancelled" }),
+    );
+    expect(
+      events.some(
+        (event) =>
+          event.type === "turn.finished" && event.stopReason === "cancelled",
+      ),
+    ).toBe(true);
+  } finally {
+    await client.dispose?.();
+  }
+}, 30_000);

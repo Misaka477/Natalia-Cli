@@ -3840,11 +3840,14 @@ export function createRealRuntimeClient(
       });
       executionAudited = true;
       const executionController = new AbortController();
+      // The cancellation listener binds the turn's own exec, not the activity
+      // closure: a background turn's tool must stop when its session is
+      // cancelled, never when the attached session is.
       const cancelExecution = () =>
         executionController.abort(
-          activeAbort?.signal.reason ?? new Error("tool cancelled"),
+          exec?.activeAbort?.signal.reason ?? new Error("tool cancelled"),
         );
-      activeAbort?.signal.addEventListener("abort", cancelExecution, {
+      exec?.activeAbort?.signal.addEventListener("abort", cancelExecution, {
         once: true,
       });
       const timeoutTimer = tool.timeoutSec
@@ -3905,7 +3908,7 @@ export function createRealRuntimeClient(
         signal,
       ).finally(() => {
         if (timeoutTimer) clearTimeout(timeoutTimer);
-        activeAbort?.signal.removeEventListener("abort", cancelExecution);
+        exec?.activeAbort?.signal.removeEventListener("abort", cancelExecution);
       });
       const bounded = await boundToolOutput(
         workspaceRoot,
