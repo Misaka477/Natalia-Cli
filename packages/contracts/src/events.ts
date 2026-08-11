@@ -802,7 +802,13 @@ type RuntimeEventData =
       reason?: string;
     }
   | {
+      type: "flow.finished";
+      outcome: "succeeded" | "failed" | "skipped";
+      reason?: string;
+    }
+  | {
       type: "flow.evaluator";
+      moduleID?: string;
       phase: "thinking" | "content";
       text: string;
     };

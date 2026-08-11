@@ -381,14 +381,28 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
     case "flow.module_event":
       handleFlowModuleEvent(state, event);
       return;
-    case "flow.evaluator": {
-      // The arbitration model's live output. The block persists across the
-      // evaluation, so the module verdict can claim it afterwards.
-      const previous = state.messages.find(
-        (item) => item.id === "flow:evaluator",
+    case "flow.finished": {
+      // The run's formal verdict, so the transcript ends with a summary
+      // instead of trailing off into the arbitration output.
+      const ok = event.outcome === "succeeded";
+      const reason = event.reason ? `：${event.reason}` : "";
+      upsertBlock(
+        state,
+        "flow:finished",
+        "system",
+        `Flow 执行${ok ? "完成" : event.outcome === "skipped" ? "已跳过" : "失败"}${reason}`,
+        ok ? "success" : event.outcome === "skipped" ? "warning" : "failed",
       );
+      return;
+    }
+    case "flow.evaluator": {
+      // The arbitration model's live output for one module. The block is keyed
+      // by module so consecutive evaluations never pile into one block; the
+      // module verdict (handleFlowModuleEvent) claims it afterwards.
+      const id = `flow:evaluator:${event.moduleID ?? "unknown"}`;
+      const previous = state.messages.find((item) => item.id === id);
       const text = (previous?.text ?? "") + event.text;
-      upsertBlock(state, "flow:evaluator", "system", text, "running");
+      upsertBlock(state, id, "system", text, "running");
       return;
     }
     case "session.ready":
@@ -928,6 +942,21 @@ function handleFlowModuleEvent(
 ) {
   const id = `flow:module:${event.moduleID}`;
   const label = event.moduleType ? ` (${event.moduleType})` : "";
+  // The arbitration block for this module stops streaming once a verdict
+  // lands: keep its text, retire the "running" status.
+  const retireEvaluator = (status: string) => {
+    const evaluatorBlock = state.messages.find(
+      (item) => item.id === `flow:evaluator:${event.moduleID}`,
+    );
+    if (evaluatorBlock && evaluatorBlock.status === "running")
+      upsertBlock(
+        state,
+        evaluatorBlock.id,
+        "system",
+        evaluatorBlock.text,
+        status,
+      );
+  };
   switch (event.kind) {
     case "activated":
       upsertBlock(state, id, "system", `Flow 模块开始执行${label}`, "running");
@@ -957,9 +986,17 @@ function handleFlowModuleEvent(
             ? "pending"
             : "failed",
       );
+      retireEvaluator(
+        event.outcome === "complete"
+          ? "success"
+          : event.outcome === "incomplete"
+            ? "pending"
+            : "failed",
+      );
       return;
     case "completed":
       upsertBlock(state, id, "system", `模块完成${label}`, "success");
+      retireEvaluator("success");
       return;
     case "blocked":
       upsertBlock(
@@ -969,6 +1006,7 @@ function handleFlowModuleEvent(
         `模块被阻断：${event.reason ?? "未知原因"}${label}`,
         "failed",
       );
+      retireEvaluator("failed");
       return;
     case "stalled":
       upsertBlock(

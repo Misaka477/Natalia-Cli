@@ -472,6 +472,15 @@ function Shell(props: {
           status: outcome.ok ? "ready" : "failed",
           detail: outcome.message,
         });
+        dispatch({
+          type: "flow.finished",
+          outcome: outcome.ok
+            ? "succeeded"
+            : outcome.status === "skipped_due_to_overlap"
+              ? "skipped"
+              : "failed",
+          reason: outcome.message,
+        });
         toast.show({
           variant: outcome.ok ? "success" : "warning",
           message: outcome.message,
