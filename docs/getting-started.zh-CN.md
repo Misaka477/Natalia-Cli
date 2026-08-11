@@ -50,10 +50,14 @@ bun install
 `bun install` 是必须的：工作区包不装也能解析，但第三方依赖
 （`@opentui/*`、`solid-js`、`zod`）不会存在。
 
-> **如果 `bun install` 看起来成功了，但 Natalia 报 `IntxLNK` 错误**，说明你的
-> 账户没有创建符号链接的权限（需要管理员或开发者模式）。此时 Bun 把包留在缓存里
-> 却没有链接过去。改用 `bun install --backend copyfile`（仓库根目录），或者直接
-> 在 `apps\tui` 目录下执行 `bun install`。
+> **如果 `bun install` 之后根 `node_modules` 里没有 `@natalia/*` 链接**（bun ≥ 1.3
+> 在 Windows 上默认使用 isolated 布局，包会全部落在 `node_modules/.bun`，导致
+> `tsc` 报 `Cannot find module '@natalia/client'`），在仓库根目录改用
+> `bun install --linker=hoisted` 重建标准的提升式布局。
+>
+> 报 `IntxLNK` 解析错误（账户无法创建符号链接，需要管理员或开发者模式）属于
+> bun 1.2 及更早版本的行为；旧版建议的 `--backend copyfile` 与在 `apps\tui`
+> 目录内安装只解决局部解析，不再适用于 bun ≥ 1.3。
 
 交互式终端还需要 WezTerm 的二进制文件，**必须是 Natalia fork 的构建**——系统
 安装的普通 WezTerm 不可用：运行时不会去 `PATH` 里找它，而且只有打过补丁的
@@ -307,17 +311,18 @@ Skill 也可以从 `.natalia/config.json` 的 `skills.urls` 声明的 URL 拉取
 
 ## 11. 出问题时
 
-| 现象                                         | 原因与处理                                                         |
-| -------------------------------------------- | ------------------------------------------------------------------ |
-| `Cannot find module 'react/jsx-dev-runtime'` | 不是从 `apps/tui` 启动的，先 `cd apps/tui`                         |
-| `IntxLNK` 解析错误                           | `bun install` 没能创建符号链接，用 `--backend copyfile`，见第 2 步 |
-| `A bash-compatible shell is unavailable`     | 装 Git for Windows，或设 `NATALIA_BASH_EXECUTABLE`，然后新开终端   |
-| `provider: not configured`                   | 第 3 步没生效。在同一个终端里确认变量，然后重启 TUI                |
-| 提交时报 `No real provider configured`       | provider 是在 runtime 启动之后才保存的，重启 TUI                   |
-| `external editor is not configured`          | 设置 `EDITOR` 或 `VISUAL`，见第 5 步                               |
-| Skill 不出现                                 | 见第 6 步的验证说明                                                |
-| 第一个终端报 WezTerm 超时                    | 重试一次，冷启动导致                                               |
-| agent 在错误的目录里工作                     | 传 `--workspace`                                                   |
+| 现象                                                                            | 原因与处理                                                                 |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `Cannot find module 'react/jsx-dev-runtime'`                                    | 不是从 `apps/tui` 启动的，先 `cd apps/tui`                                 |
+| `IntxLNK` 解析错误                                                              | 账户无法创建符号链接（bun ≤ 1.2），见第 2 步                               |
+| 根 `node_modules` 里没有 `@natalia/*`（`Cannot find module '@natalia/client'`） | bun ≥ 1.3 默认 isolated 布局，用 `bun install --linker=hoisted`，见第 2 步 |
+| `A bash-compatible shell is unavailable`                                        | 装 Git for Windows，或设 `NATALIA_BASH_EXECUTABLE`，然后新开终端           |
+| `provider: not configured`                                                      | 第 3 步没生效。在同一个终端里确认变量，然后重启 TUI                        |
+| 提交时报 `No real provider configured`                                          | provider 是在 runtime 启动之后才保存的，重启 TUI                           |
+| `external editor is not configured`                                             | 设置 `EDITOR` 或 `VISUAL`，见第 5 步                                       |
+| Skill 不出现                                                                    | 见第 6 步的验证说明                                                        |
+| 第一个终端报 WezTerm 超时                                                       | 重试一次，冷启动导致                                                       |
+| agent 在错误的目录里工作                                                        | 传 `--workspace`                                                           |
 
 排查时可在 TUI 内用 `/doctor` 和 `/diagnostics`，或启动时加 `--doctor` 让它自动
 执行一次报告。

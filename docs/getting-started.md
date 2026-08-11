@@ -51,11 +51,16 @@ bun install
 `bun install` is mandatory: workspace packages resolve without it, but the
 third-party dependencies (`@opentui/*`, `solid-js`, `zod`) do not.
 
-> **If `bun install` appears to succeed but Natalia fails with an `IntxLNK`
-> error**, your account cannot create symlinks (that needs Administrator or
-> Developer Mode). Bun then leaves packages in its cache without linking them.
-> Use `bun install --backend copyfile` from the repository root, or run
-> `bun install` from inside `apps\tui`.
+> **If, after `bun install`, the root `node_modules` has no `@natalia/*`
+> links** (bun ≥ 1.3 defaults to the isolated layout on Windows, leaving every
+> package under `node_modules/.bun` and making `tsc` fail with `Cannot find
+module '@natalia/client'`), run `bun install --linker=hoisted` from the
+> repository root to rebuild the standard hoisted layout.
+>
+> An `IntxLNK` parse error (the account cannot create symlinks; that needs
+> Administrator or Developer Mode) is behavior of bun 1.2 and earlier; the
+> old advice of `--backend copyfile` or installing from inside `apps\tui`
+> only fixes local resolution and no longer applies to bun ≥ 1.3.
 
 The interactive terminal also needs the WezTerm binaries. **They must be the
 Natalia fork build** — a stock or system-installed WezTerm cannot be used: the
@@ -328,17 +333,18 @@ the Settings Center. Do not copy it between machines or into a repository.
 
 ## 11. If something goes wrong
 
-| Symptom                                      | Cause and fix                                                                          |
-| -------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `Cannot find module 'react/jsx-dev-runtime'` | Started outside `apps/tui`. `cd apps/tui` first.                                       |
-| `IntxLNK` parse error                        | Symlink-less `bun install`. Use `--backend copyfile`, see step 2.                      |
-| `A bash-compatible shell is unavailable`     | Install Git for Windows, or set `NATALIA_BASH_EXECUTABLE`, then open a new terminal.   |
-| `provider: not configured`                   | Step 3 did not apply. Verify the variables in the same terminal, then restart the TUI. |
-| `No real provider configured` on submit      | The provider was saved after the runtime started. Restart the TUI.                     |
-| `external editor is not configured`          | Set `EDITOR` or `VISUAL`, see step 5.                                                  |
-| Skills do not appear                         | See the verification notes in step 6.                                                  |
-| WezTerm timeout on the first terminal        | Retry once; cold start.                                                                |
-| The agent works in the wrong directory       | Pass `--workspace`.                                                                    |
+| Symptom                                                                         | Cause and fix                                                                          |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `Cannot find module 'react/jsx-dev-runtime'`                                    | Started outside `apps/tui`. `cd apps/tui` first.                                       |
+| `IntxLNK` parse error                                                           | Account cannot create symlinks (bun ≤ 1.2). See step 2.                                |
+| No `@natalia/*` in root `node_modules` (`Cannot find module '@natalia/client'`) | bun ≥ 1.3 isolated layout. Run `bun install --linker=hoisted`, see step 2.             |
+| `A bash-compatible shell is unavailable`                                        | Install Git for Windows, or set `NATALIA_BASH_EXECUTABLE`, then open a new terminal.   |
+| `provider: not configured`                                                      | Step 3 did not apply. Verify the variables in the same terminal, then restart the TUI. |
+| `No real provider configured` on submit                                         | The provider was saved after the runtime started. Restart the TUI.                     |
+| `external editor is not configured`                                             | Set `EDITOR` or `VISUAL`, see step 5.                                                  |
+| Skills do not appear                                                            | See the verification notes in step 6.                                                  |
+| WezTerm timeout on the first terminal                                           | Retry once; cold start.                                                                |
+| The agent works in the wrong directory                                          | Pass `--workspace`.                                                                    |
 
 Collect details with `/doctor` and `/diagnostics` inside the TUI, or pass
 `--doctor` at startup to have the report run for you.
