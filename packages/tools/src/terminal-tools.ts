@@ -570,13 +570,14 @@ function interactiveRequestHumanTool(): RuntimeTool {
   return {
     name: "interactive_terminal_request_human",
     description:
-      'Ask a human to take over the given native Terminal pane: call this when the pane is asking for something the model cannot and must not supply — a password, a secret, a yes/no judgment, an editor session. The reason must be 240 characters or fewer and state only the kind of input needed (e.g. "needs the sudo password"); never repeat screen content, file content, or anything that looks like a secret. The call returns immediately; continue with other work and check back with interactive_terminal_observe.',
+      'Ask a human to take over the given native Terminal pane: call this when the pane is asking for something the model cannot and must not supply — a password, a secret, a yes/no judgment, an editor session. The reason must be 240 characters or fewer and state only the kind of input needed (e.g. "needs the sudo password"); never repeat screen content, file content, or anything that looks like a secret. With endTurn=false (default) the call returns immediately and you continue with other work, checking back with interactive_terminal_observe. With endTurn=true the current turn ends with a waiting_human result and the runtime automatically starts a new turn once the human finishes and releases the pane — say that you are waiting and do nothing else after the call.',
     requiresApproval: false,
     parameters: {
       type: "object",
       properties: {
         id: { type: "string" },
         reason: { type: "string", maxLength: 240 },
+        endTurn: { type: "boolean" },
       },
       required: ["id", "reason"],
       additionalProperties: false,
@@ -594,6 +595,7 @@ function interactiveRequestHumanTool(): RuntimeTool {
           ...modelNativeTerminalInfo(session),
           humanRequested: true,
           reason,
+          endTurn: args.endTurn === true,
         },
         null,
         2,

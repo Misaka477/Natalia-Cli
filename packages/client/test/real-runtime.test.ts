@@ -6735,6 +6735,244 @@ test("terminal_request_human reaches the registry audit with the bounded reason"
   }
 }, 30_000);
 
+test("request_human endTurn settles as waiting_human and resumes automatically after release", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-continue-turn-"));
+  const audit: Array<{ action: string; actor: string; detail?: string }> = [];
+  const registry = new NativeTerminalRegistry(
+    {
+      kind: "wezterm",
+      executable: "wezterm",
+      async spawn() {
+        return { pane_id: 711, window_id: 1, tab_id: 711 };
+      },
+      async list() {
+        return [
+          { pane_id: 711, window_id: 1, tab_id: 711, rows: 24, cols: 80 },
+        ];
+      },
+      async read() {
+        return "Password: ";
+      },
+      async write() {},
+      async focus() {},
+      async resize() {},
+      async stop() {},
+    },
+    {
+      autoOpenHub: false,
+      onAudit: (event) => audit.push(event),
+    },
+  );
+  const pane = await registry.start({
+    id: "rh_continue_1",
+    cwd: root,
+    command: "ssh host",
+  });
+  let streamCalls = 0;
+  const provider: StreamingProvider = {
+    provider: "continue-turn",
+    model: "continue-turn",
+    async *stream(request) {
+      streamCalls += 1;
+      if (streamCalls === 1) {
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            {
+              id: "call_end_turn",
+              name: "interactive_terminal_request_human",
+              arguments: JSON.stringify({
+                id: pane.id,
+                reason: "needs the sudo password",
+                endTurn: true,
+              }),
+            },
+          ],
+        };
+        return;
+      }
+      if (streamCalls === 2) {
+        // The tool ran; the model confirms and the turn settles waiting.
+        yield { type: "content" as const, text: "Waiting for the human." };
+        yield { type: "done" as const };
+        return;
+      }
+      yield { type: "content" as const, text: "Continuing after the human." };
+      yield { type: "done" as const };
+    },
+  };
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_continue_turn",
+    nativeTerminal: registry,
+    provider,
+  });
+  client.start((event) => {
+    events.push(event);
+    if (event.type === "approval.request")
+      client.respondApproval({ requestID: event.id, decision: "once" });
+  });
+  try {
+    await client.submit("ask the human");
+    const finished = events.filter((event) => event.type === "turn.finished");
+    expect(finished.at(-1)).toMatchObject({
+      stopReason: "waiting_human",
+    });
+    expect(audit.at(-1)).toMatchObject({
+      action: "request_human",
+      detail: "needs the sudo password",
+    });
+
+    // The pending-human state is durable before the human acts.
+    const persisted = JSON.parse(
+      await readFile(
+        join(root, ".natalia", "sessions", "ses_continue_turn.json"),
+        "utf8",
+      ),
+    ) as { metadata?: { pendingHumanTerminal?: unknown } };
+    expect(persisted.metadata?.pendingHumanTerminal).toMatchObject({
+      terminalID: "rh_continue_1",
+      reason: "needs the sudo password",
+    });
+
+    // Releasing the pane resumes the task with a fresh turn.
+    await client.nativeTerminalReleaseHumanControl?.(pane.id);
+    await waitFor(
+      () =>
+        events.filter(
+          (event) =>
+            event.type === "turn.finished" &&
+            event.stopReason === "done" &&
+            events.findIndex(
+              (candidate) =>
+                candidate.type === "turn.submitted" &&
+                candidate.text.includes("[automated continuation]"),
+            ) < events.indexOf(event),
+        ).length >= 1,
+    );
+    const continuation = events.find(
+      (event) =>
+        event.type === "turn.submitted" &&
+        event.text.includes("[automated continuation]"),
+    );
+    expect(continuation).toBeDefined();
+    const doneAfter = events.filter(
+      (event) => event.type === "turn.finished" && event.stopReason === "done",
+    );
+    expect(doneAfter.at(-1)).toBeDefined();
+    expect(
+      events.filter((event) => event.type === "turn.submitted"),
+    ).toHaveLength(2);
+
+    // The pending state is cleared once resumed.
+    const afterResume = JSON.parse(
+      await readFile(
+        join(root, ".natalia", "sessions", "ses_continue_turn.json"),
+        "utf8",
+      ),
+    ) as { metadata?: { pendingHumanTerminal?: unknown } };
+    expect(afterResume.metadata?.pendingHumanTerminal).toBeUndefined();
+  } finally {
+    await client.dispose?.();
+  }
+}, 30_000);
+
+test("releasing a pane that is not the pending one does not resume or clear state", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-continue-negative-"));
+  const registry = new NativeTerminalRegistry(
+    {
+      kind: "wezterm",
+      executable: "wezterm",
+      async spawn() {
+        return { pane_id: 721, window_id: 1, tab_id: 721 };
+      },
+      async list() {
+        return [
+          { pane_id: 721, window_id: 1, tab_id: 721, rows: 24, cols: 80 },
+        ];
+      },
+      async read() {
+        return "Password: ";
+      },
+      async write() {},
+      async focus() {},
+      async resize() {},
+      async stop() {},
+    },
+    { autoOpenHub: false },
+  );
+  const pending = await registry.start({
+    id: "rh_pending",
+    cwd: root,
+    command: "ssh host",
+  });
+  const other = await registry.start({
+    id: "rh_other",
+    cwd: root,
+    command: "cat",
+  });
+  let streamCalls = 0;
+  const provider: StreamingProvider = {
+    provider: "continue-negative",
+    model: "continue-negative",
+    async *stream(request) {
+      streamCalls += 1;
+      if (streamCalls === 1) {
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            {
+              id: "call_neg",
+              name: "interactive_terminal_request_human",
+              arguments: JSON.stringify({
+                id: pending.id,
+                reason: "needs input",
+                endTurn: true,
+              }),
+            },
+          ],
+        };
+        return;
+      }
+      yield { type: "content" as const, text: "Waiting." };
+      yield { type: "done" as const };
+    },
+  };
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_continue_negative",
+    nativeTerminal: registry,
+    provider,
+  });
+  client.start((event) => events.push(event));
+  try {
+    await client.submit("ask");
+    expect(
+      events.filter((event) => event.type === "turn.finished").at(-1)
+        ?.stopReason,
+    ).toBe("waiting_human");
+
+    await client.nativeTerminalReleaseHumanControl?.(other.id);
+    await Bun.sleep(100);
+    expect(
+      events.filter((event) => event.type === "turn.submitted"),
+    ).toHaveLength(1);
+    const persisted = JSON.parse(
+      await readFile(
+        join(root, ".natalia", "sessions", "ses_continue_negative.json"),
+        "utf8",
+      ),
+    ) as { metadata?: { pendingHumanTerminal?: unknown } };
+    expect(persisted.metadata?.pendingHumanTerminal).toMatchObject({
+      terminalID: "rh_pending",
+    });
+  } finally {
+    await client.dispose?.();
+  }
+}, 30_000);
+
 test("permission management: save validates, delete refuses the default, both persist", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-permission-manage-"));
   await mkdir(join(root, ".natalia"), { recursive: true });

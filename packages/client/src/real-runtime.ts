@@ -532,6 +532,11 @@ export function createRealRuntimeClient(
   let lastSubmitted: SubmittedTurn | undefined;
   let activeAbort: AbortController | undefined;
   let activeTurnID: string | undefined;
+  /**
+   * TERM-M.3 (c): set when the model's request_human call ends the turn on
+   * purpose; consumed by the turn-finish path in `publish`.
+   */
+  let endTurnWaitingHuman: { terminalID: string; reason: string } | undefined;
   let paused = false;
   let pauseWaiters: Array<() => void> = [];
   let ready: Promise<void> | undefined;
@@ -1403,6 +1408,29 @@ export function createRealRuntimeClient(
       });
       if (runtimeDiagnostics.length > 500) runtimeDiagnostics.splice(0, 1);
     }
+    // TERM-M.3 (c): a turn that ended as waiting_human persists the typed
+    // pending-human state and clears the turn-level marker.
+    if (
+      event.type === "turn.finished" &&
+      event.stopReason === "waiting_human"
+    ) {
+      const pending = endTurnWaitingHuman;
+      endTurnWaitingHuman = undefined;
+      if (pending && session) void setPendingHumanTerminal(pending);
+    } else if (event.type === "turn.finished") {
+      // Any other settlement discards a stale marker: a request_human call
+      // from a turn that later failed must not bleed into the next turn.
+      endTurnWaitingHuman = undefined;
+    }
+    // TERM-M.3 (c): when the human releases the requested pane, the runtime
+    // starts the continuation turn automatically. Replay never passes through
+    // publish, so a replayed detach cannot double-resume.
+    if (
+      event.type === "terminal.timeline" &&
+      event.actor === "user" &&
+      event.action === "detach"
+    )
+      void maybeContinueAfterHumanInput(event.id);
     if (
       session &&
       event.type !== "session.created" &&
@@ -1478,6 +1506,93 @@ export function createRealRuntimeClient(
         }),
       );
     await sessionPersistence;
+  }
+
+  /**
+   * TERM-M.3 (c): persist the typed pending-human state — a terminal the model
+   * asked a human to take over, with the turn ended. Written exactly like the
+   * in-flight operation audit so restart sees the same typed contract.
+   */
+  async function setPendingHumanTerminal(input: {
+    terminalID: string;
+    reason: string;
+  }) {
+    if (!session) return;
+    session.metadata = { ...session.metadata };
+    session.metadata.pendingHumanTerminal = {
+      terminalID: input.terminalID,
+      reason: input.reason,
+      since: new Date().toISOString(),
+    };
+    const sessionSnapshot = sessionStoreController.sqlite()
+      ? undefined
+      : structuredClone(session);
+    const pendingSnapshot = session.metadata.pendingHumanTerminal;
+    sessionPersistence = sessionPersistence
+      .then(async () => {
+        if (sessionStoreController.sqlite())
+          sessionStoreController.sqlite()!.updateMetadata(sessionID, {
+            pendingHumanTerminal: pendingSnapshot,
+          });
+        else await sessionStoreController.json().save(sessionSnapshot!);
+      })
+      .catch((error) =>
+        publish({
+          type: "diagnostic",
+          level: "warning",
+          message: `pending human terminal persistence failed: ${error instanceof Error ? error.message : String(error)}`,
+        }),
+      );
+    await sessionPersistence;
+  }
+
+  async function clearPendingHumanTerminal(terminalID: string) {
+    if (!session?.metadata?.pendingHumanTerminal) return false;
+    if (session.metadata.pendingHumanTerminal.terminalID !== terminalID)
+      return false;
+    session.metadata = { ...session.metadata };
+    delete session.metadata.pendingHumanTerminal;
+    const sessionSnapshot = sessionStoreController.sqlite()
+      ? undefined
+      : structuredClone(session);
+    sessionPersistence = sessionPersistence
+      .then(async () => {
+        if (sessionStoreController.sqlite())
+          sessionStoreController.sqlite()!.updateMetadata(sessionID, {
+            pendingHumanTerminal: undefined,
+          });
+        else await sessionStoreController.json().save(sessionSnapshot!);
+      })
+      .catch((error) =>
+        publish({
+          type: "diagnostic",
+          level: "warning",
+          message: `pending human terminal clear failed: ${error instanceof Error ? error.message : String(error)}`,
+        }),
+      );
+    await sessionPersistence;
+    return true;
+  }
+
+  /**
+   * TERM-M.3 (c): when the human finishes the requested input on the pending
+   * terminal, a new turn resumes the task automatically. Idempotent by
+   * construction: the pending state is cleared first, so a second release
+   * cannot double-resume.
+   */
+  async function maybeContinueAfterHumanInput(terminalID: string) {
+    const pending = session?.metadata?.pendingHumanTerminal;
+    if (!pending || pending.terminalID !== terminalID) return;
+    await clearPendingHumanTerminal(terminalID);
+    publish({
+      type: "diagnostic",
+      level: "info",
+      message: `human completed input on terminal ${terminalID}; continuing the task`,
+    });
+    await submitInput({
+      text: `[automated continuation] The human finished providing input on terminal ${terminalID}. Check the terminal output and continue the original task.`,
+      delivery: "steer",
+    });
   }
 
   function publishTerminalSession(
@@ -1675,6 +1790,7 @@ export function createRealRuntimeClient(
     runtimeStatusSnapshot,
     effectiveMaxSteps,
     waitIfPaused,
+    waitingHuman: () => endTurnWaitingHuman,
   });
 
   const turnController = createTurnController({
@@ -2228,7 +2344,13 @@ export function createRealRuntimeClient(
       const nativeTerminal = terminalController.get();
       if (!nativeTerminal)
         throw new Error("Native Terminal Host is unavailable");
-      return publicNativeTerminal(nativeTerminal.releaseHumanControl(id));
+      const sessionView = publicNativeTerminal(
+        nativeTerminal.releaseHumanControl(id),
+      );
+      // TERM-M.3 (c): the remote release path triggers the same continuation
+      // as the local timeline-detach path.
+      void maybeContinueAfterHumanInput(id);
+      return sessionView;
     },
     async nativeTerminalBeginSecureInput(id) {
       await ready;
@@ -3609,6 +3731,25 @@ export function createRealRuntimeClient(
         );
       }
       if (isManagedResourceTool(tool.name)) scheduleRuntimeStatusSnapshot();
+      // TERM-M.3 (c): request_human with endTurn=true ends the current turn as
+      // waiting_human; the runtime resumes with a new turn once the human
+      // releases the pane.
+      if (tool.name === "interactive_terminal_request_human") {
+        const requestArgs = tryParseToolArguments(call.arguments) as {
+          id?: unknown;
+          reason?: unknown;
+          endTurn?: unknown;
+        };
+        if (
+          requestArgs?.endTurn === true &&
+          typeof requestArgs.id === "string" &&
+          typeof requestArgs.reason === "string"
+        )
+          endTurnWaitingHuman = {
+            terminalID: requestArgs.id,
+            reason: requestArgs.reason,
+          };
+      }
       await toolLayer.postExecute({ ...hookEvent, result });
       return result;
     } catch (error) {

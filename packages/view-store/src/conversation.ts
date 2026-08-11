@@ -266,7 +266,9 @@ export function applyConversationEvent(
       state.footer =
         event.stopReason === "done"
           ? "Ready"
-          : `turn ${event.stopReason}${event.reason ? `: ${event.reason}` : ""}`;
+          : event.stopReason === "waiting_human"
+            ? "Waiting for a human on a terminal"
+            : `turn ${event.stopReason}${event.reason ? `: ${event.reason}` : ""}`;
       if (event.stopReason !== "done") {
         state.pendingApprovals = [];
         state.pendingQuestions = [];

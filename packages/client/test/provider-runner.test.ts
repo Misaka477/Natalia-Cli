@@ -105,6 +105,7 @@ function makeHarness(provider: StreamingProvider | undefined) {
       }) as RuntimeEvent,
     effectiveMaxSteps: () => 10,
     waitIfPaused: async () => undefined,
+    waitingHuman: () => undefined,
   });
   return {
     runner,

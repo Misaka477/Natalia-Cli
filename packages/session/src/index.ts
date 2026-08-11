@@ -13,6 +13,16 @@ export type SessionMetadata = {
   pinned?: boolean;
   lastAccessedAt?: string;
   inFlightOperation?: DurableInFlightOperation;
+  /**
+   * TERM-M.3 (c): a terminal the model asked a human to take over, with the
+   * turn ended. Typed and durable like `inFlightOperation`; the runtime
+   * resumes the task with a new turn once the human releases the pane.
+   */
+  pendingHumanTerminal?: {
+    terminalID: string;
+    reason: string;
+    since: string;
+  };
 } & Record<string, unknown>;
 
 /** Safe crash-audit state, intentionally insufficient to replay work. */

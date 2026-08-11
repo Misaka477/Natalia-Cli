@@ -784,7 +784,7 @@ type RuntimeEventData =
   | {
       type: "turn.finished";
       id: string;
-      stopReason: "done" | "cancelled" | "error";
+      stopReason: "done" | "cancelled" | "error" | "waiting_human";
       reason?: "missing_final_response";
     }
   | {

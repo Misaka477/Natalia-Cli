@@ -115,6 +115,13 @@ export function createProviderRunner(input: {
   runtimeStatusSnapshot(): Promise<RuntimeEvent>;
   effectiveMaxSteps(): number;
   waitIfPaused(): Promise<void>;
+  /**
+   * TERM-M.3 (c): a marker set by the runtime when the model's
+   * `interactive_terminal_request_human` call ended the turn on purpose. When
+   * set, the turn finishes with `stopReason: "waiting_human"` instead of
+   * "done", and the runtime persists the pending-human state.
+   */
+  waitingHuman(): { terminalID: string; reason: string } | undefined;
 }) {
   async function runTurn(input: {
     id: string;
@@ -326,7 +333,7 @@ export function createProviderRunner(input: {
       input.publish({
         type: "turn.finished",
         id,
-        stopReason: "done",
+        stopReason: input.waitingHuman() ? "waiting_human" : "done",
         reason: missingFinalResponse ? "missing_final_response" : undefined,
       });
       input.publish(await input.runtimeStatusSnapshot());

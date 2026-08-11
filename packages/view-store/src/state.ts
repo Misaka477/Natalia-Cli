@@ -147,7 +147,7 @@ export type AppState = {
   activeTurn?: string;
   paused: boolean;
   lastSubmission?: SubmittedTurn;
-  lastStopReason?: "done" | "cancelled" | "error";
+  lastStopReason?: "done" | "cancelled" | "error" | "waiting_human";
   streams: Record<string, StreamState>;
   streamPhases: Record<string, "thinking" | "assistant">;
   tools: Record<string, ToolBlock>;
