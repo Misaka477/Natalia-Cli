@@ -7772,6 +7772,59 @@ test("SQLite restart recovers the pending human terminal and resumes exactly onc
   }
 }, 30_000);
 
+test("capabilities() surfaces each capability's effective contributions", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-capability-contribs-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_cap",
+    taskID: "task_cap",
+    episodeID: "epi_cap" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_cap_contribs" as SessionID,
+  });
+  store.activateModule({
+    invocationID: "inv_cap",
+    attempt: 1,
+    flowID: "flow_cap",
+    moduleID: "read",
+    conditionIDs: [],
+  });
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_cap_contribs",
+    taskModuleContext: {
+      store,
+      invocationID: "inv_cap",
+      attempt: 1,
+      flowID: "flow_cap",
+      moduleID: "read",
+      moduleType: "read_search",
+    },
+    provider: scriptedProvider("unused"),
+  });
+  client.start(() => undefined);
+  try {
+    const records = await client.capabilities?.();
+    expect(records).toBeDefined();
+    const taskModule = records?.find(
+      (record) => record.id === "natalia-task-module",
+    );
+    expect(taskModule?.contributions).toEqual([
+      { kind: "tools", name: "flow_module_complete" },
+    ]);
+    // Built-in records declare grants without contributing; the array still exists.
+    const terminal = records?.find(
+      (record) => record.id === "natalia-terminal",
+    );
+    expect(terminal?.contributions).toEqual([]);
+    expect(terminal?.scope).toBe("session");
+    // The query is metadata only: no payload leaks through it.
+    expect(JSON.stringify(taskModule?.contributions)).not.toContain("store");
+  } finally {
+    await client.dispose?.();
+    store.close();
+  }
+}, 30_000);
+
 test("cancelling a turn aborts a tool currently executing", async () => {
   // The tool-execution cancellation listener used to read an activity-scoped
   // `activeAbort` closure that is never assigned, so a cancelled turn never

@@ -1279,6 +1279,23 @@ export type InteractiveResponseOutcome = {
   reason?: string;
 };
 
+/**
+ * One loaded capability as reported by the `capabilities` query: what it
+ * declares it may do, and the effective contributions it owns. Contributions
+ * are metadata only — payloads never leave the runtime — and a contribution
+ * that lost an override is not effective and is omitted.
+ */
+export type CapabilityRecordView = {
+  id: string;
+  name: string;
+  version: string;
+  scope: string;
+  grants: string[];
+  dependencies?: string[];
+  precedence?: number;
+  contributions: Array<{ kind: string; name: string }>;
+};
+
 export type RuntimeClient = {
   start(
     onEvent: (event: RuntimeEvent) => void,
@@ -1763,15 +1780,7 @@ export type RuntimeClient = {
       requiresApproval: boolean;
     }>
   >;
-  capabilities?(): Promise<
-    Array<{
-      id: string;
-      name: string;
-      version: string;
-      scope: string;
-      grants: string[];
-    }>
-  >;
+  capabilities?(): Promise<CapabilityRecordView[]>;
   workGraphNodes?(): Promise<WorkGraphNodeView[]>;
   workGraphEdges?(): Promise<WorkGraphEdgeView[]>;
 };

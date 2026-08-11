@@ -3022,13 +3022,28 @@ export function createRealRuntimeClient(
       }));
     },
     async capabilities() {
+      // The built-in catalogue registers during initialize; a query that skips
+      // `ready` would answer before those records exist.
+      await ready;
       if (!capabilityRegistry) return [];
-      return capabilityRegistry.list().map((r) => ({
-        id: r.id,
-        name: r.name,
-        version: r.version,
-        scope: r.scope,
-        grants: r.grants,
+      return capabilityRegistry.list().map((record) => ({
+        id: record.id,
+        name: record.name,
+        version: record.version,
+        scope: record.scope,
+        grants: record.grants,
+        dependencies: record.dependencies,
+        precedence: record.precedence,
+        // The effective contributions this capability owns, as metadata only.
+        // Payloads stay on the host side: a tool definition or a settings value
+        // must not leak through the query surface. Contributions that lost an
+        // override are not effective and are omitted.
+        contributions: record.grants.flatMap((grant) =>
+          capabilityRegistry
+            .contributions<unknown>(grant)
+            .filter((entry) => entry.capabilityID === record.id)
+            .map((entry) => ({ kind: entry.kind, name: entry.name })),
+        ),
       }));
     },
     async workGraphNodes() {
