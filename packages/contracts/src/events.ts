@@ -67,7 +67,8 @@ export type TerminalAction =
   | "attach"
   | "detach"
   | "secure_input"
-  | "request_human";
+  | "request_human"
+  | "started";
 export type SandboxStatus =
   | "created"
   | "running"

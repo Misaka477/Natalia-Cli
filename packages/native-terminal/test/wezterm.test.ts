@@ -2230,3 +2230,66 @@ test("native registry mayWaitForHuman is a conservative weak fact", async () => 
   expect(session.mayWaitForHuman).toBe(true);
   await registry.dispose();
 });
+
+test("background starts neither open the hub nor steal focus (I1)", async () => {
+  const focused: number[] = [];
+  const audit: Array<{ action: string; actor: string }> = [];
+  let nextPane = 801;
+  const registry = new NativeTerminalRegistry(
+    {
+      kind: "wezterm",
+      executable: "wezterm",
+      async spawn() {
+        const paneID = nextPane++;
+        return { pane_id: paneID, window_id: 1, tab_id: paneID };
+      },
+      async list() {
+        return [
+          {
+            pane_id: nextPane - 1,
+            window_id: 1,
+            tab_id: nextPane - 1,
+            rows: 24,
+            cols: 80,
+          },
+        ];
+      },
+      async read() {
+        return "";
+      },
+      async write() {},
+      async open(paneID, options) {
+        return { pane_id: paneID, window_id: 1, tab_id: paneID };
+      },
+      async focus(paneID) {
+        focused.push(paneID);
+      },
+      async resize() {},
+      async stop() {},
+    },
+    { autoOpenHub: true, onAudit: (e) => audit.push(e) },
+  );
+  registry.setActiveSession("ses_fg");
+
+  const bg = await registry.start({
+    id: "i1_bg",
+    cwd: "/repo",
+    command: "cat",
+    sessionID: "ses_bg",
+  });
+  expect(focused).toEqual([]);
+  expect(audit.at(-1)).toMatchObject({
+    action: "started",
+    actor: "model",
+  });
+  expect(bg.attached).toBe(true);
+
+  const fg = await registry.start({
+    id: "i1_fg",
+    cwd: "/repo",
+    command: "cat",
+    sessionID: "ses_fg",
+  });
+  expect(focused).toEqual([fg.paneID]);
+  await registry.dispose();
+});

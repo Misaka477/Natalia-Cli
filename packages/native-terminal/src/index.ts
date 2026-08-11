@@ -838,7 +838,8 @@ export type NativeTerminalAuditEvent = {
     | "resize"
     | "secure_input"
     | "exit"
-    | "request_human";
+    | "request_human"
+    | "started";
   actor: "model" | "human" | "system";
   at: string;
   redacted?: boolean;
@@ -912,6 +913,13 @@ export class NativeTerminalRegistry {
     // Creating a pane is only ever requested by the model, and it lands in the
     // window the human is attached to.
     this.assertNoHumanSecureInput("starting a terminal", "model");
+    // I1: a start from a session that is not the one the UI is attached to is
+    // background work. It must neither open the hub nor steal focus — the
+    // human's Open terminal is the only way a background pane gets a window —
+    // and a timeline fact says the pane exists, waiting for that action.
+    const owningSession = input.sessionID ?? this.activeSession;
+    const background =
+      this.activeSession !== undefined && owningSession !== this.activeSession;
     // A restarted mux server numbers panes from scratch, so stale session
     // records can collide with the pane about to be created. Recovery marks
     // them exited first, which also clears the host readiness cache.
@@ -965,7 +973,7 @@ export class NativeTerminalRegistry {
     this.sessions.set(session.id, session);
     try {
       await this.persistSessions();
-      if (this.options.autoOpenHub !== false) {
+      if (this.options.autoOpenHub !== false && !background) {
         if (!this.hub) await this.attachToHub(session, true, true);
         else {
           session.windowID = this.hub.muxWindowID;
@@ -979,6 +987,10 @@ export class NativeTerminalRegistry {
               await this.host.stop(p.pane_id).catch(() => {});
           await this.host.focus(session.paneID);
         }
+      } else if (background) {
+        // The pane is real but windowless; the human opens it with Open
+        // terminal. The timeline fact is the only trace until then.
+        this.audit(session, "started", "model");
       }
     } catch (error) {
       // The pane was created but the window attach failed (e.g. the pane

@@ -7328,3 +7328,98 @@ test("two sessions writing the workspace in parallel both land without corruptio
     await client.dispose?.();
   }
 }, 30_000);
+
+test("a background turn starting a terminal does not steal focus (I1)", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-i1-runtime-"));
+  const focused: number[] = [];
+  let nextPane = 901;
+  const registry = new NativeTerminalRegistry(
+    {
+      kind: "wezterm",
+      executable: "wezterm",
+      async spawn() {
+        const paneID = nextPane++;
+        return { pane_id: paneID, window_id: 1, tab_id: paneID };
+      },
+      async list() {
+        return [
+          {
+            pane_id: nextPane - 1,
+            window_id: 1,
+            tab_id: nextPane - 1,
+            rows: 24,
+            cols: 80,
+          },
+        ];
+      },
+      async read() {
+        return "";
+      },
+      async write() {},
+      async open(paneID, options) {
+        return { pane_id: paneID, window_id: 1, tab_id: paneID };
+      },
+      async focus(paneID) {
+        focused.push(paneID);
+      },
+      async resize() {},
+      async stop() {},
+    },
+    { autoOpenHub: true },
+  );
+  let release: (() => void) | undefined;
+  let calls = 0;
+  const provider: StreamingProvider = {
+    provider: "i1",
+    model: "i1",
+    async *stream(request) {
+      calls += 1;
+      if (calls === 1) {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            {
+              id: `call_${crypto.randomUUID()}`,
+              name: "interactive_terminal_start",
+              arguments: JSON.stringify({ command: "cat", id: "i1_bg_pane" }),
+            },
+          ],
+        };
+        return;
+      }
+      yield { type: "content" as const, text: "started" };
+      yield { type: "done" as const };
+    },
+  };
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_i1_a",
+    nativeTerminal: registry,
+    provider,
+  });
+  client.start((event) => {
+    if (event.type === "approval.request")
+      client.respondApproval({ requestID: event.id, decision: "once" });
+  });
+  try {
+    await client.sessionNew?.({ id: "ses_i1_b", title: "B" });
+    const turnA = client.submit("start a terminal");
+    await waitFor(() => release !== undefined);
+    // A's turn is parked mid-stream; attach to B makes it a background turn.
+    await client.sessionAttach?.("ses_i1_b");
+    release?.();
+    await turnA;
+    // The background start opened no window and stole no focus.
+    expect(focused).toEqual([]);
+    // The pane belongs to A; B's view cannot see it (I3), A's can.
+    expect(await client.nativeTerminalList?.()).toEqual([]);
+    await client.sessionAttach?.("ses_i1_a");
+    const visibleA = (await client.nativeTerminalList?.()) ?? [];
+    expect(visibleA.map((session) => session.id)).toContain("i1_bg_pane");
+  } finally {
+    await client.dispose?.();
+  }
+}, 30_000);

@@ -3856,7 +3856,9 @@ export function createRealRuntimeClient(
           workspaceReadAuthorize: authorizeWorkspaceRead,
           sandboxMergeAuthorize: authorizeSandboxMerge,
           settings: toolSettings(),
-          parentSessionID: sessionID,
+          // The turn's own session, not the attached one: a background turn's
+          // subagents and terminal starts belong to its session (I1/I3).
+          parentSessionID: exec?.session.id ?? sessionID,
           maxSubagentDepth: tsRuntimeConfig?.runtime.subagentDepth,
           onSandboxEvent: (event) => {
             const update = event as Extract<
