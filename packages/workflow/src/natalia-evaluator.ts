@@ -76,7 +76,7 @@ export function parseEvaluatorResult(
 ): EvaluatorResult {
   let value: unknown;
   try {
-    value = JSON.parse(input);
+    value = JSON.parse(extractEvaluatorJson(input));
   } catch {
     throw new Error("evaluator result must be valid schema JSON");
   }
@@ -97,6 +97,25 @@ export function parseEvaluatorResult(
       "evaluator result must include each declared condition exactly once",
     );
   return parsed.data;
+}
+
+/**
+ * Recovers a JSON object from free-form model output: fenced code blocks and
+ * surrounding prose are stripped, and the first `{...}` span is used. This
+ * only ever narrows the text handed to the schema, so a strictly correct
+ * answer passes through unchanged.
+ */
+function extractEvaluatorJson(input: string): string {
+  const text = input.trim();
+  if (!text) return text;
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/u);
+  const candidate = fenced?.[1] ?? text;
+  const trimmed = candidate.trim();
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed;
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start >= 0 && end > start) return trimmed.slice(start, end + 1);
+  return trimmed;
 }
 
 /**
@@ -157,7 +176,32 @@ export async function evaluateAndRecordModule(input: {
         {
           role: "system",
           content:
-            "Return only one evaluator result JSON object matching schemaVersion 1. Do not call tools or write Markdown.",
+            "You are the flow module completion evaluator. Evaluate only whether the module's declared completion conditions are satisfied by the given evidence. Return exactly one JSON object: no Markdown, no prose, no tool calls. The object must match this schema exactly (any extra key is rejected):\n" +
+            JSON.stringify({
+              schemaVersion: 1,
+              outcome: "complete | incomplete | blocked",
+              conditions: [
+                {
+                  id: "condition ID from the module context",
+                  status: "missing | partial | satisfied",
+                  reason: "short justification tied to the evidence",
+                  evidenceRefs: [
+                    "evidence refs from the module context; empty when none apply",
+                  ],
+                },
+              ],
+              gaps: [
+                "what still prevents the conditions from being satisfied; empty when complete",
+              ],
+              forbiddenRepeats: [
+                "actions that must not be repeated; empty when none",
+              ],
+              recommendedActions: [
+                "concrete next steps; empty when the module is complete",
+              ],
+              idealOutcome: "missing | partial | satisfied",
+            }) +
+            "\nUse the exact condition IDs and evidence refs listed in the module context. Every declared condition must appear exactly once in conditions.",
         },
         { role: "user", content: JSON.stringify(redacted) },
       ],

@@ -39,6 +39,15 @@ export type TaskModuleContext = {
   moduleExtensions?: ExtensionRules;
   /** Module-level file/tool policies can only further narrow the profile. */
   modulePermissions?: PermissionRules;
+  /**
+   * The active module's completion conditions, so `flow_module_complete` can be
+   * claimed with the real condition IDs instead of guessed ones.
+   */
+  moduleConditions?: Array<{
+    id: string;
+    text: string;
+    kind: "minimum" | "ideal";
+  }>;
   /** Controller-owned structured continuation for the active module only. */
   moduleContinuation?: string;
   /**
@@ -92,8 +101,43 @@ export function createFlowModuleCompleteTool(
       properties: {
         flowID: { type: "string", minLength: 1 },
         moduleID: { type: "string", minLength: 1 },
-        conditionStatuses: { type: "array" },
-        evidenceRefs: { type: "array" },
+        conditionStatuses: {
+          type: "array",
+          description:
+            "One entry per declared completion condition, using the exact condition IDs from the module context.",
+          items: {
+            type: "object",
+            properties: {
+              id: {
+                type: "string",
+                description: "The condition ID from the module context.",
+              },
+              status: {
+                type: "string",
+                enum: ["missing", "partial", "satisfied"],
+                description:
+                  "missing: not met; partial: partly met; satisfied: fully met.",
+              },
+              reason: {
+                type: "string",
+                description:
+                  "Short justification tied to what happened this attempt.",
+              },
+              evidenceRefs: {
+                type: "array",
+                description:
+                  "Tool call IDs backing this condition, each formatted exactly as tool:<callID>; empty when no tool call backs it.",
+              },
+            },
+            required: ["id", "status"],
+            additionalProperties: false,
+          },
+        },
+        evidenceRefs: {
+          type: "array",
+          description:
+            "Tool call IDs backing the conditions, each formatted exactly as tool:<callID> (for example tool:call_01_xxx). Only reference tool calls you actually made this attempt. Leave empty when a condition is met without tool evidence; file names or paths are never valid refs.",
+        },
         gaps: { type: "array" },
         recommendedAction: { type: "string", minLength: 1 },
       },
@@ -247,7 +291,9 @@ function requireConditionStatuses(value: unknown) {
     const id = requireToolString(entry.id, `conditionStatuses[${index}].id`);
     const status = entry.status;
     if (status !== "missing" && status !== "partial" && status !== "satisfied")
-      throw new Error(`conditionStatuses[${index}].status is invalid`);
+      throw new Error(
+        `conditionStatuses[${index}].status is invalid; expected one of: missing, partial, satisfied`,
+      );
     return {
       id,
       status: status as "missing" | "partial" | "satisfied",

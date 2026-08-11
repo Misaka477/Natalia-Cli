@@ -87,6 +87,13 @@ export function createProviderRunner(input: {
     | {
         moduleInstructions?: string;
         moduleContinuation?: string;
+        flowID?: string;
+        moduleID?: string;
+        moduleConditions?: Array<{
+          id: string;
+          text: string;
+          kind: "minimum" | "ideal";
+        }>;
       }
     | undefined;
   publish(event: RuntimeEvent): void;
@@ -252,6 +259,9 @@ export function createProviderRunner(input: {
                 config?.modes[config.defaultMode]?.systemPrompt,
           moduleInstructions: input.taskModuleContext()?.moduleInstructions,
           moduleContinuation: input.taskModuleContext()?.moduleContinuation,
+          flowID: input.taskModuleContext()?.flowID,
+          moduleID: input.taskModuleContext()?.moduleID,
+          moduleConditions: input.taskModuleContext()?.moduleConditions,
           skills: input.skillsList(),
           activeSkill: input.activeSkill(),
         }),
@@ -637,6 +647,13 @@ function runtimeSystemPrompt(input: {
   agentPrompt?: string;
   moduleInstructions?: string;
   moduleContinuation?: string;
+  flowID?: string;
+  moduleID?: string;
+  moduleConditions?: Array<{
+    id: string;
+    text: string;
+    kind: "minimum" | "ideal";
+  }>;
   skills?: Skill[];
   activeSkill?: Skill;
 }) {
@@ -678,6 +695,28 @@ function runtimeSystemPrompt(input: {
       "<active_flow_module_instructions>",
       input.moduleInstructions.trim(),
       "</active_flow_module_instructions>",
+    );
+  }
+  if (input.moduleID) {
+    // The completion tool requires the exact runtime-generated module ID and
+    // condition IDs; without this block the model would have to guess them.
+    lines.push(
+      "<active_flow_module>",
+      `Flow: ${input.flowID ?? "unknown"}`,
+      `Module ID: ${input.moduleID}`,
+      "When claiming completion with flow_module_complete, pass exactly this flowID and moduleID, and the condition IDs below.",
+      "For each condition, set status to one of: missing (not met), partial (partly met), satisfied (fully met).",
+      "In evidenceRefs, reference only tool call IDs from this module's execution, each in the form tool:<callID> (for example tool:call_01_xxx). A file name or path is never a valid ref; leave evidenceRefs empty when a condition is met without tool evidence.",
+      input.moduleConditions?.length
+        ? [
+            "Completion conditions:",
+            ...input.moduleConditions.map(
+              (condition) =>
+                `- [${condition.kind}] ${condition.id}: ${condition.text}`,
+            ),
+          ].join("\n")
+        : "This module declares no completion conditions.",
+      "</active_flow_module>",
     );
   }
   if (input.moduleContinuation?.trim()) {

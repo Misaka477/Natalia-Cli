@@ -1113,6 +1113,12 @@ export async function runWorkflowProcess(input: {
   path: string;
   workspaceRoot: string;
   env?: NodeJS.ProcessEnv;
+  /**
+   * Streams each JSON event line the run emits (runtime events, plus
+   * task.invocation / task.alert / task.state / diagnostic), as it happens.
+   * Non-JSON lines and lines without a `type` field are not forwarded.
+   */
+  onEvent?: (event: Record<string, unknown>) => void;
 }): Promise<TaskRunOutcome> {
   const cliEntry = resolveCliEntry(input.env);
   const command = workflowRunCommand({
@@ -1128,12 +1134,39 @@ export async function runWorkflowProcess(input: {
       stdout: "pipe",
       stderr: "pipe",
     });
-    const stdout = await new Response(child.stdout).text();
+    const stdoutLines: string[] = [];
+    const decoder = new TextDecoder("utf-8");
+    let pending = "";
+    const consumeLine = (line: string) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      stdoutLines.push(trimmed);
+      if (!input.onEvent) return;
+      try {
+        const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+        if (parsed && typeof parsed.type === "string") input.onEvent(parsed);
+      } catch {
+        // plainRuntimeEvent lines (non-json mode) or diagnostics: not events
+      }
+    };
+    const stdoutReader = child.stdout.getReader();
+    while (true) {
+      const { done, value } = await stdoutReader.read();
+      if (done) break;
+      pending += decoder.decode(value, { stream: true });
+      let newline: number;
+      while ((newline = pending.indexOf("\n")) >= 0) {
+        consumeLine(pending.slice(0, newline));
+        pending = pending.slice(newline + 1);
+      }
+    }
+    pending += decoder.decode();
+    if (pending.trim()) consumeLine(pending);
     const stderr = await new Response(child.stderr).text();
     await child.exited;
     const outcome = readTaskRunOutcome({
       exitCode: child.exitCode,
-      stdout,
+      stdout: stdoutLines.join("\n"),
       stderr,
     });
     return input.kind === "flow"

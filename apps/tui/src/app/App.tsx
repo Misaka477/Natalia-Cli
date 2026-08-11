@@ -444,10 +444,33 @@ function Shell(props: {
           variant: "info",
           message: `Starting ${workflowRun.kind} ${workflowRun.path}`,
         });
+        dispatch({
+          type: "status.update",
+          status: "running",
+          detail: `${workflowRun.kind === "flow" ? "Flow" : "Task"}: ${workflowRun.path}`,
+        });
         const outcome = await runWorkflowProcess({
           kind: workflowRun.kind,
           path: workflowRun.path,
           workspaceRoot: props.workspaceRoot,
+          onEvent: (event) => {
+            // A workflow run is a sequence of headless module turns; the
+            // runtime events each module emits (submitted prompt, thinking,
+            // content, tool cards, finished) render in the transcript exactly
+            // like an interactive turn, so the run is visible as it happens.
+            if (
+              event.type !== "task.invocation" &&
+              event.type !== "task.alert" &&
+              event.type !== "task.alert_delivery" &&
+              event.type !== "task.state"
+            )
+              dispatch(event as import("@natalia/contracts").RuntimeEvent);
+          },
+        });
+        dispatch({
+          type: "status.update",
+          status: outcome.ok ? "ready" : "failed",
+          detail: outcome.message,
         });
         toast.show({
           variant: outcome.ok ? "success" : "warning",

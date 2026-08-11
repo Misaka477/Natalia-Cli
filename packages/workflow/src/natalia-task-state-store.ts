@@ -8,7 +8,11 @@ import {
 } from "./natalia-module-policy";
 
 const SCHEMA_VERSION = 4;
-const ACTIVE_STATUSES = ["running", "blocked", "retrying"] as const;
+// Only invocations that can still transition are active. `blocked` is
+// terminal: a retryable blocked attempt transitions the invocation to
+// `retrying` instead (see completeAttempt), so a blocked invocation with an
+// ended_at must not block a later run forever.
+const ACTIVE_STATUSES = ["running", "retrying"] as const;
 
 export type NataliaTaskInvocationStatus =
   | "running"
@@ -508,7 +512,7 @@ export class NataliaTaskStateStore {
         .map((row) => row.ref),
     );
     for (const ref of input.refs)
-      if (!owned.has(ref))
+      if (!owned.has(normalizeEvidenceRef(ref)))
         throw new Error(
           `evaluator references unknown attempt evidence: ${ref}`,
         );
@@ -565,9 +569,9 @@ export class NataliaTaskStateStore {
           .map((row) => row.ref),
       );
       for (const ref of input.claim.evidenceRefs)
-        if (!evidence.has(ref))
+        if (!evidence.has(normalizeEvidenceRef(ref)))
           throw new Error(
-            `module claim references unknown attempt evidence: ${ref}`,
+            `module claim references unknown attempt evidence: ${ref}; valid refs are tool call IDs of this module's executed tools, e.g. ${formatEvidenceRefs(evidence)}`,
           );
       this.#db
         .query(
@@ -1130,4 +1134,22 @@ function moduleEventFromRow(row: ModuleEventRow): NataliaFlowModuleEvent {
     at: row.at,
     data: JSON.parse(row.data) as Record<string, unknown>,
   };
+}
+
+/**
+ * LLM-supplied evidence refs sometimes carry trailing prose or tool output
+ * (e.g. "tool:call_01_xxx read_file: <content>"). Evidence refs are
+ * `tool:<callID>` tokens with no spaces, so the first whitespace-delimited
+ * token is the canonical form; a strictly correct ref passes through
+ * unchanged.
+ */
+function normalizeEvidenceRef(ref: string): string {
+  return ref.trim().split(/\s+/u)[0] ?? ref;
+}
+
+function formatEvidenceRefs(refs: Set<string>): string {
+  const list = [...refs];
+  return list.length
+    ? list.slice(0, 5).join(", ")
+    : "none recorded yet — leave evidenceRefs empty";
 }

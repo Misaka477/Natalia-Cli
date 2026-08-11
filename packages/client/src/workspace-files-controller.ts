@@ -14,6 +14,10 @@ export function createWorkspaceFilesController(input: {
   let cleanup: (() => void) | undefined;
 
   async function init() {
+    // Idempotent: re-running init must not leak the previous watcher. A
+    // leaked watcher keeps the process alive on Windows (ReadDirectoryChangesW
+    // holds the event loop) and duplicates change events everywhere.
+    close();
     cleanup = await watchWorkspaceFiles(
       input.workspaceRoot,
       () => undefined,

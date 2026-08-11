@@ -815,6 +815,20 @@ async function runTaskModule(input: {
     moduleID: input.module.moduleID,
     moduleType: input.module.moduleType,
     moduleInstructions: definition?.instructions ?? "",
+    moduleConditions: definition
+      ? [
+          ...definition.minimumConditions.map((condition) => ({
+            id: condition.id,
+            text: condition.text,
+            kind: "minimum" as const,
+          })),
+          ...definition.idealConditions.map((condition) => ({
+            id: condition.id,
+            text: condition.text,
+            kind: "ideal" as const,
+          })),
+        ]
+      : undefined,
     moduleCommandRules: definition?.commandRules,
     moduleInteractivePrograms: definition?.interactivePrograms,
     moduleExtensions: definition?.extensions,
@@ -1051,6 +1065,10 @@ function collectEvaluatorContext(
     return;
   }
   if (event.type === "tool.update" && event.status === "succeeded") {
+    // The completion-claim tool is control traffic, not work evidence: its
+    // calls are never recorded by the evidence store, so showing the ref to
+    // the evaluator invites it to cite something that can never validate.
+    if (event.name === "flow_module_complete") return;
     context.toolRecords.push(
       `${event.callID ? `tool:${event.callID} ` : ""}${event.name}: ${event.result ?? event.summary}`,
     );

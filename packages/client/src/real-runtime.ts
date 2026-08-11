@@ -533,6 +533,7 @@ export function createRealRuntimeClient(
   let paused = false;
   let pauseWaiters: Array<() => void> = [];
   let ready: Promise<void> | undefined;
+  let readySettled = false;
   const skillsController = createSkillsController({
     workspaceRoot,
     userRoot: () => userSkillRoot(),
@@ -1694,24 +1695,36 @@ export function createRealRuntimeClient(
     start(onEvent, startOptions) {
       sink = onEvent;
       replayMode = startOptions?.replay ?? "all";
-      ready = initialize().catch((error) => {
-        const failure =
-          error instanceof Error ? error : new Error(String(error));
-        publish({
-          type: "diagnostic",
-          level: "error",
-          message: failure.message,
-        });
-        // Rethrow, so every member's `await ready` fails with the *cause*,
-        // not with a derived symptom ("checkpoint store is not initialized").
-        // The single guard below existed because this used to resolve after
-        // swallowing; it is gone with the swallow.
-        throw failure;
-      });
-      // Members still `await ready` and receive the rejection; this catch
-      // only keeps a runtime nobody calls from tripping unhandled-rejection
-      // reporting.
-      void ready.catch(() => undefined);
+      // Idempotent: a second subscriber (e.g. the transport server attaching
+      // its event sink after the TUI) must not re-run initialize. Re-running
+      // it opened a second sqlite connection and a second workspace watcher,
+      // which on Windows fails the sqlite open and leaks the first watcher,
+      // keeping the process alive after dispose.
+      if (!ready || readySettled) {
+        readySettled = false;
+        ready = initialize().then(
+          () => {
+            readySettled = true;
+          },
+          (error) => {
+            readySettled = true;
+            const failure =
+              error instanceof Error ? error : new Error(String(error));
+            publish({
+              type: "diagnostic",
+              level: "error",
+              message: failure.message,
+            });
+            // Rethrow, so every member's `await ready` fails with the *cause*,
+            // not with a derived symptom ("checkpoint store is not initialized").
+            throw failure;
+          },
+        );
+        // Members still `await ready` and receive the rejection; this catch
+        // only keeps a runtime nobody calls from tripping unhandled-rejection
+        // reporting.
+        void ready.catch(() => undefined);
+      }
     },
     async submit(text) {
       return await submitInput({ text });
@@ -1883,6 +1896,10 @@ export function createRealRuntimeClient(
       }));
     },
     async commandCatalog() {
+      // The catalog reads the plugin registry and capability contributions,
+      // which only exist after initialize; on a cold start the request could
+      // otherwise race ahead of it.
+      await ready;
       return commandCatalogEntries().map((command) => ({
         name: command.name,
         title: command.title,
