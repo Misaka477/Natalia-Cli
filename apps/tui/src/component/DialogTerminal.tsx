@@ -54,7 +54,9 @@ export function DialogTerminal(props: { backend: RuntimeClient }) {
         title: session.id,
         description: `${session.status} · WezTerm pane ${session.paneID} · ${session.command}`,
         value: session,
-        footer: `${session.inputOwner} control · ${session.rows ?? "?"}x${session.cols ?? "?"} human geometry · native window ${session.windowID}`,
+        footer: `${session.inputOwner} control · ${
+          session.mayWaitForHuman ? "may wait for human · " : ""
+        }${session.rows ?? "?"}x${session.cols ?? "?"} human geometry · native window ${session.windowID}`,
       }))}
       emptyView={
         <box paddingLeft={4} paddingRight={4} paddingTop={1}>
