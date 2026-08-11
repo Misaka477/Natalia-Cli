@@ -100,6 +100,42 @@ export function parseEvaluatorResult(
 }
 
 /**
+ * The evaluator's system prompt. A failed validation retries with the error
+ * fed back so the model can correct its format instead of the flow dying.
+ */
+function evaluatorSystemPrompt(previousError?: string): string {
+  const base =
+    "You are the flow module completion evaluator. Evaluate only whether the module's declared completion conditions are satisfied by the given evidence. Return exactly one JSON object: no Markdown, no prose, no tool calls. The object must match this schema exactly (any extra key is rejected):\n" +
+    JSON.stringify({
+      schemaVersion: 1,
+      outcome: "complete | incomplete | blocked",
+      conditions: [
+        {
+          id: "condition ID from the module context",
+          status: "missing | partial | satisfied",
+          reason: "short justification tied to the evidence",
+          evidenceRefs: [
+            "tool call IDs copied verbatim from the tool records; empty when none apply",
+          ],
+        },
+      ],
+      gaps: [
+        "what still prevents the conditions from being satisfied; empty when complete",
+      ],
+      forbiddenRepeats: ["actions that must not be repeated; empty when none"],
+      recommendedActions: [
+        "concrete next steps; empty when the module is complete",
+      ],
+      idealOutcome: "missing | partial | satisfied",
+    }) +
+    "\nUse the exact condition IDs from the module context. Every declared condition must appear exactly once in conditions.\n" +
+    "Evidence refs: copy the tool call ID verbatim from the tool records in the module context, keeping the exact tool:<callID> form. Never invent, abbreviate, re-type or decorate a callID, and never use a file name, a path, or prose as a ref. When no tool record backs a condition, set evidenceRefs to an empty array. An unmatched ref fails the evaluation.";
+  return previousError
+    ? `${base}\nPrevious attempt failed validation: ${previousError}. Correct your output accordingly and try again.`
+    : base;
+}
+
+/**
  * Recovers a JSON object from free-form model output: fenced code blocks and
  * surrounding prose are stripped, and the first `{...}` span is used. This
  * only ever narrows the text handed to the schema, so a strictly correct
@@ -168,62 +204,50 @@ export async function evaluateAndRecordModule(input: {
     return block(
       `platform completion floor found unresolved operations: ${redacted.pendingOperations.join("; ")}`,
     );
-  let result: EvaluatorResult;
-  try {
-    let content = "";
-    for await (const chunk of input.provider.stream({
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are the flow module completion evaluator. Evaluate only whether the module's declared completion conditions are satisfied by the given evidence. Return exactly one JSON object: no Markdown, no prose, no tool calls. The object must match this schema exactly (any extra key is rejected):\n" +
-            JSON.stringify({
-              schemaVersion: 1,
-              outcome: "complete | incomplete | blocked",
-              conditions: [
-                {
-                  id: "condition ID from the module context",
-                  status: "missing | partial | satisfied",
-                  reason: "short justification tied to the evidence",
-                  evidenceRefs: [
-                    "evidence refs from the module context; empty when none apply",
-                  ],
-                },
-              ],
-              gaps: [
-                "what still prevents the conditions from being satisfied; empty when complete",
-              ],
-              forbiddenRepeats: [
-                "actions that must not be repeated; empty when none",
-              ],
-              recommendedActions: [
-                "concrete next steps; empty when the module is complete",
-              ],
-              idealOutcome: "missing | partial | satisfied",
-            }) +
-            "\nUse the exact condition IDs and evidence refs listed in the module context. Every declared condition must appear exactly once in conditions.",
-        },
-        { role: "user", content: JSON.stringify(redacted) },
-      ],
-    })) {
-      if (chunk.type === "content") content += chunk.text;
-      if (chunk.type === "tool_call")
-        return block("evaluator emitted a forbidden tool call");
+  // Invalid evaluator output (unparseable JSON, schema violations, unmatched
+  // evidence refs) is retried with the validation error fed back, so the model
+  // can correct its format instead of the whole flow being killed. Hard
+  // failures (provider mismatch, consent, pending operations, tool calls)
+  // returned above already blocked. Only after three invalid outputs the
+  // module blocks.
+  let result: EvaluatorResult | undefined;
+  let lastValidationError: string | undefined;
+  for (let evaluationAttempt = 0; evaluationAttempt < 3; evaluationAttempt++) {
+    try {
+      let content = "";
+      for await (const chunk of input.provider.stream({
+        messages: [
+          {
+            role: "system",
+            content: evaluatorSystemPrompt(lastValidationError),
+          },
+          { role: "user", content: JSON.stringify(redacted) },
+        ],
+      })) {
+        if (chunk.type === "content") content += chunk.text;
+        if (chunk.type === "tool_call")
+          return block("evaluator emitted a forbidden tool call");
+      }
+      result = parseEvaluatorResult(content, redacted.conditionIDs);
+      for (const condition of result.conditions)
+        input.store.validateModuleEvidenceRefs({
+          invocationID: input.invocationID,
+          attempt: input.attempt,
+          flowID: redacted.flowID,
+          moduleID: redacted.moduleID,
+          refs: condition.evidenceRefs,
+        });
+      break;
+    } catch (error) {
+      lastValidationError =
+        error instanceof Error ? error.message : String(error);
+      if (evaluationAttempt === 2)
+        return block(
+          `evaluator unavailable or invalid: ${lastValidationError}`,
+        );
     }
-    result = parseEvaluatorResult(content, redacted.conditionIDs);
-    for (const condition of result.conditions)
-      input.store.validateModuleEvidenceRefs({
-        invocationID: input.invocationID,
-        attempt: input.attempt,
-        flowID: redacted.flowID,
-        moduleID: redacted.moduleID,
-        refs: condition.evidenceRefs,
-      });
-  } catch (error) {
-    return block(
-      `evaluator unavailable or invalid: ${error instanceof Error ? error.message : String(error)}`,
-    );
   }
+  if (!result) return block("evaluator produced no valid result");
   try {
     input.store.evaluateModule({
       invocationID: input.invocationID,

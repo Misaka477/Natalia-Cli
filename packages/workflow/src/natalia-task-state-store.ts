@@ -511,11 +511,16 @@ export class NataliaTaskStateStore {
         .all(input.invocationID, input.attempt, input.flowID, input.moduleID)
         .map((row) => row.ref),
     );
-    for (const ref of input.refs)
-      if (!owned.has(normalizeEvidenceRef(ref)))
+    for (const ref of input.refs) {
+      const normalized = normalizeEvidenceRef(ref);
+      // LLM output is prompted to copy refs verbatim from the tool records.
+      // A ref that still does not match a recorded call is an evaluator
+      // failure: tolerating it would let a model cite work that never ran.
+      if (!owned.has(normalized))
         throw new Error(
-          `evaluator references unknown attempt evidence: ${ref}`,
+          `evaluator references unknown attempt evidence: ${ref}; valid refs are tool call IDs of this module's executed tools, e.g. ${formatEvidenceRefs(owned)}`,
         );
+    }
   }
 
   moduleEvidenceRefs(input: {
@@ -568,11 +573,13 @@ export class NataliaTaskStateStore {
           )
           .map((row) => row.ref),
       );
-      for (const ref of input.claim.evidenceRefs)
-        if (!evidence.has(normalizeEvidenceRef(ref)))
+      for (const ref of input.claim.evidenceRefs) {
+        const normalized = normalizeEvidenceRef(ref);
+        if (!evidence.has(normalized))
           throw new Error(
             `module claim references unknown attempt evidence: ${ref}; valid refs are tool call IDs of this module's executed tools, e.g. ${formatEvidenceRefs(evidence)}`,
           );
+      }
       this.#db
         .query(
           "UPDATE task_flow_modules SET status = 'claimed' WHERE invocation_id = ? AND attempt = ? AND flow_id = ? AND module_id = ?",

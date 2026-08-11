@@ -173,6 +173,9 @@ test("evaluator evidence refs must belong to the claimed module attempt", async 
       yield { type: "done" };
     },
   };
+  // The evaluator is prompted to copy refs verbatim from the tool records;
+  // a ref that still matches nothing is a failed evaluation and blocks the
+  // module rather than letting a model cite work that never ran.
   await expect(
     evaluateAndRecordModule({
       store,

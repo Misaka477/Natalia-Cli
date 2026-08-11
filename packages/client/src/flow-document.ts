@@ -113,7 +113,10 @@ export function manualFlowTask(
     prompt: `Execute the flow "${flow.displayName}" in module order. Follow each active module's instructions and completion conditions.`,
     permissionProfile,
     flow: { flowID: flow.flowID },
-    retry: "none",
+    // A manual run retries once as a whole when a module stalls or blocks:
+    // a model that misformatted a claim or evaluation gets a fresh attempt
+    // instead of the flow being killed outright.
+    retry: "once",
     alerts: [],
     evaluator: { provider: model.provider, model: modelID },
   };
