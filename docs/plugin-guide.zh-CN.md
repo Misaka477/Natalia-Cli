@@ -113,6 +113,23 @@ export default definePlugin({
   默认为 `true`；显式信任某插件只读声明的 workspace 可标记它
   （host 侧 `readOnly: { "demo.plugin": true }`），此时声明
   `requiresApproval: false` 的工具保持免审批。
+- **`execute(input, context)` 的 `context` 形状**（来自
+  `@natalia/tools` 的 `ToolExecutionContext`）：
+  - `workspaceRoot: string` — 当前工作区根。
+  - `signal?: AbortSignal` — 回合取消时中止；长时间工具应监听它。
+  - `askQuestion?` — 向用户提问（`{ title, questions: [{ id, header, question,
+    options: [{ label, description? }], multiple?, custom? }] }`，返回
+    `string[][]`，外层按 questions 顺序）。宿主无交互通道时不存在。
+  - `subagents?` / `nativeTerminal?` / `sandboxes?` — 子代理、终端与会话注册表
+    （各自宿主能力存在时才有）。
+  - `workspaceReadAuthorize?` / `sandboxMergeAuthorize?` — 宿主策略钩子；
+    工具应**先调用再落盘/合并**，拒绝即抛错。
+  - `settings?` — 运行时网络与浏览器策略（`allowedHosts`/`allowedSchemes`/
+    `allowLocalhost`/`allowPrivate`/`deniedHosts`/`envAllowlist`、
+    `webSearchEndpoint`、`browserEnabled`/`browserBinary`…）。读写类工具应
+    遵守这些边界——宿主按同一份 settings 执行网络策略。
+  - `parentSessionID?` / `parentAgentID?` / `maxSubagentDepth?` — 调用方会话
+    与子代理深度预算。
 - **`setup` 可以是 async。** 若抛错，它注册的一切被回滚，加载记为 `failed`。
 - **每个注册返回一个 disposer**（`const off = api.tools.register(...)`）。
   不需要你调用——卸载会做——但你可以用它中途注销。

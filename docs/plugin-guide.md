@@ -121,6 +121,28 @@ export default definePlugin({
   plugin's own read-only declaration can mark it
   (`readOnly: { "demo.plugin": true }` in the host), in which case tools that
   declare `requiresApproval: false` stay approval-free.
+- **The `context` passed to `execute(input, context)`** (the
+  `ToolExecutionContext` from `@natalia/tools`):
+  - `workspaceRoot: string` — the current workspace root.
+  - `signal?: AbortSignal` — aborts when the turn is cancelled; long-running
+    tools should listen to it.
+  - `askQuestion?` — ask the user a question
+    (`{ title, questions: [{ id, header, question, options: [{ label,
+    description? }], multiple?, custom? }] }`, answering `string[][]`,
+    outer array in questions order). Absent when the host has no interactive
+    channel.
+  - `subagents?` / `nativeTerminal?` / `sandboxes?` — the subagent, terminal
+    and sandbox registries, present when the host capability exists.
+  - `workspaceReadAuthorize?` / `sandboxMergeAuthorize?` — host policy hooks;
+    call them **before** touching the workspace or merging, a refusal throws.
+  - `settings?` — the runtime's network/browser policy
+    (`allowedHosts`/`allowedSchemes`/`allowLocalhost`/`allowPrivate`/
+    `deniedHosts`/`envAllowlist`, `webSearchEndpoint`,
+    `browserEnabled`/`browserBinary`, …). Read/write tools should respect
+    these boundaries — the host enforces the same settings for its own
+    network policy.
+  - `parentSessionID?` / `parentAgentID?` / `maxSubagentDepth?` — the calling
+    session, agent and the subagent depth budget.
 - **`setup` may be async.** If it throws, everything it registered is rolled
   back and the load is recorded as `failed`.
 - **Every registration returns a disposer** (`const off = api.tools.register(...)`).

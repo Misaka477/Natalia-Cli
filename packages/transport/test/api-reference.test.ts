@@ -50,10 +50,22 @@ const TYPES_REFERENCE_ZH_PATH = join(
   "docs",
   "types-reference.zh-CN.md",
 );
+const CONFIG_REFERENCE_PATH = join(
+  process.cwd(),
+  "docs",
+  "config-reference.md",
+);
+const CONFIG_REFERENCE_ZH_PATH = join(
+  process.cwd(),
+  "docs",
+  "config-reference.zh-CN.md",
+);
 const GEN_BEGIN = "<!-- api-reference:generated -->";
 const GEN_END = "<!-- /api-reference:generated -->";
 const TYPES_GEN_BEGIN = "<!-- types-reference:generated -->";
 const TYPES_GEN_END = "<!-- /types-reference:generated -->";
+const CONFIG_GEN_BEGIN = "<!-- config-reference:generated -->";
+const CONFIG_GEN_END = "<!-- /config-reference:generated -->";
 const MARKER =
   "All numbers and tables below are derived from the source tables the " +
   "transport and the contracts use. Regenerate with `npm run " +
@@ -342,13 +354,112 @@ function splitCallArgs(text: string, callIndex: number): string[] | undefined {
 }
 
 /**
+ * Curated trigger notes for the event dictionary, keyed by event type. The
+ * notes are grounded in the publish sites of the runtime; an event type with
+ * no writer yet says so instead of guessing. A new event type that has no
+ * note here shows a dash, so the gap is visible rather than silent.
+ */
+const EVENT_TRIGGERS: Record<string, string> = {
+  "agent.selection":
+    "an agent was selected or switched; `pending: false` after a deferred switch applied",
+  "approval.request":
+    "a tool or action needs approval; carries the request the caller must answer",
+  "approval.response":
+    "an approval was answered or timed out; `accepted: false` means it was too late",
+  "capability.failed": "an optional capability failed to load",
+  "capability.loaded": "an optional capability finished loading",
+  "capability.unloaded": "an optional capability was unloaded",
+  "checkpoint.created":
+    "a durable checkpoint was created (turn start, compaction, context-limit recovery)",
+  "checkpoint.failed":
+    "a checkpoint could not be created; `reason`/`message` say why",
+  "checkpoint.unavailable":
+    "checkpointing is unavailable (for example no git present)",
+  "compaction.begin": "context compaction started",
+  "compaction.end": "context compaction finished with the retained summary",
+  "constitution.check":
+    "a constitution rule was evaluated against a workspace change",
+  "constitution.rule_added": "a constitution rule was added",
+  "constitution.rule_updated": "a constitution rule was updated",
+  "content.delta": "streaming answer text; live only, never journaled",
+  "content.done": "one completed answer chunk per provider step; journaled",
+  "context.checkpoint":
+    "the context journal reached a durable checkpoint (projection point)",
+  "context.limit.recovery":
+    "a provider context-limit hit and recovery (compaction plus retry) ran",
+  "context.status":
+    "the context ledger status changed (token estimate vs configured limits)",
+  "decision.recorded": "a decision record was appended; no writer yet",
+  diagnostic: "an error, warning or info message; `level` and `message`",
+  "dialog.close": "the TUI dialog closed; UI-only",
+  "dialog.open": "the TUI dialog opened; UI-only",
+  "drift.finding_opened": "a drift finding was opened; no writer yet",
+  "drift.finding_updated": "a drift finding was updated; no writer yet",
+  "evidence.recorded":
+    "evidence for a task objective was recorded; no writer yet",
+  "mcp.status": "an MCP server connection changed state",
+  "model.selection": "the model was selected or switched",
+  "plugin.update": "a plugin loaded, unloaded or reported a lifecycle change",
+  "policy.decision":
+    "a tool or action policy decision was made (allow/deny/approval_required/rejected)",
+  "question.request":
+    "a question needs an answer; carries the interactive request",
+  "question.response": "a question was answered",
+  "rollback.begin": "a workspace rollback started",
+  "rollback.end": "a workspace rollback finished",
+  "rollback.failed": "a workspace rollback failed",
+  "rollback.previewed": "a rollback dry-run produced a preview",
+  "sandbox.audit": "a sandbox management action was audited",
+  "sandbox.diff": "a sandbox's pending change set was recorded or read",
+  "sandbox.update": "a sandbox's status or change/resource counts changed",
+  "session.created": "a session record was created",
+  "session.ready": "the runtime's session finished loading (startup)",
+  "session.snapshot": "a complete session state snapshot (projection)",
+  "snapshot.created":
+    "the `snapshot` member was called (a named snapshot id is minted)",
+  "status.snapshot":
+    "a full status snapshot (startup, or after significant changes)",
+  "status.update": "the runtime status changed (paused, resumed, running, …)",
+  "step.retry": "a provider step is being retried",
+  "step.retry.cleared": "a pending step retry was cleared",
+  "step.retry.exhausted": "a step retry was exhausted; the step fails",
+  "subagent.update": "a subagent session changed state",
+  "terminal.action": "a terminal action was performed (human or model side)",
+  "terminal.approval": "a terminal approval scope was granted or revoked",
+  "terminal.pane.focus": "the terminal pane focus changed; UI-only",
+  "terminal.pane.select": "a terminal pane was selected; UI-only",
+  "terminal.timeline": "a terminal action was appended to the timeline",
+  "terminal.update": "a terminal session's status or screen changed",
+  "terminal.viewer": "a terminal viewer was opened; UI-only",
+  "thinking.delta": "streaming reasoning text; live only, never journaled",
+  "thinking.done": "completed reasoning text; journaled",
+  "tool.registered": "a tool was registered in the catalogue",
+  "tool.unregistered": "a tool was unregistered from the catalogue",
+  "tool.update": "one per tool invocation: status, arguments and result",
+  "turn.cancelled": "a turn was cancelled; `reason`",
+  "turn.finished": "a turn ended; `stopReason`: done, cancelled or error",
+  "turn.paused": "a turn is waiting on an approval or question",
+  "turn.resumed": "a paused turn resumed",
+  "turn.retry": "a whole turn is being retried (retry policy)",
+  "turn.submitted": "a turn was accepted; `id` is the turn id",
+  "workgraph.edge_added": "a work graph edge was added",
+  "workgraph.node_added": "a work graph node was added",
+};
+
+/**
  * The event dictionary, scanned from the `RuntimeEventData` union in
  * `packages/contracts/src/events.ts`: every member's `type` literal and its
  * field names (with optionality). Field *types* are shown when they sit on the
  * field's own line; multi-line nested types are elided. The union is the fact
- * source, so adding an event or renaming a field updates the reference.
+ * source, so adding an event or renaming a field updates the reference. The
+ * trigger column comes from `EVENT_TRIGGERS`; an event without a note shows a
+ * dash so a missing trigger is visible.
  */
-function eventDictionary(): Array<{ type: string; fields: string }> {
+function eventDictionary(): Array<{
+  type: string;
+  fields: string;
+  trigger: string;
+}> {
   const text = readFileSync(
     join(process.cwd(), "packages", "contracts", "src", "events.ts"),
     "utf8",
@@ -360,7 +471,7 @@ function eventDictionary(): Array<{ type: string; fields: string }> {
       "events.ts: RuntimeEventData union not found for dictionary",
     );
   const union = text.slice(from, to);
-  const rows: Array<{ type: string; fields: string }> = [];
+  const rows: Array<{ type: string; fields: string; trigger: string }> = [];
   const lines = union.split("\n");
   let i = 0;
   while (i < lines.length) {
@@ -401,7 +512,11 @@ function eventDictionary(): Array<{ type: string; fields: string }> {
         `\`${name}${optional === "?" ? "?" : ""}\`: ${(typeText ?? "").trim()}`,
       );
     }
-    rows.push({ type, fields: fields.join(", ") || "—" });
+    rows.push({
+      type,
+      fields: fields.join(", ") || "—",
+      trigger: EVENT_TRIGGERS[type] ?? "—",
+    });
   }
   return rows;
 }
@@ -620,6 +735,40 @@ function extractFirstBraceBody(text: string): string {
   return "";
 }
 
+/**
+ * Resolves an alias RHS into a self-contained display: a zod-derived type
+ * points at its schema's rows in the config reference, and an
+ * `Extract<RuntimeEvent, { type: "x" }>` alias resolves to the event
+ * dictionary fields of that event (an `& { ... }` intersection is appended).
+ */
+function resolveAliasRHS(
+  body: string,
+  eventFields: Map<string, string>,
+): string {
+  const flat = body
+    .replace(/import\("[^"]+"\)\./gu, "")
+    .replace(/\s+/gu, " ")
+    .replace(/\s*\|\s*/gu, " | ")
+    .trim();
+  const zod = flat.match(
+    /^z\.(?:infer|input)<typeof ([A-Za-z][A-Za-z0-9]*)>$/u,
+  );
+  if (zod)
+    return `zod schema \`${zod[1] ?? ""}\` — fields in the config reference`;
+  const extract = flat.match(
+    /^Extract<\s*RuntimeEvent,\s*\{\s*type: "([a-z_.]+)"\s*\}>(.*)$/u,
+  );
+  if (extract) {
+    const fields = eventFields.get(extract[1] ?? "");
+    const rest = (extract[2] ?? "").trim();
+    const base = fields
+      ? `event dictionary \`${extract[1] ?? ""}\` fields: ${fields}`
+      : flat;
+    return rest ? `${base} ${rest}` : base;
+  }
+  return flat;
+}
+
 /** The type text of one field inside an object type body. */
 function objectFieldType(body: string, fieldName: string): string | undefined {
   for (const part of splitTypeFields(body)) {
@@ -753,6 +902,9 @@ function deepTypeDictionary(): Array<{ name: string; fields: string }> {
   const definitions = contractTypeDefinitions();
   const skip = new Set(["RuntimeEvent", "RuntimeEventData"]);
   const members = runtimeClientMembers();
+  const eventFields = new Map(
+    eventDictionary().map((row) => [row.type, row.fields]),
+  );
   const seed = new Set<string>();
   const collectNames = (text: string) => {
     for (const match of text.matchAll(/\b([A-Z][A-Za-z0-9_]*)\b/gu)) {
@@ -781,14 +933,7 @@ function deepTypeDictionary(): Array<{ name: string; fields: string }> {
       const inner = extractFirstBraceBody(rhs);
       fields.push(...expandObjectBody("", inner, definitions, 0));
     } else {
-      fields.push({
-        path: "",
-        type: body
-          .replace(/import\("[^"]+"\)\./gu, "")
-          .replace(/\s+/gu, " ")
-          .replace(/\s*\|\s*/gu, " | ")
-          .trim(),
-      });
+      fields.push({ path: "", type: resolveAliasRHS(body, eventFields) });
     }
     for (const match of body.matchAll(/\b([A-Z][A-Za-z0-9_]*)\b/gu)) {
       const reference = match[1] ?? "";
@@ -812,6 +957,343 @@ function deepTypeDictionary(): Array<{ name: string; fields: string }> {
     });
   }
   return rows.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * The value-refusal dictionary, scanned from `RUNTIME_MEMBER_REFUSAL_SEMANTICS`
+ * in `packages/contracts/src/refusals.ts`: the members that refuse with a
+ * value (instead of an error), which field expresses the refusal, and the
+ * semantics note. The table is the fact source for §5's "refusal is a value"
+ * rule, so a member whose refusal semantics change updates the reference.
+ */
+function valueRefusalDictionary(): Array<{
+  member: string;
+  expressedBy: string;
+  note: string;
+}> {
+  const text = readFileSync(
+    join(process.cwd(), "packages", "contracts", "src", "refusals.ts"),
+    "utf8",
+  );
+  const from = text.indexOf("export const RUNTIME_MEMBER_REFUSAL_SEMANTICS =");
+  if (from === -1)
+    throw new Error("refusals.ts: RUNTIME_MEMBER_REFUSAL_SEMANTICS not found");
+  let depth = 0;
+  let end = -1;
+  for (let i = from; i < text.length; i++) {
+    const ch = text[i] ?? "";
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
+  if (end === -1)
+    throw new Error(
+      "refusals.ts: RUNTIME_MEMBER_REFUSAL_SEMANTICS never closes",
+    );
+  const body = text.slice(from, end);
+  const rows: Array<{ member: string; expressedBy: string; note: string }> = [];
+  for (const match of body.matchAll(
+    /([a-zA-Z][a-zA-Z0-9]*):\s*\{[^}]*refusal:\s*"value"[^}]*expressedBy:\s*"([^"]*)"[^}]*note:\s*"([^"]*)"[^}]*\}/gu,
+  )) {
+    const member = match[1] ?? "";
+    if (!member) continue;
+    rows.push({
+      member,
+      expressedBy: match[2] ?? "",
+      note: (match[3] ?? "").trim(),
+    });
+  }
+  return rows.sort((a, b) => a.member.localeCompare(b.member));
+}
+
+/**
+ * The config shape dictionary, parsed from the zod schemas in
+ * `packages/contracts/src/schemas.ts` (`configV2Schema` validates
+ * `.natalia/config.json`). One row per schema field, dotted paths for nested
+ * objects, `?` for optional fields and the default value where the schema
+ * declares one. `z.record(X)` keys are arbitrary; the element type's own
+ * fields live on its schema's rows.
+ */
+function zodSchemaDictionary(): Array<{
+  schema: string;
+  path: string;
+  type: string;
+  optional: boolean;
+  defaultValue: string;
+}> {
+  const text = readFileSync(
+    join(process.cwd(), "packages", "contracts", "src", "schemas.ts"),
+    "utf8",
+  );
+  const schemas = new Map<string, string>();
+  for (const match of text.matchAll(
+    /export const ([A-Za-z][A-Za-z0-9]*) = ([\s\S]*?)(?=\nexport )/gu,
+  )) {
+    const name = match[1] ?? "";
+    if (name.endsWith("Schema") || name === "configV2Schema")
+      schemas.set(name, (match[2] ?? "").trim());
+  }
+  const rows: Array<{
+    schema: string;
+    path: string;
+    type: string;
+    optional: boolean;
+    defaultValue: string;
+  }> = [];
+  const visited = new Set<string>();
+  const visit = (schemaName: string) => {
+    if (visited.has(schemaName)) return;
+    visited.add(schemaName);
+    const rhs = schemas.get(schemaName);
+    if (!rhs) return;
+    const object = extractZodObjectBody(rhs);
+    if (!object) return;
+    for (const field of splitTopLevel(object)) {
+      const parsed = field
+        .trim()
+        .match(/^([a-zA-Z][a-zA-Z0-9]*):\s*([\s\S]+?)\s*$/u);
+      if (!parsed) continue;
+      const fieldName = parsed[1] ?? "";
+      const zod = parseZodType(parsed[2] ?? "");
+      rows.push({
+        schema: schemaName,
+        path: fieldName,
+        type: zod.type,
+        optional: zod.optional,
+        defaultValue: zod.defaultValue,
+      });
+      for (const nested of expandZodObject(
+        fieldName,
+        parsed[2] ?? "",
+        schemas,
+        1,
+      ))
+        rows.push({ schema: schemaName, ...nested });
+    }
+    for (const reference of zodReferences(rhs)) visit(reference);
+  };
+  visit("configV2Schema");
+  return rows;
+}
+
+/** The object body of a `z.object({ ... })` schema expression. */
+function extractZodObjectBody(rhs: string): string | undefined {
+  const object = rhs.match(/z\s*\.\s*object\(\{/u);
+  if (!object) return undefined;
+  const start = (object.index ?? 0) + (object[0]?.length ?? 0);
+  // The object's own opening brace counts as depth 1, so its matching close
+  // returns to 0 and ends the body (a nested `{ ... }` inside `.default()`
+  // must not end it).
+  let depth = 1;
+  for (let i = start; i < rhs.length; i++) {
+    const ch = rhs[i] ?? "";
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return rhs.slice(start, i);
+    }
+  }
+  return undefined;
+}
+
+/** Nested `z.object` bodies inside a field, expanded to dotted paths. */
+function expandZodObject(
+  path: string,
+  expr: string,
+  schemas: Map<string, string>,
+  depth: number,
+): Array<{
+  path: string;
+  type: string;
+  optional: boolean;
+  defaultValue: string;
+}> {
+  const out: Array<{
+    path: string;
+    type: string;
+    optional: boolean;
+    defaultValue: string;
+  }> = [];
+  if (depth > 6) return out;
+  const arrayBody = expr.match(/z\s*\.\s*array\(\s*z\s*\.\s*object\(\{/u);
+  const objectBody = expr.match(/z\s*\.\s*object\(\{/u);
+  const body = extractFirstBraceBody(
+    arrayBody
+      ? (arrayBody[0] ?? "") + expr.slice((arrayBody[0] ?? "").length)
+      : expr,
+  );
+  const prefix = arrayBody ? `${path}[]` : path;
+  if (!body) {
+    // `z.infer<typeof X>` — the referenced schema's fields stay on its rows.
+    return out;
+  }
+  for (const field of splitTopLevel(body)) {
+    const parsed = field
+      .trim()
+      .match(/^([a-zA-Z][a-zA-Z0-9]*):\s*([\s\S]+?)\s*$/u);
+    if (!parsed) continue;
+    const fieldName = parsed[1] ?? "";
+    const zod = parseZodType(parsed[2] ?? "");
+    out.push({
+      path: `${prefix}.${fieldName}`,
+      type: zod.type,
+      optional: zod.optional,
+      defaultValue: zod.defaultValue,
+    });
+    out.push(
+      ...expandZodObject(
+        `${prefix}.${fieldName}`,
+        parsed[2] ?? "",
+        schemas,
+        depth + 1,
+      ),
+    );
+  }
+  return out;
+}
+
+/** Parses one zod type expression into its display form. */
+function parseZodType(expr: string): {
+  type: string;
+  optional: boolean;
+  defaultValue: string;
+} {
+  let text = expr.trim();
+  text = text.replace(/^z\s*\./u, "");
+  const constructor = text.match(/^([a-zA-Z]+)\(/u);
+  if (!constructor) {
+    // A referenced schema with a modifier chain (`runtimeConfigSchema.default({})`):
+    // the name is the type; the tail still carries optional/default info.
+    const referenced = text.match(/^([A-Za-z][A-Za-z0-9]*)([\s\S]*)$/u);
+    const type = (referenced?.[1] ?? text).replace(/\s+/gu, " ").trim();
+    const parsed = parseZodModifiers(referenced?.[2] ?? "");
+    return {
+      type,
+      optional: parsed.optional,
+      defaultValue: parsed.defaultValue,
+    };
+  }
+  const kind = constructor[1] ?? "";
+  const start = (constructor.index ?? 0) + (constructor[0]?.length ?? 0);
+  // The constructor's own opening paren counts as depth 1, so its closing
+  // paren returns to 0 and ends the argument list.
+  let depth = 1;
+  let end = -1;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i] ?? "";
+    if (ch === "(") depth++;
+    else if (ch === ")") {
+      depth--;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
+  const args = splitTopLevel(end === -1 ? "" : text.slice(start, end).trim());
+  const parsed = parseZodModifiers(text.slice((end ?? 0) + 1));
+  const optional = parsed.optional;
+  const defaultValue = parsed.defaultValue;
+  switch (kind) {
+    case "object": {
+      return { type: "object", optional, defaultValue };
+    }
+    case "enum": {
+      const values = args.map((arg) => arg.trim()).join(" | ");
+      return { type: values || "enum", optional, defaultValue };
+    }
+    case "array": {
+      return {
+        type: `${args[0] ? parseZodType(args[0] ?? "").type : "unknown"}[]`,
+        optional,
+        defaultValue,
+      };
+    }
+    case "record": {
+      const value = args[1] ?? args[0] ?? "";
+      const valueType = parseZodType(value).type;
+      return {
+        type: `Record<string, ${valueType || "unknown"}>`,
+        optional,
+        defaultValue,
+      };
+    }
+    case "union": {
+      const values = args.map((arg) => parseZodType(arg).type).join(" | ");
+      return { type: values || "union", optional, defaultValue };
+    }
+    case "literal": {
+      return { type: args[0]?.trim() || "literal", optional, defaultValue };
+    }
+    case "infer":
+    case "input": {
+      const target = args[0] ?? "";
+      const name = target.match(/typeof\s+([A-Za-z][A-Za-z0-9]*)/u)?.[1];
+      return { type: name ?? target, optional, defaultValue };
+    }
+    case "string":
+    case "number":
+    case "boolean":
+    case "any":
+    case "unknown":
+    case "null":
+    case "never":
+    case "date":
+    case "bigint":
+      return { type: kind, optional, defaultValue };
+    case "array": // unreachable, kept for clarity
+      return { type: "unknown[]", optional, defaultValue };
+    case "custom":
+      return { type: "custom", optional, defaultValue };
+    case "discriminatedUnion": {
+      const target = args[0]?.trim() ?? "";
+      return {
+        type: target ? `discriminated by ${target}` : "discriminatedUnion",
+        optional,
+        defaultValue,
+      };
+    }
+    case "intersection":
+    case "record": // handled above
+      return { type: "object", optional, defaultValue };
+    default:
+      return { type: kind, optional, defaultValue };
+  }
+}
+
+/** Parses the `.optional()/.nullable()/.nullish()/.default(...)` modifier chain. */
+function parseZodModifiers(tail: string): {
+  optional: boolean;
+  defaultValue: string;
+} {
+  let optional = false;
+  let defaultValue = "";
+  for (const modifier of tail.matchAll(
+    /\.(\w+)(?:\((?:[^()]|\([^()]*\))*\))?/gu,
+  )) {
+    const mod = modifier[1] ?? "";
+    if (mod === "optional" || mod === "nullish") optional = true;
+    if (mod === "default") {
+      const arg = (modifier[0] ?? "")
+        .replace(/^\.default\(/u, "")
+        .replace(/\)\s*$/u, "");
+      defaultValue = arg.replace(/\s+/gu, " ").slice(0, 80);
+    }
+  }
+  return { optional, defaultValue };
+}
+
+/** Every schema name referenced inside an expression. */
+function zodReferences(expr: string): string[] {
+  const out: string[] = [];
+  for (const match of expr.matchAll(/\b([A-Za-z][A-Za-z0-9]*Schema)\b/gu))
+    out.push(match[1] ?? "");
+  return out;
 }
 
 function markdownTable(headers: string[], rows: string[][]): string {
@@ -923,6 +1405,19 @@ export function renderGeneratedSections(): string {
       ]),
     ),
     ``,
+    `### Value refusals (members that refuse with a value)`,
+    ``,
+    `> These members answer an ordinary outcome instead of an error: the refusal is a field of the result. The field is listed per member; the same call shape never switches between value and error depending on state.`,
+    ``,
+    markdownTable(
+      ["Member", "Refusal expressed by", "Semantics"],
+      valueRefusalDictionary().map((row) => [
+        `\`${row.member}\``,
+        `\`${row.expressedBy}\``,
+        row.note,
+      ]),
+    ),
+    ``,
     `### Events and projection (source scan)`,
     ``,
     `- Runtime event types (\`RuntimeEventData\` union): ${eventTypeCount()}.`,
@@ -943,8 +1438,12 @@ export function renderGeneratedSections(): string {
     `### Runtime event dictionary (source scan of \`packages/contracts/src/events.ts\`)`,
     ``,
     markdownTable(
-      ["Event type", "Fields"],
-      eventDictionary().map((row) => [`\`${row.type}\``, row.fields]),
+      ["Event type", "Fields", "Trigger"],
+      eventDictionary().map((row) => [
+        `\`${row.type}\``,
+        row.fields,
+        row.trigger,
+      ]),
     ),
   ];
   return lines.join("\n") + "\n";
@@ -966,6 +1465,33 @@ function renderTypesReferenceSections(): string {
       markdownTable(
         ["Type", "Fields"],
         deepTypeDictionary().map((row) => [`\`${row.name}\``, row.fields]),
+      ),
+    ].join("\n") + "\n"
+  );
+}
+
+/**
+ * The generated block for `docs/config-reference.md`: the shape of
+ * `.natalia/config.json` and every schema it reaches, parsed from the zod
+ * schemas in `packages/contracts/src/schemas.ts`. `?` marks optional fields;
+ * the Default column shows the schema's declared default. `z.record(X)` keys
+ * are arbitrary — the element type's fields are on its own rows.
+ */
+function renderConfigReferenceSections(): string {
+  const rows = zodSchemaDictionary();
+  return (
+    [
+      `## Config shape (source scan of the zod schemas in \`packages/contracts/src/schemas.ts\`)`,
+      ``,
+      markdownTable(
+        ["Schema", "Field", "Type", "Optional", "Default"],
+        rows.map((row) => [
+          `\`${row.schema}\``,
+          `\`${row.path}\``,
+          row.type,
+          row.optional ? "yes" : "",
+          row.defaultValue,
+        ]),
       ),
     ].join("\n") + "\n"
   );
@@ -998,6 +1524,20 @@ export function writeApiReference(): void {
     writeFileSync(
       path,
       `${full.slice(0, start)}${typesBlock}${full.slice(end + TYPES_GEN_END.length)}`,
+    );
+  }
+  const configBlock = `${CONFIG_GEN_BEGIN}\n${renderConfigReferenceSections()}${CONFIG_GEN_END}`;
+  for (const path of [CONFIG_REFERENCE_PATH, CONFIG_REFERENCE_ZH_PATH]) {
+    const full = readFileSync(path, "utf8");
+    const start = full.indexOf(CONFIG_GEN_BEGIN);
+    const end = full.indexOf(CONFIG_GEN_END);
+    if (start === -1 || end === -1 || end < start)
+      throw new Error(
+        `${path} is missing the generated-block markers (${CONFIG_GEN_BEGIN} … ${CONFIG_GEN_END})`,
+      );
+    writeFileSync(
+      path,
+      `${full.slice(0, start)}${configBlock}${full.slice(end + CONFIG_GEN_END.length)}`,
     );
   }
 }
@@ -1037,11 +1577,28 @@ if (!process.env.API_REFERENCE_WRITE) {
     const block = en.slice(start, end + TYPES_GEN_END.length);
     expect(zh).toContain(block);
   });
+  test("docs/config-reference.md generated block matches the source tables", () => {
+    const full = readFileSync(CONFIG_REFERENCE_PATH, "utf8");
+    const block = `${CONFIG_GEN_BEGIN}\n${renderConfigReferenceSections()}${CONFIG_GEN_END}`;
+    expect(full).toContain(block);
+  });
+  test("docs/config-reference.zh-CN.md embeds the same generated block", () => {
+    const en = readFileSync(CONFIG_REFERENCE_PATH, "utf8");
+    const zh = readFileSync(CONFIG_REFERENCE_ZH_PATH, "utf8");
+    const start = en.indexOf(CONFIG_GEN_BEGIN);
+    const end = en.indexOf(CONFIG_GEN_END);
+    if (start === -1 || end === -1 || end < start)
+      throw new Error(
+        `${CONFIG_REFERENCE_PATH} is missing the generated-block markers`,
+      );
+    const block = en.slice(start, end + CONFIG_GEN_END.length);
+    expect(zh).toContain(block);
+  });
 }
 
 if (process.env.API_REFERENCE_WRITE && import.meta.main) {
   writeApiReference();
   console.log(
-    `updated ${API_REFERENCE_PATH}, ${API_REFERENCE_ZH_PATH}, ${TYPES_REFERENCE_PATH}, ${TYPES_REFERENCE_ZH_PATH}`,
+    `updated ${API_REFERENCE_PATH}, ${API_REFERENCE_ZH_PATH}, ${TYPES_REFERENCE_PATH}, ${TYPES_REFERENCE_ZH_PATH}, ${CONFIG_REFERENCE_PATH}, ${CONFIG_REFERENCE_ZH_PATH}`,
   );
 }
