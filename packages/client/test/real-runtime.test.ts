@@ -7482,3 +7482,108 @@ test("settings surface: set writes the scope file, get resolves it, set announce
     await client.dispose?.();
   }
 }, 30_000);
+
+test("cancelling the attached session does not abort a background session's pending approval", async () => {
+  // A background turn that starts waiting for an approval after the UI attached
+  // elsewhere must listen to its own session's abort signal. Before this fix
+  // the waiter took the active session's signal, so cancelling the foreground
+  // session cancelled the background turn's pending approval.
+  const root = await mkdtemp(join(tmpdir(), "natalia-bg-approval-abort-"));
+  let releaseA: (() => void) | undefined;
+  let releaseB: (() => void) | undefined;
+  let aCalls = 0;
+  const provider: StreamingProvider = {
+    provider: "bg-abort",
+    model: "bg-abort",
+    async *stream(request) {
+      const userText = String(
+        [...request.messages]
+          .reverse()
+          .find((message) => message.role === "user")?.content ?? "",
+      );
+      if (userText.includes("bg write")) {
+        aCalls += 1;
+        if (request.messages.some((message) => message.role === "tool")) {
+          yield { type: "content" as const, text: "bg written" };
+          yield { type: "done" as const };
+          return;
+        }
+        // Park the first provider round until the test attaches to B, so A's
+        // approval wait starts while B is the attached session.
+        if (aCalls === 1)
+          await new Promise<void>((resolve) => (releaseA = resolve));
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            {
+              id: `call_a_${aCalls}`,
+              name: "write_file",
+              arguments: JSON.stringify({ path: "bg.txt", content: "bg" }),
+            },
+          ],
+        };
+        yield { type: "done" as const };
+        return;
+      }
+      // The B turn parks in the provider so B holds a live abort signal while
+      // A's approval is pending underneath it.
+      await new Promise<void>((resolve) => (releaseB = resolve));
+      yield { type: "content" as const, text: "b done" };
+      yield { type: "done" as const };
+    },
+  };
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_bg_abort_a",
+    provider,
+  });
+  client.start((event) => events.push(event));
+  let turnB: ReturnType<typeof client.submit> | undefined;
+  try {
+    await client.sessionNew?.({ id: "ses_bg_abort_b", title: "B" });
+    const turnA = client.submit("bg write");
+    await waitFor(() => releaseA !== undefined);
+    await client.sessionAttach?.("ses_bg_abort_b");
+    turnB = client.submit("hold b");
+    await waitFor(() => releaseB !== undefined);
+    // A continues only now, so its approval wait begins after B is attached.
+    releaseA?.();
+    await waitFor(() =>
+      events.some((event) => event.type === "approval.request"),
+    );
+    const approval = events.find(
+      (event): event is Extract<RuntimeEvent, { type: "approval.request" }> =>
+        event.type === "approval.request",
+    );
+    expect(approval?.sessionID).toBe("ses_bg_abort_a");
+
+    // Cancel the attached (B) session. A's background approval must survive.
+    client.cancel("cancel attached session");
+    await Bun.sleep(100);
+    expect(
+      events.some(
+        (event) =>
+          event.type === "turn.finished" &&
+          event.sessionID === "ses_bg_abort_a" &&
+          event.stopReason === "cancelled",
+      ),
+    ).toBe(false);
+
+    // Answer A's approval: the background turn completes normally.
+    client.respondApproval({ requestID: approval!.id, decision: "once" });
+    await turnA;
+    expect(await readFile(join(root, "bg.txt"), "utf8")).toBe("bg");
+    expect(
+      events.filter(
+        (event) =>
+          event.type === "turn.finished" &&
+          event.sessionID === "ses_bg_abort_a",
+      ),
+    ).toMatchObject([expect.objectContaining({ stopReason: "done" })]);
+  } finally {
+    releaseB?.();
+    await turnB?.catch(() => undefined);
+    await client.dispose?.();
+  }
+}, 30_000);

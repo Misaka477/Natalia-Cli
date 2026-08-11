@@ -525,7 +525,9 @@ export function createRealRuntimeClient(
     publish: (event) => publish(event),
     sessionID: () => sessionID,
     permissionMode: () => permissionMode,
-    abortSignal: () => activeExec?.activeAbort?.signal,
+    abortSignal: (turnID) =>
+      executionBySession.get(turnSession.get(turnID) ?? sessionID)?.activeAbort
+        ?.signal,
     activeTurnID: () => activeExec?.activeTurnID,
     isPending: (sessionID, id, kind) =>
       isPendingInteractiveRequest(sessionID, id, kind),

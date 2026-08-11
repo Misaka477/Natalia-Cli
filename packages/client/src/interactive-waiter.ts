@@ -38,7 +38,14 @@ export type InteractiveWaiterDeps = {
   publish: (event: RuntimeEvent) => void;
   sessionID: () => SessionID;
   permissionMode: () => "ask" | "auto" | "read_only";
-  abortSignal: () => AbortSignal | undefined;
+  /**
+   * The abort signal of the turn that issued the request, resolved per turn.
+   * Parallel sessions make this a per-turn fact: a background turn waiting for
+   * an approval must listen to its own session's signal, never to the
+   * currently attached session's — cancelling the foreground session must not
+   * abort a background turn's prompt.
+   */
+  abortSignal: (turnID: string) => AbortSignal | undefined;
   activeTurnID: () => string | undefined;
   /**
    * Whether the runtime still considers this request open. Answered from the
@@ -156,7 +163,7 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
         approvalID,
         pendingApprovals,
         approvalWaiters,
-        deps.abortSignal(),
+        deps.abortSignal(turnID),
         `approval timed out: ${tool.name}`,
       );
       if (response.decision !== "reject") return undefined;
@@ -173,7 +180,7 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
       // A cancellation is a deliberate stop and still ends the turn. A timeout
       // is not: nobody answered, and discarding the whole turn after a long
       // wait loses more work than telling the model the request expired.
-      if (deps.abortSignal()?.aborted) throw error;
+      if (deps.abortSignal(turnID)?.aborted) throw error;
       deps.publishForSession(session, {
         type: "policy.decision",
         turnID,
@@ -216,7 +223,7 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
       requestID,
       pendingQuestions,
       questionWaiters,
-      deps.abortSignal(),
+      deps.abortSignal(turnID),
       "question timed out",
     );
     if (response.rejected) throw new Error("user rejected question");
