@@ -37,7 +37,7 @@ export function createTurnController(input: {
   saveInbox(snapshot: SessionRecord): Promise<void>;
   /** Waits for all queued persistence steps to land. */
   flush(): Promise<void>;
-  runCommand(id: string, text: string): Promise<boolean>;
+  runCommand(id: string, text: string, signal?: AbortSignal): Promise<boolean>;
   runTurn(input: {
     id: string;
     text: string;
@@ -72,6 +72,7 @@ export function createTurnController(input: {
           item.attachments,
           item.resources,
           item.agents,
+          signal,
         );
       }
       if (
@@ -102,6 +103,7 @@ export function createTurnController(input: {
       next.attachments,
       next.resources,
       next.agents,
+      signal,
     );
   }
 
@@ -112,8 +114,9 @@ export function createTurnController(input: {
     attachments: LocalAttachment[] = [],
     resources: PromptResourceMention[] = [],
     agents: PromptAgentMention[] = [],
+    signal?: AbortSignal,
   ) {
-    if (await input.runCommand(id, text)) {
+    if (await input.runCommand(id, text, signal)) {
       await input.flush();
       return;
     }

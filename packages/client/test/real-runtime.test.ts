@@ -7772,6 +7772,43 @@ test("SQLite restart recovers the pending human terminal and resumes exactly onc
   }
 }, 30_000);
 
+test("/skill-script aborts its child process when the command is cancelled", async () => {
+  // A slash command has no turn, so its cancellation must travel through the
+  // session drain signal. Before this fix the /skill-script command read the
+  // never-assigned activity closure, so a cancelled script kept running to
+  // completion.
+  const root = await mkdtemp(join(tmpdir(), "natalia-skill-script-cancel-"));
+  const skillRoot = join(root, ".natalia", "skills", "cancel-me");
+  await mkdir(skillRoot, { recursive: true });
+  await writeFile(
+    join(skillRoot, "SKILL.md"),
+    "---\nname: cancel-me\ndescription: Cancel me\nscripts: {long: sleep 30}\n---\nBody.",
+  );
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_skill_script_cancel",
+    provider: scriptedProvider("unused"),
+  });
+  client.start((event) => events.push(event));
+  try {
+    await waitFor(() => events.some((event) => event.type === "session.ready"));
+    await client.submit("/skill cancel-me");
+    // The long script starts; cancelling the command must abort its child.
+    setTimeout(() => client.cancel("cancel the skill script"), 150);
+    await client.submit("/skill-script long");
+    const output = events
+      .filter((event) => event.type === "content.delta")
+      .map((event) => event.text)
+      .join("\n");
+    expect(output).toContain('"exitCode"');
+    // A terminated child exits non-zero, not after its 30 second sleep.
+    expect(output).not.toMatch(/"exitCode":\s*0/u);
+  } finally {
+    await client.dispose?.();
+  }
+}, 30_000);
+
 test("capabilities() surfaces each capability's effective contributions", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-capability-contribs-"));
   const store = await NataliaTaskStateStore.open(root);

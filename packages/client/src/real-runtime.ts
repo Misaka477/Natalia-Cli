@@ -1936,7 +1936,8 @@ export function createRealRuntimeClient(
     flush: async () => {
       await sessionPersistence;
     },
-    runCommand: async (id, text) => await handleCommand(id, text),
+    runCommand: async (id, text, signal) =>
+      await handleCommand(id, text, signal),
     runTurn: async (input) =>
       await providerRunnerFor(input.sessionID).runTurn(input),
   });
@@ -3092,7 +3093,7 @@ export function createRealRuntimeClient(
       : pending.questions.some((request) => request.id === id);
   }
 
-  async function handleCommand(id: string, text: string) {
+  async function handleCommand(id: string, text: string, signal?: AbortSignal) {
     const trimmed = text.trim();
     if (!trimmed.startsWith("/")) return false;
     if (trimmed === "/help") {
@@ -3402,8 +3403,11 @@ export function createRealRuntimeClient(
     if (trimmed.startsWith("/skill-script ")) {
       if (!activeSkill) throw new Error("no active skill");
       const script = trimmed.slice("/skill-script ".length).trim();
+      // A slash command runs inside the session's drain, so its cancellation
+      // signal is the drain's, not the (never-assigned) activity closure: a
+      // cancelled command aborts the skill script's child process.
       const result = await runSkillScript(activeSkill, script, {
-        signal: activeAbort?.signal,
+        signal: signal ?? activeExec?.activeAbort?.signal,
       });
       publish({
         type: "content.delta",
