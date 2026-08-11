@@ -166,9 +166,9 @@ bun run src/main.tsx --doctor --workspace C:\path\to\your\project
 This starts the TUI and runs `/doctor` for you; it stays open afterwards, so
 read the report and leave with `ctrl+d`.
 
-A healthy report shows your provider, the workspace path, `native tools: 70`,
-the discovered skill count, and `ready`. `provider: not configured` means step 3
-did not take effect.
+A healthy report shows your provider, the workspace path, `native tools: 66`
+(the count grows as tools are added), the discovered skill count, and `ready`.
+`provider: not configured` means step 3 did not take effect.
 
 ## 5. Drive the TUI
 

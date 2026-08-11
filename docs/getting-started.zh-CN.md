@@ -154,8 +154,9 @@ bun run src/main.tsx --doctor --workspace C:\path\to\your\project
 
 它会启动 TUI 并自动执行 `/doctor`，**执行完不会退出**，看完报告用 `ctrl+d` 退出。
 
-正常的报告会显示你的 provider、工作区路径、`native tools: 70`、发现的 skill
-数量，以及 `ready`。如果显示 `provider: not configured`，说明第 3 步没生效。
+正常的报告会显示你的 provider、工作区路径、`native tools: 66`（数量随工具
+目录增长）、发现的 skill 数量，以及 `ready`。如果显示 `provider: not
+configured`，说明第 3 步没生效。
 
 ## 5. 操作 TUI
 
