@@ -182,6 +182,7 @@ export function createProviderRunner(input: {
     let assistant = "";
     try {
       const ledger = input.context();
+
       ledger.add({ id: `${id}:user`, role: "user", content: text });
       await input.createTurnCheckpoint({
         reason: "turn_begin",

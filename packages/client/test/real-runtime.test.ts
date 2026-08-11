@@ -7269,3 +7269,62 @@ export default definePlugin({
     await client.dispose?.();
   }
 });
+
+test("two sessions writing the workspace in parallel both land without corruption", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-parallel-write-"));
+  const makeWriter = (): StreamingProvider => ({
+    provider: "parallel-write",
+    model: "parallel-write",
+    async *stream(request) {
+      const userText = request.messages
+        .map((message) =>
+          typeof message.content === "string" ? message.content : "",
+        )
+        .join("\n");
+      const path = userText.includes("write a") ? "wa.txt" : "wb.txt";
+      if (!request.messages.some((message) => message.role === "tool"))
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            {
+              id: `call_${crypto.randomUUID()}`,
+              name: "write_file",
+              arguments: JSON.stringify({ path, content: `content-${path}` }),
+            },
+          ],
+        };
+      yield { type: "done" as const };
+    },
+  });
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_pw_a",
+    provider: makeWriter(),
+  });
+  client.start((event) => {
+    if (event.type === "approval.request") {
+      client.respondApproval({ requestID: event.id, decision: "once" });
+    }
+    console.log(
+      "EVT",
+      event.type,
+      (event as any).text ??
+        (event as any).status ??
+        (event as any).message ??
+        (event as any).stopReason ??
+        "",
+    );
+  });
+  try {
+    await client.sessionNew?.({ id: "ses_pw_b", title: "B" });
+    const turnA = client.submit("write a");
+    await client.sessionAttach?.("ses_pw_b");
+    const turnB = client.submit("write b");
+    await turnA;
+    await turnB;
+    expect(await readFile(join(root, "wa.txt"), "utf8")).toBe("content-wa.txt");
+    expect(await readFile(join(root, "wb.txt"), "utf8")).toBe("content-wb.txt");
+  } finally {
+    await client.dispose?.();
+  }
+}, 30_000);

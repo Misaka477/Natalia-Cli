@@ -138,6 +138,7 @@ import {
   terminalInputRisk,
 } from "./interactive-waiter";
 import { parseToolArguments, tryParseToolArguments } from "./tool-arguments";
+import { createWorkspaceWriteLock } from "./workspace-write-lock";
 
 // Re-exported because the policy tests reach for the risk classifier directly and
 // this file is the package's runtime entry point.
@@ -524,8 +525,11 @@ export function createRealRuntimeClient(
     permissionMode: () => permissionMode,
     abortSignal: () => activeExec?.activeAbort?.signal,
     activeTurnID: () => activeExec?.activeTurnID,
-    isPending: (id, kind) => isPendingInteractiveRequest(id, kind),
+    isPending: (sessionID, id, kind) =>
+      isPendingInteractiveRequest(sessionID, id, kind),
     sessionIDForTurn: (turnID) => turnSession.get(turnID) ?? sessionID,
+    publishForSession: (sessionID, event) =>
+      publishForSession(executionBySession.get(sessionID), event),
   });
   let sink: ((event: RuntimeEvent) => void) | undefined;
   let replayMode: "all" | "none" = "all";
@@ -565,6 +569,8 @@ export function createRealRuntimeClient(
   };
   const executionBySession = new Map<SessionID, SessionExecutionState>();
   let activeExec: SessionExecutionState | undefined;
+  /** D2: serialises workspace writes across parallel sessions. */
+  const workspaceWriteLock = createWorkspaceWriteLock();
   let paused = false;
   let pauseWaiters: Array<() => void> = [];
   let ready: Promise<void> | undefined;
@@ -879,7 +885,11 @@ export function createRealRuntimeClient(
             workspaceRoot,
             signal: runner.signal,
             askQuestion: async (question) =>
-              await interactive.requireQuestion(`${toolID}:question`, question),
+              await interactive.requireQuestion(
+                `${toolID}:question`,
+                hookEvent.turnID,
+                question,
+              ),
             subagents: subagentsController.get(),
             nativeTerminal: terminalController.get(),
             sandboxes: sandboxController.get(),
@@ -3025,10 +3035,15 @@ export function createRealRuntimeClient(
   };
 
   function isPendingInteractiveRequest(
+    forSessionID: SessionID,
     id: string,
     kind: "approval" | "question",
   ) {
-    const pending = projectInteractiveRequests(session?.events ?? []);
+    // D2: the request lives in the session whose turn issued it. A response
+    // arriving while the UI is attached to another session must be judged
+    // against that session's journal, never the attached one's.
+    const target = executionBySession.get(forSessionID)?.session ?? session;
+    const pending = projectInteractiveRequests(target?.events ?? []);
     return kind === "approval"
       ? pending.approvals.some((request) => request.id === id)
       : pending.questions.some((request) => request.id === id);
@@ -3385,7 +3400,7 @@ export function createRealRuntimeClient(
     };
     const messages: ProviderMessage[] = [assistantMessage];
     for (const call of calls) {
-      runtimeContext.add({
+      execContext.add({
         id: `${turnID}:${call.id}:call`,
         role: "tool_call",
         content: `${call.name} ${call.arguments}`,
@@ -3427,7 +3442,7 @@ export function createRealRuntimeClient(
             options.taskModuleContext,
           ),
         });
-        runtimeContext.add({
+        execContext.add({
           id: `${turnID}:${call.id}:result`,
           role: "tool_result",
           content: `ERROR: ${reason}`,
@@ -3486,7 +3501,7 @@ export function createRealRuntimeClient(
             options.taskModuleContext,
           ),
         });
-        runtimeContext.add({
+        execContext.add({
           id: `${turnID}:${call.id}:result`,
           role: "tool_result",
           content: `ERROR: ${reason}`,
@@ -3501,7 +3516,7 @@ export function createRealRuntimeClient(
         toolName: call.name,
         content: toolResultContent(result, call.id, options.taskModuleContext),
       });
-      runtimeContext.add({
+      execContext.add({
         id: `${turnID}:${call.id}:result`,
         role: "tool_result",
         content: result,
@@ -3776,6 +3791,7 @@ export function createRealRuntimeClient(
       startedAt: Date.now(),
     });
     let executionAudited = false;
+    let releaseWriteLock: (() => void) | undefined;
     try {
       const parsed = parseToolArguments(call.arguments);
       const paramErrors = validateToolParameters(tool.parameters, parsed);
@@ -3815,12 +3831,25 @@ export function createRealRuntimeClient(
           )
         : undefined;
       const signal = executionController.signal;
+      // D2: workspace writes serialise across sessions. A background turn's
+      // write waits for the attached session's write (and vice versa), so two
+      // turns can never interleave edits to the same workspace.
+      releaseWriteLock = workspaceWritePathForTool(
+        tool.name,
+        parsed as Record<string, unknown>,
+      )
+        ? await workspaceWriteLock.acquire()
+        : undefined;
       const completeResult = await waitForToolExecution(
         tool.execute(parsed, {
           workspaceRoot,
           signal,
           askQuestion: async (question) =>
-            await interactive.requireQuestion(`${toolID}:question`, question),
+            await interactive.requireQuestion(
+              `${toolID}:question`,
+              turnID,
+              question,
+            ),
           subagents: subagentsController.get(),
           nativeTerminal: terminalController.get(),
           sandboxes: sandboxController.get(),
@@ -3948,6 +3977,7 @@ export function createRealRuntimeClient(
       await toolLayer.postExecute({ ...hookEvent, error: message });
       return `ERROR: ${message}`;
     } finally {
+      releaseWriteLock?.();
       if (executionAudited) await setInFlightOperation(undefined);
     }
   }

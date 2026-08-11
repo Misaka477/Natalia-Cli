@@ -45,7 +45,11 @@ export type InteractiveWaiterDeps = {
    * journal rather than from the maps below, so a response arriving after a reopen
    * is judged against the durable record.
    */
-  isPending: (id: string, kind: "approval" | "question") => boolean;
+  isPending: (
+    sessionID: SessionID,
+    id: string,
+    kind: "approval" | "question",
+  ) => boolean;
   /**
    * The session a turn belongs to. Parallel sessions make "the session" a
    * per-turn fact: a background turn keeps running after the UI attaches to
@@ -53,6 +57,12 @@ export type InteractiveWaiterDeps = {
    * was submitted to, never the currently attached one.
    */
   sessionIDForTurn: (turnID: string) => SessionID;
+  /**
+   * Publish into a specific session's exec (journal + stamp). Approval and
+   * question events belong to the turn's session, not whichever session the UI
+   * is attached to — a background turn's request must land in its own journal.
+   */
+  publishForSession: (sessionID: SessionID, event: RuntimeEvent) => void;
 };
 
 export type InteractiveWaiter = ReturnType<typeof createInteractiveWaiter>;
@@ -82,6 +92,7 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
     (response: ApprovalResponse) => void
   >();
   const pendingQuestions = new Map<string, QuestionResponse>();
+  const questionTurnByID = new Map<string, string>();
   const questionWaiters = new Map<
     string,
     (response: QuestionResponse) => void
@@ -127,7 +138,7 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
         expiresAt,
       });
     else approvalToolByID.set(approvalID, tool.name);
-    publish({
+    deps.publishForSession(session, {
       type: "approval.request",
       id: approvalID,
       title: `Approve ${tool.name}`,
@@ -149,9 +160,9 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
         `approval timed out: ${tool.name}`,
       );
       if (response.decision !== "reject") return undefined;
-      publish({
+      deps.publishForSession(session, {
         type: "policy.decision",
-        turnID: deps.activeTurnID() ?? `approval:${deps.sessionID()}`,
+        turnID,
         toolName: tool.name,
         toolCallID: call.id,
         decision: "rejected",
@@ -163,9 +174,9 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
       // is not: nobody answered, and discarding the whole turn after a long
       // wait loses more work than telling the model the request expired.
       if (deps.abortSignal()?.aborted) throw error;
-      publish({
+      deps.publishForSession(session, {
         type: "policy.decision",
-        turnID: deps.activeTurnID() ?? `approval:${deps.sessionID()}`,
+        turnID,
         toolName: tool.name,
         toolCallID: call.id,
         decision: "rejected",
@@ -182,6 +193,7 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
 
   async function requireQuestion(
     requestID: string,
+    turnID: string,
     request: {
       title: string;
       questions: Array<{
@@ -194,7 +206,12 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
       }>;
     },
   ) {
-    publish({ type: "question.request", id: requestID, ...request });
+    questionTurnByID.set(requestID, turnID);
+    deps.publishForSession(deps.sessionIDForTurn(turnID), {
+      type: "question.request",
+      id: requestID,
+      ...request,
+    });
     const response = await waitForResponse(
       requestID,
       pendingQuestions,
@@ -238,7 +255,11 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
   function respondApproval(
     response: ApprovalResponse,
   ): InteractiveResponseOutcome {
-    if (!deps.isPending(response.requestID, "approval")) {
+    const respondGraph = approvalWorkGraphContext.get(response.requestID);
+    const respondSession = respondGraph
+      ? deps.sessionIDForTurn(respondGraph.turnID)
+      : deps.sessionID();
+    if (!deps.isPending(respondSession, response.requestID, "approval")) {
       publish({
         type: "diagnostic",
         level: "warning",
@@ -252,28 +273,33 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
         reason: "the approval request is no longer pending",
       };
     }
-    publish({
+    const graphContext = approvalWorkGraphContext.get(response.requestID);
+    const responseSession = graphContext
+      ? deps.sessionIDForTurn(graphContext.turnID)
+      : deps.sessionID();
+    deps.publishForSession(responseSession, {
       type: "approval.response",
       id: response.requestID,
       decision: response.decision,
       feedback: response.feedback,
     });
-    const graphContext = approvalWorkGraphContext.get(response.requestID);
     // A resolved approval is a Work Graph fact: who authorized a side effect.
     // The decision is recorded; the preview text is not, because it can carry a
     // command line.
-    publish(
+    deps.publishForSession(
+      responseSession,
       approvalNode({
         approvalID: response.requestID,
         decision: response.decision,
         toolName:
           graphContext?.toolName ?? approvalToolByID.get(response.requestID),
-        sessionID: deps.sessionID(),
+        sessionID: responseSession,
         turnID: graphContext?.turnID,
       }),
     );
     if (graphContext)
-      publish(
+      deps.publishForSession(
+        responseSession,
         approvalEdge({
           approvalID: response.requestID,
           decision: response.decision,
@@ -309,7 +335,11 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
   function respondQuestion(
     response: QuestionResponse,
   ): InteractiveResponseOutcome {
-    if (!deps.isPending(response.requestID, "question")) {
+    const questionTurn = questionTurnByID.get(response.requestID);
+    const questionSession = questionTurn
+      ? deps.sessionIDForTurn(questionTurn)
+      : deps.sessionID();
+    if (!deps.isPending(questionSession, response.requestID, "question")) {
       publish({
         type: "diagnostic",
         level: "warning",
@@ -327,6 +357,7 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
       rejected: response.rejected,
     });
     pendingQuestions.set(response.requestID, response);
+    questionTurnByID.delete(response.requestID);
     questionWaiters.get(response.requestID)?.(response);
     return { accepted: true };
   }
