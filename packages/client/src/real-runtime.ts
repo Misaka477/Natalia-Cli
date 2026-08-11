@@ -57,6 +57,7 @@ import {
   resolveConfig,
   updateConfigAtScope,
 } from "@natalia/config";
+import type { ConfigV2 } from "@natalia/contracts";
 import { CapabilityRegistry } from "@natalia/capability";
 import {
   agentsFromConfig,
@@ -646,6 +647,15 @@ export function createRealRuntimeClient(
       tsRuntimeConfig = tsConfig.config;
       runtimeContextConfig = contextStatusConfig(tsConfig.config);
       maxSteps = tsConfig.config.runtime.maxStepsPerTurn;
+      // Permission changes (default profile switch, auto/ask flip, profile
+      // edits) apply immediately, not on the next restart.
+      reloadPermissionSettings(tsConfig.config);
+      applyAgentPolicy();
+      if (
+        selectedPermissionProfile?.commandRules &&
+        selectedPermissionProfile.commandRules.mode !== "none"
+      )
+        await ensureBashCommandParser().catch(() => undefined);
       if (!options.provider) {
         const configured = providerForModel(
           tsConfig.config,
@@ -677,23 +687,14 @@ export function createRealRuntimeClient(
         jitterMs: tsConfig.config.runtime.retry.jitterMs,
       };
       maxSteps = tsConfig.config.runtime.maxStepsPerTurn;
-      const requestedPermissionProfile = options.permissionProfile;
-      const defaultPermissionProfile =
-        tsConfig.config.permissionProfiles[tsConfig.config.defaultPermission];
-      const mode = tsConfig.config.modes[tsConfig.config.defaultMode];
-      const modePermissionProfile = mode?.permission
-        ? tsConfig.config.permissionProfiles[mode.permission]
-        : undefined;
-      if (requestedPermissionProfile) {
-        selectedPermissionProfile =
-          tsConfig.config.permissionProfiles[requestedPermissionProfile];
-        if (!selectedPermissionProfile)
-          throw new Error(
-            `permission profile not found: ${requestedPermissionProfile}`,
-          );
-      } else
-        selectedPermissionProfile =
-          modePermissionProfile ?? defaultPermissionProfile;
+      if (
+        options.permissionProfile &&
+        !tsConfig.config.permissionProfiles[options.permissionProfile]
+      )
+        throw new Error(
+          `permission profile not found: ${options.permissionProfile}`,
+        );
+      reloadPermissionSettings(tsConfig.config);
       if (
         (selectedPermissionProfile?.commandRules &&
           selectedPermissionProfile.commandRules.mode !== "none") ||
@@ -701,8 +702,6 @@ export function createRealRuntimeClient(
           options.taskModuleContext.moduleCommandRules.mode !== "none")
       )
         await ensureBashCommandParser();
-      if (!options.permissionMode && selectedPermissionProfile)
-        permissionMode = selectedPermissionProfile.approval;
       agentRegistry = agentsFromConfig(tsConfig.config);
       selectedAgent = agentRegistry.default();
       if (Object.keys(tsConfig.config.agents).length && !selectedAgent)
@@ -1231,6 +1230,34 @@ export function createRealRuntimeClient(
       allow: selectedPermissionProfile?.permissions?.tools?.allow,
       exclude: selectedPermissionProfile?.permissions?.tools?.exclude,
     });
+  }
+
+  /**
+   * Re-derives the permission mode and selected profile from the given config
+   * and rebuilds the tool policy layers. Called at initialize and on every
+   * config reload, so switching the default profile or flipping auto/ask in
+   * the settings dialog takes effect immediately instead of after a restart.
+   * A requested profile (options.permissionProfile) that vanished from disk
+   * keeps the current selection; the caller decides whether that is fatal.
+   */
+  function reloadPermissionSettings(config: ConfigV2) {
+    const requestedPermissionProfile = options.permissionProfile;
+    const defaultPermissionProfile =
+      config.permissionProfiles[config.defaultPermission];
+    const mode = config.modes[config.defaultMode];
+    const modePermissionProfile = mode?.permission
+      ? config.permissionProfiles[mode.permission]
+      : undefined;
+    if (requestedPermissionProfile) {
+      const found = config.permissionProfiles[requestedPermissionProfile];
+      if (!found) return;
+      selectedPermissionProfile = found;
+    } else {
+      selectedPermissionProfile =
+        modePermissionProfile ?? defaultPermissionProfile;
+    }
+    if (!options.permissionMode && selectedPermissionProfile)
+      permissionMode = selectedPermissionProfile.approval;
   }
 
   function isToolAllowed(toolName: string) {
