@@ -407,10 +407,7 @@ async function collect(
     if (child.isDirectory()) {
       if (!ignored)
         output.push({ path: `${relativePath}/`, type: "directory" });
-      if (
-        (!ignored || ignoreRules.some((rule) => rule.negated)) &&
-        !visited.has(real)
-      ) {
+      if (!ignored && !visited.has(real)) {
         visited.add(real);
         await collect(root, real, output, maxEntries, ignoreRules, visited);
       }
@@ -449,11 +446,13 @@ async function watchDirectories(
     const real = await realpath(path).catch(() => undefined);
     if (!real || !contains(root, real) || visited.has(real)) continue;
     const relativePath = relative(root, path).split(sep).join("/");
-    if (
-      isIgnored(relativePath, true, ignoreRules) &&
-      !ignoreRules.some((rule) => rule.negated)
-    )
-      continue;
+    // Pruned purely by the collected rules. A negated rule never disables
+    // this pruning: isIgnored evaluates negations with their base scope, and
+    // git semantics forbid re-including anything under an excluded
+    // directory anyway. Without this, one vendored subtree whose own
+    // .gitignore contains a `!` pattern disables pruning for the whole
+    // workspace and the watcher lands on every devref directory.
+    if (isIgnored(relativePath, true, ignoreRules)) continue;
     visited.add(real);
     watchers.push(
       ...(await watchDirectories(root, real, onChange, ignoreRules, visited)),
@@ -535,6 +534,12 @@ async function collectIgnoreRules(
   for (const child of children) {
     if (!child.isDirectory() || ignoredDirectories.has(child.name)) continue;
     const childPath = resolve(directory, child.name);
+    const relativePath = relative(root, childPath).split(sep).join("/");
+    // Prune the walk with the rules collected so far, exactly like the
+    // watcher tree does: without this, rule collection descends into every
+    // .gitignore-excluded subtree (a vendored dependency, a devref tree) and
+    // a runtime start turns into a full-tree realpath walk.
+    if (isIgnored(relativePath, true, rules)) continue;
     const real = await realpath(childPath).catch(() => undefined);
     if (!real || !contains(root, real) || visited.has(real)) continue;
     visited.add(real);

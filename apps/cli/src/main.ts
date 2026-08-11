@@ -85,8 +85,9 @@ switch (subcommand) {
     );
     if (!Number.isInteger(port) || port <= 0 || port > 65535)
       throw new Error("serve requires a valid port");
+    const client = createRealRuntimeClient();
     const server = createRuntimeHttpServer({
-      client: createRealRuntimeClient(),
+      client,
       port,
       token: process.env.NATALIA_TRANSPORT_TOKEN,
     });
@@ -100,6 +101,10 @@ switch (subcommand) {
     );
     await waitSignal();
     server.stop(true);
+    // Without dispose the initialized runtime keeps its native input broker
+    // socket and watcher handles, so a SIGTERM'd server process never exits
+    // (observed zombie daemon holding the port).
+    await client.dispose?.();
     break;
   }
 
@@ -121,8 +126,9 @@ switch (subcommand) {
     if (!Number.isInteger(maxConcurrentTasks) || maxConcurrentTasks <= 0)
       throw new Error("daemon requires a positive --max-concurrent-tasks");
     const taskGate = createTaskGate(maxConcurrentTasks);
+    const client = createRealRuntimeClient();
     const server = createRuntimeHttpServer({
-      client: createRealRuntimeClient(),
+      client,
       port,
       token,
       // Delivery reuses the very same controller a one-shot run uses, so the
@@ -157,6 +163,12 @@ switch (subcommand) {
     console.log(JSON.stringify({ url: server.url }));
     await waitSignal();
     server.stop(true);
+    // The daemon must dispose the runtime it started: the native input broker
+    // socket and the workspace watcher keep the process alive otherwise, and
+    // a daemon that survives SIGTERM holds its port forever (the zombie-daemon
+    // defect this closes). The smoke that delivers tasks also depends on this
+    // instead of its SIGKILL fallback.
+    await client.dispose?.();
     break;
   }
 

@@ -302,6 +302,57 @@ test("workspace filesystem APIs honor root and nested gitignore rules", async ()
   ).rejects.toThrow("workspace path is ignored by filesystem policy");
 });
 
+test("ignore-rule collection does not descend into ignored directories", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-workspace-pruned-"));
+  await mkdir(join(root, "vendor"), { recursive: true });
+  await writeFile(join(root, ".gitignore"), "vendor/\n");
+  // A negated rule inside an ignored directory must never be read: the
+  // parent rule already excludes the whole subtree, and git semantics say a
+  // negation cannot re-include through an excluded directory. If the rule
+  // walk descends into `vendor` anyway, `!visible.txt` is collected and
+  // vendor/visible.txt leaks back into the catalog.
+  await writeFile(join(root, "vendor", ".gitignore"), "!visible.txt\n");
+  await writeFile(join(root, "vendor", "visible.txt"), "visible\n");
+  expect(
+    await findWorkspaceFiles({ workspaceRoot: root, limit: 100 }),
+  ).not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ path: "vendor/visible.txt" }),
+    ]),
+  );
+});
+
+test("a foreign negated rule does not disable pruning of ignored subtrees", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-workspace-negated-"));
+  await mkdir(join(root, "vendor"), { recursive: true });
+  await mkdir(join(root, "keep"), { recursive: true });
+  await writeFile(join(root, ".gitignore"), "vendor/\n");
+  // The vendored tree carries its own negated rule. It must not disable
+  // pruning of `vendor` for the whole workspace (that is the wezterm/devref
+  // failure shape: one vendored `!` pattern lands the watcher on every
+  // ignored directory). The negated rule inside `vendor` is never read, so
+  // vendor/leak.txt stays excluded.
+  await writeFile(join(root, "vendor", ".gitignore"), "!leak.txt\n");
+  await writeFile(join(root, "vendor", "leak.txt"), "leak\n");
+  // A negated rule inside a *kept* directory still works within its own
+  // base: keep/visible.txt is re-included while keep/hidden.txt is not.
+  await writeFile(join(root, "keep", ".gitignore"), "!visible.txt\n");
+  await writeFile(join(root, "keep", "hidden.txt"), "hidden\n");
+  await writeFile(join(root, "keep", "visible.txt"), "visible\n");
+  const entries = await findWorkspaceFiles({ workspaceRoot: root, limit: 200 });
+  expect(entries).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ path: "keep/visible.txt" }),
+    ]),
+  );
+  expect(entries).not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ path: "vendor/leak.txt" }),
+      expect.objectContaining({ path: "keep/hidden.txt" }),
+    ]),
+  );
+});
+
 test("workspace gitignore changes apply after catalog invalidation", async () => {
   const root = await mkdtemp(
     join(tmpdir(), "natalia-workspace-gitignore-cache-"),
@@ -393,6 +444,29 @@ watcherTest(
     expect(await findWorkspaceFiles({ workspaceRoot: root })).toEqual(
       expect.arrayContaining([{ path: "src/second.ts", type: "file" }]),
     );
+    stop();
+  },
+);
+
+watcherTest(
+  "workspace watcher does not land on gitignore-excluded subtrees",
+  async () => {
+    const root = await mkdtemp(
+      join(tmpdir(), "natalia-workspace-watch-excluded-"),
+    );
+    await mkdir(join(root, "vendor", "deep"), { recursive: true });
+    await mkdir(join(root, "keep"), { recursive: true });
+    await writeFile(join(root, ".gitignore"), "vendor/\n");
+    // A foreign negated rule must not disable pruning of `vendor` (the
+    // vendored-subtree failure shape). Without pruning the watcher lands on
+    // vendor/deep and the write below triggers a catalog invalidation.
+    await writeFile(join(root, "keep", ".gitignore"), "!visible.txt\n");
+    await writeFile(join(root, "keep", "visible.txt"), "visible\n");
+    let changes = 0;
+    const stop = await watchWorkspaceFiles(root, () => changes++);
+    await writeFile(join(root, "vendor", "deep", "leak.txt"), "leak\n");
+    await Bun.sleep(200);
+    expect(changes).toBe(0);
     stop();
   },
 );

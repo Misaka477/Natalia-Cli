@@ -164,14 +164,18 @@ try {
   );
 } finally {
   daemon.kill();
-  // The daemon does not always exit on SIGTERM (observed: it survives with
-  // its server socket and timers after `server.stop`), and the smoke must not
-  // hang on a teardown defect. SIGKILL is the reaper of last resort.
-  await Promise.race([
-    daemon.exited,
-    Bun.sleep(5_000).then(() => {
-      daemon.kill("SIGKILL");
-    }),
+  // SIGTERM must terminate the daemon now that serve/daemon dispose the
+  // runtime they started (the zombie daemon that survived `server.stop` with
+  // its broker socket was the teardown defect this smoke used to paper over
+  // with SIGKILL). A surviving daemon is a regression: it holds its port
+  // forever, so fail loudly instead of reaping silently.
+  const exited = await Promise.race([
+    daemon.exited.then(() => true),
+    Bun.sleep(5_000).then(() => false),
   ]);
-  await daemon.exited;
+  if (!exited) {
+    daemon.kill("SIGKILL");
+    await daemon.exited;
+    throw new Error("daemon did not exit on SIGTERM after server stop");
+  }
 }
