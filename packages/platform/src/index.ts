@@ -267,7 +267,10 @@ export function processTreeKillCommand(
 export function globalConfigHome(input: PlatformInput = {}): string {
   const env = input.env ?? process.env;
   if (isWindows(input.os))
-    return env.APPDATA ?? win32.join(userHome(input), "AppData", "Roaming");
+    return usableDirectory(
+      [env.APPDATA],
+      () => win32.join(userHome(input), "AppData", "Roaming"),
+    );
   return posix.join(env.HOME ?? "", ".config");
 }
 
@@ -278,7 +281,10 @@ export function globalConfigHome(input: PlatformInput = {}): string {
 export function userStateHome(input: PlatformInput = {}): string {
   const env = input.env ?? process.env;
   if (isWindows(input.os))
-    return env.LOCALAPPDATA ?? win32.join(userHome(input), "AppData", "Local");
+    return usableDirectory(
+      [env.LOCALAPPDATA],
+      () => win32.join(userHome(input), "AppData", "Local"),
+    );
   return env.XDG_STATE_HOME ?? posix.join(env.HOME ?? ".", ".local", "state");
 }
 
@@ -288,7 +294,8 @@ export function userStateHome(input: PlatformInput = {}): string {
  */
 export function userRuntimeHome(input: PlatformInput = {}): string | undefined {
   const env = input.env ?? process.env;
-  if (isWindows(input.os)) return env.LOCALAPPDATA ?? env.TEMP;
+  if (isWindows(input.os))
+    return usableDirectory([env.LOCALAPPDATA, env.TEMP], safeHomedir);
   return env.XDG_RUNTIME_DIR;
 }
 
@@ -301,13 +308,31 @@ export function userRuntimeHome(input: PlatformInput = {}): string | undefined {
  */
 export function userHomeDirectory(input: PlatformInput = {}): string {
   const env = input.env ?? process.env;
-  if (isWindows(input.os)) return env.USERPROFILE ?? env.HOME ?? safeHomedir();
+  if (isWindows(input.os))
+    return usableDirectory([env.USERPROFILE, env.HOME], safeHomedir);
   return env.HOME ?? safeHomedir();
 }
 
 function userHome(input: PlatformInput): string {
   const env = input.env ?? process.env;
-  return env.USERPROFILE ?? env.HOME ?? safeHomedir();
+  return usableDirectory([env.USERPROFILE, env.HOME], safeHomedir);
+}
+
+/**
+ * Picks the first usable directory from the candidates. A bare drive letter
+ * ("D:") from a misconfigured env var (LOCALAPPDATA/TEMP/APPDATA/HOME set to
+ * just the drive) is not a usable directory: creating a directory at the
+ * drive root fails with EPERM on Windows, which surfaced as a hard startup
+ * crash. Such values are skipped in favour of the real user home.
+ */
+function usableDirectory(
+  candidates: Array<string | undefined>,
+  fallback: () => string,
+): string {
+  for (const candidate of candidates) {
+    if (candidate && !/^[A-Za-z]:$/u.test(candidate)) return candidate;
+  }
+  return fallback();
 }
 
 /**
