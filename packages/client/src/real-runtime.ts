@@ -3085,16 +3085,21 @@ export function createRealRuntimeClient(
 
   /**
    * The tool result the model actually reads. In a flow module episode the
-   * call ID is prepended to the content, because models reliably read content
-   * but routinely ignore the protocol-level tool_call_id — without this the
-   * model cannot know its own call ID and guesses evidenceRefs.
+   * call ID is prepended to the content of text-shaped results, because
+   * models reliably read content but routinely ignore the protocol-level
+   * tool_call_id — without this the model cannot know its own call ID and
+   * guesses evidenceRefs. JSON-shaped results (report_issue, read_data_source
+   * and friends) stay untouched: the model consumes them verbatim.
    */
   function toolResultContent(
     content: string,
     callID: string,
     moduleContext: unknown,
   ): string {
-    return moduleContext ? `[tool call ID: ${callID}] ${content}` : content;
+    if (!moduleContext) return content;
+    const trimmed = content.trimStart();
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) return content;
+    return `[tool call ID: ${callID}] ${content}`;
   }
 
   /**

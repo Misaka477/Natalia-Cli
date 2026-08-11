@@ -675,7 +675,7 @@ export class CheckpointStore {
       } finally {
         await handle.close();
       }
-      await rename(temporary, journal);
+      await replaceJournalFile(temporary, journal);
     } finally {
       await rm(temporary, { force: true }).catch(() => undefined);
     }
@@ -1048,4 +1048,37 @@ function errorKind(error: unknown) {
     if (typeof code === "string") return code;
   }
   return "filesystem_error";
+}
+
+/**
+ * Atomically replaces the journal. POSIX rename is atomic and returns on the
+ * first attempt; Windows rejects the rename while another client holds the
+ * target open for reading (its handle lacks FILE_SHARE_DELETE), so the
+ * overwrite retries with a short backoff and falls back to a direct write
+ * once the lock clears. Journal writers are serialized per store, so the
+ * fallback cannot interleave two updates.
+ */
+async function replaceJournalFile(source: string, target: string) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await rename(source, target);
+      return;
+    } catch (error) {
+      const code = errorKind(error);
+      if (
+        code !== "EPERM" &&
+        code !== "EBUSY" &&
+        code !== "EACCES" &&
+        code !== "EEXIST"
+      )
+        throw error;
+      if (attempt >= 4) {
+        await writeFile(target, await readFile(source, "utf8"), {
+          mode: 0o600,
+        });
+        return;
+      }
+      await Bun.sleep(25 * (attempt + 1));
+    }
+  }
 }
