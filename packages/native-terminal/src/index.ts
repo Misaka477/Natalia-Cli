@@ -910,21 +910,32 @@ export class NativeTerminalRegistry {
       cols: pane.cols,
     };
     this.sessions.set(session.id, session);
-    await this.persistSessions();
-    if (this.options.autoOpenHub !== false) {
-      if (!this.hub) await this.attachToHub(session, true, true);
-      else {
-        session.windowID = this.hub.muxWindowID;
-        session.muxWindowID = this.hub.muxWindowID;
-        // Kill stray panes (e.g. mux default pane) in the hub window that
-        // are not managed by any session. The new session is already in
-        // this.sessions so its paneID is in the known set and won't be killed.
-        const known = new Set(this.sessions.values().map((s) => s.paneID));
-        for (const p of await this.host.list())
-          if (!known.has(p.pane_id) && p.window_id === this.hub.muxWindowID)
-            await this.host.stop(p.pane_id).catch(() => {});
-        await this.host.focus(session.paneID);
+    try {
+      await this.persistSessions();
+      if (this.options.autoOpenHub !== false) {
+        if (!this.hub) await this.attachToHub(session, true, true);
+        else {
+          session.windowID = this.hub.muxWindowID;
+          session.muxWindowID = this.hub.muxWindowID;
+          // Kill stray panes (e.g. mux default pane) in the hub window that
+          // are not managed by any session. The new session is already in
+          // this.sessions so its paneID is in the known set and won't be killed.
+          const known = new Set(this.sessions.values().map((s) => s.paneID));
+          for (const p of await this.host.list())
+            if (!known.has(p.pane_id) && p.window_id === this.hub.muxWindowID)
+              await this.host.stop(p.pane_id).catch(() => {});
+          await this.host.focus(session.paneID);
+        }
       }
+    } catch (error) {
+      // The pane was created but the window attach failed (e.g. the pane
+      // disappeared while opening). A half-started session must not linger as
+      // "running": remove it and kill the pane so the next list/observe is
+      // consistent and a retry starts clean.
+      this.sessions.delete(session.id);
+      await this.host.stop(session.paneID).catch(() => undefined);
+      await this.persistSessions().catch(() => undefined);
+      throw error;
     }
     return session;
   }

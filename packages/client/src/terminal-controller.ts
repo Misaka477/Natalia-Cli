@@ -60,6 +60,12 @@ export function createTerminalController(input: {
         // Open terminal can attach a real window to the user's unrelated
         // default mux while Natalia controls a different pane.
         environment: { WEZTERM_UNIX_SOCKET: nativeMuxSocket },
+        // Every `wezterm cli` invocation then runs with --no-auto-start
+        // --prefer-mux --class <className>: a cli spawn must never auto-start
+        // its own GUI (which would show a first window that later empties
+        // when the pane is moved, i.e. duplicate windows), and every command
+        // must target the private mux rather than whatever instance is last.
+        className: `natalia-${input.runtimeID()}`,
         muxRuntimeDir: nativeMuxRuntimeDir,
         nativeDomain,
         onPerformance: input.onPerformance,
