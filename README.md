@@ -36,19 +36,32 @@ install, provider setup, launching the TUI, and installing skills end to end.
 Configure a provider through environment variables or `.natalia/config.json`:
 
 ```bash
-export NATALIA_OPENAI_API_KEY="..."
+export NATALIA_API_KEY="..."
 export NATALIA_MODEL="gpt-4o-mini"
 npm run ts:tui
 ```
 
-Anthropic and Gemini use the same runtime boundary:
+`NATALIA_OPENAI_API_KEY` / `OPENAI_API_KEY` are accepted as fallbacks. Anthropic
+and Gemini use the same runtime boundary — any model id the provider supports
+works:
 
 ```bash
-NATALIA_PROVIDER=anthropic NATALIA_API_KEY="..." NATALIA_MODEL="claude-3-5-sonnet-latest" npm run ts:tui
-NATALIA_PROVIDER=gemini NATALIA_API_KEY="..." NATALIA_MODEL="gemini-1.5-pro" npm run ts:tui
+NATALIA_PROVIDER=anthropic NATALIA_API_KEY="..." NATALIA_MODEL="claude-3-7-sonnet-latest" npm run ts:tui
+NATALIA_PROVIDER=gemini NATALIA_API_KEY="..." NATALIA_MODEL="gemini-2.5-pro" npm run ts:tui
 ```
 
 Never commit API keys or place them in prompts, diagnostic fixtures, screenshots, or session files.
+
+### Documentation
+
+- [Getting started](docs/getting-started.md) — install, provider setup, TUI, skills.
+- [API reference](docs/api-reference.md) — the stable HTTP/RPC protocol: auth, failure kinds, events, the write surface. Bilingual.
+- [Types reference](docs/types-reference.md) — complete field shapes of every result type, nested objects expanded.
+- [Config reference](docs/config-reference.md) — the full `.natalia/config.json` shape (types, optionality, defaults).
+- [Plugin guide](docs/plugin-guide.md) — in-process plugins (tools, events, commands) and the trust model.
+- [Provider guide](docs/provider-guide.md) — writing a provider adapter.
+- [CLI commands](docs/commands.md) — session, filesystem, daemon, diagnostics, recording.
+- [Skills](docs/skills.md) — project/user/remote installs and the `SKILL.md` format.
 
 ### CLI And Local Transport
 
@@ -73,16 +86,22 @@ If a process stops during an unknown provider or tool side effect, Natalia safel
 
 ### TUI Controls
 
-| Control        | Action                     |
-| -------------- | -------------------------- |
-| `Ctrl+N`       | Create a session           |
-| `Ctrl+L`       | Open session history       |
-| `Ctrl+,`       | Open settings              |
-| `Ctrl+P`       | Open command palette       |
-| `Ctrl+C`       | Cancel the active turn     |
-| `Ctrl+Shift+K` | Open checkpoint management |
-| `F8`           | Open terminal management   |
-| `Ctrl+Shift+B` | Open sandbox management    |
+| Control          | Action                       |
+| ---------------- | ---------------------------- |
+| `Ctrl+N`         | Create a session             |
+| `Ctrl+L`         | Open session history         |
+| `Ctrl+,`         | Open settings                |
+| `Ctrl+P`         | Open command palette         |
+| `Ctrl+C`         | Cancel the active turn       |
+| `Ctrl+I` / `Ctrl+H` | Show runtime status / help |
+| `Ctrl+Shift+K`   | Open checkpoint management   |
+| `F8`             | Open terminal management     |
+| `Ctrl+Shift+B`   | Open sandbox management      |
+| `Ctrl+T`         | Toggle terminal/chat focus   |
+| `Ctrl+S`         | Create a snapshot            |
+| `Ctrl+Shift+G`   | Fork session at the last message |
+| `Ctrl+Shift+T` / `Ctrl+Shift+E` | Edit scheduled tasks / flows |
+| `Ctrl+Shift+C`   | Copy the last assistant or tool message |
 
 Useful slash commands include `/doctor`, `/help`, `/status`, `/skills`, `/checkpoint`, `/checkpoints`, `/rollback <id> --dry-run`, `/pause`, and `/resume`.
 
@@ -94,7 +113,10 @@ Runtime configuration is typed ConfigV2. Project settings are stored in:
 .natalia/config.json
 ```
 
-The Settings Center supports provider/model, runtime, context, checkpoint, browser/network, MCP, skills/plugins, workspace, agent modes, and permission profiles. Settings are saved as minimal scope overlays and validated before writing.
+The Settings Center (Ctrl+,) covers provider/model, runtime (max steps, retry,
+checkpoints), browser/network, MCP, extensions (skills/plugins), workspace,
+agent modes, permission profiles, and TUI preferences. Settings are saved as
+minimal scope overlays and validated before writing.
 
 ### Safety Notes
 
@@ -167,19 +189,36 @@ Natalia 是 local-first runtime，不提供云账号、组织管理、账单、b
 通过环境变量或 `.natalia/config.json` 配置 provider：
 
 ```bash
-export NATALIA_OPENAI_API_KEY="..."
+export NATALIA_API_KEY="..."
 export NATALIA_MODEL="gpt-4o-mini"
 npm run ts:tui
 ```
 
-Anthropic 与 Gemini 通过同一 runtime boundary 使用：
+`NATALIA_OPENAI_API_KEY` / `OPENAI_API_KEY` 作为 fallback 同样被接受。Anthropic
+与 Gemini 通过同一 runtime boundary 使用——模型 id 填你的 provider 支持的任何值：
 
 ```bash
-NATALIA_PROVIDER=anthropic NATALIA_API_KEY="..." NATALIA_MODEL="claude-3-5-sonnet-latest" npm run ts:tui
-NATALIA_PROVIDER=gemini NATALIA_API_KEY="..." NATALIA_MODEL="gemini-1.5-pro" npm run ts:tui
+NATALIA_PROVIDER=anthropic NATALIA_API_KEY="..." NATALIA_MODEL="claude-3-7-sonnet-latest" npm run ts:tui
+NATALIA_PROVIDER=gemini NATALIA_API_KEY="..." NATALIA_MODEL="gemini-2.5-pro" npm run ts:tui
 ```
 
 不要将 API key 写入仓库、prompt、diagnostic fixture、截图或 session 文件。
+
+### 文档
+
+- [快速开始](docs/getting-started.zh-CN.md) — 安装、provider 配置、TUI、skill。
+- [API 参考](docs/api-reference.zh-CN.md) — 稳定 HTTP/RPC 协议：鉴权、失败分类、
+  事件流、写面。中英双语。
+- [类型参考](docs/types-reference.zh-CN.md) — 每个结果类型的完整字段形状，
+  嵌套对象已展开。
+- [配置参考](docs/config-reference.zh-CN.md) — `.natalia/config.json` 的完整
+  形状（类型、可选性、默认值）。
+- [插件指南](docs/plugin-guide.zh-CN.md) — 进程内插件（tools、events、commands）
+  与信任模型。
+- [Provider 指南](docs/provider-guide.zh-CN.md) — 编写 provider adapter。
+- [CLI 命令参考](docs/commands.md) — session、filesystem、daemon、diagnostics、
+  recording 命令。
+- [Skill 安装](docs/skills.zh-CN.md) — 项目级/用户级/远程安装与 `SKILL.md` 格式。
 
 ### CLI 与本地 Transport
 
@@ -204,16 +243,22 @@ npm run ts:cli -- daemon-stop
 
 ### TUI 快捷键
 
-| 快捷键         | 操作                 |
-| -------------- | -------------------- |
-| `Ctrl+N`       | 新建 session         |
-| `Ctrl+L`       | 打开 session history |
-| `Ctrl+,`       | 打开 settings        |
-| `Ctrl+P`       | 打开 command palette |
-| `Ctrl+C`       | 取消当前 turn        |
-| `Ctrl+Shift+K` | 打开 checkpoint 管理 |
-| `F8`           | 打开终端管理         |
-| `Ctrl+Shift+B` | 打开 sandbox 管理    |
+| 快捷键           | 操作                             |
+| ---------------- | -------------------------------- |
+| `Ctrl+N`         | 新建 session                     |
+| `Ctrl+L`         | 打开 session history             |
+| `Ctrl+,`         | 打开 settings                    |
+| `Ctrl+P`         | 打开 command palette             |
+| `Ctrl+C`         | 取消当前 turn                    |
+| `Ctrl+I` / `Ctrl+H` | 查看 runtime status / 帮助     |
+| `Ctrl+Shift+K`   | 打开 checkpoint 管理             |
+| `F8`             | 打开终端管理                     |
+| `Ctrl+Shift+B`   | 打开 sandbox 管理                |
+| `Ctrl+T`         | 切换终端/对话焦点                |
+| `Ctrl+S`         | 创建 snapshot                    |
+| `Ctrl+Shift+G`   | 在最后一条消息处 fork session    |
+| `Ctrl+Shift+T` / `Ctrl+Shift+E` | 编辑定时任务 / flow |
+| `Ctrl+Shift+C`   | 复制最后一条 assistant 或 tool 消息 |
 
 常用 slash command：`/doctor`、`/help`、`/status`、`/skills`、`/checkpoint`、`/checkpoints`、`/rollback <id> --dry-run`、`/pause`、`/resume`。
 
@@ -225,7 +270,10 @@ runtime 使用类型化 ConfigV2。项目配置文件：
 .natalia/config.json
 ```
 
-Settings Center 支持 provider/model、runtime、context、checkpoint、browser/network、MCP、skills/plugins、workspace、agent modes 与 permission profiles。设置以最小 scope overlay 保存，并在写入前经过 schema validation。
+Settings Center（Ctrl+,）覆盖 provider/model、runtime（max steps、retry、
+checkpoints）、browser/network、MCP、extensions（skills/plugins）、workspace、
+agent modes、permission profiles 与 TUI preferences。设置以最小 scope overlay
+保存，并在写入前经过 schema validation。
 
 ### 安全说明
 
