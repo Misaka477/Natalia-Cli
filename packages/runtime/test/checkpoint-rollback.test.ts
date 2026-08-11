@@ -23,6 +23,27 @@ import {
   type CheckpointRuntimeResource,
 } from "../src";
 
+/**
+ * These fixtures create filesystem symlinks, which Windows refuses without
+ * Developer Mode or an elevated process. The behaviour under test is the
+ * ledger's handling of symlinked entries, so the tests are skipped when the
+ * machine cannot create symlinks rather than failing on setup.
+ */
+const symlinkSupported = await probeSymlinkSupport();
+const symlinkTest = symlinkSupported ? test : test.skip;
+
+async function probeSymlinkSupport(): Promise<boolean> {
+  const root = await mkdtemp(join(tmpdir(), "natalia-symlink-probe-"));
+  try {
+    await symlink("target", join(root, "link"));
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await rm(root, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
 // Python is only a stand-in for "a real external program wrote and ran a file
 // here", not a subject of these tests. The interpreter is named `python3` on
 // most POSIX distributions and `python` on Windows, so resolve whichever
@@ -122,60 +143,67 @@ test("default baseline, user scenario rollback and session restore remain durabl
   expect(await readFile(join(root, "test_example.py"), "utf8")).toContain("ok");
 });
 
-test("manifest tracks modify delete rename mode symlink and reuses objects", async () => {
-  const root = await tempWorkspace();
-  const ledger = new ContextLedger();
-  await writeFile(join(root, "a.txt"), "same\n");
-  await writeFile(join(root, "delete.txt"), "remove\n");
-  await mkdir(join(root, "dir"));
-  await writeFile(join(root, "dir", "target.txt"), "target\n");
-  await symlink("dir/target.txt", join(root, "link.txt"));
-  const store = await initializeDefaultCheckpointStore({
-    sessionID: "ses_manifest",
-    workspaceRoot: root,
-    context: ledger,
-  });
-  const baseline = (await store.list())[0];
-  expect(baseline?.manifest.entries["link.txt"]?.kind).toBe("symlink");
+symlinkTest(
+  "manifest tracks modify delete rename mode symlink and reuses objects",
+  async () => {
+    const root = await tempWorkspace();
+    const ledger = new ContextLedger();
+    await writeFile(join(root, "a.txt"), "same\n");
+    await writeFile(join(root, "delete.txt"), "remove\n");
+    await mkdir(join(root, "dir"));
+    await writeFile(join(root, "dir", "target.txt"), "target\n");
+    await symlink("dir/target.txt", join(root, "link.txt"));
+    const store = await initializeDefaultCheckpointStore({
+      sessionID: "ses_manifest",
+      workspaceRoot: root,
+      context: ledger,
+    });
+    const baseline = (await store.list())[0];
+    expect(baseline?.manifest.entries["link.txt"]?.kind).toBe("symlink");
 
-  await writeFile(join(root, "a.txt"), "changed\n");
-  await rm(join(root, "delete.txt"));
-  await rename(join(root, "dir", "target.txt"), join(root, "renamed.txt"));
-  await chmod(join(root, "a.txt"), 0o755);
-  await store.createCheckpoint({ reason: "manual", context: ledger, step: 1 });
-  const changed = (await store.list()).at(-1)!;
-  expect(changed.changes.map((change) => change.kind)).toEqual(
-    expect.arrayContaining(["modify", "delete", "rename", "mode"]),
-  );
-  expect(changed.manifest.entries["link.txt"]?.kind).toBe("symlink");
-  await store.rollbackTo("checkpoint_0", { context: ledger });
-  expect(await readFile(join(root, "a.txt"), "utf8")).toBe("same\n");
-  expect((await lstat(join(root, "a.txt"))).mode & 0o777).toBe(0o644);
-  expect(await readFile(join(root, "delete.txt"), "utf8")).toBe("remove\n");
-  expect((await lstat(join(root, "link.txt"))).isSymbolicLink()).toBe(true);
+    await writeFile(join(root, "a.txt"), "changed\n");
+    await rm(join(root, "delete.txt"));
+    await rename(join(root, "dir", "target.txt"), join(root, "renamed.txt"));
+    await chmod(join(root, "a.txt"), 0o755);
+    await store.createCheckpoint({
+      reason: "manual",
+      context: ledger,
+      step: 1,
+    });
+    const changed = (await store.list()).at(-1)!;
+    expect(changed.changes.map((change) => change.kind)).toEqual(
+      expect.arrayContaining(["modify", "delete", "rename", "mode"]),
+    );
+    expect(changed.manifest.entries["link.txt"]?.kind).toBe("symlink");
+    await store.rollbackTo("checkpoint_0", { context: ledger });
+    expect(await readFile(join(root, "a.txt"), "utf8")).toBe("same\n");
+    expect((await lstat(join(root, "a.txt"))).mode & 0o777).toBe(0o644);
+    expect(await readFile(join(root, "delete.txt"), "utf8")).toBe("remove\n");
+    expect((await lstat(join(root, "link.txt"))).isSymbolicLink()).toBe(true);
 
-  await store.gcObjects(true);
-  const buckets = await readdir(
-    join(root, ".natalia", "checkpoints", "ses_manifest", "objects"),
-  );
-  const hashes = (
-    await Promise.all(
-      buckets.map((bucket) =>
-        readdir(
-          join(
-            root,
-            ".natalia",
-            "checkpoints",
-            "ses_manifest",
-            "objects",
-            bucket,
+    await store.gcObjects(true);
+    const buckets = await readdir(
+      join(root, ".natalia", "checkpoints", "ses_manifest", "objects"),
+    );
+    const hashes = (
+      await Promise.all(
+        buckets.map((bucket) =>
+          readdir(
+            join(
+              root,
+              ".natalia",
+              "checkpoints",
+              "ses_manifest",
+              "objects",
+              bucket,
+            ),
           ),
         ),
-      ),
-    )
-  ).flat();
-  expect(new Set(hashes).size).toBe(hashes.length);
-});
+      )
+    ).flat();
+    expect(new Set(hashes).size).toBe(hashes.length);
+  },
+);
 
 test("concurrent checkpoint creation assigns unique durable sequences", async () => {
   const root = await tempWorkspace();
@@ -218,98 +246,109 @@ test("rollback refuses to mutate when its safety checkpoint is incomplete", asyn
   expect(await readFile(join(root, "second.txt"), "utf8")).toBe("second\n");
 });
 
-test("incomplete checkpoint and ignored files are visible and guarded", async () => {
-  const root = await tempWorkspace();
-  const ledger = new ContextLedger();
-  await writeFile(join(root, "tracked.txt"), "tracked\n");
-  await writeFile(join(root, "ignored.log"), "ignored\n");
-  await symlink("/tmp", join(root, "escape"));
-  const events: RuntimeEvent[] = [];
-  const store = await CheckpointStore.open({
-    sessionID: "ses_incomplete",
-    workspaceRoot: root,
-    ignore: ["*.log", "ignored.log"],
-    additionalDirs: ["../outside"],
-    onEvent: (event) => events.push(event),
-  });
-  const record = await store.createCheckpoint({
-    reason: "manual",
-    context: ledger,
-    step: 1,
-  });
-  expect(record.complete).toBe(false);
-  expect(record.errors.join("\n")).toContain("symlink outside");
-  expect(record.errors.join("\n")).toContain(
-    "additional directory is outside the managed workspace",
-  );
-  expect(record.manifest.entries["ignored.log"]).toBeUndefined();
-  expect(events.map((event) => event.type)).toContain("checkpoint.failed");
-  expect(events.map((event) => event.type)).not.toContain("checkpoint.created");
-  const failed = events.find(
-    (event): event is Extract<RuntimeEvent, { type: "checkpoint.failed" }> =>
-      event.type === "checkpoint.failed",
-  );
-  expect(failed?.errors).toEqual(
-    expect.arrayContaining([
-      "checkpoint contains a symlink outside the managed workspace",
-    ]),
-  );
-  expect(JSON.stringify(failed)).not.toContain("escape");
-  expect(JSON.stringify(failed)).not.toContain("/tmp");
-  await expect(
-    store.rollbackTo(record.id, { context: ledger }),
-  ).rejects.toThrow("incomplete");
-});
+symlinkTest(
+  "incomplete checkpoint and ignored files are visible and guarded",
+  async () => {
+    const root = await tempWorkspace();
+    const ledger = new ContextLedger();
+    await writeFile(join(root, "tracked.txt"), "tracked\n");
+    await writeFile(join(root, "ignored.log"), "ignored\n");
+    await symlink("/tmp", join(root, "escape"));
+    const events: RuntimeEvent[] = [];
+    const store = await CheckpointStore.open({
+      sessionID: "ses_incomplete",
+      workspaceRoot: root,
+      ignore: ["*.log", "ignored.log"],
+      additionalDirs: ["../outside"],
+      onEvent: (event) => events.push(event),
+    });
+    const record = await store.createCheckpoint({
+      reason: "manual",
+      context: ledger,
+      step: 1,
+    });
+    expect(record.complete).toBe(false);
+    expect(record.errors.join("\n")).toContain("symlink outside");
+    expect(record.errors.join("\n")).toContain(
+      "additional directory is outside the managed workspace",
+    );
+    expect(record.manifest.entries["ignored.log"]).toBeUndefined();
+    expect(events.map((event) => event.type)).toContain("checkpoint.failed");
+    expect(events.map((event) => event.type)).not.toContain(
+      "checkpoint.created",
+    );
+    const failed = events.find(
+      (event): event is Extract<RuntimeEvent, { type: "checkpoint.failed" }> =>
+        event.type === "checkpoint.failed",
+    );
+    expect(failed?.errors).toEqual(
+      expect.arrayContaining([
+        "checkpoint contains a symlink outside the managed workspace",
+      ]),
+    );
+    expect(JSON.stringify(failed)).not.toContain("escape");
+    expect(JSON.stringify(failed)).not.toContain("/tmp");
+    await expect(
+      store.rollbackTo(record.id, { context: ledger }),
+    ).rejects.toThrow("incomplete");
+  },
+);
 
-test("large ignored workspace fixtures do not make a durable checkpoint incomplete", async () => {
-  const root = await tempWorkspace();
-  const ledger = new ContextLedger();
-  const events: Array<
-    Extract<RuntimeEvent, { type: "checkpoint.created" | "checkpoint.failed" }>
-  > = [];
-  await mkdir(join(root, "source"), { recursive: true });
-  await mkdir(join(root, "fixture-output"), { recursive: true });
-  await writeFile(join(root, ".gitignore"), "/fixture-output\n");
-  await Promise.all(
-    Array.from({ length: 750 }, (_, index) =>
-      writeFile(join(root, "source", `${index}.txt`), `entry ${index}\n`),
-    ),
-  );
-  await symlink(
-    "/not-a-managed-target",
-    join(root, "fixture-output", "broken"),
-  );
-  const store = await initializeDefaultCheckpointStore({
-    sessionID: "ses_checkpoint_large_ignored_fixture",
-    workspaceRoot: root,
-    context: ledger,
-    onEvent: (event) => {
-      if (
-        event.type === "checkpoint.created" ||
-        event.type === "checkpoint.failed"
-      )
-        events.push(event);
-    },
-  });
+symlinkTest(
+  "large ignored workspace fixtures do not make a durable checkpoint incomplete",
+  async () => {
+    const root = await tempWorkspace();
+    const ledger = new ContextLedger();
+    const events: Array<
+      Extract<
+        RuntimeEvent,
+        { type: "checkpoint.created" | "checkpoint.failed" }
+      >
+    > = [];
+    await mkdir(join(root, "source"), { recursive: true });
+    await mkdir(join(root, "fixture-output"), { recursive: true });
+    await writeFile(join(root, ".gitignore"), "/fixture-output\n");
+    await Promise.all(
+      Array.from({ length: 750 }, (_, index) =>
+        writeFile(join(root, "source", `${index}.txt`), `entry ${index}\n`),
+      ),
+    );
+    await symlink(
+      "/not-a-managed-target",
+      join(root, "fixture-output", "broken"),
+    );
+    const store = await initializeDefaultCheckpointStore({
+      sessionID: "ses_checkpoint_large_ignored_fixture",
+      workspaceRoot: root,
+      context: ledger,
+      onEvent: (event) => {
+        if (
+          event.type === "checkpoint.created" ||
+          event.type === "checkpoint.failed"
+        )
+          events.push(event);
+      },
+    });
 
-  const [baseline] = await store.list();
-  expect(baseline).toMatchObject({ complete: true });
-  expect(Object.keys(baseline!.manifest.entries)).toHaveLength(751);
-  expect(baseline!.manifest.entries["fixture-output/broken"]).toBeUndefined();
-  expect(events).toEqual([
-    expect.objectContaining({ type: "checkpoint.created", complete: true }),
-  ]);
-  expect(
-    await store.previewRollback("checkpoint_0", ledger, [], true),
-  ).toMatchObject({
-    checkpointID: "checkpoint_0",
-    complete: true,
-    dryRun: true,
-  });
-  expect(
-    await store.rollbackTo("checkpoint_0", { context: ledger, dryRun: true }),
-  ).toMatchObject({ complete: true, dryRun: true });
-});
+    const [baseline] = await store.list();
+    expect(baseline).toMatchObject({ complete: true });
+    expect(Object.keys(baseline!.manifest.entries)).toHaveLength(751);
+    expect(baseline!.manifest.entries["fixture-output/broken"]).toBeUndefined();
+    expect(events).toEqual([
+      expect.objectContaining({ type: "checkpoint.created", complete: true }),
+    ]);
+    expect(
+      await store.previewRollback("checkpoint_0", ledger, [], true),
+    ).toMatchObject({
+      checkpointID: "checkpoint_0",
+      complete: true,
+      dryRun: true,
+    });
+    expect(
+      await store.rollbackTo("checkpoint_0", { context: ledger, dryRun: true }),
+    ).toMatchObject({ complete: true, dryRun: true });
+  },
+);
 
 test("rollback failure restores safety checkpoint for workspace and context", async () => {
   const root = await tempWorkspace();

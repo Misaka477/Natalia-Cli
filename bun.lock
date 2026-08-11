@@ -28,7 +28,6 @@
         "@natalia/platform": "workspace:*",
         "@natalia/runtime": "workspace:*",
         "@natalia/session": "workspace:*",
-        "@natalia/terminal": "workspace:*",
         "@natalia/transport": "workspace:*",
         "@natalia/workflow": "workspace:*",
       },
@@ -44,7 +43,6 @@
         "@natalia/platform": "workspace:*",
         "@natalia/plugin": "workspace:*",
         "@natalia/session": "workspace:*",
-        "@natalia/terminal": "workspace:*",
         "@natalia/testing": "workspace:*",
         "@natalia/ui-model": "workspace:*",
         "@natalia/view-store": "workspace:*",
@@ -216,7 +214,6 @@
         "@natalia/platform": "workspace:*",
         "@natalia/sandbox": "workspace:*",
         "@natalia/subagent": "workspace:*",
-        "@natalia/terminal": "workspace:*",
       },
     },
     "packages/transport": {

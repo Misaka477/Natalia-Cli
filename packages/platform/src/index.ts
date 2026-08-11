@@ -379,15 +379,23 @@ export async function forceRemove(
   const remove = input.rm ?? nodeRm;
   const options = { force: true, recursive: input.recursive ?? false };
   if (!isWindows(input.os)) return await remove(path, options);
-  try {
-    return await remove(path, options);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EPERM") throw error;
-    // Read-only attribute: clear it and retry once rather than failing a
-    // rollback that has already mutated part of the workspace.
-    await (input.chmod ?? nodeChmod)(path, 0o666).catch(() => undefined);
-    return await remove(path, options);
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try {
+      return await remove(path, options);
+    } catch (error) {
+      lastError = error;
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES")
+        throw error;
+      // Read-only attribute: clear it, then retry. EBUSY is a transient lock
+      // (a just-exited child still releasing its working-directory handle);
+      // the backoff spans several seconds so a slow child exit clears it.
+      await (input.chmod ?? nodeChmod)(path, 0o666).catch(() => undefined);
+      await Bun.sleep(100 * (attempt + 1));
+    }
   }
+  throw lastError;
 }
 
 async function nodeSymlink(

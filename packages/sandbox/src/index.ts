@@ -354,7 +354,7 @@ export class WorkspaceSandboxManager
     for (const resourceID of manifest.runningResources)
       await this.stopResource(id, resourceID).catch(() => undefined);
     this.sandboxes.delete(id);
-    await rm(manifest.root, { recursive: true, force: true });
+    await forceRemove(manifest.root, { recursive: true });
     return result;
   }
 

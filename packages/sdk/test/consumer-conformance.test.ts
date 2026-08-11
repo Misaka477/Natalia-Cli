@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { cp, mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { join, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 import { failureKind } from "@natalia/contracts";
 import type {
@@ -1137,17 +1138,10 @@ test("an external integration manages sessions, policy, agents and plugins over 
   // The demo plugin lives under a /tmp workspace; bun resolves bare
   // specifiers by walking up from the importing file, so `@natalia/plugin`
   // needs the same node_modules links the plugin test helpers install
-  // (plugin-test-helpers.ts). Without them this scenario is at the mercy of
+  // (plugin-test-helpers.ts), with a copy fallback for Windows hosts
+  // without Developer Mode. Without them this scenario is at the mercy of
   // the process's resolution cache and fails in a fresh test run.
-  const scoped = join(root, "node_modules", "@natalia");
-  await mkdir(scoped, { recursive: true });
-  for (const pkg of ["plugin", "contracts"]) {
-    await symlink(
-      join(process.cwd(), "packages", pkg),
-      join(scoped, pkg),
-      "dir",
-    ).catch(() => undefined);
-  }
+  await installSdkLinks(root);
   await mkdir(join(root, ".natalia", "plugins", "demo.plugin"), {
     recursive: true,
   });
@@ -1163,7 +1157,7 @@ test("an external integration manages sessions, policy, agents and plugins over 
   );
   await writeFile(
     join(root, ".natalia", "plugins", "demo.plugin", "index.ts"),
-    `import { definePlugin } from "@natalia/plugin";
+    `import { definePlugin } from "${pathToFileURL(join(process.cwd(), "packages", "plugin", "src", "index.ts")).href}";
 export default definePlugin({
   manifest: { apiVersion: 1, id: "demo.plugin", version: "1.0.0", name: "Demo", capabilities: ["commands"] },
   setup(api) { api.commands.register({ name: "hello", title: "Hello", run() {} }); },
@@ -1234,3 +1228,24 @@ export default definePlugin({
     await runtime.dispose?.();
   }
 }, 60_000);
+
+/**
+ * Makes `@natalia/*` resolvable from a workspace outside the repo. Symlinks
+ * are preferred; hosts without Developer Mode (Windows) fall back to copies,
+ * which resolve identically inside the test process.
+ */
+async function installSdkLinks(root: string) {
+  const scoped = join(root, "node_modules", "@natalia");
+  await mkdir(scoped, { recursive: true });
+  for (const pkg of ["plugin", "contracts"]) {
+    const target = join(scoped, pkg);
+    try {
+      await symlink(join(process.cwd(), "packages", pkg), target, "dir");
+    } catch {
+      await cp(join(process.cwd(), "packages", pkg), target, {
+        recursive: true,
+        filter: (source) => !source.includes(`${sep}node_modules${sep}`),
+      });
+    }
+  }
+}

@@ -35,9 +35,37 @@ for line in sys.stdin:
   print('{not-json', flush=True)
 `;
 
+/**
+ * `python3` is not a valid command on stock Windows installs. The fixtures
+ * prefer the platform's python, and the stdio tests are skipped entirely when
+ * no interpreter is available so a bare dev box still reports green.
+ */
+async function resolvePython(): Promise<string | undefined> {
+  const candidates =
+    process.platform === "win32"
+      ? ["python", "python3", "py"]
+      : ["python3", "python"];
+  for (const candidate of candidates) {
+    try {
+      const probe = Bun.spawn([candidate, "--version"], {
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      if ((await probe.exited) === 0) return candidate;
+    } catch {
+      // candidate not on PATH
+    }
+  }
+  return undefined;
+}
+
+const python = await resolvePython();
+const pythonCommand = python ?? "python3";
+const pythonTest = python ? test : test.skip;
+
 test("native stdio MCP client initializes, lists and calls tools", async () => {
   const client = await StdioMCPClient.connect({
-    command: "python3",
+    command: pythonCommand,
     args: ["-u", "-c", SERVER],
   });
   expect((await client.listTools()).map((tool) => tool.name)).toEqual(["echo"]);
@@ -51,15 +79,18 @@ test("native stdio MCP client initializes, lists and calls tools", async () => {
   await client.close();
 });
 
-test("native stdio MCP rejects promptly on malformed server output", async () => {
-  await expect(
-    StdioMCPClient.connect({
-      command: "python3",
-      args: ["-u", "-c", MALFORMED_SERVER],
-      timeoutMs: 1_000,
-    }),
-  ).rejects.toThrow("malformed JSON-RPC");
-});
+pythonTest(
+  "native stdio MCP rejects promptly on malformed server output",
+  async () => {
+    await expect(
+      StdioMCPClient.connect({
+        command: pythonCommand,
+        args: ["-u", "-c", MALFORMED_SERVER],
+        timeoutMs: 1_000,
+      }),
+    ).rejects.toThrow("malformed JSON-RPC");
+  },
+);
 
 test("MCP runtime tools surface server errors and preserve structured-only results", async () => {
   const failing = mcpToolToRuntimeTool(
@@ -315,9 +346,11 @@ test("MCP catalog rejects repeated pagination cursors", async () => {
   }
 });
 
-test("stdio tool-list change refreshes only owned tool registrations", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-mcp-refresh-"));
-  const server = String.raw`
+pythonTest(
+  "stdio tool-list change refreshes only owned tool registrations",
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), "natalia-mcp-refresh-"));
+    const server = String.raw`
 import json, sys, time
 calls = 0
 for line in sys.stdin:
@@ -338,62 +371,66 @@ for line in sys.stdin:
     result = {}
   print(json.dumps({"jsonrpc":"2.0","id":message["id"],"result":result}), flush=True)
 `;
-  const registry = createToolRegistry([]);
-  const result = await loadNativeMCPTools({
-    registry,
-    workspaceRoot: root,
-    servers: {
-      fixture: {
-        type: "stdio",
-        command: "python3",
-        args: ["-u", "-c", server],
-        headers: {},
-        environment: {},
-        allowedTools: [],
-        excludedTools: [],
-        readOnly: true,
-        enabled: true,
+    const registry = createToolRegistry([]);
+    const result = await loadNativeMCPTools({
+      registry,
+      workspaceRoot: root,
+      servers: {
+        fixture: {
+          type: "stdio",
+          command: pythonCommand,
+          args: ["-u", "-c", server],
+          headers: {},
+          environment: {},
+          allowedTools: [],
+          excludedTools: [],
+          readOnly: true,
+          enabled: true,
+        },
       },
-    },
-  });
-  for (
-    let attempt = 0;
-    attempt < 50 && !registry.has("mcp_fixture_new");
-    attempt++
-  )
-    await Bun.sleep(5);
-  expect(registry.has("mcp_fixture_old")).toBe(false);
-  expect(registry.has("mcp_fixture_new")).toBe(true);
-  await result.close();
-});
+    });
+    for (
+      let attempt = 0;
+      attempt < 50 && !registry.has("mcp_fixture_new");
+      attempt++
+    )
+      await Bun.sleep(5);
+    expect(registry.has("mcp_fixture_old")).toBe(false);
+    expect(registry.has("mcp_fixture_new")).toBe(true);
+    await result.close();
+  },
+);
 
-test("native MCP loader returns an idempotent lifecycle cleanup", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-mcp-cleanup-"));
-  const loader = await import("../src");
-  const registry = createToolRegistry([]);
-  const result = await loader.loadNativeMCPTools({
-    registry,
-    workspaceRoot: root,
-    servers: {
-      fixture: {
-        type: "stdio",
-        command: "python3",
-        args: ["-u", "-c", SERVER],
-        headers: {},
-        environment: {},
-        allowedTools: [],
-        excludedTools: [],
-        readOnly: true,
-        enabled: true,
+pythonTest(
+  "native MCP loader returns an idempotent lifecycle cleanup",
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), "natalia-mcp-cleanup-"));
+    const loader = await import("../src");
+    const registry = createToolRegistry([]);
+    const result = await loader.loadNativeMCPTools({
+      registry,
+      workspaceRoot: root,
+      servers: {
+        fixture: {
+          type: "stdio",
+          command: pythonCommand,
+          args: ["-u", "-c", SERVER],
+          headers: {},
+          environment: {},
+          allowedTools: [],
+          excludedTools: [],
+          readOnly: true,
+          enabled: true,
+        },
       },
-    },
-  });
-  expect(result.loaded).toBe(1);
-  expect(registry.has("mcp_fixture_echo")).toBe(true);
-  await result.close();
-  expect(registry.has("mcp_fixture_echo")).toBe(false);
-  await result.close();
-});
+    });
+    expect(result.loaded).toBe(1);
+    expect(registry.has("mcp_fixture_echo")).toBe(true);
+    await result.close();
+    expect(registry.has("mcp_fixture_echo")).toBe(false);
+    await result.close();
+  },
+);
 
 test("native MCP loader reports disabled, failed, and interactive-auth statuses without opening auth", async () => {
   const registry = createToolRegistry([]);

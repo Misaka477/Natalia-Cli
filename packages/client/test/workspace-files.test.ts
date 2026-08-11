@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { watch } from "node:fs";
-import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,29 +14,52 @@ import {
   watchWorkspaceFiles,
 } from "../src/workspace-files";
 
-test("workspace files stay contained and exclude internal directories", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-workspace-files-"));
-  const outside = await mkdtemp(
-    join(tmpdir(), "natalia-workspace-files-outside-"),
-  );
-  await mkdir(join(root, "src"), { recursive: true });
-  await mkdir(join(root, "node_modules", "pkg"), { recursive: true });
-  await writeFile(join(root, "src", "model.ts"), "export {}\n");
-  await writeFile(join(root, "node_modules", "pkg", "hidden.ts"), "hidden\n");
-  await writeFile(join(outside, "secret.ts"), "secret\n");
-  await symlink(outside, join(root, "outside"));
-  expect(
-    await findWorkspaceFiles({ workspaceRoot: root, query: "mod" }),
-  ).toEqual([{ path: "src/model.ts", type: "file" }]);
-  expect(await findWorkspaceFiles({ workspaceRoot: root })).not.toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        path: expect.stringContaining("node_modules"),
-      }),
-      expect.objectContaining({ path: expect.stringContaining("outside") }),
-    ]),
-  );
-});
+/**
+ * Symlink fixtures are skipped when the machine cannot create symlinks
+ * (Windows without Developer Mode), because the containment rules under test
+ * cannot be exercised without them.
+ */
+const symlinkSupported = await probeSymlinkSupport();
+const symlinkTest = symlinkSupported ? test : test.skip;
+
+async function probeSymlinkSupport(): Promise<boolean> {
+  const root = await mkdtemp(join(tmpdir(), "natalia-symlink-probe-"));
+  try {
+    await symlink("target", join(root, "link"));
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await rm(root, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+symlinkTest(
+  "workspace files stay contained and exclude internal directories",
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), "natalia-workspace-files-"));
+    const outside = await mkdtemp(
+      join(tmpdir(), "natalia-workspace-files-outside-"),
+    );
+    await mkdir(join(root, "src"), { recursive: true });
+    await mkdir(join(root, "node_modules", "pkg"), { recursive: true });
+    await writeFile(join(root, "src", "model.ts"), "export {}\n");
+    await writeFile(join(root, "node_modules", "pkg", "hidden.ts"), "hidden\n");
+    await writeFile(join(outside, "secret.ts"), "secret\n");
+    await symlink(outside, join(root, "outside"));
+    expect(
+      await findWorkspaceFiles({ workspaceRoot: root, query: "mod" }),
+    ).toEqual([{ path: "src/model.ts", type: "file" }]);
+    expect(await findWorkspaceFiles({ workspaceRoot: root })).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: expect.stringContaining("node_modules"),
+        }),
+        expect.objectContaining({ path: expect.stringContaining("outside") }),
+      ]),
+    );
+  },
+);
 
 test("workspace file catalog avoids repeated scans until invalidated", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-workspace-files-cache-"));
@@ -369,7 +392,7 @@ test("workspace gitignore changes apply after catalog invalidation", async () =>
   );
 });
 
-test("workspace catalog ignores symlink cycles", async () => {
+symlinkTest("workspace catalog ignores symlink cycles", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-workspace-cycle-"));
   await mkdir(join(root, "src", "nested"), { recursive: true });
   await writeFile(join(root, "src", "model.ts"), "export {}\n");

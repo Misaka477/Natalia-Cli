@@ -1,8 +1,35 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, stat, symlink, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { WorkspaceSandboxManager, containPath, isSecretEnvKey } from "../src";
+
+/**
+ * The symlink fixtures are skipped when the machine cannot create symlinks
+ * (Windows without Developer Mode); the containment rule is unexercisable
+ * without one.
+ */
+const symlinkSupported = await probeSymlinkSupport();
+const symlinkTest = symlinkSupported ? test : test.skip;
+
+async function probeSymlinkSupport(): Promise<boolean> {
+  const root = await mkdtemp(join(tmpdir(), "natalia-symlink-probe-"));
+  try {
+    await symlink("target", join(root, "link"));
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await rm(root, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
 
 test("sandbox containment blocks absolute and parent escape", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-sandbox-"));
@@ -11,7 +38,7 @@ test("sandbox containment blocks absolute and parent escape", async () => {
   await expect(containPath(root, "safe/file.txt")).resolves.toContain(root);
 });
 
-test("sandbox containment blocks symlink escape", async () => {
+symlinkTest("sandbox containment blocks symlink escape", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-sandbox-"));
   await symlink("/tmp", join(root, "out"));
   await expect(containPath(root, "out/file.txt")).rejects.toThrow(
@@ -138,7 +165,10 @@ test("sandbox merge applies rename content and mode without orphaning host files
   expect(await readFile(join(host, "new.ts"), "utf8")).toBe(
     "sandbox content\n",
   );
-  expect((await stat(join(host, "script.sh"))).mode & 0o111).not.toBe(0);
+  // Windows file modes are advisory: chmod cannot set an execute bit there,
+  // so the mode-change assertion applies on platforms where modes are real.
+  if (process.platform !== "win32")
+    expect((await stat(join(host, "script.sh"))).mode & 0o111).not.toBe(0);
   expect(await readFile(join(host, "script.sh"), "utf8")).toBe("#!/bin/sh\n");
 });
 
@@ -172,7 +202,12 @@ test("sandbox executes a real command inside its workspace target", async () => 
   const result = await manager.execute("box", "pwd; printf sandbox-ok");
   expect(result.exitCode).toBe(0);
   expect(result.output).toContain("sandbox-ok");
-  expect(result.output).toContain(join(base, "box"));
+  // Git Bash reports the MSYS-translated path on Windows (/tmp/...), so the
+  // assertion checks for the sandbox directory segments instead of the exact
+  // host spelling there.
+  if (process.platform === "win32")
+    expect(result.output).toContain("natalia-sandbox-base");
+  else expect(result.output).toContain(join(base, "box"));
   expect(result.target).toMatchObject({ kind: "sandbox", sandboxID: "box" });
 });
 

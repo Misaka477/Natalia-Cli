@@ -12,7 +12,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "npx bun test test/*.test.ts --timeout 60000"
+    "test": "npx bun test test --timeout 60000"
   },
   "dependencies": {
     "@natalia/agent": "workspace:*",

@@ -114,7 +114,15 @@ test("writes settings mutations to the requested config scope", async () => {
   );
   const home = await mkdtemp(join(tmpdir(), "natalia-config-write-home-"));
   const previousHome = process.env.HOME;
+  const previousAppData = process.env.APPDATA;
+  const previousUserProfile = process.env.USERPROFILE;
+  // Global-scope resolution reads HOME on POSIX and APPDATA on Windows, so
+  // the fixture points the platform's own variable at the temp home.
   process.env.HOME = home;
+  if (process.platform === "win32") {
+    process.env.APPDATA = home;
+    process.env.USERPROFILE = home;
+  }
   try {
     await updateConfigAtScope(
       workspaceRoot,
@@ -129,12 +137,11 @@ test("writes settings mutations to the requested config scope", async () => {
     const project = JSON.parse(
       await readFile(join(workspaceRoot, ".natalia", "config.json"), "utf8"),
     );
-    const global = JSON.parse(
-      await readFile(
-        join(home, ".config", "natalia-cli", "config.json"),
-        "utf8",
-      ),
-    );
+    const globalConfigPath =
+      process.platform === "win32"
+        ? join(home, "natalia-cli", "config.json")
+        : join(home, ".config", "natalia-cli", "config.json");
+    const global = JSON.parse(await readFile(globalConfigPath, "utf8"));
     expect(project).toEqual({ runtime: { maxStepsPerTurn: 7 } });
     expect(global).toEqual({ context: { compactionThresholdPercent: 91 } });
     const resolved = await resolveConfig({ workspaceRoot });
@@ -143,6 +150,10 @@ test("writes settings mutations to the requested config scope", async () => {
   } finally {
     if (previousHome === undefined) delete process.env.HOME;
     else process.env.HOME = previousHome;
+    if (previousAppData === undefined) delete process.env.APPDATA;
+    else process.env.APPDATA = previousAppData;
+    if (previousUserProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = previousUserProfile;
     await rm(workspaceRoot, { recursive: true, force: true });
     await rm(home, { recursive: true, force: true });
   }

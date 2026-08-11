@@ -169,7 +169,7 @@ for (const dir of consumerContractRoots)
   });
 for (const dir of deepImportRoots)
   await scan(join(root, dir), sourceExtensions, (full, text) => {
-    const relative = full.slice(root.length + 1);
+    const relative = full.slice(root.length + 1).replaceAll("\\", "/");
     if (
       transportHostImport.test(text) &&
       !testPath.test(relative) &&
@@ -229,7 +229,7 @@ for (const entry of await readdir(join(root, "packages"), {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   if (!hasTests) continue;
-  if (!gatedTests.includes(`packages/${entry.name}/test/`))
+  if (!gatedTests.includes(`packages/${entry.name}/test`))
     failures.push(
       `packages/${entry.name}/test has tests that the root "test" script never runs`,
     );

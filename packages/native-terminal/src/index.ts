@@ -165,6 +165,7 @@ export function nativeTerminalPaneCommand(
 
 export function createWezTermHost(
   input: {
+    os?: NodeJS.Platform;
     executable?: string;
     run?: CommandRunner;
     configFile?: string;
@@ -182,6 +183,10 @@ export function createWezTermHost(
     muxDomain?: string;
   } = {},
 ): NativeTerminalHost {
+  // A deployment under test may be POSIX-shaped while the host machine is
+  // Windows; the host's own os lets fixtures keep exercising the POSIX
+  // launcher paths instead of silently falling into the native branch.
+  const os = input.os ?? platform();
   // An explicit override is reserved for controlled diagnostics. The managed
   // current-main fork build is the normal host when available.
   const executable =
@@ -208,7 +213,7 @@ export function createWezTermHost(
   const global = configFile ? ["--config-file", configFile] : [];
   const muxServer = join(
     dirname(executable),
-    executableName("wezterm-mux-server"),
+    executableName("wezterm-mux-server", os),
   );
   const privateEnvironment = {
     ...input.environment,
@@ -226,7 +231,7 @@ export function createWezTermHost(
     muxReady ??= (async () => {
       if (await muxIsReady()) return;
       await measure("native.mux.start", async () => {
-        if (isWindows()) {
+        if (isWindows(os)) {
           // `--daemonize` relies on a DETACHED_PROCESS create that can leave the
           // parent waiting on the cross-compiled binary, so the server is
           // spawned directly and its readiness is polled instead. Its streams

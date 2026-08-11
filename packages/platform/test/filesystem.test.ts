@@ -113,7 +113,7 @@ describe("forceRemove", () => {
     expect(chmods).toEqual([["C:\\work\\file.txt", 0o666]]);
   });
 
-  test("Windows does not retry a non-EPERM failure", async () => {
+  test("Windows retries transient lock failures then rethrows", async () => {
     let attempts = 0;
     await expect(
       forceRemove("C:\\work\\file.txt", {
@@ -124,6 +124,8 @@ describe("forceRemove", () => {
         },
       }),
     ).rejects.toThrow("busy");
-    expect(attempts).toBe(1);
+    // EBUSY/EACCES are transient locks (a just-exited child or an in-flight
+    // reader), so removal is retried with a backoff before giving up.
+    expect(attempts).toBe(10);
   });
 });

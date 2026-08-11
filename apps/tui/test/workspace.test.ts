@@ -17,10 +17,13 @@ test("TUI resolves the nearest Git project root rather than its package director
 });
 
 test("TUI workspace override wins over Git discovery", async () => {
-  expect(
-    await resolveTuiWorkspaceRoot({
-      cwd: "/ignored",
-      override: "/tmp/natalia-explicit-workspace",
-    }),
-  ).toBe("/tmp/natalia-explicit-workspace");
+  // An explicit override is used as given; `/tmp/...` is POSIX-shaped, so the
+  // fixture spells the absolute path the host platform actually understands.
+  const override =
+    process.platform === "win32"
+      ? join(tmpdir(), "natalia-explicit-workspace")
+      : "/tmp/natalia-explicit-workspace";
+  expect(await resolveTuiWorkspaceRoot({ cwd: "/ignored", override })).toBe(
+    override,
+  );
 });

@@ -83,7 +83,7 @@ export class JsonSessionStore {
       await writeFile(temporary, `${JSON.stringify(snapshot, null, 2)}\n`, {
         mode: 0o600,
       });
-      await fsRename(temporary, this.path(snapshot.id));
+      await renameSessionFile(temporary, this.path(snapshot.id));
     };
     const queued = this.writeQueue.then(write, write);
     this.writeQueue = queued.catch(() => undefined);
@@ -212,6 +212,40 @@ export class JsonSessionStore {
 
   private path(id: SessionID) {
     return join(this.dir, `${id}.json`);
+  }
+}
+
+/**
+ * Atomically replaces the session file. POSIX rename is atomic and this returns
+ * on the first attempt. Windows rejects the rename while another client holds
+ * the target open for reading (its handle lacks FILE_SHARE_DELETE), so the
+ * overwrite is retried with a short backoff, and a direct overwrite is used as
+ * a last resort once the lock clears. Writers are already serialized by the
+ * per-store queue, so the fallback cannot interleave two updates.
+ */
+async function renameSessionFile(source: string, target: string) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await fsRename(source, target);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (
+        code !== "EPERM" &&
+        code !== "EBUSY" &&
+        code !== "EACCES" &&
+        code !== "EEXIST"
+      )
+        throw error;
+      if (attempt >= 4) {
+        await writeFile(target, await readFile(source, "utf8"), {
+          mode: 0o600,
+        });
+        await rm(source, { force: true }).catch(() => undefined);
+        return;
+      }
+      await Bun.sleep(25 * (attempt + 1));
+    }
   }
 }
 

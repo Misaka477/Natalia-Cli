@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -492,7 +492,16 @@ test("native RPC serves the same authenticated contract over temporary TLS", asy
     await rm(root, { recursive: true, force: true });
     return;
   }
-  const process = Bun.spawn(
+  // Some distributions (e.g. a conda environment with a stale install) have
+  // no usable openssl.cnf anywhere, so a minimal one is generated alongside
+  // the keys and passed explicitly. That also keeps the invocation identical
+  // across platforms.
+  const configPath = join(root, "openssl.cnf");
+  await writeFile(
+    configPath,
+    "[req]\ndistinguished_name = dn\nprompt = no\n[dn]\nCN = 127.0.0.1\n",
+  );
+  const opensslProcess = Bun.spawn(
     [
       openssl,
       "req",
@@ -504,14 +513,14 @@ test("native RPC serves the same authenticated contract over temporary TLS", asy
       keyPath,
       "-out",
       certPath,
-      "-subj",
-      "/CN=127.0.0.1",
+      "-config",
+      configPath,
       "-days",
       "1",
     ],
     { stdout: "ignore", stderr: "ignore" },
   );
-  if ((await process.exited) !== 0) {
+  if ((await opensslProcess.exited) !== 0) {
     await rm(root, { recursive: true, force: true });
     throw new Error("openssl could not create a temporary TLS certificate");
   }
