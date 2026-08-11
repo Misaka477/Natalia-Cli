@@ -825,6 +825,11 @@ function moduleRunPrompt(input: {
   flow: NataliaFlowDocument;
   module: NataliaPlannedFlowModule;
 }): string {
+  // A bare slash command (e.g. `/doctor`) is handled by the runtime's command
+  // short-circuit on exact match; wrapping it would break the match and send
+  // the task into a real turn that needs a provider. Module context is only
+  // meaningful for prompt-driven tasks.
+  if (/^\s*\/\S*\s*$/u.test(input.task.prompt)) return input.task.prompt;
   const total = input.flow.modules.length;
   const ordinal = input.flow.modules.findIndex(
     (entry) => entry.id === input.module.moduleID,

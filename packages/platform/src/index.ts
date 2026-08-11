@@ -267,9 +267,8 @@ export function processTreeKillCommand(
 export function globalConfigHome(input: PlatformInput = {}): string {
   const env = input.env ?? process.env;
   if (isWindows(input.os))
-    return usableDirectory(
-      [env.APPDATA],
-      () => win32.join(userHome(input), "AppData", "Roaming"),
+    return usableDirectory([env.APPDATA], () =>
+      win32.join(userHome(input), "AppData", "Roaming"),
     );
   return posix.join(env.HOME ?? "", ".config");
 }
@@ -281,9 +280,8 @@ export function globalConfigHome(input: PlatformInput = {}): string {
 export function userStateHome(input: PlatformInput = {}): string {
   const env = input.env ?? process.env;
   if (isWindows(input.os))
-    return usableDirectory(
-      [env.LOCALAPPDATA],
-      () => win32.join(userHome(input), "AppData", "Local"),
+    return usableDirectory([env.LOCALAPPDATA], () =>
+      win32.join(userHome(input), "AppData", "Local"),
     );
   return env.XDG_STATE_HOME ?? posix.join(env.HOME ?? ".", ".local", "state");
 }

@@ -431,6 +431,12 @@ const EVENT_TRIGGERS: Record<string, string> = {
   "terminal.timeline": "a terminal action was appended to the timeline",
   "terminal.update": "a terminal session's status or screen changed",
   "terminal.viewer": "a terminal viewer was opened; UI-only",
+  "flow.evaluator":
+    "streaming reasoning/content text from a flow module evaluator (task delivery only)",
+  "flow.finished":
+    "a flow task finished (succeeded, failed or skipped); emitted by the flow submit path",
+  "flow.module_event":
+    "a flow module's arbitration lifecycle changed (activated, claimed, evaluated, completed, blocked, stalled, continued); streamed from task delivery so the TUI can render arbitration",
   "thinking.delta": "streaming reasoning text; live only, never journaled",
   "thinking.done": "completed reasoning text; journaled",
   "tool.registered": "a tool was registered in the catalogue",
