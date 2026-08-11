@@ -785,6 +785,26 @@ type RuntimeEventData =
       id: string;
       stopReason: "done" | "cancelled" | "error";
       reason?: "missing_final_response";
+    }
+  | {
+      type: "flow.module_event";
+      kind:
+        | "activated"
+        | "claimed"
+        | "evaluated"
+        | "completed"
+        | "blocked"
+        | "stalled"
+        | "continued";
+      moduleID: string;
+      moduleType?: string;
+      outcome?: "complete" | "incomplete" | "blocked";
+      reason?: string;
+    }
+  | {
+      type: "flow.evaluator";
+      phase: "thinking" | "content";
+      text: string;
     };
 
 /**

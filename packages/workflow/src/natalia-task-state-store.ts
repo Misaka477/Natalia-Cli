@@ -109,20 +109,28 @@ export type StartTaskInvocationResult =
 export class NataliaTaskStateStore {
   readonly path: string;
   #db: Database;
+  #onModuleEvent?: (event: NataliaFlowModuleEvent) => void;
 
-  constructor(workspaceRoot: string) {
+  constructor(
+    workspaceRoot: string,
+    onModuleEvent?: (event: NataliaFlowModuleEvent) => void,
+  ) {
     this.path = resolve(workspaceRoot, ".natalia", "tasks.db");
     this.#db = new Database(this.path, { create: true });
     this.#db.exec("PRAGMA journal_mode=WAL");
     this.#db.exec("PRAGMA foreign_keys=ON");
     this.#db.exec("PRAGMA busy_timeout=5000");
+    this.#onModuleEvent = onModuleEvent;
     this.migrate();
   }
 
-  static async open(workspaceRoot: string) {
+  static async open(
+    workspaceRoot: string,
+    onModuleEvent?: (event: NataliaFlowModuleEvent) => void,
+  ) {
     const path = resolve(workspaceRoot, ".natalia", "tasks.db");
     await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-    return new NataliaTaskStateStore(workspaceRoot);
+    return new NataliaTaskStateStore(workspaceRoot, onModuleEvent);
   }
 
   close() {
@@ -1043,6 +1051,7 @@ export class NataliaTaskStateStore {
         event.at,
         JSON.stringify(event.data),
       );
+    this.#onModuleEvent?.(event);
   }
 }
 

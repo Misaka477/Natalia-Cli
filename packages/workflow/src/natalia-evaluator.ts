@@ -169,6 +169,11 @@ export async function evaluateAndRecordModule(input: {
   /** Durable config provider key used for cross-provider consent checks. */
   providerIdentity?: string;
   context: EvaluatorModuleContext;
+  /**
+   * Streams each evaluator output chunk as it is produced, so the host can
+   * surface the arbitration live instead of appearing stalled.
+   */
+  onStreamEvent?: (chunk: { type: string; text: string }) => void;
 }): Promise<EvaluatorExecutionResult> {
   const redacted = buildRedactedEvaluatorContext(input.context);
   const block = (reason: string): EvaluatorExecutionResult => {
@@ -227,6 +232,8 @@ export async function evaluateAndRecordModule(input: {
         if (chunk.type === "content") content += chunk.text;
         if (chunk.type === "tool_call")
           return block("evaluator emitted a forbidden tool call");
+        if ("text" in chunk && chunk.text)
+          input.onStreamEvent?.({ type: chunk.type, text: chunk.text });
       }
       result = parseEvaluatorResult(content, redacted.conditionIDs);
       for (const condition of result.conditions)

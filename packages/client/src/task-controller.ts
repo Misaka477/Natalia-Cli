@@ -284,7 +284,29 @@ export async function runTask(input: {
     throw new Error(
       "task execution model is unavailable in the resolved config",
     );
-  const state = await NataliaTaskStateStore.open(input.workspaceRoot);
+  const state = await NataliaTaskStateStore.open(
+    input.workspaceRoot,
+    (event) => {
+      // Module-level lifecycle (claimed/evaluated/completed/blocked/...) is
+      // otherwise only visible in tasks.db; stream it so the TUI can render
+      // the arbitration instead of looking stalled.
+      const data = event.data as {
+        moduleType?: string;
+        outcome?: "complete" | "incomplete" | "blocked";
+        reason?: string;
+      };
+      input.emit(
+        JSON.stringify({
+          type: "flow.module_event",
+          kind: event.kind,
+          moduleID: event.moduleID,
+          moduleType: data.moduleType,
+          outcome: data.outcome,
+          reason: data.reason,
+        }),
+      );
+    },
+  );
   // The alert queue is a separate durable store on purpose: a saturated or
   // broken notification queue must never rewrite the task's terminal truth.
   const alerts = await NataliaTaskAlertQueue.open(input.workspaceRoot);
@@ -901,6 +923,16 @@ async function runTaskModule(input: {
               attempt: input.attempt,
               executionProvider: input.executionProvider,
               context: evaluatorContext,
+              onStreamEvent: (chunk) => {
+                if (chunk.text && input.json)
+                  input.emit(
+                    JSON.stringify({
+                      type: "flow.evaluator",
+                      phase: chunk.type === "thinking" ? "thinking" : "content",
+                      text: chunk.text,
+                    }),
+                  );
+              },
             })
           : (input.state.stallModule({
               invocationID: input.invocationID,
@@ -1103,6 +1135,7 @@ async function evaluateClaimedTaskModule(input: {
   attempt: number;
   executionProvider: string;
   context: EvaluatorModuleContext & { policyDenied: boolean };
+  onStreamEvent?: (chunk: { type: string; text: string }) => void;
 }) {
   if (!input.task.evaluator) return undefined;
   const model = input.config.models[input.task.evaluator.model];
@@ -1172,6 +1205,7 @@ async function evaluateClaimedTaskModule(input: {
     provider,
     providerIdentity: input.task.evaluator.provider,
     context: input.context,
+    onStreamEvent: input.onStreamEvent,
   });
   return result;
 }

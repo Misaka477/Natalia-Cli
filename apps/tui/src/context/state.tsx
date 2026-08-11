@@ -378,6 +378,19 @@ function updateProjectedRow(target: MessageBlock, next: MessageBlock) {
 
 function applyTuiEvent(state: AppState, event: RuntimeEvent) {
   switch (event.type) {
+    case "flow.module_event":
+      handleFlowModuleEvent(state, event);
+      return;
+    case "flow.evaluator": {
+      // The arbitration model's live output. The block persists across the
+      // evaluation, so the module verdict can claim it afterwards.
+      const previous = state.messages.find(
+        (item) => item.id === "flow:evaluator",
+      );
+      const text = (previous?.text ?? "") + event.text;
+      upsertBlock(state, "flow:evaluator", "system", text, "running");
+      return;
+    }
     case "session.ready":
       state.status = "ready";
       return;
@@ -907,6 +920,69 @@ function upsertBlock(
     return;
   }
   state.messages.push({ id, role, text, status, owner: "ui", ...extra });
+}
+
+function handleFlowModuleEvent(
+  state: AppState,
+  event: Extract<RuntimeEvent, { type: "flow.module_event" }>,
+) {
+  const id = `flow:module:${event.moduleID}`;
+  const label = event.moduleType ? ` (${event.moduleType})` : "";
+  switch (event.kind) {
+    case "activated":
+      upsertBlock(state, id, "system", `Flow 模块开始执行${label}`, "running");
+      return;
+    case "claimed":
+      upsertBlock(
+        state,
+        id,
+        "system",
+        `完成申报已提交，仲裁中…${label}`,
+        "pending",
+      );
+      return;
+    case "evaluated":
+      upsertBlock(
+        state,
+        id,
+        "system",
+        event.outcome === "complete"
+          ? `仲裁判定：条件满足${label}`
+          : event.outcome === "incomplete"
+            ? `仲裁判定：条件未完全满足，继续执行${label}`
+            : `仲裁失败${label}`,
+        event.outcome === "complete"
+          ? "success"
+          : event.outcome === "incomplete"
+            ? "pending"
+            : "failed",
+      );
+      return;
+    case "completed":
+      upsertBlock(state, id, "system", `模块完成${label}`, "success");
+      return;
+    case "blocked":
+      upsertBlock(
+        state,
+        id,
+        "system",
+        `模块被阻断：${event.reason ?? "未知原因"}${label}`,
+        "failed",
+      );
+      return;
+    case "stalled":
+      upsertBlock(
+        state,
+        id,
+        "system",
+        `模块未收到完成申报，将重试${label}`,
+        "warning",
+      );
+      return;
+    case "continued":
+      upsertBlock(state, id, "system", `模块继续执行${label}`, "pending");
+      return;
+  }
 }
 
 function isUrgentEvent(event: RuntimeEvent) {
