@@ -658,6 +658,15 @@ natalia daemon --port 4700
   base64url, written to the daemon dir's `token` file with mode `0o600` and
   reused on later starts. The CLI reads it from `NATALIA_TRANSPORT_TOKEN` when
   present, or from the token file otherwise.
+- **The daemon never prints the token** (`natalia daemon` prints only
+  `{ url }` — printing a secret to stdout leaks it into logs). To call the
+  API, a consumer on the same machine and user reads the token file:
+  `<daemon-dir>/token` (the `--daemon-dir` directory, default
+  `$XDG_STATE_HOME/natalia-cli/daemon`, i.e. `~/.local/state/natalia-cli/daemon`
+  on Linux; `natalia daemon-status` reports the exact path). For
+  cross-machine or cross-user consumers, the deployment forwards the token
+  value through its own configuration (env var, secret store) —
+  `NATALIA_TRANSPORT_TOKEN` is the same path the CLI itself uses.
 - `natalia daemon-status` reports the registered daemon; `natalia daemon-stop`
   stops it. `--daemon-dir` overrides where the daemon keeps its state;
   `--max-concurrent-tasks` bounds parallel task delivery.

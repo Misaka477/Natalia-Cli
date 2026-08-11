@@ -544,6 +544,13 @@ natalia daemon --port 4700
 - daemon 首次启动时自己签发 bearer token：32 字节随机数、base64url，写入 daemon
   目录的 `token` 文件（权限 `0o600`），之后复用。CLI 优先读环境变量
   `NATALIA_TRANSPORT_TOKEN`，否则读 token 文件。
+- **daemon 从不打印 token**（`natalia daemon` 只打印 `{ url }`——把 secret 打到
+  stdout 会泄漏给日志系统）。调用 API 前怎么拿？与 daemon 同机同用户的消费方
+  **直接读 token 文件**：`<daemon-dir>/token`（`--daemon-dir` 指定的目录，默认
+  `$XDG_STATE_HOME/natalia-cli/daemon`，Linux 即 `~/.local/state/natalia-cli/daemon`；
+  `natalia daemon-status` 报告确切路径）。跨机或跨用户时，由部署方把 token 值
+  转发到你自己的配置（环境变量、secret store）——`NATALIA_TRANSPORT_TOKEN`
+  正是 CLI 自己用的同一条路径。
 - `natalia daemon-status` 报告已注册的 daemon；`natalia daemon-stop` 停止它。
   `--daemon-dir` 覆盖 daemon 状态目录；`--max-concurrent-tasks` 限制并行任务
   投递。
