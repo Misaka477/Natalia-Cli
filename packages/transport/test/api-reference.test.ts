@@ -44,8 +44,16 @@ const API_REFERENCE_ZH_PATH = join(
   "docs",
   "api-reference.zh-CN.md",
 );
+const TYPES_REFERENCE_PATH = join(process.cwd(), "docs", "types-reference.md");
+const TYPES_REFERENCE_ZH_PATH = join(
+  process.cwd(),
+  "docs",
+  "types-reference.zh-CN.md",
+);
 const GEN_BEGIN = "<!-- api-reference:generated -->";
 const GEN_END = "<!-- /api-reference:generated -->";
+const TYPES_GEN_BEGIN = "<!-- types-reference:generated -->";
+const TYPES_GEN_END = "<!-- /types-reference:generated -->";
 const MARKER =
   "All numbers and tables below are derived from the source tables the " +
   "transport and the contracts use. Regenerate with `npm run " +
@@ -216,12 +224,15 @@ function sdkMethodReference(): Array<{
         "Promise<".length,
     );
     const call = rpcByMethod.get(sdkMethod);
-    const typeParams = paramSignatureOf(rawParams ?? "");
+    const members = runtimeClientMembers();
+    const typeParams = paramSignatureOf(
+      resolveIndirection(rawParams ?? "", members),
+    );
     rows.push({
       sdkMethod,
       rpcMethod: call?.rpcMethod ?? "—",
       params: typeParams || call?.callParams || "—",
-      returnType: cleanType(returnMatch),
+      returnType: resolveIndirection(cleanType(returnMatch), members),
     });
   }
   return rows;
@@ -296,31 +307,6 @@ function paramKeysOf(params: string): string {
   ))
     add(match[1] ?? "");
   return keys.join(", ");
-}
-
-/** Parameter names with their types, `name?: Type`, nested objects flattened. */
-function paramSignatureOf(params: string): string {
-  const parts: string[] = [];
-  const seen = new Set<string>();
-  for (const match of params.matchAll(
-    /([a-zA-Z][a-zA-Z0-9]*)(\??):\s*([^,}]+)/gu,
-  )) {
-    const [, name, optional, rawType] = match;
-    if (!name || name === "type" || seen.has(name)) continue;
-    seen.add(name);
-    let type = (rawType ?? "").replace(/\s+/gu, " ").trim();
-    if (type.startsWith("{")) {
-      const inner = [...type.matchAll(/([a-zA-Z][a-zA-Z0-9]*)(\??):/gu)]
-        .map((entry) => `${entry[1]}${entry[2] === "?" ? "?" : ""}`)
-        .join(", ");
-      type = `{ ${inner || "…"} }`;
-    } else {
-      type = type.replace(/^import\("[^"]+"\)\./gu, "").trim();
-      if (type.length > 60) type = `${type.slice(0, 60)}…`;
-    }
-    parts.push(`\`${name}${optional === "?" ? "?" : ""}\`: ${type}`);
-  }
-  return parts.join(", ") || "—";
 }
 
 /** Splits a `call(...)` invocation into its top-level comma-separated arguments. */
@@ -449,90 +435,381 @@ function splitTypeFields(body: string): string[] {
   return parts;
 }
 
-/** Extracts `name?: Type` fields from a `{ ... }` type body. */
-function extractTypeFields(body: string): string {
-  const fields: string[] = [];
-  for (const part of splitTypeFields(body)) {
-    const field = part
-      .trim()
-      .match(/^([a-zA-Z][a-zA-Z0-9]*)(\??):\s*(.+?)\s*$/u);
-    if (!field) continue;
-    const [, name, optional, typeText] = field;
-    if (!name) continue;
-    if (/[{}\n]/u.test(typeText ?? "")) continue;
-    fields.push(
-      `\`${name}${optional === "?" ? "?" : ""}\`: ${(typeText ?? "")
-        .replace(/import\("[^"]+"\)\./gu, "")
-        .trim()}`,
-    );
+/** Splits a parameter list on top-level commas (braces/parens/brackets aware). */
+function splitTopLevel(text: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let current = "";
+  for (const ch of text) {
+    if (ch === "(" || ch === "{" || ch === "[") depth++;
+    else if (ch === ")" || ch === "}" || ch === "]") depth--;
+    if (ch === "," && depth === 0) {
+      parts.push(current.trim());
+      current = "";
+    } else {
+      current += ch;
+    }
   }
-  return fields.join(", ") || "—";
+  if (current.trim()) parts.push(current.trim());
+  return parts;
+}
+
+/** Parses the `RuntimeClient` type into member -> { params, returnType }. */
+function runtimeClientMembers(): Map<
+  string,
+  { params: string; returnType: string }
+> {
+  const text = readFileSync(
+    join(process.cwd(), "packages", "contracts", "src", "events.ts"),
+    "utf8",
+  );
+  const from = text.indexOf("export type RuntimeClient = {");
+  if (from === -1) throw new Error("events.ts: RuntimeClient type not found");
+  let depth = 0;
+  let end = -1;
+  for (let i = from; i < text.length; i++) {
+    const ch = text[i] ?? "";
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
+  if (end === -1) throw new Error("events.ts: RuntimeClient type never closes");
+  const body = text
+    .slice(from, end)
+    .replace(/\/\*\*[\s\S]*?\*\//gu, "")
+    .replace(/\/\/[^\n]*/gu, "");
+  const members = new Map<string, { params: string; returnType: string }>();
+  for (const match of body.matchAll(
+    /([a-zA-Z][a-zA-Z0-9]*)\?*\(([^()]*)\)\s*:\s*/gu,
+  )) {
+    const name = match[1] ?? "";
+    const params = match[2] ?? "";
+    let i = (match.index ?? 0) + (match[0]?.length ?? 0);
+    let memberDepth = 0;
+    let ret = "";
+    for (; i < body.length; i++) {
+      const ch = body[i] ?? "";
+      if (ch === "{") memberDepth++;
+      else if (ch === "}") memberDepth--;
+      else if (ch === ";" && memberDepth === 0) break;
+      ret += ch;
+    }
+    members.set(name, { params: params.trim(), returnType: cleanType(ret) });
+  }
+  return members;
 }
 
 /**
- * The result type dictionary, scanned from the SDK's return types and the
- * `export type NAME = { ... }` definitions in `packages/contracts/src`. The
- * contracts are the fact source: a result shape changed in the contracts
- * shows up here, and a hand edit in the block turns the guard red. Inline
- * object returns and `RuntimeClient["x"]` indirections are left to the SDK
- * table; only plain named types are expanded, one level deep — a field type
- * that is itself a named type (`RuntimeProjectedMessage[]`, `FlowRow[]`) is
- * collected too, so the dictionary covers what the top-level returns hold.
+ * Replaces `Parameters<NonNullable<RuntimeClient["x"]>>[n]` and
+ * `Awaited<ReturnType<NonNullable<RuntimeClient["x"]>>>` indirections with
+ * the member's concrete types, so the SDK table reads without opening the
+ * contracts. Unresolvable indirections stay as written.
  */
-function resultTypeDictionary(): Array<{ name: string; fields: string }> {
-  const names = new Set<string>();
-  const collectFromReturn = (returnType: string) => {
-    const match = returnType.trim().match(/^([A-Z][A-Za-z0-9_]*)(\[\])?$/u);
-    if (match) names.add(match[1] ?? "");
-  };
-  for (const row of sdkMethodReference()) collectFromReturn(row.returnType);
+function resolveIndirection(
+  text: string,
+  members: Map<string, { params: string; returnType: string }>,
+): string {
+  let out = text;
+  out = out.replace(
+    /Parameters<NonNullable<RuntimeClient\["([a-zA-Z0-9_]+)"\]>>\[(\d+)\]/gu,
+    (whole, name, index) => {
+      const member = members.get(name ?? "");
+      if (!member) return whole;
+      // `Parameters<F>[n]` is the whole n-th parameter including its
+      // `name?:` prefix; the SDK names the parameter itself, so substitute
+      // only the parameter's type.
+      return (splitTopLevel(member.params)[Number(index)] ?? whole).replace(
+        /^[a-zA-Z][a-zA-Z0-9]*\??:\s*/u,
+        "",
+      );
+    },
+  );
+  out = out.replace(
+    /Parameters<NonNullable<RuntimeClient\["([a-zA-Z0-9_]+)"\]>>/gu,
+    (whole, name) => {
+      const member = members.get(name ?? "");
+      if (!member) return whole;
+      return member.params || "void";
+    },
+  );
+  out = out.replace(
+    /Awaited<ReturnType<NonNullable<RuntimeClient\["([a-zA-Z0-9_]+)"\]>>>/gu,
+    (whole, name) => {
+      const member = members.get(name ?? "");
+      if (!member) return whole;
+      return member.returnType.replace(/^Promise<([\s\S]*?)>$/u, "$1");
+    },
+  );
+  return cleanType(out);
+}
+
+/** Parameter names with their concrete types, `name?: Type`, nested objects kept whole. */
+function paramSignatureOf(params: string): string {
+  const parts: string[] = [];
+  const seen = new Set<string>();
+  for (const part of splitTopLevel(params)) {
+    const field = part
+      .trim()
+      .match(/^([a-zA-Z][a-zA-Z0-9]*)(\??):\s*([\s\S]+?)\s*$/u);
+    if (!field) continue;
+    const [, name, optional, rawType] = field;
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    const type = cleanType(rawType ?? "");
+    parts.push(`\`${name}${optional === "?" ? "?" : ""}\`: ${type || "—"}`);
+  }
+  return parts.join(", ") || "—";
+}
+
+/**
+ * Parses every `export type NAME = RHS` in `packages/contracts/src` — object
+ * bodies, unions and aliases alike — keyed by name.
+ */
+function contractTypeDefinitions(): Map<string, string> {
   const dir = join(process.cwd(), "packages", "contracts", "src");
   const definitions = new Map<string, string>();
   for (const file of readdirSync(dir)) {
     if (!file.endsWith(".ts")) continue;
     const text = readFileSync(join(dir, file), "utf8");
-    for (const match of text.matchAll(
-      /export type ([A-Z][A-Za-z0-9_]*) = \{/gu,
-    )) {
+    for (const match of text.matchAll(/export type ([A-Z][A-Za-z0-9_]*) =/gu)) {
       const name = match[1] ?? "";
       if (definitions.has(name)) continue;
-      const start = match.index ?? 0;
-      let braces = 0;
-      let end = -1;
-      for (let i = start; i < text.length; i++) {
-        const ch = text[i];
-        if (ch === "{") braces++;
+      const start = (match.index ?? 0) + (match[0]?.length ?? 0);
+      let i = start;
+      while (i < text.length && /\s/u.test(text[i] ?? "")) i++;
+      const object = text[i] === "{";
+      let depth = 0;
+      let rhs = "";
+      for (; i < text.length; i++) {
+        const ch = text[i] ?? "";
+        if (ch === "{") depth++;
         else if (ch === "}") {
-          braces--;
-          if (braces === 0) {
-            end = i;
+          depth--;
+          if (object && depth === 0) {
+            rhs += ch;
+            i++;
             break;
           }
-        }
+        } else if (!object && ch === ";" && depth === 0) break;
+        rhs += ch;
       }
-      if (end !== -1)
-        definitions.set(name, text.slice(start + match[0].length, end));
+      definitions.set(name, rhs.trim());
     }
   }
-  const rows: Array<{ name: string; fields: string }> = [];
-  const collected = new Set<string>();
-  for (let pass = 0; pass < 2; pass++) {
-    const pending = [...names].filter((name) => !collected.has(name)).sort();
-    if (pending.length === 0) break;
-    const references = new Set<string>();
-    for (const name of pending) {
-      collected.add(name);
-      const body = definitions.get(name);
-      if (!body) continue;
-      rows.push({ name, fields: extractTypeFields(body) });
-      for (const match of body.matchAll(/\b([A-Z][A-Za-z0-9_]*)\[\]/gu))
-        references.add(match[1] ?? "");
-      for (const match of body.matchAll(/:\s*([A-Z][A-Za-z0-9_]*);/gu))
-        references.add(match[1] ?? "");
+  return definitions;
+}
+
+/** The text between the first `{` and its matching `}`. */
+function extractFirstBraceBody(text: string): string {
+  const start = text.indexOf("{");
+  if (start === -1) return "";
+  let depth = 0;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i] ?? "";
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return text.slice(start + 1, i);
     }
-    for (const reference of references)
-      if (definitions.has(reference) && !names.has(reference))
-        names.add(reference);
+  }
+  return "";
+}
+
+/** The type text of one field inside an object type body. */
+function objectFieldType(body: string, fieldName: string): string | undefined {
+  for (const part of splitTypeFields(body)) {
+    const field = part
+      .trim()
+      .match(/^([a-zA-Z][a-zA-Z0-9]*)(\??):\s*([\s\S]+?)\s*$/u);
+    if (field?.[1] === fieldName) return field[3] ?? "";
+  }
+  return undefined;
+}
+
+const TYPE_BUILTINS = new Set([
+  "Array",
+  "Record",
+  "Promise",
+  "Extract",
+  "Exclude",
+  "Omit",
+  "Pick",
+  "Partial",
+  "Required",
+  "Readonly",
+  "NonNullable",
+  "Awaited",
+  "ReturnType",
+  "Parameters",
+  "Exact",
+  "string",
+  "number",
+  "boolean",
+  "void",
+  "undefined",
+  "null",
+  "unknown",
+  "any",
+  "never",
+  "symbol",
+  "bigint",
+  "object",
+  "Date",
+  "Error",
+  "Function",
+]);
+
+/**
+ * Expands one field type into display rows. Inline objects/arrays expand with
+ * dotted (`obj.field`) or indexed (`arr[].field`) paths; `Name["field"]`
+ * indexed accesses resolve when the target type is known; multi-line unions
+ * collapse to one line; named types stay as names (their own row exists).
+ */
+function expandFieldType(
+  path: string,
+  typeText: string,
+  definitions: Map<string, string>,
+  depth: number,
+): Array<{ path: string; type: string }> {
+  const cleaned = typeText
+    .replace(/\/\*\*[\s\S]*?\*\//gu, "")
+    .replace(/\/\/[^\n]*/gu, "")
+    .replace(/import\("[^"]+"\)\./gu, "")
+    .trim();
+  const flat = (value: string) =>
+    value
+      .replace(/\s+/gu, " ")
+      .replace(/\s*\|\s*/gu, " | ")
+      .trim();
+  if (depth > 6) return [{ path, type: "…" }];
+  if (
+    /Array<\{/u.test(cleaned) ||
+    (/\]\s*$/u.test(cleaned) && /\{/u.test(cleaned))
+  ) {
+    const inner = extractFirstBraceBody(cleaned);
+    if (inner)
+      return expandObjectBody(`${path}[]`, inner, definitions, depth + 1);
+  }
+  if (cleaned.startsWith("{")) {
+    const inner = extractFirstBraceBody(cleaned);
+    if (inner) return expandObjectBody(path, inner, definitions, depth + 1);
+  }
+  const indexed = cleaned.match(
+    /^([A-Z][A-Za-z0-9_]*)\[["']([A-Za-z0-9_]+)["']\]$/u,
+  );
+  if (indexed) {
+    const target = definitions.get(indexed[1] ?? "");
+    if (target?.trim().startsWith("{")) {
+      const fieldType = objectFieldType(target, indexed[2] ?? "");
+      if (fieldType)
+        return expandFieldType(path, fieldType, definitions, depth + 1);
+    }
+  }
+  return [{ path, type: flat(cleaned) || "—" }];
+}
+
+/** Expands an object type body into dotted-path rows. */
+function expandObjectBody(
+  path: string,
+  body: string,
+  definitions: Map<string, string>,
+  depth: number,
+): Array<{ path: string; type: string }> {
+  const out: Array<{ path: string; type: string }> = [];
+  if (depth > 6) return [{ path, type: "…" }];
+  for (const part of splitTypeFields(body)) {
+    const field = part
+      .trim()
+      .match(/^([a-zA-Z][a-zA-Z0-9]*)(\??):\s*([\s\S]+?)\s*$/u);
+    if (!field) continue;
+    const [, name, optional, typeText] = field;
+    if (!name) continue;
+    out.push(
+      ...expandFieldType(
+        `${path}.${name}${optional === "?" ? "?" : ""}`,
+        typeText ?? "",
+        definitions,
+        depth + 1,
+      ),
+    );
+  }
+  return out;
+}
+
+/**
+ * The deep result type dictionary for `docs/types-reference.md`: every type
+ * reachable from the SDK's parameters and returns, with nested objects
+ * expanded into dotted/indexed field paths. The contracts are the fact
+ * source, so the table cannot rot; the giant event union family
+ * (`RuntimeEvent`/`RuntimeEventData`) is skipped because api-reference's
+ * event dictionary already covers it.
+ */
+function deepTypeDictionary(): Array<{ name: string; fields: string }> {
+  const definitions = contractTypeDefinitions();
+  const skip = new Set(["RuntimeEvent", "RuntimeEventData"]);
+  const members = runtimeClientMembers();
+  const seed = new Set<string>();
+  const collectNames = (text: string) => {
+    for (const match of text.matchAll(/\b([A-Z][A-Za-z0-9_]*)\b/gu)) {
+      const name = match[1] ?? "";
+      if (definitions.has(name) && !TYPE_BUILTINS.has(name)) seed.add(name);
+    }
+  };
+  for (const row of sdkMethodReference()) {
+    collectNames(resolveIndirection(row.params, members));
+    collectNames(resolveIndirection(row.returnType, members));
+  }
+  const rows: Array<{ name: string; fields: string }> = [];
+  const done = new Set<string>();
+  const pending = [...seed].filter((name) => !skip.has(name)).sort();
+  while (pending.length > 0) {
+    const name = pending.shift() ?? "";
+    if (done.has(name)) continue;
+    done.add(name);
+    const rhs = definitions.get(name);
+    if (!rhs) continue;
+    const body = rhs
+      .replace(/\/\*\*[\s\S]*?\*\//gu, "")
+      .replace(/\/\/[^\n]*/gu, "");
+    const fields: Array<{ path: string; type: string }> = [];
+    if (rhs.trim().startsWith("{")) {
+      const inner = extractFirstBraceBody(rhs);
+      fields.push(...expandObjectBody("", inner, definitions, 0));
+    } else {
+      fields.push({
+        path: "",
+        type: body
+          .replace(/import\("[^"]+"\)\./gu, "")
+          .replace(/\s+/gu, " ")
+          .replace(/\s*\|\s*/gu, " | ")
+          .trim(),
+      });
+    }
+    for (const match of body.matchAll(/\b([A-Z][A-Za-z0-9_]*)\b/gu)) {
+      const reference = match[1] ?? "";
+      if (
+        definitions.has(reference) &&
+        !TYPE_BUILTINS.has(reference) &&
+        !skip.has(reference) &&
+        !done.has(reference)
+      )
+        pending.push(reference);
+    }
+    rows.push({
+      name,
+      fields: fields
+        .map((field) =>
+          field.path
+            ? `\`${field.path.replace(/^\./u, "")}\`: ${field.type}`
+            : `\`${field.type}\``,
+        )
+        .join(", "),
+    });
   }
   return rows.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -669,15 +946,29 @@ export function renderGeneratedSections(): string {
       ["Event type", "Fields"],
       eventDictionary().map((row) => [`\`${row.type}\``, row.fields]),
     ),
-    ``,
-    `### Result type dictionary (source scan of \`packages/contracts/src\`)`,
-    ``,
-    markdownTable(
-      ["Type", "Fields"],
-      resultTypeDictionary().map((row) => [`\`${row.name}\``, row.fields]),
-    ),
   ];
   return lines.join("\n") + "\n";
+}
+
+/**
+ * The generated block for `docs/types-reference.md`: the deep result type
+ * dictionary, one row per type reachable from the SDK's parameters and
+ * returns. Nested objects are expanded into dotted (`obj.field`) and indexed
+ * (`arr[].field`) paths, so a consumer does not have to open the contracts.
+ */
+function renderTypesReferenceSections(): string {
+  return (
+    [
+      `## Result type dictionary (deep expansion)`,
+      ``,
+      `> Nested objects are expanded into paths: \`obj.field\` for plain objects, \`arr[].field\` for array elements. A \`?\` suffix marks an optional field; \`?.field\` means the field exists only when its parent optional field is present. Unions are shown inline. The giant event union family is omitted here — see the event dictionary in the API reference.`,
+      ``,
+      markdownTable(
+        ["Type", "Fields"],
+        deepTypeDictionary().map((row) => [`\`${row.name}\``, row.fields]),
+      ),
+    ].join("\n") + "\n"
+  );
 }
 
 export function writeApiReference(): void {
@@ -693,6 +984,20 @@ export function writeApiReference(): void {
     writeFileSync(
       path,
       `${full.slice(0, start)}${block}${full.slice(end + GEN_END.length)}`,
+    );
+  }
+  const typesBlock = `${TYPES_GEN_BEGIN}\n${renderTypesReferenceSections()}${TYPES_GEN_END}`;
+  for (const path of [TYPES_REFERENCE_PATH, TYPES_REFERENCE_ZH_PATH]) {
+    const full = readFileSync(path, "utf8");
+    const start = full.indexOf(TYPES_GEN_BEGIN);
+    const end = full.indexOf(TYPES_GEN_END);
+    if (start === -1 || end === -1 || end < start)
+      throw new Error(
+        `${path} is missing the generated-block markers (${TYPES_GEN_BEGIN} … ${TYPES_GEN_END})`,
+      );
+    writeFileSync(
+      path,
+      `${full.slice(0, start)}${typesBlock}${full.slice(end + TYPES_GEN_END.length)}`,
     );
   }
 }
@@ -715,9 +1020,28 @@ if (!process.env.API_REFERENCE_WRITE) {
     const block = en.slice(start, end + GEN_END.length);
     expect(zh).toContain(block);
   });
+  test("docs/types-reference.md generated block matches the source tables", () => {
+    const full = readFileSync(TYPES_REFERENCE_PATH, "utf8");
+    const block = `${TYPES_GEN_BEGIN}\n${renderTypesReferenceSections()}${TYPES_GEN_END}`;
+    expect(full).toContain(block);
+  });
+  test("docs/types-reference.zh-CN.md embeds the same generated block", () => {
+    const en = readFileSync(TYPES_REFERENCE_PATH, "utf8");
+    const zh = readFileSync(TYPES_REFERENCE_ZH_PATH, "utf8");
+    const start = en.indexOf(TYPES_GEN_BEGIN);
+    const end = en.indexOf(TYPES_GEN_END);
+    if (start === -1 || end === -1 || end < start)
+      throw new Error(
+        `${TYPES_REFERENCE_PATH} is missing the generated-block markers`,
+      );
+    const block = en.slice(start, end + TYPES_GEN_END.length);
+    expect(zh).toContain(block);
+  });
 }
 
 if (process.env.API_REFERENCE_WRITE && import.meta.main) {
   writeApiReference();
-  console.log(`updated ${API_REFERENCE_PATH}`);
+  console.log(
+    `updated ${API_REFERENCE_PATH}, ${API_REFERENCE_ZH_PATH}, ${TYPES_REFERENCE_PATH}, ${TYPES_REFERENCE_ZH_PATH}`,
+  );
 }
