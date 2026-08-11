@@ -61,7 +61,6 @@ Never commit API keys or place them in prompts, diagnostic fixtures, screenshots
 - [Plugin guide](docs/plugin-guide.md) — in-process plugins (tools, events, commands) and the trust model.
 - [Provider guide](docs/provider-guide.md) — writing a provider adapter.
 - [CLI commands](docs/commands.md) — session, filesystem, daemon, diagnostics, recording.
-- [Skills](docs/skills.md) — project/user/remote installs and the `SKILL.md` format.
 
 ### CLI And Local Transport
 
@@ -218,7 +217,6 @@ NATALIA_PROVIDER=gemini NATALIA_API_KEY="..." NATALIA_MODEL="gemini-2.5-pro" npm
 - [Provider 指南](docs/provider-guide.zh-CN.md) — 编写 provider adapter。
 - [CLI 命令参考](docs/commands.md) — session、filesystem、daemon、diagnostics、
   recording 命令。
-- [Skill 安装](docs/skills.zh-CN.md) — 项目级/用户级/远程安装与 `SKILL.md` 格式。
 
 ### CLI 与本地 Transport
 
