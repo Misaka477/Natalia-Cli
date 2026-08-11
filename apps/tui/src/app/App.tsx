@@ -91,6 +91,7 @@ import { sessionLayout, type SidebarMode } from "../session-layout";
 import {
   defaultTuiPreferences,
   loadTuiPreferences,
+  reloadTuiPreferencesOnSettingsUpdate,
   saveTuiPreferences,
   tuiPreferencePatch,
   type TuiPreferences,
@@ -120,6 +121,7 @@ export function App(props: {
   const [backend, setBackend] = createSignal(props.backend);
   const [historyCursor, setHistoryCursor] = createSignal<string>();
   const [newerHistoryCursor, setNewerHistoryCursor] = createSignal<string>();
+  let onRuntimeEvent: ((event: RuntimeEvent) => void) | undefined;
   let loadingHistory = false;
   let historyHydrate:
     | ((
@@ -151,6 +153,7 @@ export function App(props: {
             activeBackend.start(
               (event: RuntimeEvent) => {
                 bridge.dispatch(event);
+                onRuntimeEvent?.(event);
                 props.onDispatch?.(event);
                 if (event.type === "session.ready")
                   void hydrateRecentMessages(
@@ -168,6 +171,9 @@ export function App(props: {
               workspaceRoot={props.workspaceRoot}
               onSessionChange={(sessionID) => void changeSession(sessionID)}
               initialRoute={props.initialRoute}
+              onRuntimeEvent={(handler) => {
+                onRuntimeEvent = handler;
+              }}
               onHistoryControls={props.onHistoryControls}
               onLoadOlderHistory={async () => {
                 const cursor = historyCursor();
@@ -235,6 +241,7 @@ function Shell(props: {
   onSessionChange?: (sessionID?: string) => void;
   onLoadOlderHistory?: () => Promise<void>;
   onLoadNewerHistory?: () => Promise<void>;
+  onRuntimeEvent?: (handler: (event: RuntimeEvent) => void) => void;
   onHistoryControls?: (controls: {
     loadOlder(): Promise<void>;
     loadNewer(): Promise<void>;
@@ -305,6 +312,26 @@ function Shell(props: {
   const terminalScrollRef: { current?: any } = {};
   let submitting = false;
   let restoredAgent = false;
+  let preferencesLoad = 0;
+
+  async function reloadTuiPreferences() {
+    if (!props.workspaceRoot) return;
+    const load = ++preferencesLoad;
+    const loaded = await loadTuiPreferences(props.workspaceRoot);
+    if (load !== preferencesLoad) return;
+    setPreferences(loaded);
+    keybinds.set(loaded.keybinds);
+    setFollowMode(loaded.followBottom);
+    theme.preview(loaded.theme);
+  }
+
+  props.onRuntimeEvent?.((event) => {
+    const reload = reloadTuiPreferencesOnSettingsUpdate(
+      event,
+      reloadTuiPreferences,
+    );
+    if (reload) void reload.catch(toast.error);
+  });
 
   createEffect(() => {
     if (restoredAgent || !local.ready) return;
@@ -314,12 +341,7 @@ function Shell(props: {
   });
 
   onMount(async () => {
-    if (props.workspaceRoot) {
-      const loaded = await loadTuiPreferences(props.workspaceRoot);
-      setPreferences(loaded);
-      keybinds.set(loaded.keybinds);
-      setFollowMode(loaded.followBottom);
-    }
+    await reloadTuiPreferences();
     setTimeout(() => composer()?.focus(), 1);
   });
 

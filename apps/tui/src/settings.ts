@@ -6,6 +6,7 @@ import {
   type TuiConfigPatch,
   type TuiConfigWriteScope,
 } from "./config";
+import type { RuntimeEvent } from "@natalia/contracts";
 
 export type TuiPreferences = TuiConfig;
 export const defaultTuiPreferences: TuiPreferences = tuiConfigSchema.parse({});
@@ -20,6 +21,13 @@ export async function saveTuiPreferences(
   scope: TuiConfigWriteScope = "project",
 ) {
   await saveTuiConfig(workspaceRoot, preferences, scope);
+}
+
+export function reloadTuiPreferencesOnSettingsUpdate(
+  event: RuntimeEvent,
+  reload: () => Promise<void>,
+) {
+  if (event.type === "settings.updated") return reload();
 }
 
 export function tuiPreferencePatch(
