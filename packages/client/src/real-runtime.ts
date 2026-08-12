@@ -18,11 +18,8 @@ import {
   runtimeEventDurability,
   runtimeSlashCommands,
 } from "@natalia/contracts";
-import {
-  assertConfigApplied,
-  assertTaskReferences,
-  taskPermissionPreview,
-} from "./task-controller";
+import { assertConfigApplied, taskPermissionPreview } from "./task-controller";
+import { assertTaskReferences } from "./task-preflight";
 import {
   findWorkspaceFiles,
   globWorkspaceFiles,

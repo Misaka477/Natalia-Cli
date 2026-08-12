@@ -48,6 +48,12 @@ export function workflowRunUnavailableReason(path: string) {
     : undefined;
 }
 
+export function workflowDocumentUnavailableReason(
+  workflow: WorkflowDocumentChoice,
+) {
+  return workflow.launch.ready ? undefined : workflow.launch.reason;
+}
+
 export function workflowCommandKinds(
   workflows: WorkflowDocumentChoice[],
   query: string,
@@ -239,13 +245,21 @@ export function PromptAutocomplete(props: {
     if (item.kind === "resource") return item.resource.uri;
     if (item.kind === "workflow-command")
       return `Run an existing ${item.workflowKind}`;
-    return `${item.workflow.id} · ${item.workflow.path}`;
+    const unavailable = workflowDocumentUnavailableReason(item.workflow);
+    return !unavailable
+      ? `${item.workflow.id} · ${item.workflow.path}`
+      : `${item.workflow.id} · unavailable: ${unavailable}`;
   }
 
   function select() {
     const item = options()[selected()];
     const input = props.input();
     if (!item || !input) return;
+    if (
+      item.kind === "workflow" &&
+      workflowDocumentUnavailableReason(item.workflow)
+    )
+      return;
     const text =
       item.kind === "slash"
         ? `/${item.command.name}${item.command.acceptsArguments ? " " : ""}`

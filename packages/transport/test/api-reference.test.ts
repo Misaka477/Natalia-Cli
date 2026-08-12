@@ -842,6 +842,7 @@ function expandFieldType(
       .replace(/\s*\|\s*/gu, " | ")
       .trim();
   if (depth > 6) return [{ path, type: "…" }];
+  if (hasTopLevelUnion(cleaned)) return [{ path, type: flat(cleaned) || "—" }];
   if (
     /Array<\{/u.test(cleaned) ||
     (/\]\s*$/u.test(cleaned) && /\{/u.test(cleaned))
@@ -866,6 +867,28 @@ function expandFieldType(
     }
   }
   return [{ path, type: flat(cleaned) || "—" }];
+}
+
+function hasTopLevelUnion(value: string): boolean {
+  let braces = 0;
+  let brackets = 0;
+  let angles = 0;
+  for (const character of value) {
+    if (character === "{") braces++;
+    else if (character === "}") braces--;
+    else if (character === "[") brackets++;
+    else if (character === "]") brackets--;
+    else if (character === "<") angles++;
+    else if (character === ">") angles--;
+    else if (
+      character === "|" &&
+      braces === 0 &&
+      brackets === 0 &&
+      angles === 0
+    )
+      return true;
+  }
+  return false;
 }
 
 /** Expands an object type body into dotted-path rows. */

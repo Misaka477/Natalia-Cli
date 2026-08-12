@@ -38,12 +38,16 @@ test("slash autocomplete selects an existing flow by keyboard", async () => {
                   path: "nightly.yaml",
                   id: "task_nightly",
                   displayName: "Nightly",
+                  source: { kind: "workspace" },
+                  launch: { ready: true },
                 },
                 {
                   kind: "flow",
                   path: "cap:review/flow_review.yaml",
                   id: "flow_review",
                   displayName: "Review flow",
+                  source: { kind: "capability", capabilityID: "review" },
+                  launch: { ready: true },
                 },
               ]}
               attach={() => undefined}

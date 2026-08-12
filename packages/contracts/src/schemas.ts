@@ -852,12 +852,14 @@ export type ScheduledTaskOverview = {
   unreadable: Array<{ path: string; reason: string }>;
 };
 
-/** A task or flow document offered for selection. */
+/** A managed task or flow document and whether its definition is ready to launch. */
 export type WorkflowDocumentChoice = {
   kind: "task" | "flow";
   path: string;
   id: string;
   displayName: string;
+  source: { kind: "workspace" } | { kind: "capability"; capabilityID: string };
+  launch: { ready: true } | { ready: false; reason: string };
 };
 
 /**

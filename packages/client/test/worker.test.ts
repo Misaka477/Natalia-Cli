@@ -460,6 +460,8 @@ test("the worker channel routes workflow management catalogs", async () => {
           path: "cap:review/task_review.yaml",
           id: "task_review",
           displayName: "Review",
+          source: { kind: "capability" as const, capabilityID: "review" },
+          launch: { ready: true as const },
         },
       ];
     },

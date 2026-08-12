@@ -61,12 +61,22 @@ test("workflow contributions appear in catalog and both management overviews", a
       path: "cap:review/task_capability.yaml",
       id: "task_capability",
       displayName: "Capability task",
+      source: { kind: "capability", capabilityID: "review" },
+      launch: {
+        ready: false,
+        reason: "stage has no minimum completion condition: read",
+      },
     },
     {
       kind: "flow",
       path: "cap:review/flow_capability.yaml",
       id: "flow_capability",
       displayName: "Capability flow",
+      source: { kind: "capability", capabilityID: "review" },
+      launch: {
+        ready: false,
+        reason: "flow manual run profile is not configured: flow_capability",
+      },
     },
   ]);
   await expect(

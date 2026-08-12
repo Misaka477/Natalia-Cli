@@ -5,6 +5,7 @@ import {
   slashAutocompleteQuery,
   workflowAutocompleteQuery,
   workflowCommandKinds,
+  workflowDocumentUnavailableReason,
   workflowRunRequest,
 } from "../src/component/PromptAutocomplete";
 
@@ -38,12 +39,27 @@ test("workflow autocomplete recognizes task and flow arguments", () => {
           path: "nightly.yaml",
           id: "task_nightly",
           displayName: "Nightly",
+          source: { kind: "workspace" },
+          launch: { ready: true },
         },
       ],
       "",
     ),
   ).toEqual(["task"]);
   expect(workflowCommandKinds([], "")).toEqual([]);
+});
+
+test("workflow launch readiness carries the host reason into autocomplete", () => {
+  expect(
+    workflowDocumentUnavailableReason({
+      kind: "flow",
+      path: "cap:review/flow_review.yaml",
+      id: "flow_review",
+      displayName: "Review",
+      source: { kind: "capability", capabilityID: "review" },
+      launch: { ready: false, reason: "direct run is not configured" },
+    }),
+  ).toBe("direct run is not configured");
 });
 
 test("file mention autocomplete only activates at an @ token boundary", () => {

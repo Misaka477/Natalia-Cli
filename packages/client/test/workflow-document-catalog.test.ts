@@ -6,7 +6,7 @@ import { configV2Schema, nataliaFlowDocumentSchema } from "@natalia/contracts";
 import { NataliaDocumentStore } from "@natalia/workflow";
 import { manualFlowTask, workflowDocumentCatalog } from "../src";
 
-test("workflow catalog exposes tasks and only directly runnable flows", async () => {
+test("workflow catalog keeps every readable document and explains launch readiness", async () => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), "natalia-workflows-"));
   const documents = new NataliaDocumentStore(workspaceRoot);
   await documents.saveFlow({
@@ -14,7 +14,14 @@ test("workflow catalog exposes tasks and only directly runnable flows", async ()
     version: 1,
     flowID: "flow_hidden",
     displayName: "Hidden flow",
-    modules: [{ id: "read", type: "read_search", displayName: "Read" }],
+    modules: [
+      {
+        id: "read",
+        type: "read_search",
+        displayName: "Read",
+        minimumConditions: [{ id: "checked", text: "Read the sources" }],
+      },
+    ],
   });
   await documents.saveFlow({
     kind: "natalia-flow",
@@ -22,7 +29,14 @@ test("workflow catalog exposes tasks and only directly runnable flows", async ()
     flowID: "flow_manual",
     displayName: "Manual flow",
     directRun: { permissionProfile: "unattended" },
-    modules: [{ id: "read", type: "read_search", displayName: "Read" }],
+    modules: [
+      {
+        id: "read",
+        type: "read_search",
+        displayName: "Read",
+        minimumConditions: [{ id: "checked", text: "Read the sources" }],
+      },
+    ],
   });
   await documents.saveTask({
     kind: "natalia-task",
@@ -42,8 +56,27 @@ test("workflow catalog exposes tasks and only directly runnable flows", async ()
     permissionProfiles: { unattended: { approval: "auto" } },
   });
   expect(await workflowDocumentCatalog(workspaceRoot, config)).toEqual([
-    expect.objectContaining({ kind: "task", id: "task_manual" }),
-    expect.objectContaining({ kind: "flow", id: "flow_manual" }),
+    expect.objectContaining({
+      kind: "task",
+      id: "task_manual",
+      source: { kind: "workspace" },
+      launch: { ready: true },
+    }),
+    expect.objectContaining({
+      kind: "flow",
+      id: "flow_hidden",
+      source: { kind: "workspace" },
+      launch: {
+        ready: false,
+        reason: "flow manual run profile is not configured: flow_hidden",
+      },
+    }),
+    expect.objectContaining({
+      kind: "flow",
+      id: "flow_manual",
+      source: { kind: "workspace" },
+      launch: { ready: true },
+    }),
   ]);
   expect(
     await workflowDocumentCatalog(
@@ -56,7 +89,25 @@ test("workflow catalog exposes tasks and only directly runnable flows", async ()
         permissionProfiles: { unattended: { approval: "ask" } },
       }),
     ),
-  ).toEqual([expect.objectContaining({ kind: "task", id: "task_manual" })]);
+  ).toEqual([
+    expect.objectContaining({
+      kind: "task",
+      id: "task_manual",
+      launch: {
+        ready: false,
+        reason: "task permission profile must use auto approval: unattended",
+      },
+    }),
+    expect.objectContaining({ kind: "flow", id: "flow_hidden" }),
+    expect.objectContaining({
+      kind: "flow",
+      id: "flow_manual",
+      launch: {
+        ready: false,
+        reason: "flow manual run profile must use auto approval: unattended",
+      },
+    }),
+  ]);
 });
 
 test("manual flow task uses the flow profile and default execution model", () => {

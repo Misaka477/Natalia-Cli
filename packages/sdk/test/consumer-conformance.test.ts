@@ -247,13 +247,19 @@ test("a consumer can inspect real unattended work over the SDK", async () => {
       // A flow reports which tasks run it, so an integration can show impact.
       expect(Array.isArray(flows.flows[0]!.usedBy)).toBe(true);
 
-      // The catalog is for launching, so it lists every task but only flows that
-      // declare `directRun` — a flow without one cannot be run on its own. The
-      // example flows have no `directRun`, which is why only tasks appear here.
+      // The catalog is a management surface: every readable task and flow stays
+      // visible, while launch readiness is an explicit fact on each row.
       const catalog = await sdk.documentCatalog();
       expect(catalog.some((entry) => entry.kind === "task")).toBe(true);
+      expect(catalog.some((entry) => entry.kind === "flow")).toBe(true);
       expect(catalog.every((entry) => entry.id.length > 0)).toBe(true);
-      expect(catalog.length).toBe(tasks.tasks.length);
+      expect(
+        catalog.every(
+          (entry) =>
+            entry.source.kind === "workspace" &&
+            typeof entry.launch.ready === "boolean",
+        ),
+      ).toBe(true);
     },
     { withDocuments: true },
   );
@@ -959,6 +965,10 @@ test("an external orchestrator writes flow documents, idempotently", async () =>
     for (const entry of catalog) {
       expect(typeof entry.id).toBe("string");
       expect(typeof entry.path).toBe("string");
+      expect(["workspace", "capability"]).toContain(entry.source.kind);
+      expect(typeof entry.launch.ready).toBe("boolean");
+      if (!entry.launch.ready)
+        expect(entry.launch.reason.length).toBeGreaterThan(0);
     }
 
     // A path outside the flow editor is refused with a reason, like the

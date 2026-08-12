@@ -41,7 +41,6 @@ export {
 } from "./flow-condition-decomposition";
 export {
   assertConfigApplied,
-  assertTaskReferences,
   newHeadlessExecution,
   plainRuntimeEvent,
   runTask,
@@ -52,6 +51,7 @@ export {
   type HeadlessExecution,
   type TaskRunResult,
 } from "./task-controller";
+export { assertTaskReferences } from "./task-preflight";
 export {
   effectiveFlowPermissions,
   effectiveModulePermissions,
