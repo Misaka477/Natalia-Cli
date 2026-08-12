@@ -180,6 +180,10 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "documentCatalog",
     "saveFlowDocument",
     "deleteFlowDocument",
+    "saveTaskDocument",
+    "deleteTaskDocument",
+    "taskSchedule",
+    "taskUnschedule",
     "taskPermissionPreview",
   ],
   /** Runtime health and its own diagnostics. */

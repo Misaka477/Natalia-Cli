@@ -179,3 +179,106 @@ test("failed work emits a terminal failure and frees the gate", async () => {
     }).result,
   ).resolves.toBe("next");
 });
+
+test("active execution IDs cannot be reused until the first execution settles", async () => {
+  const scheduler = new WorkflowExecutionScheduler();
+  const release = deferred<void>();
+  const first = scheduler.schedule({
+    executionID: "exe_duplicate",
+    workspaceRoot: "/workspace/a",
+    run: async () => release.promise,
+  });
+
+  expect(() =>
+    scheduler.schedule({
+      executionID: "exe_duplicate",
+      workspaceRoot: "/workspace/b",
+      run: async () => undefined,
+    }),
+  ).toThrow("already active");
+
+  release.resolve();
+  await first.result;
+  await expect(
+    scheduler.schedule({
+      executionID: "exe_duplicate",
+      workspaceRoot: "/workspace/b",
+      run: async () => "reused",
+    }).result,
+  ).resolves.toBe("reused");
+});
+
+test("failed execution IDs are released after terminal settlement", async () => {
+  const scheduler = new WorkflowExecutionScheduler();
+  const failed = scheduler.schedule({
+    executionID: "exe_failedreuse",
+    workspaceRoot: "/workspace/a",
+    run: async () => {
+      throw new Error("boom");
+    },
+  });
+
+  await expect(failed.result).rejects.toThrow("boom");
+  await expect(
+    scheduler.schedule({
+      executionID: "exe_failedreuse",
+      workspaceRoot: "/workspace/a",
+      run: async () => "reused",
+    }).result,
+  ).resolves.toBe("reused");
+});
+
+test("idempotency replays return the active handle and reject changed input", async () => {
+  const scheduler = new WorkflowExecutionScheduler({ globalConcurrency: 1 });
+  const release = deferred<void>();
+  const first = scheduler.schedule({
+    executionID: "exe_idempotent",
+    idempotencyKey: "request-1",
+    idempotencyFingerprint: "task-a",
+    workspaceRoot: "/workspace/a",
+    run: async () => {
+      await release.promise;
+      return "done";
+    },
+  });
+  const replay = scheduler.schedule({
+    idempotencyKey: "request-1",
+    idempotencyFingerprint: "task-a",
+    workspaceRoot: "/workspace/a",
+    run: async () => "wrong",
+  });
+  expect(replay.executionID).toBe(first.executionID);
+  expect(() =>
+    scheduler.schedule({
+      idempotencyKey: "request-1",
+      idempotencyFingerprint: "task-b",
+      workspaceRoot: "/workspace/a",
+      run: async () => "wrong",
+    }),
+  ).toThrow("different input");
+  release.resolve();
+  await expect(replay.result).resolves.toBe("done");
+});
+
+test("queued executions fail closed after the queue timeout", async () => {
+  const scheduler = new WorkflowExecutionScheduler({
+    globalConcurrency: 1,
+    workspaceConcurrency: 1,
+    queueTimeoutMs: 10,
+  });
+  const release = deferred<void>();
+  const first = scheduler.schedule({
+    workspaceRoot: "/workspace/a",
+    run: async () => release.promise,
+  });
+  const queued = scheduler.schedule({
+    executionID: "exe_timeout",
+    workspaceRoot: "/workspace/a",
+    run: async () => "never",
+  });
+  await expect(queued.result).rejects.toMatchObject({
+    code: "execution_queue_timeout",
+  });
+  release.resolve();
+  await first.result;
+});

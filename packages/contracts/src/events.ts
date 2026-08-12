@@ -1682,6 +1682,40 @@ export type RuntimeClient = {
     deleted: boolean;
     alreadyDeleted: boolean;
   }>;
+  /** Creates or replaces a task document under `.natalia/tasks`. */
+  saveTaskDocument?(input: {
+    path?: string;
+    document: import("./schemas").NataliaTaskDocumentInput;
+  }): Promise<{
+    path: string;
+    taskID: string;
+    created: boolean;
+    updated: boolean;
+  }>;
+  /** Deletes a task document; configured timers must be removed first. */
+  deleteTaskDocument?(input: { path: string }): Promise<{
+    path: string;
+    deleted: boolean;
+    alreadyDeleted: boolean;
+  }>;
+  taskSchedule?(input: {
+    path: string;
+    calendar: string;
+    scope: "user" | "system";
+  }): Promise<{
+    path: string;
+    taskID: string;
+    timerUnit: string;
+    scope: "user" | "system";
+    normalizedCalendar: string;
+    next: string[];
+    commands: string[];
+  }>;
+  taskUnschedule?(input: { path: string }): Promise<{
+    path: string;
+    removed: boolean;
+    commands: string[];
+  }>;
   /**
    * Validates a task document and previews its permissions before it is ever
    * delivered to a runtime. Problems are a value, not an exception: an

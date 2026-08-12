@@ -637,6 +637,151 @@ test("unattended read routes are refused when the runtime does not implement the
   }
 });
 
+test("HTTP task idempotency replays the same active execution", async () => {
+  let starts = 0;
+  const server = createRuntimeHttpServer({
+    client: transportClient(),
+    token: "execute",
+    taskExecution: true,
+    startTask() {
+      starts += 1;
+      return {
+        executionID: "exe_http_idempotent",
+        events: (async function* () {
+          await new Promise(() => undefined);
+        })(),
+        result: new Promise<never>(() => undefined),
+        cancel() {},
+      };
+    },
+  });
+  try {
+    const post = (body: unknown) =>
+      fetch(`${server.url}/tasks/run`, {
+        method: "POST",
+        headers: {
+          authorization: "Bearer execute",
+          "content-type": "application/json",
+          "idempotency-key": "request-1",
+        },
+        body: JSON.stringify(body),
+      });
+    expect((await post({ taskID: "task_a", wait: false })).status).toBe(202);
+    expect((await post({ taskID: "task_a", wait: false })).status).toBe(202);
+    expect(starts).toBe(1);
+    expect((await post({ taskID: "task_b", wait: false })).status).toBe(409);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("task document RPC writes are fail-closed and idempotent", async () => {
+  const client = {
+    ...transportClient(),
+    async saveTaskDocument(input: { path?: string; document: unknown }) {
+      return {
+        path: input.path ?? "task.yaml",
+        taskID: "task_remote",
+        created: true,
+        updated: false,
+      };
+    },
+    async deleteTaskDocument(input: { path: string }) {
+      return { path: input.path, deleted: false, alreadyDeleted: true };
+    },
+  } as RuntimeClient;
+  const server = createRuntimeHttpServer({
+    client,
+    authorization: {
+      credentials: [
+        { token: "read", groups: ["automation"] },
+        { token: "write", write: true, groups: ["automation"] },
+      ],
+    },
+  });
+  try {
+    const request = (token: string, method: string, params: unknown) =>
+      fetch(`${server.url}/rpc`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ id: 1, method, params }),
+      });
+    expect((await request("read", "task.save", { document: {} })).status).toBe(
+      400,
+    );
+    expect((await request("write", "task.save", { document: {} })).status).toBe(
+      200,
+    );
+    expect(
+      (await request("write", "task.delete", { path: "task.yaml" })).status,
+    ).toBe(200);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("task schedule routes preserve calendar preview and unschedule idempotency", async () => {
+  const calls: string[] = [];
+  const client = {
+    ...transportClient(),
+    async taskSchedule(input: {
+      path: string;
+      calendar: string;
+      scope: "user" | "system";
+    }) {
+      calls.push(`schedule:${input.path}`);
+      return {
+        path: input.path,
+        taskID: "task_schedule",
+        timerUnit: "natalia-task-schedule.timer",
+        scope: input.scope,
+        normalizedCalendar: input.calendar,
+        next: ["2026-08-13T00:00:00Z"],
+        commands: [],
+      };
+    },
+    async taskUnschedule(input: { path: string }) {
+      calls.push(`unschedule:${input.path}`);
+      return { path: input.path, removed: false, commands: [] };
+    },
+  } as RuntimeClient;
+  const server = createRuntimeHttpServer({
+    client,
+    authorization: {
+      credentials: [{ token: "write", write: true, groups: ["automation"] }],
+    },
+  });
+  try {
+    const call = (method: string, params: unknown) =>
+      fetch(`${server.url}/rpc`, {
+        method: "POST",
+        headers: {
+          authorization: "Bearer write",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ id: 1, method, params }),
+      });
+    expect(
+      (
+        await call("task.schedule", {
+          path: "task.yaml",
+          calendar: "*-*-* 00:00:00",
+          scope: "user",
+        })
+      ).status,
+    ).toBe(200);
+    expect((await call("task.unschedule", { path: "task.yaml" })).status).toBe(
+      200,
+    );
+    expect(calls).toEqual(["schedule:task.yaml", "unschedule:task.yaml"]);
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("task execution requires write, automation, and deployment opt-in before parsing", async () => {
   let starts = 0;
   const authorization = {
@@ -904,4 +1049,93 @@ test("stopping the HTTP host cancels active workflow executions", async () => {
   expect(started.status).toBe(202);
   server.stop(true);
   expect(cancelled).toBe("HTTP runtime server stopped");
+});
+
+test("task execution output is bounded independently from event records", async () => {
+  const server = createRuntimeHttpServer({
+    client: transportClient(),
+    token: "execute",
+    taskExecution: true,
+    startTask() {
+      return {
+        executionID: "exe_output_bound",
+        events: (async function* () {
+          for (let index = 0; index < 501; index++)
+            yield {
+              type: "workflow.execution.output",
+              executionID: "exe_output_bound",
+              line: `line-${index}`,
+            };
+          yield {
+            type: "workflow.execution",
+            executionID: "exe_output_bound",
+            status: "completed",
+          };
+        })(),
+        result: Promise.resolve({
+          invocationID: "inv_output_bound",
+          status: "succeeded",
+          waterlineAdvanced: true,
+          exitCode: 0,
+        }),
+        cancel() {},
+      };
+    },
+  });
+  try {
+    const response = await fetch(`${server.url}/tasks/run`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer execute",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ taskID: "task_output_bound" }),
+    });
+    const body = (await response.json()) as { output: string[] };
+    expect(response.status).toBe(200);
+    expect(body.output).toHaveLength(500);
+    expect(body.output[0]).toBe("line-1");
+    expect(body.output.at(-1)).toBe("line-500");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("task execution observation capacity is bounded", async () => {
+  let sequence = 0;
+  const server = createRuntimeHttpServer({
+    client: transportClient(),
+    token: "execute",
+    taskExecution: true,
+    startTask() {
+      const executionID = `exe_capacity_${sequence++}`;
+      return {
+        executionID,
+        events: (async function* () {
+          await new Promise(() => undefined);
+        })(),
+        result: new Promise<never>(() => undefined),
+        cancel() {},
+      };
+    },
+  });
+  try {
+    const post = () =>
+      fetch(`${server.url}/tasks/run`, {
+        method: "POST",
+        headers: {
+          authorization: "Bearer execute",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ taskID: "task_reservation", wait: false }),
+      });
+    const requests = Array.from({ length: 100 }, post);
+    const responses = await Promise.all(requests);
+    expect(
+      responses.filter((response) => response.status === 202),
+    ).toHaveLength(100);
+    expect((await post()).status).toBe(503);
+  } finally {
+    server.stop(true);
+  }
 });

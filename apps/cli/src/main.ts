@@ -132,6 +132,9 @@ switch (subcommand) {
     const taskScheduler = new WorkflowExecutionScheduler({
       globalConcurrency: maxConcurrentTasks,
       workspaceConcurrency: 1,
+      queueTimeoutMs: Number(
+        valueAfter(argv, "--queue-timeout-ms") ?? "300000",
+      ),
     });
     const workspaceHosts = new Map<
       string,
@@ -168,6 +171,8 @@ switch (subcommand) {
           workspaceRoot,
           path: request.taskPath,
           taskID: request.taskID,
+          idempotencyKey: request.idempotencyKey,
+          idempotencyFingerprint: JSON.stringify(request),
           config,
           json: request.json !== false,
           requestedBy: { transport: "http" },

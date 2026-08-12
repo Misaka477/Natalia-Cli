@@ -691,7 +691,7 @@ createRuntimeHttpServer({
   `start`, `submit`, `cancel`, `snapshot`, `diagnostic`, `lastSubmission`, `respondApproval`, `respondQuestion`.
 - Deprecated members (`DEPRECATED_RUNTIME_MEMBERS`): none (mechanism in place, table empty).
 
-### Capability groups (17 groups · 90 optional members)
+### Capability groups (17 groups · 94 optional members)
 
 | Group          | Members (RuntimeClient names)                                                                                                                                                                                                                                                                                         |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -708,12 +708,12 @@ createRuntimeHttpServer({
 | mcp            | `mcpCatalog` · `getMcpPrompt` · `readMcpResource` · `mcpServerAdd` · `mcpServerRemove`                                                                                                                                                                                                                                |
 | extensions     | `plugins` · `commandCatalog` · `capabilities` · `pluginUnload` · `pluginReload`                                                                                                                                                                                                                                       |
 | management     | `permissionList` · `permissionSave` · `permissionDelete`                                                                                                                                                                                                                                                              |
-| automation     | `taskOverview` · `flowOverview` · `documentCatalog` · `saveFlowDocument` · `deleteFlowDocument` · `taskPermissionPreview`                                                                                                                                                                                             |
+| automation     | `taskOverview` · `flowOverview` · `documentCatalog` · `saveFlowDocument` · `deleteFlowDocument` · `saveTaskDocument` · `deleteTaskDocument` · `taskSchedule` · `taskUnschedule` · `taskPermissionPreview`                                                                                                             |
 | observability  | `runtimeStatus` · `diagnostics` · `sessionSnapshot`                                                                                                                                                                                                                                                                   |
 | workGraph      | `workGraphNodes` · `workGraphEdges`                                                                                                                                                                                                                                                                                   |
 | intelligence   | `constitutionRules` · `decisionRecords` · `evidenceRecords` · `driftFindings` · `registeredTools`                                                                                                                                                                                                                     |
 
-### RPC route table (95 methods → members)
+### RPC route table (99 methods → members)
 
 | RPC method                           | RuntimeClient member                | Capability group | Write |
 | ------------------------------------ | ----------------------------------- | ---------------- | ----- |
@@ -811,9 +811,13 @@ createRuntimeHttpServer({
 | `submit.input`                       | `submitInput`                       | transcript       | write |
 | `flow.save`                          | `saveFlowDocument`                  | automation       | write |
 | `flow.delete`                        | `deleteFlowDocument`                | automation       | write |
+| `task.save`                          | `saveTaskDocument`                  | automation       | write |
+| `task.delete`                        | `deleteTaskDocument`                | automation       | write |
+| `task.schedule`                      | `taskSchedule`                      | automation       | write |
+| `task.unschedule`                    | `taskUnschedule`                    | automation       | write |
 | `task.preview`                       | `taskPermissionPreview`             | automation       | read  |
 
-### Write surface (`RPC_WRITE_METHODS`, 47 methods; read-only credentials get `-32001 refused`)
+### Write surface (`RPC_WRITE_METHODS`, 51 methods; read-only credentials get `-32001 refused`)
 
 - `prompt`
 - `cancel`
@@ -862,6 +866,10 @@ createRuntimeHttpServer({
 - `nativeTerminal.resize`
 - `flow.save`
 - `flow.delete`
+- `task.save`
+- `task.delete`
+- `task.schedule`
+- `task.unschedule`
 
 ### Intentionally local members (`RPC_INTENTIONALLY_LOCAL`; reported as `intentionally local`)
 
@@ -1011,6 +1019,9 @@ createRuntimeHttpServer({
 | `capabilities`                      | `capabilities`                       | —                                                                          | CapabilityRecordView[]                                                                                                                                                                                                                                                                                              |
 | `sessionSnapshot`                   | `session.snapshot`                   | —                                                                          | | { agentStatus: string; currentStep?: string; activeTool?: string; changedFiles: number; unvalidatedChanges: number; hasPTY: boolean; hasSandbox: boolean; } | undefined                                                                                                                                           |
 | `deleteFlowDocument`                | `flow.delete`                        | `input`: { path: string }                                                  | { path: string; deleted: boolean; alreadyDeleted: boolean; }                                                                                                                                                                                                                                                        |
+| `deleteTaskDocument`                | `task.delete`                        | `input`: { path: string }                                                  | { path: string; deleted: boolean; alreadyDeleted: boolean; }                                                                                                                                                                                                                                                        |
+| `taskSchedule`                      | `task.schedule`                      | `input`: { path: string; calendar: string; scope: "user" | "system"; }     | { path: string; taskID: string; timerUnit: string; scope: "user" | "system"; normalizedCalendar: string; next: string[]; commands: string[]; }                                                                                                                                                                      |
+| `taskUnschedule`                    | `task.unschedule`                    | `input`: { path: string }                                                  | { path: string; removed: boolean; commands: string[]; }                                                                                                                                                                                                                                                             |
 | `updateConfig`                      | `config.update`                      | `input`: { patch: Record<string, unknown>; scope?: "project" | "global"; } | { applied: boolean; reason?: string }                                                                                                                                                                                                                                                                               |
 | `settingsGet`                       | `settings.get`                       | —                                                                          | { config: Record<string, unknown>; sources: Array<{ scope: "defaults" | "global" | "project"; path?: string; applied: boolean; diagnostic?: string; }>; }                                                                                                                                                           |
 | `settingsSet`                       | `settings.set`                       | `patch`: Record<string, `scope`: "global" | "project"                      | { applied: boolean }                                                                                                                                                                                                                                                                                                |

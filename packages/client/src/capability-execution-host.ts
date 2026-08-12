@@ -15,6 +15,8 @@ import {
 
 export type CapabilityTaskExecutionRequest = {
   executionID?: string;
+  idempotencyKey?: string;
+  idempotencyFingerprint?: string;
   workspaceRoot: string;
   path?: string;
   taskID?: string;
@@ -43,6 +45,7 @@ export class CapabilityExecutionHost {
       workspaceConcurrency?: number;
       globalQueueLimit?: number;
       workspaceQueueLimit?: number;
+      queueTimeoutMs?: number;
     } = {},
   ) {
     this.scheduler =
@@ -63,6 +66,8 @@ export class CapabilityExecutionHost {
     return this.scheduler.schedule({
       workspaceRoot,
       executionID: request.executionID,
+      idempotencyKey: request.idempotencyKey,
+      idempotencyFingerprint: request.idempotencyFingerprint,
       run: async ({ signal, publishOutput, publishResolved }) => {
         signal.throwIfAborted();
         const first = await this.resolveExecutionDocuments(request);

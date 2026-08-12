@@ -30,6 +30,10 @@ export const WORKER_ROUTE_MEMBERS = {
   "runtime.availability": null,
   "flow.save": "saveFlowDocument",
   "flow.delete": "deleteFlowDocument",
+  "task.save": "saveTaskDocument",
+  "task.delete": "deleteTaskDocument",
+  "task.schedule": "taskSchedule",
+  "task.unschedule": "taskUnschedule",
   "task.preview": "taskPermissionPreview",
   "task.overview": "taskOverview",
   "flow.overview": "flowOverview",
@@ -163,6 +167,10 @@ type WorkerRequest = {
     | "runtime.availability"
     | "flow.save"
     | "flow.delete"
+    | "task.save"
+    | "task.delete"
+    | "task.schedule"
+    | "task.unschedule"
     | "task.preview"
     | "task.overview"
     | "flow.overview"
@@ -187,6 +195,8 @@ type WorkflowWorkerEvent = {
 
 type WorkerWorkflowRunInput = {
   executionID: string;
+  idempotencyKey?: string;
+  idempotencyFingerprint?: string;
   workspaceRoot: string;
   path?: string;
   taskID?: string;
@@ -418,6 +428,26 @@ export function createWorkerRuntimeClient(
     async deleteFlowDocument(input) {
       return (await request("flow.delete", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["deleteFlowDocument"]>>
+      >;
+    },
+    async saveTaskDocument(input) {
+      return (await request("task.save", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["saveTaskDocument"]>>
+      >;
+    },
+    async deleteTaskDocument(input) {
+      return (await request("task.delete", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["deleteTaskDocument"]>>
+      >;
+    },
+    async taskSchedule(input) {
+      return (await request("task.schedule", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["taskSchedule"]>>
+      >;
+    },
+    async taskUnschedule(input) {
+      return (await request("task.unschedule", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["taskUnschedule"]>>
       >;
     },
     async taskPermissionPreview(input) {
@@ -705,6 +735,8 @@ export function attachRuntimeClientWorker(
         );
         const handle = options.workflowExecution.runTask({
           executionID: input.executionID,
+          idempotencyKey: input.idempotencyKey,
+          idempotencyFingerprint: input.idempotencyFingerprint,
           workspaceRoot: input.workspaceRoot,
           path: input.path,
           taskID: input.taskID,
@@ -980,6 +1012,14 @@ export async function handleWorkerRequest(
     );
   if (request.method === "flow.delete")
     return await client.deleteFlowDocument?.(request.value as { path: string });
+  if (request.method === "task.save")
+    return await client.saveTaskDocument?.(request.value as never);
+  if (request.method === "task.delete")
+    return await client.deleteTaskDocument?.(request.value as { path: string });
+  if (request.method === "task.schedule")
+    return await client.taskSchedule?.(request.value as never);
+  if (request.method === "task.unschedule")
+    return await client.taskUnschedule?.(request.value as { path: string });
   if (request.method === "task.preview")
     return await client.taskPermissionPreview?.(
       request.value as { path: string },

@@ -357,6 +357,22 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "error",
     note: "a flow still referenced by tasks is refused with the referencing tasks; already-deleted is a value",
   },
+  saveTaskDocument: {
+    refusal: "error",
+    note: "a path outside .natalia/tasks is refused and the validated document is written atomically",
+  },
+  deleteTaskDocument: {
+    refusal: "error",
+    note: "configured timers must be removed first; already-deleted is a value",
+  },
+  taskSchedule: {
+    refusal: "error",
+    note: "invalid calendars, scope changes and systemd failures refuse before task state is written",
+  },
+  taskUnschedule: {
+    refusal: "error",
+    note: "missing timers are an idempotent value; systemd inspection failures refuse closed",
+  },
   taskPermissionPreview: {
     refusal: "error",
     note: "a path outside .natalia/tasks is refused unless it names a visible capability-owned cap: document; validation problems are a value in the result",

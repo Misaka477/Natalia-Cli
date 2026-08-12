@@ -128,6 +128,12 @@ import {
   deleteFlowDocument as deleteFlowDocumentFile,
   saveFlowDocument as saveFlowDocumentFile,
 } from "./flow-document";
+import {
+  configureTaskSystemd,
+  deleteTaskDocument,
+  removeTaskSystemd,
+  saveTaskDocument,
+} from "./task-document";
 import { registerBuiltinCapabilities } from "./capabilities/builtin-capabilities";
 import { registerTaskModuleCapability } from "./capabilities/task-module-capability";
 import type { TaskModuleContext } from "./capabilities/task-module-tools";
@@ -2485,6 +2491,80 @@ export function createRealRuntimeClient(
         return { path: input.path, deleted: false, alreadyDeleted: true };
       await deleteFlowDocumentFile({ workspaceRoot, path: input.path });
       return { path: input.path, deleted: true, alreadyDeleted: false };
+    },
+    async saveTaskDocument(input) {
+      await ready;
+      if (input.path?.startsWith("cap:"))
+        throw new RuntimeRefusal(
+          "contributed document paths are read-only and cannot be saved",
+        );
+      const resolved = input.path ?? `${input.document.taskID}.yaml`;
+      let existed = false;
+      try {
+        await new NataliaDocumentStore(workspaceRoot).loadTask(resolved);
+        existed = true;
+      } catch {
+        existed = false;
+      }
+      await saveTaskDocument({
+        workspaceRoot,
+        path: input.path,
+        document: input.document,
+      });
+      return {
+        path: resolved,
+        taskID: input.document.taskID,
+        created: !existed,
+        updated: existed,
+      };
+    },
+    async deleteTaskDocument(input) {
+      await ready;
+      let existed = true;
+      try {
+        await new NataliaDocumentStore(workspaceRoot).loadTask(input.path);
+      } catch {
+        existed = false;
+      }
+      if (!existed)
+        return { path: input.path, deleted: false, alreadyDeleted: true };
+      await deleteTaskDocument({ workspaceRoot, path: input.path });
+      return { path: input.path, deleted: true, alreadyDeleted: false };
+    },
+    async taskSchedule(input) {
+      await ready;
+      const result = await configureTaskSystemd({
+        workspaceRoot,
+        path: input.path,
+        calendar: input.calendar,
+        scope: input.scope,
+        executable: process.execPath,
+        cliEntry: process.argv[1],
+      });
+      const task = await new NataliaDocumentStore(
+        workspaceRoot,
+      ).loadTaskDocument(input.path);
+      return {
+        path: input.path,
+        taskID: task.taskID,
+        timerUnit: result.units.timerUnit,
+        scope: input.scope,
+        normalizedCalendar: result.preview.normalized,
+        next: result.preview.next,
+        commands: result.commands,
+      };
+    },
+    async taskUnschedule(input) {
+      await ready;
+      const task = await new NataliaDocumentStore(
+        workspaceRoot,
+      ).loadTaskDocument(input.path);
+      const removed = Boolean(task.systemd?.timerUnit);
+      const result = await removeTaskSystemd({
+        workspaceRoot,
+        path: input.path,
+      });
+      return { path: input.path, removed, commands: result.commands };
     },
     async modelCatalog() {
       return await clientModelCatalog();

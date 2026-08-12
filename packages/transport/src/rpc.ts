@@ -205,6 +205,10 @@ export const RPC_ROUTE_MEMBERS = {
   // P0-G: the flow write surface, previously CLI-only.
   "flow.save": "saveFlowDocument",
   "flow.delete": "deleteFlowDocument",
+  "task.save": "saveTaskDocument",
+  "task.delete": "deleteTaskDocument",
+  "task.schedule": "taskSchedule",
+  "task.unschedule": "taskUnschedule",
   "task.preview": "taskPermissionPreview",
 } as const satisfies Readonly<Record<string, keyof RuntimeClient | null>>;
 
@@ -293,6 +297,10 @@ export const RPC_WRITE_METHODS: ReadonlySet<string> = new Set([
   "nativeTerminal.resize",
   "flow.save",
   "flow.delete",
+  "task.save",
+  "task.delete",
+  "task.schedule",
+  "task.unschedule",
 ]);
 
 /**
@@ -1419,6 +1427,61 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.deleteFlowDocument?.({ path }),
+      };
+    }
+    if (body.method === "task.save") {
+      const params = body.params;
+      if (!params || typeof params !== "object")
+        throw invalidParams("task.save.params must be an object");
+      const document = (params as { document?: unknown }).document;
+      if (!document || typeof document !== "object")
+        throw invalidParams("task.save.params.document must be an object");
+      const path =
+        typeof (params as { path?: unknown }).path === "string"
+          ? (params as { path: string }).path
+          : undefined;
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.saveTaskDocument?.({
+          path,
+          document: document as never,
+        }),
+      };
+    }
+    if (body.method === "task.delete") {
+      const path = stringParam(body.params, "path");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.deleteTaskDocument?.({ path }),
+      };
+    }
+    if (body.method === "task.schedule") {
+      const params = body.params;
+      if (!params || typeof params !== "object")
+        throw invalidParams("task.schedule.params must be an object");
+      const input = params as Record<string, unknown>;
+      if (typeof input.path !== "string" || typeof input.calendar !== "string")
+        throw invalidParams("task.schedule requires path and calendar");
+      if (input.scope !== "user" && input.scope !== "system")
+        throw invalidParams("task.schedule.scope must be user or system");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.taskSchedule?.({
+          path: input.path,
+          calendar: input.calendar,
+          scope: input.scope,
+        }),
+      };
+    }
+    if (body.method === "task.unschedule") {
+      const path = stringParam(body.params, "path");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.taskUnschedule?.({ path }),
       };
     }
     // --- P0-C: submission with attachments, resources and agent mentions ---

@@ -50,10 +50,20 @@ export type WorkflowExecutionHandle<T> = {
 };
 
 export class WorkflowExecutionRefusal extends Error {
-  readonly code: "global_queue_full" | "workspace_queue_full";
+  readonly code:
+    | "global_queue_full"
+    | "workspace_queue_full"
+    | "execution_id_conflict"
+    | "execution_idempotency_conflict"
+    | "execution_queue_timeout";
 
   constructor(
-    code: "global_queue_full" | "workspace_queue_full",
+    code:
+      | "global_queue_full"
+      | "workspace_queue_full"
+      | "execution_id_conflict"
+      | "execution_idempotency_conflict"
+      | "execution_queue_timeout",
     message: string,
   ) {
     super(message);
@@ -81,6 +91,10 @@ type ScheduledExecution<T> = {
   reject(error: unknown): void;
   started: boolean;
   settled: boolean;
+  idempotencyKey?: string;
+  idempotencyFingerprint?: string;
+  queueTimer?: ReturnType<typeof setTimeout>;
+  handle?: WorkflowExecutionHandle<unknown>;
 };
 
 /**
@@ -97,6 +111,9 @@ export class WorkflowExecutionScheduler {
   private globalActive = 0;
   private readonly workspaceActive = new Map<string, number>();
   private readonly waiting: ScheduledExecution<unknown>[] = [];
+  private readonly executionIDs = new Set<string>();
+  private readonly idempotency = new Map<string, ScheduledExecution<unknown>>();
+  private readonly queueTimeoutMs: number;
 
   constructor(
     options: {
@@ -104,6 +121,7 @@ export class WorkflowExecutionScheduler {
       workspaceConcurrency?: number;
       globalQueueLimit?: number;
       workspaceQueueLimit?: number;
+      queueTimeoutMs?: number;
     } = {},
   ) {
     this.globalConcurrency = positiveInteger(
@@ -122,11 +140,17 @@ export class WorkflowExecutionScheduler {
       options.workspaceQueueLimit ?? 20,
       "workspaceQueueLimit",
     );
+    this.queueTimeoutMs = nonNegativeInteger(
+      options.queueTimeoutMs ?? 5 * 60_000,
+      "queueTimeoutMs",
+    );
   }
 
   schedule<T>(input: {
     workspaceRoot: string;
     executionID?: string;
+    idempotencyKey?: string;
+    idempotencyFingerprint?: string;
     run: ScheduledExecution<T>["run"];
   }): WorkflowExecutionHandle<T> {
     const workspaceRoot = resolve(input.workspaceRoot);
@@ -134,6 +158,22 @@ export class WorkflowExecutionScheduler {
       input.executionID ?? `exe_${crypto.randomUUID().replace(/-/gu, "")}`;
     if (!/^exe_[a-zA-Z0-9]+$/u.test(executionID))
       throw new Error("workflow execution ID is invalid");
+    if (this.executionIDs.has(executionID))
+      throw new WorkflowExecutionRefusal(
+        "execution_id_conflict",
+        `workflow execution ID is already active: ${executionID}`,
+      );
+    if (input.idempotencyKey) {
+      const existing = this.idempotency.get(input.idempotencyKey);
+      if (existing) {
+        if (existing.idempotencyFingerprint !== input.idempotencyFingerprint)
+          throw new WorkflowExecutionRefusal(
+            "execution_idempotency_conflict",
+            `workflow idempotency key was reused with different input: ${input.idempotencyKey}`,
+          );
+        return existing.handle as WorkflowExecutionHandle<T>;
+      }
+    }
     const stream = new ExecutionEventStream();
     const abort = new AbortController();
     let resolveResult!: (value: T) => void;
@@ -152,14 +192,26 @@ export class WorkflowExecutionScheduler {
       reject: rejectResult,
       started: false,
       settled: false,
+      idempotencyKey: input.idempotencyKey,
+      idempotencyFingerprint: input.idempotencyFingerprint,
     };
-
     if (!this.canStart(workspaceRoot)) this.assertQueueCapacity(workspaceRoot);
+    this.executionIDs.add(executionID);
+    if (input.idempotencyKey)
+      this.idempotency.set(
+        input.idempotencyKey,
+        execution as ScheduledExecution<unknown>,
+      );
     this.waiting.push(execution as ScheduledExecution<unknown>);
+    if (this.queueTimeoutMs > 0)
+      execution.queueTimer = setTimeout(
+        () => this.expireQueued(execution),
+        this.queueTimeoutMs,
+      );
     this.publish(execution, { status: "queued" });
     this.drain();
 
-    return {
+    const handle: WorkflowExecutionHandle<T> = {
       executionID,
       events: stream,
       result,
@@ -172,6 +224,13 @@ export class WorkflowExecutionScheduler {
           );
           if (index >= 0) this.waiting.splice(index, 1);
           execution.settled = true;
+          this.executionIDs.delete(execution.executionID);
+          if (execution.queueTimer) clearTimeout(execution.queueTimer);
+          if (
+            execution.idempotencyKey &&
+            this.idempotency.get(execution.idempotencyKey) === execution
+          )
+            this.idempotency.delete(execution.idempotencyKey);
           this.publish(execution, { status: "cancelled", reason });
           stream.close();
           rejectResult(abort.signal.reason);
@@ -181,6 +240,30 @@ export class WorkflowExecutionScheduler {
         this.publish(execution, { status: "cancelling", reason });
       },
     };
+    execution.handle = handle as WorkflowExecutionHandle<unknown>;
+    return handle;
+  }
+
+  private expireQueued(execution: ScheduledExecution<unknown>) {
+    if (execution.started || execution.settled) return;
+    const index = this.waiting.indexOf(execution);
+    if (index < 0) return;
+    this.waiting.splice(index, 1);
+    execution.settled = true;
+    this.executionIDs.delete(execution.executionID);
+    if (
+      execution.idempotencyKey &&
+      this.idempotency.get(execution.idempotencyKey) === execution
+    )
+      this.idempotency.delete(execution.idempotencyKey);
+    const error = new WorkflowExecutionRefusal(
+      "execution_queue_timeout",
+      `workflow execution remained queued for ${this.queueTimeoutMs}ms`,
+    );
+    this.publish(execution, { status: "failed", reason: error.message });
+    execution.stream.close();
+    execution.reject(error);
+    this.drain();
   }
 
   private assertQueueCapacity(workspaceRoot: string) {
@@ -222,6 +305,7 @@ export class WorkflowExecutionScheduler {
   }
 
   private start(execution: ScheduledExecution<unknown>) {
+    if (execution.queueTimer) clearTimeout(execution.queueTimer);
     execution.started = true;
     this.globalActive += 1;
     this.workspaceActive.set(
@@ -241,10 +325,22 @@ export class WorkflowExecutionScheduler {
         });
         execution.abort.signal.throwIfAborted();
         execution.settled = true;
+        this.executionIDs.delete(execution.executionID);
+        if (
+          execution.idempotencyKey &&
+          this.idempotency.get(execution.idempotencyKey) === execution
+        )
+          this.idempotency.delete(execution.idempotencyKey);
         this.publish(execution, { status: "completed" });
         execution.resolve(value);
       } catch (error) {
         execution.settled = true;
+        this.executionIDs.delete(execution.executionID);
+        if (
+          execution.idempotencyKey &&
+          this.idempotency.get(execution.idempotencyKey) === execution
+        )
+          this.idempotency.delete(execution.idempotencyKey);
         const cancelled = execution.abort.signal.aborted;
         this.publish(execution, {
           status: cancelled ? "cancelled" : "failed",

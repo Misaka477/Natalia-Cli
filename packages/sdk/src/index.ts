@@ -368,6 +368,28 @@ export type NataliaSDK = {
     deleted: boolean;
     alreadyDeleted: boolean;
   }>;
+  /** Creates or updates a task document. Idempotent by path. */
+  saveTaskDocument(input: {
+    path?: string;
+    document: import("@natalia/contracts").NataliaTaskDocumentInput;
+  }): Promise<{
+    path: string;
+    taskID: string;
+    created: boolean;
+    updated: boolean;
+  }>;
+  /** Deletes a task document. Configured timers must be removed first. */
+  deleteTaskDocument(input: { path: string }): Promise<{
+    path: string;
+    deleted: boolean;
+    alreadyDeleted: boolean;
+  }>;
+  taskSchedule(
+    input: Parameters<NonNullable<RuntimeClient["taskSchedule"]>>[0],
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["taskSchedule"]>>>>;
+  taskUnschedule(
+    input: Parameters<NonNullable<RuntimeClient["taskUnschedule"]>>[0],
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["taskUnschedule"]>>>>;
   /** Writes a config patch (the TUI settings menu path) and applies it. */
   updateConfig(input: {
     patch: Record<string, unknown>;
@@ -639,6 +661,10 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     submitInput: async (input) => await call("submit.input", input),
     saveFlowDocument: async (input) => await call("flow.save", input),
     deleteFlowDocument: async (input) => await call("flow.delete", input),
+    saveTaskDocument: async (input) => await call("task.save", input),
+    deleteTaskDocument: async (input) => await call("task.delete", input),
+    taskSchedule: async (input) => await call("task.schedule", input),
+    taskUnschedule: async (input) => await call("task.unschedule", input),
     taskPermissionPreview: async (input) => await call("task.preview", input),
     updateConfig: async (input) => await call("config.update", input),
     settingsGet: async () => await call("settings.get", {}),

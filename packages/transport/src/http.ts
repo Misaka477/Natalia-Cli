@@ -11,6 +11,8 @@ export type TaskDeliveryRequest = {
   json?: boolean;
   /** Return 202 after admission instead of waiting for the terminal task result. */
   wait?: boolean;
+  /** Replays the same admitted execution instead of starting it twice. */
+  idempotencyKey?: string;
 };
 
 export type TaskExecutionHandle = {
@@ -156,6 +158,9 @@ function replayEvents(
 }
 
 const SSE_PREAMBLE = ": natalia runtime events\n\n";
+const TASK_EXECUTION_RECORD_LIMIT = 100;
+const TASK_EXECUTION_EVENT_LIMIT = 500;
+const TASK_EXECUTION_OUTPUT_LIMIT = 500;
 
 function encodeSSE(encoder: TextEncoder, id: number, event: RuntimeEvent) {
   return encoder.encode(
@@ -199,6 +204,11 @@ export function createRuntimeHttpServer(
     }
   >();
   const taskExecutionHandles = new Map<string, TaskExecutionHandle>();
+  const taskExecutionIdempotency = new Map<
+    string,
+    { fingerprint: string; executionID: string }
+  >();
+  let taskExecutionReservations = 0;
   let nextEventID = 1;
   if (options.events !== false)
     options.client.start((event) => {
@@ -299,9 +309,36 @@ export function createRuntimeHttpServer(
           { status: 400 },
         );
       try {
+        const idempotencyKey =
+          request.headers.get("idempotency-key") ?? payload.idempotencyKey;
+        const fingerprint = JSON.stringify({
+          ...payload,
+          wait: undefined,
+          idempotencyKey: undefined,
+        });
+        if (idempotencyKey) {
+          const existing = taskExecutionIdempotency.get(idempotencyKey);
+          if (existing) {
+            if (existing.fingerprint !== fingerprint)
+              return Response.json(
+                { error: "idempotency key was reused with different request" },
+                { status: 409 },
+              );
+            const record = taskExecutions.get(existing.executionID);
+            if (record)
+              return Response.json(
+                { executionID: existing.executionID, status: record.status },
+                { status: 202 },
+              );
+          }
+          payload.idempotencyKey = idempotencyKey;
+        }
         if (!options.startTask)
           return Response.json(await options.runTask!(payload));
-        if (taskExecutions.size >= 100) {
+        if (
+          taskExecutions.size + taskExecutionReservations >=
+          TASK_EXECUTION_RECORD_LIMIT
+        ) {
           const terminal = [...taskExecutions].find(
             ([, execution]) => execution.status !== "running",
           );
@@ -312,7 +349,20 @@ export function createRuntimeHttpServer(
               { status: 503 },
             );
         }
-        const handle = await options.startTask(payload);
+        taskExecutionReservations += 1;
+        let handle: TaskExecutionHandle;
+        try {
+          handle = await options.startTask(payload);
+        } finally {
+          taskExecutionReservations -= 1;
+        }
+        if (taskExecutions.has(handle.executionID)) {
+          handle.cancel("duplicate workflow execution ID");
+          return Response.json(
+            { error: "workflow execution ID is already being observed" },
+            { status: 409 },
+          );
+        }
         const record: {
           status: "running" | "completed" | "failed" | "cancelled";
           events: Record<string, unknown>[];
@@ -324,11 +374,17 @@ export function createRuntimeHttpServer(
         };
         taskExecutions.set(handle.executionID, record);
         taskExecutionHandles.set(handle.executionID, handle);
+        if (idempotencyKey)
+          taskExecutionIdempotency.set(idempotencyKey, {
+            fingerprint,
+            executionID: handle.executionID,
+          });
         const output: string[] = [];
         const pump = (async () => {
           for await (const event of handle.events) {
             record.events.push(event);
-            if (record.events.length > 500) record.events.shift();
+            if (record.events.length > TASK_EXECUTION_EVENT_LIMIT)
+              record.events.shift();
             if (event.type === "workflow.execution") {
               if (event.status === "cancelled") record.status = "cancelled";
               else if (event.status === "failed") record.status = "failed";
@@ -340,6 +396,7 @@ export function createRuntimeHttpServer(
               typeof event.line === "string"
             )
               output.push(event.line);
+            if (output.length > TASK_EXECUTION_OUTPUT_LIMIT) output.shift();
           }
         })();
         const settle = async () => {
