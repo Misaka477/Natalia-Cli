@@ -845,6 +845,11 @@ export function DialogWorkGraph(props: {
     summary: string;
     actor?: string;
   }>;
+  edges: Array<{
+    sourceID: string;
+    targetID: string;
+    kind: string;
+  }>;
 }) {
   return (
     <box
@@ -872,6 +877,18 @@ export function DialogWorkGraph(props: {
             </box>
           )}
         </For>
+        <Show when={props.edges.length > 0}>
+          <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>
+            Relations
+          </text>
+          <For each={props.edges}>
+            {(edge) => (
+              <text fg={darkTheme.muted} wrapMode="word">
+                {edge.kind}: {edge.sourceID} -&gt; {edge.targetID}
+              </text>
+            )}
+          </For>
+        </Show>
       </box>
     </box>
   );

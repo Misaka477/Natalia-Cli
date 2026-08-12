@@ -2770,7 +2770,8 @@ export async function runCommand(command: string, ctx: CommandContext) {
       ctx.backend.workGraphNodes?.() ?? Promise.resolve([]),
       ctx.backend.workGraphEdges?.() ?? Promise.resolve([]),
     ]).then(
-      ([nodes]) => ctx.dialog.push(() => <DialogWorkGraph nodes={nodes} />),
+      ([nodes, edges]) =>
+        ctx.dialog.push(() => <DialogWorkGraph nodes={nodes} edges={edges} />),
       (error: any) => ctx.toast.error(error),
     );
     return;
