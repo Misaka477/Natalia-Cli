@@ -30,9 +30,10 @@
  *   - `dialog.open` / `dialog.close`, `terminal.pane.focus`,
  *     `terminal.pane.select` — UI-only state, owned by whichever UI renders it.
  *   - `constitution.rule_added`, `decision.recorded`, `evidence.recorded`,
- *     `workgraph.node_added`, `workgraph.edge_added`, `drift.finding_opened`,
- *     `tool.registered` — no production writer exists yet, so projecting them
- *     would advertise a feature the runtime does not have. See
+ *     `drift.finding_opened`, `tool.registered` — no production writer exists
+ *     yet, so projecting them would advertise a feature the runtime does not
+ *     have. Work Graph events are the deliberate exception: the client now
+ *     emits secret-safe WG1 nodes and edges in production.
  */
 import type { RuntimeEvent } from "@natalia/contracts";
 import { applyConversationEvent } from "./conversation";
