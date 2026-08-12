@@ -20,13 +20,16 @@ RUN apt-get update \
     && cd packages/native-terminal/wezterm && bash get-deps \
     && rm -rf /var/lib/apt/lists/*
 ENV PATH=/root/.cargo/bin:${PATH}
-# crates.io / git dependencies time out on a direct connection here; the build
-# host's local proxy (reachable under --network=host) serves them. apt stays on
-# the direct network because the proxy 502s archive.ubuntu.com.
-ENV http_proxy=http://127.0.0.1:7890 \
-    https_proxy=http://127.0.0.1:7890 \
-    HTTP_PROXY=http://127.0.0.1:7890 \
-    HTTPS_PROXY=http://127.0.0.1:7890
+# crates.io / git dependencies can be slow or blocked on networks that need a
+# proxy. Supply one at build time only when required:
+#   docker build --build-arg NATALIA_BUILD_PROXY=http://proxy:port --target server .
+# The host-local default above is NOT baked in; it was only ever a workaround
+# for the dev machine and would break builds on a plain network.
+ARG NATALIA_BUILD_PROXY=""
+ENV http_proxy=${NATALIA_BUILD_PROXY} \
+    https_proxy=${NATALIA_BUILD_PROXY} \
+    HTTP_PROXY=${NATALIA_BUILD_PROXY} \
+    HTTPS_PROXY=${NATALIA_BUILD_PROXY}
 RUN cargo build --manifest-path packages/native-terminal/wezterm/Cargo.toml --release \
     --bin wezterm --bin wezterm-gui --bin wezterm-mux-server
 
