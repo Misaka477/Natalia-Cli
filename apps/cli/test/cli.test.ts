@@ -23,8 +23,50 @@ import {
   setLocalSessionPinned,
   sessionTable,
   showLocalSession,
+  localWorkGraph,
+  workGraphLines,
   workspaceFilesystemCommand,
 } from "../src";
+
+test("CLI Work Graph reader projects only safe nodes and edges", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-workgraph-"));
+  const store = new JsonSessionStore(join(root, ".natalia", "sessions"));
+  const session = createSessionRecord("ses_cli_graph", "Graph");
+  session.events.push(
+    {
+      type: "workgraph.node_added",
+      id: "node",
+      nodeID: "wg:change:turn:file.ts",
+      kind: "workspace_change",
+      summary: "write_file changed",
+      target: "file.ts",
+      sessionID: "ses_cli_graph",
+    },
+    {
+      type: "workgraph.edge_added",
+      id: "edge",
+      sourceID: "wg:tool:turn:call",
+      targetID: "wg:change:turn:file.ts",
+      kind: "modified",
+    },
+    {
+      type: "tool.update",
+      id: "call",
+      name: "write_file",
+      status: "succeeded",
+      summary: "write_file succeeded",
+      result: "SECRETFILEBODY",
+    },
+  );
+  await store.save(session);
+  const graph = await localWorkGraph("ses_cli_graph", root);
+  expect(graph.nodes).toHaveLength(1);
+  expect(graph.edges).toHaveLength(1);
+  expect(JSON.stringify(graph)).not.toContain("SECRETFILEBODY");
+  expect(workGraphLines(graph)).toContain(
+    "  modified: wg:tool:turn:call -> wg:change:turn:file.ts",
+  );
+});
 
 test("CLI task validate resolves a workspace task and flow without running it", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-cli-task-"));

@@ -73,6 +73,8 @@ import {
   workspaceFilesystemCommand,
   showLocalSession,
   startupDiagnostics,
+  localWorkGraph,
+  workGraphLines,
 } from "./index";
 
 const argv = process.argv.slice(2);
@@ -519,6 +521,23 @@ switch (subcommand) {
 
   case "status": {
     console.log(JSON.stringify(await plainStatus(configPath), null, 2));
+    break;
+  }
+
+  case "workgraph": {
+    const action = argv[1] ?? "list";
+    const sessionID = argv[2];
+    if (action !== "list" || !sessionID)
+      throw new Error("workgraph list requires a session ID");
+    const graph = await localWorkGraph(
+      sessionID,
+      valueAfter(argv, "--workspace") ?? process.cwd(),
+    );
+    console.log(
+      argv.includes("--json")
+        ? JSON.stringify(graph, null, 2)
+        : workGraphLines(graph).join("\n"),
+    );
     break;
   }
 

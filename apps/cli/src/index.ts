@@ -20,7 +20,12 @@ import {
 import type { RuntimeEvent } from "@natalia/contracts";
 import { callRuntimeRPC } from "@natalia/transport";
 import { ContextWindowResolver } from "@natalia/runtime";
-import { JsonSessionStore, SqliteSessionStore } from "@natalia/session";
+import {
+  JsonSessionStore,
+  SqliteSessionStore,
+  projectedWorkGraphEdges,
+  projectedWorkGraphNodes,
+} from "@natalia/session";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -198,6 +203,46 @@ export async function showLocalSession(
     cancelled: session.cancelled,
     resumable: session.resumable,
   };
+}
+
+export async function localWorkGraph(
+  sessionID: string,
+  workspaceRoot = process.cwd(),
+) {
+  const root = resolve(workspaceRoot);
+  const sqlite = localSqliteSessionStore(root);
+  const session = sqlite
+    ? sqlite.loadRecord(sessionID as import("@natalia/contracts").SessionID)
+    : undefined;
+  if (sqlite) sqlite.close();
+  const record =
+    session ??
+    (await localSessionStore(root).load(
+      sessionID as import("@natalia/contracts").SessionID,
+    ));
+  if (!record) throw new Error(`session not found: ${sessionID}`);
+  return {
+    sessionID: record.id,
+    nodes: projectedWorkGraphNodes(record.events),
+    edges: projectedWorkGraphEdges(record.events),
+  };
+}
+
+export function workGraphLines(
+  graph: Awaited<ReturnType<typeof localWorkGraph>>,
+) {
+  return [
+    `session: ${graph.sessionID}`,
+    `nodes: ${graph.nodes.length}`,
+    ...graph.nodes.map(
+      (node) =>
+        `  ${node.kind} ${node.nodeID}: ${node.summary}${node.target ? ` -> ${node.target}` : ""}`,
+    ),
+    `edges: ${graph.edges.length}`,
+    ...graph.edges.map(
+      (edge) => `  ${edge.kind}: ${edge.sourceID} -> ${edge.targetID}`,
+    ),
+  ];
 }
 
 export async function renameLocalSession(
