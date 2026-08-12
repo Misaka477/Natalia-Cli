@@ -660,6 +660,72 @@ test("a sandbox merge records only successfully landed paths", async () => {
   await client.dispose?.();
 }, 60_000);
 
+test("a successful checkpoint records a safe checkpoint fact", async () => {
+  const root = await workspace("checkpoint-workgraph");
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_wg_checkpoint",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("checkpoint the workspace");
+  const checkpoint = projectedWorkGraphNodes(events).find(
+    (node) => node.kind === "checkpoint",
+  );
+  expect(checkpoint).toMatchObject({
+    actor: "checkpoint",
+    target: "checkpoint_0",
+    sessionID: "ses_wg_checkpoint",
+  });
+  expect(JSON.stringify(checkpoint)).not.toContain(root);
+  await client.dispose?.();
+}, 60_000);
+
+test("a successful rollback links the destination to its safety checkpoint", async () => {
+  const root = await workspace("rollback-workgraph");
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_wg_rollback",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.checkpointRollback?.({ id: "checkpoint_0" });
+  const nodes = projectedWorkGraphNodes(events);
+  const edges = projectedWorkGraphEdges(events);
+  expect(
+    edges.some(
+      (edge) =>
+        edge.kind === "rolled_back_by" &&
+        edge.sourceID === "wg:checkpoint:ses_wg_rollback:checkpoint_0" &&
+        edge.targetID === "wg:checkpoint:ses_wg_rollback:checkpoint_1",
+    ),
+  ).toBe(true);
+  expect(
+    events.some(
+      (event) =>
+        event.type === "rollback.end" && event.sessionID === "ses_wg_rollback",
+    ),
+  ).toBe(true);
+  expect(JSON.stringify(nodes)).not.toContain(root);
+  await client.dispose?.();
+}, 60_000);
+
 test("a write that failed records no workspace change", async () => {
   // A graph that claims a change which never happened sends a reader looking for
   // something that is not there.

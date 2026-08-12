@@ -295,6 +295,8 @@ export class CheckpointStore {
           type: "checkpoint.created",
           id: record.id,
           reason: record.reason,
+          turnID: record.turnID,
+          stepID: record.stepID,
           sequence: record.sequence,
           complete: record.complete,
           files: Object.keys(record.manifest.entries).length,

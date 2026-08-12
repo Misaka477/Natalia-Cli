@@ -42,6 +42,7 @@ export const WORK_GRAPH_KIND = {
   agentAction: "agent_action",
   toolCall: "tool_call",
   approval: "approval",
+  checkpoint: "checkpoint",
   workspaceChange: "workspace_change",
 } as const;
 
@@ -51,6 +52,7 @@ export const WORK_GRAPH_EDGE_KIND = {
   approvedBy: "approved_by",
   rejectedBy: "rejected_by",
   modified: "modified",
+  rolledBackBy: "rolled_back_by",
 } as const;
 
 export function agentActionNodeID(turnID: string): string {
@@ -175,6 +177,48 @@ export function approvalEdge(input: {
       input.decision === "reject"
         ? WORK_GRAPH_EDGE_KIND.rejectedBy
         : WORK_GRAPH_EDGE_KIND.approvedBy,
+  };
+}
+
+export function checkpointNode(input: {
+  checkpointID: string;
+  reason: string;
+  sessionID: SessionID;
+  turnID?: string;
+}): WorkGraphNodeEvent {
+  const nodeID = `wg:checkpoint:${input.sessionID}:${input.checkpointID}`;
+  return {
+    type: "workgraph.node_added",
+    id: nodeID,
+    nodeID,
+    kind: WORK_GRAPH_KIND.checkpoint,
+    summary: workGraphSummary(["checkpoint", input.reason]),
+    actor: "checkpoint",
+    target: input.checkpointID,
+    sessionID: input.sessionID,
+    turnID: input.turnID,
+  };
+}
+
+export function rollbackCheckpointEdge(input: {
+  checkpointID: string;
+  safetyCheckpointID: string;
+  sessionID: SessionID;
+}): WorkGraphEdgeEvent {
+  return {
+    type: "workgraph.edge_added",
+    id: `wg:edge:rollback:${input.sessionID}:${input.checkpointID}:${input.safetyCheckpointID}`,
+    sourceID: checkpointNode({
+      checkpointID: input.checkpointID,
+      reason: "rollback",
+      sessionID: input.sessionID,
+    }).nodeID,
+    targetID: checkpointNode({
+      checkpointID: input.safetyCheckpointID,
+      reason: "rollback_safety",
+      sessionID: input.sessionID,
+    }).nodeID,
+    kind: WORK_GRAPH_EDGE_KIND.rolledBackBy,
   };
 }
 

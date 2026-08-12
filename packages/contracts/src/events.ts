@@ -687,6 +687,8 @@ type RuntimeEventData =
       type: "checkpoint.created";
       id: string;
       reason: string;
+      turnID?: string;
+      stepID?: string;
       sequence: number;
       complete: boolean;
       files: number;
@@ -715,6 +717,7 @@ type RuntimeEventData =
       checkpointID: string;
       safetyCheckpointID: string;
       dryRun?: boolean;
+      sessionID?: string;
     }
   | {
       type: "rollback.end";
@@ -724,6 +727,7 @@ type RuntimeEventData =
       deletedFiles: number;
       contextJournalOffset: number;
       step: number;
+      sessionID?: string;
     }
   | {
       type: "rollback.failed";
@@ -731,6 +735,7 @@ type RuntimeEventData =
       safetyCheckpointID?: string;
       message: string;
       recovered: boolean;
+      sessionID?: string;
     }
   | {
       type: "diagnostic";

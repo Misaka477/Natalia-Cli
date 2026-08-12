@@ -9,6 +9,7 @@ import {
   type DurableContextCheckpoint,
 } from "@natalia/runtime";
 import type { SubagentRegistry } from "@natalia/subagent";
+import { checkpointNode, rollbackCheckpointEdge } from "./work-graph";
 
 /**
  * The checkpoint resource controller — third cut of the resource controllers
@@ -44,7 +45,32 @@ export function createCheckpointController(input: {
         ...(checkpoint?.additionalDirs ?? []),
         ...(input.workspace()?.additionalDirs ?? []),
       ],
-      onEvent: input.publish,
+      onEvent: (event) => {
+        if (
+          event.type === "rollback.begin" ||
+          event.type === "rollback.end" ||
+          event.type === "rollback.failed"
+        )
+          event = { ...event, sessionID: input.sessionID() };
+        input.publish(event);
+        if (event.type === "checkpoint.created")
+          input.publish(
+            checkpointNode({
+              checkpointID: event.id,
+              reason: event.reason,
+              sessionID: input.sessionID(),
+              turnID: event.turnID,
+            }),
+          );
+        if (event.type === "rollback.end")
+          input.publish(
+            rollbackCheckpointEdge({
+              checkpointID: event.checkpointID,
+              safetyCheckpointID: event.safetyCheckpointID,
+              sessionID: input.sessionID(),
+            }),
+          );
+      },
     });
     if (store.isEnabled()) await store.ensureBaseline(input.context(), 0);
   }
