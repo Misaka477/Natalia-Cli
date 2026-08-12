@@ -28,6 +28,7 @@
     "native-terminal:build-wezterm": "env -u CONDA_PREFIX -u CONDA_DEFAULT_ENV -u CONDA_PROMPT_MODIFIER -u _CE_CONDA -u _CE_M PATH=/usr/bin:/bin CC=/usr/bin/gcc CXX=/usr/bin/g++ cargo build --manifest-path packages/native-terminal/wezterm/Cargo.toml --release --bin wezterm --bin wezterm-gui --bin wezterm-mux-server",
     "native-terminal:build-wezterm:windows": "cargo build --manifest-path packages/native-terminal/wezterm/Cargo.toml --release --bin wezterm --bin wezterm-gui --bin wezterm-mux-server",
     "native-terminal:build-wezterm:windows-cross": "npx bun scripts/build-wezterm-windows.ts",
+    "native-terminal:build-wezterm:ubuntu": "npx bun scripts/build-wezterm-ubuntu.ts",
     "smoke:native-terminal:kimi": "npx bun scripts/native-terminal-kimi-smoke.ts",
     "smoke:native-terminal:headless": "env -u DISPLAY -u WAYLAND_DISPLAY npx bun scripts/native-terminal-headless-smoke.ts",
     "smoke:native-terminal:chat": "npx bun scripts/native-terminal-kimi-chat-smoke.ts",

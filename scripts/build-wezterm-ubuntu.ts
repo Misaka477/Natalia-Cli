@@ -1,0 +1,154 @@
+import { existsSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
+import { join, resolve } from "node:path";
+
+/**
+ * Builds the managed WezTerm fork for Ubuntu 24.04 inside a podman container
+ * and stages the executables back into the fork's own target/release.
+ *
+ * The fork must be built *on* Ubuntu so the executables only require the
+ * Ubuntu glibc (2.39), which is what a deployed Ubuntu server runs. Building
+ * on a newer-glibc host (e.g. Fedora) produces binaries that crash with
+ * "GLIBC_2.x not found" on the server. The framework resolves the fork from
+ * packages/native-terminal/wezterm/target/release, so the stage directory is
+ * non-negotiable — everything else (CARGO_TARGET_DIR, cargo cache) is kept
+ * in podman volumes so repeated builds are incremental.
+ *
+ * Reuses an existing `natalia-ubuntu-build` container and its cargo cache.
+ */
+
+const repoRoot = resolve(join(import.meta.dir, ".."));
+const forkDir = join(repoRoot, "packages", "native-terminal", "wezterm");
+const releaseDir = join(forkDir, "target", "release");
+const containerName = "natalia-ubuntu-build";
+const containerForkDir = "/src/wezterm";
+const binaries = ["wezterm", "wezterm-gui", "wezterm-mux-server"];
+const cargoVolume = "natalia-ubuntu-cargo";
+const targetVolume = "natalia-ubuntu-build-target";
+
+await checkTool("podman");
+await ensureVolumes();
+await ensureContainer();
+await provision();
+await build();
+await stage();
+
+async function ensureVolumes() {
+  for (const volume of [cargoVolume, targetVolume]) {
+    const has = await podmanOk(["volume", "exists", volume]);
+    if (!has) {
+      console.log(`creating volume ${volume} ...`);
+      if (!(await podmanOk(["volume", "create", volume])))
+        throw new Error(`failed to create volume ${volume}`);
+    }
+  }
+}
+
+async function ensureContainer() {
+  if (await podmanOk(["container", "exists", containerName])) {
+    if (!(await podmanOk(["start", containerName]))) {
+      // Already running.
+    }
+    return;
+  }
+  console.log(`creating ${containerName} ...`);
+  const ok = await podmanOk([
+    "run",
+    "-d",
+    "--name",
+    containerName,
+    "--security-opt",
+    "label=disable",
+    // The host proxy points at the host loopback; inside the container it is
+    // a dead socket, so apt/rustup go direct.
+    "-e",
+    "http_proxy=",
+    "-e",
+    "https_proxy=",
+    "-e",
+    "HTTP_PROXY=",
+    "-e",
+    "HTTPS_PROXY=",
+    "-e",
+    "all_proxy=",
+    "-e",
+    "ALL_PROXY=",
+    "-e",
+    "CARGO_TARGET_DIR=/build/target",
+    "-v",
+    `${cargoVolume}:/root/.cargo`,
+    "-v",
+    `${targetVolume}:/build/target`,
+    "-v",
+    `${forkDir}:${containerForkDir}:ro`,
+    "ubuntu:24.04",
+    "sleep",
+    "infinity",
+  ]);
+  if (!ok) throw new Error(`failed to create ${containerName}`);
+  console.log(`  created ${containerName}`);
+}
+
+async function provision() {
+  const ok = await podmanOk([
+    "exec",
+    containerName,
+    "bash",
+    "-lc",
+    [
+      "set -e",
+      "if ! command -v curl >/dev/null; then apt-get update -qq && apt-get install -y -qq curl ca-certificates build-essential pkg-config unzip zip; fi",
+      "if [ ! -x /root/.cargo/bin/rustc ]; then curl -fsSL https://sh.rustup.rs -o /tmp/rustup.sh && sh /tmp/rustup.sh -y --profile minimal --default-toolchain stable; fi",
+      "if [ ! -f /build/get-deps.done ] && ! dpkg -s libxkbcommon-dev >/dev/null 2>&1; then cd " +
+        containerForkDir +
+        " && bash get-deps && touch /build/get-deps.done; fi",
+    ].join("\n"),
+  ]);
+  if (!ok) throw new Error("failed to provision the build container");
+}
+
+async function build() {
+  console.log("building the WezTerm fork ...");
+  const ok = await podmanOk([
+    "exec",
+    containerName,
+    "bash",
+    "-lc",
+    `export PATH=/root/.cargo/bin:$PATH; cd ${containerForkDir} && cargo build --release --bin wezterm --bin wezterm-gui --bin wezterm-mux-server`,
+  ]);
+  if (!ok) throw new Error("the fork build failed");
+}
+
+async function stage() {
+  await mkdir(releaseDir, { recursive: true });
+  for (const bin of binaries) {
+    const built = join(releaseDir, bin);
+    if (
+      !(await podmanOk([
+        "cp",
+        `${containerName}:/build/target/release/${bin}`,
+        built,
+      ]))
+    )
+      throw new Error(`failed to stage ${bin}`);
+    if (!existsSync(built))
+      throw new Error(`expected staged executable ${built}`);
+  }
+  console.log(
+    `staged ${binaries.length} Ubuntu executables in ${releaseDir}\n` +
+      "The framework resolves the fork from that directory, so no env or config is needed.",
+  );
+}
+
+async function checkTool(tool: string) {
+  const ok = await podmanOk([tool, "--version"]).catch(() => false);
+  if (!ok) throw new Error(`required tool '${tool}' is not available`);
+}
+
+async function podmanOk(args: string[]): Promise<boolean> {
+  const child = Bun.spawn(["podman", ...args], {
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  return (await child.exited) === 0;
+}
