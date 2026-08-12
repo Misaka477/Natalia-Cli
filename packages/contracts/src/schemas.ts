@@ -14,6 +14,18 @@ export const timeoutSchema = z.object({
   turnSec: z.number().int().positive().nullable().default(null),
 });
 
+/**
+ * How the native terminal window is opened for a foreground session.
+ * Deployment driven: a headless server has no display, so the pane must run
+ * windowless (the model still reads and writes it; only the human window is
+ * missing). `auto` is the default — it attempts a window and, when the attach
+ * fails (no display, stale DISPLAY, transient first-run failure), degrades to
+ * windowless instead of rolling the started terminal back.
+ */
+export const terminalWindowConfigSchema = z.object({
+  windowMode: z.enum(["auto", "windowless", "window"]).default("auto"),
+});
+
 export const runtimeConfigSchema = z.object({
   maxStepsPerTurn: z.number().int().positive().optional(),
   subagentDepth: z.number().int().min(1).max(8).default(1),
@@ -27,6 +39,7 @@ export const runtimeConfigSchema = z.object({
       jitterMs: z.number().int().min(0).default(500),
     })
     .default({}),
+  terminal: terminalWindowConfigSchema.default({}),
 });
 
 export const contextConfigSchema = z.object({

@@ -6627,7 +6627,7 @@ test("terminal panes are isolated per session across attach (I3)", async () => {
       async resize() {},
       async stop() {},
     },
-    { autoOpenHub: false },
+    { windowMode: "windowless" },
   );
   const paneA = await registry.start({
     id: "i3_runtime_a",
@@ -6696,7 +6696,7 @@ test("terminal_request_human reaches the registry audit with the bounded reason"
       async stop() {},
     },
     {
-      autoOpenHub: false,
+      windowMode: "windowless",
       onAudit: (event) => audit.push(event),
     },
   );
@@ -6781,7 +6781,7 @@ test("request_human endTurn settles as waiting_human and resumes automatically a
       async stop() {},
     },
     {
-      autoOpenHub: false,
+      windowMode: "windowless",
       onAudit: (event) => audit.push(event),
     },
   );
@@ -6922,7 +6922,7 @@ test("releasing a pane that is not the pending one does not resume or clear stat
       async resize() {},
       async stop() {},
     },
-    { autoOpenHub: false },
+    { windowMode: "windowless" },
   );
   const pending = await registry.start({
     id: "rh_pending",
@@ -7365,7 +7365,7 @@ test("a background turn starting a terminal does not steal focus (I1)", async ()
       async resize() {},
       async stop() {},
     },
-    { autoOpenHub: true },
+    { windowMode: "window" },
   );
   let release: (() => void) | undefined;
   let calls = 0;
@@ -7650,7 +7650,7 @@ function sqliteContinueRegistry() {
       async resize() {},
       async stop() {},
     },
-    { autoOpenHub: false },
+    { windowMode: "windowless" },
   );
 }
 

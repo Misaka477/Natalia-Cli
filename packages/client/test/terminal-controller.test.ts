@@ -22,6 +22,7 @@ test("terminal controller init without a host environment leaves the registry ab
     onPerformance: () => undefined,
     runtimeID: () => "runtime-test",
     userRuntimeHome: () => undefined,
+    windowMode: () => "auto",
   });
   await controller.init();
   // No WezTerm host is available in tests; init must not throw and the
@@ -43,6 +44,7 @@ test("an externally provided registry is installed as-is and never rebuilt", asy
     onPerformance: () => undefined,
     runtimeID: () => "runtime-test",
     userRuntimeHome: () => undefined,
+    windowMode: () => "auto",
     external,
   });
   await controller.init();

@@ -1875,7 +1875,9 @@ test("native registry reports the terminal device backing a pane", async () => {
     async resize() {},
     async stop() {},
   };
-  const registry = new NativeTerminalRegistry(host, { autoOpenHub: false });
+  const registry = new NativeTerminalRegistry(host, {
+    windowMode: "windowless",
+  });
   const session = await registry.start({ command: "bash", cwd: process.cwd() });
   // The device name is what lets the runtime confirm the foreground program
   // instead of inferring it from the screen.
@@ -1901,7 +1903,9 @@ test("native registry reports no terminal device when the host omits it", async 
     async resize() {},
     async stop() {},
   };
-  const registry = new NativeTerminalRegistry(host, { autoOpenHub: false });
+  const registry = new NativeTerminalRegistry(host, {
+    windowMode: "windowless",
+  });
   const session = await registry.start({ command: "bash", cwd: process.cwd() });
   await expect(registry.ttyName(session.id)).resolves.toBeUndefined();
   await registry.dispose();
@@ -2000,7 +2004,7 @@ test("native registry isolates panes per active session (I3)", async () => {
       async resize() {},
       async stop() {},
     },
-    { autoOpenHub: false },
+    { windowMode: "windowless" },
   );
   const a = await registry.start({
     id: "i3_pane_a",
@@ -2083,7 +2087,7 @@ test("native registry request_human audits the explicit call with a bounded reas
       async stop() {},
     },
     {
-      autoOpenHub: false,
+      windowMode: "windowless",
       onAudit: (event) => audit.push(event),
     },
   );
@@ -2128,7 +2132,7 @@ test("native registry request_human rejects empty, oversized, and exited-pane re
       async resize() {},
       async stop() {},
     },
-    { autoOpenHub: false },
+    { windowMode: "windowless" },
   );
   const session = await registry.start({
     id: "rh_2",
@@ -2182,7 +2186,7 @@ test("native registry mayWaitForHuman is a conservative weak fact", async () => 
       async resize() {},
       async stop() {},
     },
-    { autoOpenHub: false, mayWaitGraceMs: 30 },
+    { windowMode: "windowless", mayWaitGraceMs: 30 },
   );
   const session = await registry.start({
     id: "mw_1",
@@ -2267,7 +2271,7 @@ test("background starts neither open the hub nor steal focus (I1)", async () => 
       async resize() {},
       async stop() {},
     },
-    { autoOpenHub: true, onAudit: (e) => audit.push(e) },
+    { windowMode: "window", onAudit: (e) => audit.push(e) },
   );
   registry.setActiveSession("ses_fg");
 
@@ -2291,5 +2295,129 @@ test("background starts neither open the hub nor steal focus (I1)", async () => 
     sessionID: "ses_fg",
   });
   expect(focused).toEqual([fg.paneID]);
+  await registry.dispose();
+});
+
+test("native registry windowless mode never opens a window and records the timeline fact", async () => {
+  const audit: Array<{ action: string; actor: string }> = [];
+  let opened = 0;
+  const host = {
+    kind: "wezterm" as const,
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 71, window_id: 1, tab_id: 71, rows: 24, cols: 80 };
+    },
+    async list() {
+      return [{ pane_id: 71, window_id: 1, tab_id: 71, rows: 24, cols: 80 }];
+    },
+    async read() {
+      return "";
+    },
+    async write() {},
+    async open(paneID: number, _options: { muxWindowID?: number }) {
+      opened += 1;
+      return { pane_id: paneID, window_id: 1, tab_id: paneID };
+    },
+    async focus() {},
+    async resize() {},
+    async stop() {},
+  };
+  const registry = new NativeTerminalRegistry(host, {
+    windowMode: "windowless",
+    onAudit: (event) => audit.push(event),
+  });
+  const session = await registry.start({
+    id: "wl_1",
+    cwd: "/repo",
+    command: "cat",
+  });
+  expect(opened).toBe(0);
+  expect(audit.at(-1)).toMatchObject({
+    id: "wl_1",
+    action: "started",
+    actor: "model",
+  });
+  await expect(registry.read(session.id)).resolves.toMatchObject({ text: "" });
+  await registry.dispose();
+});
+
+test("native registry auto mode degrades to windowless when the window attach fails", async () => {
+  const audit: Array<{ action: string; actor: string }> = [];
+  let stopped = 0;
+  const host = {
+    kind: "wezterm" as const,
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 72, window_id: 1, tab_id: 72, rows: 24, cols: 80 };
+    },
+    async list() {
+      return [{ pane_id: 72, window_id: 1, tab_id: 72, rows: 24, cols: 80 }];
+    },
+    async read() {
+      return "";
+    },
+    async write() {},
+    async open() {
+      throw new Error("no display: WezTerm GUI could not start");
+    },
+    async focus() {},
+    async resize() {},
+    async stop() {
+      stopped += 1;
+    },
+  };
+  const registry = new NativeTerminalRegistry(host, {
+    onAudit: (event) => audit.push(event),
+  });
+  const session = await registry.start({
+    id: "auto_1",
+    cwd: "/repo",
+    command: "cat",
+  });
+  expect(stopped).toBe(0);
+  expect(audit.at(-1)).toMatchObject({
+    id: "auto_1",
+    action: "started",
+    actor: "model",
+  });
+  await expect(registry.read(session.id)).resolves.toMatchObject({ text: "" });
+  await registry.dispose();
+});
+
+test("native registry explicit window mode fails loudly when the attach fails", async () => {
+  const audit: Array<{ action: string; actor: string }> = [];
+  let stopped = 0;
+  const host = {
+    kind: "wezterm" as const,
+    executable: "wezterm",
+    async spawn() {
+      return { pane_id: 73, window_id: 1, tab_id: 73, rows: 24, cols: 80 };
+    },
+    async list() {
+      return [{ pane_id: 73, window_id: 1, tab_id: 73, rows: 24, cols: 80 }];
+    },
+    async read() {
+      return "";
+    },
+    async write() {},
+    async open() {
+      throw new Error("no display: WezTerm GUI could not start");
+    },
+    async focus() {},
+    async resize() {},
+    async stop() {
+      stopped += 1;
+    },
+  };
+  const registry = new NativeTerminalRegistry(host, {
+    windowMode: "window",
+    onAudit: (event) => audit.push(event),
+  });
+  await expect(
+    registry.start({ id: "win_1", cwd: "/repo", command: "cat" }),
+  ).rejects.toThrow(/no display/u);
+  expect(stopped).toBe(1);
+  expect(registry.list()).toHaveLength(0);
+  expect(audit).toHaveLength(0);
   await registry.dispose();
 });

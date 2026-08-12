@@ -7,7 +7,7 @@ const command = process.env.NATALIA_KIMI_COMMAND ?? "kimi-cli";
 // The product auto-opens the Hub. Keep this non-GUI smoke headless so it does
 // not create or leave desktop windows behind during automated verification.
 const registry = new NativeTerminalRegistry(createWezTermHost(), {
-  autoOpenHub: false,
+  windowMode: "windowless",
 });
 const session = await registry.start({
   id: `native_kimi_${Date.now()}`,

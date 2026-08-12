@@ -873,7 +873,16 @@ export class NativeTerminalRegistry {
     private readonly host: NativeTerminalHost,
     private readonly options: {
       onAudit?: (event: NativeTerminalAuditEvent) => void;
-      autoOpenHub?: boolean;
+      /**
+       * How a foreground terminal start relates to the human window.
+       * - `window`: always open/attach the hub window; an attach failure is a
+       *   start failure (the session is removed, not left half-started).
+       * - `windowless`: never open a window; the pane runs real and the model
+       *   reads and writes it, the human opens it later with Open terminal.
+       * - `auto` (default): attempt the window; on attach failure degrade to
+       *   windowless instead of rolling the started terminal back.
+       */
+      windowMode?: "auto" | "windowless" | "window";
       persistPath?: string;
       /**
        * TERM-M.3 route 3: how long a pane must be silent (after model-write
@@ -973,7 +982,17 @@ export class NativeTerminalRegistry {
     this.sessions.set(session.id, session);
     try {
       await this.persistSessions();
-      if (this.options.autoOpenHub !== false && !background) {
+    } catch (error) {
+      // persistSessions failed: never leave a pane registered without a
+      // durable record.
+      this.sessions.delete(session.id);
+      await this.host.stop(session.paneID).catch(() => undefined);
+      await this.persistSessions().catch(() => undefined);
+      throw error;
+    }
+    const windowMode = this.options.windowMode ?? "auto";
+    if (windowMode !== "windowless" && !background) {
+      try {
         if (!this.hub) await this.attachToHub(session, true, true);
         else {
           session.windowID = this.hub.muxWindowID;
@@ -987,20 +1006,29 @@ export class NativeTerminalRegistry {
               await this.host.stop(p.pane_id).catch(() => {});
           await this.host.focus(session.paneID);
         }
-      } else if (background) {
-        // The pane is real but windowless; the human opens it with Open
-        // terminal. The timeline fact is the only trace until then.
-        this.audit(session, "started", "model");
+      } catch (error) {
+        if (windowMode === "auto") {
+          // No display, a stale DISPLAY, or a transient first-run attach
+          // failure: the pane is real and the model can keep using it, so
+          // degrade to windowless instead of rolling the start back. The
+          // timeline fact is the trace until Open terminal attaches a window.
+          this.audit(session, "started", "model");
+        } else {
+          // Explicit `window`: the attach was required. A half-started
+          // session must not linger as "running": remove it and kill the
+          // pane so the next list/observe is consistent and a retry starts
+          // clean.
+          this.sessions.delete(session.id);
+          await this.host.stop(session.paneID).catch(() => undefined);
+          await this.persistSessions().catch(() => undefined);
+          throw error;
+        }
       }
-    } catch (error) {
-      // The pane was created but the window attach failed (e.g. the pane
-      // disappeared while opening). A half-started session must not linger as
-      // "running": remove it and kill the pane so the next list/observe is
-      // consistent and a retry starts clean.
-      this.sessions.delete(session.id);
-      await this.host.stop(session.paneID).catch(() => undefined);
-      await this.persistSessions().catch(() => undefined);
-      throw error;
+    } else {
+      // Windowless mode, or a start from a background session: the pane is
+      // real but windowless; the human opens it with Open terminal. The
+      // timeline fact is the only trace until then.
+      this.audit(session, "started", "model");
     }
     return session;
   }

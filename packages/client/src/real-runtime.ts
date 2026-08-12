@@ -496,6 +496,7 @@ export function createRealRuntimeClient(
       performanceTrace.mark(name, durationMs),
     runtimeID: () => nativeRuntimeID,
     userRuntimeHome: () => userRuntimeHome(),
+    windowMode: () => tsRuntimeConfig?.runtime.terminal.windowMode ?? "auto",
     external: options.nativeTerminal,
   });
   const sandboxController = createSandboxController({ workspaceRoot });

@@ -24,7 +24,7 @@ const nativeTerminal = new NativeTerminalRegistry(
     muxRuntimeDir,
     nativeDomain,
   }),
-  { autoOpenHub: false },
+  { windowMode: "windowless" },
 );
 const tools = createToolRegistry();
 const context = { workspaceRoot: root, nativeTerminal };

@@ -29,6 +29,8 @@ export function createTerminalController(input: {
   onPerformance(name: string, durationMs: number): void;
   runtimeID(): string;
   userRuntimeHome(): string | undefined;
+  /** How foreground terminal starts relate to the human window (§TERM-9). */
+  windowMode(): "auto" | "windowless" | "window";
   external?: NativeTerminalRegistry;
 }) {
   let nativeTerminal: NativeTerminalRegistry | undefined = input.external;
@@ -98,7 +100,7 @@ export function createTerminalController(input: {
             at: event.at,
           });
         },
-        autoOpenHub: true,
+        windowMode: input.windowMode(),
         persistPath: join(nativeMuxRuntimeDir, "native-terminal-sessions.json"),
       },
     );
