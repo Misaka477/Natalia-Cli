@@ -7,6 +7,7 @@ apps/*/node_modules
 packages/*/node_modules
 apps/*/dist
 packages/*/dist
+dist
 packages/native-terminal/wezterm/target
 docs/agent-overview.md
 docs/agent-overview.zh-CN.md
