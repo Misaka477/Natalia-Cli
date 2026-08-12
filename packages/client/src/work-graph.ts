@@ -178,8 +178,11 @@ export function approvalEdge(input: {
   };
 }
 
-export function workspaceChangeNodeID(turnID: string, path: string): string {
-  return `wg:change:${turnID}:${path}`;
+export function workspaceChangeNodeID(
+  identityID: string,
+  path: string,
+): string {
+  return `wg:change:${identityID}:${path}`;
 }
 
 /**
@@ -192,15 +195,20 @@ export function workspaceChangeNodeID(turnID: string, path: string): string {
  * the identity of the changed thing, not its contents.
  */
 export function workspaceChangeNode(input: {
-  turnID: string;
+  /** Existing turn identity, when a model tool call caused the change. */
+  turnID?: string;
+  /** Non-turn operation identity, used by direct runtime side-effect APIs. */
+  operationID?: string;
   path: string;
   toolName: string;
   sessionID: SessionID;
 }): WorkGraphNodeEvent {
+  const identityID = input.turnID ?? input.operationID;
+  if (!identityID) throw new Error("workspace change requires an identity");
   return {
     type: "workgraph.node_added",
-    id: workspaceChangeNodeID(input.turnID, input.path),
-    nodeID: workspaceChangeNodeID(input.turnID, input.path),
+    id: workspaceChangeNodeID(identityID, input.path),
+    nodeID: workspaceChangeNodeID(identityID, input.path),
     kind: WORK_GRAPH_KIND.workspaceChange,
     summary: workGraphSummary([input.toolName, "changed"]),
     target: input.path,

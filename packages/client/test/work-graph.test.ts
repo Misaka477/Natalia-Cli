@@ -600,6 +600,66 @@ test("a workspace change is attributable to the call and turn that made it", asy
   await client.dispose?.();
 }, 60_000);
 
+test("a sandbox merge records only successfully landed paths", async () => {
+  const root = await workspace("sandbox-merge-change");
+  const events: RuntimeEvent[] = [];
+  let step = 0;
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_wg_sandbox_merge",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        const calls = [
+          {
+            id: "create",
+            name: "sandbox_create",
+            arguments: JSON.stringify({ id: "box" }),
+          },
+          {
+            id: "write",
+            name: "sandbox_write",
+            arguments: JSON.stringify({
+              id: "box",
+              path: "merged.md",
+              content: "SECRETFILEBODY",
+            }),
+          },
+          {
+            id: "merge",
+            name: "sandbox_merge",
+            arguments: JSON.stringify({ id: "box" }),
+          },
+        ] as const;
+        if (step < calls.length) {
+          yield { type: "tool_call" as const, calls: [calls[step++]] };
+        } else {
+          yield { type: "done" as const };
+        }
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  const submitted = await client.submit("merge the sandbox");
+  const change = projectedWorkGraphNodes(events).find(
+    (node) => node.kind === "workspace_change",
+  );
+  expect(change).toMatchObject({
+    target: "merged.md",
+    actor: "sandbox_merge",
+    turnID: submitted.id,
+  });
+  expect(await Bun.file(join(root, "merged.md")).text()).toBe("SECRETFILEBODY");
+  const graph = JSON.stringify([
+    ...projectedWorkGraphNodes(events),
+    ...projectedWorkGraphEdges(events),
+  ]);
+  expect(graph).not.toContain("SECRETFILEBODY");
+  await client.dispose?.();
+}, 60_000);
+
 test("a write that failed records no workspace change", async () => {
   // A graph that claims a change which never happened sends a reader looking for
   // something that is not there.

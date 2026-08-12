@@ -11,7 +11,7 @@
  * holding the code that does it.
  */
 import type { NativeTerminalRegistry } from "@natalia/native-terminal";
-import type { WorkspaceSandboxManager } from "@natalia/sandbox";
+import type { SandboxChange, WorkspaceSandboxManager } from "@natalia/sandbox";
 import type { SubagentRegistry } from "@natalia/subagent";
 
 export type ToolExecutionBoundary = {
@@ -59,6 +59,7 @@ export type ToolExecutionContext = {
     paths: string[];
   }) => Promise<void>;
   onSandboxEvent?: (event: { type: string; [key: string]: unknown }) => void;
+  onWorkspaceChange?: (changes: SandboxChange[]) => void;
   settings?: {
     webSearchEndpoint?: string;
     webSearchProviderPriority?: string[];

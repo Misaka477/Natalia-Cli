@@ -2833,6 +2833,17 @@ export function createRealRuntimeClient(
         workspaceRoot,
         async (paths) => await authorizeSandboxMerge({ id, paths }),
       );
+      const operationID = `sandbox_merge:${id}:${randomUUID()}`;
+      for (const change of changes) {
+        publish(
+          workspaceChangeNode({
+            operationID,
+            path: change.path,
+            toolName: "sandbox_merge",
+            sessionID,
+          }),
+        );
+      }
       publish(sandboxes.updateEvent(id));
       publish(sandboxes.auditEvent(id, "merge"));
       return changes;
@@ -4076,6 +4087,25 @@ export function createRealRuntimeClient(
             ) {
               sandboxResourcesByID.set(update.id, update.runningResources);
               scheduleRuntimeStatusSnapshot();
+            }
+          },
+          onWorkspaceChange: (changes) => {
+            for (const change of changes) {
+              publish(
+                workspaceChangeNode({
+                  turnID,
+                  path: change.path,
+                  toolName: tool.name,
+                  sessionID,
+                }),
+              );
+              publish(
+                workspaceChangeEdge({
+                  turnID,
+                  callID: call.id,
+                  path: change.path,
+                }),
+              );
             }
           },
         }),

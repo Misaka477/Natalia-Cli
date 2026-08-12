@@ -141,6 +141,7 @@ function sandboxMergeTool(): RuntimeTool {
             paths,
           }),
       );
+      context.onWorkspaceChange?.(changes);
       context.onSandboxEvent?.(manager.updateEvent(id));
       context.onSandboxEvent?.(manager.auditEvent(id, "merge"));
       return JSON.stringify(changes, null, 2);
