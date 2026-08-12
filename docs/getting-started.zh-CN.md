@@ -369,6 +369,37 @@ natalia-cli                    # 命令行
 并把 `NATALIA_WORKSPACE` 指向你所在的目录，因此不需要像本地那样手动 `cd apps/tui`。
 provider 照常写在 `/workspace/.natalia/config.json` 或用环境变量。
 
+需要外部自动化（任务投递、API 调用）时，SSH 进去执行 `natalia-cli daemon` 会启动
+HTTP/SSE 服务。**当前镜像入口默认只起 sshd，daemon 不会自动常驻**；要常驻需手动
+启动或修改 entrypoint。
+
+### 访问宿主机文件（挂载）
+
+容器与宿主机文件系统是隔离的：框架的所有工具（文件读写、`run_shell`、交互式终端、
+sandbox）都在**容器内**运行，默认只能看到镜像自身的文件系统和挂载进容器的卷——
+**宿主机上未挂载的目录既看不见也碰不到**。
+
+要让框架直接操作服务器上的真实数据（例如某个代码仓库），用 bind mount 把宿主目录
+挂进容器：
+
+```bash
+docker run -d --name natalia \
+  -p 2222:22 \
+  -e NATALIA_SSH_PASSWORD='设置一个强密码' \
+  -v /srv/projects/my-project:/workspace \
+  -v /srv/shared-data:/data \
+  natalia-deploy:ubuntu24
+```
+
+挂载的目录与宿主机**共享同一份文件**（双向可见）。agent 的工作目录由
+`NATALIA_WORKSPACE`/cwd 决定（`natalia` 启动器取你所在的目录），因此
+`cd /data && natalia` 后框架就工作在挂载的宿主数据上。只挂载需要暴露给框架的
+目录——没挂载的就是它碰不到的安全边界。
+
+注意命名卷与 bind mount 的区别：`-v natalia-data:/workspace` 的 `natalia-data`
+是 docker 管理的命名卷，文件在 docker 的存储区里，不在宿主机普通路径；要使用
+服务器上的真实路径必须写成 `-v /绝对路径:/容器路径` 的 bind mount 形式。
+
 ### 关键点
 
 - fork 二进制位于镜像内的包路径下，**无需** `NATALIA_WEZTERM_EXECUTABLE`。
