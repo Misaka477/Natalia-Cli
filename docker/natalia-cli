@@ -1,0 +1,4 @@
+#!/bin/bash
+# The CLI resolves its workspace from NATALIA_WORKSPACE (or cwd).
+WS="${NATALIA_WORKSPACE:-$(pwd)}"
+NATALIA_WORKSPACE="$WS" exec bun /opt/natalia/apps/cli/src/main.ts "$@"

@@ -1,0 +1,7 @@
+#!/bin/bash
+# The TUI reads its JSX/bunfig from apps/tui (cwd-relative), and the workspace
+# from NATALIA_WORKSPACE (or cwd). The launcher fixes cwd while preserving the
+# caller's workspace.
+WS="${NATALIA_WORKSPACE:-$(pwd)}"
+cd /opt/natalia/apps/tui
+NATALIA_WORKSPACE="$WS" exec bun /opt/natalia/apps/tui/src/main.tsx "$@"
