@@ -926,7 +926,7 @@ export async function runCommand(command: string, ctx: CommandContext) {
       {
         title: "Runtime Config",
         value: "runtime",
-        description: "Max steps, retry, checkpoints",
+        description: "Max steps, retry, terminal window",
       },
       {
         title: "TUI Preferences",
@@ -2449,12 +2449,32 @@ export async function runCommand(command: string, ctx: CommandContext) {
                         ? "On"
                         : "Off",
                     },
+                    {
+                      title: "Terminal Window",
+                      value: "window-mode",
+                      description: `${
+                        resolved.runtime?.terminal?.windowMode ?? "auto"
+                      } (auto: open window, degrade if attach fails; windowless: never open; window: always require)`,
+                    },
                   ]}
                   onSelect={async (opt) => {
                     const next = structuredClone(resolved);
                     if (opt.value === "compact") {
                       next.context!.compactionEnabled =
                         !next.context!.compactionEnabled;
+                      void saveConfig(next);
+                      return;
+                    }
+                    if (opt.value === "window-mode") {
+                      const order = ["auto", "windowless", "window"] as const;
+                      const current =
+                        next.runtime?.terminal?.windowMode ?? "auto";
+                      const index = order.indexOf(
+                        current as (typeof order)[number],
+                      );
+                      next.runtime!.terminal = {
+                        windowMode: order[(index + 1) % order.length],
+                      };
                       void saveConfig(next);
                       return;
                     }
