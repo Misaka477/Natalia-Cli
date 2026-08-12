@@ -309,7 +309,73 @@ Skill 也可以从 `.natalia/config.json` 的 `skills.urls` 声明的 URL 拉取
 - 所有依赖 shell 的工具都需要兼容 bash 的 shell。**刻意没有** `cmd.exe` 备选
   方案，因为那会静默重新解释所有带引号的命令。
 
-## 11. 出问题时
+## 11. Docker 部署（Ubuntu 24.04）
+
+仓库自带 multi-stage `Dockerfile`，产出自包含镜像：应用源码、bun、依赖、
+**在 Ubuntu 24.04 内编译的 WezTerm fork**（放在包内默认解析路径）和 sshd，不依赖
+任何宿主挂载。SSH 登录使用非 root 的 `natalia` 用户。
+
+### 构建
+
+```bash
+# 普通网络
+docker build --target server -t natalia-deploy:ubuntu24 .
+
+# 构建机需要代理才能拉取 crates/git 依赖时
+docker build --target server \
+  --build-arg NATALIA_BUILD_PROXY=http://代理:端口 \
+  -t natalia-deploy:ubuntu24 .
+
+# 只想要纯 CLI 镜像（无 sshd）
+docker build --target cli -t natalia-cli:ubuntu24 .
+```
+
+### 导出到目标服务器
+
+在别处构建、目标服务器有 Docker 时：
+
+```bash
+docker save natalia-deploy:ubuntu24 | gzip > natalia-deploy-ubuntu24.tar.gz
+# 把压缩包传到服务器后
+docker load < natalia-deploy-ubuntu24.tar.gz
+```
+
+### 运行
+
+```bash
+docker run -d --name natalia \
+  -p 2222:22 \
+  -e NATALIA_SSH_PASSWORD='设置一个强密码' \
+  -v natalia-data:/workspace \
+  -v natalia-home:/home/natalia \
+  natalia-deploy:ubuntu24
+```
+
+- 不设 `NATALIA_SSH_PASSWORD` 时启动会生成随机密码，`docker logs natalia` 可读到。
+- `natalia-data` 卷保存项目配置、会话与检查点（`/workspace/.natalia`）。
+- `natalia-home` 卷保存用户级配置（`/home/natalia/.config/natalia-cli/`）；不挂的话
+  容器重建会丢。
+
+### 使用
+
+```bash
+ssh natalia@服务器IP -p 2222   # 密码同上
+cd /workspace
+natalia                        # 交互式 TUI
+natalia-cli                    # 命令行
+```
+
+镜像内的 `natalia` 启动器会把 cwd 固定到 `apps/tui`（TUI 的 JSX 配置依赖当前目录）
+并把 `NATALIA_WORKSPACE` 指向你所在的目录，因此不需要像本地那样手动 `cd apps/tui`。
+provider 照常写在 `/workspace/.natalia/config.json` 或用环境变量。
+
+### 关键点
+
+- fork 二进制位于镜像内的包路径下，**无需** `NATALIA_WEZTERM_EXECUTABLE`。
+- 容器以 root 启动 sshd，SSH 会话落到非 root 的 `natalia` 用户。
+- 无 GUI 的服务器上交互式终端以 headless（windowless）方式运行，模型照常读写。
+
+## 12. 出问题时
 
 | 现象                                                                            | 原因与处理                                                                 |
 | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
@@ -323,6 +389,7 @@ Skill 也可以从 `.natalia/config.json` 的 `skills.urls` 声明的 URL 拉取
 | Skill 不出现                                                                    | 见第 6 步的验证说明                                                        |
 | 第一个终端报 WezTerm 超时                                                       | 重试一次，冷启动导致                                                       |
 | agent 在错误的目录里工作                                                        | 传 `--workspace`                                                           |
+| Docker 里 SSH `Permission denied`                                              | 确认 `NATALIA_SSH_PASSWORD` 已设置，或看 `docker logs` 里的随机密码         |
 
 排查时可在 TUI 内用 `/doctor` 和 `/diagnostics`，或启动时加 `--doctor` 让它自动
 执行一次报告。
