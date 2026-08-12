@@ -106,6 +106,7 @@ export {
   CapabilityExecutionHost,
   type CapabilityTaskExecutionRequest,
 } from "./capability-execution-host";
+export { CapabilityHost } from "@natalia/capability";
 export { providerErrorHint, retryDisplayLine } from "./retry-display";
 export {
   cleanupUnreferencedAttachments,
@@ -124,6 +125,7 @@ export {
   attachRuntimeClientWorker,
   createWorkerRuntimeClient,
   handleWorkerRequest,
+  WORKER_CONTROL_METHODS,
   WORKER_ROUTE_MEMBERS,
   type RuntimeWorkerPort,
   type WorkerRuntimeClient,

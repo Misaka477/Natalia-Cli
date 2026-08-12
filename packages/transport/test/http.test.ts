@@ -636,3 +636,272 @@ test("unattended read routes are refused when the runtime does not implement the
     server.stop();
   }
 });
+
+test("task execution requires write, automation, and deployment opt-in before parsing", async () => {
+  let starts = 0;
+  const authorization = {
+    credentials: [
+      { token: "read", groups: ["automation"] as const },
+      { token: "wrong-group", write: true, groups: ["management"] as const },
+      { token: "execute", write: true, groups: ["automation"] as const },
+    ],
+  };
+  const server = createRuntimeHttpServer({
+    client: transportClient(),
+    authorization,
+    startTask() {
+      starts++;
+      throw new Error("must not start");
+    },
+  });
+  const post = (token?: string) =>
+    fetch(`${server.url}/tasks/run`, {
+      method: "POST",
+      headers: {
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+        "content-type": "application/json",
+      },
+      // Deliberately invalid: every authorization/deployment gate must run
+      // before a caller can use parser differences as an existence probe.
+      body: "not-json",
+    });
+  try {
+    expect((await post()).status).toBe(401);
+    expect(await (await post("read")).json()).toMatchObject({
+      kind: "refused",
+      reason: expect.stringContaining("no write scope"),
+    });
+    expect(await (await post("wrong-group")).json()).toMatchObject({
+      kind: "refused",
+      reason: expect.stringContaining("automation group"),
+    });
+    expect(await (await post("execute")).json()).toMatchObject({
+      kind: "refused",
+      reason: "task execution is not enabled by this host",
+    });
+    expect(starts).toBe(0);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("task execution exposes an authorized observation record", async () => {
+  const server = createRuntimeHttpServer({
+    client: transportClient(),
+    authorization: {
+      credentials: [
+        { token: "observe", groups: ["automation"] },
+        { token: "execute", write: true, groups: ["automation"] },
+        { token: "management", write: true, groups: ["management"] },
+      ],
+    },
+    taskExecution: true,
+    startTask(request) {
+      expect(request).toMatchObject({ taskID: "task_review", json: true });
+      return {
+        executionID: "exe_http_test",
+        events: (async function* () {
+          yield {
+            type: "workflow.execution.resolved",
+            executionID: "exe_http_test",
+            taskID: "task_review",
+          };
+          yield {
+            type: "workflow.execution.output",
+            executionID: "exe_http_test",
+            line: '{"type":"task.invocation","status":"stalled"}',
+          };
+          yield {
+            type: "workflow.execution",
+            executionID: "exe_http_test",
+            status: "completed",
+          };
+        })(),
+        result: Promise.resolve({
+          invocationID: "inv_http_test",
+          status: "stalled",
+          waterlineAdvanced: false,
+          exitCode: 0,
+        }),
+        cancel() {},
+      };
+    },
+  });
+  try {
+    const response = await fetch(`${server.url}/tasks/run`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer execute",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ taskID: "task_review", json: true }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      executionID: "exe_http_test",
+      invocationID: "inv_http_test",
+      status: "stalled",
+      output: ['{"type":"task.invocation","status":"stalled"}'],
+    });
+
+    const observation = await fetch(
+      `${server.url}/tasks/executions/exe_http_test`,
+      { headers: { authorization: "Bearer observe" } },
+    );
+    expect(await observation.json()).toMatchObject({
+      executionID: "exe_http_test",
+      status: "completed",
+      result: { invocationID: "inv_http_test", status: "stalled" },
+    });
+    const events = await fetch(
+      `${server.url}/tasks/executions/exe_http_test/events`,
+      { headers: { authorization: "Bearer observe" } },
+    );
+    expect(await events.json()).toMatchObject({
+      executionID: "exe_http_test",
+      events: [
+        { type: "workflow.execution.resolved" },
+        { type: "workflow.execution.output" },
+        { type: "workflow.execution", status: "completed" },
+      ],
+    });
+    const forbidden = await fetch(
+      `${server.url}/tasks/executions/exe_http_test`,
+      { headers: { authorization: "Bearer management" } },
+    );
+    expect(forbidden.status).toBe(403);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("async task delivery can be observed and cancelled through the execution ID", async () => {
+  let rejectResult!: (error: Error) => void;
+  const result = new Promise<{
+    invocationID: string;
+    status: string;
+    waterlineAdvanced: boolean;
+    exitCode: number;
+  }>((_resolve, reject) => (rejectResult = reject));
+  let resolveEvent!: (value: IteratorResult<Record<string, unknown>>) => void;
+  const events: AsyncIterable<Record<string, unknown>> = {
+    [Symbol.asyncIterator]() {
+      return {
+        next: () => new Promise((resolve) => (resolveEvent = resolve)),
+      };
+    },
+  };
+  const server = createRuntimeHttpServer({
+    client: transportClient(),
+    authorization: {
+      credentials: [
+        { token: "observe", groups: ["automation"] },
+        { token: "execute", write: true, groups: ["automation"] },
+      ],
+    },
+    taskExecution: true,
+    startTask() {
+      return {
+        executionID: "exe_async_test",
+        events,
+        result,
+        cancel() {
+          resolveEvent({
+            done: false,
+            value: {
+              type: "workflow.execution",
+              executionID: "exe_async_test",
+              status: "cancelled",
+            },
+          });
+          queueMicrotask(() => {
+            resolveEvent({ done: true, value: undefined });
+            rejectResult(new Error("remote workflow cancellation"));
+          });
+        },
+      };
+    },
+  });
+  try {
+    const started = await fetch(`${server.url}/tasks/run`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer execute",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ taskID: "task_async", wait: false }),
+    });
+    expect(started.status).toBe(202);
+    expect(await started.json()).toEqual({
+      executionID: "exe_async_test",
+      status: "running",
+    });
+    const running = await fetch(
+      `${server.url}/tasks/executions/exe_async_test`,
+      { headers: { authorization: "Bearer observe" } },
+    );
+    expect(await running.json()).toMatchObject({ status: "running" });
+    const forbiddenCancel = await fetch(
+      `${server.url}/tasks/executions/exe_async_test/cancel`,
+      {
+        method: "POST",
+        headers: { authorization: "Bearer observe" },
+      },
+    );
+    expect(forbiddenCancel.status).toBe(403);
+    const cancelled = await fetch(
+      `${server.url}/tasks/executions/exe_async_test/cancel`,
+      {
+        method: "POST",
+        headers: { authorization: "Bearer execute" },
+      },
+    );
+    expect(await cancelled.json()).toEqual({
+      executionID: "exe_async_test",
+      cancelling: true,
+    });
+    await Bun.sleep(0);
+    const terminal = await fetch(
+      `${server.url}/tasks/executions/exe_async_test`,
+      { headers: { authorization: "Bearer observe" } },
+    );
+    expect(await terminal.json()).toMatchObject({
+      status: "cancelled",
+      error: "remote workflow cancellation",
+    });
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("stopping the HTTP host cancels active workflow executions", async () => {
+  let cancelled: string | undefined;
+  const server = createRuntimeHttpServer({
+    client: transportClient(),
+    token: "execute",
+    taskExecution: true,
+    startTask() {
+      return {
+        executionID: "exe_stop_test",
+        events: (async function* () {
+          await new Promise(() => undefined);
+        })(),
+        result: new Promise(() => undefined),
+        cancel(reason) {
+          cancelled = reason;
+        },
+      };
+    },
+  });
+  const started = await fetch(`${server.url}/tasks/run`, {
+    method: "POST",
+    headers: {
+      authorization: "Bearer execute",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ taskID: "task_running", wait: false }),
+  });
+  expect(started.status).toBe(202);
+  server.stop(true);
+  expect(cancelled).toBe("HTTP runtime server stopped");
+});

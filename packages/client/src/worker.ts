@@ -94,6 +94,12 @@ export const WORKER_ROUTED_MEMBERS: ReadonlySet<string> = new Set(
   ),
 );
 
+/** Worker-host controls that are deliberately outside RuntimeClient reachability. */
+export const WORKER_CONTROL_METHODS: ReadonlySet<string> = new Set([
+  "workflow.run",
+  "workflow.cancel",
+]);
+
 type WorkerRequest = {
   type: "runtime.request";
   id: string;

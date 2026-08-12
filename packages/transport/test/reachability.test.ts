@@ -12,7 +12,7 @@ import {
   RPC_ROUTED_MEMBERS,
   handleRPCMessage,
 } from "../src/rpc";
-import { WORKER_ROUTE_MEMBERS } from "@natalia/client";
+import { WORKER_CONTROL_METHODS, WORKER_ROUTE_MEMBERS } from "@natalia/client";
 
 /**
  * P0-B: reachability is computed from the route table, not from a second list.
@@ -142,8 +142,13 @@ test("the worker route table matches the worker dispatch", () => {
     ).toContain(method);
   for (const method of workerMethods)
     expect(
-      Object.keys(WORKER_ROUTE_MEMBERS),
-      `worker handler without table row: ${method}`,
+      [...Object.keys(WORKER_ROUTE_MEMBERS), ...WORKER_CONTROL_METHODS],
+      `worker handler without route or control declaration: ${method}`,
+    ).toContain(method);
+  for (const method of WORKER_CONTROL_METHODS)
+    expect(
+      workerMethods,
+      `worker control without handler: ${method}`,
     ).toContain(method);
 });
 

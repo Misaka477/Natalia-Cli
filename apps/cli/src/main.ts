@@ -11,6 +11,9 @@ import {
   manualFlowTask,
   runTask,
   runTaskFromDocument,
+  CapabilityExecutionHost,
+  WorkflowExecutionScheduler,
+  CapabilityHost,
   removeTaskSystemd,
   taskPermissionPreview,
 } from "@natalia/client";
@@ -126,30 +129,50 @@ switch (subcommand) {
     );
     if (!Number.isInteger(maxConcurrentTasks) || maxConcurrentTasks <= 0)
       throw new Error("daemon requires a positive --max-concurrent-tasks");
-    const taskGate = createTaskGate(maxConcurrentTasks);
+    const taskScheduler = new WorkflowExecutionScheduler({
+      globalConcurrency: maxConcurrentTasks,
+      workspaceConcurrency: 1,
+    });
+    const workspaceHosts = new Map<
+      string,
+      { capabilities: CapabilityHost; executions: CapabilityExecutionHost }
+    >();
+    const workspaceHost = (workspaceRoot: string) => {
+      const root = resolve(workspaceRoot);
+      const existing = workspaceHosts.get(root);
+      if (existing) return existing;
+      const capabilities = new CapabilityHost({ workspaceRoot: root });
+      const created = {
+        capabilities,
+        executions: new CapabilityExecutionHost(capabilities, {
+          scheduler: taskScheduler,
+        }),
+      };
+      workspaceHosts.set(root, created);
+      return created;
+    };
     const client = createRealRuntimeClient();
     const server = createRuntimeHttpServer({
       client,
       port,
       token,
+      taskExecution: true,
       // Delivery reuses the very same controller a one-shot run uses, so the
       // resident path cannot drift from it or bypass its policy.
-      runTask: (request) =>
-        taskGate(async () => {
-          const workspaceRoot = resolve(request.workspaceRoot ?? process.cwd());
-          const config = assertConfigApplied(
-            await resolveConfig({ workspaceRoot }),
-          );
-          const output: string[] = [];
-          const result = await runTaskFromDocument({
-            workspaceRoot,
-            path: request.taskPath,
-            config,
-            json: request.json !== false,
-            emit: (line) => output.push(line),
-          });
-          return { ...result, output };
-        }),
+      startTask: async (request) => {
+        const workspaceRoot = resolve(request.workspaceRoot ?? process.cwd());
+        const config = assertConfigApplied(
+          await resolveConfig({ workspaceRoot }),
+        );
+        return workspaceHost(workspaceRoot).executions.runTask({
+          workspaceRoot,
+          path: request.taskPath,
+          taskID: request.taskID,
+          config,
+          json: request.json !== false,
+          requestedBy: { transport: "http" },
+        });
+      },
     });
     await registerRuntimeDaemon(store, {
       url: server.url,
@@ -165,6 +188,7 @@ switch (subcommand) {
     // defect this closes). The smoke that delivers tasks also depends on this
     // instead of its SIGKILL fallback.
     await client.dispose?.();
+    for (const host of workspaceHosts.values()) host.capabilities.dispose();
     break;
   }
 
@@ -919,27 +943,6 @@ function withoutRunOption(argv: string[], flag: string) {
   const index = argv.indexOf(flag);
   if (index < 0) return argv;
   return [...argv.slice(0, index), ...argv.slice(index + 2)];
-}
-
-/**
- * Bounds how many tasks the resident executor runs at once. Tasks share a
- * workspace, so the default is one: a queued task waits instead of racing
- * another one through the same working tree.
- */
-function createTaskGate(limit: number) {
-  let active = 0;
-  const waiting: Array<() => void> = [];
-  return async <T>(work: () => Promise<T>): Promise<T> => {
-    if (active >= limit)
-      await new Promise<void>((release) => waiting.push(release));
-    active += 1;
-    try {
-      return await work();
-    } finally {
-      active -= 1;
-      waiting.shift()?.();
-    }
-  };
 }
 
 /** Submits a task to the resident executor and mirrors its outcome. */

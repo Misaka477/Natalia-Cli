@@ -5,12 +5,23 @@ import type { RuntimeAuthorizationContext } from "./rpc";
 import type { RuntimeCapabilityGroup } from "@natalia/contracts";
 
 export type TaskDeliveryRequest = {
-  taskPath: string;
+  taskPath?: string;
+  taskID?: string;
   workspaceRoot?: string;
   json?: boolean;
+  /** Return 202 after admission instead of waiting for the terminal task result. */
+  wait?: boolean;
+};
+
+export type TaskExecutionHandle = {
+  executionID: string;
+  events: AsyncIterable<Record<string, unknown>>;
+  result: Promise<Omit<TaskDeliveryResult, "output" | "executionID">>;
+  cancel(reason?: string): void;
 };
 
 export type TaskDeliveryResult = {
+  executionID?: string;
   invocationID: string;
   status: string;
   waterlineAdvanced: boolean;
@@ -64,12 +75,17 @@ export type RuntimeHttpServerOptions = {
    * exactly like `runTask`.
    */
   terminalWrite?: boolean;
+  /** Explicit deployment opt-in for remote workflow execution. */
+  taskExecution?: boolean;
   /**
    * Runs a task inside this process. The handler is injected because the task
    * controller belongs to the runtime, not to the transport: the transport only
    * carries the delivery.
    */
   runTask?: (request: TaskDeliveryRequest) => Promise<TaskDeliveryResult>;
+  startTask?: (
+    request: TaskDeliveryRequest,
+  ) => TaskExecutionHandle | Promise<TaskExecutionHandle>;
 };
 
 export type RuntimeHttpServer = {
@@ -173,6 +189,16 @@ export function createRuntimeHttpServer(
   const subscribers = new Set<EventSubscriber>();
   const encoder = new TextEncoder();
   const eventBuffer: Array<{ id: number; event: RuntimeEvent }> = [];
+  const taskExecutions = new Map<
+    string,
+    {
+      status: "running" | "completed" | "failed" | "cancelled";
+      events: Record<string, unknown>[];
+      result?: Omit<TaskDeliveryResult, "output">;
+      error?: string;
+    }
+  >();
+  const taskExecutionHandles = new Map<string, TaskExecutionHandle>();
   let nextEventID = 1;
   if (options.events !== false)
     options.client.start((event) => {
@@ -198,13 +224,65 @@ export function createRuntimeHttpServer(
     );
     if (authorization === "denied")
       return Response.json({ error: "unauthorized" }, { status: 401 });
+    const executionMatch = url.pathname.match(
+      /^\/tasks\/executions\/([^/]+)(?:\/(events|cancel))?$/u,
+    );
+    if (executionMatch && executionMatch[2] === "cancel") {
+      if (request.method !== "POST")
+        return Response.json({ error: "method not allowed" }, { status: 405 });
+      if (!authorization.write)
+        return refused(
+          "authorization refused: this credential has no write scope",
+        );
+      if (authorization.groups && !authorization.groups.has("automation"))
+        return refused(
+          "authorization refused: this credential has no access to the automation group",
+        );
+      if (!options.taskExecution)
+        return refused("task execution is not enabled by this host");
+      const handle = taskExecutionHandles.get(executionMatch[1] ?? "");
+      if (!handle)
+        return Response.json(
+          { error: "active execution not found" },
+          { status: 404 },
+        );
+      handle.cancel("remote workflow cancellation");
+      return Response.json({
+        executionID: executionMatch[1],
+        cancelling: true,
+      });
+    }
+    if (executionMatch && request.method === "GET") {
+      if (authorization.groups && !authorization.groups.has("automation"))
+        return refused(
+          "authorization refused: this credential has no access to the automation group",
+        );
+      const execution = taskExecutions.get(executionMatch[1] ?? "");
+      if (!execution)
+        return Response.json({ error: "execution not found" }, { status: 404 });
+      return Response.json(
+        executionMatch[2] === "events"
+          ? { executionID: executionMatch[1], events: execution.events }
+          : { executionID: executionMatch[1], ...execution },
+      );
+    }
     if (url.pathname === "/tasks/run") {
       if (request.method !== "POST")
         return Response.json({ error: "method not allowed" }, { status: 405 });
-      if (!options.runTask)
+      if (!authorization.write)
+        return refused(
+          "authorization refused: this credential has no write scope",
+        );
+      if (authorization.groups && !authorization.groups.has("automation"))
+        return refused(
+          "authorization refused: this credential has no access to the automation group",
+        );
+      if (!options.taskExecution)
+        return refused("task execution is not enabled by this host");
+      if (!options.startTask && !options.runTask)
         return Response.json(
-          { error: "task delivery is not enabled" },
-          { status: 404 },
+          { error: "task execution is unavailable" },
+          { status: 503 },
         );
       let payload: TaskDeliveryRequest;
       try {
@@ -215,13 +293,85 @@ export function createRuntimeHttpServer(
           { status: 400 },
         );
       }
-      if (!payload?.taskPath)
+      if (Boolean(payload?.taskPath) === Boolean(payload?.taskID))
         return Response.json(
-          { error: "taskPath is required" },
+          { error: "exactly one taskPath or taskID is required" },
           { status: 400 },
         );
       try {
-        return Response.json(await options.runTask(payload));
+        if (!options.startTask)
+          return Response.json(await options.runTask!(payload));
+        if (taskExecutions.size >= 100) {
+          const terminal = [...taskExecutions].find(
+            ([, execution]) => execution.status !== "running",
+          );
+          if (terminal) taskExecutions.delete(terminal[0]);
+          else
+            return Response.json(
+              { error: "task execution observation capacity is full" },
+              { status: 503 },
+            );
+        }
+        const handle = await options.startTask(payload);
+        const record: {
+          status: "running" | "completed" | "failed" | "cancelled";
+          events: Record<string, unknown>[];
+          result?: Omit<TaskDeliveryResult, "output">;
+          error?: string;
+        } = {
+          status: "running",
+          events: [],
+        };
+        taskExecutions.set(handle.executionID, record);
+        taskExecutionHandles.set(handle.executionID, handle);
+        const output: string[] = [];
+        const pump = (async () => {
+          for await (const event of handle.events) {
+            record.events.push(event);
+            if (record.events.length > 500) record.events.shift();
+            if (event.type === "workflow.execution") {
+              if (event.status === "cancelled") record.status = "cancelled";
+              else if (event.status === "failed") record.status = "failed";
+              else if (event.status === "completed")
+                record.status = "completed";
+            }
+            if (
+              event.type === "workflow.execution.output" &&
+              typeof event.line === "string"
+            )
+              output.push(event.line);
+          }
+        })();
+        const settle = async () => {
+          try {
+            const result = await handle.result;
+            await pump;
+            const completed = { ...result, executionID: handle.executionID };
+            Object.assign(record, { status: "completed", result: completed });
+            return { ...completed, output };
+          } catch (error) {
+            await pump;
+            Object.assign(record, {
+              status: record.status === "cancelled" ? "cancelled" : "failed",
+              error: error instanceof Error ? error.message : String(error),
+            });
+            throw error;
+          } finally {
+            taskExecutionHandles.delete(handle.executionID);
+          }
+        };
+        if (payload.wait === false) {
+          void settle().catch(() => undefined);
+          return Response.json(
+            { executionID: handle.executionID, status: "running" },
+            { status: 202 },
+          );
+        }
+        try {
+          return Response.json(await settle());
+        } catch (error) {
+          throw error;
+        }
       } catch (error) {
         return Response.json(
           {
@@ -399,6 +549,17 @@ export function createRuntimeHttpServer(
     url: options.unix
       ? `unix://${options.unix}`
       : `${options.tls ? "https" : "http"}://${server.hostname}:${server.port}`,
-    stop: server.stop.bind(server),
+    stop(closeActiveConnections?: boolean) {
+      for (const handle of taskExecutionHandles.values())
+        handle.cancel("HTTP runtime server stopped");
+      server.stop(closeActiveConnections);
+    },
   };
+}
+
+function refused(reason: string) {
+  return Response.json(
+    { error: reason, kind: "refused", reason },
+    { status: 403 },
+  );
 }

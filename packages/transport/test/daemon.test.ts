@@ -57,6 +57,7 @@ test("the daemon carries a task delivery without knowing how to run one", async 
     port: 0,
     token: "delivery-token",
     events: false,
+    taskExecution: true,
     runTask: async (request) => {
       seen.push(request);
       if (request.taskPath === "broken.yaml")
@@ -113,7 +114,7 @@ test("the daemon carries a task delivery without knowing how to run one", async 
   }
 });
 
-test("a daemon without a task handler refuses delivery instead of pretending", async () => {
+test("a daemon without task execution opt-in returns a typed refusal", async () => {
   const server = createRuntimeHttpServer({
     client: createFakeBackend(),
     port: 0,
@@ -129,7 +130,11 @@ test("a daemon without a task handler refuses delivery instead of pretending", a
       },
       body: JSON.stringify({ taskPath: "nightly.yaml" }),
     });
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      kind: "refused",
+      reason: "task execution is not enabled by this host",
+    });
   } finally {
     server.stop(true);
   }
