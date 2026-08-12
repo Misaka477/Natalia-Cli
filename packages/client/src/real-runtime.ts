@@ -1246,6 +1246,7 @@ export function createRealRuntimeClient(
         message: `capability "${override.winner}" (precedence ${override.winnerPrecedence}) replaced "${override.loser}" (precedence ${override.loserPrecedence}) for ${override.kind} "${override.name}"`,
       });
     publishBuiltinCapabilities();
+    publishRegisteredTools();
     publish(contextStatusEvent(runtimeContext.status(runtimeContextConfig)));
     publish(await runtimeStatusSnapshot());
   }
@@ -1266,6 +1267,28 @@ export function createRealRuntimeClient(
         level: "warning",
         message: `capability ${event.id} failed: ${event.reason}`,
       });
+  }
+
+  /**
+   * Records the effective tool catalogue once the runtime has assembled all
+   * built-ins and task-scoped contributions. This is metadata only: tool
+   * implementations and parameters never enter the journal.
+   */
+  function publishRegisteredTools() {
+    for (const tool of tools.values()) {
+      const owner =
+        capabilityRegistry.ownerOf("tools", tool.name) ?? "natalia-runtime";
+      publish({
+        type: "tool.registered",
+        id: `tool:${tool.name}`,
+        name: tool.name,
+        owner,
+        scope: "session",
+        recovery: "fail_closed",
+        precedence: 0,
+        requiresApproval: tool.requiresApproval,
+      });
+    }
   }
 
   /**

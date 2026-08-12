@@ -30,10 +30,11 @@
  *   - `dialog.open` / `dialog.close`, `terminal.pane.focus`,
  *     `terminal.pane.select` — UI-only state, owned by whichever UI renders it.
  *   - `constitution.rule_added`, `decision.recorded`, `evidence.recorded`,
- *     `drift.finding_opened`, `tool.registered` — no production writer exists
- *     yet, so projecting them would advertise a feature the runtime does not
- *     have. Work Graph events are the deliberate exception: the client now
- *     emits secret-safe WG1 nodes and edges in production.
+ *     `drift.finding_opened` — no production writer exists yet, so projecting
+ *     them would advertise a feature the runtime does not have. Work Graph and
+ *     tool registration events are deliberate exceptions: the client emits
+ *     secret-safe facts for both in production, while their consumer-specific
+ *     projections remain owned by session queries.
  */
 import type { RuntimeEvent } from "@natalia/contracts";
 import { applyConversationEvent } from "./conversation";

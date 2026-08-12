@@ -591,7 +591,7 @@ test("the P0-C route surface answers over HTTP: native terminal, intelligence, c
     expect(await sdk.decisionRecords()).toEqual([]);
     expect(await sdk.evidenceRecords()).toEqual([]);
     expect(await sdk.driftFindings()).toEqual([]);
-    expect(await sdk.registeredTools()).toEqual([]);
+    expect((await sdk.registeredTools()).length).toBeGreaterThan(0);
     // Capability records: the runtime registers real ones (the MCP server, the
     // platform surface), so the shape is the assertion, not emptiness.
     const capabilityRecords = await sdk.capabilities();

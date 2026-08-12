@@ -97,6 +97,47 @@ test("a real turn with a tool call produces a connected graph", async () => {
   await client.dispose?.();
 }, 60_000);
 
+test("runtime startup records the effective tool catalogue as metadata", async () => {
+  const root = await workspace("registered-tools");
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_wg_registered_tools",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  let resolveReady!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    resolveReady = resolve;
+  });
+  client.start((event) => {
+    events.push(event);
+    if (event.type === "session.ready") resolveReady();
+  });
+  await ready;
+
+  const registered = events.filter(
+    (event): event is Extract<RuntimeEvent, { type: "tool.registered" }> =>
+      event.type === "tool.registered",
+  );
+  expect(registered.length).toBeGreaterThan(0);
+  expect(registered.find((event) => event.name === "read_file")).toMatchObject({
+    owner: "natalia-runtime",
+    scope: "session",
+    recovery: "fail_closed",
+  });
+  expect(registered.some((event) => "description" in event)).toBe(false);
+  expect(new Set(registered.map((event) => event.id)).size).toBe(
+    registered.length,
+  );
+  await client.dispose?.();
+}, 60_000);
+
 test("a failed tool call is recorded as a fact too", async () => {
   const root = await workspace("failed");
   const events: RuntimeEvent[] = [];
