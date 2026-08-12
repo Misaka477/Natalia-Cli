@@ -13,7 +13,10 @@ export {
   validateNataliaDocument,
   type NataliaDocument,
 } from "./natalia-documents";
-export { NataliaDocumentStore } from "./natalia-document-store";
+export {
+  NataliaDocumentStore,
+  type ContributedNataliaDocuments,
+} from "./natalia-document-store";
 export {
   buildRedactedEvaluatorContext,
   evaluateAndRecordModule,

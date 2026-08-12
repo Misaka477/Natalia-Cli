@@ -10,6 +10,7 @@ import {
   plainRuntimeEvent,
   manualFlowTask,
   runTask,
+  runTaskFromDocument,
   removeTaskSystemd,
   taskPermissionPreview,
 } from "@natalia/client";
@@ -136,18 +137,13 @@ switch (subcommand) {
       runTask: (request) =>
         taskGate(async () => {
           const workspaceRoot = resolve(request.workspaceRoot ?? process.cwd());
-          const documents = new NataliaDocumentStore(workspaceRoot);
-          const task = await documents.loadTask(request.taskPath);
-          const flow = await documents.resolveTaskFlow(task);
           const config = assertConfigApplied(
             await resolveConfig({ workspaceRoot }),
           );
-          assertTaskReferences({ task, config });
           const output: string[] = [];
-          const result = await runTask({
+          const result = await runTaskFromDocument({
             workspaceRoot,
-            task,
-            flow,
+            path: request.taskPath,
             config,
             json: request.json !== false,
             emit: (line) => output.push(line),

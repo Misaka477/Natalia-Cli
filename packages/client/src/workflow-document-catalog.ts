@@ -1,4 +1,7 @@
-import { NataliaDocumentStore } from "@natalia/workflow";
+import {
+  NataliaDocumentStore,
+  type ContributedNataliaDocuments,
+} from "@natalia/workflow";
 import { readdir } from "node:fs/promises";
 import type { ConfigV2 } from "@natalia/contracts";
 import { manualFlowTask } from "./flow-document";
@@ -9,8 +12,12 @@ export type { WorkflowDocumentChoice } from "@natalia/contracts";
 export async function workflowDocumentCatalog(
   workspaceRoot: string,
   config?: ConfigV2,
+  contributedDocuments?: ContributedNataliaDocuments,
 ): Promise<WorkflowDocumentChoice[]> {
-  const documents = new NataliaDocumentStore(workspaceRoot);
+  const documents = new NataliaDocumentStore(
+    workspaceRoot,
+    contributedDocuments,
+  );
   const choices: WorkflowDocumentChoice[] = [];
   for (const [kind, directory] of [
     ["task", documents.tasksDir],
@@ -24,7 +31,11 @@ export async function workflowDocumentCatalog(
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
-    for (const path of entries.sort()) {
+    const paths = [
+      ...entries.sort(),
+      ...documents.contributedDocumentPaths(kind),
+    ];
+    for (const path of paths) {
       try {
         if (kind === "task") {
           const document = await documents.loadTaskDocument(path);
@@ -35,10 +46,15 @@ export async function workflowDocumentCatalog(
             displayName: document.displayName,
           });
         } else {
-          const document = await documents.loadFlow(`.natalia/flows/${path}`);
+          const document = await documents.loadFlow(
+            documents.isContributedPath(path) ? path : `.natalia/flows/${path}`,
+          );
           const profile = document.directRun?.permissionProfile;
-          if (!profile) continue;
-          if (config) manualFlowTask(document, config);
+          // A contributed flow is a management document even before it gains a
+          // direct-run profile. Disk flows keep the launch catalog's existing
+          // direct-run filter.
+          if (!profile && !documents.isContributedPath(path)) continue;
+          if (profile && config) manualFlowTask(document, config);
           choices.push({
             kind,
             path,

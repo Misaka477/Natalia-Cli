@@ -17,14 +17,22 @@ import { stringify } from "yaml";
 import {
   parseNataliaDocumentYAML,
   validateNataliaDocument,
+  type NataliaDocument,
 } from "./natalia-documents";
+
+export type ContributedNataliaDocuments = Readonly<
+  Record<string, NataliaDocument>
+>;
 
 export class NataliaDocumentStore {
   readonly workspaceRoot: string;
   readonly flowsDir: string;
   readonly tasksDir: string;
 
-  constructor(workspaceRoot: string) {
+  constructor(
+    workspaceRoot: string,
+    private readonly contributedDocuments: ContributedNataliaDocuments = {},
+  ) {
     this.workspaceRoot = resolve(workspaceRoot);
     this.flowsDir = resolve(this.workspaceRoot, ".natalia", "flows");
     this.tasksDir = resolve(this.workspaceRoot, ".natalia", "tasks");
@@ -34,6 +42,7 @@ export class NataliaDocumentStore {
     document: NataliaFlowDocumentInput,
     path = `${document.flowID}.yaml`,
   ) {
+    this.rejectContributedPath(path);
     const target = this.resolveDocumentPath(this.flowsDir, path);
     const validated = validateNataliaDocument(document);
     if (validated.kind !== "natalia-flow")
@@ -46,6 +55,7 @@ export class NataliaDocumentStore {
     document: NataliaTaskDocumentInput,
     path = `${document.taskID}.yaml`,
   ) {
+    this.rejectContributedPath(path);
     const target = this.resolveDocumentPath(this.tasksDir, path);
     const validated = validateNataliaDocument(document);
     if (validated.kind !== "natalia-task")
@@ -56,6 +66,7 @@ export class NataliaDocumentStore {
 
   /** Deletes only the task definition. Durable execution and audit state stay. */
   async deleteTask(path: string) {
+    this.rejectContributedPath(path);
     const target = this.resolveDocumentPath(this.tasksDir, path);
     try {
       await rm(target);
@@ -68,6 +79,7 @@ export class NataliaDocumentStore {
 
   /** Deletes only the flow definition after callers verify task references. */
   async deleteFlow(path: string) {
+    this.rejectContributedPath(path);
     const target = this.resolveDocumentPath(this.flowsDir, path);
     try {
       await rm(target);
@@ -79,7 +91,9 @@ export class NataliaDocumentStore {
   }
 
   async loadFlow(path: string): Promise<NataliaFlowDocument> {
-    const document = await this.loadDocument(this.resolveFlowReference(path));
+    const document =
+      this.contributedDocument(path) ??
+      (await this.loadDocument(this.resolveFlowReference(path)));
     if (document.kind !== "natalia-flow")
       throw new Error(
         `flow reference does not point to a natalia-flow: ${path}`,
@@ -94,13 +108,11 @@ export class NataliaDocumentStore {
   }
 
   async loadTaskByID(taskID: string): Promise<NataliaTaskDocument> {
-    let entries: string[];
+    let entries: string[] = [];
     try {
       entries = await readdir(this.tasksDir);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT")
-        throw new Error(`natalia task not found: ${taskID}`);
-      throw error;
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
     const matches: NataliaTaskDocument[] = [];
     for (const entry of entries) {
@@ -108,6 +120,12 @@ export class NataliaDocumentStore {
       const task = await this.loadTaskDocument(entry).catch(() => undefined);
       if (task?.taskID === taskID) matches.push(task);
     }
+    // User-authored disk documents are authoritative over contributed defaults.
+    if (!matches.length)
+      for (const path of this.contributedDocumentPaths("task")) {
+        const task = await this.loadTaskDocument(path).catch(() => undefined);
+        if (task?.taskID === taskID) matches.push(task);
+      }
     if (!matches.length) throw new Error(`natalia task not found: ${taskID}`);
     if (matches.length > 1)
       throw new Error(`natalia task ID is ambiguous: ${taskID}`);
@@ -122,9 +140,9 @@ export class NataliaDocumentStore {
    * closed on that reference.
    */
   async loadTaskDocument(path: string): Promise<NataliaTaskDocument> {
-    const document = await this.loadDocument(
-      this.resolveDocumentPath(this.tasksDir, path),
-    );
+    const document =
+      this.contributedDocument(path) ??
+      (await this.loadDocument(this.resolveDocumentPath(this.tasksDir, path)));
     if (document.kind !== "natalia-task")
       throw new Error(`task path does not point to a natalia-task: ${path}`);
     return document;
@@ -144,13 +162,11 @@ export class NataliaDocumentStore {
   }
 
   async loadFlowByID(flowID: string): Promise<NataliaFlowDocument> {
-    let entries: string[];
+    let entries: string[] = [];
     try {
       entries = await readdir(this.flowsDir);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT")
-        throw new Error(`natalia flow not found: ${flowID}`);
-      throw error;
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
     const matches: NataliaFlowDocument[] = [];
     for (const entry of entries) {
@@ -158,6 +174,12 @@ export class NataliaDocumentStore {
       const flow = await this.loadFlow(`.natalia/flows/${entry}`);
       if (flow.flowID === flowID) matches.push(flow);
     }
+    // A disk document wins by ID too; contributed documents remain catalogued.
+    if (!matches.length)
+      for (const path of this.contributedDocumentPaths("flow")) {
+        const flow = await this.loadFlow(path).catch(() => undefined);
+        if (flow?.flowID === flowID) matches.push(flow);
+      }
     if (!matches.length) throw new Error(`natalia flow not found: ${flowID}`);
     if (matches.length > 1)
       throw new Error(`natalia flow ID is ambiguous: ${flowID}`);
@@ -168,6 +190,38 @@ export class NataliaDocumentStore {
     const target = resolve(this.workspaceRoot, path);
     if (isInside(target, this.flowsDir)) return target;
     throw new Error(`flow reference must stay under .natalia/flows: ${path}`);
+  }
+
+  contributedDocumentPaths(kind: "flow" | "task"): string[] {
+    return Object.keys(this.contributedDocuments)
+      .filter((path) => {
+        const document = this.contributedDocument(path);
+        return kind === "flow"
+          ? document?.kind === "natalia-flow"
+          : document?.kind === "natalia-task";
+      })
+      .sort();
+  }
+
+  isContributedPath(path: string): boolean {
+    return this.contributedDocument(path) !== undefined;
+  }
+
+  private contributedDocument(path: string): NataliaDocument | undefined {
+    const document = this.contributedDocuments[path];
+    if (!document) return undefined;
+    try {
+      return validateNataliaDocument(document);
+    } catch {
+      // Hosts validate before constructing the store. This is a defensive
+      // boundary for callers that construct the index themselves.
+      return undefined;
+    }
+  }
+
+  private rejectContributedPath(path: string) {
+    if (path.startsWith("cap:"))
+      throw new Error("contributed document paths are read-only: " + path);
   }
 
   private resolveDocumentPath(directory: string, path: string) {

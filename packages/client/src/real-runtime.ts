@@ -62,6 +62,7 @@ import {
 import type { ConfigV2 } from "@natalia/contracts";
 import { CapabilityRegistry } from "@natalia/capability";
 import { mergeContributedToolSettings } from "./capability-settings";
+import { workflowContributionsProjection } from "./workflow-contributions";
 import {
   agentsFromConfig,
   type AgentDefinition,
@@ -285,6 +286,8 @@ export type RealRuntimeClientOptions = {
   hooks?: ToolHooks;
   nativeTerminal?: NativeTerminalRegistry;
   taskModuleContext?: TaskModuleContext;
+  /** Host-owned registry shared with task delivery and other capability consumers. */
+  capabilityRegistry?: CapabilityRegistry;
 };
 
 export function createRealRuntimeClient(
@@ -317,7 +320,8 @@ export function createRealRuntimeClient(
    * Created here, not in `initialize`, because capabilities contribute tools
    * while the client is being constructed.
    */
-  const capabilityRegistry = new CapabilityRegistry();
+  const capabilityRegistry =
+    options.capabilityRegistry ?? new CapabilityRegistry();
   if (options.taskModuleContext) {
     const registered = registerTaskModuleCapability(
       capabilityRegistry,
@@ -593,6 +597,7 @@ export function createRealRuntimeClient(
   const runtimeDiagnostics: Array<
     Extract<RuntimeEvent, { type: "diagnostic" }> & { at: string }
   > = [];
+  const publishedWorkflowContributionDiagnostics = new Set<string>();
   let selectedAgent: AgentDefinition | undefined;
   let selectedModel: { modelID?: string; variant?: string } | undefined;
   let pendingAgent: AgentDefinition | undefined;
@@ -1452,6 +1457,16 @@ export function createRealRuntimeClient(
 
   function publish(event: RuntimeEvent) {
     publishForSession(activeExec, event);
+  }
+
+  function projectedWorkflowContributions() {
+    const projection = workflowContributionsProjection(capabilityRegistry);
+    for (const message of projection.diagnostics) {
+      if (publishedWorkflowContributionDiagnostics.has(message)) continue;
+      publishedWorkflowContributionDiagnostics.add(message);
+      publish({ type: "diagnostic", level: "warning", message });
+    }
+    return projection.documents;
   }
 
   function publishForSession(
@@ -2336,22 +2351,40 @@ export function createRealRuntimeClient(
       }));
     },
     async taskOverview() {
+      await ready;
       // The overview needs resolved config to compute effective permissions, so
       // it is only answerable once the runtime has initialized.
       const config =
         tsRuntimeConfig ?? (await resolveConfig({ workspaceRoot })).config;
-      return await scheduledTaskOverview({ workspaceRoot, config });
+      return await scheduledTaskOverview({
+        workspaceRoot,
+        config,
+        contributedDocuments: projectedWorkflowContributions(),
+      });
     },
     async flowOverview() {
-      return await flowOverviewForWorkspace({ workspaceRoot });
+      await ready;
+      return await flowOverviewForWorkspace({
+        workspaceRoot,
+        contributedDocuments: projectedWorkflowContributions(),
+      });
     },
     async documentCatalog() {
-      return await workflowDocumentCatalog(workspaceRoot, tsRuntimeConfig);
+      await ready;
+      return await workflowDocumentCatalog(
+        workspaceRoot,
+        tsRuntimeConfig,
+        projectedWorkflowContributions(),
+      );
     },
     async saveFlowDocument(input) {
       // P0-G: the flow write surface, previously CLI-only. Idempotent by
       // path: replaying the same request reproduces the same outcome. The
       // path is validated (and refused) by flowPath inside saveFlowDocument.
+      if (input.path?.startsWith("cap:"))
+        throw new RuntimeRefusal(
+          "contributed document paths are read-only and cannot be saved",
+        );
       const documents = new NataliaDocumentStore(workspaceRoot);
       const resolved = input.path ?? `${input.document.flowID}.yaml`;
       let existed = false;
@@ -2376,6 +2409,7 @@ export function createRealRuntimeClient(
       };
     },
     async taskPermissionPreview(input) {
+      await ready;
       // Validation problems are a value, not an exception: an orchestrator
       // validates a task document before delivering it, and decides on the
       // result. Only the path policy throws (refused, like workspace paths).
@@ -2392,7 +2426,10 @@ export function createRealRuntimeClient(
         throw new RuntimeRefusal(
           "task document path must stay under .natalia/tasks as a relative file name",
         );
-      const documents = new NataliaDocumentStore(workspaceRoot);
+      const documents = new NataliaDocumentStore(
+        workspaceRoot,
+        projectedWorkflowContributions(),
+      );
       const task = await documents.loadTaskDocument(path);
       const flow = await documents.resolveTaskFlow(task);
       const problems: string[] = [];
@@ -2426,6 +2463,10 @@ export function createRealRuntimeClient(
       // Idempotent delete: a document that is already gone answers
       // `alreadyDeleted: true` instead of failing; a flow still referenced
       // by task documents is refused with the referencing tasks.
+      if (input.path.startsWith("cap:"))
+        throw new RuntimeRefusal(
+          "contributed document paths are read-only and cannot be deleted",
+        );
       let existed = true;
       try {
         const documents = new NataliaDocumentStore(workspaceRoot);

@@ -25,6 +25,9 @@ export const WORKER_ROUTE_MEMBERS = {
   "flow.save": "saveFlowDocument",
   "flow.delete": "deleteFlowDocument",
   "task.preview": "taskPermissionPreview",
+  "task.overview": "taskOverview",
+  "flow.overview": "flowOverview",
+  "document.catalog": "documentCatalog",
   snapshot: "snapshot",
   diagnostic: "diagnostic",
   approval: "respondApproval",
@@ -148,7 +151,10 @@ type WorkerRequest = {
     | "runtime.availability"
     | "flow.save"
     | "flow.delete"
-    | "task.preview";
+    | "task.preview"
+    | "task.overview"
+    | "flow.overview"
+    | "document.catalog";
   value?: unknown;
 };
 
@@ -347,6 +353,21 @@ export function createWorkerRuntimeClient(
     async taskPermissionPreview(input) {
       return (await request("task.preview", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["taskPermissionPreview"]>>
+      >;
+    },
+    async taskOverview() {
+      return (await request("task.overview")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["taskOverview"]>>
+      >;
+    },
+    async flowOverview() {
+      return (await request("flow.overview")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["flowOverview"]>>
+      >;
+    },
+    async documentCatalog() {
+      return (await request("document.catalog")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["documentCatalog"]>>
       >;
     },
     async updateConfig(input) {
@@ -789,5 +810,9 @@ export async function handleWorkerRequest(
     return await client.taskPermissionPreview?.(
       request.value as { path: string },
     );
+  if (request.method === "task.overview") return await client.taskOverview?.();
+  if (request.method === "flow.overview") return await client.flowOverview?.();
+  if (request.method === "document.catalog")
+    return await client.documentCatalog?.();
   throw new Error(`worker channel does not route ${request.method}`);
 }

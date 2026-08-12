@@ -1686,7 +1686,8 @@ export type RuntimeClient = {
    * Validates a task document and previews its permissions before it is ever
    * delivered to a runtime. Problems are a value, not an exception: an
    * orchestrator validates first and decides, instead of catching. The path
-   * must stay under `.natalia/tasks`.
+   * must be either a relative file under `.natalia/tasks` or a currently
+   * visible capability-owned `cap:` virtual path.
    */
   taskPermissionPreview?(input: { path: string }): Promise<{
     taskID: string;

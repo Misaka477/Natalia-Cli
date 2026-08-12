@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { agentsFromConfig } from "@natalia/agent";
 import type { ResolvedConfig } from "@natalia/config";
+import type { CapabilityRegistry } from "@natalia/capability";
 import type {
   ConfigV2,
   EpisodeID,
@@ -22,6 +23,7 @@ import {
   taskAlertEventKindForStatus,
   taskAlertSubscriptions,
   NataliaDocumentStore,
+  type ContributedNataliaDocuments,
   NataliaTaskAlertQueue,
   NataliaTaskStateStore,
   NataliaUnattendedStateStore,
@@ -33,6 +35,7 @@ import {
   type NataliaTaskInvocationStatus,
 } from "@natalia/workflow";
 import { effectiveFlowPermissions } from "./effective-policy";
+import { workflowContributionsProjection } from "./workflow-contributions";
 import {
   createRealRuntimeClient,
   type RealRuntimeClientOptions,
@@ -177,8 +180,12 @@ export async function taskPermissionPreviewForDocument(input: {
   workspaceRoot: string;
   path: string;
   config: ConfigV2;
+  contributedDocuments?: ContributedNataliaDocuments;
 }) {
-  const documents = new NataliaDocumentStore(input.workspaceRoot);
+  const documents = new NataliaDocumentStore(
+    input.workspaceRoot,
+    input.contributedDocuments,
+  );
   const task = await documents.loadTaskDocument(input.path);
   const flow = await documents.resolveTaskFlow(task);
   return taskPermissionPreview({ task, flow, config: input.config });
@@ -191,6 +198,48 @@ export type TaskRunResult = {
   /** Non-zero when the outcome should fail a scheduled run. */
   exitCode: number;
 };
+
+/**
+ * Resolves a task and its flow at invocation time, including capability-owned
+ * virtual documents. Projecting on every call makes scope unload authoritative:
+ * a document that disappeared cannot start a new invocation from a stale index.
+ */
+export async function runTaskFromDocument(input: {
+  workspaceRoot: string;
+  path?: string;
+  taskID?: string;
+  capabilityRegistry?: CapabilityRegistry;
+  config: ConfigV2;
+  json: boolean;
+  emit: (line: string) => void;
+}): Promise<TaskRunResult> {
+  if (Boolean(input.path) === Boolean(input.taskID))
+    throw new Error("task execution requires exactly one path or taskID");
+  const projection = input.capabilityRegistry
+    ? workflowContributionsProjection(input.capabilityRegistry)
+    : { documents: {}, diagnostics: [] };
+  for (const message of projection.diagnostics)
+    input.emit(
+      JSON.stringify({ type: "diagnostic", level: "warning", message }),
+    );
+  const documents = new NataliaDocumentStore(
+    input.workspaceRoot,
+    projection.documents,
+  );
+  const task = input.taskID
+    ? await documents.loadTaskByID(input.taskID)
+    : await documents.loadTask(input.path!);
+  const flow = await documents.resolveTaskFlow(task);
+  assertTaskReferences({ task, config: input.config });
+  return runTask({
+    workspaceRoot: input.workspaceRoot,
+    task,
+    flow,
+    config: input.config,
+    json: input.json,
+    emit: input.emit,
+  });
+}
 
 export type ModuleCompletionOperations = {
   tools: Map<string, RuntimeEvent & { type: "tool.update" }>;

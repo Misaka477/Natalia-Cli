@@ -22,7 +22,6 @@ import { useClipboard } from "../context/clipboard";
 import { ToastRegion, useToast } from "../context/toast";
 import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
 import type { ConfigV2 } from "@natalia/contracts";
-import { assertConfigApplied, workflowDocumentCatalog } from "@natalia/client";
 import { getPluginCommands } from "@natalia/plugin";
 import {
   buildKeybindMap,
@@ -58,6 +57,7 @@ import { DialogCheckpoint } from "../component/DialogCheckpoint";
 import { DialogSandbox } from "../component/DialogSandbox";
 import {
   PromptAutocomplete,
+  workflowRunUnavailableReason,
   workflowRunRequest,
 } from "../component/PromptAutocomplete";
 import { runWorkflowProcess } from "../component/DialogScheduledTasks";
@@ -455,6 +455,14 @@ function Shell(props: {
         toast.show({
           variant: "warning",
           message: "Task and flow runs require a workspace root",
+        });
+        return;
+      }
+      const unavailable = workflowRunUnavailableReason(workflowRun.path);
+      if (unavailable) {
+        toast.show({
+          variant: "warning",
+          message: unavailable,
         });
         return;
       }
@@ -1118,16 +1126,8 @@ function Shell(props: {
               agents={props.backend.agents}
               mcpCatalog={props.backend.mcpCatalog}
               workflows={
-                props.workspaceRoot
-                  ? async () =>
-                      workflowDocumentCatalog(
-                        props.workspaceRoot!,
-                        assertConfigApplied(
-                          await resolveConfig({
-                            workspaceRoot: props.workspaceRoot!,
-                          }),
-                        ),
-                      ).catch(() => [])
+                props.workspaceRoot && props.backend.documentCatalog
+                  ? async () => props.backend.documentCatalog!().catch(() => [])
                   : undefined
               }
               attach={(path) =>

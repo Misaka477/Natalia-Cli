@@ -425,6 +425,69 @@ test("the worker channel routes the MCP surface", async () => {
   await client.dispose?.();
 });
 
+test("the worker channel routes workflow management catalogs", async () => {
+  const channel = new MessageChannel();
+  const host: RuntimeClient = {
+    start() {},
+    async submit(text) {
+      return {
+        type: "turn.submitted",
+        id: "turn_workflows",
+        text,
+        byteLength: text.length,
+        lineCount: 1,
+        sha256: "test",
+      };
+    },
+    cancel() {},
+    snapshot: () => ({
+      type: "snapshot.created",
+      id: "snap_workflows",
+      files: [],
+    }),
+    diagnostic() {},
+    lastSubmission: () => undefined,
+    async taskOverview() {
+      return { tasks: [], unreadable: [] };
+    },
+    async flowOverview() {
+      return { flows: [], unreadable: [] };
+    },
+    async documentCatalog() {
+      return [
+        {
+          kind: "task" as const,
+          path: "cap:review/task_review.yaml",
+          id: "task_review",
+          displayName: "Review",
+        },
+      ];
+    },
+    respondApproval() {
+      return { accepted: true };
+    },
+    respondQuestion() {
+      return { accepted: true };
+    },
+  };
+  attachRuntimeClientWorker(channel.port1, host);
+  const client = createWorkerRuntimeClient(channel.port2);
+  client.start(() => undefined);
+
+  await expect(client.taskOverview!()).resolves.toEqual({
+    tasks: [],
+    unreadable: [],
+  });
+  await expect(client.flowOverview!()).resolves.toEqual({
+    flows: [],
+    unreadable: [],
+  });
+  await expect(client.documentCatalog!()).resolves.toEqual([
+    expect.objectContaining({ path: "cap:review/task_review.yaml" }),
+  ]);
+  await client.dispose?.();
+});
+
 test("the worker channel routes the sandbox, agent-select and fork surface", async () => {
   // DialogSandbox guards every call (`if (!backend.sandboxList)`), so a missing
   // route degrades the whole sandbox dialog silently; App.tsx uses selectAgent

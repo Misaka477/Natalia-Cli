@@ -359,7 +359,7 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
   },
   taskPermissionPreview: {
     refusal: "error",
-    note: "a path outside .natalia/tasks is refused; validation problems are a value in the result",
+    note: "a path outside .natalia/tasks is refused unless it names a visible capability-owned cap: document; validation problems are a value in the result",
   },
 
   // --- observability ---

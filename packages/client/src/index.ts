@@ -45,6 +45,7 @@ export {
   newHeadlessExecution,
   plainRuntimeEvent,
   runTask,
+  runTaskFromDocument,
   taskPermissionPreview,
   taskPermissionPreviewForDocument,
   taskRetryMaxAttempts,
@@ -90,6 +91,10 @@ export {
   writeGeneratedTaskUnits,
 } from "./systemd-adapter";
 export type { RealRuntimeClientOptions } from "./real-runtime";
+export {
+  workflowContributionsProjection,
+  type WorkflowContributionsProjection,
+} from "./workflow-contributions";
 export { providerErrorHint, retryDisplayLine } from "./retry-display";
 export {
   cleanupUnreferencedAttachments,

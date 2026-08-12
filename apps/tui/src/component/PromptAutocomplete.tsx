@@ -42,6 +42,12 @@ export function workflowRunRequest(text: string) {
     : undefined;
 }
 
+export function workflowRunUnavailableReason(path: string) {
+  return path.startsWith("cap:")
+    ? "Capability workflow execution is not available through this TUI transport yet"
+    : undefined;
+}
+
 export function workflowCommandKinds(
   workflows: WorkflowDocumentChoice[],
   query: string,

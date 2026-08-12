@@ -6,6 +6,7 @@ import {
   NataliaDocumentStore,
   parseNataliaDocumentJSON,
   parseNataliaDocumentYAML,
+  validateNataliaDocument,
 } from "../src";
 
 test("parses a versioned natalia flow YAML document", () => {
@@ -252,4 +253,109 @@ test("legacy step-based workflow YAML is rejected, never silently converted", ()
       "version: 1\nname: legacy\nsteps:\n  - id: result\n    kind: set\n    key: done\n    value: yes\n",
     ),
   ).toThrow();
+});
+
+test("contributed documents use virtual paths without entering disk containment", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-documents-contributed-"));
+  const flow = {
+    kind: "natalia-flow" as const,
+    version: 1,
+    flowID: "flow_contributed",
+    displayName: "Contributed flow",
+    modules: [
+      { id: "read", type: "read_search" as const, displayName: "Read" },
+    ],
+  };
+  const task = {
+    kind: "natalia-task" as const,
+    version: 1,
+    taskID: "task_contributed",
+    displayName: "Contributed task",
+    schedule: "manual",
+    prompt: "Inspect.",
+    permissionProfile: "auto",
+    flow: {
+      path: "cap:review/flow_contributed.yaml",
+      flowID: "flow_contributed",
+    },
+  };
+  const store = new NataliaDocumentStore(root, {
+    "cap:review/flow_contributed.yaml": validateNataliaDocument(flow),
+    "cap:review/task_contributed.yaml": validateNataliaDocument(task),
+    // The store is defensive even though the host filters invalid payloads.
+    "cap:review/ignored.yaml": { kind: "other" } as never,
+  });
+
+  await expect(
+    store.loadFlow("cap:review/flow_contributed.yaml"),
+  ).resolves.toMatchObject(flow);
+  await expect(
+    store.loadTaskDocument("cap:review/task_contributed.yaml"),
+  ).resolves.toMatchObject(task);
+  await expect(store.loadFlowByID("flow_contributed")).resolves.toMatchObject(
+    flow,
+  );
+  await expect(store.loadTaskByID("task_contributed")).resolves.toMatchObject(
+    task,
+  );
+  await expect(
+    store.loadTask("cap:review/task_contributed.yaml"),
+  ).resolves.toMatchObject(task);
+  expect(store.contributedDocumentPaths("flow")).toEqual([
+    "cap:review/flow_contributed.yaml",
+  ]);
+  await expect(
+    store.saveFlow(flow, "cap:review/flow_contributed.yaml"),
+  ).rejects.toThrow("read-only");
+  await expect(
+    store.deleteFlow("cap:review/flow_contributed.yaml"),
+  ).rejects.toThrow("read-only");
+  await expect(
+    store.saveTask(task, "cap:review/task_contributed.yaml"),
+  ).rejects.toThrow("read-only");
+  await expect(
+    store.deleteTask("cap:review/task_contributed.yaml"),
+  ).rejects.toThrow("read-only");
+});
+
+test("disk documents remain authoritative over contributed document IDs", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-documents-priority-"));
+  const contributed = {
+    kind: "natalia-flow" as const,
+    version: 1,
+    flowID: "flow_shared",
+    displayName: "Capability default",
+    modules: [
+      { id: "read", type: "read_search" as const, displayName: "Read" },
+    ],
+  };
+  const disk = new NataliaDocumentStore(root);
+  await disk.saveFlow({ ...contributed, displayName: "User document" });
+  const store = new NataliaDocumentStore(root, {
+    "cap:review/flow_shared.yaml": validateNataliaDocument(contributed),
+  });
+  await expect(store.loadFlowByID("flow_shared")).resolves.toMatchObject({
+    displayName: "User document",
+  });
+
+  const task = {
+    kind: "natalia-task" as const,
+    version: 1,
+    taskID: "task_shared",
+    displayName: "Capability task default",
+    schedule: "manual",
+    prompt: "Inspect.",
+    permissionProfile: "auto",
+    flow: { flowID: "flow_shared" },
+  };
+  await disk.saveTask({ ...task, displayName: "User task document" });
+  const storeWithTask = new NataliaDocumentStore(root, {
+    "cap:review/flow_shared.yaml": validateNataliaDocument(contributed),
+    "cap:review/task_shared.yaml": validateNataliaDocument(task),
+  });
+  await expect(
+    storeWithTask.loadTaskByID("task_shared"),
+  ).resolves.toMatchObject({
+    displayName: "User task document",
+  });
 });

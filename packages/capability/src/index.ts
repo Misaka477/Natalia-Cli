@@ -22,6 +22,8 @@
  * registration, and the host's wiring never changes.
  */
 
+import { resolve } from "node:path";
+
 /**
  * Extension precedence and override contract.
  * Lower number = higher priority (applied first).
@@ -418,6 +420,230 @@ export class CapabilityRegistry {
         (instance.registration.dependencies ?? []).includes(id),
       )
       .map((instance) => instance.registration.id);
+  }
+}
+
+type HostedCapability = {
+  registration: CapabilityRegistration;
+  cleanup: Array<() => void>;
+  leases: number;
+  unloading: boolean;
+  cleaned: boolean;
+};
+
+export type CapabilityExecutionLease = {
+  capabilityIDs: readonly string[];
+  release(): void;
+};
+
+export type CapabilityRegistryView = Pick<
+  CapabilityRegistry,
+  | "list"
+  | "has"
+  | "scopeOf"
+  | "withGrant"
+  | "overrides"
+  | "contributions"
+  | "contribution"
+  | "ownerOf"
+>;
+
+/**
+ * Owns one workspace's capability registry and resource lifetime.
+ *
+ * Registry unload remains the visibility boundary: contributions disappear
+ * synchronously. Cleanup registered through this host waits for active execution
+ * leases, so a started invocation cannot lose dependency resources halfway
+ * through while queued and future invocations already see the capability gone.
+ */
+export class CapabilityHost {
+  readonly workspaceRoot?: string;
+  private readonly registry = new CapabilityRegistry();
+  readonly view: CapabilityRegistryView;
+  private readonly hosted = new Map<string, HostedCapability>();
+  private disposed = false;
+
+  constructor(options: { workspaceRoot?: string } = {}) {
+    this.workspaceRoot = options.workspaceRoot
+      ? resolve(options.workspaceRoot)
+      : undefined;
+    this.view = {
+      list: () => this.registry.list(),
+      has: (id) => this.registry.has(id),
+      scopeOf: (id) => this.registry.scopeOf(id),
+      withGrant: (grant) => this.registry.withGrant(grant),
+      overrides: () => this.registry.overrides(),
+      contributions: <T>(kind: CapabilityGrant) =>
+        this.registry.contributions<T>(kind),
+      contribution: <T>(kind: CapabilityGrant, name: string) =>
+        this.registry.contribution<T>(kind, name),
+      ownerOf: (kind, name) => this.registry.ownerOf(kind, name),
+    };
+  }
+
+  load(
+    registration: CapabilityRegistration,
+    activate?: (context: CapabilityContext) => void,
+  ): CapabilityContext {
+    this.assertActive();
+    if (this.hosted.has(registration.id))
+      throw new CapabilityLoadError(
+        registration.id,
+        `capability "${registration.id}" is already loaded`,
+      );
+    const hosted: HostedCapability = {
+      registration,
+      cleanup: [],
+      leases: 0,
+      unloading: false,
+      cleaned: false,
+    };
+    this.hosted.set(registration.id, hosted);
+    try {
+      return this.registry.load(registration, (context) => {
+        // This callback runs before capability cleanup and is also reached by
+        // dependency-cascade unloads initiated inside the registry.
+        context.onUnload(() => this.onRegistryUnload(registration.id));
+        activate?.({
+          ...context,
+          onUnload: (fn) => {
+            if (hosted.unloading)
+              throw new CapabilityLoadError(
+                registration.id,
+                `capability "${registration.id}" cannot register cleanup after unload`,
+              );
+            hosted.cleanup.push(fn);
+          },
+        });
+      });
+    } catch (error) {
+      if (!hosted.unloading) this.hosted.delete(registration.id);
+      throw error;
+    }
+  }
+
+  tryLoad(
+    registration: CapabilityRegistration,
+    activate?: (context: CapabilityContext) => void,
+  ):
+    | { ok: true; context: CapabilityContext }
+    | { ok: false; reason: string; error: Error } {
+    try {
+      return { ok: true, context: this.load(registration, activate) };
+    } catch (error) {
+      const wrapped = error instanceof Error ? error : new Error(String(error));
+      return { ok: false, reason: wrapped.message, error: wrapped };
+    }
+  }
+
+  unload(id: string): boolean {
+    return this.registry.unload(id);
+  }
+
+  unloadScope(scope: CapabilityScope): string[] {
+    return this.registry.unloadScope(scope);
+  }
+
+  /**
+   * Leases a capability and all of its transitive dependencies atomically.
+   * Every id must still be visible when the lease is acquired.
+   */
+  acquireExecutionLease(
+    capabilityIDs: string | readonly string[],
+  ): CapabilityExecutionLease {
+    this.assertActive();
+    const requested =
+      typeof capabilityIDs === "string" ? [capabilityIDs] : capabilityIDs;
+    if (!requested.length)
+      throw new CapabilityLoadError("", "capability lease requires an id");
+    const ordered: string[] = [];
+    const visiting = new Set<string>();
+    const collect = (id: string) => {
+      if (ordered.includes(id)) return;
+      const hosted = this.hosted.get(id);
+      if (!hosted || hosted.unloading || !this.registry.has(id))
+        throw new CapabilityLoadError(
+          id,
+          `capability "${id}" is not visible for execution`,
+        );
+      if (visiting.has(id))
+        throw new CapabilityLoadError(
+          id,
+          `capability "${id}" dependency cycle`,
+        );
+      visiting.add(id);
+      for (const dependency of hosted.registration.dependencies ?? [])
+        collect(dependency);
+      visiting.delete(id);
+      ordered.push(id);
+    };
+    for (const id of requested) collect(id);
+    for (const id of ordered) this.hosted.get(id)!.leases += 1;
+
+    let released = false;
+    return {
+      capabilityIDs: [...ordered],
+      release: () => {
+        if (released) return;
+        released = true;
+        for (const id of [...ordered].reverse()) {
+          const hosted = this.hosted.get(id);
+          if (!hosted) continue;
+          hosted.leases -= 1;
+          this.finalizeCleanup(id, hosted);
+        }
+      },
+    };
+  }
+
+  /** Immediately hides everything; leased resource cleanup finishes on release. */
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.registry.unloadAll();
+  }
+
+  pendingCleanup(): string[] {
+    return [...this.hosted.entries()]
+      .filter(([, hosted]) => hosted.unloading && !hosted.cleaned)
+      .map(([id]) => id);
+  }
+
+  list(): CapabilityRegistration[] {
+    return this.registry.list();
+  }
+
+  has(id: string): boolean {
+    return this.registry.has(id);
+  }
+
+  contributions<T>(kind: CapabilityGrant): Array<CapabilityContribution<T>> {
+    return this.registry.contributions<T>(kind);
+  }
+
+  private onRegistryUnload(id: string) {
+    const hosted = this.hosted.get(id);
+    if (!hosted) return;
+    hosted.unloading = true;
+    this.finalizeCleanup(id, hosted);
+  }
+
+  private finalizeCleanup(id: string, hosted: HostedCapability) {
+    if (!hosted.unloading || hosted.leases || hosted.cleaned) return;
+    hosted.cleaned = true;
+    for (const fn of hosted.cleanup) {
+      try {
+        fn();
+      } catch {
+        // One broken cleanup cannot retain the rest of the capability resources.
+      }
+    }
+    this.hosted.delete(id);
+  }
+
+  private assertActive() {
+    if (this.disposed)
+      throw new CapabilityLoadError("", "capability host is disposed");
   }
 }
 

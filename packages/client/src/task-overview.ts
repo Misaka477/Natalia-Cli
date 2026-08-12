@@ -18,6 +18,7 @@ export type {
 import {
   taskAlertSubscriptions,
   NataliaDocumentStore,
+  type ContributedNataliaDocuments,
   NataliaTaskAlertQueue,
   NataliaTaskStateStore,
   NataliaUnattendedStateStore,
@@ -37,8 +38,12 @@ export async function scheduledTaskOverview(input: {
   workspaceRoot: string;
   config: ConfigV2;
   readNextRun?: typeof nextSystemdRun;
+  contributedDocuments?: ContributedNataliaDocuments;
 }): Promise<ScheduledTaskOverview> {
-  const documents = new NataliaDocumentStore(input.workspaceRoot);
+  const documents = new NataliaDocumentStore(
+    input.workspaceRoot,
+    input.contributedDocuments,
+  );
   let entries: string[] = [];
   try {
     entries = (await readdir(documents.tasksDir)).filter((entry) =>
@@ -52,7 +57,10 @@ export async function scheduledTaskOverview(input: {
   try {
     const tasks: ScheduledTaskRow[] = [];
     const unreadable: Array<{ path: string; reason: string }> = [];
-    for (const entry of entries.sort()) {
+    for (const entry of [
+      ...entries.sort(),
+      ...documents.contributedDocumentPaths("task"),
+    ]) {
       let task: NataliaTaskDocument;
       try {
         task = await documents.loadTaskDocument(entry);
@@ -209,8 +217,12 @@ export async function scheduledTaskOverview(input: {
  */
 export async function flowOverview(input: {
   workspaceRoot: string;
+  contributedDocuments?: ContributedNataliaDocuments;
 }): Promise<FlowOverview> {
-  const documents = new NataliaDocumentStore(input.workspaceRoot);
+  const documents = new NataliaDocumentStore(
+    input.workspaceRoot,
+    input.contributedDocuments,
+  );
   let entries: string[] = [];
   try {
     entries = (await readdir(documents.flowsDir)).filter((entry) =>
@@ -220,25 +232,35 @@ export async function flowOverview(input: {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   const taskFlows = new Map<string, string[]>();
+  let taskEntries: string[] = [];
   try {
-    for (const entry of await readdir(documents.tasksDir)) {
-      if (!/\.ya?ml$/iu.test(entry)) continue;
-      const task = await documents.loadTask(entry).catch(() => undefined);
-      const reference = task?.flow.flowID ?? task?.flow.path;
-      if (!task || !reference) continue;
-      taskFlows.set(reference, [
-        ...(taskFlows.get(reference) ?? []),
-        task.taskID,
-      ]);
-    }
+    taskEntries = await readdir(documents.tasksDir);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
+  for (const entry of [
+    ...taskEntries,
+    ...documents.contributedDocumentPaths("task"),
+  ]) {
+    if (!/\.ya?ml$/iu.test(entry)) continue;
+    const task = await documents.loadTask(entry).catch(() => undefined);
+    const reference = task?.flow.flowID ?? task?.flow.path;
+    if (!task || !reference) continue;
+    taskFlows.set(reference, [
+      ...(taskFlows.get(reference) ?? []),
+      task.taskID,
+    ]);
+  }
   const flows: FlowRow[] = [];
   const unreadable: Array<{ path: string; reason: string }> = [];
-  for (const entry of entries.sort()) {
+  for (const entry of [
+    ...entries.sort(),
+    ...documents.contributedDocumentPaths("flow"),
+  ]) {
     const flow = await documents
-      .loadFlow(`.natalia/flows/${entry}`)
+      .loadFlow(
+        documents.isContributedPath(entry) ? entry : `.natalia/flows/${entry}`,
+      )
       .catch((error: unknown) => {
         unreadable.push({
           path: entry,
@@ -283,7 +305,11 @@ export async function flowOverview(input: {
       enabledStages: stages.filter((stage) => stage.enabled).length,
       usedBy: [
         ...(taskFlows.get(flow.flowID) ?? []),
-        ...(taskFlows.get(`.natalia/flows/${entry}`) ?? []),
+        ...(taskFlows.get(
+          documents.isContributedPath(entry)
+            ? entry
+            : `.natalia/flows/${entry}`,
+        ) ?? []),
       ],
       problems,
     });
