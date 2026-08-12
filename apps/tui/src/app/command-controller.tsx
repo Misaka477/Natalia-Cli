@@ -2452,9 +2452,9 @@ export async function runCommand(command: string, ctx: CommandContext) {
                     {
                       title: "Terminal Window",
                       value: "window-mode",
-                      description: `${
-                        resolved.runtime?.terminal?.windowMode ?? "auto"
-                      } (auto: open window, degrade if attach fails; windowless: never open; window: always require)`,
+                      description: String(
+                        resolved.runtime?.terminal?.windowMode ?? "auto",
+                      ),
                     },
                   ]}
                   onSelect={async (opt) => {
@@ -2466,16 +2466,34 @@ export async function runCommand(command: string, ctx: CommandContext) {
                       return;
                     }
                     if (opt.value === "window-mode") {
-                      const order = ["auto", "windowless", "window"] as const;
                       const current =
                         next.runtime?.terminal?.windowMode ?? "auto";
-                      const index = order.indexOf(
-                        current as (typeof order)[number],
-                      );
-                      next.runtime!.terminal = {
-                        windowMode: order[(index + 1) % order.length],
-                      };
-                      void saveConfig(next);
+                      const modes = ["auto", "windowless", "window"] as const;
+                      ctx.dialog.push(() => (
+                        <DialogSelect
+                          title="Terminal Window"
+                          options={modes.map((mode) => ({
+                            title: mode,
+                            value: mode,
+                            description:
+                              mode === "auto"
+                                ? "Open a window; degrade to windowless if the attach fails (headless-friendly default)"
+                                : mode === "windowless"
+                                  ? "Never open a window; the model still reads and writes the terminal"
+                                  : "Always require a window; fail the start if it cannot attach",
+                            footer: current === mode ? "current" : undefined,
+                          }))}
+                          current={current as (typeof modes)[number]}
+                          renderFilter={false}
+                          onSelect={async (chosen) => {
+                            const target = structuredClone(resolved);
+                            target.runtime!.terminal = {
+                              windowMode: chosen.value,
+                            };
+                            void saveConfig(target);
+                          }}
+                        />
+                      ));
                       return;
                     }
                     const v = await DialogPrompt.show(
