@@ -448,6 +448,9 @@ export type CapabilityRegistryView = Pick<
   | "ownerOf"
 >;
 
+export type CapabilityRegistryHost = CapabilityRegistryView &
+  Pick<CapabilityRegistry, "tryLoad">;
+
 /**
  * Owns one workspace's capability registry and resource lifetime.
  *
@@ -617,8 +620,28 @@ export class CapabilityHost {
     return this.registry.has(id);
   }
 
+  scopeOf(id: string): CapabilityScope | undefined {
+    return this.registry.scopeOf(id);
+  }
+
+  withGrant(grant: CapabilityGrant): string[] {
+    return this.registry.withGrant(grant);
+  }
+
+  overrides(): ReturnType<CapabilityRegistry["overrides"]> {
+    return this.registry.overrides();
+  }
+
   contributions<T>(kind: CapabilityGrant): Array<CapabilityContribution<T>> {
     return this.registry.contributions<T>(kind);
+  }
+
+  contribution<T>(kind: CapabilityGrant, name: string): T | undefined {
+    return this.registry.contribution<T>(kind, name);
+  }
+
+  ownerOf(kind: CapabilityGrant, name: string): string | undefined {
+    return this.registry.ownerOf(kind, name);
   }
 
   private onRegistryUnload(id: string) {

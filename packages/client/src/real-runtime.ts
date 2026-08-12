@@ -57,7 +57,11 @@ import {
   updateConfigAtScope,
 } from "@natalia/config";
 import type { ConfigV2 } from "@natalia/contracts";
-import { CapabilityRegistry } from "@natalia/capability";
+import {
+  CapabilityRegistry,
+  type CapabilityHost,
+  type CapabilityRegistryHost,
+} from "@natalia/capability";
 import { mergeContributedToolSettings } from "./capability-settings";
 import { workflowContributionsProjection } from "./workflow-contributions";
 import {
@@ -285,6 +289,8 @@ export type RealRuntimeClientOptions = {
   taskModuleContext?: TaskModuleContext;
   /** Host-owned registry shared with task delivery and other capability consumers. */
   capabilityRegistry?: CapabilityRegistry;
+  /** Preferred host-owned capability lifetime; survives runtime config reloads. */
+  capabilityHost?: CapabilityHost;
 };
 
 export function createRealRuntimeClient(
@@ -317,8 +323,9 @@ export function createRealRuntimeClient(
    * Created here, not in `initialize`, because capabilities contribute tools
    * while the client is being constructed.
    */
-  const capabilityRegistry =
+  const capabilityRegistry: CapabilityRegistryHost =
     options.capabilityRegistry ?? new CapabilityRegistry();
+  const workspaceCapabilityView = options.capabilityHost?.view;
   if (options.taskModuleContext) {
     const registered = registerTaskModuleCapability(
       capabilityRegistry,
@@ -1457,13 +1464,16 @@ export function createRealRuntimeClient(
   }
 
   function projectedWorkflowContributions() {
-    const projection = workflowContributionsProjection(capabilityRegistry);
-    for (const message of projection.diagnostics) {
+    const local = workflowContributionsProjection(capabilityRegistry);
+    const workspace = workspaceCapabilityView
+      ? workflowContributionsProjection(workspaceCapabilityView)
+      : { documents: {}, diagnostics: [] };
+    for (const message of [...workspace.diagnostics, ...local.diagnostics]) {
       if (publishedWorkflowContributionDiagnostics.has(message)) continue;
       publishedWorkflowContributionDiagnostics.add(message);
       publish({ type: "diagnostic", level: "warning", message });
     }
-    return projection.documents;
+    return { ...local.documents, ...workspace.documents };
   }
 
   function publishForSession(
@@ -3066,7 +3076,10 @@ export function createRealRuntimeClient(
       // `ready` would answer before those records exist.
       await ready;
       if (!capabilityRegistry) return [];
-      return capabilityRegistry.list().map((record) => ({
+      return [
+        ...(workspaceCapabilityView?.list() ?? []),
+        ...capabilityRegistry.list(),
+      ].map((record) => ({
         id: record.id,
         name: record.name,
         version: record.version,
@@ -4196,10 +4209,10 @@ export function createRealRuntimeClient(
     };
     // The `settings` grant's first host consumer: capability contributions
     // provide defaults that explicit config and permission values override.
-    return mergeContributedToolSettings(
-      base,
-      capabilityRegistry.contributions("settings"),
-    );
+    return mergeContributedToolSettings(base, [
+      ...(workspaceCapabilityView?.contributions("settings") ?? []),
+      ...capabilityRegistry.contributions("settings"),
+    ]);
   }
 }
 

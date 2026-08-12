@@ -13,6 +13,9 @@ import {
   createWorkerRuntimeClient,
 } from "../src/worker";
 import { createRealRuntimeClient } from "../src/real-runtime";
+import { CapabilityHost } from "@natalia/capability";
+import { CapabilityExecutionHost } from "../src/capability-execution-host";
+import { configV2Schema } from "@natalia/contracts";
 
 test("worker RuntimeClient transport remains behind contracts boundary", async () => {
   const channel = new MessageChannel();
@@ -488,6 +491,212 @@ test("the worker channel routes workflow management catalogs", async () => {
     expect.objectContaining({ path: "cap:review/task_review.yaml" }),
   ]);
   await client.dispose?.();
+});
+
+test("the worker streams capability task execution", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-worker-workflow-run-"));
+  const capabilities = new CapabilityHost({ workspaceRoot: root });
+  capabilities.load(
+    {
+      id: "doctor",
+      name: "Doctor",
+      version: "1",
+      scope: "workspace",
+      grants: ["workflows"],
+    },
+    (capability) => {
+      capability.contribute("workflows", "doctor-flow", {
+        kind: "natalia-flow",
+        version: 1,
+        flowID: "flow_doctor",
+        displayName: "Doctor flow",
+        modules: [
+          {
+            id: "read",
+            type: "read_search",
+            displayName: "Read",
+            minimumConditions: [{ id: "checked", text: "Run doctor" }],
+          },
+        ],
+      });
+      capability.contribute("workflows", "doctor-task", {
+        kind: "natalia-task",
+        version: 1,
+        taskID: "task_doctor",
+        displayName: "Doctor task",
+        schedule: "manual",
+        prompt: "/doctor",
+        permissionProfile: "auto",
+        flow: { flowID: "flow_doctor" },
+      });
+    },
+  );
+  const createRuntime = () =>
+    createRealRuntimeClient({
+      workspaceRoot: root,
+      sessionID: "ses_worker_workflow",
+      capabilityHost: capabilities,
+    });
+  const channel = new MessageChannel();
+  attachRuntimeClientWorker(channel.port1, createRuntime(), {
+    reload: createRuntime,
+    workflowExecution: new CapabilityExecutionHost(capabilities),
+    workflowConfig: async () => configV2Schema.parse({ version: 2 }),
+  });
+  const client = createWorkerRuntimeClient(channel.port2);
+  client.start(() => undefined);
+
+  const handle = client.runWorkflowTask({
+    workspaceRoot: root,
+    taskID: "task_doctor",
+    requestedBy: { sessionID: "ses_worker_workflow" },
+  });
+  const events = (async () => {
+    const seen = [];
+    for await (const event of handle.events) seen.push(event);
+    return seen;
+  })();
+  await expect(
+    Promise.race([
+      handle.result,
+      Bun.sleep(5_000).then(() => {
+        throw new Error("workflow result timed out");
+      }),
+    ]),
+  ).resolves.toMatchObject({ status: "stalled" });
+  const seen = await Promise.race([
+    events,
+    Bun.sleep(5_000).then(() => {
+      throw new Error("workflow event stream timed out");
+    }),
+  ]);
+  expect(seen).toContainEqual(
+    expect.objectContaining({
+      type: "workflow.execution.resolved",
+      executionID: handle.executionID,
+      taskID: "task_doctor",
+      requestedBy: {
+        transport: "worker",
+        sessionID: "ses_worker_workflow",
+      },
+    }),
+  );
+  expect(
+    seen.some(
+      (event) =>
+        event.type === "workflow.execution.output" &&
+        event.line.includes('"taskID":"task_doctor"'),
+    ),
+  ).toBe(true);
+  expect(seen.at(-1)).toMatchObject({
+    type: "workflow.execution",
+    status: "completed",
+  });
+
+  await client.dispose?.();
+});
+
+test("worker cancellation is retained while workflow config is resolving", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-worker-workflow-cancel-"));
+  const capabilities = new CapabilityHost({ workspaceRoot: root });
+  const channel = new MessageChannel();
+  let resolveConfig!: () => void;
+  const configReady = new Promise<void>((resolve) => (resolveConfig = resolve));
+  attachRuntimeClientWorker(
+    channel.port1,
+    createRealRuntimeClient({ workspaceRoot: root }),
+    {
+      workflowExecution: new CapabilityExecutionHost(capabilities),
+      workflowConfig: async () => {
+        await configReady;
+        return configV2Schema.parse({ version: 2 });
+      },
+    },
+  );
+  const client = createWorkerRuntimeClient(channel.port2);
+  client.start(() => undefined);
+  const handle = client.runWorkflowTask({
+    workspaceRoot: root,
+    taskID: "task_never_started",
+  });
+
+  handle.cancel("cancelled before config");
+  resolveConfig();
+  await expect(handle.result).rejects.toThrow("cancelled before config");
+  await client.dispose?.();
+});
+
+test("a host-owned workflow contribution survives runtime replacement", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-worker-workflow-reload-"));
+  const capabilities = new CapabilityHost({ workspaceRoot: root });
+  capabilities.load(
+    {
+      id: "review",
+      name: "Review",
+      version: "1",
+      scope: "workspace",
+      grants: ["workflows"],
+    },
+    (capability) =>
+      capability.contribute("workflows", "review-task", {
+        kind: "natalia-task",
+        version: 1,
+        taskID: "task_review",
+        displayName: "Review task",
+        schedule: "manual",
+        prompt: "Review.",
+        permissionProfile: "auto",
+        flow: { flowID: "flow_missing" },
+      }),
+  );
+  const first = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_host_reload",
+    capabilityHost: capabilities,
+  });
+  await first.runtimeStatus?.();
+  expect(capabilities.list().map((entry) => entry.id)).toEqual(["review"]);
+  await first.dispose?.();
+  const replacement = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_host_reload",
+    capabilityHost: capabilities,
+  });
+  await expect(replacement.documentCatalog!()).resolves.toContainEqual(
+    expect.objectContaining({
+      path: "cap:review/task_review.yaml",
+      source: { kind: "capability", capabilityID: "review" },
+    }),
+  );
+  expect(capabilities.list().map((entry) => entry.id)).toEqual(["review"]);
+  await replacement.dispose?.();
+});
+
+test("worker teardown disposes the workspace capability host once", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-worker-host-dispose-"));
+  const capabilities = new CapabilityHost({ workspaceRoot: root });
+  const cleaned: string[] = [];
+  capabilities.load(
+    {
+      id: "review",
+      name: "Review",
+      version: "1",
+      scope: "workspace",
+      grants: [],
+    },
+    (capability) => capability.onUnload(() => cleaned.push("review")),
+  );
+  const channel = new MessageChannel();
+  attachRuntimeClientWorker(
+    channel.port1,
+    createRealRuntimeClient({ workspaceRoot: root }),
+    { disposeHost: () => capabilities.dispose() },
+  );
+  const client = createWorkerRuntimeClient(channel.port2);
+  client.start(() => undefined);
+
+  await client.dispose?.();
+  expect(cleaned).toEqual(["review"]);
 });
 
 test("the worker channel routes the sandbox, agent-select and fork surface", async () => {

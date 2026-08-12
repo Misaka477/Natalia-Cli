@@ -42,10 +42,16 @@ export function workflowRunRequest(text: string) {
     : undefined;
 }
 
-export function workflowRunUnavailableReason(path: string) {
-  return path.startsWith("cap:")
-    ? "Capability workflow execution is not available through this TUI transport yet"
-    : undefined;
+export function workflowRunUnavailableReason(
+  kind: "task" | "flow",
+  path: string,
+  capabilityTaskExecutionAvailable = false,
+) {
+  if (!path.startsWith("cap:")) return undefined;
+  if (kind === "task" && capabilityTaskExecutionAvailable) return undefined;
+  return kind === "flow"
+    ? "Capability flow direct execution is not available through this TUI transport yet"
+    : "Capability task execution is not available through this TUI transport yet";
 }
 
 export function workflowDocumentUnavailableReason(

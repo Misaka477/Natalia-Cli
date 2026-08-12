@@ -15,7 +15,7 @@
  */
 import type {
   CapabilityRegistration,
-  CapabilityRegistry,
+  CapabilityRegistryHost,
 } from "@natalia/capability";
 import { taskModuleTools, type TaskModuleContext } from "./task-module-tools";
 
@@ -43,7 +43,7 @@ export function taskModuleCapability(): CapabilityRegistration {
  * to do with a failure; it is never swallowed here.
  */
 export function registerTaskModuleCapability(
-  registry: CapabilityRegistry,
+  registry: CapabilityRegistryHost,
   context: TaskModuleContext,
 ): { ok: true } | { ok: false; reason: string } {
   const result = registry.tryLoad(taskModuleCapability(), (capability) => {

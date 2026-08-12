@@ -14,6 +14,7 @@ import {
 } from "./workflow-execution-scheduler";
 
 export type CapabilityTaskExecutionRequest = {
+  executionID?: string;
   workspaceRoot: string;
   path?: string;
   taskID?: string;
@@ -61,6 +62,7 @@ export class CapabilityExecutionHost {
       );
     return this.scheduler.schedule({
       workspaceRoot,
+      executionID: request.executionID,
       run: async ({ signal, publishOutput, publishResolved }) => {
         signal.throwIfAborted();
         const first = await this.resolveExecutionDocuments(request);

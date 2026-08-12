@@ -126,10 +126,14 @@ export class WorkflowExecutionScheduler {
 
   schedule<T>(input: {
     workspaceRoot: string;
+    executionID?: string;
     run: ScheduledExecution<T>["run"];
   }): WorkflowExecutionHandle<T> {
     const workspaceRoot = resolve(input.workspaceRoot);
-    const executionID = `exe_${crypto.randomUUID().replace(/-/gu, "")}`;
+    const executionID =
+      input.executionID ?? `exe_${crypto.randomUUID().replace(/-/gu, "")}`;
+    if (!/^exe_[a-zA-Z0-9]+$/u.test(executionID))
+      throw new Error("workflow execution ID is invalid");
     const stream = new ExecutionEventStream();
     const abort = new AbortController();
     let resolveResult!: (value: T) => void;

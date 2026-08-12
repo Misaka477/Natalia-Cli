@@ -12,7 +12,7 @@
  */
 import type {
   CapabilityRegistration,
-  CapabilityRegistry,
+  CapabilityRegistryHost,
 } from "@natalia/capability";
 
 export function builtinCapabilities(): CapabilityRegistration[] {
@@ -69,7 +69,7 @@ export type CapabilityFailedEvent = {
  * fails to load reports why instead of vanishing, so the journal never implies a
  * capability is present when it is not.
  */
-export function registerBuiltinCapabilities(registry: CapabilityRegistry): {
+export function registerBuiltinCapabilities(registry: CapabilityRegistryHost): {
   loaded: CapabilityLoadedEvent[];
   failed: CapabilityFailedEvent[];
 } {

@@ -21,6 +21,10 @@ import { StateProvider, useAppState } from "../context/state";
 import { useClipboard } from "../context/clipboard";
 import { ToastRegion, useToast } from "../context/toast";
 import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
+import type {
+  WorkerRuntimeClient,
+  WorkflowExecutionHandle,
+} from "@natalia/client";
 import type { ConfigV2 } from "@natalia/contracts";
 import { getPluginCommands } from "@natalia/plugin";
 import {
@@ -105,8 +109,8 @@ import {
 import { runCommand } from "./command-controller";
 
 export function App(props: {
-  backend: RuntimeClient;
-  createBackend?: (sessionID?: string) => RuntimeClient;
+  backend: TuiRuntimeClient;
+  createBackend?: (sessionID?: string) => TuiRuntimeClient;
   onBackendChange?: (backend: RuntimeClient) => void;
   workspaceRoot?: string;
   onSessionChange?: (sessionID?: string) => void;
@@ -236,7 +240,7 @@ async function hydrateRecentMessages(
 }
 
 function Shell(props: {
-  backend: RuntimeClient;
+  backend: TuiRuntimeClient;
   workspaceRoot?: string;
   onSessionChange?: (sessionID?: string) => void;
   onLoadOlderHistory?: () => Promise<void>;
@@ -311,6 +315,7 @@ function Shell(props: {
   const scrollRef: { current?: any } = {};
   const terminalScrollRef: { current?: any } = {};
   let submitting = false;
+  let activeWorkflow: WorkflowExecutionHandle<unknown> | undefined;
   let restoredAgent = false;
   let preferencesLoad = 0;
 
@@ -458,7 +463,11 @@ function Shell(props: {
         });
         return;
       }
-      const unavailable = workflowRunUnavailableReason(workflowRun.path);
+      const unavailable = workflowRunUnavailableReason(
+        workflowRun.kind,
+        workflowRun.path,
+        Boolean(props.backend.runWorkflowTask),
+      );
       if (unavailable) {
         toast.show({
           variant: "warning",
@@ -479,24 +488,21 @@ function Shell(props: {
           status: "running",
           detail: `${workflowRun.kind === "flow" ? "Flow" : "Task"}: ${workflowRun.path}`,
         });
-        const outcome = await runWorkflowProcess({
-          kind: workflowRun.kind,
-          path: workflowRun.path,
-          workspaceRoot: props.workspaceRoot,
-          onEvent: (event) => {
-            // A workflow run is a sequence of headless module turns; the
-            // runtime events each module emits (submitted prompt, thinking,
-            // content, tool cards, finished) render in the transcript exactly
-            // like an interactive turn, so the run is visible as it happens.
-            if (
-              event.type !== "task.invocation" &&
-              event.type !== "task.alert" &&
-              event.type !== "task.alert_delivery" &&
-              event.type !== "task.state"
-            )
-              dispatch(event as import("@natalia/contracts").RuntimeEvent);
-          },
-        });
+        const outcome = workflowRun.path.startsWith("cap:")
+          ? await runCapabilityWorkflowTask({
+              backend: props.backend,
+              path: workflowRun.path,
+              workspaceRoot: props.workspaceRoot,
+              sessionID: state.facts.sessionID,
+              setActive: (handle) => (activeWorkflow = handle),
+              onEvent: dispatchWorkflowEvent,
+            })
+          : await runWorkflowProcess({
+              kind: workflowRun.kind,
+              path: workflowRun.path,
+              workspaceRoot: props.workspaceRoot,
+              onEvent: dispatchWorkflowEvent,
+            });
         dispatch({
           type: "status.update",
           status: outcome.ok ? "ready" : "failed",
@@ -516,6 +522,7 @@ function Shell(props: {
           message: outcome.message,
         });
       } finally {
+        activeWorkflow = undefined;
         submitting = false;
         setTimeout(() => composer()?.focus(), 1);
       }
@@ -652,6 +659,10 @@ function Shell(props: {
   }
 
   function exitOrCancel() {
+    if (activeWorkflow) {
+      activeWorkflow.cancel("TUI workflow cancellation");
+      return;
+    }
     if (state.facts.activeTurn) {
       props.backend.cancel();
     } else if (composer()?.plainText) {
@@ -659,6 +670,16 @@ function Shell(props: {
     } else {
       renderer.destroy();
     }
+  }
+
+  function dispatchWorkflowEvent(event: Record<string, unknown>) {
+    if (
+      event.type !== "task.invocation" &&
+      event.type !== "task.alert" &&
+      event.type !== "task.alert_delivery" &&
+      event.type !== "task.state"
+    )
+      dispatch(event as RuntimeEvent);
   }
 
   function changeSession(sessionID?: string) {
@@ -1199,6 +1220,46 @@ function Shell(props: {
       <ToastRegion />
     </box>
   );
+}
+
+type TuiRuntimeClient = RuntimeClient &
+  Partial<Pick<WorkerRuntimeClient, "runWorkflowTask">>;
+
+export async function runCapabilityWorkflowTask(input: {
+  backend: TuiRuntimeClient;
+  path: string;
+  workspaceRoot: string;
+  sessionID?: string;
+  setActive(handle: WorkflowExecutionHandle<unknown>): void;
+  onEvent(event: Record<string, unknown>): void;
+}) {
+  if (!input.backend.runWorkflowTask)
+    throw new Error("Capability task execution is not available");
+  const handle = input.backend.runWorkflowTask({
+    workspaceRoot: input.workspaceRoot,
+    path: input.path,
+    requestedBy: { sessionID: input.sessionID },
+  });
+  input.setActive(handle);
+  const consume = (async () => {
+    for await (const event of handle.events) {
+      if (event.type !== "workflow.execution.output") continue;
+      try {
+        const parsed = JSON.parse(event.line) as Record<string, unknown>;
+        if (typeof parsed.type === "string") input.onEvent(parsed);
+      } catch {
+        // The worker runs JSON mode; a plain diagnostic line remains a status only.
+      }
+    }
+  })();
+  const result = await handle.result;
+  await consume;
+  const ok = result.status === "succeeded" || result.status === "stalled";
+  return {
+    ok,
+    status: result.status,
+    message: `task ${input.path}: ${result.status}`,
+  };
 }
 
 function scrollToBottom(scrollbox: any) {

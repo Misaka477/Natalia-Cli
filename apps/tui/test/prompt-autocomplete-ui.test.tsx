@@ -83,8 +83,14 @@ test("slash autocomplete selects an existing flow by keyboard", async () => {
 });
 
 test("capability workflow paths never fall through to the disk subprocess", () => {
-  expect(workflowRunUnavailableReason("review.yaml")).toBeUndefined();
-  expect(workflowRunUnavailableReason("cap:review/flow_review.yaml")).toContain(
-    "not available through this TUI transport",
-  );
+  expect(workflowRunUnavailableReason("task", "review.yaml")).toBeUndefined();
+  expect(
+    workflowRunUnavailableReason("task", "cap:review/task_review.yaml", true),
+  ).toBeUndefined();
+  expect(
+    workflowRunUnavailableReason("flow", "cap:review/flow_review.yaml", true),
+  ).toContain("flow direct execution is not available");
+  expect(
+    workflowRunUnavailableReason("task", "cap:review/task_review.yaml"),
+  ).toContain("task execution is not available through this TUI transport");
 });
