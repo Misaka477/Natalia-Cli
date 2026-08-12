@@ -436,8 +436,35 @@ chmod +x /opt/natalia-cli/bin/natalia-ts
 npm run native-terminal:build-wezterm        # cargo 原生编译，产物进包内默认路径
 
 # 5. 工作区与配置
+#    工作区是框架"干活"的目录：agent 读写文件、.natalia/（配置/会话/检查点）都在这下面。
+#    systemd 单元的 WorkingDirectory 指向它，所以 daemon 启动后就在这里工作。
 mkdir -p /srv/natalia-workspace
-# provider 写 /srv/natalia-workspace/.natalia/config.json，或用环境变量
+
+#    provider 凭据任选一种方式提供（两种都有时 config.json 优先，见第 3 步的
+#    "文件优先于环境变量"）：
+#
+#    方式 A：写进框架自己的配置文件 .natalia/config.json
+#    （TUI 设置中心保存的也是这份文件）
+#    /srv/natalia-workspace/.natalia/config.json：
+#    {
+#      "providers": {
+#        "my-provider": {
+#          "type": "openai-compatible",
+#          "baseURL": "https://api.example.com/v1",
+#          "apiKey": "sk-你的key",
+#          "enabled": true
+#        }
+#      },
+#      "defaultModel": "你的模型id"
+#    }
+#
+#    方式 B：写进 /etc/natalia/unattended.env（systemd 的 EnvironmentFile，
+#    启动 daemon/timer 时被导入进程环境；systemd 服务不继承登录 shell 的 export）
+#    /etc/natalia/unattended.env：
+#    NATALIA_API_KEY=sk-你的key
+#    NATALIA_MODEL=你的模型id
+#    NATALIA_PROVIDER=openai-compatible
+#    NATALIA_BASE_URL=https://api.example.com/v1
 
 # 6. 装 systemd（常驻 daemon + 定时任务）
 cp deploy/systemd/*.service deploy/systemd/*.timer /etc/systemd/system/
