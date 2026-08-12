@@ -168,6 +168,7 @@ export async function evaluateAndRecordModule(input: {
   provider: StreamingProvider;
   /** Durable config provider key used for cross-provider consent checks. */
   providerIdentity?: string;
+  signal?: AbortSignal;
   context: EvaluatorModuleContext;
   /**
    * Streams each evaluator output chunk as it is produced, so the host can
@@ -219,6 +220,7 @@ export async function evaluateAndRecordModule(input: {
   let lastValidationError: string | undefined;
   for (let evaluationAttempt = 0; evaluationAttempt < 3; evaluationAttempt++) {
     try {
+      input.signal?.throwIfAborted();
       let content = "";
       for await (const chunk of input.provider.stream({
         messages: [
@@ -228,6 +230,7 @@ export async function evaluateAndRecordModule(input: {
           },
           { role: "user", content: JSON.stringify(redacted) },
         ],
+        signal: input.signal,
       })) {
         if (chunk.type === "content") content += chunk.text;
         if (chunk.type === "tool_call")
@@ -246,6 +249,7 @@ export async function evaluateAndRecordModule(input: {
         });
       break;
     } catch (error) {
+      if (input.signal?.aborted) throw error;
       lastValidationError =
         error instanceof Error ? error.message : String(error);
       if (evaluationAttempt === 2)

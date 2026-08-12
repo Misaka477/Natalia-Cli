@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { agentsFromConfig } from "@natalia/agent";
 import type { ResolvedConfig } from "@natalia/config";
-import type { CapabilityRegistry } from "@natalia/capability";
+import type { CapabilityRegistryView } from "@natalia/capability";
 import type {
   ConfigV2,
   EpisodeID,
@@ -130,16 +130,20 @@ export async function runTaskFromDocument(input: {
   workspaceRoot: string;
   path?: string;
   taskID?: string;
-  capabilityRegistry?: CapabilityRegistry;
+  capabilityRegistry?: CapabilityRegistryView;
+  contributedDocuments?: ContributedNataliaDocuments;
   config: ConfigV2;
   json: boolean;
   emit: (line: string) => void;
+  signal?: AbortSignal;
 }): Promise<TaskRunResult> {
   if (Boolean(input.path) === Boolean(input.taskID))
     throw new Error("task execution requires exactly one path or taskID");
-  const projection = input.capabilityRegistry
-    ? workflowContributionsProjection(input.capabilityRegistry)
-    : { documents: {}, diagnostics: [] };
+  const projection = input.contributedDocuments
+    ? { documents: input.contributedDocuments, diagnostics: [] }
+    : input.capabilityRegistry
+      ? workflowContributionsProjection(input.capabilityRegistry)
+      : { documents: {}, diagnostics: [] };
   for (const message of projection.diagnostics)
     input.emit(
       JSON.stringify({ type: "diagnostic", level: "warning", message }),
@@ -160,6 +164,7 @@ export async function runTaskFromDocument(input: {
     config: input.config,
     json: input.json,
     emit: input.emit,
+    signal: input.signal,
   });
 }
 
@@ -235,7 +240,9 @@ export async function runTask(input: {
   config: ConfigV2;
   json: boolean;
   emit: (line: string) => void;
+  signal?: AbortSignal;
 }): Promise<TaskRunResult> {
+  input.signal?.throwIfAborted();
   const config = input.config;
   let exitCode = 0;
   const profile = config.permissionProfiles[input.task.permissionProfile];
@@ -353,6 +360,7 @@ export async function runTask(input: {
   let result: NataliaTaskInvocation | undefined;
   try {
     while (true) {
+      input.signal?.throwIfAborted();
       // Every attempt reinitializes the module plan under the attempt's own
       // controller episode/session. The controller advances the linear plan
       // one module at a time, each module runs under its own fresh headless
@@ -375,6 +383,7 @@ export async function runTask(input: {
       let lastOutcome: TaskModuleRunOutcome | undefined;
       let moduleRuns = 0;
       while (true) {
+        input.signal?.throwIfAborted();
         const moduleExecution = newHeadlessExecution();
         const module = state.activateNextModule({
           invocationID,
@@ -399,6 +408,7 @@ export async function runTask(input: {
           readDataSource,
           json: input.json,
           emit: input.emit,
+          signal: input.signal,
         });
         if (lastOutcome.outcome !== "complete") break;
       }
@@ -500,6 +510,38 @@ export async function runTask(input: {
       if (status !== "succeeded" && status !== "stalled") exitCode = 1;
       break;
     }
+  } catch (error) {
+    if (!input.signal?.aborted) throw error;
+    const active = state.getInvocation(invocationID);
+    if (active?.status === "running" || active?.status === "retrying") {
+      state.cancelInvocation({
+        invocationID,
+        reason:
+          input.signal.reason instanceof Error
+            ? input.signal.reason.message
+            : String(input.signal.reason ?? "workflow execution cancelled"),
+      });
+    }
+    result = state.getInvocation(invocationID)!;
+    input.emit(
+      input.json
+        ? JSON.stringify({
+            type: "task.invocation",
+            ...result,
+            reason:
+              input.signal.reason instanceof Error
+                ? input.signal.reason.message
+                : String(input.signal.reason ?? "workflow execution cancelled"),
+          })
+        : `task ${input.task.taskID}: cancelled`,
+    );
+    await settleUnattendedState({
+      workspaceRoot: input.workspaceRoot,
+      invocation: result,
+      json: input.json,
+      emit: input.emit,
+    });
+    exitCode = 1;
   } finally {
     alerts.close();
     state.close();
@@ -832,6 +874,7 @@ async function runTaskModule(input: {
   >["readDataSource"];
   json: boolean;
   emit: (line: string) => void;
+  signal?: AbortSignal;
 }): Promise<TaskModuleRunOutcome> {
   const definition = input.flow.modules.find(
     (entry) => entry.id === input.module.moduleID,
@@ -873,6 +916,12 @@ async function runTaskModule(input: {
     permissionProfile: input.task.permissionProfile,
     taskModuleContext,
   });
+  const cancel = () =>
+    client.cancel(
+      input.signal?.reason instanceof Error
+        ? input.signal.reason.message
+        : "workflow execution cancelled",
+    );
   let stopReason: Extract<
     RuntimeEvent,
     { type: "turn.finished" }
@@ -883,6 +932,8 @@ async function runTaskModule(input: {
   );
   const completionOperations = newModuleCompletionOperations();
   try {
+    input.signal?.addEventListener("abort", cancel, { once: true });
+    input.signal?.throwIfAborted();
     client.start((event) => {
       if (event.type === "turn.finished") stopReason = event.stopReason;
       collectEvaluatorContext(evaluatorContext, event);
@@ -943,6 +994,7 @@ async function runTaskModule(input: {
                     }),
                   );
               },
+              signal: input.signal,
             })
           : (input.state.stallModule({
               invocationID: input.invocationID,
@@ -1009,6 +1061,7 @@ async function runTaskModule(input: {
         : `runtime turn finished: ${stopReason}`,
     };
   } finally {
+    input.signal?.removeEventListener("abort", cancel);
     await client.dispose?.();
   }
 }
@@ -1146,6 +1199,7 @@ async function evaluateClaimedTaskModule(input: {
   executionProvider: string;
   context: EvaluatorModuleContext & { policyDenied: boolean };
   onStreamEvent?: (chunk: { type: string; text: string }) => void;
+  signal?: AbortSignal;
 }) {
   if (!input.task.evaluator) return undefined;
   const model = input.config.models[input.task.evaluator.model];
@@ -1216,6 +1270,7 @@ async function evaluateClaimedTaskModule(input: {
     providerIdentity: input.task.evaluator.provider,
     context: input.context,
     onStreamEvent: input.onStreamEvent,
+    signal: input.signal,
   });
   return result;
 }

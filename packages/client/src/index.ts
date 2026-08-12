@@ -95,6 +95,17 @@ export {
   workflowContributionsProjection,
   type WorkflowContributionsProjection,
 } from "./workflow-contributions";
+export {
+  WorkflowExecutionRefusal,
+  WorkflowExecutionScheduler,
+  type WorkflowExecutionEvent,
+  type WorkflowExecutionHandle,
+  type WorkflowExecutionStatus,
+} from "./workflow-execution-scheduler";
+export {
+  CapabilityExecutionHost,
+  type CapabilityTaskExecutionRequest,
+} from "./capability-execution-host";
 export { providerErrorHint, retryDisplayLine } from "./retry-display";
 export {
   cleanupUnreferencedAttachments,

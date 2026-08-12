@@ -251,6 +251,37 @@ test("task state store rejects invalid attempt transitions", async () => {
   store.close();
 });
 
+test("cancelling during the retry gap terminalizes the invocation once", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-task-cancel-retry-"));
+  const store = await NataliaTaskStateStore.open(root);
+  store.startInvocation({
+    invocationID: "inv_retry_cancel",
+    taskID: "task_1",
+    episodeID: "epi_1" as import("@natalia/contracts").EpisodeID,
+    sessionID: "ses_1" as import("@natalia/contracts").SessionID,
+  });
+  store.completeAttempt({
+    invocationID: "inv_retry_cancel",
+    attempt: 1,
+    status: "failed",
+    retry: true,
+  });
+
+  expect(
+    store.cancelInvocation({
+      invocationID: "inv_retry_cancel",
+      reason: "cancelled before retry",
+    }),
+  ).toMatchObject({ status: "cancelled", waterlineAdvanced: false });
+  expect(store.attempts("inv_retry_cancel")).toMatchObject([
+    { status: "failed" },
+  ]);
+  expect(() =>
+    store.cancelInvocation({ invocationID: "inv_retry_cancel" }),
+  ).toThrow("already terminal");
+  store.close();
+});
+
 test("module lifecycle records an audited claim and evaluator completion", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-module-lifecycle-"));
   const store = await NataliaTaskStateStore.open(root);

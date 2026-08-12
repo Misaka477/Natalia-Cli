@@ -269,6 +269,43 @@ export class NataliaTaskStateStore {
     })();
   }
 
+  /**
+   * Cancels an active invocation atomically. A retrying invocation may be
+   * between attempts, so the running attempt update is conditional while the
+   * invocation always reaches one durable terminal state.
+   */
+  cancelInvocation(input: {
+    invocationID: string;
+    reason?: string;
+    at?: string;
+  }): NataliaTaskInvocation {
+    const at = input.at ?? new Date().toISOString();
+    this.#db.transaction(() => {
+      const invocation = this.requireInvocation(input.invocationID);
+      if (
+        !ACTIVE_STATUSES.includes(
+          invocation.status as (typeof ACTIVE_STATUSES)[number],
+        )
+      )
+        throw new Error(
+          `task invocation is already terminal: ${input.invocationID}`,
+        );
+      this.#db
+        .query(
+          `UPDATE task_attempts SET status = 'cancelled', ended_at = ?, reason = ?
+           WHERE invocation_id = ? AND status = 'running'`,
+        )
+        .run(at, input.reason ?? null, input.invocationID);
+      this.#db
+        .query(
+          `UPDATE task_invocations SET status = 'cancelled', ended_at = ?, waterline_advanced = 0
+           WHERE invocation_id = ?`,
+        )
+        .run(at, input.invocationID);
+    })();
+    return this.requireInvocation(input.invocationID);
+  }
+
   getInvocation(invocationID: string): NataliaTaskInvocation | undefined {
     const row = this.#db
       .query<

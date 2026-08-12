@@ -1,4 +1,4 @@
-import type { CapabilityRegistry } from "@natalia/capability";
+import type { CapabilityRegistryView } from "@natalia/capability";
 import type { NataliaDocument } from "@natalia/workflow";
 import { validateNataliaDocument } from "@natalia/workflow";
 
@@ -13,7 +13,7 @@ export type WorkflowContributionsProjection = {
  * the capability kernel intentionally cannot depend on workflow contracts.
  */
 export function workflowContributionsProjection(
-  registry: CapabilityRegistry,
+  registry: CapabilityRegistryView,
 ): WorkflowContributionsProjection {
   const documents: Record<string, NataliaDocument> = {};
   const diagnostics: string[] = [];
