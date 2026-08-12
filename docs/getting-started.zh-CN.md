@@ -406,7 +406,69 @@ docker run -d --name natalia \
 - 容器以 root 启动 sshd，SSH 会话落到非 root 的 `natalia` 用户。
 - 无 GUI 的服务器上交互式终端以 headless（windowless）方式运行，模型照常读写。
 
-## 12. 出问题时
+## 12. 直接部署（Ubuntu 24.04，不使用 Docker）
+
+不使用容器时，框架是宿主机上的普通进程——**可以访问整个文件系统**，安全边界由
+config 里的 permission profile 约束，而不是容器隔离。路径约定与 `deploy/` 目录里
+已提交的 systemd 资产一致。
+
+### 步骤
+
+```bash
+# 1. 装 Bun（系统级），把 ~/.bun/bin 加入系统 PATH
+curl -fsSL https://bun.sh/install | bash
+
+# 2. 放代码
+git clone <仓库地址> /opt/natalia-cli
+cd /opt/natalia-cli && bun install
+
+# 3. 构建发布 CLI（daemon、定时任务、命令行用的 bundle）
+npm run ts:build                              # 产出 dist/ts/natalia-ts.js
+mkdir -p /opt/natalia-cli/bin
+cp dist/ts/natalia-ts.js /opt/natalia-cli/bin/natalia-ts
+# bundle 没有 shebang，直接运行需要补一行并加执行位：
+printf '#!/usr/bin/env bun\n' | cat - /opt/natalia-cli/bin/natalia-ts > /tmp/natalia-ts && \
+  mv /tmp/natalia-ts /opt/natalia-cli/bin/natalia-ts
+chmod +x /opt/natalia-cli/bin/natalia-ts
+
+# 4.（要交互式终端才需要）在 Ubuntu 上原生编译 WezTerm fork
+#    构建依赖用 fork 自带的 get-deps，再装 rustup，然后：
+npm run native-terminal:build-wezterm        # cargo 原生编译，产物进包内默认路径
+
+# 5. 工作区与配置
+mkdir -p /srv/natalia-workspace
+# provider 写 /srv/natalia-workspace/.natalia/config.json，或用环境变量
+
+# 6. 装 systemd（常驻 daemon + 定时任务）
+cp deploy/systemd/*.service deploy/systemd/*.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now natalia-daemon              # 任务执行器（HTTP/SSE :8787）
+systemctl enable --now natalia-task-log-triage.timer  # 定时任务按需启用
+```
+
+`deploy/systemd/natalia-daemon.service` 的路径约定：代码在 `/opt/natalia-cli`、
+发布二进制在 `/opt/natalia-cli/bin/natalia-ts`、工作区在 `/srv/natalia-workspace`、
+环境（含 provider 凭据）在 `/etc/natalia/unattended.env`。
+
+### 使用
+
+- **交互式 TUI**：SSH 上服务器，进项目目录后
+  `NATALIA_WORKSPACE=<项目目录> bun /opt/natalia-cli/apps/tui/src/main.tsx`
+  （TUI 必须从 `apps/tui` 启动，JSX 配置依赖当前目录）。
+- **命令行**：`/opt/natalia-cli/bin/natalia-ts --once "需求"`
+- **daemon API**：`curl http://localhost:8787/...`（任务投递、事件）
+- **定时任务**：由 systemd timer 驱动 `natalia-ts task run ...`
+
+### 与 Docker 部署的区别
+
+| 维度 | Docker（§11） | 直接部署 |
+| --- | --- | --- |
+| 文件系统边界 | 默认只碰容器内 + 挂载的卷 | 宿主机整个文件系统 |
+| 安全边界 | 容器隔离 + permission profile | 仅 permission profile + 系统用户权限 |
+| WezTerm fork | 镜像内自动编译 | 必须在宿主机原生编译（或拷贝 Ubuntu 二进制） |
+| 常驻进程 | 镜像入口起 sshd（daemon 需自加） | systemd 单元管理 daemon/定时任务 |
+
+## 13. 出问题时
 
 | 现象                                                                            | 原因与处理                                                                 |
 | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
