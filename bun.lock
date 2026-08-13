@@ -16,7 +16,7 @@
     },
     "apps/cli": {
       "name": "@natalia/cli",
-      "version": "0.0.0-m8",
+      "version": "0.0.0-m13",
       "bin": {
         "natalia-ts": "./src/main.ts",
       },
@@ -34,7 +34,7 @@
     },
     "apps/tui": {
       "name": "@natalia/tui",
-      "version": "0.0.0-m8",
+      "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/capability": "workspace:*",
         "@natalia/client": "workspace:*",
@@ -54,21 +54,21 @@
     },
     "packages/agent": {
       "name": "@natalia/agent",
-      "version": "0.0.0-m8",
+      "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
       },
     },
     "packages/capability": {
       "name": "@natalia/capability",
-      "version": "0.0.0-m8",
+      "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
       },
     },
     "packages/client": {
       "name": "@natalia/client",
-      "version": "0.0.0-m8",
+      "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/agent": "workspace:*",
         "@natalia/capability": "workspace:*",
@@ -95,7 +95,7 @@
     },
     "packages/config": {
       "name": "@natalia/config",
-      "version": "0.0.0-m8",
+      "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
         "@natalia/platform": "workspace:*",
@@ -104,7 +104,7 @@
     },
     "packages/contracts": {
       "name": "@natalia/contracts",
-      "version": "0.0.0-m8",
+      "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/ui-model": "workspace:*",
         "zod": "3.25.76",
@@ -127,11 +127,11 @@
     },
     "packages/platform": {
       "name": "@natalia/platform",
-      "version": "0.0.0-m8",
+      "version": "0.0.0-m13",
     },
     "packages/plugin": {
       "name": "@natalia/plugin",
-      "version": "0.0.0-m8",
+      "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
         "@natalia/tools": "workspace:*",
@@ -139,7 +139,7 @@
     },
     "packages/runtime": {
       "name": "@natalia/runtime",
-      "version": "0.0.0-m8",
+      "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/config": "workspace:*",
         "@natalia/contracts": "workspace:*",
@@ -173,7 +173,7 @@
     },
     "packages/session": {
       "name": "@natalia/session",
-      "version": "0.0.0-m8",
+      "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
       },
@@ -188,7 +188,7 @@
     },
     "packages/subagent": {
       "name": "@natalia/subagent",
-      "version": "0.0.0-m8",
+      "version": "0.0.0-m13",
     },
     "packages/terminal": {
       "name": "@natalia/terminal",
@@ -200,14 +200,14 @@
     },
     "packages/testing": {
       "name": "@natalia/testing",
-      "version": "0.0.0-m8",
+      "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
       },
     },
     "packages/tools": {
       "name": "@natalia/tools",
-      "version": "0.0.0-m8",
+      "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
         "@natalia/native-terminal": "workspace:*",
@@ -225,11 +225,11 @@
     },
     "packages/ui-model": {
       "name": "@natalia/ui-model",
-      "version": "0.0.0-m8",
+      "version": "0.0.0-m13",
     },
     "packages/view-store": {
       "name": "@natalia/view-store",
-      "version": "0.0.0-m8",
+      "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
         "@natalia/ui-model": "workspace:*",
