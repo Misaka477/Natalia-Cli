@@ -238,7 +238,7 @@ test("the remote report says implemented-but-unrouted for the P0-C work list", a
     ).toBe("implemented_unreachable");
     expect(
       allChannelMembers.find((entry) => entry.member === member)!.reason,
-    ).toMatch(/(intentionally local|pending route)/);
+    ).toContain("intentionally local");
     expect(reason.length).toBeGreaterThan(0);
   }
   expect(

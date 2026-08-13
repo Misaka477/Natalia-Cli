@@ -101,6 +101,7 @@ export const WORKER_ROUTE_MEMBERS = {
   "decision.list": "decisionRecords",
   "evidence.list": "evidenceRecords",
   "chat.messages": "chatMessages",
+  "chat.submit": "chatSubmit",
   "chat.rollback": "chatRollback",
 } as const satisfies Readonly<Record<string, keyof RuntimeClient | null>>;
 
@@ -190,6 +191,7 @@ type WorkerRequest = {
     | "decision.list"
     | "evidence.list"
     | "chat.messages"
+    | "chat.submit"
     | "chat.rollback"
     | "flow.save"
     | "flow.delete"
@@ -731,6 +733,11 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["chatMessages"]>>
       >;
     },
+    async chatSubmit(input) {
+      return (await request("chat.submit", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["chatSubmit"]>>
+      >;
+    },
     async chatRollback(input) {
       return (await request("chat.rollback", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["chatRollback"]>>
@@ -1127,6 +1134,8 @@ export async function handleWorkerRequest(
   if (request.method === "evidence.list")
     return await client.evidenceRecords?.();
   if (request.method === "chat.messages") return await client.chatMessages?.();
+  if (request.method === "chat.submit")
+    return await client.chatSubmit?.(request.value as { text: string });
   if (request.method === "chat.rollback")
     return await client.chatRollback?.(
       request.value as { toMessageID: string },

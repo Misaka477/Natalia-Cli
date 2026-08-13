@@ -2589,6 +2589,481 @@ export function createRealRuntimeClient(
     return { sessionID };
   }
 
+  // --- Live Work Chat (P8 C2) ---
+  // A long-lived, always-available read-only collaborator. It shares the safe
+  // project/execution context (the same durable state the main agent reads),
+  // answers anytime, drafts plans and sends user-confirmed mailbox intents.
+  // Its only writes are the two surfaces the plan grants it — plan drafts and
+  // mailbox messages — never files, shells, PTY, sandboxes, checkpoints or
+  // approvals.
+
+  const CHAT_READ_ONLY_TOOLS = new Set([
+    "read_file",
+    "glob",
+    "grep",
+    "web_fetch",
+    "web_search",
+  ]);
+  const CHAT_WRITE_TOOLS = new Set([
+    "mailbox_send",
+    "plan_create",
+    "plan_update",
+    "plan_propose",
+  ]);
+
+  async function enqueueMailboxMessage(input: {
+    source?: "user_via_live_chat" | "system";
+    priority?: "normal" | "high" | "urgent";
+    intent: string;
+    text: string;
+    safeSummary?: string;
+    relatedPlanID?: string;
+    deliveryPolicy?: string;
+  }) {
+    if (!session) return { queued: false as const };
+    if (
+      typeof input.intent !== "string" ||
+      input.intent.trim().length === 0 ||
+      typeof input.text !== "string" ||
+      input.text.trim().length === 0
+    )
+      return { queued: false as const };
+    const now = new Date();
+    const messageID = `mailbox:${Date.now().toString(36)}:${mailboxSequence++}`;
+    publishForSession(
+      activeExec,
+      buildMailboxQueued({
+        id: `${messageID}:queued`,
+        messageID,
+        source: input.source ?? "user_via_live_chat",
+        priority: input.priority ?? "normal",
+        intent: input.intent as
+          | "clarification"
+          | "constraint"
+          | "reprioritize"
+          | "pause"
+          | "cancel"
+          | "request_report"
+          | "proposed_change"
+          | "next_plan_handoff",
+        text: redactToolOutput(input.text, true),
+        safeSummary:
+          redactToolOutput(input.safeSummary ?? input.text, true).slice(
+            0,
+            500,
+          ) || "mailbox message queued",
+        ...(input.relatedPlanID ? { relatedPlanID: input.relatedPlanID } : {}),
+        deliveryPolicy: (input.deliveryPolicy ?? "next_safe_boundary") as
+          | "next_safe_boundary"
+          | "before_next_tool"
+          | "before_next_side_effect"
+          | "immediate_control",
+        createdAt: now.toISOString(),
+      }),
+    );
+    return { queued: true as const, messageID };
+  }
+
+  async function createPlanDraft(input: {
+    title: string;
+    author?: "user" | "live_chat" | "main_agent";
+    objective: string;
+    steps: Array<{
+      id: string;
+      title: string;
+      detail?: string;
+      verification?: string;
+    }>;
+    constraints?: string[];
+    verification?: string[];
+    riskNotes?: string[];
+    relatedMailboxMessageID?: string;
+    supersedesPlanID?: string;
+    taskID?: string;
+  }) {
+    if (!session) return { created: false as const };
+    if (
+      typeof input.title !== "string" ||
+      input.title.trim().length === 0 ||
+      typeof input.objective !== "string" ||
+      input.objective.trim().length === 0 ||
+      !Array.isArray(input.steps) ||
+      input.steps.length === 0
+    )
+      return { created: false as const };
+    const now = new Date();
+    const planID = `plan:${Date.now().toString(36)}:${planSequence++}`;
+    publishForSession(
+      activeExec,
+      buildPlanDraftCreated({
+        id: `${planID}:draft:0`,
+        planID,
+        version: 1,
+        title: input.title,
+        author: input.author ?? "live_chat",
+        objective: input.objective,
+        steps: input.steps,
+        ...(input.constraints && input.constraints.length
+          ? { constraints: input.constraints }
+          : {}),
+        ...(input.verification && input.verification.length
+          ? { verification: input.verification }
+          : {}),
+        ...(input.riskNotes && input.riskNotes.length
+          ? { riskNotes: input.riskNotes }
+          : {}),
+        ...(input.relatedMailboxMessageID
+          ? { relatedMailboxMessageID: input.relatedMailboxMessageID }
+          : {}),
+        ...(input.taskID ? { taskID: input.taskID } : {}),
+        ...(input.supersedesPlanID
+          ? { supersedesPlanID: input.supersedesPlanID }
+          : {}),
+        createdAt: now.toISOString(),
+      }),
+    );
+    return { created: true as const, planID };
+  }
+
+  /** The Chat system prompt: persona + the shared safe live-work context. */
+  function chatSystemPrompt(): string {
+    if (!session) return "You are Natalia's Live Work Chat.";
+    const snapshot = buildSessionIntelligenceSnapshot({
+      id: `chat:snapshot:${Date.now().toString(36)}`,
+      events: session.events,
+      live: { agentStatus: "unknown" },
+    });
+    const plans = projectedPlans(session.events);
+    const activePlan = plans.find((plan) => plan.status === "active");
+    const mailbox = projectedMailboxMessages(session.events).filter(
+      (message) =>
+        message.status === "queued" || message.status === "delivered",
+    );
+    const drift = projectedDriftFindings(session.events).filter(
+      (finding) => finding.status === "open",
+    );
+    const decisions = projectedDecisionRecords(session.events).slice(-6);
+    const rules = projectedConstitutionRules(session.events);
+    const lines = [
+      "You are Natalia's Live Work Chat — the user's read-only collaborator alongside the main agent. You share the safe project/execution context below and the conversation history; you are not a memory-less second agent.",
+      "You help the user understand and steer the main agent's work in real time: explain what it is doing and why, report changed files and verification status, assess risk, and propose lower-risk routes.",
+      "You may read project files with read-only tools and draft plans (plan_create/plan_update/plan_propose). When the user decides a directive, encode it as a structured mailbox_send intent (constraint/reprioritize/pause/cancel/request_report/proposed_change/next_plan_handoff) and call mailbox_send — the main agent receives it at its next safe boundary.",
+      "You must NEVER write files, run shells or processes, write to the PTY, create/merge/discard sandboxes, create checkpoints or roll back, approve any action, or modify the active plan directly. You cannot see secrets, sensitive input values, or private reasoning.",
+      "Answer in the user's language. Be direct, technically accurate, and cite only what the context and tools actually show.",
+      "<live_work_context>",
+      `Main agent: ${snapshot.agentStatus}${snapshot.currentStep ? ` · ${snapshot.currentStep}` : ""}${snapshot.activeTool ? ` · tool: ${snapshot.activeTool}` : ""}`,
+      `Changed files: ${snapshot.changedFiles} · unvalidated: ${snapshot.unvalidatedChanges}`,
+      activePlan
+        ? `Active plan (${activePlan.status}): ${activePlan.title} — ${activePlan.objective}`
+        : "Active plan: none",
+      mailbox.length
+        ? `Pending mailbox intents:\n${mailbox
+            .map(
+              (message) =>
+                `- [${message.priority}] ${message.intent}: ${message.safeSummary} (${message.status})`,
+            )
+            .join("\n")}`
+        : "Pending mailbox intents: none",
+      drift.length
+        ? `Open drift findings:\n${drift
+            .map(
+              (finding) =>
+                `- ${finding.severity}: ${finding.originalObjective} — ${finding.currentActivity}`,
+            )
+            .join("\n")}`
+        : "Open drift findings: none",
+      decisions.length
+        ? `Recent decisions:\n${decisions
+            .map((decision) => `- ${decision.decision}`)
+            .join("\n")}`
+        : "Recent decisions: none",
+      rules.length
+        ? `Constitution rules: ${rules.map((rule) => rule.ruleID).join(", ")}`
+        : "Constitution rules: none",
+      "</live_work_context>",
+    ];
+    return lines.filter(Boolean).join("\n");
+  }
+
+  function chatTools(): RuntimeTool[] {
+    const visible: RuntimeTool[] = [];
+    for (const tool of tools.values())
+      if (CHAT_READ_ONLY_TOOLS.has(tool.name)) visible.push(tool);
+    visible.push(
+      {
+        name: "mailbox_send",
+        description:
+          "Queue a durable intent for the main agent, delivered at its next safe boundary. Call this only after the user has confirmed the directive in the conversation. intent is one of clarification, constraint, reprioritize, pause, cancel, request_report, proposed_change, next_plan_handoff.",
+        requiresApproval: false,
+        parameters: {
+          type: "object",
+          properties: {
+            intent: { type: "string" },
+            text: { type: "string" },
+            priority: { type: "string", enum: ["normal", "high", "urgent"] },
+            deliveryPolicy: {
+              type: "string",
+              enum: [
+                "next_safe_boundary",
+                "before_next_tool",
+                "before_next_side_effect",
+                "immediate_control",
+              ],
+            },
+            relatedPlanID: { type: "string" },
+          },
+          required: ["intent", "text"],
+          additionalProperties: false,
+        },
+        async execute(parsed) {
+          const args = parsed as {
+            intent?: string;
+            text?: string;
+            priority?: string;
+            deliveryPolicy?: string;
+            relatedPlanID?: string;
+          };
+          if (typeof args.intent !== "string" || typeof args.text !== "string")
+            return "mailbox_send requires intent and text";
+          return JSON.stringify(
+            await enqueueMailboxMessage({
+              intent: args.intent,
+              text: args.text,
+              ...(args.priority ? { priority: args.priority as never } : {}),
+              ...(args.deliveryPolicy
+                ? { deliveryPolicy: args.deliveryPolicy as never }
+                : {}),
+              ...(args.relatedPlanID
+                ? { relatedPlanID: args.relatedPlanID }
+                : {}),
+            }),
+          );
+        },
+      },
+      {
+        name: "plan_create",
+        description:
+          "Create a new plan draft (author: live_chat). It does not touch the active plan; the user must accept it before it can be queued and handed off.",
+        requiresApproval: false,
+        parameters: {
+          type: "object",
+          properties: {
+            title: { type: "string" },
+            objective: { type: "string" },
+            steps: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  id: { type: "string" },
+                  title: { type: "string" },
+                  detail: { type: "string" },
+                  verification: { type: "string" },
+                },
+                required: ["id", "title"],
+              },
+            },
+            constraints: { type: "array", items: { type: "string" } },
+            verification: { type: "array", items: { type: "string" } },
+            riskNotes: { type: "array", items: { type: "string" } },
+          },
+          required: ["title", "objective", "steps"],
+          additionalProperties: false,
+        },
+        async execute(parsed) {
+          const args = parsed as {
+            title?: string;
+            objective?: string;
+            steps?: Array<{
+              id: string;
+              title: string;
+              detail?: string;
+              verification?: string;
+            }>;
+            constraints?: string[];
+            verification?: string[];
+            riskNotes?: string[];
+          };
+          if (
+            typeof args.title !== "string" ||
+            typeof args.objective !== "string" ||
+            !Array.isArray(args.steps)
+          )
+            return "plan_create requires title, objective and steps";
+          return JSON.stringify(
+            await createPlanDraft({
+              title: args.title,
+              objective: args.objective,
+              steps: args.steps,
+              ...(args.constraints ? { constraints: args.constraints } : {}),
+              ...(args.verification ? { verification: args.verification } : {}),
+              ...(args.riskNotes ? { riskNotes: args.riskNotes } : {}),
+            }),
+          );
+        },
+      },
+      {
+        name: "plan_update",
+        description:
+          "Update a plan draft that live_chat authored (bump version). Use it to revise a draft before the user accepts it.",
+        requiresApproval: false,
+        parameters: {
+          type: "object",
+          properties: {
+            planID: { type: "string" },
+            objective: { type: "string" },
+            steps: { type: "array" },
+            constraints: { type: "array", items: { type: "string" } },
+            verification: { type: "array", items: { type: "string" } },
+            riskNotes: { type: "array", items: { type: "string" } },
+            reason: { type: "string" },
+          },
+          required: ["planID"],
+          additionalProperties: false,
+        },
+        async execute(parsed) {
+          const args = parsed as { planID?: string; reason?: string };
+          if (typeof args.planID !== "string")
+            return "plan_update requires planID";
+          const plan = projectedPlans(session?.events ?? []).find(
+            (candidate) =>
+              candidate.planID === args.planID &&
+              candidate.author === "live_chat" &&
+              candidate.status === "draft",
+          );
+          if (!plan) return `no live_chat draft ${args.planID}`;
+          publishForSession(
+            activeExec,
+            buildPlanTransition({
+              id: `${plan.planID}:draft:${plan.version + 1}`,
+              planID: plan.planID,
+              version: plan.version + 1,
+              transition: "draft_updated",
+              at: new Date().toISOString(),
+              reason: args.reason ?? "chat revision",
+            }),
+          );
+          return JSON.stringify({ updated: true, planID: plan.planID });
+        },
+      },
+      {
+        name: "plan_propose",
+        description:
+          "Move a live_chat plan draft to proposed so the user can review and accept it.",
+        requiresApproval: false,
+        parameters: {
+          type: "object",
+          properties: {
+            planID: { type: "string" },
+          },
+          required: ["planID"],
+          additionalProperties: false,
+        },
+        async execute(parsed) {
+          const args = parsed as { planID?: string };
+          if (typeof args.planID !== "string")
+            return "plan_propose requires planID";
+          const plan = projectedPlans(session?.events ?? []).find(
+            (candidate) =>
+              candidate.planID === args.planID &&
+              candidate.author === "live_chat",
+          );
+          if (!plan || plan.status !== "draft")
+            return `no draftable live_chat plan ${args.planID}`;
+          publishForSession(
+            activeExec,
+            buildPlanTransition({
+              id: `${plan.planID}:proposed:${Date.now().toString(36)}`,
+              planID: plan.planID,
+              version: plan.version,
+              transition: "proposed",
+              at: new Date().toISOString(),
+            }),
+          );
+          return JSON.stringify({ proposed: true, planID: plan.planID });
+        },
+      },
+    );
+    return visible;
+  }
+
+  /** Runs one Chat turn: shared context + history -> provider stream -> tools. */
+  async function runChatTurn(input: {
+    text: string;
+    responseMessageID: string;
+  }) {
+    if (!provider) throw new Error("provider unavailable for live work chat");
+    const history = projectedChatMessages(session?.events ?? []);
+    const messages: ProviderMessage[] = [
+      { role: "system", content: chatSystemPrompt() },
+    ];
+    for (const message of history) {
+      if (message.messageID === input.responseMessageID) continue;
+      messages.push(
+        message.role === "user"
+          ? { role: "user", content: message.text }
+          : { role: "assistant", content: message.text },
+      );
+    }
+    const visibleTools = chatTools();
+    const toolSchemas = visibleTools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+    }));
+    let output = "";
+    for (let step = 1; step <= effectiveMaxSteps(); step++) {
+      const calls: ProviderToolCall[] = [];
+      for await (const chunk of provider.stream({
+        messages,
+        tools: toolSchemas,
+        signal: new AbortController().signal,
+      })) {
+        if (chunk.type === "content") {
+          output += chunk.text;
+          publish({
+            type: "chat.message.delta",
+            id: `${input.responseMessageID}:delta:${chatSequence++}`,
+            messageID: input.responseMessageID,
+            text: output,
+          });
+        }
+        if (chunk.type === "tool_call") calls.push(...chunk.calls);
+      }
+      if (!calls.length) break;
+      messages.push({ role: "assistant", content: output, toolCalls: calls });
+      for (const call of calls) {
+        const tool = visibleTools.find(
+          (candidate) => candidate.name === call.name,
+        );
+        if (!tool)
+          throw new Error(
+            `live work chat requested unavailable tool: ${call.name}`,
+          );
+        const parsed = parseToolArguments(call.arguments);
+        const paramErrors = validateToolParameters(tool.parameters, parsed);
+        if (paramErrors.length)
+          throw new Error(
+            `live work chat tool "${tool.name}" parameter validation failed: ${paramErrors.map((error) => `${error.path}: ${error.message}`).join("; ")}`,
+          );
+        const result = await tool.execute(parsed, {
+          workspaceRoot,
+          signal: new AbortController().signal,
+        });
+        messages.push({ role: "tool", content: result, toolCallID: call.id });
+      }
+    }
+    publish({
+      type: "chat.message.added",
+      id: `${input.responseMessageID}:chat`,
+      messageID: input.responseMessageID,
+      role: "chat",
+      text: redactToolOutput(output.trim() || "(no reply)", true),
+      at: new Date().toISOString(),
+    });
+    return { text: output };
+  }
+
   return {
     start(onEvent, startOptions) {
       sink = onEvent;
@@ -3839,46 +4314,7 @@ export function createRealRuntimeClient(
       relatedPlanID?: string;
       deliveryPolicy?: string;
     }) {
-      if (!session) return { queued: false as const };
-      if (
-        typeof input.intent !== "string" ||
-        input.intent.trim().length === 0 ||
-        typeof input.text !== "string" ||
-        input.text.trim().length === 0
-      )
-        return { queued: false as const };
-      const now = new Date();
-      const messageID = `mailbox:${Date.now().toString(36)}:${mailboxSequence++}`;
-      const event = buildMailboxQueued({
-        id: `${messageID}:queued`,
-        messageID,
-        source: input.source ?? "user_via_live_chat",
-        priority: input.priority ?? "normal",
-        intent: input.intent as
-          | "clarification"
-          | "constraint"
-          | "reprioritize"
-          | "pause"
-          | "cancel"
-          | "request_report"
-          | "proposed_change"
-          | "next_plan_handoff",
-        text: redactToolOutput(input.text, true),
-        safeSummary:
-          redactToolOutput(input.safeSummary ?? input.text, true).slice(
-            0,
-            500,
-          ) || "mailbox message queued",
-        ...(input.relatedPlanID ? { relatedPlanID: input.relatedPlanID } : {}),
-        deliveryPolicy: (input.deliveryPolicy ?? "next_safe_boundary") as
-          | "next_safe_boundary"
-          | "before_next_tool"
-          | "before_next_side_effect"
-          | "immediate_control",
-        createdAt: now.toISOString(),
-      });
-      publishForSession(activeExec, event);
-      return { queued: true as const, messageID };
+      return enqueueMailboxMessage(input);
     },
     async mailboxDeliver(messageID: string) {
       if (!session || typeof messageID !== "string" || !messageID)
@@ -4005,6 +4441,37 @@ export function createRealRuntimeClient(
       });
       return { rolledBackTo: input.toMessageID, removed };
     },
+    async chatSubmit(input: { text: string }) {
+      await ready;
+      const text = typeof input.text === "string" ? input.text.trim() : "";
+      if (!text || !session || !provider) return { messageID: "" };
+      const now = new Date();
+      const userMessageID = `chat:${Date.now().toString(36)}:${chatSequence++}`;
+      publish({
+        type: "chat.message.added",
+        id: `${userMessageID}:user`,
+        messageID: userMessageID,
+        role: "user",
+        text: redactToolOutput(text, true),
+        at: now.toISOString(),
+      });
+      const responseMessageID = `chat:${Date.now().toString(36)}:${chatSequence++}`;
+      try {
+        await runChatTurn({ text, responseMessageID });
+      } catch (cause) {
+        publish({
+          type: "chat.message.added",
+          id: `${responseMessageID}:chat`,
+          messageID: responseMessageID,
+          role: "chat",
+          text: `(live work chat error: ${
+            cause instanceof Error ? cause.message : String(cause)
+          })`,
+          at: new Date().toISOString(),
+        });
+      }
+      return { messageID: responseMessageID };
+    },
     async planCreate(input: {
       title: string;
       author?: "user" | "live_chat" | "main_agent";
@@ -4022,48 +4489,7 @@ export function createRealRuntimeClient(
       supersedesPlanID?: string;
       taskID?: string;
     }) {
-      if (!session) return { created: false as const };
-      if (
-        typeof input.title !== "string" ||
-        input.title.trim().length === 0 ||
-        typeof input.objective !== "string" ||
-        input.objective.trim().length === 0 ||
-        !Array.isArray(input.steps) ||
-        input.steps.length === 0
-      )
-        return { created: false as const };
-      const now = new Date();
-      const planID = `plan:${Date.now().toString(36)}:${planSequence++}`;
-      publishForSession(
-        activeExec,
-        buildPlanDraftCreated({
-          id: `${planID}:draft:0`,
-          planID,
-          version: 1,
-          title: input.title,
-          author: input.author ?? "live_chat",
-          objective: input.objective,
-          steps: input.steps,
-          ...(input.constraints && input.constraints.length
-            ? { constraints: input.constraints }
-            : {}),
-          ...(input.verification && input.verification.length
-            ? { verification: input.verification }
-            : {}),
-          ...(input.riskNotes && input.riskNotes.length
-            ? { riskNotes: input.riskNotes }
-            : {}),
-          ...(input.relatedMailboxMessageID
-            ? { relatedMailboxMessageID: input.relatedMailboxMessageID }
-            : {}),
-          ...(input.taskID ? { taskID: input.taskID } : {}),
-          ...(input.supersedesPlanID
-            ? { supersedesPlanID: input.supersedesPlanID }
-            : {}),
-          createdAt: now.toISOString(),
-        }),
-      );
-      return { created: true as const, planID };
+      return createPlanDraft(input);
     },
     async planUpdate(input: {
       planID: string;

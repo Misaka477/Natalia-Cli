@@ -228,6 +228,7 @@ export const RPC_ROUTE_MEMBERS = {
   "submit.input": "submitInput",
   // P8 C2: the always-available Live Work Chat conversation (read + rollback).
   "chat.messages": "chatMessages",
+  "chat.submit": "chatSubmit",
   "chat.rollback": "chatRollback",
   // P0-G: the flow write surface, previously CLI-only.
   "flow.save": "saveFlowDocument",
@@ -255,10 +256,6 @@ export const RPC_INTENTIONALLY_LOCAL: Readonly<Record<string, string>> = {
     "intentionally local: a local read of the most recent submission",
   diagnostic:
     "intentionally local: one-way publishing from a local caller, not a query",
-  // P8 C2: the Chat execution loop lands in its own slice; the route joins the
-  // channel when `chatSubmit` is implemented (the read + rollback already are).
-  chatSubmit:
-    "pending route: the Chat execution slice has not landed yet (P8 C2 §56.52)",
 };
 
 /** The member names this transport routes. `null` rows (availability itself) excluded. */
@@ -1851,6 +1848,20 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.chatMessages(),
+      };
+    }
+    if (body.method === "chat.submit") {
+      optionsGuard(client, "chatSubmit");
+      const params = body.params;
+      if (!params || typeof params !== "object")
+        throw invalidParams("chat.submit.params must be an object");
+      const text = (params as { text?: unknown }).text;
+      if (typeof text !== "string")
+        throw invalidParams("chat.submit.params.text must be a string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.chatSubmit({ text }),
       };
     }
     if (body.method === "chat.rollback") {

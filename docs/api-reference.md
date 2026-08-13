@@ -861,7 +861,7 @@ Deployment notes:
 | plans          | `planList` · `planCreate` · `planUpdate` · `planPropose` · `planAccept` · `planQueue` · `planActivate` · `planSupersede` · `planCompleted`                                                                                                                                                                            |
 | chat           | `chatSubmit` · `chatMessages` · `chatRollback`                                                                                                                                                                                                                                                                        |
 
-### RPC route table (123 methods → members)
+### RPC route table (124 methods → members)
 
 | RPC method                           | RuntimeClient member                | Capability group | Write |
 | ------------------------------------ | ----------------------------------- | ---------------- | ----- |
@@ -980,6 +980,7 @@ Deployment notes:
 | `session.snapshot`                   | `sessionSnapshot`                   | observability    | read  |
 | `submit.input`                       | `submitInput`                       | transcript       | write |
 | `chat.messages`                      | `chatMessages`                      | chat             | read  |
+| `chat.submit`                        | `chatSubmit`                        | chat             | read  |
 | `chat.rollback`                      | `chatRollback`                      | chat             | read  |
 | `flow.save`                          | `saveFlowDocument`                  | automation       | write |
 | `flow.delete`                        | `deleteFlowDocument`                | automation       | write |
@@ -1051,7 +1052,6 @@ Deployment notes:
 | `start`          | intentionally local: remote consumers subscribe to /events instead of calling start |
 | `lastSubmission` | intentionally local: a local read of the most recent submission                     |
 | `diagnostic`     | intentionally local: one-way publishing from a local caller, not a query            |
-| `chatSubmit`     | pending route: the Chat execution slice has not landed yet (P8 C2 §56.52)           |
 
 ### Empty-until-writers queries (`UNIMPLEMENTED_QUERIES`: reachable, implemented, no production writer yet)
 

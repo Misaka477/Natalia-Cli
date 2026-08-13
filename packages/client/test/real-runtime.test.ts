@@ -9681,3 +9681,36 @@ test("the live work chat read and rollback surface a durable conversation", asyn
   });
   await client.dispose?.();
 });
+
+test("chat submit runs a live work chat turn and persists the conversation", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-chat-turn-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_chat_turn",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield {
+          type: "content" as const,
+          text: "the main agent is running step 2",
+        };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  const outcome = await client.chatSubmit!({
+    text: "what is the agent doing",
+  });
+  expect(outcome.messageID.length).toBeGreaterThan(0);
+  const history = await client.chatMessages!();
+  expect(history).toHaveLength(2);
+  expect(history[0]).toMatchObject({
+    role: "user",
+    text: "what is the agent doing",
+  });
+  expect(history[1]).toMatchObject({ role: "chat" });
+  expect(history[1].text).toContain("running step 2");
+  await client.dispose?.();
+});
