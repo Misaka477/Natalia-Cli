@@ -1,12 +1,11 @@
 import { expect, test } from "bun:test";
 import { createMockKeys, createTestRenderer } from "@opentui/core/testing";
 import { render } from "@opentui/solid";
-import { onMount } from "solid-js";
 import { KeymapProvider } from "@opentui/keymap/solid";
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
 import type { RuntimeClient } from "@natalia/contracts";
-import { DialogLiveChat } from "../src/component/DialogLiveChat";
-import { DialogProvider, useDialog } from "../src/dialog/provider";
+import { LiveChatView } from "../src/component/LiveChatView";
+import { DialogProvider } from "../src/dialog/provider";
 import { registerNataliaKeymap } from "../src/modal/mode-stack";
 
 function mockBackend(overrides: Record<string, unknown> = {}) {
@@ -73,20 +72,31 @@ function mockBackend(overrides: Record<string, unknown> = {}) {
   } as unknown as RuntimeClient;
 }
 
-async function mountChat(backend: RuntimeClient) {
+async function mountChat(
+  backend: RuntimeClient,
+  callbacks: {
+    focused?: () => boolean;
+    onEscape?: () => void;
+    onClose?: () => void;
+  } = {},
+) {
   const setup = await createTestRenderer({ width: 160, height: 36 });
   const keymap = createDefaultOpenTuiKeymap(setup.renderer);
   const disposeKeymap = registerNataliaKeymap(keymap, setup.renderer);
-  function Harness() {
-    const dialog = useDialog();
-    onMount(() => dialog.push(() => <DialogLiveChat backend={backend} />));
-    return null;
-  }
+  const onEscape = callbacks.onEscape ?? (() => {});
+  const onClose = callbacks.onClose ?? (() => {});
   await render(
     () => (
       <KeymapProvider keymap={keymap}>
         <DialogProvider>
-          <Harness />
+          <LiveChatView
+            backend={backend}
+            focused={callbacks.focused ?? (() => true)}
+            onRequestFocus={() => {}}
+            onEscape={onEscape}
+            onClose={onClose}
+            onInputRef={() => {}}
+          />
         </DialogProvider>
       </KeymapProvider>
     ),
@@ -101,12 +111,12 @@ async function mountChat(backend: RuntimeClient) {
   };
 }
 
-test("the live work chat renders the snapshot, plan, drift and completion card", async () => {
+test("the live work chat view renders the snapshot, plan, drift and completion card", async () => {
   const mounted = await mountChat(mockBackend());
   try {
     const frame = mounted.setup.captureCharFrame();
     expect(frame).toContain("Live Work Chat");
-    expect(frame).toContain("read-only collaborator");
+    expect(frame).toContain("writes routed through the main-agent mailbox");
     expect(frame).toContain("Main agent: running");
     expect(frame).toContain("replace the fetch wrapper");
     expect(frame).toContain("implement user authentication");
@@ -158,10 +168,49 @@ test("sending a message routes a durable mailbox intent to the main agent", asyn
       deliveryPolicy: "next_safe_boundary",
       priority: "normal",
     });
-    // The sent message appears in the dialog's own history.
+    // The sent message appears in the view's own history.
     expect(mounted.setup.captureCharFrame()).toContain(
       "please focus on the docs task first",
     );
+  } finally {
+    mounted.dispose();
+    mounted.setup.renderer.destroy();
+  }
+});
+
+test("escape in the chat pane returns focus to the main feed", async () => {
+  let escaped = false;
+  const mounted = await mountChat(mockBackend(), {
+    onEscape: () => {
+      escaped = true;
+    },
+  });
+  try {
+    await mounted.keys.pressEscape();
+    await mounted.setup.renderOnce();
+    expect(escaped).toBe(true);
+  } finally {
+    mounted.dispose();
+    mounted.setup.renderer.destroy();
+  }
+});
+
+test("a non-focused chat pane does not send on enter", async () => {
+  const sends: Array<Record<string, unknown>> = [];
+  const backend = mockBackend({
+    mailboxSend: async (input: Record<string, unknown>) => {
+      sends.push(input);
+      return { queued: true, messageID: "mailbox:2" };
+    },
+  });
+  const mounted = await mountChat(backend, { focused: () => false });
+  try {
+    await mounted.keys.typeText("should not send");
+    await mounted.setup.renderOnce();
+    mounted.keys.pressEnter();
+    await Bun.sleep(20);
+    await mounted.setup.renderOnce();
+    expect(sends).toHaveLength(0);
   } finally {
     mounted.dispose();
     mounted.setup.renderer.destroy();

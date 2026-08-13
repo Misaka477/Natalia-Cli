@@ -4,24 +4,28 @@ import {
   ScrollBoxRenderable,
   TextAttributes,
 } from "@opentui/core";
+import { useRenderer } from "@opentui/solid";
 import { useBindings } from "@opentui/keymap/solid";
-import { For, Show, createSignal, onMount } from "solid-js";
+import { For, Show, createEffect, createSignal, onMount } from "solid-js";
 import type { RuntimeClient } from "@natalia/contracts";
 import { darkTheme } from "../theme/theme";
 import { useDialog } from "../dialog/provider";
 import { DialogSelect } from "../dialog/DialogSelect";
 
 /**
- * Live Work Chat (P8 Phase C2): a read-only collaboration surface over the
- * main agent's real state. It answers "what is the agent doing, what does the
- * plan say, what intents are queued, is anything drifting" from the durable
- * read models (session snapshot, plan list, mailbox, drift findings, completion
- * cards) and turns the user's message into a durable mailbox intent the main
- * agent receives at the next safe boundary.
+ * Live Work Chat (P8 Phase C2) as a docked view: a read-only collaboration
+ * surface over the main agent's real state. It answers "what is the agent
+ * doing, what does the plan say, what intents are queued, is anything drifting"
+ * from the durable read models and turns the user's message into a durable
+ * mailbox intent the main agent receives at the next safe boundary.
  *
- * The boundary from P8 §2.2 is structural, not asserted here: this surface
- * only calls the read queries and `mailboxSend`; it never writes files, runs
- * shells, writes the terminal or approves actions.
+ * The boundary from P8 §2.2 is structural: this surface only calls the read
+ * queries and `mailboxSend`; it never writes files, runs shells, writes the
+ * terminal or approves actions.
+ *
+ * Unlike the dialog shell it replaced, this view is docked beside the feed:
+ * `focused()` is the host's single pane-focus signal, so Enter sends here only
+ * while this pane owns the keyboard and Escape hands focus back to the feed.
  */
 
 const MAILBOX_INTENTS = [
@@ -59,8 +63,21 @@ type CompletionRow = NonNullable<
   Awaited<ReturnType<NonNullable<RuntimeClient["completions"]>>>
 >[number];
 
-export function DialogLiveChat(props: { backend: RuntimeClient }) {
+export function LiveChatView(props: {
+  backend: RuntimeClient;
+  /** Whether this pane owns keyboard focus (host pane-focus signal). */
+  focused: () => boolean;
+  /** The host routes Enter/Escape to the pane that owns focus. */
+  onRequestFocus(): void;
+  /** Esc in the chat pane returns focus to the main feed. */
+  onEscape(): void;
+  /** Closes the docked view entirely. */
+  onClose(): void;
+  /** Registers the message input with the host for focus routing. */
+  onInputRef(value: InputRenderable | undefined): void;
+}) {
   const dialog = useDialog();
+  const renderer = useRenderer();
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string>();
   const [snapshot, setSnapshot] = createSignal<SnapshotRow | undefined>();
@@ -178,41 +195,52 @@ export function DialogLiveChat(props: { backend: RuntimeClient }) {
   };
 
   onMount(() => {
-    dialog.setSize("large");
     void refresh();
-    setTimeout(() => {
+  });
+  // While this pane owns focus its input takes the keyboard; on first mount it
+  // is focused so the pane is usable the moment it opens.
+  createEffect(() => {
+    if (!props.focused()) return;
+    queueMicrotask(() => {
       if (!input || input.isDestroyed) return;
       input.focus();
-    }, 1);
+    });
   });
   useBindings(() => ({
-    mode: "modal",
+    mode: "base",
     target: inputTarget,
-    enabled: inputTarget() !== undefined && !loading(),
+    enabled: props.focused() && inputTarget() !== undefined && !loading(),
     priority: 1,
     bindings: [
       {
         key: "return",
         desc: "Send the message as an intent",
-        group: "Dialog",
+        group: "Live Work Chat",
         cmd: () => void send(),
       },
       {
         key: "t",
         desc: "Choose the intent type",
-        group: "Dialog",
+        group: "Live Work Chat",
         cmd: chooseIntent,
+      },
+      {
+        key: "escape",
+        desc: "Return focus to the main feed",
+        group: "Live Work Chat",
+        cmd: props.onEscape,
       },
     ],
   }));
   useBindings(() => ({
-    mode: "modal",
+    mode: "base",
     enabled: true,
+    priority: -1,
     bindings: [
       {
         key: "r",
         desc: "Refresh live work state",
-        group: "Dialog",
+        group: "Live Work Chat",
         cmd: () => void refresh(),
       },
     ],
@@ -222,19 +250,25 @@ export function DialogLiveChat(props: { backend: RuntimeClient }) {
     <box
       position="relative"
       width="100%"
-      maxHeight="100%"
+      height="100%"
       flexDirection="column"
       gap={1}
+      backgroundColor={darkTheme.background}
+      onMouseUp={() => {
+        if (renderer.getSelection()?.getSelectedText()) return;
+        props.onRequestFocus();
+      }}
     >
       <box flexDirection="row" justifyContent="space-between">
         <text attributes={TextAttributes.BOLD} fg={darkTheme.accent}>
           Live Work Chat
         </text>
-        <text fg={darkTheme.muted}>Modal</text>
+        <text fg={darkTheme.muted} onMouseUp={() => props.onClose()}>
+          × close
+        </text>
       </box>
       <text fg={darkTheme.muted}>
-        Chat mode: read-only collaborator · writes routed through the main-agent
-        mailbox only
+        Chat: read-only · writes routed through the main-agent mailbox only
       </text>
       <Show when={error()}>
         <text fg={darkTheme.danger}>{error()}</text>
@@ -244,8 +278,8 @@ export function DialogLiveChat(props: { backend: RuntimeClient }) {
         fallback={<text fg={darkTheme.muted}>Loading live work state...</text>}
       >
         <scrollbox
-          height={16}
-          maxHeight={16}
+          height={18}
+          maxHeight={18}
           border={["left"]}
           borderColor={darkTheme.muted}
           ref={(value: ScrollBoxRenderable) => (chatScroll = value)}
@@ -376,10 +410,11 @@ export function DialogLiveChat(props: { backend: RuntimeClient }) {
           ref={(value: InputRenderable) => {
             input = value;
             setInputTarget(value);
+            props.onInputRef(value);
           }}
         />
         <text fg={darkTheme.muted}>
-          Enter send as {intent()} · T choose intent · R refresh · Escape close
+          Enter send as {intent()} · T choose intent · R refresh · Esc to feed
         </text>
       </box>
     </box>

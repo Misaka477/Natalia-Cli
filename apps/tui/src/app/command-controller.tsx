@@ -83,7 +83,6 @@ import { DialogThemeList } from "../component/DialogThemeList";
 import { DialogCheckpoint } from "../component/DialogCheckpoint";
 import { DialogSandbox } from "../component/DialogSandbox";
 import { DialogTerminal } from "../component/DialogTerminal";
-import { DialogLiveChat } from "../component/DialogLiveChat";
 import { DialogSelect, type DialogSelectOption } from "../dialog/DialogSelect";
 import { DialogPrompt } from "../dialog/DialogPrompt";
 import { DialogConfirm } from "../dialog/DialogConfirm";
@@ -150,6 +149,19 @@ export interface CommandContext {
   setComposerText: (text: string) => void;
   submit: () => Promise<void>;
   updatePreferences: (next: TuiPreferences, scope?: any) => void;
+  /**
+   * The docked view host. The view column and its pane focus are presentation
+   * state owned by the app shell, so commands route through it rather than
+   * reaching into a reducer.
+   */
+  viewDock: {
+    active: () => "chat" | null;
+    focus: () => "main" | "chat";
+    openChat(): void;
+    close(): void;
+    focusChat(): void;
+    focusMain(): void;
+  };
 }
 
 export async function runCommand(command: string, ctx: CommandContext) {
@@ -2867,10 +2879,26 @@ export async function runCommand(command: string, ctx: CommandContext) {
     return;
   }
   if (command === "chat.open") {
-    // P8 C2: the Live Work Chat is a read-only collaboration surface. The
-    // mailbox/snapshot/plan data planes are wired; this dialog renders them and
-    // routes user messages through `mailboxSend` (the only write it may touch).
-    ctx.dialog.push(() => <DialogLiveChat backend={ctx.backend} />);
+    // P8 C2: the Live Work Chat is a docked view, not a modal. Opening it both
+    // shows the column and hands the pane keyboard focus; a second invocation
+    // closes it again.
+    if (ctx.viewDock.active() === "chat") {
+      ctx.viewDock.close();
+      return;
+    }
+    ctx.viewDock.openChat();
+    return;
+  }
+  if (command === "view.close") {
+    ctx.viewDock.close();
+    return;
+  }
+  if (command === "view.focus.chat") {
+    ctx.viewDock.focusChat();
+    return;
+  }
+  if (command === "view.focus.main") {
+    ctx.viewDock.focusMain();
     return;
   }
   // Plugin commands

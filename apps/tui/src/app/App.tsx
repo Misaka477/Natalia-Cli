@@ -1,4 +1,8 @@
-import { TextareaRenderable, type PasteEvent } from "@opentui/core";
+import {
+  InputRenderable,
+  TextareaRenderable,
+  type PasteEvent,
+} from "@opentui/core";
 import { useRenderer } from "@opentui/solid";
 import {
   useBindings,
@@ -59,6 +63,7 @@ import { DialogWorkspaceSearch } from "../component/DialogWorkspaceSearch";
 import { DialogTerminal } from "../component/DialogTerminal";
 import { DialogCheckpoint } from "../component/DialogCheckpoint";
 import { DialogSandbox } from "../component/DialogSandbox";
+import { LiveChatView } from "../component/LiveChatView";
 import {
   PromptAutocomplete,
   workflowRunUnavailableReason,
@@ -257,6 +262,12 @@ function Shell(props: {
   const [terminalHeight, setTerminalHeight] = createSignal(renderer.height);
   const [sidebarMode, setSidebarMode] = createSignal<SidebarMode>("auto");
   const [sidebarOpen, setSidebarOpen] = createSignal(false);
+  // The docked view host: which view is open and which pane owns the keyboard.
+  // Presentation state, so it lives here (like the sidebar) rather than in the
+  // runtime event stream.
+  const [viewActive, setViewActive] = createSignal<"chat" | null>(null);
+  const [viewFocus, setViewFocus] = createSignal<"main" | "chat">("main");
+  const [chatInput, setChatInput] = createSignal<InputRenderable>();
   const promptRef = usePromptRef();
   const { state, dispatch } = useAppState();
   const route = useRouteController();
@@ -289,7 +300,21 @@ function Shell(props: {
       terminalHeight(),
       sidebarMode(),
       sidebarOpen(),
+      viewActive() !== null,
     );
+  // The pane owns the keyboard: chat hands focus to the view's input, main (or
+  // a closed view) hands it back to the composer. LiveChatView itself focuses
+  // its input when focused(), so this only blurs the side leaving focus.
+  createEffect(() => {
+    const pane = viewFocus();
+    const open = viewActive() !== null;
+    if (open && pane === "chat") {
+      composer()?.blur();
+      return;
+    }
+    chatInput()?.blur();
+    queueMicrotask(() => composer()?.focus());
+  });
   const activeSubagentRoute = () => {
     const current = route.route();
     return current.kind === "subagent" ? current : undefined;
@@ -736,6 +761,27 @@ function Shell(props: {
       setComposerText,
       submit,
       updatePreferences,
+      viewDock: {
+        active: viewActive,
+        focus: viewFocus,
+        openChat: () => {
+          setViewActive("chat");
+          setViewFocus("chat");
+        },
+        close: () => {
+          setViewActive(null);
+          setViewFocus("main");
+        },
+        focusChat: () => {
+          if (viewActive() === "chat") {
+            setViewFocus("chat");
+            return;
+          }
+          setViewActive("chat");
+          setViewFocus("chat");
+        },
+        focusMain: () => setViewFocus("main"),
+      },
     });
   }
 
@@ -1006,6 +1052,56 @@ function Shell(props: {
       height="100%"
       backgroundColor={theme.theme.background}
     >
+      <Show when={layout().viewVisible && !layout().viewOverlay}>
+        <box
+          width={layout().viewWidth}
+          flexShrink={0}
+          height="100%"
+          flexDirection="column"
+          border={["right"]}
+          borderColor={theme.theme.muted}
+        >
+          <LiveChatView
+            backend={props.backend}
+            focused={() => viewFocus() === "chat"}
+            onRequestFocus={() => setViewFocus("chat")}
+            onEscape={() => setViewFocus("main")}
+            onClose={() => {
+              setViewActive(null);
+              setViewFocus("main");
+            }}
+            onInputRef={setChatInput}
+          />
+        </box>
+      </Show>
+      <Show when={layout().viewOverlay}>
+        <box
+          position="absolute"
+          left={0}
+          width={layout().viewWidth}
+          height="100%"
+          flexDirection="column"
+          backgroundColor={theme.theme.background}
+          border={["right"]}
+          borderColor={theme.theme.muted}
+        >
+          <LiveChatView
+            backend={props.backend}
+            focused={() => viewFocus() === "chat"}
+            onRequestFocus={() => setViewFocus("chat")}
+            onEscape={() => {
+              // An overlay covers the feed, so leaving it also closes it.
+              setViewActive(null);
+              setViewFocus("main");
+            }}
+            onClose={() => {
+              setViewActive(null);
+              setViewFocus("main");
+            }}
+            onInputRef={setChatInput}
+          />
+        </box>
+      </Show>
       <box flexGrow={1} minWidth={0} height="100%" flexDirection="column">
         <Show when={activeSubagentRoute()} keyed>
           {(current) => (
@@ -1212,7 +1308,7 @@ function Shell(props: {
                     ? `View: ${route.route().kind}`
                     : layout().compact
                       ? `${keymapBoundary.palette} commands · ${keymapBoundary.sidebar} sidebar`
-                      : `${keymapBoundary.newline} newline · ${keymapBoundary.palette} commands · ${keymapBoundary.sidebar} sidebar · ctrl+c cancel/exit`)}
+                      : `${keymapBoundary.newline} newline · ${keymapBoundary.palette} commands · ${keymapBoundary.sidebar} sidebar · ctrl+c cancel/exit${viewActive() ? ` · pane: ${viewFocus()}` : ""}`)}
               </text>
             </Show>
           </box>

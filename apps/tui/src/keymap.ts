@@ -231,7 +231,22 @@ export const commands: Record<string, CommandDef> = {
   "chat.open": {
     id: "chat.open",
     keys: "unset",
-    desc: "Open the Live Work Chat",
+    desc: "Open the Live Work Chat view",
+  },
+  "view.close": {
+    id: "view.close",
+    keys: "unset",
+    desc: "Close the docked view and return focus to the feed",
+  },
+  "view.focus.chat": {
+    id: "view.focus.chat",
+    keys: "unset",
+    desc: "Focus the Live Work Chat pane",
+  },
+  "view.focus.main": {
+    id: "view.focus.main",
+    keys: "unset",
+    desc: "Focus the main feed",
   },
   cancel: { id: "cancel", keys: "ctrl+c", desc: "Cancel current turn" },
   exit: { id: "exit", keys: "ctrl+d", desc: "Exit on empty composer" },
