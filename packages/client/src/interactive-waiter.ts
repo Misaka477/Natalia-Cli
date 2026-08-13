@@ -392,9 +392,53 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
     return approvalWaiters.size > 0 || questionWaiters.size > 0;
   }
 
+  async function requirePlanAcceptance(input: {
+    approvalID: string;
+    planID: string;
+    title: string;
+    detail: string;
+  }): Promise<ApprovalResponse | undefined> {
+    if (deps.permissionMode() === "auto")
+      return { requestID: input.approvalID, decision: "once" };
+    if (deps.permissionMode() === "read_only")
+      return {
+        requestID: input.approvalID,
+        decision: "reject",
+        feedback: "read_only",
+      };
+    // Establish the pending record before publishing, so a synchronous
+    // `respondApproval` from an event sink is not mistaken for a response to a
+    // non-pending request (same rule as tool approvals, §waiter).
+    pendingApprovalRequests.add(input.approvalID);
+    deps.publishForSession(deps.sessionID(), {
+      type: "approval.request",
+      id: input.approvalID,
+      title: input.title,
+      preview: `Accept plan ${input.planID}`,
+      detail: input.detail,
+      keyArguments: [input.planID],
+      sensitive: false,
+      scope: "plan_acceptance",
+    });
+    try {
+      return await waitForResponse(
+        input.approvalID,
+        pendingApprovals,
+        approvalWaiters,
+        deps.abortSignal("plan_acceptance"),
+        `plan acceptance timed out: ${input.planID}`,
+      );
+    } catch {
+      return undefined;
+    } finally {
+      pendingApprovalRequests.delete(input.approvalID);
+    }
+  }
+
   return {
     requireApproval,
     requireQuestion,
+    requirePlanAcceptance,
     respondApproval,
     respondQuestion,
     restoreInteractiveState,

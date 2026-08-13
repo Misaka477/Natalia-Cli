@@ -1639,7 +1639,14 @@ export function createRealRuntimeClient(
     // "step complete"). Deliver every queued mailbox message so the main agent
     // sees user intents at the boundary, never mid-token. `mailbox.delivered`
     // is not a trigger, so this cannot recurse.
-    if (event.type === "turn.finished") deliverQueuedMailboxAtBoundary(exec);
+    if (event.type === "turn.finished") {
+      deliverQueuedMailboxAtBoundary(exec);
+      // P8 C4: a finished turn is also the safe completion point for the active
+      // plan (§6.5 — "A reaches completed / paused / designated safe finish").
+      // Promote the queued-next plan to active so the next turn carries it.
+      // `plan.activated` is not a trigger, so this cannot recurse.
+      activateQueuedPlanAtBoundary(exec);
+    }
   }
 
   /**
@@ -1666,6 +1673,32 @@ export function createRealRuntimeClient(
           at,
         }),
       );
+  }
+
+  /**
+   * P8 C4: promotes the queued-next plan to active at the turn safe boundary.
+   * §6.5: after the active plan reaches a safe finish, the accepted queued plan
+   * activates and the next Main Agent turn carries it. Projection-driven: only
+   * a plan still `queued_next_plan` is promoted, and one per boundary, so an
+   * already-active plan is never re-activated.
+   */
+  function activateQueuedPlanAtBoundary(exec?: SessionExecutionState) {
+    const target = exec ?? activeExec;
+    if (!target?.session) return;
+    const queued = projectedPlans(target.session.events).find(
+      (plan) => plan.status === "queued_next_plan",
+    );
+    if (!queued) return;
+    publishForSession(
+      target,
+      buildPlanTransition({
+        id: `${queued.planID}:activated:${queued.version + 1}`,
+        planID: queued.planID,
+        version: queued.version + 1,
+        transition: "activated",
+        at: new Date().toISOString(),
+      }),
+    );
   }
 
   /**
@@ -2091,6 +2124,22 @@ export function createRealRuntimeClient(
             priority: message.priority,
             source: message.source,
           })),
+      activePlan: () => {
+        const plan = projectedPlans(exec.session.events).find(
+          (candidate) => candidate.status === "active",
+        );
+        if (!plan) return undefined;
+        return {
+          planID: plan.planID,
+          version: plan.version,
+          title: plan.title,
+          objective: plan.objective,
+          steps: plan.steps,
+          constraints: plan.constraints,
+          verification: plan.verification,
+          riskNotes: plan.riskNotes,
+        };
+      },
       retryPolicy: () => retryPolicy,
       lastProviderUsage: () => exec.lastProviderUsage,
       setLastProviderUsage: (usage) => {
@@ -3686,6 +3735,19 @@ export function createRealRuntimeClient(
         (p) => p.planID === planID && p.status === "proposed",
       );
       if (!plan) return { accepted: false as const };
+      // Acceptance is the user's decision (§6.2: "accepted = 用户接受计划内容").
+      // It goes through the same approval request/response machinery as tools:
+      // the runtime waits for a human approve before recording the acceptance,
+      // so a proposed plan cannot be silently accepted by the caller. A reject
+      // leaves the plan proposed.
+      const approvalID = `${planID}:accept:${plan.version + 1}:${crypto.randomUUID().replace(/-/gu, "").slice(0, 8)}`;
+      const response = await interactive.requirePlanAcceptance({
+        approvalID,
+        planID,
+        title: "Accept plan",
+        detail: `${plan.title}\n${plan.objective}`,
+      });
+      if (response?.decision === "reject") return { accepted: false as const };
       publishForSession(
         activeExec,
         buildPlanTransition({

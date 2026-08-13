@@ -35,6 +35,21 @@ function makeHarness(
       priority: string;
       source: "user_via_live_chat" | "system";
     }>;
+    activePlan?: {
+      planID: string;
+      version: number;
+      title: string;
+      objective: string;
+      steps: Array<{
+        id: string;
+        title: string;
+        detail?: string;
+        verification?: string;
+      }>;
+      constraints: string[];
+      verification: string[];
+      riskNotes: string[];
+    };
   },
 ) {
   const events: RuntimeEvent[] = [];
@@ -76,6 +91,7 @@ function makeHarness(
     activeSkill: () => undefined,
     skillsList: () => [],
     mailboxMessages: () => options?.mailboxMessages ?? [],
+    activePlan: () => options?.activePlan,
     retryPolicy: () => ({
       maxAttemptsPerStep: 1,
       initialBackoffMs: 1,
@@ -278,4 +294,48 @@ test("delivered mailbox intents render into the system prompt", async () => {
   expect(systemPrompt).toContain("[high] reprioritize");
   expect(systemPrompt).toContain("focus on the docs task first");
   expect(systemPrompt).toContain("</pending_user_intents>");
+});
+
+test("an active plan renders as a NextPlanHandoff in the system prompt", async () => {
+  let systemPrompt = "";
+  const { runner } = makeHarness(
+    {
+      provider: "scripted",
+      model: "m1",
+      async *stream(request) {
+        const system = request.messages.find(
+          (message) => message.role === "system",
+        );
+        if (system && typeof system.content === "string")
+          systemPrompt = system.content;
+        yield content("working on the plan");
+      },
+    },
+    {
+      activePlan: {
+        planID: "plan:1",
+        version: 5,
+        title: "Switch to Bun-native HTTP",
+        objective: "replace the fetch wrapper",
+        steps: [
+          {
+            id: "s1",
+            title: "introduce the server",
+            verification: "typecheck",
+          },
+        ],
+        constraints: ["keep loopback default"],
+        verification: ["typecheck"],
+        riskNotes: ["port conflicts"],
+      },
+    },
+  );
+  await runner.runTurn(turn);
+  expect(systemPrompt).toContain("<next_plan_handoff>");
+  expect(systemPrompt).toContain("plan:1 v5: Switch to Bun-native HTTP");
+  expect(systemPrompt).toContain("replace the fetch wrapper");
+  expect(systemPrompt).toContain("s1: introduce the server");
+  expect(systemPrompt).toContain("keep loopback default");
+  expect(systemPrompt).toContain("port conflicts");
+  expect(systemPrompt).toContain("</next_plan_handoff>");
 });

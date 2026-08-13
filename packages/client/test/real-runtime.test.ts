@@ -5691,7 +5691,11 @@ test("plan drafts move through the full lifecycle with version bumps", async () 
     },
   });
   const events: RuntimeEvent[] = [];
-  client.start((event) => events.push(event));
+  client.start((event) => {
+    events.push(event);
+    if (event.type === "approval.request" && event.scope === "plan_acceptance")
+      client.respondApproval({ requestID: event.id, decision: "once" });
+  });
   await client.submit("hello");
   await pollHistoryForFinished(client);
 
@@ -5756,7 +5760,10 @@ test("plan update bumps the version and supersede keeps the reason", async () =>
       },
     },
   });
-  client.start(() => {});
+  client.start((event) => {
+    if (event.type === "approval.request" && event.scope === "plan_acceptance")
+      client.respondApproval({ requestID: event.id, decision: "once" });
+  });
   await client.submit("hello");
   await pollHistoryForFinished(client);
 
@@ -5784,6 +5791,144 @@ test("plan update bumps the version and supersede keeps the reason", async () =>
   expect(superseded?.reason).toBe("a newer plan arrived");
   // A superseded plan cannot be proposed.
   expect(await client.planPropose?.(planID)).toEqual({ proposed: false });
+});
+
+test("plan acceptance requires an approval and a reject leaves the plan proposed", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-plan-accept-reject-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_plan_accept_reject",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  // Reject every plan-acceptance approval.
+  client.start((event) => {
+    if (event.type === "approval.request" && event.scope === "plan_acceptance")
+      client.respondApproval({ requestID: event.id, decision: "reject" });
+  });
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+
+  const created = await client.planCreate?.({
+    title: "Rejected plan",
+    author: "live_chat",
+    objective: "this plan is rejected",
+    steps: [{ id: "s1", title: "first" }],
+  });
+  const planID = created!.planID!;
+  await client.planPropose?.(planID);
+
+  const outcome = await client.planAccept?.(planID);
+  expect(outcome).toEqual({ accepted: false });
+  // Rejection leaves the plan proposed — it is not silently accepted.
+  expect((await client.planList!())[0]?.status).toBe("proposed");
+  expect(
+    (await client.planList!())[0]?.status === "proposed" &&
+      (await client.planList!())[0]?.version,
+  ).toBe(2);
+});
+
+test("a queued-next plan activates automatically at the next turn boundary", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-plan-activate-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_plan_activate",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => {
+    if (event.type === "approval.request" && event.scope === "plan_acceptance")
+      client.respondApproval({ requestID: event.id, decision: "once" });
+  });
+  await client.submit("first");
+  await pollHistoryForFinished(client);
+
+  const created = await client.planCreate?.({
+    title: "Next plan",
+    author: "live_chat",
+    objective: "the next phase",
+    steps: [{ id: "s1", title: "step one" }],
+  });
+  const planID = created!.planID!;
+  await client.planPropose?.(planID);
+  await client.planAccept?.(planID);
+  await client.planQueue?.(planID);
+  expect((await client.planList!())[0]?.status).toBe("queued_next_plan");
+
+  // A finished turn is the safe completion point: the queued plan activates.
+  await client.submit("second");
+  await pollHistoryForFinished(client);
+  const plan = (await client.planList!())[0];
+  expect(plan?.status).toBe("active");
+  // Version bumped on activation (created v1 -> proposed v2 -> accepted v3 ->
+  // queued v4 -> active v5).
+  expect(plan?.version).toBe(5);
+});
+
+test("an auto-activated plan reaches the next turn as a NextPlanHandoff", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-plan-handoff-"));
+  let systemPrompts: string[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_plan_handoff",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        const system = request.messages.find(
+          (message) => message.role === "system",
+        );
+        if (system && typeof system.content === "string")
+          systemPrompts.push(system.content);
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => {
+    if (event.type === "approval.request" && event.scope === "plan_acceptance")
+      client.respondApproval({ requestID: event.id, decision: "once" });
+  });
+  await client.submit("first");
+  await pollHistoryForFinished(client);
+
+  const created = await client.planCreate?.({
+    title: "The next phase",
+    author: "live_chat",
+    objective: "deliver the next phase",
+    steps: [{ id: "s1", title: "start", verification: "typecheck" }],
+    constraints: ["keep loopback default"],
+  });
+  const planID = created!.planID!;
+  await client.planPropose?.(planID);
+  await client.planAccept?.(planID);
+  await client.planQueue?.(planID);
+
+  // Turn 2 activates the plan at its boundary; turn 2's own prompt (assembled
+  // before the boundary) must not carry the handoff.
+  await client.submit("second");
+  await pollHistoryForFinished(client);
+  expect(systemPrompts.at(-1)).not.toContain("<next_plan_handoff>");
+
+  // Turn 3 runs after activation, so its prompt carries the structured handoff.
+  await client.submit("third");
+  await pollHistoryForFinished(client);
+  const prompt = systemPrompts.at(-1) ?? "";
+  expect(prompt).toContain("<next_plan_handoff>");
+  expect(prompt).toContain("The next phase");
+  expect(prompt).toContain("deliver the next phase");
+  expect(prompt).toContain("s1: start");
+  expect(prompt).toContain("keep loopback default");
+  expect(prompt).toContain("</next_plan_handoff>");
 });
 
 test("durable session replay preserves tool-call pairs for the next provider turn", async () => {

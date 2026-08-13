@@ -93,6 +93,29 @@ export function createProviderRunner(input: {
     priority: string;
     source: "user_via_live_chat" | "system";
   }>;
+  /**
+   * The currently active plan, if any (P8 C4 NextPlanHandoff source). When a
+   * queued-next plan activates at the turn boundary, the next turn renders it
+   * as a structured handoff so the main agent knows the objective, constraints,
+   * steps and verification of the plan now in force.
+   */
+  activePlan():
+    | {
+        planID: string;
+        version: number;
+        title: string;
+        objective: string;
+        steps: Array<{
+          id: string;
+          title: string;
+          detail?: string;
+          verification?: string;
+        }>;
+        constraints: string[];
+        verification: string[];
+        riskNotes: string[];
+      }
+    | undefined;
   retryPolicy(): RetryPolicy;
   lastProviderUsage(): ProviderUsage | undefined;
   setLastProviderUsage(usage: ProviderUsage | undefined): void;
@@ -286,6 +309,7 @@ export function createProviderRunner(input: {
           skills: input.skillsList(),
           activeSkill: input.activeSkill(),
           pendingIntents: input.mailboxMessages(),
+          activePlan: input.activePlan(),
         }),
       });
       let usedTools = false;
@@ -691,6 +715,25 @@ function runtimeSystemPrompt(input: {
     priority: string;
     source: "user_via_live_chat" | "system";
   }>;
+  /**
+   * The active plan, rendered as a structured NextPlanHandoff (§6.5) so the
+   * main agent follows the plan now in force. Omitted when no plan is active.
+   */
+  activePlan?: {
+    planID: string;
+    version: number;
+    title: string;
+    objective: string;
+    steps: Array<{
+      id: string;
+      title: string;
+      detail?: string;
+      verification?: string;
+    }>;
+    constraints: string[];
+    verification: string[];
+    riskNotes: string[];
+  };
 }) {
   const lines = [
     "You are Natalia, a local software engineering agent running in a terminal UI.",
@@ -798,6 +841,29 @@ function runtimeSystemPrompt(input: {
       ),
       "</pending_user_intents>",
     );
+  }
+  const plan = input.activePlan;
+  if (plan) {
+    const handoff: Array<string | undefined> = [
+      "<next_plan_handoff>",
+      `Plan ${plan.planID} v${plan.version}: ${plan.title}`,
+      `Objective: ${plan.objective}`,
+      "Steps:",
+      ...plan.steps.map((step) => `- ${step.id}: ${step.title}`),
+      plan.constraints.length
+        ? ["Constraints:", ...plan.constraints.map((c) => `- ${c}`)].join("\n")
+        : undefined,
+      plan.verification.length
+        ? ["Verification:", ...plan.verification.map((v) => `- ${v}`)].join(
+            "\n",
+          )
+        : undefined,
+      plan.riskNotes.length
+        ? ["Risks:", ...plan.riskNotes.map((r) => `- ${r}`)].join("\n")
+        : undefined,
+      "</next_plan_handoff>",
+    ];
+    lines.push(...handoff.filter((line): line is string => Boolean(line)));
   }
   return lines.join("\n");
 }
