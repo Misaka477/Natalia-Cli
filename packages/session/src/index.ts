@@ -292,6 +292,7 @@ export {
   projectedWorkGraphNodes,
   projectedWorkGraphEdges,
   projectedMailboxMessages,
+  projectedPlans,
   projectSession,
   settleInterruptedTurns,
   settleInterruptedTurnIDs,

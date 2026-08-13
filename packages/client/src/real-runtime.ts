@@ -88,6 +88,7 @@ import {
   projectedWorkGraphNodes,
   projectedWorkGraphEdges,
   projectedMailboxMessages,
+  projectedPlans,
   settleInterruptedTurns,
   settleInterruptedTurnIDs,
   modelVisibleEvents,
@@ -158,6 +159,7 @@ import {
   buildEvidenceRecorded,
 } from "./evidence-ledger";
 import { buildMailboxQueued, buildMailboxStatus } from "./mailbox-ledger";
+import { buildPlanDraftCreated, buildPlanTransition } from "./plan-ledger";
 
 // Re-exported because the policy tests reach for the risk classifier directly and
 // this file is the package's runtime entry point.
@@ -669,6 +671,7 @@ export function createRealRuntimeClient(
   let decisionSequence = 0;
   let evidenceSequence = 0;
   let mailboxSequence = 0;
+  let planSequence = 0;
 
   /**
    * Re-reads the config and re-resolves the provider from it.
@@ -3536,6 +3539,220 @@ export function createRealRuntimeClient(
           id: `${messageID}:superseded:${mailboxSequence++}`,
           messageID,
           status: "superseded",
+          at: new Date().toISOString(),
+          reason:
+            redactToolOutput(reason ?? "", true).slice(0, 500) || undefined,
+        }),
+      );
+      return { superseded: true as const };
+    },
+    async planList() {
+      if (!session) return [];
+      return projectedPlans(session.events).map((plan) => ({
+        planID: plan.planID,
+        version: plan.version,
+        title: plan.title,
+        author: plan.author,
+        objective: plan.objective,
+        steps: plan.steps,
+        constraints: plan.constraints,
+        verification: plan.verification,
+        riskNotes: plan.riskNotes,
+        ...(plan.relatedMailboxMessageID
+          ? { relatedMailboxMessageID: plan.relatedMailboxMessageID }
+          : {}),
+        ...(plan.supersedesPlanID
+          ? { supersedesPlanID: plan.supersedesPlanID }
+          : {}),
+        createdAt: plan.createdAt,
+        status: plan.status,
+        ...(plan.reason ? { reason: plan.reason } : {}),
+      }));
+    },
+    async planCreate(input: {
+      title: string;
+      author?: "user" | "live_chat" | "main_agent";
+      objective: string;
+      steps: Array<{
+        id: string;
+        title: string;
+        detail?: string;
+        verification?: string;
+      }>;
+      constraints?: string[];
+      verification?: string[];
+      riskNotes?: string[];
+      relatedMailboxMessageID?: string;
+      supersedesPlanID?: string;
+    }) {
+      if (!session) return { created: false as const };
+      if (
+        typeof input.title !== "string" ||
+        input.title.trim().length === 0 ||
+        typeof input.objective !== "string" ||
+        input.objective.trim().length === 0 ||
+        !Array.isArray(input.steps) ||
+        input.steps.length === 0
+      )
+        return { created: false as const };
+      const now = new Date();
+      const planID = `plan:${Date.now().toString(36)}:${planSequence++}`;
+      publishForSession(
+        activeExec,
+        buildPlanDraftCreated({
+          id: `${planID}:draft:0`,
+          planID,
+          version: 1,
+          title: input.title,
+          author: input.author ?? "live_chat",
+          objective: input.objective,
+          steps: input.steps,
+          ...(input.constraints && input.constraints.length
+            ? { constraints: input.constraints }
+            : {}),
+          ...(input.verification && input.verification.length
+            ? { verification: input.verification }
+            : {}),
+          ...(input.riskNotes && input.riskNotes.length
+            ? { riskNotes: input.riskNotes }
+            : {}),
+          ...(input.relatedMailboxMessageID
+            ? { relatedMailboxMessageID: input.relatedMailboxMessageID }
+            : {}),
+          ...(input.supersedesPlanID
+            ? { supersedesPlanID: input.supersedesPlanID }
+            : {}),
+          createdAt: now.toISOString(),
+        }),
+      );
+      return { created: true as const, planID };
+    },
+    async planUpdate(input: {
+      planID: string;
+      objective?: string;
+      steps?: Array<{
+        id: string;
+        title: string;
+        detail?: string;
+        verification?: string;
+      }>;
+      constraints?: string[];
+      verification?: string[];
+      riskNotes?: string[];
+      reason?: string;
+    }) {
+      if (!session || typeof input.planID !== "string" || !input.planID)
+        return { updated: false as const };
+      const plan = projectedPlans(session.events).find(
+        (p) => p.planID === input.planID && p.status === "draft",
+      );
+      if (!plan) return { updated: false as const };
+      publishForSession(
+        activeExec,
+        buildPlanTransition({
+          id: `${input.planID}:draft:${plan.version + 1}`,
+          planID: input.planID,
+          version: plan.version + 1,
+          transition: "draft_updated",
+          at: new Date().toISOString(),
+          reason: input.reason,
+        }),
+      );
+      return { updated: true as const };
+    },
+    async planPropose(planID: string) {
+      if (!session || typeof planID !== "string" || !planID)
+        return { proposed: false as const };
+      const plan = projectedPlans(session.events).find(
+        (p) => p.planID === planID && p.status === "draft",
+      );
+      if (!plan) return { proposed: false as const };
+      publishForSession(
+        activeExec,
+        buildPlanTransition({
+          id: `${planID}:proposed:${plan.version + 1}`,
+          planID,
+          version: plan.version + 1,
+          transition: "proposed",
+          at: new Date().toISOString(),
+        }),
+      );
+      return { proposed: true as const };
+    },
+    async planAccept(planID: string) {
+      if (!session || typeof planID !== "string" || !planID)
+        return { accepted: false as const };
+      const plan = projectedPlans(session.events).find(
+        (p) => p.planID === planID && p.status === "proposed",
+      );
+      if (!plan) return { accepted: false as const };
+      publishForSession(
+        activeExec,
+        buildPlanTransition({
+          id: `${planID}:accepted:${plan.version + 1}`,
+          planID,
+          version: plan.version + 1,
+          transition: "accepted",
+          at: new Date().toISOString(),
+        }),
+      );
+      return { accepted: true as const };
+    },
+    async planQueue(planID: string) {
+      if (!session || typeof planID !== "string" || !planID)
+        return { queued: false as const };
+      const plan = projectedPlans(session.events).find(
+        (p) => p.planID === planID && p.status === "accepted",
+      );
+      if (!plan) return { queued: false as const };
+      publishForSession(
+        activeExec,
+        buildPlanTransition({
+          id: `${planID}:queued:${plan.version + 1}`,
+          planID,
+          version: plan.version + 1,
+          transition: "queued",
+          at: new Date().toISOString(),
+        }),
+      );
+      return { queued: true as const };
+    },
+    async planActivate(planID: string) {
+      if (!session || typeof planID !== "string" || !planID)
+        return { activated: false as const };
+      const plan = projectedPlans(session.events).find(
+        (p) => p.planID === planID && p.status === "queued_next_plan",
+      );
+      if (!plan) return { activated: false as const };
+      publishForSession(
+        activeExec,
+        buildPlanTransition({
+          id: `${planID}:activated:${plan.version + 1}`,
+          planID,
+          version: plan.version + 1,
+          transition: "activated",
+          at: new Date().toISOString(),
+        }),
+      );
+      return { activated: true as const };
+    },
+    async planSupersede(planID: string, reason?: string) {
+      if (!session || typeof planID !== "string" || !planID)
+        return { superseded: false as const };
+      const plan = projectedPlans(session.events).find(
+        (p) =>
+          p.planID === planID &&
+          p.status !== "completed" &&
+          p.status !== "archived",
+      );
+      if (!plan) return { superseded: false as const };
+      publishForSession(
+        activeExec,
+        buildPlanTransition({
+          id: `${planID}:superseded:${plan.version + 1}`,
+          planID,
+          version: plan.version + 1,
+          transition: "superseded",
           at: new Date().toISOString(),
           reason:
             redactToolOutput(reason ?? "", true).slice(0, 500) || undefined,

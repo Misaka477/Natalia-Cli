@@ -212,6 +212,17 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "mailboxDefer",
     "mailboxSupersede",
   ],
+  /** Live Work Chat plan drafts and lifecycle (P8 Phase C4). */
+  plans: [
+    "planList",
+    "planCreate",
+    "planUpdate",
+    "planPropose",
+    "planAccept",
+    "planQueue",
+    "planActivate",
+    "planSupersede",
+  ],
 } as const satisfies Record<string, readonly (keyof RuntimeClient)[]>;
 
 export type RuntimeCapabilityGroup = keyof typeof RUNTIME_CAPABILITY_GROUPS;

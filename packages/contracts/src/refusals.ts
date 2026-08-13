@@ -434,6 +434,44 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "superseded",
     note: "supersedes a queued mailbox message with a safe reason",
   },
+
+  // --- Live Work Chat plans (P8 C4) ---
+  planList: { refusal: "none", note: "pure read" },
+  planCreate: {
+    refusal: "value",
+    expressedBy: "created",
+    note: "creates a plan draft; plan content is safe prose that may reach the journal, so secrets must be redacted by the caller",
+  },
+  planUpdate: {
+    refusal: "value",
+    expressedBy: "updated",
+    note: "updates a draft plan's content, bumping its version",
+  },
+  planPropose: {
+    refusal: "value",
+    expressedBy: "proposed",
+    note: "proposes a draft for user review",
+  },
+  planAccept: {
+    refusal: "value",
+    expressedBy: "accepted",
+    note: "accepts a proposed plan; the user's decision",
+  },
+  planQueue: {
+    refusal: "value",
+    expressedBy: "queued",
+    note: "queues an accepted plan as next, waiting for the current plan's safe finish",
+  },
+  planActivate: {
+    refusal: "value",
+    expressedBy: "activated",
+    note: "activates a queued-next plan",
+  },
+  planSupersede: {
+    refusal: "value",
+    expressedBy: "superseded",
+    note: "supersedes a plan with a safe reason",
+  },
 } as const satisfies Record<keyof RuntimeClient, MemberRefusalSemantics>;
 
 type AssertNever<T extends never> = T;

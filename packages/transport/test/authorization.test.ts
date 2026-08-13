@@ -125,6 +125,14 @@ function controllableClient() {
     "mailboxAcknowledge",
     "mailboxDefer",
     "mailboxSupersede",
+    "planList",
+    "planCreate",
+    "planUpdate",
+    "planPropose",
+    "planAccept",
+    "planQueue",
+    "planActivate",
+    "planSupersede",
     "settingsGet",
   ])
     client[member] = () => undefined;

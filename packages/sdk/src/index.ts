@@ -392,6 +392,63 @@ export type NataliaSDK = {
   ): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["mailboxSupersede"]>>>
   >;
+  /** The durable Live Work Chat plans, projected from the journal (P8 C4). */
+  planList(): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["planList"]>>>
+  >;
+  /** Creates a plan draft (P8 C4). */
+  planCreate(input: {
+    title: string;
+    author?: "user" | "live_chat" | "main_agent";
+    objective: string;
+    steps: Array<{
+      id: string;
+      title: string;
+      detail?: string;
+      verification?: string;
+    }>;
+    constraints?: string[];
+    verification?: string[];
+    riskNotes?: string[];
+    relatedMailboxMessageID?: string;
+    supersedesPlanID?: string;
+  }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planCreate"]>>>>;
+  /** Updates a draft plan's content, bumping its version. */
+  planUpdate(input: {
+    planID: string;
+    objective?: string;
+    steps?: Array<{
+      id: string;
+      title: string;
+      detail?: string;
+      verification?: string;
+    }>;
+    constraints?: string[];
+    verification?: string[];
+    riskNotes?: string[];
+    reason?: string;
+  }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planUpdate"]>>>>;
+  /** Proposes a draft for user review. */
+  planPropose(
+    planID: string,
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planPropose"]>>>>;
+  /** Accepts a proposed plan. */
+  planAccept(
+    planID: string,
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planAccept"]>>>>;
+  /** Queues an accepted plan as next. */
+  planQueue(
+    planID: string,
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planQueue"]>>>>;
+  /** Activates a queued-next plan. */
+  planActivate(
+    planID: string,
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planActivate"]>>>>;
+  /** Supersedes a plan with a safe reason. */
+  planSupersede(
+    planID: string,
+    reason?: string,
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planSupersede"]>>>>;
   driftFindings(): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["driftFindings"]>>>
   >;
@@ -747,6 +804,35 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       await call("mailbox.defer", { messageID, reason }),
     mailboxSupersede: async (messageID, reason) =>
       await call("mailbox.supersede", { messageID, reason }),
+    planList: async () => await call("plan.list", {}),
+    planCreate: async (input) =>
+      await call("plan.create", {
+        title: input.title,
+        author: input.author,
+        objective: input.objective,
+        steps: input.steps,
+        constraints: input.constraints ?? [],
+        verification: input.verification ?? [],
+        riskNotes: input.riskNotes ?? [],
+        relatedMailboxMessageID: input.relatedMailboxMessageID,
+        supersedesPlanID: input.supersedesPlanID,
+      }),
+    planUpdate: async (input) =>
+      await call("plan.update", {
+        planID: input.planID,
+        objective: input.objective,
+        steps: input.steps,
+        constraints: input.constraints ?? [],
+        verification: input.verification ?? [],
+        riskNotes: input.riskNotes ?? [],
+        reason: input.reason,
+      }),
+    planPropose: async (planID) => await call("plan.propose", { planID }),
+    planAccept: async (planID) => await call("plan.accept", { planID }),
+    planQueue: async (planID) => await call("plan.queue", { planID }),
+    planActivate: async (planID) => await call("plan.activate", { planID }),
+    planSupersede: async (planID, reason) =>
+      await call("plan.supersede", { planID, reason }),
     driftFindings: async () => await call("drift.findings", {}),
     registeredTools: async () => await call("tools.registered", {}),
     capabilities: async () => await call("capabilities", {}),

@@ -574,6 +574,87 @@ type RuntimeEventData =
       reason: string;
       supersededAt: string;
     }
+  | {
+      type: "plan.draft.created";
+      id: string;
+      planID: string;
+      version: number;
+      title: string;
+      author: "user" | "live_chat" | "main_agent";
+      objective: string;
+      steps: Array<{
+        id: string;
+        title: string;
+        detail?: string;
+        verification?: string;
+      }>;
+      constraints?: string[];
+      verification?: string[];
+      riskNotes?: string[];
+      relatedMailboxMessageID?: string;
+      supersedesPlanID?: string;
+      createdAt: string;
+      reason?: string;
+    }
+  | {
+      type: "plan.draft.updated";
+      id: string;
+      planID: string;
+      version: number;
+      updatedAt: string;
+      reason?: string;
+    }
+  | {
+      type: "plan.proposed";
+      id: string;
+      planID: string;
+      version: number;
+      proposedAt: string;
+    }
+  | {
+      type: "plan.accepted";
+      id: string;
+      planID: string;
+      version: number;
+      acceptedBy: "user";
+      acceptedAt: string;
+    }
+  | {
+      type: "plan.queued";
+      id: string;
+      planID: string;
+      version: number;
+      queuedAt: string;
+    }
+  | {
+      type: "plan.activated";
+      id: string;
+      planID: string;
+      version: number;
+      activatedAt: string;
+    }
+  | {
+      type: "plan.superseded";
+      id: string;
+      planID: string;
+      version: number;
+      reason: string;
+      supersededAt: string;
+    }
+  | {
+      type: "plan.completed";
+      id: string;
+      planID: string;
+      version: number;
+      completedAt: string;
+    }
+  | {
+      type: "plan.archived";
+      id: string;
+      planID: string;
+      version: number;
+      archivedAt: string;
+    }
   | { type: "status.update"; status: string; detail?: string }
   | {
       type: "status.snapshot";
@@ -1887,6 +1968,79 @@ export type RuntimeClient = {
   /** Supersedes a mailbox message, with a safe reason. */
   mailboxSupersede?(
     messageID: string,
+    reason?: string,
+  ): Promise<{ superseded: boolean }>;
+  /** The durable Live Work Chat plans, projected from the journal (P8 C4). */
+  planList?(): Promise<
+    Array<{
+      planID: string;
+      version: number;
+      title: string;
+      author: "user" | "live_chat" | "main_agent";
+      objective: string;
+      steps: Array<{
+        id: string;
+        title: string;
+        detail?: string;
+        verification?: string;
+      }>;
+      constraints: string[];
+      verification: string[];
+      riskNotes: string[];
+      relatedMailboxMessageID?: string;
+      supersedesPlanID?: string;
+      createdAt: string;
+      status: string;
+      reason?: string;
+    }>
+  >;
+  /**
+   * Creates a plan draft. Plan content (objective, steps, constraints,
+   * verification, risk notes) is safe prose that may reach the journal — never
+   * tool output, file content or secrets.
+   */
+  planCreate?(input: {
+    title: string;
+    author?: "user" | "live_chat" | "main_agent";
+    objective: string;
+    steps: Array<{
+      id: string;
+      title: string;
+      detail?: string;
+      verification?: string;
+    }>;
+    constraints?: string[];
+    verification?: string[];
+    riskNotes?: string[];
+    relatedMailboxMessageID?: string;
+    supersedesPlanID?: string;
+  }): Promise<{ created: boolean; planID?: string }>;
+  /** Updates a draft plan's content (keeps the plan, bumps version). */
+  planUpdate?(input: {
+    planID: string;
+    objective?: string;
+    steps?: Array<{
+      id: string;
+      title: string;
+      detail?: string;
+      verification?: string;
+    }>;
+    constraints?: string[];
+    verification?: string[];
+    riskNotes?: string[];
+    reason?: string;
+  }): Promise<{ updated: boolean }>;
+  /** Proposes a draft for user review. */
+  planPropose?(planID: string): Promise<{ proposed: boolean }>;
+  /** Accepts a proposed plan (the user's decision). */
+  planAccept?(planID: string): Promise<{ accepted: boolean }>;
+  /** Queues an accepted plan as next, waiting for the current plan's safe finish. */
+  planQueue?(planID: string): Promise<{ queued: boolean }>;
+  /** Activates a queued-next plan. */
+  planActivate?(planID: string): Promise<{ activated: boolean }>;
+  /** Supersedes a plan, with a safe reason. */
+  planSupersede?(
+    planID: string,
     reason?: string,
   ): Promise<{ superseded: boolean }>;
   evidenceRecords?(): Promise<

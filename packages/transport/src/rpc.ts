@@ -208,6 +208,15 @@ export const RPC_ROUTE_MEMBERS = {
   "mailbox.acknowledge": "mailboxAcknowledge",
   "mailbox.defer": "mailboxDefer",
   "mailbox.supersede": "mailboxSupersede",
+  // P8 C4: durable Live Work Chat plan drafts and lifecycle.
+  "plan.list": "planList",
+  "plan.create": "planCreate",
+  "plan.update": "planUpdate",
+  "plan.propose": "planPropose",
+  "plan.accept": "planAccept",
+  "plan.queue": "planQueue",
+  "plan.activate": "planActivate",
+  "plan.supersede": "planSupersede",
   capabilities: "capabilities",
   "session.snapshot": "sessionSnapshot",
   "submit.input": "submitInput",
@@ -1509,6 +1518,158 @@ export async function handleRPCMessage(
         id: body.id ?? null,
         result: await client.mailboxSupersede?.(
           messageID,
+          typeof params.reason === "string" ? params.reason : undefined,
+        ),
+      };
+    }
+    if (body.method === "plan.list") {
+      optionsGuard(client, "planList");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.planList(),
+      };
+    }
+    if (body.method === "plan.create") {
+      optionsGuard(client, "planCreate");
+      const params = body.params as Record<string, unknown> | undefined;
+      if (
+        !params ||
+        typeof params.title !== "string" ||
+        params.title.trim().length === 0 ||
+        typeof params.objective !== "string" ||
+        params.objective.trim().length === 0 ||
+        !Array.isArray(params.steps) ||
+        params.steps.length === 0
+      )
+        throw invalidParams(
+          "plan.create requires a title, an objective and at least one step",
+        );
+      const result = await client.planCreate?.({
+        title: params.title,
+        ...(typeof params.author === "string"
+          ? { author: params.author as "user" | "live_chat" | "main_agent" }
+          : {}),
+        objective: params.objective,
+        steps: params.steps as Array<{
+          id: string;
+          title: string;
+          detail?: string;
+          verification?: string;
+        }>,
+        ...(Array.isArray(params.constraints)
+          ? { constraints: params.constraints.map(String) }
+          : {}),
+        ...(Array.isArray(params.verification)
+          ? { verification: params.verification.map(String) }
+          : {}),
+        ...(Array.isArray(params.riskNotes)
+          ? { riskNotes: params.riskNotes.map(String) }
+          : {}),
+        ...(typeof params.relatedMailboxMessageID === "string"
+          ? { relatedMailboxMessageID: params.relatedMailboxMessageID }
+          : {}),
+        ...(typeof params.supersedesPlanID === "string"
+          ? { supersedesPlanID: params.supersedesPlanID }
+          : {}),
+      });
+      if (!result)
+        throw invalidParams("plan.create is not implemented by this runtime");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result,
+      };
+    }
+    if (body.method === "plan.update") {
+      optionsGuard(client, "planUpdate");
+      const params = body.params as Record<string, unknown> | undefined;
+      const planID = params?.planID;
+      if (typeof planID !== "string" || !planID)
+        throw invalidParams("plan.update requires a planID string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.planUpdate?.({
+          planID,
+          ...(typeof params.objective === "string"
+            ? { objective: params.objective }
+            : {}),
+          ...(Array.isArray(params.steps) ? { steps: params.steps } : {}),
+          ...(Array.isArray(params.constraints)
+            ? { constraints: params.constraints.map(String) }
+            : {}),
+          ...(Array.isArray(params.verification)
+            ? { verification: params.verification.map(String) }
+            : {}),
+          ...(Array.isArray(params.riskNotes)
+            ? { riskNotes: params.riskNotes.map(String) }
+            : {}),
+          ...(typeof params.reason === "string"
+            ? { reason: params.reason }
+            : {}),
+        }),
+      };
+    }
+    if (body.method === "plan.propose") {
+      optionsGuard(client, "planPropose");
+      const params = body.params as Record<string, unknown> | undefined;
+      const planID = params?.planID;
+      if (typeof planID !== "string" || !planID)
+        throw invalidParams("plan.propose requires a planID string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.planPropose?.(planID),
+      };
+    }
+    if (body.method === "plan.accept") {
+      optionsGuard(client, "planAccept");
+      const params = body.params as Record<string, unknown> | undefined;
+      const planID = params?.planID;
+      if (typeof planID !== "string" || !planID)
+        throw invalidParams("plan.accept requires a planID string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.planAccept?.(planID),
+      };
+    }
+    if (body.method === "plan.queue") {
+      optionsGuard(client, "planQueue");
+      const params = body.params as Record<string, unknown> | undefined;
+      const planID = params?.planID;
+      if (typeof planID !== "string" || !planID)
+        throw invalidParams("plan.queue requires a planID string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.planQueue?.(planID),
+      };
+    }
+    if (body.method === "plan.activate") {
+      optionsGuard(client, "planActivate");
+      const params = body.params as Record<string, unknown> | undefined;
+      const planID = params?.planID;
+      if (typeof planID !== "string" || !planID)
+        throw invalidParams("plan.activate requires a planID string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.planActivate?.(planID),
+      };
+    }
+    if (body.method === "plan.supersede") {
+      optionsGuard(client, "planSupersede");
+      const params = body.params as Record<string, unknown> | undefined;
+      const planID = params?.planID;
+      if (typeof planID !== "string" || !planID)
+        throw invalidParams("plan.supersede requires a planID string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.planSupersede?.(
+          planID,
           typeof params.reason === "string" ? params.reason : undefined,
         ),
       };

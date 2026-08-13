@@ -5677,6 +5677,115 @@ test("delivered mailbox intents reach the main agent in the next turn system pro
   expect(thirdPrompt).toContain("</pending_user_intents>");
 });
 
+test("plan drafts move through the full lifecycle with version bumps", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-plan-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_plan",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+
+  const created = await client.planCreate?.({
+    title: "Switch to Bun-native HTTP",
+    author: "live_chat",
+    objective: "replace the fetch wrapper with Bun.serve",
+    steps: [
+      { id: "s1", title: "introduce the server", verification: "typecheck" },
+    ],
+    constraints: ["keep 127.0.0.1 default"],
+  });
+  expect(created?.created).toBe(true);
+  expect(created?.planID).toBeDefined();
+  const planID = created!.planID!;
+
+  let plans = await client.planList!();
+  expect(plans).toHaveLength(1);
+  expect(plans[0]).toMatchObject({
+    planID,
+    version: 1,
+    title: "Switch to Bun-native HTTP",
+    author: "live_chat",
+    status: "draft",
+    objective: "replace the fetch wrapper with Bun.serve",
+  });
+
+  expect(await client.planPropose?.(planID)).toEqual({ proposed: true });
+  expect((await client.planList!())[0]?.status).toBe("proposed");
+
+  expect(await client.planAccept?.(planID)).toEqual({ accepted: true });
+  expect((await client.planList!())[0]?.status).toBe("accepted");
+
+  expect(await client.planQueue?.(planID)).toEqual({ queued: true });
+  expect((await client.planList!())[0]?.status).toBe("queued_next_plan");
+
+  expect(await client.planActivate?.(planID)).toEqual({ activated: true });
+  const active = (await client.planList!())[0];
+  expect(active?.status).toBe("active");
+  expect(active?.version).toBe(5);
+
+  // Out-of-order transitions are rejected (an active plan cannot be proposed).
+  expect(await client.planPropose?.(planID)).toEqual({ proposed: false });
+  expect(
+    events.filter(
+      (event): event is Extract<RuntimeEvent, { type: "plan.proposed" }> =>
+        event.type === "plan.proposed",
+    ).length,
+  ).toBe(1);
+});
+
+test("plan update bumps the version and supersede keeps the reason", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-plan-upd-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_plan_upd",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => {});
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+
+  const created = await client.planCreate?.({
+    title: "Old plan",
+    author: "live_chat",
+    objective: "do it the old way",
+    steps: [{ id: "s1", title: "first" }],
+  });
+  const planID = created!.planID!;
+
+  expect(
+    await client.planUpdate?.({
+      planID,
+      reason: "add verification",
+    }),
+  ).toEqual({ updated: true });
+  expect((await client.planList!())[0]?.version).toBe(2);
+
+  expect(await client.planSupersede?.(planID, "a newer plan arrived")).toEqual({
+    superseded: true,
+  });
+  const superseded = (await client.planList!())[0];
+  expect(superseded?.status).toBe("superseded");
+  expect(superseded?.reason).toBe("a newer plan arrived");
+  // A superseded plan cannot be proposed.
+  expect(await client.planPropose?.(planID)).toEqual({ proposed: false });
+});
+
 test("durable session replay preserves tool-call pairs for the next provider turn", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-replay-tools-"));
   await writeFile(join(root, "input.txt"), "replay-ok\n");

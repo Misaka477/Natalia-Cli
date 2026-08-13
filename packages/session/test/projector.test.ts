@@ -12,6 +12,7 @@ import {
   projectedDecisionRecords,
   projectedEvidenceRecords,
   projectedMailboxMessages,
+  projectedPlans,
   projectedWorkGraphNodes,
   projectedWorkGraphEdges,
   projectSessionMessages,
@@ -473,6 +474,109 @@ test("projectedMailboxMessages replays to the same status from replay", () => {
     intent: "constraint",
     status: "acknowledged",
   });
+});
+
+test("projectedPlans tracks the full plan lifecycle with version bumps", () => {
+  const session = createSessionRecord("ses_plans", "Plans");
+  appendSessionEvent(session, {
+    type: "plan.draft.created",
+    id: "plan:1:draft:0",
+    planID: "plan:1",
+    version: 1,
+    title: "Switch to Bun-native HTTP",
+    author: "live_chat",
+    objective: "replace the fetch wrapper",
+    steps: [{ id: "s1", title: "introduce the server" }],
+    constraints: ["keep loopback default"],
+    createdAt: "t0",
+  });
+  expect(projectedPlans(session.events)[0]?.status).toBe("draft");
+
+  appendSessionEvent(session, {
+    type: "plan.draft.updated",
+    id: "plan:1:draft:1",
+    planID: "plan:1",
+    version: 2,
+    updatedAt: "t1",
+    reason: "add verification",
+  });
+  appendSessionEvent(session, {
+    type: "plan.proposed",
+    id: "plan:1:proposed:3",
+    planID: "plan:1",
+    version: 3,
+    proposedAt: "t2",
+  });
+  expect(projectedPlans(session.events)[0]?.status).toBe("proposed");
+
+  appendSessionEvent(session, {
+    type: "plan.accepted",
+    id: "plan:1:accepted:4",
+    planID: "plan:1",
+    version: 4,
+    acceptedBy: "user",
+    acceptedAt: "t3",
+  });
+  appendSessionEvent(session, {
+    type: "plan.queued",
+    id: "plan:1:queued:5",
+    planID: "plan:1",
+    version: 5,
+    queuedAt: "t4",
+  });
+  expect(projectedPlans(session.events)[0]?.status).toBe("queued_next_plan");
+
+  appendSessionEvent(session, {
+    type: "plan.activated",
+    id: "plan:1:activated:6",
+    planID: "plan:1",
+    version: 6,
+    activatedAt: "t5",
+  });
+  const active = projectedPlans(session.events)[0];
+  expect(active?.status).toBe("active");
+  expect(active?.version).toBe(6);
+  expect(active?.constraints).toEqual(["keep loopback default"]);
+  expect(active?.objective).toContain("fetch wrapper");
+});
+
+test("projectedPlans ignores transitions for a plan that was never created", () => {
+  const session = createSessionRecord("ses_plans_unknown", "Plans");
+  appendSessionEvent(session, {
+    type: "plan.superseded",
+    id: "plan:9:superseded:2",
+    planID: "plan:9",
+    version: 2,
+    reason: "never existed",
+    supersededAt: "t0",
+  });
+  expect(projectedPlans(session.events)).toEqual([]);
+});
+
+test("projectedPlans supersedes a plan and keeps the reason", () => {
+  const session = createSessionRecord("ses_plans_superseded", "Plans");
+  appendSessionEvent(session, {
+    type: "plan.draft.created",
+    id: "plan:2:draft:0",
+    planID: "plan:2",
+    version: 1,
+    title: "Old plan",
+    author: "live_chat",
+    objective: "do it the old way",
+    steps: [{ id: "s1", title: "first" }],
+    createdAt: "t0",
+  });
+  appendSessionEvent(session, {
+    type: "plan.superseded",
+    id: "plan:2:superseded:2",
+    planID: "plan:2",
+    version: 2,
+    reason: "a newer plan arrived",
+    supersededAt: "t1",
+  });
+  const projected = projectedPlans(session.events)[0];
+  expect(projected?.status).toBe("superseded");
+  expect(projected?.reason).toBe("a newer plan arrived");
 });
 
 test("projectedEvidenceRecords collects evidence records", () => {
