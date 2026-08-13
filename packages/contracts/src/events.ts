@@ -1774,11 +1774,26 @@ export type RuntimeClient = {
     Array<{
       decision: string;
       rationale: string[];
+      alternatives: { option: string; rejectedReason?: string }[];
+      consequences: string[];
       status: "proposed" | "accepted" | "superseded";
       linkedPlans: string[];
       linkedConstraints: string[];
     }>
   >;
+  /**
+   * Records a decision as a durable `decision.recorded` fact. The decision text
+   * and rationale may reach the journal — safe prose only, never tool output,
+   * file content or secrets.
+   */
+  recordDecision?(input: {
+    decision: string;
+    rationale?: string[];
+    alternatives?: { option: string; rejectedReason?: string }[];
+    consequences?: string[];
+    linkedPlans?: string[];
+    linkedConstraints?: string[];
+  }): Promise<{ recorded: boolean }>;
   evidenceRecords?(): Promise<
     Array<{
       taskID: string;

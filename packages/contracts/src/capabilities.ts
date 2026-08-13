@@ -197,6 +197,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
   intelligence: [
     "constitutionRules",
     "decisionRecords",
+    "recordDecision",
     "evidenceRecords",
     "driftFindings",
     "registeredTools",
@@ -252,8 +253,6 @@ export type UnclassifiedRuntimeClientMember = AssertNever<
  * Each is a first slice whose writer is scheduled work, not an abandoned surface.
  */
 export const UNIMPLEMENTED_QUERIES = {
-  constitutionRules: "no production code records constitution rules yet",
-  decisionRecords: "no production code records decisions yet",
   evidenceRecords: "no production code records validation evidence yet",
   driftFindings: "no production code opens drift findings yet",
   registeredTools: "tool registration metadata is not published yet",

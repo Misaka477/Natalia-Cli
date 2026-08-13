@@ -308,11 +308,10 @@ test("a consumer can ask what this runtime implements, without guessing", async 
     for (const group of report.groups)
       expect(group.available && group.partial).toBe(false);
 
-    // And the five queries that answer with nothing are named, with a reason, so an
-    // empty array is not mistaken for "nothing recorded".
+    // And the queries that answer with nothing are named, with a reason, so an
+    // empty array is not mistaken for "nothing recorded". constitution rules and
+    // decision records now have production writers, so they are out of this list.
     expect(report.unimplemented.map((entry) => entry.member).sort()).toEqual([
-      "constitutionRules",
-      "decisionRecords",
       "driftFindings",
       "evidenceRecords",
       "registeredTools",
@@ -585,9 +584,15 @@ test("the P0-C route surface answers over HTTP: native terminal, intelligence, c
       );
     }
 
-    // Intelligence queries and capability records: routed and answering with
-    // nothing, exactly as the availability report promises via `unimplemented`.
-    expect(await sdk.constitutionRules()).toEqual([]);
+    // Intelligence queries and capability records: routed. The constitution
+    // rules are the first facts (the runtime's self-protection rules are seeded
+    // into every session), and decisions are empty until `recordDecision` is
+    // called. Evidence, drift and tool metadata still answer with nothing.
+    const constitutionRules = await sdk.constitutionRules();
+    expect(constitutionRules.length).toBeGreaterThan(0);
+    expect(constitutionRules.some((rule) => rule.ruleID === "C-TERM-001")).toBe(
+      true,
+    );
     expect(await sdk.decisionRecords()).toEqual([]);
     expect(await sdk.evidenceRecords()).toEqual([]);
     expect(await sdk.driftFindings()).toEqual([]);

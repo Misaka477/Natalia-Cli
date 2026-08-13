@@ -62,8 +62,14 @@ test("a query that answers with nothing says why, instead of looking like no dat
   const members = Object.keys(UNIMPLEMENTED_QUERIES) as Array<
     keyof typeof UNIMPLEMENTED_QUERIES
   >;
+  // The intelligence group also holds implemented writers (recordDecision),
+  // so stub the whole group plus the unimplemented query members.
   const report = describeRuntimeCapabilities(
-    stub([...REQUIRED_RUNTIME_MEMBERS, ...members]),
+    stub([
+      ...REQUIRED_RUNTIME_MEMBERS,
+      ...RUNTIME_CAPABILITY_GROUPS.intelligence,
+      ...members,
+    ]),
   );
   expect(report.unimplemented.map((entry) => entry.member).sort()).toEqual(
     [...members].sort(),

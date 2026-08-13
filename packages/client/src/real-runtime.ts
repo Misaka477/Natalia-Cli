@@ -151,6 +151,7 @@ import {
 import { parseToolArguments, tryParseToolArguments } from "./tool-arguments";
 import { createWorkspaceWriteLock } from "./workspace-write-lock";
 import { buildSessionIntelligenceSnapshot } from "./session-intelligence";
+import { recordDecision, seedConstitutionRules } from "./constitution-ledger";
 
 // Re-exported because the policy tests reach for the risk classifier directly and
 // this file is the package's runtime entry point.
@@ -659,6 +660,7 @@ export function createRealRuntimeClient(
    */
   const activeToolByTurn = new Map<string, string>();
   let sessionSnapshotSequence = 0;
+  let decisionSequence = 0;
 
   /**
    * Re-reads the config and re-resolves the provider from it.
@@ -1247,6 +1249,11 @@ export function createRealRuntimeClient(
       activeExec.selectedModel = selectedModel;
     }
     publish({ type: "session.ready", sessionID });
+    // The self-protection rules are the first constitution facts: migrate them
+    // into the durable journal on every boot (idempotent — replay already holds
+    // them) so `constitutionRules()` and the /constitution UI answer real rules,
+    // not the empty projection CST1 shipped.
+    for (const rule of seedConstitutionRules(session.events)) publish(rule);
     // Overrides are visible, not silent: a plugin that replaced a built-in
     // tool shows up in diagnostics so nobody discovers it by surprise.
     for (const override of capabilityRegistry.overrides())
@@ -3242,10 +3249,35 @@ export function createRealRuntimeClient(
       return projectedDecisionRecords(session.events).map((r) => ({
         decision: r.decision,
         rationale: r.rationale ?? [],
+        alternatives: r.alternatives ?? [],
+        consequences: r.consequences ?? [],
         status: r.status,
         linkedPlans: r.linkedPlans ?? [],
         linkedConstraints: r.linkedConstraints ?? [],
       }));
+    },
+    /**
+     * The `decision.recorded` production writer. Decisions are durable facts —
+     * a decision text and rationale may reach the journal — so this is the
+     * surface the Chat/override loop (CST3) records through. The event
+     * constructor in `constitution-ledger.ts` keeps the secret-safe boundary:
+     * decision text and rationale are prose, never tool output or file content.
+     */
+    async recordDecision(input: {
+      decision: string;
+      rationale?: string[];
+      alternatives?: { option: string; rejectedReason?: string }[];
+      consequences?: string[];
+      linkedPlans?: string[];
+      linkedConstraints?: string[];
+    }) {
+      if (!session) return { recorded: false as const };
+      const event = recordDecision({
+        id: `decision:${Date.now().toString(36)}:${decisionSequence++}`,
+        ...input,
+      });
+      publishForSession(activeExec, event);
+      return { recorded: true as const };
     },
     async evidenceRecords() {
       if (!session) return [];

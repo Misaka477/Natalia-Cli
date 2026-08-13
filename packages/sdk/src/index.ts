@@ -332,6 +332,17 @@ export type NataliaSDK = {
   decisionRecords(): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["decisionRecords"]>>>
   >;
+  /** Records a durable decision fact (CST3 writer). */
+  recordDecision(input: {
+    decision: string;
+    rationale?: string[];
+    alternatives?: { option: string; rejectedReason?: string }[];
+    consequences?: string[];
+    linkedPlans?: string[];
+    linkedConstraints?: string[];
+  }): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["recordDecision"]>>>
+  >;
   evidenceRecords(): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["evidenceRecords"]>>>
   >;
@@ -653,6 +664,15 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       await call("nativeTerminal.resize", input),
     constitutionRules: async () => await call("constitution.rules", {}),
     decisionRecords: async () => await call("decision.records", {}),
+    recordDecision: async (input) =>
+      await call("decision.record", {
+        decision: input.decision,
+        rationale: input.rationale ?? [],
+        alternatives: input.alternatives ?? [],
+        consequences: input.consequences ?? [],
+        linkedPlans: input.linkedPlans ?? [],
+        linkedConstraints: input.linkedConstraints ?? [],
+      }),
     evidenceRecords: async () => await call("evidence.records", {}),
     driftFindings: async () => await call("drift.findings", {}),
     registeredTools: async () => await call("tools.registered", {}),

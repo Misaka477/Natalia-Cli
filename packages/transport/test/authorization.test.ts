@@ -114,6 +114,7 @@ function controllableClient() {
     "nativeTerminalResize",
     "constitutionRules",
     "decisionRecords",
+    "recordDecision",
     "evidenceRecords",
     "driftFindings",
     "registeredTools",

@@ -196,6 +196,7 @@ export const RPC_ROUTE_MEMBERS = {
   "nativeTerminal.resize": "nativeTerminalResize",
   "constitution.rules": "constitutionRules",
   "decision.records": "decisionRecords",
+  "decision.record": "recordDecision",
   "evidence.records": "evidenceRecords",
   "drift.findings": "driftFindings",
   "tools.registered": "registeredTools",
@@ -1296,6 +1297,48 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.decisionRecords(),
+      };
+    }
+    if (body.method === "decision.record") {
+      optionsGuard(client, "recordDecision");
+      const params = body.params as Record<string, unknown> | undefined;
+      if (
+        !params ||
+        typeof params.decision !== "string" ||
+        params.decision.trim().length === 0
+      )
+        throw invalidParams("decision.record requires a decision string");
+      const result = await client.recordDecision?.({
+        decision: params.decision,
+        ...(Array.isArray(params.rationale)
+          ? { rationale: params.rationale.map(String) }
+          : {}),
+        ...(Array.isArray(params.alternatives)
+          ? {
+              alternatives: params.alternatives as {
+                option: string;
+                rejectedReason?: string;
+              }[],
+            }
+          : {}),
+        ...(Array.isArray(params.consequences)
+          ? { consequences: params.consequences.map(String) }
+          : {}),
+        ...(Array.isArray(params.linkedPlans)
+          ? { linkedPlans: params.linkedPlans.map(String) }
+          : {}),
+        ...(Array.isArray(params.linkedConstraints)
+          ? { linkedConstraints: params.linkedConstraints.map(String) }
+          : {}),
+      });
+      if (!result)
+        throw invalidParams(
+          "decision.record is not implemented by this runtime",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result,
       };
     }
     if (body.method === "evidence.records") {

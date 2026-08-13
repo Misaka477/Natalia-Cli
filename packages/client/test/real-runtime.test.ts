@@ -5089,6 +5089,150 @@ test("session intelligence read model answers the latest published snapshot", as
   expect(snapshot?.hasSandbox).toBe(false);
 });
 
+test("the self-protection rules are seeded as the first constitution facts", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-constitution-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_constitution",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+
+  const rules = await client.constitutionRules!();
+  expect(rules.map((rule) => rule.ruleID)).toEqual([
+    "C-TERM-001",
+    "C-TERM-002",
+    "C-TERM-003",
+  ]);
+  for (const rule of rules)
+    expect(rule).toMatchObject({
+      scope: "release",
+      priority: "critical",
+      source: "policy",
+      enforcement: "deny",
+      overridePolicy: "forbidden",
+    });
+  expect(
+    events.some(
+      (event) =>
+        event.type === "constitution.rule_added" &&
+        event.ruleID === "C-TERM-001",
+    ),
+  ).toBe(true);
+});
+
+test("recordDecision writes a durable decision fact", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-decision-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_decision",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+
+  const outcome = await client.recordDecision?.({
+    decision: "workspace isolation is not container/VM security",
+    rationale: ["the sandbox is a workspace boundary"],
+    linkedConstraints: ["C-TERM-001"],
+  });
+  expect(outcome).toEqual({ recorded: true });
+  const records = await client.decisionRecords!();
+  expect(records).toHaveLength(1);
+  expect(records[0]).toMatchObject({
+    decision: "workspace isolation is not container/VM security",
+    rationale: ["the sandbox is a workspace boundary"],
+    status: "accepted",
+    linkedConstraints: ["C-TERM-001"],
+  });
+  expect(
+    events.some(
+      (event) =>
+        event.type === "decision.recorded" &&
+        event.decision === "workspace isolation is not container/VM security",
+    ),
+  ).toBe(true);
+});
+
+test("constitution rules and decisions survive replay", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-const-replay-"));
+  const initial = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_const_replay",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  initial.start(() => {});
+  await initial.submit("hello");
+  await initial.recordDecision?.({
+    decision: "default no commit/push",
+  });
+  await pollHistoryForFinished(initial);
+
+  const replayed: RuntimeEvent[] = [];
+  const reopened = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_const_replay",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  reopened.start((event) => replayed.push(event));
+  await reopened.submit("again");
+  await pollHistoryForFinished(reopened);
+
+  const rules = await reopened.constitutionRules!();
+  expect(rules.map((rule) => rule.ruleID)).toEqual([
+    "C-TERM-001",
+    "C-TERM-002",
+    "C-TERM-003",
+  ]);
+  const decisions = await reopened.decisionRecords!();
+  expect(decisions.map((decision) => decision.decision)).toContain(
+    "default no commit/push",
+  );
+  // Replay must not duplicate the seeded rules: the reopened session replays
+  // the original three rule_added events to the sink and the idempotent seed
+  // skips them — exactly three, not six.
+  const ruleAdded = replayed.filter(
+    (
+      event,
+    ): event is Extract<RuntimeEvent, { type: "constitution.rule_added" }> =>
+      event.type === "constitution.rule_added",
+  );
+  expect(ruleAdded.map((event) => event.ruleID).sort()).toEqual([
+    "C-TERM-001",
+    "C-TERM-002",
+    "C-TERM-003",
+  ]);
+});
+
 test("durable session replay preserves tool-call pairs for the next provider turn", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-replay-tools-"));
   await writeFile(join(root, "input.txt"), "replay-ok\n");
@@ -5671,7 +5815,10 @@ async function pollHistoryForFinished(
   timeoutMs = 3000,
 ) {
   for (let elapsed = 0; elapsed < timeoutMs; elapsed += 50) {
-    const history = await client.history?.({ limit: 100 });
+    // A larger window than 100: seeded constitution rules and session
+    // snapshots are durable events too, so a turn's `turn.finished` can sit
+    // beyond a 100-event window and must not look like the turn never settled.
+    const history = await client.history?.({ limit: 1000 });
     if (history?.events.some((entry) => entry.event.type === "turn.finished"))
       return;
     await Bun.sleep(50);

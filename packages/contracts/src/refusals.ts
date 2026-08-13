@@ -388,9 +388,16 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
   workGraphEdges: { refusal: "none", note: "pure read" },
 
   // --- intelligence ---
-  // Reachable, empty, and named in UNIMPLEMENTED_QUERIES with the reason.
+  // Read surfaces. The rule/decision writers now exist in production; evidence,
+  // drift and tool metadata still answer nothing and are named in
+  // UNIMPLEMENTED_QUERIES with the reason.
   constitutionRules: { refusal: "none", note: "pure read" },
   decisionRecords: { refusal: "none", note: "pure read" },
+  recordDecision: {
+    refusal: "value",
+    expressedBy: "recorded",
+    note: "records a durable decision fact; decision text and rationale are safe prose, never tool output or file content",
+  },
   evidenceRecords: { refusal: "none", note: "pure read" },
   driftFindings: { refusal: "none", note: "pure read" },
   registeredTools: { refusal: "none", note: "pure read" },
