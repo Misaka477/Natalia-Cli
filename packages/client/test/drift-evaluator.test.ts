@@ -144,3 +144,86 @@ test("buildDriftFindingUpdate redacts secrets from the rationale", () => {
   expect(JSON.stringify(event)).not.toContain("supersecret");
   expect(event.rationale).toContain("[REDACTED]");
 });
+
+test("a dependency manifest change unrelated to the objective opens an advisory", () => {
+  const evaluator = makeEvaluator();
+  const findings = evaluator.evaluate({
+    sessionID: "ses_1",
+    turnID: "t_1",
+    objective: "implement the credential handler",
+    currentActivity: "implement the credential handler",
+    applicableConstraints: [],
+    changes: [{ action: "modified", path: "package.json" }],
+    evidenceRefs: ["validated"],
+  });
+  const dep = findings.find((f) => f.findingID.includes("dependency_signal"));
+  expect(dep).toBeDefined();
+  expect(dep?.severity).toBe("advisory");
+  expect(dep?.evidence).toContain("dependency:package.json");
+});
+
+test("a dependency change when the objective is about dependencies opens nothing", () => {
+  const evaluator = makeEvaluator();
+  const findings = evaluator.evaluate({
+    sessionID: "ses_1",
+    turnID: "t_1",
+    objective: "update the dependencies and lockfile",
+    currentActivity: "update the dependencies and lockfile",
+    applicableConstraints: [],
+    changes: [{ action: "modified", path: "bun.lock" }],
+    evidenceRefs: [],
+  });
+  expect(findings).toEqual([]);
+});
+
+test("a change outside the objective's named target opens a target_drift advisory", () => {
+  const evaluator = makeEvaluator();
+  const findings = evaluator.evaluate({
+    sessionID: "ses_1",
+    turnID: "t_1",
+    objective: 'refactor the "src/auth" module',
+    currentActivity: 'refactor the "src/auth" module',
+    applicableConstraints: [],
+    changes: [{ action: "modified", path: "dist/out.js" }],
+    evidenceRefs: [],
+  });
+  const drift = findings.find((f) => f.findingID.includes("target_drift"));
+  expect(drift).toBeDefined();
+  expect(
+    drift?.evidence.some((entry) => entry.startsWith("outside_target:")),
+  ).toBe(true);
+});
+
+test("a change inside the objective's named target opens nothing", () => {
+  const evaluator = makeEvaluator();
+  const findings = evaluator.evaluate({
+    sessionID: "ses_1",
+    turnID: "t_1",
+    objective: 'refactor the "src/auth" module',
+    currentActivity: 'refactor the "src/auth" module',
+    applicableConstraints: [],
+    changes: [{ action: "modified", path: "src/auth/credential.ts" }],
+    evidenceRefs: [],
+  });
+  expect(findings.some((f) => f.findingID.includes("target_drift"))).toBe(
+    false,
+  );
+});
+
+test("minimumConfidence tuning suppresses weak signals", () => {
+  const evaluator = createDriftEvaluator({
+    openFindingIDs: () => new Set(),
+    minimumConfidence: 0.8,
+  });
+  // dependency_signal has confidence 0.55 and target_drift 0.6: both below 0.8.
+  const findings = evaluator.evaluate({
+    sessionID: "ses_1",
+    turnID: "t_1",
+    objective: "implement the credential handler",
+    currentActivity: "implement the credential handler",
+    applicableConstraints: [],
+    changes: [{ action: "modified", path: "package.json" }],
+    evidenceRefs: [],
+  });
+  expect(findings).toEqual([]);
+});

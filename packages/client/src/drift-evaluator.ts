@@ -208,20 +208,97 @@ function evidenceGapRule(): Rule {
   };
 }
 
+/**
+ * D4 `dependency_signal`: a change to a dependency manifest or lockfile when
+ * the objective has nothing to do with dependencies is a mild drift signal.
+ */
+const DEPENDENCY_MANIFESTS = [
+  "package.json",
+  "bun.lock",
+  "pnpm-lock.yaml",
+  "yarn.lock",
+  "Cargo.toml",
+  "Cargo.lock",
+  "requirements.txt",
+  "pyproject.toml",
+];
+
+function dependencyRule(): Rule {
+  return {
+    name: "dependency_signal",
+    severity: "advisory",
+    match: (signal) => {
+      const depChange = signal.changes.find((change) =>
+        DEPENDENCY_MANIFESTS.some(
+          (manifest) =>
+            change.path === manifest || change.path?.endsWith(`/${manifest}`),
+        ),
+      );
+      if (!depChange) return undefined;
+      if (
+        /\bdependen\w*|install\w*|lockfile|manifest\w*/iu.test(signal.objective)
+      )
+        return undefined;
+      return {
+        confidence: 0.55,
+        evidence: [`dependency:${depChange.path}`],
+      };
+    },
+  };
+}
+
+/**
+ * D4 `target_drift`: a change lands outside the directory the objective names
+ * (e.g. objective says "src" but the change touched "dist"). The objective's
+ * quoted path segments are the expected targets.
+ */
+function targetDriftRule(): Rule {
+  return {
+    name: "target_drift",
+    severity: "advisory",
+    match: (signal) => {
+      const targets = [...signal.objective.matchAll(/"([^"]+)"/gu)].map(
+        (match) => match[1]!.replace(/^\.\//u, "").replace(/\/$/u, ""),
+      );
+      if (!targets.length || !signal.changes.length) return undefined;
+      const outside = signal.changes.filter(
+        (change) =>
+          change.path &&
+          !targets.some(
+            (target) =>
+              change.path === target || change.path?.startsWith(`${target}/`),
+          ),
+      );
+      if (!outside.length) return undefined;
+      return {
+        confidence: 0.6,
+        evidence: outside.map((change) => `outside_target:${change.path}`),
+      };
+    },
+  };
+}
+
 export function createDriftEvaluator(input: {
   /** Keep findings stable per turn: same signals do not reopen the same finding. */
   openFindingIDs: () => ReadonlySet<string>;
+  /** False-positive tuning: rules below this confidence are not opened. */
+  minimumConfidence?: number;
 }) {
+  const minimumConfidence = input.minimumConfidence ?? 0.5;
   const rules: Rule[] = [
     objectiveActivityRule(),
     constraintViolationRule(),
     evidenceGapRule(),
+    dependencyRule(),
+    targetDriftRule(),
   ];
 
   /**
    * Evaluate a turn's signals against the rules. Returns the findings to open,
    * each ready to publish. Findings already open (per `openFindingIDs`) are not
    * reopened — a finding is one fact per divergence, not one per evaluation.
+   * D4: a rule result below `minimumConfidence` is not opened (false-positive
+   * tuning — weak signals should not spam the ledger).
    */
   function evaluate(
     signal: DriftSignal,
@@ -233,6 +310,7 @@ export function createDriftEvaluator(input: {
     for (const rule of rules) {
       const result = rule.match(signal);
       if (!result) continue;
+      if (result.confidence < minimumConfidence) continue;
       const findingID = `drift:${rule.name}:${signal.turnID ?? "session"}:${signal.sessionID ?? ""}`;
       if (open.has(findingID)) continue;
       findings.push(

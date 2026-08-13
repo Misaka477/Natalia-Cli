@@ -6338,7 +6338,7 @@ test("a confirmed change diverging from the active plan auto-opens a drift findi
     title: "Implement user authentication",
     author: "live_chat",
     objective: "implement user authentication",
-    steps: [{ id: "s1", title: "add the login flow" }],
+    steps: [{ id: "s1", title: "add the credential flow" }],
     constraints: ["never commit generated files"],
   });
   const planID = created!.planID!;
