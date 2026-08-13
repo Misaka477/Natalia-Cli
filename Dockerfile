@@ -6,32 +6,19 @@ RUN bun install --frozen-lockfile
 
 FROM ubuntu:24.04 AS wezterm-build
 
-ENV DEBIAN_FRONTEND=noninteractive
-WORKDIR /src
-COPY packages/native-terminal/wezterm ./packages/native-terminal/wezterm
-# The fork's own get-deps script is the canonical build-dependency list
-# (Wayland/X11/EGL/Mesa/fonts...); the hand-maintained subset used to miss
-# libraries such as libwayland-dev. get-deps requires rust to already be on
-# PATH, hence the rustup step first.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl \
-    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal \
-    && export PATH=/root/.cargo/bin:$PATH \
-    && cd packages/native-terminal/wezterm && bash get-deps \
-    && rm -rf /var/lib/apt/lists/*
-ENV PATH=/root/.cargo/bin:${PATH}
-# crates.io / git dependencies can be slow or blocked on networks that need a
-# proxy. Supply one at build time only when required:
-#   docker build --build-arg NATALIA_BUILD_PROXY=http://proxy:port --target server .
-# The host-local default above is NOT baked in; it was only ever a workaround
-# for the dev machine and would break builds on a plain network.
-ARG NATALIA_BUILD_PROXY=""
-ENV http_proxy=${NATALIA_BUILD_PROXY} \
-    https_proxy=${NATALIA_BUILD_PROXY} \
-    HTTP_PROXY=${NATALIA_BUILD_PROXY} \
-    HTTPS_PROXY=${NATALIA_BUILD_PROXY}
-RUN cargo build --manifest-path packages/native-terminal/wezterm/Cargo.toml --release \
-    --bin wezterm --bin wezterm-gui --bin wezterm-mux-server
+# The WezTerm fork is built inside the `natalia-ubuntu-build` podman container
+# (scripts/build-wezterm-ubuntu.ts) so the executables only require the Ubuntu
+# glibc (2.39), then staged into packages/native-terminal/wezterm/target/release.
+# This stage copies those host-staged binaries (staged under deploy/wezterm-bin
+# so the 2.8G cargo target stays out of the build context) instead of
+# recompiling inside `docker build`, because building on the Docker host would
+# (a) require the full Rust toolchain and crates.io/github access at
+# image-build time, and (b) risk linking against the host's glibc.
+# Run the build script before `docker build`:
+#   npm run native-terminal:build-wezterm:ubuntu
+COPY deploy/wezterm-bin/wezterm /src/packages/native-terminal/wezterm/target/release/wezterm
+COPY deploy/wezterm-bin/wezterm-gui /src/packages/native-terminal/wezterm/target/release/wezterm-gui
+COPY deploy/wezterm-bin/wezterm-mux-server /src/packages/native-terminal/wezterm/target/release/wezterm-mux-server
 
 FROM ubuntu:24.04 AS cli
 

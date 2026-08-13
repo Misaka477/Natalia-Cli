@@ -121,6 +121,10 @@ async function build() {
 
 async function stage() {
   await mkdir(releaseDir, { recursive: true });
+  // Also stage under deploy/wezterm-bin so the Dockerfile can COPY the three
+  // executables without pulling the 2.8G cargo target into the build context.
+  const deployDir = join(repoRoot, "deploy", "wezterm-bin");
+  await mkdir(deployDir, { recursive: true });
   for (const bin of binaries) {
     const built = join(releaseDir, bin);
     if (
@@ -133,10 +137,14 @@ async function stage() {
       throw new Error(`failed to stage ${bin}`);
     if (!existsSync(built))
       throw new Error(`expected staged executable ${built}`);
+    const staged = join(deployDir, bin);
+    await Bun.write(staged, Bun.file(built));
+    if (process.platform !== "win32")
+      await Bun.spawn(["chmod", "+x", staged]).exited;
   }
   console.log(
-    `staged ${binaries.length} Ubuntu executables in ${releaseDir}\n` +
-      "The framework resolves the fork from that directory, so no env or config is needed.",
+    `staged ${binaries.length} Ubuntu executables in ${releaseDir} and ${deployDir}\n` +
+      "The framework resolves the fork from the package target directory, so no env or config is needed.",
   );
 }
 

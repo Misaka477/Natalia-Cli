@@ -318,17 +318,21 @@ Skill 也可以从 `.natalia/config.json` 的 `skills.urls` 声明的 URL 拉取
 ### 构建
 
 ```bash
-# 普通网络
-docker build --target server -t natalia-deploy:ubuntu24 .
+# 1. 先在构建机上用 podman 容器编译 WezTerm fork（在 Ubuntu 24.04 内编译，
+#    产物只依赖 Ubuntu glibc 2.39，服务器才能跑）。构建机需要 podman；
+#    crates.io/github 网络不通时构建脚本会用代理并增量缓存：
+npm run native-terminal:build-wezterm:ubuntu
 
-# 构建机需要代理才能拉取 crates/git 依赖时
-docker build --target server \
-  --build-arg NATALIA_BUILD_PROXY=http://代理:端口 \
-  -t natalia-deploy:ubuntu24 .
+# 2. 再构建镜像。镜像从宿主机打包 fork 产物，不再在镜像构建时重编译：
+docker build --target server -t natalia-deploy:ubuntu24 .
 
 # 只想要纯 CLI 镜像（无 sshd）
 docker build --target cli -t natalia-cli:ubuntu24 .
 ```
+
+> fork 产物位于 `packages/native-terminal/wezterm/target/release/`；构建脚本会把它
+> 同时复制到 `deploy/wezterm-bin/`，`.dockerignore` 排除了 `wezterm/target`（2.8G），
+> 镜像通过 `--from=wezterm-build` 从 `deploy/wezterm-bin/` 显式打包这三个二进制。
 
 ### 导出到目标服务器
 
