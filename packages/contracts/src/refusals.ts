@@ -342,6 +342,19 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
   plugins: { refusal: "none", note: "pure read" },
   commandCatalog: { refusal: "none", note: "pure read" },
   capabilities: { refusal: "none", note: "pure read" },
+  chatMessages: {
+    refusal: "none",
+    note: "pure read of the durable Chat conversation",
+  },
+  chatRollback: {
+    refusal: "value",
+    expressedBy: "removed",
+    note: "rolls the Chat conversation back to a message boundary; reports the count removed",
+  },
+  chatSubmit: {
+    refusal: "error",
+    note: "a Chat message either enters the conversation or does not; a rejected submission has no partial value to report",
+  },
 
   // --- automation ---
   // These report per-entry problems in the result rather than failing the call,

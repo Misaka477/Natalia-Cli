@@ -974,6 +974,27 @@ type RuntimeEventData =
       text: string;
     }
   | {
+      type: "chat.message.added";
+      id: string;
+      messageID: string;
+      role: "user" | "chat";
+      text: string;
+      at: string;
+    }
+  | {
+      type: "chat.message.delta";
+      id: string;
+      messageID: string;
+      text: string;
+    }
+  | {
+      type: "chat.rollback";
+      id: string;
+      toMessageID: string;
+      removed: number;
+      at: string;
+    }
+  | {
       type: "settings.updated";
       scope: "global" | "project";
     };
@@ -2241,6 +2262,32 @@ export type RuntimeClient = {
   capabilities?(): Promise<CapabilityRecordView[]>;
   workGraphNodes?(): Promise<WorkGraphNodeView[]>;
   workGraphEdges?(): Promise<WorkGraphEdgeView[]>;
+  /**
+   * Sends the user's message into the Live Work Chat conversation (P8 C2). The
+   * Chat is a long-lived, always-available collaborator with the full safe
+   * project/execution context, not a stateless second agent; it answers with a
+   * streamed `chat.message.delta` and settles with `chat.message.added`.
+   */
+  chatSubmit?(input: { text: string }): Promise<{ messageID: string }>;
+  /**
+   * The durable Chat conversation, oldest first. `chat.rollback` truncates it
+   * at a message boundary, so the projection returns the effective history.
+   */
+  chatMessages?(): Promise<ChatMessageRow[]>;
+  /**
+   * Rolls the Chat conversation back to a message boundary — the only rollback
+   * the Chat may issue, and it never touches workspace/checkpoint state.
+   */
+  chatRollback?(input: {
+    toMessageID: string;
+  }): Promise<{ rolledBackTo: string; removed: number }>;
+};
+
+export type ChatMessageRow = {
+  messageID: string;
+  role: "user" | "chat";
+  text: string;
+  at: string;
 };
 
 export type FakeBackend = RuntimeClient;

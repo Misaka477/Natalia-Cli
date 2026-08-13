@@ -226,6 +226,9 @@ export const RPC_ROUTE_MEMBERS = {
   capabilities: "capabilities",
   "session.snapshot": "sessionSnapshot",
   "submit.input": "submitInput",
+  // P8 C2: the always-available Live Work Chat conversation (read + rollback).
+  "chat.messages": "chatMessages",
+  "chat.rollback": "chatRollback",
   // P0-G: the flow write surface, previously CLI-only.
   "flow.save": "saveFlowDocument",
   "flow.delete": "deleteFlowDocument",
@@ -252,6 +255,10 @@ export const RPC_INTENTIONALLY_LOCAL: Readonly<Record<string, string>> = {
     "intentionally local: a local read of the most recent submission",
   diagnostic:
     "intentionally local: one-way publishing from a local caller, not a query",
+  // P8 C2: the Chat execution loop lands in its own slice; the route joins the
+  // channel when `chatSubmit` is implemented (the read + rollback already are).
+  chatSubmit:
+    "pending route: the Chat execution slice has not landed yet (P8 C2 §56.52)",
 };
 
 /** The member names this transport routes. `null` rows (availability itself) excluded. */
@@ -1836,6 +1843,30 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.sessionSnapshot(),
+      };
+    }
+    if (body.method === "chat.messages") {
+      optionsGuard(client, "chatMessages");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.chatMessages(),
+      };
+    }
+    if (body.method === "chat.rollback") {
+      optionsGuard(client, "chatRollback");
+      const params = body.params;
+      if (!params || typeof params !== "object")
+        throw invalidParams("chat.rollback.params must be an object");
+      const toMessageID = (params as { toMessageID?: unknown }).toMessageID;
+      if (typeof toMessageID !== "string")
+        throw invalidParams(
+          "chat.rollback.params.toMessageID must be a string",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.chatRollback({ toMessageID }),
       };
     }
     // --- P0-G follow-up: the config write surface (previously TUI-only) ---

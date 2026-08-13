@@ -9656,3 +9656,28 @@ test("cancelling a turn aborts a tool currently executing", async () => {
     await client.dispose?.();
   }
 }, 30_000);
+
+test("the live work chat read and rollback surface a durable conversation", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-chat-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_chat_slice_a",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  // Slice A data plane: a fresh conversation is empty and an unknown rollback
+  // boundary is a no-op (removed 0), never a crash. The full message flow is
+  // covered once the Chat execution slice lands (chatSubmit).
+  expect(await client.chatMessages!()).toEqual([]);
+  expect(await client.chatRollback!({ toMessageID: "chat:nope" })).toEqual({
+    rolledBackTo: "chat:nope",
+    removed: 0,
+  });
+  await client.dispose?.();
+});

@@ -294,6 +294,7 @@ export {
   projectedWorkGraphEdges,
   projectedMailboxMessages,
   projectedPlans,
+  projectedChatMessages,
   projectSession,
   settleInterruptedTurns,
   settleInterruptedTurnIDs,

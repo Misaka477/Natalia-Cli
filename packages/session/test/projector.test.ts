@@ -9,6 +9,7 @@ import {
   projectedCapabilities,
   projectedDriftFindings,
   projectedConstitutionRules,
+  projectedChatMessages,
   projectedDecisionRecords,
   projectedEvidenceRecords,
   projectedMailboxMessages,
@@ -765,4 +766,55 @@ test("latestSessionSnapshot returns the most recent snapshot", () => {
   expect(snap?.agentStatus).toBe("running");
   expect(snap?.currentStep).toBe("fix parser");
   expect(snap?.hasPTY).toBe(true);
+});
+
+test("the live work chat conversation projects messages and honours rollback boundaries", () => {
+  const session = createSessionRecord("ses_chat", "Chat");
+  appendSessionEvent(session, {
+    type: "chat.message.added",
+    id: "chat:1",
+    messageID: "chat:m1",
+    role: "user",
+    text: "what is the agent doing",
+    at: "2026-08-14T00:00:00.000Z",
+  });
+  appendSessionEvent(session, {
+    type: "chat.message.added",
+    id: "chat:2",
+    messageID: "chat:m2",
+    role: "chat",
+    text: "it is running step 2 of the plan",
+    at: "2026-08-14T00:00:01.000Z",
+  });
+  appendSessionEvent(session, {
+    type: "chat.message.added",
+    id: "chat:3",
+    messageID: "chat:m3",
+    role: "user",
+    text: "stop and re-plan",
+    at: "2026-08-14T00:00:02.000Z",
+  });
+  const history = projectedChatMessages(session.events);
+  expect(history.map((message) => message.messageID)).toEqual([
+    "chat:m1",
+    "chat:m2",
+    "chat:m3",
+  ]);
+  expect(history[1]).toMatchObject({
+    role: "chat",
+    text: "it is running step 2 of the plan",
+  });
+
+  appendSessionEvent(session, {
+    type: "chat.rollback",
+    id: "chat:r1",
+    toMessageID: "chat:m2",
+    removed: 1,
+    at: "2026-08-14T00:00:03.000Z",
+  });
+  const after = projectedChatMessages(session.events);
+  expect(after.map((message) => message.messageID)).toEqual([
+    "chat:m1",
+    "chat:m2",
+  ]);
 });

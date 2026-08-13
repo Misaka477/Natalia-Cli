@@ -93,6 +93,7 @@ import {
   projectedWorkGraphEdges,
   projectedMailboxMessages,
   projectedPlans,
+  projectedChatMessages,
   settleInterruptedTurns,
   settleInterruptedTurnIDs,
   modelVisibleEvents,
@@ -727,6 +728,7 @@ export function createRealRuntimeClient(
   let decisionSequence = 0;
   let evidenceSequence = 0;
   let mailboxSequence = 0;
+  let chatSequence = 0;
   let planSequence = 0;
   let completionSequence = 0;
 
@@ -3976,6 +3978,32 @@ export function createRealRuntimeClient(
         status: plan.status,
         ...(plan.reason ? { reason: plan.reason } : {}),
       }));
+    },
+    async chatMessages() {
+      if (!session) return [];
+      return projectedChatMessages(session.events).map((message) => ({
+        messageID: message.messageID,
+        role: message.role,
+        text: message.text,
+        at: message.at,
+      }));
+    },
+    async chatRollback(input: { toMessageID: string }) {
+      if (!session) return { rolledBackTo: input.toMessageID, removed: 0 };
+      const history = projectedChatMessages(session.events);
+      const index = history.findIndex(
+        (message) => message.messageID === input.toMessageID,
+      );
+      if (index === -1) return { rolledBackTo: input.toMessageID, removed: 0 };
+      const removed = history.length - (index + 1);
+      publish({
+        type: "chat.rollback",
+        id: `chat:rollback:${Date.now().toString(36)}:${chatSequence++}`,
+        toMessageID: input.toMessageID,
+        removed,
+        at: new Date().toISOString(),
+      });
+      return { rolledBackTo: input.toMessageID, removed };
     },
     async planCreate(input: {
       title: string;

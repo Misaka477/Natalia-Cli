@@ -836,7 +836,7 @@ Deployment notes:
   `start`, `submit`, `cancel`, `snapshot`, `diagnostic`, `lastSubmission`, `respondApproval`, `respondQuestion`.
 - Deprecated members (`DEPRECATED_RUNTIME_MEMBERS`): none (mechanism in place, table empty).
 
-### Capability groups (19 groups · 116 optional members)
+### Capability groups (20 groups · 119 optional members)
 
 | Group          | Members (RuntimeClient names)                                                                                                                                                                                                                                                                                         |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -859,8 +859,9 @@ Deployment notes:
 | intelligence   | `constitutionRules` · `decisionRecords` · `recordDecision` · `evidenceRecords` · `recordValidation` · `completions` · `recordCompletion` · `driftFindings` · `evaluateDrift` · `acknowledgeDriftFinding` · `confirmedWorkspaceChanges` · `registeredTools`                                                            |
 | mailbox        | `mailboxList` · `mailboxSend` · `mailboxDeliver` · `mailboxAcknowledge` · `mailboxDefer` · `mailboxSupersede`                                                                                                                                                                                                         |
 | plans          | `planList` · `planCreate` · `planUpdate` · `planPropose` · `planAccept` · `planQueue` · `planActivate` · `planSupersede` · `planCompleted`                                                                                                                                                                            |
+| chat           | `chatSubmit` · `chatMessages` · `chatRollback`                                                                                                                                                                                                                                                                        |
 
-### RPC route table (121 methods → members)
+### RPC route table (123 methods → members)
 
 | RPC method                           | RuntimeClient member                | Capability group | Write |
 | ------------------------------------ | ----------------------------------- | ---------------- | ----- |
@@ -978,6 +979,8 @@ Deployment notes:
 | `capabilities`                       | `capabilities`                      | extensions       | read  |
 | `session.snapshot`                   | `sessionSnapshot`                   | observability    | read  |
 | `submit.input`                       | `submitInput`                       | transcript       | write |
+| `chat.messages`                      | `chatMessages`                      | chat             | read  |
+| `chat.rollback`                      | `chatRollback`                      | chat             | read  |
 | `flow.save`                          | `saveFlowDocument`                  | automation       | write |
 | `flow.delete`                        | `deleteFlowDocument`                | automation       | write |
 | `task.save`                          | `saveTaskDocument`                  | automation       | write |
@@ -1048,6 +1051,7 @@ Deployment notes:
 | `start`          | intentionally local: remote consumers subscribe to /events instead of calling start |
 | `lastSubmission` | intentionally local: a local read of the most recent submission                     |
 | `diagnostic`     | intentionally local: one-way publishing from a local caller, not a query            |
+| `chatSubmit`     | pending route: the Chat execution slice has not landed yet (P8 C2 §56.52)           |
 
 ### Empty-until-writers queries (`UNIMPLEMENTED_QUERIES`: reachable, implemented, no production writer yet)
 
@@ -1075,6 +1079,7 @@ Deployment notes:
 | `agentCreate`             | `created`            | creating an existing name answers created:false with a reason                                                                                                      |
 | `agentDelete`             | `deleted`            | the default agent refuses deletion; an unknown name is an idempotent success                                                                                       |
 | `canReloadConfig`         | `allowed`            | advisory precheck; the action re-checks for itself                                                                                                                 |
+| `chatRollback`            | `removed`            | rolls the Chat conversation back to a message boundary; reports the count removed                                                                                  |
 | `evaluateDrift`           | `opened`             | runs the DriftEvaluator against safe signals and publishes findings; the evaluator has no write power, a finding only escalates to an approval/Chat/mailbox prompt |
 | `mailboxAcknowledge`      | `acknowledged`       | acknowledges a delivered mailbox message                                                                                                                           |
 | `mailboxDefer`            | `deferred`           | defers a queued mailbox message with a safe reason                                                                                                                 |
@@ -1111,7 +1116,7 @@ Deployment notes:
 
 ### Events and projection (source scan)
 
-- Runtime event types (`RuntimeEventData` union): 88.
+- Runtime event types (`RuntimeEventData` union): 91.
 - view-store projections (`case` labels in `packages/view-store/src`): 57.
 
 ### SDK methods → RPC routes (source scan of `packages/sdk/src/index.ts`)
@@ -1331,5 +1336,8 @@ Deployment notes:
 | `flow.module_event`         | `moduleID`: string, `moduleType?`: string, `outcome?`: "complete" | "incomplete" | "blocked", `reason?`: string                                                                                                                                                                                                                                                                                                                                                                                                            | a flow module's arbitration lifecycle changed (activated, claimed, evaluated, completed, blocked, stalled, continued); streamed from task delivery so the TUI can render arbitration |
 | `flow.finished`             | `outcome`: "succeeded" | "failed" | "skipped", `reason?`: string                                                                                                                                                                                                                                                                                                                                                                                                                                                           | a flow task finished (succeeded, failed or skipped); emitted by the flow submit path                                                                                                 |
 | `flow.evaluator`            | `moduleID?`: string, `phase`: "thinking" | "content", `text`: string                                                                                                                                                                                                                                                                                                                                                                                                                                                       | streaming reasoning/content text from a flow module evaluator (task delivery only)                                                                                                   |
+| `chat.message.added`        | `id`: string, `messageID`: string, `role`: "user" | "chat", `text`: string, `at`: string                                                                                                                                                                                                                                                                                                                                                                                                                                   | —                                                                                                                                                                                    |
+| `chat.message.delta`        | `id`: string, `messageID`: string, `text`: string                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | —                                                                                                                                                                                    |
+| `chat.rollback`             | `id`: string, `toMessageID`: string, `removed`: number, `at`: string                                                                                                                                                                                                                                                                                                                                                                                                                                                       | —                                                                                                                                                                                    |
 | `settings.updated`          | `scope`: "global" | "project"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | —                                                                                                                                                                                    |
 <!-- /api-reference:generated -->

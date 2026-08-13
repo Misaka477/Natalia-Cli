@@ -575,6 +575,44 @@ export function projectedMailboxMessages(
 }
 
 /**
+ * Projects the Live Work Chat conversation from the durable journal. The
+ * conversation is event-sourced: `chat.message.added` appends a message and
+ * `chat.rollback` truncates the effective history at a message boundary, so the
+ * Chat's context never diverges from what the journal records.
+ */
+export type ProjectedChatMessage = {
+  messageID: string;
+  role: "user" | "chat";
+  text: string;
+  at: string;
+};
+
+export function projectedChatMessages(
+  events: RuntimeEvent[],
+): ProjectedChatMessage[] {
+  const messages: ProjectedChatMessage[] = [];
+  for (const event of events) {
+    if (event.type === "chat.message.added") {
+      messages.push({
+        messageID: event.messageID,
+        role: event.role,
+        text: event.text,
+        at: event.at,
+      });
+      continue;
+    }
+    if (event.type === "chat.rollback") {
+      const index = messages.findIndex(
+        (message) => message.messageID === event.toMessageID,
+      );
+      if (index !== -1) messages.splice(index + 1);
+      else messages.length = 0;
+    }
+  }
+  return messages;
+}
+
+/**
  * Projects the current plan state from the durable journal. The lifecycle is
  * event-sourced: `plan.draft.created` creates the plan (with its content and
  * version) and each transition (`draft.updated`/`proposed`/`accepted`/`queued`/
