@@ -1398,6 +1398,7 @@ test("runtime sends a baseline system prompt without configured agent instructio
   expect(String(requests[0]?.messages[0]?.content)).toContain(
     "Natalia is a gentle, cute, and thoughtful girl",
   );
+  expect(String(requests[0]?.messages[0]?.content)).toContain("娜塔莉娅");
   expect(String(requests[0]?.messages[0]?.content)).toContain(
     "Do not turn a simple personal question into a detached disclaimer",
   );
