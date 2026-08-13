@@ -400,6 +400,28 @@ docker run -d --name natalia \
 是 docker 管理的命名卷，文件在 docker 的存储区里，不在宿主机普通路径；要使用
 服务器上的真实路径必须写成 `-v /绝对路径:/容器路径` 的 bind mount 形式。
 
+### 部署安全检查清单
+
+镜像默认是"安全形态"，实际强度取决于部署是否按原样使用。上线前逐项核对（依据
+`natalia-security-assessment` §2.9/§5）：
+
+1. **SSH 收口**：用 `NATALIA_SSH_PASSWORD` 设强密码（或换 key 认证）；不要暴露
+   `2222` 到公网，必要时只对管理网段放行。
+2. **HTTP/SSE daemon 收口**：daemon 起在容器/宿主内网端口，**只监听
+   `127.0.0.1`**；需要远程访问时走 SSH 隧道，并配 token——不要在无认证的
+   0.0.0.0 端口上开 daemon。
+3. **unattended 独立收紧 profile**：无人值守任务用独立的、权限更小的
+   permission profile（而不是 TUI 交互用的宽 profile），config 里按
+   `permissions` 显式收敛工具集。
+4. **egress 验证**：容器网络按需收敛；用 `curl` 试访问外部地址确认出网 ACL
+   真实生效（该拦的地址应被拦）。
+5. **凭据最小化**：provider 凭据只进 `.natalia/config.json` 或专用 env 文件，
+   不要写进镜像、启动器或日志；容器/宿主其他进程不应能读到。
+6. **只挂载需要的目录**：bind mount 只暴露框架必须操作的宿主数据，其余目录
+   不挂载——没挂载的就是它碰不到的安全边界（§11「访问宿主机文件」）。
+7. **非 root 运行**：SSH 会话落到非 root 的 `natalia` 用户（镜像默认如此）；
+   直接在容器内执行工具也用 `natalia`，避免以 root 跑 agent。
+
 ### 关键点
 
 - fork 二进制位于镜像内的包路径下，**无需** `NATALIA_WEZTERM_EXECUTABLE`。
@@ -494,6 +516,28 @@ systemctl enable --now natalia-task-log-triage.timer  # 定时任务按需启用
 | 安全边界 | 容器隔离 + permission profile | 仅 permission profile + 系统用户权限 |
 | WezTerm fork | 镜像内自动编译 | 必须在宿主机原生编译（或拷贝 Ubuntu 二进制） |
 | 常驻进程 | 镜像入口起 sshd（daemon 需自加） | systemd 单元管理 daemon/定时任务 |
+
+### 部署安全检查清单
+
+直接部署时框架是宿主机上的普通进程，**可访问整个文件系统**——安全边界只有
+permission profile 和系统用户权限，上线前逐项核对（依据 `natalia-security-assessment`
+§2.9/§5）：
+
+1. **专用低权限系统用户**：用独立账号运行 daemon 与 TUI，不用 root 跑 agent；
+   `deploy/systemd/natalia-daemon.service` 按此配置（`User=`/`Group=`）。
+2. **systemd 硬化**：保留单元里的 `NoNewPrivileges=yes`、`ProtectHome=yes`
+   等限制，不要为省事删掉；`WorkingDirectory` 指向专用工作区而非 `/`。
+3. **daemon 收口**：HTTP/SSE 默认只监听 `127.0.0.1`（`createRuntimeHttpServer`
+   默认 hostname，端口 `8787`）；远程访问走 SSH 隧道并配 token，不要在公网开无
+   认证 daemon。
+4. **unattended 独立收紧 profile**：定时任务/无人值守用独立、更小的 permission
+   profile，不要复用 TUI 交互的宽 profile。
+5. **凭据最小化**：provider 凭据只进 `.natalia/config.json` 或
+   `/etc/natalia/unattended.env`（`600` 权限），systemd 单元不携带明文 key。
+6. **权限收敛验证**：用一个受限账户确认 agent 在只读目录里写不进、在
+   permission profile 拒绝的工具上调用会被拦。
+7. **进程与终端降权**：交互式终端/`run_shell` 以运行框架的用户执行；不要给该
+   用户 sudo 免密，避免 agent 拿到提权通道。
 
 ## 13. 出问题时
 
