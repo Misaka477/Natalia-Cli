@@ -1632,6 +1632,37 @@ export function createRealRuntimeClient(
         activeToolByTurn.delete(turnID);
     }
     if (isSessionSnapshotTrigger(event)) publishSessionSnapshot(exec);
+    // P8 C3 safe-boundary scheduler: a finished turn is a safe point (§5.2 —
+    // "step complete"). Deliver every queued mailbox message so the main agent
+    // sees user intents at the boundary, never mid-token. `mailbox.delivered`
+    // is not a trigger, so this cannot recurse.
+    if (event.type === "turn.finished") deliverQueuedMailboxAtBoundary(exec);
+  }
+
+  /**
+   * The safe-boundary delivery half of the mailbox: every queued message moves
+   * to `delivered` at the safe point. The projection drives this — only
+   * messages still `queued` are delivered, so deferred/superseded messages are
+   * left alone, and a message that was already delivered is untouched.
+   */
+  function deliverQueuedMailboxAtBoundary(exec?: SessionExecutionState) {
+    const target = exec ?? activeExec;
+    if (!target?.session) return;
+    const queued = projectedMailboxMessages(target.session.events).filter(
+      (message) => message.status === "queued",
+    );
+    if (!queued.length) return;
+    const at = new Date().toISOString();
+    for (const message of queued)
+      publishForSession(
+        target,
+        buildMailboxStatus({
+          id: `${message.messageID}:delivered:${mailboxSequence++}`,
+          messageID: message.messageID,
+          status: "delivered",
+          at,
+        }),
+      );
   }
 
   /**

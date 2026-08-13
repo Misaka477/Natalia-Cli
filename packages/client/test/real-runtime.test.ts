@@ -5475,6 +5475,158 @@ test("mailboxSend redacts secrets from the recorded safe summary", async () => {
   expect(JSON.stringify(mailbox)).not.toContain("supersecretvalue");
 });
 
+test("queued mailbox messages are delivered at the next turn safe boundary", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-mailbox-safe-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_mailbox_safe",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => {});
+  await client.submit("first");
+  await pollHistoryForFinished(client);
+
+  // No turn running: the message stays queued.
+  await client.mailboxSend?.({
+    intent: "reprioritize",
+    text: "focus on docs",
+    safeSummary: "reprioritize to docs",
+  });
+  expect((await client.mailboxList!())[0]?.status).toBe("queued");
+
+  // A finished turn is a safe boundary: the queued message is auto-delivered.
+  await client.submit("second");
+  await pollHistoryForFinished(client);
+  const mailbox = await client.mailboxList!();
+  expect(mailbox[0]?.status).toBe("delivered");
+  expect(
+    mailbox[0]?.deliveryPolicy === undefined
+      ? "next_safe_boundary"
+      : mailbox[0]?.deliveryPolicy,
+  ).toBe("next_safe_boundary");
+});
+
+test("deferred and superseded mailbox messages are not auto-delivered at a boundary", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-mailbox-safe-def-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_mailbox_safe_def",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => {});
+  await client.submit("first");
+  await pollHistoryForFinished(client);
+
+  const deferred = await client.mailboxSend?.({
+    intent: "constraint",
+    text: "never merge failing",
+    safeSummary: "a constraint",
+  });
+  const superseded = await client.mailboxSend?.({
+    intent: "cancel",
+    text: "stop the plan",
+    safeSummary: "cancel",
+  });
+  expect(
+    await client.mailboxDefer?.(deferred!.messageID!, "unsafe boundary"),
+  ).toEqual({ deferred: true });
+  expect(
+    await client.mailboxSupersede?.(superseded!.messageID!, "newer"),
+  ).toEqual({ superseded: true });
+
+  await client.submit("second");
+  await pollHistoryForFinished(client);
+
+  const mailbox = await client.mailboxList!();
+  const byIntent = new Map(mailbox.map((m) => [m.intent, m.status]));
+  expect(byIntent.get("constraint")).toBe("deferred");
+  expect(byIntent.get("cancel")).toBe("superseded");
+});
+
+test("a manually delivered mailbox message is not re-delivered at a boundary", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-mailbox-safe-man-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_mailbox_safe_man",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => {});
+  await client.submit("first");
+  await pollHistoryForFinished(client);
+
+  const sent = await client.mailboxSend?.({
+    intent: "request_report",
+    text: "summarize",
+    safeSummary: "a report request",
+  });
+  expect(await client.mailboxDeliver?.(sent!.messageID!)).toEqual({
+    delivered: true,
+  });
+
+  await client.submit("second");
+  await pollHistoryForFinished(client);
+
+  // Already delivered, so the boundary leaves it alone (no duplicate delivered
+  // transition event).
+  expect((await client.mailboxList!())[0]?.status).toBe("delivered");
+  expect(
+    (await client.mailboxList!())[0]?.status === "delivered" &&
+      (await client.mailboxList!())[0]?.status,
+  ).toBe("delivered");
+});
+
+test("a mailbox message sent mid-turn is delivered when that turn finishes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-mailbox-midturn-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_mailbox_midturn",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "content" as const, text: "working" };
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        yield { type: "done" as const };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+
+  const submitting = client.submit("long task");
+  // The turn is running: give it a moment, then enqueue a mailbox message.
+  await waitFor(() => events.some((event) => event.type === "turn.submitted"));
+  await Bun.sleep(20);
+  await client.mailboxSend?.({
+    intent: "pause",
+    text: "please pause after this step",
+    safeSummary: "pause requested",
+  });
+  expect((await client.mailboxList!())[0]?.status).toBe("queued");
+
+  await submitting;
+  await pollHistoryForFinished(client);
+  expect((await client.mailboxList!())[0]?.status).toBe("delivered");
+});
+
 test("durable session replay preserves tool-call pairs for the next provider turn", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-replay-tools-"));
   await writeFile(join(root, "input.txt"), "replay-ok\n");
