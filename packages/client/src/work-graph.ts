@@ -56,6 +56,7 @@ export const WORK_GRAPH_EDGE_KIND = {
   modified: "modified",
   rolledBackBy: "rolled_back_by",
   validatedBy: "validated_by",
+  constrainedBy: "constrained_by",
 } as const;
 
 export function agentActionNodeID(turnID: string): string {
@@ -369,5 +370,27 @@ export function completionValidationEdge(input: {
     sourceID: workspaceChangeNodeID(input.changeID, input.path),
     targetID: `wg:completion:${input.completionID}`,
     kind: WORK_GRAPH_EDGE_KIND.validatedBy,
+  };
+}
+
+/**
+ * A constitution preflight that blocked a tool call connects the call to the
+ * rule that constrained it (CST4: the `constrained_by` edge kind in
+ * `workGraphEdgeSchema`, previously never emitted). Only a conflict is an edge:
+ * a rule a call merely passed is not news, so a passing check does not spam the
+ * graph with "constrained by" relations on every tool call. The target is the
+ * `constraint` node the runtime seeds for each rule at startup (§56.37).
+ */
+export function constitutionCheckEdge(input: {
+  turnID: string;
+  callID: string;
+  ruleID: string;
+}): WorkGraphEdgeEvent {
+  return {
+    type: "workgraph.edge_added",
+    id: `wg:edge:tool-constraint:${input.turnID}:${input.callID}:${input.ruleID}`,
+    sourceID: toolCallNodeID(input.turnID, input.callID),
+    targetID: `wg:constraint:${input.ruleID}`,
+    kind: WORK_GRAPH_EDGE_KIND.constrainedBy,
   };
 }

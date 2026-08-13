@@ -188,6 +188,7 @@ import {
   externalWorkspaceChangeNode,
   completionValidationEdge,
   constitutionRuleNode,
+  constitutionCheckEdge,
   decisionNode,
 } from "./work-graph";
 import { ensureBashCommandParser } from "./bash-command-policy";
@@ -4876,6 +4877,7 @@ export function createRealRuntimeClient(
    */
   function checkConstitutionForTool(
     turnID: string,
+    callID: string,
     toolName: string,
     toolAction: string,
     toolResource: string,
@@ -4899,6 +4901,17 @@ export function createRealRuntimeClient(
             resource: `command:${commandText.slice(0, 120)}`,
             conflict: true,
           });
+          // CST4: the blocked call is constrained by the rule that stopped it.
+          // The tool-call node for a failed call is published by the caller, so
+          // the edge's source exists once the call settles; a conflict is the
+          // only check worth an edge (a pass-through rule is not news).
+          publish(
+            constitutionCheckEdge({
+              turnID,
+              callID,
+              ruleID: entry.ruleID,
+            }),
+          );
           blocked = `blocked by constitution: ${entry.statement}. Use terminal.kill or terminal.close instead.`;
           break;
         }
@@ -5049,6 +5062,7 @@ export function createRealRuntimeClient(
     });
     const blocked = checkConstitutionForTool(
       turnID,
+      call.id,
       tool.name,
       tool.name,
       // `write`/`apply_patch` were named here but no such tools exist — the real

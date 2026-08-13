@@ -20,6 +20,8 @@ import {
   installPluginSdkLinks,
   pluginSdkImportPath,
 } from "./plugin-test-helpers";
+import { projectedWorkGraphEdges } from "@natalia/session";
+import { toolCallNodeID } from "../src/work-graph";
 
 test("real runtime client streams provider output and persists replayable session", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-real-"));
@@ -2356,7 +2358,7 @@ test("self-protection patterns block terminal input, not only run_shell", async 
     },
   });
   client.start((event) => events.push(event));
-  await client.submit("stop the terminal host");
+  const submitted = await client.submit("stop the terminal host");
   const blocked = events.filter(
     (event): event is Extract<RuntimeEvent, { type: "tool.update" }> =>
       event.type === "tool.update" &&
@@ -2370,6 +2372,16 @@ test("self-protection patterns block terminal input, not only run_shell", async 
       ruleID: "C-TERM-001",
     }),
   );
+  // CST4: the blocked call is linked to the rule that constrained it. The
+  // call is recorded as a failed tool-call node, so the edge source exists.
+  expect(
+    projectedWorkGraphEdges(events).some(
+      (edge) =>
+        edge.kind === "constrained_by" &&
+        edge.sourceID === toolCallNodeID(submitted.id, "kill") &&
+        edge.targetID === "wg:constraint:C-TERM-001",
+    ),
+  ).toBe(true);
   await client.dispose?.();
 });
 

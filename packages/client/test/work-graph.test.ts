@@ -14,6 +14,7 @@ import {
   agentActionNodeID,
   approvalNodeID,
   completionValidationEdge,
+  constitutionCheckEdge,
   constitutionRuleNode,
   decisionNode,
   externalWorkspaceChangeNode,
@@ -932,5 +933,19 @@ test("a recorded decision is a decision node (CST4 linkage)", () => {
     actor: "decision",
     target: "decision:abc",
     sessionID: "ses_1",
+  });
+});
+
+test("a blocked constitution preflight links the call to the rule (CST4 constrained_by)", () => {
+  const edge = constitutionCheckEdge({
+    turnID: "turn_1",
+    callID: "call_1",
+    ruleID: "C-TERM-001",
+  });
+  expect(workGraphEdgeSchema.safeParse(edge).success).toBe(true);
+  expect(edge).toMatchObject({
+    kind: "constrained_by",
+    sourceID: toolCallNodeID("turn_1", "call_1"),
+    targetID: "wg:constraint:C-TERM-001",
   });
 });
