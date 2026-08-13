@@ -2856,6 +2856,16 @@ export async function runCommand(command: string, ctx: CommandContext) {
     });
     return;
   }
+  if (command === "session.toggle.thinking") {
+    // Thinking rows are open by default; this hides them behind the Thought
+    // line for long threads. The `reasoning` preference was dormant in the
+    // schema and now drives the default state of a thinking row.
+    ctx.updatePreferences({
+      ...ctx.preferences(),
+      reasoning: ctx.preferences().reasoning === "hidden" ? "step" : "hidden",
+    });
+    return;
+  }
   if (command === "chat.open") {
     // P8 C2: the Live Work Chat is a read-only collaboration surface. The
     // mailbox/snapshot/plan data planes are wired; this dialog renders them and

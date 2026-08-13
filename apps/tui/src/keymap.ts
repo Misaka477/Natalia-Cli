@@ -223,6 +223,11 @@ export const commands: Record<string, CommandDef> = {
     keys: "unset",
     desc: "Toggle tool details",
   },
+  "session.toggle.thinking": {
+    id: "session.toggle.thinking",
+    keys: "unset",
+    desc: "Toggle reasoning visibility",
+  },
   "chat.open": {
     id: "chat.open",
     keys: "unset",

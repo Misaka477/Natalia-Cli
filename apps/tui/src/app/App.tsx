@@ -1021,6 +1021,7 @@ function Shell(props: {
             density={preferences().density}
             toolDetails={preferences().toolDetails}
             diffStyle={preferences().diffStyle}
+            reasoning={preferences().reasoning}
             terminalWidth={layout().toolContentWidth}
             toolPreviewLines={layout().toolPreviewLines}
             showJumpToBottom={jumpToBottomVisible()}

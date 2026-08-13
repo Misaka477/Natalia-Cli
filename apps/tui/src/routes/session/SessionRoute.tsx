@@ -60,6 +60,7 @@ export function SessionRoute(props: {
   onFollowChange?: (follow: boolean) => void;
   density?: TuiPreferences["density"];
   toolDetails?: TuiPreferences["toolDetails"];
+  reasoning?: TuiPreferences["reasoning"];
   diffStyle?: TuiPreferences["diffStyle"];
   terminalWidth?: number;
   toolPreviewLines?: number;
@@ -242,6 +243,7 @@ export function SessionRoute(props: {
                     onFork={props.onMessageFork}
                     density={props.density ?? "comfortable"}
                     toolDetails={props.toolDetails ?? "collapsed"}
+                    reasoning={props.reasoning ?? "step"}
                     diffStyle={props.diffStyle ?? "auto"}
                     terminalWidth={props.terminalWidth ?? 80}
                     toolPreviewLines={props.toolPreviewLines ?? 10}

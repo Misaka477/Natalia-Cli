@@ -19,6 +19,11 @@ import { themeTokens as darkTheme } from "../../theme/theme";
 import { useRouteController } from "../../context/route";
 import { useDialog } from "../../dialog/provider";
 import {
+  alwaysSeparate,
+  tightRowMargin,
+  tightSiblingMargin,
+} from "./sibling-margin";
+import {
   filetype,
   formatPrimitiveArgs,
   formatToolPath,
@@ -163,6 +168,7 @@ function FallbackToolBlock(props: {
       marginTop={1}
       marginBottom={1}
       gap={1}
+      ref={(element: any) => alwaysSeparate.add(element)}
       onMouseOver={() => setHover(true)}
       onMouseOut={() => setHover(false)}
       onMouseUp={() => {
@@ -259,6 +265,7 @@ function CompactToolLine(props: {
       paddingLeft={3}
       marginTop={1}
       flexDirection="row"
+      ref={(element: any) => tightSiblingMargin(element, tightRowMargin)}
       onMouseOver={() => setHover(true)}
       onMouseOut={() => setHover(false)}
       onMouseUp={props.onOpen}
@@ -753,7 +760,12 @@ function ShellToolView(props: {
 
   if (!tool().result)
     return (
-      <box paddingLeft={3} marginTop={1} flexDirection="row">
+      <box
+        paddingLeft={3}
+        marginTop={1}
+        flexDirection="row"
+        ref={(element: any) => tightSiblingMargin(element, tightRowMargin)}
+      >
         <text width={2} fg={failed() ? darkTheme.danger : darkTheme.muted}>
           {running() ? "│" : failed() ? "✗" : "$"}
         </text>
@@ -791,6 +803,7 @@ function ShellToolView(props: {
         paddingLeft={3}
         marginTop={1}
         flexDirection="row"
+        ref={(element: any) => tightSiblingMargin(element, tightRowMargin)}
         onMouseOver={() => setHover(true)}
         onMouseOut={() => setHover(false)}
         onMouseUp={() => {
@@ -822,6 +835,7 @@ function ShellToolView(props: {
       paddingLeft={2}
       marginTop={1}
       gap={1}
+      ref={(element: any) => alwaysSeparate.add(element)}
       onMouseOver={() => collapsed().overflow && setHover(true)}
       onMouseOut={() => setHover(false)}
       onMouseUp={() => {

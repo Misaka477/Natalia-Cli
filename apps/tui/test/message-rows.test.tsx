@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { For } from "solid-js";
 import { createTestRenderer } from "@opentui/core/testing";
 import { render } from "@opentui/solid";
 import { KeymapProvider } from "@opentui/keymap/solid";
@@ -11,6 +12,7 @@ import { registerNataliaKeymap } from "../src/modal/mode-stack";
 async function mountBlock(
   block: MessageBlock,
   toolDetails: "collapsed" | "expanded" = "collapsed",
+  reasoning: "step" | "hidden" = "step",
 ) {
   const setup = await createTestRenderer({ width: 120, height: 36 });
   const keymap = createDefaultOpenTuiKeymap(setup.renderer);
@@ -23,6 +25,7 @@ async function mountBlock(
             block={block}
             density="comfortable"
             toolDetails={toolDetails}
+            reasoning={reasoning}
             diffStyle="auto"
             terminalWidth={120}
             toolPreviewLines={10}
@@ -129,6 +132,18 @@ test("a thinking row shows its reasoning until collapsed", async () => {
   }
 });
 
+test("a thinking row collapses to one line when reasoning is hidden", async () => {
+  const mounted = await mountBlock(thinkingBlock, "collapsed", "hidden");
+  try {
+    const frame = mounted.setup.captureCharFrame();
+    expect(frame).toContain("Thought");
+    expect(frame).not.toContain("transport swap");
+  } finally {
+    mounted.disposeKeymap();
+    mounted.setup.renderer.destroy();
+  }
+});
+
 test("a completed generic tool collapses to one line when details are collapsed", async () => {
   const mounted = await mountBlock(toolBlock());
   try {
@@ -175,6 +190,44 @@ const shellBlock = (
     detailAvailable: true,
   },
 });
+
+async function mountColumn(blocks: MessageBlock[]) {
+  const setup = await createTestRenderer({ width: 120, height: 36 });
+  const keymap = createDefaultOpenTuiKeymap(setup.renderer);
+  const disposeKeymap = registerNataliaKeymap(keymap, setup.renderer);
+  await render(
+    () => (
+      <KeymapProvider keymap={keymap}>
+        <DialogProvider>
+          <box flexDirection="column">
+            <For each={blocks}>
+              {(block) => (
+                <MessageBlockView
+                  block={block}
+                  density="comfortable"
+                  toolDetails="collapsed"
+                  reasoning="step"
+                  diffStyle="auto"
+                  terminalWidth={120}
+                  toolPreviewLines={10}
+                  onCopy={() => {}}
+                  onFork={() => {}}
+                />
+              )}
+            </For>
+          </box>
+        </DialogProvider>
+      </KeymapProvider>
+    ),
+    setup.renderer,
+  );
+  await setup.renderOnce();
+  return { setup, disposeKeymap };
+}
+
+function lineIndex(frame: string, needle: string) {
+  return frame.split("\n").findIndex((line) => line.includes(needle));
+}
 
 test("a completed shell collapses to one line when details are collapsed", async () => {
   const mounted = await mountBlock(
@@ -241,6 +294,23 @@ test("a diff keeps its block even when details are collapsed", async () => {
     const frame = mounted.setup.captureCharFrame();
     expect(frame).toContain("Edit");
     expect(frame).toContain("export const b = 2");
+  } finally {
+    mounted.disposeKeymap();
+    mounted.setup.renderer.destroy();
+  }
+});
+
+test("consecutive tool one-liners pack tight as a run", async () => {
+  const mounted = await mountColumn([
+    toolBlock({ keyArguments: ["objective=alpha"] }),
+    toolBlock({ keyArguments: ["objective=beta"] }),
+  ]);
+  try {
+    const frame = mounted.setup.captureCharFrame();
+    const firstLine = lineIndex(frame, "objective=alpha");
+    const secondLine = lineIndex(frame, "objective=beta");
+    expect(firstLine).toBeGreaterThanOrEqual(0);
+    expect(secondLine).toBe(firstLine + 1);
   } finally {
     mounted.disposeKeymap();
     mounted.setup.renderer.destroy();

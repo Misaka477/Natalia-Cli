@@ -5,6 +5,7 @@ import { roleColor, themeTokens as darkTheme } from "../../theme/theme";
 import type { TuiPreferences } from "../../settings";
 import { markdownSyntax, ToolBlockView } from "./tool-views";
 import { InlineInteractiveBlock } from "./interactive-rows";
+import { alwaysSeparate } from "./sibling-margin";
 
 /**
  * Renders one transcript row against the reference interaction language:
@@ -20,6 +21,7 @@ export function MessageBlockView(props: {
   onFork?: (turnID: string, prompt: string) => void;
   density: TuiPreferences["density"];
   toolDetails: TuiPreferences["toolDetails"];
+  reasoning: TuiPreferences["reasoning"];
   diffStyle: TuiPreferences["diffStyle"];
   terminalWidth: number;
   toolPreviewLines: number;
@@ -49,7 +51,13 @@ export function MessageBlockView(props: {
       />
     );
   if (role === "thinking")
-    return <ThinkingBlock block={props.block} density={props.density} />;
+    return (
+      <ThinkingBlock
+        block={props.block}
+        density={props.density}
+        defaultOpen={props.reasoning === "step"}
+      />
+    );
   if (role === "assistant")
     return (
       <AssistantBlock
@@ -63,6 +71,7 @@ export function MessageBlockView(props: {
       flexDirection="column"
       marginTop={props.density === "comfortable" ? 1 : 0}
       paddingLeft={role === "system" || role === "subagent" ? 2 : 1}
+      ref={(element: any) => alwaysSeparate.add(element)}
     >
       <text fg={roleColor(role, darkTheme)} wrapMode="word">
         {props.block.text}
@@ -86,6 +95,7 @@ function UserBlock(props: {
       paddingLeft={2}
       paddingTop={1}
       paddingBottom={1}
+      ref={(element: any) => alwaysSeparate.add(element)}
     >
       <text fg={darkTheme.text} wrapMode="word">
         {props.block.text}
@@ -129,6 +139,7 @@ function AssistantBlock(props: {
       flexDirection="column"
       marginTop={props.density === "comfortable" ? 1 : 0}
       paddingLeft={3}
+      ref={(element: any) => alwaysSeparate.add(element)}
     >
       <markdown
         content={props.block.text}
@@ -157,16 +168,18 @@ function AssistantBlock(props: {
 function ThinkingBlock(props: {
   block: MessageBlock;
   density: TuiPreferences["density"];
+  defaultOpen: boolean;
 }) {
   // Reasoning is the part of the model the user actually wants to read, so it
   // is open by default; the header collapses it when the row is long.
-  const [collapsed, setCollapsed] = createSignal(false);
+  const [collapsed, setCollapsed] = createSignal(!props.defaultOpen);
   const providerSafe = props.block.providerPolicy === "hidden";
   return (
     <box
       flexDirection="column"
       marginTop={props.density === "comfortable" ? 1 : 0}
       paddingLeft={3}
+      ref={(element: any) => alwaysSeparate.add(element)}
       onMouseUp={() => setCollapsed((value) => !value)}
     >
       <text fg={darkTheme.warning}>
