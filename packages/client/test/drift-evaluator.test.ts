@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { createDriftEvaluator } from "../src/drift-evaluator";
+import {
+  buildDriftFindingUpdate,
+  createDriftEvaluator,
+} from "../src/drift-evaluator";
 import { DRIFT_FINDING_WRITER_OWNER } from "../src/workspace-observation";
 
 function makeEvaluator(open: ReadonlySet<string> = new Set()) {
@@ -114,4 +117,30 @@ test("drift findings carry no secrets", () => {
   });
   const serialized = JSON.stringify(findings);
   expect(serialized).not.toContain("supersecret");
+});
+
+test("buildDriftFindingUpdate records the rationale acknowledgement", () => {
+  const event = buildDriftFindingUpdate({
+    id: "drift:abc:drift:x",
+    findingID: "drift:x",
+    status: "explained",
+    rationale: "the css refactor was a prerequisite",
+  });
+  expect(event).toMatchObject({
+    type: "drift.finding_updated",
+    findingID: "drift:x",
+    status: "explained",
+    rationale: "the css refactor was a prerequisite",
+  });
+});
+
+test("buildDriftFindingUpdate redacts secrets from the rationale", () => {
+  const event = buildDriftFindingUpdate({
+    id: "drift:abc:drift:y",
+    findingID: "drift:y",
+    status: "dismissed",
+    rationale: "api_key=supersecret is not involved",
+  });
+  expect(JSON.stringify(event)).not.toContain("supersecret");
+  expect(event.rationale).toContain("[REDACTED]");
 });

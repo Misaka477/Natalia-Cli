@@ -410,6 +410,11 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "opened",
     note: "runs the DriftEvaluator against safe signals and publishes findings; the evaluator has no write power, a finding only escalates to an approval/Chat/mailbox prompt",
   },
+  acknowledgeDriftFinding: {
+    refusal: "value",
+    expressedBy: "acknowledged",
+    note: "acknowledges an open drift finding; the rationale is safe prose, never a command, content or secret",
+  },
   confirmedWorkspaceChanges: {
     refusal: "none",
     note: "reconciles watcher hints and returns the confirmed changes; not written to the Work Graph (Phase 4)",

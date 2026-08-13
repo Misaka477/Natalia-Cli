@@ -2149,6 +2149,15 @@ export type RuntimeClient = {
     }>;
     evidenceRefs?: string[];
   }): Promise<{ opened: number }>;
+  /**
+   * Acknowledge a drift finding (P7 D3): the Main Agent explains it, the user
+   * dismisses it, or the work corrects it. Only an open finding can transition.
+   */
+  acknowledgeDriftFinding?(input: {
+    findingID: string;
+    status: "explained" | "dismissed" | "corrected";
+    rationale?: string;
+  }): Promise<{ acknowledged: boolean }>;
   registeredTools?(): Promise<
     Array<{
       name: string;

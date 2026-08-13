@@ -201,6 +201,7 @@ export const RPC_ROUTE_MEMBERS = {
   "evidence.record": "recordValidation",
   "drift.findings": "driftFindings",
   "drift.evaluate": "evaluateDrift",
+  "drift.acknowledge": "acknowledgeDriftFinding",
   "observation.confirmed": "confirmedWorkspaceChanges",
   "tools.registered": "registeredTools",
   // P8 C3: durable Live Work Chat mailbox.
@@ -1442,6 +1443,27 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result,
+      };
+    }
+    if (body.method === "drift.acknowledge") {
+      optionsGuard(client, "acknowledgeDriftFinding");
+      const params = body.params as Record<string, unknown> | undefined;
+      if (
+        !params ||
+        typeof params.findingID !== "string" ||
+        !params.findingID.trim()
+      )
+        throw invalidParams("drift.acknowledge requires a findingID string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.acknowledgeDriftFinding?.({
+          findingID: params.findingID,
+          status: params.status as "explained" | "dismissed" | "corrected",
+          ...(typeof params.rationale === "string"
+            ? { rationale: params.rationale }
+            : {}),
+        }),
       };
     }
     if (body.method === "observation.confirmed") {

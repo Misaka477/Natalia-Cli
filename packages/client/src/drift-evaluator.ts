@@ -68,6 +68,35 @@ function redact(text: string): string {
   );
 }
 
+export type DriftFindingStatus =
+  | "open"
+  | "explained"
+  | "dismissed"
+  | "corrected";
+
+/**
+ * A finding's status transition (P7 D3: rationale acknowledgement). The Main
+ * Agent acknowledges a finding as explained (with a rationale) or the user
+ * dismisses it / the work corrects it. `rationale` is safe prose — never a
+ * command, content or secret — and is redacted before journaling.
+ */
+export function buildDriftFindingUpdate(input: {
+  id: string;
+  findingID: string;
+  status: DriftFindingStatus;
+  rationale?: string;
+}): Extract<RuntimeEvent, { type: "drift.finding_updated" }> {
+  const event: Extract<RuntimeEvent, { type: "drift.finding_updated" }> = {
+    type: "drift.finding_updated",
+    id: input.id,
+    findingID: input.findingID,
+    status: input.status,
+    ...(input.rationale ? { rationale: redact(input.rationale) } : {}),
+  };
+  assertSecretSafeObservation(event);
+  return event;
+}
+
 export function buildDriftFinding(
   input: DriftFindingInput,
 ): Extract<RuntimeEvent, { type: "drift.finding_opened" }> {

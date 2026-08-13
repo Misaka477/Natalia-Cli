@@ -6179,6 +6179,62 @@ test("evaluateDrift opens a high finding for a forbidden constraint signal", asy
   );
 });
 
+test("acknowledgeDriftFinding transitions an open finding with a rationale", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-drift-ack-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_drift_ack",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+
+  await client.evaluateDrift?.({
+    objective: "implement user authentication",
+    currentActivity: "refactoring the css theme",
+    applicableConstraints: [],
+    changes: [{ action: "modified", path: "src/theme.css" }],
+    evidenceRefs: [],
+  });
+  const open = await client.driftFindings!();
+  const findingID = open[0]!.findingID;
+  expect(open[0]?.status).toBe("open");
+
+  const acked = await client.acknowledgeDriftFinding?.({
+    findingID,
+    status: "explained",
+    rationale: "the css refactor is a prerequisite",
+  });
+  expect(acked).toEqual({ acknowledged: true });
+
+  const after = await client.driftFindings!();
+  expect(after[0]?.status).toBe("explained");
+  expect(
+    events.some(
+      (event) =>
+        event.type === "drift.finding_updated" &&
+        event.status === "explained" &&
+        event.rationale === "the css refactor is a prerequisite",
+    ),
+  ).toBe(true);
+
+  // A non-open finding cannot be acknowledged again.
+  expect(
+    await client.acknowledgeDriftFinding?.({
+      findingID,
+      status: "dismissed",
+    }),
+  ).toEqual({ acknowledged: false });
+});
+
 test("a write_file turn registers a mutation the auditor can attribute", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-obs-write-"));
   const client = createRealRuntimeClient({

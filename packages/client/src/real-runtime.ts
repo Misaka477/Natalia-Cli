@@ -164,7 +164,10 @@ import {
 import { buildMailboxQueued, buildMailboxStatus } from "./mailbox-ledger";
 import { buildPlanDraftCreated, buildPlanTransition } from "./plan-ledger";
 import { createMailboxAcknowledgeTool } from "./mailbox-tool";
-import { createDriftEvaluator } from "./drift-evaluator";
+import {
+  createDriftEvaluator,
+  buildDriftFindingUpdate,
+} from "./drift-evaluator";
 import { createMutationRegistry } from "./mutation-registry";
 
 // Re-exported because the policy tests reach for the risk classifier directly and
@@ -4019,6 +4022,34 @@ export function createRealRuntimeClient(
       });
       for (const finding of findings) publishForSession(activeExec, finding);
       return { opened: findings.length };
+    },
+    /**
+     * Acknowledge a drift finding (P7 D3): the Main Agent explains it, the user
+     * dismisses it, or the work corrects it. Only an open finding can transition.
+     */
+    async acknowledgeDriftFinding(input: {
+      findingID: string;
+      status: "explained" | "dismissed" | "corrected";
+      rationale?: string;
+    }) {
+      if (!session) return { acknowledged: false as const };
+      if (!input.findingID.trim()) return { acknowledged: false as const };
+      const finding = projectedDriftFindings(session.events).find(
+        (candidate) =>
+          candidate.findingID === input.findingID &&
+          candidate.status === "open",
+      );
+      if (!finding) return { acknowledged: false as const };
+      publishForSession(
+        activeExec,
+        buildDriftFindingUpdate({
+          id: `drift:${Date.now().toString(36)}:${input.findingID}`,
+          findingID: input.findingID,
+          status: input.status,
+          rationale: input.rationale,
+        }),
+      );
+      return { acknowledged: true as const };
     },
     async registeredTools() {
       if (!session) return [];

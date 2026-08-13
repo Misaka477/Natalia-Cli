@@ -202,6 +202,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "recordValidation",
     "driftFindings",
     "evaluateDrift",
+    "acknowledgeDriftFinding",
     "confirmedWorkspaceChanges",
     "registeredTools",
   ],

@@ -465,6 +465,14 @@ export type NataliaSDK = {
     }>;
     evidenceRefs?: string[];
   }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["evaluateDrift"]>>>>;
+  /** Acknowledges an open drift finding (P7 D3). */
+  acknowledgeDriftFinding(input: {
+    findingID: string;
+    status: "explained" | "dismissed" | "corrected";
+    rationale?: string;
+  }): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["acknowledgeDriftFinding"]>>>
+  >;
   /** Reconciles watcher hints and returns the confirmed changes (WG4 Phase 3). */
   confirmedWorkspaceChanges(): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["confirmedWorkspaceChanges"]>>>
@@ -858,6 +866,12 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         applicableConstraints: input.applicableConstraints ?? [],
         changes: input.changes ?? [],
         evidenceRefs: input.evidenceRefs ?? [],
+      }),
+    acknowledgeDriftFinding: async (input) =>
+      await call("drift.acknowledge", {
+        findingID: input.findingID,
+        status: input.status,
+        rationale: input.rationale,
       }),
     confirmedWorkspaceChanges: async () =>
       await call("observation.confirmed", {}),
