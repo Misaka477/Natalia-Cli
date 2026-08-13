@@ -5225,6 +5225,47 @@ test("recordDecision writes a durable decision fact", async () => {
   ).toBe(true);
 });
 
+test("seeded constitution rules and decisions are Work Graph constraint/decision nodes (CST4)", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-cst4-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_cst4",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+
+  // Each seeded self-protection rule is a constraint node in the graph.
+  const constraintNodes = events.filter(
+    (event): event is Extract<RuntimeEvent, { type: "workgraph.node_added" }> =>
+      event.type === "workgraph.node_added" && event.kind === "constraint",
+  );
+  expect(constraintNodes.length).toBeGreaterThanOrEqual(3);
+  expect(constraintNodes.some((node) => node.target === "C-TERM-001")).toBe(
+    true,
+  );
+
+  // A recorded decision becomes a decision node.
+  await client.recordDecision?.({
+    decision: "default no commit/push",
+    rationale: ["the framework should never write to git without asking"],
+  });
+  expect(
+    events.some(
+      (event) =>
+        event.type === "workgraph.node_added" && event.kind === "decision",
+    ),
+  ).toBe(true);
+});
+
 test("constitution rules and decisions survive replay", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-const-replay-"));
   const initial = createRealRuntimeClient({

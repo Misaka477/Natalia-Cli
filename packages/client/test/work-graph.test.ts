@@ -14,6 +14,8 @@ import {
   agentActionNodeID,
   approvalNodeID,
   completionValidationEdge,
+  constitutionRuleNode,
+  decisionNode,
   externalWorkspaceChangeNode,
   toolCallNodeID,
 } from "../src/work-graph";
@@ -900,5 +902,35 @@ test("a completion card validates a workspace change through a validated_by edge
     kind: "validated_by",
     sourceID: "wg:change:task_1:src/a.ts",
     targetID: "wg:completion:completion:1",
+  });
+});
+
+test("a constitution rule is a constraint node (CST4 linkage)", () => {
+  const node = constitutionRuleNode({
+    ruleID: "C-TERM-001",
+    statement: "禁止直接杀掉 wezterm-mux-server",
+    sessionID: "ses_1",
+  });
+  expect(workGraphNodeSchema.safeParse(node).success).toBe(true);
+  expect(node).toMatchObject({
+    kind: "constraint",
+    actor: "constitution",
+    target: "C-TERM-001",
+    sessionID: "ses_1",
+  });
+});
+
+test("a recorded decision is a decision node (CST4 linkage)", () => {
+  const node = decisionNode({
+    decisionID: "decision:abc",
+    decision: "default no commit/push",
+    sessionID: "ses_1",
+  });
+  expect(workGraphNodeSchema.safeParse(node).success).toBe(true);
+  expect(node).toMatchObject({
+    kind: "decision",
+    actor: "decision",
+    target: "decision:abc",
+    sessionID: "ses_1",
   });
 });

@@ -187,6 +187,8 @@ import {
   workspaceChangeNode,
   externalWorkspaceChangeNode,
   completionValidationEdge,
+  constitutionRuleNode,
+  decisionNode,
 } from "./work-graph";
 import { ensureBashCommandParser } from "./bash-command-policy";
 import { RuntimePerformanceTrace } from "./performance-trace";
@@ -1346,7 +1348,18 @@ export function createRealRuntimeClient(
     // into the durable journal on every boot (idempotent — replay already holds
     // them) so `constitutionRules()` and the /constitution UI answer real rules,
     // not the empty projection CST1 shipped.
-    for (const rule of seedConstitutionRules(session.events)) publish(rule);
+    for (const rule of seedConstitutionRules(session.events)) {
+      publish(rule);
+      // CST4 Work Graph linkage: each seeded rule is a `constraint` node, so
+      // tool calls and drift findings can relate to it in the graph.
+      publish(
+        constitutionRuleNode({
+          ruleID: rule.ruleID,
+          statement: rule.statement,
+          sessionID,
+        }),
+      );
+    }
     // Overrides are visible, not silent: a plugin that replaced a built-in
     // tool shows up in diagnostics so nobody discovers it by surprise.
     for (const override of capabilityRegistry.overrides())
@@ -3611,6 +3624,15 @@ export function createRealRuntimeClient(
         ...input,
       });
       publishForSession(activeExec, event);
+      // CST4 Work Graph linkage: the decision is a `decision` node in the graph.
+      publishForSession(
+        activeExec,
+        decisionNode({
+          decisionID: event.id,
+          decision: event.decision,
+          sessionID,
+        }),
+      );
       return { recorded: true as const };
     },
     async evidenceRecords() {

@@ -44,6 +44,8 @@ export const WORK_GRAPH_KIND = {
   approval: "approval",
   checkpoint: "checkpoint",
   workspaceChange: "workspace_change",
+  constraint: "constraint",
+  decision: "decision",
 } as const;
 
 /** Edge vocabulary, likewise from `workGraphEdgeSchema`. */
@@ -178,6 +180,51 @@ export function approvalEdge(input: {
       input.decision === "reject"
         ? WORK_GRAPH_EDGE_KIND.rejectedBy
         : WORK_GRAPH_EDGE_KIND.approvedBy,
+  };
+}
+
+/**
+ * One node per constitution rule (CST4 Work Graph linkage). A rule is a
+ * `constraint` in the graph — the durable "this may not happen" fact that
+ * tool calls and drift findings relate to. The statement is safe prose; the
+ * rule id is the identity.
+ */
+export function constitutionRuleNode(input: {
+  ruleID: string;
+  statement: string;
+  sessionID: SessionID;
+}): WorkGraphNodeEvent {
+  return {
+    type: "workgraph.node_added",
+    id: `wg:constraint:${input.ruleID}`,
+    nodeID: `wg:constraint:${input.ruleID}`,
+    kind: WORK_GRAPH_KIND.constraint,
+    summary: workGraphSummary(["constraint", input.ruleID]),
+    actor: "constitution",
+    target: input.ruleID,
+    sessionID: input.sessionID,
+  };
+}
+
+/**
+ * One node per recorded decision (CST4 Work Graph linkage). A decision is a
+ * `decision` node in the graph. The decision text is safe prose; the decision
+ * id is the identity.
+ */
+export function decisionNode(input: {
+  decisionID: string;
+  decision: string;
+  sessionID: SessionID;
+}): WorkGraphNodeEvent {
+  return {
+    type: "workgraph.node_added",
+    id: `wg:decision:${input.decisionID}`,
+    nodeID: `wg:decision:${input.decisionID}`,
+    kind: WORK_GRAPH_KIND.decision,
+    summary: workGraphSummary(["decision", input.decisionID]),
+    actor: "decision",
+    target: input.decisionID,
+    sessionID: input.sessionID,
   };
 }
 
