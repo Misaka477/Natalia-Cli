@@ -83,6 +83,7 @@ import { DialogThemeList } from "../component/DialogThemeList";
 import { DialogCheckpoint } from "../component/DialogCheckpoint";
 import { DialogSandbox } from "../component/DialogSandbox";
 import { DialogTerminal } from "../component/DialogTerminal";
+import { DialogLiveChat } from "../component/DialogLiveChat";
 import { DialogSelect, type DialogSelectOption } from "../dialog/DialogSelect";
 import { DialogPrompt } from "../dialog/DialogPrompt";
 import { DialogConfirm } from "../dialog/DialogConfirm";
@@ -2842,6 +2843,13 @@ export async function runCommand(command: string, ctx: CommandContext) {
         ctx.dialog.push(() => <DialogSessionSnapshot snapshot={snapshot} />),
       (error: any) => ctx.toast.error(error),
     );
+    return;
+  }
+  if (command === "chat.open") {
+    // P8 C2: the Live Work Chat is a read-only collaboration surface. The
+    // mailbox/snapshot/plan data planes are wired; this dialog renders them and
+    // routes user messages through `mailboxSend` (the only write it may touch).
+    ctx.dialog.push(() => <DialogLiveChat backend={ctx.backend} />);
     return;
   }
   // Plugin commands
