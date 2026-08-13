@@ -410,6 +410,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "opened",
     note: "runs the DriftEvaluator against safe signals and publishes findings; the evaluator has no write power, a finding only escalates to an approval/Chat/mailbox prompt",
   },
+  confirmedWorkspaceChanges: {
+    refusal: "none",
+    note: "reconciles watcher hints and returns the confirmed changes; not written to the Work Graph (Phase 4)",
+  },
   registeredTools: { refusal: "none", note: "pure read" },
 
   // --- Live Work Chat mailbox (P8 C3) ---

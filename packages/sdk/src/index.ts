@@ -465,6 +465,10 @@ export type NataliaSDK = {
     }>;
     evidenceRefs?: string[];
   }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["evaluateDrift"]>>>>;
+  /** Reconciles watcher hints and returns the confirmed changes (WG4 Phase 3). */
+  confirmedWorkspaceChanges(): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["confirmedWorkspaceChanges"]>>>
+  >;
   registeredTools(): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["registeredTools"]>>>
   >;
@@ -855,6 +859,8 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         changes: input.changes ?? [],
         evidenceRefs: input.evidenceRefs ?? [],
       }),
+    confirmedWorkspaceChanges: async () =>
+      await call("observation.confirmed", {}),
     registeredTools: async () => await call("tools.registered", {}),
     capabilities: async () => await call("capabilities", {}),
     sessionSnapshot: async () => await call("session.snapshot", {}),

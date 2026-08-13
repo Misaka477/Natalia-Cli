@@ -119,6 +119,7 @@ function controllableClient() {
     "recordValidation",
     "driftFindings",
     "evaluateDrift",
+    "confirmedWorkspaceChanges",
     "registeredTools",
     "mailboxList",
     "mailboxSend",

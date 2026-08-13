@@ -6179,6 +6179,33 @@ test("evaluateDrift opens a high finding for a forbidden constraint signal", asy
   );
 });
 
+test("a write_file turn registers a mutation the auditor can attribute", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-obs-write-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_obs_write",
+    provider: writeFileProvider(),
+    permissionMode: "auto",
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  await client.submit("create a workspace file");
+  await pollHistoryForFinished(client);
+
+  // The write tool settled and registered an expected mutation; reconciling the
+  // watcher hints attributes the change to the tool call (WG4 Phase 3).
+  const changes = await client.confirmedWorkspaceChanges!();
+  expect(changes.length).toBeGreaterThan(0);
+  const attributed = changes.find(
+    (change) => change.attribution === "attributed" && change.origin === "tool",
+  );
+  expect(attributed).toBeDefined();
+  expect(attributed?.correlation.turnID).toBeDefined();
+  expect(attributed?.correlation.callID).toBeDefined();
+  // Secret-safe: no content or command text on a confirmed change.
+  expect(JSON.stringify(changes)).not.toContain("hello from TS7");
+});
+
 test("durable session replay preserves tool-call pairs for the next provider turn", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-replay-tools-"));
   await writeFile(join(root, "input.txt"), "replay-ok\n");

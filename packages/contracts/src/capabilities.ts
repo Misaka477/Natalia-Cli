@@ -202,6 +202,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "recordValidation",
     "driftFindings",
     "evaluateDrift",
+    "confirmedWorkspaceChanges",
     "registeredTools",
   ],
   /** Live Work Chat durable mailbox (P8 Phase C3). */

@@ -1450,6 +1450,35 @@ export type RuntimeClient = {
     cursor?: string;
   }): Promise<RuntimeMessagePage>;
   pendingInteractive?(): Promise<PendingInteractiveRequests>;
+  /**
+   * Reconcile the workspace watcher hints against the current workspace and
+   * return the confirmed changes (WG4 Phase 3 read surface). Confirmed changes
+   * are not written to the Work Graph yet (Phase 4).
+   */
+  confirmedWorkspaceChanges?(): Promise<
+    Array<{
+      id: string;
+      workspaceRoot: string;
+      path: string;
+      operation: "added" | "modified" | "deleted" | "renamed";
+      origin:
+        | "tool"
+        | "sandbox_merge"
+        | "checkpoint_rollback"
+        | "external"
+        | "unknown";
+      attribution: "attributed" | "unattributed" | "indeterminate";
+      correlation: {
+        sessionID?: string;
+        episodeID?: string;
+        turnID?: string;
+        callID?: string;
+        operationID?: string;
+      };
+      health: "healthy" | "degraded" | "unavailable";
+      at: string;
+    }>
+  >;
   dispose?(): Promise<void>;
   /**
    * Whether config could be applied right now. Advisory only: a turn can start

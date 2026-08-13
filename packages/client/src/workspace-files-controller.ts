@@ -1,6 +1,16 @@
 import { watchWorkspaceFiles } from "@natalia/client";
 import { createWorkspaceChangeAuditor } from "./workspace-change-auditor";
 
+/** The identity a watcher-confirmed change carries when a mutation matched it. */
+export type WorkspaceMutationIdentity = {
+  turnID?: string;
+  callID?: string;
+  operationID?: string;
+  sessionID?: string;
+  episodeID?: string;
+  origin: "tool" | "sandbox_merge" | "checkpoint_rollback";
+};
+
 /**
  * The workspace-files watcher controller — cut of the resource controllers
  * split (mainline plan §15) and WG4's observation owner (mainline plan §56.9).
@@ -18,10 +28,15 @@ export function createWorkspaceFilesController(input: {
   workspaceRoot: string;
   /** Enumerate the current workspace-relative paths, for baseline/reconcile. */
   listPaths: () => Promise<string[]>;
+  /** Consult the expected-mutation registry (WG4 Phase 3) to attribute a path. */
+  resolveMutation?: (path: string) => WorkspaceMutationIdentity | undefined;
 }) {
   let cleanup: (() => void) | undefined;
   const auditor = createWorkspaceChangeAuditor({
     workspaceRoot: input.workspaceRoot,
+    resolveOrigin: (path) => input.resolveMutation?.(path)?.origin,
+    resolveIdentity: (path) => input.resolveMutation?.(path),
+    hasReliableIdentity: () => true,
   });
 
   async function init() {

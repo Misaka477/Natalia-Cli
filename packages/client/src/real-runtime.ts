@@ -11,7 +11,10 @@ import { createTerminalController } from "./terminal-controller";
 import { createSandboxController } from "./sandbox-controller";
 import { createCheckpointController } from "./checkpoint-controller";
 import { createMcpController } from "./mcp-controller";
-import { createWorkspaceFilesController } from "./workspace-files-controller";
+import {
+  createWorkspaceFilesController,
+  type WorkspaceMutationIdentity,
+} from "./workspace-files-controller";
 import { createPluginsController } from "./plugins-controller";
 import { RuntimeRefusal } from "@natalia/contracts";
 import {
@@ -162,6 +165,7 @@ import { buildMailboxQueued, buildMailboxStatus } from "./mailbox-ledger";
 import { buildPlanDraftCreated, buildPlanTransition } from "./plan-ledger";
 import { createMailboxAcknowledgeTool } from "./mailbox-tool";
 import { createDriftEvaluator } from "./drift-evaluator";
+import { createMutationRegistry } from "./mutation-registry";
 
 // Re-exported because the policy tests reach for the risk classifier directly and
 // this file is the package's runtime entry point.
@@ -635,6 +639,7 @@ export function createRealRuntimeClient(
     | undefined;
   let runtimeContextConfig = contextStatusConfig();
   let retryPolicy: NonNullable<Parameters<typeof runWithRetry>[2]>["policy"];
+  const mutationRegistry = createMutationRegistry();
   const workspaceFilesController = createWorkspaceFilesController({
     workspaceRoot,
     listPaths: async () => {
@@ -642,6 +647,22 @@ export function createRealRuntimeClient(
       return entries
         .filter((entry) => entry.type === "file")
         .map((entry) => entry.path);
+    },
+    resolveMutation: (path) => {
+      const mutation = mutationRegistry.match({
+        path,
+        operation: "modified",
+      });
+      if (!mutation) return undefined;
+      const identity: WorkspaceMutationIdentity = {
+        origin: mutation.operationID ? "sandbox_merge" : "tool",
+      };
+      if (mutation.turnID) identity.turnID = mutation.turnID;
+      if (mutation.callID) identity.callID = mutation.callID;
+      if (mutation.operationID) identity.operationID = mutation.operationID;
+      if (mutation.sessionID) identity.sessionID = mutation.sessionID;
+      if (mutation.episodeID) identity.episodeID = mutation.episodeID;
+      return identity;
     },
   });
   const driftEvaluator = createDriftEvaluator({
@@ -2532,6 +2553,13 @@ export function createRealRuntimeClient(
       await ready;
       return projectInteractiveRequests(session?.events ?? []);
     },
+    async confirmedWorkspaceChanges() {
+      await ready;
+      // Reconcile the watcher hints against the current workspace and return the
+      // confirmed changes (WG4 Phase 3 read surface). They are not written to
+      // the Work Graph yet — that is Phase 4.
+      return await workspaceFilesController.reconcile();
+    },
     sessionAttach: attachSession,
     async dispose() {
       terminalCommandBuffer.clearAll();
@@ -3133,6 +3161,17 @@ export function createRealRuntimeClient(
         async (paths) => await authorizeSandboxMerge({ id, paths }),
       );
       const operationID = `sandbox_merge:${id}:${randomUUID()}`;
+      // WG4 Phase 3: sandbox merge keeps its own operation provenance (not a
+      // tool call), but registers an expected mutation so the auditor can
+      // attribute merged paths to the merge operation.
+      mutationRegistry.register({
+        sessionID,
+        episodeID: options.episodeID,
+        operationID,
+        toolName: "sandbox_merge",
+        authorizedPaths: ["."],
+        expectedOperations: ["added", "modified", "deleted"],
+      });
       for (const change of changes) {
         publish(
           workspaceChangeNode({
@@ -3143,6 +3182,7 @@ export function createRealRuntimeClient(
           }),
         );
       }
+      mutationRegistry.settle(operationID);
       publish(sandboxes.updateEvent(id));
       publish(sandboxes.auditEvent(id, "merge"));
       return changes;
@@ -4847,6 +4887,24 @@ export function createRealRuntimeClient(
       )
         ? await workspaceWriteLock.acquire()
         : undefined;
+      // WG4 Phase 3: register the expected mutation before the tool runs so the
+      // auditor can attribute a watcher-confirmed change to this call. Only
+      // workspace-writing tools register; the authorized path is the tool's own
+      // path argument (the same scope the write lock protects).
+      const writePath = workspaceWritePathForTool(
+        tool.name,
+        parsed as Record<string, unknown>,
+      );
+      if (writePath) {
+        mutationRegistry.register({
+          sessionID,
+          turnID,
+          callID: call.id,
+          toolName: tool.name,
+          authorizedPaths: [writePath],
+          expectedOperations: ["modified", "added", "deleted", "renamed"],
+        });
+      }
       const completeResult = await waitForToolExecution(
         tool.execute(parsed, {
           workspaceRoot,
@@ -4881,6 +4939,10 @@ export function createRealRuntimeClient(
             }
           },
           onWorkspaceChange: (changes) => {
+            // WG4 Phase 3: the tool settled successfully — the expected
+            // mutation stops matching unrelated later hints, but its identity
+            // stays available for attributing the change it caused.
+            mutationRegistry.settle(call.id);
             for (const change of changes) {
               publish(
                 workspaceChangeNode({
@@ -4988,6 +5050,15 @@ export function createRealRuntimeClient(
       await toolLayer.postExecute({ ...hookEvent, result });
       return result;
     } catch (error) {
+      // WG4 Phase 3: a failed write did not change the workspace — drop the
+      // expected mutation so it cannot attribute a later unrelated hint.
+      if (
+        workspaceWritePathForTool(
+          tool.name,
+          tryParseToolArguments(call.arguments),
+        )
+      )
+        mutationRegistry.forget(call.id);
       const message = error instanceof Error ? error.message : String(error);
       publish({
         type: "tool.update",
