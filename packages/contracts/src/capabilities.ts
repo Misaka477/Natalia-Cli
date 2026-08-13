@@ -276,9 +276,9 @@ export type UnclassifiedRuntimeClientMember = AssertNever<
  *
  * Each is a first slice whose writer is scheduled work, not an abandoned surface.
  */
-export const UNIMPLEMENTED_QUERIES = {
-  registeredTools: "tool registration metadata is not published yet",
-} as const satisfies Partial<Record<keyof RuntimeClient, string>>;
+export const UNIMPLEMENTED_QUERIES = {} as const satisfies Partial<
+  Record<keyof RuntimeClient, string>
+>;
 
 export type UnimplementedQuery = keyof typeof UNIMPLEMENTED_QUERIES;
 

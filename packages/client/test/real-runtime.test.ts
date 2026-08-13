@@ -1529,6 +1529,60 @@ test("runtime loads a local manifest plugin and exposes its owned tool", async (
   });
 });
 
+test("unloading a plugin publishes tool.unregistered and drops it from registeredTools", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-plugin-unregister-"));
+  const pluginRoot = join(root, ".natalia", "plugins", "demo");
+  await mkdir(pluginRoot, { recursive: true });
+  await writeFile(
+    join(pluginRoot, "natalia.plugin.json"),
+    JSON.stringify({
+      apiVersion: 1,
+      id: "demo.plugin",
+      version: "1.0.0",
+      name: "Demo",
+      description: "",
+      entry: "index.ts",
+      capabilities: ["tools"],
+    }),
+  );
+  await writeFile(
+    join(pluginRoot, "index.ts"),
+    "export default { setup(api) { api.tools.register({ name: 'echo', description: 'Echo', requiresApproval: false, parameters: { type: 'object', properties: {} }, async execute() { return 'plugin ok'; } }) } }",
+  );
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_plugin_unregister",
+  });
+  client.start((event) => events.push(event));
+  await client.plugins?.();
+
+  // The plugin tool is registered and reported.
+  const before = await client.registeredTools!();
+  expect(before.some((tool) => tool.name === "plugin_demo_plugin_echo")).toBe(
+    true,
+  );
+
+  const unloaded = await client.pluginUnload?.("demo.plugin");
+  expect(unloaded?.unloaded).toBe(true);
+
+  // tool.unregistered was published for the removed tool.
+  expect(
+    events.some(
+      (event) =>
+        event.type === "tool.unregistered" &&
+        event.name === "plugin_demo_plugin_echo",
+    ),
+  ).toBe(true);
+  // The projected catalog no longer reports it.
+  const after = await client.registeredTools!();
+  expect(after.some((tool) => tool.name === "plugin_demo_plugin_echo")).toBe(
+    false,
+  );
+
+  await client.dispose?.();
+});
+
 test("permission profile disables installed skills and plugins before discovery", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-profile-extensions-"));
   const pluginRoot = join(root, ".natalia", "plugins", "demo");

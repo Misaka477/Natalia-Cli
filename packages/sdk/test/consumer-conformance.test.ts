@@ -308,13 +308,11 @@ test("a consumer can ask what this runtime implements, without guessing", async 
     for (const group of report.groups)
       expect(group.available && group.partial).toBe(false);
 
-    // And the queries that answer with nothing are named, with a reason, so an
-    // empty array is not mistaken for "nothing recorded". Constitution rules,
-    // decision records, validation evidence and drift findings now have
-    // production writers, so they are out of this list.
-    expect(report.unimplemented.map((entry) => entry.member).sort()).toEqual([
-      "registeredTools",
-    ]);
+    // Every fact-domain read surface now has a production writer, so the
+    // unimplemented list is empty.
+    expect(report.unimplemented.map((entry) => entry.member).sort()).toEqual(
+      [],
+    );
     for (const entry of report.unimplemented)
       expect(entry.reason).toMatch(/yet/u);
 

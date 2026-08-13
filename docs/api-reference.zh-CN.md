@@ -903,9 +903,8 @@ createRuntimeHttpServer({
 
 ### Empty-until-writers queries (`UNIMPLEMENTED_QUERIES`: reachable, implemented, no production writer yet)
 
-| Member            | Why it answers empty                            |
-| ----------------- | ----------------------------------------------- |
-| `registeredTools` | tool registration metadata is not published yet |
+| Member | Why it answers empty |
+| ------ | -------------------- |
 
 ### Failure codes (`RUNTIME_RPC_ERROR_CODES`)
 

@@ -1413,10 +1413,9 @@ export function renderGeneratedSections(): string {
     ``,
     markdownTable(
       ["Member", "Why it answers empty"],
-      Object.entries(UNIMPLEMENTED_QUERIES).map(([member, reason]) => [
-        `\`${member}\``,
-        reason,
-      ]),
+      (Object.entries(UNIMPLEMENTED_QUERIES) as Array<[string, string]>).map(
+        ([member, reason]) => [`\`${member}\``, reason],
+      ),
     ),
     ``,
     `### Failure codes (\`RUNTIME_RPC_ERROR_CODES\`)`,

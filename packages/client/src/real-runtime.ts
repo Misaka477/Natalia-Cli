@@ -3472,7 +3472,20 @@ export function createRealRuntimeClient(
     },
     async pluginUnload(id) {
       await ready;
-      return await pluginsController.unload(id);
+      const before = new Set(tools.keys());
+      const result = await pluginsController.unload(id);
+      // The plugin's tool disposers removed its tools from the registry; publish
+      // tool.unregistered for the ones that disappeared so the projected tool
+      // catalog stops reporting them (P5 dynamic unload).
+      for (const name of before) {
+        if (tools.has(name)) continue;
+        publish({
+          type: "tool.unregistered",
+          id: `tool:${name}`,
+          name,
+        });
+      }
+      return result;
     },
     async pluginReload(id) {
       await ready;
