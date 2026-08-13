@@ -160,6 +160,7 @@ import {
 } from "./evidence-ledger";
 import { buildMailboxQueued, buildMailboxStatus } from "./mailbox-ledger";
 import { buildPlanDraftCreated, buildPlanTransition } from "./plan-ledger";
+import { createMailboxAcknowledgeTool } from "./mailbox-tool";
 
 // Re-exported because the policy tests reach for the risk classifier directly and
 // this file is the package's runtime entry point.
@@ -1204,6 +1205,34 @@ export function createRealRuntimeClient(
         }),
       );
     else tools.delete("skill_load");
+    // P8 C3: the main agent acknowledges delivered mailbox intents it acted
+    // on; acknowledged messages stop being re-injected as pending intents.
+    tools.set(
+      "mailbox_acknowledge",
+      createMailboxAcknowledgeTool({
+        onAcknowledge: async (messageIDs) => {
+          if (!session) return;
+          const at = new Date().toISOString();
+          for (const messageID of messageIDs) {
+            const message = projectedMailboxMessages(session.events).find(
+              (candidate) =>
+                candidate.messageID === messageID &&
+                candidate.status === "delivered",
+            );
+            if (!message) continue;
+            publishForSession(
+              activeExec,
+              buildMailboxStatus({
+                id: `${messageID}:acknowledged:${mailboxSequence++}`,
+                messageID,
+                status: "acknowledged",
+                at,
+              }),
+            );
+          }
+        },
+      }),
+    );
     publish({
       type: "session.created",
       sessionID,

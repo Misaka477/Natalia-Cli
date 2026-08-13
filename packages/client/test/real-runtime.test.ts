@@ -5931,6 +5931,78 @@ test("an auto-activated plan reaches the next turn as a NextPlanHandoff", async 
   expect(prompt).toContain("</next_plan_handoff>");
 });
 
+test("mailbox_acknowledge marks delivered messages acknowledged and stops re-injection", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-mailbox-ack-tool-"));
+  let ackAttempted = 0;
+  let systemPrompts: string[] = [];
+  let sentID = "";
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_mailbox_ack_tool",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        const system = request.messages.find(
+          (message) => message.role === "system",
+        );
+        if (system && typeof system.content === "string")
+          systemPrompts.push(system.content);
+        const pending = systemPrompts
+          .at(-1)
+          ?.includes("<pending_user_intents>");
+        // Acknowledge exactly once, when the pending intent is actually
+        // injected (turn 3) and we know the message id.
+        if (pending && ackAttempted === 0 && sentID) {
+          ackAttempted += 1;
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "call_ack",
+                name: "mailbox_acknowledge",
+                arguments: JSON.stringify({ messageIDs: [sentID] }),
+              },
+            ],
+          };
+        }
+        yield { type: "done" as const };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  await client.submit("first");
+  await pollHistoryForFinished(client);
+
+  // Seed a queued mailbox message while idle.
+  await client.mailboxSend?.({
+    intent: "constraint",
+    text: "never commit the lockfile",
+    safeSummary: "a constraint",
+  });
+  sentID = (await client.mailboxList!())[0]!.messageID;
+
+  // Turn 2's boundary delivers the intent; turn 3 injects it and the model
+  // acknowledges it via the tool.
+  await client.submit("second");
+  await pollHistoryForFinished(client);
+  expect(systemPrompts.at(-1)).not.toContain("never commit the lockfile");
+
+  await client.submit("third");
+  await pollHistoryForFinished(client);
+  expect(ackAttempted).toBe(1);
+  expect(events.some((event) => event.type === "mailbox.acknowledged")).toBe(
+    true,
+  );
+
+  // Turn 4 no longer injects it (acknowledged messages are excluded).
+  await client.submit("fourth");
+  await pollHistoryForFinished(client);
+  const last = systemPrompts.at(-1) ?? "";
+  expect(last).not.toContain("never commit the lockfile");
+});
+
 test("durable session replay preserves tool-call pairs for the next provider turn", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-replay-tools-"));
   await writeFile(join(root, "input.txt"), "replay-ok\n");
