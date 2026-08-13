@@ -68,6 +68,33 @@ function fakeBackend(): RuntimeClient {
     driftFindings: async () => [],
     completions: async () => [],
     mailboxSend: async () => ({ queued: true, messageID: "mailbox:v" }),
+    chatSubmit: async ({ text }: { text: string }) => {
+      const user = {
+        messageID: "chat:v1",
+        role: "user" as const,
+        text,
+        at: "now",
+      };
+      sink?.({
+        type: "chat.message.added",
+        id: "chat:v1:user",
+        messageID: user.messageID,
+        role: "user",
+        text,
+        at: "now",
+      });
+      sink?.({
+        type: "chat.message.added",
+        id: "chat:v2:chat",
+        messageID: "chat:v2",
+        role: "chat",
+        text: "the main agent is running step 2",
+        at: "now",
+      });
+      return { messageID: "chat:v2" };
+    },
+    chatMessages: async () => [],
+    chatRollback: async () => ({ rolledBackTo: "chat:v1", removed: 1 }),
   };
 }
 
@@ -124,7 +151,7 @@ test("chat.open docks the Live Work Chat beside the feed and focuses the chat pa
     const frame = mounted.setup.captureCharFrame();
     expect(frame).toContain("Live Work Chat");
     expect(frame).toContain("Main agent: running");
-    expect(frame).toContain("Type a message for the main agent");
+    expect(frame).toContain("Ask the Chat");
     // The feed stays visible beside the docked view.
     expect(frame).toContain("Ask anything...");
     expect(frame).toContain("pane: chat");

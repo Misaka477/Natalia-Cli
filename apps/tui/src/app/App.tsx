@@ -1063,6 +1063,7 @@ function Shell(props: {
         >
           <LiveChatView
             backend={props.backend}
+            messages={() => state.chatMessages}
             focused={() => viewFocus() === "chat"}
             onRequestFocus={() => setViewFocus("chat")}
             onEscape={() => setViewFocus("main")}
@@ -1071,6 +1072,19 @@ function Shell(props: {
               setViewFocus("main");
             }}
             onInputRef={setChatInput}
+            onSend={(text) => {
+              void props.backend.chatSubmit?.({ text }).catch((error) =>
+                toast.show({
+                  variant: "error",
+                  message: `Chat message not delivered: ${
+                    error instanceof Error ? error.message : String(error)
+                  }`.slice(0, 160),
+                }),
+              );
+            }}
+            onRollback={(toMessageID) => {
+              void props.backend.chatRollback?.({ toMessageID });
+            }}
           />
         </box>
       </Show>
@@ -1087,6 +1101,7 @@ function Shell(props: {
         >
           <LiveChatView
             backend={props.backend}
+            messages={() => state.chatMessages}
             focused={() => viewFocus() === "chat"}
             onRequestFocus={() => setViewFocus("chat")}
             onEscape={() => {
@@ -1099,6 +1114,19 @@ function Shell(props: {
               setViewFocus("main");
             }}
             onInputRef={setChatInput}
+            onSend={(text) => {
+              void props.backend.chatSubmit?.({ text }).catch((error) =>
+                toast.show({
+                  variant: "error",
+                  message: `Chat message not delivered: ${
+                    error instanceof Error ? error.message : String(error)
+                  }`.slice(0, 160),
+                }),
+              );
+            }}
+            onRollback={(toMessageID) => {
+              void props.backend.chatRollback?.({ toMessageID });
+            }}
           />
         </box>
       </Show>

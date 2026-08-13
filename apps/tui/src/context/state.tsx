@@ -147,6 +147,18 @@ export type AppState = {
    */
   facts: ViewAppState;
   terminalPane: { selectedID?: string; focus: "chat" | "terminal" };
+  /**
+   * The Live Work Chat conversation, projected from the durable journal
+   * (`chat.message.added` appends, `chat.message.delta` streams the last chat
+   * message, `chat.rollback` truncates). Same source as the runtime reads, so
+   * the view never drifts from the journal (§8.3).
+   */
+  chatMessages: Array<{
+    messageID: string;
+    role: "user" | "chat";
+    text: string;
+    at: string;
+  }>;
 };
 
 /**
@@ -168,6 +180,7 @@ export function createInitialState(): AppState {
     modal: structuredClone(initialModalState),
     facts: initialFacts(),
     terminalPane: { focus: "chat" },
+    chatMessages: [],
     messages: [],
   };
 }
@@ -516,6 +529,27 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
       state.terminalPane.focus = event.focus;
       state.terminalPane.selectedID ??= nextActiveTerminal(state);
       return;
+    case "chat.message.added":
+      state.chatMessages.push({
+        messageID: event.messageID,
+        role: event.role,
+        text: event.text,
+        at: event.at,
+      });
+      return;
+    case "chat.message.delta": {
+      const last = state.chatMessages.at(-1);
+      if (last && last.role === "chat") last.text = event.text;
+      return;
+    }
+    case "chat.rollback": {
+      const index = state.chatMessages.findIndex(
+        (message) => message.messageID === event.toMessageID,
+      );
+      if (index !== -1) state.chatMessages.splice(index + 1);
+      else state.chatMessages.length = 0;
+      return;
+    }
     case "terminal.timeline":
       applyResourceEvent(state.facts, event);
       return;

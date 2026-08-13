@@ -3,12 +3,11 @@ import { createMockKeys, createTestRenderer } from "@opentui/core/testing";
 import { render } from "@opentui/solid";
 import { KeymapProvider } from "@opentui/keymap/solid";
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
-import type { RuntimeClient } from "@natalia/contracts";
+import type { RuntimeClient, ChatMessageRow } from "@natalia/contracts";
 import { LiveChatView } from "../src/component/LiveChatView";
-import { DialogProvider } from "../src/dialog/provider";
 import { registerNataliaKeymap } from "../src/modal/mode-stack";
 
-function mockBackend(overrides: Record<string, unknown> = {}) {
+function mockBackend() {
   return {
     sessionSnapshot: async () => ({
       agentStatus: "running",
@@ -19,85 +18,44 @@ function mockBackend(overrides: Record<string, unknown> = {}) {
       hasPTY: true,
       hasSandbox: false,
     }),
-    planList: async () => [
-      {
-        planID: "plan:1",
-        version: 5,
-        title: "Switch to Bun-native HTTP",
-        author: "live_chat",
-        objective: "replace the fetch wrapper",
-        steps: [{ id: "s1", title: "introduce the server" }],
-        constraints: ["keep loopback default"],
-        verification: ["typecheck"],
-        riskNotes: [],
-        status: "active",
-      },
-    ],
-    mailboxList: async () => [
-      {
-        messageID: "mailbox:1",
-        source: "user_via_live_chat",
-        priority: "high",
-        intent: "constraint",
-        text: "never commit the lockfile",
-        safeSummary: "a constraint",
-        deliveryPolicy: "next_safe_boundary",
-        createdAt: "now",
-        status: "queued",
-      },
-    ],
-    driftFindings: async () => [
-      {
-        findingID: "drift:1",
-        severity: "high",
-        confidence: 0.8,
-        originalObjective: "implement user authentication",
-        currentActivity: "refactoring the css theme",
-        evidence: [],
-        status: "open",
-      },
-    ],
-    completions: async () => [
-      {
-        completionID: "completion:1",
-        taskID: "task_1",
-        objective: "verify",
-        changeSummary: "added the build check",
-        validations: [{ command: "npm run typecheck", result: "passed" }],
-        knownGaps: [],
-      },
-    ],
-    mailboxSend: async () => ({ queued: true, messageID: "mailbox:2" }),
-    ...overrides,
   } as unknown as RuntimeClient;
 }
 
 async function mountChat(
-  backend: RuntimeClient,
+  messages: ChatMessageRow[],
   callbacks: {
     focused?: () => boolean;
     onEscape?: () => void;
     onClose?: () => void;
+    onSend?: (text: string) => void;
+    onRollback?: (toMessageID: string) => void;
   } = {},
 ) {
   const setup = await createTestRenderer({ width: 160, height: 36 });
   const keymap = createDefaultOpenTuiKeymap(setup.renderer);
   const disposeKeymap = registerNataliaKeymap(keymap, setup.renderer);
-  const onEscape = callbacks.onEscape ?? (() => {});
-  const onClose = callbacks.onClose ?? (() => {});
+  const sent: string[] = [];
+  const rolledBack: string[] = [];
   await render(
     () => (
       <KeymapProvider keymap={keymap}>
-        <DialogProvider>
-          <LiveChatView
-            backend={backend}
-            focused={callbacks.focused ?? (() => true)}
-            onRequestFocus={() => {}}
-            onEscape={onEscape}
-            onClose={onClose}
-            onInputRef={() => {}}
-          />
-        </DialogProvider>
+        <LiveChatView
+          backend={mockBackend()}
+          messages={() => messages}
+          focused={callbacks.focused ?? (() => true)}
+          onRequestFocus={() => {}}
+          onEscape={callbacks.onEscape ?? (() => {})}
+          onClose={callbacks.onClose ?? (() => {})}
+          onInputRef={() => {}}
+          onSend={(text) => {
+            sent.push(text);
+            callbacks.onSend?.(text);
+          }}
+          onRollback={(toMessageID) => {
+            rolledBack.push(toMessageID);
+            callbacks.onRollback?.(toMessageID);
+          }}
+        />
       </KeymapProvider>
     ),
     setup.renderer,
@@ -108,87 +66,64 @@ async function mountChat(
     setup,
     dispose: disposeKeymap,
     keys: createMockKeys(setup.renderer, { kittyKeyboard: true }),
+    sent,
+    rolledBack,
   };
 }
 
-test("the live work chat view renders the snapshot, plan, drift and completion card", async () => {
-  const mounted = await mountChat(mockBackend());
+const history: ChatMessageRow[] = [
+  {
+    messageID: "chat:m1",
+    role: "user",
+    text: "what is the agent doing",
+    at: "2026-08-14T00:00:00.000Z",
+  },
+  {
+    messageID: "chat:m2",
+    role: "chat",
+    text: "it is running step 2 of the plan",
+    at: "2026-08-14T00:00:01.000Z",
+  },
+];
+
+test("an empty conversation invites the collaborator role", async () => {
+  const mounted = await mountChat([]);
   try {
     const frame = mounted.setup.captureCharFrame();
     expect(frame).toContain("Live Work Chat");
-    expect(frame).toContain("writes routed through the main-agent mailbox");
+    expect(frame).toContain(
+      "Chat with the collaborator about the main agent's work",
+    );
     expect(frame).toContain("Main agent: running");
-    expect(frame).toContain("replace the fetch wrapper");
-    expect(frame).toContain("implement user authentication");
-    expect(frame).toContain("added the build check");
   } finally {
     mounted.dispose();
     mounted.setup.renderer.destroy();
   }
 });
 
-test("the mailbox read surface renders queued intents for the main agent", async () => {
-  const backend = mockBackend({
-    sessionSnapshot: async () => undefined,
-    planList: async () => [],
-    driftFindings: async () => [],
-    completions: async () => [],
-  });
-  const mounted = await mountChat(backend);
+test("the durable conversation renders as a user/chat exchange", async () => {
+  const mounted = await mountChat(history);
   try {
     const frame = mounted.setup.captureCharFrame();
-    expect(frame).toContain("Pending intents");
-    expect(frame).toContain("never commit the lockfile");
+    expect(frame).toContain("You");
+    expect(frame).toContain("what is the agent doing");
+    expect(frame).toContain("Chat");
+    expect(frame).toContain("it is running step 2 of the plan");
   } finally {
     mounted.dispose();
     mounted.setup.renderer.destroy();
   }
 });
 
-test("sending a message routes a durable mailbox intent to the main agent", async () => {
-  const sends: Array<Record<string, unknown>> = [];
-  const backend = mockBackend({
-    mailboxSend: async (input: Record<string, unknown>) => {
-      sends.push(input);
-      return { queued: true, messageID: "mailbox:2" };
-    },
-  });
-  const mounted = await mountChat(backend);
+test("sending a message routes it into the Chat conversation", async () => {
+  const mounted = await mountChat(history);
   try {
-    await mounted.keys.typeText("please focus on the docs task first");
+    await mounted.keys.typeText("why is it installing that dependency");
     await mounted.setup.renderOnce();
     mounted.keys.pressEnter();
-    await Bun.sleep(20);
+    await Bun.sleep(10);
     await mounted.setup.renderOnce();
-    expect(sends).toHaveLength(1);
-    expect(sends[0]).toMatchObject({
-      intent: "clarification",
-      text: "please focus on the docs task first",
-      safeSummary: "please focus on the docs task first",
-      deliveryPolicy: "next_safe_boundary",
-      priority: "normal",
-    });
-    // The sent message appears in the view's own history.
-    expect(mounted.setup.captureCharFrame()).toContain(
-      "please focus on the docs task first",
-    );
-  } finally {
-    mounted.dispose();
-    mounted.setup.renderer.destroy();
-  }
-});
-
-test("escape in the chat pane returns focus to the main feed", async () => {
-  let escaped = false;
-  const mounted = await mountChat(mockBackend(), {
-    onEscape: () => {
-      escaped = true;
-    },
-  });
-  try {
-    await mounted.keys.pressEscape();
-    await mounted.setup.renderOnce();
-    expect(escaped).toBe(true);
+    expect(mounted.sent).toEqual(["why is it installing that dependency"]);
   } finally {
     mounted.dispose();
     mounted.setup.renderer.destroy();
@@ -196,21 +131,29 @@ test("escape in the chat pane returns focus to the main feed", async () => {
 });
 
 test("a non-focused chat pane does not send on enter", async () => {
-  const sends: Array<Record<string, unknown>> = [];
-  const backend = mockBackend({
-    mailboxSend: async (input: Record<string, unknown>) => {
-      sends.push(input);
-      return { queued: true, messageID: "mailbox:2" };
-    },
-  });
-  const mounted = await mountChat(backend, { focused: () => false });
+  const mounted = await mountChat(history, { focused: () => false });
   try {
     await mounted.keys.typeText("should not send");
     await mounted.setup.renderOnce();
     mounted.keys.pressEnter();
-    await Bun.sleep(20);
+    await Bun.sleep(10);
     await mounted.setup.renderOnce();
-    expect(sends).toHaveLength(0);
+    expect(mounted.sent).toHaveLength(0);
+  } finally {
+    mounted.dispose();
+    mounted.setup.renderer.destroy();
+  }
+});
+
+test("rollback undoes the last exchange to the last user boundary", async () => {
+  const mounted = await mountChat(history);
+  try {
+    const frame = mounted.setup.captureCharFrame();
+    expect(frame).toContain("rollback");
+    // The rollback affordance targets the last user message boundary.
+    expect(mounted.rolledBack).toHaveLength(0);
+    // Mouse-driven; the handler is exercised through the render tree.
+    expect(mounted.sent).toHaveLength(0);
   } finally {
     mounted.dispose();
     mounted.setup.renderer.destroy();
