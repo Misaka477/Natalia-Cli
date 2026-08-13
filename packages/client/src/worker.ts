@@ -213,10 +213,12 @@ export type RuntimeWorkerPort = {
     type: "message",
     handler: (event: MessageEvent<unknown>) => void,
   ): void;
+  addEventListener(type: "close", handler: (event: Event) => void): void;
   removeEventListener(
     type: "message",
     handler: (event: MessageEvent<unknown>) => void,
   ): void;
+  removeEventListener(type: "close", handler: (event: Event) => void): void;
 };
 
 export type WorkerRuntimeClient = RuntimeClient & {
@@ -264,6 +266,18 @@ export function createWorkerRuntimeClient(
     else request.resolve(message.value);
   };
   port.addEventListener("message", onMessage);
+  // The worker can exit underneath the TUI (provider connection loss, crash,
+  // dispose). Surface that through the event stream instead of leaving a
+  // silently dead backend whose every next request fails.
+  port.addEventListener("close", () => {
+    if (!sink) return;
+    sink({
+      type: "diagnostic",
+      level: "error",
+      message: "runtime worker exited; the session backend is unavailable",
+      at: new Date().toISOString(),
+    });
+  });
   port.start?.();
   /**
    * Notifications have no caller waiting on them, so a rejected worker request
@@ -285,12 +299,21 @@ export function createWorkerRuntimeClient(
     const id = `wrk_${(++sequence).toString(36)}`;
     return new Promise<unknown>((resolve, reject) => {
       pending.set(id, { resolve, reject });
-      port.postMessage({
-        type: "runtime.request",
-        id,
-        method,
-        value,
-      } satisfies WorkerRequest);
+      try {
+        port.postMessage({
+          type: "runtime.request",
+          id,
+          method,
+          value,
+        } satisfies WorkerRequest);
+      } catch (error) {
+        // The worker can exit underneath the TUI (provider connection loss,
+        // crash, dispose). Reject immediately and do not strand the pending
+        // entry; callers that await receive the error, callers that fire and
+        // forget must catch it themselves.
+        pending.delete(id);
+        reject(error);
+      }
     });
   };
   return {
