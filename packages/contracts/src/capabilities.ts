@@ -227,6 +227,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "planQueue",
     "planActivate",
     "planSupersede",
+    "planCompleted",
   ],
 } as const satisfies Record<string, readonly (keyof RuntimeClient)[]>;
 

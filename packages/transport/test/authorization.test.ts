@@ -138,6 +138,7 @@ function controllableClient() {
     "planQueue",
     "planActivate",
     "planSupersede",
+    "planCompleted",
     "settingsGet",
   ])
     client[member] = () => undefined;

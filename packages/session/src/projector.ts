@@ -598,6 +598,8 @@ export type ProjectedPlan = {
   verification: string[];
   riskNotes: string[];
   relatedMailboxMessageID?: string;
+  /** The task this plan verifies (E3 task contract). */
+  taskID?: string;
   supersedesPlanID?: string;
   createdAt: string;
   status:
@@ -629,6 +631,7 @@ export function projectedPlans(events: RuntimeEvent[]): ProjectedPlan[] {
         ...(rawEvent.relatedMailboxMessageID
           ? { relatedMailboxMessageID: rawEvent.relatedMailboxMessageID }
           : {}),
+        ...(rawEvent.taskID ? { taskID: rawEvent.taskID } : {}),
         ...(rawEvent.supersedesPlanID
           ? { supersedesPlanID: rawEvent.supersedesPlanID }
           : {}),

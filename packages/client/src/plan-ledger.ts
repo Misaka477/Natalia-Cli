@@ -38,6 +38,9 @@ export type PlanDraftInput = {
   verification?: string[];
   riskNotes?: string[];
   relatedMailboxMessageID?: string;
+  /** The task this plan verifies (E3 task contract). The task's evidence
+   *  records are the completion evidence for this plan. */
+  taskID?: string;
   supersedesPlanID?: string;
   createdAt: string;
   reason?: string;
@@ -67,6 +70,7 @@ export function buildPlanDraftCreated(
     ...(input.relatedMailboxMessageID
       ? { relatedMailboxMessageID: input.relatedMailboxMessageID }
       : {}),
+    ...(input.taskID ? { taskID: input.taskID } : {}),
     ...(input.supersedesPlanID
       ? { supersedesPlanID: input.supersedesPlanID }
       : {}),

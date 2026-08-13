@@ -492,6 +492,11 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "superseded",
     note: "supersedes a plan with a safe reason",
   },
+  planCompleted: {
+    refusal: "value",
+    expressedBy: "completed",
+    note: "marks an active plan completed; its task's evidence moves to accepted (E3)",
+  },
 } as const satisfies Record<keyof RuntimeClient, MemberRefusalSemantics>;
 
 type AssertNever<T extends never> = T;

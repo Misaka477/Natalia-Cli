@@ -612,6 +612,8 @@ type RuntimeEventData =
       verification?: string[];
       riskNotes?: string[];
       relatedMailboxMessageID?: string;
+      /** The task this plan verifies (E3 task contract). */
+      taskID?: string;
       supersedesPlanID?: string;
       createdAt: string;
       reason?: string;
@@ -2063,6 +2065,7 @@ export type RuntimeClient = {
     riskNotes?: string[];
     relatedMailboxMessageID?: string;
     supersedesPlanID?: string;
+    taskID?: string;
   }): Promise<{ created: boolean; planID?: string }>;
   /** Updates a draft plan's content (keeps the plan, bumps version). */
   planUpdate?(input: {
@@ -2092,11 +2095,15 @@ export type RuntimeClient = {
     planID: string,
     reason?: string,
   ): Promise<{ superseded: boolean }>;
+  /** Marks an active plan completed; its task's evidence moves to accepted (E3). */
+  planCompleted?(planID: string): Promise<{ completed: boolean }>;
   evidenceRecords?(): Promise<
     Array<{
       taskID: string;
       objective: string;
       status: string;
+      /** E3: the status driven by its plan's lifecycle, when the record belongs to a task. */
+      effectiveStatus?: string;
       changes: Array<{
         path: string;
         changeType: "added" | "modified" | "deleted";

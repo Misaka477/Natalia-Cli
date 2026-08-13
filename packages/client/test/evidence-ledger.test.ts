@@ -3,6 +3,7 @@ import {
   boundValidationOutcome,
   buildCompletionRecorded,
   buildEvidenceRecorded,
+  evidenceStatusForPlanState,
 } from "../src/evidence-ledger";
 import type { RuntimeEvent } from "@natalia/contracts";
 
@@ -152,4 +153,22 @@ test("completion cards carry the fixed fields and omit empty optional sections",
   expect("humanValidation" in event).toBe(false);
   expect("knownGaps" in event).toBe(false);
   expect("rollbackState" in event).toBe(false);
+});
+
+test("evidence status transition policy maps plan lifecycle to effective status", () => {
+  expect(evidenceStatusForPlanState("accepted", "implemented")).toBe("planned");
+  expect(evidenceStatusForPlanState("queued_next_plan", "validated")).toBe(
+    "planned",
+  );
+  expect(evidenceStatusForPlanState("active", "planned")).toBe("implemented");
+  expect(evidenceStatusForPlanState("completed", "implemented")).toBe(
+    "accepted",
+  );
+  // A draft/proposed/superseded plan does not change the recorded status.
+  expect(evidenceStatusForPlanState("draft", "implemented")).toBe(
+    "implemented",
+  );
+  expect(evidenceStatusForPlanState("superseded", "validated")).toBe(
+    "validated",
+  );
 });

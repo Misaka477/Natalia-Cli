@@ -141,3 +141,59 @@ export function buildCompletionRecorded(input: {
     recordedAt: input.recordedAt,
   };
 }
+
+/**
+ * P2 E3: the evidence status transition policy. A plan's lifecycle drives the
+ * EFFECTIVE status of the evidence records that belong to its task — an
+ * evidence record is an immutable fact (it records what was run when), but its
+ * meaning progresses as the plan does. This is a projection policy: it never
+ * rewrites the journal, it answers "what does this evidence mean now".
+ *
+ * Mapping (§6.2 statuses):
+ *   - plan proposed/queued:      evidence stays as recorded
+ *   - plan accepted:             evidence moves to "planned" (the task is
+ *                                committed to, validation not yet run)
+ *   - plan activated:            evidence moves to "implemented" (work in
+ *                                progress under this plan)
+ *   - plan completed:            evidence moves to "accepted" (the plan's task
+ *                                passed its validation contract)
+ *   - plan superseded/archived:  evidence stays as recorded (a dead plan does
+ *                                not promote its evidence)
+ */
+export type PlanLifecycleState =
+  | "draft"
+  | "proposed"
+  | "accepted"
+  | "queued_next_plan"
+  | "active"
+  | "completed"
+  | "superseded"
+  | "archived";
+
+export type EvidenceRecordedStatus =
+  | "planned"
+  | "implemented"
+  | "validated"
+  | "accepted"
+  | "promoted"
+  | "blocked"
+  | "failed"
+  | "partial";
+
+export function evidenceStatusForPlanState(
+  planState: PlanLifecycleState,
+  recordedStatus: EvidenceRecordedStatus,
+): EvidenceRecordedStatus {
+  switch (planState) {
+    case "accepted":
+      return "planned";
+    case "queued_next_plan":
+      return "planned";
+    case "active":
+      return "implemented";
+    case "completed":
+      return "accepted";
+    default:
+      return recordedStatus;
+  }
+}

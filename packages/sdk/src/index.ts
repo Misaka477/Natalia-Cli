@@ -436,6 +436,7 @@ export type NataliaSDK = {
     riskNotes?: string[];
     relatedMailboxMessageID?: string;
     supersedesPlanID?: string;
+    taskID?: string;
   }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planCreate"]>>>>;
   /** Updates a draft plan's content, bumping its version. */
   planUpdate(input: {
@@ -473,6 +474,10 @@ export type NataliaSDK = {
     planID: string,
     reason?: string,
   ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planSupersede"]>>>>;
+  /** Marks an active plan completed; its task's evidence moves to accepted (E3). */
+  planCompleted(
+    planID: string,
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planCompleted"]>>>>;
   driftFindings(): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["driftFindings"]>>>
   >;
@@ -880,6 +885,7 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         riskNotes: input.riskNotes ?? [],
         relatedMailboxMessageID: input.relatedMailboxMessageID,
         supersedesPlanID: input.supersedesPlanID,
+        taskID: input.taskID,
       }),
     planUpdate: async (input) =>
       await call("plan.update", {
@@ -897,6 +903,7 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     planActivate: async (planID) => await call("plan.activate", { planID }),
     planSupersede: async (planID, reason) =>
       await call("plan.supersede", { planID, reason }),
+    planCompleted: async (planID) => await call("plan.complete", { planID }),
     driftFindings: async () => await call("drift.findings", {}),
     evaluateDrift: async (input) =>
       await call("drift.evaluate", {

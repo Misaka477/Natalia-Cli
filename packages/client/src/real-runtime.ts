@@ -162,6 +162,8 @@ import {
   boundValidationOutcome,
   buildCompletionRecorded,
   buildEvidenceRecorded,
+  evidenceStatusForPlanState,
+  type PlanLifecycleState,
 } from "./evidence-ledger";
 import { buildMailboxQueued, buildMailboxStatus } from "./mailbox-ledger";
 import { buildPlanDraftCreated, buildPlanTransition } from "./plan-ledger";
@@ -3613,10 +3615,26 @@ export function createRealRuntimeClient(
     },
     async evidenceRecords() {
       if (!session) return [];
+      // P2 E3: the effective status of each evidence record is driven by the
+      // lifecycle of the plan whose task it belongs to (a projection policy —
+      // the journal keeps the recorded status; the query answers what it means
+      // now).
+      const plans = projectedPlans(session.events);
+      const planStateForTask = new Map<string, string>();
+      for (const plan of plans) {
+        if (plan.taskID) planStateForTask.set(plan.taskID, plan.status);
+      }
       return projectedEvidenceRecords(session.events).map((r) => ({
         taskID: r.taskID,
         objective: r.objective,
         status: r.status,
+        effectiveStatus:
+          r.taskID && planStateForTask.has(r.taskID)
+            ? evidenceStatusForPlanState(
+                planStateForTask.get(r.taskID)! as PlanLifecycleState,
+                r.status,
+              )
+            : r.status,
         changes: r.changes ?? [],
         validations: r.validations ?? [],
         knownGaps: r.knownGaps ?? [],
@@ -3951,6 +3969,7 @@ export function createRealRuntimeClient(
       riskNotes?: string[];
       relatedMailboxMessageID?: string;
       supersedesPlanID?: string;
+      taskID?: string;
     }) {
       if (!session) return { created: false as const };
       if (
@@ -3986,6 +4005,7 @@ export function createRealRuntimeClient(
           ...(input.relatedMailboxMessageID
             ? { relatedMailboxMessageID: input.relatedMailboxMessageID }
             : {}),
+          ...(input.taskID ? { taskID: input.taskID } : {}),
           ...(input.supersedesPlanID
             ? { supersedesPlanID: input.supersedesPlanID }
             : {}),
@@ -4139,6 +4159,26 @@ export function createRealRuntimeClient(
         }),
       );
       return { superseded: true as const };
+    },
+    async planCompleted(planID: string) {
+      if (!session || typeof planID !== "string" || !planID)
+        return { completed: false as const };
+      const plan = projectedPlans(session.events).find(
+        (candidate) =>
+          candidate.planID === planID && candidate.status === "active",
+      );
+      if (!plan) return { completed: false as const };
+      publishForSession(
+        activeExec,
+        buildPlanTransition({
+          id: `${planID}:completed:${plan.version + 1}`,
+          planID,
+          version: plan.version + 1,
+          transition: "completed",
+          at: new Date().toISOString(),
+        }),
+      );
+      return { completed: true as const };
     },
     async sessionSnapshot() {
       if (!session) return undefined;

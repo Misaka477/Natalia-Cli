@@ -5479,6 +5479,85 @@ test("recordCompletion rejects an empty task id or change summary", async () => 
   ).toEqual({ recorded: false });
 });
 
+test("a completed plan drives its task's evidence to accepted (E3 status policy)", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-e3-policy-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_e3_policy",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => {
+    if (event.type === "approval.request" && event.scope === "plan_acceptance")
+      client.respondApproval({ requestID: event.id, decision: "once" });
+  });
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+
+  // Evidence recorded for the task.
+  await client.recordValidation?.({
+    taskID: "task_e3",
+    objective: "verify the build",
+    command: "exit 0",
+  });
+
+  // A plan that verifies the task, driven through the lifecycle.
+  const created = await client.planCreate?.({
+    title: "Verify the build task",
+    author: "live_chat",
+    objective: "verify the build task",
+    steps: [{ id: "s1", title: "run validation" }],
+    taskID: "task_e3",
+  });
+  const planID = created!.planID!;
+  await client.planPropose?.(planID);
+  await client.planAccept?.(planID);
+  await client.planQueue?.(planID);
+  await client.submit("second");
+  await pollHistoryForFinished(client);
+  // Active plan -> evidence effective status "implemented".
+  let evidence = await client.evidenceRecords!();
+  expect(evidence[0]?.effectiveStatus).toBe("implemented");
+
+  await client.planCompleted?.(planID);
+  evidence = await client.evidenceRecords!();
+  expect(evidence[0]?.effectiveStatus).toBe("accepted");
+  expect(evidence[0]?.status).toBe("validated");
+});
+
+test("planCompleted rejects a plan that is not active", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-plan-complete-rej-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_plan_complete_rej",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => {});
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+
+  const created = await client.planCreate?.({
+    title: "Draft only",
+    author: "live_chat",
+    objective: "never activated",
+    steps: [{ id: "s1", title: "first" }],
+  });
+  expect(await client.planCompleted?.(created!.planID!)).toEqual({
+    completed: false,
+  });
+});
+
 test("mailbox send/list/deliver/acknowledge records a durable lifecycle", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-mailbox-"));
   const client = createRealRuntimeClient({

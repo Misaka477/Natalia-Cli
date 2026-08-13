@@ -222,6 +222,7 @@ export const RPC_ROUTE_MEMBERS = {
   "plan.queue": "planQueue",
   "plan.activate": "planActivate",
   "plan.supersede": "planSupersede",
+  "plan.complete": "planCompleted",
   capabilities: "capabilities",
   "session.snapshot": "sessionSnapshot",
   "submit.input": "submitInput",
@@ -1706,6 +1707,7 @@ export async function handleRPCMessage(
         ...(typeof params.supersedesPlanID === "string"
           ? { supersedesPlanID: params.supersedesPlanID }
           : {}),
+        ...(typeof params.taskID === "string" ? { taskID: params.taskID } : {}),
       });
       if (!result)
         throw invalidParams("plan.create is not implemented by this runtime");
@@ -1806,6 +1808,18 @@ export async function handleRPCMessage(
           planID,
           typeof params.reason === "string" ? params.reason : undefined,
         ),
+      };
+    }
+    if (body.method === "plan.complete") {
+      optionsGuard(client, "planCompleted");
+      const params = body.params as Record<string, unknown> | undefined;
+      const planID = params?.planID;
+      if (typeof planID !== "string" || !planID)
+        throw invalidParams("plan.complete requires a planID string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.planCompleted?.(planID),
       };
     }
     if (body.method === "capabilities") {
