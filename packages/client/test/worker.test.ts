@@ -835,3 +835,105 @@ test("the worker channel routes the sandbox, agent-select and fork surface", asy
     runningResources: [],
   });
 });
+
+test("fact-domain read queries and mailbox writes route through the channel", async () => {
+  const channel = new MessageChannel();
+  let sink: ((event: RuntimeEvent) => void) | undefined;
+  const host: RuntimeClient = {
+    start(handler) {
+      sink = handler;
+    },
+    async submit(text) {
+      const event: SubmittedTurn = {
+        type: "turn.submitted",
+        id: "turn_worker_facts",
+        text,
+        byteLength: text.length,
+        lineCount: 1,
+        sha256: "test",
+      };
+      sink?.(event);
+      return event;
+    },
+    cancel() {},
+    diagnostic() {},
+    lastSubmission: () => undefined,
+    snapshot: () => ({
+      type: "snapshot.created",
+      id: "snapshot_worker_facts",
+      files: [],
+    }),
+    respondApproval() {
+      return { accepted: true };
+    },
+    respondQuestion() {
+      return { accepted: true };
+    },
+    sessionSnapshot: async () => ({
+      agentStatus: "running",
+      changedFiles: 1,
+      unvalidatedChanges: 1,
+      hasPTY: false,
+      hasSandbox: false,
+    }),
+    planList: async () => [
+      {
+        planID: "plan:1",
+        version: 1,
+        title: "t",
+        author: "main_agent",
+        objective: "o",
+        steps: [],
+        constraints: [],
+        verification: [],
+        riskNotes: [],
+        status: "active",
+        createdAt: "2026-08-12T00:00:00.000Z",
+      },
+    ],
+    planAccept: async () => ({ accepted: true }),
+    mailboxList: async () => [],
+    mailboxSend: async (input) => ({ queued: true, messageID: "mailbox:1" }),
+    mailboxAcknowledge: async () => ({ acknowledged: true }),
+    driftFindings: async () => [],
+    completions: async () => [],
+    constitutionRules: async () => [],
+    decisionRecords: async () => [],
+    evidenceRecords: async () => [],
+    chatMessages: async () => [
+      { messageID: "chat:m1", role: "user", text: "hi", at: "now" },
+    ],
+    chatRollback: async () => ({ rolledBackTo: "chat:m1", removed: 1 }),
+  };
+  attachRuntimeClientWorker(channel.port1, host);
+  const client = createWorkerRuntimeClient(channel.port2);
+  client.start((event) => sink?.(event));
+
+  expect(await client.sessionSnapshot!()).toMatchObject({
+    agentStatus: "running",
+  });
+  expect(await client.planList!()).toHaveLength(1);
+  expect(await client.planAccept!("plan:1")).toEqual({ accepted: true });
+  expect(
+    await client.mailboxSend!({ intent: "clarification", text: "hi" }),
+  ).toEqual({
+    queued: true,
+    messageID: "mailbox:1",
+  });
+  expect(await client.mailboxList!()).toEqual([]);
+  expect(await client.mailboxAcknowledge!("mailbox:1")).toEqual({
+    acknowledged: true,
+  });
+  expect(await client.driftFindings!()).toEqual([]);
+  expect(await client.completions!()).toEqual([]);
+  expect(await client.constitutionRules!()).toEqual([]);
+  expect(await client.decisionRecords!()).toEqual([]);
+  expect(await client.evidenceRecords!()).toEqual([]);
+  expect(await client.chatMessages!()).toEqual([
+    { messageID: "chat:m1", role: "user", text: "hi", at: "now" },
+  ]);
+  expect(await client.chatRollback!({ toMessageID: "chat:m1" })).toEqual({
+    rolledBackTo: "chat:m1",
+    removed: 1,
+  });
+});

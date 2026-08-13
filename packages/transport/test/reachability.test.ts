@@ -238,7 +238,7 @@ test("the remote report says implemented-but-unrouted for the P0-C work list", a
     ).toBe("implemented_unreachable");
     expect(
       allChannelMembers.find((entry) => entry.member === member)!.reason,
-    ).toContain("intentionally local");
+    ).toMatch(/(intentionally local|pending route)/);
     expect(reason.length).toBeGreaterThan(0);
   }
   expect(
@@ -319,8 +319,10 @@ test("the worker channel reports its own gaps instead of hiding them", async () 
     ),
   );
   // P0-C aligned the worker channel: checkpoint and the secure-input control
-  // are routed now. The channel's remaining gaps (MCP, work graph, the
-  // intelligence surface) are still reported — that is the point, no silence.
+  // are routed now. The intelligence surface (constitution, mailbox, plan,
+  // drift, completions, snapshot, evidence/decision reads) joined it in the
+  // view-dock round (§56.50). The channel's remaining gap (work graph) is
+  // still reported — that is the point, no silence.
   expect(byMember.get("nativeTerminalBeginSecureInput")).toBe(
     "implemented_reachable",
   );
@@ -332,7 +334,10 @@ test("the worker channel reports its own gaps instead of hiding them", async () 
   expect(byMember.get("sessionFork")).toBe("implemented_reachable");
   expect(byMember.get("sandboxList")).toBe("implemented_reachable");
   expect(byMember.get("selectAgent")).toBe("implemented_reachable");
-  expect(byMember.get("constitutionRules")).toBe("implemented_unreachable");
+  expect(byMember.get("constitutionRules")).toBe("implemented_reachable");
+  expect(byMember.get("mailboxSend")).toBe("implemented_reachable");
+  expect(byMember.get("planList")).toBe("implemented_reachable");
+  expect(byMember.get("sessionSnapshot")).toBe("implemented_reachable");
   expect(byMember.get("workGraphNodes")).toBe("implemented_unreachable");
 });
 

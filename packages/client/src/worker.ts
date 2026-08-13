@@ -89,6 +89,19 @@ export const WORKER_ROUTE_MEMBERS = {
   "sandbox.merge": "sandboxMerge",
   "sandbox.delete": "sandboxDelete",
   "agent.select": "selectAgent",
+  "session.snapshot": "sessionSnapshot",
+  "plan.list": "planList",
+  "plan.accept": "planAccept",
+  "mailbox.list": "mailboxList",
+  "mailbox.send": "mailboxSend",
+  "mailbox.acknowledge": "mailboxAcknowledge",
+  "drift.list": "driftFindings",
+  completions: "completions",
+  "constitution.list": "constitutionRules",
+  "decision.list": "decisionRecords",
+  "evidence.list": "evidenceRecords",
+  "chat.messages": "chatMessages",
+  "chat.rollback": "chatRollback",
 } as const satisfies Readonly<Record<string, keyof RuntimeClient | null>>;
 
 /** The member names this channel routes, for reachability reporting. */
@@ -165,6 +178,19 @@ type WorkerRequest = {
     | "sandbox.delete"
     | "agent.select"
     | "runtime.availability"
+    | "session.snapshot"
+    | "plan.list"
+    | "plan.accept"
+    | "mailbox.list"
+    | "mailbox.send"
+    | "mailbox.acknowledge"
+    | "drift.list"
+    | "completions"
+    | "constitution.list"
+    | "decision.list"
+    | "evidence.list"
+    | "chat.messages"
+    | "chat.rollback"
     | "flow.save"
     | "flow.delete"
     | "task.save"
@@ -645,6 +671,71 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["selectAgent"]>>
       >;
     },
+    async sessionSnapshot() {
+      return (await request("session.snapshot")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["sessionSnapshot"]>>
+      >;
+    },
+    async planList() {
+      return (await request("plan.list")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["planList"]>>
+      >;
+    },
+    async planAccept(planID) {
+      return (await request("plan.accept", planID)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["planAccept"]>>
+      >;
+    },
+    async mailboxList() {
+      return (await request("mailbox.list")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["mailboxList"]>>
+      >;
+    },
+    async mailboxSend(input) {
+      return (await request("mailbox.send", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["mailboxSend"]>>
+      >;
+    },
+    async mailboxAcknowledge(messageID) {
+      return (await request("mailbox.acknowledge", messageID)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["mailboxAcknowledge"]>>
+      >;
+    },
+    async driftFindings() {
+      return (await request("drift.list")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["driftFindings"]>>
+      >;
+    },
+    async completions() {
+      return (await request("completions")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["completions"]>>
+      >;
+    },
+    async constitutionRules() {
+      return (await request("constitution.list")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["constitutionRules"]>>
+      >;
+    },
+    async decisionRecords() {
+      return (await request("decision.list")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["decisionRecords"]>>
+      >;
+    },
+    async evidenceRecords() {
+      return (await request("evidence.list")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["evidenceRecords"]>>
+      >;
+    },
+    async chatMessages() {
+      return (await request("chat.messages")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["chatMessages"]>>
+      >;
+    },
+    async chatRollback(input) {
+      return (await request("chat.rollback", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["chatRollback"]>>
+      >;
+    },
     async dispose() {
       await request("dispose");
       port.removeEventListener("message", onMessage);
@@ -1017,6 +1108,29 @@ export async function handleWorkerRequest(
     return await client.sandboxDelete?.(request.value as string);
   if (request.method === "agent.select")
     return await client.selectAgent?.(request.value as string);
+  if (request.method === "session.snapshot")
+    return await client.sessionSnapshot?.();
+  if (request.method === "plan.list") return await client.planList?.();
+  if (request.method === "plan.accept")
+    return await client.planAccept?.(request.value as string);
+  if (request.method === "mailbox.list") return await client.mailboxList?.();
+  if (request.method === "mailbox.send")
+    return await client.mailboxSend?.(request.value as never);
+  if (request.method === "mailbox.acknowledge")
+    return await client.mailboxAcknowledge?.(request.value as string);
+  if (request.method === "drift.list") return await client.driftFindings?.();
+  if (request.method === "completions") return await client.completions?.();
+  if (request.method === "constitution.list")
+    return await client.constitutionRules?.();
+  if (request.method === "decision.list")
+    return await client.decisionRecords?.();
+  if (request.method === "evidence.list")
+    return await client.evidenceRecords?.();
+  if (request.method === "chat.messages") return await client.chatMessages?.();
+  if (request.method === "chat.rollback")
+    return await client.chatRollback?.(
+      request.value as { toMessageID: string },
+    );
   if (request.method === "approval")
     return client.respondApproval(request.value as ApprovalResponse);
   if (request.method === "question")
