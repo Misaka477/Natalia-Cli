@@ -399,6 +399,11 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     note: "records a durable decision fact; decision text and rationale are safe prose, never tool output or file content",
   },
   evidenceRecords: { refusal: "none", note: "pure read" },
+  recordValidation: {
+    refusal: "value",
+    expressedBy: "recorded",
+    note: "runs a validation command and records the outcome; only the command, outcome, bounded safe summary and duration reach the journal — raw output is redacted",
+  },
   driftFindings: { refusal: "none", note: "pure read" },
   registeredTools: { refusal: "none", note: "pure read" },
 } as const satisfies Record<keyof RuntimeClient, MemberRefusalSemantics>;

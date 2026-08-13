@@ -43,6 +43,7 @@ test("the members whose refusal must be a value are named, and each names its fi
     "providerAdd",
     "providerRemove",
     "recordDecision",
+    "recordValidation",
     "reloadConfig",
     "respondApproval",
     "respondQuestion",

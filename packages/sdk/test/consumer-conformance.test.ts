@@ -309,11 +309,11 @@ test("a consumer can ask what this runtime implements, without guessing", async 
       expect(group.available && group.partial).toBe(false);
 
     // And the queries that answer with nothing are named, with a reason, so an
-    // empty array is not mistaken for "nothing recorded". constitution rules and
-    // decision records now have production writers, so they are out of this list.
+    // empty array is not mistaken for "nothing recorded". Constitution rules,
+    // decision records and validation evidence now have production writers, so
+    // they are out of this list.
     expect(report.unimplemented.map((entry) => entry.member).sort()).toEqual([
       "driftFindings",
-      "evidenceRecords",
       "registeredTools",
     ]);
     for (const entry of report.unimplemented)

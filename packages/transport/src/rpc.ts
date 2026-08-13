@@ -198,6 +198,7 @@ export const RPC_ROUTE_MEMBERS = {
   "decision.records": "decisionRecords",
   "decision.record": "recordDecision",
   "evidence.records": "evidenceRecords",
+  "evidence.record": "recordValidation",
   "drift.findings": "driftFindings",
   "tools.registered": "registeredTools",
   capabilities: "capabilities",
@@ -1347,6 +1348,40 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.evidenceRecords(),
+      };
+    }
+    if (body.method === "evidence.record") {
+      optionsGuard(client, "recordValidation");
+      const params = body.params as Record<string, unknown> | undefined;
+      if (
+        !params ||
+        typeof params.taskID !== "string" ||
+        params.taskID.trim().length === 0 ||
+        typeof params.command !== "string" ||
+        params.command.trim().length === 0
+      )
+        throw invalidParams(
+          "evidence.record requires a taskID and a command string",
+        );
+      const result = await client.recordValidation?.({
+        taskID: params.taskID,
+        objective: typeof params.objective === "string" ? params.objective : "",
+        command: params.command,
+        ...(typeof params.timeoutSec === "number"
+          ? { timeoutSec: params.timeoutSec }
+          : {}),
+        ...(Array.isArray(params.knownGaps)
+          ? { knownGaps: params.knownGaps.map(String) }
+          : {}),
+      });
+      if (!result)
+        throw invalidParams(
+          "evidence.record is not implemented by this runtime",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result,
       };
     }
     if (body.method === "drift.findings") {

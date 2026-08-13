@@ -346,6 +346,16 @@ export type NataliaSDK = {
   evidenceRecords(): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["evidenceRecords"]>>>
   >;
+  /** Runs a validation command and records the outcome as durable evidence. */
+  recordValidation(input: {
+    taskID: string;
+    objective: string;
+    command: string;
+    timeoutSec?: number;
+    knownGaps?: string[];
+  }): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["recordValidation"]>>>
+  >;
   driftFindings(): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["driftFindings"]>>>
   >;
@@ -674,6 +684,14 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         linkedConstraints: input.linkedConstraints ?? [],
       }),
     evidenceRecords: async () => await call("evidence.records", {}),
+    recordValidation: async (input) =>
+      await call("evidence.record", {
+        taskID: input.taskID,
+        objective: input.objective,
+        command: input.command,
+        timeoutSec: input.timeoutSec,
+        knownGaps: input.knownGaps ?? [],
+      }),
     driftFindings: async () => await call("drift.findings", {}),
     registeredTools: async () => await call("tools.registered", {}),
     capabilities: async () => await call("capabilities", {}),

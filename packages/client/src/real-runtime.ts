@@ -152,6 +152,10 @@ import { parseToolArguments, tryParseToolArguments } from "./tool-arguments";
 import { createWorkspaceWriteLock } from "./workspace-write-lock";
 import { buildSessionIntelligenceSnapshot } from "./session-intelligence";
 import { recordDecision, seedConstitutionRules } from "./constitution-ledger";
+import {
+  boundValidationOutcome,
+  buildEvidenceRecorded,
+} from "./evidence-ledger";
 
 // Re-exported because the policy tests reach for the risk classifier directly and
 // this file is the package's runtime entry point.
@@ -661,6 +665,7 @@ export function createRealRuntimeClient(
   const activeToolByTurn = new Map<string, string>();
   let sessionSnapshotSequence = 0;
   let decisionSequence = 0;
+  let evidenceSequence = 0;
 
   /**
    * Re-reads the config and re-resolves the provider from it.
@@ -3285,8 +3290,72 @@ export function createRealRuntimeClient(
         taskID: r.taskID,
         objective: r.objective,
         status: r.status,
+        changes: r.changes ?? [],
+        validations: r.validations ?? [],
         knownGaps: r.knownGaps ?? [],
       }));
+    },
+    /**
+     * The `evidence.recorded` production writer (E2 起步): runs a validation
+     * command against the workspace, redacts secrets and truncates the summary,
+     * then records the outcome as a durable evidence fact. This is the
+     * validation-runner adapter — the command runs with the workspace as cwd,
+     * bounded output and a timeout, and only the command, outcome, bounded safe
+     * summary and duration reach the journal. Raw output never does.
+     */
+    async recordValidation(input: {
+      taskID: string;
+      objective: string;
+      command: string;
+      timeoutSec?: number;
+      knownGaps?: string[];
+    }) {
+      if (!session) return { recorded: false as const };
+      if (
+        typeof input.taskID !== "string" ||
+        input.taskID.trim().length === 0 ||
+        typeof input.objective !== "string" ||
+        input.objective.trim().length === 0 ||
+        typeof input.command !== "string" ||
+        input.command.trim().length === 0
+      )
+        return { recorded: false as const };
+      const startedAt = performance.now();
+      let result: "passed" | "failed" | "skipped" = "failed";
+      let safeSummary = "validation command did not run";
+      try {
+        const run = await runValidationCommand(
+          input.command,
+          workspaceRoot,
+          input.timeoutSec ?? 120,
+        );
+        result = run.exitCode === 0 ? "passed" : "failed";
+        safeSummary = run.safeSummary;
+      } catch (error) {
+        safeSummary = `validation runner failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`;
+      }
+      const outcome = boundValidationOutcome({
+        command: redactToolOutput(input.command, true),
+        result,
+        safeSummary,
+        durationMs: performance.now() - startedAt,
+      });
+      const event = buildEvidenceRecorded({
+        id: `evidence:${Date.now().toString(36)}:${evidenceSequence++}`,
+        taskID: input.taskID,
+        objective: input.objective,
+        status: result === "passed" ? "validated" : "failed",
+        validations: [outcome],
+        knownGaps: input.knownGaps,
+      });
+      publishForSession(activeExec, event);
+      return {
+        recorded: true as const,
+        result,
+        safeSummary: outcome.safeSummary,
+      };
     },
     async sessionSnapshot() {
       if (!session) return undefined;
@@ -4511,6 +4580,47 @@ function redactToolOutput(output: string, redact: boolean | undefined) {
     (match) =>
       `${match.slice(0, match.indexOf("=") >= 0 ? match.indexOf("=") + 1 : match.indexOf(":") + 1)}[REDACTED]`,
   );
+}
+
+/**
+ * Runs a validation command with the workspace as cwd and bounded, redacted
+ * output. The redaction is unconditional for validation output (a validation
+ * run's output may carry secrets the model's own redaction config would not
+ * catch), and the captured output is capped so a chatty runner cannot grow the
+ * returned summary without limit. This is the E2 "redaction" half of the
+ * validation-runner adapter: secrets are stripped here, before anything reaches
+ * `evidence.recorded`.
+ */
+async function runValidationCommand(
+  command: string,
+  cwd: string,
+  timeoutSec: number,
+): Promise<{ exitCode: number; safeSummary: string }> {
+  const process = Bun.spawn(["/bin/bash", "-c", command], {
+    cwd,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const timer = setTimeout(
+    () => {
+      try {
+        process.kill();
+      } catch {
+        // already gone
+      }
+    },
+    Math.max(1, timeoutSec) * 1000,
+  );
+  const [stdout, stderr] = await Promise.all([
+    new Response(process.stdout).text(),
+    new Response(process.stderr).text(),
+  ]);
+  await process.exited;
+  clearTimeout(timer);
+  const exitCode = process.exitCode ?? 0;
+  const combined = `${stdout}\n${stderr}`.slice(0, 4000);
+  const safeSummary = redactToolOutput(combined.trim(), true).slice(0, 2000);
+  return { exitCode, safeSummary };
 }
 
 function waitForToolExecution<T>(execution: Promise<T>, signal?: AbortSignal) {

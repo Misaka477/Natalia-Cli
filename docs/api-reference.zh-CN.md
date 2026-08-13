@@ -691,7 +691,7 @@ createRuntimeHttpServer({
   `start`, `submit`, `cancel`, `snapshot`, `diagnostic`, `lastSubmission`, `respondApproval`, `respondQuestion`.
 - Deprecated members (`DEPRECATED_RUNTIME_MEMBERS`): none (mechanism in place, table empty).
 
-### Capability groups (17 groups · 95 optional members)
+### Capability groups (17 groups · 96 optional members)
 
 | Group          | Members (RuntimeClient names)                                                                                                                                                                                                                                                                                         |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -711,9 +711,9 @@ createRuntimeHttpServer({
 | automation     | `taskOverview` · `flowOverview` · `documentCatalog` · `saveFlowDocument` · `deleteFlowDocument` · `saveTaskDocument` · `deleteTaskDocument` · `taskSchedule` · `taskUnschedule` · `taskPermissionPreview`                                                                                                             |
 | observability  | `runtimeStatus` · `diagnostics` · `sessionSnapshot`                                                                                                                                                                                                                                                                   |
 | workGraph      | `workGraphNodes` · `workGraphEdges`                                                                                                                                                                                                                                                                                   |
-| intelligence   | `constitutionRules` · `decisionRecords` · `recordDecision` · `evidenceRecords` · `driftFindings` · `registeredTools`                                                                                                                                                                                                  |
+| intelligence   | `constitutionRules` · `decisionRecords` · `recordDecision` · `evidenceRecords` · `recordValidation` · `driftFindings` · `registeredTools`                                                                                                                                                                             |
 
-### RPC route table (100 methods → members)
+### RPC route table (101 methods → members)
 
 | RPC method                           | RuntimeClient member                | Capability group | Write |
 | ------------------------------------ | ----------------------------------- | ---------------- | ----- |
@@ -805,6 +805,7 @@ createRuntimeHttpServer({
 | `decision.records`                   | `decisionRecords`                   | intelligence     | read  |
 | `decision.record`                    | `recordDecision`                    | intelligence     | read  |
 | `evidence.records`                   | `evidenceRecords`                   | intelligence     | read  |
+| `evidence.record`                    | `recordValidation`                  | intelligence     | read  |
 | `drift.findings`                     | `driftFindings`                     | intelligence     | read  |
 | `tools.registered`                   | `registeredTools`                   | intelligence     | read  |
 | `capabilities`                       | `capabilities`                      | extensions       | read  |
@@ -883,11 +884,10 @@ createRuntimeHttpServer({
 
 ### Empty-until-writers queries (`UNIMPLEMENTED_QUERIES`: reachable, implemented, no production writer yet)
 
-| Member            | Why it answers empty                               |
-| ----------------- | -------------------------------------------------- |
-| `evidenceRecords` | no production code records validation evidence yet |
-| `driftFindings`   | no production code opens drift findings yet        |
-| `registeredTools` | tool registration metadata is not published yet    |
+| Member            | Why it answers empty                            |
+| ----------------- | ----------------------------------------------- |
+| `driftFindings`   | no production code opens drift findings yet     |
+| `registeredTools` | tool registration metadata is not published yet |
 
 ### Failure codes (`RUNTIME_RPC_ERROR_CODES`)
 
@@ -904,28 +904,29 @@ createRuntimeHttpServer({
 
 > These members answer an ordinary outcome instead of an error: the refusal is a field of the result. The field is listed per member; the same call shape never switches between value and error depending on state.
 
-| Member             | Refusal expressed by | Semantics                                                                                                                                             |
-| ------------------ | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agentCreate`      | `created`            | creating an existing name answers created:false with a reason                                                                                         |
-| `agentDelete`      | `deleted`            | the default agent refuses deletion; an unknown name is an idempotent success                                                                          |
-| `canReloadConfig`  | `allowed`            | advisory precheck; the action re-checks for itself                                                                                                    |
-| `mcpServerAdd`     | `saved`              | config write and reconnect; connection failures surface as diagnostics                                                                                |
-| `mcpServerRemove`  | `removed`            | an unknown server is an idempotent success                                                                                                            |
-| `pause`            | `paused`             | nothing running, or already paused, is an ordinary answer                                                                                             |
-| `permissionDelete` | `deleted`            | the default profile refuses deletion; an unknown name is an idempotent success                                                                        |
-| `permissionSave`   | `saved`              | the config file is written either way; a running turn blocks the reload and answers applied:false                                                     |
-| `pluginUnload`     | `unloaded`           | an unknown plugin id is an idempotent success                                                                                                         |
-| `providerAdd`      | `saved`              | config write and apply; apply may be blocked by a running turn                                                                                        |
-| `providerRemove`   | `removed`            | a provider referenced by a model refuses deletion; an unknown name is an idempotent success                                                           |
-| `recordDecision`   | `recorded`           | records a durable decision fact; decision text and rationale are safe prose, never tool output or file content                                        |
-| `reloadConfig`     | `applied`            | the reference case: applying new policy under a running turn is refused, and refusing is normal                                                       |
-| `respondApproval`  | `accepted`           | a response to a request that timed out or was already answered is dropped, and the caller has to be told; it used to answer responded:true either way |
-| `respondQuestion`  | `accepted`           | same as respondApproval                                                                                                                               |
-| `resume`           | `resumed`            | nothing paused is an ordinary answer                                                                                                                  |
-| `selectAgent`      | `outcome`            | three real outcomes exist in the runtime — applied, deferred until the turn ends, unknown agent — and the caller could see none of them               |
-| `sessionArchive`   | `archived`           | archiving an archived session answers archived:true; an unknown session is an argument error                                                          |
-| `sessionNew`       | `created`            | creating an existing id answers created:false with the existing summary                                                                               |
-| `updateConfig`     | `applied`            | the file may be written while a running turn prevents application, and that is an ordinary answer                                                     |
+| Member             | Refusal expressed by | Semantics                                                                                                                                                  |
+| ------------------ | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agentCreate`      | `created`            | creating an existing name answers created:false with a reason                                                                                              |
+| `agentDelete`      | `deleted`            | the default agent refuses deletion; an unknown name is an idempotent success                                                                               |
+| `canReloadConfig`  | `allowed`            | advisory precheck; the action re-checks for itself                                                                                                         |
+| `mcpServerAdd`     | `saved`              | config write and reconnect; connection failures surface as diagnostics                                                                                     |
+| `mcpServerRemove`  | `removed`            | an unknown server is an idempotent success                                                                                                                 |
+| `pause`            | `paused`             | nothing running, or already paused, is an ordinary answer                                                                                                  |
+| `permissionDelete` | `deleted`            | the default profile refuses deletion; an unknown name is an idempotent success                                                                             |
+| `permissionSave`   | `saved`              | the config file is written either way; a running turn blocks the reload and answers applied:false                                                          |
+| `pluginUnload`     | `unloaded`           | an unknown plugin id is an idempotent success                                                                                                              |
+| `providerAdd`      | `saved`              | config write and apply; apply may be blocked by a running turn                                                                                             |
+| `providerRemove`   | `removed`            | a provider referenced by a model refuses deletion; an unknown name is an idempotent success                                                                |
+| `recordDecision`   | `recorded`           | records a durable decision fact; decision text and rationale are safe prose, never tool output or file content                                             |
+| `recordValidation` | `recorded`           | runs a validation command and records the outcome; only the command, outcome, bounded safe summary and duration reach the journal — raw output is redacted |
+| `reloadConfig`     | `applied`            | the reference case: applying new policy under a running turn is refused, and refusing is normal                                                            |
+| `respondApproval`  | `accepted`           | a response to a request that timed out or was already answered is dropped, and the caller has to be told; it used to answer responded:true either way      |
+| `respondQuestion`  | `accepted`           | same as respondApproval                                                                                                                                    |
+| `resume`           | `resumed`            | nothing paused is an ordinary answer                                                                                                                       |
+| `selectAgent`      | `outcome`            | three real outcomes exist in the runtime — applied, deferred until the turn ends, unknown agent — and the caller could see none of them                    |
+| `sessionArchive`   | `archived`           | archiving an archived session answers archived:true; an unknown session is an argument error                                                               |
+| `sessionNew`       | `created`            | creating an existing id answers created:false with the existing summary                                                                                    |
+| `updateConfig`     | `applied`            | the file may be written while a running turn prevents application, and that is an ordinary answer                                                          |
 
 ### Events and projection (source scan)
 
@@ -1014,7 +1015,8 @@ createRuntimeHttpServer({
 | `constitutionRules`                 | `constitution.rules`                 | —                                                                                                                                                                                                 | Array<{ ruleID: string; statement: string; scope: "project" | "package" | "sandbox" | "task" | "release"; priority: "critical" | "high" | "medium" | "low"; source: "user" | "master_plan" | "policy"; enforcement: "deny" | "approval" | "warn"; overridePolicy: "forbidden" | "user_scoped" | "user_explicit"; }> |
 | `decisionRecords`                   | `decision.records`                   | —                                                                                                                                                                                                 | Array<{ decision: string; rationale: string[]; alternatives: { option: string; rejectedReason?: string }[]; consequences: string[]; status: "proposed" | "accepted" | "superseded"; linkedPlans: string[]; linkedConstraints: string[]; }>                                                                          |
 | `recordDecision`                    | `decision.record`                    | `input`: { decision: string; rationale?: string[]; alternatives?: { option: string; rejectedReason?: string }[]; consequences?: string[]; linkedPlans?: string[]; linkedConstraints?: string[]; } | { recorded: boolean }                                                                                                                                                                                                                                                                                               |
-| `evidenceRecords`                   | `evidence.records`                   | —                                                                                                                                                                                                 | Array<{ taskID: string; objective: string; status: string; knownGaps: string[]; }>                                                                                                                                                                                                                                  |
+| `evidenceRecords`                   | `evidence.records`                   | —                                                                                                                                                                                                 | Array<{ taskID: string; objective: string; status: string; changes: Array<{ path: string; changeType: "added" | "modified" | "deleted"; summary: string; }>; validations: Array<{ command: string; result: "passed" | "failed" | "skipped"; safeSummary: string; durationMs?: number; }>; knownGaps: string[]; }>   |
+| `recordValidation`                  | `evidence.record`                    | `input`: { taskID: string; objective: string; command: string; timeoutSec?: number; knownGaps?: string[]; }                                                                                       | { recorded: boolean; result?: "passed" | "failed"; safeSummary?: string; }                                                                                                                                                                                                                                          |
 | `driftFindings`                     | `drift.findings`                     | —                                                                                                                                                                                                 | Array<{ findingID: string; severity: "advisory" | "warning" | "high"; confidence: number; originalObjective: string; currentActivity: string; evidence: string[]; status: string; }>                                                                                                                                |
 | `registeredTools`                   | `tools.registered`                   | —                                                                                                                                                                                                 | Array<{ name: string; owner: string; scope: string; recovery: string; precedence: number; requiresApproval: boolean; }>                                                                                                                                                                                             |
 | `capabilities`                      | `capabilities`                       | —                                                                                                                                                                                                 | CapabilityRecordView[]                                                                                                                                                                                                                                                                                              |

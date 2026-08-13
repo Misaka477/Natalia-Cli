@@ -1799,9 +1799,37 @@ export type RuntimeClient = {
       taskID: string;
       objective: string;
       status: string;
+      changes: Array<{
+        path: string;
+        changeType: "added" | "modified" | "deleted";
+        summary: string;
+      }>;
+      validations: Array<{
+        command: string;
+        result: "passed" | "failed" | "skipped";
+        safeSummary: string;
+        durationMs?: number;
+      }>;
       knownGaps: string[];
     }>
   >;
+  /**
+   * Runs a validation command against the workspace and records the outcome as
+   * a durable `evidence.recorded` fact. Only the command, outcome, bounded safe
+   * summary and duration reach the journal — the raw output is redacted and
+   * truncated before recording.
+   */
+  recordValidation?(input: {
+    taskID: string;
+    objective: string;
+    command: string;
+    timeoutSec?: number;
+    knownGaps?: string[];
+  }): Promise<{
+    recorded: boolean;
+    result?: "passed" | "failed";
+    safeSummary?: string;
+  }>;
   sessionSnapshot?(): Promise<
     | {
         agentStatus: string;

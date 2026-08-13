@@ -5233,6 +5233,113 @@ test("constitution rules and decisions survive replay", async () => {
   ]);
 });
 
+test("recordValidation runs a command and records durable evidence", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-evidence-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_evidence",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+
+  const passed = await client.recordValidation?.({
+    taskID: "task_build",
+    objective: "verify the build passes",
+    command: "exit 0",
+  });
+  expect(passed).toEqual({ recorded: true, result: "passed", safeSummary: "" });
+  const failed = await client.recordValidation?.({
+    taskID: "task_build",
+    objective: "verify the build passes",
+    command: "exit 1",
+  });
+  expect(failed?.result).toBe("failed");
+
+  const records = await client.evidenceRecords!();
+  expect(records).toHaveLength(2);
+  expect(records[0]).toMatchObject({
+    taskID: "task_build",
+    status: "validated",
+    validations: [{ command: "exit 0", result: "passed" }],
+  });
+  expect(records[1]).toMatchObject({
+    status: "failed",
+    validations: [{ command: "exit 1", result: "failed" }],
+  });
+  expect(
+    events.filter(
+      (event): event is Extract<RuntimeEvent, { type: "evidence.recorded" }> =>
+        event.type === "evidence.recorded",
+    ).length,
+  ).toBe(2);
+});
+
+test("recordValidation redacts secrets from the recorded summary", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-evidence-redact-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_evidence_redact",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => {});
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+
+  await client.recordValidation?.({
+    taskID: "task_secret",
+    objective: "a validation that prints a secret",
+    command: 'printf "api_key=supersecretvalue\\n"; exit 0',
+  });
+  const records = await client.evidenceRecords!();
+  const summary = records[0]?.validations[0]?.safeSummary ?? "";
+  expect(summary).not.toContain("supersecretvalue");
+  expect(JSON.stringify(records)).not.toContain("supersecretvalue");
+});
+
+test("recordValidation rejects empty task id or command without recording", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-evidence-reject-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_evidence_reject",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+
+  const outcome = await client.recordValidation?.({
+    taskID: "",
+    objective: "x",
+    command: "exit 0",
+  });
+  expect(outcome).toEqual({ recorded: false });
+  expect(events.some((event) => event.type === "evidence.recorded")).toBe(
+    false,
+  );
+});
+
 test("durable session replay preserves tool-call pairs for the next provider turn", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-replay-tools-"));
   await writeFile(join(root, "input.txt"), "replay-ok\n");

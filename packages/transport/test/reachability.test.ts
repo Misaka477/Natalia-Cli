@@ -189,6 +189,7 @@ test("the remote report says implemented-but-unrouted for the P0-C work list", a
     "decisionRecords",
     "recordDecision",
     "evidenceRecords",
+    "recordValidation",
     "driftFindings",
     "registeredTools",
     "capabilities",

@@ -116,6 +116,7 @@ function controllableClient() {
     "decisionRecords",
     "recordDecision",
     "evidenceRecords",
+    "recordValidation",
     "driftFindings",
     "registeredTools",
     "settingsGet",
