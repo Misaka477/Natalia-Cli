@@ -1669,13 +1669,55 @@ export function createRealRuntimeClient(
     // sees user intents at the boundary, never mid-token. `mailbox.delivered`
     // is not a trigger, so this cannot recurse.
     if (event.type === "turn.finished") {
-      deliverQueuedMailboxAtBoundary(exec);
+      // P8 C3 safe-boundary scheduler: a finished turn is a safe point (§5.2 —
+      // "step complete"). Delivery is consumption-driven, not model-discipline-
+      // driven: messages delivered at the previous boundary were injected into
+      // this turn's context, so a normal turn finish acknowledges them (they no
+      // longer re-inject); messages still queued are delivered for the next
+      // turn. The order matters — acknowledge the already-delivered batch before
+      // delivering the queued batch, so a fresh delivery is not mis-acked.
+      settleMailboxAtBoundary(exec);
       // P8 C4: a finished turn is also the safe completion point for the active
       // plan (§6.5 — "A reaches completed / paused / designated safe finish").
       // Promote the queued-next plan to active so the next turn carries it.
       // `plan.activated` is not a trigger, so this cannot recurse.
       activateQueuedPlanAtBoundary(exec);
     }
+  }
+  /**
+   * P8 C3: settle the mailbox at the turn boundary. Already-delivered messages
+   * (injected into the turn that just finished) are acknowledged so they stop
+   * re-injecting; still-queued messages are delivered for the next turn. A turn
+   * that ends cancelled/aborted is NOT a settlement — the model did not finish
+   * the turn, so its delivered intents stay delivered for another chance.
+   */
+  function settleMailboxAtBoundary(exec?: SessionExecutionState) {
+    acknowledgeDeliveredMailboxAtBoundary(exec);
+    deliverQueuedMailboxAtBoundary(exec);
+  }
+  /**
+   * Acknowledge every message that is still `delivered` (it was injected into
+   * the turn that just finished, so the main agent has seen it). Acknowledged
+   * messages no longer appear in `<pending_user_intents>`.
+   */
+  function acknowledgeDeliveredMailboxAtBoundary(exec?: SessionExecutionState) {
+    const target = exec ?? activeExec;
+    if (!target?.session) return;
+    const delivered = projectedMailboxMessages(target.session.events).filter(
+      (message) => message.status === "delivered",
+    );
+    if (!delivered.length) return;
+    const at = new Date().toISOString();
+    for (const message of delivered)
+      publishForSession(
+        target,
+        buildMailboxStatus({
+          id: `${message.messageID}:acknowledged:${mailboxSequence++}`,
+          messageID: message.messageID,
+          status: "acknowledged",
+          at,
+        }),
+      );
   }
 
   /**

@@ -5584,13 +5584,10 @@ test("a manually delivered mailbox message is not re-delivered at a boundary", a
   await client.submit("second");
   await pollHistoryForFinished(client);
 
-  // Already delivered, so the boundary leaves it alone (no duplicate delivered
-  // transition event).
-  expect((await client.mailboxList!())[0]?.status).toBe("delivered");
-  expect(
-    (await client.mailboxList!())[0]?.status === "delivered" &&
-      (await client.mailboxList!())[0]?.status,
-  ).toBe("delivered");
+  // The manually delivered message was injected into turn 2's context, so the
+  // turn's finish acknowledges it (consumption-driven settlement) and it is not
+  // re-delivered by the boundary.
+  expect((await client.mailboxList!())[0]?.status).toBe("acknowledged");
 });
 
 test("a mailbox message sent mid-turn is delivered when that turn finishes", async () => {
@@ -6001,6 +5998,99 @@ test("mailbox_acknowledge marks delivered messages acknowledged and stops re-inj
   await pollHistoryForFinished(client);
   const last = systemPrompts.at(-1) ?? "";
   expect(last).not.toContain("never commit the lockfile");
+});
+
+test("delivered mailbox intents are auto-acknowledged at the next turn finish (no tool needed)", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-mailbox-consume-"));
+  let systemPrompts: string[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_mailbox_consume",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        const system = request.messages.find(
+          (message) => message.role === "system",
+        );
+        if (system && typeof system.content === "string")
+          systemPrompts.push(system.content);
+        yield { type: "done" as const };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  await client.submit("first");
+  await pollHistoryForFinished(client);
+
+  // Seed a queued intent while idle.
+  await client.mailboxSend?.({
+    intent: "constraint",
+    text: "never merge a failing build",
+    safeSummary: "a merge constraint",
+  });
+
+  // Turn 2's boundary delivers it (injected into turn 3). The model never calls
+  // mailbox_acknowledge — the delivery is consumption-driven.
+  await client.submit("second");
+  await pollHistoryForFinished(client);
+  expect((await client.mailboxList!())[0]?.status).toBe("delivered");
+
+  // Turn 3 injects it once, then its finish auto-acknowledges it.
+  await client.submit("third");
+  await pollHistoryForFinished(client);
+  expect(systemPrompts.at(-1)).toContain("never merge a failing build");
+  expect((await client.mailboxList!())[0]?.status).toBe("acknowledged");
+
+  // Turn 4 no longer injects it.
+  await client.submit("fourth");
+  await pollHistoryForFinished(client);
+  const last = systemPrompts.at(-1) ?? "";
+  expect(last).not.toContain("never merge a failing build");
+});
+
+test("a cancelled turn does not auto-acknowledge delivered intents", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-mailbox-cancel-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_mailbox_cancel",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "content" as const, text: "half" };
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        yield { type: "done" as const };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  await client.submit("first");
+  await pollHistoryForFinished(client);
+
+  await client.mailboxSend?.({
+    intent: "pause",
+    text: "pause after this",
+    safeSummary: "pause requested",
+  });
+  await client.submit("second");
+  await pollHistoryForFinished(client);
+  expect((await client.mailboxList!())[0]?.status).toBe("delivered");
+
+  // Abort the third turn before it finishes: the delivered intent must stay
+  // delivered (not acked), so a later turn can still see it.
+  const eventsThird: RuntimeEvent[] = [];
+  client.start((event) => eventsThird.push(event));
+  const third = client.submit("third");
+  await waitFor(() =>
+    eventsThird.some((event) => event.type === "turn.submitted"),
+  );
+  await Bun.sleep(20);
+  client.cancel("test cancel");
+  await third;
+  expect((await client.mailboxList!())[0]?.status).toBe("delivered");
 });
 
 test("durable session replay preserves tool-call pairs for the next provider turn", async () => {

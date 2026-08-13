@@ -835,7 +835,7 @@ function runtimeSystemPrompt(input: {
   if (intents.length) {
     lines.push(
       "<pending_user_intents>",
-      "These intents arrived through the Live Work Chat mailbox and were delivered at the last safe boundary. They may adjust, constrain or pause the current plan — acknowledge them in your reply or act on them when consistent with policy.",
+      "These intents arrived through the Live Work Chat mailbox and were delivered at the last safe boundary. They may adjust, constrain or pause the current plan — act on them when consistent with policy; this turn's normal completion acknowledges them automatically. If you act on one mid-turn, you may acknowledge it immediately with the mailbox_acknowledge tool.",
       ...intents.map(
         (intent) => `- [${intent.priority}] ${intent.intent}: ${intent.text}`,
       ),
