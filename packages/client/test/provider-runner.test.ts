@@ -25,7 +25,18 @@ function usage(inputTokens: number, outputTokens: number): ProviderStreamChunk {
   return { type: "usage", inputTokens, outputTokens };
 }
 
-function makeHarness(provider: StreamingProvider | undefined) {
+function makeHarness(
+  provider: StreamingProvider | undefined,
+  options?: {
+    mailboxMessages?: Array<{
+      messageID: string;
+      intent: string;
+      text: string;
+      priority: string;
+      source: "user_via_live_chat" | "system";
+    }>;
+  },
+) {
   const events: RuntimeEvent[] = [];
   const ledger = new ContextLedger();
   const checkpoints: Array<{ reason: string; step: number }> = [];
@@ -64,6 +75,7 @@ function makeHarness(provider: StreamingProvider | undefined) {
     }),
     activeSkill: () => undefined,
     skillsList: () => [],
+    mailboxMessages: () => options?.mailboxMessages ?? [],
     retryPolicy: () => ({
       maxAttemptsPerStep: 1,
       initialBackoffMs: 1,
@@ -232,4 +244,38 @@ test("aborting the turn mid-stream finishes cancelled with a warning", async () 
       (event) => event.type === "diagnostic" && event.level === "warning",
     ),
   ).toBe(true);
+});
+
+test("delivered mailbox intents render into the system prompt", async () => {
+  let systemPrompt = "";
+  const { runner } = makeHarness(
+    {
+      provider: "scripted",
+      model: "m1",
+      async *stream(request) {
+        const system = request.messages.find(
+          (message) => message.role === "system",
+        );
+        if (system && typeof system.content === "string")
+          systemPrompt = system.content;
+        yield content("acknowledged");
+      },
+    },
+    {
+      mailboxMessages: [
+        {
+          messageID: "mailbox:1",
+          intent: "reprioritize",
+          text: "focus on the docs task first",
+          priority: "high",
+          source: "user_via_live_chat",
+        },
+      ],
+    },
+  );
+  await runner.runTurn(turn);
+  expect(systemPrompt).toContain("<pending_user_intents>");
+  expect(systemPrompt).toContain("[high] reprioritize");
+  expect(systemPrompt).toContain("focus on the docs task first");
+  expect(systemPrompt).toContain("</pending_user_intents>");
 });

@@ -80,6 +80,19 @@ export function createProviderRunner(input: {
   };
   activeSkill(): Skill | undefined;
   skillsList(): Skill[];
+  /**
+   * The Live Work Chat mailbox messages currently waiting for the main agent:
+   * delivered at the last safe boundary but not yet acknowledged. The runtime
+   * provides the projection; the runner renders them into the system prompt so
+   * the agent acts on user intents at the next turn.
+   */
+  mailboxMessages(): Array<{
+    messageID: string;
+    intent: string;
+    text: string;
+    priority: string;
+    source: "user_via_live_chat" | "system";
+  }>;
   retryPolicy(): RetryPolicy;
   lastProviderUsage(): ProviderUsage | undefined;
   setLastProviderUsage(usage: ProviderUsage | undefined): void;
@@ -272,6 +285,7 @@ export function createProviderRunner(input: {
           moduleConditions: input.taskModuleContext()?.moduleConditions,
           skills: input.skillsList(),
           activeSkill: input.activeSkill(),
+          pendingIntents: input.mailboxMessages(),
         }),
       });
       let usedTools = false;
@@ -664,6 +678,19 @@ function runtimeSystemPrompt(input: {
   }>;
   skills?: Skill[];
   activeSkill?: Skill;
+  /**
+   * Delivered-but-unacknowledged Live Work Chat mailbox messages. Rendered as a
+   * `<pending_user_intents>` block so the main agent sees user intents at the
+   * next turn and can acknowledge them. Omitted entirely when none are pending,
+   * so a session without Live Chat traffic pays no tokens.
+   */
+  pendingIntents?: Array<{
+    messageID: string;
+    intent: string;
+    text: string;
+    priority: string;
+    source: "user_via_live_chat" | "system";
+  }>;
 }) {
   const lines = [
     "You are Natalia, a local software engineering agent running in a terminal UI.",
@@ -759,6 +786,17 @@ function runtimeSystemPrompt(input: {
         ? `Currently loaded: ${input.activeSkill.name}. Do not reload it.`
         : "None is loaded yet.",
       "</available_skills>",
+    );
+  }
+  const intents = input.pendingIntents ?? [];
+  if (intents.length) {
+    lines.push(
+      "<pending_user_intents>",
+      "These intents arrived through the Live Work Chat mailbox and were delivered at the last safe boundary. They may adjust, constrain or pause the current plan — acknowledge them in your reply or act on them when consistent with policy.",
+      ...intents.map(
+        (intent) => `- [${intent.priority}] ${intent.intent}: ${intent.text}`,
+      ),
+      "</pending_user_intents>",
     );
   }
   return lines.join("\n");

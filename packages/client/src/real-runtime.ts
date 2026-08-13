@@ -2078,6 +2078,16 @@ export function createRealRuntimeClient(
       runtimeContextConfig: () => runtimeContextConfig,
       activeSkill: () => exec.activeSkill,
       skillsList: () => skillsController.list(),
+      mailboxMessages: () =>
+        projectedMailboxMessages(exec.session.events)
+          .filter((message) => message.status === "delivered")
+          .map((message) => ({
+            messageID: message.messageID,
+            intent: message.intent,
+            text: message.text,
+            priority: message.priority,
+            source: message.source,
+          })),
       retryPolicy: () => retryPolicy,
       lastProviderUsage: () => exec.lastProviderUsage,
       setLastProviderUsage: (usage) => {

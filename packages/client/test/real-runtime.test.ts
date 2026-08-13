@@ -5627,6 +5627,56 @@ test("a mailbox message sent mid-turn is delivered when that turn finishes", asy
   expect((await client.mailboxList!())[0]?.status).toBe("delivered");
 });
 
+test("delivered mailbox intents reach the main agent in the next turn system prompt", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-mailbox-inject-"));
+  let systemPrompts: string[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_mailbox_inject",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        const system = request.messages.find(
+          (message) => message.role === "system",
+        );
+        if (system && typeof system.content === "string")
+          systemPrompts.push(system.content);
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => {});
+  await client.submit("first");
+  await pollHistoryForFinished(client);
+
+  // Queue an intent while idle; it stays queued until a turn boundary.
+  await client.mailboxSend?.({
+    intent: "constraint",
+    text: "never commit the lockfile",
+    safeSummary: "a commit constraint",
+    priority: "high",
+  });
+  expect((await client.mailboxList!())[0]?.status).toBe("queued");
+
+  // Turn 2 is a safe boundary: it delivers the intent at its end. Turn 2's
+  // own system prompt was already assembled, so it must NOT carry the intent.
+  await client.submit("second");
+  await pollHistoryForFinished(client);
+  const secondPrompt = systemPrompts.at(-1) ?? "";
+  expect(secondPrompt).not.toContain("<pending_user_intents>");
+  expect((await client.mailboxList!())[0]?.status).toBe("delivered");
+
+  // Turn 3 runs after the boundary, so the delivered intent is now injected.
+  await client.submit("third");
+  await pollHistoryForFinished(client);
+  const thirdPrompt = systemPrompts.at(-1) ?? "";
+  expect(thirdPrompt).toContain("<pending_user_intents>");
+  expect(thirdPrompt).toContain("[high] constraint");
+  expect(thirdPrompt).toContain("never commit the lockfile");
+  expect(thirdPrompt).toContain("</pending_user_intents>");
+});
+
 test("durable session replay preserves tool-call pairs for the next provider turn", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-replay-tools-"));
   await writeFile(join(root, "input.txt"), "replay-ok\n");
