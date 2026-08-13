@@ -289,6 +289,7 @@ export {
   projectedDriftFindings,
   projectedCapabilities,
   projectedEvidenceRecords,
+  projectedCompletions,
   projectedWorkGraphNodes,
   projectedWorkGraphEdges,
   projectedMailboxMessages,

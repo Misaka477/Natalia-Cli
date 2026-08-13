@@ -482,6 +482,26 @@ type RuntimeEventData =
       knownGaps?: string[];
     }
   | {
+      type: "completion.recorded";
+      id: string;
+      taskID: string;
+      objective: string;
+      /** The fixed completion-card report structure (§5). */
+      changeSummary: string;
+      behaviorImpact?: string;
+      validations: Array<{
+        command: string;
+        result: "passed" | "failed" | "skipped";
+        safeSummary: string;
+      }>;
+      humanValidation?: string;
+      knownGaps?: string[];
+      externalSideEffects?: string[];
+      rollbackState?: "clean" | "available" | "none" | "needs_promotion";
+      evidenceIDs?: string[];
+      recordedAt: string;
+    }
+  | {
       type: "constitution.check";
       id: string;
       ruleID: string;
@@ -2108,6 +2128,49 @@ export type RuntimeClient = {
     result?: "passed" | "failed";
     safeSummary?: string;
   }>;
+  /** The completion cards, projected from the journal (P2 E4). */
+  completions?(): Promise<
+    Array<{
+      completionID: string;
+      taskID: string;
+      objective: string;
+      changeSummary: string;
+      behaviorImpact?: string;
+      validations: Array<{
+        command: string;
+        result: "passed" | "failed" | "skipped";
+        safeSummary: string;
+      }>;
+      humanValidation?: string;
+      knownGaps: string[];
+      externalSideEffects: string[];
+      rollbackState?: string;
+      evidenceIDs: string[];
+      recordedAt: string;
+    }>
+  >;
+  /**
+   * Record a completion card: the fixed report structure that answers "is it
+   * really done, what evidence is missing". changeSummary is safe prose — never
+   * a diff or file content.
+   */
+  recordCompletion?(input: {
+    taskID: string;
+    objective: string;
+    changeSummary: string;
+    behaviorImpact?: string;
+    validations?: Array<{
+      command: string;
+      result: "passed" | "failed" | "skipped";
+      safeSummary: string;
+    }>;
+    humanValidation?: string;
+    knownGaps?: string[];
+    externalSideEffects?: string[];
+    rollbackState?: "clean" | "available" | "none" | "needs_promotion";
+    evidenceIDs?: string[];
+    changePaths?: string[];
+  }): Promise<{ recorded: boolean; completionID?: string }>;
   sessionSnapshot?(): Promise<
     | {
         agentStatus: string;

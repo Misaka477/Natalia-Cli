@@ -5394,6 +5394,91 @@ test("recordValidation rejects empty task id or command without recording", asyn
   );
 });
 
+test("recordCompletion records a card, its projection and validated_by edges", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-completion-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_completion",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+
+  const outcome = await client.recordCompletion?.({
+    taskID: "task_build",
+    objective: "verify the build",
+    changeSummary: "added the build check",
+    behaviorImpact: "CI now runs typecheck",
+    validations: [
+      { command: "npm run typecheck", result: "passed", safeSummary: "ok" },
+    ],
+    humanValidation: "reviewed by owner",
+    knownGaps: ["no windows coverage"],
+    externalSideEffects: ["writes .tmp"],
+    rollbackState: "available",
+    evidenceIDs: ["evidence:1"],
+    changePaths: ["src/build.ts"],
+  });
+  expect(outcome?.recorded).toBe(true);
+  expect(outcome?.completionID).toBeDefined();
+
+  const cards = await client.completions!();
+  expect(cards).toHaveLength(1);
+  expect(cards[0]).toMatchObject({
+    taskID: "task_build",
+    changeSummary: "added the build check",
+    validations: [{ command: "npm run typecheck", result: "passed" }],
+    humanValidation: "reviewed by owner",
+    knownGaps: ["no windows coverage"],
+    rollbackState: "available",
+    evidenceIDs: ["evidence:1"],
+  });
+
+  // The completion card validated the change via a validated_by Work Graph edge.
+  expect(
+    events.some(
+      (event) =>
+        event.type === "workgraph.edge_added" &&
+        event.kind === "validated_by" &&
+        event.targetID.includes("completion"),
+    ),
+  ).toBe(true);
+});
+
+test("recordCompletion rejects an empty task id or change summary", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-completion-reject-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_completion_reject",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => {});
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+
+  expect(
+    await client.recordCompletion?.({
+      taskID: "",
+      objective: "x",
+      changeSummary: "y",
+    }),
+  ).toEqual({ recorded: false });
+});
+
 test("mailbox send/list/deliver/acknowledge records a durable lifecycle", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-mailbox-"));
   const client = createRealRuntimeClient({

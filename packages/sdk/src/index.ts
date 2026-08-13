@@ -356,6 +356,30 @@ export type NataliaSDK = {
   }): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["recordValidation"]>>>
   >;
+  /** The completion cards, projected from the journal (P2 E4). */
+  completions(): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["completions"]>>>
+  >;
+  /** Records a completion card and its validated_by Work Graph edges. */
+  recordCompletion(input: {
+    taskID: string;
+    objective: string;
+    changeSummary: string;
+    behaviorImpact?: string;
+    validations?: Array<{
+      command: string;
+      result: "passed" | "failed" | "skipped";
+      safeSummary: string;
+    }>;
+    humanValidation?: string;
+    knownGaps?: string[];
+    externalSideEffects?: string[];
+    rollbackState?: "clean" | "available" | "none" | "needs_promotion";
+    evidenceIDs?: string[];
+    changePaths?: string[];
+  }): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["recordCompletion"]>>>
+  >;
   /** The durable Live Work Chat mailbox, projected from the journal. */
   mailboxList(): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["mailboxList"]>>>
@@ -809,6 +833,21 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         command: input.command,
         timeoutSec: input.timeoutSec,
         knownGaps: input.knownGaps ?? [],
+      }),
+    completions: async () => await call("completion.records", {}),
+    recordCompletion: async (input) =>
+      await call("completion.record", {
+        taskID: input.taskID,
+        objective: input.objective,
+        changeSummary: input.changeSummary,
+        behaviorImpact: input.behaviorImpact,
+        validations: input.validations ?? [],
+        humanValidation: input.humanValidation,
+        knownGaps: input.knownGaps ?? [],
+        externalSideEffects: input.externalSideEffects ?? [],
+        rollbackState: input.rollbackState,
+        evidenceIDs: input.evidenceIDs ?? [],
+        changePaths: input.changePaths ?? [],
       }),
     mailboxList: async () => await call("mailbox.list", {}),
     mailboxSend: async (input) =>

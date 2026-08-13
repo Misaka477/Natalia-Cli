@@ -13,6 +13,7 @@ import { createRealRuntimeClient } from "../src";
 import {
   agentActionNodeID,
   approvalNodeID,
+  completionValidationEdge,
   externalWorkspaceChangeNode,
   toolCallNodeID,
 } from "../src/work-graph";
@@ -886,4 +887,18 @@ test("an external confirmed change becomes an isolated workspace_change node wit
   // No turnID — this is an isolated node with no causal edge.
   expect(node.turnID).toBeUndefined();
   expect(node.id).toContain("src/untracked.ts");
+});
+
+test("a completion card validates a workspace change through a validated_by edge", () => {
+  const edge = completionValidationEdge({
+    changeID: "task_1",
+    path: "src/a.ts",
+    completionID: "completion:1",
+  });
+  expect(workGraphEdgeSchema.safeParse(edge).success).toBe(true);
+  expect(edge).toMatchObject({
+    kind: "validated_by",
+    sourceID: "wg:change:task_1:src/a.ts",
+    targetID: "wg:completion:completion:1",
+  });
 });

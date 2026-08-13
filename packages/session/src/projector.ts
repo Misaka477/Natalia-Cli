@@ -477,6 +477,14 @@ export function projectedEvidenceRecords(events: RuntimeEvent[]) {
   );
 }
 
+/** Completion cards (P2 E4), in journal order. */
+export function projectedCompletions(events: RuntimeEvent[]) {
+  return events.filter(
+    (event): event is Extract<RuntimeEvent, { type: "completion.recorded" }> =>
+      event.type === "completion.recorded",
+  );
+}
+
 export function projectedDecisionRecords(events: RuntimeEvent[]) {
   return events.filter(
     (event): event is Extract<RuntimeEvent, { type: "decision.recorded" }> =>

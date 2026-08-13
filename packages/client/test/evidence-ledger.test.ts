@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   boundValidationOutcome,
+  buildCompletionRecorded,
   buildEvidenceRecorded,
 } from "../src/evidence-ledger";
 import type { RuntimeEvent } from "@natalia/contracts";
@@ -105,4 +106,50 @@ test("validation facts are secret-safe: no raw output shape is accepted", () => 
   });
   expect(JSON.stringify(event)).not.toContain("supersecret");
   expect(JSON.stringify(event)).not.toContain("stdout");
+});
+
+test("buildCompletionRecorded carries the fixed completion-card structure", () => {
+  const event = buildCompletionRecorded({
+    id: "completion:1",
+    taskID: "task_1",
+    objective: "verify the build",
+    changeSummary: "added the build check",
+    behaviorImpact: "CI now runs typecheck",
+    validations: [
+      { command: "npm run typecheck", result: "passed", safeSummary: "ok" },
+    ],
+    humanValidation: "reviewed by owner",
+    knownGaps: ["no windows coverage"],
+    externalSideEffects: ["writes .tmp"],
+    rollbackState: "available",
+    evidenceIDs: ["evidence:1"],
+    recordedAt: "now",
+  });
+  expect(event).toMatchObject({
+    type: "completion.recorded",
+    taskID: "task_1",
+    changeSummary: "added the build check",
+    behaviorImpact: "CI now runs typecheck",
+    validations: [{ command: "npm run typecheck", result: "passed" }],
+    humanValidation: "reviewed by owner",
+    knownGaps: ["no windows coverage"],
+    rollbackState: "available",
+    evidenceIDs: ["evidence:1"],
+  });
+});
+
+test("completion cards carry the fixed fields and omit empty optional sections", () => {
+  const event = buildCompletionRecorded({
+    id: "completion:2",
+    taskID: "task_2",
+    objective: "do work",
+    changeSummary: "the work is done",
+    validations: [],
+    recordedAt: "now",
+  });
+  expect(event.changeSummary).toBe("the work is done");
+  expect("behaviorImpact" in event).toBe(false);
+  expect("humanValidation" in event).toBe(false);
+  expect("knownGaps" in event).toBe(false);
+  expect("rollbackState" in event).toBe(false);
 });

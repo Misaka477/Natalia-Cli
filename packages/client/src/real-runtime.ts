@@ -85,6 +85,7 @@ import {
   projectedConstitutionRules,
   projectedDecisionRecords,
   projectedEvidenceRecords,
+  projectedCompletions,
   latestSessionSnapshot,
   projectedCanonicalTools,
   projectedDriftFindings,
@@ -159,6 +160,7 @@ import { buildSessionIntelligenceSnapshot } from "./session-intelligence";
 import { recordDecision, seedConstitutionRules } from "./constitution-ledger";
 import {
   boundValidationOutcome,
+  buildCompletionRecorded,
   buildEvidenceRecorded,
 } from "./evidence-ledger";
 import { buildMailboxQueued, buildMailboxStatus } from "./mailbox-ledger";
@@ -182,6 +184,7 @@ import {
   workspaceChangeEdge,
   workspaceChangeNode,
   externalWorkspaceChangeNode,
+  completionValidationEdge,
 } from "./work-graph";
 import { ensureBashCommandParser } from "./bash-command-policy";
 import { RuntimePerformanceTrace } from "./performance-trace";
@@ -720,6 +723,7 @@ export function createRealRuntimeClient(
   let evidenceSequence = 0;
   let mailboxSequence = 0;
   let planSequence = 0;
+  let completionSequence = 0;
 
   /**
    * Re-reads the config and re-resolves the provider from it.
@@ -3618,6 +3622,23 @@ export function createRealRuntimeClient(
         knownGaps: r.knownGaps ?? [],
       }));
     },
+    async completions() {
+      if (!session) return [];
+      return projectedCompletions(session.events).map((c) => ({
+        completionID: c.id,
+        taskID: c.taskID,
+        objective: c.objective,
+        changeSummary: c.changeSummary,
+        ...(c.behaviorImpact ? { behaviorImpact: c.behaviorImpact } : {}),
+        validations: c.validations,
+        ...(c.humanValidation ? { humanValidation: c.humanValidation } : {}),
+        knownGaps: c.knownGaps ?? [],
+        externalSideEffects: c.externalSideEffects ?? [],
+        ...(c.rollbackState ? { rollbackState: c.rollbackState } : {}),
+        evidenceIDs: c.evidenceIDs ?? [],
+        recordedAt: c.recordedAt,
+      }));
+    },
     /**
      * The `evidence.recorded` production writer (E2 起步): runs a validation
      * command against the workspace, redacts secrets and truncates the summary,
@@ -3679,6 +3700,76 @@ export function createRealRuntimeClient(
         result,
         safeSummary: outcome.safeSummary,
       };
+    },
+    /**
+     * Record a completion card (P2 E4): the fixed report structure (§5) that
+     * answers "is it really done, what evidence is missing". The card is safe
+     * prose — changeSummary is a summary, never a diff or file content — and a
+     * `validated_by` Work Graph edge connects each completed change to the card.
+     */
+    async recordCompletion(input: {
+      taskID: string;
+      objective: string;
+      changeSummary: string;
+      behaviorImpact?: string;
+      validations?: Array<{
+        command: string;
+        result: "passed" | "failed" | "skipped";
+        safeSummary: string;
+      }>;
+      humanValidation?: string;
+      knownGaps?: string[];
+      externalSideEffects?: string[];
+      rollbackState?: "clean" | "available" | "none" | "needs_promotion";
+      evidenceIDs?: string[];
+      changePaths?: string[];
+    }) {
+      if (!session) return { recorded: false as const };
+      if (
+        !input.taskID.trim() ||
+        !input.objective.trim() ||
+        !input.changeSummary.trim()
+      )
+        return { recorded: false as const };
+      const recordedAt = new Date().toISOString();
+      const completionID = `completion:${Date.now().toString(36)}:${completionSequence++}`;
+      const event = buildCompletionRecorded({
+        id: completionID,
+        taskID: input.taskID,
+        objective: input.objective,
+        changeSummary: redactToolOutput(input.changeSummary, true),
+        ...(input.behaviorImpact
+          ? { behaviorImpact: redactToolOutput(input.behaviorImpact, true) }
+          : {}),
+        validations: (input.validations ?? []).map((validation) =>
+          boundValidationOutcome({
+            command: redactToolOutput(validation.command, true),
+            result: validation.result,
+            safeSummary: validation.safeSummary,
+          }),
+        ),
+        ...(input.humanValidation
+          ? { humanValidation: redactToolOutput(input.humanValidation, true) }
+          : {}),
+        knownGaps: input.knownGaps,
+        externalSideEffects: input.externalSideEffects,
+        rollbackState: input.rollbackState,
+        evidenceIDs: input.evidenceIDs,
+        recordedAt,
+      });
+      publishForSession(activeExec, event);
+      // P2 E4 Work Graph integration: each completed change is validated by the
+      // card through a `validated_by` edge.
+      for (const path of input.changePaths ?? [])
+        publishForSession(
+          activeExec,
+          completionValidationEdge({
+            changeID: event.taskID,
+            path,
+            completionID,
+          }),
+        );
+      return { recorded: true as const, completionID };
     },
     async mailboxList() {
       if (!session) return [];

@@ -200,6 +200,8 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "recordDecision",
     "evidenceRecords",
     "recordValidation",
+    "completions",
+    "recordCompletion",
     "driftFindings",
     "evaluateDrift",
     "acknowledgeDriftFinding",

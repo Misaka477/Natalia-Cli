@@ -53,6 +53,7 @@ export const WORK_GRAPH_EDGE_KIND = {
   rejectedBy: "rejected_by",
   modified: "modified",
   rolledBackBy: "rolled_back_by",
+  validatedBy: "validated_by",
 } as const;
 
 export function agentActionNodeID(turnID: string): string {
@@ -301,5 +302,25 @@ export function workspaceChangeEdge(input: {
     sourceID: toolCallNodeID(input.turnID, input.callID),
     targetID: workspaceChangeNodeID(input.turnID, input.path),
     kind: WORK_GRAPH_EDGE_KIND.modified,
+  };
+}
+
+/**
+ * A completion card validates a workspace change (P2 E4): the change node is
+ * connected to a validation-node-style fact through a `validated_by` edge. The
+ * edge exists in `workGraphEdgeSchema`; this is the writer that emits it. The
+ * target is the workspace-change node the completion rests on.
+ */
+export function completionValidationEdge(input: {
+  changeID: string;
+  path: string;
+  completionID: string;
+}): WorkGraphEdgeEvent {
+  return {
+    type: "workgraph.edge_added",
+    id: `wg:edge:completion-validated:${input.completionID}:${input.path}`,
+    sourceID: workspaceChangeNodeID(input.changeID, input.path),
+    targetID: `wg:completion:${input.completionID}`,
+    kind: WORK_GRAPH_EDGE_KIND.validatedBy,
   };
 }

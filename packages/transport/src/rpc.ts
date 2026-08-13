@@ -199,6 +199,8 @@ export const RPC_ROUTE_MEMBERS = {
   "decision.record": "recordDecision",
   "evidence.records": "evidenceRecords",
   "evidence.record": "recordValidation",
+  "completion.records": "completions",
+  "completion.record": "recordCompletion",
   "drift.findings": "driftFindings",
   "drift.evaluate": "evaluateDrift",
   "drift.acknowledge": "acknowledgeDriftFinding",
@@ -1396,6 +1398,72 @@ export async function handleRPCMessage(
       if (!result)
         throw invalidParams(
           "evidence.record is not implemented by this runtime",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result,
+      };
+    }
+    if (body.method === "completion.records") {
+      optionsGuard(client, "completions");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.completions(),
+      };
+    }
+    if (body.method === "completion.record") {
+      optionsGuard(client, "recordCompletion");
+      const params = body.params as Record<string, unknown> | undefined;
+      if (
+        !params ||
+        typeof params.taskID !== "string" ||
+        params.taskID.trim().length === 0 ||
+        typeof params.changeSummary !== "string" ||
+        params.changeSummary.trim().length === 0
+      )
+        throw invalidParams(
+          "completion.record requires a taskID and a changeSummary string",
+        );
+      const result = await client.recordCompletion?.({
+        taskID: params.taskID,
+        objective: typeof params.objective === "string" ? params.objective : "",
+        changeSummary: params.changeSummary,
+        ...(typeof params.behaviorImpact === "string"
+          ? { behaviorImpact: params.behaviorImpact }
+          : {}),
+        ...(Array.isArray(params.validations)
+          ? { validations: params.validations }
+          : {}),
+        ...(typeof params.humanValidation === "string"
+          ? { humanValidation: params.humanValidation }
+          : {}),
+        ...(Array.isArray(params.knownGaps)
+          ? { knownGaps: params.knownGaps.map(String) }
+          : {}),
+        ...(Array.isArray(params.externalSideEffects)
+          ? { externalSideEffects: params.externalSideEffects.map(String) }
+          : {}),
+        ...(typeof params.rollbackState === "string"
+          ? {
+              rollbackState: params.rollbackState as
+                | "clean"
+                | "available"
+                | "none"
+                | "needs_promotion",
+            }
+          : {}),
+        ...(Array.isArray(params.evidenceIDs)
+          ? { evidenceIDs: params.evidenceIDs.map(String) }
+          : {}),
+        ...(Array.isArray(params.changePaths)
+          ? { changePaths: params.changePaths.map(String) }
+          : {}),
+      });
+      if (!result)
+        throw invalidParams(
+          "completion.record is not implemented by this runtime",
         );
       return {
         jsonrpc: "2.0",

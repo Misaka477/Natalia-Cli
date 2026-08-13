@@ -399,6 +399,12 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     note: "records a durable decision fact; decision text and rationale are safe prose, never tool output or file content",
   },
   evidenceRecords: { refusal: "none", note: "pure read" },
+  completions: { refusal: "none", note: "pure read" },
+  recordCompletion: {
+    refusal: "value",
+    expressedBy: "recorded",
+    note: "records a completion card; changeSummary is safe prose, never a diff or file content",
+  },
   recordValidation: {
     refusal: "value",
     expressedBy: "recorded",

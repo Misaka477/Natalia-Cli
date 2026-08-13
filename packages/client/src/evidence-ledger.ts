@@ -94,3 +94,50 @@ export function boundValidationOutcome(input: {
       : {}),
   };
 }
+
+/**
+ * A completion card (P2 E4): the fixed report structure from the evidence plan
+ * §5 — change summary, behavior impact, validation evidence, human validation,
+ * known gaps, external side effects, rollback state. `changeSummary` is safe
+ * prose (a summary, never a diff or file content); validation entries are the
+ * same bounded outcomes as evidence. A completion records which evidence facts
+ * it rests on via `evidenceIDs`.
+ */
+export function buildCompletionRecorded(input: {
+  id: string;
+  taskID: string;
+  objective: string;
+  changeSummary: string;
+  behaviorImpact?: string;
+  validations?: ValidationOutcome[];
+  humanValidation?: string;
+  knownGaps?: string[];
+  externalSideEffects?: string[];
+  rollbackState?: "clean" | "available" | "none" | "needs_promotion";
+  evidenceIDs?: string[];
+  recordedAt: string;
+}): Extract<RuntimeEvent, { type: "completion.recorded" }> {
+  return {
+    type: "completion.recorded",
+    id: input.id,
+    taskID: input.taskID,
+    objective: input.objective,
+    changeSummary: input.changeSummary,
+    ...(input.behaviorImpact ? { behaviorImpact: input.behaviorImpact } : {}),
+    validations: input.validations ?? [],
+    ...(input.humanValidation
+      ? { humanValidation: input.humanValidation }
+      : {}),
+    ...(input.knownGaps && input.knownGaps.length
+      ? { knownGaps: input.knownGaps }
+      : {}),
+    ...(input.externalSideEffects && input.externalSideEffects.length
+      ? { externalSideEffects: input.externalSideEffects }
+      : {}),
+    ...(input.rollbackState ? { rollbackState: input.rollbackState } : {}),
+    ...(input.evidenceIDs && input.evidenceIDs.length
+      ? { evidenceIDs: input.evidenceIDs }
+      : {}),
+    recordedAt: input.recordedAt,
+  };
+}
