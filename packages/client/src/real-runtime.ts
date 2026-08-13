@@ -150,6 +150,7 @@ import {
 } from "./interactive-waiter";
 import { parseToolArguments, tryParseToolArguments } from "./tool-arguments";
 import { createWorkspaceWriteLock } from "./workspace-write-lock";
+import { buildSessionIntelligenceSnapshot } from "./session-intelligence";
 
 // Re-exported because the policy tests reach for the risk classifier directly and
 // this file is the package's runtime entry point.
@@ -650,6 +651,14 @@ export function createRealRuntimeClient(
   const performanceTrace = new RuntimePerformanceTrace();
   const sandboxResourcesByID = new Map<string, number>();
   const turnCoordinator = () => sessionRunCoordinator(sessionID);
+  /**
+   * P8 C1 writer state: the currently running tool per turn, kept current at
+   * the same single choke point the Work Graph writer uses, so a session
+   * intelligence snapshot can answer "what tool is running now" from real state
+   * instead of guessing.
+   */
+  const activeToolByTurn = new Map<string, string>();
+  let sessionSnapshotSequence = 0;
 
   /**
    * Re-reads the config and re-resolves the provider from it.
@@ -1596,6 +1605,94 @@ export function createRealRuntimeClient(
       pluginMs,
       sinkMs,
     });
+    // P8 C1 writer: keep the live work-state tracking current and publish a
+    // session intelligence snapshot at work-state boundaries. `session.snapshot`
+    // is not a trigger, so the snapshot's own publish cannot recurse here.
+    if (event.type === "tool.update") {
+      const turnID = toolEventTurnID(event);
+      if (event.status === "running") activeToolByTurn.set(turnID, event.name);
+      else if (
+        ["succeeded", "failed", "rejected", "cancelled"].includes(event.status)
+      )
+        activeToolByTurn.delete(turnID);
+    }
+    if (isSessionSnapshotTrigger(event)) publishSessionSnapshot(exec);
+  }
+
+  /**
+   * The turn a tool event belongs to, from the `${turnID}:${callID}` id shape
+   * the runtime publishes (the call id is repeated in `callID`, so only a real
+   * suffix is stripped — the same normalisation the shared projection uses).
+   */
+  function toolEventTurnID(event: { id: string; callID?: string }): string {
+    const suffix = event.callID ? `:${event.callID}` : "";
+    return event.callID && event.id.endsWith(suffix)
+      ? event.id.slice(0, -suffix.length)
+      : event.id;
+  }
+
+  /** Work-state boundaries worth a fresh snapshot. */
+  function isSessionSnapshotTrigger(event: RuntimeEvent): boolean {
+    if (
+      event.type === "turn.submitted" ||
+      event.type === "turn.finished" ||
+      event.type === "turn.cancelled"
+    )
+      return true;
+    if (event.type === "tool.update")
+      return (
+        event.status === "running" ||
+        ["succeeded", "failed", "rejected", "cancelled"].includes(event.status)
+      );
+    if (event.type === "sandbox.update")
+      return event.status === "created" || event.status === "deleted";
+    if (event.type === "terminal.timeline")
+      return (
+        event.action === "created" ||
+        event.action === "started" ||
+        event.action === "exit"
+      );
+    return false;
+  }
+
+  /**
+   * The session intelligence production writer: builds the latest snapshot from
+   * the journal-backed facts (changed files, validated changes, recent output,
+   * live PTY/sandbox) plus live state (active tool), and publishes it as a
+   * durable event so the `session.snapshot` read model answers real data.
+   *
+   * Agent status is derived from the journal rather than the live turn marker:
+   * by the time this runs after a `turn.finished`, the event is already
+   * appended, so `projectSession` reports the turn as complete — the snapshot
+   * for the finished turn says `idle`, not `running`. Deriving from the journal
+   * also makes the same snapshot reproducible from replay.
+   */
+  function publishSessionSnapshot(exec?: SessionExecutionState) {
+    const target = exec ?? activeExec;
+    if (!target?.session) return;
+    const events = target.session.events;
+    const projection = projectSession(target.session);
+    const active = projection.activeTurnIDs.length > 0;
+    let agentStatus = "idle";
+    if (paused) agentStatus = "paused";
+    else if (active) agentStatus = "running";
+    const step = target.context.journalStatus().messageCount;
+    const activeTurnID = projection.activeTurnIDs[0];
+    const activeTool = activeTurnID
+      ? activeToolByTurn.get(activeTurnID)
+      : undefined;
+    publishForSession(
+      target,
+      buildSessionIntelligenceSnapshot({
+        id: `snapshot:${target.session.id}:${sessionSnapshotSequence++}`,
+        events,
+        live: {
+          agentStatus,
+          ...(active ? { currentStep: `step ${step}` } : {}),
+          ...(activeTool ? { activeTool } : {}),
+        },
+      }),
+    );
   }
 
   function runtimeEventFlushBarrier(event: RuntimeEvent) {

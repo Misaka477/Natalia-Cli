@@ -3588,7 +3588,9 @@ test("real runtime requests a final response after exhausting tool steps", async
       .map((event) => event.text)
       .join(""),
   ).toContain("All tool checks completed.");
-  expect(events.at(-2)).toMatchObject({
+  expect(
+    events.filter((event) => event.type === "turn.finished").at(-1),
+  ).toMatchObject({
     type: "turn.finished",
     stopReason: "done",
   });
@@ -4980,6 +4982,111 @@ test("real runtime client writes inside its selected workspace after approval", 
       (event) => event.type === "tool.update" && event.status === "succeeded",
     ),
   ).toBe(true);
+});
+
+test("session intelligence writer publishes real snapshot facts for a working turn", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-intelligence-"));
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_intelligence",
+    provider: writeFileProvider(),
+  });
+  client.start((event) => {
+    events.push(event);
+    if (event.type === "approval.request")
+      client.respondApproval({ requestID: event.id, decision: "once" });
+  });
+  await client.submit("create a workspace file");
+
+  const snapshots = events.filter(
+    (event): event is Extract<RuntimeEvent, { type: "session.snapshot" }> =>
+      event.type === "session.snapshot",
+  );
+  expect(snapshots.length).toBeGreaterThan(0);
+
+  // The snapshot reflects the real turn lifecycle: running while the turn is
+  // active, idle after it settles.
+  const running = snapshots.find(
+    (snapshot) => snapshot.agentStatus === "running",
+  );
+  expect(running).toBeDefined();
+  const settled = snapshots.find((snapshot) => snapshot.agentStatus === "idle");
+  expect(settled).toBeDefined();
+
+  // The write tool is the active tool on at least one snapshot, and the Work
+  // Graph records the workspace change the snapshot counts.
+  const withTool = snapshots.find(
+    (snapshot) => snapshot.activeTool === "write_file",
+  );
+  expect(withTool).toBeDefined();
+  const last = snapshots.at(-1);
+  expect(last?.changedFiles).toBeGreaterThan(0);
+  expect(last?.unvalidatedChanges).toBeGreaterThan(0);
+
+  // Secret-safe: no file content, no tool arguments, no command text.
+  const serialized = JSON.stringify(snapshots);
+  expect(serialized).not.toContain("hello from TS7");
+  expect(serialized).not.toContain("call_write");
+});
+
+test("session intelligence writer survives replay with the same facts", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-ts7-intelligence-replay-"),
+  );
+  const initial = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_intelligence_replay",
+    provider: writeFileProvider(),
+  });
+  initial.start((event) => {
+    if (event.type === "approval.request")
+      initial.respondApproval({ requestID: event.id, decision: "once" });
+  });
+  await initial.submit("create a workspace file");
+  await pollHistoryForFinished(initial);
+
+  const replayed: RuntimeEvent[] = [];
+  const reopened = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_intelligence_replay",
+    provider: writeFileProvider(),
+  });
+  reopened.start((event) => replayed.push(event));
+  await waitFor(() => replayed.some((event) => event.type === "session.ready"));
+
+  const snapshots = replayed.filter(
+    (event): event is Extract<RuntimeEvent, { type: "session.snapshot" }> =>
+      event.type === "session.snapshot",
+  );
+  expect(snapshots.length).toBeGreaterThan(0);
+  expect(snapshots.at(-1)?.changedFiles).toBeGreaterThan(0);
+  expect(snapshots.at(-1)?.agentStatus).toBe("idle");
+  expect(JSON.stringify(snapshots)).not.toContain("hello from TS7");
+});
+
+test("session intelligence read model answers the latest published snapshot", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-intelligence-read-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_intelligence_read",
+    provider: writeFileProvider(),
+  });
+  client.start((event) => {
+    if (event.type === "approval.request")
+      client.respondApproval({ requestID: event.id, decision: "once" });
+  });
+  await client.submit("create a workspace file");
+  await pollHistoryForFinished(client);
+
+  // Before the writer existed this answered `undefined` forever. Now the RPC
+  // member reports the latest durable snapshot with real work facts.
+  const snapshot = await client.sessionSnapshot?.();
+  expect(snapshot).toBeDefined();
+  expect(snapshot?.changedFiles).toBeGreaterThan(0);
+  expect(snapshot?.agentStatus).toBe("idle");
+  expect(snapshot?.hasPTY).toBe(false);
+  expect(snapshot?.hasSandbox).toBe(false);
 });
 
 test("durable session replay preserves tool-call pairs for the next provider turn", async () => {
