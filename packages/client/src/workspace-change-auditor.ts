@@ -68,10 +68,22 @@ export type WorkspaceChangeAuditor = ReturnType<
   typeof createWorkspaceChangeAuditor
 >;
 
+/** The correlation/identity a confirmed change carries, if the registry matched it. */
+export type WorkspaceChangeIdentity = {
+  turnID?: string;
+  callID?: string;
+  operationID?: string;
+  sessionID?: string;
+  episodeID?: string;
+  origin: WorkspaceChangeOrigin;
+};
+
 export function createWorkspaceChangeAuditor(input: {
   workspaceRoot: string;
-  /** When the expected-mutation registry lands (Phase 3) it is consulted here. */
+  /** Consult the expected-mutation registry (Phase 3) to attribute a path. */
   resolveOrigin?: (path: string) => WorkspaceChangeOrigin | undefined;
+  /** Correlation/identity for a matched expected mutation. */
+  resolveIdentity?: (path: string) => WorkspaceChangeIdentity | undefined;
   /** Whether the auditor has a reliable identity for attribution (Phase 3). */
   hasReliableIdentity?: () => boolean;
   debounceMs?: number;
@@ -155,11 +167,13 @@ export function createWorkspaceChangeAuditor(input: {
             ? hint.operation
             : "deleted";
       const origin = input.resolveOrigin?.(hint.path) ?? "unknown";
-      const attributed = attributionFor(origin, {
+      const identity = input.resolveIdentity?.(hint.path);
+      const correlatedOrigin = identity?.origin ?? origin;
+      const attributed = attributionFor(correlatedOrigin, {
         hasReliableIdentity:
           (input.hasReliableIdentity?.() ?? false) &&
-          origin !== "external" &&
-          origin !== "unknown",
+          correlatedOrigin !== "external" &&
+          correlatedOrigin !== "unknown",
         indeterminate: hint.indeterminate,
       });
       const change: ConfirmedWorkspaceChange = {
@@ -167,9 +181,15 @@ export function createWorkspaceChangeAuditor(input: {
         workspaceRoot,
         path: hint.path,
         operation,
-        origin,
+        origin: correlatedOrigin,
         attribution: attributed,
-        correlation: {},
+        correlation: {
+          sessionID: identity?.sessionID,
+          episodeID: identity?.episodeID,
+          turnID: identity?.turnID,
+          callID: identity?.callID,
+          operationID: identity?.operationID,
+        },
         health: hint.health,
         ...(hint.healthReason ? { healthReason: hint.healthReason } : {}),
         at: new Date(hint.observedAt).toISOString(),
