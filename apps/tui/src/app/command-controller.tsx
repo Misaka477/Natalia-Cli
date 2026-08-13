@@ -2845,6 +2845,17 @@ export async function runCommand(command: string, ctx: CommandContext) {
     );
     return;
   }
+  if (command === "session.toggle.actions") {
+    // The details lever behind the feed's density: a completed tool call is one
+    // line when collapsed and a full card when expanded. Persisted through the
+    // same settings path as the rest of the TUI preferences.
+    ctx.updatePreferences({
+      ...ctx.preferences(),
+      toolDetails:
+        ctx.preferences().toolDetails === "expanded" ? "collapsed" : "expanded",
+    });
+    return;
+  }
   if (command === "chat.open") {
     // P8 C2: the Live Work Chat is a read-only collaboration surface. The
     // mailbox/snapshot/plan data planes are wired; this dialog renders them and

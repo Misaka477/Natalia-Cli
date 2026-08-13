@@ -77,10 +77,6 @@ function UserBlock(props: {
   onCopy?: (text: string) => void;
   onFork?: (turnID: string, prompt: string) => void;
 }) {
-  const [hover, setHover] = createSignal(false);
-  const actionable = Boolean(
-    props.onCopy || (props.onFork && props.block.text),
-  );
   return (
     <box
       flexDirection="column"
@@ -90,8 +86,6 @@ function UserBlock(props: {
       paddingLeft={2}
       paddingTop={1}
       paddingBottom={1}
-      onMouseOver={() => setHover(true)}
-      onMouseOut={() => setHover(false)}
     >
       <text fg={darkTheme.text} wrapMode="word">
         {props.block.text}
@@ -101,7 +95,7 @@ function UserBlock(props: {
           {props.block.pendingText}
         </text>
       </Show>
-      <Show when={hover() && actionable}>
+      <Show when={props.onCopy || (props.onFork && props.block.text)}>
         <box flexDirection="row" gap={2} paddingTop={1}>
           <Show when={props.onCopy}>
             <text
@@ -130,14 +124,11 @@ function AssistantBlock(props: {
   density: TuiPreferences["density"];
   onCopy?: (text: string) => void;
 }) {
-  const [hover, setHover] = createSignal(false);
   return (
     <box
       flexDirection="column"
       marginTop={props.density === "comfortable" ? 1 : 0}
       paddingLeft={3}
-      onMouseOver={() => setHover(true)}
-      onMouseOut={() => setHover(false)}
     >
       <markdown
         content={props.block.text}
@@ -150,7 +141,7 @@ function AssistantBlock(props: {
           {props.block.pendingText}
         </text>
       </Show>
-      <Show when={hover() && props.onCopy}>
+      <Show when={props.onCopy}>
         <text
           fg={darkTheme.muted}
           paddingTop={1}
@@ -167,20 +158,22 @@ function ThinkingBlock(props: {
   block: MessageBlock;
   density: TuiPreferences["density"];
 }) {
-  const [expanded, setExpanded] = createSignal(false);
+  // Reasoning is the part of the model the user actually wants to read, so it
+  // is open by default; the header collapses it when the row is long.
+  const [collapsed, setCollapsed] = createSignal(false);
   const providerSafe = props.block.providerPolicy === "hidden";
   return (
     <box
       flexDirection="column"
       marginTop={props.density === "comfortable" ? 1 : 0}
       paddingLeft={3}
-      onMouseUp={() => setExpanded((value) => !value)}
+      onMouseUp={() => setCollapsed((value) => !value)}
     >
       <text fg={darkTheme.warning}>
-        {expanded() ? "- " : "+ "}Thought
+        {collapsed() ? "+ " : "- "}Thought
         {providerSafe ? " · provider-safe" : ""}
       </text>
-      <Show when={expanded()}>
+      <Show when={!collapsed()}>
         <box paddingLeft={2} paddingTop={1}>
           <text fg={darkTheme.muted} wrapMode="word">
             {props.block.text || "Thinking..."}

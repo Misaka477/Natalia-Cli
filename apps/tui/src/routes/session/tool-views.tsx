@@ -53,6 +53,7 @@ export function ToolBlockView(props: {
     return (
       <ShellToolView
         block={props.block}
+        toolDetails={props.toolDetails}
         terminalWidth={props.terminalWidth}
         previewLines={props.toolPreviewLines}
       />
@@ -720,6 +721,7 @@ function ToolPanel(props: {
 
 function ShellToolView(props: {
   block: MessageBlock;
+  toolDetails: "expanded" | "collapsed";
   terminalWidth: number;
   previewLines: number;
 }) {
@@ -778,6 +780,38 @@ function ShellToolView(props: {
       </box>
     );
 
+  // A completed shell with details collapsed is one line; click opens the block.
+  if (
+    props.toolDetails === "collapsed" &&
+    tool().status === "succeeded" &&
+    !expanded()
+  )
+    return (
+      <box
+        paddingLeft={3}
+        marginTop={1}
+        flexDirection="row"
+        onMouseOver={() => setHover(true)}
+        onMouseOut={() => setHover(false)}
+        onMouseUp={() => {
+          if (renderer.getSelection()?.getSelectedText()) return;
+          setExpanded(true);
+        }}
+      >
+        <text width={2} fg={darkTheme.muted}>
+          ✓
+        </text>
+        <text
+          flexGrow={1}
+          fg={hover() ? darkTheme.text : darkTheme.muted}
+          wrapMode="word"
+        >
+          $ {input().command || tool().name}
+          {tool().elapsed ? ` · ${tool().elapsed}` : ""}
+        </text>
+      </box>
+    );
+
   return (
     <box
       border={["left"]}
@@ -793,6 +827,11 @@ function ShellToolView(props: {
       onMouseUp={() => {
         if (renderer.getSelection()?.getSelectedText()) return;
         if (collapsed().overflow) setExpanded((value) => !value);
+        else if (
+          props.toolDetails === "collapsed" &&
+          tool().status === "succeeded"
+        )
+          setExpanded(false);
       }}
     >
       <Show when={input().workdir && input().workdir !== "."}>

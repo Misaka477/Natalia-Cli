@@ -417,6 +417,18 @@ function Shell(props: {
     const text = (input?.plainText ?? "").replace(/\n$/, "");
     if (!text.trim()) return;
     const control = text.trim();
+    // While an approval or question is pending, Enter is owned by the inline
+    // prompt card; this guard exists for the other submit paths so a turn can
+    // never be launched past a decision the runtime is waiting on.
+    if (state.dialog === "approval" || state.dialog === "question") {
+      if (control !== "/pause" && control !== "/resume") {
+        toast.show({
+          variant: "warning",
+          message: "Answer the pending prompt above first",
+        });
+        return;
+      }
+    }
     if (control === "/editor" || control.startsWith("/editor ")) {
       const draft = control === "/editor" ? "" : text.slice("/editor ".length);
       try {
@@ -1091,15 +1103,19 @@ function Shell(props: {
               )}
               width="100%"
               placeholder={
-                route.route().kind !== "none"
-                  ? "Press Escape to return"
-                  : "Ask anything..."
+                state.dialog === "approval" || state.dialog === "question"
+                  ? "Answer the pending prompt above"
+                  : route.route().kind !== "none"
+                    ? "Press Escape to return"
+                    : "Ask anything..."
               }
               placeholderColor={theme.theme.muted}
               textColor={
-                route.route().kind !== "none"
+                state.dialog === "approval" || state.dialog === "question"
                   ? theme.theme.muted
-                  : theme.theme.text
+                  : route.route().kind !== "none"
+                    ? theme.theme.muted
+                    : theme.theme.text
               }
               focusedTextColor={theme.theme.text}
               cursorColor={theme.theme.accent}

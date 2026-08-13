@@ -218,6 +218,11 @@ export const commands: Record<string, CommandDef> = {
     keys: "unset",
     desc: "Show session intelligence snapshot",
   },
+  "session.toggle.actions": {
+    id: "session.toggle.actions",
+    keys: "unset",
+    desc: "Toggle tool details",
+  },
   "chat.open": {
     id: "chat.open",
     keys: "unset",

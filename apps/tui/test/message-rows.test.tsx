@@ -8,7 +8,10 @@ import { MessageBlockView } from "../src/routes/session/message-rows";
 import { DialogProvider } from "../src/dialog/provider";
 import { registerNataliaKeymap } from "../src/modal/mode-stack";
 
-async function mountBlock(block: MessageBlock) {
+async function mountBlock(
+  block: MessageBlock,
+  toolDetails: "collapsed" | "expanded" = "collapsed",
+) {
   const setup = await createTestRenderer({ width: 120, height: 36 });
   const keymap = createDefaultOpenTuiKeymap(setup.renderer);
   const disposeKeymap = registerNataliaKeymap(keymap, setup.renderer);
@@ -19,10 +22,12 @@ async function mountBlock(block: MessageBlock) {
           <MessageBlockView
             block={block}
             density="comfortable"
-            toolDetails="collapsed"
+            toolDetails={toolDetails}
             diffStyle="auto"
             terminalWidth={120}
             toolPreviewLines={10}
+            onCopy={() => {}}
+            onFork={() => {}}
           />
         </DialogProvider>
       </KeymapProvider>
@@ -87,13 +92,13 @@ const toolBlock = (
     },
   }) as unknown as MessageBlock;
 
-test("a user message reads as content, not a labelled toolbar", async () => {
+test("a user message keeps its copy/fork affordances visible", async () => {
   const mounted = await mountBlock(userBlock);
   try {
     const frame = mounted.setup.captureCharFrame();
     expect(frame).toContain("please switch the server to Bun-native HTTP");
     expect(frame).not.toContain("▎You");
-    expect(frame).not.toContain("copy");
+    expect(frame).toContain("copy");
   } finally {
     mounted.disposeKeymap();
     mounted.setup.renderer.destroy();
@@ -112,12 +117,12 @@ test("an assistant reply is plain content with no per-block header", async () =>
   }
 });
 
-test("a thinking row is one Thought line until opened", async () => {
+test("a thinking row shows its reasoning until collapsed", async () => {
   const mounted = await mountBlock(thinkingBlock);
   try {
     const frame = mounted.setup.captureCharFrame();
     expect(frame).toContain("Thought");
-    expect(frame).not.toContain("transport swap");
+    expect(frame).toContain("transport swap");
   } finally {
     mounted.disposeKeymap();
     mounted.setup.renderer.destroy();
@@ -132,6 +137,83 @@ test("a completed generic tool collapses to one line when details are collapsed"
     expect(frame).not.toContain("args:");
     expect(frame).not.toContain("result:");
     expect(frame).not.toContain("d detail");
+  } finally {
+    mounted.disposeKeymap();
+    mounted.setup.renderer.destroy();
+  }
+});
+
+const shellBlock = (
+  status: "succeeded" | "failed",
+  detail: string,
+): MessageBlock => ({
+  id: "tool:shell:call_1",
+  role: "tool",
+  text: "shell:run_shell command=npm test · shell exited",
+  owner: "projection",
+  tool: {
+    id: "tool:shell:call_1",
+    name: "run_shell",
+    kind: "shell",
+    status,
+    summary:
+      status === "succeeded" ? "shell exited with code 0" : "command failed",
+    argumentsRaw: '{"command":"npm test"}',
+    argumentsComplete: true,
+    keyArguments: ["command=npm test"],
+    redactedArguments: '{"command":"npm test"}',
+    elapsed: "2.1s",
+    result: {
+      summary: status === "succeeded" ? "shell exited with code 0" : "failed",
+      preview: detail.slice(0, 80),
+      detail,
+      truncated: false,
+      totalChars: detail.length,
+      totalLines: detail.split("\n").length,
+    },
+    metadata: {},
+    detailAvailable: true,
+  },
+});
+
+test("a completed shell collapses to one line when details are collapsed", async () => {
+  const mounted = await mountBlock(
+    shellBlock("succeeded", "1 passing\n2 passing"),
+  );
+  try {
+    const frame = mounted.setup.captureCharFrame();
+    expect(frame).toContain("npm test");
+    expect(frame).not.toContain("1 passing");
+    expect(frame).not.toContain("ShellSpinner");
+  } finally {
+    mounted.disposeKeymap();
+    mounted.setup.renderer.destroy();
+  }
+});
+
+test("a completed shell shows its output block when details are expanded", async () => {
+  const mounted = await mountBlock(
+    shellBlock("succeeded", "1 passing\n2 passing"),
+    "expanded",
+  );
+  try {
+    const frame = mounted.setup.captureCharFrame();
+    expect(frame).toContain("npm test");
+    expect(frame).toContain("1 passing");
+  } finally {
+    mounted.disposeKeymap();
+    mounted.setup.renderer.destroy();
+  }
+});
+
+test("a failed shell keeps its block even when details are collapsed", async () => {
+  const mounted = await mountBlock(
+    shellBlock("failed", "SyntaxError: unexpected token"),
+  );
+  try {
+    const frame = mounted.setup.captureCharFrame();
+    expect(frame).toContain("SyntaxError");
+    expect(frame).not.toContain("✓");
   } finally {
     mounted.disposeKeymap();
     mounted.setup.renderer.destroy();
