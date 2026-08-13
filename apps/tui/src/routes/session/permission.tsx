@@ -2,9 +2,10 @@ import { TextareaRenderable, TextAttributes } from "@opentui/core";
 import { useBindings } from "@opentui/keymap/solid";
 import type { RuntimeClient } from "@natalia/contracts";
 import type { ModalRequest } from "@natalia/ui-model";
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { usePromptRef } from "../../context/prompt";
 import { themeTokens as darkTheme } from "../../theme/theme";
+import { useModeStack } from "../../modal/mode-stack";
 
 const MODE = "approval";
 
@@ -13,6 +14,14 @@ export function PermissionPrompt(props: {
   backend: RuntimeClient;
   onExit(): void;
 }) {
+  // The prompt is an inline bottom card, not an overlay: it registers the mode
+  // that gates its keys for as long as it is mounted and releases it when it
+  // goes away, leaving the timeline visible and scrollable above it.
+  const modes = useModeStack();
+  onMount(() => {
+    const release = modes.push(MODE);
+    onCleanup(release);
+  });
   const [stage, setStage] = createSignal<"prompt" | "reject">("prompt");
   const [selected, setSelected] = createSignal(0);
   const [expanded, setExpanded] = createSignal(false);

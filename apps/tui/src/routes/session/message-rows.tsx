@@ -1,12 +1,18 @@
-import { TextAttributes } from "@opentui/core";
-import { Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import type { RuntimeClient } from "@natalia/contracts";
-import { useAppState, type MessageBlock } from "../../context/state";
+import type { MessageBlock } from "../../context/state";
 import { roleColor, themeTokens as darkTheme } from "../../theme/theme";
 import type { TuiPreferences } from "../../settings";
 import { markdownSyntax, ToolBlockView } from "./tool-views";
 import { InlineInteractiveBlock } from "./interactive-rows";
 
+/**
+ * Renders one transcript row against the reference interaction language:
+ * content first, chrome last. A user message is a coloured left rail with no
+ * label, an assistant reply is plain indented content, and a thinking row is a
+ * single "Thought" line until opened. Consecutive rows separate by a hairline,
+ * not by a per-row toolbar.
+ */
 export function MessageBlockView(props: {
   block: MessageBlock;
   backend?: RuntimeClient;
@@ -32,110 +38,160 @@ export function MessageBlockView(props: {
         toolPreviewLines={props.toolPreviewLines}
       />
     );
-  const isUser = props.block.role === "user";
-  const isThinking = props.block.role === "thinking";
-  const isAssistant = props.block.role === "assistant";
-  const isCopyable = isUser || isThinking || isAssistant;
+  const role = props.block.role;
+  if (role === "user")
+    return (
+      <UserBlock
+        block={props.block}
+        density={props.density}
+        onCopy={props.onCopy}
+        onFork={props.onFork}
+      />
+    );
+  if (role === "thinking")
+    return <ThinkingBlock block={props.block} density={props.density} />;
+  if (role === "assistant")
+    return (
+      <AssistantBlock
+        block={props.block}
+        density={props.density}
+        onCopy={props.onCopy}
+      />
+    );
   return (
     <box
       flexDirection="column"
       marginTop={props.density === "comfortable" ? 1 : 0}
-      border={isThinking || isAssistant ? ["left"] : []}
-      borderColor={isThinking ? darkTheme.muted : darkTheme.accent}
-      paddingLeft={isThinking || isAssistant ? 1 : 0}
+      paddingLeft={role === "system" || role === "subagent" ? 2 : 1}
     >
-      <box flexDirection="row" gap={1}>
-        <text
-          fg={isUser ? darkTheme.accent : darkTheme.muted}
-          attributes={TextAttributes.BOLD}
-        >
-          {isUser
-            ? "▎You"
-            : props.block.role === "system"
-              ? " System"
-              : props.block.role === "assistant"
-                ? " Natalia"
-                : props.block.role === "subagent"
-                  ? " Subagent"
-                  : ` ${props.block.role.charAt(0).toUpperCase()}${props.block.role.slice(1)}`}
-        </text>
-        {props.block.status ? (
-          <text fg={darkTheme.muted}>[{props.block.status}]</text>
-        ) : null}
-        {props.block.role === "thinking" &&
-        props.block.providerPolicy === "hidden" ? (
-          <text fg={darkTheme.warning}>provider-safe</text>
-        ) : null}
-        <Show when={isCopyable && (props.onCopy || (isUser && props.onFork))}>
-          <box flexDirection="row" gap={1}>
-            <Show when={props.onCopy}>
-              <text
-                fg={darkTheme.muted}
-                onMouseUp={() => props.onCopy?.(props.block.text)}
-              >
-                copy
-              </text>
-            </Show>
-            <Show when={isUser && props.onFork}>
-              <text
-                fg={darkTheme.muted}
-                onMouseUp={() =>
-                  props.onFork?.(props.block.id, props.block.text)
-                }
-              >
-                fork
-              </text>
-            </Show>
-          </box>
-        </Show>
-      </box>
-      <BlockBody block={props.block} toolDetails={props.toolDetails} />
+      <text fg={roleColor(role, darkTheme)} wrapMode="word">
+        {props.block.text}
+      </text>
     </box>
   );
 }
 
-function BlockBody(props: {
+function UserBlock(props: {
   block: MessageBlock;
-  toolDetails: TuiPreferences["toolDetails"];
+  density: TuiPreferences["density"];
+  onCopy?: (text: string) => void;
+  onFork?: (turnID: string, prompt: string) => void;
 }) {
-  if (props.block.role === "assistant") {
-    return (
-      <box flexDirection="column">
-        <markdown
-          content={props.block.text}
-          streaming={true}
-          syntaxStyle={markdownSyntax()}
-          fg={darkTheme.text}
-        />
-        <Show when={props.block.pendingText}>
-          <text fg={darkTheme.muted} wrapMode="word">
-            {props.block.pendingText}
-          </text>
-        </Show>
-      </box>
-    );
-  }
-  if (props.block.role === "thinking") {
-    return (
-      <box flexDirection="column">
-        <text fg={darkTheme.muted} wrapMode="word">
-          {props.block.text || "Thinking..."}
-        </text>
-        <Show when={props.block.pendingText}>
-          <text fg={darkTheme.muted} wrapMode="word">
-            {props.block.pendingText}
-          </text>
-        </Show>
-      </box>
-    );
-  }
+  const [hover, setHover] = createSignal(false);
+  const actionable = Boolean(
+    props.onCopy || (props.onFork && props.block.text),
+  );
   return (
-    <text
-      fg={roleColor(props.block.role, darkTheme)}
-      wrapMode="word"
-      paddingLeft={1}
+    <box
+      flexDirection="column"
+      marginTop={props.density === "comfortable" ? 1 : 0}
+      border={["left"]}
+      borderColor={darkTheme.accent}
+      paddingLeft={2}
+      paddingTop={1}
+      paddingBottom={1}
+      onMouseOver={() => setHover(true)}
+      onMouseOut={() => setHover(false)}
     >
-      {props.block.text}
-    </text>
+      <text fg={darkTheme.text} wrapMode="word">
+        {props.block.text}
+      </text>
+      <Show when={props.block.pendingText}>
+        <text fg={darkTheme.muted} wrapMode="word">
+          {props.block.pendingText}
+        </text>
+      </Show>
+      <Show when={hover() && actionable}>
+        <box flexDirection="row" gap={2} paddingTop={1}>
+          <Show when={props.onCopy}>
+            <text
+              fg={darkTheme.muted}
+              onMouseUp={() => props.onCopy?.(props.block.text)}
+            >
+              copy
+            </text>
+          </Show>
+          <Show when={props.onFork}>
+            <text
+              fg={darkTheme.muted}
+              onMouseUp={() => props.onFork?.(props.block.id, props.block.text)}
+            >
+              fork
+            </text>
+          </Show>
+        </box>
+      </Show>
+    </box>
+  );
+}
+
+function AssistantBlock(props: {
+  block: MessageBlock;
+  density: TuiPreferences["density"];
+  onCopy?: (text: string) => void;
+}) {
+  const [hover, setHover] = createSignal(false);
+  return (
+    <box
+      flexDirection="column"
+      marginTop={props.density === "comfortable" ? 1 : 0}
+      paddingLeft={3}
+      onMouseOver={() => setHover(true)}
+      onMouseOut={() => setHover(false)}
+    >
+      <markdown
+        content={props.block.text}
+        streaming={true}
+        syntaxStyle={markdownSyntax()}
+        fg={darkTheme.text}
+      />
+      <Show when={props.block.pendingText}>
+        <text fg={darkTheme.muted} wrapMode="word">
+          {props.block.pendingText}
+        </text>
+      </Show>
+      <Show when={hover() && props.onCopy}>
+        <text
+          fg={darkTheme.muted}
+          paddingTop={1}
+          onMouseUp={() => props.onCopy?.(props.block.text)}
+        >
+          copy
+        </text>
+      </Show>
+    </box>
+  );
+}
+
+function ThinkingBlock(props: {
+  block: MessageBlock;
+  density: TuiPreferences["density"];
+}) {
+  const [expanded, setExpanded] = createSignal(false);
+  const providerSafe = props.block.providerPolicy === "hidden";
+  return (
+    <box
+      flexDirection="column"
+      marginTop={props.density === "comfortable" ? 1 : 0}
+      paddingLeft={3}
+      onMouseUp={() => setExpanded((value) => !value)}
+    >
+      <text fg={darkTheme.warning}>
+        {expanded() ? "- " : "+ "}Thought
+        {providerSafe ? " · provider-safe" : ""}
+      </text>
+      <Show when={expanded()}>
+        <box paddingLeft={2} paddingTop={1}>
+          <text fg={darkTheme.muted} wrapMode="word">
+            {props.block.text || "Thinking..."}
+          </text>
+          <Show when={props.block.pendingText}>
+            <text fg={darkTheme.muted} wrapMode="word">
+              {props.block.pendingText}
+            </text>
+          </Show>
+        </box>
+      </Show>
+    </box>
   );
 }

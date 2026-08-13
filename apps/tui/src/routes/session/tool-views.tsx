@@ -49,7 +49,6 @@ export function ToolBlockView(props: {
   terminalWidth: number;
   toolPreviewLines: number;
 }) {
-  const dialog = useDialog();
   if (props.block.tool?.kind === "shell")
     return (
       <ShellToolView
@@ -72,22 +71,37 @@ export function ToolBlockView(props: {
     ].includes(props.block.tool?.kind ?? "")
   )
     return <InteractionToolView block={props.block} />;
+  return (
+    <FallbackToolBlock
+      block={props.block}
+      toolDetails={props.toolDetails}
+      diffStyle={props.diffStyle}
+      terminalWidth={props.terminalWidth}
+    />
+  );
+}
+
+/**
+ * The fallback tool card. A diff or a failing call keeps its block — that is
+ * the content worth reading. A completed, non-diff tool collapses to a single
+ * line once the preference is "collapsed": a closed card is not a canvas for
+ * more chrome, it is one line that reads as a fact.
+ */
+function FallbackToolBlock(props: {
+  block: MessageBlock;
+  toolDetails: "expanded" | "collapsed";
+  diffStyle: "auto" | "stacked";
+  terminalWidth: number;
+}) {
+  const dialog = useDialog();
+  const tool = () => props.block.tool!;
   const [expanded, setExpanded] = createSignal(
     props.toolDetails === "expanded",
   );
   const [argumentsExpanded, setArgumentsExpanded] = createSignal(false);
   const [hover, setHover] = createSignal(false);
-  const tool = () => props.block.tool!;
   const diff = () => tool().kind === "diff" && tool().result?.detail;
-  const path = () => toolPath(tool().redactedArguments);
-  const diffView = () =>
-    props.diffStyle === "stacked" || props.terminalWidth <= 120
-      ? "unified"
-      : "split";
-  const title = () => {
-    const operation = tool().name === "apply_patch" ? "Patched" : "Edit";
-    return `← ${operation}${path() ? ` ${path()}` : ""}`;
-  };
+  const succeeded = () => tool().status === "succeeded";
   const openDetail = () => {
     const content = tool().result?.detail || tool().redactedArguments;
     if (!content) return;
@@ -102,6 +116,19 @@ export function ToolBlockView(props: {
         }
       />
     ));
+  };
+  // A completed, non-diff tool with details collapsed is one line, not a card.
+  if (props.toolDetails === "collapsed" && succeeded() && !diff())
+    return <CompactToolLine tool={tool()} onOpen={openDetail} />;
+
+  const path = () => toolPath(tool().redactedArguments);
+  const diffView = () =>
+    props.diffStyle === "stacked" || props.terminalWidth <= 120
+      ? "unified"
+      : "split";
+  const title = () => {
+    const operation = tool().name === "apply_patch" ? "Patched" : "Edit";
+    return `← ${operation}${path() ? ` ${path()}` : ""}`;
   };
 
   useBindings(() => ({
@@ -183,50 +210,32 @@ export function ToolBlockView(props: {
           </text>
         </Show>
         <Show when={tool().argumentsComplete && tool().redactedArguments}>
-          <box flexDirection="column">
-            <text fg={darkTheme.muted} wrapMode="word">
-              args: {tool().keyArguments.join(", ") || "{}"}
-              {" · a raw · d detail"}
+          <text fg={darkTheme.muted} wrapMode="word">
+            args: {tool().keyArguments.join(", ") || "{}"}
+          </text>
+          <Show when={argumentsExpanded()}>
+            <text fg={darkTheme.text} wrapMode="word">
+              {tool().redactedArguments}
             </text>
-            <Show when={argumentsExpanded()}>
-              <text fg={darkTheme.text} wrapMode="word">
-                {tool().redactedArguments}
-              </text>
-            </Show>
-          </box>
+          </Show>
         </Show>
         <Show when={tool().result}>
           {(result) => (
-            <box flexDirection="column">
-              <Show when={tool().kind !== "diff"}>
-                <text fg={darkTheme.muted}>
-                  result: {result().summary}
-                  {result().truncated || tool().kind === "subagent"
-                    ? " · collapsed by default"
-                    : ""}
-                </text>
-                <Show
-                  when={expanded()}
-                  fallback={
-                    <text fg={darkTheme.text} wrapMode="word">
-                      {result().preview.split("\n").slice(0, 2).join("\n")}
-                    </text>
-                  }
-                >
+            <Show when={tool().kind !== "diff"}>
+              <Show
+                when={expanded()}
+                fallback={
                   <text fg={darkTheme.text} wrapMode="word">
-                    {result().detail}
+                    {result().preview.split("\n").slice(0, 2).join("\n")}
                   </text>
-                </Show>
+                }
+              >
+                <text fg={darkTheme.text} wrapMode="word">
+                  {result().detail}
+                </text>
               </Show>
-            </box>
+            </Show>
           )}
-        </Show>
-        <Show when={tool().detailAvailable}>
-          <text fg={darkTheme.muted} onMouseUp={openDetail}>
-            {expanded()
-              ? "collapse details · d detail with args/result tabs"
-              : "expand · d detail with args/result tabs"}
-          </text>
         </Show>
         <Show when={tool().status === "failed"}>
           <text fg={darkTheme.danger} wrapMode="word">
@@ -234,6 +243,37 @@ export function ToolBlockView(props: {
           </text>
         </Show>
       </Show>
+    </box>
+  );
+}
+
+function CompactToolLine(props: {
+  tool: NonNullable<MessageBlock["tool"]>;
+  onOpen(): void;
+}) {
+  const tool = () => props.tool;
+  const [hover, setHover] = createSignal(false);
+  return (
+    <box
+      paddingLeft={3}
+      marginTop={1}
+      flexDirection="row"
+      onMouseOver={() => setHover(true)}
+      onMouseOut={() => setHover(false)}
+      onMouseUp={props.onOpen}
+    >
+      <text width={2} fg={darkTheme.muted}>
+        ✓
+      </text>
+      <text
+        flexGrow={1}
+        fg={hover() ? darkTheme.text : darkTheme.muted}
+        wrapMode="word"
+      >
+        {toolIcon(tool().kind)} {tool().name}
+        {tool().keyArguments.length ? ` ${tool().keyArguments.join(", ")}` : ""}
+        {tool().elapsed ? ` · ${tool().elapsed}` : ""}
+      </text>
     </box>
   );
 }
@@ -670,13 +710,6 @@ function ToolPanel(props: {
           <Show when={errorExpanded() && error() !== props.tool.summary}>
             <text fg={darkTheme.danger} wrapMode="word">
               {error()}
-            </text>
-          </Show>
-          <Show when={error() !== props.tool.summary}>
-            <text fg={darkTheme.muted}>
-              {errorExpanded()
-                ? "Click to hide error detail"
-                : "Click to show error detail"}
             </text>
           </Show>
         </box>
