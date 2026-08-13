@@ -988,6 +988,19 @@ type RuntimeEventData =
       text: string;
     }
   | {
+      type: "chat.thinking.delta";
+      id: string;
+      messageID: string;
+      text: string;
+    }
+  | {
+      type: "chat.tool.used";
+      id: string;
+      toolName: string;
+      summary: string;
+      at: string;
+    }
+  | {
       type: "chat.rollback";
       id: string;
       toMessageID: string;

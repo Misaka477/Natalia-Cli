@@ -2987,6 +2987,50 @@ export function createRealRuntimeClient(
     return visible;
   }
 
+  /** A concise, secret-safe summary of a Chat tool call for the conversation. */
+  function chatToolSummary(
+    toolName: string,
+    args: Record<string, unknown>,
+    result: string,
+  ) {
+    switch (toolName) {
+      case "mailbox_send": {
+        const intent = typeof args.intent === "string" ? args.intent : "intent";
+        const outcome = safeParseJson(result);
+        const messageID =
+          outcome && typeof outcome.messageID === "string"
+            ? ` (${outcome.messageID})`
+            : "";
+        return `queued mailbox intent: ${intent}${messageID}`;
+      }
+      case "plan_create": {
+        const title = typeof args.title === "string" ? args.title : "untitled";
+        return `drafted plan: ${title}`;
+      }
+      case "plan_update": {
+        const planID =
+          typeof args.planID === "string" ? args.planID : "unknown";
+        return `revised plan ${planID}`;
+      }
+      case "plan_propose": {
+        const planID =
+          typeof args.planID === "string" ? args.planID : "unknown";
+        return `proposed plan ${planID} for your review`;
+      }
+      default:
+        return `${toolName} (${result.slice(0, 120)})`;
+    }
+  }
+
+  function safeParseJson(value: string): Record<string, unknown> | undefined {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object" ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   /** Runs one Chat turn: shared context + history -> provider stream -> tools. */
   async function runChatTurn(input: {
     text: string;
@@ -3012,6 +3056,7 @@ export function createRealRuntimeClient(
       parameters: tool.parameters,
     }));
     let output = "";
+    let thinking = "";
     for (let step = 1; step <= effectiveMaxSteps(); step++) {
       const calls: ProviderToolCall[] = [];
       for await (const chunk of provider.stream({
@@ -3019,6 +3064,16 @@ export function createRealRuntimeClient(
         tools: toolSchemas,
         signal: new AbortController().signal,
       })) {
+        if (chunk.type === "thinking") {
+          thinking += chunk.text;
+          publish({
+            type: "chat.thinking.delta",
+            id: `${input.responseMessageID}:thinking:${chatSequence++}`,
+            messageID: input.responseMessageID,
+            text: thinking,
+          });
+          continue;
+        }
         if (chunk.type === "content") {
           output += chunk.text;
           publish({
@@ -3049,6 +3104,17 @@ export function createRealRuntimeClient(
         const result = await tool.execute(parsed, {
           workspaceRoot,
           signal: new AbortController().signal,
+        });
+        publish({
+          type: "chat.tool.used",
+          id: `${input.responseMessageID}:tool:${chatSequence++}`,
+          toolName: tool.name,
+          summary: chatToolSummary(
+            tool.name,
+            parsed as Record<string, unknown>,
+            result,
+          ),
+          at: new Date().toISOString(),
         });
         messages.push({ role: "tool", content: result, toolCallID: call.id });
       }

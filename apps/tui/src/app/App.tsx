@@ -1063,7 +1063,7 @@ function Shell(props: {
         >
           <LiveChatView
             backend={props.backend}
-            messages={() => state.chatMessages}
+            timeline={() => state.chatTimeline}
             focused={() => viewFocus() === "chat"}
             onRequestFocus={() => setViewFocus("chat")}
             onEscape={() => setViewFocus("main")}
@@ -1085,6 +1085,26 @@ function Shell(props: {
             onRollback={(toMessageID) => {
               void props.backend.chatRollback?.({ toMessageID });
             }}
+            onPlanAccept={(planID) => {
+              void props.backend.planAccept?.(planID).catch((error) =>
+                toast.show({
+                  variant: "error",
+                  message: `Plan not accepted: ${
+                    error instanceof Error ? error.message : String(error)
+                  }`.slice(0, 160),
+                }),
+              );
+            }}
+            onPlanReject={(planID) => {
+              void props.backend.planSupersede?.(
+                planID,
+                "rejected in live work chat",
+              );
+            }}
+            promptMaxHeight={Math.min(
+              preferences().prompt.maxHeight,
+              layout().promptMaxHeight,
+            )}
           />
         </box>
       </Show>
@@ -1101,7 +1121,7 @@ function Shell(props: {
         >
           <LiveChatView
             backend={props.backend}
-            messages={() => state.chatMessages}
+            timeline={() => state.chatTimeline}
             focused={() => viewFocus() === "chat"}
             onRequestFocus={() => setViewFocus("chat")}
             onEscape={() => {
@@ -1127,6 +1147,26 @@ function Shell(props: {
             onRollback={(toMessageID) => {
               void props.backend.chatRollback?.({ toMessageID });
             }}
+            onPlanAccept={(planID) => {
+              void props.backend.planAccept?.(planID).catch((error) =>
+                toast.show({
+                  variant: "error",
+                  message: `Plan not accepted: ${
+                    error instanceof Error ? error.message : String(error)
+                  }`.slice(0, 160),
+                }),
+              );
+            }}
+            onPlanReject={(planID) => {
+              void props.backend.planSupersede?.(
+                planID,
+                "rejected in live work chat",
+              );
+            }}
+            promptMaxHeight={Math.min(
+              preferences().prompt.maxHeight,
+              layout().promptMaxHeight,
+            )}
           />
         </box>
       </Show>

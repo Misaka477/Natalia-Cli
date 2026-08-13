@@ -148,17 +148,33 @@ export type AppState = {
   facts: ViewAppState;
   terminalPane: { selectedID?: string; focus: "chat" | "terminal" };
   /**
-   * The Live Work Chat conversation, projected from the durable journal
-   * (`chat.message.added` appends, `chat.message.delta` streams the last chat
-   * message, `chat.rollback` truncates). Same source as the runtime reads, so
-   * the view never drifts from the journal (§8.3).
+   * The Live Work Chat timeline, projected from the durable journal in event
+   * order: `chat.message.added` appends a message, `chat.tool.used` appends a
+   * tool-action row, `chat.message.delta` streams the last chat message and
+   * `chat.rollback` truncates at a message boundary. Same source the runtime
+   * reads, so the view never drifts from the journal (§8.3).
    */
-  chatMessages: Array<{
-    messageID: string;
-    role: "user" | "chat";
-    text: string;
-    at: string;
-  }>;
+  chatTimeline: Array<
+    | {
+        kind: "message";
+        messageID: string;
+        role: "user" | "chat";
+        text: string;
+        at: string;
+      }
+    | {
+        kind: "thinking";
+        messageID: string;
+        text: string;
+      }
+    | {
+        kind: "action";
+        id: string;
+        toolName: string;
+        summary: string;
+        at: string;
+      }
+  >;
 };
 
 /**
@@ -180,7 +196,7 @@ export function createInitialState(): AppState {
     modal: structuredClone(initialModalState),
     facts: initialFacts(),
     terminalPane: { focus: "chat" },
-    chatMessages: [],
+    chatTimeline: [],
     messages: [],
   };
 }
@@ -529,25 +545,75 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
       state.terminalPane.focus = event.focus;
       state.terminalPane.selectedID ??= nextActiveTerminal(state);
       return;
-    case "chat.message.added":
-      state.chatMessages.push({
-        messageID: event.messageID,
-        role: event.role,
-        text: event.text,
+    case "chat.message.added": {
+      // A streaming reply may already have created the entry from its deltas;
+      // upsert rather than append so the final text replaces the streamed one.
+      const existing = state.chatTimeline.find(
+        (entry) =>
+          entry.kind === "message" && entry.messageID === event.messageID,
+      );
+      if (existing && existing.kind === "message") {
+        existing.text = event.text;
+        existing.at = event.at;
+      } else {
+        state.chatTimeline.push({
+          kind: "message",
+          messageID: event.messageID,
+          role: event.role,
+          text: event.text,
+          at: event.at,
+        });
+      }
+      return;
+    }
+    case "chat.message.delta": {
+      // The reply's final `chat.message.added` arrives only when the turn
+      // settles, so a delta for a not-yet-added message must create the entry
+      // or the streamed text never appears.
+      let target = state.chatTimeline.find(
+        (entry) =>
+          entry.kind === "message" && entry.messageID === event.messageID,
+      );
+      if (!target) {
+        target = {
+          kind: "message",
+          messageID: event.messageID,
+          role: "chat",
+          text: "",
+          at: new Date().toISOString(),
+        };
+        state.chatTimeline.push(target);
+      }
+      if (target.kind === "message") target.text = event.text;
+      return;
+    }
+    case "chat.thinking.delta": {
+      const last = state.chatTimeline.at(-1);
+      if (last && last.kind === "thinking") last.text = event.text;
+      else
+        state.chatTimeline.push({
+          kind: "thinking",
+          messageID: event.messageID,
+          text: event.text,
+        });
+      return;
+    }
+    case "chat.tool.used":
+      state.chatTimeline.push({
+        kind: "action",
+        id: event.id,
+        toolName: event.toolName,
+        summary: event.summary,
         at: event.at,
       });
       return;
-    case "chat.message.delta": {
-      const last = state.chatMessages.at(-1);
-      if (last && last.role === "chat") last.text = event.text;
-      return;
-    }
     case "chat.rollback": {
-      const index = state.chatMessages.findIndex(
-        (message) => message.messageID === event.toMessageID,
+      const index = state.chatTimeline.findIndex(
+        (entry) =>
+          entry.kind === "message" && entry.messageID === event.toMessageID,
       );
-      if (index !== -1) state.chatMessages.splice(index + 1);
-      else state.chatMessages.length = 0;
+      if (index !== -1) state.chatTimeline.splice(index + 1);
+      else state.chatTimeline.length = 0;
       return;
     }
     case "terminal.timeline":

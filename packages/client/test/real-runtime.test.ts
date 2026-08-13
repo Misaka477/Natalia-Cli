@@ -9714,3 +9714,60 @@ test("chat submit runs a live work chat turn and persists the conversation", asy
   expect(history[1].text).toContain("running step 2");
   await client.dispose?.();
 });
+
+test("chat tool calls surface as conversation actions", async () => {
+  let streamCalls = 0;
+  const root = await mkdtemp(join(tmpdir(), "natalia-chat-tool-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_chat_tool",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        // The generator re-runs from the top on every stream call, so only the
+        // first call offers the tool; later steps reply in text and settle.
+        streamCalls += 1;
+        if (streamCalls === 1) {
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "call_1",
+                name: "mailbox_send",
+                arguments: JSON.stringify({
+                  intent: "constraint",
+                  text: "do not install that dependency",
+                }),
+              },
+            ],
+          };
+          return;
+        }
+        yield {
+          type: "content" as const,
+          text: "I queued the constraint for the main agent.",
+        };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  await client.chatSubmit!({ text: "do not install that dependency" });
+  console.log(
+    "DIAG_EVENTS",
+    JSON.stringify(events.map((e) => (e as { type: string }).type)),
+  );
+  console.log(
+    "DIAG_CHAT",
+    JSON.stringify(events.filter((e) => e.type.startsWith("chat."))),
+  );
+  const actions = events.filter((event) => event.type === "chat.tool.used");
+  expect(actions).toHaveLength(1);
+  expect(actions[0]).toMatchObject({ toolName: "mailbox_send" });
+  expect((actions[0] as { summary: string }).summary).toContain(
+    "queued mailbox intent: constraint",
+  );
+  await client.dispose?.();
+});
