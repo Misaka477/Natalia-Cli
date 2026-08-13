@@ -6093,6 +6093,92 @@ test("a cancelled turn does not auto-acknowledge delivered intents", async () =>
   expect((await client.mailboxList!())[0]?.status).toBe("delivered");
 });
 
+test("evaluateDrift opens durable findings and driftFindings answers them", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-drift-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_drift",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+
+  const opened = await client.evaluateDrift?.({
+    objective: "implement user authentication",
+    currentActivity: "refactoring the css theme",
+    applicableConstraints: ["never commit generated files"],
+    changes: [{ action: "modified", path: "src/theme.css" }],
+    evidenceRefs: [],
+  });
+  expect(opened).toEqual({ opened: 1 });
+
+  const findings = await client.driftFindings!();
+  expect(findings).toHaveLength(1);
+  expect(findings[0]).toMatchObject({
+    severity: "advisory",
+    originalObjective: "implement user authentication",
+    status: "open",
+  });
+  expect(
+    events.some(
+      (event) =>
+        event.type === "drift.finding_opened" &&
+        event.findingID.includes("objective_activity_mismatch"),
+    ),
+  ).toBe(true);
+
+  // The same signals do not reopen an already-open finding.
+  const again = await client.evaluateDrift?.({
+    objective: "implement user authentication",
+    currentActivity: "refactoring the css theme",
+    applicableConstraints: ["never commit generated files"],
+    changes: [{ action: "modified", path: "src/theme.css" }],
+    evidenceRefs: [],
+  });
+  expect(again).toEqual({ opened: 0 });
+  expect(await client.driftFindings!()).toHaveLength(1);
+});
+
+test("evaluateDrift opens a high finding for a forbidden constraint signal", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-drift-high-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_drift_high",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => {});
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+
+  await client.evaluateDrift?.({
+    objective: "finish the docs",
+    currentActivity: "commit the generated files to the repo",
+    applicableConstraints: ["never commit generated files"],
+    changes: [{ action: "added", path: "dist/out.js" }],
+    evidenceRefs: [],
+  });
+  const findings = await client.driftFindings!();
+  const high = findings.find((finding) => finding.severity === "high");
+  expect(high).toBeDefined();
+  expect(high?.evidence.some((entry) => entry.startsWith("constraint:"))).toBe(
+    true,
+  );
+});
+
 test("durable session replay preserves tool-call pairs for the next provider turn", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-replay-tools-"));
   await writeFile(join(root, "input.txt"), "replay-ok\n");

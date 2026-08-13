@@ -201,6 +201,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "evidenceRecords",
     "recordValidation",
     "driftFindings",
+    "evaluateDrift",
     "registeredTools",
   ],
   /** Live Work Chat durable mailbox (P8 Phase C3). */
@@ -274,7 +275,6 @@ export type UnclassifiedRuntimeClientMember = AssertNever<
  * Each is a first slice whose writer is scheduled work, not an abandoned surface.
  */
 export const UNIMPLEMENTED_QUERIES = {
-  driftFindings: "no production code opens drift findings yet",
   registeredTools: "tool registration metadata is not published yet",
 } as const satisfies Partial<Record<keyof RuntimeClient, string>>;
 

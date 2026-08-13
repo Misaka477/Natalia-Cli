@@ -452,6 +452,19 @@ export type NataliaSDK = {
   driftFindings(): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["driftFindings"]>>>
   >;
+  /** Runs the DriftEvaluator against safe signals and publishes findings. */
+  evaluateDrift(input: {
+    objective: string;
+    currentActivity: string;
+    applicableConstraints?: string[];
+    changes?: Array<{
+      path?: string;
+      action?: string;
+      target?: string;
+      summary?: string;
+    }>;
+    evidenceRefs?: string[];
+  }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["evaluateDrift"]>>>>;
   registeredTools(): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["registeredTools"]>>>
   >;
@@ -834,6 +847,14 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
     planSupersede: async (planID, reason) =>
       await call("plan.supersede", { planID, reason }),
     driftFindings: async () => await call("drift.findings", {}),
+    evaluateDrift: async (input) =>
+      await call("drift.evaluate", {
+        objective: input.objective,
+        currentActivity: input.currentActivity,
+        applicableConstraints: input.applicableConstraints ?? [],
+        changes: input.changes ?? [],
+        evidenceRefs: input.evidenceRefs ?? [],
+      }),
     registeredTools: async () => await call("tools.registered", {}),
     capabilities: async () => await call("capabilities", {}),
     sessionSnapshot: async () => await call("session.snapshot", {}),

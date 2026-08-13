@@ -34,6 +34,7 @@ test("the members whose refusal must be a value are named, and each names its fi
     "agentCreate",
     "agentDelete",
     "canReloadConfig",
+    "evaluateDrift",
     "mailboxAcknowledge",
     "mailboxDefer",
     "mailboxDeliver",

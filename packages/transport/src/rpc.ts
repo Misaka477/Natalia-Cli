@@ -200,6 +200,7 @@ export const RPC_ROUTE_MEMBERS = {
   "evidence.records": "evidenceRecords",
   "evidence.record": "recordValidation",
   "drift.findings": "driftFindings",
+  "drift.evaluate": "evaluateDrift",
   "tools.registered": "registeredTools",
   // P8 C3: durable Live Work Chat mailbox.
   "mailbox.list": "mailboxList",
@@ -1406,6 +1407,40 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.driftFindings(),
+      };
+    }
+    if (body.method === "drift.evaluate") {
+      optionsGuard(client, "evaluateDrift");
+      const params = body.params as Record<string, unknown> | undefined;
+      if (
+        !params ||
+        typeof params.objective !== "string" ||
+        params.objective.trim().length === 0 ||
+        typeof params.currentActivity !== "string" ||
+        params.currentActivity.trim().length === 0
+      )
+        throw invalidParams(
+          "drift.evaluate requires an objective and a currentActivity string",
+        );
+      const result = await client.evaluateDrift?.({
+        objective: params.objective,
+        currentActivity: params.currentActivity,
+        ...(Array.isArray(params.applicableConstraints)
+          ? { applicableConstraints: params.applicableConstraints.map(String) }
+          : {}),
+        ...(Array.isArray(params.changes) ? { changes: params.changes } : {}),
+        ...(Array.isArray(params.evidenceRefs)
+          ? { evidenceRefs: params.evidenceRefs.map(String) }
+          : {}),
+      });
+      if (!result)
+        throw invalidParams(
+          "drift.evaluate is not implemented by this runtime",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result,
       };
     }
     if (body.method === "tools.registered") {

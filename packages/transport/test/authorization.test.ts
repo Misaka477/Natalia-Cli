@@ -118,6 +118,7 @@ function controllableClient() {
     "evidenceRecords",
     "recordValidation",
     "driftFindings",
+    "evaluateDrift",
     "registeredTools",
     "mailboxList",
     "mailboxSend",

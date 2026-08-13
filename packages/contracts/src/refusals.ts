@@ -405,6 +405,11 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     note: "runs a validation command and records the outcome; only the command, outcome, bounded safe summary and duration reach the journal — raw output is redacted",
   },
   driftFindings: { refusal: "none", note: "pure read" },
+  evaluateDrift: {
+    refusal: "value",
+    expressedBy: "opened",
+    note: "runs the DriftEvaluator against safe signals and publishes findings; the evaluator has no write power, a finding only escalates to an approval/Chat/mailbox prompt",
+  },
   registeredTools: { refusal: "none", note: "pure read" },
 
   // --- Live Work Chat mailbox (P8 C3) ---

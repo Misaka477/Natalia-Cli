@@ -161,6 +161,7 @@ import {
 import { buildMailboxQueued, buildMailboxStatus } from "./mailbox-ledger";
 import { buildPlanDraftCreated, buildPlanTransition } from "./plan-ledger";
 import { createMailboxAcknowledgeTool } from "./mailbox-tool";
+import { createDriftEvaluator } from "./drift-evaluator";
 
 // Re-exported because the policy tests reach for the risk classifier directly and
 // this file is the package's runtime entry point.
@@ -642,6 +643,21 @@ export function createRealRuntimeClient(
         .filter((entry) => entry.type === "file")
         .map((entry) => entry.path);
     },
+  });
+  const driftEvaluator = createDriftEvaluator({
+    openFindingIDs: () =>
+      new Set(
+        (session?.events ?? [])
+          .filter(
+            (
+              event,
+            ): event is Extract<
+              RuntimeEvent,
+              { type: "drift.finding_opened" }
+            > => event.type === "drift.finding_opened",
+          )
+          .map((event) => event.findingID),
+      ),
   });
   const statusController = createStatusSnapshotController({
     provider: () => provider,
@@ -3914,6 +3930,40 @@ export function createRealRuntimeClient(
         evidence: f.evidence,
         status: f.status,
       }));
+    },
+    /**
+     * Run the DriftEvaluator against safe signals and publish any findings it
+     * opens. The evaluator is the only production writer of
+     * `drift.finding_opened` (§56.9); it has no write power — a finding only
+     * escalates to an approval/Chat/mailbox prompt, never a cancellation.
+     * Already-open findings are not reopened.
+     */
+    async evaluateDrift(input: {
+      objective: string;
+      currentActivity: string;
+      applicableConstraints?: string[];
+      changes?: Array<{
+        path?: string;
+        action?: string;
+        target?: string;
+        summary?: string;
+      }>;
+      evidenceRefs?: string[];
+    }) {
+      if (!session) return { opened: 0 as const };
+      if (!input.objective.trim() || !input.currentActivity.trim())
+        return { opened: 0 as const };
+      const findings = driftEvaluator.evaluate({
+        sessionID,
+        turnID: activeExec?.activeTurnID,
+        objective: input.objective,
+        currentActivity: input.currentActivity,
+        applicableConstraints: input.applicableConstraints ?? [],
+        changes: input.changes ?? [],
+        evidenceRefs: input.evidenceRefs ?? [],
+      });
+      for (const finding of findings) publishForSession(activeExec, finding);
+      return { opened: findings.length };
     },
     async registeredTools() {
       if (!session) return [];

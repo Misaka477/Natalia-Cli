@@ -2102,6 +2102,24 @@ export type RuntimeClient = {
       status: string;
     }>
   >;
+  /**
+   * Runs the DriftEvaluator against safe signals and publishes any
+   * `drift.finding_opened` facts. The evaluator is the only production writer
+   * of drift findings and has no write power — a finding only escalates to an
+   * approval/Chat/mailbox prompt, never a cancellation.
+   */
+  evaluateDrift?(input: {
+    objective: string;
+    currentActivity: string;
+    applicableConstraints?: string[];
+    changes?: Array<{
+      path?: string;
+      action?: string;
+      target?: string;
+      summary?: string;
+    }>;
+    evidenceRefs?: string[];
+  }): Promise<{ opened: number }>;
   registeredTools?(): Promise<
     Array<{
       name: string;
