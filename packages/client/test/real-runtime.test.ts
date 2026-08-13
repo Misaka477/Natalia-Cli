@@ -6313,6 +6313,55 @@ test("an external workspace change becomes an isolated external graph node", asy
   ).toBe(true);
 });
 
+test("a confirmed change diverging from the active plan auto-opens a drift finding", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-obs-drift-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_obs_drift",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => {
+    if (event.type === "approval.request" && event.scope === "plan_acceptance")
+      client.respondApproval({ requestID: event.id, decision: "once" });
+  });
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+
+  // An active plan with a clear objective and a constraint.
+  const created = await client.planCreate?.({
+    title: "Implement user authentication",
+    author: "live_chat",
+    objective: "implement user authentication",
+    steps: [{ id: "s1", title: "add the login flow" }],
+    constraints: ["never commit generated files"],
+  });
+  const planID = created!.planID!;
+  await client.planPropose?.(planID);
+  await client.planAccept?.(planID);
+  await client.planQueue?.(planID);
+  await client.submit("second");
+  await pollHistoryForFinished(client);
+  expect((await client.planList!())[0]?.status).toBe("active");
+
+  // An external change unrelated to the plan's objective.
+  await writeFile(join(root, "theme.css"), "unrelated css\n");
+  await Bun.sleep(400);
+  await client.confirmedWorkspaceChanges!();
+
+  const findings = await client.driftFindings!();
+  const mismatch = findings.find((finding) =>
+    finding.findingID.includes("objective_activity_mismatch"),
+  );
+  expect(mismatch).toBeDefined();
+  expect(mismatch?.severity).toBe("advisory");
+});
+
 test("durable session replay preserves tool-call pairs for the next provider turn", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-replay-tools-"));
   await writeFile(join(root, "input.txt"), "replay-ok\n");

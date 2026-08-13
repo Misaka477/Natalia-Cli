@@ -2559,6 +2559,7 @@ export function createRealRuntimeClient(
     },
     async confirmedWorkspaceChanges() {
       await ready;
+      if (!session) return [];
       // Reconcile the watcher hints against the current workspace. Confirmed
       // changes attributed to a tool/sandbox are already graphed by the tool
       // path; confirmed EXTERNAL/unattributed changes become isolated
@@ -2575,6 +2576,36 @@ export function createRealRuntimeClient(
             sessionID,
           }),
         );
+      }
+      // WG4 Phase 5: run the confirmed changes through the DriftEvaluator
+      // against the active plan's objective and constraints, so a confirmed
+      // change that diverges from the plan opens a finding automatically
+      // (§56.9: "DriftEvaluator 只在确认的实际变化与 objective、constraint…
+      // 不一致时打开 drift.finding_opened").
+      if (confirmed.length) {
+        const activePlan = projectedPlans(session.events).find(
+          (plan) => plan.status === "active",
+        );
+        const objective = activePlan?.objective ?? "";
+        const applicableConstraints = activePlan?.constraints ?? [];
+        if (objective || applicableConstraints.length) {
+          const findings = driftEvaluator.evaluate({
+            sessionID,
+            turnID: activeExec?.activeTurnID,
+            objective,
+            currentActivity: confirmed
+              .map((change) => `${change.operation}:${change.path}`)
+              .join(", "),
+            applicableConstraints,
+            changes: confirmed.map((change) => ({
+              path: change.path,
+              action: change.operation,
+            })),
+            evidenceRefs: [],
+          });
+          for (const finding of findings)
+            publishForSession(activeExec, finding);
+        }
       }
       return confirmed;
     },
