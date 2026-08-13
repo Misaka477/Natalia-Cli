@@ -87,6 +87,7 @@ import {
   projectedDriftFindings,
   projectedWorkGraphNodes,
   projectedWorkGraphEdges,
+  projectedMailboxMessages,
   settleInterruptedTurns,
   settleInterruptedTurnIDs,
   modelVisibleEvents,
@@ -156,6 +157,7 @@ import {
   boundValidationOutcome,
   buildEvidenceRecorded,
 } from "./evidence-ledger";
+import { buildMailboxQueued, buildMailboxStatus } from "./mailbox-ledger";
 
 // Re-exported because the policy tests reach for the risk classifier directly and
 // this file is the package's runtime entry point.
@@ -666,6 +668,7 @@ export function createRealRuntimeClient(
   let sessionSnapshotSequence = 0;
   let decisionSequence = 0;
   let evidenceSequence = 0;
+  let mailboxSequence = 0;
 
   /**
    * Re-reads the config and re-resolves the provider from it.
@@ -3356,6 +3359,148 @@ export function createRealRuntimeClient(
         result,
         safeSummary: outcome.safeSummary,
       };
+    },
+    async mailboxList() {
+      if (!session) return [];
+      return projectedMailboxMessages(session.events).map((m) => ({
+        messageID: m.messageID,
+        source: m.source,
+        priority: m.priority,
+        intent: m.intent,
+        text: m.text,
+        safeSummary: m.safeSummary,
+        ...(m.relatedPlanID ? { relatedPlanID: m.relatedPlanID } : {}),
+        deliveryPolicy: m.deliveryPolicy,
+        createdAt: m.createdAt,
+        status: m.status,
+        ...(m.reason ? { reason: m.reason } : {}),
+      }));
+    },
+    async mailboxSend(input: {
+      source?: "user_via_live_chat" | "system";
+      priority?: "normal" | "high" | "urgent";
+      intent: string;
+      text: string;
+      safeSummary?: string;
+      relatedPlanID?: string;
+      deliveryPolicy?: string;
+    }) {
+      if (!session) return { queued: false as const };
+      if (
+        typeof input.intent !== "string" ||
+        input.intent.trim().length === 0 ||
+        typeof input.text !== "string" ||
+        input.text.trim().length === 0
+      )
+        return { queued: false as const };
+      const now = new Date();
+      const messageID = `mailbox:${Date.now().toString(36)}:${mailboxSequence++}`;
+      const event = buildMailboxQueued({
+        id: `${messageID}:queued`,
+        messageID,
+        source: input.source ?? "user_via_live_chat",
+        priority: input.priority ?? "normal",
+        intent: input.intent as
+          | "clarification"
+          | "constraint"
+          | "reprioritize"
+          | "pause"
+          | "cancel"
+          | "request_report"
+          | "proposed_change"
+          | "next_plan_handoff",
+        text: redactToolOutput(input.text, true),
+        safeSummary:
+          redactToolOutput(input.safeSummary ?? input.text, true).slice(
+            0,
+            500,
+          ) || "mailbox message queued",
+        ...(input.relatedPlanID ? { relatedPlanID: input.relatedPlanID } : {}),
+        deliveryPolicy: (input.deliveryPolicy ?? "next_safe_boundary") as
+          | "next_safe_boundary"
+          | "before_next_tool"
+          | "before_next_side_effect"
+          | "immediate_control",
+        createdAt: now.toISOString(),
+      });
+      publishForSession(activeExec, event);
+      return { queued: true as const, messageID };
+    },
+    async mailboxDeliver(messageID: string) {
+      if (!session || typeof messageID !== "string" || !messageID)
+        return { delivered: false as const };
+      const message = projectedMailboxMessages(session.events).find(
+        (m) => m.messageID === messageID && m.status === "queued",
+      );
+      if (!message) return { delivered: false as const };
+      publishForSession(
+        activeExec,
+        buildMailboxStatus({
+          id: `${messageID}:delivered:${mailboxSequence++}`,
+          messageID,
+          status: "delivered",
+          at: new Date().toISOString(),
+        }),
+      );
+      return { delivered: true as const };
+    },
+    async mailboxAcknowledge(messageID: string) {
+      if (!session || typeof messageID !== "string" || !messageID)
+        return { acknowledged: false as const };
+      const message = projectedMailboxMessages(session.events).find(
+        (m) => m.messageID === messageID && m.status === "delivered",
+      );
+      if (!message) return { acknowledged: false as const };
+      publishForSession(
+        activeExec,
+        buildMailboxStatus({
+          id: `${messageID}:acknowledged:${mailboxSequence++}`,
+          messageID,
+          status: "acknowledged",
+          at: new Date().toISOString(),
+        }),
+      );
+      return { acknowledged: true as const };
+    },
+    async mailboxDefer(messageID: string, reason?: string) {
+      if (!session || typeof messageID !== "string" || !messageID)
+        return { deferred: false as const };
+      const message = projectedMailboxMessages(session.events).find(
+        (m) => m.messageID === messageID && m.status === "queued",
+      );
+      if (!message) return { deferred: false as const };
+      publishForSession(
+        activeExec,
+        buildMailboxStatus({
+          id: `${messageID}:deferred:${mailboxSequence++}`,
+          messageID,
+          status: "deferred",
+          at: new Date().toISOString(),
+          reason:
+            redactToolOutput(reason ?? "", true).slice(0, 500) || undefined,
+        }),
+      );
+      return { deferred: true as const };
+    },
+    async mailboxSupersede(messageID: string, reason?: string) {
+      if (!session || typeof messageID !== "string" || !messageID)
+        return { superseded: false as const };
+      const message = projectedMailboxMessages(session.events).find(
+        (m) => m.messageID === messageID && m.status === "queued",
+      );
+      if (!message) return { superseded: false as const };
+      publishForSession(
+        activeExec,
+        buildMailboxStatus({
+          id: `${messageID}:superseded:${mailboxSequence++}`,
+          messageID,
+          status: "superseded",
+          at: new Date().toISOString(),
+          reason:
+            redactToolOutput(reason ?? "", true).slice(0, 500) || undefined,
+        }),
+      );
+      return { superseded: true as const };
     },
     async sessionSnapshot() {
       if (!session) return undefined;

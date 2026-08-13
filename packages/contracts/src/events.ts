@@ -523,6 +523,57 @@ type RuntimeEventData =
       linkedPlans?: string[];
       linkedConstraints?: string[];
     }
+  | {
+      type: "mailbox.queued";
+      id: string;
+      messageID: string;
+      source: "user_via_live_chat" | "system";
+      priority: "normal" | "high" | "urgent";
+      intent:
+        | "clarification"
+        | "constraint"
+        | "reprioritize"
+        | "pause"
+        | "cancel"
+        | "request_report"
+        | "proposed_change"
+        | "next_plan_handoff";
+      text: string;
+      safeSummary: string;
+      relatedPlanID?: string;
+      deliveryPolicy:
+        | "next_safe_boundary"
+        | "before_next_tool"
+        | "before_next_side_effect"
+        | "immediate_control";
+      createdAt: string;
+    }
+  | {
+      type: "mailbox.delivered";
+      id: string;
+      messageID: string;
+      deliveredAt: string;
+    }
+  | {
+      type: "mailbox.acknowledged";
+      id: string;
+      messageID: string;
+      acknowledgedAt: string;
+    }
+  | {
+      type: "mailbox.deferred";
+      id: string;
+      messageID: string;
+      reason: string;
+      deferredAt: string;
+    }
+  | {
+      type: "mailbox.superseded";
+      id: string;
+      messageID: string;
+      reason: string;
+      supersededAt: string;
+    }
   | { type: "status.update"; status: string; detail?: string }
   | {
       type: "status.snapshot";
@@ -1794,6 +1845,50 @@ export type RuntimeClient = {
     linkedPlans?: string[];
     linkedConstraints?: string[];
   }): Promise<{ recorded: boolean }>;
+  /** The durable mailbox of Live Work Chat intents, projected from the journal. */
+  mailboxList?(): Promise<
+    Array<{
+      messageID: string;
+      source: "user_via_live_chat" | "system";
+      priority: "normal" | "high" | "urgent";
+      intent: string;
+      text: string;
+      safeSummary: string;
+      relatedPlanID?: string;
+      deliveryPolicy: string;
+      createdAt: string;
+      status: string;
+      reason?: string;
+    }>
+  >;
+  /**
+   * Enqueues a Live Work Chat intent as a durable mailbox message. The text is
+   * user intent prose that may reach the journal — secrets must be redacted by
+   * the caller; `safeSummary` is the bounded, redacted summary.
+   */
+  mailboxSend?(input: {
+    source?: "user_via_live_chat" | "system";
+    priority?: "normal" | "high" | "urgent";
+    intent: string;
+    text: string;
+    safeSummary?: string;
+    relatedPlanID?: string;
+    deliveryPolicy?: string;
+  }): Promise<{ queued: boolean; messageID?: string }>;
+  /** Marks a queued mailbox message delivered at a safe boundary. */
+  mailboxDeliver?(messageID: string): Promise<{ delivered: boolean }>;
+  /** Acknowledges a delivered mailbox message. */
+  mailboxAcknowledge?(messageID: string): Promise<{ acknowledged: boolean }>;
+  /** Defers a mailbox message, with a safe reason. */
+  mailboxDefer?(
+    messageID: string,
+    reason?: string,
+  ): Promise<{ deferred: boolean }>;
+  /** Supersedes a mailbox message, with a safe reason. */
+  mailboxSupersede?(
+    messageID: string,
+    reason?: string,
+  ): Promise<{ superseded: boolean }>;
   evidenceRecords?(): Promise<
     Array<{
       taskID: string;

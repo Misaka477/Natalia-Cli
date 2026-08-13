@@ -11,6 +11,7 @@ import {
   projectedConstitutionRules,
   projectedDecisionRecords,
   projectedEvidenceRecords,
+  projectedMailboxMessages,
   projectedWorkGraphNodes,
   projectedWorkGraphEdges,
   projectSessionMessages,
@@ -388,6 +389,90 @@ test("projectedDecisionRecords collects decision records", () => {
   expect(records).toHaveLength(1);
   expect(records[0]?.decision).toContain("TypeScript/Bun");
   expect(records[0]?.status).toBe("accepted");
+});
+
+test("projectedMailboxMessages tracks the full mailbox lifecycle", () => {
+  const session = createSessionRecord("ses_mailbox", "Mailbox");
+  appendSessionEvent(session, {
+    type: "mailbox.queued",
+    id: "mailbox:1:queued",
+    messageID: "mailbox:1",
+    source: "user_via_live_chat",
+    priority: "high",
+    intent: "reprioritize",
+    text: "focus on docs",
+    safeSummary: "reprioritize to docs",
+    deliveryPolicy: "next_safe_boundary",
+    createdAt: "t0",
+  });
+  expect(projectedMailboxMessages(session.events)[0]?.status).toBe("queued");
+
+  appendSessionEvent(session, {
+    type: "mailbox.deferred",
+    id: "mailbox:1:deferred",
+    messageID: "mailbox:1",
+    reason: "unsafe boundary",
+    deferredAt: "t1",
+  });
+  expect(projectedMailboxMessages(session.events)[0]?.status).toBe("deferred");
+  expect(projectedMailboxMessages(session.events)[0]?.reason).toBe(
+    "unsafe boundary",
+  );
+
+  appendSessionEvent(session, {
+    type: "mailbox.superseded",
+    id: "mailbox:1:superseded",
+    messageID: "mailbox:1",
+    reason: "newer instruction",
+    supersededAt: "t2",
+  });
+  expect(projectedMailboxMessages(session.events)[0]?.status).toBe(
+    "superseded",
+  );
+
+  // A transition for an unknown message is ignored.
+  appendSessionEvent(session, {
+    type: "mailbox.acknowledged",
+    id: "mailbox:2:ack",
+    messageID: "mailbox:2",
+    acknowledgedAt: "t3",
+  });
+  expect(projectedMailboxMessages(session.events)).toHaveLength(1);
+});
+
+test("projectedMailboxMessages replays to the same status from replay", () => {
+  const session = createSessionRecord("ses_mailbox_replay", "Mailbox");
+  appendSessionEvent(session, {
+    type: "mailbox.queued",
+    id: "mailbox:3:queued",
+    messageID: "mailbox:3",
+    source: "system",
+    priority: "normal",
+    intent: "constraint",
+    text: "never commit",
+    safeSummary: "a constraint",
+    deliveryPolicy: "before_next_tool",
+    createdAt: "t0",
+  });
+  appendSessionEvent(session, {
+    type: "mailbox.delivered",
+    id: "mailbox:3:delivered",
+    messageID: "mailbox:3",
+    deliveredAt: "t1",
+  });
+  appendSessionEvent(session, {
+    type: "mailbox.acknowledged",
+    id: "mailbox:3:ack",
+    messageID: "mailbox:3",
+    acknowledgedAt: "t2",
+  });
+  // Replaying the same journal produces the same projected state.
+  const projected = projectedMailboxMessages(session.events);
+  expect(projected[0]).toMatchObject({
+    messageID: "mailbox:3",
+    intent: "constraint",
+    status: "acknowledged",
+  });
 });
 
 test("projectedEvidenceRecords collects evidence records", () => {

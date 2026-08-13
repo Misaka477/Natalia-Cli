@@ -203,6 +203,15 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "driftFindings",
     "registeredTools",
   ],
+  /** Live Work Chat durable mailbox (P8 Phase C3). */
+  mailbox: [
+    "mailboxList",
+    "mailboxSend",
+    "mailboxDeliver",
+    "mailboxAcknowledge",
+    "mailboxDefer",
+    "mailboxSupersede",
+  ],
 } as const satisfies Record<string, readonly (keyof RuntimeClient)[]>;
 
 export type RuntimeCapabilityGroup = keyof typeof RUNTIME_CAPABILITY_GROUPS;

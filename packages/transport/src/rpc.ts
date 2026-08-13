@@ -201,6 +201,13 @@ export const RPC_ROUTE_MEMBERS = {
   "evidence.record": "recordValidation",
   "drift.findings": "driftFindings",
   "tools.registered": "registeredTools",
+  // P8 C3: durable Live Work Chat mailbox.
+  "mailbox.list": "mailboxList",
+  "mailbox.send": "mailboxSend",
+  "mailbox.deliver": "mailboxDeliver",
+  "mailbox.acknowledge": "mailboxAcknowledge",
+  "mailbox.defer": "mailboxDefer",
+  "mailbox.supersede": "mailboxSupersede",
   capabilities: "capabilities",
   "session.snapshot": "sessionSnapshot",
   "submit.input": "submitInput",
@@ -1398,6 +1405,112 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.registeredTools(),
+      };
+    }
+    if (body.method === "mailbox.list") {
+      optionsGuard(client, "mailboxList");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.mailboxList(),
+      };
+    }
+    if (body.method === "mailbox.send") {
+      optionsGuard(client, "mailboxSend");
+      const params = body.params as Record<string, unknown> | undefined;
+      if (
+        !params ||
+        typeof params.intent !== "string" ||
+        params.intent.trim().length === 0 ||
+        typeof params.text !== "string" ||
+        params.text.trim().length === 0
+      )
+        throw invalidParams(
+          "mailbox.send requires an intent and a text string",
+        );
+      const result = await client.mailboxSend?.({
+        ...(typeof params.source === "string"
+          ? {
+              source: params.source as "user_via_live_chat" | "system",
+            }
+          : {}),
+        ...(typeof params.priority === "string"
+          ? {
+              priority: params.priority as "normal" | "high" | "urgent",
+            }
+          : {}),
+        intent: params.intent,
+        text: params.text,
+        ...(typeof params.safeSummary === "string"
+          ? { safeSummary: params.safeSummary }
+          : {}),
+        ...(typeof params.relatedPlanID === "string"
+          ? { relatedPlanID: params.relatedPlanID }
+          : {}),
+        ...(typeof params.deliveryPolicy === "string"
+          ? { deliveryPolicy: params.deliveryPolicy }
+          : {}),
+      });
+      if (!result)
+        throw invalidParams("mailbox.send is not implemented by this runtime");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result,
+      };
+    }
+    if (body.method === "mailbox.deliver") {
+      optionsGuard(client, "mailboxDeliver");
+      const params = body.params as Record<string, unknown> | undefined;
+      const messageID = params?.messageID;
+      if (typeof messageID !== "string" || !messageID)
+        throw invalidParams("mailbox.deliver requires a messageID string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.mailboxDeliver?.(messageID),
+      };
+    }
+    if (body.method === "mailbox.acknowledge") {
+      optionsGuard(client, "mailboxAcknowledge");
+      const params = body.params as Record<string, unknown> | undefined;
+      const messageID = params?.messageID;
+      if (typeof messageID !== "string" || !messageID)
+        throw invalidParams("mailbox.acknowledge requires a messageID string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.mailboxAcknowledge?.(messageID),
+      };
+    }
+    if (body.method === "mailbox.defer") {
+      optionsGuard(client, "mailboxDefer");
+      const params = body.params as Record<string, unknown> | undefined;
+      const messageID = params?.messageID;
+      if (typeof messageID !== "string" || !messageID)
+        throw invalidParams("mailbox.defer requires a messageID string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.mailboxDefer?.(
+          messageID,
+          typeof params.reason === "string" ? params.reason : undefined,
+        ),
+      };
+    }
+    if (body.method === "mailbox.supersede") {
+      optionsGuard(client, "mailboxSupersede");
+      const params = body.params as Record<string, unknown> | undefined;
+      const messageID = params?.messageID;
+      if (typeof messageID !== "string" || !messageID)
+        throw invalidParams("mailbox.supersede requires a messageID string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.mailboxSupersede?.(
+          messageID,
+          typeof params.reason === "string" ? params.reason : undefined,
+        ),
       };
     }
     if (body.method === "capabilities") {

@@ -291,6 +291,7 @@ export {
   projectedEvidenceRecords,
   projectedWorkGraphNodes,
   projectedWorkGraphEdges,
+  projectedMailboxMessages,
   projectSession,
   settleInterruptedTurns,
   settleInterruptedTurnIDs,

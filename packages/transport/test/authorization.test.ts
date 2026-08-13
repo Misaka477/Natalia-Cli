@@ -119,6 +119,12 @@ function controllableClient() {
     "recordValidation",
     "driftFindings",
     "registeredTools",
+    "mailboxList",
+    "mailboxSend",
+    "mailboxDeliver",
+    "mailboxAcknowledge",
+    "mailboxDefer",
+    "mailboxSupersede",
     "settingsGet",
   ])
     client[member] = () => undefined;

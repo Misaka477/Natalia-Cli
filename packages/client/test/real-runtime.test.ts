@@ -5340,6 +5340,141 @@ test("recordValidation rejects empty task id or command without recording", asyn
   );
 });
 
+test("mailbox send/list/deliver/acknowledge records a durable lifecycle", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-mailbox-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_mailbox",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+
+  const sent = await client.mailboxSend?.({
+    intent: "reprioritize",
+    text: "focus on the docs task first",
+    safeSummary: "user asked to reprioritize",
+    priority: "high",
+    deliveryPolicy: "next_safe_boundary",
+  });
+  expect(sent?.queued).toBe(true);
+  expect(sent?.messageID).toBeDefined();
+
+  let mailbox = await client.mailboxList!();
+  expect(mailbox).toHaveLength(1);
+  expect(mailbox[0]).toMatchObject({
+    intent: "reprioritize",
+    priority: "high",
+    text: "focus on the docs task first",
+    status: "queued",
+    deliveryPolicy: "next_safe_boundary",
+  });
+
+  expect(await client.mailboxDeliver?.(sent!.messageID!)).toEqual({
+    delivered: true,
+  });
+  expect((await client.mailboxList!())[0]?.status).toBe("delivered");
+
+  expect(await client.mailboxAcknowledge?.(sent!.messageID!)).toEqual({
+    acknowledged: true,
+  });
+  expect((await client.mailboxList!())[0]?.status).toBe("acknowledged");
+
+  expect(
+    events.filter((event) => event.type.startsWith("mailbox.")).length,
+  ).toBe(3);
+  expect(
+    events.some(
+      (event) =>
+        event.type === "mailbox.queued" &&
+        event.intent === "reprioritize" &&
+        event.safeSummary === "user asked to reprioritize",
+    ),
+  ).toBe(true);
+});
+
+test("mailbox defer and supersede move a queued message out of the way", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-mailbox-def-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_mailbox_def",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => {});
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+
+  const sent = await client.mailboxSend?.({
+    intent: "constraint",
+    text: "never merge a failing build",
+    safeSummary: "a merge constraint",
+  });
+  expect(
+    await client.mailboxDefer?.(sent!.messageID!, "unsafe boundary"),
+  ).toEqual({ deferred: true });
+  expect((await client.mailboxList!())[0]?.status).toBe("deferred");
+  expect((await client.mailboxList!())[0]?.reason).toBe("unsafe boundary");
+
+  const second = await client.mailboxSend?.({
+    intent: "cancel",
+    text: "stop the current plan",
+    safeSummary: "cancel requested",
+  });
+  expect(
+    await client.mailboxSupersede?.(second!.messageID!, "superseded by newer"),
+  ).toEqual({ superseded: true });
+  expect((await client.mailboxList!())[1]?.status).toBe("superseded");
+
+  // A delivered message cannot be acknowledged twice or delivered twice.
+  expect(await client.mailboxDefer?.(sent!.messageID!, "again")).toEqual({
+    deferred: false,
+  });
+  expect(await client.mailboxAcknowledge?.(sent!.messageID!)).toEqual({
+    acknowledged: false,
+  });
+});
+
+test("mailboxSend redacts secrets from the recorded safe summary", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-mailbox-redact-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_mailbox_redact",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => {});
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+
+  await client.mailboxSend?.({
+    intent: "constraint",
+    text: "api_key=supersecretvalue",
+    safeSummary: "api_key=supersecretvalue",
+  });
+  const mailbox = await client.mailboxList!();
+  expect(mailbox[0]?.safeSummary).not.toContain("supersecretvalue");
+  expect(JSON.stringify(mailbox)).not.toContain("supersecretvalue");
+});
+
 test("durable session replay preserves tool-call pairs for the next provider turn", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-replay-tools-"));
   await writeFile(join(root, "input.txt"), "replay-ok\n");

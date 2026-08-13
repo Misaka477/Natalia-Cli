@@ -406,6 +406,34 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
   },
   driftFindings: { refusal: "none", note: "pure read" },
   registeredTools: { refusal: "none", note: "pure read" },
+
+  // --- Live Work Chat mailbox (P8 C3) ---
+  mailboxList: { refusal: "none", note: "pure read" },
+  mailboxSend: {
+    refusal: "value",
+    expressedBy: "queued",
+    note: "enqueues a durable mailbox intent; the text is user intent prose that may reach the journal, so secrets must be redacted by the caller",
+  },
+  mailboxDeliver: {
+    refusal: "value",
+    expressedBy: "delivered",
+    note: "marks a queued mailbox message delivered; unknown messages answer delivered:false",
+  },
+  mailboxAcknowledge: {
+    refusal: "value",
+    expressedBy: "acknowledged",
+    note: "acknowledges a delivered mailbox message",
+  },
+  mailboxDefer: {
+    refusal: "value",
+    expressedBy: "deferred",
+    note: "defers a queued mailbox message with a safe reason",
+  },
+  mailboxSupersede: {
+    refusal: "value",
+    expressedBy: "superseded",
+    note: "supersedes a queued mailbox message with a safe reason",
+  },
 } as const satisfies Record<keyof RuntimeClient, MemberRefusalSemantics>;
 
 type AssertNever<T extends never> = T;

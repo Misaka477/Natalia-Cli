@@ -356,6 +356,42 @@ export type NataliaSDK = {
   }): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["recordValidation"]>>>
   >;
+  /** The durable Live Work Chat mailbox, projected from the journal. */
+  mailboxList(): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["mailboxList"]>>>
+  >;
+  /** Enqueues a Live Work Chat intent as a durable mailbox message. */
+  mailboxSend(input: {
+    source?: "user_via_live_chat" | "system";
+    priority?: "normal" | "high" | "urgent";
+    intent: string;
+    text: string;
+    safeSummary?: string;
+    relatedPlanID?: string;
+    deliveryPolicy?: string;
+  }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["mailboxSend"]>>>>;
+  /** Marks a queued mailbox message delivered at a safe boundary. */
+  mailboxDeliver(
+    messageID: string,
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["mailboxDeliver"]>>>>;
+  /** Acknowledges a delivered mailbox message. */
+  mailboxAcknowledge(
+    messageID: string,
+  ): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["mailboxAcknowledge"]>>>
+  >;
+  /** Defers a queued mailbox message with a safe reason. */
+  mailboxDefer(
+    messageID: string,
+    reason?: string,
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["mailboxDefer"]>>>>;
+  /** Supersedes a queued mailbox message with a safe reason. */
+  mailboxSupersede(
+    messageID: string,
+    reason?: string,
+  ): Promise<
+    Awaited<ReturnType<NonNullable<RuntimeClient["mailboxSupersede"]>>>
+  >;
   driftFindings(): Promise<
     Awaited<ReturnType<NonNullable<RuntimeClient["driftFindings"]>>>
   >;
@@ -692,6 +728,25 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         timeoutSec: input.timeoutSec,
         knownGaps: input.knownGaps ?? [],
       }),
+    mailboxList: async () => await call("mailbox.list", {}),
+    mailboxSend: async (input) =>
+      await call("mailbox.send", {
+        source: input.source,
+        priority: input.priority,
+        intent: input.intent,
+        text: input.text,
+        safeSummary: input.safeSummary,
+        relatedPlanID: input.relatedPlanID,
+        deliveryPolicy: input.deliveryPolicy,
+      }),
+    mailboxDeliver: async (messageID) =>
+      await call("mailbox.deliver", { messageID }),
+    mailboxAcknowledge: async (messageID) =>
+      await call("mailbox.acknowledge", { messageID }),
+    mailboxDefer: async (messageID, reason) =>
+      await call("mailbox.defer", { messageID, reason }),
+    mailboxSupersede: async (messageID, reason) =>
+      await call("mailbox.supersede", { messageID, reason }),
     driftFindings: async () => await call("drift.findings", {}),
     registeredTools: async () => await call("tools.registered", {}),
     capabilities: async () => await call("capabilities", {}),

@@ -484,6 +484,88 @@ export function projectedDecisionRecords(events: RuntimeEvent[]) {
   );
 }
 
+/**
+ * Projects the current mailbox state from the durable journal. The lifecycle is
+ * event-sourced: `mailbox.queued` creates a message and each transition event
+ * (`delivered`/`acknowledged`/`deferred`/`superseded`) moves it forward. The
+ * projected status is the result of replaying the whole journal, so replay
+ * reproduces the same mailbox the live session saw.
+ */
+export type ProjectedMailboxMessage = {
+  messageID: string;
+  source: "user_via_live_chat" | "system";
+  priority: "normal" | "high" | "urgent";
+  intent:
+    | "clarification"
+    | "constraint"
+    | "reprioritize"
+    | "pause"
+    | "cancel"
+    | "request_report"
+    | "proposed_change"
+    | "next_plan_handoff";
+  text: string;
+  safeSummary: string;
+  relatedPlanID?: string;
+  deliveryPolicy:
+    | "next_safe_boundary"
+    | "before_next_tool"
+    | "before_next_side_effect"
+    | "immediate_control";
+  createdAt: string;
+  status: "queued" | "delivered" | "acknowledged" | "deferred" | "superseded";
+  reason?: string;
+};
+
+export function projectedMailboxMessages(
+  events: RuntimeEvent[],
+): ProjectedMailboxMessage[] {
+  const messages = new Map<string, ProjectedMailboxMessage>();
+  for (const event of events) {
+    if (event.type === "mailbox.queued") {
+      messages.set(event.messageID, {
+        messageID: event.messageID,
+        source: event.source,
+        priority: event.priority,
+        intent: event.intent,
+        text: event.text,
+        safeSummary: event.safeSummary,
+        ...(event.relatedPlanID ? { relatedPlanID: event.relatedPlanID } : {}),
+        deliveryPolicy: event.deliveryPolicy,
+        createdAt: event.createdAt,
+        status: "queued",
+      });
+      continue;
+    }
+    if (event.type === "mailbox.delivered") {
+      const message = messages.get(event.messageID);
+      if (message) message.status = "delivered";
+      continue;
+    }
+    if (event.type === "mailbox.acknowledged") {
+      const message = messages.get(event.messageID);
+      if (message) message.status = "acknowledged";
+      continue;
+    }
+    if (event.type === "mailbox.deferred") {
+      const message = messages.get(event.messageID);
+      if (message) {
+        message.status = "deferred";
+        message.reason = event.reason;
+      }
+      continue;
+    }
+    if (event.type === "mailbox.superseded") {
+      const message = messages.get(event.messageID);
+      if (message) {
+        message.status = "superseded";
+        message.reason = event.reason;
+      }
+    }
+  }
+  return [...messages.values()];
+}
+
 export function settleInterruptedTurnIDs(
   activeTurnIDs: string[],
   pendingApprovalIDs: string[],
