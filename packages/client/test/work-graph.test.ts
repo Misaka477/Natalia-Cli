@@ -13,6 +13,7 @@ import { createRealRuntimeClient } from "../src";
 import {
   agentActionNodeID,
   approvalNodeID,
+  externalWorkspaceChangeNode,
   toolCallNodeID,
 } from "../src/work-graph";
 
@@ -868,3 +869,21 @@ test("a read records no workspace change", async () => {
   ).toBe(false);
   await client.dispose?.();
 }, 60_000);
+
+test("an external confirmed change becomes an isolated workspace_change node with no edge", () => {
+  const node = externalWorkspaceChangeNode({
+    confirmedChangeID: "change:ext:1",
+    path: "src/untracked.ts",
+    sessionID: "ses_1",
+  });
+  expect(workGraphNodeSchema.safeParse(node).success).toBe(true);
+  expect(node).toMatchObject({
+    kind: "workspace_change",
+    target: "src/untracked.ts",
+    actor: "external",
+    sessionID: "ses_1",
+  });
+  // No turnID — this is an isolated node with no causal edge.
+  expect(node.turnID).toBeUndefined();
+  expect(node.id).toContain("src/untracked.ts");
+});

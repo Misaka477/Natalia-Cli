@@ -6206,6 +6206,57 @@ test("a write_file turn registers a mutation the auditor can attribute", async (
   expect(JSON.stringify(changes)).not.toContain("hello from TS7");
 });
 
+test("an external workspace change becomes an isolated external graph node", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-obs-external-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_obs_external",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "done" as const };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  await client.submit("hello");
+  await pollHistoryForFinished(client);
+
+  // An external edit the watcher sees but no tool claimed.
+  await writeFile(join(root, "external-note.txt"), "written outside\n");
+  await Bun.sleep(400);
+  const changes = await client.confirmedWorkspaceChanges!();
+  const external = changes.find((change) =>
+    change.path.includes("external-note"),
+  );
+  expect(external).toBeDefined();
+  expect(external?.attribution).toBe("unattributed");
+
+  // The external confirmed change became an isolated workspace_change node with
+  // no causal edge.
+  const externalNodes = events.filter(
+    (event): event is Extract<RuntimeEvent, { type: "workgraph.node_added" }> =>
+      event.type === "workgraph.node_added" &&
+      event.kind === "workspace_change" &&
+      event.actor === "external",
+  );
+  expect(
+    externalNodes.some((node) => node.target === "external-note.txt"),
+  ).toBe(true);
+  const edges = events.filter(
+    (event): event is Extract<RuntimeEvent, { type: "workgraph.edge_added" }> =>
+      event.type === "workgraph.edge_added",
+  );
+  // No edge points at the external node (no reliable turn/call identity).
+  expect(
+    edges.every(
+      (edge) => !externalNodes.some((node) => edge.targetID === node.nodeID),
+    ),
+  ).toBe(true);
+});
+
 test("durable session replay preserves tool-call pairs for the next provider turn", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-replay-tools-"));
   await writeFile(join(root, "input.txt"), "replay-ok\n");

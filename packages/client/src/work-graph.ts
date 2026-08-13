@@ -243,23 +243,50 @@ export function workspaceChangeNode(input: {
   turnID?: string;
   /** Non-turn operation identity, used by direct runtime side-effect APIs. */
   operationID?: string;
+  /** An external confirmed change with no reliable identity (WG4 Phase 4). */
+  externalID?: string;
   path: string;
   toolName: string;
   sessionID: SessionID;
 }): WorkGraphNodeEvent {
-  const identityID = input.turnID ?? input.operationID;
+  const identityID = input.turnID ?? input.operationID ?? input.externalID;
   if (!identityID) throw new Error("workspace change requires an identity");
+  const actor =
+    (input.turnID ?? input.operationID)
+      ? input.toolName
+      : input.externalID
+        ? "external"
+        : input.toolName;
   return {
     type: "workgraph.node_added",
     id: workspaceChangeNodeID(identityID, input.path),
     nodeID: workspaceChangeNodeID(identityID, input.path),
     kind: WORK_GRAPH_KIND.workspaceChange,
-    summary: workGraphSummary([input.toolName, "changed"]),
+    summary: workGraphSummary([actor, "changed"]),
     target: input.path,
-    actor: input.toolName,
+    actor,
     sessionID: input.sessionID,
     turnID: input.turnID,
   };
+}
+
+/**
+ * A confirmed external change with no reliable identity becomes an isolated
+ * `workspace_change` node (§56.9: "确认的外部变化可以生成孤立 workspace_change 节点…
+ * 没有可靠 turnID/callID 时不建立因果边"). The identity is the confirmed-change
+ * id, so replay stays stable; no `tool_call --modified-->` edge is created.
+ */
+export function externalWorkspaceChangeNode(input: {
+  confirmedChangeID: string;
+  path: string;
+  sessionID: SessionID;
+}): WorkGraphNodeEvent {
+  return workspaceChangeNode({
+    externalID: `external:${input.confirmedChangeID}`,
+    path: input.path,
+    toolName: "external",
+    sessionID: input.sessionID,
+  });
 }
 
 /** Links the tool call to the file it changed. */

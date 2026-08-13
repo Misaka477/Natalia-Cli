@@ -178,6 +178,7 @@ import {
   toolCallNode,
   workspaceChangeEdge,
   workspaceChangeNode,
+  externalWorkspaceChangeNode,
 } from "./work-graph";
 import { ensureBashCommandParser } from "./bash-command-policy";
 import { RuntimePerformanceTrace } from "./performance-trace";
@@ -2555,10 +2556,24 @@ export function createRealRuntimeClient(
     },
     async confirmedWorkspaceChanges() {
       await ready;
-      // Reconcile the watcher hints against the current workspace and return the
-      // confirmed changes (WG4 Phase 3 read surface). They are not written to
-      // the Work Graph yet — that is Phase 4.
-      return await workspaceFilesController.reconcile();
+      // Reconcile the watcher hints against the current workspace. Confirmed
+      // changes attributed to a tool/sandbox are already graphed by the tool
+      // path; confirmed EXTERNAL/unattributed changes become isolated
+      // workspace_change nodes (§56.9: "确认的外部变化可以生成孤立 workspace_change
+      // 节点…没有可靠 turnID/callID 时不建立因果边").
+      const confirmed = await workspaceFilesController.reconcile();
+      for (const change of confirmed) {
+        if (change.attribution === "attributed") continue;
+        publishForSession(
+          activeExec,
+          externalWorkspaceChangeNode({
+            confirmedChangeID: change.id,
+            path: change.path,
+            sessionID,
+          }),
+        );
+      }
+      return confirmed;
     },
     sessionAttach: attachSession,
     async dispose() {
