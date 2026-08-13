@@ -1729,6 +1729,10 @@ export function createRealRuntimeClient(
       // Promote the queued-next plan to active so the next turn carries it.
       // `plan.activated` is not a trigger, so this cannot recurse.
       activateQueuedPlanAtBoundary(exec);
+      // WG4: a finished turn is a natural reconcile point — discover external
+      // edits the watcher saw, graph them as isolated nodes, and drift-check
+      // them against the active plan. No explicit call needed.
+      void reconcileWorkspaceObservation(exec);
     }
   }
   /**
@@ -1817,6 +1821,81 @@ export function createRealRuntimeClient(
         at: new Date().toISOString(),
       }),
     );
+  }
+
+  /**
+   * WG4: reconcile the watcher hints against the current workspace, graph any
+   * confirmed external changes as isolated nodes, and run them through the
+   * DriftEvaluator against the active plan (Phase 4 + Phase 5). This is both the
+   * `confirmedWorkspaceChanges()` read surface and the turn-end automatic
+   * reconcile — a finished turn reconciles so external edits are discovered,
+   * graphed and drift-checked without an explicit call.
+   */
+  function reconcileWorkspaceObservation(exec?: SessionExecutionState): Promise<
+    Array<{
+      id: string;
+      workspaceRoot: string;
+      path: string;
+      operation: "added" | "modified" | "deleted" | "renamed";
+      origin:
+        | "tool"
+        | "sandbox_merge"
+        | "checkpoint_rollback"
+        | "external"
+        | "unknown";
+      attribution: "attributed" | "unattributed" | "indeterminate";
+      correlation: {
+        sessionID?: string;
+        episodeID?: string;
+        turnID?: string;
+        callID?: string;
+        operationID?: string;
+      };
+      health: "healthy" | "degraded" | "unavailable";
+      at: string;
+    }>
+  > {
+    return (async () => {
+      const target = exec ?? activeExec;
+      if (!target?.session) return [];
+      const confirmed = await workspaceFilesController.reconcile();
+      for (const change of confirmed) {
+        if (change.attribution === "attributed") continue;
+        publishForSession(
+          target,
+          externalWorkspaceChangeNode({
+            confirmedChangeID: change.id,
+            path: change.path,
+            sessionID: target.session.id,
+          }),
+        );
+      }
+      if (confirmed.length) {
+        const activePlan = projectedPlans(target.session.events).find(
+          (plan) => plan.status === "active",
+        );
+        const objective = activePlan?.objective ?? "";
+        const applicableConstraints = activePlan?.constraints ?? [];
+        if (objective || applicableConstraints.length) {
+          const findings = driftEvaluator.evaluate({
+            sessionID: target.session.id,
+            turnID: target.activeTurnID,
+            objective,
+            currentActivity: confirmed
+              .map((change) => `${change.operation}:${change.path}`)
+              .join(", "),
+            applicableConstraints,
+            changes: confirmed.map((change) => ({
+              path: change.path,
+              action: change.operation,
+            })),
+            evidenceRefs: [],
+          });
+          for (const finding of findings) publishForSession(target, finding);
+        }
+      }
+      return confirmed;
+    })();
   }
 
   /**
@@ -2560,54 +2639,7 @@ export function createRealRuntimeClient(
     async confirmedWorkspaceChanges() {
       await ready;
       if (!session) return [];
-      // Reconcile the watcher hints against the current workspace. Confirmed
-      // changes attributed to a tool/sandbox are already graphed by the tool
-      // path; confirmed EXTERNAL/unattributed changes become isolated
-      // workspace_change nodes (§56.9: "确认的外部变化可以生成孤立 workspace_change
-      // 节点…没有可靠 turnID/callID 时不建立因果边").
-      const confirmed = await workspaceFilesController.reconcile();
-      for (const change of confirmed) {
-        if (change.attribution === "attributed") continue;
-        publishForSession(
-          activeExec,
-          externalWorkspaceChangeNode({
-            confirmedChangeID: change.id,
-            path: change.path,
-            sessionID,
-          }),
-        );
-      }
-      // WG4 Phase 5: run the confirmed changes through the DriftEvaluator
-      // against the active plan's objective and constraints, so a confirmed
-      // change that diverges from the plan opens a finding automatically
-      // (§56.9: "DriftEvaluator 只在确认的实际变化与 objective、constraint…
-      // 不一致时打开 drift.finding_opened").
-      if (confirmed.length) {
-        const activePlan = projectedPlans(session.events).find(
-          (plan) => plan.status === "active",
-        );
-        const objective = activePlan?.objective ?? "";
-        const applicableConstraints = activePlan?.constraints ?? [];
-        if (objective || applicableConstraints.length) {
-          const findings = driftEvaluator.evaluate({
-            sessionID,
-            turnID: activeExec?.activeTurnID,
-            objective,
-            currentActivity: confirmed
-              .map((change) => `${change.operation}:${change.path}`)
-              .join(", "),
-            applicableConstraints,
-            changes: confirmed.map((change) => ({
-              path: change.path,
-              action: change.operation,
-            })),
-            evidenceRefs: [],
-          });
-          for (const finding of findings)
-            publishForSession(activeExec, finding);
-        }
-      }
-      return confirmed;
+      return reconcileWorkspaceObservation(activeExec);
     },
     sessionAttach: attachSession,
     async dispose() {

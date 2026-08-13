@@ -6248,17 +6248,32 @@ test("a write_file turn registers a mutation the auditor can attribute", async (
   await client.submit("create a workspace file");
   await pollHistoryForFinished(client);
 
-  // The write tool settled and registered an expected mutation; reconciling the
-  // watcher hints attributes the change to the tool call (WG4 Phase 3).
+  // The write tool settled and registered an expected mutation; the turn-end
+  // reconcile attributes the watcher hint to the tool call (WG4 Phase 3) rather
+  // than treating it as an external change.
   const changes = await client.confirmedWorkspaceChanges!();
-  expect(changes.length).toBeGreaterThan(0);
-  const attributed = changes.find(
-    (change) => change.attribution === "attributed" && change.origin === "tool",
+  const externalNodes = events.filter(
+    (event): event is Extract<RuntimeEvent, { type: "workgraph.node_added" }> =>
+      event.type === "workgraph.node_added" &&
+      event.kind === "workspace_change" &&
+      event.actor === "external",
   );
-  expect(attributed).toBeDefined();
-  expect(attributed?.correlation.turnID).toBeDefined();
-  expect(attributed?.correlation.callID).toBeDefined();
-  // Secret-safe: no content or command text on a confirmed change.
+  // The attributed tool change is graphed by the tool path, not double-graphed
+  // as an isolated external node.
+  expect(externalNodes.some((node) => node.target === "hello-ts7.txt")).toBe(
+    false,
+  );
+  expect(
+    events.some(
+      (event) =>
+        event.type === "workgraph.node_added" &&
+        event.kind === "workspace_change" &&
+        event.target === "hello-ts7.txt" &&
+        event.actor === "write_file",
+    ),
+  ).toBe(true);
+  // Secret-safe: the confirmed change facts carry no file content (the tool's
+  // own tool.update argumentsDelta legitimately does — that is the call record).
   expect(JSON.stringify(changes)).not.toContain("hello from TS7");
 });
 
@@ -6360,6 +6375,46 @@ test("a confirmed change diverging from the active plan auto-opens a drift findi
   );
   expect(mismatch).toBeDefined();
   expect(mismatch?.severity).toBe("advisory");
+});
+
+test("an external change during a turn is reconciled at turn finish without an explicit call", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-obs-turnend-"));
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_obs_turnend",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield { type: "content" as const, text: "working" };
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        yield { type: "done" as const };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  await client.submit("first");
+  await pollHistoryForFinished(client);
+
+  // External edit while idle, then another turn finishes: the turn-end
+  // reconcile must discover, graph and drift-check it — no explicit
+  // confirmedWorkspaceChanges call.
+  await writeFile(join(root, "turnend-note.txt"), "external\n");
+  await Bun.sleep(300);
+  await client.submit("second");
+  await pollHistoryForFinished(client);
+  await Bun.sleep(300);
+
+  expect(
+    events.some(
+      (event) =>
+        event.type === "workgraph.node_added" &&
+        event.kind === "workspace_change" &&
+        event.actor === "external" &&
+        event.target === "turnend-note.txt",
+    ),
+  ).toBe(true);
 });
 
 test("durable session replay preserves tool-call pairs for the next provider turn", async () => {
