@@ -113,6 +113,7 @@ export const confirmedWorkspaceChangeSchema = z.object({
   attribution: workspaceChangeAttributionSchema,
   correlation: workspaceCorrelationSchema,
   health: workspaceObservationHealthSchema,
+  healthReason: workspaceObservationHealthReasonSchema.optional(),
   at: z.string(),
 });
 

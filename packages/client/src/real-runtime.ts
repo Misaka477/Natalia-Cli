@@ -636,6 +636,12 @@ export function createRealRuntimeClient(
   let retryPolicy: NonNullable<Parameters<typeof runWithRetry>[2]>["policy"];
   const workspaceFilesController = createWorkspaceFilesController({
     workspaceRoot,
+    listPaths: async () => {
+      const entries = await findWorkspaceFiles({ workspaceRoot, limit: 1000 });
+      return entries
+        .filter((entry) => entry.type === "file")
+        .map((entry) => entry.path);
+    },
   });
   const statusController = createStatusSnapshotController({
     provider: () => provider,

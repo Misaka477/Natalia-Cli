@@ -268,7 +268,10 @@ export async function globWorkspaceFiles(input: {
 
 export async function watchWorkspaceFiles(
   workspaceRoot: string,
-  onChange: () => void,
+  onChange: (change: {
+    path: string;
+    operation: "added" | "modified" | "deleted" | "renamed";
+  }) => void,
 ) {
   const root = await realpath(workspaceRoot);
   let watchers: FSWatcher[] = [];
@@ -284,7 +287,13 @@ export async function watchWorkspaceFiles(
     if (relativePath && isIgnored(relativePath, false, catalog.ignoreRules))
       return;
     invalidateWorkspaceFiles(root);
-    onChange();
+    // The change detail is a hint: the auditor reconciles it into a confirmed
+    // change (§56.9). `rename` is mapped to the coarse operation the watcher
+    // can prove; a full path/operation determination belongs to reconciliation.
+    onChange({
+      path: relativePath || ".",
+      operation: eventType === "rename" ? "renamed" : "modified",
+    });
     // Existing directory watchers observe ordinary file writes. Rebuilding the
     // full recursive watcher tree after every event self-scans large devref
     // trees forever. Attach only genuinely new directories incrementally.
