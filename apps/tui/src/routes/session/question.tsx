@@ -1,9 +1,19 @@
 import { TextareaRenderable } from "@opentui/core";
+import { useRenderer } from "@opentui/solid";
 import { useBindings } from "@opentui/keymap/solid";
 import type { RuntimeClient } from "@natalia/contracts";
 import type { ModalRequest } from "@natalia/ui-model";
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createStore } from "solid-js/store";
+import {
+  createMemo,
+  createSignal,
+  For,
+  onCleanup,
+  onMount,
+  Show,
+} from "solid-js";
 import { usePromptRef } from "../../context/prompt";
+import { useToast } from "../../context/toast";
 import { themeTokens as darkTheme } from "../../theme/theme";
 import { useModeStack } from "../../modal/mode-stack";
 
@@ -22,374 +32,585 @@ export function QuestionPrompt(props: {
     const release = modes.push(MODE);
     onCleanup(release);
   });
-  const [tab, setTab] = createSignal(0);
-  const [selected, setSelected] = createSignal(0);
-  const [editing, setEditing] = createSignal(false);
-  const [answers, setAnswers] = createSignal<string[][]>([]);
-  const [custom, setCustom] = createSignal<string[]>([]);
+  const renderer = useRenderer();
   const prompt = usePromptRef();
-  const [rejecting, setRejecting] = createSignal(false);
-  let input: TextareaRenderable | undefined;
+  const toast = useToast();
   const questions = () => props.request.questions ?? [];
-  const single = () => questions().length === 1 && !questions()[0]?.multiple;
-  const confirm = () => !single() && tab() === questions().length;
-  const question = () => questions()[tab()];
+  const single = () =>
+    questions().length === 1 && questions()[0]?.multiple !== true;
+  const tabs = () => (single() ? 1 : questions().length + 1);
+  const [tabHover, setTabHover] = createSignal<number | "confirm" | null>(null);
+  const [store, setStore] = createStore({
+    tab: 0,
+    answers: [] as string[][],
+    custom: [] as string[],
+    selected: 0,
+    editing: false,
+  });
+
+  let textarea: TextareaRenderable | undefined;
+
+  const question = () => questions()[store.tab];
+  const confirm = () => !single() && store.tab === questions().length;
   const options = () => question()?.options ?? [];
-  const customEnabled = () => question()?.custom !== false;
-  const total = () => options().length + (customEnabled() ? 1 : 0);
+  const custom = () => question()?.custom !== false;
+  const other = () => custom() && store.selected === options().length;
+  const input = () => store.custom[store.tab] ?? "";
+  const multi = () => question()?.multiple === true;
+  const customPicked = () => {
+    const value = input();
+    if (!value) return false;
+    return store.answers[store.tab]?.includes(value) ?? false;
+  };
+
+  function submit() {
+    // Answers are read out of the Solid store, whose elements are deep
+    // proxies. Structured-clone (postMessage) cannot clone them, so they must
+    // be flattened to plain arrays before the response leaves the TUI.
+    deliver(
+      {
+        requestID: props.request.id,
+        answers: questions().map((_, index) => {
+          const answer = store.answers[index];
+          return answer ? [...answer] : [];
+        }),
+      },
+      "answer",
+    );
+  }
+
+  function reject() {
+    deliver(
+      {
+        requestID: props.request.id,
+        answers: [],
+        rejected: true,
+      },
+      "dismissal",
+    );
+  }
+
+  // The runtime worker can go away underneath the TUI (e.g. the provider
+  // connection drops and the worker exits). A rejected delivery must never
+  // become an unhandled rejection that takes the whole TUI down: surface it,
+  // keep the card open, and let the human retry.
+  function deliver(
+    response: Parameters<NonNullable<RuntimeClient["respondQuestion"]>>[0],
+    verb: string,
+  ) {
+    const outcome = props.backend.respondQuestion?.(response);
+    if (outcome instanceof Promise)
+      void outcome.catch((error: unknown) => {
+        const detail = error instanceof Error ? error.message : String(error);
+        toast.show({
+          variant: "error",
+          message: `Your ${verb} could not be delivered: ${detail}`.slice(
+            0,
+            160,
+          ),
+        });
+      });
+    queueMicrotask(() => prompt.focus());
+  }
+
+  function pick(answer: string, customAnswer = false) {
+    const answers = [...store.answers];
+    answers[store.tab] = [answer];
+    setStore("answers", answers);
+    if (customAnswer) {
+      const inputs = [...store.custom];
+      inputs[store.tab] = answer;
+      setStore("custom", inputs);
+    }
+    if (single()) {
+      submit();
+      return;
+    }
+    setStore("tab", store.tab + 1);
+    setStore("selected", 0);
+  }
+
+  function toggle(answer: string) {
+    const existing = store.answers[store.tab] ?? [];
+    const next = [...existing];
+    const index = next.indexOf(answer);
+    if (index === -1) next.push(answer);
+    if (index !== -1) next.splice(index, 1);
+    const answers = [...store.answers];
+    answers[store.tab] = next;
+    setStore("answers", answers);
+  }
+
+  function moveTo(index: number) {
+    setStore("selected", index);
+  }
+
+  function selectTab(index: number) {
+    setStore("tab", index);
+    setStore("selected", 0);
+  }
+
+  function selectOption() {
+    if (other()) {
+      setStore("editing", true);
+      return;
+    }
+    const option = options()[store.selected];
+    if (!option) return;
+    if (multi()) {
+      toggle(option.label);
+      return;
+    }
+    pick(option.label);
+  }
 
   useBindings(() => ({
     mode: MODE,
-    enabled: rejecting(),
-    bindings: [
-      {
-        key: "escape",
-        desc: "Keep the question open",
-        group: "Question",
-        cmd: () => setRejecting(false),
-      },
-      {
-        key: "return",
-        desc: "Confirm declining question",
-        group: "Question",
-        cmd: () => reject(),
-      },
-    ],
-  }));
-
-  useBindings(() => ({
-    mode: MODE,
-    enabled: editing(),
+    enabled: store.editing && !confirm(),
     bindings: [
       {
         key: "escape",
         desc: "Cancel answer edit",
         group: "Question",
-        cmd: () => setEditing(false),
+        cmd: () => setStore("editing", false),
       },
       {
         key: "return",
         desc: "Submit answer edit",
         group: "Question",
-        cmd: () => submitCustom(),
+        cmd: () => {
+          const text = textarea?.plainText?.trim() ?? "";
+          const previous = store.custom[store.tab];
+
+          if (!text) {
+            if (previous) {
+              const inputs = [...store.custom];
+              inputs[store.tab] = "";
+              setStore("custom", inputs);
+              const answers = [...store.answers];
+              answers[store.tab] = (answers[store.tab] ?? []).filter(
+                (value) => value !== previous,
+              );
+              setStore("answers", answers);
+            }
+            setStore("editing", false);
+            return;
+          }
+
+          if (multi()) {
+            const inputs = [...store.custom];
+            inputs[store.tab] = text;
+            setStore("custom", inputs);
+            const existing = store.answers[store.tab] ?? [];
+            const next = [...existing];
+            if (previous) {
+              const index = next.indexOf(previous);
+              if (index !== -1) next.splice(index, 1);
+            }
+            if (!next.includes(text)) next.push(text);
+            const answers = [...store.answers];
+            answers[store.tab] = next;
+            setStore("answers", answers);
+            setStore("editing", false);
+            return;
+          }
+
+          pick(text, true);
+          setStore("editing", false);
+        },
       },
     ],
   }));
 
-  useBindings(() => ({
-    mode: MODE,
-    enabled: !editing(),
-    bindings: [
-      {
-        key: "left",
-        desc: "Previous question",
-        group: "Question",
-        cmd: () => selectTab(tab() - 1),
-      },
-      {
-        key: "h",
-        desc: "Previous question",
-        group: "Question",
-        cmd: () => selectTab(tab() - 1),
-      },
-      {
-        key: "right",
-        desc: "Next question",
-        group: "Question",
-        cmd: () => selectTab(tab() + 1),
-      },
-      {
-        key: "l",
-        desc: "Next question",
-        group: "Question",
-        cmd: () => selectTab(tab() + 1),
-      },
-      {
-        key: "tab",
-        desc: "Next question",
-        group: "Question",
-        cmd: () => selectTab(tab() + 1),
-      },
-      {
-        key: "up",
-        desc: "Previous answer",
-        group: "Question",
-        cmd: () => setSelected((selected() - 1 + total()) % total()),
-      },
-      {
-        key: "k",
-        desc: "Previous answer",
-        group: "Question",
-        cmd: () => setSelected((selected() - 1 + total()) % total()),
-      },
-      {
-        key: "down",
-        desc: "Next answer",
-        group: "Question",
-        cmd: () => setSelected((selected() + 1) % total()),
-      },
-      {
-        key: "j",
-        desc: "Next answer",
-        group: "Question",
-        cmd: () => setSelected((selected() + 1) % total()),
-      },
-      {
-        key: "return",
-        desc: "Select answer",
-        group: "Question",
-        cmd: () => select(),
-      },
-      {
-        key: "escape",
-        // Escape must never answer on its own: a modal can appear while the
-        // user is reaching for another surface, and declining immediately
-        // would fail the whole turn. This only arms the decline.
-        desc: "Start declining question",
-        group: "Question",
-        cmd: () => setRejecting(true),
-      },
-      ...Array.from({ length: Math.min(total(), 9) }, (_, index) => ({
-        key: String(index + 1),
-        desc: `Select answer ${index + 1}`,
-        group: "Question",
-        cmd: () => select(index),
-      })),
-    ],
-  }));
-
-  function setAnswer(index: number, value: string[]) {
-    const next = [...answers()];
-    next[index] = value;
-    setAnswers(next);
-  }
-
-  function selectTab(index: number) {
-    const count = questions().length + (single() ? 0 : 1);
-    setTab((index + count) % count);
-    setSelected(0);
-    setEditing(false);
-  }
-
-  function select(index = selected()) {
-    if (confirm()) return submit();
-    setSelected(index);
-    if (index === options().length && customEnabled()) {
-      setEditing(true);
-      queueMicrotask(() => input?.focus());
-      return;
-    }
-    const answer = options()[index]?.label;
-    if (!answer) return;
-    if (question()?.multiple) {
-      const current = answers()[tab()] ?? [];
-      setAnswer(
-        tab(),
-        current.includes(answer)
-          ? current.filter((item) => item !== answer)
-          : [...current, answer],
-      );
-      return;
-    }
-    setAnswer(tab(), [answer]);
-    if (single()) return submit();
-    selectTab(tab() + 1);
-  }
-
-  function submitCustom() {
-    const value = input?.plainText.trim() ?? "";
-    setEditing(false);
-    if (!value) return;
-    const next = [...custom()];
-    next[tab()] = value;
-    setCustom(next);
-    const current = answers()[tab()] ?? [];
-    if (question()?.multiple) {
-      setAnswer(tab(), current.includes(value) ? current : [...current, value]);
-      return;
-    }
-    setAnswer(tab(), [value]);
-    if (single()) return submit();
-    selectTab(tab() + 1);
-  }
-
-  function submit() {
-    props.backend.respondQuestion({
-      requestID: props.request.id,
-      answers: questions().map((_, index) => answers()[index] ?? []),
-    });
-    queueMicrotask(() => prompt.focus());
-  }
-
-  function reject() {
-    props.backend.respondQuestion({
-      requestID: props.request.id,
-      answers: [],
-      rejected: true,
-    });
-    queueMicrotask(() => prompt.focus());
-  }
+  useBindings(() => {
+    const total = options().length + (custom() ? 1 : 0);
+    const max = Math.min(total, 9);
+    return {
+      mode: MODE,
+      enabled: !store.editing,
+      bindings: [
+        {
+          key: "left",
+          desc: "Previous question",
+          group: "Question",
+          cmd: () => selectTab((store.tab - 1 + tabs()) % tabs()),
+        },
+        {
+          key: "h",
+          desc: "Previous question",
+          group: "Question",
+          cmd: () => selectTab((store.tab - 1 + tabs()) % tabs()),
+        },
+        {
+          key: "right",
+          desc: "Next question",
+          group: "Question",
+          cmd: () => selectTab((store.tab + 1) % tabs()),
+        },
+        {
+          key: "l",
+          desc: "Next question",
+          group: "Question",
+          cmd: () => selectTab((store.tab + 1) % tabs()),
+        },
+        {
+          key: "tab",
+          desc: "Next question",
+          group: "Question",
+          cmd: () => selectTab((store.tab + 1) % tabs()),
+        },
+        ...(confirm()
+          ? [
+              {
+                key: "return",
+                desc: "Submit answer",
+                group: "Question",
+                cmd: () => submit(),
+              },
+              {
+                key: "escape",
+                desc: "Dismiss question",
+                group: "Question",
+                cmd: () => reject(),
+              },
+            ]
+          : [
+              ...Array.from({ length: max }, (_, index) => ({
+                key: String(index + 1),
+                desc: `Select answer ${index + 1}`,
+                group: "Question",
+                cmd: () => {
+                  moveTo(index);
+                  selectOption();
+                },
+              })),
+              {
+                key: "up",
+                desc: "Previous answer",
+                group: "Question",
+                cmd: () => moveTo((store.selected - 1 + total) % total),
+              },
+              {
+                key: "k",
+                desc: "Previous answer",
+                group: "Question",
+                cmd: () => moveTo((store.selected - 1 + total) % total),
+              },
+              {
+                key: "down",
+                desc: "Next answer",
+                group: "Question",
+                cmd: () => moveTo((store.selected + 1) % total),
+              },
+              {
+                key: "j",
+                desc: "Next answer",
+                group: "Question",
+                cmd: () => moveTo((store.selected + 1) % total),
+              },
+              {
+                key: "return",
+                desc: "Select answer",
+                group: "Question",
+                cmd: () => selectOption(),
+              },
+              {
+                key: "escape",
+                desc: "Dismiss question",
+                group: "Question",
+                cmd: () => reject(),
+              },
+            ]),
+      ],
+    };
+  });
 
   return (
     <box
+      flexShrink={0}
       backgroundColor={darkTheme.panel}
       border={["left"]}
       borderColor={darkTheme.accent}
-      flexDirection="column"
     >
       <box
-        flexDirection="column"
         gap={1}
-        paddingLeft={2}
-        paddingRight={2}
+        paddingLeft={1}
+        paddingRight={3}
         paddingTop={1}
         paddingBottom={1}
       >
         <Show when={!single()}>
-          <box flexDirection="row" gap={1}>
+          <box flexDirection="row" gap={1} paddingLeft={1}>
             <For each={questions()}>
               {(item, index) => (
-                <text
-                  fg={index() === tab() ? darkTheme.accent : darkTheme.muted}
+                <box
+                  paddingLeft={1}
+                  paddingRight={1}
+                  backgroundColor={
+                    index() === store.tab
+                      ? darkTheme.accent
+                      : tabHover() === index()
+                        ? darkTheme.background
+                        : darkTheme.panel
+                  }
+                  onMouseOver={() => setTabHover(index())}
+                  onMouseOut={() => setTabHover(null)}
+                  onMouseUp={() => {
+                    if (renderer.getSelection()?.getSelectedText()) return;
+                    selectTab(index());
+                  }}
                 >
-                  {item.header}
-                  {answers()[index()]?.length ? " *" : ""}
-                </text>
+                  <text
+                    fg={
+                      index() === store.tab
+                        ? onAccentText()
+                        : (store.answers[index()]?.length ?? 0) > 0
+                          ? darkTheme.text
+                          : darkTheme.muted
+                    }
+                  >
+                    {item.header}
+                  </text>
+                </box>
               )}
             </For>
-            <text fg={confirm() ? darkTheme.accent : darkTheme.muted}>
-              Confirm
-            </text>
+            <box
+              paddingLeft={1}
+              paddingRight={1}
+              backgroundColor={
+                confirm()
+                  ? darkTheme.accent
+                  : tabHover() === "confirm"
+                    ? darkTheme.background
+                    : darkTheme.panel
+              }
+              onMouseOver={() => setTabHover("confirm")}
+              onMouseOut={() => setTabHover(null)}
+              onMouseUp={() => {
+                if (renderer.getSelection()?.getSelectedText()) return;
+                selectTab(questions().length);
+              }}
+            >
+              <text fg={confirm() ? onAccentText() : darkTheme.muted}>
+                Confirm
+              </text>
+            </box>
           </box>
         </Show>
-        <Show
-          when={!confirm()}
-          fallback={<Review questions={questions()} answers={answers()} />}
-        >
-          <text fg={darkTheme.text} wrapMode="word">
-            {question()?.question}
-            {question()?.multiple ? " (select all that apply)" : ""}
-          </text>
-          <For each={options()}>
-            {(option, index) => (
-              <Option
-                index={index()}
-                selected={selected() === index()}
-                picked={(answers()[tab()] ?? []).includes(option.label)}
-                multiple={question()?.multiple === true}
-                label={option.label}
-                description={option.description}
-                onSelect={() => select(index())}
-              />
-            )}
-          </For>
-          <Show when={customEnabled()}>
-            <Option
-              index={options().length}
-              selected={selected() === options().length}
-              picked={Boolean(
-                custom()[tab()] &&
-                  (answers()[tab()] ?? []).includes(custom()[tab()]!),
-              )}
-              multiple={question()?.multiple === true}
-              label="Type your own answer"
-              description={custom()[tab()]}
-              onSelect={() => select(options().length)}
-            />
-            <Show when={editing()}>
-              <textarea
-                ref={(value: TextareaRenderable) => {
-                  input = value;
-                  value.traits = { status: "ANSWER" };
+
+        <Show when={!confirm()}>
+          <box paddingLeft={1} gap={1} flexShrink={0}>
+            <box flexShrink={0}>
+              <text fg={darkTheme.text}>
+                {question()?.question}
+                {multi() ? " (select all that apply)" : ""}
+              </text>
+            </box>
+            <box>
+              <For each={options()}>
+                {(option, index) => {
+                  const active = () => index() === store.selected;
+                  const picked = () =>
+                    store.answers[store.tab]?.includes(option.label) ?? false;
+                  return (
+                    <box
+                      flexShrink={0}
+                      onMouseOver={() => moveTo(index())}
+                      onMouseDown={() => moveTo(index())}
+                      onMouseUp={() => {
+                        if (renderer.getSelection()?.getSelectedText()) return;
+                        selectOption();
+                      }}
+                    >
+                      <box flexDirection="row">
+                        <box
+                          backgroundColor={
+                            active() ? darkTheme.background : undefined
+                          }
+                          paddingRight={1}
+                        >
+                          <text
+                            fg={active() ? darkTheme.accent : darkTheme.muted}
+                          >
+                            {`${index() + 1}.`}
+                          </text>
+                        </box>
+                        <box
+                          backgroundColor={
+                            active() ? darkTheme.background : undefined
+                          }
+                        >
+                          <text
+                            fg={
+                              active()
+                                ? darkTheme.accent
+                                : picked()
+                                  ? darkTheme.success
+                                  : darkTheme.text
+                            }
+                          >
+                            {multi()
+                              ? `[${picked() ? "✓" : " "}] ${option.label}`
+                              : option.label}
+                          </text>
+                        </box>
+                        <Show when={!multi() && picked()}>
+                          <text fg={darkTheme.success}> ✓</text>
+                        </Show>
+                      </box>
+                      <Show when={option.description}>
+                        <box paddingLeft={3}>
+                          <text fg={darkTheme.muted}>{option.description}</text>
+                        </box>
+                      </Show>
+                    </box>
+                  );
                 }}
-                focused
-                initialValue={custom()[tab()] ?? ""}
-                placeholder="Type your own answer"
-                placeholderColor={darkTheme.muted}
-                textColor={darkTheme.text}
-                focusedTextColor={darkTheme.text}
-                cursorColor={darkTheme.accent}
-              />
-            </Show>
-          </Show>
+              </For>
+              <Show when={custom()}>
+                <box
+                  flexShrink={0}
+                  onMouseOver={() => moveTo(options().length)}
+                  onMouseDown={() => moveTo(options().length)}
+                  onMouseUp={() => {
+                    if (renderer.getSelection()?.getSelectedText()) return;
+                    selectOption();
+                  }}
+                >
+                  <box flexDirection="row">
+                    <box
+                      backgroundColor={
+                        other() ? darkTheme.background : undefined
+                      }
+                      paddingRight={1}
+                    >
+                      <text fg={other() ? darkTheme.accent : darkTheme.muted}>
+                        {`${options().length + 1}.`}
+                      </text>
+                    </box>
+                    <box
+                      backgroundColor={
+                        other() ? darkTheme.background : undefined
+                      }
+                    >
+                      <text
+                        fg={
+                          other()
+                            ? darkTheme.accent
+                            : customPicked()
+                              ? darkTheme.success
+                              : darkTheme.text
+                        }
+                      >
+                        {multi()
+                          ? `[${customPicked() ? "✓" : " "}] Type your own answer`
+                          : "Type your own answer"}
+                      </text>
+                    </box>
+                    <Show when={!multi() && customPicked()}>
+                      <text fg={darkTheme.success}> ✓</text>
+                    </Show>
+                  </box>
+                  <Show when={store.editing}>
+                    <box paddingLeft={3}>
+                      <textarea
+                        ref={(value: TextareaRenderable) => {
+                          textarea = value;
+                          value.traits = { status: "ANSWER" };
+                          queueMicrotask(() => value.focus());
+                        }}
+                        initialValue={input()}
+                        placeholder="Type your own answer"
+                        placeholderColor={darkTheme.muted}
+                        minHeight={1}
+                        maxHeight={6}
+                        textColor={darkTheme.text}
+                        focusedTextColor={darkTheme.text}
+                        cursorColor={darkTheme.accent}
+                      />
+                    </box>
+                  </Show>
+                  <Show when={!store.editing && input()}>
+                    <box paddingLeft={3}>
+                      <text fg={darkTheme.muted}>{input()}</text>
+                    </box>
+                  </Show>
+                </box>
+              </Show>
+            </box>
+          </box>
+        </Show>
+
+        <Show when={confirm() && !single()}>
+          <box paddingLeft={1}>
+            <text fg={darkTheme.text}>Review</text>
+          </box>
+          <For each={questions()}>
+            {(item, index) => {
+              const value = () => store.answers[index()]?.join(", ") ?? "";
+              return (
+                <box paddingLeft={1}>
+                  <text>
+                    <span style={{ fg: darkTheme.muted }}>{item.header}:</span>{" "}
+                    <span
+                      style={{
+                        fg: value() ? darkTheme.text : darkTheme.danger,
+                      }}
+                    >
+                      {value() ? value() : "(not answered)"}
+                    </span>
+                  </text>
+                </box>
+              );
+            }}
+          </For>
         </Show>
       </box>
       <box
         flexDirection="row"
-        gap={2}
+        flexShrink={0}
+        gap={1}
         paddingLeft={2}
-        paddingRight={2}
+        paddingRight={3}
         paddingBottom={1}
       >
-        <Show
-          when={rejecting()}
-          fallback={
-            <text fg={darkTheme.muted}>
-              ↑↓ select · ←→ tab · enter confirm · esc to decline
-            </text>
-          }
-        >
-          <text fg={darkTheme.warning}>
-            Decline this question? enter confirm · esc cancel
+        <Show when={!single()}>
+          <text fg={darkTheme.text}>
+            {"⇆"} <span style={{ fg: darkTheme.muted }}>tab</span>
           </text>
         </Show>
+        <Show when={!confirm()}>
+          <text fg={darkTheme.text}>
+            {"↑↓"} <span style={{ fg: darkTheme.muted }}>select</span>
+          </text>
+        </Show>
+        <text fg={darkTheme.text}>
+          enter{" "}
+          <span style={{ fg: darkTheme.muted }}>
+            {confirm()
+              ? "submit"
+              : multi()
+                ? "toggle"
+                : single()
+                  ? "submit"
+                  : "confirm"}
+          </span>
+        </text>
+        <text fg={darkTheme.text}>
+          esc <span style={{ fg: darkTheme.muted }}>dismiss</span>
+        </text>
       </box>
     </box>
   );
 }
 
-function Option(props: {
-  index: number;
-  selected: boolean;
-  picked: boolean;
-  multiple: boolean;
-  label: string;
-  description?: string;
-  onSelect(): void;
-}) {
-  return (
-    <box flexDirection="column" onMouseUp={props.onSelect}>
-      <text
-        fg={
-          props.selected
-            ? darkTheme.accent
-            : props.picked
-              ? darkTheme.success
-              : darkTheme.text
-        }
-      >
-        {props.index + 1}.{" "}
-        {props.multiple ? `[${props.picked ? "x" : " "}] ` : ""}
-        {props.label}
-      </text>
-      <Show when={props.description}>
-        <text fg={darkTheme.muted} paddingLeft={3} wrapMode="word">
-          {props.description}
-        </text>
-      </Show>
-    </box>
+/** Foreground readable on an accent-filled tab, for either theme mode. */
+function onAccentText() {
+  const hex = darkTheme.accent.slice(1);
+  const rgb = [0, 2, 4].map((index) =>
+    parseInt(hex.slice(index, index + 2), 16),
   );
-}
-
-function Review(props: {
-  questions: Array<{ header: string }>;
-  answers: string[][];
-}) {
-  return (
-    <box flexDirection="column">
-      <text fg={darkTheme.text}>Review</text>
-      <For each={props.questions}>
-        {(item, index) => (
-          <text
-            fg={
-              props.answers[index()]?.length ? darkTheme.text : darkTheme.danger
-            }
-          >
-            {item.header}:{" "}
-            {props.answers[index()]?.join(", ") || "(not answered)"}
-          </text>
-        )}
-      </For>
-    </box>
-  );
+  const luminance =
+    (0.2126 * rgb[0]! + 0.7152 * rgb[1]! + 0.0722 * rgb[2]!) / 255;
+  return luminance > 0.5 ? darkTheme.background : darkTheme.text;
 }

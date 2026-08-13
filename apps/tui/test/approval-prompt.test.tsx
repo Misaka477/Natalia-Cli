@@ -8,6 +8,7 @@ import type { RuntimeClient } from "@natalia/contracts";
 import type { ModalRequest } from "@natalia/ui-model";
 import { PermissionPrompt } from "../src/routes/session/permission";
 import { PromptRefProvider } from "../src/context/prompt";
+import { ToastProvider, ToastRegion } from "../src/context/toast";
 import { registerNataliaKeymap } from "../src/modal/mode-stack";
 
 const request = {
@@ -39,15 +40,18 @@ async function mountApproval() {
   await render(
     () => (
       <KeymapProvider keymap={keymap}>
-        <PromptRefProvider>
-          {mounted() ? (
-            <PermissionPrompt
-              request={request}
-              backend={backend}
-              onExit={() => {}}
-            />
-          ) : null}
-        </PromptRefProvider>
+        <ToastProvider>
+          <ToastRegion />
+          <PromptRefProvider>
+            {mounted() ? (
+              <PermissionPrompt
+                request={request}
+                backend={backend}
+                onExit={() => {}}
+              />
+            ) : null}
+          </PromptRefProvider>
+        </ToastProvider>
       </KeymapProvider>
     ),
     setup.renderer,

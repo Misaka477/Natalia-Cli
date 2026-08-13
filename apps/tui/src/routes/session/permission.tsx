@@ -4,6 +4,7 @@ import type { RuntimeClient } from "@natalia/contracts";
 import type { ModalRequest } from "@natalia/ui-model";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { usePromptRef } from "../../context/prompt";
+import { useToast } from "../../context/toast";
 import { themeTokens as darkTheme } from "../../theme/theme";
 import { useModeStack } from "../../modal/mode-stack";
 
@@ -23,6 +24,7 @@ export function PermissionPrompt(props: {
     onCleanup(release);
   });
   const [stage, setStage] = createSignal<"prompt" | "reject">("prompt");
+  const toast = useToast();
   const [selected, setSelected] = createSignal(0);
   const [expanded, setExpanded] = createSignal(false);
   const actions = ["once", "session", "reject"] as const;
@@ -30,12 +32,25 @@ export function PermissionPrompt(props: {
   let input: TextareaRenderable | undefined;
 
   function reply(decision: (typeof actions)[number], feedback?: string) {
-    props.backend.respondApproval({
+    // The runtime worker can exit underneath the TUI; a delivery that fails
+    // must never become an unhandled rejection that takes the process down.
+    const outcome = props.backend.respondApproval?.({
       requestID: props.request.id,
       decision,
       feedback:
         decision === "reject" ? feedback?.trim() || undefined : undefined,
     });
+    if (outcome instanceof Promise)
+      void outcome.catch((error: unknown) => {
+        const detail = error instanceof Error ? error.message : String(error);
+        toast.show({
+          variant: "error",
+          message: `Your decision could not be delivered: ${detail}`.slice(
+            0,
+            160,
+          ),
+        });
+      });
     queueMicrotask(() => prompt.focus());
   }
 
