@@ -1055,9 +1055,11 @@ function zodSchemaDictionary(): Array<{
   optional: boolean;
   defaultValue: string;
 }> {
-  const text = readFileSync(
-    join(process.cwd(), "packages", "contracts", "src", "schemas.ts"),
-    "utf8",
+  const text = stripComments(
+    readFileSync(
+      join(process.cwd(), "packages", "contracts", "src", "schemas.ts"),
+      "utf8",
+    ),
   );
   const schemas = new Map<string, string>();
   for (const match of text.matchAll(
@@ -1108,6 +1110,61 @@ function zodSchemaDictionary(): Array<{
   };
   visit("configV2Schema");
   return rows;
+}
+
+/**
+ * Removes `//` and block comments, keeping newlines so the remaining text
+ * stays on its original lines.
+ *
+ * The field scan splits an object body on top-level commas and then matches
+ * `name: type`, so a documented field would otherwise be dropped from the
+ * table: the comma-bearing prose above it lands in the same segment and the
+ * segment no longer starts with a field name. Comments inside string and
+ * template literals are left alone, so a `"https://…"` default survives.
+ */
+function stripComments(source: string): string {
+  let out = "";
+  let i = 0;
+  while (i < source.length) {
+    const ch = source[i] ?? "";
+    const next = source[i + 1] ?? "";
+    if (ch === '"' || ch === "'" || ch === "`") {
+      const quote = ch;
+      out += ch;
+      i++;
+      while (i < source.length) {
+        const cur = source[i] ?? "";
+        out += cur;
+        i++;
+        if (cur === "\\") {
+          out += source[i] ?? "";
+          i++;
+          continue;
+        }
+        if (cur === quote) break;
+      }
+      continue;
+    }
+    if (ch === "/" && next === "/") {
+      while (i < source.length && source[i] !== "\n") i++;
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      i += 2;
+      while (
+        i < source.length &&
+        !(source[i] === "*" && source[i + 1] === "/")
+      ) {
+        if (source[i] === "\n") out += "\n";
+        i++;
+      }
+      i += 2;
+      continue;
+    }
+    out += ch;
+    i++;
+  }
+  return out;
 }
 
 /** The object body of a `z.object({ ... })` schema expression. */
@@ -1621,6 +1678,17 @@ if (!process.env.API_REFERENCE_WRITE) {
       );
     const block = en.slice(start, end + CONFIG_GEN_END.length);
     expect(zh).toContain(block);
+  });
+  test("the config dictionary keeps fields that carry a doc comment", () => {
+    // A comment above a field used to swallow it: its prose commas split the
+    // object body, so the field never matched `name: type` and vanished from
+    // the table even though the config accepts it.
+    const documented = zodSchemaDictionary().map(
+      (row) => `${row.schema}.${row.path}`,
+    );
+    expect(documented).toContain("pluginConfigSchema.settings");
+    expect(documented).toContain("issueTargetConfigSchema.token");
+    expect(documented).toContain("dataSourceConfigSchema.timestampField");
   });
 }
 

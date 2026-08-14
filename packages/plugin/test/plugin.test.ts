@@ -391,3 +391,31 @@ test("an async plugin config schema is refused instead of loading unvalidated", 
     /must be synchronous: async.plugin/u,
   );
 });
+
+test("conformance checks a plugin against the config it will be loaded with", async () => {
+  const seen: { config?: unknown } = {};
+  const plugin = configuredPlugin({
+    id: "conformance.plugin",
+    seen,
+    configSchema: z.object({ endpoint: z.string().min(1) }),
+  });
+  const passed = await runPluginConformance({
+    plugin,
+    allowed: ["tools"],
+    config: { endpoint: "https://example.test" },
+  });
+  expect(passed.every((check) => check.passed)).toBe(true);
+  expect(seen.config).toEqual({ endpoint: "https://example.test" });
+
+  // The same plugin with an unusable config fails its conformance run, so a
+  // config contract is testable before the plugin ships.
+  const failed = await runPluginConformance({
+    plugin,
+    allowed: ["tools"],
+    config: {},
+  });
+  expect(failed[0]?.passed).toBe(false);
+  expect(failed[0]?.detail).toMatch(
+    /plugin config invalid: conformance.plugin/u,
+  );
+});

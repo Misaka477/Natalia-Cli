@@ -2,7 +2,7 @@
 
 > Status: `PLUGIN_API_VERSION` = 1 (see `@natalia/plugin`).
 > This guide covers how to write, load and test a plugin. It pairs with the
-> runtime API reference (`docs/api-reference.md`): plugins run *inside* the
+> runtime API reference (`docs/api-reference.md`): plugins run _inside_ the
 > runtime process, so the plugin API is a host-side extension surface, not an
 > RPC surface.
 
@@ -12,10 +12,10 @@ A plugin is a TypeScript/JavaScript module that runs **in-process** inside the
 runtime. It can contribute three kinds of things, each gated by its own
 capability:
 
-| Capability | What the plugin gets |
-| --- | --- |
-| `tools` | `api.tools.register(tool)` — a model-callable tool, named `plugin_<id>_<name>` |
-| `events` | `api.events.on(listener)` — every runtime event, dispatched to all listeners |
+| Capability | What the plugin gets                                                             |
+| ---------- | -------------------------------------------------------------------------------- |
+| `tools`    | `api.tools.register(tool)` — a model-callable tool, named `plugin_<id>_<name>`   |
+| `events`   | `api.events.on(listener)` — every runtime event, dispatched to all listeners     |
 | `commands` | `api.commands.register(command)` — a palette command, named `plugin_<id>_<name>` |
 
 **Trust model, stated plainly: a plugin is trusted code, not a sandbox.** It is
@@ -58,14 +58,14 @@ it made is undone) and recorded as `failed` in the registry audit.
 }
 ```
 
-| Field | Rule |
-| --- | --- |
-| `apiVersion` | must be `1` |
-| `id` | `[a-z0-9][a-z0-9._-]*`; the registry key, and the prefix of every registered name |
-| `version` | semantic version |
-| `name` | display name; also the default `category` for commands |
-| `description` | optional, default `""` |
-| `entry` | optional, default `"index.ts"`; must be a local `.js`/`.mjs`/`.ts` |
+| Field          | Rule                                                                                                                |
+| -------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `apiVersion`   | must be `1`                                                                                                         |
+| `id`           | `[a-z0-9][a-z0-9._-]*`; the registry key, and the prefix of every registered name                                   |
+| `version`      | semantic version                                                                                                    |
+| `name`         | display name; also the default `category` for commands                                                              |
+| `description`  | optional, default `""`                                                                                              |
+| `entry`        | optional, default `"index.ts"`; must be a local `.js`/`.mjs`/`.ts`                                                  |
 | `capabilities` | which of `tools`/`events`/`commands` the plugin may use; the host may further constrain with an `allowed` whitelist |
 
 ## 4. `definePlugin`
@@ -128,7 +128,7 @@ export default definePlugin({
     tools should listen to it.
   - `askQuestion?` — ask the user a question
     (`{ title, questions: [{ id, header, question, options: [{ label,
-    description? }], multiple?, custom? }] }`, answering `string[][]`,
+description? }], multiple?, custom? }] }`, answering `string[][]`,
     outer array in questions order). Absent when the host has no interactive
     channel.
   - `subagents?` / `nativeTerminal?` / `sandboxes?` — the subagent, terminal
@@ -149,7 +149,64 @@ export default definePlugin({
   You do not need to call them — unload does — but you may use them to
   unregister mid-flight.
 
-## 5. Events
+## 5. Configuration
+
+A plugin that needs configuration declares the schema for its own config, and
+the host passes the entry it was configured with:
+
+```json
+// .natalia/config.json
+{
+  "plugins": {
+    "settings": {
+      "demo.plugin": { "endpoint": "https://example.test", "retries": 5 }
+    }
+  }
+}
+```
+
+```ts
+import { z } from "zod";
+
+export default definePlugin({
+  manifest: {
+    apiVersion: 1,
+    id: "demo.plugin",
+    version: "1.0.0",
+    name: "Demo",
+  },
+  configSchema: z.object({
+    endpoint: z.string().url(),
+    retries: z.number().int().min(0).default(3),
+  }),
+  setup(api) {
+    const config = api.config as { endpoint: string; retries: number };
+    // config.retries is 3 when the host omitted it — the schema's default.
+  },
+});
+```
+
+- **The plugin owns the schema, the host owns the value.** The runtime does not
+  interpret `plugins.settings`: it keys the record by plugin id and hands each
+  plugin its own entry. A plugin's config vocabulary is therefore versioned
+  with the plugin, not with the runtime's config schema.
+- **`api.config` is the validated value**, i.e. the schema's parsed output, so
+  declared defaults are already applied. A plugin without a `configSchema`
+  accepts anything and receives the raw value unchanged.
+- **Misconfiguration fails the load, loudly.** Validation runs _before_
+  `setup`, so an invalid entry never reaches a half-configured plugin: the load
+  throws with the failing paths (`- Invalid url (at endpoint)`), the audit
+  records `failed`, and nothing the plugin would have registered exists.
+- **Any Standard Schema library works** (zod, valibot, arktype) — the plugin
+  API duck-types the `~standard` interface rather than requiring this repo's
+  zod build, because a plugin is distributed independently. The schema must
+  validate synchronously; an async schema is a load error rather than a
+  silently unvalidated config.
+- **Conformance takes a config too**:
+  `runPluginConformance({ plugin, config: { endpoint: "https://example.test" } })`,
+  so a plugin's config contract is testable in isolation.
+
+## 6. Events
 
 ```ts
 setup(api) {
@@ -167,13 +224,13 @@ ignored — one bad plugin cannot break the dispatch loop. Events are the
 capability a plugin declares to observe; it is how a plugin reacts to the
 runtime without polling.
 
-## 6. Commands
+## 7. Commands
 
 ```ts
 api.commands.register({
   name: "deploy",
   title: "Deploy the demo",
-  category: "Demo",       // optional; defaults to the plugin's name
+  category: "Demo", // optional; defaults to the plugin's name
   async run() {
     await deploy();
   },
@@ -186,7 +243,7 @@ alike), and the authoritative list is readable over RPC — `command.catalog`
 registry owns. The palette renders synchronously through a process-wide bridge
 that assumes one runtime per process (true for the CLI and the TUI worker).
 
-## 7. Conformance
+## 8. Conformance
 
 `runPluginConformance` checks a plugin in isolation, against a throwaway tool
 registry:
@@ -205,7 +262,7 @@ contribution, extend the conformance checks in `packages/plugin/test/` the
 same way before shipping it — the repo's gate is that a claim in this guide is
 either a test or a lie.
 
-## 8. Loading and auditing
+## 9. Loading and auditing
 
 The registry records every lifecycle transition as a `PluginAudit`:
 `loaded`, `unloaded`, `denied` (a capability the plugin used but was not
@@ -214,11 +271,11 @@ the registry (`registry.audit()`) and surfaced by the runtime; a plugin that
 fails to load produces a runtime diagnostic naming the plugin, so a broken
 plugin is visible in `sdk.diagnostics()` instead of silently missing.
 
-## 9. Dependency resolution (deployment note)
+## 10. Dependency resolution (deployment note)
 
 A plugin that imports `@natalia/plugin` (the documented way to `definePlugin`)
 must be able to resolve it. Bun resolves bare specifiers by walking up from
-the *importing file* for a `node_modules`/workspace context, and the plugin
+the _importing file_ for a `node_modules`/workspace context, and the plugin
 lives in the workspace's `.natalia/plugins` — outside the runtime's package
 tree. The deployment must therefore provide one of:
 

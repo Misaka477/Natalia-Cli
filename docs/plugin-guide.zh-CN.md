@@ -10,11 +10,11 @@
 插件是运行在 runtime **进程内**的 TypeScript/JavaScript 模块，可贡献三类东西，
 每类由独立 capability 门控：
 
-| Capability | 插件得到什么 |
-| --- | --- |
-| `tools` | `api.tools.register(tool)` — 模型可调用的工具，名为 `plugin_<id>_<name>` |
-| `events` | `api.events.on(listener)` — 全部 runtime 事件，分发给所有监听者 |
-| `commands` | `api.commands.register(command)` — 面板命令，名为 `plugin_<id>_<name>` |
+| Capability | 插件得到什么                                                             |
+| ---------- | ------------------------------------------------------------------------ |
+| `tools`    | `api.tools.register(tool)` — 模型可调用的工具，名为 `plugin_<id>_<name>` |
+| `events`   | `api.events.on(listener)` — 全部 runtime 事件，分发给所有监听者          |
+| `commands` | `api.commands.register(command)` — 面板命令，名为 `plugin_<id>_<name>`   |
 
 **信任模型，直说：插件是可信代码，不是沙箱。** 它是进程内 `import()` 加载，
 仅有路径包含与 `.js`/`.mjs`/`.ts` 扩展名检查——无 VM、无文件系统限制、无超时、
@@ -53,14 +53,14 @@ registry audit 中记为 `failed`。
 }
 ```
 
-| 字段 | 规则 |
-| --- | --- |
-| `apiVersion` | 必须为 `1` |
-| `id` | `[a-z0-9][a-z0-9._-]*`；registry 键，也是所有注册名的前缀 |
-| `version` | 语义化版本 |
-| `name` | 显示名；也是命令的默认 `category` |
-| `description` | 可选，默认 `""` |
-| `entry` | 可选，默认 `"index.ts"`；必须是本地 `.js`/`.mjs`/`.ts` |
+| 字段           | 规则                                                                           |
+| -------------- | ------------------------------------------------------------------------------ |
+| `apiVersion`   | 必须为 `1`                                                                     |
+| `id`           | `[a-z0-9][a-z0-9._-]*`；registry 键，也是所有注册名的前缀                      |
+| `version`      | 语义化版本                                                                     |
+| `name`         | 显示名；也是命令的默认 `category`                                              |
+| `description`  | 可选，默认 `""`                                                                |
+| `entry`        | 可选，默认 `"index.ts"`；必须是本地 `.js`/`.mjs`/`.ts`                         |
 | `capabilities` | 插件可用的 `tools`/`events`/`commands`；host 还可用 `allowed` 白名单进一步约束 |
 
 ## 4. `definePlugin`
@@ -118,7 +118,7 @@ export default definePlugin({
   - `workspaceRoot: string` — 当前工作区根。
   - `signal?: AbortSignal` — 回合取消时中止；长时间工具应监听它。
   - `askQuestion?` — 向用户提问（`{ title, questions: [{ id, header, question,
-    options: [{ label, description? }], multiple?, custom? }] }`，返回
+options: [{ label, description? }], multiple?, custom? }] }`，返回
     `string[][]`，外层按 questions 顺序）。宿主无交互通道时不存在。
   - `subagents?` / `nativeTerminal?` / `sandboxes?` — 子代理、终端与会话注册表
     （各自宿主能力存在时才有）。
@@ -134,7 +134,59 @@ export default definePlugin({
 - **每个注册返回一个 disposer**（`const off = api.tools.register(...)`）。
   不需要你调用——卸载会做——但你可以用它中途注销。
 
-## 5. 事件
+## 5. 配置
+
+需要配置的插件自己声明配置的 schema，宿主把为它配置的那一项传进来：
+
+```json
+// .natalia/config.json
+{
+  "plugins": {
+    "settings": {
+      "demo.plugin": { "endpoint": "https://example.test", "retries": 5 }
+    }
+  }
+}
+```
+
+```ts
+import { z } from "zod";
+
+export default definePlugin({
+  manifest: {
+    apiVersion: 1,
+    id: "demo.plugin",
+    version: "1.0.0",
+    name: "Demo",
+  },
+  configSchema: z.object({
+    endpoint: z.string().url(),
+    retries: z.number().int().min(0).default(3),
+  }),
+  setup(api) {
+    const config = api.config as { endpoint: string; retries: number };
+    // 宿主没写 retries 时它是 3——schema 声明的默认值。
+  },
+});
+```
+
+- **schema 归插件，值归宿主。** runtime 不解释 `plugins.settings`：它只按插件
+  id 索引，把对应的那一项交给该插件。因此插件的配置词汇随插件版本演进，而不
+  绑在 runtime 的配置 schema 上。
+- **`api.config` 是校验后的值**（schema 的解析结果），声明的默认值已经生效。
+  没有 `configSchema` 的插件接受任意值，原样收到。
+- **配置错误让加载失败，并且吵。** 校验发生在 `setup` **之前**，无效配置绝不
+  会进到一个半配置好的插件里：加载抛错并列出失败路径
+  （`- Invalid url (at endpoint)`），审计记为 `failed`，插件本会注册的东西
+  一件都不存在。
+- **任何 Standard Schema 库都可以**（zod、valibot、arktype）——插件 API 只对
+  `~standard` 接口做鸭子类型，不要求本仓库的 zod 构建，因为插件是独立分发的。
+  schema 必须同步校验；异步 schema 直接算加载错误，而不是静默地不校验。
+- **conformance 也能带配置**：
+  `runPluginConformance({ plugin, config: { endpoint: "https://example.test" } })`，
+  于是插件的配置契约可以被单独测试。
+
+## 6. 事件
 
 ```ts
 setup(api) {
@@ -150,13 +202,13 @@ setup(api) {
 无序列化）。抛错的监听者被忽略——一个坏插件不能搞坏分发循环。events 是插件
 声明"观察"所用的 capability；插件靠它响应 runtime 而无须轮询。
 
-## 6. 命令
+## 7. 命令
 
 ```ts
 api.commands.register({
   name: "deploy",
   title: "Deploy the demo",
-  category: "Demo",       // 可选；默认取插件名
+  category: "Demo", // 可选；默认取插件名
   async run() {
     await deploy();
   },
@@ -168,7 +220,7 @@ api.commands.register({
 实际拥有的命令。面板经进程级同步桥渲染，该桥假设每进程一个 runtime（CLI 与
 TUI worker 成立）。
 
-## 7. Conformance
+## 8. Conformance
 
 `runPluginConformance` 在隔离环境里、对着一次性工具 registry 检查插件：
 
@@ -185,7 +237,7 @@ const results = await runPluginConformance({ plugin, allowed: ["tools"] });
 conformance 检查——本仓库的门禁是：本指南里的一句声明，要么是测试，要么是
 谎言。
 
-## 8. 加载与审计
+## 9. 加载与审计
 
 registry 把每个生命周期转换记为 `PluginAudit`：`loaded`、`unloaded`、
 `denied`（插件用了未授予的 capability）或 `failed`（manifest 或 `setup`
@@ -193,7 +245,7 @@ registry 把每个生命周期转换记为 `PluginAudit`：`loaded`、`unloaded`
 暴露出来；加载失败的插件产生一条指名道姓的 runtime diagnostic，因此坏插件
 在 `sdk.diagnostics()` 里可见，而不是悄悄消失。
 
-## 9. 依赖解析（部署注意）
+## 10. 依赖解析（部署注意）
 
 import `@natalia/plugin`（文档化的 `definePlugin` 方式）的插件必须能解析它。
 bun 解析裸 specifier 的方式是从 *import 文件*向上找 `node_modules`/workspace
