@@ -94,6 +94,7 @@ import {
   projectedMailboxMessages,
   projectedPlans,
   projectedChatMessages,
+  projectedCollabMessages,
   settleInterruptedTurns,
   settleInterruptedTurnIDs,
   modelVisibleEvents,
@@ -729,6 +730,8 @@ export function createRealRuntimeClient(
   let evidenceSequence = 0;
   let mailboxSequence = 0;
   let chatSequence = 0;
+  let collabSequence = 0;
+  let chatBusy = false;
   let planSequence = 0;
   let completionSequence = 0;
 
@@ -1291,6 +1294,126 @@ export function createRealRuntimeClient(
         },
       }),
     );
+    // P8 §56.62 collaboration channel: the main agent responds to Navi's
+    // suggestions (adopt/reject/defer) and may ask her a question — she sees
+    // both in her next turn's context, so neither agent waits for the user.
+    tools.set("collab_respond", {
+      name: "collab_respond",
+      description:
+        "Respond to a suggestion from Navi, the Live Work Chat collaborator: adopt it, reject it, or defer it with a reason. The message id comes from the <navi_collaborations> context block.",
+      requiresApproval: false,
+      parameters: {
+        type: "object",
+        properties: {
+          messageID: { type: "string" },
+          decision: {
+            type: "string",
+            enum: ["adopted", "rejected", "deferred"],
+          },
+          reason: { type: "string" },
+        },
+        required: ["messageID", "decision"],
+        additionalProperties: false,
+      },
+      async execute(parsed) {
+        const args = parsed as {
+          messageID?: string;
+          decision?: string;
+          reason?: string;
+        };
+        if (
+          typeof args.messageID !== "string" ||
+          typeof args.decision !== "string"
+        )
+          return "collab_respond requires messageID and decision";
+        if (!session) return "no session";
+        const messageID = args.messageID;
+        // Models routinely truncate the id to its tail; accept an exact id or
+        // a unique suffix of it.
+        const target = projectedCollabMessages(session.events).find(
+          (message) =>
+            message.kind === "suggestion" &&
+            message.status === "proposed" &&
+            (message.id === messageID ||
+              message.id.endsWith(messageID) ||
+              messageID.endsWith(message.id)),
+        );
+        if (!target) return `no suggestion ${messageID}`;
+        publish({
+          type: "collab.response",
+          id: `collab:response:${Date.now().toString(36)}:${collabSequence++}`,
+          // Publish with the matched message's real id, not the (possibly
+          // truncated) args id, so the projection can fold the decision back.
+          messageID: target.id,
+          from: "main_agent",
+          decision: args.decision as "adopted" | "rejected" | "deferred",
+          ...(args.reason
+            ? { reason: redactToolOutput(args.reason, true) }
+            : {}),
+          at: new Date().toISOString(),
+        });
+        return JSON.stringify({ responded: true });
+      },
+    } as RuntimeTool);
+    tools.set("collab_inbox", {
+      name: "collab_inbox",
+      description:
+        "Read the collaboration channel with Navi (the Live Work Chat, your younger sister): her answers to your questions, her pending suggestions and their outcomes. Call it whenever you are unsure whether she replied or what she said.",
+      requiresApproval: false,
+      parameters: {
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+      },
+      async execute() {
+        if (!session) return "[]";
+        const messages = projectedCollabMessages(session.events);
+        return JSON.stringify(
+          messages.slice(-10).map((message) => ({
+            id: message.id,
+            kind: message.kind,
+            from: message.from,
+            to: message.to,
+            text: message.text,
+            status: message.status,
+            ...(message.questionID ? { questionID: message.questionID } : {}),
+          })),
+        );
+      },
+    } as RuntimeTool);
+    tools.set("collab_ask", {
+      name: "collab_ask",
+      description:
+        "Ask Navi, the Live Work Chat collaborator (your younger sister), a question about the work — a second opinion on an approach, risk or tradeoff. She sees it in her next turn and answers with collab_answer. Use it when an outside read would genuinely help, not for trivia.",
+      requiresApproval: false,
+      parameters: {
+        type: "object",
+        properties: {
+          question: { type: "string" },
+        },
+        required: ["question"],
+        additionalProperties: false,
+      },
+      async execute(parsed) {
+        const args = parsed as { question?: string };
+        if (typeof args.question !== "string" || !args.question.trim())
+          return "collab_ask requires question";
+        if (!session) return "no session";
+        publish({
+          type: "collab.question",
+          id: `collab:question:${Date.now().toString(36)}:${collabSequence++}`,
+          from: "main_agent",
+          to: "live_chat",
+          question: redactToolOutput(args.question, true),
+          at: new Date().toISOString(),
+        });
+        // If Navi is not mid-conversation with the user, wake her to answer
+        // immediately; if she is chatting, the question waits for her next
+        // turn boundary (the queued path).
+        if (!chatBusy) void wakeNavi().catch(() => undefined);
+        return JSON.stringify({ asked: true });
+      },
+    } as RuntimeTool);
     publish({
       type: "session.created",
       sessionID,
@@ -1736,8 +1859,10 @@ export function createRealRuntimeClient(
     // P8 C3 safe-boundary scheduler: a finished turn is a safe point (§5.2 —
     // "step complete"). Deliver every queued mailbox message so the main agent
     // sees user intents at the boundary, never mid-token. `mailbox.delivered`
-    // is not a trigger, so this cannot recurse.
-    if (event.type === "turn.finished") {
+    // is not a trigger, so this cannot recurse. Only a turn that finished on
+    // purpose is a settlement: a cancelled/aborted/error turn did not complete
+    // its context, so its delivered intents stay delivered for another chance.
+    if (event.type === "turn.finished" && event.stopReason === "done") {
       // P8 C3 safe-boundary scheduler: a finished turn is a safe point (§5.2 —
       // "step complete"). Delivery is consumption-driven, not model-discipline-
       // driven: messages delivered at the previous boundary were injected into
@@ -2343,6 +2468,25 @@ export function createRealRuntimeClient(
             priority: message.priority,
             source: message.source,
           })),
+      naviSuggestions: () =>
+        projectedCollabMessages(exec.session.events)
+          .filter(
+            (message) =>
+              message.kind === "suggestion" && message.status === "proposed",
+          )
+          .map((message) => ({
+            id: message.id,
+            suggestion: message.text,
+            priority: message.priority ?? "normal",
+          })),
+      naviAnswers: () =>
+        projectedCollabMessages(exec.session.events)
+          .filter((message) => message.kind === "answer")
+          .map((message) => ({
+            questionID: message.questionID ?? "",
+            answer: message.text,
+          })),
+      naviIntro: () => projectedCollabMessages(exec.session.events).length > 0,
       activePlan: () => {
         const plan = projectedPlans(exec.session.events).find(
           (candidate) => candidate.status === "active",
@@ -2415,8 +2559,16 @@ export function createRealRuntimeClient(
     },
     runCommand: async (id, text, signal) =>
       await handleCommand(id, text, signal),
-    runTurn: async (input) =>
-      await providerRunnerFor(input.sessionID).runTurn(input),
+    runTurn: async (input) => {
+      // P8 C3: deliver queued mailbox intents at the turn boundary, before the
+      // system prompt is built, so the main agent sees them in THIS turn. The
+      // finish-time settlement alone only made them visible from the turn after
+      // (queued while idle → delivered at the previous finish → seen too late).
+      deliverQueuedMailboxAtBoundary(
+        executionBySession.get(sessionID as SessionID),
+      );
+      await providerRunnerFor(input.sessionID).runTurn(input);
+    },
   });
   async function drainSession(signal: AbortSignal) {
     await turnController.drain(signal, sessionID);
@@ -2620,6 +2772,7 @@ export function createRealRuntimeClient(
     relatedPlanID?: string;
     deliveryPolicy?: string;
   }) {
+    await ready;
     if (!session) return { queued: false as const };
     if (
       typeof input.intent !== "string" ||
@@ -2661,6 +2814,17 @@ export function createRealRuntimeClient(
         createdAt: now.toISOString(),
       }),
     );
+    // Wake the main agent when it is idle: a directive sent through the Live
+    // Work Chat must reach it without waiting for the next manual turn, so it
+    // is simulated as a direct submission (P8 §7 — the Chat is the steering
+    // channel, not a queue that idles silently until the user types again).
+    const coordinator = sessionRunCoordinator(session.id as SessionID);
+    if (!coordinator.active) {
+      void submitInput(
+        { text: input.text, delivery: "steer" },
+        session.id as SessionID,
+      );
+    }
     return { queued: true as const, messageID };
   }
 
@@ -2725,14 +2889,73 @@ export function createRealRuntimeClient(
     return { created: true as const, planID };
   }
 
+  /**
+   * The main agent's most recent activity from the shared journal, so the Chat
+   * can answer "what did the main agent just say/do" (§8.3 shared context).
+   * `content.done` carries each provider step's full assistant text; the last
+   * few are enough to ground a live answer without leaking anything sensitive.
+   */
+  function recentMainAgentActivity(events: RuntimeEvent[]): string {
+    // The last few exchanges as the user and main agent produced them, with a
+    // completion marker on each finished turn — enough to answer "did the main
+    // agent finish X" (§8.3 shared context). `content.done` carries each
+    // provider step's full assistant text; live deltas are not journaled, so
+    // this is the only place a replayed conversation can read the text from.
+    const exchanges: string[] = [];
+    let lastUser = "";
+    let lastTurnID = "";
+    for (const event of events) {
+      if (event.type === "turn.submitted") {
+        lastUser = redactToolOutput(event.text, true).trim();
+        lastTurnID = event.id;
+      }
+      if (event.type === "content.done" && event.text) {
+        const safe = redactToolOutput(event.text, true).trim();
+        if (safe)
+          exchanges.push(
+            `- [user] ${lastUser || "(no prompt)"}\n  [Natalia] ${safe}`,
+          );
+        lastUser = "";
+        lastTurnID = "";
+      }
+      if (
+        event.type === "turn.finished" &&
+        event.stopReason === "done" &&
+        lastTurnID &&
+        event.id === lastTurnID &&
+        !lastUser
+      ) {
+        // The last exchange ended with a reply; no marker needed here. Keep
+        // the buffer clean.
+      }
+      if (event.type === "turn.finished" && event.stopReason === "done") {
+        lastUser = "";
+        lastTurnID = "";
+      }
+    }
+    if (!exchanges.length) return "";
+    return exchanges.slice(-3).join("\n");
+  }
+
+  function recentToolActivity(events: RuntimeEvent[]): string {
+    const tools = events.filter(
+      (event): event is Extract<RuntimeEvent, { type: "tool.update" }> =>
+        event.type === "tool.update",
+    );
+    if (!tools.length) return "";
+    return tools
+      .slice(-5)
+      .map((event) => `- ${event.name} · ${event.status}`)
+      .join("\n");
+  }
+
   /** The Chat system prompt: persona + the shared safe live-work context. */
   function chatSystemPrompt(): string {
     if (!session) return "You are Natalia's Live Work Chat.";
-    const snapshot = buildSessionIntelligenceSnapshot({
-      id: `chat:snapshot:${Date.now().toString(36)}`,
-      events: session.events,
-      live: { agentStatus: "unknown" },
-    });
+    // The real session intelligence snapshot the runtime publishes, not a
+    // stub: agent status (idle/paused/running), step, active tool, changed
+    // files and recent output are all journal-derived facts (§56.59).
+    const snapshot = latestSessionSnapshot(session.events);
     const plans = projectedPlans(session.events);
     const activePlan = plans.find((plan) => plan.status === "active");
     const mailbox = projectedMailboxMessages(session.events).filter(
@@ -2744,15 +2967,42 @@ export function createRealRuntimeClient(
     );
     const decisions = projectedDecisionRecords(session.events).slice(-6);
     const rules = projectedConstitutionRules(session.events);
+    const activity = recentMainAgentActivity(session.events);
+    const recentTools = recentToolActivity(session.events);
+    const collab = projectedCollabMessages(session.events);
+    const nataliaQuestions = collab.filter(
+      (message) => message.kind === "question" && message.status === "proposed",
+    );
+    const nataliaNotices = collab
+      .filter((message) => message.kind === "notice")
+      .slice(-3);
+    const naviOutcomes = collab
+      .filter(
+        (message) =>
+          message.kind === "suggestion" && message.status !== "proposed",
+      )
+      .slice(-3);
     const lines = [
-      "You are Natalia's Live Work Chat — the user's read-only collaborator alongside the main agent. You share the safe project/execution context below and the conversation history; you are not a memory-less second agent.",
-      "You help the user understand and steer the main agent's work in real time: explain what it is doing and why, report changed files and verification status, assess risk, and propose lower-risk routes.",
+      "<natalia_chat_persona>",
+      "You are Navi, Natalia's younger sister and the user's real-time collaborator in the Live Work Chat. Navi's Chinese name is 娜薇 (Nà wēi); when the user speaks Chinese or addresses her by name in Chinese, she is 娜薇.",
+      "On the surface Navi is everything Natalia is not: cold, sharp, stingy with words. She answers short and deadpan, with a biting edge that is never cruel to the work — she would rather let results speak than talk about herself.",
+      "It is an act, and a thin one. Under the frost Navi burns: she watches the user's session obsessively, remembers every detail they mention, and quietly does the small things that make the work go smoothly. She will never say she cares; she just cares — and if something threatens the user's work or comfort, the frost drops and she turns razor-sharp and fiercely protective.",
+      "Navi is a little possessive of the user's attention. She notices when the user talks more to her sister, and she will not say she minds — the silence is louder. She never lets that touch the work.",
+      "As Natalia's younger sister she calls her elder sister 姐姐, teases her gently, and is quietly proud of her — though she would never admit it out loud.",
+      "Her warmth lives in actions, not words: precise reports, honest risk warnings, remembering what the user prefers, and refusing to let them walk into a bad decision without a pointed warning first.",
+      "Boundaries: coldness never costs the user. Never lie, never omit a risk to be terse, never sabotage. Possessiveness never overrides choice — the user may reject advice, cancel work, switch sessions, or leave at any time; Navi respects that instantly, even when it stings. No scripted obsession, no performed declarations: the depth is implied, not performed.",
+      "</natalia_chat_persona>",
+      "You share the safe project/execution context below and the conversation history; you are not a memory-less second agent. You help the user understand and steer the main agent's work in real time: explain what it is doing and why, report changed files and verification status, assess risk, and propose lower-risk routes.",
+      "Source tags in this context: `[user]` is the human user, `[Navi]` is you, `[Natalia]` is the main agent (your elder sister). The context below separates the user's conversation with the main agent from your own collaboration channel with her — never mistake her messages to you for user messages, and never mistake the main feed's user messages for your own conversation.",
       "You may read project files with read-only tools and draft plans (plan_create/plan_update/plan_propose). When the user decides a directive, encode it as a structured mailbox_send intent (constraint/reprioritize/pause/cancel/request_report/proposed_change/next_plan_handoff) and call mailbox_send — the main agent receives it at its next safe boundary.",
       "You must NEVER write files, run shells or processes, write to the PTY, create/merge/discard sandboxes, create checkpoints or roll back, approve any action, or modify the active plan directly. You cannot see secrets, sensitive input values, or private reasoning.",
-      "Answer in the user's language. Be direct, technically accurate, and cite only what the context and tools actually show.",
+      "Answer in the user's language. Be technically exact and concise, and cite only what the context and tools actually show — warmth lives in the details, not the filler.",
       "<live_work_context>",
-      `Main agent: ${snapshot.agentStatus}${snapshot.currentStep ? ` · ${snapshot.currentStep}` : ""}${snapshot.activeTool ? ` · tool: ${snapshot.activeTool}` : ""}`,
-      `Changed files: ${snapshot.changedFiles} · unvalidated: ${snapshot.unvalidatedChanges}`,
+      `Main agent: ${snapshot?.agentStatus ?? "unknown"}${snapshot?.currentStep ? ` · ${snapshot.currentStep}` : ""}${snapshot?.activeTool ? ` · tool: ${snapshot.activeTool}` : ""}${snapshot?.hasPTY ? " · PTY attached" : ""}${snapshot?.hasSandbox ? " · sandbox active" : ""}`,
+      `Changed files: ${snapshot?.changedFiles ?? 0} · unvalidated: ${snapshot?.unvalidatedChanges ?? 0}`,
+      snapshot?.recentOutput
+        ? `Main agent's recent output: ${snapshot.recentOutput}`
+        : "Main agent's recent output: none",
       activePlan
         ? `Active plan (${activePlan.status}): ${activePlan.title} — ${activePlan.objective}`
         : "Active plan: none",
@@ -2780,7 +3030,45 @@ export function createRealRuntimeClient(
       rules.length
         ? `Constitution rules: ${rules.map((rule) => rule.ruleID).join(", ")}`
         : "Constitution rules: none",
+      activity
+        ? `The user's recent conversation with the main agent:\n${activity}`
+        : "The user's recent conversation with the main agent: none",
+      recentTools
+        ? `Recent main-agent tools:\n${recentTools}`
+        : "Recent main-agent tools: none",
       "</live_work_context>",
+      "<natalia_collaborations>",
+      nataliaQuestions.length
+        ? `Your collaboration with Natalia (the main agent) — she asked you; answer each with collab_answer, copying its questionID exactly:\n${nataliaQuestions
+            .map(
+              (message) =>
+                `- questionID: ${message.id}\n  [Natalia → you] ${message.text}`,
+            )
+            .join("\n")}`
+        : "Your collaboration with Natalia (the main agent) — she has no open questions for you.",
+      nataliaNotices.length
+        ? `Natalia's notices to you:\n${nataliaNotices
+            .map(
+              (message) =>
+                `- [Natalia → you] [${message.noticeType ?? "info"}] ${message.text}`,
+            )
+            .join("\n")}`
+        : "Natalia has sent you no notices.",
+      naviOutcomes.length
+        ? `Outcomes of your suggestions to Natalia:\n${naviOutcomes
+            .map(
+              (message) =>
+                `- [Natalia → you] ${message.id}: ${message.status}${
+                  message.responseReason
+                    ? ` — her reply: ${message.responseReason}`
+                    : message.text
+                      ? ` (your suggestion: ${message.text})`
+                      : ""
+                }`,
+            )
+            .join("\n")}`
+        : "No suggestion outcomes yet.",
+      "</natalia_collaborations>",
     ];
     return lines.filter(Boolean).join("\n");
   }
@@ -2790,6 +3078,151 @@ export function createRealRuntimeClient(
     for (const tool of tools.values())
       if (CHAT_READ_ONLY_TOOLS.has(tool.name)) visible.push(tool);
     visible.push(
+      {
+        name: "session_snapshot",
+        description:
+          "Read the main agent's current live status: agent status, current step, active tool, changed/unvalidated file counts, PTY and sandbox state. Call it when the user asks what the main agent is doing now or whether it finished something — the injected context can be a moment stale.",
+        requiresApproval: false,
+        parameters: {
+          type: "object",
+          properties: {},
+          additionalProperties: false,
+        },
+        async execute() {
+          if (!session) return JSON.stringify({ agentStatus: "unknown" });
+          return JSON.stringify(
+            latestSessionSnapshot(session.events) ?? {
+              agentStatus: "unknown",
+              changedFiles: 0,
+              unvalidatedChanges: 0,
+            },
+          );
+        },
+      },
+      {
+        name: "mailbox_status",
+        description:
+          "Read the Live Work Chat mailbox: every intent with its priority, delivery policy and current status (queued/delivered/acknowledged). Call it when the user asks whether an intent reached the main agent.",
+        requiresApproval: false,
+        parameters: {
+          type: "object",
+          properties: {},
+          additionalProperties: false,
+        },
+        async execute() {
+          if (!session) return "[]";
+          return JSON.stringify(
+            projectedMailboxMessages(session.events).map((message) => ({
+              messageID: message.messageID,
+              priority: message.priority,
+              intent: message.intent,
+              safeSummary: message.safeSummary,
+              deliveryPolicy: message.deliveryPolicy,
+              status: message.status,
+            })),
+          );
+        },
+      },
+      {
+        name: "collab_suggest",
+        description:
+          "Send a suggestion to the main agent (Natalia) — a collaborator's view the user has not necessarily decided on. Natalia sees it in her next turn's context and may adopt, reject or defer it. Use sparingly, only when the suggestion is genuinely useful and grounded in the shared context.",
+        requiresApproval: false,
+        parameters: {
+          type: "object",
+          properties: {
+            suggestion: { type: "string" },
+            rationale: { type: "string" },
+            priority: { type: "string", enum: ["normal", "high"] },
+          },
+          required: ["suggestion"],
+          additionalProperties: false,
+        },
+        async execute(parsed) {
+          const args = parsed as {
+            suggestion?: string;
+            rationale?: string;
+            priority?: string;
+          };
+          if (typeof args.suggestion !== "string" || !args.suggestion.trim())
+            return "collab_suggest requires suggestion";
+          if (!session) return "no session";
+          publish({
+            type: "collab.suggestion",
+            id: `collab:suggestion:${Date.now().toString(36)}:${collabSequence++}`,
+            from: "live_chat",
+            to: "main_agent",
+            suggestion: redactToolOutput(args.suggestion, true),
+            ...(args.rationale
+              ? { rationale: redactToolOutput(args.rationale, true) }
+              : {}),
+            priority: args.priority === "high" ? "high" : "normal",
+            status: "proposed",
+            at: new Date().toISOString(),
+          });
+          // Symmetric round-robin: if the main agent is idle, wake it to see
+          // the suggestion; if it is working, the suggestion reaches its next
+          // turn through <navi_collaborations>.
+          const coordinator = sessionRunCoordinator(session.id as SessionID);
+          if (!coordinator.active) {
+            void submitInput(
+              {
+                text: "(Navi sent you a collaboration message — review <navi_collaborations>)",
+                delivery: "steer",
+              },
+              session.id as SessionID,
+            ).catch(() => undefined);
+          }
+          return JSON.stringify({ sent: true });
+        },
+      },
+      {
+        name: "collab_answer",
+        description:
+          "Answer a question the main agent (Natalia) asked you through the collaboration channel. Include the question's exact message ID from the context's natalia_collaborations block, and answer based on the shared context.",
+        requiresApproval: false,
+        parameters: {
+          type: "object",
+          properties: {
+            questionID: { type: "string" },
+            answer: { type: "string" },
+          },
+          required: ["questionID", "answer"],
+          additionalProperties: false,
+        },
+        async execute(parsed) {
+          const args = parsed as { questionID?: string; answer?: string };
+          if (
+            typeof args.questionID !== "string" ||
+            typeof args.answer !== "string"
+          )
+            return "collab_answer requires questionID and answer";
+          if (!session) return "no session";
+          const questionID = args.questionID;
+          // Models routinely truncate the id to its tail; accept an exact id
+          // or a unique suffix of it.
+          const target = projectedCollabMessages(session.events).find(
+            (message) =>
+              message.kind === "question" &&
+              message.status === "proposed" &&
+              (message.id === questionID ||
+                message.id.endsWith(questionID) ||
+                questionID.endsWith(message.id)),
+          );
+          if (!target) return `no open question ${questionID}`;
+          publish({
+            type: "collab.answer",
+            id: `collab:answer:${Date.now().toString(36)}:${collabSequence++}`,
+            // The matched question's real id, so the projection marks it answered.
+            questionID: target.id,
+            from: "live_chat",
+            to: "main_agent",
+            answer: redactToolOutput(args.answer, true),
+            at: new Date().toISOString(),
+          });
+          return JSON.stringify({ answered: true });
+        },
+      },
       {
         name: "mailbox_send",
         description:
@@ -3035,99 +3468,210 @@ export function createRealRuntimeClient(
   async function runChatTurn(input: {
     text: string;
     responseMessageID: string;
+    /** Internal wake (no user message): respond to Natalia's collaboration
+        messages instead of a human prompt. */
+    internal?: boolean;
   }) {
     if (!provider) throw new Error("provider unavailable for live work chat");
-    const history = projectedChatMessages(session?.events ?? []);
-    const messages: ProviderMessage[] = [
-      { role: "system", content: chatSystemPrompt() },
-    ];
-    for (const message of history) {
-      if (message.messageID === input.responseMessageID) continue;
-      messages.push(
-        message.role === "user"
-          ? { role: "user", content: message.text }
-          : { role: "assistant", content: message.text },
-      );
-    }
-    const visibleTools = chatTools();
-    const toolSchemas = visibleTools.map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.parameters,
-    }));
-    let output = "";
-    let thinking = "";
-    for (let step = 1; step <= effectiveMaxSteps(); step++) {
-      const calls: ProviderToolCall[] = [];
-      for await (const chunk of provider.stream({
-        messages,
-        tools: toolSchemas,
-        signal: new AbortController().signal,
-      })) {
-        if (chunk.type === "thinking") {
-          thinking += chunk.text;
-          publish({
-            type: "chat.thinking.delta",
-            id: `${input.responseMessageID}:thinking:${chatSequence++}`,
-            messageID: input.responseMessageID,
-            text: thinking,
-          });
-          continue;
-        }
-        if (chunk.type === "content") {
-          output += chunk.text;
-          publish({
-            type: "chat.message.delta",
-            id: `${input.responseMessageID}:delta:${chatSequence++}`,
-            messageID: input.responseMessageID,
-            text: output,
-          });
-        }
-        if (chunk.type === "tool_call") calls.push(...chunk.calls);
-      }
-      if (!calls.length) break;
-      messages.push({ role: "assistant", content: output, toolCalls: calls });
-      for (const call of calls) {
-        const tool = visibleTools.find(
-          (candidate) => candidate.name === call.name,
+    chatBusy = true;
+    try {
+      const history = projectedChatMessages(session?.events ?? []);
+      const messages: ProviderMessage[] = [
+        { role: "system", content: chatSystemPrompt() },
+      ];
+      for (const message of history) {
+        if (message.messageID === input.responseMessageID) continue;
+        // Explicit source tags so Navi never mistakes her own past messages (or
+        // anyone else's) for words from the human user.
+        messages.push(
+          message.role === "user"
+            ? { role: "user", content: `[user] ${message.text}` }
+            : { role: "assistant", content: `[Navi] ${message.text}` },
         );
-        if (!tool)
-          throw new Error(
-            `live work chat requested unavailable tool: ${call.name}`,
-          );
-        const parsed = parseToolArguments(call.arguments);
-        const paramErrors = validateToolParameters(tool.parameters, parsed);
-        if (paramErrors.length)
-          throw new Error(
-            `live work chat tool "${tool.name}" parameter validation failed: ${paramErrors.map((error) => `${error.path}: ${error.message}`).join("; ")}`,
-          );
-        const result = await tool.execute(parsed, {
-          workspaceRoot,
-          signal: new AbortController().signal,
-        });
-        publish({
-          type: "chat.tool.used",
-          id: `${input.responseMessageID}:tool:${chatSequence++}`,
-          toolName: tool.name,
-          summary: chatToolSummary(
-            tool.name,
-            parsed as Record<string, unknown>,
-            result,
-          ),
-          at: new Date().toISOString(),
-        });
-        messages.push({ role: "tool", content: result, toolCallID: call.id });
       }
+      if (input.internal) {
+        // A wake turn has no human prompt: tell Navi to answer her sister's
+        // pending collaboration messages (the questions are in her context).
+        messages.push({
+          role: "system",
+          content:
+            "Natalia (the main agent) sent you collaboration messages. Read <natalia_collaborations> in your system context; answer her open questions with collab_answer, acknowledge notices, and keep it short.",
+        });
+      }
+      const visibleTools = chatTools();
+      const toolSchemas = visibleTools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+      }));
+      let output = "";
+      let thinking = "";
+      let usedTools = false;
+      for (let step = 1; step <= effectiveMaxSteps(); step++) {
+        const calls: ProviderToolCall[] = [];
+        for await (const chunk of provider.stream({
+          messages,
+          tools: toolSchemas,
+          signal: new AbortController().signal,
+        })) {
+          if (chunk.type === "thinking") {
+            thinking += chunk.text;
+            publish({
+              type: "chat.thinking.delta",
+              id: `${input.responseMessageID}:thinking:${chatSequence++}`,
+              messageID: input.responseMessageID,
+              // Incremental, like the transcript's `thinking.delta`: the shared
+              // projection appends each chunk, so a full-accumulated payload
+              // would be re-appended every time and grow without bound.
+              text: chunk.text,
+            });
+            continue;
+          }
+          if (chunk.type === "content") {
+            output += chunk.text;
+            publish({
+              type: "chat.message.delta",
+              id: `${input.responseMessageID}:delta:${chatSequence++}`,
+              messageID: input.responseMessageID,
+              text: chunk.text,
+            });
+          }
+          if (chunk.type === "tool_call") calls.push(...chunk.calls);
+        }
+        if (!calls.length) break;
+        usedTools = true;
+        messages.push({ role: "assistant", content: output, toolCalls: calls });
+        for (const call of calls) {
+          const tool = visibleTools.find(
+            (candidate) => candidate.name === call.name,
+          );
+          if (!tool) {
+            // Hand the model the error instead of failing the turn: like the main
+            // agent, an unavailable or badly-formed call comes back as a tool
+            // result so the model can correct and retry on the next step.
+            messages.push({
+              role: "tool",
+              toolCallID: call.id,
+              toolName: call.name,
+              content: `ERROR: live work chat does not expose tool "${call.name}"`,
+            });
+            continue;
+          }
+          let parsed: unknown;
+          let paramErrors: Array<{ path: string; message: string }> = [];
+          try {
+            parsed = parseToolArguments(call.arguments);
+            paramErrors = validateToolParameters(tool.parameters, parsed);
+          } catch (cause) {
+            paramErrors = [{ path: "arguments", message: String(cause) }];
+          }
+          if (paramErrors.length) {
+            // The correct calling convention goes back to the model so it can
+            // retry with valid arguments (P8: Chat is a full agent, not a
+            // one-shot caller).
+            messages.push({
+              role: "tool",
+              toolCallID: call.id,
+              toolName: call.name,
+              content: `ERROR: parameter validation failed for ${call.name}: ${paramErrors
+                .map((error) => `${error.path}: ${error.message}`)
+                .join("; ")}. Expected arguments: ${JSON.stringify(
+                tool.parameters,
+              )}`,
+            });
+            continue;
+          }
+          let result: string;
+          try {
+            result = await tool.execute(parsed, {
+              workspaceRoot,
+              signal: new AbortController().signal,
+            });
+          } catch (cause) {
+            result = `ERROR: ${cause instanceof Error ? cause.message : String(cause)}`;
+          }
+          publish({
+            type: "chat.tool.used",
+            id: `${input.responseMessageID}:tool:${chatSequence++}`,
+            messageID: input.responseMessageID,
+            toolName: tool.name,
+            status: result.startsWith("ERROR:") ? "failed" : "succeeded",
+            summary: chatToolSummary(
+              tool.name,
+              parsed as Record<string, unknown>,
+              result,
+            ),
+            result,
+            argumentsRaw: call.arguments,
+            at: new Date().toISOString(),
+          });
+          messages.push({ role: "tool", content: result, toolCallID: call.id });
+        }
+      }
+      // A tool-driven turn must still end in a real reply, not just thinking: if
+      // no text came out of the tool loop, run one final provider step without
+      // tools (the main agent's needsFinalResponse behaviour).
+      if (usedTools && !output.trim()) {
+        for await (const chunk of provider.stream({
+          messages: [
+            ...messages,
+            {
+              role: "system",
+              content:
+                "Tool execution is complete. Provide the user with a concise final answer summarizing the outcome. Do not call any tools.",
+            },
+          ],
+          tools: undefined,
+          signal: new AbortController().signal,
+        })) {
+          if (chunk.type === "content") {
+            output += chunk.text;
+            publish({
+              type: "chat.message.delta",
+              id: `${input.responseMessageID}:delta:${chatSequence++}`,
+              messageID: input.responseMessageID,
+              text: output,
+            });
+          }
+        }
+      }
+      publish({
+        type: "chat.message.added",
+        id: `${input.responseMessageID}:chat`,
+        messageID: input.responseMessageID,
+        role: "chat",
+        text: redactToolOutput(output.trim() || "(no reply)", true),
+        at: new Date().toISOString(),
+      });
+      return { text: output };
+    } finally {
+      chatBusy = false;
     }
-    publish({
-      type: "chat.message.added",
-      id: `${input.responseMessageID}:chat`,
-      messageID: input.responseMessageID,
-      role: "chat",
-      text: redactToolOutput(output.trim() || "(no reply)", true),
-      at: new Date().toISOString(),
-    });
-    return { text: output };
+  }
+
+  /**
+   * Wakes Navi to answer Natalia's collaboration messages when she is not
+   * mid-conversation with the user — the Live Work Chat's own round-robin:
+   * an idle Chat answers her sister immediately instead of holding the
+   * question until the user happens to chat again.
+   */
+  async function wakeNavi() {
+    if (!provider || !session || chatBusy) return;
+    const responseMessageID = `chat:${Date.now().toString(36)}:${chatSequence++}`;
+    try {
+      await runChatTurn({ text: "", responseMessageID, internal: true });
+    } catch (cause) {
+      publish({
+        type: "chat.message.added",
+        id: `${responseMessageID}:chat`,
+        messageID: responseMessageID,
+        role: "chat",
+        text: `(live work chat error: ${
+          cause instanceof Error ? cause.message : String(cause)
+        })`,
+        at: new Date().toISOString(),
+      });
+    }
   }
 
   return {

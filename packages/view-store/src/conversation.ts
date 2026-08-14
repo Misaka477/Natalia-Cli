@@ -22,9 +22,41 @@ import {
   streamSegmentChars,
   upsertBlock,
   type AppState,
+  type MessageBlock,
   type StreamState,
   type ToolBlock,
 } from "./state";
+
+/**
+ * The part of projected state the streaming helpers write to. The main
+ * transcript and the Live Work Chat conversation both stream with the same
+ * markdown-safe segmentation machinery; `AppState` satisfies this structurally,
+ * and the Chat projection passes its own arrays.
+ */
+export type StreamTarget = {
+  messages: MessageBlock[];
+  streams: Record<string, StreamState>;
+  streamPhases: Record<string, "thinking" | "assistant">;
+};
+
+/** Upserts into an explicit messages array (the generic form of upsertBlock). */
+export function upsertInto(
+  messages: MessageBlock[],
+  id: string,
+  role: MessageBlock["role"],
+  text: string,
+  status?: string,
+  extra?: Partial<MessageBlock>,
+): void {
+  const block = messages.find((item) => item.id === id);
+  if (block) {
+    block.text = text;
+    if (status !== undefined) block.status = status;
+    if (extra) Object.assign(block, extra);
+    return;
+  }
+  messages.push({ id, role, text, pendingText: "", status, ...extra });
+}
 
 export function newStream(): StreamState {
   return {
@@ -347,30 +379,30 @@ function insideFence(text: string): boolean {
 }
 
 function prepareStreamPhase(
-  state: AppState,
+  target: StreamTarget,
   turnID: string,
   phase: "thinking" | "assistant",
 ): void {
-  const previous = state.streamPhases[turnID];
+  const previous = target.streamPhases[turnID];
   if (previous === phase) return;
-  if (previous) flushStream(state, streamID(turnID, previous));
+  if (previous) flushStream(target, streamID(turnID, previous));
   // Returning to a phase that already rendered text means the model alternated
   // between reasoning and answering. The new text belongs *below* whatever the
   // other phase wrote in between, so it opens a new segment instead of growing
   // the block above it — otherwise a second thought merges into the first and the
   // answer that came before it ends up rendered underneath, which is no longer
   // the order the model produced them in.
-  const stream = state.streams[streamID(turnID, phase)];
+  const stream = target.streams[streamID(turnID, phase)];
   if (stream && (stream.committed || stream.tail)) {
     stream.segmentIndex += 1;
     stream.committed = "";
     stream.tail = "";
   }
-  state.streamPhases[turnID] = phase;
+  target.streamPhases[turnID] = phase;
 }
 
 function appendStream(
-  state: AppState,
+  target: StreamTarget,
   input: {
     id: string;
     role: "thinking" | "assistant";
@@ -379,20 +411,23 @@ function appendStream(
     reasoningVisible?: boolean;
   },
 ): void {
-  const stream = (state.streams[input.id] ??= newStream());
+  const stream = (target.streams[input.id] ??= newStream());
   // A retried attempt replaces the text of the attempt it supersedes rather than
   // appending to it, so a UI never shows two copies of one response.
   if (input.attempt !== undefined && input.attempt !== stream.attempt) {
     stream.attempt = input.attempt;
     stream.committed = "";
     stream.tail = "";
-    removeStreamBlocks(state, input.id);
+    target.messages = target.messages.filter(
+      (block) =>
+        block.id !== input.id && !block.id.startsWith(`${input.id}:segment:`),
+    );
   }
   const applied = appendWithRetrySkip(input.text, stream.retrySkip);
   stream.retrySkip = applied.retrySkip;
   if (!applied.text && applied.retrySkip) {
     // The whole chunk was text we already have; nothing to render yet.
-    writeStreamBlock(state, input.id, input.role, input.reasoningVisible);
+    writeStreamBlock(target, input.id, input.role, input.reasoningVisible);
     return;
   }
   stream.tail += applied.text;
@@ -428,31 +463,31 @@ function appendStream(
     if (cut >= 0) {
       const carried = stream.tail.slice(cut);
       stream.tail = stream.tail.slice(0, cut);
-      commitStream(state, input.id, input.role, input.reasoningVisible);
+      commitStream(target, input.id, input.role, input.reasoningVisible);
       stream.segmentIndex += 1;
       stream.committed = "";
       stream.tail = carried;
-      writeStreamBlock(state, input.id, input.role, input.reasoningVisible);
+      writeStreamBlock(target, input.id, input.role, input.reasoningVisible);
       return;
     }
   }
-  writeStreamBlock(state, input.id, input.role, input.reasoningVisible);
+  writeStreamBlock(target, input.id, input.role, input.reasoningVisible);
 }
 
 /** Reflects the stream into its block without confirming the tail. */
 function writeStreamBlock(
-  state: AppState,
+  target: StreamTarget,
   id: string,
   role: "thinking" | "assistant",
   reasoningVisible?: boolean,
 ): void {
-  const stream = state.streams[id];
+  const stream = target.streams[id];
   if (!stream) return;
   // A segment that has just opened with nothing carried into it has nothing to
   // show, and a block with no text renders as an empty gap in the transcript.
   if (!stream.committed && !stream.tail) return;
-  upsertBlock(
-    state,
+  upsertInto(
+    target.messages,
     segmentID(id, stream.segmentIndex),
     role,
     stream.committed,
@@ -465,17 +500,17 @@ function writeStreamBlock(
 }
 
 function commitStream(
-  state: AppState,
+  target: StreamTarget,
   id: string,
   role: "thinking" | "assistant",
   reasoningVisible?: boolean,
 ): void {
-  const stream = state.streams[id];
+  const stream = target.streams[id];
   if (!stream) return;
   stream.committed += stream.tail;
   stream.tail = "";
-  upsertBlock(
-    state,
+  upsertInto(
+    target.messages,
     segmentID(id, stream.segmentIndex),
     role,
     stream.committed,
@@ -488,15 +523,15 @@ function commitStream(
 }
 
 /** Commits any buffered text so later output cannot interleave with it. */
-export function flushStream(state: AppState, id: string): void {
-  const stream = state.streams[id];
+export function flushStream(target: StreamTarget, id: string): void {
+  const stream = target.streams[id];
   if (!stream) return;
   if (!stream.tail && !stream.committed) return;
-  const block = state.messages.find(
+  const block = target.messages.find(
     (item) => item.id === segmentID(id, stream.segmentIndex),
   );
   commitStream(
-    state,
+    target,
     id,
     id.endsWith(":thinking") ? "thinking" : "assistant",
     block?.reasoningVisible,
@@ -507,9 +542,9 @@ export function flushStream(state: AppState, id: string): void {
  * After a tool card, subsequent model text belongs to a fresh segment so it
  * renders below the card instead of growing the block above it.
  */
-function beginPostToolSegment(state: AppState, turnID: string): void {
+function beginPostToolSegment(target: StreamTarget, turnID: string): void {
   for (const role of ["thinking", "assistant"] as const) {
-    const stream = state.streams[streamID(turnID, role)];
+    const stream = target.streams[streamID(turnID, role)];
     if (!stream || (!stream.committed && !stream.tail)) continue;
     stream.segmentIndex += 1;
     stream.committed = "";
@@ -550,12 +585,6 @@ function dropStreamTail(state: AppState, turnID: string): void {
   }
 }
 
-function removeStreamBlocks(state: AppState, id: string): void {
-  state.messages = state.messages.filter(
-    (block) => block.id !== id && !block.id.startsWith(`${id}:segment:`),
-  );
-}
-
 /** Marks the last segment of a stream, which is the block a reader ends on. */
 function markBlockStatus(state: AppState, id: string, status: string): void {
   const stream = state.streams[id];
@@ -575,4 +604,162 @@ function userText(
     )
     .join(", ");
   return `${event.text}\n\nAttachments: ${attachments}`;
+}
+
+function chatTarget(state: AppState): StreamTarget {
+  return {
+    messages: state.chatMessages,
+    streams: state.chatStreams,
+    streamPhases: state.chatStreamPhases,
+  };
+}
+
+/**
+ * Projects the Live Work Chat conversation through the same streaming machinery
+ * as the main transcript (§8.3: one projection, not a separate drift-prone
+ * copy). `chat.message.delta` streams into an assistant stream keyed by the
+ * message id, `chat.thinking.delta` into a thinking stream, the final
+ * `chat.message.added` flushes and (on replay) synthesizes the block, tool
+ * actions narrate as system rows, and `chat.rollback` truncates at a boundary.
+ */
+export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
+  switch (event.type) {
+    case "chat.message.added": {
+      if (event.role === "user") {
+        state.chatMessages.push({
+          id: `chat:${event.messageID}:user`,
+          role: "user",
+          text: event.text,
+          pendingText: "",
+        });
+        return true;
+      }
+      const key = `chat:${event.messageID}:assistant`;
+      flushStream(chatTarget(state), key);
+      const stream = state.chatStreams[key];
+      const currentID = stream ? segmentID(key, stream.segmentIndex) : key;
+      const current = state.chatMessages.find(
+        (block) => block.id === currentID,
+      );
+      // Live streaming has already filled the segment; durable replay is the
+      // case where this is the only place the text can come from.
+      const alreadyRendered = Boolean(
+        current && (current.text || current.pendingText),
+      );
+      if (event.text && !alreadyRendered)
+        upsertInto(state.chatMessages, currentID, "assistant", event.text);
+      delete state.chatStreams[key];
+      delete state.chatStreams[`chat:${event.messageID}:thinking`];
+      delete state.chatStreamPhases[`chat:${event.messageID}`];
+      return true;
+    }
+    case "chat.message.delta":
+      prepareStreamPhase(
+        chatTarget(state),
+        `chat:${event.messageID}`,
+        "assistant",
+      );
+      appendStream(chatTarget(state), {
+        id: `chat:${event.messageID}:assistant`,
+        role: "assistant",
+        text: event.text,
+      });
+      return true;
+    case "chat.thinking.delta":
+      prepareStreamPhase(
+        chatTarget(state),
+        `chat:${event.messageID}`,
+        "thinking",
+      );
+      appendStream(chatTarget(state), {
+        id: `chat:${event.messageID}:thinking`,
+        role: "thinking",
+        text: event.text,
+      });
+      return true;
+    case "chat.tool.used": {
+      // Mirrors the transcript's `tool.update`: commit any in-flight text,
+      // open a fresh segment so the model's post-tool reply renders BELOW the
+      // card (not merged into the block above it), then insert the card.
+      const turnKey = `chat:${event.messageID}`;
+      const target = chatTarget(state);
+      flushStream(target, `${turnKey}:thinking`);
+      flushStream(target, `${turnKey}:assistant`);
+      beginPostToolSegment(target, turnKey);
+      delete target.streamPhases[turnKey];
+      const tool: ToolBlock = {
+        name: event.toolName,
+        status: event.status,
+        summary: event.summary,
+        argumentsRaw: event.argumentsRaw ?? "",
+        ...(event.result !== undefined ? { result: event.result } : {}),
+        ...(event.startedAt !== undefined
+          ? { startedAt: event.startedAt }
+          : {}),
+        ...(event.endedAt !== undefined ? { endedAt: event.endedAt } : {}),
+      };
+      upsertInto(
+        state.chatMessages,
+        `chat:${event.id}:tool`,
+        "tool",
+        event.summary,
+        event.status,
+        { tool },
+      );
+      return true;
+    }
+    case "chat.rollback": {
+      const boundary = `chat:${event.toMessageID}`;
+      const index = state.chatMessages.findIndex(
+        (block) => block.id === `${boundary}:user`,
+      );
+      if (index !== -1) state.chatMessages.splice(index + 1);
+      else state.chatMessages.length = 0;
+      state.chatStreams = {};
+      state.chatStreamPhases = {};
+      return true;
+    }
+    case "collab.suggestion":
+      upsertInto(
+        state.chatMessages,
+        `chat:${event.id}:collab`,
+        "system",
+        `Navi → Natalia: ${event.suggestion}`,
+      );
+      return true;
+    case "collab.notice":
+      upsertInto(
+        state.chatMessages,
+        `chat:${event.id}:collab`,
+        "system",
+        `Natalia → Navi: [${event.noticeType}] ${event.notice}`,
+      );
+      return true;
+    case "collab.question":
+      upsertInto(
+        state.chatMessages,
+        `chat:${event.id}:collab`,
+        "system",
+        `Natalia → Navi: ${event.question}`,
+      );
+      return true;
+    case "collab.answer":
+      upsertInto(
+        state.chatMessages,
+        `chat:${event.id}:collab`,
+        "system",
+        `Navi → Natalia: ${event.answer}`,
+      );
+      return true;
+    case "collab.response":
+      upsertInto(
+        state.chatMessages,
+        `chat:${event.id}:collab`,
+        "system",
+        `Natalia ${event.decision} the suggestion${event.reason ? ` (${event.reason})` : ""}`,
+      );
+      return true;
+    default:
+      return false;
+  }
 }

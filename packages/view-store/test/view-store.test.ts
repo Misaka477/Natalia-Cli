@@ -827,3 +827,62 @@ test("plain long prose still segments", () => {
   expect(assistant.length).toBeGreaterThan(1);
   expect(assistant.map(displayText).join("")).toBe(prose);
 });
+
+test("chat tool calls render in event order with post-tool text below the card", () => {
+  const state = initialState();
+  applyEvent(state, {
+    type: "chat.message.added",
+    id: "chat:1",
+    messageID: "chat:m1",
+    role: "user",
+    text: "check the status",
+    at: "now",
+  });
+  applyEvent(state, {
+    type: "chat.message.delta",
+    id: "chat:2",
+    messageID: "chat:m2",
+    text: "I will look.",
+  });
+  applyEvent(state, {
+    type: "chat.tool.used",
+    id: "chat:m2:tool:1",
+    messageID: "chat:m2",
+    toolName: "session_snapshot",
+    status: "succeeded",
+    summary: "snapshot read",
+    result: '{"agentStatus":"idle"}',
+    argumentsRaw: "{}",
+    at: "now",
+  });
+  applyEvent(state, {
+    type: "chat.message.delta",
+    id: "chat:3",
+    messageID: "chat:m2",
+    text: " the main agent is idle.",
+  });
+  applyEvent(state, {
+    type: "chat.message.added",
+    id: "chat:4",
+    messageID: "chat:m2",
+    role: "chat",
+    text: "I will look. the main agent is idle.",
+    at: "now",
+  });
+  const blocks = state.chatMessages;
+  const order = blocks.map((block) => block.id);
+  // user -> pre-tool text -> tool card -> post-tool segment below the card.
+  expect(order).toEqual([
+    "chat:chat:m1:user",
+    "chat:chat:m2:assistant",
+    "chat:chat:m2:tool:1:tool",
+    "chat:chat:m2:assistant:segment:1",
+  ]);
+  const tool = blocks.find((block) => block.id === "chat:chat:m2:tool:1:tool");
+  expect(tool?.role).toBe("tool");
+  expect(tool?.tool?.name).toBe("session_snapshot");
+  const post = blocks.find(
+    (block) => block.id === "chat:chat:m2:assistant:segment:1",
+  );
+  expect(displayText(post!)).toBe(" the main agent is idle.");
+});

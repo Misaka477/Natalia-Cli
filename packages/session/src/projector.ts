@@ -613,6 +613,100 @@ export function projectedChatMessages(
 }
 
 /**
+ * Projects the agent-to-agent collaboration channel (Chat Navi ↔ Main Natalia):
+ * suggestions, notices, questions and answers as a durable conversation, with
+ * responses folding the decision back onto the target message's status. Both
+ * agents read this same projection, so the 轮巡 works without the user
+ * prompting either side to check on the other (§8.3).
+ */
+export type ProjectedCollabMessage = {
+  id: string;
+  kind: "suggestion" | "notice" | "question" | "answer";
+  from: "live_chat" | "main_agent";
+  to: "live_chat" | "main_agent";
+  text: string;
+  priority?: string;
+  noticeType?: string;
+  status: "proposed" | "adopted" | "rejected" | "deferred" | "answered";
+  questionID?: string;
+  /** The recipient's reply reason, when a suggestion was responded to. */
+  responseReason?: string;
+  at: string;
+};
+
+export function projectedCollabMessages(
+  events: RuntimeEvent[],
+): ProjectedCollabMessage[] {
+  const messages: ProjectedCollabMessage[] = [];
+  for (const event of events) {
+    if (event.type === "collab.suggestion") {
+      messages.push({
+        id: event.id,
+        kind: "suggestion",
+        from: "live_chat",
+        to: "main_agent",
+        text: event.suggestion,
+        priority: event.priority,
+        status: "proposed",
+        at: event.at,
+      });
+      continue;
+    }
+    if (event.type === "collab.notice") {
+      messages.push({
+        id: event.id,
+        kind: "notice",
+        from: "main_agent",
+        to: "live_chat",
+        text: event.notice,
+        noticeType: event.noticeType,
+        status: "proposed",
+        at: event.at,
+      });
+      continue;
+    }
+    if (event.type === "collab.question") {
+      messages.push({
+        id: event.id,
+        kind: "question",
+        from: "main_agent",
+        to: "live_chat",
+        text: event.question,
+        status: "proposed",
+        at: event.at,
+      });
+      continue;
+    }
+    if (event.type === "collab.answer") {
+      messages.push({
+        id: event.id,
+        kind: "answer",
+        from: "live_chat",
+        to: "main_agent",
+        text: event.answer,
+        questionID: event.questionID,
+        status: "answered",
+        at: event.at,
+      });
+      const target = messages.find(
+        (message) => message.id === event.questionID,
+      );
+      if (target && target.kind === "question") target.status = "answered";
+      continue;
+    }
+    if (event.type === "collab.response") {
+      const target = messages.find((message) => message.id === event.messageID);
+      if (target && target.kind === "suggestion") {
+        target.status = event.decision;
+        if (event.reason) target.responseReason = event.reason;
+      }
+      continue;
+    }
+  }
+  return messages;
+}
+
+/**
  * Projects the current plan state from the durable journal. The lifecycle is
  * event-sourced: `plan.draft.created` creates the plan (with its content and
  * version) and each transition (`draft.updated`/`proposed`/`accepted`/`queued`/

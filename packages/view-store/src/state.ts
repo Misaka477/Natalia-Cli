@@ -155,6 +155,12 @@ export type AppState = {
   pendingApprovals: PendingApproval[];
   pendingQuestions: PendingQuestion[];
 
+  // live work chat
+  /** The Chat conversation, projected like the main transcript (§8.3). */
+  chatMessages: MessageBlock[];
+  chatStreams: Record<string, StreamState>;
+  chatStreamPhases: Record<string, "thinking" | "assistant">;
+
   // resources
   terminals: Record<string, TerminalView>;
   terminalTimeline: Record<string, TerminalTimelineEntry[]>;
@@ -200,6 +206,9 @@ export function initialState(): AppState {
     todos: [],
     pendingApprovals: [],
     pendingQuestions: [],
+    chatMessages: [],
+    chatStreams: {},
+    chatStreamPhases: {},
     terminals: {},
     terminalTimeline: {},
     terminalApprovals: {},
@@ -236,6 +245,12 @@ export function cloneState(state: AppState): AppState {
     todos: [...state.todos],
     pendingApprovals: [...state.pendingApprovals],
     pendingQuestions: [...state.pendingQuestions],
+    chatMessages: state.chatMessages.map((block) => ({
+      ...block,
+      ...(block.tool ? { tool: { ...block.tool } } : {}),
+    })),
+    chatStreams: mapRecord(state.chatStreams, (value) => ({ ...value })),
+    chatStreamPhases: { ...state.chatStreamPhases },
     terminals: { ...state.terminals },
     terminalTimeline: mapRecord(state.terminalTimeline, (value) => [...value]),
     terminalApprovals: { ...state.terminalApprovals },

@@ -37,7 +37,7 @@
  *     projections remain owned by session queries.
  */
 import type { RuntimeEvent } from "@natalia/contracts";
-import { applyConversationEvent } from "./conversation";
+import { applyChatEvent, applyConversationEvent } from "./conversation";
 import { applyResourceEvent } from "./resources";
 import { applyStatusEvent } from "./status";
 import { cloneState, initialState, type AppState } from "./state";
@@ -97,7 +97,7 @@ export {
  */
 export { applyResourceEvent } from "./resources";
 export { applyStatusEvent } from "./status";
-export { applyConversationEvent } from "./conversation";
+export { applyChatEvent, applyConversationEvent } from "./conversation";
 
 /**
  * Mutates `state` in place. Unknown and deliberately unprojected events are
@@ -106,6 +106,7 @@ export { applyConversationEvent } from "./conversation";
  */
 export function applyEvent(state: AppState, event: RuntimeEvent): void {
   if (applyConversationEvent(state, event)) return;
+  if (applyChatEvent(state, event)) return;
   if (applyResourceEvent(state, event)) return;
   applyStatusEvent(state, event);
 }

@@ -295,6 +295,7 @@ export {
   projectedMailboxMessages,
   projectedPlans,
   projectedChatMessages,
+  projectedCollabMessages,
   projectSession,
   settleInterruptedTurns,
   settleInterruptedTurnIDs,

@@ -996,8 +996,14 @@ type RuntimeEventData =
   | {
       type: "chat.tool.used";
       id: string;
+      messageID: string;
       toolName: string;
+      status: string;
       summary: string;
+      result?: string;
+      argumentsRaw?: string;
+      startedAt?: number;
+      endedAt?: number;
       at: string;
     }
   | {
@@ -1005,6 +1011,52 @@ type RuntimeEventData =
       id: string;
       toMessageID: string;
       removed: number;
+      at: string;
+    }
+  | {
+      type: "collab.suggestion";
+      id: string;
+      from: "live_chat";
+      to: "main_agent";
+      suggestion: string;
+      rationale?: string;
+      priority: "normal" | "high";
+      status: "proposed";
+      at: string;
+    }
+  | {
+      type: "collab.notice";
+      id: string;
+      from: "main_agent";
+      to: "live_chat";
+      notice: string;
+      noticeType: "step_completed" | "blocked" | "needs_input" | "risk";
+      at: string;
+    }
+  | {
+      type: "collab.question";
+      id: string;
+      from: "main_agent";
+      to: "live_chat";
+      question: string;
+      at: string;
+    }
+  | {
+      type: "collab.answer";
+      id: string;
+      questionID: string;
+      from: "live_chat";
+      to: "main_agent";
+      answer: string;
+      at: string;
+    }
+  | {
+      type: "collab.response";
+      id: string;
+      messageID: string;
+      from: "live_chat" | "main_agent";
+      decision: "adopted" | "rejected" | "deferred";
+      reason?: string;
       at: string;
     }
   | {

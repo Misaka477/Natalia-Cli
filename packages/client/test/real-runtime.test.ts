@@ -5764,19 +5764,18 @@ test("queued mailbox messages are delivered at the next turn safe boundary", asy
   await client.submit("first");
   await pollHistoryForFinished(client);
 
-  // No turn running: the message stays queued.
+  // No turn running: the intent wakes the idle main agent immediately (P8 §7)
+  // instead of sitting queued until the next manual turn.
   await client.mailboxSend?.({
     intent: "reprioritize",
     text: "focus on docs",
     safeSummary: "reprioritize to docs",
   });
-  expect((await client.mailboxList!())[0]?.status).toBe("queued");
-
-  // A finished turn is a safe boundary: the queued message is auto-delivered.
-  await client.submit("second");
-  await pollHistoryForFinished(client);
+  await waitForAsync(
+    async () => (await client.mailboxList!())[0]?.status === "acknowledged",
+  );
   const mailbox = await client.mailboxList!();
-  expect(mailbox[0]?.status).toBe("delivered");
+  expect(mailbox[0]?.status).toBe("acknowledged");
   expect(
     mailbox[0]?.deliveryPolicy === undefined
       ? "next_safe_boundary"
@@ -5881,9 +5880,10 @@ test("a mailbox message sent mid-turn is delivered when that turn finishes", asy
   client.start((event) => events.push(event));
 
   const submitting = client.submit("long task");
-  // The turn is running: give it a moment, then enqueue a mailbox message.
-  await waitFor(() => events.some((event) => event.type === "turn.submitted"));
-  await Bun.sleep(20);
+  // Wait until the provider is actually streaming so the turn is definitely
+  // active when the message is sent (turn.submitted alone fires before the
+  // drain starts).
+  await waitFor(() => events.some((event) => event.type === "content.delta"));
   await client.mailboxSend?.({
     intent: "pause",
     text: "please pause after this step",
@@ -5919,31 +5919,25 @@ test("delivered mailbox intents reach the main agent in the next turn system pro
   await client.submit("first");
   await pollHistoryForFinished(client);
 
-  // Queue an intent while idle; it stays queued until a turn boundary.
+  // No turn running: the intent wakes the idle agent, whose wake turn's
+  // system prompt already carries it.
   await client.mailboxSend?.({
     intent: "constraint",
     text: "never commit the lockfile",
     safeSummary: "a commit constraint",
     priority: "high",
   });
-  expect((await client.mailboxList!())[0]?.status).toBe("queued");
-
-  // Turn 2 is a safe boundary: it delivers the intent at its end. Turn 2's
-  // own system prompt was already assembled, so it must NOT carry the intent.
-  await client.submit("second");
-  await pollHistoryForFinished(client);
-  const secondPrompt = systemPrompts.at(-1) ?? "";
-  expect(secondPrompt).not.toContain("<pending_user_intents>");
-  expect((await client.mailboxList!())[0]?.status).toBe("delivered");
-
-  // Turn 3 runs after the boundary, so the delivered intent is now injected.
-  await client.submit("third");
-  await pollHistoryForFinished(client);
-  const thirdPrompt = systemPrompts.at(-1) ?? "";
-  expect(thirdPrompt).toContain("<pending_user_intents>");
-  expect(thirdPrompt).toContain("[high] constraint");
-  expect(thirdPrompt).toContain("never commit the lockfile");
-  expect(thirdPrompt).toContain("</pending_user_intents>");
+  await waitFor(() => systemPrompts.length > 1);
+  const wakePrompt = systemPrompts.at(-1) ?? "";
+  expect(wakePrompt).toContain("<pending_user_intents>");
+  expect(wakePrompt).toContain("[high] constraint");
+  expect(wakePrompt).toContain("never commit the lockfile");
+  expect(wakePrompt).toContain("</pending_user_intents>");
+  // The wake turn finishes after its prompt is captured, so wait for the ack.
+  await waitForAsync(
+    async () => (await client.mailboxList!())[0]?.status === "acknowledged",
+  );
+  expect((await client.mailboxList!())[0]?.status).toBe("acknowledged");
 });
 
 test("plan drafts move through the full lifecycle with version bumps", async () => {
@@ -6296,44 +6290,47 @@ test("delivered mailbox intents are auto-acknowledged at the next turn finish (n
   await client.submit("first");
   await pollHistoryForFinished(client);
 
-  // Seed a queued intent while idle.
+  // Seed an intent while idle: the agent wakes and the wake turn sees it; its
+  // finish auto-acknowledges it (consumption-driven, no tool needed).
   await client.mailboxSend?.({
     intent: "constraint",
     text: "never merge a failing build",
     safeSummary: "a merge constraint",
   });
-
-  // Turn 2's boundary delivers it (injected into turn 3). The model never calls
-  // mailbox_acknowledge — the delivery is consumption-driven.
-  await client.submit("second");
-  await pollHistoryForFinished(client);
-  expect((await client.mailboxList!())[0]?.status).toBe("delivered");
-
-  // Turn 3 injects it once, then its finish auto-acknowledges it.
-  await client.submit("third");
-  await pollHistoryForFinished(client);
+  await waitFor(() => systemPrompts.length > 1);
   expect(systemPrompts.at(-1)).toContain("never merge a failing build");
-  expect((await client.mailboxList!())[0]?.status).toBe("acknowledged");
+  await waitForAsync(
+    async () => (await client.mailboxList!())[0]?.status === "acknowledged",
+  );
 
-  // Turn 4 no longer injects it.
-  await client.submit("fourth");
+  // A later turn no longer injects it.
+  await client.submit("next");
   await pollHistoryForFinished(client);
   const last = systemPrompts.at(-1) ?? "";
   expect(last).not.toContain("never merge a failing build");
 });
 
-test("a cancelled turn does not auto-acknowledge delivered intents", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-mailbox-cancel-"));
+test("a turn that does not finish normally does not auto-acknowledge delivered intents", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-mailbox-error-"));
+  let streamCalls = 0;
   const client = createRealRuntimeClient({
     workspaceRoot: root,
-    sessionID: "ses_ts7_mailbox_cancel",
+    sessionID: "ses_ts7_mailbox_error",
     provider: {
       provider: "test",
       model: "test",
       async *stream() {
+        streamCalls++;
+        if (streamCalls === 1) {
+          // The warm-up turn completes normally.
+          yield { type: "done" as const };
+          return;
+        }
+        // The second turn errors mid-stream: it is not a "done" settlement, so
+        // it must not acknowledge a delivered intent.
         yield { type: "content" as const, text: "half" };
-        await new Promise((resolve) => setTimeout(resolve, 30));
-        yield { type: "done" as const };
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        throw new Error("provider failed");
       },
     },
   });
@@ -6342,26 +6339,24 @@ test("a cancelled turn does not auto-acknowledge delivered intents", async () =>
   await client.submit("first");
   await pollHistoryForFinished(client);
 
-  await client.mailboxSend?.({
+  // Send the intent mid-turn (the running turn keeps the coordinator active, so
+  // no wake turn spawns), then deliver it explicitly so it is "delivered".
+  events.length = 0;
+  const running = client.submit("long");
+  await waitFor(() => events.some((event) => event.type === "content.delta"));
+  const sent = await client.mailboxSend?.({
     intent: "pause",
     text: "pause after this",
     safeSummary: "pause requested",
   });
-  await client.submit("second");
-  await pollHistoryForFinished(client);
+  expect((await client.mailboxList!())[0]?.status).toBe("queued");
+  if (sent?.messageID) await client.mailboxDeliver?.(sent.messageID);
   expect((await client.mailboxList!())[0]?.status).toBe("delivered");
 
-  // Abort the third turn before it finishes: the delivered intent must stay
-  // delivered (not acked), so a later turn can still see it.
-  const eventsThird: RuntimeEvent[] = [];
-  client.start((event) => eventsThird.push(event));
-  const third = client.submit("third");
-  await waitFor(() =>
-    eventsThird.some((event) => event.type === "turn.submitted"),
-  );
-  await Bun.sleep(20);
-  client.cancel("test cancel");
-  await third;
+  // The running turn errors out: not a "done" finish, so the delivered intent
+  // stays delivered for another turn to see.
+  await running;
+  await pollHistoryForFinished(client);
   expect((await client.mailboxList!())[0]?.status).toBe("delivered");
 });
 
@@ -7263,6 +7258,18 @@ async function waitFor(predicate: () => boolean, timeoutMs = 500) {
     await Bun.sleep(10);
   }
   throw new Error("timed out waiting for condition");
+}
+
+/** Polls until an async predicate holds (the runtime wakes turns asynchronously). */
+async function waitForAsync(
+  predicate: () => Promise<boolean>,
+  timeoutMs = 3000,
+) {
+  for (let elapsed = 0; elapsed < timeoutMs; elapsed += 50) {
+    if (await predicate()) return;
+    await Bun.sleep(50);
+  }
+  throw new Error("timed out waiting for async condition");
 }
 
 /** Polls the attached session's history until a turn has settled on disk. */
@@ -9755,14 +9762,6 @@ test("chat tool calls surface as conversation actions", async () => {
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
   await client.chatSubmit!({ text: "do not install that dependency" });
-  console.log(
-    "DIAG_EVENTS",
-    JSON.stringify(events.map((e) => (e as { type: string }).type)),
-  );
-  console.log(
-    "DIAG_CHAT",
-    JSON.stringify(events.filter((e) => e.type.startsWith("chat."))),
-  );
   const actions = events.filter((event) => event.type === "chat.tool.used");
   expect(actions).toHaveLength(1);
   expect(actions[0]).toMatchObject({ toolName: "mailbox_send" });
@@ -9771,3 +9770,521 @@ test("chat tool calls surface as conversation actions", async () => {
   );
   await client.dispose?.();
 });
+
+test("the chat context includes the main agent's recent activity", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-chat-ctx-"));
+  let streamCalls = 0;
+  let chatSystemPrompt = "";
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_chat_ctx",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        streamCalls++;
+        if (streamCalls === 1) {
+          yield {
+            type: "content" as const,
+            text: "I replaced the fetch wrapper",
+          };
+          yield { type: "done" as const };
+          return;
+        }
+        chatSystemPrompt = String(
+          (request as { messages: Array<{ role: string; content: string }> })
+            .messages[0]?.content ?? "",
+        );
+        yield {
+          type: "content" as const,
+          text: "the main agent said it replaced the wrapper",
+        };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.submit("replace the wrapper");
+  await pollHistoryForFinished(client);
+  await client.chatSubmit!({ text: "what did the main agent just say" });
+  // The Chat shares the main agent's recent exchange — the user's prompt and
+  // the reply — so it can answer the question instead of only seeing the
+  // status card (§8.3 shared context).
+  expect(chatSystemPrompt).toContain("I replaced the fetch wrapper");
+  expect(chatSystemPrompt).toContain("replace the wrapper");
+  await client.dispose?.();
+});
+
+test("a queued mailbox intent wakes an idle main agent", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-mailbox-deliver-"));
+  const systemPrompts: string[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_mailbox_deliver",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        systemPrompts.push(
+          String(
+            (
+              request as {
+                messages: Array<{ role: string; content: string }>;
+              }
+            ).messages[0]?.content ?? "",
+          ),
+        );
+        yield { type: "content" as const, text: "will do" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.mailboxSend!({
+    intent: "constraint",
+    text: "do not install that dependency",
+  });
+  // The mailbox intent wakes the idle main agent: no manual submission is
+  // needed, the turn runs as if the user had typed the directive (P8 §7).
+  await pollHistoryForFinished(client);
+  expect(systemPrompts[0]).toContain("do not install that dependency");
+  await client.dispose?.();
+});
+
+test("a chat tool parameter error returns the usage to the model for retry", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-chat-retry-"));
+  let streamCalls = 0;
+  let secondStepToolMessages: unknown[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_chat_retry",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        streamCalls++;
+        if (streamCalls === 1) {
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "call_1",
+                name: "read_file",
+                arguments: JSON.stringify({ path: "a.txt", maxBytes: 100 }),
+              },
+            ],
+          };
+          return;
+        }
+        secondStepToolMessages = (
+          request as { messages: Array<{ role: string; content: string }> }
+        ).messages
+          .filter((message) => message.role === "tool")
+          .map((message) => message.content);
+        yield { type: "content" as const, text: "I read the file" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.chatSubmit!({ text: "read the file" });
+  const history = await client.chatMessages!();
+  expect(history.at(-1)?.text).toContain("I read the file");
+  // The bad call came back as a tool result carrying the correct calling
+  // convention, so the model could retry on the next step.
+  expect(
+    secondStepToolMessages.some((content) =>
+      String(content).includes("parameter validation failed"),
+    ),
+  ).toBe(true);
+  await client.dispose?.();
+});
+
+test("the chat can query the main agent's live status with session_snapshot", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-chat-snapshot-"));
+  let streamCalls = 0;
+  let snapshotToolResult = "";
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_chat_snapshot",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        streamCalls++;
+        if (streamCalls === 1) {
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "call_1",
+                name: "session_snapshot",
+                arguments: "{}",
+              },
+            ],
+          };
+          return;
+        }
+        snapshotToolResult = String(
+          (
+            request as {
+              messages: Array<{ role: string; content: string }>;
+            }
+          ).messages.filter((message) => message.role === "tool")[0]?.content ??
+            "",
+        );
+        yield {
+          type: "content" as const,
+          text: "the main agent is running step 2",
+        };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.chatSubmit!({ text: "what is the main agent doing" });
+  // The read-only snapshot tool returned the live status to the model.
+  expect(snapshotToolResult).toContain("agentStatus");
+  await client.dispose?.();
+});
+
+test("the collaboration channel round-robins between Navi and the main agent", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-collab-"));
+  let mainPrompt = "";
+  let chatPrompt2 = "";
+  let mainResponded = false;
+  let naviSuggested = false;
+  const rrEvents: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_collab",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        const system = String(
+          (request as { messages: Array<{ role: string; content: string }> })
+            .messages[0]?.content ?? "",
+        );
+        // Chat turns carry her sister's questions/outcomes block; main-agent
+        // turns never do, so the source of a stream call is content, not a
+        // call counter (the wake runs concurrently).
+        const naviTurn = system.includes("<natalia_collaborations>");
+        if (!naviTurn) {
+          mainPrompt = system;
+          if (!mainResponded) {
+            mainResponded = true;
+            // Natalia's wake turn: adopt Navi's suggestion.
+            const match = /\[Navi\] (collab:suggestion:[a-z0-9]+:[0-9]+)/u.exec(
+              system,
+            );
+            yield {
+              type: "tool_call" as const,
+              calls: [
+                {
+                  id: "c2",
+                  name: "collab_respond",
+                  arguments: JSON.stringify({
+                    messageID: match?.[1] ?? "",
+                    decision: "adopted",
+                  }),
+                },
+              ],
+            };
+            return;
+          }
+          yield { type: "content" as const, text: "ok" };
+          yield { type: "done" as const };
+          return;
+        }
+        chatPrompt2 = system;
+        if (!naviSuggested) {
+          // Navi's first turn: send the suggestion.
+          naviSuggested = true;
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "c1",
+                name: "collab_suggest",
+                arguments: JSON.stringify({
+                  suggestion: "prefer echo over cat for the demo",
+                  priority: "normal",
+                }),
+              },
+            ],
+          };
+          return;
+        }
+        yield { type: "content" as const, text: "she adopted it" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => rrEvents.push(event));
+  await client.chatSubmit!({ text: "suggest echo" });
+  // The suggestion wakes the idle main agent, whose wake turn already carries
+  // the suggestion (the 轮巡) — no extra user submission needed.
+  await waitForAsync(async () => mainPrompt.length > 0, 10000);
+  // The main agent knows who Navi is and sees her suggestion without the user
+  // prompting it (the 轮巡).
+  expect(mainPrompt).toContain("<live_work_chat>");
+  expect(mainPrompt).toContain("your younger sister");
+  expect(mainPrompt).toContain("<navi_collaborations>");
+  expect(mainPrompt).toContain("prefer echo over cat for the demo");
+  // Wait until the wake main turn's decision lands, so Navi's next prompt is
+  // built after the outcome exists (the round-robin race).
+  await waitForAsync(
+    async () => rrEvents.some((event) => event.type === "collab.response"),
+    10000,
+  );
+  await client.chatSubmit!({ text: "what did she decide" });
+  await waitForAsync(async () => chatPrompt2.includes("adopted"), 10000);
+  // Navi sees the outcome without the user prompting her.
+  expect(chatPrompt2).toContain("Outcomes of your suggestions to Natalia");
+  expect(chatPrompt2).toContain("adopted");
+  await client.dispose?.();
+}, 20000);
+
+test("an idle Navi answers Natalia's question immediately without a user chat", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-navi-wake-"));
+  let streamCalls = 0;
+  let naviStreamCount = 0;
+  const mainPrompts: string[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_navi_wake",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        streamCalls++;
+        const system = String(
+          (request as { messages: Array<{ role: string; content: string }> })
+            .messages[0]?.content ?? "",
+        );
+        // The Navi wake turn's context carries her sister's pending questions;
+        // the main agent's context never does.
+        const naviTurn = system.includes("<natalia_collaborations>");
+        if (!naviTurn) {
+          mainPrompts.push(system);
+          if (streamCalls === 1) {
+            yield {
+              type: "tool_call" as const,
+              calls: [
+                {
+                  id: "c1",
+                  name: "collab_ask",
+                  arguments: JSON.stringify({ question: "is echo safe" }),
+                },
+              ],
+            };
+            return;
+          }
+          yield { type: "content" as const, text: "ok" };
+          yield { type: "done" as const };
+          return;
+        }
+        naviStreamCount++;
+        if (naviStreamCount === 1) {
+          const match =
+            /\[Natalia → you\] (collab:question:[a-z0-9]+:[0-9]+)/u.exec(
+              system,
+            );
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "c2",
+                name: "collab_answer",
+                arguments: JSON.stringify({
+                  questionID: match?.[1] ?? "",
+                  answer: "yes, echo is safe",
+                }),
+              },
+            ],
+          };
+          return;
+        }
+        yield { type: "content" as const, text: "answered natalia" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  // No chatSubmit at all: the question wakes Navi and she answers on her own.
+  await client.submit("hello");
+  await waitForAsync(async () =>
+    events.some((event) => event.type === "collab.answer"),
+  );
+  const answer = events.find((event) => event.type === "collab.answer");
+  expect(answer).toMatchObject({ answer: "yes, echo is safe" });
+  // The answer reaches Natalia's own context on her next turn (the 轮巡).
+  await client.submit("continue");
+  await waitForAsync(async () => mainPrompts.length >= 2);
+  expect(mainPrompts.at(-1)).toContain("<navi_responses>");
+  expect(mainPrompts.at(-1)).toContain("yes, echo is safe");
+  await client.dispose?.();
+}, 20000);
+
+test("collab_inbox lets the main agent read Navi's answer on demand", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-collab-inbox-"));
+  let streamCalls = 0;
+  let naviStreamCount = 0;
+  let inboxToolResult = "";
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_collab_inbox",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        streamCalls++;
+        const system = String(
+          (request as { messages: Array<{ role: string; content: string }> })
+            .messages[0]?.content ?? "",
+        );
+        const toolMessages = (
+          request as {
+            messages: Array<{ role: string; content: string }>;
+          }
+        ).messages.filter((message) => message.role === "tool");
+        const naviTurn = system.includes("<natalia_collaborations>");
+        if (!naviTurn) {
+          if (streamCalls === 1) {
+            yield {
+              type: "tool_call" as const,
+              calls: [
+                {
+                  id: "c1",
+                  name: "collab_ask",
+                  arguments: JSON.stringify({ question: "is echo safe" }),
+                },
+              ],
+            };
+            return;
+          }
+          if (streamCalls === 5) {
+            yield {
+              type: "tool_call" as const,
+              calls: [{ id: "c5", name: "collab_inbox", arguments: "{}" }],
+            };
+            return;
+          }
+          if (streamCalls === 6) {
+            inboxToolResult = String(toolMessages.at(-1)?.content ?? "");
+          }
+          yield { type: "content" as const, text: "ok" };
+          yield { type: "done" as const };
+          return;
+        }
+        naviStreamCount++;
+        if (naviStreamCount === 1) {
+          const match =
+            /\[Natalia → you\] (collab:question:[a-z0-9]+:[0-9]+)/u.exec(
+              system,
+            );
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "c2",
+                name: "collab_answer",
+                arguments: JSON.stringify({
+                  questionID: match?.[1] ?? "",
+                  answer: "yes, echo is safe",
+                }),
+              },
+            ],
+          };
+          return;
+        }
+        yield { type: "content" as const, text: "answered natalia" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.submit("hello");
+  await client.submit("check");
+  await waitForAsync(async () => inboxToolResult.length > 0);
+  expect(inboxToolResult).toContain("yes, echo is safe");
+  await client.dispose?.();
+}, 20000);
+
+test("collab_answer accepts a truncated question id (models drop the prefix)", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-collab-trunc-"));
+  let streamCalls = 0;
+  let naviStreamCount = 0;
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_collab_trunc",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        streamCalls++;
+        const system = String(
+          (request as { messages: Array<{ role: string; content: string }> })
+            .messages[0]?.content ?? "",
+        );
+        const naviTurn = system.includes("<natalia_collaborations>");
+        if (!naviTurn) {
+          if (streamCalls === 1) {
+            yield {
+              type: "tool_call" as const,
+              calls: [
+                {
+                  id: "c1",
+                  name: "collab_ask",
+                  arguments: JSON.stringify({ question: "is echo safe" }),
+                },
+              ],
+            };
+            return;
+          }
+          yield { type: "content" as const, text: "ok" };
+          yield { type: "done" as const };
+          return;
+        }
+        naviStreamCount++;
+        if (naviStreamCount === 1) {
+          const match = /questionID: (collab:question:[a-z0-9]+:[0-9]+)/u.exec(
+            system,
+          );
+          // The model truncates the id to its tail, dropping the prefix.
+          const truncated = (match?.[1] ?? "").replace(
+            /^collab:question:/u,
+            "",
+          );
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "c2",
+                name: "collab_answer",
+                arguments: JSON.stringify({
+                  questionID: truncated,
+                  answer: "yes, echo is safe",
+                }),
+              },
+            ],
+          };
+          return;
+        }
+        yield { type: "content" as const, text: "answered natalia" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  await client.submit("hello");
+  await waitForAsync(async () =>
+    events.some((event) => event.type === "collab.answer"),
+  );
+  const answer = events.find((event) => event.type === "collab.answer");
+  expect(answer).toMatchObject({ answer: "yes, echo is safe" });
+  await client.dispose?.();
+}, 20000);

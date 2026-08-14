@@ -35,6 +35,14 @@ function makeHarness(
       priority: string;
       source: "user_via_live_chat" | "system";
     }>;
+    naviSuggestions?: Array<{
+      id: string;
+      suggestion: string;
+      priority: string;
+      rationale?: string;
+    }>;
+    naviIntro?: boolean;
+    naviAnswers?: Array<{ questionID: string; answer: string }>;
     activePlan?: {
       planID: string;
       version: number;
@@ -91,6 +99,9 @@ function makeHarness(
     activeSkill: () => undefined,
     skillsList: () => [],
     mailboxMessages: () => options?.mailboxMessages ?? [],
+    naviSuggestions: () => options?.naviSuggestions ?? [],
+    naviIntro: () => options?.naviIntro ?? false,
+    naviAnswers: () => options?.naviAnswers ?? [],
     activePlan: () => options?.activePlan,
     retryPolicy: () => ({
       maxAttemptsPerStep: 1,

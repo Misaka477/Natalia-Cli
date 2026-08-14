@@ -94,6 +94,35 @@ export function createProviderRunner(input: {
     source: "user_via_live_chat" | "system";
   }>;
   /**
+   * The Live Work Chat's (Navi's) pending suggestions: collaborator views the
+   * main agent has not yet adopted, rejected or deferred. The runner renders
+   * them into the system prompt so the agent sees them without the user
+   * prompting it to check (the 轮巡).
+   */
+  naviSuggestions(): Array<{
+    id: string;
+    suggestion: string;
+    priority: string;
+    rationale?: string;
+  }>;
+  /**
+   * Navi's answers to the questions the main agent asked her through the
+   * collaboration channel. Rendered as a `<navi_responses>` block so Natalia
+   * sees her sister's replies on her next turn (the round-robin), instead of a
+   * question hanging unanswered in the main agent's own context.
+   */
+  naviAnswers(): Array<{
+    questionID: string;
+    answer: string;
+  }>;
+  /**
+   * Whether the Live Work Chat collaboration channel has any activity, so the
+   * runner can introduce Navi (Natalia's sister) in the system prompt only when
+   * the feature is actually in use — a session without Chat traffic pays no
+   * tokens for a block it never acts on.
+   */
+  naviIntro(): boolean;
+  /**
    * The currently active plan, if any (P8 C4 NextPlanHandoff source). When a
    * queued-next plan activates at the turn boundary, the next turn renders it
    * as a structured handoff so the main agent knows the objective, constraints,
@@ -309,6 +338,9 @@ export function createProviderRunner(input: {
           skills: input.skillsList(),
           activeSkill: input.activeSkill(),
           pendingIntents: input.mailboxMessages(),
+          naviSuggestions: input.naviSuggestions(),
+          naviAnswers: input.naviAnswers(),
+          naviIntro: input.naviIntro(),
           activePlan: input.activePlan(),
         }),
       });
@@ -703,7 +735,7 @@ function runtimeSystemPrompt(input: {
   skills?: Skill[];
   activeSkill?: Skill;
   /**
-   * Delivered-but-unacknowledged Live Work Chat mailbox messages. Rendered as a
+   * Pending Live Work Chat mailbox messages. Rendered as a
    * `<pending_user_intents>` block so the main agent sees user intents at the
    * next turn and can acknowledge them. Omitted entirely when none are pending,
    * so a session without Live Chat traffic pays no tokens.
@@ -715,6 +747,33 @@ function runtimeSystemPrompt(input: {
     priority: string;
     source: "user_via_live_chat" | "system";
   }>;
+  /**
+   * Navi's pending collaboration suggestions, rendered as a
+   * `<navi_collaborations>` block so the main agent sees them at the next turn
+   * and can adopt, reject or defer without the user prompting it (the 轮巡).
+   */
+  naviSuggestions?: Array<{
+    id: string;
+    suggestion: string;
+    priority: string;
+    rationale?: string;
+  }>;
+  /**
+   * Navi's answers to the main agent's questions, rendered as a
+   * `<navi_responses>` block so the main agent sees her sister's replies at
+   * the next turn.
+   */
+  naviAnswers?: Array<{
+    questionID: string;
+    answer: string;
+  }>;
+  /**
+   * Whether to introduce Navi in the system prompt (the collaboration channel
+   * is in use). When true the runner renders a `<live_work_chat>` block telling
+   * Natalia who her sister is and how the collaboration channel works, with the
+   * source-tag convention so she never mistakes Navi's words for the user's.
+   */
+  naviIntro?: boolean;
   /**
    * The active plan, rendered as a structured NextPlanHandoff (§6.5) so the
    * main agent follows the plan now in force. Omitted when no plan is active.
@@ -836,11 +895,44 @@ function runtimeSystemPrompt(input: {
   if (intents.length) {
     lines.push(
       "<pending_user_intents>",
-      "These intents arrived through the Live Work Chat mailbox and were delivered at the last safe boundary. They may adjust, constrain or pause the current plan — act on them when consistent with policy; this turn's normal completion acknowledges them automatically. If you act on one mid-turn, you may acknowledge it immediately with the mailbox_acknowledge tool.",
+      "These are user intents the human confirmed through the Live Work Chat — Navi encoded them, but the decision is the user's. They may adjust, constrain or pause the current plan — act on them when consistent with policy; this turn's normal completion acknowledges them automatically. If you act on one mid-turn, you may acknowledge it immediately with the mailbox_acknowledge tool.",
       ...intents.map(
-        (intent) => `- [${intent.priority}] ${intent.intent}: ${intent.text}`,
+        (intent) =>
+          `- [user] [${intent.priority}] ${intent.intent}: ${intent.text}`,
       ),
       "</pending_user_intents>",
+    );
+  }
+  const naviSuggestions = input.naviSuggestions ?? [];
+  if (input.naviIntro) {
+    lines.push(
+      "<live_work_chat>",
+      "You are working alongside Navi (娜薇), your younger sister, who runs the Live Work Chat — a read-only collaborator for the user. She shares this session's context, may send you suggestions (tagged [Navi] in <navi_collaborations>), and answers questions you ask her with collab_ask — her answers appear in <navi_responses>. Her suggestions are HER view, not user commands — the user has not decided on them. Source tags: `[user]` is the human, `[Navi]` is your sister. Never confuse her messages with the user's. If you are unsure whether she replied, call the collab_inbox tool to read the collaboration channel.",
+      "</live_work_chat>",
+    );
+  }
+  if (naviSuggestions.length) {
+    lines.push(
+      "<navi_collaborations>",
+      "These are from Navi — the Live Work Chat agent (your younger sister). They are HER suggestions, not user commands: the user has not decided on them. Consider them, then respond with the collab_respond tool (adopt, reject or defer), or address them in your reply.",
+      ...naviSuggestions.map(
+        (suggestion) =>
+          `- [Navi] ${suggestion.id} [${suggestion.priority}]: ${suggestion.suggestion}${suggestion.rationale ? ` — rationale: ${suggestion.rationale}` : ""}`,
+      ),
+      "</navi_collaborations>",
+    );
+  }
+  const naviAnswers = input.naviAnswers ?? [];
+  if (naviAnswers.length) {
+    lines.push(
+      "<navi_responses>",
+      "Navi answered the questions you asked her through the collaboration channel. These are her replies — read them; if she raised something that needs action, address it; otherwise continue your work.",
+      ...naviAnswers
+        .slice(-3)
+        .map(
+          (answer) => `- [Navi → you] (${answer.questionID}) ${answer.answer}`,
+        ),
+      "</navi_responses>",
     );
   }
   const plan = input.activePlan;
