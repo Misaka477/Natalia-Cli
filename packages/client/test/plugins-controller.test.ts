@@ -42,6 +42,7 @@ function makeController(root: string) {
     pluginEnabled: () => undefined,
     pluginCapabilities: () => undefined,
     pluginReadOnly: () => undefined,
+    pluginSettings: () => undefined,
     publish: () => undefined,
     syncGlobalCommands: () => {
       synced++;

@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
+import { z } from "zod";
 import { createToolRegistry } from "@natalia/tools";
 import {
   createPluginRegistry,
   definePlugin,
+  resolvePluginConfig,
   runPluginConformance,
 } from "../src";
 
@@ -277,4 +279,115 @@ test("two plugins cannot register the same command name", async () => {
     "plugin_first_plugin_go",
     "plugin_second_plugin_go",
   ]);
+});
+
+function configuredPlugin(input: {
+  id: string;
+  seen: { config?: unknown };
+  configSchema?: ReturnType<typeof z.object>;
+}) {
+  return definePlugin({
+    manifest: {
+      apiVersion: 1,
+      id: input.id,
+      version: "1.0.0",
+      name: "Configured",
+      description: "",
+      entry: "index.ts",
+      capabilities: ["tools"],
+    },
+    configSchema: input.configSchema,
+    setup(api) {
+      input.seen.config = api.config;
+      api.tools.register({
+        name: "run",
+        description: "Run",
+        requiresApproval: false,
+        parameters: { type: "object", properties: {} },
+        async execute() {
+          return "ok";
+        },
+      });
+    },
+  });
+}
+
+test("a plugin receives its own config validated by its declared schema", async () => {
+  const tools = createToolRegistry([]);
+  const registry = createPluginRegistry({ tools, allowed: ["tools"] });
+  const seen: { config?: unknown } = {};
+  await registry.load(
+    configuredPlugin({
+      id: "configured.plugin",
+      seen,
+      configSchema: z.object({
+        retries: z.number().int().default(3),
+        label: z.string(),
+      }),
+    }),
+    undefined,
+    { label: "primary" },
+  );
+  // The parsed value reaches setup, so schema defaults are applied.
+  expect(seen.config).toEqual({ retries: 3, label: "primary" });
+  expect(tools.has("plugin_configured_plugin_run")).toBe(true);
+});
+
+test("an invalid plugin config fails the load and registers nothing", async () => {
+  const tools = createToolRegistry([]);
+  const registry = createPluginRegistry({ tools, allowed: ["tools"] });
+  const seen: { config?: unknown } = {};
+  await expect(
+    registry.load(
+      configuredPlugin({
+        id: "invalid.plugin",
+        seen,
+        configSchema: z.object({ label: z.string() }),
+      }),
+      undefined,
+      { label: 42 },
+    ),
+  ).rejects.toThrow(/plugin config invalid: invalid.plugin/u);
+  // Misconfiguration fails before setup runs, so nothing was contributed.
+  expect(seen.config).toBeUndefined();
+  expect(tools.has("plugin_invalid_plugin_run")).toBe(false);
+  expect(registry.list()).toEqual([]);
+  expect(registry.audit().map((entry) => entry.action)).toEqual(["failed"]);
+});
+
+test("a plugin without a config schema keeps its config unchanged", async () => {
+  const tools = createToolRegistry([]);
+  const registry = createPluginRegistry({ tools, allowed: ["tools"] });
+  const seen: { config?: unknown } = {};
+  await registry.load(configuredPlugin({ id: "raw.plugin", seen }), undefined, {
+    anything: true,
+  });
+  expect(seen.config).toEqual({ anything: true });
+});
+
+test("plugin config validation reports the failing path", () => {
+  const seen: { config?: unknown } = {};
+  const plugin = configuredPlugin({
+    id: "paths.plugin",
+    seen,
+    configSchema: z.object({ nested: z.object({ port: z.number() }) }),
+  });
+  expect(() => resolvePluginConfig(plugin, { nested: { port: "80" } })).toThrow(
+    /\(at nested.port\)/u,
+  );
+});
+
+test("an async plugin config schema is refused instead of loading unvalidated", () => {
+  const seen: { config?: unknown } = {};
+  const plugin = {
+    ...configuredPlugin({ id: "async.plugin", seen }),
+    configSchema: {
+      "~standard": {
+        validate: () => Promise.resolve({ value: {} }),
+      },
+    },
+  };
+  expect(() => resolvePluginConfig(plugin, {})).toThrow(
+    /must be synchronous: async.plugin/u,
+  );
 });

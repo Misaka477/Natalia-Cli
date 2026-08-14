@@ -25,6 +25,8 @@ export function createPluginsController(input: {
   pluginEnabled(): Record<string, boolean> | undefined;
   pluginCapabilities(): Record<string, string[]> | undefined;
   pluginReadOnly(): Record<string, boolean> | undefined;
+  /** Per-plugin config, keyed by plugin id; each plugin validates its own entry. */
+  pluginSettings(): Record<string, unknown> | undefined;
   publish(event: RuntimeEvent): void;
   syncGlobalCommands(): void;
 }) {
@@ -54,6 +56,7 @@ export function createPluginsController(input: {
       registry,
       enabled: input.pluginEnabled(),
       capabilities: input.pluginCapabilities(),
+      settings: input.pluginSettings(),
       onError: (id, error) =>
         input.publish({
           type: "diagnostic",
@@ -101,6 +104,7 @@ export function createPluginsController(input: {
         await registry.load(
           { ...candidate, manifest } as Plugin,
           input.pluginCapabilities()?.[id],
+          input.pluginSettings()?.[id],
         );
         input.syncGlobalCommands();
         return { reloaded: true };

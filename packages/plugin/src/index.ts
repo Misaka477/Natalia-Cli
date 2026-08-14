@@ -16,6 +16,34 @@ export const pluginManifestSchema = z.object({
   capabilities: z.array(z.enum(["tools", "events", "commands"])).default([]),
 });
 export type PluginManifest = z.infer<typeof pluginManifestSchema>;
+/**
+ * One problem found while validating a plugin's own config.
+ *
+ * Mirrors the Standard Schema issue shape: `path` may carry either plain keys
+ * or `{ key }` wrappers, so both spellings are accepted when formatting.
+ */
+export type PluginConfigIssue = {
+  message: string;
+  path?: ReadonlyArray<PropertyKey | { key: PropertyKey }>;
+};
+type PluginConfigValidation = {
+  value?: unknown;
+  issues?: ReadonlyArray<PluginConfigIssue>;
+};
+/**
+ * Minimal Standard Schema surface a plugin uses to validate its own config.
+ *
+ * Duck-typed on purpose: an independently distributed plugin package must be
+ * able to validate with any Standard Schema library (zod, valibot, arktype)
+ * without depending on this repository's zod build.
+ */
+export type PluginConfigSchema = {
+  "~standard": {
+    validate(
+      value: unknown,
+    ): PluginConfigValidation | Promise<PluginConfigValidation>;
+  };
+};
 export type PluginAudit = {
   pluginID: string;
   action: "loaded" | "unloaded" | "denied" | "failed";
@@ -24,10 +52,20 @@ export type PluginAudit = {
 };
 export type Plugin = {
   manifest: PluginManifest;
+  /**
+   * Validates the config this plugin is loaded with. Optional: a plugin that
+   * takes no config omits it and receives the raw value unchanged.
+   */
+  configSchema?: PluginConfigSchema;
   setup(api: PluginAPI): void | Promise<void>;
   dispose?(): void | Promise<void>;
 };
 export type PluginAPI = {
+  /**
+   * The config this plugin was loaded with, already validated by its own
+   * `configSchema` (the schema's parsed value, so defaults are applied).
+   */
+  config: unknown;
   tools: { register(tool: RuntimeTool): () => void };
   events: { on(listener: (event: unknown) => void): () => void };
   /**
@@ -63,6 +101,46 @@ export function getPluginCommands() {
 
 export function definePlugin(plugin: Plugin) {
   return plugin;
+}
+
+function formatConfigIssue(issue: PluginConfigIssue) {
+  const path = (issue.path ?? [])
+    .map((segment) =>
+      typeof segment === "object" && segment !== null && "key" in segment
+        ? String(segment.key)
+        : String(segment),
+    )
+    .join(".");
+  return path ? `  - ${issue.message} (at ${path})` : `  - ${issue.message}`;
+}
+
+/**
+ * Validate the config a plugin is loaded with against its own schema.
+ *
+ * A plugin without `configSchema` accepts any value, so its config passes
+ * through unchanged. Validation is synchronous: an async schema is a load
+ * error rather than a silently unvalidated config, because the registry must
+ * decide whether to run `setup` before any registration happens.
+ *
+ * @returns the validated config (the schema's parsed value, defaults applied).
+ * @throws when the schema reports issues or validates asynchronously.
+ */
+export function resolvePluginConfig(plugin: Plugin, config: unknown): unknown {
+  const schema = plugin.configSchema;
+  if (!schema) return config;
+  const result = schema["~standard"].validate(config);
+  if (result !== null && typeof result === "object" && "then" in result)
+    throw new Error(
+      `plugin config validation must be synchronous: ${plugin.manifest.id}`,
+    );
+  const settled = result as PluginConfigValidation;
+  if (settled.issues?.length)
+    throw new Error(
+      `plugin config invalid: ${plugin.manifest.id}\n${settled.issues
+        .map(formatConfigIssue)
+        .join("\n")}`,
+    );
+  return settled.value;
 }
 
 export function createPluginRegistry(input: {
@@ -110,14 +188,28 @@ export function createPluginRegistry(input: {
     }
   };
   return {
-    async load(plugin: Plugin, allowedOverride?: string[]) {
+    async load(plugin: Plugin, allowedOverride?: string[], config?: unknown) {
       const manifest = pluginManifestSchema.parse(plugin.manifest);
       if (plugins.has(manifest.id))
         throw new Error(`plugin already loaded: ${manifest.id}`);
+      // Validate before anything is registered: misconfiguration must fail
+      // loud at load, never reach `setup` as a half-applied config.
+      let resolvedConfig: unknown;
+      try {
+        resolvedConfig = resolvePluginConfig({ ...plugin, manifest }, config);
+      } catch (error) {
+        writeAudit(
+          manifest.id,
+          "failed",
+          error instanceof Error ? error.message : String(error),
+        );
+        throw error;
+      }
       const listeners = new Set<(event: unknown) => void>();
       const commands = new Map<string, PluginCommand>();
       const disposers: Array<() => void> = [];
       const api: PluginAPI = {
+        config: resolvedConfig,
         tools: {
           register(tool) {
             assertCapability(manifest, "tools", allowedOverride);
@@ -250,6 +342,8 @@ export async function loadLocalPlugins(input: {
   registry: ReturnType<typeof createPluginRegistry>;
   enabled?: Record<string, boolean>;
   capabilities?: Record<string, string[]>;
+  /** Per-plugin config, keyed by plugin id, validated by the plugin's schema. */
+  settings?: Record<string, unknown>;
   onError?: (id: string, error: unknown) => void;
 }) {
   const loaded: PluginManifest[] = [];
@@ -275,6 +369,7 @@ export async function loadLocalPlugins(input: {
         await input.registry.load(
           { ...candidate, manifest } as Plugin,
           input.capabilities?.[manifest.id],
+          input.settings?.[manifest.id],
         );
         loaded.push(manifest);
       } catch (error) {
@@ -305,6 +400,8 @@ export function validatePluginPath(root: string, path: string) {
 export async function runPluginConformance(input: {
   plugin: Plugin;
   allowed?: string[];
+  /** Config to load with, validated by the plugin's own `configSchema`. */
+  config?: unknown;
 }) {
   const tools = new Map<string, RuntimeTool>();
   const registry = createPluginRegistry({
@@ -323,7 +420,7 @@ export async function runPluginConformance(input: {
   });
   const result: Array<{ name: string; passed: boolean; detail?: string }> = [];
   try {
-    await registry.load(input.plugin);
+    await registry.load(input.plugin, undefined, input.config);
     result.push({ name: "manifest-and-setup", passed: true });
     await registry.unload(input.plugin.manifest.id);
     result.push({

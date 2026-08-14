@@ -397,6 +397,11 @@ export const pluginConfigSchema = z.object({
   paths: z.array(z.string()).default([]),
   capabilities: z.record(z.array(z.enum(["tools", "events"]))).default({}),
   readOnly: z.record(z.boolean()).default({}),
+  // Per-plugin config, keyed by plugin id. The runtime does not interpret these
+  // values: each plugin validates its own entry with the config schema it
+  // declares, so an invalid entry fails that plugin's load instead of silently
+  // reaching its setup.
+  settings: z.record(z.unknown()).default({}),
 });
 
 export const mcpServerConfigSchema = z.object({

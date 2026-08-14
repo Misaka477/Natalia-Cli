@@ -548,6 +548,7 @@ export function createRealRuntimeClient(
     pluginEnabled: () => tsRuntimeConfig?.plugins.enabled,
     pluginCapabilities: () => tsRuntimeConfig?.plugins.capabilities,
     pluginReadOnly: () => tsRuntimeConfig?.plugins.readOnly,
+    pluginSettings: () => tsRuntimeConfig?.plugins.settings,
     publish,
     syncGlobalCommands: () => setGlobalPluginCommands(commandCatalogEntries()),
   });
