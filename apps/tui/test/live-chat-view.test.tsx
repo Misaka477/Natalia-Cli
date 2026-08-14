@@ -1,18 +1,14 @@
 import { expect, test } from "bun:test";
 import { createMockKeys, createTestRenderer } from "@opentui/core/testing";
 import { render } from "@opentui/solid";
+import { createSignal } from "solid-js";
 import { KeymapProvider } from "@opentui/keymap/solid";
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
-import { createSignal } from "solid-js";
 import type { RuntimeClient } from "@natalia/contracts";
+import type { MessageBlock } from "../src/context/state";
 import { LiveChatView } from "../src/component/LiveChatView";
+import { DialogProvider } from "../src/dialog/provider";
 import { registerNataliaKeymap } from "../src/modal/mode-stack";
-
-type TimelineEntry = Parameters<
-  typeof LiveChatView
->[0]["timeline"] extends () => infer T
-  ? T
-  : never;
 
 function mockBackend(overrides: Record<string, unknown> = {}) {
   return {
@@ -32,7 +28,7 @@ function mockBackend(overrides: Record<string, unknown> = {}) {
 }
 
 async function mountChat(
-  timeline: TimelineEntry,
+  messages: MessageBlock[],
   callbacks: {
     focused?: () => boolean;
     onEscape?: () => void;
@@ -54,32 +50,34 @@ async function mountChat(
   await render(
     () => (
       <KeymapProvider keymap={keymap}>
-        <LiveChatView
-          backend={mockBackend(backendOverrides)}
-          timeline={() => timeline}
-          focused={callbacks.focused ?? (() => true)}
-          onRequestFocus={() => {}}
-          onEscape={callbacks.onEscape ?? (() => {})}
-          onClose={callbacks.onClose ?? (() => {})}
-          onInputRef={() => {}}
-          onSend={(text) => {
-            sent.push(text);
-            callbacks.onSend?.(text);
-          }}
-          onRollback={(toMessageID) => {
-            rolledBack.push(toMessageID);
-            callbacks.onRollback?.(toMessageID);
-          }}
-          onPlanAccept={(planID) => {
-            accepted.push(planID);
-            callbacks.onPlanAccept?.(planID);
-          }}
-          onPlanReject={(planID) => {
-            rejected.push(planID);
-            callbacks.onPlanReject?.(planID);
-          }}
-          promptMaxHeight={6}
-        />
+        <DialogProvider>
+          <LiveChatView
+            backend={mockBackend(backendOverrides)}
+            messages={() => messages}
+            focused={callbacks.focused ?? (() => true)}
+            onRequestFocus={() => {}}
+            onEscape={callbacks.onEscape ?? (() => {})}
+            onClose={callbacks.onClose ?? (() => {})}
+            onInputRef={() => {}}
+            onSend={(text) => {
+              sent.push(text);
+              callbacks.onSend?.(text);
+            }}
+            onRollback={(toMessageID) => {
+              rolledBack.push(toMessageID);
+              callbacks.onRollback?.(toMessageID);
+            }}
+            onPlanAccept={(planID) => {
+              accepted.push(planID);
+              callbacks.onPlanAccept?.(planID);
+            }}
+            onPlanReject={(planID) => {
+              rejected.push(planID);
+              callbacks.onPlanReject?.(planID);
+            }}
+            promptMaxHeight={6}
+          />
+        </DialogProvider>
       </KeymapProvider>
     ),
     setup.renderer,
@@ -97,27 +95,42 @@ async function mountChat(
   };
 }
 
-const history: TimelineEntry = [
+const history: MessageBlock[] = [
   {
-    kind: "message",
-    messageID: "chat:m1",
+    id: "chat:chat:m1:user",
     role: "user",
     text: "what is the agent doing",
-    at: "2026-08-14T00:00:00.000Z",
+    pendingText: "",
+    owner: "projection",
   },
   {
-    kind: "message",
-    messageID: "chat:m2",
-    role: "chat",
+    id: "chat:chat:m2:assistant",
+    role: "assistant",
     text: "it is running step 2 of the plan",
-    at: "2026-08-14T00:00:01.000Z",
+    pendingText: "",
+    owner: "projection",
   },
   {
-    kind: "action",
-    id: "chat:a1",
-    toolName: "mailbox_send",
-    summary: "queued mailbox intent: constraint",
-    at: "2026-08-14T00:00:02.000Z",
+    id: "chat:chat:a1:tool",
+    role: "tool",
+    text: "generic:session_snapshot arguments ready · snapshot read",
+    pendingText: "",
+    owner: "projection",
+    tool: {
+      id: "chat:chat:a1:tool",
+      name: "session_snapshot",
+      kind: "generic",
+      status: "succeeded",
+      summary: "snapshot read",
+      argumentsRaw: "{}",
+      argumentsComplete: true,
+      keyArguments: [],
+      redactedArguments: "{}",
+      elapsed: "",
+      result: undefined,
+      metadata: {},
+      detailAvailable: true,
+    },
   },
 ];
 
@@ -134,13 +147,13 @@ test("an empty conversation invites the collaborator role", async () => {
   }
 });
 
-test("the conversation renders messages and Chat's tool actions in order", async () => {
+test("the projected conversation renders through the main feed's row renderer", async () => {
   const mounted = await mountChat(history);
   try {
     const frame = mounted.setup.captureCharFrame();
     expect(frame).toContain("what is the agent doing");
     expect(frame).toContain("it is running step 2 of the plan");
-    expect(frame).toContain("queued mailbox intent: constraint");
+    expect(frame).toContain("session_snapshot");
   } finally {
     mounted.dispose();
     mounted.setup.renderer.destroy();
@@ -177,87 +190,6 @@ test("a non-focused chat pane does not send on enter", async () => {
   }
 });
 
-test("a streaming chat reply appears incrementally as deltas land", async () => {
-  const [timeline, setTimeline] = createSignal<TimelineEntry>([
-    {
-      kind: "message",
-      messageID: "chat:m1",
-      role: "user",
-      text: "explain the plan",
-      at: "now",
-    },
-  ]);
-  const setup = await createTestRenderer({ width: 160, height: 36 });
-  const keymap = createDefaultOpenTuiKeymap(setup.renderer);
-  const disposeKeymap = registerNataliaKeymap(keymap, setup.renderer);
-  await render(
-    () => (
-      <KeymapProvider keymap={keymap}>
-        <LiveChatView
-          backend={mockBackend()}
-          timeline={timeline}
-          focused={() => true}
-          onRequestFocus={() => {}}
-          onEscape={() => {}}
-          onClose={() => {}}
-          onInputRef={() => {}}
-          onSend={() => {}}
-          onRollback={() => {}}
-          onPlanAccept={() => {}}
-          onPlanReject={() => {}}
-          promptMaxHeight={6}
-        />
-      </KeymapProvider>
-    ),
-    setup.renderer,
-  );
-  await Bun.sleep(20);
-  await setup.renderOnce();
-  try {
-    // First delta creates the reply entry (the final added has not arrived).
-    setTimeline([
-      {
-        kind: "message",
-        messageID: "chat:m1",
-        role: "user",
-        text: "explain the plan",
-        at: "now",
-      },
-      {
-        kind: "message",
-        messageID: "chat:m2",
-        role: "chat",
-        text: "the plan is",
-        at: "now",
-      },
-    ]);
-    await setup.renderOnce();
-    expect(setup.captureCharFrame()).toContain("the plan is");
-    // A later delta replaces the reply text (incremental streaming).
-    setTimeline([
-      {
-        kind: "message",
-        messageID: "chat:m1",
-        role: "user",
-        text: "explain the plan",
-        at: "now",
-      },
-      {
-        kind: "message",
-        messageID: "chat:m2",
-        role: "chat",
-        text: "the plan is to replace the wrapper",
-        at: "now",
-      },
-    ]);
-    await setup.renderOnce();
-    expect(setup.captureCharFrame()).toContain("replace the wrapper");
-  } finally {
-    disposeKeymap();
-    setup.renderer.destroy();
-  }
-});
-
 test("a Chat-proposed plan shows a review card with accept and reject", async () => {
   const mounted = await mountChat(
     history,
@@ -289,5 +221,76 @@ test("a Chat-proposed plan shows a review card with accept and reject", async ()
   } finally {
     mounted.dispose();
     mounted.setup.renderer.destroy();
+  }
+});
+
+test("a streamed Chat reply appears incrementally as the projection updates", async () => {
+  const [messages, setMessages] = createSignal<MessageBlock[]>([
+    {
+      id: "chat:chat:m1:user",
+      role: "user",
+      text: "explain the plan",
+      pendingText: "",
+      owner: "projection",
+    },
+  ]);
+  const setup = await createTestRenderer({ width: 160, height: 36 });
+  const keymap = createDefaultOpenTuiKeymap(setup.renderer);
+  const disposeKeymap = registerNataliaKeymap(keymap, setup.renderer);
+  await render(
+    () => (
+      <KeymapProvider keymap={keymap}>
+        <DialogProvider>
+          <LiveChatView
+            backend={mockBackend()}
+            messages={messages}
+            focused={() => true}
+            onRequestFocus={() => {}}
+            onEscape={() => {}}
+            onClose={() => {}}
+            onInputRef={() => {}}
+            onSend={() => {}}
+            onRollback={() => {}}
+            onPlanAccept={() => {}}
+            onPlanReject={() => {}}
+            promptMaxHeight={6}
+          />
+        </DialogProvider>
+      </KeymapProvider>
+    ),
+    setup.renderer,
+  );
+  await Bun.sleep(20);
+  await setup.renderOnce();
+  try {
+    // First delta creates the assistant block (the final added has not landed).
+    setMessages([
+      messages()[0]!,
+      {
+        id: "chat:chat:m2:assistant",
+        role: "assistant",
+        text: "the plan is",
+        pendingText: "",
+        owner: "projection",
+      },
+    ]);
+    await setup.renderOnce();
+    expect(setup.captureCharFrame()).toContain("the plan is");
+    // A later delta replaces the text (incremental streaming).
+    setMessages([
+      messages()[0]!,
+      {
+        id: "chat:chat:m2:assistant",
+        role: "assistant",
+        text: "the plan is to replace the wrapper",
+        pendingText: "",
+        owner: "projection",
+      },
+    ]);
+    await setup.renderOnce();
+    expect(setup.captureCharFrame()).toContain("replace the wrapper");
+  } finally {
+    disposeKeymap();
+    setup.renderer.destroy();
   }
 });

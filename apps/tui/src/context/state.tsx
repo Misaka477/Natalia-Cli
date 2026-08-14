@@ -38,6 +38,7 @@ import {
   initialState as initialFacts,
   streamID,
   type AppState as ViewAppState,
+  applyChatEvent,
 } from "@natalia/view-store";
 import { messageBlockFromProjection } from "./view-store-adapter";
 
@@ -147,34 +148,8 @@ export type AppState = {
    */
   facts: ViewAppState;
   terminalPane: { selectedID?: string; focus: "chat" | "terminal" };
-  /**
-   * The Live Work Chat timeline, projected from the durable journal in event
-   * order: `chat.message.added` appends a message, `chat.tool.used` appends a
-   * tool-action row, `chat.message.delta` streams the last chat message and
-   * `chat.rollback` truncates at a message boundary. Same source the runtime
-   * reads, so the view never drifts from the journal (§8.3).
-   */
-  chatTimeline: Array<
-    | {
-        kind: "message";
-        messageID: string;
-        role: "user" | "chat";
-        text: string;
-        at: string;
-      }
-    | {
-        kind: "thinking";
-        messageID: string;
-        text: string;
-      }
-    | {
-        kind: "action";
-        id: string;
-        toolName: string;
-        summary: string;
-        at: string;
-      }
-  >;
+  /** The Chat conversation rows, kept in object identity like the transcript. */
+  chatMessages: MessageBlock[];
 };
 
 /**
@@ -196,7 +171,7 @@ export function createInitialState(): AppState {
     modal: structuredClone(initialModalState),
     facts: initialFacts(),
     terminalPane: { focus: "chat" },
-    chatTimeline: [],
+    chatMessages: [],
     messages: [],
   };
 }
@@ -330,6 +305,7 @@ export function useAppState() {
  */
 function applyEvent(state: AppState, event: RuntimeEvent) {
   projectFacts(state, event);
+  syncProjectedChat(state);
   syncProjectedRows(state);
   applyTuiEvent(state, event);
 }
@@ -345,6 +321,7 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
  */
 function projectFacts(state: AppState, event: RuntimeEvent) {
   if (applyConversationEvent(state.facts, event)) return;
+  if (applyChatEvent(state.facts, event)) return;
   applyStatusEvent(state.facts, event);
 }
 
@@ -406,6 +383,34 @@ function updateProjectedRow(target: MessageBlock, next: MessageBlock) {
   // The derived tool view is cached on the projected fact it came from, so an
   // unchanged tool is the same object and the row keeps its identity.
   if (target.tool !== next.tool) target.tool = next.tool;
+}
+
+/**
+ * Brings the Chat conversation rows in line with `facts.chatMessages`, the same
+ * identity-preserving way `syncProjectedRows` handles the transcript: an
+ * unchanged row keeps its object identity so the renderer does not remount it
+ * on every streamed event.
+ */
+function syncProjectedChat(state: AppState) {
+  const projected = state.facts.chatMessages;
+  const index = new Map<string, number>();
+  for (let position = 0; position < state.chatMessages.length; position++)
+    index.set(state.chatMessages[position]!.id, position);
+  for (const source of projected) {
+    const position = index.get(source.id);
+    if (position === undefined) {
+      state.chatMessages.push(messageBlockFromProjection(source));
+      index.set(source.id, state.chatMessages.length - 1);
+      continue;
+    }
+    updateProjectedRow(
+      state.chatMessages[position]!,
+      messageBlockFromProjection(source),
+    );
+  }
+  if (projected.length >= state.chatMessages.length) return;
+  const live = new Set(projected.map((source) => source.id));
+  state.chatMessages = state.chatMessages.filter((row) => live.has(row.id));
 }
 
 function applyTuiEvent(state: AppState, event: RuntimeEvent) {
@@ -545,77 +550,6 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
       state.terminalPane.focus = event.focus;
       state.terminalPane.selectedID ??= nextActiveTerminal(state);
       return;
-    case "chat.message.added": {
-      // A streaming reply may already have created the entry from its deltas;
-      // upsert rather than append so the final text replaces the streamed one.
-      const existing = state.chatTimeline.find(
-        (entry) =>
-          entry.kind === "message" && entry.messageID === event.messageID,
-      );
-      if (existing && existing.kind === "message") {
-        existing.text = event.text;
-        existing.at = event.at;
-      } else {
-        state.chatTimeline.push({
-          kind: "message",
-          messageID: event.messageID,
-          role: event.role,
-          text: event.text,
-          at: event.at,
-        });
-      }
-      return;
-    }
-    case "chat.message.delta": {
-      // The reply's final `chat.message.added` arrives only when the turn
-      // settles, so a delta for a not-yet-added message must create the entry
-      // or the streamed text never appears.
-      let target = state.chatTimeline.find(
-        (entry) =>
-          entry.kind === "message" && entry.messageID === event.messageID,
-      );
-      if (!target) {
-        target = {
-          kind: "message",
-          messageID: event.messageID,
-          role: "chat",
-          text: "",
-          at: new Date().toISOString(),
-        };
-        state.chatTimeline.push(target);
-      }
-      if (target.kind === "message") target.text = event.text;
-      return;
-    }
-    case "chat.thinking.delta": {
-      const last = state.chatTimeline.at(-1);
-      if (last && last.kind === "thinking") last.text = event.text;
-      else
-        state.chatTimeline.push({
-          kind: "thinking",
-          messageID: event.messageID,
-          text: event.text,
-        });
-      return;
-    }
-    case "chat.tool.used":
-      state.chatTimeline.push({
-        kind: "action",
-        id: event.id,
-        toolName: event.toolName,
-        summary: event.summary,
-        at: event.at,
-      });
-      return;
-    case "chat.rollback": {
-      const index = state.chatTimeline.findIndex(
-        (entry) =>
-          entry.kind === "message" && entry.messageID === event.toMessageID,
-      );
-      if (index !== -1) state.chatTimeline.splice(index + 1);
-      else state.chatTimeline.length = 0;
-      return;
-    }
     case "terminal.timeline":
       applyResourceEvent(state.facts, event);
       return;

@@ -12,40 +12,8 @@ import { For, Show, createEffect, createSignal, onMount } from "solid-js";
 import type { RuntimeClient } from "@natalia/contracts";
 import { darkTheme } from "../theme/theme";
 import { MessageBlockView } from "../routes/session/message-rows";
-import { markdownSyntax } from "../routes/session/tool-views";
 import type { MessageBlock } from "../context/state";
-
-/**
- * The prompt frame border characters, copied from opencode's ui/border:
- * `EmptyBorder` keeps the frame borderless except the vertical line, and the
- * prompt frame rounds its bottom-left corner with "╹".
- */
-const PROMPT_FRAME_BORDER = {
-  topLeft: "",
-  bottomLeft: "╹",
-  vertical: "┃",
-  topRight: "",
-  bottomRight: "",
-  horizontal: " ",
-  bottomT: "",
-  topT: "",
-  cross: "",
-  leftT: "",
-  rightT: "",
-};
-const PROMPT_BOTTOM_BORDER = {
-  topLeft: "",
-  bottomLeft: "╹",
-  vertical: "",
-  topRight: "",
-  bottomRight: "",
-  horizontal: " ",
-  bottomT: "",
-  topT: "",
-  cross: "",
-  leftT: "",
-  rightT: "",
-};
+import { PROMPT_BOTTOM_BORDER, PROMPT_FRAME_BORDER } from "../prompt-border";
 
 /**
  * Live Work Chat (P8 C2) as a docked, always-available conversation. The user
@@ -55,34 +23,12 @@ const PROMPT_BOTTOM_BORDER = {
  * durable state — every write to the project goes through the main agent,
  * never through here (§2.2 boundary).
  *
- * The layout mirrors the main feed: the conversation fills the whole height
- * (`flexGrow`), rows render through the same `MessageBlockView`, and the
- * composer is the same bordered textarea the main feed uses. The timeline comes
- * from the shared projection (`chat.message.added` / `chat.message.delta` /
- * `chat.tool.used` / `chat.rollback`), so streamed replies and Chat's tool
- * actions appear live and in order (§8.3).
+ * The conversation renders the shared projection (`state.facts.chatMessages`)
+ * through the same `MessageBlockView` the main feed uses: the view-store
+ * projects the chat events with the exact streaming/segment/retry machinery as
+ * the transcript, so the Chat looks and behaves like the main feed, not a
+ * second hand-written renderer (§8.3).
  */
-
-type ChatEntry =
-  | {
-      kind: "message";
-      messageID: string;
-      role: "user" | "chat";
-      text: string;
-      at: string;
-    }
-  | {
-      kind: "thinking";
-      messageID: string;
-      text: string;
-    }
-  | {
-      kind: "action";
-      id: string;
-      toolName: string;
-      summary: string;
-      at: string;
-    };
 
 type MailboxStatusRow = {
   messageID: string;
@@ -102,8 +48,8 @@ type PlanRow = {
 
 export function LiveChatView(props: {
   backend: RuntimeClient;
-  /** The durable Chat timeline, projected by the app shell. */
-  timeline: () => ChatEntry[];
+  /** The projected Chat conversation, mapped through the shared adapter. */
+  messages: () => MessageBlock[];
   /** Whether this pane owns keyboard focus (host pane-focus signal). */
   focused: () => boolean;
   onRequestFocus(): void;
@@ -114,7 +60,7 @@ export function LiveChatView(props: {
   onRollback(toMessageID: string): void;
   onPlanAccept(planID: string): void;
   onPlanReject(planID: string): void;
-  /** The composer's max height, matching opencode's `max(6, h/3)`. */
+  /** The composer's max height, matching the reference TUI's `max(6, h/3)`. */
   promptMaxHeight: number;
 }) {
   const renderer = useRenderer();
@@ -135,11 +81,14 @@ export function LiveChatView(props: {
   let input: TextareaRenderable | undefined;
   let chatScroll: ScrollBoxRenderable | undefined;
 
+  /** The last user message id, so rollback can rewind the conversation. */
   const lastUserMessage = () => {
-    for (let index = props.timeline().length - 1; index >= 0; index--) {
-      const entry = props.timeline()[index];
-      if (entry?.kind === "message" && entry.role === "user")
-        return entry.messageID;
+    for (let index = props.messages().length - 1; index >= 0; index--) {
+      const block = props.messages()[index];
+      if (block?.role !== "user") continue;
+      // The projected id is `chat:<messageID>:user`.
+      const match = /^chat:(.+):user$/u.exec(block.id);
+      if (match) return match[1];
     }
     return undefined;
   };
@@ -172,7 +121,7 @@ export function LiveChatView(props: {
     });
   });
   createEffect(() => {
-    if (props.timeline().length > 0)
+    if (props.messages().length > 0)
       queueMicrotask(() => chatScroll?.scrollTo(chatScroll.scrollHeight ?? 0));
   });
   useBindings(() => ({
@@ -304,7 +253,7 @@ export function LiveChatView(props: {
         ref={(value: ScrollBoxRenderable) => (chatScroll = value)}
       >
         <Show
-          when={props.timeline().length > 0}
+          when={props.messages().length > 0}
           fallback={
             <box
               flexDirection="column"
@@ -319,55 +268,17 @@ export function LiveChatView(props: {
             </box>
           }
         >
-          <For each={props.timeline()}>
-            {(entry) => (
-              <Show
-                when={entry.kind === "message"}
-                fallback={
-                  <Show
-                    when={entry.kind === "thinking"}
-                    fallback={
-                      <box paddingLeft={3} marginTop={1}>
-                        <text fg={darkTheme.muted} wrapMode="word">
-                          → {entry.kind === "action" ? entry.summary : ""}
-                        </text>
-                      </box>
-                    }
-                  >
-                    {/* A Chat thinking row, like the main feed's Thought block:
-                        one muted line while it streams, expandable. */}
-                    <ChatThinkingRow
-                      text={entry.kind === "thinking" ? entry.text : ""}
-                    />
-                  </Show>
-                }
-              >
-                {/* The main feed's own row renderer: user messages get the
-                    accent left rail, Chat replies the padded streaming
-                    markdown. Same component, same interaction language. */}
-                <MessageBlockView
-                  block={
-                    {
-                      id:
-                        entry.kind === "message" || entry.kind === "thinking"
-                          ? entry.messageID
-                          : entry.id,
-                      role:
-                        entry.kind === "message" && entry.role === "user"
-                          ? "user"
-                          : "assistant",
-                      text: entry.kind === "message" ? entry.text : "",
-                      owner: "projection",
-                    } as MessageBlock
-                  }
-                  density="comfortable"
-                  toolDetails="collapsed"
-                  reasoning="step"
-                  diffStyle="auto"
-                  terminalWidth={120}
-                  toolPreviewLines={10}
-                />
-              </Show>
+          <For each={props.messages()}>
+            {(block) => (
+              <MessageBlockView
+                block={block}
+                density="comfortable"
+                toolDetails="collapsed"
+                reasoning="step"
+                diffStyle="auto"
+                terminalWidth={120}
+                toolPreviewLines={10}
+              />
             )}
           </For>
         </Show>
@@ -396,7 +307,7 @@ export function LiveChatView(props: {
           </For>
         </box>
       </Show>
-      {/* The composer box, copied line for line from opencode's prompt
+      {/* The composer box, copied line for line from the reference TUI's prompt
           (packages/tui/src/component/prompt/index.tsx): an outer anchor, a left
           frame with a rounded bottom-left corner, a padded panel box holding
           the textarea and a meta row, and a one-line bottom frame. */}
@@ -432,7 +343,6 @@ export function LiveChatView(props: {
               focusedBackgroundColor={darkTheme.panel}
               cursorColor={darkTheme.text}
               onMouseDown={(event: MouseEvent) => event.target?.focus()}
-              syntaxStyle={markdownSyntax()}
               onContentChange={() => setDraft(input?.plainText ?? "")}
             />
             <box
@@ -456,28 +366,6 @@ export function LiveChatView(props: {
           customBorderChars={PROMPT_BOTTOM_BORDER}
         />
       </box>
-    </box>
-  );
-}
-
-/** A Chat thinking row, mirroring the main feed's Thought block. */
-function ChatThinkingRow(props: { text: string }) {
-  const [collapsed, setCollapsed] = createSignal(false);
-  return (
-    <box
-      flexDirection="column"
-      marginTop={1}
-      paddingLeft={3}
-      onMouseUp={() => setCollapsed((value) => !value)}
-    >
-      <text fg={darkTheme.warning}>{collapsed() ? "+ " : "- "}Thought</text>
-      <Show when={!collapsed()}>
-        <box paddingLeft={2} paddingTop={1}>
-          <text fg={darkTheme.muted} wrapMode="word">
-            {props.text || "Thinking..."}
-          </text>
-        </box>
-      </Show>
     </box>
   );
 }

@@ -1,5 +1,6 @@
 import {
   InputRenderable,
+  MouseEvent,
   TextareaRenderable,
   type PasteEvent,
 } from "@opentui/core";
@@ -55,6 +56,10 @@ import {
 import { DialogProviderSetup } from "../component/DialogProviderSetup";
 import { DialogMcp } from "../component/DialogMcp";
 import { DialogThemeList } from "../component/DialogThemeList";
+import { messageBlockFromProjection } from "../context/view-store-adapter";
+import { PROMPT_BOTTOM_BORDER, PROMPT_FRAME_BORDER } from "../prompt-border";
+import { statusValues } from "../routes/session/tool-utils";
+import { markdownSyntax } from "../routes/session/tool-views";
 import { DialogModel } from "../component/DialogModel";
 import { DialogSkill } from "../component/DialogSkill";
 import { DialogStash } from "../component/DialogStash";
@@ -1063,7 +1068,7 @@ function Shell(props: {
         >
           <LiveChatView
             backend={props.backend}
-            timeline={() => state.chatTimeline}
+            messages={() => state.chatMessages}
             focused={() => viewFocus() === "chat"}
             onRequestFocus={() => setViewFocus("chat")}
             onEscape={() => setViewFocus("main")}
@@ -1121,7 +1126,7 @@ function Shell(props: {
         >
           <LiveChatView
             backend={props.backend}
-            timeline={() => state.chatTimeline}
+            messages={() => state.chatMessages}
             focused={() => viewFocus() === "chat"}
             onRequestFocus={() => setViewFocus("chat")}
             onEscape={() => {
@@ -1244,141 +1249,190 @@ function Shell(props: {
             backend={props.backend}
             onExit={exitOrCancel}
           />
-          <box
-            flexShrink={0}
-            border={["top"]}
-            borderColor={
-              route.route().kind !== "none"
-                ? theme.theme.muted
-                : theme.theme.accent
-            }
-            paddingTop={1}
-            paddingLeft={2}
-            paddingRight={2}
-          >
-            <textarea
-              ref={(value: TextareaRenderable) => {
-                setComposer(value);
-                promptRef.set(value);
-              }}
-              minHeight={1}
-              maxHeight={Math.min(
-                preferences().prompt.maxHeight,
-                layout().promptMaxHeight,
-              )}
+          {/* The composer box, copied line for line from the reference TUI's prompt
+              (packages/tui/src/component/prompt/index.tsx): an outer anchor, a
+              left frame with a rounded bottom-left corner, a padded panel box
+              holding the textarea and a meta row, and a one-line bottom frame. */}
+          <box visible={true} width="100%" flexShrink={0}>
+            <box
               width="100%"
-              placeholder={
-                state.dialog === "approval" || state.dialog === "question"
-                  ? "Answer the pending prompt above"
-                  : route.route().kind !== "none"
-                    ? "Press Escape to return"
-                    : "Ask anything..."
-              }
-              placeholderColor={theme.theme.muted}
-              textColor={
-                state.dialog === "approval" || state.dialog === "question"
+              border={["left"]}
+              borderColor={
+                route.route().kind !== "none"
                   ? theme.theme.muted
-                  : route.route().kind !== "none"
-                    ? theme.theme.muted
-                    : theme.theme.text
+                  : theme.theme.accent
               }
-              focusedTextColor={theme.theme.text}
-              cursorColor={theme.theme.accent}
-              onPaste={handlePaste}
-              onContentChange={() =>
-                setComposerText(composer()?.plainText ?? "")
-              }
-              onKeyDown={(event: {
-                name?: string;
-                ctrl?: boolean;
-                alt?: boolean;
-                meta?: boolean;
-                option?: boolean;
-                shift?: boolean;
-                preventDefault(): void;
-              }) => {
-                const key = normalizeKey(event.name ?? "");
-                const action = composerKeyAction(event);
-                if (action === "submit") {
-                  event.preventDefault();
-                  void submit();
-                  return;
-                }
-                if (action === "newline") {
-                  event.preventDefault();
-                  composer()?.insertText("\n");
-                  return;
-                }
-                if (action === "buffer-home") {
-                  event.preventDefault();
-                  composer()?.gotoBufferHome();
-                  return;
-                }
-                if (action === "buffer-end") {
-                  event.preventDefault();
-                  composer()?.gotoBufferEnd();
-                  return;
-                }
-              }}
-            />
-            <PromptAutocomplete
-              input={composer}
-              text={composerText}
-              workspaceFiles={props.backend.workspaceFiles}
-              agents={props.backend.agents}
-              mcpCatalog={props.backend.mcpCatalog}
-              workflows={
-                props.workspaceRoot && props.backend.documentCatalog
-                  ? async () => props.backend.documentCatalog!().catch(() => [])
-                  : undefined
-              }
-              attach={(path) =>
-                setAttachmentPaths((current) =>
-                  current.includes(path) ? current : [...current, path],
-                )
-              }
-              mentionAgent={(name) =>
-                setMentionAgents((current) =>
-                  current.includes(name) ? current : [...current, name],
-                )
-              }
-              mentionResource={(resource) =>
-                setMentionResources((current) =>
-                  current.some(
-                    (item) =>
-                      item.server === resource.server &&
-                      item.uri === resource.uri,
-                  )
-                    ? current
-                    : [...current, resource],
-                )
-              }
-            />
-            <Show when={attachmentPaths().length > 0}>
-              <text fg={theme.theme.muted}>
-                Attachments:{" "}
-                {attachmentPaths()
-                  .map((path) => path.split("/").at(-1) ?? path)
-                  .join(", ")}
-                {" · Alt+X removes last, Alt+O manage"}
-              </text>
-            </Show>
-            <Show when={layout().showComposerHints}>
-              <text
-                fg={
-                  pastePreview().startsWith("paste rejected")
-                    ? theme.theme.danger
-                    : theme.theme.muted
-                }
+              customBorderChars={PROMPT_FRAME_BORDER}
+            >
+              <box
+                paddingLeft={2}
+                paddingRight={2}
+                paddingTop={1}
+                flexShrink={0}
+                backgroundColor={theme.theme.panel}
+                flexGrow={1}
+                width="100%"
               >
-                {pastePreview() ||
-                  (route.route().kind !== "none"
-                    ? `View: ${route.route().kind}`
-                    : layout().compact
-                      ? `${keymapBoundary.palette} commands · ${keymapBoundary.sidebar} sidebar`
-                      : `${keymapBoundary.newline} newline · ${keymapBoundary.palette} commands · ${keymapBoundary.sidebar} sidebar · ctrl+c cancel/exit${viewActive() ? ` · pane: ${viewFocus()}` : ""}`)}
-              </text>
-            </Show>
+                <textarea
+                  ref={(value: TextareaRenderable) => {
+                    setComposer(value);
+                    promptRef.set(value);
+                  }}
+                  minHeight={1}
+                  maxHeight={Math.min(
+                    preferences().prompt.maxHeight,
+                    layout().promptMaxHeight,
+                  )}
+                  width="100%"
+                  placeholder={
+                    state.dialog === "approval" || state.dialog === "question"
+                      ? "Answer the pending prompt above"
+                      : route.route().kind !== "none"
+                        ? "Press Escape to return"
+                        : "Ask anything..."
+                  }
+                  placeholderColor={theme.theme.muted}
+                  textColor={
+                    state.dialog === "approval" || state.dialog === "question"
+                      ? theme.theme.muted
+                      : route.route().kind !== "none"
+                        ? theme.theme.muted
+                        : theme.theme.text
+                  }
+                  focusedTextColor={theme.theme.text}
+                  focusedBackgroundColor={theme.theme.panel}
+                  cursorColor={theme.theme.text}
+                  syntaxStyle={markdownSyntax()}
+                  onMouseDown={(event: MouseEvent) => event.target?.focus()}
+                  onPaste={handlePaste}
+                  onContentChange={() =>
+                    setComposerText(composer()?.plainText ?? "")
+                  }
+                  onKeyDown={(event: {
+                    name?: string;
+                    ctrl?: boolean;
+                    alt?: boolean;
+                    meta?: boolean;
+                    option?: boolean;
+                    shift?: boolean;
+                    preventDefault(): void;
+                  }) => {
+                    const key = normalizeKey(event.name ?? "");
+                    const action = composerKeyAction(event);
+                    if (action === "submit") {
+                      event.preventDefault();
+                      void submit();
+                      return;
+                    }
+                    if (action === "newline") {
+                      event.preventDefault();
+                      composer()?.insertText("\n");
+                      return;
+                    }
+                    if (action === "buffer-home") {
+                      event.preventDefault();
+                      composer()?.gotoBufferHome();
+                      return;
+                    }
+                    if (action === "buffer-end") {
+                      event.preventDefault();
+                      composer()?.gotoBufferEnd();
+                      return;
+                    }
+                  }}
+                />
+                <box
+                  flexDirection="row"
+                  flexShrink={0}
+                  paddingTop={1}
+                  gap={1}
+                  justifyContent="space-between"
+                >
+                  <box flexDirection="row" gap={1}>
+                    <text fg={theme.theme.accent}>Natalia</text>
+                    <text fg={theme.theme.muted}>·</text>
+                    <text fg={theme.theme.muted}>
+                      {statusValues(state.statusSegments).model ??
+                        "model not selected"}
+                    </text>
+                    <text fg={theme.theme.muted}>
+                      {statusValues(state.statusSegments).provider ??
+                        "provider not selected"}
+                    </text>
+                  </box>
+                  <Show when={layout().showComposerHints}>
+                    <text
+                      fg={
+                        pastePreview().startsWith("paste rejected")
+                          ? theme.theme.danger
+                          : theme.theme.muted
+                      }
+                    >
+                      {pastePreview() ||
+                        (route.route().kind !== "none"
+                          ? `View: ${route.route().kind}`
+                          : layout().compact
+                            ? `${keymapBoundary.palette} commands · ${keymapBoundary.sidebar} sidebar`
+                            : `${keymapBoundary.newline} newline · ${keymapBoundary.palette} commands · ${keymapBoundary.sidebar} sidebar · ctrl+c cancel/exit${viewActive() ? ` · pane: ${viewFocus()}` : ""}`)}
+                    </text>
+                  </Show>
+                </box>
+                <PromptAutocomplete
+                  input={composer}
+                  text={composerText}
+                  workspaceFiles={props.backend.workspaceFiles}
+                  agents={props.backend.agents}
+                  mcpCatalog={props.backend.mcpCatalog}
+                  workflows={
+                    props.workspaceRoot && props.backend.documentCatalog
+                      ? async () =>
+                          props.backend.documentCatalog!().catch(() => [])
+                      : undefined
+                  }
+                  attach={(path) =>
+                    setAttachmentPaths((current) =>
+                      current.includes(path) ? current : [...current, path],
+                    )
+                  }
+                  mentionAgent={(name) =>
+                    setMentionAgents((current) =>
+                      current.includes(name) ? current : [...current, name],
+                    )
+                  }
+                  mentionResource={(resource) =>
+                    setMentionResources((current) =>
+                      current.some(
+                        (item) =>
+                          item.server === resource.server &&
+                          item.uri === resource.uri,
+                      )
+                        ? current
+                        : [...current, resource],
+                    )
+                  }
+                />
+                <Show when={attachmentPaths().length > 0}>
+                  <text fg={theme.theme.muted}>
+                    Attachments:{" "}
+                    {attachmentPaths()
+                      .map((path) => path.split("/").at(-1) ?? path)
+                      .join(", ")}
+                    {" · Alt+X removes last, Alt+O manage"}
+                  </text>
+                </Show>
+              </box>
+            </box>
+            <box
+              height={1}
+              width="100%"
+              border={["left"]}
+              borderColor={
+                route.route().kind !== "none"
+                  ? theme.theme.muted
+                  : theme.theme.accent
+              }
+              customBorderChars={PROMPT_BOTTOM_BORDER}
+            />
           </box>
           <SessionFooter workspaceRoot={props.workspaceRoot} />
         </Show>
