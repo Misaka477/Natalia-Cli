@@ -131,3 +131,44 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "scanner.plugin", v
   expect(kernel.has("plugin:scanner.plugin")).toBe(false);
   expect(kernel.ownerOf("tools", "plugin_scanner_plugin_scan")).toBeUndefined();
 });
+
+test("a failing plugin's diagnostic is attributed to the plugin", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-plugins-owner-"));
+  // A plugin whose entry does not exist fails to load; its diagnostic must say
+  // which plugin it belongs to, so "which package failed" is traceable.
+  await mkdir(join(root, ".natalia", "plugins", "broken.plugin"), {
+    recursive: true,
+  });
+  await writeFile(
+    join(root, ".natalia", "plugins", "broken.plugin", "natalia.plugin.json"),
+    JSON.stringify({
+      apiVersion: 1,
+      id: "broken.plugin",
+      version: "1.0.0",
+      name: "Broken",
+      description: "",
+      entry: "missing.ts",
+      capabilities: [],
+    }),
+  );
+  const diagnostics: Array<{ owner?: string; message: string }> = [];
+  const controller = createPluginsController({
+    workspaceRoot: root,
+    tools: createToolRegistry([]),
+    capabilityRegistry: new CapabilityRegistry(),
+    pluginPaths: () => [],
+    pluginEnabled: () => undefined,
+    pluginCapabilities: () => undefined,
+    pluginReadOnly: () => undefined,
+    pluginSettings: () => undefined,
+    publish: (event) => {
+      if (event.type === "diagnostic") diagnostics.push(event);
+    },
+    syncGlobalCommands: () => undefined,
+  });
+  await controller.init();
+  expect(diagnostics.length).toBeGreaterThan(0);
+  expect(
+    diagnostics.some((entry) => entry.owner === "plugin:broken.plugin"),
+  ).toBe(true);
+});

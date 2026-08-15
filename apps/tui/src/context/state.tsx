@@ -605,7 +605,7 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
         state,
         `diagnostic:${Date.now()}`,
         "system",
-        `${event.level}: ${event.message}`,
+        `${event.level}: ${event.message}${event.owner ? ` [${event.owner}]` : ""}`,
       );
       state.footer = event.message;
       return;

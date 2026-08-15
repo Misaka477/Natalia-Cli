@@ -150,8 +150,10 @@ import {
   applyToolFamilyEnabledFilter,
   builtinToolFamilies,
   createToolRegistryFromCapabilities,
+  toolFamilyCapabilityID,
 } from "./capabilities/tool-family-capabilities";
 import {
+  RUNTIME_CONFIG_CAPABILITY_ID,
   RUNTIME_CONFIG_SERVICE,
   refreshRuntimeConfigService,
   registerRuntimeConfigCapability,
@@ -874,6 +876,7 @@ export function createRealRuntimeClient(
         publish({
           type: "diagnostic",
           level: "warning",
+          owner: RUNTIME_CONFIG_CAPABILITY_ID,
           message: `runtime config service unavailable: ${registeredConfig.reason}`,
         });
       if (
@@ -1096,6 +1099,7 @@ export function createRealRuntimeClient(
         publish({
           type: "diagnostic",
           level: "warning",
+          owner: failure.id,
           message: `tool family ${failure.id} is not loaded: ${failure.reason}`,
         });
       const cascaded = applyToolFamilyEnabledFilter({
@@ -1108,6 +1112,7 @@ export function createRealRuntimeClient(
         publish({
           type: "diagnostic",
           level: "warning",
+          owner: toolFamilyCapabilityID(family.id),
           message: `tool family ${family.id} is not loaded: ${family.reason}`,
         });
     }
@@ -1582,6 +1587,7 @@ export function createRealRuntimeClient(
       publish({
         type: "diagnostic",
         level: "warning",
+        owner: "natalia-runtime",
         message: `capability ${event.id} failed: ${event.reason}`,
       });
   }
@@ -5584,9 +5590,12 @@ export function createRealRuntimeClient(
         id,
         text: entries.length
           ? entries
-              .map((entry) => `${entry.at} ${entry.level}: ${entry.message}`)
+              .map(
+                (entry) =>
+                  `${entry.at}${entry.owner ? ` [${entry.owner}]` : ""} ${entry.level}: ${entry.message}`,
+              )
               .join("\n")
-          : "no runtime diagnostics",
+          : "no diagnostics recorded",
       });
       publish({ type: "content.done", id });
       publish({ type: "turn.finished", id, stopReason: "done" });

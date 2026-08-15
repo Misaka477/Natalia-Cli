@@ -514,10 +514,10 @@ export async function loadNativeMCPTools(input: {
     }
   >;
   workspaceRoot: string;
-  onDiagnostic?: (message: string) => void;
+  onDiagnostic?: (server: string, message: string) => void;
 }) {
   let loaded = 0;
-  const diagnostics: string[] = [];
+  const diagnostics: Array<[server: string, message: string]> = [];
   const statuses: Record<string, MCPServerStatus> = {};
   const owner = new MCPConnectionOwner(input.registry);
   for (const [name, server] of Object.entries(input.servers)) {
@@ -527,7 +527,7 @@ export async function loadNativeMCPTools(input: {
     }
     if (server.auth) {
       const message = `MCP server ${name} requires interactive authentication, which is unsupported by the local runtime`;
-      diagnostics.push(message);
+      diagnostics.push([name, message]);
       statuses[name] = { status: "unsupported_auth_flow", tools: 0, message };
       continue;
     }
@@ -560,10 +560,12 @@ export async function loadNativeMCPTools(input: {
           try {
             await refreshTools();
             input.onDiagnostic?.(
+              name,
               `MCP server ${name} refreshed its tool catalog`,
             );
           } catch (error) {
             input.onDiagnostic?.(
+              name,
               `MCP server ${name} tool refresh failed: ${error instanceof Error ? error.message : String(error)}`,
             );
           }
@@ -573,14 +575,15 @@ export async function loadNativeMCPTools(input: {
         status: "connected",
         tools: owner.count(`mcp_${name}_`),
       };
-      diagnostics.push(`TS config MCP ${name} loaded`);
+      diagnostics.push([name, `TS config MCP ${name} loaded`]);
     } catch (error) {
       const message = `TS config MCP ${name} failed: ${error instanceof Error ? error.message : String(error)}`;
-      diagnostics.push(message);
+      diagnostics.push([name, message]);
       statuses[name] = { status: "failed", tools: 0, message };
     }
   }
-  for (const diagnostic of diagnostics) input.onDiagnostic?.(diagnostic);
+  for (const [server, message] of diagnostics)
+    input.onDiagnostic?.(server, message);
   return {
     loaded,
     diagnostics,

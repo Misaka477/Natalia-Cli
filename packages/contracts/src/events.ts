@@ -896,6 +896,14 @@ type RuntimeEventData =
       level: "info" | "warning" | "error";
       message: string;
       at?: string;
+      /**
+       * Which capability, plugin or namespace the diagnostic belongs to, so a
+       * consumer can attribute it ("which tool package failed") and filter by
+       * owner. Capability-scoped values use the capability id (e.g.
+       * `plugin:demo.plugin`, `mcp:server`, `natalia-tool-fs`); a runtime-level
+       * diagnostic without a meaningful owner omits the field.
+       */
+      owner?: string;
     }
   | {
       type: "dialog.open";

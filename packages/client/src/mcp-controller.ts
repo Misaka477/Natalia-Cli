@@ -40,8 +40,13 @@ export function createMcpController(input: {
       registry: input.tools,
       servers: input.servers(),
       workspaceRoot: input.workspaceRoot,
-      onDiagnostic: (message) =>
-        input.publish({ type: "diagnostic", level: "info", message }),
+      onDiagnostic: (server, message) =>
+        input.publish({
+          type: "diagnostic",
+          level: "info",
+          owner: `mcp:${server}`,
+          message,
+        }),
     });
     cleanup.push(nativeMCP.close);
     access.push(nativeMCP);
@@ -51,6 +56,7 @@ export function createMcpController(input: {
       input.publish({
         type: "diagnostic",
         level: "info",
+        owner: "mcp",
         message: `Loaded ${nativeMCP.loaded} native MCP tool(s) from TS config.`,
       });
   }

@@ -484,3 +484,47 @@ test("native MCP loader reports disabled, failed, and interactive-auth statuses 
   );
   await result.close();
 });
+
+test("MCP diagnostics are attributed to the server they come from", async () => {
+  const seen: Array<[server: string, message: string]> = [];
+  const registry = createToolRegistry([]);
+  const result = await loadNativeMCPTools({
+    registry,
+    workspaceRoot: process.cwd(),
+    onDiagnostic: (server, message) => seen.push([server, message]),
+    servers: {
+      auth_needed: {
+        type: "http",
+        url: "https://example.test",
+        args: [],
+        headers: {},
+        environment: {},
+        allowedTools: [],
+        excludedTools: [],
+        readOnly: true,
+        enabled: true,
+        auth: { clientID: "not-used" },
+      },
+      failed: {
+        type: "stdio",
+        command: "definitely-not-installed",
+        args: [],
+        headers: {},
+        environment: {},
+        allowedTools: [],
+        excludedTools: [],
+        readOnly: true,
+        enabled: true,
+      },
+    },
+  });
+  // Every diagnostic names the server it belongs to, so a consumer can
+  // attribute "which MCP server failed" without parsing the message.
+  expect(seen.length).toBeGreaterThan(0);
+  for (const [server, message] of seen) {
+    expect(server).toBeString();
+    expect(message.length).toBeGreaterThan(0);
+  }
+  expect(seen.some(([server, message]) => server === "auth_needed")).toBe(true);
+  await result.close();
+});

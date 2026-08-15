@@ -118,6 +118,7 @@ export function createPluginsController(input: {
         input.publish({
           type: "diagnostic",
           level: "warning",
+          owner: pluginCapabilityID(id),
           message: `plugin ${id} failed to load: ${error instanceof Error ? error.message : String(error)}`,
         }),
     });
