@@ -153,9 +153,11 @@ export function createPluginsController(input: {
         if (registry.list().some((loaded) => loaded.id === id))
           await registry.unload(id);
         const entry = validatePluginPath(resolve(path, ".."), manifest.entry);
-        const module = (await import(
-          `${new URL(entry, import.meta.url).href}?reload=${Date.now()}`
-        )) as { default?: unknown };
+        // Bun ignores query strings on file:// URLs, but a plain path with a
+        // query is a fresh cache key — the reload must re-read the entry.
+        const module = (await import(`${entry}?reload=${Date.now()}`)) as {
+          default?: unknown;
+        };
         const candidate = module.default as Partial<Plugin>;
         if (!candidate.setup || typeof candidate.setup !== "function")
           throw new Error(`plugin module has no setup function: ${id}`);

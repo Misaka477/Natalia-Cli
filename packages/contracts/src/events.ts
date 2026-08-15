@@ -1915,6 +1915,13 @@ export type RuntimeClient = {
    * error.
    */
   pluginReload?(id: string): Promise<{ reloaded: boolean }>;
+  /**
+   * Hot-reloads an out-of-tree tool family: re-imports its entry with a
+   * cache-busting query and re-registers it without a restart. This is what a
+   * self-modifying agent triggers after its change is promoted. A write; an
+   * unknown family id or a disabled family is an argument error.
+   */
+  toolFamilyReload?(id: string): Promise<{ reloaded: boolean }>;
   getMcpPrompt?(
     server: string,
     name: string,

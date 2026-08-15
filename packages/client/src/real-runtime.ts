@@ -161,7 +161,10 @@ import {
   refreshRuntimeConfigService,
   registerRuntimeConfigCapability,
 } from "./capabilities/runtime-config-capability";
-import { loadLocalToolFamilies } from "./capabilities/local-tool-families";
+import {
+  loadLocalToolFamilies,
+  reloadLocalToolFamily,
+} from "./capabilities/local-tool-families";
 import type { TaskModuleContext } from "./capabilities/task-module-tools";
 import {
   flowOverview as flowOverviewForWorkspace,
@@ -4732,6 +4735,76 @@ export function createRealRuntimeClient(
     async pluginReload(id) {
       await ready;
       return await pluginsController.reload(id);
+    },
+    async toolFamilyReload(id) {
+      await ready;
+      if (options.tools || !tsRuntimeConfig)
+        throw new Error("tool family reload is not available");
+      const familyID = id;
+      const family = await reloadLocalToolFamily({
+        roots: tsRuntimeConfig.tools.paths.map((path) =>
+          resolve(workspaceRoot, path),
+        ),
+        familyID,
+        enabled: tsRuntimeConfig.tools.enabled,
+        onError: (key, error) =>
+          publish({
+            type: "diagnostic",
+            level: "warning",
+            owner: toolFamilyCapabilityID(familyID),
+            message: `tool family ${familyID} failed to reload: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          }),
+        trust: {
+          workspaceRoot,
+          verify: (key, entryPath) =>
+            verifyTrust(workspaceRoot, key, entryPath),
+        },
+      });
+      // Hot swap: release the old capability and its tools, then re-register
+      // the freshly imported family and move the kernel-accepted tools in.
+      const before = new Set(tools.keys());
+      const oldTools = capabilityRegistry
+        .contributions<RuntimeTool>("tools")
+        .filter(
+          (contribution) =>
+            contribution.capabilityID === toolFamilyCapabilityID(familyID),
+        )
+        .map((contribution) => contribution.name);
+      capabilityRegistry.unload(toolFamilyCapabilityID(familyID));
+      for (const name of oldTools) tools.delete(name);
+      const outcome = registerToolFamilyCapabilities(capabilityRegistry, [
+        family,
+      ]);
+      for (const entry of outcome.loaded)
+        for (const name of entry.tools) {
+          const owned = capabilityRegistry.contribution<RuntimeTool>(
+            "tools",
+            name,
+          );
+          if (owned) tools.set(name, owned);
+        }
+      // Publish what changed so the projected tool catalog stays honest.
+      for (const name of before) {
+        if (tools.has(name)) continue;
+        publish({ type: "tool.unregistered", id: `tool:${name}`, name });
+      }
+      for (const name of [...tools.keys()]) {
+        if (before.has(name)) continue;
+        const owner = capabilityRegistry.ownerOf("tools", name);
+        publish({
+          type: "tool.registered",
+          id: `tool:${name}`,
+          name,
+          owner: owner ?? "natalia-runtime",
+          scope: (owner && capabilityRegistry.scopeOf(owner)) || "session",
+          recovery: "fail_closed",
+          precedence: 0,
+          requiresApproval: tools.get(name)?.requiresApproval ?? false,
+        });
+      }
+      return { reloaded: true };
     },
     async runtimeStatus() {
       await ready;

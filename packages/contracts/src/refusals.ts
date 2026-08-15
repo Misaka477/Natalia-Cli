@@ -329,6 +329,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "error",
     note: "an unknown plugin id is an argument error",
   },
+  toolFamilyReload: {
+    refusal: "error",
+    note: "an unknown or disabled tool family id is an argument error",
+  },
   getMcpPrompt: {
     refusal: "error",
     note: "a disconnected server refuses; there is no prompt to return",

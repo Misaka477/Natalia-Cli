@@ -7,6 +7,10 @@
  * same way a `packages/tool-*` package is. Loaded families join the built-ins
  * through the same capability kernel, owning their tools the same way; nothing
  * about an out-of-tree family is special-cased once loaded.
+ *
+ * `reloadLocalToolFamily` is the hot-reload a self-modifying agent needs: after
+ * its change is promoted to the system slot, the entry is re-imported with a
+ * cache-busting query and re-registered without a restart.
  */
 import { readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -18,6 +22,17 @@ export const TOOL_FAMILY_MANIFEST = "natalia.tool.json";
 export type LocalToolFamilyManifest = {
   /** Relative entry, like a plugin's `entry`. */
   entry: string;
+};
+
+export type LocalToolFamilyOptions = {
+  onError?: (id: string, error: unknown) => void;
+  trust?: {
+    workspaceRoot: string;
+    verify: (
+      key: string,
+      entryPath: string,
+    ) => Promise<{ verified: boolean; expected?: string; actual?: string }>;
+  };
 };
 
 /** The discovered family packages under a root, in stable order. */
@@ -62,56 +77,90 @@ export async function loadLocalToolFamilies(input: {
   roots: string[];
   enabled?: Record<string, boolean>;
   onError?: (id: string, error: unknown) => void;
-  trust?: {
-    workspaceRoot: string;
-    verify: (
-      key: string,
-      entryPath: string,
-    ) => Promise<{ verified: boolean; expected?: string; actual?: string }>;
-  };
+  trust?: LocalToolFamilyOptions["trust"];
 }): Promise<ToolFamily[]> {
   const families: ToolFamily[] = [];
   for (const root of input.roots) {
     const discovered = await discoverLocalToolFamilies(root);
     for (const { manifest, path } of discovered) {
-      const entryPath = resolve(path, "..", manifest.entry);
-      try {
-        if (input.trust) {
-          const verified = await input.trust.verify(
-            keyForPath(path),
-            entryPath,
-          );
-          if (verified.expected && !verified.verified) {
-            input.onError?.(
-              path,
-              new Error("package changed since install (fingerprint mismatch)"),
-            );
-            continue;
-          }
-        }
-        const module = (await import(pathToFileURL(entryPath).href)) as {
-          default?: unknown;
-        };
-        const exported = module.default;
-        const family =
-          typeof exported === "function"
-            ? (exported as () => ToolFamily)()
-            : (exported as ToolFamily | undefined);
-        if (!family || typeof family.id !== "string") {
-          input.onError?.(
-            path,
-            new Error(`tool family entry has no default export: ${entryPath}`),
-          );
-          continue;
-        }
-        if (input.enabled?.[family.id] === false) continue;
-        families.push(family);
-      } catch (error) {
-        input.onError?.(path, error);
-      }
+      const imported = await importLocalToolFamily(manifest, path, input);
+      if (!imported) continue;
+      if (input.enabled?.[imported.family.id] === false) continue;
+      families.push(imported.family);
     }
   }
   return families;
+}
+
+/**
+ * Re-imports one out-of-tree family with a cache-busting query — the hot
+ * reload a self-modifying agent needs after its change is promoted: the entry
+ * on disk is re-read and re-registered without a restart. The reload still
+ * verifies the package against the trust database.
+ */
+export async function reloadLocalToolFamily(input: {
+  roots: string[];
+  familyID: string;
+  enabled?: Record<string, boolean>;
+  onError?: (id: string, error: unknown) => void;
+  trust?: LocalToolFamilyOptions["trust"];
+}): Promise<ToolFamily> {
+  for (const root of input.roots) {
+    const discovered = await discoverLocalToolFamilies(root);
+    for (const { manifest, path } of discovered) {
+      const imported = await importLocalToolFamily(manifest, path, input, {
+        cacheBust: true,
+      });
+      if (imported?.family.id !== input.familyID) continue;
+      if (input.enabled?.[input.familyID] === false)
+        throw new Error(`tool family is disabled in config: ${input.familyID}`);
+      return imported.family;
+    }
+  }
+  throw new Error(`tool family not found: ${input.familyID}`);
+}
+
+async function importLocalToolFamily(
+  manifest: LocalToolFamilyManifest,
+  path: string,
+  input: LocalToolFamilyOptions,
+  options?: { cacheBust?: boolean },
+): Promise<{ family: ToolFamily; entryPath: string } | undefined> {
+  const entryPath = resolve(path, "..", manifest.entry);
+  try {
+    if (input.trust) {
+      const verified = await input.trust.verify(keyForPath(path), entryPath);
+      if (verified.expected && !verified.verified) {
+        input.onError?.(
+          path,
+          new Error("package changed since install (fingerprint mismatch)"),
+        );
+        return undefined;
+      }
+    }
+    const href = options?.cacheBust
+      ? // Bun ignores query strings on file:// URLs, but a plain path with a
+        // query is a fresh cache key — the hot reload must re-read the entry.
+        `${entryPath}?reload=${Date.now()}`
+      : pathToFileURL(entryPath).href;
+    const module = (await import(href)) as { default?: unknown };
+    const exported = module.default;
+    const family =
+      typeof exported === "function"
+        ? (exported as () => ToolFamily)()
+        : (exported as ToolFamily | undefined);
+    if (!family || typeof family.id !== "string") {
+      input.onError?.(
+        path,
+        new Error(`tool family entry has no default export: ${entryPath}`),
+      );
+      return undefined;
+    }
+    return { family, entryPath };
+  } catch (error) {
+    input.onError?.(path, error);
+    return undefined;
+  }
 }
 
 /**

@@ -172,3 +172,25 @@ test("a failing plugin's diagnostic is attributed to the plugin", async () => {
     diagnostics.some((entry) => entry.owner === "plugin:broken.plugin"),
   ).toBe(true);
 });
+
+test("plugin reload re-reads the module after a file change (cache-bust)", async () => {
+  const root = await pluginWorkspace();
+  const { controller } = makeController(root);
+  await controller.init();
+  // The plugin's file changes on disk (an agent self-edit promoted to the
+  // system slot); reload must re-read it, not serve the cached module.
+  const entry = join(root, ".natalia", "plugins", "demo.plugin", "index.ts");
+  await writeFile(
+    entry,
+    `import { definePlugin } from "${pluginSdkImportPath()}";
+export default definePlugin({ manifest: { apiVersion: 1, id: "demo.plugin", version: "1.0.0", name: "Demo", capabilities: ["commands"] }, setup(api) { api.commands.register({ name: "reloaded", title: "Reloaded", run() {} }); } });`,
+  );
+  await controller.reload("demo.plugin");
+  const commands = controller.get().commands();
+  // Command names are namespaced to the plugin; the point is the reloaded
+  // module's command replaced the original one, not the cached module.
+  expect(
+    commands.some((command) => command.name === "plugin_demo_plugin_reloaded"),
+  ).toBe(true);
+  await controller.close();
+});

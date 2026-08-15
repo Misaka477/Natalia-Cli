@@ -836,7 +836,7 @@ Deployment notes:
   `start`, `submit`, `cancel`, `snapshot`, `diagnostic`, `lastSubmission`, `respondApproval`, `respondQuestion`.
 - Deprecated members (`DEPRECATED_RUNTIME_MEMBERS`): none (mechanism in place, table empty).
 
-### Capability groups (20 groups · 119 optional members)
+### Capability groups (20 groups · 120 optional members)
 
 | Group          | Members (RuntimeClient names)                                                                                                                                                                                                                                                                                         |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -851,7 +851,7 @@ Deployment notes:
 | sandbox        | `sandboxList` · `sandboxDiff` · `sandboxResources` · `sandboxResourceOutput` · `sandboxMerge` · `sandboxDelete` · `sandboxResourceStop`                                                                                                                                                                               |
 | sessions       | `sessionList` · `sessionTouch` · `sessionRename` · `sessionPin` · `sessionDuplicate` · `sessionFork` · `sessionDelete` · `sessionNew` · `sessionArchive` · `sessionExport` · `sessionAttach`                                                                                                                          |
 | mcp            | `mcpCatalog` · `getMcpPrompt` · `readMcpResource` · `mcpServerAdd` · `mcpServerRemove`                                                                                                                                                                                                                                |
-| extensions     | `plugins` · `commandCatalog` · `capabilities` · `pluginUnload` · `pluginReload`                                                                                                                                                                                                                                       |
+| extensions     | `plugins` · `commandCatalog` · `capabilities` · `pluginUnload` · `pluginReload` · `toolFamilyReload`                                                                                                                                                                                                                  |
 | management     | `permissionList` · `permissionSave` · `permissionDelete`                                                                                                                                                                                                                                                              |
 | automation     | `taskOverview` · `flowOverview` · `documentCatalog` · `saveFlowDocument` · `deleteFlowDocument` · `saveTaskDocument` · `deleteTaskDocument` · `taskSchedule` · `taskUnschedule` · `taskPermissionPreview`                                                                                                             |
 | observability  | `runtimeStatus` · `diagnostics` · `sessionSnapshot`                                                                                                                                                                                                                                                                   |
@@ -861,7 +861,7 @@ Deployment notes:
 | plans          | `planList` · `planCreate` · `planUpdate` · `planPropose` · `planAccept` · `planQueue` · `planActivate` · `planSupersede` · `planCompleted`                                                                                                                                                                            |
 | chat           | `chatSubmit` · `chatMessages` · `chatRollback`                                                                                                                                                                                                                                                                        |
 
-### RPC route table (124 methods → members)
+### RPC route table (125 methods → members)
 
 | RPC method                           | RuntimeClient member                | Capability group | Write |
 | ------------------------------------ | ----------------------------------- | ---------------- | ----- |
@@ -928,6 +928,7 @@ Deployment notes:
 | `provider.remove`                    | `providerRemove`                    | selection        | write |
 | `plugin.unload`                      | `pluginUnload`                      | extensions       | write |
 | `plugin.reload`                      | `pluginReload`                      | extensions       | write |
+| `tools.reload`                       | `toolFamilyReload`                  | extensions       | read  |
 | `plugin.list`                        | `plugins`                           | extensions       | read  |
 | `command.catalog`                    | `commandCatalog`                    | extensions       | read  |
 | `task.overview`                      | `taskOverview`                      | automation       | read  |

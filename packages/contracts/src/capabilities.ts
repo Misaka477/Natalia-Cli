@@ -170,6 +170,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "capabilities",
     "pluginUnload",
     "pluginReload",
+    "toolFamilyReload",
   ],
   /** Security and configuration management (permission profiles). */
   management: ["permissionList", "permissionSave", "permissionDelete"],

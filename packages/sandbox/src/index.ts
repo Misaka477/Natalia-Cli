@@ -549,3 +549,8 @@ async function readOptional(path: string) {
     throw error;
   }
 }
+
+export {
+  WorktreeSandboxManager,
+  type WorktreePromotion,
+} from "./worktree-sandbox";

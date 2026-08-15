@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, test } from "bun:test";
 import { createRealRuntimeClient } from "../src";
@@ -12,7 +12,7 @@ import { providerError } from "@natalia/runtime";
 import { CapabilityRegistry } from "@natalia/capability";
 import { createToolRegistry } from "@natalia/tools";
 import { getPluginCommands } from "@natalia/plugin";
-import { resolveConfig } from "@natalia/config";
+import { fingerprintFile, recordTrust, resolveConfig } from "@natalia/config";
 import { SqliteSessionStore } from "@natalia/session";
 import { WorkspaceSandboxManager } from "@natalia/sandbox";
 import { NativeTerminalRegistry } from "@natalia/native-terminal";
@@ -858,6 +858,65 @@ export default (): ToolFamily => ({
     owner: "natalia-tool-extra.family",
     scope: "session",
   });
+  await client.dispose?.();
+}, 60_000);
+
+test("toolFamilyReload hot-swaps an out-of-tree family after promotion", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-tools-reload-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({ version: 2, tools: { paths: ["extra-tools"] } }),
+  );
+  await mkdir(join(root, "extra-tools", "extra.family"), { recursive: true });
+  await writeFile(
+    join(root, "extra-tools", "extra.family", "natalia.tool.json"),
+    JSON.stringify({ entry: "index.ts" }),
+  );
+  const entryPath = join(root, "extra-tools", "extra.family", "index.ts");
+  const familySource = (tool: string) =>
+    `import type { ToolFamily } from "@natalia/tools";
+export default (): ToolFamily => ({
+  id: "extra.family", name: "Extra", version: "1.0.0",
+  description: "Out-of-tree fixture family", scope: "session",
+  tools: [{ name: "${tool}", description: "Run", requiresApproval: false,
+    parameters: { type: "object", properties: {} }, async execute() { return "ok"; } }],
+});
+`;
+  await writeFile(entryPath, familySource("extra_run"));
+
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_runtime_tools_reload",
+    provider: scriptedProvider("ready"),
+  });
+  client.start((event) => events.push(event));
+  await waitFor(() =>
+    events.some(
+      (event) => event.type === "tool.registered" && event.name === "extra_run",
+    ),
+  );
+
+  // The agent's change lands (promotion writes the new entry), the trust
+  // record is re-pinned to the promoted version, and the runtime hot-swaps.
+  await writeFile(entryPath, familySource("extra_run_v2"));
+  await fingerprintEntry(root, entryPath);
+  const reloaded = await client.toolFamilyReload?.("extra.family");
+  console.log("reload result:", JSON.stringify(reloaded));
+  expect(reloaded).toEqual({ reloaded: true });
+  await waitFor(() =>
+    events.some(
+      (event) =>
+        event.type === "tool.registered" && event.name === "extra_run_v2",
+    ),
+  );
+  expect(
+    events.some(
+      (event) =>
+        event.type === "tool.unregistered" && event.name === "extra_run",
+    ),
+  ).toBe(true);
   await client.dispose?.();
 }, 60_000);
 
@@ -7530,6 +7589,16 @@ async function waitFor(
     await Bun.sleep(10);
   }
   throw new Error(`timed out waiting for ${label}`);
+}
+
+/** Re-pins a family's trust record to the promoted bytes (the promotion step). */
+async function fingerprintEntry(workspaceRoot: string, entryPath: string) {
+  await recordTrust(workspaceRoot, {
+    key: resolve(entryPath, ".."),
+    source: resolve(entryPath, ".."),
+    fingerprint: await fingerprintFile(entryPath),
+    installedAt: new Date().toISOString(),
+  });
 }
 
 /** Polls until an async predicate holds (the runtime wakes turns asynchronously). */

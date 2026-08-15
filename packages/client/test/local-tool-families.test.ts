@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import {
   discoverLocalToolFamilies,
   loadLocalToolFamilies,
+  reloadLocalToolFamily,
 } from "../src/capabilities/local-tool-families";
 
 async function fixtureFamily(root: string, id: string) {
@@ -120,4 +121,41 @@ test("trust verification skips a package whose bytes changed since install", asy
   expect(
     errors.some((message) => message.includes("fingerprint mismatch")),
   ).toBe(true);
+});
+
+test("reloadLocalToolFamily re-reads the entry after a change (cache-bust)", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-reload-"));
+  const dir = await fixtureFamily(root, "fixture.a");
+  const entry = join(dir, "index.ts");
+  const source = (tool: string) =>
+    `import type { ToolFamily } from "@natalia/tools";
+export default (): ToolFamily => ({
+  id: "fixture.a", name: "fixture.a", version: "1.0.0",
+  description: "Fixture family", scope: "session",
+  tools: [{ name: "${tool}", description: "Run", requiresApproval: false,
+    parameters: { type: "object", properties: {} }, async execute() { return "ok"; } }],
+});
+`;
+  await writeFile(entry, source("fixture.a_run"));
+  const first = await loadLocalToolFamilies({ roots: [root] });
+  expect(first[0]!.tools[0]!.name).toBe("fixture.a_run");
+  // The promoted change lands on disk; the reload re-reads it.
+  await writeFile(entry, source("fixture.a_run_v2"));
+  const reloaded = await reloadLocalToolFamily({
+    roots: [root],
+    familyID: "fixture.a",
+  });
+  expect(reloaded.tools[0]!.name).toBe("fixture.a_run_v2");
+});
+
+test("reloadLocalToolFamily refuses a disabled family", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-reload-disabled-"));
+  await fixtureFamily(root, "fixture.a");
+  await expect(
+    reloadLocalToolFamily({
+      roots: [root],
+      familyID: "fixture.a",
+      enabled: { "fixture.a": false },
+    }),
+  ).rejects.toThrow(/disabled in config/u);
 });

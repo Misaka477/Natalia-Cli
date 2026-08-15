@@ -172,6 +172,7 @@ export const RPC_ROUTE_MEMBERS = {
   "provider.remove": "providerRemove",
   "plugin.unload": "pluginUnload",
   "plugin.reload": "pluginReload",
+  "tools.reload": "toolFamilyReload",
   "plugin.list": "plugins",
   "command.catalog": "commandCatalog",
   "task.overview": "taskOverview",
@@ -2359,6 +2360,16 @@ export async function handleRPCMessage(
           body.method === "plugin.unload"
             ? await client.pluginUnload?.(id)
             : await client.pluginReload?.(id),
+      };
+    }
+    if (body.method === "tools.reload") {
+      const member = "toolFamilyReload";
+      optionsGuard(client, member);
+      const id = managementName(body.params, body.method);
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.toolFamilyReload?.(id),
       };
     }
     // A name the route table accepted but no dispatch block serves: the table
