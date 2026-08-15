@@ -95,21 +95,134 @@ const interactiveTerminalToolAliases = {
   interactive_list: "interactive_terminal_list",
 } as const;
 
+export { interactiveTerminalToolAliases };
+
+/**
+ * A tool family: the unit a host loads, and the unit that owns its tools.
+ *
+ * The built-in tools are grouped here rather than in the host so that the same
+ * grouping is available to whoever assembles them — today the runtime, which
+ * registers one capability per family so the kernel owns the tools and unloading
+ * a family really removes them; tomorrow a separately distributed `tool-*`
+ * package, which describes itself the same way.
+ *
+ * `scope` is the lifetime of the family's tools, spelled with the capability
+ * scopes the kernel already understands. It stays a plain string union here:
+ * this package must not depend on the kernel to describe its own tools.
+ */
+export type ToolFamilyScope = "process" | "workspace" | "session";
+
+export type ToolFamily = {
+  /** Stable family key, and the suffix of the capability id the host loads it as. */
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  scope: ToolFamilyScope;
+  tools: RuntimeTool[];
+  /** Alternate names for this family's tools, applied by the host's registry. */
+  aliases?: Record<string, string>;
+};
+
+/**
+ * The built-in tool families, in the order their tools are advertised.
+ *
+ * This is the single source of truth for what the framework ships: `defaultTools`
+ * is derived from it, so a family cannot be registered through the kernel and
+ * still be missing from the flat catalogue (or the reverse).
+ */
+export function defaultToolFamilies(
+  processRegistry = new ManagedProcessRegistry(),
+): ToolFamily[] {
+  return [
+    {
+      id: "fs",
+      name: "Filesystem Tools",
+      version: "1.0.0",
+      description: "Reading, writing and editing workspace files.",
+      scope: "workspace",
+      tools: [...fileTools],
+    },
+    {
+      id: "search",
+      name: "Search Tools",
+      version: "1.0.0",
+      description: "Finding files by name and content in the workspace.",
+      scope: "workspace",
+      tools: [...searchTools],
+    },
+    {
+      id: "todo",
+      name: "Todo Tools",
+      version: "1.0.0",
+      description: "The session's task list.",
+      scope: "session",
+      tools: [...todoTools],
+    },
+    {
+      id: "ask",
+      name: "Interactive Question Tools",
+      version: "1.0.0",
+      description: "Asking the user a structured question.",
+      scope: "session",
+      tools: [askUserTool()],
+    },
+    {
+      id: "agent",
+      name: "Subagent Tools",
+      version: "1.0.0",
+      description: "Delegating work to a subagent.",
+      scope: "session",
+      tools: [...agentTools()],
+    },
+    {
+      id: "terminal",
+      name: "Terminal Tools",
+      version: "1.0.0",
+      description: "Native terminal panes and interactive programs.",
+      scope: "session",
+      tools: [...terminalTools()],
+      aliases: { ...interactiveTerminalToolAliases },
+    },
+    {
+      id: "sandbox",
+      name: "Sandbox Tools",
+      version: "1.0.0",
+      description: "Isolated workspaces and their merge back.",
+      scope: "workspace",
+      tools: [...sandboxTools()],
+    },
+    {
+      id: "shell",
+      name: "Shell Tools",
+      version: "1.0.0",
+      description: "One-shot command execution.",
+      scope: "session",
+      tools: [...shellTools],
+    },
+    {
+      id: "process",
+      name: "Managed Process Tools",
+      version: "1.0.0",
+      description: "Long-running background processes.",
+      scope: "session",
+      tools: [...managedProcessTools(processRegistry)],
+    },
+    {
+      id: "web",
+      name: "Web Tools",
+      version: "1.0.0",
+      description: "Fetching and searching the web.",
+      scope: "session",
+      tools: [...webTools],
+    },
+  ];
+}
+
 export function defaultTools(
   processRegistry = new ManagedProcessRegistry(),
 ): RuntimeTool[] {
-  return [
-    ...fileTools,
-    ...searchTools,
-    ...todoTools,
-    askUserTool(),
-    ...agentTools(),
-    ...terminalTools(),
-    ...sandboxTools(),
-    ...shellTools,
-    ...managedProcessTools(processRegistry),
-    ...webTools,
-  ];
+  return defaultToolFamilies(processRegistry).flatMap((family) => family.tools);
 }
 
 function askUserTool(): RuntimeTool {

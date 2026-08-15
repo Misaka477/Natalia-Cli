@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { ProviderStreamRequest } from "@natalia/runtime";
+import { defaultToolFamilies } from "@natalia/tools";
 import {
   projectedWorkGraphEdges,
   projectedWorkGraphNodes,
@@ -131,11 +132,38 @@ test("runtime startup records the effective tool catalogue as metadata", async (
       event.type === "tool.registered",
   );
   expect(registered.length).toBeGreaterThan(0);
+  // Built-in tools are contributed by their family capability, so the journal
+  // names the family that owns a tool and the scope that family declared —
+  // not an anonymous `natalia-runtime`.
   expect(registered.find((event) => event.name === "read_file")).toMatchObject({
-    owner: "natalia-runtime",
-    scope: "session",
+    owner: "natalia-tool-fs",
+    scope: "workspace",
     recovery: "fail_closed",
   });
+  expect(registered.find((event) => event.name === "todo_write")).toMatchObject(
+    {
+      owner: "natalia-tool-todo",
+      scope: "session",
+    },
+  );
+  // Every built-in tool is owned by its family. What is left on
+  // `natalia-runtime` is only what the host itself registers after assembly
+  // (skills, mailbox and collaboration tools), never a framework tool.
+  const familyOwned = new Map(
+    defaultToolFamilies().flatMap((family) =>
+      family.tools.map(
+        (tool) => [tool.name, `natalia-tool-${family.id}`] as const,
+      ),
+    ),
+  );
+  for (const event of registered) {
+    const expected = familyOwned.get(event.name);
+    if (expected) expect(event.owner).toBe(expected);
+  }
+  // …and every family tool really reached the catalogue, so the loop above is
+  // not vacuously true.
+  for (const name of familyOwned.keys())
+    expect(registered.some((event) => event.name === name)).toBe(true);
   expect(registered.some((event) => "description" in event)).toBe(false);
   expect(new Set(registered.map((event) => event.id)).size).toBe(
     registered.length,

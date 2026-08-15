@@ -103,7 +103,6 @@ import {
   type SessionRecord,
 } from "@natalia/session";
 import {
-  createToolRegistry,
   boundToolOutput,
   cleanupToolOutput,
   validateToolParameters,
@@ -143,7 +142,11 @@ import {
   saveTaskDocument,
 } from "./task-document";
 import { registerBuiltinCapabilities } from "./capabilities/builtin-capabilities";
-import { registerTaskModuleCapability } from "./capabilities/task-module-capability";
+import {
+  registerTaskModuleCapability,
+  TASK_MODULE_CAPABILITY_ID,
+} from "./capabilities/task-module-capability";
+import { createToolRegistryFromCapabilities } from "./capabilities/tool-family-capabilities";
 import type { TaskModuleContext } from "./capabilities/task-module-tools";
 import {
   flowOverview as flowOverviewForWorkspace,
@@ -354,13 +357,20 @@ export function createRealRuntimeClient(
   const processRegistry = options.tools
     ? undefined
     : new ManagedProcessRegistry();
-  const tools = options.tools ?? createToolRegistry(undefined, processRegistry);
   /**
-   * Created here, not in `initialize`, because capabilities contribute tools
-   * while the client is being constructed.
+   * Created before the tool registry, because the built-in tool families are
+   * capabilities: the kernel owns every tool, and the registry the executor reads
+   * is assembled from what the kernel accepted.
    */
   const capabilityRegistry: CapabilityRegistryHost =
     options.capabilityRegistry ?? new CapabilityRegistry();
+  const builtinToolFamilies = options.tools
+    ? undefined
+    : createToolRegistryFromCapabilities({
+        registry: capabilityRegistry,
+        processRegistry,
+      });
+  const tools = options.tools ?? builtinToolFamilies!.tools;
   const workspaceCapabilityView = options.capabilityHost?.view;
   if (options.taskModuleContext) {
     const registered = registerTaskModuleCapability(
@@ -372,10 +382,13 @@ export function createRealRuntimeClient(
     // The capability owns its tool names; the runtime only moves what the kernel
     // accepted into the registry the executor reads. A task-scoped tool may never
     // shadow a registered one, or a flow could silently replace a policy-checked
-    // implementation.
+    // implementation. Only this capability's own contributions are moved: the
+    // built-in families are already in the registry, and re-reading them here
+    // would report every one of them as a shadowing attempt.
     for (const contribution of capabilityRegistry.contributions<RuntimeTool>(
       "tools",
     )) {
+      if (contribution.capabilityID !== TASK_MODULE_CAPABILITY_ID) continue;
       if (tools.has(contribution.name))
         throw new Error(
           `task module context cannot replace ${contribution.name}`,
@@ -1523,17 +1536,23 @@ export function createRealRuntimeClient(
    * Records the effective tool catalogue once the runtime has assembled all
    * built-ins and task-scoped contributions. This is metadata only: tool
    * implementations and parameters never enter the journal.
+   *
+   * Owner and scope are read from the kernel, not asserted here: a tool the
+   * kernel owns reports the capability that contributed it and that capability's
+   * scope, so the journal says which family a tool came from and how long it
+   * lives. `natalia-runtime` is left for a tool the host injected directly (a
+   * caller-supplied registry, and the skills/mailbox/collaboration tools the
+   * runtime registers after assembly).
    */
   function publishRegisteredTools() {
     for (const tool of tools.values()) {
-      const owner =
-        capabilityRegistry.ownerOf("tools", tool.name) ?? "natalia-runtime";
+      const owner = capabilityRegistry.ownerOf("tools", tool.name);
       publish({
         type: "tool.registered",
         id: `tool:${tool.name}`,
         name: tool.name,
-        owner,
-        scope: "session",
+        owner: owner ?? "natalia-runtime",
+        scope: (owner && capabilityRegistry.scopeOf(owner)) || "session",
         recovery: "fail_closed",
         precedence: 0,
         requiresApproval: tool.requiresApproval,
