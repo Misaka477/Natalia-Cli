@@ -20,6 +20,7 @@ export {
 export { SnapshotSandboxManager } from "./snapshot-sandbox";
 export {
   SnapshotStore,
-  type FileSnapshot,
-  type FileSnapshotIndex,
+  type IndexedFile,
+  type SnapshotIndex,
 } from "./snapshot-store";
+export { ObjectStore } from "./object-store";

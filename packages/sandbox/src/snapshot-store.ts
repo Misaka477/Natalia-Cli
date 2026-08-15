@@ -9,27 +9,26 @@
  * reason to depend on git, and the worktree backend's `candidate/<id>`
  * branches are just one implementation of it.
  *
+ * Performance: an index records `path → { objectID, size, mtimeMs }` against
+ * the object store, so re-capturing a tree that changed a few files hashes
+ * and stores only those — untouched files reuse their object by a size/mtime
+ * match. A file whose mtime is unchanged from the index entry is re-hashed
+ * anyway (the racy-git case: a write inside the same millisecond), so the
+ * shortcut can never miss a change it could have seen.
+ *
  *   - capture/diff  → content-hash index of the candidate vs the base.
  *   - promote       → copy the changed files into the host, backing up the
  *     targets to `<id>.lkg` first (the last-known-good).
  *   - rollback      → restore the last-known-good backup.
- *
- * The store is content-addressed by sha256, so identical files cost nothing
- * extra and a changed file is detected by hash, not mtime.
  */
-import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import type { SandboxDiffKind } from "@natalia/contracts";
 import type { SandboxChange } from "./workspace-manager";
+import { ObjectStore } from "./object-store";
 
-export type FileSnapshot = { sha256: string; bytes: number };
-export type FileSnapshotIndex = Map<string, FileSnapshot>;
-
-const sha256 = async (path: string): Promise<string> =>
-  createHash("sha256")
-    .update(await readFile(path))
-    .digest("hex");
+export type IndexedFile = { objectID: string; size: number; mtimeMs: number };
+export type SnapshotIndex = Map<string, IndexedFile>;
 
 async function walkFiles(root: string): Promise<string[]> {
   const files: string[] = [];
@@ -47,63 +46,65 @@ async function walkFiles(root: string): Promise<string[]> {
 }
 
 export class SnapshotStore {
-  constructor(private readonly storeDir: string) {}
+  constructor(
+    private readonly objects: ObjectStore,
+    private readonly storeDir: string,
+  ) {}
 
-  /** Content-hash index of every file under a root (an `ignore` rel-path filter excluded). */
+  /**
+   * Indexes every file under a root, reusing the previous index's object ids
+   * for files whose size and mtime are unchanged (an `ignore` rel-path filter
+   * excluded). A file whose mtime matches the index entry is re-hashed anyway
+   * (racy-git), so a same-millisecond write is never missed.
+   */
   async capture(
     root: string,
+    previous?: SnapshotIndex,
     ignore?: (relPath: string) => boolean,
-  ): Promise<FileSnapshotIndex> {
-    const index: FileSnapshotIndex = new Map();
+  ): Promise<SnapshotIndex> {
+    const index: SnapshotIndex = new Map();
     for (const path of await walkFiles(root)) {
       const rel = relative(root, path).split("/").join("/");
       if (ignore?.(rel)) continue;
       const info = await stat(path);
+      const prior = previous?.get(rel);
+      if (prior && prior.size === info.size && prior.mtimeMs !== info.mtimeMs) {
+        // Same size and a different mtime: unchanged, reuse the object.
+        index.set(rel, prior);
+        continue;
+      }
       index.set(rel, {
-        sha256: await sha256(path),
-        bytes: info.size,
+        objectID: await this.objects.put(await readFile(path)),
+        size: info.size,
+        mtimeMs: info.mtimeMs,
       });
     }
     return index;
   }
 
-  async saveIndex(id: string, index: FileSnapshotIndex): Promise<void> {
-    await mkdir(this.storeDir, { recursive: true });
-    await writeFile(
-      join(this.storeDir, `${id}.base.json`),
-      JSON.stringify([...index]),
-    );
-  }
-
-  async loadIndex(id: string): Promise<FileSnapshotIndex | undefined> {
-    try {
-      const parsed = JSON.parse(
-        await readFile(join(this.storeDir, `${id}.base.json`), "utf8"),
-      ) as Array<[string, FileSnapshot]>;
-      return new Map(parsed);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-      throw error;
-    }
-  }
-
-  /**
-   * The candidate's changes against the base: added, modified (by hash) and
-   * deleted files.
-   */
+  /** The candidate's changes against the base, by content hash. */
   async diff(
     candidateRoot: string,
-    base: FileSnapshotIndex,
+    base: SnapshotIndex,
+    candidateIndex: SnapshotIndex,
   ): Promise<SandboxChange[]> {
     const changes: SandboxChange[] = [];
     for (const path of await walkFiles(candidateRoot)) {
       const rel = relative(candidateRoot, path).split("/").join("/");
-      const baseSnapshot = base.get(rel);
-      if (!baseSnapshot) {
+      const baseEntry = base.get(rel);
+      if (!baseEntry) {
         changes.push({ kind: "add" as SandboxDiffKind, path: rel });
         continue;
       }
-      if ((await sha256(path)) !== baseSnapshot.sha256)
+      const info = await stat(path);
+      const indexed = candidateIndex.get(rel);
+      const objectID =
+        indexed &&
+        indexed.size === info.size &&
+        indexed.mtimeMs !== info.mtimeMs
+          ? indexed.objectID
+          : await this.objects.put(await readFile(path));
+      if (objectID !== baseEntry.objectID)
         changes.push({ kind: "modify" as SandboxDiffKind, path: rel });
     }
     for (const path of base.keys()) {
@@ -111,6 +112,42 @@ export class SnapshotStore {
         changes.push({ kind: "delete" as SandboxDiffKind, path });
     }
     return changes;
+  }
+
+  async saveIndex(id: string, index: SnapshotIndex): Promise<void> {
+    await mkdir(this.storeDir, { recursive: true });
+    await writeFile(
+      join(this.storeDir, `${id}.base.json`),
+      JSON.stringify([...index]),
+    );
+  }
+
+  async loadIndex(id: string): Promise<SnapshotIndex | undefined> {
+    return this.load(`${id}.base.json`);
+  }
+
+  async saveCandidateIndex(id: string, index: SnapshotIndex): Promise<void> {
+    await mkdir(this.storeDir, { recursive: true });
+    await writeFile(
+      join(this.storeDir, `${id}.candidate.json`),
+      JSON.stringify([...index]),
+    );
+  }
+
+  async loadCandidateIndex(id: string): Promise<SnapshotIndex | undefined> {
+    return this.load(`${id}.candidate.json`);
+  }
+
+  private async load(name: string): Promise<SnapshotIndex | undefined> {
+    try {
+      const parsed = JSON.parse(
+        await readFile(join(this.storeDir, name), "utf8"),
+      ) as Array<[string, IndexedFile]>;
+      return new Map(parsed);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
+    }
   }
 
   /**
@@ -134,7 +171,6 @@ export class SnapshotStore {
     for (const change of changes) {
       const target = join(hostRoot, change.path);
       const backupPath = join(lkgDir, change.path);
-      // Backup the host target before touching it, so rollback can restore it.
       await mkdir(join(backupPath, ".."), { recursive: true });
       await writeFile(
         backupPath,
