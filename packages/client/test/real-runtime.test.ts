@@ -806,6 +806,61 @@ test("runtime status reflects the configured auto approval profile", async () =>
   });
 });
 
+test("tools.paths loads out-of-tree families through the kernel", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-tools-paths-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      tools: { paths: ["extra-tools"] },
+    }),
+  );
+  await mkdir(join(root, "extra-tools", "extra.family"), { recursive: true });
+  await writeFile(
+    join(root, "extra-tools", "extra.family", "natalia.tool.json"),
+    JSON.stringify({ entry: "index.ts" }),
+  );
+  await writeFile(
+    join(root, "extra-tools", "extra.family", "index.ts"),
+    `import type { ToolFamily } from "@natalia/tools";
+export default (): ToolFamily => ({
+  id: "extra.family",
+  name: "Extra",
+  version: "1.0.0",
+  description: "Out-of-tree fixture family",
+  scope: "session",
+  tools: [{
+    name: "extra_run",
+    description: "Run",
+    requiresApproval: false,
+    parameters: { type: "object", properties: {} },
+    async execute() { return "extra"; },
+  }],
+});
+`,
+  );
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_runtime_tools_paths",
+    provider: scriptedProvider("ready"),
+  });
+  client.start((event) => events.push(event));
+  await waitFor(() => events.some((event) => event.type === "session.ready"));
+  const registered = events.filter(
+    (event): event is Extract<RuntimeEvent, { type: "tool.registered" }> =>
+      event.type === "tool.registered",
+  );
+  // The out-of-tree family's tool is in the catalogue, owned by its capability
+  // like any built-in — nothing about an external family is special-cased.
+  expect(registered.find((event) => event.name === "extra_run")).toMatchObject({
+    owner: "natalia-tool-extra.family",
+    scope: "session",
+  });
+  await client.dispose?.();
+}, 60_000);
+
 test("finalizeContent is applied exactly once before the result freezes", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-runtime-finalize-"));
   const tools = createToolRegistry([]);

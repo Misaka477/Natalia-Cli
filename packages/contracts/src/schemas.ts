@@ -409,9 +409,14 @@ export const pluginConfigSchema = z.object({
  * `packages/tool-*` package declares); a family that is absent or `true` loads,
  * `false` disables it — **not enabled = not in the registry**, so a disabled
  * family's tools cannot be called at all.
+ *
+ * `paths` adds out-of-tree families: directories containing a `natalia.tool.json`
+ * manifest whose entry exports the family. Loaded families join the built-ins
+ * through the same capability kernel, so they own their tools the same way.
  */
 export const toolsConfigSchema = z.object({
   enabled: z.record(z.boolean()).default({}),
+  paths: z.array(z.string()).default([]),
 });
 
 export const mcpServerConfigSchema = z.object({

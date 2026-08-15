@@ -150,6 +150,7 @@ import {
   applyToolFamilyEnabledFilter,
   builtinToolFamilies,
   createToolRegistryFromCapabilities,
+  registerToolFamilyCapabilities,
   toolFamilyCapabilityID,
 } from "./capabilities/tool-family-capabilities";
 import {
@@ -158,6 +159,7 @@ import {
   refreshRuntimeConfigService,
   registerRuntimeConfigCapability,
 } from "./capabilities/runtime-config-capability";
+import { loadLocalToolFamilies } from "./capabilities/local-tool-families";
 import type { TaskModuleContext } from "./capabilities/task-module-tools";
 import {
   flowOverview as flowOverviewForWorkspace,
@@ -1114,6 +1116,49 @@ export function createRealRuntimeClient(
           level: "warning",
           owner: toolFamilyCapabilityID(family.id),
           message: `tool family ${family.id} is not loaded: ${family.reason}`,
+        });
+    }
+    // Out-of-tree families declared by `tools.paths` join the built-ins through
+    // the same kernel, so they own their tools the same way. They load here
+    // because dynamic import is async and the built-in catalogue is assembled at
+    // construction — before this point no config is resolved yet.
+    if (
+      tsRuntimeConfig &&
+      !options.tools &&
+      tsRuntimeConfig.tools.paths.length
+    ) {
+      const extraFamilies = await loadLocalToolFamilies({
+        roots: tsRuntimeConfig.tools.paths.map((path) =>
+          resolve(workspaceRoot, path),
+        ),
+        enabled: tsRuntimeConfig.tools.enabled,
+        onError: (id, error) =>
+          publish({
+            type: "diagnostic",
+            level: "warning",
+            owner: "natalia-tools",
+            message: `tool family ${id} failed to load: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          }),
+      });
+      const outcome = registerToolFamilyCapabilities(
+        capabilityRegistry,
+        extraFamilies,
+      );
+      for (const entry of outcome.loaded)
+        for (const name of entry.tools) {
+          const owned = capabilityRegistry.contribution<
+            import("@natalia/tools").RuntimeTool
+          >("tools", name);
+          if (owned) tools.set(name, owned);
+        }
+      for (const failure of outcome.failed)
+        publish({
+          type: "diagnostic",
+          level: "warning",
+          owner: failure.id,
+          message: `tool family ${failure.id} is not loaded: ${failure.reason}`,
         });
     }
     if (extensionEnabled("plugins")) {
