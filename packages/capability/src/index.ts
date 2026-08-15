@@ -58,7 +58,8 @@ export type CapabilityGrant =
   | "workflows"
   | "projection"
   | "resources"
-  | "listeners";
+  | "listeners"
+  | "services";
 
 export type CapabilityScope = "process" | "workspace" | "session";
 
@@ -77,6 +78,30 @@ export type CapabilityRegistration = {
    * wins and replaces; equal or lower is refused. Absent means 0.
    */
   precedence?: number;
+  /**
+   * Service names this capability provides. Each must be contributed as a
+   * `services` contribution during activation; a declared service that is never
+   * provided fails the load.
+   */
+  provides?: string[];
+  /**
+   * Service names that must exist before this capability activates. A load with
+   * unsatisfied requirements is held **pending** — the capability is loaded but
+   * its activation is deferred until every required service is provided.
+   */
+  requires?: string[];
+};
+
+/**
+ * A service appearing, being replaced or disappearing.
+ *
+ * `provider` is the capability currently providing the service (undefined when
+ * it just disappeared); `providerBefore` is present only on a replacement.
+ */
+export type ServiceUpdate = {
+  name: string;
+  provider: string | undefined;
+  providerBefore?: string;
 };
 
 /** Controlled API the runtime provides to each loaded capability. */
@@ -87,6 +112,11 @@ export type CapabilityContext = {
    * grant, when the name is already taken, or when the capability is unloading.
    */
   contribute: (kind: CapabilityGrant, name: string, payload: unknown) => void;
+  /**
+   * Resolves a service by name. Returns the current value the providing
+   * capability contributed, or `undefined` while no one provides it.
+   */
+  service: <T>(name: string) => T | undefined;
   onUnload: (fn: () => void) => void;
 };
 
@@ -106,6 +136,11 @@ type CapabilityInstance = {
   sealed: boolean;
 };
 
+type PendingActivation = {
+  instance: CapabilityInstance;
+  activate: ((context: CapabilityContext) => void) | undefined;
+};
+
 export class CapabilityLoadError extends Error {
   readonly capabilityID: string;
   constructor(capabilityID: string, message: string) {
@@ -122,6 +157,10 @@ export class CapabilityRegistry {
   private owners = new Map<string, string>();
   /** `kind\u0000name` -> precedence of the current owner. */
   private ownerPrecedence = new Map<string, number>();
+  /** Capabilities waiting for required services before they can activate. */
+  private pending = new Map<string, PendingActivation>();
+  /** Service-change listeners; fired when a service appears, is replaced or disappears. */
+  private serviceListeners = new Set<(update: ServiceUpdate) => void>();
   /** Every override that happened, in order: loser replaced by winner. */
   private overrideLog: Array<{
     kind: CapabilityGrant;
@@ -191,6 +230,22 @@ export class CapabilityRegistry {
           );
         const key = contributionKey(kind, name);
         const existing = this.owners.get(key);
+        if (existing !== undefined && existing === registration.id) {
+          // The same capability refreshing one of its own contributions — a
+          // service re-provided with a new value. The record is replaced in
+          // place, so `contributions()` still reports one effective entry, and
+          // service consumers hear the change.
+          const record = instance.contributions.find(
+            (contribution) =>
+              contribution.kind === kind && contribution.name === name,
+          );
+          if (record) record.payload = payload;
+          if (kind === "services") {
+            this.emitServiceUpdate(name, registration.id, existing);
+            this.wakePending();
+          }
+          return;
+        }
         if (existing !== undefined) {
           // Override protocol: the higher precedence wins and replaces, the
           // equal or lower is refused. The loser's contribution stays on its
@@ -220,7 +275,13 @@ export class CapabilityRegistry {
           name,
           payload,
         });
+        // A service appearing wakes every capability that was waiting for it.
+        if (kind === "services") {
+          this.emitServiceUpdate(name, registration.id, existing);
+          this.wakePending();
+        }
       },
+      service: <T>(name: string) => this.service<T>(name),
       onUnload: (fn) => {
         instance.unloadFns.push(fn);
       },
@@ -234,23 +295,92 @@ export class CapabilityRegistry {
       this.byGrant.set(grant, holders);
     }
 
+    // A capability that requires services which are not there yet is held
+    // pending: loaded but not activated. It activates when the last required
+    // service appears (see `wakePending`).
+    const missing = (registration.requires ?? []).filter(
+      (name) => this.service(name) === undefined,
+    );
+    if (missing.length) {
+      this.pending.set(registration.id, { instance, activate });
+      return context;
+    }
+
+    this.activateInstance(instance, context, activate);
+    return context;
+  }
+
+  /** Runs a stored activation and verifies the declared services were provided. */
+  private activateInstance(
+    instance: CapabilityInstance,
+    context: CapabilityContext,
+    activate: ((context: CapabilityContext) => void) | undefined,
+  ): void {
     if (activate) {
       try {
         activate(context);
       } catch (error) {
-        this.unload(registration.id);
+        this.unload(instance.registration.id);
         throw error instanceof CapabilityLoadError
           ? error
           : new CapabilityLoadError(
-              registration.id,
-              `capability "${registration.id}" failed to activate: ${
+              instance.registration.id,
+              `capability "${instance.registration.id}" failed to activate: ${
                 error instanceof Error ? error.message : String(error)
               }`,
             );
       }
     }
+    // A declared service that was never provided is a lie: the capability said
+    // it provides something it does not, so it does not stay loaded.
+    for (const provided of instance.registration.provides ?? []) {
+      if (this.ownerOf("services", provided) !== instance.registration.id) {
+        this.unload(instance.registration.id);
+        throw new CapabilityLoadError(
+          instance.registration.id,
+          `capability "${instance.registration.id}" declared service "${provided}" but did not provide it`,
+        );
+      }
+    }
+  }
 
-    return context;
+  /** Activates every pending capability whose required services now exist. */
+  private wakePending(): void {
+    for (const [id, entry] of [...this.pending]) {
+      const missing = (entry.instance.registration.requires ?? []).filter(
+        (name) => this.service(name) === undefined,
+      );
+      if (missing.length) continue;
+      this.pending.delete(id);
+      try {
+        this.activateInstance(
+          entry.instance,
+          entry.instance.context,
+          entry.activate,
+        );
+      } catch {
+        // A pending capability that fails activation (or never provided its
+        // declared services) is removed — a lying capability is absent, not
+        // half-active. The failure is visible as the capability not being
+        // loaded.
+      }
+    }
+  }
+
+  private emitServiceUpdate(
+    name: string,
+    provider: string | undefined,
+    providerBefore?: string,
+  ): void {
+    const update: ServiceUpdate = { name, provider };
+    if (providerBefore !== undefined) update.providerBefore = providerBefore;
+    for (const listener of this.serviceListeners) {
+      try {
+        listener(update);
+      } catch {
+        // A listener that throws must not break the rest of the notification.
+      }
+    }
   }
 
   /**
@@ -261,10 +391,11 @@ export class CapabilityRegistry {
     registration: CapabilityRegistration,
     activate?: (context: CapabilityContext) => void,
   ):
-    | { ok: true; context: CapabilityContext }
+    | { ok: true; context: CapabilityContext; pending: boolean }
     | { ok: false; reason: string; error: Error } {
     try {
-      return { ok: true, context: this.load(registration, activate) };
+      const context = this.load(registration, activate);
+      return { ok: true, context, pending: this.pending.has(registration.id) };
     } catch (error) {
       const wrapped = error instanceof Error ? error : new Error(String(error));
       return { ok: false, reason: wrapped.message, error: wrapped };
@@ -352,8 +483,12 @@ export class CapabilityRegistry {
       if (this.owners.get(key) === id) {
         this.owners.delete(key);
         this.ownerPrecedence.delete(key);
+        // A service disappearing is a change its consumers need to hear about.
+        if (contribution.kind === "services")
+          this.emitServiceUpdate(contribution.name, undefined);
       }
     }
+    this.pending.delete(id);
     for (const grant of instance.registration.grants)
       this.byGrant.get(grant)?.delete(id);
     this.instances.delete(id);
@@ -439,6 +574,35 @@ export class CapabilityRegistry {
     return this.owners.get(contributionKey(kind, name));
   }
 
+  /** Resolves a service by name, from the capability currently providing it. */
+  service<T>(name: string): T | undefined {
+    return this.contribution<T>("services", name);
+  }
+
+  /** Every service currently provided, in provider order. */
+  services(): string[] {
+    return this.contributions("services").map(
+      (contribution) => contribution.name,
+    );
+  }
+
+  /**
+   * Subscribes to service changes. Fired when a service appears, is replaced
+   * by a higher-precedence provider, or disappears with its provider. Returns
+   * an unsubscribe function.
+   */
+  onServiceUpdate(listener: (update: ServiceUpdate) => void): () => void {
+    this.serviceListeners.add(listener);
+    return () => {
+      this.serviceListeners.delete(listener);
+    };
+  }
+
+  /** Whether a loaded capability is still waiting for required services. */
+  isPending(id: string): boolean {
+    return this.pending.has(id);
+  }
+
   private dependentsOf(id: string): string[] {
     return [...this.instances.values()]
       .filter((instance) =>
@@ -471,6 +635,9 @@ export type CapabilityRegistryView = Pick<
   | "contributions"
   | "contribution"
   | "ownerOf"
+  | "service"
+  | "services"
+  | "onServiceUpdate"
 >;
 
 export type CapabilityRegistryHost = CapabilityRegistryView &
@@ -506,6 +673,9 @@ export class CapabilityHost {
       contribution: <T>(kind: CapabilityGrant, name: string) =>
         this.registry.contribution<T>(kind, name),
       ownerOf: (kind, name) => this.registry.ownerOf(kind, name),
+      service: <T>(name: string) => this.registry.service<T>(name),
+      services: () => this.registry.services(),
+      onServiceUpdate: (listener) => this.registry.onServiceUpdate(listener),
     };
   }
 
@@ -554,10 +724,15 @@ export class CapabilityHost {
     registration: CapabilityRegistration,
     activate?: (context: CapabilityContext) => void,
   ):
-    | { ok: true; context: CapabilityContext }
+    | { ok: true; context: CapabilityContext; pending: boolean }
     | { ok: false; reason: string; error: Error } {
     try {
-      return { ok: true, context: this.load(registration, activate) };
+      const context = this.load(registration, activate);
+      return {
+        ok: true,
+        context,
+        pending: this.registry.isPending(registration.id),
+      };
     } catch (error) {
       const wrapped = error instanceof Error ? error : new Error(String(error));
       return { ok: false, reason: wrapped.message, error: wrapped };

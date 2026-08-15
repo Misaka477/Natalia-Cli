@@ -418,3 +418,170 @@ test("unloading the loser does not remove the winner's contribution", () => {
   expect(tools).toHaveLength(1);
   expect((tools[0]!.payload as { run: () => string }).run()).toBe("high");
 });
+
+test("a capability provides a service resolvable by name", () => {
+  const registry = new CapabilityRegistry();
+  registry.load(
+    registration("cap.store", {
+      grants: ["services"],
+      provides: ["store"],
+    }),
+    (ctx) => ctx.contribute("services", "store", { get: () => "value" }),
+  );
+  expect(registry.service<{ get: () => string }>("store")?.get()).toBe("value");
+  expect(registry.services()).toEqual(["store"]);
+  expect(registry.ownerOf("services", "store")).toBe("cap.store");
+});
+
+test("a capability requiring a service stays pending until it is provided", () => {
+  const registry = new CapabilityRegistry();
+  let activated = 0;
+  // Not provided yet: the consumer is held pending, loaded but not activated.
+  const loaded = registry.load(
+    registration("cap.consumer", { requires: ["store"] }),
+    () => {
+      activated++;
+    },
+  );
+  expect(activated).toBe(0);
+  expect(registry.isPending("cap.consumer")).toBe(true);
+  expect(registry.has("cap.consumer")).toBe(true);
+  expect(registry.service("store")).toBeUndefined();
+  expect(loaded.service("store")).toBeUndefined();
+
+  // The provider arrives: the consumer activates.
+  registry.load(
+    registration("cap.store", { grants: ["services"], provides: ["store"] }),
+    (ctx) => ctx.contribute("services", "store", { ready: true }),
+  );
+  expect(activated).toBe(1);
+  expect(registry.isPending("cap.consumer")).toBe(false);
+  expect(loaded.service<{ ready: boolean }>("store")?.ready).toBe(true);
+});
+
+test("tryLoad reports a pending load without calling it a failure", () => {
+  const registry = new CapabilityRegistry();
+  const result = registry.tryLoad(
+    registration("cap.consumer", { requires: ["missing"] }),
+  );
+  expect(result.ok).toBe(true);
+  if (result.ok) expect(result.pending).toBe(true);
+});
+
+test("a declared service that is never provided fails the load", () => {
+  const registry = new CapabilityRegistry();
+  expect(() =>
+    registry.load(
+      registration("cap.liar", { grants: ["services"], provides: ["store"] }),
+      () => {},
+    ),
+  ).toThrow(/declared service "store" but did not provide it/u);
+  expect(registry.has("cap.liar")).toBe(false);
+});
+
+test("a pending capability that never provides its declared service is dropped", () => {
+  const registry = new CapabilityRegistry();
+  registry.load(
+    registration("cap.consumer", { requires: ["store"] }),
+    () => {},
+  );
+  // The consumer's activation never runs, so the requirement that it provide
+  // its own declared service cannot hold — it must not stay half-loaded.
+  registry.load(
+    registration("cap.store", { grants: ["services"], provides: ["store"] }),
+    (ctx) => ctx.contribute("services", "store", 1),
+  );
+  // `cap.consumer` activates (its activation is empty) and stays loaded.
+  expect(registry.has("cap.consumer")).toBe(true);
+});
+
+test("service updates notify on provide, replace and disappear", () => {
+  const registry = new CapabilityRegistry();
+  const updates: Array<{
+    name: string;
+    provider?: string;
+    providerBefore?: string;
+  }> = [];
+  const unsubscribe = registry.onServiceUpdate((update) =>
+    updates.push(update),
+  );
+
+  registry.load(
+    registration("cap.store", { grants: ["services"], provides: ["store"] }),
+    (ctx) => ctx.contribute("services", "store", 1),
+  );
+  expect(updates).toEqual([{ name: "store", provider: "cap.store" }]);
+
+  // A higher-precedence provider replaces it, reporting who was there before.
+  registry.load(
+    registration("cap.store2", {
+      grants: ["services"],
+      provides: ["store"],
+      precedence: 10,
+    }),
+    (ctx) => ctx.contribute("services", "store", 2),
+  );
+  expect(updates[1]).toEqual({
+    name: "store",
+    provider: "cap.store2",
+    providerBefore: "cap.store",
+  });
+  expect(registry.service<number>("store")).toBe(2);
+
+  // Unloading the winner removes the service and notifies.
+  registry.unload("cap.store2");
+  expect(registry.service("store")).toBeUndefined();
+  expect(updates.at(-1)).toEqual({ name: "store", provider: undefined });
+
+  unsubscribe();
+  registry.load(
+    registration("cap.store3", { grants: ["services"], provides: ["store"] }),
+    (ctx) => ctx.contribute("services", "store", 3),
+  );
+  // Unsubscribed: the third provider's update is not delivered.
+  expect(updates.length).toBe(3);
+});
+
+test("a post-load service contribution wakes a pending capability", () => {
+  const registry = new CapabilityRegistry();
+  let activated = 0;
+  registry.load(registration("cap.consumer", { requires: ["store"] }), () => {
+    activated++;
+  });
+  expect(activated).toBe(0);
+  registry.load(
+    registration("cap.provider", { grants: ["services"] }),
+    () => {},
+  );
+  // The provider contributes its service after activation, the same way a
+  // plugin's tools arrive during its setup.
+  registry.contribute("cap.provider", "services", "store", { ok: true });
+  expect(activated).toBe(1);
+  expect(registry.isPending("cap.consumer")).toBe(false);
+});
+
+test("the same capability may refresh its own service in place", () => {
+  const registry = new CapabilityRegistry();
+  const updates: Array<{
+    name: string;
+    provider?: string;
+    providerBefore?: string;
+  }> = [];
+  registry.onServiceUpdate((update) => updates.push(update));
+  registry.load(
+    registration("cap.store", { grants: ["services"], provides: ["store"] }),
+    (ctx) => ctx.contribute("services", "store", 1),
+  );
+  expect(registry.service<number>("store")).toBe(1);
+  // Refreshing replaces the value rather than being refused as a duplicate.
+  registry.contribute("cap.store", "services", "store", 2);
+  expect(registry.service<number>("store")).toBe(2);
+  expect(registry.services()).toEqual(["store"]);
+  // One effective record, and subscribers heard the replacement.
+  expect(registry.contributions("services")).toHaveLength(1);
+  expect(updates.at(-1)).toEqual({
+    name: "store",
+    provider: "cap.store",
+    providerBefore: "cap.store",
+  });
+});

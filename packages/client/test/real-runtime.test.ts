@@ -9,6 +9,7 @@ import type {
   StreamingProvider,
 } from "@natalia/runtime";
 import { providerError } from "@natalia/runtime";
+import { CapabilityRegistry } from "@natalia/capability";
 import { createToolRegistry } from "@natalia/tools";
 import { getPluginCommands } from "@natalia/plugin";
 import { resolveConfig } from "@natalia/config";
@@ -804,6 +805,66 @@ test("runtime status reflects the configured auto approval profile", async () =>
     permissions: "auto",
   });
 });
+
+test("the runtime config is a kernel service refreshed on reload", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-config-service-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({ version: 2, defaultPermission: "ask" }),
+  );
+  const kernel = new CapabilityRegistry();
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_runtime_config_service",
+    capabilityRegistry: kernel,
+    provider: scriptedProvider("ready"),
+  });
+  client.start(() => undefined);
+  await waitFor(
+    () => kernel.service("runtime.config") !== undefined,
+    10_000,
+    "the runtime config service to be provided",
+  );
+
+  // By-name resolution: any capability can read the resolved config.
+  const first = kernel.service<{ defaultPermission?: string }>(
+    "runtime.config",
+  );
+  expect(first?.defaultPermission).toBe("ask");
+  expect(kernel.ownerOf("services", "runtime.config")).toBe(
+    "natalia-runtime-config",
+  );
+
+  // A config reload replaces the service and notifies subscribers.
+  const updates: Array<{ name: string; providerBefore?: string }> = [];
+  const unsubscribe = kernel.onServiceUpdate((update) => updates.push(update));
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({ version: 2, defaultPermission: "auto" }),
+  );
+  // Reload applies on demand, and the refresh replaces the service in place.
+  await client.reloadConfig?.();
+  await waitFor(() => {
+    const current = kernel.service<{ defaultPermission?: string }>(
+      "runtime.config",
+    );
+    return current?.defaultPermission === "auto";
+  });
+  expect(
+    kernel.service<{ defaultPermission?: string }>("runtime.config")
+      ?.defaultPermission,
+  ).toBe("auto");
+  expect(
+    updates.some(
+      (update) =>
+        update.name === "runtime.config" &&
+        update.providerBefore === "natalia-runtime-config",
+    ),
+  ).toBe(true);
+  unsubscribe();
+  await client.dispose?.();
+}, 60_000);
 
 test("tools.enabled=false keeps a family out of the runtime catalogue", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-runtime-tools-enabled-"));

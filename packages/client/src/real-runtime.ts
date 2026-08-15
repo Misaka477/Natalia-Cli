@@ -151,6 +151,11 @@ import {
   builtinToolFamilies,
   createToolRegistryFromCapabilities,
 } from "./capabilities/tool-family-capabilities";
+import {
+  RUNTIME_CONFIG_SERVICE,
+  refreshRuntimeConfigService,
+  registerRuntimeConfigCapability,
+} from "./capabilities/runtime-config-capability";
 import type { TaskModuleContext } from "./capabilities/task-module-tools";
 import {
   flowOverview as flowOverviewForWorkspace,
@@ -816,6 +821,9 @@ export function createRealRuntimeClient(
       tsRuntimeConfig = tsConfig.config;
       runtimeContextConfig = contextStatusConfig(tsConfig.config);
       maxSteps = tsConfig.config.runtime.maxStepsPerTurn;
+      // The config service is refreshed in place, so consumers of the service
+      // are notified of the reload.
+      refreshRuntimeConfigService(capabilityRegistry, tsConfig.config);
       // Permission changes (default profile switch, auto/ask flip, profile
       // edits) apply immediately, not on the next restart.
       reloadPermissionSettings(tsConfig.config);
@@ -856,6 +864,18 @@ export function createRealRuntimeClient(
         jitterMs: tsConfig.config.runtime.retry.jitterMs,
       };
       maxSteps = tsConfig.config.runtime.maxStepsPerTurn;
+      // The config is a kernel service: plugins and tool families can resolve
+      // it by name and subscribe to its updates.
+      const registeredConfig = registerRuntimeConfigCapability(
+        capabilityRegistry,
+        tsConfig.config,
+      );
+      if (!registeredConfig.ok)
+        publish({
+          type: "diagnostic",
+          level: "warning",
+          message: `runtime config service unavailable: ${registeredConfig.reason}`,
+        });
       if (
         options.permissionProfile &&
         !tsConfig.config.permissionProfiles[options.permissionProfile]
