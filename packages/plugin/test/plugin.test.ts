@@ -22,6 +22,8 @@ test("plugin registrations are capability-gated and removed on unload", async ()
         entry: "index.ts",
         capabilities: ["tools"],
         scope: "session",
+        provides: [] as string[],
+        requires: [] as string[],
       },
       setup(api) {
         api.tools.register({
@@ -76,6 +78,8 @@ test("plugin conformance harness verifies lifecycle cleanup", async () => {
         entry: "index.ts",
         capabilities: ["tools"],
         scope: "session",
+        provides: [] as string[],
+        requires: [] as string[],
       },
       setup(api) {
         api.tools.register({
@@ -116,6 +120,8 @@ test("plugin cannot use an undeclared capability", async () => {
           entry: "index.ts",
           capabilities: [],
           scope: "session",
+          provides: [] as string[],
+          requires: [] as string[],
         },
         setup(api) {
           api.events.on(() => undefined);
@@ -139,6 +145,8 @@ test("an explicit empty capability grant denies all plugin capabilities", async 
           entry: "index.ts",
           capabilities: ["tools"],
           scope: "session",
+          provides: [] as string[],
+          requires: [] as string[],
         },
         setup(api) {
           api.tools.register({
@@ -168,6 +176,8 @@ function pluginWithReadOnlyTool(id: string) {
       entry: "index.ts",
       capabilities: ["tools"],
       scope: "session",
+      provides: [] as string[],
+      requires: [] as string[],
     },
     setup(api) {
       api.tools.register({
@@ -198,6 +208,8 @@ test("a plugin command is namespaced, listed, and removed on unload", async () =
         entry: "index.ts",
         capabilities: ["commands"],
         scope: "session",
+        provides: [] as string[],
+        requires: [] as string[],
       },
       setup(api) {
         api.commands.register({
@@ -238,6 +250,8 @@ test("a plugin without the commands capability cannot register one", async () =>
           entry: "index.ts",
           capabilities: ["tools"],
           scope: "session",
+          provides: [] as string[],
+          requires: [] as string[],
         },
         setup(api) {
           api.commands.register({
@@ -266,6 +280,8 @@ test("two plugins cannot register the same command name", async () => {
     entry: "index.ts",
     capabilities: ["commands" as const],
     scope: "session" as const,
+    provides: [] as string[],
+    requires: [] as string[],
   });
   await registry.load(
     definePlugin({
@@ -306,6 +322,8 @@ function configuredPlugin(input: {
       entry: "index.ts",
       capabilities: ["tools"],
       scope: "session",
+      provides: [] as string[],
+      requires: [] as string[],
     },
     configSchema: input.configSchema,
     setup(api) {
@@ -445,6 +463,8 @@ test("a plugin manifest without a scope defaults to session", async () => {
         entry: "index.ts",
         capabilities: ["tools"],
         scope: "session",
+        provides: [] as string[],
+        requires: [] as string[],
       },
       setup(api) {
         api.tools.register({
@@ -470,7 +490,7 @@ test("plugin tools are offered to the kernel channel with the plugin's scope", a
   let unloaded: string | undefined;
   const registry = createPluginRegistry({
     tools,
-    contribute: (manifest) => (name, tool) => {
+    contribute: (manifest) => (_kind, name, tool) => {
       contributed.push({ name, tool, manifest });
       return () => released.push(name);
     },
@@ -489,6 +509,8 @@ test("plugin tools are offered to the kernel channel with the plugin's scope", a
         entry: "index.ts",
         scope: "workspace",
         capabilities: ["tools"],
+        provides: [],
+        requires: [],
       },
       setup(api) {
         api.tools.register({
@@ -527,6 +549,8 @@ test("conformance reports tool ownership and the approval boundary", async () =>
         entry: "index.ts",
         capabilities: ["tools"],
         scope: "session",
+        provides: [] as string[],
+        requires: [] as string[],
       },
       setup(api) {
         api.tools.register({
@@ -570,6 +594,8 @@ test("a plugin reads the runtime's resolved config via api.runtimeConfig", async
         entry: "index.ts",
         capabilities: [],
         scope: "session",
+        provides: [] as string[],
+        requires: [] as string[],
       },
       setup(api) {
         seen.push(api.runtimeConfig?.());

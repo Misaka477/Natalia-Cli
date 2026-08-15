@@ -641,7 +641,7 @@ export type CapabilityRegistryView = Pick<
 >;
 
 export type CapabilityRegistryHost = CapabilityRegistryView &
-  Pick<CapabilityRegistry, "tryLoad" | "contribute" | "unload">;
+  Pick<CapabilityRegistry, "tryLoad" | "contribute" | "unload" | "isPending">;
 
 /**
  * Owns one workspace's capability registry and resource lifetime.

@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createToolRegistry } from "@natalia/tools";
 import { CapabilityRegistry } from "@natalia/capability";
-import { createPluginsController } from "../src/plugins-controller";
+import {
+  createPluginsController,
+  pluginCapabilityID,
+} from "../src/plugins-controller";
+import { registerRuntimeConfigCapability } from "../src/capabilities/runtime-config-capability";
 import {
   installPluginSdkLinks,
   pluginSdkImportPath,
@@ -193,4 +197,185 @@ export default definePlugin({ manifest: { apiVersion: 1, id: "demo.plugin", vers
     commands.some((command) => command.name === "plugin_demo_plugin_reloaded"),
   ).toBe(true);
   await controller.close();
+});
+
+test("the plugin capability owns its tools, commands and listeners (single channel)", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-plugins-single-"));
+  await mkdir(join(root, ".natalia", "plugins", "full.plugin"), {
+    recursive: true,
+  });
+  await writeFile(
+    join(root, ".natalia", "plugins", "full.plugin", "natalia.plugin.json"),
+    JSON.stringify({
+      apiVersion: 1,
+      id: "full.plugin",
+      version: "1.0.0",
+      name: "Full",
+      description: "",
+      entry: "index.ts",
+      capabilities: ["tools", "commands", "events"],
+    }),
+  );
+  await writeFile(
+    join(root, ".natalia", "plugins", "full.plugin", "index.ts"),
+    `import { definePlugin } from "${pluginSdkImportPath()}";
+export default definePlugin({ manifest: { apiVersion: 1, id: "full.plugin", version: "1.0.0", name: "Full", capabilities: ["tools", "commands", "events"] }, setup(api) {
+  api.tools.register({ name: "run", description: "Run", requiresApproval: false, parameters: { type: "object", properties: {} }, async execute() { return "ok"; } });
+  api.commands.register({ name: "greet", title: "Greet", run() {} });
+  api.events.on(() => {});
+} });`,
+  );
+
+  const kernel = new CapabilityRegistry();
+  const { controller } = makeController(root, kernel);
+  await controller.init();
+
+  // The plugin capability owns every kind it registers — tools, commands and
+  // listeners are all kernel contributions, the same single channel a built-in
+  // tool family uses.
+  expect(kernel.ownerOf("tools", "plugin_full_plugin_run")).toBe(
+    "plugin:full.plugin",
+  );
+  expect(kernel.ownerOf("commands", "plugin_full_plugin_greet")).toBe(
+    "plugin:full.plugin",
+  );
+  expect(
+    kernel
+      .contributions("listeners")
+      .some(
+        (entry) =>
+          entry.capabilityID === "plugin:full.plugin" &&
+          entry.name.startsWith("plugin_full_plugin_listener_"),
+      ),
+  ).toBe(true);
+
+  // Unloading the plugin releases everything it owned, in every kind.
+  await controller.unload("full.plugin");
+  expect(kernel.ownerOf("tools", "plugin_full_plugin_run")).toBeUndefined();
+  expect(
+    kernel.ownerOf("commands", "plugin_full_plugin_greet"),
+  ).toBeUndefined();
+  expect(kernel.contributions("listeners")).toHaveLength(0);
+});
+
+test("a plugin provides a service through the kernel, resolvable by name", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-plugins-service-"));
+  await mkdir(join(root, ".natalia", "plugins", "svc.plugin"), {
+    recursive: true,
+  });
+  await writeFile(
+    join(root, ".natalia", "plugins", "svc.plugin", "natalia.plugin.json"),
+    JSON.stringify({
+      apiVersion: 1,
+      id: "svc.plugin",
+      version: "1.0.0",
+      name: "Svc",
+      description: "",
+      entry: "index.ts",
+      capabilities: [],
+      provides: ["greeting"],
+    }),
+  );
+  await writeFile(
+    join(root, ".natalia", "plugins", "svc.plugin", "index.ts"),
+    `import { definePlugin } from "${pluginSdkImportPath()}";
+export default definePlugin({ manifest: { apiVersion: 1, id: "svc.plugin", version: "1.0.0", name: "Svc", provides: ["greeting"] }, setup(api) {
+  api.services.provide("greeting", { text: "hello" });
+} });`,
+  );
+
+  const kernel = new CapabilityRegistry();
+  const { controller } = makeController(root, kernel);
+  await controller.init();
+
+  // The plugin's service is a kernel-owned contribution, resolvable by name —
+  // the first-class service surface a built-in capability has.
+  expect(kernel.ownerOf("services", "greeting")).toBe("plugin:svc.plugin");
+  expect(kernel.service<{ text: string }>("greeting")?.text).toBe("hello");
+  await controller.unload("svc.plugin");
+  expect(kernel.ownerOf("services", "greeting")).toBeUndefined();
+});
+
+test("a plugin providing an undeclared service is refused", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-plugins-undeclared-"));
+  await mkdir(join(root, ".natalia", "plugins", "bad.plugin"), {
+    recursive: true,
+  });
+  await writeFile(
+    join(root, ".natalia", "plugins", "bad.plugin", "natalia.plugin.json"),
+    JSON.stringify({
+      apiVersion: 1,
+      id: "bad.plugin",
+      version: "1.0.0",
+      name: "Bad",
+      description: "",
+      entry: "index.ts",
+      capabilities: [],
+      provides: [],
+    }),
+  );
+  await writeFile(
+    join(root, ".natalia", "plugins", "bad.plugin", "index.ts"),
+    `import { definePlugin } from "${pluginSdkImportPath()}";
+export default definePlugin({ manifest: { apiVersion: 1, id: "bad.plugin", version: "1.0.0", name: "Bad" }, setup(api) {
+  api.services.provide("undeclared", {});
+} });`,
+  );
+  const diagnostics: string[] = [];
+  const controller = createPluginsController({
+    workspaceRoot: root,
+    tools: createToolRegistry([]),
+    capabilityRegistry: new CapabilityRegistry(),
+    pluginPaths: () => [],
+    pluginEnabled: () => undefined,
+    pluginCapabilities: () => undefined,
+    pluginReadOnly: () => undefined,
+    pluginSettings: () => undefined,
+    publish: (event) => {
+      if (event.type === "diagnostic") diagnostics.push(event.message);
+    },
+    syncGlobalCommands: () => undefined,
+  });
+  await controller.init();
+  expect(
+    diagnostics.some((message) => message.includes("undeclared service")),
+  ).toBe(true);
+});
+
+test("a plugin requiring a service waits for it before its setup runs", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-plugins-requires-"));
+  await mkdir(join(root, ".natalia", "plugins", "req.plugin"), {
+    recursive: true,
+  });
+  await writeFile(
+    join(root, ".natalia", "plugins", "req.plugin", "natalia.plugin.json"),
+    JSON.stringify({
+      apiVersion: 1,
+      id: "req.plugin",
+      version: "1.0.0",
+      name: "Req",
+      description: "",
+      entry: "index.ts",
+      capabilities: [],
+      requires: ["runtime.config"],
+    }),
+  );
+  await writeFile(
+    join(root, ".natalia", "plugins", "req.plugin", "index.ts"),
+    `import { definePlugin } from "${pluginSdkImportPath()}";
+let setupRan = false;
+export default definePlugin({ manifest: { apiVersion: 1, id: "req.plugin", version: "1.0.0", name: "Req", requires: ["runtime.config"] }, setup(api) {
+  setupRan = true;
+  (globalThis as any).__reqPluginSetupRan = setupRan;
+} });`,
+  );
+
+  const kernel = new CapabilityRegistry();
+  // The required service is provided before the plugin loads.
+  registerRuntimeConfigCapability(kernel, { runtime: {} } as never);
+  const { controller } = makeController(root, kernel);
+  await controller.init();
+  // The capability activated (its requires satisfied) and setup ran.
+  expect(kernel.isPending(pluginCapabilityID("req.plugin"))).toBe(false);
+  expect(kernel.has(pluginCapabilityID("req.plugin"))).toBe(true);
 });

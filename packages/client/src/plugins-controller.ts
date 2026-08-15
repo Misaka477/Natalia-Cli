@@ -66,41 +66,64 @@ export function createPluginsController(input: {
           status: entry.action,
           detail: entry.detail,
         }),
-      contribute: (manifest) => {
+      contribute: async (manifest) => {
         const capabilityID = pluginCapabilityID(manifest.id);
-        return (name, tool) => {
-          if (!input.capabilityRegistry.has(capabilityID)) {
-            const result = input.capabilityRegistry.tryLoad(
-              {
-                id: capabilityID,
-                name: manifest.name,
-                version: manifest.version,
-                description: manifest.description,
-                scope: manifest.scope,
-                // Only what reaches the kernel: a plugin's commands and event
-                // listeners stay inside the plugin registry, which enforces its
-                // own grants for them.
-                grants: manifest.capabilities.includes("tools")
-                  ? ["tools"]
-                  : [],
-              },
-              () => {},
+        // The plugin's capability owns everything it registers — tools,
+        // commands and event listeners all reach the kernel, the single
+        // channel a built-in tool family uses. `events` maps to the kernel's
+        // `listeners` grant; execution stays in the registry, ownership is the
+        // kernel's.
+        const grants: CapabilityGrant[] = [];
+        if (manifest.capabilities.includes("tools")) grants.push("tools");
+        if (manifest.capabilities.includes("commands")) grants.push("commands");
+        if (manifest.capabilities.includes("events")) grants.push("listeners");
+        if (manifest.provides.length) grants.push("services");
+        const result = input.capabilityRegistry.tryLoad(
+          {
+            id: capabilityID,
+            name: manifest.name,
+            version: manifest.version,
+            description: manifest.description,
+            scope: manifest.scope,
+            grants,
+            // `requires` gates activation on the plugin's capability: its setup
+            // waits for the required services. `provides` is not declared on
+            // the registration — a plugin's services arrive during setup (post
+            // activation), and the declaration contract is enforced by
+            // `api.services.provide` (a declared name only).
+            ...(manifest.requires.length
+              ? { requires: manifest.requires }
+              : {}),
+          },
+          () => {},
+        );
+        if (!result.ok)
+          throw new Error(`plugin capability failed to load: ${result.reason}`);
+        // A plugin that requires services stays pending until they are
+        // provided; setup waits for the capability to activate — the same
+        // dependency-ordered activation a built-in capability gets.
+        if (manifest.requires.length) {
+          for (
+            let elapsed = 0;
+            elapsed < 10_000 &&
+            input.capabilityRegistry.isPending(capabilityID);
+            elapsed += 10
+          )
+            await Bun.sleep(10);
+          if (input.capabilityRegistry.isPending(capabilityID))
+            throw new Error(
+              `plugin capability ${capabilityID} still pending: required services were not provided`,
             );
-            if (!result.ok)
-              throw new Error(
-                `plugin capability failed to load: ${result.reason}`,
-              );
-          }
+        }
+        return (kind, name, payload) => {
           input.capabilityRegistry.contribute(
             capabilityID,
-            "tools",
+            kind,
             name,
-            tool,
+            payload,
           );
           // Kernel ownership is released when the plugin unloads (the whole
-          // capability goes), not per tool: the executor registry is the
-          // authority on what is callable, the kernel is the authority on who
-          // owns it.
+          // capability goes), not per registration.
           return () => {};
         };
       },

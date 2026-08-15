@@ -22,6 +22,18 @@ export const pluginManifestSchema = z.object({
   entry: z.string().default("index.ts"),
   capabilities: z.array(z.enum(["tools", "events", "commands"])).default([]),
   scope: pluginScopeSchema.default("session"),
+  /**
+   * Service names this plugin provides, first-class capability features: the
+   * plugin's capability declares them, so another capability can resolve them
+   * by name and subscribe to their updates.
+   */
+  provides: z.array(z.string()).default([]),
+  /**
+   * Service names this plugin needs before its setup runs. The plugin's
+   * capability stays pending until every required service is provided — the
+   * same dependency-ordered activation a built-in capability gets.
+   */
+  requires: z.array(z.string()).default([]),
 });
 export type PluginManifest = z.infer<typeof pluginManifestSchema>;
 /**
@@ -81,6 +93,14 @@ export type PluginAPI = {
    */
   runtimeConfig?: () => unknown;
   tools: { register(tool: RuntimeTool): () => void };
+  /**
+   * Services this plugin provides (declared in the manifest's `provides`):
+   * contributed to the capability kernel as `services`, so other capabilities
+   * resolve them by name and subscribe to their updates.
+   */
+  services: {
+    provide(name: string, value: unknown): () => void;
+  };
   events: { on(listener: (event: unknown) => void): () => void };
   /**
    * Commands a plugin adds to the palette. Gated on the "commands" capability
@@ -157,6 +177,13 @@ export function resolvePluginConfig(plugin: Plugin, config: unknown): unknown {
   return settled.value;
 }
 
+/** The kernel contribution kinds a plugin can make through its capability. */
+export type PluginContributionKind =
+  | "tools"
+  | "commands"
+  | "listeners"
+  | "services";
+
 export function createPluginRegistry(input: {
   tools: ToolRegistry;
   allowed?: string[];
@@ -164,17 +191,33 @@ export function createPluginRegistry(input: {
   onAudit?: (entry: PluginAudit) => void;
   /**
    * Optional kernel channel. Called once per plugin load, before setup, with the
-   * validated manifest. It returns a contribution sink for that plugin's tools,
-   * or `undefined` to keep plugin tools registry-only (the standalone default).
+   * validated manifest. It returns a contribution sink for that plugin's
+   * registrations, or `undefined` to keep plugin registrations registry-only
+   * (the standalone default).
    *
-   * When a sink is present, every registered tool is handed to it in addition to
-   * the tool registry, so the host can attribute the tool to the plugin: the
-   * kernel owns the tool, and `tool.registered` reports the plugin and the scope
-   * it declared instead of an anonymous host.
+   * When a sink is present, every tool, command and event listener is handed to
+   * it in addition to the registry, so the host can attribute them to the
+   * plugin: the kernel owns the registration, and unload releases it. This is
+   * the single channel — a plugin's capability owns everything it registers,
+   * exactly like a built-in tool family.
    */
   contribute?: (
     manifest: PluginManifest,
-  ) => ((name: string, tool: RuntimeTool) => () => void) | undefined;
+  ) =>
+    | ((
+        kind: PluginContributionKind,
+        name: string,
+        payload: unknown,
+      ) => () => void)
+    | Promise<
+        | ((
+            kind: PluginContributionKind,
+            name: string,
+            payload: unknown,
+          ) => () => void)
+        | undefined
+      >
+    | undefined;
   /** Called when a plugin unloads, so the host can release kernel ownership. */
   onUnload?: (pluginID: string) => void;
   /** The runtime's resolved config accessor, exposed to plugins as `api.runtimeConfig`. */
@@ -239,9 +282,11 @@ export function createPluginRegistry(input: {
       const listeners = new Set<(event: unknown) => void>();
       const commands = new Map<string, PluginCommand>();
       const disposers: Array<() => void> = [];
-      // The kernel channel is resolved before setup so a plugin's first tool
-      // registration can be attributed to it from the start.
-      const pluginContribute = input.contribute?.(manifest);
+      // The kernel channel is resolved before setup: the plugin's capability
+      // loads (and, for a plugin that declares `requires`, waits for the
+      // required services to appear) so setup runs only once the capability is
+      // active — the same dependency-ordered activation a built-in family gets.
+      const pluginContribute = await input.contribute?.(manifest);
       const api: PluginAPI = {
         config: resolvedConfig,
         tools: {
@@ -261,8 +306,21 @@ export function createPluginRegistry(input: {
               if (input.tools.get(name) === owned) input.tools.delete(name);
             };
             disposers.push(dispose);
-            if (pluginContribute) disposers.push(pluginContribute(name, owned));
+            if (pluginContribute)
+              disposers.push(pluginContribute("tools", name, owned));
             return dispose;
+          },
+        },
+        services: {
+          provide(name, value) {
+            if (!manifest.provides.includes(name))
+              throw new Error(
+                `plugin ${manifest.id} provided undeclared service: ${name}`,
+              );
+            disposers.push(() => undefined);
+            if (pluginContribute)
+              disposers.push(pluginContribute("services", name, value));
+            return () => undefined;
           },
         },
         events: {
@@ -271,6 +329,14 @@ export function createPluginRegistry(input: {
             listeners.add(listener);
             const dispose = () => listeners.delete(listener);
             disposers.push(dispose);
+            if (pluginContribute)
+              disposers.push(
+                pluginContribute(
+                  "listeners",
+                  `plugin_${manifest.id.replace(/[^a-z0-9_]/giu, "_")}_listener_${listeners.size}`,
+                  listener,
+                ),
+              );
             return dispose;
           },
         },
@@ -294,6 +360,8 @@ export function createPluginRegistry(input: {
               commandOwners.delete(name);
             };
             disposers.push(dispose);
+            if (pluginContribute)
+              disposers.push(pluginContribute("commands", name, owned));
             return dispose;
           },
         },
@@ -464,7 +532,7 @@ export async function runPluginConformance(input: {
     } as ToolRegistry,
     allowed: input.allowed,
     readOnly: input.readOnly,
-    contribute: (manifest) => (name) => {
+    contribute: (manifest) => (_kind, name) => {
       contributed.push(name);
       return () => {
         releases.push(name);
