@@ -110,3 +110,71 @@ test("promoting a candidate with no changes refuses", async () => {
     /has no changes to promote/u,
   );
 });
+
+test("a candidate that fails validation is refused promotion with its build output", async () => {
+  const root = await scratchRepo();
+  const manager = new WorktreeSandboxManager(root);
+  const sandbox = await manager.create("sbx.6");
+  await writeFile(join(sandbox.root, "file.txt"), "broken\n");
+  await git(sandbox.root, ["add", "."]);
+  await git(sandbox.root, ["commit", "-m", "broken candidate"]);
+  // The build evidence gate: a candidate that does not pass validation must
+  // not reach the system slot.
+  await expect(
+    manager.promoteWithValidation("sbx.6", {
+      command: "test -f build-pass-marker",
+    }),
+  ).rejects.toThrow(/failed validation/u);
+  // The system slot is untouched.
+  expect(await readFile(join(root, "file.txt"), "utf8")).toBe("base\n");
+  // And a passing candidate promotes.
+  const good = await manager.create("sbx.7");
+  await writeFile(join(good.root, "file.txt"), "good\n");
+  await git(good.root, ["add", "."]);
+  await git(good.root, ["commit", "-m", "good candidate"]);
+  await manager.promoteWithValidation("sbx.7", { command: "true" });
+  expect(await readFile(join(root, "file.txt"), "utf8")).toBe("good\n");
+});
+
+test("governance skips the human approval for a low-risk promotion", async () => {
+  const root = await scratchRepo();
+  const manager = new WorktreeSandboxManager(root);
+  const sandbox = await manager.create("sbx.8");
+  await mkdir(join(sandbox.root, "docs"), { recursive: true });
+  await writeFile(join(sandbox.root, "docs/note.md"), "low risk\n");
+  await git(sandbox.root, ["add", "."]);
+  await git(sandbox.root, ["commit", "-m", "low risk edit"]);
+  const authorized: string[][] = [];
+  await manager.promoteWithValidation("sbx.8", {
+    command: "true",
+    requireApprovalTier: "medium",
+    authorize: async (paths) => {
+      authorized.push(paths);
+    },
+  });
+  // A low-risk config/doc edit clears the medium gate without a human.
+  expect(authorized).toEqual([]);
+});
+
+test("governance requires the human approval for a high-risk promotion", async () => {
+  const root = await scratchRepo();
+  const manager = new WorktreeSandboxManager(root);
+  const sandbox = await manager.create("sbx.9");
+  await mkdir(join(sandbox.root, "packages/tools/src"), { recursive: true });
+  await writeFile(
+    join(sandbox.root, "packages/tools/src/types.ts"),
+    "contract\n",
+  );
+  await git(sandbox.root, ["add", "."]);
+  await git(sandbox.root, ["commit", "-m", "contract edit"]);
+  const authorized: string[][] = [];
+  await manager.promoteWithValidation("sbx.9", {
+    command: "true",
+    requireApprovalTier: "medium",
+    authorize: async (paths) => {
+      authorized.push(paths);
+    },
+  });
+  // A contract change is high risk: the human approval ran.
+  expect(authorized.length).toBe(1);
+});

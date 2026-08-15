@@ -17,6 +17,11 @@ import { rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { SandboxDiffKind } from "@natalia/contracts";
 import type { SandboxChange } from "./index";
+import {
+  requiresApproval,
+  riskTierForChanges,
+  type SandboxRiskTier,
+} from "./governance";
 
 export type WorktreePromotion = {
   sandboxID: string;
@@ -166,6 +171,65 @@ export class WorktreeSandboxManager {
     const promoted = await this.systemHead();
     this.lastKnownGood = lastKnownGood;
     return { sandboxID: id, base, promoted, lastKnownGood, changedFiles };
+  }
+
+  /**
+   * Runs a validation command in the candidate worktree — the build evidence a
+   * candidate must produce before promotion. The command runs in the worktree's
+   * own directory, so it checks exactly the candidate's state.
+   */
+  async validate(
+    id: string,
+    command: string,
+  ): Promise<{ ok: boolean; exitCode: number; output: string }> {
+    const root = resolve(this.sandboxRoot, id);
+    const process = Bun.spawn(["bash", "-c", command], {
+      cwd: root,
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(process.stdout).text(),
+      new Response(process.stderr).text(),
+      process.exited,
+    ]);
+    return { ok: exitCode === 0, exitCode, output: `${stdout}${stderr}` };
+  }
+
+  /**
+   * Validates the candidate and, when it passes, promotes it. The build
+   * evidence is part of the promotion contract: a candidate that does not
+   * build must not reach the system slot, and the failing output is the reason.
+   *
+   * When `requireApprovalTier` is set, the candidate's change set is classified
+   * into a governance risk tier and the authorization hook (the human approval
+   * of 半自迭代) runs only when the candidate clears the gate — a low-risk
+   * config edit promotes without a human in the loop, a contract change never
+   * does.
+   */
+  async promoteWithValidation(
+    id: string,
+    input: {
+      command: string;
+      authorize?: (paths: string[]) => Promise<void>;
+      requireApprovalTier?: SandboxRiskTier;
+    },
+  ): Promise<WorktreePromotion> {
+    const evidence = await this.validate(id, input.command);
+    if (!evidence.ok)
+      throw new Error(
+        `candidate ${id} failed validation (exit ${evidence.exitCode}):\n${evidence.output.slice(0, 2000)}`,
+      );
+    const authorize =
+      input.authorize && input.requireApprovalTier
+        ? async (paths: string[]) => {
+            const tier = riskTierForChanges(await this.previewMerge(id));
+            if (requiresApproval(tier, input.requireApprovalTier!))
+              await input.authorize!(paths);
+          }
+        : input.authorize;
+    return await this.merge(id, this.hostRoot, authorize);
   }
 
   /** The recorded last-known-good commit, if any. */

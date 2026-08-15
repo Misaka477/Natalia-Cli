@@ -554,3 +554,10 @@ export {
   WorktreeSandboxManager,
   type WorktreePromotion,
 } from "./worktree-sandbox";
+
+export {
+  requiresApproval,
+  riskTierForChanges,
+  riskTierForPath,
+  type SandboxRiskTier,
+} from "./governance";
