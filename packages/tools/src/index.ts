@@ -49,6 +49,15 @@ export {
 } from "./terminal-io";
 
 export { materializeTools } from "./invocation";
+export {
+  ToolExecutionPipeline,
+  type FrozenToolResult,
+  type PipelineRunResult,
+  type PostToolDecision,
+  type PreToolDecision,
+  type ToolExecutionInput,
+  type ToolGuard,
+} from "./execution-pipeline";
 /**
  * Process helpers are part of the tool-authoring surface: shell, process and
  * terminal families all spawn and supervise child processes, and a family
