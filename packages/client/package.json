@@ -24,6 +24,7 @@
     "@natalia/subagent": "workspace:*",
     "@natalia/terminal": "workspace:*",
     "@natalia/testing": "workspace:*",
+    "@natalia/tool-ask": "workspace:*",
     "@natalia/tool-fs": "workspace:*",
     "@natalia/tool-search": "workspace:*",
     "@natalia/tool-todo": "workspace:*",

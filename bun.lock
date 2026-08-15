@@ -85,6 +85,7 @@
         "@natalia/subagent": "workspace:*",
         "@natalia/terminal": "workspace:*",
         "@natalia/testing": "workspace:*",
+        "@natalia/tool-ask": "workspace:*",
         "@natalia/tool-fs": "workspace:*",
         "@natalia/tool-search": "workspace:*",
         "@natalia/tool-todo": "workspace:*",
@@ -206,6 +207,13 @@
       "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
+      },
+    },
+    "packages/tool-ask": {
+      "name": "@natalia/tool-ask",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/tools": "workspace:*",
       },
     },
     "packages/tool-fs": {
@@ -371,6 +379,8 @@
     "@natalia/terminal": ["@natalia/terminal@workspace:packages/terminal"],
 
     "@natalia/testing": ["@natalia/testing@workspace:packages/testing"],
+
+    "@natalia/tool-ask": ["@natalia/tool-ask@workspace:packages/tool-ask"],
 
     "@natalia/tool-fs": ["@natalia/tool-fs@workspace:packages/tool-fs"],
 

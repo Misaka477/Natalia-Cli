@@ -49,6 +49,9 @@
       "path": "../testing"
     },
     {
+      "path": "../tool-ask"
+    },
+    {
       "path": "../tool-fs"
     },
     {

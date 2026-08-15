@@ -19,12 +19,12 @@ import type {
   CapabilityRegistration,
   CapabilityRegistryHost,
 } from "@natalia/capability";
+import { askToolFamily } from "@natalia/tool-ask";
 import { fsToolFamily } from "@natalia/tool-fs";
 import { searchToolFamily } from "@natalia/tool-search";
 import { todoToolFamily } from "@natalia/tool-todo";
 import {
   agentToolFamily,
-  askToolFamily,
   createToolRegistry,
   processToolFamily,
   sandboxToolFamily,
@@ -56,8 +56,8 @@ export function builtinToolFamilies(
   return [
     fsToolFamily(),
     searchToolFamily(),
-    todoToolFamily(),
     askToolFamily(),
+    todoToolFamily(),
     agentToolFamily(),
     terminalToolFamily(),
     sandboxToolFamily(),

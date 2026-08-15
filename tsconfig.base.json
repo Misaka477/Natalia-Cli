@@ -19,6 +19,7 @@
       "@natalia/platform": ["packages/platform/src/index.ts"],
       "@natalia/plugin": ["packages/plugin/src/index.ts"],
       "@natalia/session": ["packages/session/src/index.ts"],
+      "@natalia/tool-ask": ["packages/tool-ask/src/index.ts"],
       "@natalia/tool-fs": ["packages/tool-fs/src/index.ts"],
       "@natalia/tool-search": ["packages/tool-search/src/index.ts"],
       "@natalia/tool-todo": ["packages/tool-todo/src/index.ts"],
