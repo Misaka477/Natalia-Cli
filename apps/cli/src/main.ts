@@ -66,6 +66,7 @@ import {
   importLocalSessionMetadata,
   doctorReport,
   installOutOfTreeToolFamily,
+  installRegistryToolFamily,
   installToolFamily,
   listLocalSessions,
   plainStatus,
@@ -748,6 +749,20 @@ switch (subcommand) {
       console.log(
         JSON.stringify(
           await installOutOfTreeToolFamily({ workspaceRoot, dir: target }),
+          null,
+          2,
+        ),
+      );
+      break;
+    }
+    const builtin = toolFamilyCatalogue().find(
+      (family) => family.id === target,
+    );
+    if (!builtin && /[@/]|\.(tgz|tar\.gz)$|^[a-z0-9-]+@/iu.test(target)) {
+      // A registry package spec: forward to the package manager.
+      console.log(
+        JSON.stringify(
+          await installRegistryToolFamily({ workspaceRoot, spec: target }),
           null,
           2,
         ),

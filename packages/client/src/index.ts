@@ -112,6 +112,12 @@ export {
   toolFamilyCapabilityID,
   type ToolFamilyLoadOutcome,
 } from "./capabilities/tool-family-capabilities";
+export {
+  discoverLocalToolFamilies,
+  loadLocalToolFamilies,
+  reloadLocalToolFamily,
+  watchLocalToolFamilies,
+} from "./capabilities/local-tool-families";
 export { providerErrorHint, retryDisplayLine } from "./retry-display";
 export {
   cleanupUnreferencedAttachments,

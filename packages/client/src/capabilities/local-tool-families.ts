@@ -39,12 +39,40 @@ export type LocalToolFamilyOptions = {
 export async function discoverLocalToolFamilies(root: string) {
   const dir = resolve(root);
   const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+  // Symlinks count as directories here: the package manager links local
+  // `file:` specs, and Dirent.isDirectory() is false for a symlink even
+  // though it resolves to one.
+  const isDirectory = (entry: {
+    isDirectory(): boolean;
+    isSymbolicLink(): boolean;
+  }) => entry.isDirectory() || entry.isSymbolicLink();
   const directories = [
     dir,
-    ...entries
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => join(dir, entry.name)),
+    ...entries.filter(isDirectory).map((entry) => join(dir, entry.name)),
   ];
+  // A `node_modules` subdirectory holds installed packages (the package
+  // manager's layout, the same "reconcile by installed state" the dsh
+  // research calls for): scan one level into it — plus scoped packages, which
+  // nest one deeper as `node_modules/@scope/<name>` — so an installed package
+  // with a `natalia.tool.json` at its root is discovered.
+  for (const entry of entries.filter(
+    (entry) => isDirectory(entry) && entry.name === "node_modules",
+  )) {
+    const installed = await readdir(join(dir, entry.name), {
+      withFileTypes: true,
+    }).catch(() => []);
+    for (const packageEntry of installed.filter(isDirectory)) {
+      const packageDir = join(dir, entry.name, packageEntry.name);
+      directories.push(packageDir);
+      if (packageEntry.name.startsWith("@")) {
+        const scoped = await readdir(packageDir, { withFileTypes: true }).catch(
+          () => [],
+        );
+        for (const scopedEntry of scoped.filter(isDirectory))
+          directories.push(join(packageDir, scopedEntry.name));
+      }
+    }
+  }
   const discovered: Array<{ manifest: LocalToolFamilyManifest; path: string }> =
     [];
   for (const directory of directories) {

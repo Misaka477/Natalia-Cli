@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -4020,4 +4021,73 @@ export default (): ToolFamily => ({
   );
   expect(list.exitCode).toBe(0);
   expect(new TextDecoder().decode(list.stdout)).toContain("extra.family");
+});
+
+test("CLI install <pkg> forwards to npm and registers the installed family", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-install-pkg-"));
+  // A packaged family: an installable package (package.json) carrying a
+  // natalia.tool.json, exactly what publishing @natalia/tool-* would produce.
+  const pkg = join(root, "tool-fixture-pkg");
+  await mkdir(pkg, { recursive: true });
+  await writeFile(
+    join(pkg, "package.json"),
+    JSON.stringify({
+      name: "@natalia/tool-fixture",
+      version: "1.0.0",
+      type: "module",
+    }),
+  );
+  await writeFile(
+    join(pkg, "natalia.tool.json"),
+    JSON.stringify({ entry: "index.ts" }),
+  );
+  await writeFile(
+    join(pkg, "index.ts"),
+    `import type { ToolFamily } from "@natalia/tools";
+export default (): ToolFamily => ({
+  id: "fixture.pkg", name: "Fixture Pkg", version: "1.0.0",
+  description: "Installed fixture family", scope: "session",
+  tools: [{ name: "pkg_run", description: "Run", requiresApproval: false,
+    parameters: { type: "object", properties: {} }, async execute() { return "ok"; } }],
+});
+`,
+  );
+
+  const install = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "install",
+      `file:${pkg}`,
+      "--workspace",
+      root,
+    ],
+    { cwd: root, stdout: "pipe", stderr: "pipe" },
+  );
+  expect(install.exitCode).toBe(0);
+  expect(JSON.parse(new TextDecoder().decode(install.stdout))).toMatchObject({
+    installed: true,
+    familyID: "fixture.pkg",
+  });
+
+  // The package landed under .natalia/tools/node_modules (the package
+  // manager's layout), trust was recorded, and config enables + scans it.
+  expect(
+    existsSync(
+      join(
+        root,
+        ".natalia",
+        "tools",
+        "node_modules",
+        "@natalia",
+        "tool-fixture",
+        "natalia.tool.json",
+      ),
+    ),
+  ).toBe(true);
+  const config = JSON.parse(
+    await readFile(join(root, ".natalia", "config.json"), "utf8"),
+  ) as { tools?: { enabled?: Record<string, boolean>; paths?: string[] } };
+  expect(config.tools?.enabled?.["fixture.pkg"]).toBe(true);
+  expect(config.tools?.paths).toContain(join(root, ".natalia", "tools"));
 });

@@ -1,6 +1,7 @@
 import {
   builtinToolFamilies,
   checkpointDisplayLine,
+  discoverLocalToolFamilies,
   compactionDisplayLine,
   globWorkspaceFiles,
   listWorkspaceFiles,
@@ -34,7 +35,7 @@ import {
 } from "@natalia/session";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -604,4 +605,82 @@ export async function trustList(workspaceRoot: string) {
 export async function trustRemove(workspaceRoot: string, key: string) {
   const store = await removeTrust(workspaceRoot, key);
   return { removed: !store[key], key };
+}
+
+/**
+ * Installs an out-of-tree tool family from a package manager spec.
+ *
+ * The P11 distribution layer, corrected by the dsh research: package
+ * management is delegated to the standard package manager (npm/pnpm) — registry
+ * resolution, download, versioning, dependencies and integrity are its job, and
+ * its lockfile is the integrity. This is a thin forwarder: `npm install` into
+ * `.natalia/tools`, then the family is discovered from the installed state (the
+ * loader scans `node_modules/*` for a `natalia.tool.json`), trusted and enabled.
+ */
+export async function installRegistryToolFamily(input: {
+  workspaceRoot: string;
+  spec: string;
+}): Promise<{ installed: boolean; familyID: string; source: string }> {
+  const toolsDir = resolve(input.workspaceRoot, ".natalia", "tools");
+  await mkdir(toolsDir, { recursive: true });
+  const process = Bun.spawn(
+    [
+      "npm",
+      "install",
+      "--no-audit",
+      "--no-fund",
+      "--prefix",
+      toolsDir,
+      input.spec,
+    ],
+    { stdin: "ignore", stdout: "pipe", stderr: "pipe" },
+  );
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(process.stdout).text(),
+    new Response(process.stderr).text(),
+    process.exited,
+  ]);
+  if (exitCode !== 0)
+    throw new Error(
+      `npm install ${input.spec} failed: ${(stderr || stdout).trim()}`,
+    );
+
+  // Find the installed family package by its manifest, then learn its id.
+  const discovered = await discoverLocalToolFamilies(toolsDir);
+  const installed = discovered.map(({ manifest, path }) => ({
+    manifest,
+    path,
+    packageDir: resolve(path, ".."),
+  }));
+  if (!installed.length)
+    throw new Error(
+      `no tool family package found in ${toolsDir} after install`,
+    );
+  const entry = resolve(installed[0]!.packageDir, installed[0]!.manifest.entry);
+  const module = (await import(pathToFileURL(entry).href)) as {
+    default?: unknown;
+  };
+  const exported = module.default;
+  const family =
+    typeof exported === "function"
+      ? (exported as () => { id: string; version: string })()
+      : (exported as { id: string; version: string } | undefined);
+  if (!family?.id)
+    throw new Error(`tool family entry has no default export: ${entry}`);
+
+  await recordTrust(input.workspaceRoot, {
+    key: installed[0]!.packageDir,
+    source: input.spec,
+    version: family.version,
+    fingerprint: await fingerprintFile(entry),
+    installedAt: new Date().toISOString(),
+  });
+
+  const { config } = await resolveConfig({
+    workspaceRoot: input.workspaceRoot,
+  });
+  const enabled = { ...config.tools.enabled, [family.id]: true };
+  const paths = Array.from(new Set([...(config.tools.paths ?? []), toolsDir]));
+  await updateConfig(input.workspaceRoot, { tools: { enabled, paths } });
+  return { installed: true, familyID: family.id, source: input.spec };
 }

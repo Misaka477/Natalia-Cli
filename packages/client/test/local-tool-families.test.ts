@@ -177,3 +177,37 @@ test("watchLocalToolFamilies reports a family entry change (debounced)", async (
   expect(fired[0]![1]).toBe(entry);
   await close();
 });
+
+test("discoverLocalToolFamilies finds installed packages under node_modules (scoped)", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-nodemodules-"));
+  const installed = join(root, "node_modules", "@natalia", "tool-fixture");
+  await mkdir(installed, { recursive: true });
+  await writeFile(
+    join(installed, "natalia.tool.json"),
+    JSON.stringify({ entry: "index.ts" }),
+  );
+  await writeFile(join(installed, "index.ts"), "export default {};");
+  const discovered = await discoverLocalToolFamilies(root);
+  expect(discovered.map((entry) => entry.path)).toContain(
+    join(installed, "natalia.tool.json"),
+  );
+});
+
+test("discoverLocalToolFamilies follows a symlinked installed package", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-symlink-"));
+  const actual = join(root, "real-pkg");
+  await mkdir(actual, { recursive: true });
+  await writeFile(
+    join(actual, "natalia.tool.json"),
+    JSON.stringify({ entry: "index.ts" }),
+  );
+  await writeFile(join(actual, "index.ts"), "export default {};");
+  // npm links local file: specs as symlinks; Dirent.isDirectory() is false for
+  // them, so the scan must follow.
+  await mkdir(join(root, "node_modules", "@natalia"), { recursive: true });
+  await Bun.$`ln -s ${actual} ${join(root, "node_modules", "@natalia", "tool-fixture")}`.quiet();
+  const discovered = await discoverLocalToolFamilies(root);
+  expect(discovered.map((entry) => entry.path)).toContain(
+    join(actual, "natalia.tool.json"),
+  );
+});
