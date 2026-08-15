@@ -49,6 +49,12 @@
       "path": "../testing"
     },
     {
+      "path": "../tool-fs"
+    },
+    {
+      "path": "../tool-search"
+    },
+    {
       "path": "../tool-todo"
     },
     {

@@ -19,15 +19,15 @@ import type {
   CapabilityRegistration,
   CapabilityRegistryHost,
 } from "@natalia/capability";
+import { fsToolFamily } from "@natalia/tool-fs";
+import { searchToolFamily } from "@natalia/tool-search";
 import { todoToolFamily } from "@natalia/tool-todo";
 import {
   agentToolFamily,
   askToolFamily,
   createToolRegistry,
-  fsToolFamily,
   processToolFamily,
   sandboxToolFamily,
-  searchToolFamily,
   shellToolFamily,
   terminalToolFamily,
   webToolFamily,

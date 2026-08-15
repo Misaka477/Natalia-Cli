@@ -1,8 +1,20 @@
+/**
+ * The filesystem tool family, as a separately packaged family.
+ *
+ * Depends on the framework only for the tool-authoring surface (`RuntimeTool`,
+ * `ToolFamily`, the argument helpers) and knows nothing about the runtime, the
+ * capability kernel or the host that loads it.
+ */
+import {
+  requireObject,
+  requireString,
+  workspacePath,
+  type RuntimeTool,
+  type ToolFamily,
+} from "@natalia/tools";
 import { createHash } from "node:crypto";
 import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
-import { requireObject, requireString, workspacePath } from "./arguments";
-import type { RuntimeTool } from "./types";
 
 function readFileTool(): RuntimeTool {
   return {
@@ -140,3 +152,18 @@ export const fileTools: RuntimeTool[] = [
   editFileTool(),
   readMediaFileTool(),
 ];
+
+/**
+ * Workspace scope: these tools only mean something inside the workspace they are
+ * pointed at, and the host's write lock serialises their writes per workspace.
+ */
+export function fsToolFamily(): ToolFamily {
+  return {
+    id: "fs",
+    name: "Filesystem Tools",
+    version: "1.0.0",
+    description: "Reading, writing and editing workspace files.",
+    scope: "workspace",
+    tools: fileTools,
+  };
+}

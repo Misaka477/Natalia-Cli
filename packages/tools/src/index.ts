@@ -1,8 +1,6 @@
 import { agentTools } from "./agent-tools";
 import { sandboxTools } from "./sandbox-tools";
 import { terminalTools } from "./terminal-tools";
-import { fileTools } from "./file-tools";
-import { searchTools } from "./search-tools";
 import { shellTools } from "./shell-tools";
 import { webTools } from "./web-tools";
 export { validateToolParameters, assertValidToolParameters } from "./validate";
@@ -147,28 +145,6 @@ export type ToolFamily = {
  * host's list of families is the only thing that changes. `todo` already left —
  * see `@natalia/tool-todo`.
  */
-export function fsToolFamily(): ToolFamily {
-  return {
-    id: "fs",
-    name: "Filesystem Tools",
-    version: "1.0.0",
-    description: "Reading, writing and editing workspace files.",
-    scope: "workspace",
-    tools: [...fileTools],
-  };
-}
-
-export function searchToolFamily(): ToolFamily {
-  return {
-    id: "search",
-    name: "Search Tools",
-    version: "1.0.0",
-    description: "Finding files by name and content in the workspace.",
-    scope: "workspace",
-    tools: [...searchTools],
-  };
-}
-
 export function askToolFamily(): ToolFamily {
   return {
     id: "ask",

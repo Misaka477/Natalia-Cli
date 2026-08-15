@@ -1,12 +1,20 @@
-import { readFile } from "node:fs/promises";
-import { isAbsolute, resolve } from "node:path";
+/**
+ * The search tool family, as a separately packaged family.
+ *
+ * Depends on the framework only for the tool-authoring surface (`RuntimeTool`,
+ * `ToolFamily`, the argument helpers) and knows nothing about the runtime, the
+ * capability kernel or the host that loads it.
+ */
 import {
   numberOr,
   optionalString,
   requireObject,
   requireString,
-} from "./arguments";
-import type { RuntimeTool } from "./types";
+  type RuntimeTool,
+  type ToolFamily,
+} from "@natalia/tools";
+import { readFile } from "node:fs/promises";
+import { isAbsolute, resolve } from "node:path";
 
 function globTool(): RuntimeTool {
   return {
@@ -111,3 +119,19 @@ function grepTool(): RuntimeTool {
 }
 
 export const searchTools: RuntimeTool[] = [globTool(), grepTool()];
+
+/**
+ * Workspace scope: these tools only mean something inside the workspace they are
+ * pointed at, and they read through the same workspace authorization the host
+ * applies to file reads.
+ */
+export function searchToolFamily(): ToolFamily {
+  return {
+    id: "search",
+    name: "Search Tools",
+    version: "1.0.0",
+    description: "Finding files by name and content in the workspace.",
+    scope: "workspace",
+    tools: searchTools,
+  };
+}
