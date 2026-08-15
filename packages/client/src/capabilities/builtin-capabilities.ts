@@ -3,12 +3,17 @@
  *
  * Scope, honestly: terminal, sandbox, checkpoint and MCP are still constructed
  * directly by the runtime, so these records make them visible and auditable
- * through the capability registry rather than owning their wiring. They declare
- * no contributions, which is why they need no grants beyond the ones they name.
+ * through the capability registry rather than owning their wiring. They are
+ * visibility-only records and declare **no grants**, because a grant is
+ * permission to contribute and these contribute nothing: claiming `tools` here
+ * put them in `withGrant("tools")` as tool providers that provide no tool.
  *
- * The task-module capability in `task-module-capability.ts` is the opposite case
- * and the one to copy: it contributes its tools through the kernel, so the
- * runtime never names them.
+ * The tools these subsystems expose are owned by their tool-family capabilities
+ * (`natalia-tool-terminal`, `natalia-tool-sandbox` in
+ * `tool-family-capabilities.ts`), which really do contribute them. The
+ * task-module capability in `task-module-capability.ts` is the other example to
+ * copy: it contributes its tools through the kernel, so the runtime never names
+ * them.
  */
 import type {
   CapabilityRegistration,
@@ -22,28 +27,28 @@ export function builtinCapabilities(): CapabilityRegistration[] {
       name: "Terminal",
       version: "1.0.0",
       scope: "session",
-      grants: ["tools", "resources"],
+      grants: [],
     },
     {
       id: "natalia-sandbox",
       name: "Sandbox",
       version: "1.0.0",
       scope: "workspace",
-      grants: ["tools", "resources"],
+      grants: [],
     },
     {
       id: "natalia-checkpoint",
       name: "Checkpoint",
       version: "1.0.0",
       scope: "workspace",
-      grants: ["tools", "commands"],
+      grants: [],
     },
     {
       id: "natalia-mcp",
       name: "MCP Server",
       version: "1.0.0",
       scope: "session",
-      grants: ["tools", "resources"],
+      grants: [],
     },
   ];
 }

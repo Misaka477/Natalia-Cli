@@ -15,6 +15,26 @@ export {
   TOOL_OUTPUT_RETENTION_MS,
 } from "./output";
 import { optionalString, requireObject, requireString } from "./arguments";
+
+/**
+ * The tool-authoring surface.
+ *
+ * A tool family is meant to be writable outside this package — that is the point
+ * of `ToolFamily` — and every built-in family already uses these helpers to read
+ * its arguments. Keeping them private would have forced an out-of-package family
+ * to reimplement argument validation, which is how two dialects of "what a bad
+ * argument is" appear.
+ */
+export {
+  numberOr,
+  optionalInteger,
+  optionalString,
+  positiveNumberOr,
+  positiveNumberOrUndefined,
+  requireObject,
+  requireString,
+  workspacePath,
+} from "./arguments";
 import { ManagedProcessRegistry, managedProcessTools } from "./managed-process";
 import type { RuntimeTool, ToolExecutionContext } from "./types";
 

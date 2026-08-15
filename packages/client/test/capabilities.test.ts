@@ -28,12 +28,21 @@ test("built-in capability records are stable data", () => {
     "natalia-checkpoint",
     "natalia-mcp",
   ]);
-  // Every record must declare a scope and at least one grant, otherwise the
-  // catalogue entry says nothing about what the subsystem is allowed to do.
+  // These are visibility-only records for subsystems the runtime still wires
+  // itself. They must declare a scope, and they must claim no grant: a grant is
+  // permission to contribute, and a record that contributes nothing while
+  // claiming `tools` shows up as a tool provider that provides no tool.
   for (const record of records) {
     expect(record.scope).toBeString();
-    expect(record.grants.length).toBeGreaterThan(0);
+    expect(record.grants).toEqual([]);
   }
+});
+
+test("no built-in subsystem record claims to provide tools", () => {
+  const registry = new CapabilityRegistry();
+  registerBuiltinCapabilities(registry);
+  // The tool providers are the tool-family capabilities, not these records.
+  expect(registry.withGrant("tools")).toEqual([]);
 });
 
 test("registration emits one durable event per capability that loaded", () => {
