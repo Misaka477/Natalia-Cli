@@ -568,7 +568,10 @@ export function createRealRuntimeClient(
     windowMode: () => tsRuntimeConfig?.runtime.terminal.windowMode ?? "auto",
     external: options.nativeTerminal,
   });
-  const sandboxController = createSandboxController({ workspaceRoot });
+  const sandboxController = createSandboxController({
+    workspaceRoot,
+    backend: () => tsRuntimeConfig?.sandbox.backend,
+  });
   const checkpointController = createCheckpointController({
     sessionID: () => sessionID,
     workspaceRoot,

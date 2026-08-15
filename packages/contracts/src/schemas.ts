@@ -26,6 +26,18 @@ export const terminalWindowConfigSchema = z.object({
   windowMode: z.enum(["auto", "windowless", "window"]).default("auto"),
 });
 
+export const sandboxConfigSchema = z.object({
+  /**
+   * Which sandbox backend is the default. `snapshot` is our own git-free
+   * backend (content-addressed object store, candidate/promote/rollback) and
+   * needs nothing external; `worktree` uses the host's real git when the
+   * workspace is a git repo, so a promoted sandbox change lands as a commit in
+   * the user's own history. Default `snapshot`: the framework ships its own
+   * git, git is opt-in for history integration.
+   */
+  backend: z.enum(["snapshot", "worktree"]).default("snapshot"),
+});
+
 export const runtimeConfigSchema = z.object({
   maxStepsPerTurn: z.number().int().positive().optional(),
   subagentDepth: z.number().int().min(1).max(8).default(1),
@@ -736,6 +748,7 @@ export const alertChannelConfigSchema = z.object({
 export const configV2Schema = z.object({
   version: z.literal(2),
   runtime: runtimeConfigSchema.default({}),
+  sandbox: sandboxConfigSchema.default({}),
   context: contextConfigSchema.default({}),
   checkpoint: checkpointConfigSchema,
   models: z.record(modelConfigSchema).default({}),
@@ -772,6 +785,8 @@ export const configV2Schema = z.object({
   alertChannels: z.record(alertChannelConfigSchema).default({}),
   experimental: experimentalConfigSchema.default({}),
 });
+
+export type SandboxBackend = z.infer<typeof sandboxConfigSchema>["backend"];
 
 export type ConfigV2 = z.infer<typeof configV2Schema>;
 export type ModelConfig = z.infer<typeof modelConfigSchema>;

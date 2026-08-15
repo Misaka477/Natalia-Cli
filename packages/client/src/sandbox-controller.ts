@@ -5,6 +5,7 @@ import {
   WorktreeSandboxManager,
   WorkspaceSandboxManager,
 } from "@natalia/sandbox";
+import type { SandboxBackend } from "@natalia/contracts";
 
 /**
  * The sandbox resource controller — second cut of the resource controllers
@@ -13,32 +14,38 @@ import {
  * and authorization stays in the shared pre-execute funnel
  * (`toolLayer.preExecute`), so there is exactly one policy path.
  *
- * The production backend is the worktree-based manager (P9): a sandbox is a
- * git worktree on a candidate branch, so an agent's changes are commits that
- * diff, preview and promote, and a failed activation rolls back to
- * last-known-good. Workspaces that are not git repos fall back to the
- * directory-copy manager — worktree semantics require git.
+ * The default backend is our own git-free snapshot manager: a sandbox is an
+ * isolated copy with candidate/promote/rollback against a content-addressed
+ * snapshot of the host — no external git needed. When the workspace is a git
+ * repo and `sandbox.backend: "worktree"` is set, the worktree-based manager
+ * (P9) is used instead, so a promoted sandbox change lands as a commit in the
+ * user's own git history.
  *
  * Multi-session shape (plan §41.9): the controller exposes the manager by
  * accessor, and today it installs exactly one instance. When sessions become
  * per-session maps (D3 forces background sessions into sandboxes), only this
  * module's `init`/`get` implementations change.
  */
-export function createSandboxController(input: { workspaceRoot: string }) {
+export function createSandboxController(input: {
+  workspaceRoot: string;
+  /** Backend from `sandbox.backend`; absent defaults to our own snapshot. */
+  backend?(): SandboxBackend | undefined;
+}) {
   let manager: WorkspaceSandboxManager | undefined;
 
   async function init() {
     if (manager) return;
-    // Worktree semantics need a git repo; everything else gets the git-free
-    // snapshot backend — same candidate/promotion/rollback surface, no git
-    // dependency. Both extend the shared operational surface the sandbox
-    // tools call.
+    // Our own git-free snapshot backend is the default; the worktree backend
+    // (real git, for history integration) is a per-project opt-in that needs a
+    // git repo. Both extend the shared operational surface the sandbox tools
+    // call.
     const isGitRepo =
       existsSync(join(input.workspaceRoot, ".git")) ||
       existsSync(join(input.workspaceRoot, ".git", "HEAD"));
-    const next = isGitRepo
-      ? new WorktreeSandboxManager(input.workspaceRoot)
-      : new SnapshotSandboxManager(input.workspaceRoot);
+    const next =
+      input.backend?.() === "worktree" && isGitRepo
+        ? new WorktreeSandboxManager(input.workspaceRoot)
+        : new SnapshotSandboxManager(input.workspaceRoot);
     await next.initialize();
     manager = next;
   }

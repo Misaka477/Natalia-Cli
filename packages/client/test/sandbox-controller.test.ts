@@ -2,6 +2,11 @@ import { expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  SnapshotSandboxManager,
+  WorktreeSandboxManager,
+} from "@natalia/sandbox";
+import { mkdir } from "node:fs/promises";
 import { createSandboxController } from "../src/sandbox-controller";
 
 test("sandbox controller initializes lazily and refuses before init", async () => {
@@ -21,4 +26,26 @@ test("sandbox controller init is idempotent", async () => {
   const first = controller.get();
   await controller.init();
   expect(controller.get()).toBe(first);
+});
+
+test("the default sandbox backend is our own git-free snapshot manager", async () => {
+  // A git repo workspace, but no backend configured: our own snapshot backend
+  // is the default — git is not required.
+  const root = await mkdtemp(join(tmpdir(), "natalia-sandbox-default-"));
+  await mkdir(join(root, ".git"), { recursive: true });
+  const controller = createSandboxController({ workspaceRoot: root });
+  await controller.init();
+  expect(controller.get()).toBeInstanceOf(SnapshotSandboxManager);
+  expect(controller.get()).not.toBeInstanceOf(WorktreeSandboxManager);
+});
+
+test("sandbox.backend=worktree opts into the real-git backend when a repo exists", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-sandbox-worktree-opt-"));
+  await mkdir(join(root, ".git"), { recursive: true });
+  const controller = createSandboxController({
+    workspaceRoot: root,
+    backend: () => "worktree",
+  });
+  await controller.init();
+  expect(controller.get()).toBeInstanceOf(WorktreeSandboxManager);
 });
