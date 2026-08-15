@@ -136,6 +136,60 @@ test("a capability cannot contribute after it has been unloaded", () => {
   expect(registry.contributions("tools")).toEqual([]);
 });
 
+test("a host can contribute to an already-loaded capability", () => {
+  // Some contributions arrive after activation — a plugin's tools land during
+  // its setup, once the capability owning them must already exist. The host
+  // path must add them with the same gates as activation.
+  const registry = new CapabilityRegistry();
+  registry.load(registration("cap.plugin", { scope: "workspace" }), () => {});
+  registry.contribute("cap.plugin", "tools", "plugin_read", { run: () => "x" });
+  expect(registry.ownerOf("tools", "plugin_read")).toBe("cap.plugin");
+  expect(registry.scopeOf("cap.plugin")).toBe("workspace");
+  expect(registry.contributions("tools")).toHaveLength(1);
+});
+
+test("post-load contribution is refused for an unknown capability", () => {
+  const registry = new CapabilityRegistry();
+  expect(() => registry.contribute("cap.ghost", "tools", "thing", {})).toThrow(
+    /not loaded/u,
+  );
+});
+
+test("post-load contribution still enforces the grant", () => {
+  const registry = new CapabilityRegistry();
+  registry.load(
+    registration("cap.tools-only", { grants: ["tools"] }),
+    () => {},
+  );
+  expect(() =>
+    registry.contribute("cap.tools-only", "commands", "thing", {}),
+  ).toThrow(/without the "commands" grant/u);
+});
+
+test("post-load contribution obeys the override protocol", () => {
+  const registry = new CapabilityRegistry();
+  registry.load(registration("cap.a"), (ctx) =>
+    ctx.contribute("tools", "shared", "a"),
+  );
+  registry.load(
+    registration("cap.b", { grants: ["tools"], precedence: 10 }),
+    (ctx) => ctx.contribute("tools", "shared", "b"),
+  );
+  // Equal-precedence newcomer refused even through the post-load path.
+  expect(() => registry.contribute("cap.a", "tools", "shared", "a2")).toThrow(
+    /already provided/u,
+  );
+  expect(registry.ownerOf("tools", "shared")).toBe("cap.b");
+});
+
+test("unloading a capability releases what the host contributed", () => {
+  const registry = new CapabilityRegistry();
+  registry.load(registration("cap.plugin"), () => {});
+  registry.contribute("cap.plugin", "tools", "late_tool", {});
+  expect(registry.unload("cap.plugin")).toBe(true);
+  expect(registry.ownerOf("tools", "late_tool")).toBeUndefined();
+});
+
 test("scope is enforced by unloading it, which is what scope means", () => {
   const registry = new CapabilityRegistry();
   registry.load(registration("cap.session", { scope: "session" }), (ctx) =>

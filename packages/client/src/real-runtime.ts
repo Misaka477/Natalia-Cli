@@ -557,6 +557,7 @@ export function createRealRuntimeClient(
   const pluginsController = createPluginsController({
     workspaceRoot,
     tools,
+    capabilityRegistry,
     pluginPaths: () => tsRuntimeConfig?.plugins.paths ?? [],
     pluginEnabled: () => tsRuntimeConfig?.plugins.enabled,
     pluginCapabilities: () => tsRuntimeConfig?.plugins.capabilities,

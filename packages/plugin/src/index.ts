@@ -6,6 +6,13 @@ import type { RuntimeTool, ToolRegistry } from "@natalia/tools";
 
 export const PLUGIN_API_VERSION = 1;
 
+/**
+ * How long a plugin's contributions live. This is the same vocabulary the
+ * capability kernel uses, so a host can attribute a plugin's tools to the
+ * plugin with the scope the plugin declared.
+ */
+export const pluginScopeSchema = z.enum(["process", "workspace", "session"]);
+
 export const pluginManifestSchema = z.object({
   apiVersion: z.literal(PLUGIN_API_VERSION),
   id: z.string().regex(/^[a-z0-9][a-z0-9._-]*$/u),
@@ -14,6 +21,7 @@ export const pluginManifestSchema = z.object({
   description: z.string().default(""),
   entry: z.string().default("index.ts"),
   capabilities: z.array(z.enum(["tools", "events", "commands"])).default([]),
+  scope: pluginScopeSchema.default("session"),
 });
 export type PluginManifest = z.infer<typeof pluginManifestSchema>;
 /**
@@ -148,6 +156,21 @@ export function createPluginRegistry(input: {
   allowed?: string[];
   readOnly?: Record<string, boolean>;
   onAudit?: (entry: PluginAudit) => void;
+  /**
+   * Optional kernel channel. Called once per plugin load, before setup, with the
+   * validated manifest. It returns a contribution sink for that plugin's tools,
+   * or `undefined` to keep plugin tools registry-only (the standalone default).
+   *
+   * When a sink is present, every registered tool is handed to it in addition to
+   * the tool registry, so the host can attribute the tool to the plugin: the
+   * kernel owns the tool, and `tool.registered` reports the plugin and the scope
+   * it declared instead of an anonymous host.
+   */
+  contribute?: (
+    manifest: PluginManifest,
+  ) => ((name: string, tool: RuntimeTool) => () => void) | undefined;
+  /** Called when a plugin unloads, so the host can release kernel ownership. */
+  onUnload?: (pluginID: string) => void;
 }) {
   const plugins = new Map<
     string,
@@ -208,6 +231,9 @@ export function createPluginRegistry(input: {
       const listeners = new Set<(event: unknown) => void>();
       const commands = new Map<string, PluginCommand>();
       const disposers: Array<() => void> = [];
+      // The kernel channel is resolved before setup so a plugin's first tool
+      // registration can be attributed to it from the start.
+      const pluginContribute = input.contribute?.(manifest);
       const api: PluginAPI = {
         config: resolvedConfig,
         tools: {
@@ -227,6 +253,7 @@ export function createPluginRegistry(input: {
               if (input.tools.get(name) === owned) input.tools.delete(name);
             };
             disposers.push(dispose);
+            if (pluginContribute) disposers.push(pluginContribute(name, owned));
             return dispose;
           },
         },
@@ -288,6 +315,7 @@ export function createPluginRegistry(input: {
       await entry.plugin.dispose?.();
       for (const dispose of entry.dispose) dispose();
       plugins.delete(id);
+      input.onUnload?.(id);
       writeAudit(id, "unloaded");
     },
     dispatch(event: unknown) {
@@ -402,8 +430,15 @@ export async function runPluginConformance(input: {
   allowed?: string[];
   /** Config to load with, validated by the plugin's own `configSchema`. */
   config?: unknown;
+  /** Workspace trust mark, same shape the registry accepts. */
+  readOnly?: Record<string, boolean>;
 }) {
   const tools = new Map<string, RuntimeTool>();
+  // The kernel channel is captured, not wired to a real registry: conformance
+  // verifies that plugin tools are attributable to the plugin (namespaced names,
+  // released on unload) without needing the capability kernel at all.
+  const contributed: string[] = [];
+  const releases: string[] = [];
   const registry = createPluginRegistry({
     tools: {
       set(name, tool) {
@@ -417,22 +452,70 @@ export async function runPluginConformance(input: {
       },
     } as ToolRegistry,
     allowed: input.allowed,
+    readOnly: input.readOnly,
+    contribute: (manifest) => (name) => {
+      contributed.push(name);
+      return () => {
+        releases.push(name);
+      };
+    },
   });
   const result: Array<{ name: string; passed: boolean; detail?: string }> = [];
+  const manifest = input.plugin.manifest;
+  let setupFailed: unknown;
   try {
     await registry.load(input.plugin, undefined, input.config);
-    result.push({ name: "manifest-and-setup", passed: true });
-    await registry.unload(input.plugin.manifest.id);
+  } catch (error) {
+    setupFailed = error;
+  }
+  result.push({
+    name: "manifest-and-setup",
+    passed: !setupFailed,
+    ...(setupFailed
+      ? {
+          detail:
+            setupFailed instanceof Error
+              ? setupFailed.message
+              : String(setupFailed),
+        }
+      : {}),
+  });
+  if (!setupFailed) {
+    // Every tool the plugin registered is namespaced to it, so a plugin cannot
+    // shadow a built-in by choosing a name, and it was offered to the kernel
+    // channel under that owned name.
+    const prefix = `plugin_${manifest.id.replace(/[^a-z0-9_]/giu, "_")}_`;
+    result.push({
+      name: "tool-ownership",
+      passed:
+        contributed.length > 0 &&
+        contributed.every((name) => name.startsWith(prefix)) &&
+        [...tools.keys()].every((name) => name.startsWith(prefix)),
+      detail:
+        contributed.length === 0 ? "plugin contributed no tools" : undefined,
+    });
+    // Without the readOnly trust mark, dynamic plugin tools demand approval;
+    // with it, the plugin's own declaration is honoured.
+    const sample = [...tools.entries()][0];
+    result.push({
+      name: "approval-boundary",
+      passed: sample
+        ? input.readOnly?.[manifest.id]
+          ? sample[1].requiresApproval === false
+          : sample[1].requiresApproval === true
+        : false,
+      detail: sample ? undefined : "plugin contributed no tools to check",
+    });
+    await registry.unload(manifest.id);
     result.push({
       name: "owned-registration-cleanup",
-      passed: tools.size === 0,
-      detail: tools.size ? "plugin tools remained registered" : undefined,
-    });
-  } catch (error) {
-    result.push({
-      name: "manifest-and-setup",
-      passed: false,
-      detail: error instanceof Error ? error.message : String(error),
+      passed:
+        tools.size === 0 &&
+        contributed.every((name) => releases.includes(name)),
+      detail:
+        tools.size || contributed.length !== releases.length
+          ? "plugin registrations remained after unload"
+          : undefined,
     });
   }
   return result;

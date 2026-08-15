@@ -49,7 +49,8 @@ registry audit 中记为 `failed`。
   "name": "Demo",
   "description": "A demonstration plugin",
   "entry": "index.ts",
-  "capabilities": ["tools", "events", "commands"]
+  "capabilities": ["tools", "events", "commands"],
+  "scope": "session"
 }
 ```
 
@@ -62,6 +63,11 @@ registry audit 中记为 `failed`。
 | `description`  | 可选，默认 `""`                                                                |
 | `entry`        | 可选，默认 `"index.ts"`；必须是本地 `.js`/`.mjs`/`.ts`                         |
 | `capabilities` | 插件可用的 `tools`/`events`/`commands`；host 还可用 `allowed` 白名单进一步约束 |
+| `scope`        | 插件贡献的存活范围：`process`/`workspace`/`session`，默认 `session`            |
+
+`scope` 是归属，不是沙箱：插件的工具报告插件为 owner、scope 为它所声明的值，
+与内置工具族完全一致。宿主的内核拥有插件的工具——卸载插件时它们从内核释放，
+`tool.registered` 指向插件而不是匿名的宿主。
 
 ## 4. `definePlugin`
 
@@ -229,13 +235,17 @@ import { runPluginConformance } from "@natalia/plugin";
 
 const results = await runPluginConformance({ plugin, allowed: ["tools"] });
 // [{ name: "manifest-and-setup", passed: true },
+//  { name: "tool-ownership", passed: true },
+//  { name: "approval-boundary", passed: true },
 //  { name: "owned-registration-cleanup", passed: true }]
 ```
 
-两项检查：manifest 可解析且 `setup` 能跑；`unload` 后插件注册的工具一个不剩。
-若你的插件贡献第三种东西，发布前按同样方式扩展 `packages/plugin/test/` 的
-conformance 检查——本仓库的门禁是：本指南里的一句声明，要么是测试，要么是
-谎言。
+四项检查：manifest 可解析且 `setup` 能跑；插件注册的每个工具都以插件为前缀命名、
+并以该名字交给 kernel 通道；动态工具的审批边界成立（除非工作区把插件标记为
+read-only——传 `readOnly: { "demo.plugin": true }` 可检查受信一侧）；`unload` 后
+工具 registry 与 kernel 通道里都不剩任何注册。若你的插件贡献第四种东西，发布前
+按同样方式扩展 `packages/plugin/test/` 的 conformance 检查——本仓库的门禁是：本
+指南里的一句声明，要么是测试，要么是谎言。
 
 ## 9. 加载与审计
 

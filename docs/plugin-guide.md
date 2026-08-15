@@ -54,7 +54,8 @@ it made is undone) and recorded as `failed` in the registry audit.
   "name": "Demo",
   "description": "A demonstration plugin",
   "entry": "index.ts",
-  "capabilities": ["tools", "events", "commands"]
+  "capabilities": ["tools", "events", "commands"],
+  "scope": "session"
 }
 ```
 
@@ -67,6 +68,13 @@ it made is undone) and recorded as `failed` in the registry audit.
 | `description`  | optional, default `""`                                                                                              |
 | `entry`        | optional, default `"index.ts"`; must be a local `.js`/`.mjs`/`.ts`                                                  |
 | `capabilities` | which of `tools`/`events`/`commands` the plugin may use; the host may further constrain with an `allowed` whitelist |
+| `scope`        | how long the plugin's contributions live: `process`/`workspace`/`session`, default `session`                        |
+
+`scope` is attribution, not sandboxing: a plugin's tools report the plugin as
+their owner with the scope it declared, the same way a built-in tool family
+does. The host's capability kernel owns the plugin's tools — unloading the
+plugin releases them from the kernel, and `tool.registered` names the plugin
+instead of an anonymous host.
 
 ## 4. `definePlugin`
 
@@ -253,14 +261,20 @@ import { runPluginConformance } from "@natalia/plugin";
 
 const results = await runPluginConformance({ plugin, allowed: ["tools"] });
 // [{ name: "manifest-and-setup", passed: true },
+//  { name: "tool-ownership", passed: true },
+//  { name: "approval-boundary", passed: true },
 //  { name: "owned-registration-cleanup", passed: true }]
 ```
 
-Two checks: the manifest parses and `setup` runs; and after `unload`, no tool
-the plugin registered is left behind. If your plugin adds a third kind of
-contribution, extend the conformance checks in `packages/plugin/test/` the
-same way before shipping it — the repo's gate is that a claim in this guide is
-either a test or a lie.
+Four checks: the manifest parses and `setup` runs; every tool the plugin
+registers is namespaced to it and offered to the kernel channel under that owned
+name; the dynamic-tool approval boundary holds (approval unless the workspace
+marks the plugin read-only — pass `readOnly: { "demo.plugin": true }` to check
+the trusted side); and after `unload` no registration — in the tool registry or
+the kernel channel — is left behind. If your plugin adds another kind of
+contribution, extend the conformance checks in `packages/plugin/test/` the same
+way before shipping it — the repo's gate is that a claim in this guide is either
+a test or a lie.
 
 ## 9. Loading and auditing
 

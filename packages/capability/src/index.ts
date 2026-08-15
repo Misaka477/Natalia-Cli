@@ -272,6 +272,31 @@ export class CapabilityRegistry {
   }
 
   /**
+   * Contributes to an already-loaded capability.
+   *
+   * Activation collects a capability's initial contributions, but some hosts
+   * learn their contributions later — a plugin's tools arrive during its setup,
+   * after the capability that owns them must already be loaded. This is the same
+   * gate the activate context enforces (grant check, sealed check, override
+   * protocol) on the capability's own contribution record, so the timing of the
+   * contribution cannot bypass the kernel's rules.
+   */
+  contribute(
+    capabilityID: string,
+    kind: CapabilityGrant,
+    name: string,
+    payload: unknown,
+  ): void {
+    const instance = this.instances.get(capabilityID);
+    if (!instance)
+      throw new CapabilityLoadError(
+        capabilityID,
+        `cannot contribute to "${capabilityID}": not loaded`,
+      );
+    instance.context.contribute(kind, name, payload);
+  }
+
+  /**
    * Loads several capabilities, ordering them so dependencies come first and
    * refusing a cycle rather than deadlocking or picking an arbitrary order.
    */
@@ -449,7 +474,7 @@ export type CapabilityRegistryView = Pick<
 >;
 
 export type CapabilityRegistryHost = CapabilityRegistryView &
-  Pick<CapabilityRegistry, "tryLoad">;
+  Pick<CapabilityRegistry, "tryLoad" | "contribute" | "unload">;
 
 /**
  * Owns one workspace's capability registry and resource lifetime.

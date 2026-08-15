@@ -21,6 +21,7 @@ test("plugin registrations are capability-gated and removed on unload", async ()
         description: "",
         entry: "index.ts",
         capabilities: ["tools"],
+        scope: "session",
       },
       setup(api) {
         api.tools.register({
@@ -74,6 +75,7 @@ test("plugin conformance harness verifies lifecycle cleanup", async () => {
         description: "",
         entry: "index.ts",
         capabilities: ["tools"],
+        scope: "session",
       },
       setup(api) {
         api.tools.register({
@@ -90,7 +92,9 @@ test("plugin conformance harness verifies lifecycle cleanup", async () => {
     allowed: ["tools"],
   });
   expect(results).toEqual([
-    { name: "manifest-and-setup", passed: true },
+    { name: "manifest-and-setup", passed: true, detail: undefined },
+    { name: "tool-ownership", passed: true, detail: undefined },
+    { name: "approval-boundary", passed: true, detail: undefined },
     { name: "owned-registration-cleanup", passed: true, detail: undefined },
   ]);
 });
@@ -111,6 +115,7 @@ test("plugin cannot use an undeclared capability", async () => {
           description: "",
           entry: "index.ts",
           capabilities: [],
+          scope: "session",
         },
         setup(api) {
           api.events.on(() => undefined);
@@ -133,6 +138,7 @@ test("an explicit empty capability grant denies all plugin capabilities", async 
           description: "",
           entry: "index.ts",
           capabilities: ["tools"],
+          scope: "session",
         },
         setup(api) {
           api.tools.register({
@@ -161,6 +167,7 @@ function pluginWithReadOnlyTool(id: string) {
       description: "",
       entry: "index.ts",
       capabilities: ["tools"],
+      scope: "session",
     },
     setup(api) {
       api.tools.register({
@@ -190,6 +197,7 @@ test("a plugin command is namespaced, listed, and removed on unload", async () =
         description: "",
         entry: "index.ts",
         capabilities: ["commands"],
+        scope: "session",
       },
       setup(api) {
         api.commands.register({
@@ -229,6 +237,7 @@ test("a plugin without the commands capability cannot register one", async () =>
           description: "",
           entry: "index.ts",
           capabilities: ["tools"],
+          scope: "session",
         },
         setup(api) {
           api.commands.register({
@@ -256,6 +265,7 @@ test("two plugins cannot register the same command name", async () => {
     description: "",
     entry: "index.ts",
     capabilities: ["commands" as const],
+    scope: "session" as const,
   });
   await registry.load(
     definePlugin({
@@ -295,6 +305,7 @@ function configuredPlugin(input: {
       description: "",
       entry: "index.ts",
       capabilities: ["tools"],
+      scope: "session",
     },
     configSchema: input.configSchema,
     setup(api) {
@@ -418,4 +429,122 @@ test("conformance checks a plugin against the config it will be loaded with", as
   expect(failed[0]?.detail).toMatch(
     /plugin config invalid: conformance.plugin/u,
   );
+});
+
+test("a plugin manifest without a scope defaults to session", async () => {
+  const tools = createToolRegistry([]);
+  const registry = createPluginRegistry({ tools });
+  await registry.load(
+    definePlugin({
+      manifest: {
+        apiVersion: 1,
+        id: "scopeless.plugin",
+        version: "1.0.0",
+        name: "Scopeless",
+        description: "",
+        entry: "index.ts",
+        capabilities: ["tools"],
+        scope: "session",
+      },
+      setup(api) {
+        api.tools.register({
+          name: "noop",
+          description: "Noop",
+          requiresApproval: false,
+          parameters: { type: "object", properties: {} },
+          async execute() {
+            return "ok";
+          },
+        });
+      },
+    }),
+  );
+  expect(registry.list()[0]?.scope).toBe("session");
+});
+
+test("plugin tools are offered to the kernel channel with the plugin's scope", async () => {
+  const tools = createToolRegistry([]);
+  const contributed: Array<{ name: string; tool: unknown; manifest: unknown }> =
+    [];
+  const released: string[] = [];
+  let unloaded: string | undefined;
+  const registry = createPluginRegistry({
+    tools,
+    contribute: (manifest) => (name, tool) => {
+      contributed.push({ name, tool, manifest });
+      return () => released.push(name);
+    },
+    onUnload: (id) => {
+      unloaded = id;
+    },
+  });
+  await registry.load(
+    definePlugin({
+      manifest: {
+        apiVersion: 1,
+        id: "owned.plugin",
+        version: "1.0.0",
+        name: "Owned",
+        description: "",
+        entry: "index.ts",
+        scope: "workspace",
+        capabilities: ["tools"],
+      },
+      setup(api) {
+        api.tools.register({
+          name: "scan",
+          description: "Scan",
+          requiresApproval: false,
+          parameters: { type: "object", properties: {} },
+          async execute() {
+            return "ok";
+          },
+        });
+      },
+    }),
+  );
+  // The kernel channel saw the owned, namespaced tool and the manifest it came
+  // from, so a host can attribute it and read the plugin's declared scope.
+  expect(contributed).toHaveLength(1);
+  expect(contributed[0]!.name).toBe("plugin_owned_plugin_scan");
+  expect((contributed[0]!.manifest as { scope: string }).scope).toBe(
+    "workspace",
+  );
+  await registry.unload("owned.plugin");
+  expect(released).toEqual(["plugin_owned_plugin_scan"]);
+  expect(unloaded).toBe("owned.plugin");
+});
+
+test("conformance reports tool ownership and the approval boundary", async () => {
+  const results = await runPluginConformance({
+    plugin: definePlugin({
+      manifest: {
+        apiVersion: 1,
+        id: "owned.plugin",
+        version: "1.0.0",
+        name: "Owned",
+        description: "",
+        entry: "index.ts",
+        capabilities: ["tools"],
+        scope: "session",
+      },
+      setup(api) {
+        api.tools.register({
+          name: "scan",
+          description: "Scan",
+          requiresApproval: false,
+          parameters: { type: "object", properties: {} },
+          async execute() {
+            return "ok";
+          },
+        });
+      },
+    }),
+    allowed: ["tools"],
+  });
+  const byName = new Map(results.map((check) => [check.name, check]));
+  // Without the readOnly trust mark the dynamic tool demands approval.
+  expect(byName.get("tool-ownership")?.passed).toBe(true);
+  expect(byName.get("approval-boundary")?.passed).toBe(true);
+  expect(byName.get("owned-registration-cleanup")?.passed).toBe(true);
 });
