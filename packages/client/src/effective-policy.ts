@@ -2,7 +2,7 @@ import type {
   NataliaFlowDocument,
   PermissionProfile,
 } from "@natalia/contracts";
-import { createToolRegistry } from "@natalia/tools";
+import { builtinToolNames } from "./capabilities/tool-family-capabilities";
 import {
   moduleToolPolicy,
   type NataliaFlowModuleType,
@@ -250,7 +250,9 @@ function runtimeToolNames(capabilities: {
   readDataSource?: boolean;
 }) {
   return [
-    ...createToolRegistry().keys(),
+    // The host's family catalogue is the built-in inventory. Keeping a second
+    // list here is how a tool ends up callable but unknown to policy.
+    ...builtinToolNames(),
     SYSTEM_MODULE_TOOL,
     ...(capabilities.reportIssue ? ["report_issue"] : []),
     ...(capabilities.readDataSource ? ["read_data_source"] : []),

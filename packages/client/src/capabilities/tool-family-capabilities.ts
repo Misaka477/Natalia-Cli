@@ -5,7 +5,7 @@
  * the `ToolRegistry`: the kernel did not own them, `tool.registered` reported
  * every one of them as owned by `natalia-runtime`, and nothing could remove a
  * family because nothing had ever contributed it. Here each family from
- * `defaultToolFamilies()` is loaded as one capability that contributes its own
+ * `builtinToolFamilies()` is loaded as one capability that contributes its own
  * tools, so the built-ins are on exactly the same footing as an external plugin:
  *
  *   - the kernel refuses a contribution outside the `tools` grant;
@@ -19,14 +19,61 @@ import type {
   CapabilityRegistration,
   CapabilityRegistryHost,
 } from "@natalia/capability";
+import { todoToolFamily } from "@natalia/tool-todo";
 import {
+  agentToolFamily,
+  askToolFamily,
   createToolRegistry,
-  defaultToolFamilies,
+  fsToolFamily,
+  processToolFamily,
+  sandboxToolFamily,
+  searchToolFamily,
+  shellToolFamily,
+  terminalToolFamily,
+  webToolFamily,
   ManagedProcessRegistry,
   type RuntimeTool,
   type ToolFamily,
   type ToolRegistry,
 } from "@natalia/tools";
+
+/**
+ * The tool families this host loads, in the order their tools are advertised.
+ *
+ * Composition lives here, not in `@natalia/tools`, because the framework ships no
+ * tools: a family is described by whoever packages it, and the host decides which
+ * ones to load. `todo` already comes from its own package; the rest are described
+ * by factories that still live next to their implementations, and moving one out
+ * changes only its import here.
+ *
+ * This is also the effective built-in catalogue — the single list that says what
+ * the model can call — so anything that needs to know the built-in tool names
+ * reads it instead of keeping a second inventory.
+ */
+export function builtinToolFamilies(
+  processRegistry = new ManagedProcessRegistry(),
+): ToolFamily[] {
+  return [
+    fsToolFamily(),
+    searchToolFamily(),
+    todoToolFamily(),
+    askToolFamily(),
+    agentToolFamily(),
+    terminalToolFamily(),
+    sandboxToolFamily(),
+    shellToolFamily(),
+    processToolFamily(processRegistry),
+    webToolFamily(),
+  ];
+}
+
+/** Every built-in tool name, including the aliases a model may use. */
+export function builtinToolNames(): string[] {
+  return builtinToolFamilies().flatMap((family) => [
+    ...family.tools.map((tool) => tool.name),
+    ...Object.keys(family.aliases ?? {}),
+  ]);
+}
 
 /** The capability id a family is loaded as. */
 export function toolFamilyCapabilityID(familyID: string) {
@@ -95,7 +142,8 @@ export function createToolRegistryFromCapabilities(input: {
   processRegistry?: ManagedProcessRegistry;
   families?: ToolFamily[];
 }): { tools: ToolRegistry; outcome: ToolFamilyLoadOutcome } {
-  const families = input.families ?? defaultToolFamilies(input.processRegistry);
+  const families = input.families ?? builtinToolFamilies(input.processRegistry);
+
   const outcome = registerToolFamilyCapabilities(input.registry, families);
   const tools = createToolRegistry([]);
   const accepted = new Set(

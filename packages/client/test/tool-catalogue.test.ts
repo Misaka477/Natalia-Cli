@@ -1,8 +1,20 @@
 import { expect, test } from "bun:test";
-import { createToolRegistry } from "../src/index";
+import { CapabilityRegistry } from "@natalia/capability";
+import { createToolRegistryFromCapabilities } from "../src/capabilities/tool-family-capabilities";
+
+/** The catalogue the host actually assembles, through the kernel. */
+function builtinRegistry() {
+  return createToolRegistryFromCapabilities({
+    registry: new CapabilityRegistry(),
+  }).tools;
+}
 
 /**
  * The built-in tool catalogue, pinned.
+ *
+ * It lives with the host because the host composes it: the families come from
+ * `@natalia/tools` and from separately packaged ones like `@natalia/tool-todo`,
+ * and only the assembled result is the surface a model sees.
  *
  * This is a policy surface, not an inventory: a tool that quietly disappears
  * changes what the model can do, a name that changes breaks every transcript and
@@ -88,7 +100,7 @@ const catalogue: Array<
 ];
 
 test("the built-in tool catalogue is exactly this, with these approval boundaries", () => {
-  const registry = createToolRegistry();
+  const registry = builtinRegistry();
   const actual = [...registry.entries()]
     .map(
       ([name, tool]) =>
@@ -116,7 +128,7 @@ test("the interactive terminal aliases resolve to the tools they stand for", () 
   // The short names are what a model tends to reach for; they are registered as
   // aliases rather than duplicate tools so there is one implementation and one
   // approval boundary per action.
-  const registry = createToolRegistry();
+  const registry = builtinRegistry();
   for (const [alias, target] of [
     ["interactive_start", "interactive_terminal_start"],
     ["interactive_read", "interactive_terminal_read"],

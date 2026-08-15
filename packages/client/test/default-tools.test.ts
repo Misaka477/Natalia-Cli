@@ -3,18 +3,27 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, test } from "bun:test";
 import {
-  createToolRegistry,
   encodeTerminalKey,
   ManagedProcessRegistry,
   nativeTerminalReadPage,
   nativeTerminalSearchPage,
-} from "../src";
+} from "@natalia/tools";
+import { CapabilityRegistry } from "@natalia/capability";
+import { createToolRegistryFromCapabilities } from "../src/capabilities/tool-family-capabilities";
+
+/** The built-in catalogue the host assembles, so these tests exercise the real surface. */
+function builtinTools(processRegistry = new ManagedProcessRegistry()) {
+  return createToolRegistryFromCapabilities({
+    registry: new CapabilityRegistry(),
+    processRegistry,
+  }).tools;
+}
 import { NativeTerminalRegistry } from "@natalia/native-terminal";
 import { WorkspaceSandboxManager } from "@natalia/sandbox";
 
 test("default file tools read write and edit inside workspace", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-files-"));
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   await tools
     .get("write_file")!
     .execute(
@@ -43,7 +52,7 @@ test("default file tools read write and edit inside workspace", async () => {
 test("default shell and process tools execute real commands", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-process-"));
   await writeFile(join(root, "data.txt"), "ok\n");
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   const shell = await tools
     .get("run_shell")!
     .execute({ command: "cat data.txt" }, { workspaceRoot: root });
@@ -102,7 +111,7 @@ test("default shell and process tools execute real commands", async () => {
 test("managed process registry reports live workspace process counts", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-process-count-"));
   const registry = new ManagedProcessRegistry();
-  const tools = createToolRegistry(undefined, registry);
+  const tools = builtinTools(registry);
   await tools
     .get("process_start")!
     .execute(
@@ -117,18 +126,18 @@ test("managed process registry reports live workspace process counts", async () 
 });
 
 test("subagent retry is exposed as an explicit continuation tool", () => {
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   expect(tools.get("agent_retry")?.requiresApproval).toBe(true);
   expect(tools.get("agent_retry")?.description).toContain("continuation");
 });
 
 test("plan retains the approval boundary of its durable todo write", () => {
-  expect(createToolRegistry().get("plan")?.requiresApproval).toBe(true);
+  expect(builtinTools().get("plan")?.requiresApproval).toBe(true);
 });
 
 test("managed process registry persists state for restart and background aliases", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-persist-"));
-  const first = createToolRegistry();
+  const first = builtinTools();
   await first
     .get("background_start")!
     .execute(
@@ -141,7 +150,7 @@ test("managed process registry persists state for restart and background aliases
       .execute({ id: "proc_persist" }, { workspaceRoot: root }),
   );
 
-  const second = createToolRegistry();
+  const second = builtinTools();
   const listed = JSON.parse(
     await second.get("background_list")!.execute({}, { workspaceRoot: root }),
   ) as Array<{ id: string }>;
@@ -158,7 +167,7 @@ test("managed process registry persists state for restart and background aliases
 
 test("managed process restart preserves readiness configuration", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-restart-"));
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   await tools.get("process_start")!.execute(
     {
       id: "proc_restart",
@@ -190,7 +199,7 @@ test("managed process restart preserves readiness configuration", async () => {
 
 test("managed process stop terminates the owned process group", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-process-group-"));
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   const started = JSON.parse(
     await tools.get("process_start")!.execute(
       {
@@ -213,7 +222,7 @@ test("managed process stop terminates the owned process group", async () => {
 
 test("managed process output uses a UTF-8 byte budget", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-process-output-"));
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   await tools.get("process_start")!.execute(
     {
       id: "proc_output",
@@ -240,7 +249,7 @@ test("managed process output uses a UTF-8 byte budget", async () => {
 
 test("managed process max runtime stops the owned process group", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-process-deadline-"));
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   const started = JSON.parse(
     await tools.get("process_start")!.execute(
       {
@@ -268,7 +277,7 @@ test("reopened managed process registry restores a durable deadline", async () =
   const root = await mkdtemp(
     join(tmpdir(), "natalia-tools-process-reopen-deadline-"),
   );
-  const first = createToolRegistry();
+  const first = builtinTools();
   await first.get("process_start")!.execute(
     {
       id: "proc_reopen_deadline",
@@ -277,7 +286,7 @@ test("reopened managed process registry restores a durable deadline", async () =
     },
     { workspaceRoot: root },
   );
-  const reopened = createToolRegistry();
+  const reopened = builtinTools();
   await reopened.get("process_list")!.execute({}, { workspaceRoot: root });
   await Bun.sleep(300);
   const status = JSON.parse(
@@ -290,7 +299,7 @@ test("reopened managed process registry restores a durable deadline", async () =
 
 test("reopened registry immediately stops an overdue durable deadline", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-process-overdue-"));
-  const first = createToolRegistry();
+  const first = builtinTools();
   const started = JSON.parse(
     await first
       .get("process_start")!
@@ -305,7 +314,7 @@ test("reopened registry immediately stops an overdue durable deadline", async ()
   };
   parsed.processes[0]!.deadlineAt = new Date(Date.now() - 1).toISOString();
   await writeFile(manifest, `${JSON.stringify(parsed)}\n`);
-  const reopened = createToolRegistry();
+  const reopened = builtinTools();
   const status = JSON.parse(
     await reopened
       .get("process_status")!
@@ -317,7 +326,7 @@ test("reopened registry immediately stops an overdue durable deadline", async ()
 
 test("managed process resource limits require positive values", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-process-limits-"));
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   await expect(
     tools
       .get("process_start")!
@@ -343,7 +352,7 @@ test("managed process IDs and deadlines are isolated by workspace", async () => 
   const secondRoot = await mkdtemp(
     join(tmpdir(), "natalia-tools-process-second-"),
   );
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   await tools
     .get("process_start")!
     .execute(
@@ -378,7 +387,7 @@ test("native glob grep and durable todo tools operate inside the workspace", asy
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-discovery-"));
   await writeFile(join(root, "needle.ts"), "export const needle = 'found';\n");
   await writeFile(join(root, "other.txt"), "nothing here\n");
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   expect(
     await tools
       .get("glob")!
@@ -427,7 +436,7 @@ test("glob and grep preflight every exposed or read workspace path", async () =>
       if (input.paths.includes("protected.ts")) throw new Error("protected");
     },
   };
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   await expect(
     tools.get("glob")!.execute({ pattern: "*.ts" }, context),
   ).rejects.toThrow("protected");
@@ -447,7 +456,7 @@ test("media and browser visit tools provide native TS metadata", async () => {
     join(root, "image.png"),
     new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
   );
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   expect(
     await tools
       .get("read_media_file")!
@@ -508,7 +517,7 @@ test("media and browser visit tools provide native TS metadata", async () => {
 });
 
 test("ask_user tool delegates to the runtime question channel", async () => {
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   const result = await tools.get("ask_user")!.execute(
     { question: "Pick one", options: ["yes", "no"] },
     {
@@ -526,7 +535,7 @@ test("ask_user tool delegates to the runtime question channel", async () => {
 });
 
 test("web_search uses a native configured endpoint without proxying Go", async () => {
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   const saved = process.env.NATALIA_WEB_SEARCH_URL;
   const server = Bun.serve({
     port: 0,
@@ -550,7 +559,7 @@ test("web_search uses a native configured endpoint without proxying Go", async (
 });
 
 test("web_search selects the configured endpoint only when its priority permits", async () => {
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   const configured = Bun.serve({
     port: 0,
     fetch: () => new Response("configured provider result"),
@@ -597,7 +606,7 @@ test("interactive Terminal tools keep model I/O on one native host pane", async 
     async stop() {},
   });
   const context = { workspaceRoot: root, nativeTerminal };
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   const startResult = await tools
     .get("interactive_terminal_start")!
     .execute({ command: "cat", id: "tty_tools" }, context);
@@ -731,7 +740,7 @@ test("unified interactive terminal input tool sends text and key sequences", asy
     async stop() {},
   });
   const context = { workspaceRoot: root, nativeTerminal };
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   await tools
     .get("interactive_terminal_start")!
     .execute({ command: "cat", id: "tty_input" }, context);
@@ -804,7 +813,7 @@ test("interactive terminal snapshot returns cursor and revision without afterRev
     async stop() {},
   });
   const context = { workspaceRoot: root, nativeTerminal };
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   await tools
     .get("interactive_terminal_start")!
     .execute({ command: "cat", id: "tty_snapshot" }, context);
@@ -851,7 +860,7 @@ test("terminal observe latest mode returns current state without waiting", async
     async stop() {},
   });
   const context = { workspaceRoot: root, nativeTerminal };
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   await tools
     .get("interactive_terminal_start")!
     .execute({ command: "cat", id: "tty_observe" }, context);
@@ -898,7 +907,7 @@ test("terminal observe tail mode returns only recent lines", async () => {
     async stop() {},
   });
   const context = { workspaceRoot: root, nativeTerminal };
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   await tools
     .get("interactive_terminal_start")!
     .execute({ command: "cat", id: "tty_tail" }, context);
@@ -948,7 +957,7 @@ test("terminal observe cursor mode returns lines around cursor", async () => {
     async stop() {},
   });
   const context = { workspaceRoot: root, nativeTerminal };
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   await tools
     .get("interactive_terminal_start")!
     .execute({ command: "cat", id: "tty_cursor" }, context);
@@ -991,7 +1000,7 @@ test("terminal observe new_only mode returns only new text since last observatio
     async stop() {},
   });
   const context = { workspaceRoot: root, nativeTerminal };
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   await tools
     .get("interactive_terminal_start")!
     .execute({ command: "cat", id: "tty_new_only" }, context);
@@ -1043,7 +1052,7 @@ test("interactive terminal input paste mode wraps text in bracketed paste escape
     async stop() {},
   });
   const context = { workspaceRoot: root, nativeTerminal };
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   await tools
     .get("interactive_terminal_start")!
     .execute({ command: "cat", id: "tty_paste" }, context);
@@ -1082,7 +1091,7 @@ test("terminal observe afterRevision is optional and defaults to current state",
     async stop() {},
   });
   const context = { workspaceRoot: root, nativeTerminal };
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   await tools
     .get("interactive_terminal_start")!
     .execute({ command: "cat", id: "tty_no_ar" }, context);
@@ -1165,7 +1174,7 @@ test("sandbox tools create execute diff and merge through the registry", async (
     sandboxes: new WorkspaceSandboxManager(join(root, ".natalia", "sandboxes")),
     onSandboxEvent: (event: { type: string }) => events.push(event.type),
   };
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   await tools.get("sandbox_create")!.execute({ id: "box" }, context);
   expect(
     await tools
@@ -1268,7 +1277,7 @@ test("terminal_observe latest reports a point-in-time read, not a wait outcome",
     async stop() {},
   });
   const context = { workspaceRoot: root, nativeTerminal };
-  const tools = createToolRegistry();
+  const tools = builtinTools();
   await tools
     .get("interactive_terminal_start")!
     .execute({ command: "cat", id: "tty_latest" }, context);

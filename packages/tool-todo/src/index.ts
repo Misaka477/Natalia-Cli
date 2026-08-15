@@ -1,7 +1,20 @@
+/**
+ * The todo tool family, as a separately packaged family.
+ *
+ * This is the first built-in family to live outside `@natalia/tools`, and it is
+ * the proof of the shape the rest follow: it depends on the framework only for
+ * the tool-authoring surface (`RuntimeTool`, `ToolFamily`, the argument helpers)
+ * and knows nothing about the runtime, the capability kernel or the host that
+ * loads it. The host composes families; the framework ships none.
+ */
+import {
+  requireObject,
+  requireString,
+  type RuntimeTool,
+  type ToolFamily,
+} from "@natalia/tools";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { requireObject, requireString } from "./arguments";
-import type { RuntimeTool } from "./types";
 
 type TodoItem = {
   content: string;
@@ -91,3 +104,19 @@ export const todoTools: RuntimeTool[] = [
   todoReadTool(),
   todoWriteTool(),
 ];
+
+/**
+ * Session scope: the todo list belongs to the workspace on disk, but the tools
+ * that write it are only meaningful for as long as the session that is working
+ * through them.
+ */
+export function todoToolFamily(): ToolFamily {
+  return {
+    id: "todo",
+    name: "Todo Tools",
+    version: "1.0.0",
+    description: "The session's task list.",
+    scope: "session",
+    tools: todoTools,
+  };
+}

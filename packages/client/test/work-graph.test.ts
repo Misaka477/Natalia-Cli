@@ -4,13 +4,13 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { ProviderStreamRequest } from "@natalia/runtime";
-import { defaultToolFamilies } from "@natalia/tools";
 import {
   projectedWorkGraphEdges,
   projectedWorkGraphNodes,
 } from "@natalia/session";
 import { workGraphEdgeSchema, workGraphNodeSchema } from "@natalia/contracts";
 import { createRealRuntimeClient } from "../src";
+import { builtinToolFamilies } from "../src/capabilities/tool-family-capabilities";
 import {
   agentActionNodeID,
   approvalNodeID,
@@ -150,7 +150,7 @@ test("runtime startup records the effective tool catalogue as metadata", async (
   // `natalia-runtime` is only what the host itself registers after assembly
   // (skills, mailbox and collaboration tools), never a framework tool.
   const familyOwned = new Map(
-    defaultToolFamilies().flatMap((family) =>
+    builtinToolFamilies().flatMap((family) =>
       family.tools.map(
         (tool) => [tool.name, `natalia-tool-${family.id}`] as const,
       ),

@@ -85,6 +85,7 @@
         "@natalia/subagent": "workspace:*",
         "@natalia/terminal": "workspace:*",
         "@natalia/testing": "workspace:*",
+        "@natalia/tool-todo": "workspace:*",
         "@natalia/tools": "workspace:*",
         "@natalia/ui-model": "workspace:*",
         "@natalia/workflow": "workspace:*",
@@ -203,6 +204,13 @@
       "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
+      },
+    },
+    "packages/tool-todo": {
+      "name": "@natalia/tool-todo",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/tools": "workspace:*",
       },
     },
     "packages/tools": {
@@ -347,6 +355,8 @@
     "@natalia/terminal": ["@natalia/terminal@workspace:packages/terminal"],
 
     "@natalia/testing": ["@natalia/testing@workspace:packages/testing"],
+
+    "@natalia/tool-todo": ["@natalia/tool-todo@workspace:packages/tool-todo"],
 
     "@natalia/tools": ["@natalia/tools@workspace:packages/tools"],
 
