@@ -1,5 +1,25 @@
 import { expect, test } from "bun:test";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { WorktreeSandboxManager } from "@natalia/sandbox";
 import { sandboxToolFamily, sandboxTools } from "../src";
+
+async function git(cwd: string, args: string[]) {
+  const process = Bun.spawn(["git", ...args], {
+    cwd,
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(process.stdout).text(),
+    new Response(process.stderr).text(),
+    process.exited,
+  ]);
+  if (exitCode !== 0) throw new Error(stderr.trim() || stdout.trim());
+  return stdout.trim();
+}
 
 test("the sandbox family describes the tools it ships", () => {
   const family = sandboxToolFamily();
@@ -23,4 +43,44 @@ test("sandbox tools refuse without a sandbox manager", async () => {
   ).rejects.toThrow(
     /sandbox manager is unavailable|requires a sandbox manager|sandbox/u,
   );
+});
+
+test("sandbox tools run through the worktree backend (create/write/merge)", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tool-sandbox-wt-"));
+  await git(root, ["init", "-b", "main"]);
+  await git(root, ["config", "user.email", "test@natalia"]);
+  await git(root, ["config", "user.name", "Natalia Test"]);
+  await writeFile(join(root, "file.txt"), "base\n");
+  await git(root, ["add", "."]);
+  await git(root, ["commit", "-m", "base"]);
+  const manager = new WorktreeSandboxManager(root);
+  await manager.initialize();
+  const context = {
+    workspaceRoot: root,
+    sandboxes: manager,
+    onSandboxEvent: () => undefined,
+    onWorkspaceChange: () => undefined,
+    sandboxMergeAuthorize: async () => undefined,
+  } as never;
+  const tools = new Map(
+    sandboxToolFamily().tools.map((tool) => [tool.name, tool]),
+  );
+
+  await tools.get("sandbox_create")!.execute({ id: "wt.1" }, context);
+  // The sandbox is a real worktree on a candidate branch.
+  expect(await manager.exists("wt.1")).toBe(true);
+
+  await tools
+    .get("sandbox_write")!
+    .execute({ id: "wt.1", path: "file.txt", content: "edited\n" }, context);
+
+  const merged = await tools
+    .get("sandbox_merge")!
+    .execute({ id: "wt.1" }, context);
+  expect(JSON.parse(merged)).toContainEqual(
+    expect.objectContaining({ path: "file.txt", kind: "modify" }),
+  );
+  // The write was promoted into the system branch: the workspace file changed.
+  expect(await readFile(join(root, "file.txt"), "utf8")).toBe("edited\n");
+  expect(await manager.lastKnownGoodCommit()).toBeDefined();
 });

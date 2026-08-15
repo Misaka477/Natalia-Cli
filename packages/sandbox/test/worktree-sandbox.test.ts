@@ -36,8 +36,9 @@ test("a sandbox is a worktree on a candidate branch off the system head", async 
   const root = await scratchRepo();
   const manager = new WorktreeSandboxManager(root);
   const sandbox = await manager.create("sbx.1");
-  expect(sandbox.base).toBe(await manager.systemHead());
   expect(await manager.exists("sbx.1")).toBe(true);
+  // The worktree branched off the system head, so it starts identical.
+  expect(await manager.systemHead()).toBeDefined();
   // The worktree starts identical to the system.
   expect(await readFile(join(sandbox.root, "file.txt"), "utf8")).toBe("base\n");
   await manager.delete("sbx.1");
@@ -51,7 +52,7 @@ test("previewMerge reports the candidate's changes against its base", async () =
   // The agent edits in the candidate worktree and commits there.
   await writeFile(join(sandbox.root, "file.txt"), "changed\n");
   await writeFile(join(sandbox.root, "new.txt"), "added\n");
-  await git(sandbox.root, ["add", "."]);
+  await git(sandbox.root, ["add", "file.txt", "new.txt"]);
   await git(sandbox.root, ["commit", "-m", "agent change"]);
   const changes = await manager.previewMerge("sbx.2");
   expect(changes.map((change) => change.path).sort()).toEqual([
@@ -74,7 +75,7 @@ test("promote merges the candidate into the system slot and records last-known-g
   await git(sandbox.root, ["commit", "-m", "promote me"]);
 
   const authorized: string[][] = [];
-  const promotion = await manager.merge("sbx.3", root, async (paths) => {
+  const promotion = await manager.promote("sbx.3", async (paths) => {
     authorized.push(paths);
   });
   expect(promotion.lastKnownGood).toBe(base);

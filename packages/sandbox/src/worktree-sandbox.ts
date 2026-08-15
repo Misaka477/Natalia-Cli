@@ -1,22 +1,27 @@
 /**
- * The Advanced Sandbox foundation (P9): a worktree-based sandbox.
+ * The Advanced Sandbox production backend (P9): a worktree-based sandbox.
  *
- * The workspace-isolation manager copies a directory; this one gives a sandbox
- * real git semantics. A sandbox is a worktree at a candidate branch
- * (`candidate/<id>`), so the agent's changes are commits the host can diff,
- * preview and promote — and the system slot keeps a last-known-good commit to
- * roll back to. This is the mechanism the self-iteration vision (半自迭代)
- * requires: agent edits happen in the candidate worktree, a human approves the
- * preview, promotion lands them in the system branch atomically, and a failed
- * activation rolls back to last-known-good.
+ * This manager extends `WorkspaceSandboxManager`, so it is a drop-in for the
+ * full operational surface the sandbox tools use (execute, resources, file
+ * ops, persistence) — and adds real git semantics on top: a sandbox is a
+ * worktree on a candidate branch (`candidate/<id>`) off the system head, so
+ * the agent's changes are commits the host can diff, preview and promote, and
+ * the system slot keeps a last-known-good commit to roll back to. That is the
+ * mechanism 半自迭代 requires: agent edits in the candidate worktree, a human
+ * approves the preview, promotion lands them in the system branch atomically,
+ * and a failed activation rolls back to last-known-good.
  *
- * The manager runs `git` in the host repo. It does not invent container/VM
- * isolation — that is a later, threat-model-driven step.
+ * The manager runs `git` in the host repo. Workspaces that are not git repos
+ * fall back to the directory-copy manager; container/VM isolation is a later,
+ * threat-model-driven step.
  */
-import { rm } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { SandboxDiffKind } from "@natalia/contracts";
-import type { SandboxChange } from "./index";
+import {
+  WorkspaceSandboxManager,
+  type SandboxChange,
+} from "./workspace-manager";
 import {
   requiresApproval,
   riskTierForChanges,
@@ -35,21 +40,13 @@ export type WorktreePromotion = {
 };
 
 /** Runs `git` and returns stdout trimmed; throws with stderr on failure. */
-async function git(
-  cwd: string,
-  args: string[],
-  input?: string,
-): Promise<string> {
+async function git(cwd: string, args: string[]): Promise<string> {
   const process = Bun.spawn(["git", ...args], {
     cwd,
-    stdin: input === undefined ? "ignore" : "pipe",
+    stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
   });
-  if (input !== undefined && process.stdin) {
-    process.stdin.write(input);
-    process.stdin.end();
-  }
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(process.stdout).text(),
     new Response(process.stderr).text(),
@@ -62,12 +59,33 @@ async function git(
   return stdout.trim();
 }
 
-export class WorktreeSandboxManager {
-  private readonly sandboxRoot: string;
-  private lastKnownGood: string | undefined;
+/** Like `git`, but returns the raw output untrimmed (for `-z` porcelain). */
+async function gitRaw(cwd: string, args: string[]): Promise<string> {
+  const process = Bun.spawn(["git", ...args], {
+    cwd,
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(process.stdout).text(),
+    new Response(process.stderr).text(),
+    process.exited,
+  ]);
+  if (exitCode !== 0)
+    throw new Error(
+      `git ${args.join(" ")} failed: ${stderr.trim() || stdout.trim()}`,
+    );
+  return stdout;
+}
 
-  constructor(private readonly hostRoot: string) {
-    this.sandboxRoot = resolve(hostRoot, ".natalia", "sandboxes");
+export class WorktreeSandboxManager extends WorkspaceSandboxManager {
+  private lastKnownGood: string | undefined;
+  private readonly hostRoot: string;
+
+  constructor(hostRoot: string) {
+    super(resolve(hostRoot, ".natalia", "sandboxes"));
+    this.hostRoot = hostRoot;
   }
 
   /** The commit the host system branch is on. */
@@ -75,32 +93,35 @@ export class WorktreeSandboxManager {
     return git(this.hostRoot, ["rev-parse", "HEAD"]);
   }
 
-  /** Creates a sandbox as a worktree on a candidate branch off the system head. */
-  async create(id: string) {
-    const branch = `candidate/${id}`;
-    const root = resolve(this.sandboxRoot, id);
-    const base = await this.systemHead();
-    await git(this.hostRoot, ["worktree", "add", "-b", branch, root, base]);
-    return { id, root, base, branch };
+  /** The name of the host system branch. */
+  async systemBranch(): Promise<string> {
+    return git(this.hostRoot, ["rev-parse", "--abbrev-ref", "HEAD"]);
   }
 
-  async delete(id: string) {
+  /** Creates a sandbox as a worktree on a candidate branch off the system head. */
+  override async create(id: string) {
     const branch = `candidate/${id}`;
-    const root = resolve(this.sandboxRoot, id);
+    const root = resolve(this["baseRoot"], id);
+    const base = await this.systemHead();
+    await git(this.hostRoot, ["worktree", "add", "-b", branch, root, base]);
+    // The manifest record must never enter a candidate diff, even when the
+    // agent runs `git add .` in the worktree.
+    await writeFile(resolve(root, ".gitignore"), ".natalia-manifest.json\n", {
+      flag: "a",
+    });
+    // The base records the manifest (resources, env allowlist, changed files)
+    // at the worktree root; the record is ignored, so it never enters a diff.
+    return await super.create(id);
+  }
+
+  override async delete(id: string) {
+    const branch = `candidate/${id}`;
+    const root = resolve(this["baseRoot"], id);
     await git(this.hostRoot, ["worktree", "remove", "--force", root]).catch(
       () => undefined,
     );
     await git(this.hostRoot, ["branch", "-D", branch]).catch(() => undefined);
-    await rm(root, { recursive: true, force: true });
-  }
-
-  /** The worktree root a sandbox's tools execute in. */
-  target(id: string) {
-    return {
-      kind: "sandbox" as const,
-      sandboxID: id,
-      root: resolve(this.sandboxRoot, id),
-    };
+    return await super.delete(id);
   }
 
   /** Whether a candidate branch exists for the sandbox. */
@@ -115,9 +136,10 @@ export class WorktreeSandboxManager {
 
   /**
    * The changes the candidate made against its base, as a diff summary. This is
-   * the preview a human approves before promotion.
+   * the preview a human approves before promotion — the real worktree diff, not
+   * the manifest's change list.
    */
-  async previewMerge(id: string): Promise<SandboxChange[]> {
+  override async previewMerge(id: string): Promise<SandboxChange[]> {
     const base = await this.baseFor(id);
     const names = await git(this.hostRoot, [
       "diff",
@@ -132,7 +154,7 @@ export class WorktreeSandboxManager {
         continue;
       }
       if (kind === "R") {
-        changes.push({ kind: "renamed" as SandboxDiffKind, path, oldPath });
+        changes.push({ kind: "rename" as SandboxDiffKind, path, oldPath });
         continue;
       }
       changes.push({
@@ -144,19 +166,51 @@ export class WorktreeSandboxManager {
   }
 
   /**
-   * Promotes a candidate into the system slot. The changed paths are authorized
-   * first (the human approval step of 半自迭代), then the candidate branch is
-   * merged into the system branch. The commit before the merge is recorded as
-   * last-known-good, so a failed activation can roll back.
+   * Promotes a candidate into the system slot: the candidate branch is merged
+   * into the system branch after the changed paths are authorized. The commit
+   * before the merge is recorded as last-known-good, so a failed activation can
+   * roll back. Base-compatible return: the changed files, as the copy-based
+   * merge reports them.
    */
-  async merge(
+  override async merge(
     id: string,
     _hostRoot?: string,
     authorize?: (paths: string[]) => Promise<void>,
-  ): Promise<WorktreePromotion> {
+  ): Promise<SandboxChange[]> {
     const branch = `candidate/${id}`;
+    const root = resolve(this["baseRoot"], id);
     const base = await this.baseFor(id);
     const lastKnownGood = await this.systemHead();
+    // The sandbox tools' write model records changes in the worktree without
+    // committing; promotion works on commits, so pending worktree changes are
+    // committed to the candidate branch first. The manifest and the ignore
+    // rule stay out of the commit.
+    const status = await gitRaw(root, [
+      "status",
+      "--porcelain",
+      "-z",
+      "--",
+      ".",
+      ":(exclude).gitignore",
+      ":(exclude).natalia-manifest.json",
+    ]).catch(() => "");
+    if (status) {
+      // `-z` yields `XY path` records (renames split across two records, the
+      // second being the new path). Add exactly the changed paths so the
+      // ignored manifest and the ignore rule never enter a commit.
+      const changed: string[] = [];
+      const records = status.split("\0").filter(Boolean);
+      for (let index = 0; index < records.length; index++) {
+        const path = records[index]!.slice(3);
+        if (path.startsWith("R  ")) {
+          changed.push(records[++index] ?? "");
+          continue;
+        }
+        if (path) changed.push(path);
+      }
+      await git(root, ["add", "--", ...changed.filter(Boolean)]);
+      await git(root, ["commit", "-m", `sandbox ${id} changes`]);
+    }
     const ahead = await git(this.hostRoot, [
       "rev-list",
       "--count",
@@ -168,21 +222,36 @@ export class WorktreeSandboxManager {
     const paths = changedFiles.map((change) => change.path);
     if (paths.length) await authorize?.(paths);
     await git(this.hostRoot, ["merge", "--no-ff", "--no-edit", branch]);
-    const promoted = await this.systemHead();
     this.lastKnownGood = lastKnownGood;
-    return { sandboxID: id, base, promoted, lastKnownGood, changedFiles };
+    return changedFiles;
+  }
+
+  /** Promotes and reports the full promotion record, including the commits. */
+  async promote(
+    id: string,
+    authorize?: (paths: string[]) => Promise<void>,
+  ): Promise<WorktreePromotion> {
+    const base = await this.baseFor(id);
+    const lastKnownGood = await this.systemHead();
+    const changedFiles = await this.merge(id, this.hostRoot, authorize);
+    return {
+      sandboxID: id,
+      base,
+      promoted: await this.systemHead(),
+      lastKnownGood,
+      changedFiles,
+    };
   }
 
   /**
    * Runs a validation command in the candidate worktree — the build evidence a
-   * candidate must produce before promotion. The command runs in the worktree's
-   * own directory, so it checks exactly the candidate's state.
+   * candidate must produce before promotion.
    */
   async validate(
     id: string,
     command: string,
   ): Promise<{ ok: boolean; exitCode: number; output: string }> {
-    const root = resolve(this.sandboxRoot, id);
+    const root = resolve(this["baseRoot"], id);
     const process = Bun.spawn(["bash", "-c", command], {
       cwd: root,
       stdin: "ignore",
@@ -198,15 +267,9 @@ export class WorktreeSandboxManager {
   }
 
   /**
-   * Validates the candidate and, when it passes, promotes it. The build
-   * evidence is part of the promotion contract: a candidate that does not
-   * build must not reach the system slot, and the failing output is the reason.
-   *
-   * When `requireApprovalTier` is set, the candidate's change set is classified
-   * into a governance risk tier and the authorization hook (the human approval
-   * of 半自迭代) runs only when the candidate clears the gate — a low-risk
-   * config edit promotes without a human in the loop, a contract change never
-   * does.
+   * Validates the candidate and, when it passes, promotes it. When
+   * `requireApprovalTier` is set, the human-approval hook runs only when the
+   * candidate's governance risk tier clears the gate.
    */
   async promoteWithValidation(
     id: string,
@@ -229,7 +292,7 @@ export class WorktreeSandboxManager {
               await input.authorize!(paths);
           }
         : input.authorize;
-    return await this.merge(id, this.hostRoot, authorize);
+    return await this.promote(id, authorize);
   }
 
   /** The recorded last-known-good commit, if any. */
