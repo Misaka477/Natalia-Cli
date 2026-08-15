@@ -45,7 +45,15 @@ function runShellTool(): RuntimeTool {
         required: ["stdout", "stderr", "exitCode"],
         additionalProperties: false,
       },
-      render(args, value) {
+      presentCall(args) {
+        const command = requireObject(args).command as string | undefined;
+        return {
+          kind: "terminal",
+          title: typeof command === "string" ? command : "command",
+          summary: "run",
+        };
+      },
+      presentResult(args, value) {
         const command = requireObject(args).command as string | undefined;
         const stdout =
           value.match(/stdout:\n([\s\S]*?)(?:\nstderr:|\n?$)/u)?.[1] ?? "";

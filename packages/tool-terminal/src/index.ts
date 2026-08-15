@@ -534,6 +534,29 @@ function interactiveSnapshotTool(): RuntimeTool {
       required: ["id"],
       additionalProperties: false,
     },
+    output: {
+      schema: {
+        type: "object",
+        properties: { screen: { type: "string" } },
+        required: ["screen"],
+        additionalProperties: false,
+      },
+      presentCall(args) {
+        return {
+          kind: "terminal",
+          title: String(requireObject(args).id ?? ""),
+          summary: "snapshot",
+        };
+      },
+      presentResult(args, value) {
+        return {
+          kind: "terminal",
+          title: String(requireObject(args).id ?? ""),
+          summary: "screen",
+          body: value,
+        };
+      },
+    },
     async execute(input, context) {
       const args = requireObject(input);
       const id = requireString(args.id, "id");

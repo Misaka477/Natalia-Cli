@@ -468,6 +468,31 @@ function processStartTool(registry: ManagedProcessRegistry): RuntimeTool {
       required: ["command"],
       additionalProperties: false,
     },
+    output: {
+      schema: {
+        type: "object",
+        properties: { id: { type: "string" } },
+        required: ["id"],
+        additionalProperties: false,
+      },
+      presentCall(args) {
+        return {
+          kind: "terminal",
+          title: requireObject(args).command as string,
+          summary: "start",
+        };
+      },
+      presentResult(args, value) {
+        const command = requireObject(args).command as string;
+        const id = JSON.parse(value)?.id as string | undefined;
+        return {
+          kind: "terminal",
+          title: command,
+          summary: id ? `started ${id}` : "started",
+          meta: id ? [["id", id]] : [],
+        };
+      },
+    },
     async execute(input, context) {
       const args = requireObject(input);
       return JSON.stringify(

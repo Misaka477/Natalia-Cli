@@ -35,6 +35,42 @@ function webFetchTool(): RuntimeTool {
       required: ["url"],
       additionalProperties: false,
     },
+    output: {
+      schema: {
+        type: "object",
+        properties: {
+          status: { type: "number" },
+          contentType: { type: "string" },
+          body: { type: "string" },
+        },
+        required: ["status", "contentType", "body"],
+        additionalProperties: false,
+      },
+      presentCall(args) {
+        return {
+          kind: "web",
+          title: requireObject(args).url as string,
+          summary: "fetch",
+        };
+      },
+      presentResult(args, value) {
+        const url = requireObject(args).url as string;
+        const status = Number(/status=(\d+)/u.exec(value)?.[1] ?? "0");
+        const contentType =
+          /content-type=([^\n]*)/u.exec(value)?.[1] ?? "unknown";
+        const body = value.split("\n").slice(2).join("\n") || "(empty body)";
+        return {
+          kind: "web",
+          title: url,
+          summary: `status ${status}`,
+          body,
+          meta: [
+            ["content-type", contentType],
+            ["status", String(status)],
+          ],
+        };
+      },
+    },
     async execute(input, context) {
       const args = requireObject(input);
       const url = requireString(args.url, "url");

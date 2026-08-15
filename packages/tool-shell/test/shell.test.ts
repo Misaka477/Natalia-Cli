@@ -34,7 +34,7 @@ test("run_shell projects a terminal card from its output definition", () => {
   const tool = shellToolFamily().tools.find(
     (candidate) => candidate.name === "run_shell",
   )!;
-  const intent = tool.output?.render(
+  const intent = tool.output?.presentResult(
     { command: "make build" },
     "exit=0\nstdout:\nbuilt ok\nstderr:\nwarn",
   );

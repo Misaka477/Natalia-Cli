@@ -44,6 +44,31 @@ function todoReadTool(): RuntimeTool {
     description: "Read durable workspace todo items.",
     requiresApproval: false,
     parameters: { type: "object", properties: {}, additionalProperties: false },
+    output: {
+      schema: {
+        type: "object",
+        properties: { items: { type: "array" } },
+        required: ["items"],
+        additionalProperties: false,
+      },
+      presentCall() {
+        return { kind: "generic", title: "todos", summary: "read" };
+      },
+      presentResult(_args, value) {
+        const items =
+          (JSON.parse(value) as Array<{
+            status?: string;
+            content?: string;
+          }> | null) ?? [];
+        const done = items.filter((item) => item.status === "completed").length;
+        return {
+          kind: "generic",
+          title: "todos",
+          summary: `${items.length} items · ${done} done`,
+          body: value,
+        };
+      },
+    },
     async execute(_input, context) {
       return JSON.stringify(await readTodos(context.workspaceRoot), null, 2);
     },

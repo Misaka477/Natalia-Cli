@@ -4,6 +4,7 @@ import {
   ProjectionCache,
   classifyTool,
   collapseToolOutput,
+  projectToolCall,
   projectToolRender,
   resultView,
   shouldLazyRenderDetail,
@@ -161,5 +162,19 @@ test("projectToolRender ignores a missing or malformed intent", () => {
   expect(projectToolRender({ render: { kind: "read" } })).toBeUndefined();
   expect(
     projectToolRender({ render: { title: "x", summary: "y" } }),
+  ).toBeUndefined();
+});
+
+test("projectToolCall decodes the call card from metadata.call", () => {
+  const call = projectToolCall({
+    call: { kind: "terminal", title: "make build", summary: "run" },
+  });
+  expect(call).toEqual({
+    kind: "terminal",
+    title: "make build",
+    summary: "run",
+  });
+  expect(
+    projectToolCall({ render: { kind: "read", title: "x", summary: "y" } }),
   ).toBeUndefined();
 });

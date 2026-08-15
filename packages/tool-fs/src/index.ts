@@ -27,7 +27,7 @@ function readFileTool(): RuntimeTool {
       required: ["path"],
       additionalProperties: false,
     },
-    // The pilot output definition: the tool declares what its result means so
+    // The output definition: the tool declares what its call and result mean so
     // a client can draw a file card instead of guessing from the string.
     output: {
       schema: {
@@ -36,7 +36,15 @@ function readFileTool(): RuntimeTool {
         required: ["content"],
         additionalProperties: false,
       },
-      render(args, value) {
+      presentCall(args) {
+        const path = requireObject(args).path as string | undefined;
+        return {
+          kind: "read",
+          title: typeof path === "string" ? path : "file",
+          summary: "read",
+        };
+      },
+      presentResult(args, value) {
         const path = requireObject(args).path as string | undefined;
         return {
           kind: "read",
@@ -72,6 +80,28 @@ function writeFileTool(): RuntimeTool {
       required: ["path", "content"],
       additionalProperties: false,
     },
+    output: {
+      schema: {
+        type: "object",
+        properties: { path: { type: "string" } },
+        required: ["path"],
+        additionalProperties: false,
+      },
+      presentCall(args) {
+        return {
+          kind: "generic",
+          title: requireObject(args).path as string,
+          summary: "write",
+        };
+      },
+      presentResult(args, value) {
+        return {
+          kind: "generic",
+          title: requireObject(args).path as string,
+          summary: value,
+        };
+      },
+    },
     async execute(input, context) {
       const args = requireObject(input);
       const path = workspacePath(
@@ -100,6 +130,28 @@ function editFileTool(): RuntimeTool {
       },
       required: ["path", "oldText", "newText"],
       additionalProperties: false,
+    },
+    output: {
+      schema: {
+        type: "object",
+        properties: { path: { type: "string" } },
+        required: ["path"],
+        additionalProperties: false,
+      },
+      presentCall(args) {
+        return {
+          kind: "diff",
+          title: requireObject(args).path as string,
+          summary: "edit",
+        };
+      },
+      presentResult(args, value) {
+        return {
+          kind: "diff",
+          title: requireObject(args).path as string,
+          summary: value,
+        };
+      },
     },
     async execute(input, context) {
       const args = requireObject(input);

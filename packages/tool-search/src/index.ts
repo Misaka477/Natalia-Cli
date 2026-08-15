@@ -31,6 +31,32 @@ function globTool(): RuntimeTool {
       required: ["pattern"],
       additionalProperties: false,
     },
+    output: {
+      schema: {
+        type: "object",
+        properties: { paths: { type: "array" } },
+        required: ["paths"],
+        additionalProperties: false,
+      },
+      presentCall(args) {
+        return {
+          kind: "search",
+          title: requireObject(args).pattern as string,
+          summary: "glob",
+        };
+      },
+      presentResult(args, value) {
+        const paths = value
+          .split("\n")
+          .filter((line) => !line.startsWith("..."));
+        return {
+          kind: "search",
+          title: requireObject(args).pattern as string,
+          summary: `${paths.length} matches`,
+          body: value,
+        };
+      },
+    },
     async execute(input, context) {
       const args = requireObject(input);
       const pattern = requireString(args.pattern, "pattern");
@@ -73,6 +99,32 @@ function grepTool(): RuntimeTool {
       },
       required: ["pattern"],
       additionalProperties: false,
+    },
+    output: {
+      schema: {
+        type: "object",
+        properties: { matches: { type: "array" } },
+        required: ["matches"],
+        additionalProperties: false,
+      },
+      presentCall(args) {
+        return {
+          kind: "search",
+          title: requireObject(args).pattern as string,
+          summary: "grep",
+        };
+      },
+      presentResult(args, value) {
+        return {
+          kind: "search",
+          title: requireObject(args).pattern as string,
+          summary:
+            value === "no matches"
+              ? "no matches"
+              : `${value.split("\n").length} matches`,
+          body: value,
+        };
+      },
     },
     async execute(input, context) {
       const args = requireObject(input);

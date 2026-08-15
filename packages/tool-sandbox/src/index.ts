@@ -40,6 +40,28 @@ function sandboxCreateTool(): RuntimeTool {
       required: ["id"],
       additionalProperties: false,
     },
+    output: {
+      schema: {
+        type: "object",
+        properties: { id: { type: "string" } },
+        required: ["id"],
+        additionalProperties: false,
+      },
+      presentCall(args) {
+        return {
+          kind: "generic",
+          title: requireObject(args).id as string,
+          summary: "create",
+        };
+      },
+      presentResult(args, value) {
+        return {
+          kind: "generic",
+          title: requireObject(args).id as string,
+          summary: value,
+        };
+      },
+    },
     async execute(input, context) {
       const args = requireObject(input);
       const id = requireString(args.id, "id");

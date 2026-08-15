@@ -6271,6 +6271,15 @@ export function createRealRuntimeClient(
       status: "running",
       summary: "running",
       startedAt: Date.now(),
+      // The call card, when the tool declares one: the tool says what the call
+      // means (a file path, a command) without leaking raw arguments.
+      metadata: tool.output?.presentCall
+        ? {
+            call: tool.output.presentCall(
+              tryParseToolArguments(call.arguments),
+            ),
+          }
+        : undefined,
     });
     let executionAudited = false;
     let releaseWriteLock: (() => void) | undefined;
@@ -6420,7 +6429,7 @@ export function createRealRuntimeClient(
       // The tool's own output projection becomes part of the event metadata, so
       // a client can draw the result as the card the tool described instead of
       // guessing from the string.
-      const projectedRender = tool.output?.render(
+      const projectedRender = tool.output?.presentResult(
         tryParseToolArguments(call.arguments),
         result,
       );

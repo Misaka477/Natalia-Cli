@@ -44,6 +44,30 @@ function agentSpawnTool(): RuntimeTool {
       required: ["task"],
       additionalProperties: false,
     },
+    output: {
+      schema: {
+        type: "object",
+        properties: { taskID: { type: "string" } },
+        required: ["taskID"],
+        additionalProperties: false,
+      },
+      presentCall(args) {
+        return {
+          kind: "generic",
+          title: requireObject(args).task as string,
+          summary: "spawn",
+        };
+      },
+      presentResult(_args, value) {
+        const taskID = JSON.parse(value)?.taskID as string | undefined;
+        return {
+          kind: "generic",
+          title: "subagent",
+          summary: taskID ? `spawned ${taskID}` : "spawned",
+          meta: taskID ? [["taskID", taskID]] : [],
+        };
+      },
+    },
     async execute(input, context) {
       const args = requireObject(input);
       const array = (value: unknown) =>

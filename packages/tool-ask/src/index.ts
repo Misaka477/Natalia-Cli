@@ -32,6 +32,29 @@ function askUserTool(): RuntimeTool {
       required: ["question", "options"],
       additionalProperties: false,
     },
+    output: {
+      schema: {
+        type: "object",
+        properties: { answers: { type: "array" } },
+        required: ["answers"],
+        additionalProperties: false,
+      },
+      presentCall(args) {
+        return {
+          kind: "generic",
+          title: requireObject(args).question as string,
+          summary: "ask",
+        };
+      },
+      presentResult(args, value) {
+        return {
+          kind: "generic",
+          title: requireObject(args).question as string,
+          summary: "answered",
+          body: value,
+        };
+      },
+    },
     async execute(input, context) {
       if (!context.askQuestion)
         throw new Error("interactive question channel unavailable");

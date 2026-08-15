@@ -43,30 +43,24 @@ export type ToolResultPresentation = {
 };
 
 /**
- * The UI-facing card a tool projects for one of its results.
+ * The UI-facing card a tool projects for a call or a result.
  *
  * Tools declare this in their `output` definition (`@natalia/tools`); it reaches
- * the client through the `tool.update` event's `metadata.render`. `ui-model`
- * cannot depend on `@natalia/tools` (a kernel package), so this is a structural
- * mirror the TUI decodes from the event metadata.
+ * the client through the `tool.update` event's `metadata.call` (running) and
+ * `metadata.render` (result). `ui-model` cannot depend on `@natalia/tools` (a
+ * kernel package), so this is a structural mirror the TUI decodes from the
+ * event metadata.
  */
 export type ToolRenderIntent = {
-  kind: "read" | "terminal" | "diff" | "search" | "web" | "generic";
+  kind: "generic" | "terminal" | "diff" | "search" | "read" | "web";
   title: string;
   summary: string;
   body?: string;
   meta?: Array<[label: string, value: string]>;
 };
 
-/**
- * Decodes a tool's self-projected render intent from the event metadata, or
- * returns `undefined` when the tool declared none. A malformed intent is
- * treated as absent — the client falls back to rendering the plain result.
- */
-export function projectToolRender(
-  metadata: Record<string, unknown> = {},
-): ToolRenderIntent | undefined {
-  const raw = metadata.render;
+/** Decodes a projected card from a metadata slot, or `undefined` when absent. */
+function decodeIntent(raw: unknown): ToolRenderIntent | undefined {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
   const candidate = raw as Record<string, unknown>;
   if (
@@ -84,6 +78,27 @@ export function projectToolRender(
       ? { meta: candidate.meta as Array<[string, string]> }
       : {}),
   };
+}
+
+/**
+ * Decodes a tool's self-projected call card from the event metadata
+ * (`metadata.call`), or `undefined` when the tool declared none.
+ */
+export function projectToolCall(
+  metadata: Record<string, unknown> = {},
+): ToolRenderIntent | undefined {
+  return decodeIntent(metadata.call);
+}
+
+/**
+ * Decodes a tool's self-projected result card from the event metadata
+ * (`metadata.render`), or `undefined` when the tool declared none. A malformed
+ * intent is treated as absent — the client falls back to the plain result.
+ */
+export function projectToolRender(
+  metadata: Record<string, unknown> = {},
+): ToolRenderIntent | undefined {
+  return decodeIntent(metadata.render);
 }
 
 export type ParsedToolArguments = {

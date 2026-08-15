@@ -28,15 +28,15 @@ export type ToolSchema = {
 };
 
 /**
- * The UI-facing card a tool draws for one of its results.
+ * The UI-facing card a tool draws for a call or a result.
  *
- * This is a projection, not presentation: the tool says what its result means
- * (a file to read, a terminal session, a diff) and keeps the body plain text,
- * and a client renders that however it likes. A card is a suggestion — a client
- * that cannot draw the kind falls back to the plain result.
+ * This is a projection, not presentation: the tool says what the call or result
+ * means (a file to read, a terminal session, a diff, a search) and keeps the
+ * body plain text, and a client renders that however it likes. A card is a
+ * suggestion — a client that cannot draw the kind falls back to the plain text.
  */
 export type ToolRenderIntent = {
-  kind: "read" | "terminal" | "diff" | "search" | "web" | "generic";
+  kind: "generic" | "terminal" | "diff" | "search" | "read" | "web";
   /** Card title, e.g. the file path or the command. */
   title: string;
   /** One-line summary for the collapsed card. */
@@ -48,15 +48,20 @@ export type ToolRenderIntent = {
 };
 
 /**
- * How a tool's output is structured and rendered. Optional: a tool without one
- * keeps the plain-string contract — its result is still returned and shown
+ * How a tool's call and result are projected. Optional: a tool without one
+ * keeps the plain-string contract — its call and result are still shown
  * verbatim, just not projected.
  */
 export type ToolOutputDefinition = {
   /** JSON schema of the tool's output value. */
   schema: ToolSchema;
-  /** Pure projection of the call arguments and the result into a card. */
-  render(args: unknown, value: string): ToolRenderIntent | undefined;
+  /**
+   * Projects the call arguments into a card, shown while the tool runs and as
+   * the call's own presentation.
+   */
+  presentCall?(args: unknown): ToolRenderIntent | undefined;
+  /** Projects the arguments and the result into a card. */
+  presentResult(args: unknown, value: string): ToolRenderIntent | undefined;
 };
 
 export type RuntimeTool = ToolExecutionBoundary & {

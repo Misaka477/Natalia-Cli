@@ -12,9 +12,11 @@ import {
 import {
   collapseToolOutput,
   parseTodoItems,
+  projectToolCall,
   projectToolRender,
   stripAnsiOutput,
 } from "@natalia/ui-model";
+import type { ToolRenderIntent } from "@natalia/ui-model";
 import type { MessageBlock } from "../../context/state";
 import { themeTokens as darkTheme } from "../../theme/theme";
 import { useRouteController } from "../../context/route";
@@ -62,7 +64,17 @@ function ProjectedToolCard(props: {
   toolDetails: "expanded" | "collapsed";
 }) {
   const tool = () => props.block.tool!;
-  const intent = () => projectToolRender(tool().metadata)!;
+  // The result card wins once it exists; before that the call card carries the
+  // title and summary (a file path, a command), so the running card is the
+  // call's presentation, not a raw dump.
+  const intent = () =>
+    projectToolRender(tool().metadata) ??
+    projectToolCall(tool().metadata) ??
+    ({
+      kind: "generic",
+      title: tool().name,
+      summary: tool().status,
+    } as ToolRenderIntent);
   const [expanded, setExpanded] = createSignal(
     props.toolDetails === "expanded",
   );
@@ -131,9 +143,13 @@ export function ToolBlockView(props: {
   toolPreviewLines: number;
 }) {
   // A tool that declares its own output projection draws its own card: the
-  // tool knows what its result means, and the manual kind-based renderers below
-  // are the fallback for the tools that do not (yet).
-  if (props.block.tool && projectToolRender(props.block.tool.metadata))
+  // tool knows what its call and result mean, and the manual kind-based
+  // renderers below are the fallback for the tools that do not (yet).
+  if (
+    props.block.tool &&
+    (projectToolRender(props.block.tool.metadata) ||
+      projectToolCall(props.block.tool.metadata))
+  )
     return (
       <ProjectedToolCard block={props.block} toolDetails={props.toolDetails} />
     );

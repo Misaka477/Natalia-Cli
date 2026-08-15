@@ -847,6 +847,17 @@ test("a tool with an output definition projects its result into the event", asyn
     title: "note.txt",
     body: "projected content",
   });
+  // The running event carried the call card the tool projected, so the running
+  // card is the call's presentation (a file path), not a raw argument dump.
+  const running = events.find(
+    (event): event is Extract<RuntimeEvent, { type: "tool.update" }> =>
+      event.type === "tool.update" && event.status === "running",
+  );
+  expect(running?.metadata?.call).toMatchObject({
+    kind: "read",
+    title: "note.txt",
+    summary: "read",
+  });
   await client.dispose?.();
 }, 60_000);
 
