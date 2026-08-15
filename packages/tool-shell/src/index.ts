@@ -1,9 +1,20 @@
+/**
+ * The shell tool family, as a separately packaged family.
+ *
+ * Depends on the framework for the tool-authoring surface and process helpers,
+ * and on the platform package for shell resolution. It knows nothing about the
+ * runtime or the capability kernel.
+ */
 import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
 import { profileShellCommand } from "@natalia/platform";
-import { numberOr, requireObject, requireString } from "./arguments";
-import { safeToolEnv, terminateChildProcessTree } from "./child-process";
-import type { RuntimeTool, ToolExecutionContext } from "./types";
+import { numberOr, requireObject, requireString } from "@natalia/tools";
+import { safeToolEnv, terminateChildProcessTree } from "@natalia/tools";
+import type {
+  RuntimeTool,
+  ToolExecutionContext,
+  ToolFamily,
+} from "@natalia/tools";
 
 function runShellTool(): RuntimeTool {
   return {
@@ -87,3 +98,18 @@ export async function runShell(
 }
 
 export const shellTools: RuntimeTool[] = [runShellTool()];
+
+/**
+ * Session scope: a shell command only runs while the session that submitted it
+ * is alive.
+ */
+export function shellToolFamily(): ToolFamily {
+  return {
+    id: "shell",
+    name: "Shell Tools",
+    version: "1.0.0",
+    description: "One-shot command execution.",
+    scope: "session",
+    tools: shellTools,
+  };
+}

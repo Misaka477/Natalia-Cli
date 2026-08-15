@@ -1,8 +1,6 @@
 import { agentTools } from "./agent-tools";
 import { sandboxTools } from "./sandbox-tools";
 import { terminalTools } from "./terminal-tools";
-import { shellTools } from "./shell-tools";
-import { webTools } from "./web-tools";
 export { validateToolParameters, assertValidToolParameters } from "./validate";
 export {
   boundToolOutput,
@@ -195,17 +193,6 @@ export function sandboxToolFamily(): ToolFamily {
   };
 }
 
-export function shellToolFamily(): ToolFamily {
-  return {
-    id: "shell",
-    name: "Shell Tools",
-    version: "1.0.0",
-    description: "One-shot command execution.",
-    scope: "session",
-    tools: [...shellTools],
-  };
-}
-
 export function processToolFamily(
   processRegistry = new ManagedProcessRegistry(),
 ): ToolFamily {
@@ -216,16 +203,5 @@ export function processToolFamily(
     description: "Long-running background processes.",
     scope: "session",
     tools: [...managedProcessTools(processRegistry)],
-  };
-}
-
-export function webToolFamily(): ToolFamily {
-  return {
-    id: "web",
-    name: "Web Tools",
-    version: "1.0.0",
-    description: "Fetching and searching the web.",
-    scope: "session",
-    tools: [...webTools],
   };
 }

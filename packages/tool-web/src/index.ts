@@ -1,3 +1,10 @@
+/**
+ * The web tool family, as a separately packaged family.
+ *
+ * Depends on the framework for the tool-authoring surface, on the platform
+ * package for shell quoting, and on the shell family for headless browser runs.
+ * It knows nothing about the runtime or the capability kernel.
+ */
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
@@ -8,9 +15,13 @@ import {
   requireObject,
   requireString,
   workspacePath,
-} from "./arguments";
-import { runShell } from "./shell-tools";
-import type { RuntimeTool, ToolExecutionContext } from "./types";
+} from "@natalia/tools";
+import { runShell } from "@natalia/tool-shell";
+import type {
+  RuntimeTool,
+  ToolExecutionContext,
+  ToolFamily,
+} from "@natalia/tools";
 
 function webFetchTool(): RuntimeTool {
   return {
@@ -305,3 +316,18 @@ export const webTools: RuntimeTool[] = [
   browserVisitTool(),
   browserScreenshotTool(),
 ];
+
+/**
+ * Session scope: these tools are only meaningful while the session using them
+ * is alive; the network policy they enforce is the host's settings.
+ */
+export function webToolFamily(): ToolFamily {
+  return {
+    id: "web",
+    name: "Web Tools",
+    version: "1.0.0",
+    description: "Fetching and searching the web.",
+    scope: "session",
+    tools: webTools,
+  };
+}

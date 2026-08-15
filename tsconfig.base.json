@@ -22,6 +22,8 @@
       "@natalia/tool-ask": ["packages/tool-ask/src/index.ts"],
       "@natalia/tool-fs": ["packages/tool-fs/src/index.ts"],
       "@natalia/tool-search": ["packages/tool-search/src/index.ts"],
+      "@natalia/tool-shell": ["packages/tool-shell/src/index.ts"],
+      "@natalia/tool-web": ["packages/tool-web/src/index.ts"],
       "@natalia/tool-todo": ["packages/tool-todo/src/index.ts"],
       "@natalia/tools": ["packages/tools/src/index.ts"]
     },

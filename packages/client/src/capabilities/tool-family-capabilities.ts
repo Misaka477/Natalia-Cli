@@ -22,15 +22,15 @@ import type {
 import { askToolFamily } from "@natalia/tool-ask";
 import { fsToolFamily } from "@natalia/tool-fs";
 import { searchToolFamily } from "@natalia/tool-search";
+import { shellToolFamily } from "@natalia/tool-shell";
+import { webToolFamily } from "@natalia/tool-web";
 import { todoToolFamily } from "@natalia/tool-todo";
 import {
   agentToolFamily,
   createToolRegistry,
   processToolFamily,
   sandboxToolFamily,
-  shellToolFamily,
   terminalToolFamily,
-  webToolFamily,
   ManagedProcessRegistry,
   type RuntimeTool,
   type ToolFamily,

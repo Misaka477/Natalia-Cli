@@ -27,6 +27,8 @@
     "@natalia/tool-ask": "workspace:*",
     "@natalia/tool-fs": "workspace:*",
     "@natalia/tool-search": "workspace:*",
+    "@natalia/tool-shell": "workspace:*",
+    "@natalia/tool-web": "workspace:*",
     "@natalia/tool-todo": "workspace:*",
     "@natalia/tools": "workspace:*",
     "@natalia/ui-model": "workspace:*",

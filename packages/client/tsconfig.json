@@ -58,6 +58,12 @@
       "path": "../tool-search"
     },
     {
+      "path": "../tool-shell"
+    },
+    {
+      "path": "../tool-web"
+    },
+    {
       "path": "../tool-todo"
     },
     {

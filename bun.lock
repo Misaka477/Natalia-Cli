@@ -88,7 +88,9 @@
         "@natalia/tool-ask": "workspace:*",
         "@natalia/tool-fs": "workspace:*",
         "@natalia/tool-search": "workspace:*",
+        "@natalia/tool-shell": "workspace:*",
         "@natalia/tool-todo": "workspace:*",
+        "@natalia/tool-web": "workspace:*",
         "@natalia/tools": "workspace:*",
         "@natalia/ui-model": "workspace:*",
         "@natalia/workflow": "workspace:*",
@@ -230,10 +232,27 @@
         "@natalia/tools": "workspace:*",
       },
     },
+    "packages/tool-shell": {
+      "name": "@natalia/tool-shell",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/platform": "workspace:*",
+        "@natalia/tools": "workspace:*",
+      },
+    },
     "packages/tool-todo": {
       "name": "@natalia/tool-todo",
       "version": "0.0.0-m13",
       "dependencies": {
+        "@natalia/tools": "workspace:*",
+      },
+    },
+    "packages/tool-web": {
+      "name": "@natalia/tool-web",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/platform": "workspace:*",
+        "@natalia/tool-shell": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
     },
@@ -386,7 +405,11 @@
 
     "@natalia/tool-search": ["@natalia/tool-search@workspace:packages/tool-search"],
 
+    "@natalia/tool-shell": ["@natalia/tool-shell@workspace:packages/tool-shell"],
+
     "@natalia/tool-todo": ["@natalia/tool-todo@workspace:packages/tool-todo"],
+
+    "@natalia/tool-web": ["@natalia/tool-web@workspace:packages/tool-web"],
 
     "@natalia/tools": ["@natalia/tools@workspace:packages/tools"],
 
