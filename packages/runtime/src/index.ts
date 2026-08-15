@@ -5,5 +5,6 @@ export * from "./errors";
 export * from "./loop";
 export * from "./modelmeta";
 export * from "./provider";
+export * from "./provider-concurrency";
 export * from "./request";
 export * from "./retry";

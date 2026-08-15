@@ -43,6 +43,7 @@ import type {
 import {
   ContextLedger,
   contextStatusEvent,
+  ProviderConcurrencyLimiter,
   providerForModel,
   type ProviderMessage,
   type ProviderToolCall,
@@ -50,6 +51,7 @@ import {
   runWithRetry,
   runCheckpointCommand,
   type StreamingProvider,
+  withProviderConcurrency,
 } from "@natalia/runtime";
 import {
   discoverProviderModels,
@@ -694,6 +696,8 @@ export function createRealRuntimeClient(
   let retryPolicy: NonNullable<Parameters<typeof runWithRetry>[2]>["policy"];
   /** The out-of-tree family watcher (HMR's hot half); closed at dispose. */
   let toolFamilyWatcher: (() => Promise<void>) | undefined;
+  /** Per-provider in-flight ceiling for parallel streams (the fan-out cap). */
+  let providerConcurrencyLimiter = new ProviderConcurrencyLimiter({});
   const mutationRegistry = createMutationRegistry();
   const workspaceFilesController = createWorkspaceFilesController({
     workspaceRoot,
@@ -876,6 +880,11 @@ export function createRealRuntimeClient(
         jitterMs: tsConfig.config.runtime.retry.jitterMs,
       };
       maxSteps = tsConfig.config.runtime.maxStepsPerTurn;
+      // The fan-out ceiling: parallel sub-agent streams take a slot per
+      // provider instead of tripping rate limits.
+      providerConcurrencyLimiter = new ProviderConcurrencyLimiter(
+        tsConfig.config.runtime.providerConcurrency ?? {},
+      );
       // The config is a kernel service: plugins and tool families can resolve
       // it by name and subscribe to its updates.
       const registeredConfig = registerRuntimeConfigCapability(
@@ -978,15 +987,20 @@ export function createRealRuntimeClient(
             !excluded.has(tool.name) &&
             (!allowed.length || allowed.includes(tool.name)),
         );
-        for await (const chunk of provider.stream({
-          messages,
-          tools: visibleTools.map((tool) => ({
-            name: tool.name,
-            description: tool.description,
-            parameters: tool.parameters,
-          })),
-          signal: runner.signal,
-        })) {
+        for await (const chunk of withProviderConcurrency(
+          providerConcurrencyLimiter,
+          provider!.provider,
+          () =>
+            provider!.stream({
+              messages,
+              tools: visibleTools.map((tool) => ({
+                name: tool.name,
+                description: tool.description,
+                parameters: tool.parameters,
+              })),
+              signal: runner.signal,
+            }),
+        )) {
           if (chunk.type === "content") output += chunk.text;
           if (chunk.type === "tool_call") calls.push(...chunk.calls);
         }
@@ -3768,11 +3782,16 @@ export function createRealRuntimeClient(
       let usedTools = false;
       for (let step = 1; step <= effectiveMaxSteps(); step++) {
         const calls: ProviderToolCall[] = [];
-        for await (const chunk of provider.stream({
-          messages,
-          tools: toolSchemas,
-          signal: new AbortController().signal,
-        })) {
+        for await (const chunk of withProviderConcurrency(
+          providerConcurrencyLimiter,
+          provider!.provider,
+          () =>
+            provider!.stream({
+              messages,
+              tools: toolSchemas,
+              signal: new AbortController().signal,
+            }),
+        )) {
           if (chunk.type === "thinking") {
             thinking += chunk.text;
             publish({
@@ -3871,18 +3890,23 @@ export function createRealRuntimeClient(
       // no text came out of the tool loop, run one final provider step without
       // tools (the main agent's needsFinalResponse behaviour).
       if (usedTools && !output.trim()) {
-        for await (const chunk of provider.stream({
-          messages: [
-            ...messages,
-            {
-              role: "system",
-              content:
-                "Tool execution is complete. Provide the user with a concise final answer summarizing the outcome. Do not call any tools.",
-            },
-          ],
-          tools: undefined,
-          signal: new AbortController().signal,
-        })) {
+        for await (const chunk of withProviderConcurrency(
+          providerConcurrencyLimiter,
+          provider!.provider,
+          () =>
+            provider!.stream({
+              messages: [
+                ...messages,
+                {
+                  role: "system",
+                  content:
+                    "Tool execution is complete. Provide the user with a concise final answer summarizing the outcome. Do not call any tools.",
+                },
+              ],
+              tools: undefined,
+              signal: new AbortController().signal,
+            }),
+        )) {
           if (chunk.type === "content") {
             output += chunk.text;
             publish({
