@@ -70,7 +70,15 @@ function sandboxCreateTool(): RuntimeTool {
       context.onSandboxEvent?.(
         requireSandboxes(context).auditEvent(id, "create"),
       );
-      return JSON.stringify(sandbox, null, 2);
+      // The resolved config by name (the D2 runtime.config service): the tool
+      // says which backend actually created the sandbox.
+      const backend =
+        (
+          context.runtimeConfig?.() as
+            | { sandbox?: { backend?: string } }
+            | undefined
+        )?.sandbox?.backend ?? "snapshot";
+      return JSON.stringify({ ...sandbox, backend }, null, 2);
     },
   };
 }

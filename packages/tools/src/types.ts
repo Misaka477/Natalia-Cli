@@ -105,6 +105,12 @@ export type ToolExecutionContext = {
   }) => Promise<void>;
   onSandboxEvent?: (event: { type: string; [key: string]: unknown }) => void;
   onWorkspaceChange?: (changes: SandboxChange[]) => void;
+  /**
+   * The runtime's resolved config, by name (the D2 `runtime.config` service),
+   * refreshed in place on config reload. A tool family reads values the
+   * `settings` subset does not carry.
+   */
+  runtimeConfig?: () => unknown;
   settings?: {
     webSearchEndpoint?: string;
     webSearchProviderPriority?: string[];

@@ -123,3 +123,24 @@ test("sandbox tools run through the git-free snapshot backend (no git needed)", 
   await manager.rollback("snap.1");
   expect(await readFile(join(root, "file.txt"), "utf8")).toBe("base\n");
 });
+
+test("sandbox_create reads the resolved config service (runtimeConfig) to name its backend", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tool-sandbox-backend-"));
+  const manager = new SnapshotSandboxManager(root);
+  await manager.initialize();
+  const tool = sandboxToolFamily().tools.find(
+    (candidate) => candidate.name === "sandbox_create",
+  )!;
+  const created = await tool.execute({ id: "cfg.1" }, {
+    workspaceRoot: root,
+    sandboxes: manager,
+    // The resolved config service: sandbox.backend=worktree was configured.
+    runtimeConfig: () => ({ sandbox: { backend: "worktree" } }),
+    onSandboxEvent: () => undefined,
+    onWorkspaceChange: () => undefined,
+  } as never);
+  const parsed = JSON.parse(created) as { backend?: string };
+  // The tool family consumed the runtime.config service by name — the D2
+  // service is genuinely used by a real production tool, not just plugins.
+  expect(parsed.backend).toBe("worktree");
+});

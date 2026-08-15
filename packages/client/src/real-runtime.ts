@@ -6602,6 +6602,9 @@ export function createRealRuntimeClient(
               sandboxes: sandboxController.get(),
               workspaceReadAuthorize: authorizeWorkspaceRead,
               sandboxMergeAuthorize: authorizeSandboxMerge,
+              // The resolved config as a service: a tool family reads it by
+              // name (e.g. `sandbox.backend`) instead of re-parsing config.
+              runtimeConfig: () => capabilityRegistry.service("runtime.config"),
               settings: toolSettings(),
               // The turn's own session, not the attached one: a background turn's
               // subagents and terminal starts belong to its session (I1/I3).
