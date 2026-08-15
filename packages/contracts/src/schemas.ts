@@ -404,6 +404,16 @@ export const pluginConfigSchema = z.object({
   settings: z.record(z.unknown()).default({}),
 });
 
+/**
+ * Which tool families the host loads. Keyed by family id (the `id` a
+ * `packages/tool-*` package declares); a family that is absent or `true` loads,
+ * `false` disables it — **not enabled = not in the registry**, so a disabled
+ * family's tools cannot be called at all.
+ */
+export const toolsConfigSchema = z.object({
+  enabled: z.record(z.boolean()).default({}),
+});
+
 export const mcpServerConfigSchema = z.object({
   type: z.enum(["stdio", "http"]),
   command: z.string().optional(),
@@ -738,6 +748,7 @@ export const configV2Schema = z.object({
   mcpServers: z.record(mcpServerConfigSchema).default({}),
   skills: skillsConfigSchema.default({}),
   plugins: pluginConfigSchema.default({}),
+  tools: toolsConfigSchema.default({}),
   workspace: workspaceConfigSchema.default({}),
   instructions: instructionConfigSchema.default({}),
   webSearch: webSearchConfigSchema.default({}),

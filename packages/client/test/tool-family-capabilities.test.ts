@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { CapabilityRegistry } from "@natalia/capability";
 import { todoToolFamily } from "@natalia/tool-todo";
 import {
+  applyToolFamilyEnabledFilter,
   builtinToolFamilies,
   builtinToolNames,
   createToolRegistryFromCapabilities,
@@ -9,6 +10,7 @@ import {
   toolFamilyCapabilityID,
   toolFamilyRegistration,
 } from "../src/capabilities/tool-family-capabilities";
+import type { ToolFamily } from "@natalia/tools";
 
 // The built-in tools are capabilities now, so they must be assemblable without a
 // runtime. If any of this needed a real client, nothing would have been decoupled.
@@ -127,4 +129,142 @@ test("registering the same families twice is refused, not silently doubled", () 
   expect(second.failed.length).toBe(families.length);
   for (const failure of second.failed)
     expect(failure.reason).toMatch(/already loaded/u);
+});
+
+test("config enabled=false keeps a family out of the registry entirely", () => {
+  const registry = new CapabilityRegistry();
+  const { tools } = createToolRegistryFromCapabilities({
+    registry,
+    enabled: { todo: false },
+  });
+  // The todo family's tools are never assembled, and its capability is absent.
+  for (const tool of todoToolFamily().tools)
+    expect(tools.has(tool.name)).toBe(false);
+  expect(registry.has(toolFamilyCapabilityID("todo"))).toBe(false);
+  // Everything else still loads.
+  expect(tools.has("read_file")).toBe(true);
+});
+
+test("applyToolFamilyEnabledFilter removes a disabled family after assembly", () => {
+  const registry = new CapabilityRegistry();
+  const { tools } = createToolRegistryFromCapabilities({ registry });
+  expect(tools.has("todo_read")).toBe(true);
+  const cascaded = applyToolFamilyEnabledFilter({
+    tools,
+    registry,
+    families: builtinToolFamilies(),
+    enabled: { todo: false },
+  });
+  expect(cascaded).toEqual([]);
+  for (const tool of todoToolFamily().tools)
+    expect(tools.has(tool.name)).toBe(false);
+  expect(registry.has(toolFamilyCapabilityID("todo"))).toBe(false);
+});
+
+test("a family that depends on a disabled one is cascade-disabled with a reason", () => {
+  const registry = new CapabilityRegistry();
+  const dependent: ToolFamily = {
+    id: "dependent",
+    name: "Dependent",
+    version: "1.0.0",
+    description: "Depends on the base family.",
+    scope: "session",
+    dependencies: ["base"],
+    tools: [
+      {
+        name: "dependent_run",
+        description: "Run",
+        requiresApproval: false,
+        parameters: { type: "object", properties: {} },
+        async execute() {
+          return "ok";
+        },
+      },
+    ],
+  };
+  const base: ToolFamily = {
+    id: "base",
+    name: "Base",
+    version: "1.0.0",
+    description: "The dependency.",
+    scope: "session",
+    tools: [
+      {
+        name: "base_run",
+        description: "Run",
+        requiresApproval: false,
+        parameters: { type: "object", properties: {} },
+        async execute() {
+          return "ok";
+        },
+      },
+    ],
+  };
+  const { tools } = createToolRegistryFromCapabilities({
+    registry,
+    families: [base, dependent],
+  });
+  expect(tools.has("dependent_run")).toBe(true);
+
+  const cascaded = applyToolFamilyEnabledFilter({
+    tools,
+    registry,
+    families: [base, dependent],
+    enabled: { base: false },
+  });
+  expect(cascaded).toEqual([
+    { id: "dependent", reason: expect.stringContaining("base") as string },
+  ]);
+  expect(tools.has("base_run")).toBe(false);
+  expect(tools.has("dependent_run")).toBe(false);
+  expect(registry.has(toolFamilyCapabilityID("dependent"))).toBe(false);
+});
+
+test("dependency ordering lets a dependent load after its dependency", () => {
+  const registry = new CapabilityRegistry();
+  const dependent: ToolFamily = {
+    id: "later",
+    name: "Later",
+    version: "1.0.0",
+    description: "Depends on the earlier family.",
+    scope: "session",
+    dependencies: ["earlier"],
+    tools: [
+      {
+        name: "later_run",
+        description: "Run",
+        requiresApproval: false,
+        parameters: { type: "object", properties: {} },
+        async execute() {
+          return "ok";
+        },
+      },
+    ],
+  };
+  const earlier: ToolFamily = {
+    id: "earlier",
+    name: "Earlier",
+    version: "1.0.0",
+    description: "The dependency.",
+    scope: "session",
+    tools: [
+      {
+        name: "earlier_run",
+        description: "Run",
+        requiresApproval: false,
+        parameters: { type: "object", properties: {} },
+        async execute() {
+          return "ok";
+        },
+      },
+    ],
+  };
+  // Dependent listed first on purpose: ordering must fix it, not the caller.
+  const outcome = registerToolFamilyCapabilities(registry, [
+    dependent,
+    earlier,
+  ]);
+  expect(outcome.failed).toEqual([]);
+  expect(registry.has(toolFamilyCapabilityID("later"))).toBe(true);
+  expect(registry.has(toolFamilyCapabilityID("earlier"))).toBe(true);
 });

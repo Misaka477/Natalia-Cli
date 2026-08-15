@@ -51,9 +51,14 @@ import {
  * This is also the effective built-in catalogue — the single list that says what
  * the model can call — so anything that needs to know the built-in tool names
  * reads it instead of keeping a second inventory.
+ *
+ * `enabled` is the config's `tools.enabled`: a family that is `false` does not
+ * load, and a family that is absent or `true` loads. The filter happens here, so
+ * a disabled family's tools never reach the kernel or the executor registry.
  */
 export function builtinToolFamilies(
   processRegistry = new ManagedProcessRegistry(),
+  enabled?: Record<string, boolean>,
 ): ToolFamily[] {
   return [
     fsToolFamily(),
@@ -66,12 +71,12 @@ export function builtinToolFamilies(
     shellToolFamily(),
     processToolFamily(processRegistry),
     webToolFamily(),
-  ];
+  ].filter((family) => enabled?.[family.id] !== false);
 }
 
 /** Every built-in tool name, including the aliases a model may use. */
-export function builtinToolNames(): string[] {
-  return builtinToolFamilies().flatMap((family) => [
+export function builtinToolNames(enabled?: Record<string, boolean>): string[] {
+  return builtinToolFamilies(undefined, enabled).flatMap((family) => [
     ...family.tools.map((tool) => tool.name),
     ...Object.keys(family.aliases ?? {}),
   ]);
@@ -92,6 +97,14 @@ export function toolFamilyRegistration(
     description: family.description,
     scope: family.scope,
     grants: ["tools"],
+    // A family's dependencies are the capabilities of the families it names, so
+    // the kernel refuses the load when one of them is missing — a disabled
+    // dependency is a missing capability, and the failure says so.
+    ...(family.dependencies?.length
+      ? {
+          dependencies: family.dependencies.map(toolFamilyCapabilityID),
+        }
+      : {}),
   };
 }
 
@@ -105,6 +118,10 @@ export type ToolFamilyLoadOutcome = {
  * Loads every built-in family into the kernel. A family that fails to load says
  * why and does not leave half its tools behind — `tryLoad` rolls the activation
  * back — so the caller can report the loss instead of serving a partial family.
+ *
+ * Families are ordered by their dependencies first, so a dependent family is
+ * never tried before the family it names: the kernel would otherwise refuse it
+ * with "not loaded" even when everything is present.
  */
 export function registerToolFamilyCapabilities(
   registry: CapabilityRegistryHost,
@@ -112,7 +129,7 @@ export function registerToolFamilyCapabilities(
 ): ToolFamilyLoadOutcome {
   const loaded: ToolFamilyLoadOutcome["loaded"] = [];
   const failed: ToolFamilyLoadOutcome["failed"] = [];
-  for (const family of families) {
+  for (const family of orderedFamilies(families)) {
     const registration = toolFamilyRegistration(family);
     const result = registry.tryLoad(registration, (capability) => {
       for (const tool of family.tools)
@@ -130,6 +147,24 @@ export function registerToolFamilyCapabilities(
   return { loaded, failed };
 }
 
+/** Dependencies first, stable otherwise, so tryLoad never races its own input. */
+function orderedFamilies(families: ToolFamily[]): ToolFamily[] {
+  const byID = new Map(families.map((family) => [family.id, family]));
+  const ordered: ToolFamily[] = [];
+  const visited = new Set<string>();
+  const visit = (family: ToolFamily) => {
+    if (visited.has(family.id)) return;
+    visited.add(family.id);
+    for (const dependency of family.dependencies ?? []) {
+      const dependencyFamily = byID.get(dependency);
+      if (dependencyFamily) visit(dependencyFamily);
+    }
+    ordered.push(family);
+  };
+  for (const family of families) visit(family);
+  return ordered;
+}
+
 /**
  * Builds the tool registry the executor reads from the families the kernel
  * accepted.
@@ -139,12 +174,76 @@ export function registerToolFamilyCapabilities(
  * also listed somewhere else. Aliases are applied per family, so an alias cannot
  * outlive the family that named it.
  */
+/**
+ * Applies the config's `tools.enabled` to an already-assembled runtime.
+ *
+ * The full catalogue loads at construction (the executor registry and the
+ * task-module collision check are built before config resolves), so a disabled
+ * family is removed here instead: its capability is unloaded from the kernel —
+ * which cascades to any family that depends on it — and its tools are dropped
+ * from the executor registry, so they can never be called. `tool.registered` is
+ * published after this runs, so a disabled family never appears in it.
+ *
+ * @returns the families that were enabled but cascade-disabled because a family
+ * they depend on is disabled, each with the reason.
+ */
+export function applyToolFamilyEnabledFilter(input: {
+  tools: ToolRegistry;
+  registry: CapabilityRegistryHost;
+  families: ToolFamily[];
+  enabled?: Record<string, boolean>;
+}): Array<{ id: string; reason: string }> {
+  const enabledIDs = new Set(
+    input.families
+      .filter((family) => input.enabled?.[family.id] !== false)
+      .map((family) => family.id),
+  );
+  for (const family of input.families)
+    if (!enabledIDs.has(family.id))
+      input.registry.unload(toolFamilyCapabilityID(family.id));
+  // The kernel cascades an unload to dependents, so a family can be gone even
+  // though it was not itself disabled. What is actually loaded decides what
+  // stays in the executor registry.
+  const loadedIDs = new Set(
+    input.families
+      .filter((family) => input.registry.has(toolFamilyCapabilityID(family.id)))
+      .map((family) => family.id),
+  );
+  const loadedNames = new Set(
+    input.families
+      .filter((family) => loadedIDs.has(family.id))
+      .flatMap((family) => [
+        ...family.tools.map((tool) => tool.name),
+        ...Object.keys(family.aliases ?? {}),
+      ]),
+  );
+  for (const family of input.families)
+    for (const tool of family.tools)
+      if (!loadedNames.has(tool.name)) input.tools.delete(tool.name);
+  const cascaded: Array<{ id: string; reason: string }> = [];
+  for (const family of input.families) {
+    if (!enabledIDs.has(family.id)) continue;
+    if (loadedIDs.has(family.id)) continue;
+    const disabledDependencies = (family.dependencies ?? []).filter(
+      (dependency) => !enabledIDs.has(dependency),
+    );
+    cascaded.push({
+      id: family.id,
+      reason: `depends on disabled tool family: ${disabledDependencies.join(", ")}`,
+    });
+  }
+  return cascaded;
+}
+
 export function createToolRegistryFromCapabilities(input: {
   registry: CapabilityRegistryHost;
   processRegistry?: ManagedProcessRegistry;
   families?: ToolFamily[];
+  /** Config `tools.enabled`: a family that is `false` does not load. */
+  enabled?: Record<string, boolean>;
 }): { tools: ToolRegistry; outcome: ToolFamilyLoadOutcome } {
-  const families = input.families ?? builtinToolFamilies(input.processRegistry);
+  const families =
+    input.families ?? builtinToolFamilies(input.processRegistry, input.enabled);
 
   const outcome = registerToolFamilyCapabilities(input.registry, families);
   const tools = createToolRegistry([]);

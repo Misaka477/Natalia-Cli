@@ -238,6 +238,9 @@ function mergeConfig(base: ConfigV2, overlay: ConfigPatch): ConfigV2 {
       >,
     ),
     skills: { ...base.skills, ...overlay.skills },
+    tools: {
+      enabled: { ...base.tools?.enabled, ...overlay.tools?.enabled },
+    },
     plugins: {
       enabled: { ...base.plugins.enabled, ...overlay.plugins?.enabled },
       paths: overlay.plugins?.paths ?? base.plugins.paths,

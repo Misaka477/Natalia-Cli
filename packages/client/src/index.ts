@@ -107,6 +107,11 @@ export {
   type CapabilityTaskExecutionRequest,
 } from "./capability-execution-host";
 export { CapabilityHost } from "@natalia/capability";
+export {
+  builtinToolFamilies,
+  toolFamilyCapabilityID,
+  type ToolFamilyLoadOutcome,
+} from "./capabilities/tool-family-capabilities";
 export { providerErrorHint, retryDisplayLine } from "./retry-display";
 export {
   cleanupUnreferencedAttachments,

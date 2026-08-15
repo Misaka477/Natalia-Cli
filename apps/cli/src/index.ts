@@ -1,4 +1,5 @@
 import {
+  builtinToolFamilies,
   checkpointDisplayLine,
   compactionDisplayLine,
   globWorkspaceFiles,
@@ -16,6 +17,7 @@ import {
   migrationSummaryText,
   modelSelectionStatus,
   resolveConfig,
+  updateConfig,
 } from "@natalia/config";
 import type { RuntimeEvent } from "@natalia/contracts";
 import { callRuntimeRPC } from "@natalia/transport";
@@ -454,4 +456,80 @@ export async function workspaceFilesystemCommand(input: {
     include: input.include,
     limit: input.limit,
   });
+}
+
+/**
+ * The families this CLI knows how to install and uninstall.
+ *
+ * This is the host's catalogue — the same `builtinToolFamilies` the runtime
+ * loads — so the CLI and the runtime can never disagree about what a family id
+ * means.
+ */
+export function toolFamilyCatalogue() {
+  return builtinToolFamilies().map((family) => ({
+    id: family.id,
+    name: family.name,
+    version: family.version,
+    description: family.description,
+    scope: family.scope,
+    dependencies: family.dependencies ?? [],
+    tools: family.tools.map((tool) => tool.name),
+  }));
+}
+
+export async function installToolFamily(input: {
+  workspaceRoot: string;
+  familyID: string;
+}): Promise<{ installed: boolean; note?: string }> {
+  const families = builtinToolFamilies();
+  const family = families.find((candidate) => candidate.id === input.familyID);
+  if (!family)
+    throw new Error(
+      `unknown tool family: ${input.familyID} (known: ${families.map((candidate) => candidate.id).join(", ")})`,
+    );
+  const { config } = await resolveConfig({
+    workspaceRoot: input.workspaceRoot,
+  });
+  const disabled = config.tools.enabled ?? {};
+  // Installing restores a family to its default-on state.
+  const note = (family.dependencies ?? []).filter(
+    (dependency) => disabled[dependency] === false,
+  ).length
+    ? `note: ${family.id} depends on a disabled family (${(family.dependencies ?? []).filter((dependency) => disabled[dependency] === false).join(", ")}); enable it too or this family will not load`
+    : undefined;
+  const enabled = { ...disabled, [family.id]: true };
+  await updateConfig(input.workspaceRoot, { tools: { enabled } });
+  return { installed: true, note };
+}
+
+export async function uninstallToolFamily(input: {
+  workspaceRoot: string;
+  familyID: string;
+}): Promise<{ uninstalled: boolean; note?: string }> {
+  const families = builtinToolFamilies();
+  const family = families.find((candidate) => candidate.id === input.familyID);
+  if (!family)
+    throw new Error(
+      `unknown tool family: ${input.familyID} (known: ${families.map((candidate) => candidate.id).join(", ")})`,
+    );
+  const { config } = await resolveConfig({
+    workspaceRoot: input.workspaceRoot,
+  });
+  const disabled = config.tools.enabled ?? {};
+  const enabled = { ...disabled, [family.id]: false };
+  // Uninstalling a family another enabled family depends on cascade-disables
+  // that family too; the runtime will report it, and so do we.
+  const affected = families
+    .filter(
+      (candidate) =>
+        candidate.id !== family.id &&
+        disabled[candidate.id] !== false &&
+        (candidate.dependencies ?? []).includes(family.id),
+    )
+    .map((candidate) => candidate.id);
+  const note = affected.length
+    ? `note: disabling ${family.id} also disables ${affected.join(", ")}`
+    : undefined;
+  await updateConfig(input.workspaceRoot, { tools: { enabled } });
+  return { uninstalled: true, note };
 }

@@ -146,7 +146,11 @@ import {
   registerTaskModuleCapability,
   TASK_MODULE_CAPABILITY_ID,
 } from "./capabilities/task-module-capability";
-import { createToolRegistryFromCapabilities } from "./capabilities/tool-family-capabilities";
+import {
+  applyToolFamilyEnabledFilter,
+  builtinToolFamilies,
+  createToolRegistryFromCapabilities,
+} from "./capabilities/tool-family-capabilities";
 import type { TaskModuleContext } from "./capabilities/task-module-tools";
 import {
   flowOverview as flowOverviewForWorkspace,
@@ -364,13 +368,18 @@ export function createRealRuntimeClient(
    */
   const capabilityRegistry: CapabilityRegistryHost =
     options.capabilityRegistry ?? new CapabilityRegistry();
-  const builtinToolFamilies = options.tools
+  const initialFamilies = options.tools
     ? undefined
     : createToolRegistryFromCapabilities({
         registry: capabilityRegistry,
         processRegistry,
       });
-  const tools = options.tools ?? builtinToolFamilies!.tools;
+  const tools = options.tools ?? initialFamilies!.tools;
+  // A family that could not load at construction says why at start, instead of
+  // its tools silently missing from the catalogue.
+  const initialFamilyFailures = options.tools
+    ? []
+    : initialFamilies!.outcome.failed;
   const workspaceCapabilityView = options.capabilityHost?.view;
   if (options.taskModuleContext) {
     const registered = registerTaskModuleCapability(
@@ -1057,6 +1066,30 @@ export function createRealRuntimeClient(
     });
     if (tsRuntimeConfig && extensionEnabled("mcp")) {
       await mcpController.reload();
+    }
+    // The config's `tools.enabled` decides which built-in families stay: a
+    // disabled family's capability is unloaded and its tools dropped, so they
+    // are never callable and never appear in `tool.registered`. A family that
+    // depends on a disabled one is cascade-disabled too, and says why.
+    if (tsRuntimeConfig && !options.tools) {
+      for (const failure of initialFamilyFailures)
+        publish({
+          type: "diagnostic",
+          level: "warning",
+          message: `tool family ${failure.id} is not loaded: ${failure.reason}`,
+        });
+      const cascaded = applyToolFamilyEnabledFilter({
+        tools,
+        registry: capabilityRegistry,
+        families: builtinToolFamilies(processRegistry),
+        enabled: tsRuntimeConfig.tools?.enabled,
+      });
+      for (const family of cascaded)
+        publish({
+          type: "diagnostic",
+          level: "warning",
+          message: `tool family ${family.id} is not loaded: ${family.reason}`,
+        });
     }
     if (extensionEnabled("plugins")) {
       await pluginsController.init();

@@ -141,6 +141,12 @@ export type ToolFamily = {
   tools: RuntimeTool[];
   /** Alternate names for this family's tools, applied by the host's registry. */
   aliases?: Record<string, string>;
+  /**
+   * Family ids that must be enabled for this family to load. A disabled or
+   * unknown dependency refuses the load with the reason stated, instead of a
+   * family quietly running half-equipped.
+   */
+  dependencies?: string[];
 };
 
 /**

@@ -3877,3 +3877,84 @@ test("a bare alert channel stays silent on success and on a retried attempt", as
   ).toBe(false);
   alerts.close();
 });
+
+test("CLI tool list reports the built-in families", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-tools-list-"));
+  const child = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "tool",
+      "list",
+    ],
+    { cwd: root, stdout: "pipe", stderr: "pipe" },
+  );
+  expect(child.exitCode).toBe(0);
+  const catalogue = JSON.parse(
+    new TextDecoder().decode(child.stdout),
+  ) as Array<{ id: string; tools: string[] }>;
+  expect(catalogue.map((family) => family.id)).toContain("fs");
+  expect(catalogue.map((family) => family.id)).toContain("todo");
+  expect(catalogue.find((family) => family.id === "fs")?.tools).toContain(
+    "read_file",
+  );
+});
+
+test("CLI install and uninstall flip tools.enabled in the workspace config", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-tools-toggle-"));
+  const uninstall = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "uninstall",
+      "todo",
+      "--workspace",
+      root,
+    ],
+    { cwd: root, stdout: "pipe", stderr: "pipe" },
+  );
+  expect(uninstall.exitCode).toBe(0);
+  expect(JSON.parse(new TextDecoder().decode(uninstall.stdout))).toMatchObject({
+    uninstalled: true,
+  });
+  const afterUninstall = JSON.parse(
+    await readFile(join(root, ".natalia", "config.json"), "utf8"),
+  ) as { tools?: { enabled?: Record<string, boolean> } };
+  expect(afterUninstall.tools?.enabled?.todo).toBe(false);
+
+  const install = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "install",
+      "todo",
+      "--workspace",
+      root,
+    ],
+    { cwd: root, stdout: "pipe", stderr: "pipe" },
+  );
+  expect(install.exitCode).toBe(0);
+  const afterInstall = JSON.parse(
+    await readFile(join(root, ".natalia", "config.json"), "utf8"),
+  ) as { tools?: { enabled?: Record<string, boolean> } };
+  expect(afterInstall.tools?.enabled?.todo).toBe(true);
+});
+
+test("CLI install refuses an unknown family", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-tools-unknown-"));
+  const child = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "install",
+      "not.a.family",
+      "--workspace",
+      root,
+    ],
+    { cwd: root, stdout: "pipe", stderr: "pipe" },
+  );
+  expect(child.exitCode).not.toBe(0);
+  expect(new TextDecoder().decode(child.stderr)).toContain(
+    "unknown tool family",
+  );
+});

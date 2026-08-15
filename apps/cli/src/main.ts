@@ -64,12 +64,15 @@ import {
   exportLocalSessionMetadata,
   importLocalSessionMetadata,
   doctorReport,
+  installToolFamily,
   listLocalSessions,
   plainStatus,
   renameLocalSession,
   setLocalSessionPinned,
   sessionTable,
   promptArguments,
+  toolFamilyCatalogue,
+  uninstallToolFamily,
   workspaceFilesystemCommand,
   showLocalSession,
   startupDiagnostics,
@@ -726,6 +729,45 @@ switch (subcommand) {
     console.log(JSON.stringify({ url: server.url, cassette: cassettePath }));
     await waitSignal();
     server.stop(true);
+    break;
+  }
+
+  case "install": {
+    const familyID = argv[1];
+    if (!familyID) throw new Error("install requires a tool family id");
+    console.log(
+      JSON.stringify(
+        await installToolFamily({
+          workspaceRoot: valueAfter(argv, "--workspace") ?? process.cwd(),
+          familyID,
+        }),
+        null,
+        2,
+      ),
+    );
+    break;
+  }
+
+  case "uninstall": {
+    const familyID = argv[1];
+    if (!familyID) throw new Error("uninstall requires a tool family id");
+    console.log(
+      JSON.stringify(
+        await uninstallToolFamily({
+          workspaceRoot: valueAfter(argv, "--workspace") ?? process.cwd(),
+          familyID,
+        }),
+        null,
+        2,
+      ),
+    );
+    break;
+  }
+
+  case "tool": {
+    const action = argv[1] as "list" | undefined;
+    if (action !== "list") throw new Error("tool requires list");
+    console.log(JSON.stringify(toolFamilyCatalogue(), null, 2));
     break;
   }
 

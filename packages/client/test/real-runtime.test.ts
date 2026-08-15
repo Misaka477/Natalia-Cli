@@ -805,6 +805,36 @@ test("runtime status reflects the configured auto approval profile", async () =>
   });
 });
 
+test("tools.enabled=false keeps a family out of the runtime catalogue", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-tools-enabled-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({ version: 2, tools: { enabled: { todo: false } } }),
+  );
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_runtime_tools_enabled",
+    provider: scriptedProvider("ready"),
+  });
+  client.start((event) => events.push(event));
+  await waitFor(() => events.some((event) => event.type === "session.ready"));
+  const registered = events.filter(
+    (event): event is Extract<RuntimeEvent, { type: "tool.registered" }> =>
+      event.type === "tool.registered",
+  );
+  // The disabled family never appears in the catalogue...
+  expect(
+    registered.some(
+      (event) => event.name.startsWith("todo_") || event.name === "plan",
+    ),
+  ).toBe(false);
+  // ...and the rest of the families do.
+  expect(registered.some((event) => event.name === "read_file")).toBe(true);
+  await client.dispose?.();
+}, 60_000);
+
 test("read-only profile rejects side-effecting tools without an approval request", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-runtime-read-only-"));
   await mkdir(join(root, ".natalia"), { recursive: true });

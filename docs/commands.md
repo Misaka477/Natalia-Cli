@@ -81,6 +81,21 @@ npm run ts:cli -- fs search 'createRuntime' --include '*.ts' --limit 100
 
 The `fs` commands stay within the selected workspace and return JSON.
 
+## Tool Families
+
+```bash
+npm run ts:cli -- tool list
+npm run ts:cli -- install <family> --workspace <path>
+npm run ts:cli -- uninstall <family> --workspace <path>
+```
+
+`tool list` prints the built-in tool families the runtime can load (id, name,
+scope, dependencies, tools). `install <family>` and `uninstall <family>` flip
+the family in the workspace config's `tools.enabled` — a family that is not
+enabled never reaches the registry, so its tools cannot be called. Uninstalling
+a family another enabled family depends on cascade-disables that family too,
+and both commands report such notes.
+
 ## Transport Recording
 
 ```bash
