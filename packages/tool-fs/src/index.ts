@@ -27,6 +27,25 @@ function readFileTool(): RuntimeTool {
       required: ["path"],
       additionalProperties: false,
     },
+    // The pilot output definition: the tool declares what its result means so
+    // a client can draw a file card instead of guessing from the string.
+    output: {
+      schema: {
+        type: "object",
+        properties: { content: { type: "string" } },
+        required: ["content"],
+        additionalProperties: false,
+      },
+      render(args, value) {
+        const path = requireObject(args).path as string | undefined;
+        return {
+          kind: "read",
+          title: typeof path === "string" ? path : "file",
+          summary: `${value.length.toLocaleString()} chars`,
+          body: value,
+        };
+      },
+    },
     async execute(input, context) {
       const args = requireObject(input);
       const path = workspacePath(

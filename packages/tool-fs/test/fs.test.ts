@@ -29,3 +29,19 @@ test("read_file and write_file round-trip inside the workspace", async () => {
       .execute({ path: "../escape" }, { workspaceRoot: root }),
   ).rejects.toThrow(/outside workspace|path/u);
 });
+
+test("read_file projects a read card from its output definition", () => {
+  const tool = fsToolFamily().tools.find(
+    (candidate) => candidate.name === "read_file",
+  )!;
+  const intent = tool.output?.render(
+    { path: "src/index.ts" },
+    "export const x = 1;",
+  );
+  expect(intent).toMatchObject({
+    kind: "read",
+    title: "src/index.ts",
+    summary: expect.stringMatching(/chars/u) as string,
+    body: "export const x = 1;",
+  });
+});

@@ -806,6 +806,50 @@ test("runtime status reflects the configured auto approval profile", async () =>
   });
 });
 
+test("a tool with an output definition projects its result into the event", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-tool-render-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(join(root, "note.txt"), "projected content");
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_runtime_tool_render",
+    provider: {
+      provider: "tool-render",
+      model: "tool-render-model",
+      async *stream(request) {
+        if (!request.messages.some((message) => message.role === "tool"))
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "call_read",
+                name: "read_file",
+                arguments: JSON.stringify({ path: "note.txt" }),
+              },
+            ],
+          };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("read the note");
+  const update = events.find(
+    (event): event is Extract<RuntimeEvent, { type: "tool.update" }> =>
+      event.type === "tool.update" && event.status === "succeeded",
+  );
+  expect(update).toBeDefined();
+  // read_file declares an output definition, so its card travels with the event
+  // and a client renders it without reclassifying the string.
+  expect(update!.metadata?.render).toMatchObject({
+    kind: "read",
+    title: "note.txt",
+    body: "projected content",
+  });
+  await client.dispose?.();
+}, 60_000);
+
 test("the runtime config is a kernel service refreshed on reload", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-runtime-config-service-"));
   await mkdir(join(root, ".natalia"), { recursive: true });

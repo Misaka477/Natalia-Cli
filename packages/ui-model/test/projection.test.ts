@@ -4,6 +4,7 @@ import {
   ProjectionCache,
   classifyTool,
   collapseToolOutput,
+  projectToolRender,
   resultView,
   shouldLazyRenderDetail,
   stripAnsiOutput,
@@ -133,4 +134,32 @@ test("browser and question JSON results project as human-readable summaries", ()
   );
   expect(question.summary).toBe("User answered");
   expect(question.preview).toBe("Answer: 选项1");
+});
+
+test("projectToolRender decodes a tool's self-projected card", () => {
+  const intent = projectToolRender({
+    render: {
+      kind: "read",
+      title: "src/index.ts",
+      summary: "1,024 chars",
+      body: "export const x = 1;",
+      meta: [["lines", "1"]],
+    },
+  });
+  expect(intent).toEqual({
+    kind: "read",
+    title: "src/index.ts",
+    summary: "1,024 chars",
+    body: "export const x = 1;",
+    meta: [["lines", "1"]],
+  });
+});
+
+test("projectToolRender ignores a missing or malformed intent", () => {
+  expect(projectToolRender({})).toBeUndefined();
+  expect(projectToolRender({ render: "read" })).toBeUndefined();
+  expect(projectToolRender({ render: { kind: "read" } })).toBeUndefined();
+  expect(
+    projectToolRender({ render: { title: "x", summary: "y" } }),
+  ).toBeUndefined();
 });

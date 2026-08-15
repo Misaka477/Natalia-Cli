@@ -32,6 +32,36 @@ function runShellTool(): RuntimeTool {
       required: ["command"],
       additionalProperties: false,
     },
+    // The pilot output definition: the result is a terminal session card, so a
+    // client draws the command with its exit status instead of a raw blob.
+    output: {
+      schema: {
+        type: "object",
+        properties: {
+          stdout: { type: "string" },
+          stderr: { type: "string" },
+          exitCode: { type: "number" },
+        },
+        required: ["stdout", "stderr", "exitCode"],
+        additionalProperties: false,
+      },
+      render(args, value) {
+        const command = requireObject(args).command as string | undefined;
+        const stdout =
+          value.match(/stdout:\n([\s\S]*?)(?:\nstderr:|\n?$)/u)?.[1] ?? "";
+        const stderr = value.match(/stderr:\n([\s\S]*?)$/u)?.[1] ?? "";
+        const exitCode = Number(/exit=(-?\d+)/u.exec(value)?.[1] ?? "0");
+        return {
+          kind: "terminal",
+          title: typeof command === "string" ? command : "command",
+          summary: `exit ${exitCode}`,
+          body: [stdout, stderr && `stderr:\n${stderr}`]
+            .filter(Boolean)
+            .join("\n"),
+          meta: [["exit", String(exitCode)]],
+        };
+      },
+    },
     async execute(input, context) {
       const args = requireObject(input);
       return await runShell(

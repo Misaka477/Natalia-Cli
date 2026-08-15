@@ -6417,6 +6417,13 @@ export function createRealRuntimeClient(
         redactToolOutput(completeResult, redactToolOutputEnabled()),
       );
       const result = bounded.text;
+      // The tool's own output projection becomes part of the event metadata, so
+      // a client can draw the result as the card the tool described instead of
+      // guessing from the string.
+      const projectedRender = tool.output?.render(
+        tryParseToolArguments(call.arguments),
+        result,
+      );
       if (options.taskModuleContext && tool.name !== "flow_module_complete") {
         options.taskModuleContext.store.recordModuleEvidence({
           invocationID: options.taskModuleContext.invocationID,
@@ -6443,9 +6450,10 @@ export function createRealRuntimeClient(
         status: "succeeded",
         summary: result.slice(0, 200),
         result,
-        metadata: bounded.outputPath
-          ? { outputPath: bounded.outputPath }
-          : undefined,
+        metadata: {
+          ...(bounded.outputPath ? { outputPath: bounded.outputPath } : {}),
+          ...(projectedRender ? { render: projectedRender } : {}),
+        },
         endedAt: Date.now(),
       });
       publishWorkGraphToolCall(turnID, call.id, tool.name, "succeeded");

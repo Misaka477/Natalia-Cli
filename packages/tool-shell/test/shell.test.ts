@@ -29,3 +29,20 @@ test("run_shell rejects on a failing command with its output", async () => {
     runShell("exit 3", { workspaceRoot: root, settings: {} } as never, 10),
   ).rejects.toThrow(/exit=3/u);
 });
+
+test("run_shell projects a terminal card from its output definition", () => {
+  const tool = shellToolFamily().tools.find(
+    (candidate) => candidate.name === "run_shell",
+  )!;
+  const intent = tool.output?.render(
+    { command: "make build" },
+    "exit=0\nstdout:\nbuilt ok\nstderr:\nwarn",
+  );
+  expect(intent).toMatchObject({
+    kind: "terminal",
+    title: "make build",
+    summary: "exit 0",
+    meta: [["exit", "0"]],
+  });
+  expect(intent?.body).toContain("built ok");
+});

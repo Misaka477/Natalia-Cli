@@ -27,9 +27,42 @@ export type ToolSchema = {
   additionalProperties?: boolean;
 };
 
+/**
+ * The UI-facing card a tool draws for one of its results.
+ *
+ * This is a projection, not presentation: the tool says what its result means
+ * (a file to read, a terminal session, a diff) and keeps the body plain text,
+ * and a client renders that however it likes. A card is a suggestion — a client
+ * that cannot draw the kind falls back to the plain result.
+ */
+export type ToolRenderIntent = {
+  kind: "read" | "terminal" | "diff" | "search" | "web" | "generic";
+  /** Card title, e.g. the file path or the command. */
+  title: string;
+  /** One-line summary for the collapsed card. */
+  summary: string;
+  /** Body shown when the card is expanded. */
+  body?: string;
+  /** Extra label/value lines. */
+  meta?: Array<[label: string, value: string]>;
+};
+
+/**
+ * How a tool's output is structured and rendered. Optional: a tool without one
+ * keeps the plain-string contract — its result is still returned and shown
+ * verbatim, just not projected.
+ */
+export type ToolOutputDefinition = {
+  /** JSON schema of the tool's output value. */
+  schema: ToolSchema;
+  /** Pure projection of the call arguments and the result into a card. */
+  render(args: unknown, value: string): ToolRenderIntent | undefined;
+};
+
 export type RuntimeTool = ToolExecutionBoundary & {
   description: string;
   parameters: ToolSchema;
+  output?: ToolOutputDefinition;
   execute(input: unknown, context: ToolExecutionContext): Promise<string>;
 };
 

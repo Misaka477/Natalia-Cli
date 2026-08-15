@@ -42,6 +42,50 @@ export type ToolResultPresentation = {
   name?: string;
 };
 
+/**
+ * The UI-facing card a tool projects for one of its results.
+ *
+ * Tools declare this in their `output` definition (`@natalia/tools`); it reaches
+ * the client through the `tool.update` event's `metadata.render`. `ui-model`
+ * cannot depend on `@natalia/tools` (a kernel package), so this is a structural
+ * mirror the TUI decodes from the event metadata.
+ */
+export type ToolRenderIntent = {
+  kind: "read" | "terminal" | "diff" | "search" | "web" | "generic";
+  title: string;
+  summary: string;
+  body?: string;
+  meta?: Array<[label: string, value: string]>;
+};
+
+/**
+ * Decodes a tool's self-projected render intent from the event metadata, or
+ * returns `undefined` when the tool declared none. A malformed intent is
+ * treated as absent — the client falls back to rendering the plain result.
+ */
+export function projectToolRender(
+  metadata: Record<string, unknown> = {},
+): ToolRenderIntent | undefined {
+  const raw = metadata.render;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const candidate = raw as Record<string, unknown>;
+  if (
+    typeof candidate.kind !== "string" ||
+    typeof candidate.title !== "string" ||
+    typeof candidate.summary !== "string"
+  )
+    return undefined;
+  return {
+    kind: candidate.kind as ToolRenderIntent["kind"],
+    title: candidate.title,
+    summary: candidate.summary,
+    ...(typeof candidate.body === "string" ? { body: candidate.body } : {}),
+    ...(Array.isArray(candidate.meta)
+      ? { meta: candidate.meta as Array<[string, string]> }
+      : {}),
+  };
+}
+
 export type ParsedToolArguments = {
   complete: boolean;
   keyArguments: string[];

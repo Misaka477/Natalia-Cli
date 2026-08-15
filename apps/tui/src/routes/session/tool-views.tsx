@@ -12,6 +12,7 @@ import {
 import {
   collapseToolOutput,
   parseTodoItems,
+  projectToolRender,
   stripAnsiOutput,
 } from "@natalia/ui-model";
 import type { MessageBlock } from "../../context/state";
@@ -47,6 +48,81 @@ export function markdownSyntax() {
   });
 }
 
+/**
+ * A tool card drawn from the tool's own output projection (`metadata.render`).
+ *
+ * This is the direction the whole tool contract is moving: the tool says what
+ * its result is, and the client renders the card it described instead of
+ * reclassifying the string. The card stays deliberately plain — title, summary,
+ * meta, collapsible body — so a tool's projection is a suggestion any client
+ * can honor.
+ */
+function ProjectedToolCard(props: {
+  block: MessageBlock;
+  toolDetails: "expanded" | "collapsed";
+}) {
+  const tool = () => props.block.tool!;
+  const intent = () => projectToolRender(tool().metadata)!;
+  const [expanded, setExpanded] = createSignal(
+    props.toolDetails === "expanded",
+  );
+  const [hover, setHover] = createSignal(false);
+  const summary = () => intent().summary;
+  // A completed card with details collapsed is one line: title · summary.
+  if (props.toolDetails === "collapsed" && tool().status === "succeeded")
+    return (
+      <text
+        paddingLeft={1}
+        fg={darkTheme.text}
+        onMouseOver={() => setHover(true)}
+        onMouseOut={() => setHover(false)}
+        onMouseUp={() => setExpanded((value) => !value)}
+      >
+        {`${toolIcon(intent().kind)} ${intent().title} · ${summary()}${tool().elapsed ? ` · ${tool().elapsed}` : ""}`}
+      </text>
+    );
+  return (
+    <box
+      flexDirection="column"
+      border={["left"]}
+      borderColor={darkTheme.background}
+      backgroundColor={darkTheme.panel}
+      paddingTop={1}
+      paddingBottom={1}
+      paddingLeft={2}
+      marginTop={1}
+      marginBottom={1}
+      gap={1}
+      onMouseOver={() => setHover(true)}
+      onMouseOut={() => setHover(false)}
+      onMouseUp={() => setExpanded((value) => !value)}
+    >
+      <text paddingLeft={3} fg={darkTheme.muted}>
+        {`${toolIcon(intent().kind)} ${intent().title}${tool().elapsed ? ` · ${tool().elapsed}` : ""}`}
+      </text>
+      <text paddingLeft={1} fg={darkTheme.muted}>
+        {summary()}
+      </text>
+      <For each={intent().meta ?? []}>
+        {([label, value]) => (
+          <text paddingLeft={1} fg={darkTheme.muted}>
+            {`${label}: ${value}`}
+          </text>
+        )}
+      </For>
+      <Show when={expanded() && intent().body}>
+        {(content) => (
+          <box paddingLeft={1}>
+            <text fg={darkTheme.text} wrapMode="word">
+              {content()}
+            </text>
+          </box>
+        )}
+      </Show>
+    </box>
+  );
+}
+
 export function ToolBlockView(props: {
   block: MessageBlock;
   toolDetails: "expanded" | "collapsed";
@@ -54,6 +130,13 @@ export function ToolBlockView(props: {
   terminalWidth: number;
   toolPreviewLines: number;
 }) {
+  // A tool that declares its own output projection draws its own card: the
+  // tool knows what its result means, and the manual kind-based renderers below
+  // are the fallback for the tools that do not (yet).
+  if (props.block.tool && projectToolRender(props.block.tool.metadata))
+    return (
+      <ProjectedToolCard block={props.block} toolDetails={props.toolDetails} />
+    );
   if (props.block.tool?.kind === "shell")
     return (
       <ShellToolView
