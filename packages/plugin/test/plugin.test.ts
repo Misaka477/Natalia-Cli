@@ -548,3 +548,38 @@ test("conformance reports tool ownership and the approval boundary", async () =>
   expect(byName.get("approval-boundary")?.passed).toBe(true);
   expect(byName.get("owned-registration-cleanup")?.passed).toBe(true);
 });
+
+test("a plugin reads the runtime's resolved config via api.runtimeConfig", async () => {
+  const tools = createToolRegistry([]);
+  const seen: unknown[] = [];
+  const registry = createPluginRegistry({
+    tools,
+    runtimeConfig: () => ({
+      defaultPermission: "ask",
+      runtime: { maxSteps: 8 },
+    }),
+  });
+  await registry.load(
+    definePlugin({
+      manifest: {
+        apiVersion: 1,
+        id: "cfg.reader",
+        version: "1.0.0",
+        name: "Cfg Reader",
+        description: "",
+        entry: "index.ts",
+        capabilities: [],
+        scope: "session",
+      },
+      setup(api) {
+        seen.push(api.runtimeConfig?.());
+      },
+    }),
+  );
+  // The resolved config reached the plugin by name — the D2 service has a real
+  // production consumer, not just tests.
+  expect(seen).toEqual([
+    { defaultPermission: "ask", runtime: { maxSteps: 8 } },
+  ]);
+  expect(registry.list()[0]?.id).toBe("cfg.reader");
+});

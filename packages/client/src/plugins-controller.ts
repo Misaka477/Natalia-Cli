@@ -107,6 +107,9 @@ export function createPluginsController(input: {
       onUnload: (pluginID) => {
         input.capabilityRegistry.unload(pluginCapabilityID(pluginID));
       },
+      // The runtime's resolved config as a service: plugins read it by name,
+      // refreshed in place on config reload (the D2 change notify).
+      runtimeConfig: () => input.capabilityRegistry.service("runtime.config"),
     });
     await loadLocalPlugins({
       roots: roots(),

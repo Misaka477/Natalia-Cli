@@ -74,6 +74,12 @@ export type PluginAPI = {
    * `configSchema` (the schema's parsed value, so defaults are applied).
    */
   config: unknown;
+  /**
+   * The runtime's resolved config, when the host provides it (the D2
+   * `runtime.config` service). A plugin can read the effective config by name
+   * instead of duplicating a parser.
+   */
+  runtimeConfig?: () => unknown;
   tools: { register(tool: RuntimeTool): () => void };
   events: { on(listener: (event: unknown) => void): () => void };
   /**
@@ -171,6 +177,8 @@ export function createPluginRegistry(input: {
   ) => ((name: string, tool: RuntimeTool) => () => void) | undefined;
   /** Called when a plugin unloads, so the host can release kernel ownership. */
   onUnload?: (pluginID: string) => void;
+  /** The runtime's resolved config accessor, exposed to plugins as `api.runtimeConfig`. */
+  runtimeConfig?: () => unknown;
 }) {
   const plugins = new Map<
     string,
@@ -289,6 +297,9 @@ export function createPluginRegistry(input: {
             return dispose;
           },
         },
+        // The runtime's resolved config, when the host provides it: a plugin
+        // reads the effective config by name instead of duplicating a parser.
+        ...(input.runtimeConfig ? { runtimeConfig: input.runtimeConfig } : {}),
       };
       try {
         await plugin.setup(api);
