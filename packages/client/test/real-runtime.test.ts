@@ -9678,6 +9678,74 @@ test("cancelling a turn aborts a tool currently executing", async () => {
   }
 }, 30_000);
 
+test("a cancellation during the durable in-flight write still aborts the tool", async () => {
+  // The window the 10ms-timer test above only hits by luck: `tool.update
+  // running` is published, then the runtime awaits a durable in-flight write,
+  // and only then attaches the abort listener. Cancelling synchronously on the
+  // `running` event lands inside that window every time, and an
+  // already-aborted signal never fires `abort` again — so the tool used to run
+  // to its own timeout with the turn already cancelled.
+  const root = await mkdtemp(join(tmpdir(), "natalia-tool-cancel-window-"));
+  let toolAborted = false;
+  const tools = createToolRegistry([]);
+  tools.set("wait_for_cancel", {
+    name: "wait_for_cancel",
+    description: "Wait until the turn is cancelled.",
+    requiresApproval: false,
+    // No timeout: if the cancellation is dropped there is nothing to rescue the
+    // call, which is exactly the user-visible failure being pinned.
+    parameters: { type: "object", properties: {} },
+    async execute(_args, context) {
+      return await new Promise<string>((resolve) => {
+        const signal = context.signal;
+        if (signal?.aborted) {
+          toolAborted = true;
+          resolve("aborted");
+          return;
+        }
+        signal?.addEventListener(
+          "abort",
+          () => {
+            toolAborted = true;
+            resolve("aborted");
+          },
+          { once: true },
+        );
+      });
+    },
+  });
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_tool_cancel_window",
+    tools,
+    provider: {
+      provider: "tool-cancel",
+      model: "tool-cancel",
+      async *stream(request) {
+        if (request.signal?.aborted) throw new Error("cancelled");
+        if (!request.messages.some((message) => message.role === "tool"))
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              { id: "call_window", name: "wait_for_cancel", arguments: "{}" },
+            ],
+          };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => {
+    if (event.type === "tool.update" && event.status === "running")
+      client.cancel("stop the tool");
+  });
+  try {
+    await client.submit("run the waiting tool");
+    expect(toolAborted).toBe(true);
+  } finally {
+    await client.dispose?.();
+  }
+}, 20_000);
+
 test("the live work chat read and rollback surface a durable conversation", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-chat-"));
   const client = createRealRuntimeClient({

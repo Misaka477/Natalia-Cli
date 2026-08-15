@@ -6236,9 +6236,16 @@ export function createRealRuntimeClient(
         executionController.abort(
           exec?.activeAbort?.signal.reason ?? new Error("tool cancelled"),
         );
-      exec?.activeAbort?.signal.addEventListener("abort", cancelExecution, {
-        once: true,
-      });
+      const execSignal = exec?.activeAbort?.signal;
+      // A cancellation that already happened must not be missed. `running` is
+      // published before the durable in-flight write above, so a cancel can land
+      // while that write is in flight — and `addEventListener("abort")` never
+      // fires for an already-aborted signal. Without this check the tool ran on
+      // until its own timeout (or forever, when it declares none) even though the
+      // turn was cancelled.
+      if (execSignal?.aborted) cancelExecution();
+      else
+        execSignal?.addEventListener("abort", cancelExecution, { once: true });
       const timeoutTimer = tool.timeoutSec
         ? setTimeout(
             () =>
