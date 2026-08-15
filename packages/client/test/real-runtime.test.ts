@@ -4000,7 +4000,7 @@ test("queued input wakes an idle session after durable admission", async () => {
     text: "wait for idle",
     delivery: "queue",
   });
-  for (let index = 0; index < 50 && !started; index++) await Bun.sleep(1);
+  await waitFor(() => started, 5000, "the queued input to start streaming");
   expect(started).toBe(true);
   const stored = JSON.parse(
     await readFile(
@@ -4145,17 +4145,23 @@ test("restart resumes a pending queued input but does not replay interrupted pro
     },
   });
   reopened.start((event) => events.push(event));
-  for (let index = 0; index < 50 && !calls; index++) await Bun.sleep(1);
+  // A cold start replays the session, registers tools and rebuilds context
+  // before it can wake the queued input, so the budget is the runtime's
+  // startup, not a single tick.
+  await waitFor(
+    () => calls > 0,
+    5000,
+    "the queued input to reach the provider",
+  );
   expect(calls).toBe(1);
-  for (
-    let index = 0;
-    index < 50 &&
-    !events.some(
-      (event) => event.type === "turn.finished" && event.id === "turn_queued",
-    );
-    index++
-  )
-    await Bun.sleep(1);
+  await waitFor(
+    () =>
+      events.some(
+        (event) => event.type === "turn.finished" && event.id === "turn_queued",
+      ),
+    5000,
+    "the queued turn to finish",
+  );
   expect(
     events.some(
       (event) =>
@@ -4241,18 +4247,22 @@ test("restart safely settles a durable tool execution window without replaying i
     },
   });
   reopened.start((event) => events.push(event));
-  for (let index = 0; index < 50 && !calls; index++) await Bun.sleep(1);
+  await waitFor(
+    () => calls > 0,
+    5000,
+    "the queued input to reach the provider",
+  );
   expect(calls).toBe(1);
-  for (
-    let index = 0;
-    index < 50 &&
-    !events.some(
-      (event) =>
-        event.type === "turn.finished" && event.id === "turn_queued_after_tool",
-    );
-    index++
-  )
-    await Bun.sleep(1);
+  await waitFor(
+    () =>
+      events.some(
+        (event) =>
+          event.type === "turn.finished" &&
+          event.id === "turn_queued_after_tool",
+      ),
+    5000,
+    "the queued turn to finish",
+  );
   expect(
     events.some(
       (event) =>
@@ -7252,12 +7262,16 @@ function subagentToolProvider(): StreamingProvider {
   };
 }
 
-async function waitFor(predicate: () => boolean, timeoutMs = 500) {
+async function waitFor(
+  predicate: () => boolean,
+  timeoutMs = 500,
+  label = "condition",
+) {
   for (let elapsed = 0; elapsed < timeoutMs; elapsed += 10) {
     if (predicate()) return;
     await Bun.sleep(10);
   }
-  throw new Error("timed out waiting for condition");
+  throw new Error(`timed out waiting for ${label}`);
 }
 
 /** Polls until an async predicate holds (the runtime wakes turns asynchronously). */
