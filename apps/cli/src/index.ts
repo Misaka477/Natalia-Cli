@@ -13,9 +13,13 @@ import {
   referencedAttachmentsForSessions,
 } from "@natalia/client";
 import {
+  fingerprintFile,
   loadConfigFile,
+  loadTrustStore,
   migrationSummaryText,
   modelSelectionStatus,
+  recordTrust,
+  removeTrust,
   resolveConfig,
   updateConfig,
 } from "@natalia/config";
@@ -30,7 +34,9 @@ import {
 } from "@natalia/session";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 export type StartupDiagnostics = {
   configPath: string;
@@ -532,4 +538,70 @@ export async function uninstallToolFamily(input: {
     : undefined;
   await updateConfig(input.workspaceRoot, { tools: { enabled } });
   return { uninstalled: true, note };
+}
+
+/**
+ * Installs an out-of-tree tool family package from a directory.
+ *
+ * The directory holds a `natalia.tool.json` manifest; installing it loads the
+ * family, records its source + entry fingerprint in the trust database, adds
+ * its parent to `tools.paths` and enables the family — so a later load verifies
+ * the package against the trust record instead of silently running whatever is
+ * on disk.
+ */
+export async function installOutOfTreeToolFamily(input: {
+  workspaceRoot: string;
+  dir: string;
+}): Promise<{ installed: boolean; familyID: string; note?: string }> {
+  const dir = resolve(input.workspaceRoot, input.dir);
+  const manifestPath = resolve(dir, "natalia.tool.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+    entry?: string;
+  };
+  const entryPath = resolve(dir, manifest.entry ?? "index.ts");
+  const module = (await import(pathToFileURL(entryPath).href)) as {
+    default?: unknown;
+  };
+  const exported = module.default;
+  const family =
+    typeof exported === "function"
+      ? (exported as () => { id: string; version: string })()
+      : (exported as { id: string; version: string } | undefined);
+  if (!family?.id)
+    throw new Error(`tool family entry has no default export: ${entryPath}`);
+
+  await recordTrust(input.workspaceRoot, {
+    key: dir,
+    source: dir,
+    version: family.version,
+    fingerprint: await fingerprintFile(entryPath),
+    installedAt: new Date().toISOString(),
+  });
+
+  const { config } = await resolveConfig({
+    workspaceRoot: input.workspaceRoot,
+  });
+  const enabled = { ...config.tools.enabled, [family.id]: true };
+  const paths = Array.from(
+    new Set([...(config.tools.paths ?? []), resolve(dir, "..")]),
+  );
+  await updateConfig(input.workspaceRoot, { tools: { enabled, paths } });
+  return { installed: true, familyID: family.id };
+}
+
+/** The trust database, for `natalia trust list`. */
+export async function trustList(workspaceRoot: string) {
+  const store = await loadTrustStore(workspaceRoot);
+  return Object.entries(store).map(([key, entry]) => ({
+    key,
+    source: entry.source,
+    version: entry.version,
+    installedAt: entry.installedAt,
+  }));
+}
+
+/** Removes a trust record, for `natalia trust remove`. */
+export async function trustRemove(workspaceRoot: string, key: string) {
+  const store = await removeTrust(workspaceRoot, key);
+  return { removed: !store[key], key };
 }

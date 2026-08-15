@@ -3958,3 +3958,66 @@ test("CLI install refuses an unknown family", async () => {
     "unknown tool family",
   );
 });
+
+test("CLI install <dir> records trust and enables an out-of-tree family", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-cli-install-dir-"));
+  const familyDir = join(root, "extra.family");
+  await mkdir(familyDir, { recursive: true });
+  await writeFile(
+    join(familyDir, "natalia.tool.json"),
+    JSON.stringify({ entry: "index.ts" }),
+  );
+  await writeFile(
+    join(familyDir, "index.ts"),
+    `import type { ToolFamily } from "@natalia/tools";
+export default (): ToolFamily => ({
+  id: "extra.family", name: "Extra", version: "1.0.0",
+  description: "Out-of-tree family", scope: "session",
+  tools: [{ name: "extra_run", description: "Run", requiresApproval: false,
+    parameters: { type: "object", properties: {} }, async execute() { return "ok"; } }],
+});
+`,
+  );
+  const install = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "install",
+      "extra.family",
+      "--workspace",
+      root,
+    ],
+    { cwd: root, stdout: "pipe", stderr: "pipe" },
+  );
+  expect(install.exitCode).toBe(0);
+  expect(JSON.parse(new TextDecoder().decode(install.stdout))).toMatchObject({
+    installed: true,
+    familyID: "extra.family",
+  });
+
+  // The trust record exists and the config enables the family.
+  const trust = JSON.parse(
+    await readFile(join(root, ".natalia", "trust.json"), "utf8"),
+  ) as Record<string, { source: string; fingerprint?: string }>;
+  const record = Object.values(trust)[0];
+  expect(record?.source).toContain("extra.family");
+  expect(record?.fingerprint).toBeString();
+  const config = JSON.parse(
+    await readFile(join(root, ".natalia", "config.json"), "utf8"),
+  ) as { tools?: { enabled?: Record<string, boolean>; paths?: string[] } };
+  expect(config.tools?.enabled?.["extra.family"]).toBe(true);
+
+  const list = Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "..", "src", "main.ts"),
+      "trust",
+      "list",
+      "--workspace",
+      root,
+    ],
+    { cwd: root, stdout: "pipe", stderr: "pipe" },
+  );
+  expect(list.exitCode).toBe(0);
+  expect(new TextDecoder().decode(list.stdout)).toContain("extra.family");
+});

@@ -53,11 +53,22 @@ export async function discoverLocalToolFamilies(root: string) {
  * `tools.enabled` filter the built-ins get. A family whose entry cannot be
  * imported, or whose default export is not a family, is skipped with its error
  * reported — a broken package must not take the rest of the catalogue down.
+ *
+ * When `trust` is provided, each family's entry is verified against the trust
+ * database: a changed or replaced package is reported (not loaded silently) so
+ * the operator hears that the bytes differ from what was installed.
  */
 export async function loadLocalToolFamilies(input: {
   roots: string[];
   enabled?: Record<string, boolean>;
   onError?: (id: string, error: unknown) => void;
+  trust?: {
+    workspaceRoot: string;
+    verify: (
+      key: string,
+      entryPath: string,
+    ) => Promise<{ verified: boolean; expected?: string; actual?: string }>;
+  };
 }): Promise<ToolFamily[]> {
   const families: ToolFamily[] = [];
   for (const root of input.roots) {
@@ -65,6 +76,19 @@ export async function loadLocalToolFamilies(input: {
     for (const { manifest, path } of discovered) {
       const entryPath = resolve(path, "..", manifest.entry);
       try {
+        if (input.trust) {
+          const verified = await input.trust.verify(
+            keyForPath(path),
+            entryPath,
+          );
+          if (verified.expected && !verified.verified) {
+            input.onError?.(
+              path,
+              new Error("package changed since install (fingerprint mismatch)"),
+            );
+            continue;
+          }
+        }
         const module = (await import(pathToFileURL(entryPath).href)) as {
           default?: unknown;
         };
@@ -88,4 +112,12 @@ export async function loadLocalToolFamilies(input: {
     }
   }
   return families;
+}
+
+/**
+ * The trust-record key for a family package. The family id is only known after
+ * import, so a package is keyed by its resolved directory path.
+ */
+function keyForPath(manifestPath: string) {
+  return resolve(manifestPath, "..");
 }

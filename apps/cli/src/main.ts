@@ -55,6 +55,7 @@ import {
   runtimeDaemonStatus,
   stopRuntimeDaemon,
 } from "@natalia/transport/host";
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { readFile } from "node:fs/promises";
 
@@ -64,6 +65,7 @@ import {
   exportLocalSessionMetadata,
   importLocalSessionMetadata,
   doctorReport,
+  installOutOfTreeToolFamily,
   installToolFamily,
   listLocalSessions,
   plainStatus,
@@ -72,6 +74,8 @@ import {
   sessionTable,
   promptArguments,
   toolFamilyCatalogue,
+  trustList,
+  trustRemove,
   uninstallToolFamily,
   workspaceFilesystemCommand,
   showLocalSession,
@@ -733,19 +737,49 @@ switch (subcommand) {
   }
 
   case "install": {
-    const familyID = argv[1];
-    if (!familyID) throw new Error("install requires a tool family id");
+    const target = argv[1];
+    if (!target)
+      throw new Error("install requires a tool family id or a directory");
+    const workspaceRoot = valueAfter(argv, "--workspace") ?? process.cwd();
+    // A directory installs an out-of-tree family package and records its trust;
+    // anything else is a built-in family id.
+    const dir = resolve(workspaceRoot, target);
+    if (existsSync(resolve(dir, "natalia.tool.json"))) {
+      console.log(
+        JSON.stringify(
+          await installOutOfTreeToolFamily({ workspaceRoot, dir: target }),
+          null,
+          2,
+        ),
+      );
+      break;
+    }
     console.log(
       JSON.stringify(
-        await installToolFamily({
-          workspaceRoot: valueAfter(argv, "--workspace") ?? process.cwd(),
-          familyID,
-        }),
+        await installToolFamily({ workspaceRoot, familyID: target }),
         null,
         2,
       ),
     );
     break;
+  }
+
+  case "trust": {
+    const action = argv[1] as "list" | "remove" | undefined;
+    const workspaceRoot = valueAfter(argv, "--workspace") ?? process.cwd();
+    if (action === "list") {
+      console.log(JSON.stringify(await trustList(workspaceRoot), null, 2));
+      break;
+    }
+    if (action === "remove") {
+      const key = argv[2];
+      if (!key) throw new Error("trust remove requires a key");
+      console.log(
+        JSON.stringify(await trustRemove(workspaceRoot, key), null, 2),
+      );
+      break;
+    }
+    throw new Error("trust requires list or remove");
   }
 
   case "uninstall": {

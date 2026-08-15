@@ -58,6 +58,7 @@ import {
   resolveTuiConfig,
   saveTuiConfig,
   updateConfigAtScope,
+  verifyTrust,
 } from "@natalia/config";
 import type { ConfigV2 } from "@natalia/contracts";
 import {
@@ -1142,6 +1143,14 @@ export function createRealRuntimeClient(
               error instanceof Error ? error.message : String(error)
             }`,
           }),
+        // Out-of-tree packages are verified against the trust database: a
+        // package whose bytes changed since install is reported, not silently
+        // replaced by whatever is on disk now.
+        trust: {
+          workspaceRoot,
+          verify: (key, entryPath) =>
+            verifyTrust(workspaceRoot, key, entryPath),
+        },
       });
       const outcome = registerToolFamilyCapabilities(
         capabilityRegistry,

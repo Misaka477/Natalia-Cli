@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { fingerprintFile } from "@natalia/config";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -87,4 +88,36 @@ test("a broken entry is reported and does not stop the rest", async () => {
   expect(families.map((family) => family.id)).toEqual(["fixture.a"]);
   expect(errors.length).toBeGreaterThan(0);
   expect(errors[0]!.startsWith(join(broken, "natalia.tool.json"))).toBe(true);
+});
+
+test("trust verification skips a package whose bytes changed since install", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-trust-"));
+  const dir = await fixtureFamily(root, "fixture.a");
+  const entryPath = join(dir, "index.ts");
+  const fingerprint = await fingerprintFile(entryPath);
+  const trust = {
+    workspaceRoot: root,
+    verify: async (_key: string, entry: string) => {
+      const actual = await fingerprintFile(entry);
+      return actual === fingerprint
+        ? { verified: true, expected: fingerprint }
+        : { verified: false, expected: fingerprint, actual };
+    },
+  };
+  // Matching trust: loads.
+  const loaded = await loadLocalToolFamilies({ roots: [root], trust });
+  expect(loaded.map((family) => family.id)).toEqual(["fixture.a"]);
+  // The package changed since install: reported and skipped.
+  await writeFile(entryPath, "// changed\n");
+  const errors: string[] = [];
+  const afterChange = await loadLocalToolFamilies({
+    roots: [root],
+    trust,
+    onError: (_id, error) =>
+      errors.push(error instanceof Error ? error.message : String(error)),
+  });
+  expect(afterChange).toEqual([]);
+  expect(
+    errors.some((message) => message.includes("fingerprint mismatch")),
+  ).toBe(true);
 });
