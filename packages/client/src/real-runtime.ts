@@ -6415,342 +6415,377 @@ export function createRealRuntimeClient(
         });
         publishWorkGraphToolCall(turnID, call.id, tool.name, "failed");
         return { decision: "deny" as const, reason: blocked };
-      });
-    // Decision-only: the approval-and-execution block below is the execute
-    // stage's content and runs when every pre stage allowed.
-    const run = await pipeline.run({
-      name: tool.name,
-      args: tryParseToolArguments(call.arguments),
-      context: { workspaceRoot },
-    });
-    if (run.status === "denied") return `ERROR: ${run.reason}`;
-    if (run.status === "asking")
-      return `ERROR: ${run.decision.reason ?? "approval required"}`;
-    publish({
-      type: "tool.update",
-      id: toolID,
-      name: tool.name,
-      callID: call.id,
-      status: tool.requiresApproval ? "awaiting_approval" : "queued",
-      summary: tool.requiresApproval ? "awaiting approval" : "queued",
-      argumentsDelta: call.arguments,
-    });
-    publish({
-      type: "policy.decision",
-      turnID,
-      toolName: tool.name,
-      toolCallID: call.id,
-      decision: tool.requiresApproval ? "approval_required" : "allow",
-    });
-    if (tool.requiresApproval) {
-      const refusal = await interactive.requireApproval(
-        toolID,
-        tool,
-        call,
-        turnID,
-      );
-      if (refusal) {
-        // Reported like a policy denial: the call did not run, the turn keeps
-        // going, and the model receives the reason as this call's result.
+      })
+      .execute(async () => {
         publish({
           type: "tool.update",
           id: toolID,
           name: tool.name,
           callID: call.id,
-          status: "rejected",
-          summary: refusal.reason,
-          result: refusal.reason,
-          endedAt: Date.now(),
+          status: tool.requiresApproval ? "awaiting_approval" : "queued",
+          summary: tool.requiresApproval ? "awaiting approval" : "queued",
+          argumentsDelta: call.arguments,
         });
-        publishWorkGraphToolCall(turnID, call.id, tool.name, "rejected");
-        await toolLayer.postExecute({ ...hookEvent, error: refusal.reason });
-        return `ERROR: ${refusal.reason}`;
-      }
-    }
-    await waitIfPaused();
-    publish({
-      type: "tool.update",
-      id: toolID,
-      name: tool.name,
-      callID: call.id,
-      status: "running",
-      summary: "running",
-      startedAt: Date.now(),
-      // The call card, when the tool declares one: the tool says what the call
-      // means (a file path, a command) without leaking raw arguments.
-      metadata: tool.output?.presentCall
-        ? {
-            call: tool.output.presentCall(
-              tryParseToolArguments(call.arguments),
-            ),
-          }
-        : undefined,
-    });
-    let executionAudited = false;
-    let releaseWriteLock: (() => void) | undefined;
-    try {
-      const parsed = parseToolArguments(call.arguments);
-      const paramErrors = validateToolParameters(tool.parameters, parsed);
-      if (paramErrors.length) {
-        const detail = paramErrors
-          .map((e) => `${e.path}: ${e.message}`)
-          .join("; ");
-        throw new Error(
-          `tool "${tool.name}" parameter validation failed: ${detail}`,
-        );
-      }
-      await setInFlightOperation({
-        kind: "tool_execution",
-        turnID,
-        toolName: tool.name,
-        toolCallID: call.id,
-        startedAt: new Date().toISOString(),
-      });
-      executionAudited = true;
-      const executionController = new AbortController();
-      // The cancellation listener binds the turn's own exec, not the activity
-      // closure: a background turn's tool must stop when its session is
-      // cancelled, never when the attached session is.
-      const cancelExecution = () =>
-        executionController.abort(
-          exec?.activeAbort?.signal.reason ?? new Error("tool cancelled"),
-        );
-      const execSignal = exec?.activeAbort?.signal;
-      // A cancellation that already happened must not be missed. `running` is
-      // published before the durable in-flight write above, so a cancel can land
-      // while that write is in flight — and `addEventListener("abort")` never
-      // fires for an already-aborted signal. Without this check the tool ran on
-      // until its own timeout (or forever, when it declares none) even though the
-      // turn was cancelled.
-      if (execSignal?.aborted) cancelExecution();
-      else
-        execSignal?.addEventListener("abort", cancelExecution, { once: true });
-      const timeoutTimer = tool.timeoutSec
-        ? setTimeout(
-            () =>
-              executionController.abort(
-                new Error(
-                  `tool ${tool.name} timed out after ${tool.timeoutSec}s`,
-                ),
-              ),
-            tool.timeoutSec * 1000,
-          )
-        : undefined;
-      const signal = executionController.signal;
-      // D2: workspace writes serialise across sessions. A background turn's
-      // write waits for the attached session's write (and vice versa), so two
-      // turns can never interleave edits to the same workspace.
-      releaseWriteLock = workspaceWritePathForTool(
-        tool.name,
-        parsed as Record<string, unknown>,
-      )
-        ? await workspaceWriteLock.acquire()
-        : undefined;
-      // WG4 Phase 3: register the expected mutation before the tool runs so the
-      // auditor can attribute a watcher-confirmed change to this call. Only
-      // workspace-writing tools register; the authorized path is the tool's own
-      // path argument (the same scope the write lock protects).
-      const writePath = workspaceWritePathForTool(
-        tool.name,
-        parsed as Record<string, unknown>,
-      );
-      if (writePath) {
-        mutationRegistry.register({
-          sessionID,
+        publish({
+          type: "policy.decision",
           turnID,
-          callID: call.id,
           toolName: tool.name,
-          authorizedPaths: [writePath],
-          expectedOperations: ["modified", "added", "deleted", "renamed"],
+          toolCallID: call.id,
+          decision: tool.requiresApproval ? "approval_required" : "allow",
         });
-      }
-      const completeResult = await waitForToolExecution(
-        tool.execute(parsed, {
-          workspaceRoot,
-          signal,
-          askQuestion: async (question) =>
-            await interactive.requireQuestion(
-              `${toolID}:question`,
-              turnID,
-              question,
-            ),
-          subagents: subagentsController.get(),
-          nativeTerminal: terminalController.get(),
-          sandboxes: sandboxController.get(),
-          workspaceReadAuthorize: authorizeWorkspaceRead,
-          sandboxMergeAuthorize: authorizeSandboxMerge,
-          settings: toolSettings(),
-          // The turn's own session, not the attached one: a background turn's
-          // subagents and terminal starts belong to its session (I1/I3).
-          parentSessionID: exec?.session.id ?? sessionID,
-          maxSubagentDepth: tsRuntimeConfig?.runtime.subagentDepth,
-          onSandboxEvent: (event) => {
-            const update = event as Extract<
-              RuntimeEvent,
-              { type: "sandbox.update" }
-            >;
-            publish(update);
-            if (
-              sandboxResourcesByID.get(update.id) !== update.runningResources
-            ) {
-              sandboxResourcesByID.set(update.id, update.runningResources);
-              scheduleRuntimeStatusSnapshot();
-            }
-          },
-          onWorkspaceChange: (changes) => {
-            // WG4 Phase 3: the tool settled successfully — the expected
-            // mutation stops matching unrelated later hints, but its identity
-            // stays available for attributing the change it caused.
-            mutationRegistry.settle(call.id);
-            for (const change of changes) {
-              publish(
-                workspaceChangeNode({
-                  turnID,
-                  path: change.path,
-                  toolName: tool.name,
-                  sessionID,
-                }),
-              );
-              publish(
-                workspaceChangeEdge({
-                  turnID,
-                  callID: call.id,
-                  path: change.path,
-                }),
-              );
-            }
-          },
-        }),
-        signal,
-      ).finally(() => {
-        if (timeoutTimer) clearTimeout(timeoutTimer);
-        exec?.activeAbort?.signal.removeEventListener("abort", cancelExecution);
-      });
-      // The tool's own final content invariant runs exactly once, before
-      // redaction and bounding: what the model sees is the content the tool
-      // finalized (a fetched page without its scripts, a compacted dump).
-      const finalizedContent =
-        tool.output?.finalizeContent?.(completeResult) ?? completeResult;
-      const bounded = await boundToolOutput(
-        workspaceRoot,
-        redactToolOutput(finalizedContent, redactToolOutputEnabled()),
-      );
-      const result = bounded.text;
-      // The tool's own output projection becomes part of the event metadata, so
-      // a client can draw the result as the card the tool described instead of
-      // guessing from the string.
-      const projectedRender = tool.output?.presentResult?.(
-        tryParseToolArguments(call.arguments),
-        result,
-      );
-      if (options.taskModuleContext && tool.name !== "flow_module_complete") {
-        options.taskModuleContext.store.recordModuleEvidence({
-          invocationID: options.taskModuleContext.invocationID,
-          attempt: options.taskModuleContext.attempt,
-          flowID: options.taskModuleContext.flowID,
-          moduleID: options.taskModuleContext.moduleID,
-          ref: `tool:${call.id}`,
-          tool: tool.name,
-        });
-      }
-      if (
-        tool.name === "interactive_terminal_start" ||
-        tool.name === "interactive_terminal_stop"
-      ) {
-        const terminalID = (parsed as Record<string, unknown>).id;
-        if (typeof terminalID === "string")
-          terminalCommandBuffer.clear(terminalID);
-      }
-      publish({
-        type: "tool.update",
-        id: toolID,
-        name: tool.name,
-        callID: call.id,
-        status: "succeeded",
-        summary: result.slice(0, 200),
-        result,
-        metadata: {
-          ...(bounded.outputPath ? { outputPath: bounded.outputPath } : {}),
-          ...(projectedRender ? { render: projectedRender } : {}),
-        },
-        endedAt: Date.now(),
-      });
-      publishWorkGraphToolCall(turnID, call.id, tool.name, "succeeded");
-      // Only after success: a write that failed did not change the workspace, and
-      // a graph that says otherwise sends a reader looking for a change that is
-      // not there.
-      const changedPath = workspaceWritePathForTool(
-        tool.name,
-        tryParseToolArguments(call.arguments),
-      );
-      if (changedPath) {
-        publish(
-          workspaceChangeNode({
+        if (tool.requiresApproval) {
+          const refusal = await interactive.requireApproval(
+            toolID,
+            tool,
+            call,
             turnID,
-            path: changedPath,
-            toolName: tool.name,
-            sessionID,
-          }),
-        );
-        publish(
-          workspaceChangeEdge({ turnID, callID: call.id, path: changedPath }),
-        );
-      }
-      if (isManagedResourceTool(tool.name)) scheduleRuntimeStatusSnapshot();
-      // TERM-M.3 (c): request_human with endTurn=true ends the current turn as
-      // waiting_human; the runtime resumes with a new turn once the human
-      // releases the pane.
-      if (tool.name === "interactive_terminal_request_human") {
-        const requestArgs = tryParseToolArguments(call.arguments) as {
-          id?: unknown;
-          reason?: unknown;
-          endTurn?: unknown;
-        };
-        if (
-          requestArgs?.endTurn === true &&
-          typeof requestArgs.id === "string" &&
-          typeof requestArgs.reason === "string"
-        ) {
-          const marker = {
-            terminalID: requestArgs.id,
-            reason: requestArgs.reason,
-          };
-          if (exec) exec.endTurnWaitingHuman = marker;
-          else endTurnWaitingHuman = marker;
+          );
+          if (refusal) {
+            // Reported like a policy denial: the call did not run, the turn keeps
+            // going, and the model receives the reason as this call's result.
+            publish({
+              type: "tool.update",
+              id: toolID,
+              name: tool.name,
+              callID: call.id,
+              status: "rejected",
+              summary: refusal.reason,
+              result: refusal.reason,
+              endedAt: Date.now(),
+            });
+            publishWorkGraphToolCall(turnID, call.id, tool.name, "rejected");
+            await toolLayer.postExecute({
+              ...hookEvent,
+              error: refusal.reason,
+            });
+            throw new Error(refusal.reason);
+          }
         }
-      }
-      await toolLayer.postExecute({ ...hookEvent, result });
-      return result;
-    } catch (error) {
-      // WG4 Phase 3: a failed write did not change the workspace — drop the
-      // expected mutation so it cannot attribute a later unrelated hint.
-      if (
-        workspaceWritePathForTool(
-          tool.name,
-          tryParseToolArguments(call.arguments),
-        )
-      )
-        mutationRegistry.forget(call.id);
-      const message = error instanceof Error ? error.message : String(error);
-      publish({
-        type: "tool.update",
-        id: toolID,
-        name: tool.name,
-        callID: call.id,
-        status: "failed",
-        summary: message,
-        result: message,
-        endedAt: Date.now(),
+        await waitIfPaused();
+        publish({
+          type: "tool.update",
+          id: toolID,
+          name: tool.name,
+          callID: call.id,
+          status: "running",
+          summary: "running",
+          startedAt: Date.now(),
+          // The call card, when the tool declares one: the tool says what the call
+          // means (a file path, a command) without leaking raw arguments.
+          metadata: tool.output?.presentCall
+            ? {
+                call: tool.output.presentCall(
+                  tryParseToolArguments(call.arguments),
+                ),
+              }
+            : undefined,
+        });
+        let executionAudited = false;
+        let releaseWriteLock: (() => void) | undefined;
+        try {
+          const parsed = parseToolArguments(call.arguments);
+          const paramErrors = validateToolParameters(tool.parameters, parsed);
+          if (paramErrors.length) {
+            const detail = paramErrors
+              .map((e) => `${e.path}: ${e.message}`)
+              .join("; ");
+            throw new Error(
+              `tool "${tool.name}" parameter validation failed: ${detail}`,
+            );
+          }
+          await setInFlightOperation({
+            kind: "tool_execution",
+            turnID,
+            toolName: tool.name,
+            toolCallID: call.id,
+            startedAt: new Date().toISOString(),
+          });
+          executionAudited = true;
+          const executionController = new AbortController();
+          // The cancellation listener binds the turn's own exec, not the activity
+          // closure: a background turn's tool must stop when its session is
+          // cancelled, never when the attached session is.
+          const cancelExecution = () =>
+            executionController.abort(
+              exec?.activeAbort?.signal.reason ?? new Error("tool cancelled"),
+            );
+          const execSignal = exec?.activeAbort?.signal;
+          // A cancellation that already happened must not be missed. `running` is
+          // published before the durable in-flight write above, so a cancel can land
+          // while that write is in flight — and `addEventListener("abort")` never
+          // fires for an already-aborted signal. Without this check the tool ran on
+          // until its own timeout (or forever, when it declares none) even though the
+          // turn was cancelled.
+          if (execSignal?.aborted) cancelExecution();
+          else
+            execSignal?.addEventListener("abort", cancelExecution, {
+              once: true,
+            });
+          const timeoutTimer = tool.timeoutSec
+            ? setTimeout(
+                () =>
+                  executionController.abort(
+                    new Error(
+                      `tool ${tool.name} timed out after ${tool.timeoutSec}s`,
+                    ),
+                  ),
+                tool.timeoutSec * 1000,
+              )
+            : undefined;
+          const signal = executionController.signal;
+          // D2: workspace writes serialise across sessions. A background turn's
+          // write waits for the attached session's write (and vice versa), so two
+          // turns can never interleave edits to the same workspace.
+          releaseWriteLock = workspaceWritePathForTool(
+            tool.name,
+            parsed as Record<string, unknown>,
+          )
+            ? await workspaceWriteLock.acquire()
+            : undefined;
+          // WG4 Phase 3: register the expected mutation before the tool runs so the
+          // auditor can attribute a watcher-confirmed change to this call. Only
+          // workspace-writing tools register; the authorized path is the tool's own
+          // path argument (the same scope the write lock protects).
+          const writePath = workspaceWritePathForTool(
+            tool.name,
+            parsed as Record<string, unknown>,
+          );
+          if (writePath) {
+            mutationRegistry.register({
+              sessionID,
+              turnID,
+              callID: call.id,
+              toolName: tool.name,
+              authorizedPaths: [writePath],
+              expectedOperations: ["modified", "added", "deleted", "renamed"],
+            });
+          }
+          const completeResult = await waitForToolExecution(
+            tool.execute(parsed, {
+              workspaceRoot,
+              signal,
+              askQuestion: async (question) =>
+                await interactive.requireQuestion(
+                  `${toolID}:question`,
+                  turnID,
+                  question,
+                ),
+              subagents: subagentsController.get(),
+              nativeTerminal: terminalController.get(),
+              sandboxes: sandboxController.get(),
+              workspaceReadAuthorize: authorizeWorkspaceRead,
+              sandboxMergeAuthorize: authorizeSandboxMerge,
+              settings: toolSettings(),
+              // The turn's own session, not the attached one: a background turn's
+              // subagents and terminal starts belong to its session (I1/I3).
+              parentSessionID: exec?.session.id ?? sessionID,
+              maxSubagentDepth: tsRuntimeConfig?.runtime.subagentDepth,
+              onSandboxEvent: (event) => {
+                const update = event as Extract<
+                  RuntimeEvent,
+                  { type: "sandbox.update" }
+                >;
+                publish(update);
+                if (
+                  sandboxResourcesByID.get(update.id) !==
+                  update.runningResources
+                ) {
+                  sandboxResourcesByID.set(update.id, update.runningResources);
+                  scheduleRuntimeStatusSnapshot();
+                }
+              },
+              onWorkspaceChange: (changes) => {
+                // WG4 Phase 3: the tool settled successfully — the expected
+                // mutation stops matching unrelated later hints, but its identity
+                // stays available for attributing the change it caused.
+                mutationRegistry.settle(call.id);
+                for (const change of changes) {
+                  publish(
+                    workspaceChangeNode({
+                      turnID,
+                      path: change.path,
+                      toolName: tool.name,
+                      sessionID,
+                    }),
+                  );
+                  publish(
+                    workspaceChangeEdge({
+                      turnID,
+                      callID: call.id,
+                      path: change.path,
+                    }),
+                  );
+                }
+              },
+            }),
+            signal,
+          ).finally(() => {
+            if (timeoutTimer) clearTimeout(timeoutTimer);
+            exec?.activeAbort?.signal.removeEventListener(
+              "abort",
+              cancelExecution,
+            );
+          });
+          // The tool's own final content invariant runs exactly once, before
+          // redaction and bounding: what the model sees is the content the tool
+          // finalized (a fetched page without its scripts, a compacted dump).
+          const finalizedContent =
+            tool.output?.finalizeContent?.(completeResult) ?? completeResult;
+          const bounded = await boundToolOutput(
+            workspaceRoot,
+            redactToolOutput(finalizedContent, redactToolOutputEnabled()),
+          );
+          const result = bounded.text;
+          // The tool's own output projection becomes part of the event metadata, so
+          // a client can draw the result as the card the tool described instead of
+          // guessing from the string.
+          const projectedRender = tool.output?.presentResult?.(
+            tryParseToolArguments(call.arguments),
+            result,
+          );
+          if (
+            options.taskModuleContext &&
+            tool.name !== "flow_module_complete"
+          ) {
+            options.taskModuleContext.store.recordModuleEvidence({
+              invocationID: options.taskModuleContext.invocationID,
+              attempt: options.taskModuleContext.attempt,
+              flowID: options.taskModuleContext.flowID,
+              moduleID: options.taskModuleContext.moduleID,
+              ref: `tool:${call.id}`,
+              tool: tool.name,
+            });
+          }
+          if (
+            tool.name === "interactive_terminal_start" ||
+            tool.name === "interactive_terminal_stop"
+          ) {
+            const terminalID = (parsed as Record<string, unknown>).id;
+            if (typeof terminalID === "string")
+              terminalCommandBuffer.clear(terminalID);
+          }
+          publish({
+            type: "tool.update",
+            id: toolID,
+            name: tool.name,
+            callID: call.id,
+            status: "succeeded",
+            summary: result.slice(0, 200),
+            result,
+            metadata: {
+              ...(bounded.outputPath ? { outputPath: bounded.outputPath } : {}),
+              ...(projectedRender ? { render: projectedRender } : {}),
+            },
+            endedAt: Date.now(),
+          });
+          publishWorkGraphToolCall(turnID, call.id, tool.name, "succeeded");
+          // Only after success: a write that failed did not change the workspace, and
+          // a graph that says otherwise sends a reader looking for a change that is
+          // not there.
+          const changedPath = workspaceWritePathForTool(
+            tool.name,
+            tryParseToolArguments(call.arguments),
+          );
+          if (changedPath) {
+            publish(
+              workspaceChangeNode({
+                turnID,
+                path: changedPath,
+                toolName: tool.name,
+                sessionID,
+              }),
+            );
+            publish(
+              workspaceChangeEdge({
+                turnID,
+                callID: call.id,
+                path: changedPath,
+              }),
+            );
+          }
+          if (isManagedResourceTool(tool.name)) scheduleRuntimeStatusSnapshot();
+          // TERM-M.3 (c): request_human with endTurn=true ends the current turn as
+          // waiting_human; the runtime resumes with a new turn once the human
+          // releases the pane.
+          if (tool.name === "interactive_terminal_request_human") {
+            const requestArgs = tryParseToolArguments(call.arguments) as {
+              id?: unknown;
+              reason?: unknown;
+              endTurn?: unknown;
+            };
+            if (
+              requestArgs?.endTurn === true &&
+              typeof requestArgs.id === "string" &&
+              typeof requestArgs.reason === "string"
+            ) {
+              const marker = {
+                terminalID: requestArgs.id,
+                reason: requestArgs.reason,
+              };
+              if (exec) exec.endTurnWaitingHuman = marker;
+              else endTurnWaitingHuman = marker;
+            }
+          }
+          return result;
+        } catch (error) {
+          // WG4 Phase 3: a failed write did not change the workspace — drop the
+          // expected mutation so it cannot attribute a later unrelated hint.
+          if (
+            workspaceWritePathForTool(
+              tool.name,
+              tryParseToolArguments(call.arguments),
+            )
+          )
+            mutationRegistry.forget(call.id);
+          const message =
+            error instanceof Error ? error.message : String(error);
+          publish({
+            type: "tool.update",
+            id: toolID,
+            name: tool.name,
+            callID: call.id,
+            status: "failed",
+            summary: message,
+            result: message,
+            endedAt: Date.now(),
+          });
+          // A failed call is as much a fact as a successful one; the error text stays
+          // out of the graph.
+          publishWorkGraphToolCall(turnID, call.id, tool.name, "failed");
+          await toolLayer.postExecute({ ...hookEvent, error: message });
+          throw new Error(message);
+        } finally {
+          releaseWriteLock?.();
+          if (executionAudited) await setInFlightOperation(undefined);
+        }
+      })
+      .postStage(async (_input, content) => {
+        // postExecute-on-success is the post waterfall's accept stage; the
+        // error-reporting postExecute calls stay in the execute stage where
+        // they already fire.
+        await toolLayer.postExecute({ ...hookEvent, result: content });
+        return { decision: "accept" as const };
       });
-      // A failed call is as much a fact as a successful one; the error text stays
-      // out of the graph.
-      publishWorkGraphToolCall(turnID, call.id, tool.name, "failed");
-      await toolLayer.postExecute({ ...hookEvent, error: message });
-      return `ERROR: ${message}`;
-    } finally {
-      releaseWriteLock?.();
-      if (executionAudited) await setInFlightOperation(undefined);
+    let run: Awaited<ReturnType<typeof pipeline.run>>;
+    try {
+      run = await pipeline.run({
+        name: tool.name,
+        args: tryParseToolArguments(call.arguments),
+        context: { workspaceRoot },
+      });
+    } catch (error) {
+      // The execute stage throws on refusal and on failure after publishing
+      // its own events; the caller turns the reason into the model-visible
+      // result. A cancellation is not a failure: it propagates so the turn
+      // coordinator settles the turn as cancelled.
+      if (exec?.activeAbort?.signal.aborted) throw error;
+      return `ERROR: ${error instanceof Error ? error.message : String(error)}`;
     }
+    if (run.status === "denied") return `ERROR: ${run.reason}`;
+    if (run.status === "asking")
+      return `ERROR: ${run.decision.reason ?? "approval required"}`;
+    if (run.status === "blocked") return `ERROR: ${run.feedback}`;
+    return run.result.content;
   }
 
   /**
