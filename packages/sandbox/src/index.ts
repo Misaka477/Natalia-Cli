@@ -17,3 +17,9 @@ export {
   WorktreeSandboxManager,
   type WorktreePromotion,
 } from "./worktree-sandbox";
+export { SnapshotSandboxManager } from "./snapshot-sandbox";
+export {
+  SnapshotStore,
+  type FileSnapshot,
+  type FileSnapshotIndex,
+} from "./snapshot-store";

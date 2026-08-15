@@ -2,7 +2,10 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { WorktreeSandboxManager } from "@natalia/sandbox";
+import {
+  SnapshotSandboxManager,
+  WorktreeSandboxManager,
+} from "@natalia/sandbox";
 import { sandboxToolFamily, sandboxTools } from "../src";
 
 async function git(cwd: string, args: string[]) {
@@ -83,4 +86,40 @@ test("sandbox tools run through the worktree backend (create/write/merge)", asyn
   // The write was promoted into the system branch: the workspace file changed.
   expect(await readFile(join(root, "file.txt"), "utf8")).toBe("edited\n");
   expect(await manager.lastKnownGoodCommit()).toBeDefined();
+});
+
+test("sandbox tools run through the git-free snapshot backend (no git needed)", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tool-sandbox-snap-"));
+  await writeFile(join(root, "file.txt"), "base\n");
+  const manager = new SnapshotSandboxManager(root);
+  await manager.initialize();
+  const context = {
+    workspaceRoot: root,
+    sandboxes: manager,
+    onSandboxEvent: () => undefined,
+    onWorkspaceChange: () => undefined,
+    sandboxMergeAuthorize: async () => undefined,
+  } as never;
+  const tools = new Map(
+    sandboxToolFamily().tools.map((tool) => [tool.name, tool]),
+  );
+
+  await tools.get("sandbox_create")!.execute({ id: "snap.1" }, context);
+  await tools
+    .get("sandbox_write")!
+    .execute({ id: "snap.1", path: "file.txt", content: "edited\n" }, context);
+
+  const merged = await tools
+    .get("sandbox_merge")!
+    .execute({ id: "snap.1" }, context);
+  expect(JSON.parse(merged)).toContainEqual(
+    expect.objectContaining({ path: "file.txt", kind: "modify" }),
+  );
+  // Promoted into the host — no git anywhere in the workspace.
+  expect(await readFile(join(root, "file.txt"), "utf8")).toBe("edited\n");
+  expect(await manager.hasLastKnownGood("snap.1")).toBe(true);
+
+  // Rollback restores the host to the pre-promotion state.
+  await manager.rollback("snap.1");
+  expect(await readFile(join(root, "file.txt"), "utf8")).toBe("base\n");
 });

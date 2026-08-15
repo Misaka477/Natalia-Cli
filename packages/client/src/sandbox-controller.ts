@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
+  SnapshotSandboxManager,
   WorktreeSandboxManager,
   WorkspaceSandboxManager,
 } from "@natalia/sandbox";
@@ -28,16 +29,16 @@ export function createSandboxController(input: { workspaceRoot: string }) {
 
   async function init() {
     if (manager) return;
-    // Worktree semantics need a git repo; everything else uses the copy
-    // backend. Both share the operational surface the sandbox tools call.
+    // Worktree semantics need a git repo; everything else gets the git-free
+    // snapshot backend — same candidate/promotion/rollback surface, no git
+    // dependency. Both extend the shared operational surface the sandbox
+    // tools call.
     const isGitRepo =
       existsSync(join(input.workspaceRoot, ".git")) ||
       existsSync(join(input.workspaceRoot, ".git", "HEAD"));
     const next = isGitRepo
       ? new WorktreeSandboxManager(input.workspaceRoot)
-      : new WorkspaceSandboxManager(
-          join(input.workspaceRoot, ".natalia", "sandboxes"),
-        );
+      : new SnapshotSandboxManager(input.workspaceRoot);
     await next.initialize();
     manager = next;
   }
