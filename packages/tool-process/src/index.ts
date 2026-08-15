@@ -1,6 +1,13 @@
 /**
  * Long-lived processes a model started, and the tools that manage them.
  *
+ * The registry is the only durable state in this family: a process outlives the
+ * turn and session that started it, so it is persisted per workspace and
+ * re-adopted on load.
+ */
+/**
+ * Long-lived processes a model started, and the tools that manage them.
+ *
  * The registry is the only durable state in this package: a process outlives the
  * turn that started it and the session that started it, so it is persisted per
  * workspace and re-adopted on load. That is why identity is checked before any
@@ -20,15 +27,6 @@ import {
   startDetachedProcess,
 } from "@natalia/platform";
 import {
-  numberOr,
-  optionalInteger,
-  optionalString,
-  positiveNumberOr,
-  positiveNumberOrUndefined,
-  requireObject,
-  requireString,
-} from "./arguments";
-import {
   isProcessRunning,
   ownsProcess,
   processFingerprint,
@@ -37,9 +35,22 @@ import {
   sendProcessSignal,
   stopProcessTree,
   truncateProcessOutput,
-} from "./child-process";
-import { boundToolOutput } from "./output";
-import type { RuntimeTool, ToolExecutionContext } from "./types";
+} from "@natalia/tools";
+import { boundToolOutput } from "@natalia/tools";
+import {
+  numberOr,
+  optionalInteger,
+  optionalString,
+  positiveNumberOr,
+  positiveNumberOrUndefined,
+  requireObject,
+  requireString,
+} from "@natalia/tools";
+import type {
+  RuntimeTool,
+  ToolExecutionContext,
+  ToolFamily,
+} from "@natalia/tools";
 
 export type ManagedProcessStatus = "running" | "exited" | "failed" | "stopped";
 
@@ -726,4 +737,21 @@ export function managedProcessTools(
     backgroundCleanupTool(registry),
     backgroundAuditTool(registry),
   ];
+}
+
+/**
+ * Session scope: the tools are meaningful only while the session using them is
+ * alive, even though the processes they manage outlive it.
+ */
+export function processToolFamily(
+  processRegistry = new ManagedProcessRegistry(),
+): ToolFamily {
+  return {
+    id: "process",
+    name: "Managed Process Tools",
+    version: "1.0.0",
+    description: "Long-running background processes.",
+    scope: "session",
+    tools: [...managedProcessTools(processRegistry)],
+  };
 }

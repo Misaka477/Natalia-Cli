@@ -4,10 +4,10 @@ import { tmpdir } from "node:os";
 import { expect, test } from "bun:test";
 import {
   encodeTerminalKey,
-  ManagedProcessRegistry,
   nativeTerminalReadPage,
   nativeTerminalSearchPage,
 } from "@natalia/tools";
+import { ManagedProcessRegistry } from "@natalia/tool-process";
 import { CapabilityRegistry } from "@natalia/capability";
 import { createToolRegistryFromCapabilities } from "../src/capabilities/tool-family-capabilities";
 

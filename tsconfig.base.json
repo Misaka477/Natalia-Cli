@@ -24,7 +24,13 @@
       "@natalia/tool-search": ["packages/tool-search/src/index.ts"],
       "@natalia/tool-shell": ["packages/tool-shell/src/index.ts"],
       "@natalia/tool-web": ["packages/tool-web/src/index.ts"],
+      "@natalia/tool-process": ["packages/tool-process/src/index.ts"],
+      "@natalia/tool-terminal": ["packages/tool-terminal/src/index.ts"],
+      "@natalia/tool-agent": ["packages/tool-agent/src/index.ts"],
+      "@natalia/tool-sandbox": ["packages/tool-sandbox/src/index.ts"],
       "@natalia/tool-todo": ["packages/tool-todo/src/index.ts"],
+      "@natalia/sandbox": ["packages/sandbox/src/index.ts"],
+      "@natalia/subagent": ["packages/subagent/src/index.ts"],
       "@natalia/tools": ["packages/tools/src/index.ts"]
     },
     "noUncheckedIndexedAccess": false,

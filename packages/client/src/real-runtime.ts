@@ -106,11 +106,11 @@ import {
   boundToolOutput,
   cleanupToolOutput,
   validateToolParameters,
-  ManagedProcessRegistry,
   type RuntimeTool,
   type ToolMaterialization,
   type ToolRegistry,
 } from "@natalia/tools";
+import { ManagedProcessRegistry } from "@natalia/tool-process";
 import {
   createSkillLoadTool,
   readSkillResource,

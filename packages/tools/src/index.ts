@@ -1,6 +1,3 @@
-import { agentTools } from "./agent-tools";
-import { sandboxTools } from "./sandbox-tools";
-import { terminalTools } from "./terminal-tools";
 export { validateToolParameters, assertValidToolParameters } from "./validate";
 export {
   boundToolOutput,
@@ -30,7 +27,6 @@ export {
   requireString,
   workspacePath,
 } from "./arguments";
-import { ManagedProcessRegistry, managedProcessTools } from "./managed-process";
 import type { RuntimeTool, ToolExecutionContext } from "./types";
 
 export type {
@@ -40,11 +36,6 @@ export type {
   ToolSchema,
 } from "./types";
 
-export {
-  ManagedProcessRegistry,
-  type ManagedProcessInfo,
-  type ManagedProcessStatus,
-} from "./managed-process";
 import {
   encodeTerminalKey,
   nativeTerminalReadPage,
@@ -67,6 +58,7 @@ export { materializeTools } from "./invocation";
 export {
   isProcessRunning,
   ownsProcess,
+  processFingerprint,
   readOptionalFile,
   safeToolEnv,
   sendProcessSignal,
@@ -159,49 +151,3 @@ export type ToolFamily = {
  * host's list of families is the only thing that changes. `todo` already left —
  * see `@natalia/tool-todo`.
  */
-export function agentToolFamily(): ToolFamily {
-  return {
-    id: "agent",
-    name: "Subagent Tools",
-    version: "1.0.0",
-    description: "Delegating work to a subagent.",
-    scope: "session",
-    tools: [...agentTools()],
-  };
-}
-
-export function terminalToolFamily(): ToolFamily {
-  return {
-    id: "terminal",
-    name: "Terminal Tools",
-    version: "1.0.0",
-    description: "Native terminal panes and interactive programs.",
-    scope: "session",
-    tools: [...terminalTools()],
-    aliases: { ...interactiveTerminalToolAliases },
-  };
-}
-
-export function sandboxToolFamily(): ToolFamily {
-  return {
-    id: "sandbox",
-    name: "Sandbox Tools",
-    version: "1.0.0",
-    description: "Isolated workspaces and their merge back.",
-    scope: "workspace",
-    tools: [...sandboxTools()],
-  };
-}
-
-export function processToolFamily(
-  processRegistry = new ManagedProcessRegistry(),
-): ToolFamily {
-  return {
-    id: "process",
-    name: "Managed Process Tools",
-    version: "1.0.0",
-    description: "Long-running background processes.",
-    scope: "session",
-    tools: [...managedProcessTools(processRegistry)],
-  };
-}

@@ -1,5 +1,8 @@
 /**
  * Tools that spawn and supervise subagents.
+ */
+/**
+ * Tools that spawn and supervise subagents.
  *
  * A subagent is another turn-taking runtime with its own budget, so spawning,
  * stopping and retrying all require approval while observing does not. Depth is
@@ -11,9 +14,13 @@ import {
   optionalString,
   requireObject,
   requireString,
-} from "./arguments";
+} from "@natalia/tools";
 import type { SubagentRegistry } from "@natalia/subagent";
-import type { RuntimeTool, ToolExecutionContext } from "./types";
+import type {
+  RuntimeTool,
+  ToolExecutionContext,
+  ToolFamily,
+} from "@natalia/tools";
 
 function requireSubagents(context: ToolExecutionContext) {
   if (!context.subagents) throw new Error("subagent runtime unavailable");
@@ -233,4 +240,18 @@ export function agentTools(): RuntimeTool[] {
     agentCleanupTool(),
     agentAuditTool(),
   ];
+}
+
+/**
+ * Session scope: a subagent belongs to the session that spawned it.
+ */
+export function agentToolFamily(): ToolFamily {
+  return {
+    id: "agent",
+    name: "Subagent Tools",
+    version: "1.0.0",
+    description: "Delegating work to a subagent.",
+    scope: "session",
+    tools: [...agentTools()],
+  };
 }

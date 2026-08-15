@@ -1,5 +1,8 @@
 /**
  * Tools that work inside a workspace sandbox.
+ */
+/**
+ * Tools that work inside a workspace sandbox.
  *
  * A sandbox is a copy of the workspace the model may change freely; merging is the
  * only way changes reach the real tree, and it is the only action here that asks
@@ -13,9 +16,13 @@ import {
   optionalString,
   requireObject,
   requireString,
-} from "./arguments";
+} from "@natalia/tools";
 import type { WorkspaceSandboxManager } from "@natalia/sandbox";
-import type { RuntimeTool, ToolExecutionContext } from "./types";
+import type {
+  RuntimeTool,
+  ToolExecutionContext,
+  ToolFamily,
+} from "@natalia/tools";
 
 function requireSandboxes(context: ToolExecutionContext) {
   if (!context.sandboxes) throw new Error("sandbox runtime unavailable");
@@ -340,4 +347,19 @@ export function sandboxTools(): RuntimeTool[] {
     sandboxResourceOutputTool(),
     sandboxResourceStopTool(),
   ];
+}
+
+/**
+ * Workspace scope: a sandbox is a copy of the workspace, and its tools are only
+ * meaningful while that workspace is mounted.
+ */
+export function sandboxToolFamily(): ToolFamily {
+  return {
+    id: "sandbox",
+    name: "Sandbox Tools",
+    version: "1.0.0",
+    description: "Isolated workspaces and their merge back.",
+    scope: "workspace",
+    tools: [...sandboxTools()],
+  };
 }

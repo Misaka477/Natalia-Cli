@@ -1,5 +1,8 @@
 /**
  * Tools that drive the one native terminal pane the model shares with the user.
+ */
+/**
+ * Tools that drive the one native terminal pane the model shares with the user.
  *
  * There is a single pane on purpose: the model and the person are looking at the
  * same screen, so what the model types is visible and what the person typed is
@@ -14,15 +17,20 @@ import {
   positiveNumberOr,
   requireObject,
   requireString,
-} from "./arguments";
+} from "@natalia/tools";
 import {
   encodeTerminalKey,
+  interactiveTerminalToolAliases,
   nativeTerminalReadPage,
   nativeTerminalSearchPage,
-} from "./terminal-io";
+} from "@natalia/tools";
 import type { NativeTerminalSession } from "@natalia/native-terminal";
-import { truncateProcessOutput } from "./child-process";
-import type { RuntimeTool, ToolExecutionContext } from "./types";
+import { truncateProcessOutput } from "@natalia/tools";
+import type {
+  RuntimeTool,
+  ToolExecutionContext,
+  ToolFamily,
+} from "@natalia/tools";
 
 function requireNativeTerminal(context: ToolExecutionContext) {
   if (!context.nativeTerminal)
@@ -665,4 +673,20 @@ export function terminalTools(): RuntimeTool[] {
     interactiveStopTool(),
     interactiveListTool(),
   ];
+}
+
+/**
+ * Session scope: the pane is shared with the user and only exists while the
+ * session is alive.
+ */
+export function terminalToolFamily(): ToolFamily {
+  return {
+    id: "terminal",
+    name: "Terminal Tools",
+    version: "1.0.0",
+    description: "Native terminal panes and interactive programs.",
+    scope: "session",
+    tools: [...terminalTools()],
+    aliases: { ...interactiveTerminalToolAliases },
+  };
 }

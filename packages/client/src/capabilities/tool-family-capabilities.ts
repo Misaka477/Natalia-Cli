@@ -19,19 +19,21 @@ import type {
   CapabilityRegistration,
   CapabilityRegistryHost,
 } from "@natalia/capability";
+import { agentToolFamily } from "@natalia/tool-agent";
 import { askToolFamily } from "@natalia/tool-ask";
 import { fsToolFamily } from "@natalia/tool-fs";
 import { searchToolFamily } from "@natalia/tool-search";
+import {
+  ManagedProcessRegistry,
+  processToolFamily,
+} from "@natalia/tool-process";
+import { sandboxToolFamily } from "@natalia/tool-sandbox";
 import { shellToolFamily } from "@natalia/tool-shell";
+import { terminalToolFamily } from "@natalia/tool-terminal";
 import { webToolFamily } from "@natalia/tool-web";
 import { todoToolFamily } from "@natalia/tool-todo";
 import {
-  agentToolFamily,
   createToolRegistry,
-  processToolFamily,
-  sandboxToolFamily,
-  terminalToolFamily,
-  ManagedProcessRegistry,
   type RuntimeTool,
   type ToolFamily,
   type ToolRegistry,
