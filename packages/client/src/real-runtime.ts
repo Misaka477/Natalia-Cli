@@ -5445,6 +5445,8 @@ export function createRealRuntimeClient(
         scope: record.scope,
         grants: record.grants,
         dependencies: record.dependencies,
+        provides: record.provides,
+        requires: record.requires,
         precedence: record.precedence,
         // The effective contributions this capability owns, as metadata only.
         // Payloads stay on the host side: a tool definition or a settings value
