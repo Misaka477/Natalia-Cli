@@ -861,6 +861,60 @@ export default (): ToolFamily => ({
   await client.dispose?.();
 }, 60_000);
 
+test("the family watcher hot-reloads a promoted change automatically", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-tools-watch-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({ version: 2, tools: { paths: ["extra-tools"] } }),
+  );
+  await mkdir(join(root, "extra-tools", "extra.family"), { recursive: true });
+  await writeFile(
+    join(root, "extra-tools", "extra.family", "natalia.tool.json"),
+    JSON.stringify({ entry: "index.ts" }),
+  );
+  const entryPath = join(root, "extra-tools", "extra.family", "index.ts");
+  const familySource = (tool: string) =>
+    `import type { ToolFamily } from "@natalia/tools";
+export default (): ToolFamily => ({
+  id: "extra.family", name: "Extra", version: "1.0.0",
+  description: "Out-of-tree fixture family", scope: "session",
+  tools: [{ name: "${tool}", description: "Run", requiresApproval: false,
+    parameters: { type: "object", properties: {} }, async execute() { return "ok"; } }],
+});
+`;
+  await writeFile(entryPath, familySource("extra_run"));
+  await fingerprintEntry(root, entryPath);
+
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_runtime_tools_watch",
+    provider: scriptedProvider("ready"),
+  });
+  client.start((event) => events.push(event));
+  await waitFor(() =>
+    events.some(
+      (event) => event.type === "tool.registered" && event.name === "extra_run",
+    ),
+  );
+
+  // The promoted change lands and the trust record is re-pinned; the watcher
+  // detects it and hot-reloads without any manual reload call.
+  await writeFile(entryPath, familySource("extra_run_v2"));
+  await fingerprintEntry(root, entryPath);
+  await waitFor(
+    () =>
+      events.some(
+        (event) =>
+          event.type === "tool.registered" && event.name === "extra_run_v2",
+      ),
+    10_000,
+    "the watcher to hot-reload the promoted change",
+  );
+  await client.dispose?.();
+}, 60_000);
+
 test("toolFamilyReload hot-swaps an out-of-tree family after promotion", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-runtime-tools-reload-"));
   await mkdir(join(root, ".natalia"), { recursive: true });

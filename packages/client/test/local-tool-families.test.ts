@@ -7,6 +7,7 @@ import {
   discoverLocalToolFamilies,
   loadLocalToolFamilies,
   reloadLocalToolFamily,
+  watchLocalToolFamilies,
 } from "../src/capabilities/local-tool-families";
 
 async function fixtureFamily(root: string, id: string) {
@@ -158,4 +159,21 @@ test("reloadLocalToolFamily refuses a disabled family", async () => {
       enabled: { "fixture.a": false },
     }),
   ).rejects.toThrow(/disabled in config/u);
+});
+
+test("watchLocalToolFamilies reports a family entry change (debounced)", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-watch-"));
+  const dir = await fixtureFamily(root, "fixture.a");
+  const entry = join(dir, "index.ts");
+  const fired: Array<[string, string]> = [];
+  const close = await watchLocalToolFamilies({
+    roots: [root],
+    debounceMs: 40,
+    onChange: (familyID, entryPath) => fired.push([familyID, entryPath]),
+  });
+  await writeFile(entry, "// touch\n" + (await readFile(entry, "utf8")));
+  await Bun.sleep(200);
+  expect(fired.some(([familyID]) => familyID === "fixture.a")).toBe(true);
+  expect(fired[0]![1]).toBe(entry);
+  await close();
 });

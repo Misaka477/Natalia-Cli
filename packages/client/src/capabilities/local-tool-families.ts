@@ -170,3 +170,69 @@ async function importLocalToolFamily(
 function keyForPath(manifestPath: string) {
   return resolve(manifestPath, "..");
 }
+
+/**
+ * Watches out-of-tree family entries and reports changes, debounced per family.
+ *
+ * This is the "hot" half of HMR: after the agent's change is promoted (and the
+ * trust record re-pinned), the entry changes on disk and the watcher fires. The
+ * caller decides what the change means — a trusted change is hot-reloaded, an
+ * untrusted one is reported as an edit without promotion. `fs.watch` is used so
+ * no polling is involved; returning `close` keeps the watcher's lifecycle in
+ * the caller's hands.
+ */
+export async function watchLocalToolFamilies(input: {
+  roots: string[];
+  /** Called with the family id and its entry path when the entry changed. */
+  onChange: (familyID: string, entryPath: string) => void;
+  debounceMs?: number;
+}): Promise<() => Promise<void>> {
+  const debounceMs = input.debounceMs ?? 150;
+  const { watch } = await import("node:fs");
+  const entries: Array<{ familyID: string; dir: string; entryPath: string }> =
+    [];
+  for (const root of input.roots) {
+    const discovered = await discoverLocalToolFamilies(root);
+    for (const { manifest, path } of discovered) {
+      const entryPath = resolve(path, "..", manifest.entry);
+      // The id is only known after import; derive it once at watch time.
+      const module = (await import(pathToFileURL(entryPath).href)) as {
+        default?: unknown;
+      };
+      const exported = module.default;
+      const family =
+        typeof exported === "function"
+          ? (exported as () => ToolFamily)()
+          : (exported as ToolFamily | undefined);
+      if (!family?.id) continue;
+      entries.push({
+        familyID: family.id,
+        dir: resolve(path, ".."),
+        entryPath,
+      });
+    }
+  }
+  const timers = new Map<string, ReturnType<typeof setTimeout>>();
+  const watchers = entries.map(({ familyID, dir, entryPath }) =>
+    watch(dir, (_event, filename) => {
+      if (filename?.toString() !== entryPath.split("/").pop()) return;
+      const existing = timers.get(familyID);
+      if (existing) clearTimeout(existing);
+      timers.set(
+        familyID,
+        setTimeout(() => {
+          timers.delete(familyID);
+          input.onChange(familyID, entryPath);
+        }, debounceMs),
+      );
+    }),
+  );
+  let closed = false;
+  return async () => {
+    if (closed) return;
+    closed = true;
+    for (const timer of timers.values()) clearTimeout(timer);
+    timers.clear();
+    for (const watcher of watchers) watcher.close();
+  };
+}
