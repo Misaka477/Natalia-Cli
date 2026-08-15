@@ -806,6 +806,63 @@ test("runtime status reflects the configured auto approval profile", async () =>
   });
 });
 
+test("finalizeContent is applied exactly once before the result freezes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-finalize-"));
+  const tools = createToolRegistry([]);
+  let calls = 0;
+  tools.set("finalized_tool", {
+    name: "finalized_tool",
+    description: "Tool with a final content invariant.",
+    requiresApproval: false,
+    parameters: { type: "object", properties: {} },
+    output: {
+      schema: { type: "object", properties: {} },
+      finalizeContent(content) {
+        calls++;
+        return content.toUpperCase();
+      },
+    },
+    async execute() {
+      return "raw result";
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_runtime_finalize",
+    tools,
+    provider: {
+      provider: "finalize",
+      model: "finalize-model",
+      async *stream(request) {
+        if (!request.messages.some((message) => message.role === "tool"))
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              { id: "call_finalize", name: "finalized_tool", arguments: "{}" },
+            ],
+          };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.submit("run the finalizing tool");
+  const update = events.find(
+    (event): event is Extract<RuntimeEvent, { type: "tool.update" }> =>
+      event.type === "tool.update" && event.status === "succeeded",
+  );
+  // The model sees the finalized content, and it ran exactly once.
+  const failedUpdate = events.find(
+    (event): event is Extract<RuntimeEvent, { type: "tool.update" }> =>
+      event.type === "tool.update" && event.status === "failed",
+  );
+  console.log("failed:", failedUpdate?.result, "calls:", calls);
+  expect(update?.result).toBe("RAW RESULT");
+  expect(calls).toBe(1);
+  await client.dispose?.();
+}, 60_000);
+
 test("a tool with an output definition projects its result into the event", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-runtime-tool-render-"));
   await mkdir(join(root, ".natalia"), { recursive: true });

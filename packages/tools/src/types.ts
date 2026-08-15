@@ -61,7 +61,14 @@ export type ToolOutputDefinition = {
    */
   presentCall?(args: unknown): ToolRenderIntent | undefined;
   /** Projects the arguments and the result into a card. */
-  presentResult(args: unknown, value: string): ToolRenderIntent | undefined;
+  presentResult?(args: unknown, value: string): ToolRenderIntent | undefined;
+  /**
+   * The tool's own final content invariant, called exactly once on the raw
+   * result before it is redacted and bounded — e.g. stripping page scripts a
+   * fetched page carries, or compacting a screen dump. Pure: the content the
+   * model sees is the content this returns.
+   */
+  finalizeContent?(content: string): string;
 };
 
 export type RuntimeTool = ToolExecutionBoundary & {

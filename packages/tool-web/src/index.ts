@@ -70,6 +70,11 @@ function webFetchTool(): RuntimeTool {
           ],
         };
       },
+      // The page's scripts are not content the model should read: a fetched
+      // page goes to the model with its executable script blocks removed.
+      finalizeContent(content) {
+        return content.replace(/<script\b[^>]*>[\s\S]*?<\/script>/giu, "");
+      },
     },
     async execute(input, context) {
       const args = requireObject(input);

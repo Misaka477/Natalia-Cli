@@ -34,7 +34,7 @@ test("read_file projects a read card from its output definition", () => {
   const tool = fsToolFamily().tools.find(
     (candidate) => candidate.name === "read_file",
   )!;
-  const intent = tool.output?.presentResult(
+  const intent = tool.output?.presentResult?.(
     { path: "src/index.ts" },
     "export const x = 1;",
   );

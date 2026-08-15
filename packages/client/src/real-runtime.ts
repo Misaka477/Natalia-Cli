@@ -6421,15 +6421,20 @@ export function createRealRuntimeClient(
         if (timeoutTimer) clearTimeout(timeoutTimer);
         exec?.activeAbort?.signal.removeEventListener("abort", cancelExecution);
       });
+      // The tool's own final content invariant runs exactly once, before
+      // redaction and bounding: what the model sees is the content the tool
+      // finalized (a fetched page without its scripts, a compacted dump).
+      const finalizedContent =
+        tool.output?.finalizeContent?.(completeResult) ?? completeResult;
       const bounded = await boundToolOutput(
         workspaceRoot,
-        redactToolOutput(completeResult, redactToolOutputEnabled()),
+        redactToolOutput(finalizedContent, redactToolOutputEnabled()),
       );
       const result = bounded.text;
       // The tool's own output projection becomes part of the event metadata, so
       // a client can draw the result as the card the tool described instead of
       // guessing from the string.
-      const projectedRender = tool.output?.presentResult(
+      const projectedRender = tool.output?.presentResult?.(
         tryParseToolArguments(call.arguments),
         result,
       );

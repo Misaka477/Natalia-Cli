@@ -21,3 +21,14 @@ test("web_fetch enforces the network policy before reaching the network", async 
     } as never),
   ).rejects.toThrow(/localhost/u);
 });
+
+test("web_fetch finalizes fetched content by stripping script blocks", () => {
+  const tool = webToolFamily().tools.find(
+    (candidate) => candidate.name === "web_fetch",
+  )!;
+  const content = `<html><script>alert(1)</script><p>hello</p><script type="module">run()</script></html>`;
+  const finalized = tool.output!.finalizeContent!(content);
+  expect(finalized).not.toContain("alert(1)");
+  expect(finalized).not.toContain("run()");
+  expect(finalized).toContain("<p>hello</p>");
+});
