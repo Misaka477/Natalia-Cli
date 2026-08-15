@@ -67,24 +67,41 @@ export type PipelineRunResult =
  * turn a denial back into an allow.
  */
 export class ToolExecutionPipeline {
-  private pre: Array<(input: ToolExecutionInput) => PreToolDecision> = [];
-  private guards: Array<ToolGuard> = [];
+  private pre: Array<
+    (input: ToolExecutionInput) => PreToolDecision | Promise<PreToolDecision>
+  > = [];
+  private guards: Array<
+    (
+      input: ToolExecutionInput,
+    ) => string | undefined | Promise<string | undefined>
+  > = [];
   private executeFn:
     | ((input: ToolExecutionInput) => Promise<string>)
     | undefined;
   private post: Array<
-    (input: ToolExecutionInput, content: string) => PostToolDecision
+    (
+      input: ToolExecutionInput,
+      content: string,
+    ) => PostToolDecision | Promise<PostToolDecision>
   > = [];
   private finalizer: ((content: string) => string) | undefined;
 
   /** Appends a pre stage. */
-  preStage(stage: (input: ToolExecutionInput) => PreToolDecision): this {
+  preStage(
+    stage: (
+      input: ToolExecutionInput,
+    ) => PreToolDecision | Promise<PreToolDecision>,
+  ): this {
     this.pre.push(stage);
     return this;
   }
 
   /** Appends a monotonic guard. */
-  guard(stage: ToolGuard): this {
+  guard(
+    stage: (
+      input: ToolExecutionInput,
+    ) => string | undefined | Promise<string | undefined>,
+  ): this {
     this.guards.push(stage);
     return this;
   }
@@ -97,7 +114,10 @@ export class ToolExecutionPipeline {
 
   /** Appends a post stage. */
   postStage(
-    stage: (input: ToolExecutionInput, content: string) => PostToolDecision,
+    stage: (
+      input: ToolExecutionInput,
+      content: string,
+    ) => PostToolDecision | Promise<PostToolDecision>,
   ): this {
     this.post.push(stage);
     return this;
@@ -113,7 +133,7 @@ export class ToolExecutionPipeline {
     const decisions: PreToolDecision[] = [];
     // Pre waterfall: the first deny or ask stops the run. Allows accumulate.
     for (const stage of this.pre) {
-      const decision = stage(input);
+      const decision = await stage(input);
       decisions.push(decision);
       if (decision.decision === "deny")
         return { status: "denied", reason: decision.reason };
@@ -121,7 +141,7 @@ export class ToolExecutionPipeline {
     }
     // Monotonic guards: the first denial is final; a guard cannot force-allow.
     for (const guard of this.guards) {
-      const reason = guard(input);
+      const reason = await guard(input);
       if (reason !== undefined)
         return {
           status: "denied",
@@ -129,15 +149,18 @@ export class ToolExecutionPipeline {
         };
     }
     if (!this.executeFn)
+      // A decision-only pipeline: every pre stage allowed, and there is nothing
+      // to execute. The caller that assembled only a decision chain reads the
+      // status and ignores the (empty) content.
       return {
-        status: "denied",
-        reason: "pipeline has no execute stage",
+        status: "allowed",
+        result: Object.freeze({ content: "", raw: "", decisions }),
       };
     const raw = await this.executeFn(input);
     let content = raw;
     // Post waterfall: the first block stops; a replace swaps the content.
     for (const stage of this.post) {
-      const decision = stage(input, content);
+      const decision = await stage(input, content);
       if (decision.decision === "block")
         return { status: "blocked", feedback: decision.feedback };
       if (decision.decision === "replace") content = decision.content;

@@ -119,10 +119,10 @@ test("reordering the pre stages changes the outcome", async () => {
   expect((await aFirst.run(input())).status).toBe("denied");
 });
 
-test("a pipeline without an execute stage cannot run", async () => {
-  const run = await new ToolExecutionPipeline().run(input());
-  expect(run).toEqual({
-    status: "denied",
-    reason: "pipeline has no execute stage",
-  });
+test("a decision-only pipeline allows without an execute stage", async () => {
+  const run = await new ToolExecutionPipeline()
+    .preStage(() => ({ decision: "allow" as const }))
+    .run(input());
+  expect(run.status).toBe("allowed");
+  if (run.status === "allowed") expect(run.result.content).toBe("");
 });

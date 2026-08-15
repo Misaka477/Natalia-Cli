@@ -105,6 +105,7 @@ import {
 import {
   boundToolOutput,
   cleanupToolOutput,
+  ToolExecutionPipeline,
   validateToolParameters,
   type RuntimeTool,
   type ToolMaterialization,
@@ -6166,78 +6167,127 @@ export function createRealRuntimeClient(
       toolCallID: call.id,
       arguments: call.arguments,
     };
-    const preResult = await toolLayer.preExecute(hookEvent);
-    for (const diagnostic of preResult.diagnostics) {
-      publish({
-        type: "diagnostic",
-        level: "info",
-        message: diagnostic,
-      });
-    }
-    if (!preResult.allowed) {
-      if (preResult.clearTerminal) {
-        const terminalID = tryParseToolArguments(call.arguments).id;
-        if (typeof terminalID === "string") {
-          try {
-            await terminalController.get()?.write(terminalID, "\x15");
-            publish({
-              type: "diagnostic",
-              level: "warning",
-              message: `cleared blocked terminal command buffer for ${terminalID}`,
-            });
-          } catch (error) {
-            publish({
-              type: "diagnostic",
-              level: "warning",
-              message: `could not clear blocked terminal command buffer for ${terminalID}: ${error instanceof Error ? error.message : String(error)}`,
-            });
+    // The policy chain is a reorderable pipeline now: preExecute, read-only and
+    // constitution are pre stages (the first denial stops the run), and the
+    // approval-and-execution block below is the execute stage's content. The
+    // outcome is a frozen result the caller cannot rewrite.
+    const pipeline = new ToolExecutionPipeline()
+      .preStage(async () => {
+        const preResult = await toolLayer.preExecute(hookEvent);
+        for (const diagnostic of preResult.diagnostics) {
+          publish({
+            type: "diagnostic",
+            level: "info",
+            message: diagnostic,
+          });
+        }
+        if (preResult.allowed) return { decision: "allow" as const };
+        if (preResult.clearTerminal) {
+          const terminalID = tryParseToolArguments(call.arguments).id;
+          if (typeof terminalID === "string") {
+            try {
+              await terminalController.get()?.write(terminalID, "\x15");
+              publish({
+                type: "diagnostic",
+                level: "warning",
+                message: `cleared blocked terminal command buffer for ${terminalID}`,
+              });
+            } catch (error) {
+              publish({
+                type: "diagnostic",
+                level: "warning",
+                message: `could not clear blocked terminal command buffer for ${terminalID}: ${error instanceof Error ? error.message : String(error)}`,
+              });
+            }
           }
         }
-      }
-      publish({
-        type: "policy.decision",
-        turnID,
-        toolName: tool.name,
-        toolCallID: call.id,
-        decision: "deny",
-        reason: preResult.diagnostics.join("; "),
+        const reason = preResult.diagnostics.join("; ");
+        publish({
+          type: "policy.decision",
+          turnID,
+          toolName: tool.name,
+          toolCallID: call.id,
+          decision: "deny",
+          reason,
+        });
+        publish({
+          type: "tool.update",
+          id: toolID,
+          name: tool.name,
+          callID: call.id,
+          status: "failed",
+          summary: reason,
+          result: reason,
+          endedAt: Date.now(),
+        });
+        publishWorkGraphToolCall(turnID, call.id, tool.name, "failed");
+        return { decision: "deny" as const, reason };
+      })
+      .preStage(() => {
+        if (!(permissionMode === "read_only" && tool.requiresApproval))
+          return { decision: "allow" as const };
+        const message = readOnlyToolMessage(tool.name);
+        publish({
+          type: "policy.decision",
+          turnID,
+          toolName: tool.name,
+          toolCallID: call.id,
+          decision: "deny",
+          reason: message,
+        });
+        publish({
+          type: "tool.update",
+          id: toolID,
+          name: tool.name,
+          callID: call.id,
+          status: "rejected",
+          summary: message,
+          result: message,
+          endedAt: Date.now(),
+        });
+        publishWorkGraphToolCall(turnID, call.id, tool.name, "rejected");
+        return { decision: "deny" as const, reason: message };
+      })
+      .preStage(() => {
+        const blocked = checkConstitutionForTool(
+          turnID,
+          call.id,
+          tool.name,
+          tool.name,
+          // `write`/`apply_patch` were named here but no such tools exist — the
+          // real ones are `write_file`/`edit_file`, so this always fell through
+          // to "global" and a path-scoped constitution rule could never match.
+          // Latent rather than exploited, because constitution rules still have
+          // no writer.
+          workspaceWritePathForTool(
+            tool.name,
+            tryParseToolArguments(call.arguments),
+          ) ?? "global",
+          commandTextForTool(tool.name, tryParseToolArguments(call.arguments)),
+        );
+        if (!blocked) return { decision: "allow" as const };
+        publish({
+          type: "tool.update",
+          id: toolID,
+          name: tool.name,
+          callID: call.id,
+          status: "failed",
+          summary: blocked,
+          argumentsDelta: call.arguments,
+        });
+        publishWorkGraphToolCall(turnID, call.id, tool.name, "failed");
+        return { decision: "deny" as const, reason: blocked };
       });
-      publish({
-        type: "tool.update",
-        id: toolID,
-        name: tool.name,
-        callID: call.id,
-        status: "failed",
-        summary: preResult.diagnostics.join("; "),
-        result: preResult.diagnostics.join("; "),
-        endedAt: Date.now(),
-      });
-      publishWorkGraphToolCall(turnID, call.id, tool.name, "failed");
-      return `ERROR: ${preResult.diagnostics.join("; ")}`;
-    }
-    if (permissionMode === "read_only" && tool.requiresApproval) {
-      const message = readOnlyToolMessage(tool.name);
-      publish({
-        type: "policy.decision",
-        turnID,
-        toolName: tool.name,
-        toolCallID: call.id,
-        decision: "deny",
-        reason: message,
-      });
-      publish({
-        type: "tool.update",
-        id: toolID,
-        name: tool.name,
-        callID: call.id,
-        status: "rejected",
-        summary: message,
-        result: message,
-        endedAt: Date.now(),
-      });
-      publishWorkGraphToolCall(turnID, call.id, tool.name, "rejected");
-      return `ERROR: ${message}`;
-    }
+    // Decision-only: the approval-and-execution block below is the execute
+    // stage's content and runs when every pre stage allowed.
+    const run = await pipeline.run({
+      name: tool.name,
+      args: tryParseToolArguments(call.arguments),
+      context: { workspaceRoot },
+    });
+    if (run.status === "denied") return `ERROR: ${run.reason}`;
+    if (run.status === "asking")
+      return `ERROR: ${run.decision.reason ?? "approval required"}`;
     publish({
       type: "tool.update",
       id: toolID,
@@ -6254,34 +6304,6 @@ export function createRealRuntimeClient(
       toolCallID: call.id,
       decision: tool.requiresApproval ? "approval_required" : "allow",
     });
-    const blocked = checkConstitutionForTool(
-      turnID,
-      call.id,
-      tool.name,
-      tool.name,
-      // `write`/`apply_patch` were named here but no such tools exist — the real
-      // ones are `write_file`/`edit_file`, so this always fell through to
-      // "global" and a path-scoped constitution rule could never match. Latent
-      // rather than exploited, because constitution rules still have no writer.
-      workspaceWritePathForTool(
-        tool.name,
-        tryParseToolArguments(call.arguments),
-      ) ?? "global",
-      commandTextForTool(tool.name, tryParseToolArguments(call.arguments)),
-    );
-    if (blocked) {
-      publish({
-        type: "tool.update",
-        id: toolID,
-        name: tool.name,
-        callID: call.id,
-        status: "failed",
-        summary: blocked,
-        argumentsDelta: call.arguments,
-      });
-      publishWorkGraphToolCall(turnID, call.id, tool.name, "failed");
-      return blocked;
-    }
     if (tool.requiresApproval) {
       const refusal = await interactive.requireApproval(
         toolID,
