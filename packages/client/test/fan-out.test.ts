@@ -153,3 +153,28 @@ test("reviewPRs promotes approved PRs into the system slot and sends back the re
   // The rejected candidate was not promoted into the host.
   expect(existsSync(join(root, "output.txt"))).toBe(true); // only the approved one
 });
+
+import {
+  LEAD_REVIEWER_SYSTEM_PROMPT,
+  ORCHESTRATOR_SYSTEM_PROMPT,
+  sandboxedSubagentSystemPrompt,
+} from "../src/agent-team-prompts";
+
+test("agent-team prompts carry the contract each role must follow", () => {
+  // The orchestrator: disjoint ownership + validation are load-bearing.
+  expect(ORCHESTRATOR_SYSTEM_PROMPT).toContain("ownership map");
+  expect(ORCHESTRATOR_SYSTEM_PROMPT).toContain("never overlap");
+  expect(ORCHESTRATOR_SYSTEM_PROMPT).toContain("validateOwnershipMap");
+  // The sandboxed sub-agent: its file domain is enforced by the prompt.
+  expect(sandboxedSubagentSystemPrompt()).toContain("isolated workspace");
+  expect(sandboxedSubagentSystemPrompt(["systems/battle"])).toContain(
+    "systems/battle",
+  );
+  expect(sandboxedSubagentSystemPrompt(["systems/battle"])).toContain(
+    "write files ONLY under these paths",
+  );
+  // The lead reviewer: one PR at a time, against domain + contract + evidence.
+  expect(LEAD_REVIEWER_SYSTEM_PROMPT).toContain("one at a time");
+  expect(LEAD_REVIEWER_SYSTEM_PROMPT).toContain("build evidence");
+  expect(LEAD_REVIEWER_SYSTEM_PROMPT).toContain("outside its domain");
+});

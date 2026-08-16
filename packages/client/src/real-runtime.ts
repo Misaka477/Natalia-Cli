@@ -9,6 +9,7 @@ import { createSkillsController } from "./skills-controller";
 import { createSubagentsController } from "./subagents-controller";
 import { createTerminalController } from "./terminal-controller";
 import { SnapshotSandboxManager } from "@natalia/sandbox";
+import { sandboxedSubagentSystemPrompt } from "./agent-team-prompts";
 import { createSandboxController } from "./sandbox-controller";
 import { createCheckpointController } from "./checkpoint-controller";
 import { createMcpController } from "./mcp-controller";
@@ -1011,8 +1012,8 @@ export function createRealRuntimeClient(
       const messages: ProviderMessage[] = [
         {
           role: "system",
-          content:
-            "You are a focused Natalia TS/Bun subagent working inside your own isolated workspace. Use the provided native tools for filesystem work. Return a concise factual final result. Never claim a tool action you did not run. Do not reveal private reasoning.",
+          // The sandboxed sub-agent's prompt: own worktree + file domain.
+          content: sandboxedSubagentSystemPrompt(writePaths),
         },
         { role: "user", content: task },
       ];
