@@ -43,6 +43,8 @@ export async function runTuiShell(
     initialPrompt?: string;
     backend?: RuntimeClient;
     createBackend?: (sessionID?: string) => RuntimeClient;
+    /** Re-points the workspace root before a fresh backend is created. */
+    onWorkspaceRootChange?: (root: string) => void;
     workspaceRoot?: string;
     onSessionChange?: (sessionID?: string) => void;
     fixture?: boolean;
@@ -104,6 +106,7 @@ export async function runTuiShell(
                         <App
                           backend={backend}
                           createBackend={input.createBackend}
+                          onWorkspaceRootChange={input.onWorkspaceRootChange}
                           onBackendChange={(next) => {
                             activeBackend = next;
                           }}

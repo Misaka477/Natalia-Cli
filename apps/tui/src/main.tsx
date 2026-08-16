@@ -8,7 +8,7 @@ const smoke =
   process.env.NATALIA_TUI_SMOKE === "1" || process.argv.includes("--smoke");
 const doctor = process.argv.includes("--doctor");
 const diagnostics = process.argv.includes("--diagnostics");
-const workspaceRoot = await resolveTuiWorkspaceRoot({
+let currentWorkspaceRoot = await resolveTuiWorkspaceRoot({
   override: process.env.NATALIA_WORKSPACE ?? argumentValue("--workspace"),
 });
 const requestedSessionID = argumentValue("--session");
@@ -18,7 +18,7 @@ const createBackend = (nextSessionID?: string) => {
   const worker = new Worker(new URL("./runtime-worker.ts", import.meta.url), {
     workerData: {
       port: channel.port1,
-      workspaceRoot,
+      workspaceRoot: currentWorkspaceRoot,
       // An interactive launch starts a new session. A prior session is only
       // reopened via --session or an explicit selection in the session dialog.
       sessionID: nextSessionID ?? launchSessionID,
@@ -44,7 +44,12 @@ const handle = await runTuiShell({
   fixture: smoke,
   backend: smoke ? undefined : createBackend(),
   createBackend: smoke ? undefined : createBackend,
-  workspaceRoot,
+  // Switching the workspace re-points the mutable root; the App then creates a
+  // fresh backend on it (and disposes the old), so no TUI restart is needed.
+  onWorkspaceRootChange: (nextRoot: string) => {
+    currentWorkspaceRoot = nextRoot;
+  },
+  workspaceRoot: currentWorkspaceRoot,
   closeAfterInitialTurn: doctor || diagnostics ? false : undefined,
 });
 

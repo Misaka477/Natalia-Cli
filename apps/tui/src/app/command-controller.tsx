@@ -125,6 +125,7 @@ export interface CommandContext {
   ) => void;
   attachmentPaths: () => string[];
   changeSession: (sessionID?: string) => void;
+  changeWorkspace: (root: string) => void;
   persistConfig: (next: ConfigPatch, base?: ConfigV2) => Promise<void>;
   toast: { show: (msg: any) => void; error: (err: unknown) => void };
   dialog: DialogContext;
@@ -2268,6 +2269,12 @@ export async function runCommand(command: string, ctx: CommandContext) {
                       description: resolved.workspace?.root || "(project root)",
                     },
                     {
+                      title: "Switch Workspace",
+                      value: "switch",
+                      description:
+                        "Re-create the runtime on a different directory",
+                    },
+                    {
                       title: "Instructions",
                       value: "instr",
                       description: resolved.instructions?.enabled
@@ -2312,6 +2319,21 @@ export async function runCommand(command: string, ctx: CommandContext) {
                           onConfirm={(value) => {
                             next.workspace!.root = value.trim();
                             void saveConfig(next);
+                          }}
+                        />
+                      ));
+                      return;
+                    }
+                    if (opt.value === "switch") {
+                      // Switch the LIVE workspace: re-create the runtime on a
+                      // new root without restarting the TUI.
+                      ctx.dialog.push(() => (
+                        <DialogPrompt
+                          title="Switch Workspace"
+                          placeholder={ctx.workspaceRoot ?? process.cwd()}
+                          onConfirm={(value) => {
+                            const root = value.trim();
+                            if (root) ctx.changeWorkspace(root);
                           }}
                         />
                       ));

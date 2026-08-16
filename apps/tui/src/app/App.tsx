@@ -122,6 +122,7 @@ export function App(props: {
   backend: TuiRuntimeClient;
   createBackend?: (sessionID?: string) => TuiRuntimeClient;
   onBackendChange?: (backend: RuntimeClient) => void;
+  onWorkspaceRootChange?: (root: string) => void;
   workspaceRoot?: string;
   onSessionChange?: (sessionID?: string) => void;
   onDispatch?: (event: RuntimeEvent) => void;
@@ -158,6 +159,20 @@ export function App(props: {
     props.onSessionChange?.(sessionID);
   }
 
+  /** Switches the live workspace: re-point the root, create a fresh backend on
+      it, swap, and dispose the old — no TUI restart. The active-turn guard
+      lives at the command layer, which has the turn state. */
+  async function changeWorkspace(nextRoot: string) {
+    if (props.createBackend && props.onWorkspaceRootChange) {
+      const previous = backend();
+      props.onWorkspaceRootChange(nextRoot);
+      const next = props.createBackend();
+      setBackend(next);
+      props.onBackendChange?.(next);
+      await previous.dispose?.();
+    }
+  }
+
   return (
     <Show when={backend()} keyed>
       {(activeBackend) => (
@@ -184,6 +199,7 @@ export function App(props: {
               backend={activeBackend}
               workspaceRoot={props.workspaceRoot}
               onSessionChange={(sessionID) => void changeSession(sessionID)}
+              onWorkspaceChange={(root) => void changeWorkspace(root)}
               initialRoute={props.initialRoute}
               onRuntimeEvent={(handler) => {
                 onRuntimeEvent = handler;
@@ -253,6 +269,7 @@ function Shell(props: {
   backend: TuiRuntimeClient;
   workspaceRoot?: string;
   onSessionChange?: (sessionID?: string) => void;
+  onWorkspaceChange?: (root: string) => void;
   onLoadOlderHistory?: () => Promise<void>;
   onLoadNewerHistory?: () => Promise<void>;
   onRuntimeEvent?: (handler: (event: RuntimeEvent) => void) => void;
@@ -734,6 +751,16 @@ function Shell(props: {
     props.onSessionChange?.(sessionID);
   }
 
+  function changeWorkspace(root: string) {
+    if (state.facts.activeTurn || submitting) {
+      props.backend.diagnostic(
+        "Finish or cancel the current turn before switching workspaces.",
+      );
+      return;
+    }
+    props.onWorkspaceChange?.(root);
+  }
+
   function onCommand(command: string) {
     void runCommand(command, {
       backend: props.backend,
@@ -744,6 +771,7 @@ function Shell(props: {
       setMentionResources,
       attachmentPaths,
       changeSession,
+      changeWorkspace,
       persistConfig,
       toast,
       dialog,
