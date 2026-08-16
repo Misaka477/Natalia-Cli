@@ -966,9 +966,149 @@ export function createRealRuntimeClient(
     sessionID =
       options.sessionID ?? (`ses_${sessionSeed(workspaceRoot)}` as SessionID);
     await sessionStoreController.init();
+    // T-2: the sandboxed sub-agent path. A sub-agent spawned with
+    // `mode: "sandbox"` gets its own sandbox worktree — its file tools operate
+    // in that worktree, not the parent's workspace — and the turn loop is
+    // otherwise the same (same strength, reduced authority via the tool
+    // domain). It is a new path; the shared-context loop below stays untouched.
+    async function runSandboxedSubagent(
+      task: string,
+      runner: import("@natalia/subagent").RunnerContext,
+    ) {
+      const record = subagentsController.get().get(runner.agentId);
+      if (!record)
+        throw new Error(`subagent record not found: ${runner.agentId}`);
+      const allowed = record.allowedTools ?? [];
+      const excluded = new Set(record.excludeTools ?? []);
+      // The sub-agent's own worktree, created through the sandbox backend.
+      const manifest = await sandboxController.get().create(runner.agentId);
+      const sandboxRoot = manifest.root;
+      runner.log(`accepted (sandboxed): ${task}`);
+      runner.setStatus("running");
+      const messages: ProviderMessage[] = [
+        {
+          role: "system",
+          content:
+            "You are a focused Natalia TS/Bun subagent working inside your own isolated workspace. Use the provided native tools for filesystem work. Return a concise factual final result. Never claim a tool action you did not run. Do not reveal private reasoning.",
+        },
+        { role: "user", content: task },
+      ];
+      for (let step = 1; step <= effectiveMaxSteps(); step++) {
+        let output = "";
+        const calls: ProviderToolCall[] = [];
+        const visibleTools = [...tools.values()].filter(
+          (tool) =>
+            isToolAllowed(tool.name) &&
+            (permissionMode !== "read_only" || !tool.requiresApproval) &&
+            !excluded.has(tool.name) &&
+            (!allowed.length || allowed.includes(tool.name)),
+        );
+        for await (const chunk of withProviderConcurrency(
+          providerConcurrencyLimiter,
+          provider!.provider,
+          () =>
+            provider!.stream({
+              messages,
+              tools: visibleTools.map((tool) => ({
+                name: tool.name,
+                description: tool.description,
+                parameters: tool.parameters,
+              })),
+              signal: runner.signal,
+            }),
+        )) {
+          if (chunk.type === "content") output += chunk.text;
+          if (chunk.type === "tool_call") calls.push(...chunk.calls);
+        }
+        if (!calls.length) {
+          runner.log(output.trim() || "completed without text output");
+          return;
+        }
+        messages.push({
+          role: "assistant",
+          content: output,
+          toolCalls: calls,
+        });
+        for (const call of calls) {
+          const tool = tools.get(call.name);
+          if (!tool)
+            throw new Error(
+              `subagent requested unavailable tool: ${call.name}`,
+            );
+          if (
+            !isToolAllowed(tool.name) ||
+            excluded.has(tool.name) ||
+            (allowed.length && !allowed.includes(tool.name))
+          )
+            throw new Error(`subagent tool denied by policy: ${tool.name}`);
+          const toolID = `subagent:${runner.agentId}:${step}:${call.id}`;
+          const hookEvent: ToolHookEvent = {
+            turnID: `subagent:${runner.agentId}`,
+            toolName: tool.name,
+            toolCallID: call.id,
+            arguments: call.arguments,
+          };
+          const preResult = await toolLayer.preExecute(hookEvent);
+          if (!preResult.allowed)
+            throw new Error(
+              `subagent tool denied by policy: ${preResult.diagnostics.join("; ")}`,
+            );
+          if (permissionMode === "read_only" && tool.requiresApproval)
+            throw new Error(readOnlyToolMessage(tool.name));
+          if (tool.requiresApproval) {
+            const refusal = await interactive.requireApproval(
+              toolID,
+              tool,
+              call,
+              hookEvent.turnID,
+            );
+            if (refusal) throw new Error(refusal.reason);
+          }
+          const parsed = parseToolArguments(call.arguments);
+          const paramErrors = validateToolParameters(tool.parameters, parsed);
+          if (paramErrors.length)
+            throw new Error(
+              `tool "${tool.name}" parameter validation failed: ${paramErrors.map((error) => `${error.path}: ${error.message}`).join("; ")}`,
+            );
+          // The tool runs against the sub-agent's own worktree, not the parent's
+          // workspace. No nested sandbox manager: the sub-agent works IN its
+          // sandbox rather than managing sandboxes itself.
+          const result = await tool.execute(parsed, {
+            workspaceRoot: sandboxRoot,
+            signal: runner.signal,
+            askQuestion: async (question) =>
+              await interactive.requireQuestion(
+                `${toolID}:question`,
+                hookEvent.turnID,
+                question,
+              ),
+            subagents: subagentsController.get(),
+            nativeTerminal: terminalController.get(),
+            workspaceReadAuthorize: authorizeWorkspaceRead,
+            sandboxMergeAuthorize: authorizeSandboxMerge,
+            settings: toolSettings(),
+            parentSessionID: sessionID,
+            parentAgentID: runner.agentId,
+            maxSubagentDepth: tsRuntimeConfig?.runtime.subagentDepth,
+          });
+          await toolLayer.postExecute({ ...hookEvent, result });
+          runner.log(`tool ${tool.name}: ${result.slice(0, 240)}`);
+          messages.push({
+            role: "tool",
+            content: result,
+            toolCallID: call.id,
+          });
+        }
+      }
+      throw new Error("subagent step limit reached");
+    }
     await subagentsController.init(async (task, runner) => {
       if (!provider) throw new Error("provider unavailable for subagent");
       const record = subagentsController.get().get(runner.agentId);
+      // `mode: "sandbox"` routes to the sub-agent's own worktree; everything
+      // else keeps the shared-context loop unchanged.
+      if (record?.mode === "sandbox")
+        return await runSandboxedSubagent(task, runner);
       const allowed = record?.allowedTools ?? [];
       const excluded = new Set(record?.excludeTools ?? []);
       const messages: ProviderMessage[] = [

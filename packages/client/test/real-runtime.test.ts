@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -10751,3 +10752,90 @@ test("collab_answer accepts a truncated question id (models drop the prefix)", a
   expect(answer).toMatchObject({ answer: "yes, echo is safe" });
   await client.dispose?.();
 }, 20000);
+
+function sandboxedSubagentProvider(): StreamingProvider {
+  return {
+    provider: "scripted-sandboxed-subagent",
+    model: "scripted-sandboxed-subagent-model",
+    async *stream(request: ProviderStreamRequest) {
+      const isChild = request.messages.some(
+        (message) => message.content === "child sandbox file task",
+      );
+      if (
+        isChild &&
+        !request.messages.some((message) => message.role === "tool")
+      ) {
+        yield {
+          type: "tool_call",
+          calls: [
+            {
+              id: "call_sandbox_child_write",
+              name: "write_file",
+              arguments: JSON.stringify({
+                path: "agent-test.txt",
+                content: "sandbox agent test success",
+              }),
+            },
+          ],
+        };
+        yield { type: "done" };
+        return;
+      }
+      if (isChild) {
+        yield {
+          type: "content",
+          text: "created agent-test.txt successfully",
+        };
+        yield { type: "done" };
+        return;
+      }
+      if (!request.messages.some((message) => message.role === "tool")) {
+        yield {
+          type: "tool_call",
+          calls: [
+            {
+              id: "call_sandbox_subagent",
+              name: "agent_spawn",
+              arguments: JSON.stringify({
+                task: "child sandbox file task",
+                mode: "sandbox",
+              }),
+            },
+          ],
+        };
+        yield { type: "done" };
+        return;
+      }
+      yield { type: "content", text: "parent complete" };
+      yield { type: "done" };
+    },
+  };
+}
+
+test("a sandboxed subagent writes into its own worktree, not the parent workspace", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-sandboxed-subagent-"));
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_sandboxed_subagent",
+    provider: sandboxedSubagentProvider(),
+    permissionMode: "auto",
+  });
+  client.start((event) => events.push(event));
+  await client.submit("delegate a sandboxed file task");
+  await waitFor(() =>
+    events.some(
+      (event) =>
+        event.type === "subagent.update" && event.status === "completed",
+    ),
+  );
+  // The write landed in the sub-agent's own sandbox worktree (id a1), not the
+  // parent's workspace.
+  expect(
+    await readFile(
+      join(root, ".natalia", "sandboxes", "a1", "agent-test.txt"),
+      "utf8",
+    ),
+  ).toBe("sandbox agent test success");
+  expect(existsSync(join(root, "agent-test.txt"))).toBe(false);
+});
