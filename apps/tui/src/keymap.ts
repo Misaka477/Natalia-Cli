@@ -440,6 +440,11 @@ export const commands: Record<string, CommandDef> = {
     keys: "unset",
     desc: "Edit model parameters",
   },
+  "team.concurrency": {
+    id: "team.concurrency",
+    keys: "unset",
+    desc: "Set team fan-out concurrency cap",
+  },
   "scroll.up": { id: "scroll.up", keys: "pageup", desc: "Scroll up" },
   "scroll.down": { id: "scroll.down", keys: "pagedown", desc: "Scroll down" },
   "scroll.top": { id: "scroll.top", keys: "home", desc: "Scroll to top" },

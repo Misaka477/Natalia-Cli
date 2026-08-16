@@ -1986,6 +1986,9 @@ export async function runCommand(command: string, ctx: CommandContext) {
             case "model.edit":
               runCommand("model.edit", ctx);
               break;
+            case "team.concurrency":
+              runCommand("team.concurrency", ctx);
+              break;
             case "web":
               ctx.dialog.push(() => (
                 <DialogSelect
