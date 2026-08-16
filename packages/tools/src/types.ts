@@ -99,6 +99,15 @@ export type ToolExecutionContext = {
     toolName: "glob" | "grep";
     paths: string[];
   }) => Promise<void>;
+  /**
+   * Path-domain write authorization: a host that narrows a tool's write scope
+   * (the ownership map for a fan-out sub-agent) rejects a write outside the
+   * domain here. Absent = no domain restriction beyond the workspace boundary.
+   */
+  workspaceWriteAuthorize?: (input: {
+    toolName: string;
+    path: string;
+  }) => Promise<void>;
   sandboxMergeAuthorize?: (input: {
     id: string;
     paths: string[];

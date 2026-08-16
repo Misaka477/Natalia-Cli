@@ -10839,3 +10839,93 @@ test("a sandboxed subagent writes into its own worktree, not the parent workspac
   ).toBe("sandbox agent test success");
   expect(existsSync(join(root, "agent-test.txt"))).toBe(false);
 });
+
+function sandboxedDomainProvider(): StreamingProvider {
+  return {
+    provider: "scripted-sandboxed-domain",
+    model: "scripted-sandboxed-domain-model",
+    async *stream(request: ProviderStreamRequest) {
+      const isChild = request.messages.some(
+        (message) => message.content === "child domain task",
+      );
+      if (
+        isChild &&
+        !request.messages.some((message) => message.role === "tool")
+      ) {
+        // The child tries to write outside its file domain.
+        yield {
+          type: "tool_call",
+          calls: [
+            {
+              id: "call_domain_write",
+              name: "write_file",
+              arguments: JSON.stringify({
+                path: "forbidden/x.txt",
+                content: "should be refused",
+              }),
+            },
+          ],
+        };
+        yield { type: "done" };
+        return;
+      }
+      if (isChild) {
+        yield { type: "content", text: "done" };
+        yield { type: "done" };
+        return;
+      }
+      if (!request.messages.some((message) => message.role === "tool")) {
+        yield {
+          type: "tool_call",
+          calls: [
+            {
+              id: "call_domain_spawn",
+              name: "agent_spawn",
+              arguments: JSON.stringify({
+                task: "child domain task",
+                mode: "sandbox",
+                writePaths: ["allowed"],
+              }),
+            },
+          ],
+        };
+        yield { type: "done" };
+        return;
+      }
+      yield { type: "content", text: "parent complete" };
+      yield { type: "done" };
+    },
+  };
+}
+
+test("a sandboxed sub-agent's writes are narrowed to its file domain", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-sandboxed-domain-"));
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_sandboxed_domain",
+    provider: sandboxedDomainProvider(),
+    permissionMode: "auto",
+  });
+  client.start((event) => events.push(event));
+  await client.submit("delegate a domain task");
+  await waitFor(() =>
+    events.some(
+      (event) =>
+        event.type === "subagent.update" &&
+        (event.status === "failed" || event.status === "completed"),
+    ),
+  );
+  // The write outside the domain was refused by the ownership-map authorize:
+  // the sub-agent failed, and the forbidden file was never created — in the
+  // parent workspace or anywhere in its sandbox.
+  expect(
+    events.some(
+      (event) => event.type === "subagent.update" && event.status === "failed",
+    ),
+  ).toBe(true);
+  expect(existsSync(join(root, "forbidden"))).toBe(false);
+  expect(
+    existsSync(join(root, ".natalia", "sandboxes", "a1", "forbidden", "x.txt")),
+  ).toBe(false);
+});

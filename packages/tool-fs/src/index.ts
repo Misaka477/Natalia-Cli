@@ -108,6 +108,10 @@ function writeFileTool(): RuntimeTool {
         context.workspaceRoot,
         requireString(args.path, "path"),
       );
+      await context.workspaceWriteAuthorize?.({
+        toolName: "write_file",
+        path,
+      });
       await mkdir(dirname(path), { recursive: true });
       await writeFile(path, requireString(args.content, "content"));
       if (typeof args.mode === "number") await chmod(path, args.mode);
@@ -159,6 +163,10 @@ function editFileTool(): RuntimeTool {
         context.workspaceRoot,
         requireString(args.path, "path"),
       );
+      await context.workspaceWriteAuthorize?.({
+        toolName: "edit_file",
+        path,
+      });
       const oldText = requireString(args.oldText, "oldText");
       const current = await readFile(path, "utf8");
       if (!current.includes(oldText)) throw new Error("oldText not found");

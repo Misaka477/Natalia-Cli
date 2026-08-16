@@ -983,6 +983,28 @@ export function createRealRuntimeClient(
       // The sub-agent's own worktree, created through the sandbox backend.
       const manifest = await sandboxController.get().create(runner.agentId);
       const sandboxRoot = manifest.root;
+      // The ownership map's domain: paths (relative to the sub-agent's
+      // worktree) it may write. Absent = unrestricted (same authority as the
+      // main agent).
+      const writePaths = record.writePaths;
+      const writeAuthorize = writePaths?.length
+        ? async ({ toolName, path }: { toolName: string; path: string }) => {
+            const relative = path.startsWith(sandboxRoot + "/")
+              ? path.slice(sandboxRoot.length + 1)
+              : path;
+            const inDomain = writePaths.some(
+              (domain) =>
+                relative === domain ||
+                relative.startsWith(
+                  domain.endsWith("/") ? domain : `${domain}/`,
+                ),
+            );
+            if (!inDomain)
+              throw new Error(
+                `subagent write outside file domain (${toolName}): ${relative}`,
+              );
+          }
+        : undefined;
       runner.log(`accepted (sandboxed): ${task}`);
       runner.setStatus("running");
       const messages: ProviderMessage[] = [
@@ -1085,6 +1107,9 @@ export function createRealRuntimeClient(
             subagents: subagentsController.get(),
             nativeTerminal: terminalController.get(),
             workspaceReadAuthorize: authorizeWorkspaceRead,
+            ...(writeAuthorize
+              ? { workspaceWriteAuthorize: writeAuthorize }
+              : {}),
             sandboxMergeAuthorize: authorizeSandboxMerge,
             settings: toolSettings(),
             parentSessionID: sessionID,

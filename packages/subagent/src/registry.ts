@@ -73,6 +73,7 @@ export class SubagentRegistry {
       modelProfile: options.modelProfile ?? "",
       allowedTools: options.allowedTools ?? [],
       excludeTools: options.excludeTools ?? [],
+      writePaths: options.writePaths,
       outputs: [],
       createdAt: now,
       updatedAt: now,

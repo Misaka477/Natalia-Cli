@@ -44,6 +44,7 @@ export interface SubagentRecord {
   modelProfile: string;
   allowedTools: string[];
   excludeTools: string[];
+  writePaths?: string[];
   outputs: OutputEntry[];
   createdAt: number;
   updatedAt: number;
@@ -57,6 +58,12 @@ export interface SpawnOptions {
   modelProfile?: string;
   allowedTools?: string[];
   excludeTools?: string[];
+  /**
+   * The paths (relative to the sub-agent's worktree) this sub-agent may write —
+   * the ownership map's domain for a fan-out agent. Absent = no domain
+   * restriction (same authority as the main agent).
+   */
+  writePaths?: string[];
   signal?: AbortSignal;
   parentSessionID?: string;
   parentAgentID?: SubagentID;
