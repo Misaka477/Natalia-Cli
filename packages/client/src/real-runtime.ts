@@ -11,6 +11,7 @@ import { createTerminalController } from "./terminal-controller";
 import { SnapshotSandboxManager } from "@natalia/sandbox";
 import { sandboxedSubagentSystemPrompt } from "./agent-team-prompts";
 import { createSandboxController } from "./sandbox-controller";
+import { createTeamFanoutTool, createTeamReviewTool } from "./team-tools";
 import { createCheckpointController } from "./checkpoint-controller";
 import { createMcpController } from "./mcp-controller";
 import {
@@ -1658,6 +1659,26 @@ export function createRealRuntimeClient(
     // P8 §56.62 collaboration channel: the main agent responds to Navi's
     // suggestions (adopt/reject/defer) and may ask her a question — she sees
     // both in her next turn's context, so neither agent waits for the user.
+    // Agent-team: the main agent orchestrates a fan-out via these tools and
+    // acts as the lead reviewer. Host-registered like the skills/mailbox tools.
+    if (extensionEnabled("plugins") || extensionEnabled("skills")) {
+      tools.set(
+        "team_fanout",
+        createTeamFanoutTool({
+          subagents: () =>
+            subagentsController.enabled()
+              ? subagentsController.get()
+              : undefined,
+          sandboxes: () => sandboxController.get(),
+        }),
+      );
+      tools.set(
+        "team_review",
+        createTeamReviewTool({
+          sandboxes: () => sandboxController.get(),
+        }),
+      );
+    }
     tools.set("collab_respond", {
       name: "collab_respond",
       description:
