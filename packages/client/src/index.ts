@@ -118,6 +118,7 @@ export {
   reloadLocalToolFamily,
   watchLocalToolFamilies,
 } from "./capabilities/local-tool-families";
+export { runFanOut, type FanOutPR, type FanOutTask } from "./fan-out";
 export { providerErrorHint, retryDisplayLine } from "./retry-display";
 export {
   cleanupUnreferencedAttachments,
