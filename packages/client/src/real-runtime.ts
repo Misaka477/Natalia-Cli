@@ -8,6 +8,7 @@ import { createProviderRunner } from "./provider-runner";
 import { createSkillsController } from "./skills-controller";
 import { createSubagentsController } from "./subagents-controller";
 import { createTerminalController } from "./terminal-controller";
+import { SnapshotSandboxManager } from "@natalia/sandbox";
 import { createSandboxController } from "./sandbox-controller";
 import { createCheckpointController } from "./checkpoint-controller";
 import { createMcpController } from "./mcp-controller";
@@ -6010,6 +6011,14 @@ export function createRealRuntimeClient(
         runtimeContext,
         trimmed,
         checkpointController.rollbackOptions(),
+        // The shared object library: the sandbox's snapshot indices are also
+        // owners, so checkpoint GC must never prune a live sandbox object.
+        async () => {
+          const manager = sandboxController.get();
+          return manager instanceof SnapshotSandboxManager
+            ? await manager.referencedObjectIDs()
+            : undefined;
+        },
       );
       publish({ type: "content.delta", id, text: result.output });
       publish({ type: "content.done", id });

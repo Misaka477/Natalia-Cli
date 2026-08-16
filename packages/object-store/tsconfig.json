@@ -5,15 +5,5 @@
     "rootDir": "../.."
   },
   "include": ["src", "test"],
-  "references": [
-    {
-      "path": "../contracts"
-    },
-    {
-      "path": "../platform"
-    },
-    {
-      "path": "../object-store"
-    }
-  ]
+  "references": []
 }

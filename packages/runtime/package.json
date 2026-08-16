@@ -11,6 +11,7 @@
   "dependencies": {
     "@natalia/contracts": "workspace:*",
     "@natalia/config": "workspace:*",
+    "@natalia/object-store": "workspace:*",
     "@natalia/platform": "workspace:*",
     "@natalia/session": "workspace:*",
     "@natalia/tools": "workspace:*"

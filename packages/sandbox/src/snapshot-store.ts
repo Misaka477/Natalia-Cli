@@ -25,7 +25,7 @@ import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import type { SandboxDiffKind } from "@natalia/contracts";
 import type { SandboxChange } from "./workspace-manager";
-import { ObjectStore } from "./object-store";
+import { ObjectStore } from "@natalia/object-store";
 
 export type IndexedFile = { objectID: string; size: number; mtimeMs: number };
 export type SnapshotIndex = Map<string, IndexedFile>;
@@ -213,6 +213,23 @@ export class SnapshotStore {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Every object id the snapshot indices reference — the union of every base
+   * and candidate index under the store. The shared object library's GC uses
+   * this so one owner never prunes another's live objects.
+   */
+  async referencedObjectIDs(): Promise<Set<string>> {
+    const ids = new Set<string>();
+    for (const name of await readdir(this.storeDir).catch(
+      () => [] as string[],
+    )) {
+      if (!name.endsWith(".json")) continue;
+      const index = await this.load(name);
+      for (const entry of index?.values() ?? []) ids.add(entry.objectID);
+    }
+    return ids;
   }
 }
 

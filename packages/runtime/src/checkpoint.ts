@@ -1,3 +1,4 @@
+import { ObjectStore } from "@natalia/object-store";
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import {
@@ -155,6 +156,8 @@ const DEFAULT_IGNORES = [
 export class CheckpointStore {
   readonly workspaceRoot: string;
   readonly storeDir: string;
+  /** The shared content-addressed object library (`.natalia/objects`). */
+  private readonly objects: ObjectStore;
   private readonly sessionID: SessionID;
   private readonly enabled: boolean;
   private readonly maxFiles: number;
@@ -172,6 +175,9 @@ export class CheckpointStore {
     this.storeDir = resolve(
       options.storeDir ??
         join(this.workspaceRoot, ".natalia", "checkpoints", options.sessionID),
+    );
+    this.objects = new ObjectStore(
+      resolve(this.workspaceRoot, ".natalia", "objects"),
     );
     this.enabled = options.enabled ?? true;
     this.maxFiles = options.maxFiles ?? 20000;
@@ -206,6 +212,8 @@ export class CheckpointStore {
     }
     try {
       assertContained(this.workspaceRoot, this.workspaceRoot);
+      // The journal lives per session; the objects live in the shared library.
+      await mkdir(this.storeDir, { recursive: true, mode: 0o700 });
       await mkdir(this.objectRoot(), { recursive: true, mode: 0o700 });
       await appendFile(this.journalPath(), "", { mode: 0o600 });
     } catch (error) {
@@ -450,22 +458,25 @@ export class CheckpointStore {
     }
   }
 
-  async gcObjects(dryRun = true) {
+  async gcObjects(dryRun = true, extraReachable?: Iterable<string>) {
+    // Reachable = this journal's object references, unioned with every other
+    // owner's references (the sandbox's snapshot indices), so GC can never
+    // prune another owner's live objects.
     const referenced = new Set<string>();
     for (const record of await this.list()) {
       for (const entry of Object.values(record.manifest.entries))
         if (entry.objectHash) referenced.add(entry.objectHash);
     }
-    const existing = await listObjectHashes(this.objectRoot());
-    const unreachable = existing.filter((hash) => !referenced.has(hash));
-    let bytes = 0;
-    for (const hash of unreachable)
-      bytes += await fileSize(this.objectPath(hash));
-    if (!dryRun) {
+    for (const id of extraReachable ?? []) referenced.add(id);
+    if (dryRun) {
+      const existing = new Set(await this.objects.list());
+      const unreachable = [...existing].filter((hash) => !referenced.has(hash));
+      let bytes = 0;
       for (const hash of unreachable)
-        await rm(this.objectPath(hash), { force: true });
+        bytes += (await stat(this.objectPath(hash))).size;
+      return { dryRun, unreachableObjects: unreachable.length, bytes };
     }
-    return { dryRun, unreachableObjects: unreachable.length, bytes };
+    return { dryRun, ...(await this.objects.collectGarbage(referenced)) };
   }
 
   async diskUsageBytes() {
@@ -591,15 +602,9 @@ export class CheckpointStore {
   }
 
   private async writeObject(hash: string, bytes: Buffer) {
-    const path = this.objectPath(hash);
-    try {
-      await stat(path);
-      return;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    }
-    await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-    await writeFile(path, bytes, { mode: 0o600 });
+    // The shared store dedups by content hash; `hash` is sha256(bytes), so the
+    // written object id is identical.
+    await this.objects.put(bytes);
   }
 
   private async applyManifest(manifest: WorkspaceManifest) {
@@ -702,7 +707,9 @@ export class CheckpointStore {
   }
 
   private objectRoot() {
-    return join(this.storeDir, "objects");
+    // The shared object library, git-style: one store for checkpoint and the
+    // sandbox, so identical files across subsystems share a single object.
+    return resolve(this.workspaceRoot, ".natalia", "objects");
   }
 
   private objectPath(hash: string) {
@@ -727,6 +734,11 @@ export async function runCheckpointCommand(
   context: ContextLedger,
   command: string,
   options: Omit<RollbackOptions, "context" | "dryRun"> = {},
+  /**
+   * Other object-library owners' referenced ids (the sandbox's snapshot
+   * indices), so GC never prunes a live sandbox object.
+   */
+  extraReachable?: () => Promise<Iterable<string> | undefined>,
 ): Promise<CheckpointCommandResult> {
   const parts = command.trim().split(/\s+/u);
   const name = parts[0];
@@ -740,7 +752,10 @@ export async function runCheckpointCommand(
   }
   if (name === "/checkpoints") {
     if (parts[1] === "gc") {
-      const result = await store.gcObjects(parts.includes("--dry-run"));
+      const result = await store.gcObjects(
+        parts.includes("--dry-run"),
+        await extraReachable?.(),
+      );
       return {
         ok: true,
         output: `checkpoint gc ${result.dryRun ? "dry-run" : "applied"}: ${result.unreachableObjects} objects, ${result.bytes} bytes`,

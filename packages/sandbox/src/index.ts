@@ -23,4 +23,3 @@ export {
   type IndexedFile,
   type SnapshotIndex,
 } from "./snapshot-store";
-export { ObjectStore } from "./object-store";

@@ -16,7 +16,7 @@ import {
   WorkspaceSandboxManager,
   type SandboxChange,
 } from "./workspace-manager";
-import { ObjectStore } from "./object-store";
+import { ObjectStore } from "@natalia/object-store";
 import { SnapshotStore, type SnapshotIndex } from "./snapshot-store";
 
 /** Paths under a candidate that must never count as a change. */
@@ -61,6 +61,10 @@ export class SnapshotSandboxManager extends WorkspaceSandboxManager {
     const base = await this.store.loadIndex(id);
     if (!base) return await super.previewMerge(id);
     const candidateIndex = await this.captureCandidate(id);
+    // Persist the candidate index so the live worktree's objects count as
+    // referenced for the shared library's GC — a reviewed-but-unmerged
+    // candidate is still an owner.
+    await this.store.saveCandidateIndex(id, candidateIndex);
     return await this.store.diff(this.candidateRoot(id), base, candidateIndex);
   }
 
@@ -102,6 +106,15 @@ export class SnapshotSandboxManager extends WorkspaceSandboxManager {
   /** Whether a last-known-good exists for the sandbox. */
   async hasLastKnownGood(id: string): Promise<boolean> {
     return this.store.hasLastKnownGood(id);
+  }
+
+  /**
+   * Every object id this manager's snapshot indices reference — for the shared
+   * object library's GC, so checkpoint's gc can never prune a live sandbox
+   * object.
+   */
+  async referencedObjectIDs(): Promise<Set<string>> {
+    return await this.store.referencedObjectIDs();
   }
 
   /** The candidate's current index, reusing the previous one by size/mtime. */

@@ -182,22 +182,13 @@ symlinkTest(
     expect((await lstat(join(root, "link.txt"))).isSymbolicLink()).toBe(true);
 
     await store.gcObjects(true);
-    const buckets = await readdir(
-      join(root, ".natalia", "checkpoints", "ses_manifest", "objects"),
-    );
+    // Objects now live in the shared content-addressed library, not the
+    // per-session checkpoint dir.
+    const buckets = await readdir(join(root, ".natalia", "objects"));
     const hashes = (
       await Promise.all(
         buckets.map((bucket) =>
-          readdir(
-            join(
-              root,
-              ".natalia",
-              "checkpoints",
-              "ses_manifest",
-              "objects",
-              bucket,
-            ),
-          ),
+          readdir(join(root, ".natalia", "objects", bucket)),
         ),
       )
     ).flat();

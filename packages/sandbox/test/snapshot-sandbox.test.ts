@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { ObjectStore } from "../src/object-store";
+import { ObjectStore } from "@natalia/object-store";
 import { SnapshotSandboxManager } from "../src/snapshot-sandbox";
 import { SnapshotStore } from "../src/snapshot-store";
 

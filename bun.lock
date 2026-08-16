@@ -85,10 +85,14 @@
         "@natalia/subagent": "workspace:*",
         "@natalia/terminal": "workspace:*",
         "@natalia/testing": "workspace:*",
+        "@natalia/tool-agent": "workspace:*",
         "@natalia/tool-ask": "workspace:*",
         "@natalia/tool-fs": "workspace:*",
+        "@natalia/tool-process": "workspace:*",
+        "@natalia/tool-sandbox": "workspace:*",
         "@natalia/tool-search": "workspace:*",
         "@natalia/tool-shell": "workspace:*",
+        "@natalia/tool-terminal": "workspace:*",
         "@natalia/tool-todo": "workspace:*",
         "@natalia/tool-web": "workspace:*",
         "@natalia/tools": "workspace:*",
@@ -131,6 +135,10 @@
         "@natalia/platform": "workspace:*",
       },
     },
+    "packages/object-store": {
+      "name": "@natalia/object-store",
+      "version": "0.0.0-m13",
+    },
     "packages/platform": {
       "name": "@natalia/platform",
       "version": "0.0.0-m13",
@@ -149,6 +157,7 @@
       "dependencies": {
         "@natalia/config": "workspace:*",
         "@natalia/contracts": "workspace:*",
+        "@natalia/object-store": "workspace:*",
         "@natalia/platform": "workspace:*",
         "@natalia/session": "workspace:*",
         "@natalia/tools": "workspace:*",
@@ -162,6 +171,7 @@
       "version": "0.0.0-m11",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
+        "@natalia/object-store": "workspace:*",
         "@natalia/platform": "workspace:*",
       },
     },
@@ -211,6 +221,14 @@
         "@natalia/contracts": "workspace:*",
       },
     },
+    "packages/tool-agent": {
+      "name": "@natalia/tool-agent",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/subagent": "workspace:*",
+        "@natalia/tools": "workspace:*",
+      },
+    },
     "packages/tool-ask": {
       "name": "@natalia/tool-ask",
       "version": "0.0.0-m13",
@@ -222,6 +240,22 @@
       "name": "@natalia/tool-fs",
       "version": "0.0.0-m13",
       "dependencies": {
+        "@natalia/tools": "workspace:*",
+      },
+    },
+    "packages/tool-process": {
+      "name": "@natalia/tool-process",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/platform": "workspace:*",
+        "@natalia/tools": "workspace:*",
+      },
+    },
+    "packages/tool-sandbox": {
+      "name": "@natalia/tool-sandbox",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/sandbox": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
     },
@@ -237,6 +271,14 @@
       "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/platform": "workspace:*",
+        "@natalia/tools": "workspace:*",
+      },
+    },
+    "packages/tool-terminal": {
+      "name": "@natalia/tool-terminal",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/native-terminal": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
     },
@@ -379,6 +421,8 @@
 
     "@natalia/native-terminal": ["@natalia/native-terminal@workspace:packages/native-terminal"],
 
+    "@natalia/object-store": ["@natalia/object-store@workspace:packages/object-store"],
+
     "@natalia/platform": ["@natalia/platform@workspace:packages/platform"],
 
     "@natalia/plugin": ["@natalia/plugin@workspace:packages/plugin"],
@@ -399,13 +443,21 @@
 
     "@natalia/testing": ["@natalia/testing@workspace:packages/testing"],
 
+    "@natalia/tool-agent": ["@natalia/tool-agent@workspace:packages/tool-agent"],
+
     "@natalia/tool-ask": ["@natalia/tool-ask@workspace:packages/tool-ask"],
 
     "@natalia/tool-fs": ["@natalia/tool-fs@workspace:packages/tool-fs"],
 
+    "@natalia/tool-process": ["@natalia/tool-process@workspace:packages/tool-process"],
+
+    "@natalia/tool-sandbox": ["@natalia/tool-sandbox@workspace:packages/tool-sandbox"],
+
     "@natalia/tool-search": ["@natalia/tool-search@workspace:packages/tool-search"],
 
     "@natalia/tool-shell": ["@natalia/tool-shell@workspace:packages/tool-shell"],
+
+    "@natalia/tool-terminal": ["@natalia/tool-terminal@workspace:packages/tool-terminal"],
 
     "@natalia/tool-todo": ["@natalia/tool-todo@workspace:packages/tool-todo"],
 
