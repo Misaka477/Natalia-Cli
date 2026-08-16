@@ -43,3 +43,39 @@ test("runFanOut spawns sandboxed sub-agents in parallel and produces one PR each
   // Each sub-agent worked in its own sandbox, disjoint by construction.
   expect(prs[0]!.sandboxID).not.toBe(prs[1]!.sandboxID);
 });
+
+test("runFanOut gates each PR with build evidence from the candidate worktree", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-fanout-evidence-"));
+  const sandboxes = new SnapshotSandboxManager(root);
+  await sandboxes.initialize();
+  const registry = new SubagentRegistry({
+    workDir: join(root, ".natalia", "subagents"),
+    runner: async (task, context) => {
+      const manifest = await sandboxes.create(context.agentId);
+      // The "build" marker decides pass/fail per task.
+      const pass = task.includes("pass");
+      if (pass) await writeFile(join(manifest.root, "build-pass"), "1");
+      context.log(pass ? "ok" : "broken");
+      context.setStatus("done");
+    },
+  });
+
+  const prs = await runFanOut({
+    tasks: [
+      { id: "pass-task", prompt: "pass task" },
+      { id: "fail-task", prompt: "fail task" },
+    ],
+    subagents: registry,
+    sandboxes,
+    timeoutMs: 10_000,
+    buildCommand: "test -f build-pass",
+  });
+
+  const passPR = prs.find((pr) => pr.id === "pass-task")!;
+  const failPR = prs.find((pr) => pr.id === "fail-task")!;
+  // The gate ran in each candidate's own worktree: pass builds, fail ones are
+  // reported with the failing evidence for the lead to reject or fix.
+  expect(passPR.buildEvidence?.ok).toBe(true);
+  expect(failPR.buildEvidence?.ok).toBe(false);
+  expect(failPR.buildEvidence?.exitCode).not.toBe(0);
+});

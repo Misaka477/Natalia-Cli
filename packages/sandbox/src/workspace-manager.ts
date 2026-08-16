@@ -276,6 +276,29 @@ export class WorkspaceSandboxManager
     await this.persist(this.mustGet(id));
   }
 
+  /**
+   * Runs a validation command in the candidate's root — the build evidence a
+   * candidate must produce before its PR is ready. Shared by every backend.
+   */
+  async validate(
+    id: string,
+    command: string,
+  ): Promise<{ ok: boolean; exitCode: number; output: string }> {
+    const manifest = this.mustGet(id);
+    const process = Bun.spawn(["bash", "-c", command], {
+      cwd: manifest.root,
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(process.stdout).text(),
+      new Response(process.stderr).text(),
+      process.exited,
+    ]);
+    return { ok: exitCode === 0, exitCode, output: `${stdout}${stderr}` };
+  }
+
   async previewMerge(id: string) {
     const manifest = this.mustGet(id);
     manifest.changedFiles = classifyRenames(manifest.changedFiles);

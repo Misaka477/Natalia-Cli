@@ -32,6 +32,11 @@ export type FanOutPR = {
   /** The candidate's diff against its base — what a lead reviews. */
   diff: SandboxChange[];
   result?: string;
+  /**
+   * Build evidence: a validation command run in the candidate worktree before
+   * the PR is ready. Present when a build command was configured.
+   */
+  buildEvidence?: { ok: boolean; exitCode: number; output: string };
 };
 
 const TERMINAL = new Set(["completed", "failed", "stopped"]);
@@ -46,6 +51,12 @@ export async function runFanOut(input: {
   sandboxes: WorkspaceSandboxManager;
   publish?: (event: RuntimeEvent) => void;
   timeoutMs?: number;
+  /**
+   * Build command run in each completed candidate's worktree — the build
+   * evidence gate. A candidate that fails it is still reported as a PR, with
+   * the failing output as the reason (a lead reviews or rejects on it).
+   */
+  buildCommand?: string;
 }): Promise<FanOutPR[]> {
   const spawned = await Promise.all(
     input.tasks.map(async (task) => ({
@@ -79,12 +90,23 @@ export async function runFanOut(input: {
             .previewMerge(record.id)
             .catch(() => [] as SandboxChange[])
         : [];
+    const buildEvidence =
+      status === "completed" && input.buildCommand
+        ? await input.sandboxes
+            .validate(record.id, input.buildCommand)
+            .catch(() => ({
+              ok: false,
+              exitCode: -1,
+              output: "validate failed",
+            }))
+        : undefined;
     prs.push({
       id: task.id,
       sandboxID: record.id,
       status,
       diff,
       result: record.outputs.map((entry) => entry.text).join("\n"),
+      ...(buildEvidence ? { buildEvidence } : {}),
     });
   }
   return prs;

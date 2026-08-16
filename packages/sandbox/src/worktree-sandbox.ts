@@ -244,29 +244,6 @@ export class WorktreeSandboxManager extends WorkspaceSandboxManager {
   }
 
   /**
-   * Runs a validation command in the candidate worktree — the build evidence a
-   * candidate must produce before promotion.
-   */
-  async validate(
-    id: string,
-    command: string,
-  ): Promise<{ ok: boolean; exitCode: number; output: string }> {
-    const root = resolve(this["baseRoot"], id);
-    const process = Bun.spawn(["bash", "-c", command], {
-      cwd: root,
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(process.stdout).text(),
-      new Response(process.stderr).text(),
-      process.exited,
-    ]);
-    return { ok: exitCode === 0, exitCode, output: `${stdout}${stderr}` };
-  }
-
-  /**
    * Validates the candidate and, when it passes, promotes it. When
    * `requireApprovalTier` is set, the human-approval hook runs only when the
    * candidate's governance risk tier clears the gate.
