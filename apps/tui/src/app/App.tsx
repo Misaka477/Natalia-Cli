@@ -312,10 +312,13 @@ function Shell(props: {
   const keybinds = useKeybinds();
   const theme = useTheme();
   const local = useLocal();
+  // User-level settings (models, providers, team, TUI prefs) default to the
+  // GLOBAL scope so they follow the user across workspace switches; the scope
+  // toggle writes workspace-specific settings to the project scope.
   const [tuiWriteScope, setTuiWriteScope] =
-    createSignal<TuiConfigWriteScope>("project");
+    createSignal<TuiConfigWriteScope>("global");
   const [configWriteScope, setConfigWriteScope] =
-    createSignal<ConfigWriteScope>("project");
+    createSignal<ConfigWriteScope>("global");
   const layout = () =>
     sessionLayout(
       terminalWidth(),
