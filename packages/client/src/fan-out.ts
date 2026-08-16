@@ -57,17 +57,20 @@ export async function runFanOut(input: {
    * the failing output as the reason (a lead reviews or rejects on it).
    */
   buildCommand?: string;
+  /** Maximum concurrent sub-agents; absent = spawn all at once. */
+  maxConcurrent?: number;
 }): Promise<FanOutPR[]> {
-  const spawned = await Promise.all(
-    input.tasks.map(async (task) => ({
-      task,
-      record: await input.subagents.spawn(task.prompt, {
-        mode: "sandbox",
-        writePaths: task.writePaths,
-        allowedTools: task.allowedTools,
-        excludeTools: task.excludeTools,
-      }),
-    })),
+  const cap = Math.min(
+    input.maxConcurrent ?? input.tasks.length,
+    input.tasks.length,
+  );
+  const spawned = await spawnWithConcurrency(input.tasks, cap, (task) =>
+    input.subagents.spawn(task.prompt, {
+      mode: "sandbox",
+      writePaths: task.writePaths,
+      allowedTools: task.allowedTools,
+      excludeTools: task.excludeTools,
+    }),
   );
   input.publish?.({
     type: "diagnostic",
@@ -80,7 +83,7 @@ export async function runFanOut(input: {
     input.timeoutMs ?? 120_000,
   );
   const prs: FanOutPR[] = [];
-  for (const { task, record } of spawned) {
+  for (const { item: task, record } of spawned) {
     const status =
       (input.subagents.status(record.id) as FanOutPR["status"]) ?? "failed";
     // A completed candidate's worktree holds its diff for the lead to review.
@@ -110,6 +113,26 @@ export async function runFanOut(input: {
     });
   }
   return prs;
+}
+
+async function spawnWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  spawn: (item: T) => Promise<R>,
+): Promise<Array<{ item: T; record: R }>> {
+  const results: Array<{ item: T; record: R }> = [];
+  let cursor = 0;
+  async function worker() {
+    while (cursor < items.length) {
+      const index = cursor++;
+      results[index] = {
+        item: items[index]!,
+        record: await spawn(items[index]!),
+      };
+    }
+  }
+  await Promise.all(Array.from({ length: Math.max(1, limit) }, worker));
+  return results;
 }
 
 async function waitForAllTerminal(

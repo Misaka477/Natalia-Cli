@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -177,4 +178,51 @@ test("agent-team prompts carry the contract each role must follow", () => {
   expect(LEAD_REVIEWER_SYSTEM_PROMPT).toContain("one at a time");
   expect(LEAD_REVIEWER_SYSTEM_PROMPT).toContain("build evidence");
   expect(LEAD_REVIEWER_SYSTEM_PROMPT).toContain("outside its domain");
+});
+
+test("runFanOut caps concurrent spawns with maxConcurrent", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-fanout-cap-"));
+  await mkdir(join(root, ".natalia", "subagents"), { recursive: true });
+  const sandboxes = new SnapshotSandboxManager(root);
+  await sandboxes.initialize();
+  const registry = new SubagentRegistry({
+    workDir: join(root, ".natalia", "subagents"),
+    runner: async (task, context) => {
+      const manifest = await sandboxes.create(context.agentId);
+      await writeFile(join(manifest.root, "out.txt"), task);
+      context.log("ok");
+      context.setStatus("done");
+    },
+  });
+  // Count in-flight spawn calls: maxConcurrent caps the spawn burst.
+  const originalSpawn = registry.spawn.bind(registry);
+  let inFlight = 0;
+  let peakSpawn = 0;
+  const counting = new Proxy(registry, {
+    get(target, prop) {
+      if (prop === "spawn")
+        return async (...args: Parameters<typeof originalSpawn>) => {
+          inFlight++;
+          peakSpawn = Math.max(peakSpawn, inFlight);
+          const result = await originalSpawn(...args);
+          inFlight--;
+          return result;
+        };
+      return (target as unknown as Record<string, unknown>)[prop as string];
+    },
+  });
+  const prs = await runFanOut({
+    tasks: [
+      { id: "a", prompt: "a" },
+      { id: "b", prompt: "b" },
+      { id: "c", prompt: "c" },
+    ],
+    subagents: counting as SubagentRegistry,
+    sandboxes,
+    maxConcurrent: 2,
+    timeoutMs: 10_000,
+  });
+  expect(prs).toHaveLength(3);
+  // Never more than 2 spawn calls were in flight at once.
+  expect(peakSpawn).toBeLessThanOrEqual(2);
 });

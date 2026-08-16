@@ -42,6 +42,7 @@ type SettingsAction =
   | "permission"
   | "mode"
   | "model.edit"
+  | "team.concurrency"
   | "web"
   | "workspace"
   | "extensions"
@@ -488,6 +489,21 @@ export async function runCommand(command: string, ctx: CommandContext) {
                 description: m.stream ? "On" : "Off",
               },
               {
+                title: "Image input",
+                value: "img",
+                description: m.capabilities?.imageInput ? "On" : "Off",
+              },
+              {
+                title: "PDF input",
+                value: "pdf",
+                description: m.capabilities?.pdfInput ? "On" : "Off",
+              },
+              {
+                title: "Video input",
+                value: "video",
+                description: m.capabilities?.videoInput ? "On" : "Off",
+              },
+              {
                 title: "Request Timeout",
                 value: "timeout",
                 description: m.requestTimeoutSec?.toString() ?? "(default)",
@@ -508,6 +524,33 @@ export async function runCommand(command: string, ctx: CommandContext) {
               }
               if (o.value === "stream") {
                 m.stream = !m.stream;
+                save(resolved);
+                refresh();
+                return;
+              }
+              // Capability toggles: image / PDF / video input per model. Each is
+              // a boolean flag — absent means the model's default, so a toggle
+              // flips it to the opposite of the current effective value.
+              if (
+                o.value === "img" ||
+                o.value === "pdf" ||
+                o.value === "video"
+              ) {
+                const capability =
+                  o.value === "img"
+                    ? "imageInput"
+                    : o.value === "pdf"
+                      ? "pdfInput"
+                      : "videoInput";
+                m.capabilities ??= {
+                  toolCall: true,
+                  reasoning: true,
+                  thinking: true,
+                  imageInput: false,
+                  pdfInput: false,
+                  videoInput: false,
+                };
+                m.capabilities[capability] = !m.capabilities[capability];
                 save(resolved);
                 refresh();
                 return;
@@ -554,6 +597,9 @@ export async function runCommand(command: string, ctx: CommandContext) {
                 topp: "Top P",
                 mid: "Model ID",
                 timeout: "Request Timeout (sec)",
+                img: "Image input",
+                pdf: "PDF input",
+                video: "Video input",
               };
               const defaults: Record<string, string> = {
                 ctx: String(m.contextWindow),
@@ -920,6 +966,11 @@ export async function runCommand(command: string, ctx: CommandContext) {
         title: "Models",
         value: "model.edit",
         description: "Add/edit/delete model configs",
+      },
+      {
+        title: "Team max concurrent sub-agents",
+        value: "team.concurrency",
+        description: "Set the fan-out concurrency cap",
       },
       {
         title: "Web & Network",

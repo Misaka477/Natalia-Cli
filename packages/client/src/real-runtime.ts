@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, dirname, join, resolve } from "node:path";
 import { createStatusSnapshotController } from "./status-controller";
 import { createSessionStoreController } from "./session-store-controller";
@@ -9,7 +9,10 @@ import { createSkillsController } from "./skills-controller";
 import { createSubagentsController } from "./subagents-controller";
 import { createTerminalController } from "./terminal-controller";
 import { SnapshotSandboxManager } from "@natalia/sandbox";
-import { sandboxedSubagentSystemPrompt } from "./agent-team-prompts";
+import {
+  TEAM_MODE_DIRECTIVE,
+  sandboxedSubagentSystemPrompt,
+} from "./agent-team-prompts";
 import { createSandboxController } from "./sandbox-controller";
 import { createTeamFanoutTool, createTeamReviewTool } from "./team-tools";
 import { createCheckpointController } from "./checkpoint-controller";
@@ -704,6 +707,26 @@ export function createRealRuntimeClient(
   let toolFamilyWatcher: (() => Promise<void>) | undefined;
   /** Per-provider in-flight ceiling for parallel streams (the fan-out cap). */
   let providerConcurrencyLimiter = new ProviderConcurrencyLimiter({});
+  /** The selected model's declared image-input capability, from config. */
+  function currentModelImageInput(): boolean {
+    const modelID =
+      selectedAgent?.model ??
+      selectedModel?.modelID ??
+      tsRuntimeConfig?.defaultModel;
+    return (
+      !!modelID &&
+      (tsRuntimeConfig?.models[modelID]?.capabilities?.imageInput ?? false)
+    );
+  }
+  function mediaTypeForImage(
+    path: string,
+  ): "image/png" | "image/jpeg" | "image/webp" | "image/gif" {
+    const ext = path.split(".").pop()?.toLowerCase() ?? "";
+    if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
+    if (ext === "webp") return "image/webp";
+    if (ext === "gif") return "image/gif";
+    return "image/png";
+  }
   const mutationRegistry = createMutationRegistry();
   const workspaceFilesController = createWorkspaceFilesController({
     workspaceRoot,
@@ -974,7 +997,34 @@ export function createRealRuntimeClient(
     // in that worktree, not the parent's workspace — and the turn loop is
     // otherwise the same (same strength, reduced authority via the tool
     // domain). It is a new path; the shared-context loop below stays untouched.
+    // The concurrent fan-out cap (`team.maxConcurrent`) is enforced here, at
+    // the work itself, not at the spawn call.
+    let sandboxedSubagentActive = 0;
+    const sandboxedSubagentWaiters: Array<() => void> = [];
+    async function acquireSandboxedSubagentSlot() {
+      const limit = tsRuntimeConfig?.team?.maxConcurrent ?? 4;
+      if (sandboxedSubagentActive >= limit)
+        await new Promise<void>((resolve) =>
+          sandboxedSubagentWaiters.push(resolve),
+        );
+      sandboxedSubagentActive++;
+    }
+    function releaseSandboxedSubagentSlot() {
+      sandboxedSubagentActive--;
+      sandboxedSubagentWaiters.shift()?.();
+    }
     async function runSandboxedSubagent(
+      task: string,
+      runner: import("@natalia/subagent").RunnerContext,
+    ) {
+      await acquireSandboxedSubagentSlot();
+      try {
+        await runSandboxedSubagentInner(task, runner);
+      } finally {
+        releaseSandboxedSubagentSlot();
+      }
+    }
+    async function runSandboxedSubagentInner(
       task: string,
       runner: import("@natalia/subagent").RunnerContext,
     ) {
@@ -2811,7 +2861,22 @@ export function createRealRuntimeClient(
     const targetExec =
       executionBySession.get(targetSessionID) ?? activeExec ?? undefined;
     const targetSession = targetExec?.session ?? session;
-    const text = input.text;
+    let text = input.text;
+    // /team <message>: the user explicitly requests the agent team. Inject the
+    // forcing directive into the turn's context and run the rest as a normal
+    // turn — the model must decompose and fan out instead of working
+    // sequentially. Handled here (not as a slash command) so the turn runs
+    // normally instead of nesting a submit inside a command.
+    if (text.trim().startsWith("/team")) {
+      const message = text.trim().slice("/team".length).trim();
+      if (!message) throw new Error("/team requires a message after it");
+      runtimeContext.add({
+        id: `team-mode:${runtimeContext.journalStatus().journalOffset}`,
+        role: "system",
+        content: TEAM_MODE_DIRECTIVE,
+      });
+      text = message;
+    }
     const attachments = input.attachments?.length
       ? await storeLocalAttachments({ workspaceRoot, paths: input.attachments })
       : [];
@@ -6260,6 +6325,25 @@ export function createRealRuntimeClient(
     assistant: string,
     materialized: ToolMaterialization,
   ): Promise<ProviderMessage[]> {
+    // B: the model can attach an image (a screenshot it took) so the next
+    // provider step shows it back to the model, gated by the model's image
+    // input capability.
+    const pendingImages: Array<{
+      mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+      dataURL: string;
+    }> = [];
+    const attachImage = async (path: string) => {
+      if (!currentModelImageInput())
+        throw new Error(
+          "the selected model does not support image input — set models.<name>.capabilities.imageInput",
+        );
+      const mediaType = mediaTypeForImage(path);
+      const bytes = await readFile(resolve(workspaceRoot, path));
+      pendingImages.push({
+        mediaType,
+        dataURL: `data:${mediaType};base64,${bytes.toString("base64")}`,
+      });
+    };
     // D2: a tool segment belongs to the session its turn was submitted to. The
     // local bindings shadow the activity-scoped globals for the whole segment,
     // so every publish lands in that session's journal with its stamp, and the
@@ -6385,12 +6469,20 @@ export function createRealRuntimeClient(
         });
         continue;
       }
-      const result = await executeOneTool(turnID, call, resolved.tool);
+      const result = await executeOneTool(
+        turnID,
+        call,
+        resolved.tool,
+        attachImage,
+      );
       messages.push({
         role: "tool",
         toolCallID: call.id,
         toolName: call.name,
         content: toolResultContent(result, call.id, options.taskModuleContext),
+        // B: an image the model attached travels on the tool message, so the
+        // next provider step shows it back to the model.
+        ...(pendingImages.length ? { images: pendingImages.splice(0) } : {}),
       });
       execContext.add({
         id: `${turnID}:${call.id}:result`,
@@ -6495,6 +6587,7 @@ export function createRealRuntimeClient(
     turnID: string,
     call: ProviderToolCall,
     tool: RuntimeTool,
+    attachImage?: (path: string) => Promise<void>,
   ) {
     // D2: same shadowing as `executeToolCalls` — this segment's events and
     // ledger belong to the turn's session.
@@ -6796,6 +6889,7 @@ export function createRealRuntimeClient(
               subagents: subagentsController.get(),
               nativeTerminal: terminalController.get(),
               sandboxes: sandboxController.get(),
+              ...(attachImage ? { attachImage } : {}),
               workspaceReadAuthorize: authorizeWorkspaceRead,
               sandboxMergeAuthorize: authorizeSandboxMerge,
               // The resolved config as a service: a tool family reads it by

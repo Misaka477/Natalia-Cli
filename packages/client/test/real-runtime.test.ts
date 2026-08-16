@@ -10929,3 +10929,119 @@ test("a sandboxed sub-agent's writes are narrowed to its file domain", async () 
     existsSync(join(root, ".natalia", "sandboxes", "a1", "forbidden", "x.txt")),
   ).toBe(false);
 });
+
+function imageAttachProvider(): StreamingProvider {
+  let calls = 0;
+  return {
+    provider: "scripted-image",
+    model: "scripted-image-model",
+    async *stream(request: ProviderStreamRequest) {
+      calls++;
+      if (calls === 1) {
+        // Main turn: the model decides to look at its own screenshot.
+        yield {
+          type: "tool_call",
+          calls: [
+            {
+              id: "call_image",
+              name: "image_read",
+              arguments: JSON.stringify({ path: "shot.png" }),
+            },
+          ],
+        };
+        yield { type: "done" };
+        return;
+      }
+      // Second step: the attached image must be in the messages the model sees.
+      const hasImage = request.messages.some(
+        (message) =>
+          message.role === "tool" &&
+          Array.isArray(message.images) &&
+          (message.images as unknown[]).length > 0,
+      );
+      yield {
+        type: "content",
+        text: hasImage ? "saw my screenshot" : "no image",
+      };
+      yield { type: "done" };
+    },
+  };
+}
+
+test("a model with image input can attach its own screenshot and see it", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-image-attach-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  // A valid PNG header; enough for the attach path.
+  await writeFile(
+    join(root, "shot.png"),
+    Buffer.from("89504e470d0a1a0a0000000d49484452", "hex"),
+  );
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 2,
+      defaultModel: "scripted-image",
+      models: {
+        "scripted-image": {
+          provider: "scripted-image",
+          model: "scripted-image-model",
+          capabilities: { imageInput: true },
+        },
+      },
+    }),
+  );
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_image_attach",
+    provider: imageAttachProvider(),
+  });
+  client.start((event) => events.push(event));
+  await client.submit("look at my screenshot");
+  await waitFor(() =>
+    events.some(
+      (event) => event.type === "turn.finished" && event.stopReason === "done",
+    ),
+  );
+  const text = events
+    .filter((event) => event.type === "content.delta")
+    .map((event) => (event as { text: string }).text)
+    .join("");
+  // The second provider step saw the attached image on the tool message.
+  expect(text).toContain("saw my screenshot");
+  await client.dispose?.();
+}, 60_000);
+
+test("/team forces the agent-team directive into the turn context", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-team-cmd-"));
+  let sawDirective = false;
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_team_cmd",
+    provider: {
+      provider: "scripted-team",
+      model: "scripted-team-model",
+      async *stream(request) {
+        sawDirective = request.messages.some(
+          (message) =>
+            message.role === "system" && message.content.includes("agent team"),
+        );
+        yield {
+          type: "content",
+          text: sawDirective ? "team ready" : "no team",
+        };
+        yield { type: "done" };
+      },
+    },
+  });
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  await client.submit("/team build the game");
+  await waitFor(() =>
+    events.some(
+      (event) => event.type === "turn.finished" && event.stopReason === "done",
+    ),
+  );
+  expect(sawDirective).toBe(true);
+  await client.dispose?.();
+}, 60_000);

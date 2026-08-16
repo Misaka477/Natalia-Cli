@@ -1413,6 +1413,12 @@ export type RuntimeSessionSummary = {
 // Keep TUI completion and runtime command handling on one local vocabulary.
 export const runtimeSlashCommands: RuntimeSlashCommand[] = [
   { name: "help", description: "Show runtime command help" },
+  {
+    name: "team",
+    description:
+      "Force the agent team (fan-out + review) for the following prompt",
+    acceptsArguments: true,
+  },
   { name: "doctor", description: "Inspect runtime and provider health" },
   { name: "status", description: "Show the runtime status snapshot" },
   {

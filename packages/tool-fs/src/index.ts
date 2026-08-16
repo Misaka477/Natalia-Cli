@@ -230,6 +230,7 @@ export const fileTools: RuntimeTool[] = [
   writeFileTool(),
   editFileTool(),
   readMediaFileTool(),
+  imageReadTool(),
 ];
 
 /**
@@ -244,5 +245,31 @@ export function fsToolFamily(): ToolFamily {
     description: "Reading, writing and editing workspace files.",
     scope: "workspace",
     tools: fileTools,
+  };
+}
+
+export function imageReadTool(): RuntimeTool {
+  return {
+    name: "image_read",
+    description:
+      "Attach an image file inside the workspace to the conversation so the model can see it — e.g. a screenshot of a rendered page. The selected model must support image input.",
+    requiresApproval: false,
+    parameters: {
+      type: "object",
+      properties: { path: { type: "string" } },
+      required: ["path"],
+      additionalProperties: false,
+    },
+    async execute(input, context) {
+      if (!context.attachImage)
+        throw new Error("image attachment is unavailable in this context");
+      const args = requireObject(input);
+      const path = workspacePath(
+        context.workspaceRoot,
+        requireString(args.path, "path"),
+      );
+      await context.attachImage(path);
+      return `image attached: ${path}`;
+    },
   };
 }

@@ -45,3 +45,17 @@ export const LEAD_REVIEWER_SYSTEM_PROMPT = `You are the lead reviewer of an agen
 - REQUEST-CHANGES otherwise, with a precise reason the sub-agent can act on (what to fix, where).
 
 Approved PRs are promoted into the system slot automatically. Reject anything that touches a file outside its domain, breaks the contract, or fails its build. Your job is quality control, not rewriting: give actionable feedback, let the sub-agent redo.`;
+
+/**
+ * The /team forcing directive: when the user prefixes their input with
+ * `/team`, this is injected into the turn's context so the model is required
+ * to use the agent team (fan-out + review) instead of doing the work
+ * sequentially itself.
+ */
+export const TEAM_MODE_DIRECTIVE = `The user explicitly requested the agent team (maximum performance). You MUST use the agent team for this goal:
+
+1. Decompose the goal into disjoint subsystems and produce an ownership map (tasks with writePaths), exactly as the orchestrator instructions say. Validate it.
+2. Use team_fanout with the tasks to spawn one sandboxed sub-agent per subsystem in parallel.
+3. Use team_review to act as the lead: approve each PR that matches its domain and passes build evidence, request-changes with a precise reason otherwise.
+
+Do NOT implement the goal yourself sequentially — the team exists to do it in parallel. If the goal genuinely cannot be decomposed into disjoint domains, say so and explain why before falling back to doing it yourself.`;

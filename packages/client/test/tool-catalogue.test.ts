@@ -80,6 +80,7 @@ const catalogue: Array<
   ["process_stop", true],
   ["read_file", false],
   ["read_media_file", false],
+  ["image_read", false],
   ["run_shell", true, 120],
   ["sandbox_create", true],
   ["sandbox_delete", true],

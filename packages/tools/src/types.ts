@@ -108,6 +108,13 @@ export type ToolExecutionContext = {
     toolName: string;
     path: string;
   }) => Promise<void>;
+  /**
+   * Attaches an image file to the current turn so the model sees it on the
+   * next provider step — the "model takes a screenshot and looks at it" path
+   * (self-verifying a rendered page). Gated by the model's image input
+   * capability; absent = images cannot be attached.
+   */
+  attachImage?: (path: string) => Promise<void>;
   sandboxMergeAuthorize?: (input: {
     id: string;
     paths: string[];

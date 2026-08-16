@@ -26,6 +26,15 @@ export const terminalWindowConfigSchema = z.object({
   windowMode: z.enum(["auto", "windowless", "window"]).default("auto"),
 });
 
+export const teamConfigSchema = z.object({
+  /**
+   * The maximum number of sandboxed sub-agents a fan-out may run concurrently.
+   * More parallelism is faster but costs more provider tokens and sandbox
+   * disk; the provider-concurrency limiter is the hard ceiling underneath.
+   */
+  maxConcurrent: z.number().int().min(1).max(32).default(4),
+});
+
 export const sandboxConfigSchema = z.object({
   /**
    * Which sandbox backend is the default. `snapshot` is our own git-free
@@ -749,6 +758,7 @@ export const configV2Schema = z.object({
   version: z.literal(2),
   runtime: runtimeConfigSchema.default({}),
   sandbox: sandboxConfigSchema.default({}),
+  team: teamConfigSchema.default({}),
   context: contextConfigSchema.default({}),
   checkpoint: checkpointConfigSchema,
   models: z.record(modelConfigSchema).default({}),

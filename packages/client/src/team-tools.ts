@@ -65,11 +65,17 @@ export function createTeamFanoutTool(input: {
       const map = validateOwnershipMap({ tasks: args.tasks });
       if (!map.ok)
         return `ERROR: ownership map is invalid:\n${map.issues.join("\n")}`;
+      const runtimeConfig = (
+        context.runtimeConfig?.() as
+          | { team?: { maxConcurrent?: number } }
+          | undefined
+      )?.team;
       const prs = await runFanOut({
         tasks: args.tasks,
         subagents,
         sandboxes,
         buildCommand: args.buildCommand,
+        maxConcurrent: runtimeConfig?.maxConcurrent,
       });
       return JSON.stringify(
         prs.map((pr) => ({
