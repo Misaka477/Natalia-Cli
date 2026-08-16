@@ -164,6 +164,31 @@ export function App(props: {
       lives at the command layer, which has the turn state. */
   async function changeWorkspace(nextRoot: string) {
     if (props.createBackend && props.onWorkspaceRootChange) {
+      // Carry user-level settings from the source workspace into the global
+      // scope, so providers/models/team/defaultModel follow the user across
+      // workspace switches instead of vanishing with the old directory. The
+      // migration is best-effort and idempotent.
+      try {
+        const source = (
+          await resolveConfig({
+            workspaceRoot: props.workspaceRoot ?? process.cwd(),
+          })
+        ).config;
+        const userPatch: Record<string, unknown> = {};
+        if (source.models && Object.keys(source.models).length)
+          userPatch.models = source.models;
+        if (source.providers && Object.keys(source.providers).length)
+          userPatch.providers = source.providers;
+        if (source.defaultModel) userPatch.defaultModel = source.defaultModel;
+        if (source.team) userPatch.team = source.team;
+        if (Object.keys(userPatch).length)
+          await props.backend.updateConfig?.({
+            scope: "global",
+            patch: userPatch as never,
+          });
+      } catch {
+        // A failed migration must not block the switch itself.
+      }
       const previous = backend();
       props.onWorkspaceRootChange(nextRoot);
       const next = props.createBackend();
