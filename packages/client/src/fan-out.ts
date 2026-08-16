@@ -127,3 +127,104 @@ async function waitForAllTerminal(
     `fan-out timed out waiting for sub-agents: ${stuck.join(", ")}`,
   );
 }
+
+/**
+ * Validates a decomposed ownership map — the contract-first output's disjoint
+ * guarantee. Every write domain belongs to exactly one task, and no domain is
+ * a prefix of another (an overlap that would let two tasks touch the same
+ * file). Decomposition quality is the fan-out's success condition; this is the
+ * mechanical gate an orchestrator runs before spawning.
+ */
+export function validateOwnershipMap(input: { tasks: FanOutTask[] }): {
+  ok: boolean;
+  issues: string[];
+} {
+  const issues: string[] = [];
+  const domains = input.tasks.flatMap((task) =>
+    (task.writePaths ?? []).map((domain) => ({
+      task: task.id,
+      domain: domain.endsWith("/") ? domain : `${domain}/`,
+    })),
+  );
+  for (let index = 0; index < domains.length; index++) {
+    for (let other = index + 1; other < domains.length; other++) {
+      const a = domains[index]!;
+      const b = domains[other]!;
+      if (a.task === b.task) continue;
+      if (b.domain.startsWith(a.domain) || a.domain.startsWith(b.domain))
+        issues.push(
+          `overlapping domains: ${a.task} (${a.domain}) and ${b.task} (${b.domain})`,
+        );
+    }
+  }
+  return { ok: issues.length === 0, issues };
+}
+
+export type PRReviewDecision = {
+  id: string;
+  decision: "approve" | "request-changes";
+  reason?: string;
+};
+
+export type PRReviewOutcome = {
+  id: string;
+  decision: "approve" | "request-changes";
+  reason?: string;
+  /** The promoted changes when approved and merged. */
+  merged?: SandboxChange[];
+};
+
+/**
+ * The PR review loop (T-4): a lead decides each PR one at a time — incremental,
+ * so each review sees one candidate's diff and evidence, never the whole batch.
+ * An approved PR is promoted into the system slot (the sandbox backend's
+ * merge); a request-changes PR is returned with the reason, and its candidate
+ * stays for the sub-agent to redo.
+ */
+export async function reviewPRs(input: {
+  prs: FanOutPR[];
+  sandboxes: WorkspaceSandboxManager;
+  workspaceRoot: string;
+  decide: (pr: FanOutPR) => Promise<PRReviewDecision> | PRReviewDecision;
+  publish?: (event: RuntimeEvent) => void;
+}): Promise<PRReviewOutcome[]> {
+  const outcomes: PRReviewOutcome[] = [];
+  for (const pr of input.prs) {
+    if (pr.status !== "completed") {
+      outcomes.push({
+        id: pr.id,
+        decision: "request-changes",
+        reason: `sub-agent did not complete (${pr.status})`,
+      });
+      continue;
+    }
+    const decision = await input.decide(pr);
+    if (decision.decision === "approve") {
+      const merged = await input.sandboxes
+        .merge(pr.sandboxID, input.workspaceRoot)
+        .catch((error) => {
+          throw new Error(
+            `promotion of ${pr.id} failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+      input.publish?.({
+        type: "diagnostic",
+        level: "info",
+        message: `PR ${pr.id} approved and promoted (${merged.length} files)`,
+      });
+      outcomes.push({ id: pr.id, decision: "approve", merged });
+    } else {
+      input.publish?.({
+        type: "diagnostic",
+        level: "info",
+        message: `PR ${pr.id} sent back for changes: ${decision.reason ?? "no reason"}`,
+      });
+      outcomes.push({
+        id: pr.id,
+        decision: "request-changes",
+        reason: decision.reason,
+      });
+    }
+  }
+  return outcomes;
+}

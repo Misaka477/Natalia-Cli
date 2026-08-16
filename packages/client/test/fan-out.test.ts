@@ -1,10 +1,11 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { SubagentRegistry } from "@natalia/subagent";
 import { SnapshotSandboxManager } from "@natalia/sandbox";
-import { runFanOut } from "../src/fan-out";
+import { reviewPRs, runFanOut, validateOwnershipMap } from "../src/fan-out";
 
 test("runFanOut spawns sandboxed sub-agents in parallel and produces one PR each", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-fanout-"));
@@ -78,4 +79,77 @@ test("runFanOut gates each PR with build evidence from the candidate worktree", 
   expect(passPR.buildEvidence?.ok).toBe(true);
   expect(failPR.buildEvidence?.ok).toBe(false);
   expect(failPR.buildEvidence?.exitCode).not.toBe(0);
+});
+
+test("validateOwnershipMap rejects overlapping domains (T-3 close)", () => {
+  const disjoint = validateOwnershipMap({
+    tasks: [
+      { id: "battle", prompt: "battle", writePaths: ["systems/battle"] },
+      {
+        id: "inventory",
+        prompt: "inventory",
+        writePaths: ["systems/inventory"],
+      },
+    ],
+  });
+  expect(disjoint.ok).toBe(true);
+
+  const prefix = validateOwnershipMap({
+    tasks: [
+      { id: "systems", prompt: "systems", writePaths: ["systems"] },
+      { id: "battle", prompt: "battle", writePaths: ["systems/battle"] },
+    ],
+  });
+  expect(prefix.ok).toBe(false);
+  expect(prefix.issues.join("\n")).toContain("overlapping domains");
+});
+
+test("reviewPRs promotes approved PRs into the system slot and sends back the rest (T-4)", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-review-"));
+  await writeFile(join(root, "base.txt"), "base\n");
+  const sandboxes = new SnapshotSandboxManager(root);
+  await sandboxes.initialize();
+  const registry = new SubagentRegistry({
+    workDir: join(root, ".natalia", "subagents"),
+    runner: async (task, context) => {
+      const manifest = await sandboxes.create(context.agentId);
+      await writeFile(join(manifest.root, "output.txt"), `from ${task}`);
+      context.log("ok");
+      context.setStatus("done");
+    },
+  });
+
+  const prs = await runFanOut({
+    tasks: [
+      { id: "approved", prompt: "approved task" },
+      { id: "rejected", prompt: "rejected task" },
+    ],
+    subagents: registry,
+    sandboxes,
+    timeoutMs: 10_000,
+  });
+
+  // The lead: approve the first PR, send back the second.
+  const outcomes = await reviewPRs({
+    prs,
+    sandboxes,
+    workspaceRoot: root,
+    decide: (pr) =>
+      pr.id === "approved"
+        ? { id: pr.id, decision: "approve" as const }
+        : { id: pr.id, decision: "request-changes" as const, reason: "redo" },
+  });
+
+  const approved = outcomes.find((outcome) => outcome.id === "approved")!;
+  const rejected = outcomes.find((outcome) => outcome.id === "rejected")!;
+  expect(approved.decision).toBe("approve");
+  expect(approved.merged?.map((change) => change.path)).toContain("output.txt");
+  // The approved candidate's change landed in the host workspace.
+  expect(await readFile(join(root, "output.txt"), "utf8")).toBe(
+    "from approved task",
+  );
+  expect(rejected.decision).toBe("request-changes");
+  expect(rejected.reason).toBe("redo");
+  // The rejected candidate was not promoted into the host.
+  expect(existsSync(join(root, "output.txt"))).toBe(true); // only the approved one
 });
