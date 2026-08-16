@@ -419,6 +419,28 @@ export async function runCommand(command: string, ctx: CommandContext) {
     );
     return;
   }
+  if (command === "team.concurrency") {
+    resolveConfig({
+      workspaceRoot: ctx.workspaceRoot ?? process.cwd(),
+    }).then(async ({ config: resolved }) => {
+      const current = String(resolved.team?.maxConcurrent ?? 4);
+      const v = await DialogPrompt.show(
+        ctx.dialog,
+        "Team max concurrent sub-agents",
+        { placeholder: current },
+      );
+      if (v === null) return;
+      const parsed = Number(v);
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 32) {
+        ctx.toast.error("team.maxConcurrent must be an integer from 1 to 32");
+        return;
+      }
+      resolved.team = { maxConcurrent: parsed };
+      void ctx.persistConfig(resolved, resolved).catch(ctx.toast.error);
+      ctx.dialog.pop();
+    });
+    return;
+  }
   if (command === "model.edit") {
     resolveConfig({
       workspaceRoot: ctx.workspaceRoot ?? process.cwd(),
