@@ -47,6 +47,29 @@ test("materialized tools validate input and preserve invocation identity", async
   });
 });
 
+test("materialized tools report numeric bounds with the failing field", async () => {
+  const bounded: RuntimeTool = {
+    ...echo(),
+    parameters: {
+      type: "object",
+      properties: { offset: { type: "integer", minimum: 1 } },
+      required: ["offset"],
+      additionalProperties: false,
+    },
+  };
+  const materialized = materializeTools(createToolRegistry([bounded]));
+
+  await expect(
+    materialized.settle(
+      { ...invocation, arguments: { offset: 0 } },
+      { workspaceRoot: "/tmp" },
+    ),
+  ).resolves.toEqual({
+    status: "failed",
+    error: "Invalid tool input: offset: must be at least 1",
+  });
+});
+
 test("materialized tools reject removed and replaced registrations as stale", async () => {
   const registry = createToolRegistry([echo("first")]);
   const materialized = materializeTools(registry);

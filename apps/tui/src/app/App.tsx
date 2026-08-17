@@ -25,19 +25,18 @@ import { useRouteController, type AppRoute } from "../context/route";
 import { StateProvider, useAppState } from "../context/state";
 import { useClipboard } from "../context/clipboard";
 import { ToastRegion, useToast } from "../context/toast";
-import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
+import type {
+  RuntimeClient,
+  RuntimeEvent,
+  RuntimeModelSelection,
+} from "@natalia/contracts";
 import type {
   WorkerRuntimeClient,
   WorkflowExecutionHandle,
 } from "@natalia/client";
-import type { ConfigV2 } from "@natalia/contracts";
+import type { ConfigV3 } from "@natalia/contracts";
 import { getPluginCommands } from "@natalia/plugin";
-import {
-  buildKeybindMap,
-  commands,
-  composerKeyAction,
-  keymapBoundary,
-} from "../keymap";
+import { buildKeybindMap, commands, composerKeyAction } from "../keymap";
 import { useKeybinds } from "../context/keybind";
 import {
   DialogProvider,
@@ -53,7 +52,7 @@ import {
   DialogSessionList,
   DialogStatus,
 } from "../dialog/DialogLayer";
-import { DialogProviderSetup } from "../component/DialogProviderSetup";
+import { DialogProviderManager } from "../component/DialogProviderManager";
 import { DialogMcp } from "../component/DialogMcp";
 import { DialogThemeList } from "../component/DialogThemeList";
 import { messageBlockFromProjection } from "../context/view-store-adapter";
@@ -87,7 +86,6 @@ import {
   type ConfigPatch,
   type ConfigWriteScope,
 } from "@natalia/config";
-import { discoverProviderModels } from "@natalia/config";
 import { statSync } from "node:fs";
 import { relative as relativePath, resolve } from "node:path";
 import { decidePaste } from "../prompt/paste";
@@ -99,8 +97,8 @@ import {
   SubagentRoute,
 } from "../routes/session/SessionRoute";
 import { darkTheme } from "../theme/theme";
-import { useTheme } from "../context/theme";
-import { useLocal } from "../context/local";
+import { ThemeProvider, useTheme } from "../context/theme";
+import { LocalProvider, useLocal } from "../context/local";
 import { sessionLayout, type SidebarMode } from "../session-layout";
 import {
   defaultTuiPreferences,
@@ -111,12 +109,15 @@ import {
   type TuiPreferences,
 } from "../settings";
 import type { TuiConfigWriteScope } from "../config";
+import { resolveWorkspaceInput, validateWorkspaceInput } from "../workspace";
 
 import {
   parseSettingsRecord,
   parseSettingsStringRecord,
 } from "./settings-utils";
 import { runCommand } from "./command-controller";
+
+type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
 
 export function App(props: {
   backend: TuiRuntimeClient;
@@ -134,6 +135,7 @@ export function App(props: {
   }) => void;
 }) {
   const [backend, setBackend] = createSignal(props.backend);
+  const [workspaceRoot, setWorkspaceRoot] = createSignal(props.workspaceRoot);
   const [historyCursor, setHistoryCursor] = createSignal<string>();
   const [newerHistoryCursor, setNewerHistoryCursor] = createSignal<string>();
   let onRuntimeEvent: ((event: RuntimeEvent) => void) | undefined;
@@ -164,32 +166,26 @@ export function App(props: {
       lives at the command layer, which has the turn state. */
   async function changeWorkspace(nextRoot: string) {
     if (props.createBackend && props.onWorkspaceRootChange) {
-      // Carry user-level settings from the source workspace into the global
-      // scope, so providers/models/team/defaultModel follow the user across
-      // workspace switches instead of vanishing with the old directory. The
-      // migration is best-effort and idempotent.
+      const previous = backend();
+      // Carry user-level team settings from the source workspace into the
+      // global scope. Model configuration is already global-only.
       try {
         const source = (
           await resolveConfig({
-            workspaceRoot: props.workspaceRoot ?? process.cwd(),
+            workspaceRoot: workspaceRoot() ?? process.cwd(),
           })
         ).config;
         const userPatch: Record<string, unknown> = {};
-        if (source.models && Object.keys(source.models).length)
-          userPatch.models = source.models;
-        if (source.providers && Object.keys(source.providers).length)
-          userPatch.providers = source.providers;
-        if (source.defaultModel) userPatch.defaultModel = source.defaultModel;
         if (source.team) userPatch.team = source.team;
         if (Object.keys(userPatch).length)
-          await props.backend.updateConfig?.({
+          await previous.updateConfig?.({
             scope: "global",
             patch: userPatch as never,
           });
       } catch {
         // A failed migration must not block the switch itself.
       }
-      const previous = backend();
+      setWorkspaceRoot(nextRoot);
       props.onWorkspaceRootChange(nextRoot);
       const next = props.createBackend();
       setBackend(next);
@@ -201,78 +197,86 @@ export function App(props: {
   return (
     <Show when={backend()} keyed>
       {(activeBackend) => (
-        <StateProvider
-          onReady={(bridge) => {
-            historyHydrate = bridge.hydrateMessages;
-            activeBackend.start(
-              (event: RuntimeEvent) => {
-                bridge.dispatch(event);
-                onRuntimeEvent?.(event);
-                props.onDispatch?.(event);
-                if (event.type === "session.ready")
-                  void hydrateRecentMessages(
-                    activeBackend,
-                    bridge.hydrateMessages,
-                  ).then((cursor) => setHistoryCursor(cursor));
-              },
-              { replay: "none" },
-            );
-          }}
-        >
-          <DialogProvider>
-            <Shell
-              backend={activeBackend}
-              workspaceRoot={props.workspaceRoot}
-              onSessionChange={(sessionID) => void changeSession(sessionID)}
-              onWorkspaceChange={(root) => void changeWorkspace(root)}
-              initialRoute={props.initialRoute}
-              onRuntimeEvent={(handler) => {
-                onRuntimeEvent = handler;
+        <ThemeProvider workspaceRoot={workspaceRoot()}>
+          <LocalProvider workspaceRoot={workspaceRoot()}>
+            <StateProvider
+              onReady={(bridge) => {
+                historyHydrate = bridge.hydrateMessages;
+                activeBackend.start(
+                  (event: RuntimeEvent) => {
+                    bridge.dispatch(event);
+                    onRuntimeEvent?.(event);
+                    props.onDispatch?.(event);
+                    if (event.type === "session.ready")
+                      void hydrateRecentMessages(
+                        activeBackend,
+                        bridge.hydrateMessages,
+                      ).then((cursor) => setHistoryCursor(cursor));
+                  },
+                  { replay: "none" },
+                );
               }}
-              onHistoryControls={props.onHistoryControls}
-              onLoadOlderHistory={async () => {
-                const cursor = historyCursor();
-                if (!cursor || loadingHistory || !historyHydrate) return;
-                loadingHistory = true;
-                try {
-                  const page = await activeBackend.messages?.({
-                    cursor,
-                    limit: 100,
-                  });
-                  if (!page) return;
-                  const evicted = historyHydrate(
-                    [...page.data].reverse(),
-                    "older",
-                  );
-                  if (evicted) setNewerHistoryCursor(page.cursor.previous);
-                  setHistoryCursor(page.cursor.next);
-                } finally {
-                  loadingHistory = false;
-                }
-              }}
-              onLoadNewerHistory={async () => {
-                const cursor = newerHistoryCursor();
-                if (!cursor || loadingHistory || !historyHydrate) return;
-                loadingHistory = true;
-                try {
-                  const page = await activeBackend.messages?.({
-                    cursor,
-                    limit: 100,
-                  });
-                  if (!page) return;
-                  const evicted = historyHydrate(
-                    [...page.data].reverse(),
-                    "newer",
-                  );
-                  if (evicted) setHistoryCursor(page.cursor.next);
-                  setNewerHistoryCursor(page.cursor.previous);
-                } finally {
-                  loadingHistory = false;
-                }
-              }}
-            />
-          </DialogProvider>
-        </StateProvider>
+            >
+              <DialogProvider>
+                <Shell
+                  backend={activeBackend}
+                  workspaceRoot={workspaceRoot()}
+                  onSessionChange={(sessionID) => void changeSession(sessionID)}
+                  onWorkspaceChange={
+                    props.createBackend && props.onWorkspaceRootChange
+                      ? (root) => void changeWorkspace(root)
+                      : undefined
+                  }
+                  initialRoute={props.initialRoute}
+                  onRuntimeEvent={(handler) => {
+                    onRuntimeEvent = handler;
+                  }}
+                  onHistoryControls={props.onHistoryControls}
+                  onLoadOlderHistory={async () => {
+                    const cursor = historyCursor();
+                    if (!cursor || loadingHistory || !historyHydrate) return;
+                    loadingHistory = true;
+                    try {
+                      const page = await activeBackend.messages?.({
+                        cursor,
+                        limit: 100,
+                      });
+                      if (!page) return;
+                      const evicted = historyHydrate(
+                        [...page.data].reverse(),
+                        "older",
+                      );
+                      if (evicted) setNewerHistoryCursor(page.cursor.previous);
+                      setHistoryCursor(page.cursor.next);
+                    } finally {
+                      loadingHistory = false;
+                    }
+                  }}
+                  onLoadNewerHistory={async () => {
+                    const cursor = newerHistoryCursor();
+                    if (!cursor || loadingHistory || !historyHydrate) return;
+                    loadingHistory = true;
+                    try {
+                      const page = await activeBackend.messages?.({
+                        cursor,
+                        limit: 100,
+                      });
+                      if (!page) return;
+                      const evicted = historyHydrate(
+                        [...page.data].reverse(),
+                        "newer",
+                      );
+                      if (evicted) setHistoryCursor(page.cursor.next);
+                      setNewerHistoryCursor(page.cursor.previous);
+                    } finally {
+                      loadingHistory = false;
+                    }
+                  }}
+                />
+              </DialogProvider>
+            </StateProvider>
+          </LocalProvider>
+        </ThemeProvider>
       )}
     </Show>
   );
@@ -344,6 +348,7 @@ function Shell(props: {
     createSignal<TuiConfigWriteScope>("global");
   const [configWriteScope, setConfigWriteScope] =
     createSignal<ConfigWriteScope>("global");
+  const [configRevision, setConfigRevision] = createSignal(0);
   const layout = () =>
     sessionLayout(
       terminalWidth(),
@@ -352,6 +357,8 @@ function Shell(props: {
       sidebarOpen(),
       viewActive() !== null,
     );
+  const compactComposerControls = () => layout().contentWidth < 64;
+  const minimalComposerControls = () => layout().contentWidth < 34;
   // The pane owns the keyboard: chat hands focus to the view's input, main (or
   // a closed view) hands it back to the composer. LiveChatView itself focuses
   // its input when focused(), so this only blurs the side leaving focus.
@@ -389,7 +396,13 @@ function Shell(props: {
   const history = new PromptHistory();
   const scrollRef: { current?: any } = {};
   const terminalScrollRef: { current?: any } = {};
-  let submitting = false;
+  const [modelSubmissions, setModelSubmissions] = createSignal(0);
+  const [workflowRunning, setWorkflowRunning] = createSignal(false);
+  const [quickModel, setQuickModel] = createSignal<RuntimeModelSelection>({});
+  const [quickReasoning, setQuickReasoning] = createSignal<ReasoningEffort>();
+  const [quickProfile, setQuickProfile] = createSignal("ask");
+  let composerControlTimer: ReturnType<typeof setTimeout> | undefined;
+  let ignoreStopUntil = 0;
   let activeWorkflow: WorkflowExecutionHandle<unknown> | undefined;
   let restoredAgent = false;
   let preferencesLoad = 0;
@@ -420,8 +433,12 @@ function Shell(props: {
       props.backend.selectAgent?.(local.state.activeAgent);
   });
 
-  onMount(async () => {
-    await reloadTuiPreferences();
+  createEffect(() => {
+    if (!props.workspaceRoot) return;
+    void reloadTuiPreferences().catch(toast.error);
+  });
+
+  onMount(() => {
     setTimeout(() => composer()?.focus(), 1);
   });
 
@@ -456,35 +473,215 @@ function Shell(props: {
       );
   }
 
-  async function persistConfig(next: ConfigPatch, base?: ConfigV2) {
+  async function persistConfigOutcome(
+    next: ConfigPatch,
+    base?: ConfigV3,
+    scopeOverride?: ConfigWriteScope,
+  ): Promise<boolean> {
     // The same path a remote consumer takes: write via the public config
     // surface, so the TUI and an external integration cannot drift apart.
-    const scope = configWriteScope();
+    const scope = scopeOverride ?? configWriteScope();
     if (!props.backend.updateConfig)
       throw new Error("Runtime backend does not support config updates");
     const reload = await props.backend.updateConfig({
-      patch: (base ? configPatch(base, next as ConfigV2) : next) as Record<
+      patch: (base ? configPatch(base, next as ConfigV3) : next) as Record<
         string,
         unknown
       >,
       scope,
     });
+    // Dialogs resolve the effective global + project configuration themselves.
+    // Notify any mounted reader after the durable write, even when the runtime
+    // cannot apply that write until the active turn finishes.
+    setConfigRevision((revision) => revision + 1);
     // Refusal is an ordinary answer now, not an exception, so it has to be said:
     // the file was written either way, and reporting "applied" when the runtime
     // declined would tell the user their change is live when it is not.
     if (!reload.applied) {
       toast.show({
         variant: "warning",
-        message: `Runtime config saved to ${scope} config but not applied: ${
+        message: `Runtime config saved but not applied: ${
           reload.reason ?? "the runtime declined to apply it"
         }`,
       });
-      return;
+      return false;
     }
     toast.show({
       variant: "success",
-      message: `Runtime config saved and applied from ${scope} config`,
+      message: "Runtime config saved and applied",
     });
+    return true;
+  }
+
+  async function persistConfig(
+    next: ConfigPatch,
+    base?: ConfigV3,
+  ): Promise<boolean> {
+    return persistConfigOutcome(next, base);
+  }
+
+  function isReasoningEffort(value: unknown): value is ReasoningEffort {
+    return (
+      value === "minimal" ||
+      value === "low" ||
+      value === "medium" ||
+      value === "high" ||
+      value === "xhigh"
+    );
+  }
+
+  async function refreshQuickControls() {
+    const root = props.workspaceRoot ?? process.cwd();
+    const [selection, profiles, reasoning] = await Promise.all([
+      props.backend.modelSelection?.(),
+      props.backend.permissionList?.(),
+      props.backend.reasoningEffort?.(),
+    ]);
+    if (selection) setQuickModel(selection);
+    if (profiles) setQuickProfile(profiles.default);
+    setQuickReasoning(reasoning);
+  }
+
+  onMount(() => {
+    void refreshQuickControls().catch(() => undefined);
+  });
+
+  createEffect(() => {
+    const selection = state.facts.modelSelection;
+    if (!selection) return;
+    setQuickModel(selection);
+    void props.backend
+      .reasoningEffort?.()
+      .then((reasoning) => setQuickReasoning(reasoning))
+      .catch(() => undefined);
+  });
+
+  function openModelPicker() {
+    if (modelBusy()) {
+      toast.show({
+        variant: "warning",
+        message: "Finish or stop queued work before changing the model",
+      });
+      return;
+    }
+    dialog.push(() => (
+      <DialogModel
+        workspaceRoot={props.workspaceRoot ?? process.cwd()}
+        catalog={props.backend.modelCatalog}
+        selection={props.backend.modelSelection}
+        selectRuntimeModel={props.backend.selectModel}
+        configRevision={configRevision}
+        onPersist={persistConfig}
+        onSelected={(selection) => {
+          setQuickModel(selection);
+          void props.backend
+            .reasoningEffort?.()
+            .then((reasoning) => setQuickReasoning(reasoning))
+            .catch(() => undefined);
+        }}
+      />
+    ));
+  }
+
+  function openReasoningPicker() {
+    if (modelBusy()) {
+      toast.show({
+        variant: "warning",
+        message: "Finish or stop queued work before changing reasoning effort",
+      });
+      return;
+    }
+    const modelID = quickModel().modelID ?? state.facts.modelSelection?.modelID;
+    if (!modelID) {
+      toast.show({ variant: "warning", message: "Select a model first" });
+      return;
+    }
+    dialog.push(() => (
+      <DialogSelect
+        title="Reasoning effort"
+        renderFilter={false}
+        current={quickReasoning() ?? ""}
+        options={
+          [
+            { title: "Default", value: "" },
+            { title: "Minimal", value: "minimal" },
+            { title: "Low", value: "low" },
+            { title: "Medium", value: "medium" },
+            { title: "High", value: "high" },
+            { title: "XHigh", value: "xhigh" },
+          ] as Array<
+            DialogSelectOption<
+              "" | "minimal" | "low" | "medium" | "high" | "xhigh"
+            >
+          >
+        }
+        onSelect={(option) => {
+          dialog.pop();
+          const reasoningEffort = (option.value || undefined) as
+            | ReasoningEffort
+            | undefined;
+          void props.backend
+            .setReasoningEffort?.(reasoningEffort)
+            .then(() => setQuickReasoning(reasoningEffort))
+            .catch(toast.error);
+        }}
+      />
+    ));
+  }
+
+  function openProfilePicker() {
+    if (modelBusy()) {
+      toast.show({
+        variant: "warning",
+        message: "Finish or stop queued work before changing the work profile",
+      });
+      return;
+    }
+    if (!props.backend.permissionList) {
+      toast.show({
+        variant: "warning",
+        message: "This runtime does not expose permission profiles",
+      });
+      return;
+    }
+    void props.backend.permissionList().then(
+      (profiles) =>
+        dialog.push(() => (
+          <DialogSelect
+            title="Work profile"
+            placeholder="Search profiles"
+            current={quickProfile()}
+            options={profiles.profiles.map((profile) => ({
+              title:
+                profile.name === "ask"
+                  ? "Ask"
+                  : profile.name === "auto"
+                    ? "Auto"
+                    : profile.name === "read_only"
+                      ? "Read-only"
+                      : profile.name,
+              value: profile.name,
+              category:
+                profile.name === "ask" ||
+                profile.name === "auto" ||
+                profile.name === "read_only"
+                  ? "Built-in"
+                  : "Profiles",
+              description:
+                profile.description || `approval: ${profile.approval}`,
+            }))}
+            onSelect={(option) => {
+              dialog.pop();
+              void persistConfigOutcome({ defaultPermission: option.value })
+                .then((applied) => {
+                  if (applied) setQuickProfile(option.value);
+                })
+                .catch(toast.error);
+            }}
+          />
+        )),
+      toast.error,
+    );
   }
 
   async function submit() {
@@ -528,7 +725,6 @@ function Shell(props: {
       }
       return;
     }
-    if (submitting && control !== "/pause" && control !== "/resume") return;
     if (control === "/pause") {
       input?.clear();
       props.backend.pause?.("TUI composer control");
@@ -543,6 +739,13 @@ function Shell(props: {
     }
     const workflowRun = workflowRunRequest(control);
     if (workflowRun) {
+      if (busy()) {
+        toast.show({
+          variant: "warning",
+          message: "Stop the current work before starting a workflow",
+        });
+        return;
+      }
       if (!props.workspaceRoot) {
         toast.show({
           variant: "warning",
@@ -562,7 +765,7 @@ function Shell(props: {
         });
         return;
       }
-      submitting = true;
+      setWorkflowRunning(true);
       input?.clear();
       history.add(text);
       try {
@@ -610,7 +813,7 @@ function Shell(props: {
         });
       } finally {
         activeWorkflow = undefined;
-        submitting = false;
+        setWorkflowRunning(false);
         setTimeout(() => composer()?.focus(), 1);
       }
       return;
@@ -622,20 +825,31 @@ function Shell(props: {
       });
       return;
     }
+    if (workflowRunning()) {
+      toast.show({
+        variant: "warning",
+        message: "Wait for the current workflow to finish before sending",
+      });
+      return;
+    }
     const attachments = attachmentPaths();
+    const agents = mentionAgents();
+    const resources = mentionResources();
+    const previousSubmissionID = state.facts.lastSubmission?.id;
+    const queued = modelBusy();
     if (
-      (attachments.length ||
-        mentionAgents().length ||
-        mentionResources().length) &&
+      (attachments.length || agents.length || resources.length || queued) &&
       !props.backend.submitInput
     ) {
       toast.show({
         variant: "warning",
-        message: "This runtime transport does not support attachments",
+        message: queued
+          ? "This runtime transport does not support queued prompts"
+          : "This runtime transport does not support attachments",
       });
       return;
     }
-    submitting = true;
+    setModelSubmissions((value) => value + 1);
     const shouldFollow = isNearBottom(scrollRef.current);
     setFollowMode(shouldFollow);
     if (shouldFollow) toBottom(0);
@@ -643,16 +857,16 @@ function Shell(props: {
       input?.clear();
       setPastePreview("");
       history.add(text);
-      if (
-        attachments.length ||
-        mentionAgents().length ||
-        mentionResources().length
-      )
+      setAttachmentPaths([]);
+      setMentionAgents([]);
+      setMentionResources([]);
+      if (attachments.length || agents.length || resources.length || queued)
         await props.backend.submitInput!({
           text,
+          delivery: queued ? "queue" : "steer",
           attachments,
-          agents: mentionAgents().map((name) => ({ name })),
-          resources: mentionResources().map((resource) => ({
+          agents: agents.map((name) => ({ name })),
+          resources: resources.map((resource) => ({
             server: resource.server,
             uri: resource.uri,
             name: resource.name,
@@ -660,11 +874,40 @@ function Shell(props: {
           })),
         });
       else await props.backend.submit(text);
-      setAttachmentPaths([]);
-      setMentionAgents([]);
-      setMentionResources([]);
+      if (queued)
+        toast.show({
+          variant: "info",
+          message: "Message queued for the next turn",
+        });
+    } catch (error) {
+      // Runtime events are batched before they reach the projection. Give an
+      // admission event a chance to land before deciding this draft was lost.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      if (
+        state.facts.lastSubmission?.id === previousSubmissionID &&
+        !composer()?.plainText
+      ) {
+        composer()?.setText(text);
+        setComposerText(text);
+        setAttachmentPaths((current) => [
+          ...new Set([...attachments, ...current]),
+        ]);
+        setMentionAgents((current) => [...new Set([...agents, ...current])]);
+        setMentionResources((current) => [
+          ...resources,
+          ...current.filter(
+            (candidate) =>
+              !resources.some(
+                (resource) =>
+                  resource.server === candidate.server &&
+                  resource.uri === candidate.uri,
+              ),
+          ),
+        ]);
+      }
+      toast.error(error);
     } finally {
-      submitting = false;
+      setModelSubmissions((value) => Math.max(0, value - 1));
       if (followBottom()) toBottom(50);
       setTimeout(() => composer()?.focus(), 1);
     }
@@ -746,11 +989,15 @@ function Shell(props: {
   }
 
   function exitOrCancel() {
-    if (activeWorkflow) {
-      activeWorkflow.cancel("TUI workflow cancellation");
+    if (workflowRunning()) {
+      activeWorkflow?.cancel("TUI workflow cancellation");
       return;
     }
-    if (state.facts.activeTurn) {
+    if (
+      state.facts.activeTurn ||
+      modelSubmissions() > 0 ||
+      hasQueuedPrompts()
+    ) {
       props.backend.cancel();
     } else if (composer()?.plainText) {
       composer()?.clear();
@@ -758,6 +1005,51 @@ function Shell(props: {
       renderer.destroy();
     }
   }
+
+  function busy() {
+    return Boolean(modelBusy() || workflowRunning());
+  }
+
+  function modelBusy() {
+    return Boolean(
+      state.facts.activeTurn || modelSubmissions() > 0 || hasQueuedPrompts(),
+    );
+  }
+
+  function modelActive() {
+    return Boolean(state.facts.activeTurn || hasQueuedPrompts());
+  }
+
+  function hasQueuedPrompts() {
+    return state.facts.messages.some(
+      (message) => message.role === "user" && message.status === "queued",
+    );
+  }
+
+  function queuedPromptCount() {
+    return state.facts.messages.filter(
+      (message) => message.role === "user" && message.status === "queued",
+    ).length;
+  }
+
+  function activateComposerControl() {
+    if (modelActive()) {
+      if (Date.now() < ignoreStopUntil) return;
+      exitOrCancel();
+      return;
+    }
+    if (modelSubmissions() > 0) return;
+    if (composerControlTimer) clearTimeout(composerControlTimer);
+    composerControlTimer = setTimeout(() => {
+      composerControlTimer = undefined;
+      ignoreStopUntil = Date.now() + 250;
+      void submit();
+    }, 100);
+  }
+
+  onCleanup(() => {
+    if (composerControlTimer) clearTimeout(composerControlTimer);
+  });
 
   function dispatchWorkflowEvent(event: Record<string, unknown>) {
     if (
@@ -770,7 +1062,7 @@ function Shell(props: {
   }
 
   function changeSession(sessionID?: string) {
-    if (state.facts.activeTurn || submitting) {
+    if (busy()) {
       props.backend.diagnostic(
         "Finish or cancel the current turn before switching sessions.",
       );
@@ -780,13 +1072,45 @@ function Shell(props: {
   }
 
   function changeWorkspace(root: string) {
-    if (state.facts.activeTurn || submitting) {
+    if (busy()) {
       props.backend.diagnostic(
         "Finish or cancel the current turn before switching workspaces.",
       );
       return;
     }
     props.onWorkspaceChange?.(root);
+  }
+
+  function openWorkspaceSwitcher() {
+    if (!props.onWorkspaceChange) {
+      toast.show({
+        variant: "warning",
+        message: "Workspace switching is not available in this runtime",
+      });
+      return;
+    }
+    if (busy()) {
+      props.backend.diagnostic(
+        "Finish or cancel the current turn before switching workspaces.",
+      );
+      return;
+    }
+    dialog.push(() => (
+      <DialogPrompt
+        title="Switch Workspace"
+        description={() => (
+          <text fg={theme.theme.muted}>
+            Enter a directory to re-create the runtime in that workspace.
+          </text>
+        )}
+        value={props.workspaceRoot ?? process.cwd()}
+        validate={(value) => validateWorkspaceInput(value, props.workspaceRoot)}
+        onConfirm={(value) => {
+          dialog.clear();
+          changeWorkspace(resolveWorkspaceInput(value, props.workspaceRoot));
+        }}
+      />
+    ));
   }
 
   function onCommand(command: string) {
@@ -800,7 +1124,9 @@ function Shell(props: {
       attachmentPaths,
       changeSession,
       changeWorkspace,
+      openWorkspaceSwitcher,
       persistConfig,
+      configRevision,
       toast,
       dialog,
       local,
@@ -1106,6 +1432,17 @@ function Shell(props: {
     toBottom(0);
   }
 
+  function copyMessage(text: string) {
+    if (!clipboard.write) {
+      toast.show({ variant: "warning", message: "Clipboard unavailable" });
+      return;
+    }
+    void clipboard.write(text).then(
+      () => toast.show({ variant: "success", message: "Copied to clipboard" }),
+      (error) => toast.error(error),
+    );
+  }
+
   return (
     <box
       flexDirection="row"
@@ -1234,7 +1571,24 @@ function Shell(props: {
       <box flexGrow={1} minWidth={0} height="100%" flexDirection="column">
         <Show when={activeSubagentRoute()} keyed>
           {(current) => (
-            <SubagentRoute agentID={current.id} onBack={() => route.back()} />
+            <SubagentRoute
+              agentID={current.id}
+              onBack={() => route.back()}
+              scrollRef={scrollRef}
+              followBottom={followBottom()}
+              onFollowChange={setFollowMode}
+              density={preferences().density}
+              toolDetails={preferences().toolDetails}
+              diffStyle={preferences().diffStyle}
+              reasoning={preferences().reasoning}
+              terminalWidth={layout().toolContentWidth}
+              toolPreviewLines={layout().toolPreviewLines}
+              showJumpToBottom={jumpToBottomVisible()}
+              onJumpToBottom={jumpToBottom}
+              backend={props.backend}
+              onExit={() => renderer.destroy()}
+              onMessageCopy={copyMessage}
+            />
           )}
         </Show>
         <Show when={!activeSubagentRoute()}>
@@ -1253,23 +1607,7 @@ function Shell(props: {
             onLoadOlderHistory={props.onLoadOlderHistory}
             onLoadNewerHistory={props.onLoadNewerHistory}
             onJumpToBottom={jumpToBottom}
-            onMessageCopy={(text) => {
-              if (!clipboard.write) {
-                toast.show({
-                  variant: "warning",
-                  message: "Clipboard unavailable",
-                });
-                return;
-              }
-              void clipboard.write(text).then(
-                () =>
-                  toast.show({
-                    variant: "success",
-                    message: "Copied to clipboard",
-                  }),
-                (error) => toast.error(error),
-              );
-            }}
+            onMessageCopy={copyMessage}
             onMessageFork={(turnID, prompt) => {
               if (!state.facts.sessionID || !props.backend.sessionFork) {
                 toast.show({
@@ -1329,110 +1667,159 @@ function Shell(props: {
                 flexGrow={1}
                 width="100%"
               >
-                <textarea
-                  ref={(value: TextareaRenderable) => {
-                    setComposer(value);
-                    promptRef.set(value);
-                  }}
-                  minHeight={1}
-                  maxHeight={Math.min(
-                    preferences().prompt.maxHeight,
-                    layout().promptMaxHeight,
-                  )}
-                  width="100%"
-                  placeholder={
-                    state.dialog === "approval" || state.dialog === "question"
-                      ? "Answer the pending prompt above"
-                      : route.route().kind !== "none"
-                        ? "Press Escape to return"
-                        : "Ask anything..."
-                  }
-                  placeholderColor={theme.theme.muted}
-                  textColor={
-                    state.dialog === "approval" || state.dialog === "question"
-                      ? theme.theme.muted
-                      : route.route().kind !== "none"
-                        ? theme.theme.muted
-                        : theme.theme.text
-                  }
-                  focusedTextColor={theme.theme.text}
-                  focusedBackgroundColor={theme.theme.panel}
-                  cursorColor={theme.theme.text}
-                  syntaxStyle={markdownSyntax()}
-                  onMouseDown={(event: MouseEvent) => event.target?.focus()}
-                  onPaste={handlePaste}
-                  onContentChange={() =>
-                    setComposerText(composer()?.plainText ?? "")
-                  }
-                  onKeyDown={(event: {
-                    name?: string;
-                    ctrl?: boolean;
-                    alt?: boolean;
-                    meta?: boolean;
-                    option?: boolean;
-                    shift?: boolean;
-                    preventDefault(): void;
-                  }) => {
-                    const key = normalizeKey(event.name ?? "");
-                    const action = composerKeyAction(event);
-                    if (action === "submit") {
-                      event.preventDefault();
-                      void submit();
-                      return;
-                    }
-                    if (action === "newline") {
-                      event.preventDefault();
-                      composer()?.insertText("\n");
-                      return;
-                    }
-                    if (action === "buffer-home") {
-                      event.preventDefault();
-                      composer()?.gotoBufferHome();
-                      return;
-                    }
-                    if (action === "buffer-end") {
-                      event.preventDefault();
-                      composer()?.gotoBufferEnd();
-                      return;
-                    }
-                  }}
-                />
                 <box
                   flexDirection="row"
-                  flexShrink={0}
-                  paddingTop={1}
-                  gap={1}
                   justifyContent="space-between"
+                  paddingBottom={1}
+                  flexShrink={0}
                 >
                   <box flexDirection="row" gap={1}>
-                    <text fg={theme.theme.accent}>Natalia</text>
-                    <text fg={theme.theme.muted}>·</text>
-                    <text fg={theme.theme.muted}>
-                      {statusValues(state.statusSegments).model ??
-                        "model not selected"}
+                    <text fg={theme.theme.text} onMouseUp={openProfilePicker}>
+                      {compactComposerLabel(
+                        profileLabel(quickProfile()),
+                        minimalComposerControls() ? 9 : 16,
+                      )}{" "}
+                      ▼
                     </text>
-                    <text fg={theme.theme.muted}>
-                      {statusValues(state.statusSegments).provider ??
-                        "provider not selected"}
-                    </text>
+                    <Show when={!minimalComposerControls()}>
+                      <text fg={theme.theme.muted}>·</text>
+                      <text fg={theme.theme.text} onMouseUp={openModelPicker}>
+                        {compactComposerLabel(
+                          quickModel().modelID ??
+                            state.facts.modelSelection?.modelID ??
+                            statusValues(state.statusSegments).model ??
+                            "Model",
+                          compactComposerControls() ? 12 : 24,
+                        )}{" "}
+                        ▼
+                      </text>
+                    </Show>
+                    <Show when={!compactComposerControls()}>
+                      <text fg={theme.theme.muted}>·</text>
+                      <text
+                        fg={theme.theme.text}
+                        onMouseUp={openReasoningPicker}
+                      >
+                        {reasoningLabel(quickReasoning())} ▼
+                      </text>
+                    </Show>
                   </box>
-                  <Show when={layout().showComposerHints}>
-                    <text
-                      fg={
-                        pastePreview().startsWith("paste rejected")
-                          ? theme.theme.danger
-                          : theme.theme.muted
-                      }
-                    >
-                      {pastePreview() ||
-                        (route.route().kind !== "none"
-                          ? `View: ${route.route().kind}`
-                          : layout().compact
-                            ? `${keymapBoundary.palette} commands · ${keymapBoundary.sidebar} sidebar`
-                            : `${keymapBoundary.newline} newline · ${keymapBoundary.palette} commands · ${keymapBoundary.sidebar} sidebar · ctrl+c cancel/exit${viewActive() ? ` · pane: ${viewFocus()}` : ""}`)}
+                  <Show when={!compactComposerControls()}>
+                    <text fg={theme.theme.muted}>
+                      {viewActive() === "chat"
+                        ? "Chat focused"
+                        : modelActive()
+                          ? hasQueuedPrompts()
+                            ? `Working · ${queuedPromptCount()} queued`
+                            : "Working"
+                          : (statusValues(state.statusSegments).ctx ?? "Ready")}
                     </text>
                   </Show>
                 </box>
+                <box
+                  width="100%"
+                  flexDirection="row"
+                  alignItems="flex-end"
+                  gap={2}
+                >
+                  <textarea
+                    ref={(value: TextareaRenderable) => {
+                      setComposer(value);
+                      promptRef.set(value);
+                    }}
+                    minHeight={1}
+                    maxHeight={Math.min(
+                      preferences().prompt.maxHeight,
+                      layout().promptMaxHeight,
+                    )}
+                    flexGrow={1}
+                    minWidth={0}
+                    placeholder={
+                      state.dialog === "approval" || state.dialog === "question"
+                        ? "Answer the pending prompt above"
+                        : route.route().kind !== "none"
+                          ? "Press Escape to return"
+                          : modelBusy()
+                            ? "Type the next message and press Enter to queue..."
+                            : "Ask anything..."
+                    }
+                    placeholderColor={theme.theme.muted}
+                    textColor={
+                      state.dialog === "approval" || state.dialog === "question"
+                        ? theme.theme.muted
+                        : route.route().kind !== "none"
+                          ? theme.theme.muted
+                          : theme.theme.text
+                    }
+                    focusedTextColor={theme.theme.text}
+                    focusedBackgroundColor={theme.theme.panel}
+                    cursorColor={theme.theme.text}
+                    syntaxStyle={markdownSyntax()}
+                    onMouseDown={(event: MouseEvent) => event.target?.focus()}
+                    onPaste={handlePaste}
+                    onContentChange={() =>
+                      setComposerText(composer()?.plainText ?? "")
+                    }
+                    onKeyDown={(event: {
+                      name?: string;
+                      ctrl?: boolean;
+                      alt?: boolean;
+                      meta?: boolean;
+                      option?: boolean;
+                      shift?: boolean;
+                      preventDefault(): void;
+                    }) => {
+                      const key = normalizeKey(event.name ?? "");
+                      const action = composerKeyAction(event);
+                      if (action === "submit") {
+                        event.preventDefault();
+                        void submit();
+                        return;
+                      }
+                      if (action === "newline") {
+                        event.preventDefault();
+                        composer()?.insertText("\n");
+                        return;
+                      }
+                      if (action === "buffer-home") {
+                        event.preventDefault();
+                        composer()?.gotoBufferHome();
+                        return;
+                      }
+                      if (action === "buffer-end") {
+                        event.preventDefault();
+                        composer()?.gotoBufferEnd();
+                        return;
+                      }
+                    }}
+                  />
+                  <box
+                    flexShrink={0}
+                    paddingLeft={1}
+                    paddingRight={1}
+                    onMouseUp={activateComposerControl}
+                  >
+                    <text
+                      fg={
+                        modelActive() ? theme.theme.danger : theme.theme.accent
+                      }
+                    >
+                      {modelActive() ? "■ Stop" : "↑ Send"}
+                    </text>
+                  </box>
+                </box>
+                <Show when={pastePreview()}>
+                  <text
+                    paddingTop={1}
+                    fg={
+                      pastePreview().startsWith("paste rejected")
+                        ? theme.theme.danger
+                        : theme.theme.muted
+                    }
+                  >
+                    {pastePreview()}
+                  </text>
+                </Show>
                 <PromptAutocomplete
                   input={composer}
                   text={composerText}
@@ -1490,9 +1877,20 @@ function Shell(props: {
               customBorderChars={PROMPT_BOTTOM_BORDER}
             />
           </box>
-          <SessionFooter workspaceRoot={props.workspaceRoot} />
+          <SessionFooter
+            workspaceRoot={props.workspaceRoot}
+            onWorkspaceSelect={openWorkspaceSwitcher}
+          />
         </Show>
       </box>
+      <Show when={layout().sidebarGap > 0}>
+        <box
+          width={layout().sidebarGap}
+          flexShrink={0}
+          height="100%"
+          backgroundColor={theme.theme.background}
+        />
+      </Show>
       <Show when={layout().sidebarVisible && !layout().sidebarOverlay}>
         <SessionSidebar
           workspaceRoot={props.workspaceRoot}
@@ -1511,6 +1909,25 @@ function Shell(props: {
       <ToastRegion />
     </box>
   );
+}
+
+function profileLabel(profile: string) {
+  if (profile === "ask") return "Ask";
+  if (profile === "auto") return "Auto";
+  if (profile === "read_only") return "Read-only";
+  return profile || "Profile";
+}
+
+function reasoningLabel(reasoning: ReasoningEffort | undefined) {
+  if (!reasoning) return "Default";
+  if (reasoning === "xhigh") return "XHigh";
+  return reasoning[0]!.toUpperCase() + reasoning.slice(1);
+}
+
+function compactComposerLabel(value: string, maxLength: number) {
+  return value.length > maxLength
+    ? `${value.slice(0, Math.max(1, maxLength - 3))}...`
+    : value;
 }
 
 type TuiRuntimeClient = RuntimeClient &

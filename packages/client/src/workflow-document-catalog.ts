@@ -3,7 +3,7 @@ import {
   type ContributedNataliaDocuments,
 } from "@natalia/workflow";
 import { readdir } from "node:fs/promises";
-import type { ConfigV2 } from "@natalia/contracts";
+import type { ConfigV3 } from "@natalia/contracts";
 import { manualFlowTask } from "./flow-document";
 import { effectiveFlowPermissions } from "./effective-policy";
 import { assertTaskReferences } from "./task-preflight";
@@ -13,7 +13,7 @@ export type { WorkflowDocumentChoice } from "@natalia/contracts";
 
 export async function workflowDocumentCatalog(
   workspaceRoot: string,
-  config?: ConfigV2,
+  config?: ConfigV3,
   contributedDocuments?: ContributedNataliaDocuments,
 ): Promise<WorkflowDocumentChoice[]> {
   const documents = new NataliaDocumentStore(
@@ -81,7 +81,7 @@ function documentSource(path: string): WorkflowDocumentChoice["source"] {
 
 function flowLaunchReadiness(
   document: Parameters<typeof manualFlowTask>[0],
-  config?: ConfigV2,
+  config?: ConfigV3,
 ): WorkflowDocumentChoice["launch"] {
   if (!config) return { ready: false, reason: "runtime config is unavailable" };
   try {
@@ -98,7 +98,7 @@ function flowLaunchReadiness(
 async function taskLaunchReadiness(
   documents: NataliaDocumentStore,
   task: Awaited<ReturnType<NataliaDocumentStore["loadTaskDocument"]>>,
-  config?: ConfigV2,
+  config?: ConfigV3,
 ): Promise<WorkflowDocumentChoice["launch"]> {
   if (!config) return { ready: false, reason: "runtime config is unavailable" };
   try {

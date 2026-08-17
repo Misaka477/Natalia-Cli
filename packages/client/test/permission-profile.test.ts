@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { configV2Schema, type ConfigV2 } from "@natalia/contracts";
+import { configV3Schema, type ConfigV3 } from "@natalia/contracts";
 import {
   configWithoutPermissionProfile,
   parseToolAllowList,
@@ -10,9 +10,9 @@ import {
   permissionProfileUsage,
 } from "../src";
 
-function config(overrides: Record<string, unknown> = {}): ConfigV2 {
-  return configV2Schema.parse({
-    version: 2,
+function config(overrides: Record<string, unknown> = {}): ConfigV3 {
+  return configV3Schema.parse({
+    version: 3,
     permissionProfiles: {
       ask: { approval: "ask", description: "Ask first" },
       unattended_read: { approval: "auto", description: "Nightly read" },

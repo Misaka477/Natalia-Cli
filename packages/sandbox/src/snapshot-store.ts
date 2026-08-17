@@ -9,12 +9,9 @@
  * reason to depend on git, and the worktree backend's `candidate/<id>`
  * branches are just one implementation of it.
  *
- * Performance: an index records `path → { objectID, size, mtimeMs }` against
- * the object store, so re-capturing a tree that changed a few files hashes
- * and stores only those — untouched files reuse their object by a size/mtime
- * match. A file whose mtime is unchanged from the index entry is re-hashed
- * anyway (the racy-git case: a write inside the same millisecond), so the
- * shortcut can never miss a change it could have seen.
+ * Performance: an index records content id and filesystem metadata for each
+ * path, so re-capturing a tree that changed a few files hashes and stores only
+ * those — untouched files reuse their object by a size/mtime/ctime match.
  *
  *   - capture/diff  → content-hash index of the candidate vs the base.
  *   - promote       → copy the changed files into the host, backing up the
@@ -22,15 +19,23 @@
  *   - rollback      → restore the last-known-good backup.
  */
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
-import { join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { SandboxDiffKind } from "@natalia/contracts";
 import type { SandboxChange } from "./workspace-manager";
 import { ObjectStore } from "@natalia/object-store";
 
-export type IndexedFile = { objectID: string; size: number; mtimeMs: number };
+export type IndexedFile = {
+  objectID: string;
+  size: number;
+  mtimeMs: number;
+  ctimeMs?: number;
+};
 export type SnapshotIndex = Map<string, IndexedFile>;
 
-async function walkFiles(root: string): Promise<string[]> {
+async function walkFiles(
+  root: string,
+  ignore?: (relPath: string) => boolean,
+): Promise<string[]> {
   const files: string[] = [];
   const stack = [root];
   while (stack.length) {
@@ -38,6 +43,8 @@ async function walkFiles(root: string): Promise<string[]> {
     const entries = await readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       const path = join(dir, entry.name);
+      const rel = relative(root, path).split("/").join("/");
+      if (ignore?.(rel)) continue;
       if (entry.isDirectory()) stack.push(path);
       else if (entry.isFile()) files.push(path);
     }
@@ -53,9 +60,8 @@ export class SnapshotStore {
 
   /**
    * Indexes every file under a root, reusing the previous index's object ids
-   * for files whose size and mtime are unchanged (an `ignore` rel-path filter
-   * excluded). A file whose mtime matches the index entry is re-hashed anyway
-   * (racy-git), so a same-millisecond write is never missed.
+   * for files whose size, mtime and ctime are unchanged (an `ignore` rel-path
+   * filter excluded). Older indices without ctime are conservatively re-hashed.
    */
   async capture(
     root: string,
@@ -63,13 +69,17 @@ export class SnapshotStore {
     ignore?: (relPath: string) => boolean,
   ): Promise<SnapshotIndex> {
     const index: SnapshotIndex = new Map();
-    for (const path of await walkFiles(root)) {
+    for (const path of await walkFiles(root, ignore)) {
       const rel = relative(root, path).split("/").join("/");
-      if (ignore?.(rel)) continue;
       const info = await stat(path);
       const prior = previous?.get(rel);
-      if (prior && prior.size === info.size && prior.mtimeMs !== info.mtimeMs) {
-        // Same size and a different mtime: unchanged, reuse the object.
+      if (
+        prior &&
+        prior.ctimeMs !== undefined &&
+        prior.size === info.size &&
+        prior.mtimeMs === info.mtimeMs &&
+        prior.ctimeMs === info.ctimeMs
+      ) {
         index.set(rel, prior);
         continue;
       }
@@ -77,38 +87,54 @@ export class SnapshotStore {
         objectID: await this.objects.put(await readFile(path)),
         size: info.size,
         mtimeMs: info.mtimeMs,
+        ctimeMs: info.ctimeMs,
       });
     }
     return index;
   }
 
+  /** Checks out an index into an empty candidate worktree. */
+  async materialize(
+    root: string,
+    index: SnapshotIndex,
+  ): Promise<SnapshotIndex> {
+    const candidate: SnapshotIndex = new Map();
+    for (const [path, entry] of index) {
+      const target = resolve(root, path);
+      const rel = relative(resolve(root), target);
+      if (rel.startsWith("..") || rel === "" || isAbsolute(rel))
+        throw new Error(`snapshot path escapes worktree: ${path}`);
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, await this.objects.get(entry.objectID));
+      const info = await stat(target);
+      candidate.set(path, {
+        objectID: entry.objectID,
+        size: info.size,
+        mtimeMs: info.mtimeMs,
+        ctimeMs: info.ctimeMs,
+      });
+    }
+    return candidate;
+  }
+
   /** The candidate's changes against the base, by content hash. */
   async diff(
-    candidateRoot: string,
+    _candidateRoot: string,
     base: SnapshotIndex,
     candidateIndex: SnapshotIndex,
   ): Promise<SandboxChange[]> {
     const changes: SandboxChange[] = [];
-    for (const path of await walkFiles(candidateRoot)) {
-      const rel = relative(candidateRoot, path).split("/").join("/");
-      const baseEntry = base.get(rel);
+    for (const [path, candidateEntry] of candidateIndex) {
+      const baseEntry = base.get(path);
       if (!baseEntry) {
-        changes.push({ kind: "add" as SandboxDiffKind, path: rel });
+        changes.push({ kind: "add" as SandboxDiffKind, path });
         continue;
       }
-      const info = await stat(path);
-      const indexed = candidateIndex.get(rel);
-      const objectID =
-        indexed &&
-        indexed.size === info.size &&
-        indexed.mtimeMs !== info.mtimeMs
-          ? indexed.objectID
-          : await this.objects.put(await readFile(path));
-      if (objectID !== baseEntry.objectID)
-        changes.push({ kind: "modify" as SandboxDiffKind, path: rel });
+      if (candidateEntry.objectID !== baseEntry.objectID)
+        changes.push({ kind: "modify" as SandboxDiffKind, path });
     }
     for (const path of base.keys()) {
-      if (!(await exists(resolve(candidateRoot, path))))
+      if (!candidateIndex.has(path))
         changes.push({ kind: "delete" as SandboxDiffKind, path });
     }
     return changes;
@@ -230,14 +256,5 @@ export class SnapshotStore {
       for (const entry of index?.values() ?? []) ids.add(entry.objectID);
     }
     return ids;
-  }
-}
-
-async function exists(path: string): Promise<boolean> {
-  try {
-    await stat(path);
-    return true;
-  } catch {
-    return false;
   }
 }

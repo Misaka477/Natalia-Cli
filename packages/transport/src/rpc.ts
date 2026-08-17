@@ -129,6 +129,8 @@ export const RPC_ROUTE_MEMBERS = {
   "model.catalog": "modelCatalog",
   "model.selection": "modelSelection",
   "model.select": "selectModel",
+  "model.reasoning": "reasoningEffort",
+  "model.reasoning.set": "setReasoningEffort",
   "skills.list": "skills",
   "workspace.files": "workspaceFiles",
   "workspace.search": "workspaceSearch",
@@ -288,6 +290,7 @@ export const RPC_WRITE_METHODS: ReadonlySet<string> = new Set([
   "resume",
   "agent.select",
   "model.select",
+  "model.reasoning.set",
   "config.reload",
   "config.update",
   "settings.set",
@@ -616,6 +619,33 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: { modelID: modelID ?? null, variant: variant ?? null },
+      };
+    }
+    if (body.method === "model.reasoning") {
+      optionsGuard(client, "reasoningEffort");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: (await client.reasoningEffort()) ?? null,
+      };
+    }
+    if (body.method === "model.reasoning.set") {
+      optionsGuard(client, "setReasoningEffort");
+      const effort = body.params?.effort;
+      if (
+        effort !== undefined &&
+        !["minimal", "low", "medium", "high", "xhigh"].includes(String(effort))
+      )
+        throw invalidParams(
+          "model.reasoning.set.params.effort must be minimal, low, medium, high, or xhigh",
+        );
+      await client.setReasoningEffort(
+        effort as "minimal" | "low" | "medium" | "high" | "xhigh" | undefined,
+      );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: { effort: effort ?? null },
       };
     }
     if (body.method === "skills.list") {

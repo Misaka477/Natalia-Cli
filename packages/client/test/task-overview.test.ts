@@ -2,16 +2,16 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { configV2Schema, type ConfigV2 } from "@natalia/contracts";
+import { configV3Schema, type ConfigV3 } from "@natalia/contracts";
 import { NataliaTaskStateStore } from "@natalia/workflow";
 import { flowOverview, scheduledTaskOverview } from "../src";
 
 const READY_FLOW =
   "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n    minimumConditions:\n      - id: c1\n        text: Read the sources\n";
 
-function config(overrides: Record<string, unknown> = {}): ConfigV2 {
-  return configV2Schema.parse({
-    version: 2,
+function config(overrides: Record<string, unknown> = {}): ConfigV3 {
+  return configV3Schema.parse({
+    version: 3,
     permissionProfiles: {
       unattended: { approval: "auto", description: "Task profile" },
       interactive: { approval: "ask", description: "Interactive" },

@@ -2,7 +2,7 @@ import type { ErrorKind, RuntimeEvent } from "@natalia/contracts";
 
 export function retryDisplayLine(event: RuntimeEvent) {
   if (event.type === "step.retry") {
-    return `Retrying after ${event.reason}${event.statusCode ? ` (${event.statusCode})` : ""} · attempt ${event.attempt}/${event.maxAttempts} · waiting ${formatWait(event.waitMs)}`;
+    return `Retrying after ${event.reason}${event.statusCode ? ` (${event.statusCode})` : ""} · attempt ${event.attempt}/${event.maxAttempts ?? "unlimited"} · waiting ${formatWait(event.waitMs)}`;
   }
   if (event.type === "step.retry.cleared") {
     return `Retry recovered after ${event.attempts} attempts`;
@@ -12,8 +12,8 @@ export function retryDisplayLine(event: RuntimeEvent) {
     // the attempt budget was never reached because the failure was final.
     const cause =
       event.retryable === false
-        ? `Not retryable after ${event.attempts}/${event.maxAttempts}`
-        : `Retry exhausted after ${event.attempts}/${event.maxAttempts}`;
+        ? `Not retryable after ${event.attempts}/${event.maxAttempts ?? "unlimited"}`
+        : `Retry exhausted after ${event.attempts}/${event.maxAttempts ?? "unlimited"}`;
     const hint = providerErrorHint(event.reason);
     return `${cause}: ${event.message}${hint ? ` · ${hint}` : ""}`;
   }

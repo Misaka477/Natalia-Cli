@@ -10,13 +10,18 @@ import { TextAttributes } from "@opentui/core";
 import { useRenderer } from "@opentui/solid";
 import { useBindings } from "@opentui/keymap/solid";
 import type { RuntimeClient } from "@natalia/contracts";
+import { selectPrimaryActivity, type ActivityView } from "@natalia/view-store";
 import { activeModal } from "@natalia/ui-model";
 import {
   collapseToolOutput,
   parseTodoItems,
   stripAnsiOutput,
 } from "@natalia/ui-model";
-import { useAppState, type MessageBlock } from "../../context/state";
+import {
+  useAppState,
+  type AppState,
+  type MessageBlock,
+} from "../../context/state";
 import { roleColor, themeTokens as darkTheme } from "../../theme/theme";
 import { terminalPreview } from "../../terminal-preview";
 import type { TuiPreferences } from "../../settings";
@@ -42,7 +47,6 @@ import {
   statusValues,
   stringField,
   subagentColor,
-  toolColor,
   toolIcon,
   toolInput,
   toolPath,
@@ -54,6 +58,11 @@ import { ModelTerminalPane } from "./terminal-pane";
 import { MessageBlockView } from "./message-rows";
 
 export function SessionRoute(props: {
+  messages?: MessageBlock[];
+  viewState?: AppState;
+  emptyTitle?: string;
+  emptyHint?: string;
+  displayOnly?: boolean;
   scrollRef?: { current?: any };
   terminalScrollRef?: { current?: any };
   followBottom?: boolean;
@@ -74,9 +83,14 @@ export function SessionRoute(props: {
   onExit?: () => void;
 }) {
   const { state, dispatch } = useAppState();
+  const viewState = () =>
+    props.viewState ?? (props.displayOnly ? undefined : state);
   const layout = () => timelineLayout(props.terminalWidth ?? 80);
-  const modal = createMemo(() => activeModal(state.modal));
-  const timelineGroups = createMemo(() => groupTimelineBlocks(state.messages));
+  const modal = createMemo(() =>
+    activeModal(viewState()?.modal ?? state.modal),
+  );
+  const messages = () => props.messages ?? viewState()?.messages ?? [];
+  const timelineGroups = createMemo(() => groupTimelineBlocks(messages()));
   const virtualizer = new TimelineVirtualizer<MessageBlock>(24);
   const [timelineRange, setTimelineRange] = createSignal<
     TimelineRange<MessageBlock>
@@ -254,7 +268,7 @@ export function SessionRoute(props: {
           )}
         </For>
         <box height={timelineRange().bottom} flexShrink={0} />
-        <Show when={state.messages.length === 0}>
+        <Show when={messages().length === 0}>
           <box
             flexDirection="column"
             alignItems="center"
@@ -263,9 +277,11 @@ export function SessionRoute(props: {
             gap={1}
           >
             <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
-              {state.facts.title}
+              {props.emptyTitle ?? viewState()?.facts.title}
             </text>
-            <text fg={darkTheme.muted}>Start a new task below</text>
+            <text fg={darkTheme.muted}>
+              {props.emptyHint ?? "Start a new task below"}
+            </text>
           </box>
         </Show>
       </scrollbox>
@@ -302,7 +318,7 @@ export function SessionRoute(props: {
           <text fg={darkTheme.text}>↓ Jump to latest</text>
         </box>
       </Show>
-      <Show when={state.terminalPane.selectedID}>
+      <Show when={!props.displayOnly && state.terminalPane.selectedID}>
         {(selectedID) => {
           const terminal = () => state.facts.terminals[selectedID()];
           return (
@@ -328,14 +344,14 @@ export function SessionRoute(props: {
           );
         }}
       </Show>
-      <Show when={state.facts.retryBanner}>
+      <Show when={viewState()?.facts.retryBanner}>
         {(retry) => (
           <box flexShrink={0} paddingLeft={1} backgroundColor={darkTheme.panel}>
             <text fg={darkTheme.warning}>{retry().text}</text>
           </box>
         )}
       </Show>
-      <Show when={state.facts.compactionBanner}>
+      <Show when={viewState()?.facts.compactionBanner}>
         {(banner) => (
           <box flexShrink={0} paddingLeft={1} backgroundColor={darkTheme.panel}>
             <text fg={darkTheme.accent}>{banner().text}</text>
@@ -346,9 +362,29 @@ export function SessionRoute(props: {
   );
 }
 
-export function SessionFooter(props: { workspaceRoot?: string }) {
+export function SessionFooter(props: {
+  workspaceRoot?: string;
+  onWorkspaceSelect?: () => void;
+}) {
   const { state } = useAppState();
-  const pending = state.dialog === "approval" || state.dialog === "question";
+  const [scanPosition, setScanPosition] = createSignal(0);
+  const primaryActivity = () => selectPrimaryActivity(state.facts);
+  const activityActive = createMemo(
+    () => primaryActivity()?.state === "active",
+  );
+
+  createEffect(() => {
+    if (!activityActive()) {
+      setScanPosition(0);
+      return;
+    }
+    const timer = setInterval(
+      () => setScanPosition((current) => current + 1),
+      140,
+    );
+    onCleanup(() => clearInterval(timer));
+  });
+
   return (
     <box
       flexShrink={0}
@@ -358,10 +394,19 @@ export function SessionFooter(props: { workspaceRoot?: string }) {
       paddingLeft={1}
       paddingRight={1}
     >
-      <text fg={darkTheme.muted}>{compactPath(props.workspaceRoot)}</text>
+      <text
+        fg={props.onWorkspaceSelect ? darkTheme.text : darkTheme.muted}
+        onMouseUp={props.onWorkspaceSelect}
+      >
+        {compactPath(props.workspaceRoot)}
+        <Show when={props.onWorkspaceSelect}> ▼</Show>
+      </text>
       <box flexDirection="row" gap={2} flexShrink={0}>
-        <Show when={pending}>
-          <text fg={darkTheme.warning}>△ Action required</text>
+        <Show when={primaryActivity()}>
+          <text fg={activityColor(primaryActivity()!)}>
+            {activityIndicator(primaryActivity()!, scanPosition())}{" "}
+            {activityLabel(primaryActivity()!)}
+          </text>
         </Show>
         <Show when={Object.keys(state.facts.terminals).length > 0}>
           <text fg={darkTheme.text}>
@@ -396,6 +441,46 @@ export function SessionFooter(props: { workspaceRoot?: string }) {
   );
 }
 
+function activityIndicator(activity: ActivityView, scanPosition: number) {
+  if (activity.state === "waiting") return "?";
+  if (activity.state === "paused") return "=";
+  return [".  ", " . ", "  .", " . "][scanPosition % 4]!;
+}
+
+function activityColor(activity: ActivityView) {
+  if (activity.state === "waiting") return darkTheme.warning;
+  if (activity.state === "paused") return darkTheme.muted;
+  if (activity.kind === "retrying") return darkTheme.warning;
+  return darkTheme.accent;
+}
+
+function activityLabel(activity: ActivityView) {
+  switch (activity.kind) {
+    case "planning":
+      return "Planning";
+    case "thinking":
+      return "Thinking";
+    case "generating":
+      return "Generating";
+    case "tool":
+      return activity.label ? `Using ${activity.label}` : "Using a tool";
+    case "command":
+      return "Running command";
+    case "workflow":
+      return "Running workflow";
+    case "subagent":
+      return "Working with subagent";
+    case "compacting":
+      return "Compacting context";
+    case "retrying":
+      return "Retrying";
+    case "waiting_for_user":
+      return "Waiting for input";
+    case "paused":
+      return "Paused";
+  }
+}
+
 export function SessionSidebar(props: {
   width?: number;
   workspaceRoot?: string;
@@ -405,7 +490,27 @@ export function SessionSidebar(props: {
   const { state } = useAppState();
   const route = useRouteController();
   const values = () => statusValues(state.statusSegments);
-  const tools = () => Object.values(state.facts.tools);
+  const todos = () => state.facts.todos;
+  const visibleTodos = () => {
+    const items = todos();
+    if (items.length <= 6) return items;
+    return items.filter((todo) => todo.status !== "completed").slice(0, 6);
+  };
+  const hiddenCompletedTodos = () => todos().length - visibleTodos().length;
+  const agents = () =>
+    Object.values(state.facts.subagents).filter(
+      (agent) => !agent.parentAgentID,
+    );
+  const activeAgents = () =>
+    agents().filter((agent) => agent.status !== "completed").length;
+  const sessionStatus = () => {
+    const activity = selectPrimaryActivity(state.facts);
+    if (activity) return activityLabel(activity);
+    if (state.facts.activeTurn) return "Working";
+    if (activeAgents())
+      return `${activeAgents()} agent${activeAgents() === 1 ? "" : "s"} working`;
+    return "Ready";
+  };
   return (
     <box
       width={props.width ?? 42}
@@ -416,131 +521,79 @@ export function SessionSidebar(props: {
       top={props.overlay ? 0 : undefined}
       bottom={props.overlay ? 0 : undefined}
       zIndex={props.overlay ? 20 : undefined}
-      backgroundColor={darkTheme.panel}
+      backgroundColor={darkTheme.background}
+      border={props.overlay ? undefined : ["left"]}
+      borderColor={darkTheme.muted}
       paddingTop={1}
       paddingBottom={1}
       paddingLeft={2}
       paddingRight={2}
     >
       <scrollbox flexGrow={1}>
-        <box flexDirection="column" gap={1} paddingRight={1}>
-          <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
-            {state.facts.title}
-          </text>
-          <Show when={state.facts.sessionID}>
-            <text fg={darkTheme.muted}>{state.facts.sessionID}</text>
-          </Show>
-          <Show when={props.workspaceRoot && !props.compact}>
-            <text fg={darkTheme.muted}>{compactPath(props.workspaceRoot)}</text>
-          </Show>
-          <box marginTop={1} flexDirection="column">
+        <box flexDirection="column" gap={2} paddingRight={1}>
+          <box flexDirection="column">
             <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
-              Context
+              {state.facts.title || "Natalia session"}
             </text>
-            <text fg={darkTheme.muted}>{values().ctx ?? "pending"}</text>
-            <Show when={!props.compact}>
-              <text fg={darkTheme.muted}>
-                {values().model ?? "model not selected"}
-              </text>
-              <text fg={darkTheme.muted}>
-                {values().provider ?? "provider not selected"}
-              </text>
-            </Show>
+            <text fg={darkTheme.muted}>{sessionStatus()}</text>
           </box>
-          <Show when={state.facts.todos.length > 0}>
-            <box marginTop={1} flexDirection="column">
+          <Show when={todos().length > 0}>
+            <box flexDirection="column" gap={1}>
               <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
-                Todo
+                Plan
               </text>
-              <For each={state.facts.todos}>
+              <For each={visibleTodos()}>
                 {(todo) => (
                   <text
                     fg={
                       todo.status === "in_progress"
-                        ? darkTheme.warning
+                        ? darkTheme.text
                         : darkTheme.muted
                     }
                     wrapMode="word"
                   >
-                    {todo.status === "completed"
-                      ? "✓"
-                      : todo.status === "in_progress"
-                        ? "•"
-                        : "○"}{" "}
+                    <span
+                      style={{
+                        fg:
+                          todo.status === "completed"
+                            ? darkTheme.success
+                            : todo.status === "in_progress"
+                              ? darkTheme.warning
+                              : darkTheme.muted,
+                      }}
+                    >
+                      {todo.status === "completed"
+                        ? "✓"
+                        : todo.status === "in_progress"
+                          ? "•"
+                          : "○"}
+                    </span>{" "}
                     {todo.content}
                   </text>
                 )}
               </For>
+              <Show when={hiddenCompletedTodos() > 0}>
+                <text fg={darkTheme.muted}>
+                  Completed ({hiddenCompletedTodos()})
+                </text>
+              </Show>
             </box>
           </Show>
-          <Show
-            when={
-              Object.values(state.facts.subagents).filter(
-                (agent) => !agent.parentAgentID,
-              ).length > 0
-            }
-          >
-            <box marginTop={1} flexDirection="column">
+          <Show when={agents().length > 0}>
+            <box flexDirection="column" gap={1}>
               <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
                 Agents
               </text>
-              <For
-                each={Object.values(state.facts.subagents).filter(
-                  (agent) => !agent.parentAgentID,
-                )}
-              >
+              <For each={agents()}>
                 {(agent) => (
-                  <box flexDirection="column">
-                    <text
-                      fg={subagentColor(agent.status)}
-                      onMouseUp={() =>
-                        route.push({ kind: "subagent", id: agent.id })
-                      }
-                    >
-                      {agent.status === "completed" ? "✓" : "│"} {agent.id}
-                    </text>
-                    <Show when={agent.task && !props.compact}>
-                      <text
-                        paddingLeft={2}
-                        fg={darkTheme.muted}
-                        wrapMode="word"
-                      >
-                        {agent.task}
-                      </text>
-                    </Show>
-                  </box>
-                )}
-              </For>
-            </box>
-          </Show>
-          <Show when={tools().length > 0 && !props.compact}>
-            <box marginTop={1} flexDirection="column">
-              <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
-                Tools
-              </text>
-              <For each={tools().slice(-8)}>
-                {(tool) => (
-                  <text fg={toolColor(tool.status)}>
-                    {tool.status === "succeeded" ? "✓" : "•"} {tool.name}
-                  </text>
-                )}
-              </For>
-            </box>
-          </Show>
-          <Show
-            when={
-              Object.values(state.facts.sandboxes).length > 0 && !props.compact
-            }
-          >
-            <box marginTop={1} flexDirection="column">
-              <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
-                Workspace
-              </text>
-              <For each={Object.values(state.facts.sandboxes)}>
-                {(sandbox) => (
-                  <text fg={darkTheme.muted}>
-                    {sandbox.changedFiles} changed · {sandbox.runningResources}{" "}
-                    running
+                  <text
+                    fg={subagentColor(agent.status)}
+                    onMouseUp={() =>
+                      route.push({ kind: "subagent", id: agent.id })
+                    }
+                  >
+                    {agent.status === "completed" ? "✓" : "•"} {agent.id} ·{" "}
+                    {agent.status}
                   </text>
                 )}
               </For>
@@ -549,16 +602,34 @@ export function SessionSidebar(props: {
         </box>
       </scrollbox>
       <text fg={darkTheme.muted}>
-        <span style={{ fg: darkTheme.success }}>•</span> <b>Natalia</b> local
+        {values().model ?? "model not selected"} ·{" "}
+        {values().ctx ?? "context pending"}
       </text>
     </box>
   );
 }
 
-export function SubagentRoute(props: { agentID: string; onBack(): void }) {
+export function SubagentRoute(props: {
+  agentID: string;
+  onBack(): void;
+  scrollRef?: { current?: any };
+  followBottom?: boolean;
+  onFollowChange?: (follow: boolean) => void;
+  density?: TuiPreferences["density"];
+  toolDetails?: TuiPreferences["toolDetails"];
+  reasoning?: TuiPreferences["reasoning"];
+  diffStyle?: TuiPreferences["diffStyle"];
+  terminalWidth?: number;
+  toolPreviewLines?: number;
+  showJumpToBottom?: boolean;
+  onJumpToBottom?: () => void;
+  onMessageCopy?: (text: string) => void;
+  backend?: RuntimeClient;
+  onExit?: () => void;
+}) {
   const { state } = useAppState();
   const agent = () => state.facts.subagents[props.agentID];
-  const history = () => state.facts.subagentHistory[props.agentID] ?? [];
+  const messages = () => state.subagentStates[props.agentID]?.messages ?? [];
   const children = () =>
     Object.values(state.facts.subagents).filter(
       (candidate) => candidate.parentAgentID === props.agentID,
@@ -577,69 +648,60 @@ export function SubagentRoute(props: { agentID: string; onBack(): void }) {
   }));
   return (
     <box flexGrow={1} minHeight={0} flexDirection="column">
-      <scrollbox flexGrow={1} paddingLeft={3} paddingRight={3} paddingTop={1}>
-        <box flexDirection="column" gap={1}>
-          <Show when={!agent()}>
-            <text fg={darkTheme.warning}>Subagent state is not available.</text>
-          </Show>
+      <box
+        flexShrink={0}
+        flexDirection="row"
+        justifyContent="space-between"
+        paddingLeft={3}
+        paddingRight={3}
+        paddingTop={1}
+      >
+        <box flexDirection="column">
           <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
             {agent()?.task || props.agentID}
           </text>
-          <text fg={darkTheme.muted}>{props.agentID}</text>
-          <Show when={agent()}>
-            {(value) => (
-              <box flexDirection="row" gap={2}>
-                <text fg={subagentColor(value().status)}>{value().status}</text>
-                <text fg={darkTheme.muted}>
-                  {value().attached ? "attached" : "detached"}
+          <text fg={darkTheme.muted}>
+            {props.agentID} · {agent()?.status ?? "unavailable"}
+          </text>
+        </box>
+        <Show when={children().length > 0}>
+          <box flexDirection="row" gap={1}>
+            <For each={children()}>
+              {(child) => (
+                <text
+                  fg={subagentColor(child.status)}
+                  onMouseUp={() =>
+                    route.push({ kind: "subagent", id: child.id })
+                  }
+                >
+                  {child.id}
                 </text>
-              </box>
-            )}
-          </Show>
-          <Show when={agent()?.parentAgentID}>
-            <text fg={darkTheme.muted}>Parent: {agent()!.parentAgentID}</text>
-          </Show>
-          <Show when={children().length > 0}>
-            <box marginTop={1} flexDirection="column" gap={1}>
-              <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
-                Child agents
-              </text>
-              <For each={children()}>
-                {(child) => (
-                  <text
-                    fg={subagentColor(child.status)}
-                    onMouseUp={() =>
-                      route.push({ kind: "subagent", id: child.id })
-                    }
-                  >
-                    {child.status === "completed" ? "✓" : "│"} {child.id} ·{" "}
-                    {child.status}
-                  </text>
-                )}
-              </For>
-            </box>
-          </Show>
-          <box marginTop={1} flexDirection="column" gap={1}>
-            <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
-              Activity
-            </text>
-            <For each={history()}>
-              {(event) => (
-                <box flexDirection="column">
-                  <text fg={subagentColor(event.status)}>
-                    {event.event} · {event.status}
-                  </text>
-                  <Show when={event.text}>
-                    <text paddingLeft={2} fg={darkTheme.muted} wrapMode="word">
-                      {event.text}
-                    </text>
-                  </Show>
-                </box>
               )}
             </For>
           </box>
-        </box>
-      </scrollbox>
+        </Show>
+      </box>
+      <SessionRoute
+        messages={messages()}
+        viewState={state.subagentStates[props.agentID]}
+        emptyTitle={agent()?.task || props.agentID}
+        emptyHint="Waiting for subagent output"
+        displayOnly
+        backend={props.backend}
+        onExit={props.onExit}
+        onMessageCopy={props.onMessageCopy}
+        scrollRef={props.scrollRef}
+        followBottom={props.followBottom}
+        onFollowChange={props.onFollowChange}
+        density={props.density}
+        toolDetails={props.toolDetails}
+        reasoning={props.reasoning}
+        diffStyle={props.diffStyle}
+        terminalWidth={props.terminalWidth}
+        toolPreviewLines={props.toolPreviewLines}
+        showJumpToBottom={props.showJumpToBottom}
+        onJumpToBottom={props.onJumpToBottom}
+      />
       <box
         flexShrink={0}
         flexDirection="row"

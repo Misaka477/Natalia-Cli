@@ -22,6 +22,7 @@ import {
   recordTrust,
   removeTrust,
   resolveConfig,
+  resolveEffectiveModel,
   updateConfig,
 } from "@natalia/config";
 import type { RuntimeEvent } from "@natalia/contracts";
@@ -61,19 +62,20 @@ export async function startupDiagnostics(
 
 export async function plainStatus(configPath: string) {
   const loaded = await loadConfigFile(configPath);
-  const model = loaded.config.models[loaded.config.defaultModel];
-  if (!model)
-    throw new Error(`missing default model: ${loaded.config.defaultModel}`);
+  const ref = loaded.config.defaultModel;
+  if (!ref) throw new Error("missing default model: none configured");
+  const effective = resolveEffectiveModel(loaded.config, ref);
+  if (!effective) throw new Error("missing default model: none configured");
   const resolver = new ContextWindowResolver();
   const resolved = await resolver.resolve({
-    provider: model.provider,
-    model: model.model,
-    explicitContextWindow: model.contextWindow,
+    provider: effective.providerID,
+    model: effective.ref.model,
+    explicitContextWindow: effective.limits.contextWindow,
   });
   return {
     mode: process.stdout.isTTY ? "tty" : "plain",
-    model: model.model,
-    provider: model.provider,
+    model: effective.ref.model,
+    provider: effective.providerID,
     contextWindow: resolved,
   };
 }
@@ -349,10 +351,18 @@ export async function doctorReport(input: {
     workspaceRoot: input.workspaceRoot ?? process.cwd(),
     globalPath: input.configPath,
   });
-  const selection = modelSelectionStatus(
-    loaded.config,
-    loaded.config.defaultModel,
-  );
+  const defaultRef = loaded.config.defaultModel;
+  const selection = defaultRef
+    ? modelSelectionStatus(loaded.config, defaultRef)
+    : {
+        ref: { provider: "", model: "" },
+        key: "",
+        configured: false,
+        usable: false,
+        policyAllowed: false,
+        selected: false,
+        reason: "model_not_configured",
+      };
   const sessions = await listLocalSessions(input.workspaceRoot);
   return {
     configPath: input.configPath,

@@ -78,6 +78,8 @@ const comparedTerminalFields = [
   // The session that published the update; a pane left on a stale session
   // would render under the wrong ownership.
   "sessionID",
+  // Child-owned terminal updates are isolated by their subagent projection.
+  "agentID",
 ] as const;
 
 /**

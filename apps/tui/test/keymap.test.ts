@@ -85,6 +85,17 @@ describe("command definitions", () => {
     expect(bindings["permission.dialog.delete"]).toEqual(["alt+d"]);
   });
 
+  test("provider and model actions use Alt chords, away from filter text", () => {
+    const { bindings } = buildKeybindMap();
+    expect(bindings["provider.dialog.edit"]).toEqual(["alt+e"]);
+    expect(bindings["provider.dialog.models"]).toEqual(["alt+m"]);
+    expect(bindings["provider.dialog.toggle"]).toEqual(["alt+t"]);
+    expect(bindings["provider.dialog.delete"]).toEqual(["alt+x"]);
+    expect(bindings["provider.model.toggle"]).toEqual(["alt+t"]);
+    expect(bindings["provider.model.default"]).toEqual(["alt+d"]);
+    expect(bindings["provider.model.delete"]).toEqual(["alt+x"]);
+  });
+
   test("known command IDs match documented set", () => {
     expect(commands["palette.toggle"]).toBeDefined();
     expect(commands["session.new"]).toBeDefined();

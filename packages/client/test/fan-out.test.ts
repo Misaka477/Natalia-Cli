@@ -10,6 +10,7 @@ import { reviewPRs, runFanOut, validateOwnershipMap } from "../src/fan-out";
 
 test("runFanOut spawns sandboxed sub-agents in parallel and produces one PR each", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-fanout-"));
+  await writeFile(join(root, "CONTRACT.md"), "shared contract\n");
   const sandboxes = new SnapshotSandboxManager(root);
   await sandboxes.initialize();
 
@@ -19,6 +20,9 @@ test("runFanOut spawns sandboxed sub-agents in parallel and produces one PR each
     workDir: join(root, ".natalia", "subagents"),
     runner: async (task, context) => {
       const manifest = await sandboxes.create(context.agentId);
+      expect(await readFile(join(manifest.root, "CONTRACT.md"), "utf8")).toBe(
+        "shared contract\n",
+      );
       await writeFile(join(manifest.root, "output.txt"), `made by ${task}`);
       context.log("complete");
       context.setStatus("done");
@@ -168,6 +172,12 @@ test("agent-team prompts carry the contract each role must follow", () => {
   expect(ORCHESTRATOR_SYSTEM_PROMPT).toContain("validateOwnershipMap");
   // The sandboxed sub-agent: its file domain is enforced by the prompt.
   expect(sandboxedSubagentSystemPrompt()).toContain("isolated workspace");
+  expect(sandboxedSubagentSystemPrompt()).toContain(
+    "already checked out the repository base",
+  );
+  expect(sandboxedSubagentSystemPrompt()).toContain(
+    "Do not create or switch worktrees",
+  );
   expect(sandboxedSubagentSystemPrompt(["systems/battle"])).toContain(
     "systems/battle",
   );

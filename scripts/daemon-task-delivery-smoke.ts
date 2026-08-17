@@ -19,7 +19,7 @@ async function workspace(prefix: string) {
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       permissionProfiles: {
         unattended: { approval: "auto", description: "Task profile" },
       },

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { configV2Schema, nataliaFlowDocumentSchema } from "@natalia/contracts";
+import { configV3Schema, nataliaFlowDocumentSchema } from "@natalia/contracts";
 import { NataliaDocumentStore } from "@natalia/workflow";
 import { manualFlowTask, workflowDocumentCatalog } from "../src";
 
@@ -48,11 +48,22 @@ test("workflow catalog keeps every readable document and explains launch readine
     permissionProfile: "unattended",
     flow: { flowID: "flow_manual" },
   });
-  const config = configV2Schema.parse({
-    version: 2,
-    defaultModel: "worker",
-    providers: { local: { type: "openai-compatible", apiKey: "key" } },
-    models: { worker: { provider: "local", model: "worker-model" } },
+  const config = configV3Schema.parse({
+    version: 3,
+    defaultModel: { provider: "local", model: "worker-model" },
+    providers: {
+      local: {
+        name: "local",
+        driver: "openai-compatible",
+        enabled: true,
+        connection: { apiKey: "key" },
+      },
+    },
+    catalog: {
+      providers: {
+        local: { models: { "worker-model": { name: "worker-model" } } },
+      },
+    },
     permissionProfiles: { unattended: { approval: "auto" } },
   });
   expect(await workflowDocumentCatalog(workspaceRoot, config)).toEqual([
@@ -81,11 +92,22 @@ test("workflow catalog keeps every readable document and explains launch readine
   expect(
     await workflowDocumentCatalog(
       workspaceRoot,
-      configV2Schema.parse({
-        version: 2,
-        defaultModel: "worker",
-        providers: { local: { type: "openai-compatible", apiKey: "key" } },
-        models: { worker: { provider: "local", model: "worker-model" } },
+      configV3Schema.parse({
+        version: 3,
+        defaultModel: { provider: "local", model: "worker-model" },
+        providers: {
+          local: {
+            name: "local",
+            driver: "openai-compatible",
+            enabled: true,
+            connection: { apiKey: "key" },
+          },
+        },
+        catalog: {
+          providers: {
+            local: { models: { "worker-model": { name: "worker-model" } } },
+          },
+        },
         permissionProfiles: { unattended: { approval: "ask" } },
       }),
     ),
@@ -119,18 +141,29 @@ test("manual flow task uses the flow profile and default execution model", () =>
     directRun: { permissionProfile: "unattended" },
     modules: [{ id: "read", type: "read_search", displayName: "Read" }],
   });
-  const config = configV2Schema.parse({
-    version: 2,
-    defaultModel: "worker",
-    providers: { local: { type: "openai-compatible", apiKey: "key" } },
-    models: { worker: { provider: "local", model: "worker-model" } },
+  const config = configV3Schema.parse({
+    version: 3,
+    defaultModel: { provider: "local", model: "worker-model" },
+    providers: {
+      local: {
+        name: "local",
+        driver: "openai-compatible",
+        enabled: true,
+        connection: { apiKey: "key" },
+      },
+    },
+    catalog: {
+      providers: {
+        local: { models: { "worker-model": { name: "worker-model" } } },
+      },
+    },
     permissionProfiles: { unattended: { approval: "auto" } },
   });
   expect(manualFlowTask(flow, config)).toMatchObject({
     taskID: "manual_flow_flow_manual",
     schedule: "manual",
     permissionProfile: "unattended",
-    evaluator: { provider: "local", model: "worker" },
+    evaluator: { provider: "local", model: "worker-model" },
   });
   expect(() =>
     manualFlowTask(

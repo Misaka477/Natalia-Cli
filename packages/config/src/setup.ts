@@ -1,4 +1,6 @@
-import type { ConfigV2 } from "@natalia/contracts";
+import type { ConfigV3, ModelRef } from "@natalia/contracts";
+import { modelRefKey, parseModelRef } from "@natalia/contracts";
+import { resolveEffectiveModel } from "./catalog";
 
 export type SetupContextWindowResolution = {
   tokens: number;
@@ -25,15 +27,17 @@ export type SetupSnapshot = {
 };
 
 export function createSetupSnapshot(
-  config: ConfigV2,
-  modelName: string,
+  config: ConfigV3,
+  ref: ModelRef | string,
   resolution: SetupContextWindowResolution,
 ): SetupSnapshot {
-  const model = config.models[modelName];
-  if (!model) throw new Error(`unknown model config: ${modelName}`);
+  const modelRef = typeof ref === "string" ? parseModelRef(ref) : ref;
+  const effective = resolveEffectiveModel(config, modelRef);
+  if (!effective)
+    throw new Error(`unknown model config: ${modelRefKey(modelRef)}`);
   return {
-    provider: model.provider,
-    model: model.model,
+    provider: effective.providerID,
+    model: modelRef.model,
     contextWindow: {
       tokens: resolution.tokens,
       source: resolution.source,
@@ -42,9 +46,11 @@ export function createSetupSnapshot(
       manualOverrideAllowed: true,
     },
     outputLimit: {
-      value: model.maxOutputTokens ?? null,
-      semantics: model.maxOutputTokens ? "explicit-positive" : "omitted",
+      value: effective.limits.maxOutputTokens ?? null,
+      semantics: effective.limits.maxOutputTokens
+        ? "explicit-positive"
+        : "omitted",
     },
-    secretFields: ["providers.*.apiKey"],
+    secretFields: ["providers.*.connection.apiKey"],
   };
 }

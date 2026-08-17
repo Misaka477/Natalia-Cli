@@ -9,7 +9,7 @@
  * reloads by subscribing to service updates instead of polling.
  */
 import type { CapabilityRegistryHost } from "@natalia/capability";
-import type { ConfigV2 } from "@natalia/contracts";
+import type { ConfigV3 } from "@natalia/contracts";
 
 export const RUNTIME_CONFIG_CAPABILITY_ID = "natalia-runtime-config";
 export const RUNTIME_CONFIG_SERVICE = "runtime.config";
@@ -17,7 +17,7 @@ export const RUNTIME_CONFIG_SERVICE = "runtime.config";
 /** Loads the capability that provides the runtime's config as a service. */
 export function registerRuntimeConfigCapability(
   registry: CapabilityRegistryHost,
-  config: ConfigV2,
+  config: ConfigV3,
 ): { ok: true } | { ok: false; reason: string } {
   const result = registry.tryLoad(
     {
@@ -41,7 +41,7 @@ export function registerRuntimeConfigCapability(
  */
 export function refreshRuntimeConfigService(
   registry: CapabilityRegistryHost,
-  config: ConfigV2,
+  config: ConfigV3,
 ): void {
   registry.contribute(
     RUNTIME_CONFIG_CAPABILITY_ID,

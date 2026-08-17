@@ -6,7 +6,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { readClipboardImage } from "../clipboard";
 import type {
-  ConfigV2,
+  ConfigV3,
   MCPResourceCatalog,
   RuntimeClient,
 } from "@natalia/contracts";
@@ -34,8 +34,6 @@ import {
 /** Every editor the Settings menu can open. */
 type SettingsAction =
   | "provider"
-  | "edit-provider"
-  | "delete-provider"
   | "theme"
   | "mcp"
   | "model"
@@ -66,7 +64,7 @@ import {
   DialogStatus,
   DialogHelp,
 } from "../dialog/DialogLayer";
-import { DialogProviderSetup } from "../component/DialogProviderSetup";
+import { DialogProviderManager } from "../component/DialogProviderManager";
 import { DialogModel } from "../component/DialogModel";
 import { DialogFlows } from "../component/DialogFlows";
 import {
@@ -111,7 +109,6 @@ import {
 } from "./settings-utils";
 import { previewCommandRuleImport } from "./permission-command-rules";
 import { themeTokens as darkTheme } from "../theme/theme";
-import { discoverProviderModels } from "@natalia/config";
 import { DialogToolMultiSelect } from "../component/DialogToolMultiSelect";
 
 export interface CommandContext {
@@ -126,7 +123,9 @@ export interface CommandContext {
   attachmentPaths: () => string[];
   changeSession: (sessionID?: string) => void;
   changeWorkspace: (root: string) => void;
-  persistConfig: (next: ConfigPatch, base?: ConfigV2) => Promise<void>;
+  openWorkspaceSwitcher: () => void;
+  persistConfig: (next: ConfigPatch, base?: ConfigV3) => Promise<boolean>;
+  configRevision: () => number;
   toast: { show: (msg: any) => void; error: (err: unknown) => void };
   dialog: DialogContext;
   local: {
@@ -215,11 +214,12 @@ export async function runCommand(command: string, ctx: CommandContext) {
     resolveConfig({
       workspaceRoot: ctx.workspaceRoot ?? process.cwd(),
     }).then(({ config: resolved }) => {
+      const base = structuredClone(resolved);
       ctx.dialog.push(() => (
-        <DialogProviderSetup
+        <DialogProviderManager
           config={resolved}
           onPersist={(next) =>
-            void ctx.persistConfig(next, resolved).catch(ctx.toast.error)
+            void ctx.persistConfig(next, base).catch(ctx.toast.error)
           }
         />
       ));
@@ -233,6 +233,9 @@ export async function runCommand(command: string, ctx: CommandContext) {
         catalog={ctx.backend.modelCatalog}
         selection={ctx.backend.modelSelection}
         selectRuntimeModel={ctx.backend.selectModel}
+        configRevision={ctx.configRevision}
+        onPersist={ctx.persistConfig}
+        onError={ctx.toast.error}
       />
     ));
     return;
@@ -445,354 +448,13 @@ export async function runCommand(command: string, ctx: CommandContext) {
     resolveConfig({
       workspaceRoot: ctx.workspaceRoot ?? process.cwd(),
     }).then(({ config: resolved }) => {
-      const mk = (mid: string, pvid: string) => {
-        const v = mid.trim();
-        if (!v) throw new Error("Model ID cannot be empty");
-        return `${pvid}_${v.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
-      };
-      const save = (next: ConfigV2) => {
-        void ctx.persistConfig(next, resolved).catch(ctx.toast.error);
-      };
-      const openModelDetail = (opt: { value: string }) => {
-        const m = resolved.models[opt.value];
-        if (!m) return;
-        const refresh = () => {
-          ctx.dialog.pop();
-          openModelDetail(opt);
-        };
-        ctx.dialog.push(() => (
-          <DialogSelect
-            title={`Edit ${opt.value}`}
-            options={[
-              { title: "Model ID", value: "mid", description: m.model },
-              {
-                title: "Default",
-                value: "def",
-                description:
-                  resolved.defaultModel === opt.value
-                    ? "✓ current"
-                    : "Set as default",
-              },
-              {
-                title: "Context Window",
-                value: "ctx",
-                description:
-                  typeof m.contextWindow === "number"
-                    ? `${m.contextWindow.toLocaleString()}`
-                    : String(m.contextWindow),
-              },
-              {
-                title: "Max Output Tokens",
-                value: "maxout",
-                description: m.maxOutputTokens?.toString() ?? "(default)",
-              },
-              {
-                title: "Temperature",
-                value: "temp",
-                description: m.temperature?.toString() ?? "(default)",
-              },
-              {
-                title: "Top P",
-                value: "topp",
-                description: m.topP?.toString() ?? "(default)",
-              },
-              {
-                title: "Reasoning Effort",
-                value: "reason",
-                description: m.reasoningEffort ?? "none",
-              },
-              {
-                title: "Thinking",
-                value: "think",
-                description: m.thinkingEnabled ? "On" : "Off",
-              },
-              {
-                title: "Stream",
-                value: "stream",
-                description: m.stream ? "On" : "Off",
-              },
-              {
-                title: "Image input",
-                value: "img",
-                description: m.capabilities?.imageInput ? "On" : "Off",
-              },
-              {
-                title: "PDF input",
-                value: "pdf",
-                description: m.capabilities?.pdfInput ? "On" : "Off",
-              },
-              {
-                title: "Video input",
-                value: "video",
-                description: m.capabilities?.videoInput ? "On" : "Off",
-              },
-              {
-                title: "Request Timeout",
-                value: "timeout",
-                description: m.requestTimeoutSec?.toString() ?? "(default)",
-              },
-              { title: "Delete", value: "del", description: "Remove model" },
-            ]}
-            onSelect={async (o) => {
-              if (o.value === "def") {
-                resolved.defaultModel = opt.value;
-                save(resolved);
-                return;
-              }
-              if (o.value === "think") {
-                m.thinkingEnabled = !m.thinkingEnabled;
-                save(resolved);
-                refresh();
-                return;
-              }
-              if (o.value === "stream") {
-                m.stream = !m.stream;
-                save(resolved);
-                refresh();
-                return;
-              }
-              // Capability toggles: image / PDF / video input per model. Each is
-              // a boolean flag — absent means the model's default, so a toggle
-              // flips it to the opposite of the current effective value.
-              if (
-                o.value === "img" ||
-                o.value === "pdf" ||
-                o.value === "video"
-              ) {
-                const capability =
-                  o.value === "img"
-                    ? "imageInput"
-                    : o.value === "pdf"
-                      ? "pdfInput"
-                      : "videoInput";
-                m.capabilities ??= {
-                  toolCall: true,
-                  reasoning: true,
-                  thinking: true,
-                  imageInput: false,
-                  pdfInput: false,
-                  videoInput: false,
-                };
-                m.capabilities[capability] = !m.capabilities[capability];
-                save(resolved);
-                refresh();
-                return;
-              }
-              if (o.value === "reason") {
-                ctx.dialog.push(() => (
-                  <DialogSelect
-                    title="Reasoning Effort"
-                    options={[
-                      "minimal",
-                      "low",
-                      "medium",
-                      "high",
-                      "xhigh",
-                      "none",
-                    ].map((v) => ({
-                      title: v,
-                      value: v,
-                      description:
-                        v === (m.reasoningEffort ?? "none")
-                          ? "current"
-                          : undefined,
-                    }))}
-                    onSelect={(r) => {
-                      m.reasoningEffort =
-                        r.value === "none" ? null : (r.value as any);
-                      save(resolved);
-                      ctx.dialog.pop();
-                    }}
-                  />
-                ));
-                return;
-              }
-              if (o.value === "del") {
-                delete (resolved.models as Record<string, unknown>)[opt.value];
-                save(resolved);
-                ctx.dialog.pop();
-                return;
-              }
-              const labels: Record<string, string> = {
-                ctx: "Context Window",
-                maxout: "Max Output Tokens",
-                temp: "Temperature",
-                topp: "Top P",
-                mid: "Model ID",
-                timeout: "Request Timeout (sec)",
-                img: "Image input",
-                pdf: "PDF input",
-                video: "Video input",
-              };
-              const defaults: Record<string, string> = {
-                ctx: String(m.contextWindow),
-                maxout: String(m.maxOutputTokens ?? ""),
-                temp: String(m.temperature ?? ""),
-                topp: String(m.topP ?? ""),
-                mid: m.model,
-                timeout: String(m.requestTimeoutSec ?? ""),
-              };
-              const v = await DialogPrompt.show(ctx.dialog, labels[o.value], {
-                placeholder: defaults[o.value],
-              });
-              if (v === null) return;
-              if (o.value === "ctx")
-                m.contextWindow =
-                  v === "auto" ? ("auto" as any) : Number(v) || "auto";
-              if (o.value === "maxout")
-                m.maxOutputTokens = v === "" ? null : Number(v) || null;
-              if (o.value === "temp")
-                m.temperature = v === "" ? null : Number(v);
-              if (o.value === "topp") m.topP = v === "" ? null : Number(v);
-              if (o.value === "mid") {
-                if (v.trim()) m.model = v.trim();
-              }
-              if (o.value === "timeout")
-                m.requestTimeoutSec = v === "" ? null : Number(v) || null;
-              save(resolved);
-              refresh();
-            }}
-          />
-        ));
-      };
+      const base = structuredClone(resolved);
       ctx.dialog.push(() => (
-        <DialogSelect
-          title="Edit Models"
-          options={[
-            ...Object.entries(resolved.models ?? {}).map(([key, m]) => ({
-              title: key,
-              value: key,
-              description: `${m.model} @ ${m.provider}`,
-            })),
-            {
-              title: "+ Add model to provider",
-              value: "$add",
-              description: "Add a new model to an existing provider",
-            },
-          ]}
-          onSelect={(opt) => {
-            if (opt.value === "$add") {
-              const providers = Object.entries(resolved.providers ?? {});
-              ctx.dialog.push(() => (
-                <DialogSelect
-                  title="Select Provider"
-                  options={providers.map(([name, p]) => ({
-                    title: name,
-                    value: name,
-                    description: `${p.type}${p.baseURL ? ` @ ${p.baseURL}` : ""}`,
-                  }))}
-                  onSelect={async (p) => {
-                    const provider = resolved.providers[p.value];
-                    if (!provider?.apiKey || !provider?.baseURL) {
-                      const mid = await DialogPrompt.show(
-                        ctx.dialog,
-                        "Model ID",
-                        { placeholder: "gpt-4.1" },
-                      );
-                      if (!mid || !mid.trim()) return;
-                      resolved.models[mk(mid, p.value)] = {
-                        enabled: true,
-                        capabilities: {
-                          toolCall: true,
-                          reasoning: true,
-                          thinking: true,
-                          imageInput: false,
-                          videoInput: false,
-                          pdfInput: false,
-                        },
-                        model: mid.trim(),
-                        provider: p.value,
-                        contextWindow: "auto",
-                        temperature: null,
-                        topP: null,
-                        reasoningEffort: null,
-                        thinkingEnabled: true,
-                        stream: true,
-                        requestTimeoutSec: null,
-                        variants: {},
-                      };
-                      save(resolved);
-                      ctx.dialog.pop();
-                      return;
-                    }
-                    try {
-                      const models = await discoverProviderModels(
-                        provider.type,
-                        provider.baseURL,
-                        provider.apiKey,
-                      );
-                      ctx.dialog.push(() => (
-                        <DialogSelect
-                          title={`Models: ${p.value}`}
-                          options={models.map((model: string) => ({
-                            title: model,
-                            value: model,
-                          }))}
-                          onSelect={(sel) => {
-                            resolved.models[mk(sel.value, p.value)] = {
-                              enabled: true,
-                              capabilities: {
-                                toolCall: true,
-                                reasoning: true,
-                                thinking: true,
-                                imageInput: false,
-                                videoInput: false,
-                                pdfInput: false,
-                              },
-                              model: sel.value,
-                              provider: p.value,
-                              contextWindow: "auto",
-                              temperature: null,
-                              topP: null,
-                              reasoningEffort: null,
-                              thinkingEnabled: true,
-                              stream: true,
-                              requestTimeoutSec: null,
-                              variants: {},
-                            };
-                            save(resolved);
-                            ctx.dialog.pop();
-                          }}
-                        />
-                      ));
-                    } catch (e) {
-                      const mid = await DialogPrompt.show(
-                        ctx.dialog,
-                        "Discovery failed, enter Model ID manually",
-                        { placeholder: "gpt-4.1" },
-                      );
-                      if (!mid || !mid.trim()) return;
-                      resolved.models[mk(mid, p.value)] = {
-                        enabled: true,
-                        capabilities: {
-                          toolCall: true,
-                          reasoning: true,
-                          thinking: true,
-                          imageInput: false,
-                          videoInput: false,
-                          pdfInput: false,
-                        },
-                        model: mid.trim(),
-                        provider: p.value,
-                        contextWindow: "auto",
-                        temperature: null,
-                        topP: null,
-                        reasoningEffort: null,
-                        thinkingEnabled: true,
-                        stream: true,
-                        requestTimeoutSec: null,
-                        variants: {},
-                      };
-                      save(resolved);
-                      ctx.dialog.pop();
-                    }
-                  }}
-                />
-              ));
-              return;
-            }
-            openModelDetail(opt);
-          }}
+        <DialogProviderManager
+          config={resolved}
+          onPersist={(next) =>
+            void ctx.persistConfig(next, base).catch(ctx.toast.error)
+          }
         />
       ));
     });
@@ -932,7 +594,7 @@ export async function runCommand(command: string, ctx: CommandContext) {
     return;
   }
   if (command === "settings.open") {
-    let settingsBase: ConfigV2 | undefined;
+    let settingsBase: ConfigV3 | undefined;
     async function saveConfig(next: ConfigPatch) {
       try {
         await ctx.persistConfig(next, settingsBase);
@@ -946,19 +608,9 @@ export async function runCommand(command: string, ctx: CommandContext) {
     // either side is a compile error instead of a menu entry that does nothing.
     const settingsOptions: DialogSelectOption<SettingsAction>[] = [
       {
-        title: "Add Provider",
+        title: "Providers & Models",
         value: "provider",
-        description: "Configure a provider and model",
-      },
-      {
-        title: "Edit Provider",
-        value: "edit-provider",
-        description: "Modify key, URL, type",
-      },
-      {
-        title: "Delete Provider",
-        value: "delete-provider",
-        description: "Remove provider and models",
+        description: "Configure providers and import models",
       },
       {
         title: "Theme",
@@ -981,14 +633,9 @@ export async function runCommand(command: string, ctx: CommandContext) {
         description: "Select agent mode",
       },
       {
-        title: "Select Model",
+        title: "Default Model",
         value: "model",
-        description: "Select default model",
-      },
-      {
-        title: "Models",
-        value: "model.edit",
-        description: "Add/edit/delete model configs",
+        description: "Choose the model used by default",
       },
       {
         title: "Team max concurrent sub-agents",
@@ -1037,92 +684,12 @@ export async function runCommand(command: string, ctx: CommandContext) {
           switch (option.value) {
             case "provider":
               ctx.dialog.push(() => (
-                <DialogProviderSetup
+                <DialogProviderManager
                   config={resolved}
                   onPersist={(next) => void saveConfig(next)}
                 />
               ));
               break;
-            case "edit-provider": {
-              const providers = Object.entries(resolved.providers ?? {});
-              ctx.dialog.push(() => (
-                <DialogSelect
-                  title="Edit Provider"
-                  options={providers.map(([name, p]) => ({
-                    title: name,
-                    value: name,
-                    description: `${p.type}${p.baseURL ? ` @ ${p.baseURL}` : ""}`,
-                  }))}
-                  onSelect={async (opt) => {
-                    const p = resolved.providers[opt.value];
-                    if (!p) return;
-                    const newKey = await DialogPrompt.show(
-                      ctx.dialog,
-                      "API Key",
-                      { placeholder: p.apiKey ?? "" },
-                    );
-                    if (newKey === null || newKey === undefined) return;
-                    const newURL = await DialogPrompt.show(
-                      ctx.dialog,
-                      "Base URL",
-                      { placeholder: p.baseURL ?? "" },
-                    );
-                    if (newURL === null || newURL === undefined) return;
-                    const newHeaders = await DialogPrompt.show(
-                      ctx.dialog,
-                      "Custom Headers (JSON)",
-                      {
-                        placeholder:
-                          p.customHeaders && Object.keys(p.customHeaders).length
-                            ? JSON.stringify(p.customHeaders)
-                            : "{}",
-                      },
-                    );
-                    if (newHeaders === null || newHeaders === undefined) return;
-                    p.apiKey = newKey.trim() || p.apiKey;
-                    p.baseURL = newURL.trim() || p.baseURL;
-                    try {
-                      p.customHeaders = JSON.parse(newHeaders.trim() || "{}");
-                    } catch {
-                      /* keep existing */
-                    }
-                    void saveConfig(resolved);
-                    ctx.dialog.pop();
-                  }}
-                />
-              ));
-              break;
-            }
-            case "delete-provider": {
-              const providers = Object.entries(resolved.providers ?? {});
-              ctx.dialog.push(() => (
-                <DialogSelect
-                  title="Delete Provider"
-                  options={providers.map(([name, p]) => ({
-                    title: name,
-                    value: name,
-                    description: `${p.type} — removes provider and its models`,
-                  }))}
-                  onSelect={(opt) => {
-                    delete (resolved.providers as Record<string, unknown>)[
-                      opt.value
-                    ];
-                    for (const key of Object.keys(resolved.models ?? {})) {
-                      if (resolved.models[key]?.provider === opt.value)
-                        delete (resolved.models as Record<string, unknown>)[
-                          key
-                        ];
-                    }
-                    if (!resolved.models[resolved.defaultModel])
-                      resolved.defaultModel =
-                        Object.keys(resolved.models)[0] ?? "";
-                    void saveConfig(resolved);
-                    ctx.dialog.pop();
-                  }}
-                />
-              ));
-              break;
-            }
             case "theme":
               ctx.dialog.push(() => (
                 <DialogThemeList
@@ -1153,6 +720,9 @@ export async function runCommand(command: string, ctx: CommandContext) {
                   catalog={ctx.backend.modelCatalog}
                   selection={ctx.backend.modelSelection}
                   selectRuntimeModel={ctx.backend.selectModel}
+                  configRevision={ctx.configRevision}
+                  onPersist={ctx.persistConfig}
+                  onError={ctx.toast.error}
                 />
               ));
               break;
@@ -1165,7 +735,7 @@ export async function runCommand(command: string, ctx: CommandContext) {
                   const [profile, setProfile] = createSignal(
                     structuredClone(resolved.permissionProfiles[name]!),
                   );
-                  const saveProfile = async (next: ConfigV2) => {
+                  const saveProfile = async (next: ConfigV3) => {
                     const target = next.permissionProfiles[name];
                     if (!target || !(await saveConfig(next))) return false;
                     const saved = structuredClone(target);
@@ -2347,18 +1917,7 @@ export async function runCommand(command: string, ctx: CommandContext) {
                       return;
                     }
                     if (opt.value === "switch") {
-                      // Switch the LIVE workspace: re-create the runtime on a
-                      // new root without restarting the TUI.
-                      ctx.dialog.push(() => (
-                        <DialogPrompt
-                          title="Switch Workspace"
-                          placeholder={ctx.workspaceRoot ?? process.cwd()}
-                          onConfirm={(value) => {
-                            const root = value.trim();
-                            if (root) ctx.changeWorkspace(root);
-                          }}
-                        />
-                      ));
+                      ctx.openWorkspaceSwitcher();
                       return;
                     }
                     if (opt.value === "extra") {

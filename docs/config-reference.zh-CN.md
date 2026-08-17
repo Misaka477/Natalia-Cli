@@ -1,12 +1,12 @@
 # Natalia 配置参考 — v1
 
 > 本文档描述 `.natalia/config.json` 的形状：每个字段的类型、可选性与默认值。
-> 校验器是 `configV2Schema`（`packages/contracts/src/schemas.ts`）；本表由该
+> 校验器是 `configV3Schema`（`packages/contracts/src/schemas.ts`）；本表由该
 > schema 生成，因此不会与代码漂移。
 >
 > 配置经 `updateConfig`（`config.update`）写入并应用——写入与应用的语义（回合
 > 进行中可能答 `applied: false`）见 `docs/api-reference.md` §9。`providers`/
-> `models`/`agents`/`permissionProfiles` 等 `z.record(X)` 的键任意，元素字段
+> `catalog.providers`/`modelOverrides`/`agents`/`permissionProfiles` 等 `z.record(X)` 的键任意，元素字段
 > 见对应 schema 自己的行。
 >
 > 文末"机器派生"标题下的表格由源码生成（`npm run docs:api-reference`），与
@@ -25,48 +25,49 @@
 
 | Schema                                | Field                                 | Type                                                                             | Optional | Default                                                                          |
 | ------------------------------------- | ------------------------------------- | -------------------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------- |
-| `configV2Schema`                      | `version`                             | 2                                                                                |          |                                                                                  |
-| `configV2Schema`                      | `runtime`                             | runtimeConfigSchema                                                              |          | {}                                                                               |
-| `configV2Schema`                      | `sandbox`                             | sandboxConfigSchema                                                              |          | {}                                                                               |
-| `configV2Schema`                      | `team`                                | teamConfigSchema                                                                 |          | {}                                                                               |
-| `configV2Schema`                      | `context`                             | contextConfigSchema                                                              |          | {}                                                                               |
-| `configV2Schema`                      | `checkpoint`                          | checkpointConfigSchema                                                           |          |                                                                                  |
-| `configV2Schema`                      | `models`                              | Record<string, modelConfigSchema>                                                |          | {}                                                                               |
-| `configV2Schema`                      | `defaultModel`                        | string                                                                           |          | ""                                                                               |
-| `configV2Schema`                      | `providers`                           | Record<string, providerConfigSchema>                                             |          | {}                                                                               |
-| `configV2Schema`                      | `permissionProfiles`                  | Record<string, permissionProfileSchema>                                          |          | { ask: { approval: "ask", description: "Ask before write, process, or shell acti |
-| `configV2Schema`                      | `permissionProfiles.ask`              | { approval: "ask", description: "Ask before write, process, or shell actions", } |          |                                                                                  |
-| `configV2Schema`                      | `permissionProfiles.ask.approval`     | "ask"                                                                            |          |                                                                                  |
-| `configV2Schema`                      | `permissionProfiles.ask.description`  | "Ask before write                                                                |          |                                                                                  |
-| `configV2Schema`                      | `permissionProfiles.auto`             | { approval: "auto", description: "Automatically approve actions" }               |          |                                                                                  |
-| `configV2Schema`                      | `permissionProfiles.auto.approval`    | "auto"                                                                           |          |                                                                                  |
-| `configV2Schema`                      | `permissionProfiles.auto.description` | "Automatically approve actions"                                                  |          |                                                                                  |
-| `configV2Schema`                      | `defaultPermission`                   | string                                                                           |          | "ask"                                                                            |
-| `configV2Schema`                      | `modes`                               | Record<string, modeConfigSchema>                                                 |          | {}                                                                               |
-| `configV2Schema`                      | `defaultMode`                         | string                                                                           |          | "code"                                                                           |
-| `configV2Schema`                      | `agents`                              | Record<string, agentConfigSchema>                                                |          | {}                                                                               |
-| `configV2Schema`                      | `defaultAgent`                        | string                                                                           |          | ""                                                                               |
-| `configV2Schema`                      | `mcpServers`                          | Record<string, mcpServerConfigSchema>                                            |          | {}                                                                               |
-| `configV2Schema`                      | `skills`                              | skillsConfigSchema                                                               |          | {}                                                                               |
-| `configV2Schema`                      | `plugins`                             | pluginConfigSchema                                                               |          | {}                                                                               |
-| `configV2Schema`                      | `tools`                               | toolsConfigSchema                                                                |          | {}                                                                               |
-| `configV2Schema`                      | `workspace`                           | workspaceConfigSchema                                                            |          | {}                                                                               |
-| `configV2Schema`                      | `instructions`                        | instructionConfigSchema                                                          |          | {}                                                                               |
-| `configV2Schema`                      | `webSearch`                           | webSearchConfigSchema                                                            |          | {}                                                                               |
-| `configV2Schema`                      | `browser`                             | browserConfigSchema                                                              |          | {}                                                                               |
-| `configV2Schema`                      | `network`                             | networkConfigSchema                                                              |          | {}                                                                               |
-| `configV2Schema`                      | `security`                            | securityConfigSchema                                                             |          | {}                                                                               |
-| `configV2Schema`                      | `issueTargets`                        | Record<string, issueTargetConfigSchema>                                          |          | {}                                                                               |
-| `configV2Schema`                      | `dataSources`                         | Record<string, dataSourceConfigSchema>                                           |          | {}                                                                               |
-| `configV2Schema`                      | `alertChannels`                       | Record<string, alertChannelConfigSchema>                                         |          | {}                                                                               |
-| `configV2Schema`                      | `experimental`                        | experimentalConfigSchema                                                         |          | {}                                                                               |
+| `configV3Schema`                      | `version`                             | 3                                                                                |          |                                                                                  |
+| `configV3Schema`                      | `runtime`                             | runtimeConfigSchema                                                              |          | {}                                                                               |
+| `configV3Schema`                      | `sandbox`                             | sandboxConfigSchema                                                              |          | {}                                                                               |
+| `configV3Schema`                      | `team`                                | teamConfigSchema                                                                 |          | {}                                                                               |
+| `configV3Schema`                      | `context`                             | contextConfigSchema                                                              |          | {}                                                                               |
+| `configV3Schema`                      | `checkpoint`                          | checkpointConfigSchema                                                           |          |                                                                                  |
+| `configV3Schema`                      | `providers`                           | Record<string, providerConfigSchema>                                             |          | {}                                                                               |
+| `configV3Schema`                      | `catalog`                             | modelCatalogSchema                                                               |          |                                                                                  |
+| `configV3Schema`                      | `modelOverrides`                      | Record<string, modelOverrideSchema>                                              |          | {}                                                                               |
+| `configV3Schema`                      | `defaultModel`                        | modelRefSchema                                                                   |          | null                                                                             |
+| `configV3Schema`                      | `permissionProfiles`                  | Record<string, permissionProfileSchema>                                          |          | { ask: { approval: "ask", description: "Ask before write, process, or shell acti |
+| `configV3Schema`                      | `permissionProfiles.ask`              | { approval: "ask", description: "Ask before write, process, or shell actions", } |          |                                                                                  |
+| `configV3Schema`                      | `permissionProfiles.ask.approval`     | "ask"                                                                            |          |                                                                                  |
+| `configV3Schema`                      | `permissionProfiles.ask.description`  | "Ask before write                                                                |          |                                                                                  |
+| `configV3Schema`                      | `permissionProfiles.auto`             | { approval: "auto", description: "Automatically approve actions" }               |          |                                                                                  |
+| `configV3Schema`                      | `permissionProfiles.auto.approval`    | "auto"                                                                           |          |                                                                                  |
+| `configV3Schema`                      | `permissionProfiles.auto.description` | "Automatically approve actions"                                                  |          |                                                                                  |
+| `configV3Schema`                      | `defaultPermission`                   | string                                                                           |          | "ask"                                                                            |
+| `configV3Schema`                      | `modes`                               | Record<string, modeConfigSchema>                                                 |          | {}                                                                               |
+| `configV3Schema`                      | `defaultMode`                         | string                                                                           |          | "code"                                                                           |
+| `configV3Schema`                      | `agents`                              | Record<string, agentConfigSchema>                                                |          | {}                                                                               |
+| `configV3Schema`                      | `defaultAgent`                        | string                                                                           |          | ""                                                                               |
+| `configV3Schema`                      | `mcpServers`                          | Record<string, mcpServerConfigSchema>                                            |          | {}                                                                               |
+| `configV3Schema`                      | `skills`                              | skillsConfigSchema                                                               |          | {}                                                                               |
+| `configV3Schema`                      | `plugins`                             | pluginConfigSchema                                                               |          | {}                                                                               |
+| `configV3Schema`                      | `tools`                               | toolsConfigSchema                                                                |          | {}                                                                               |
+| `configV3Schema`                      | `workspace`                           | workspaceConfigSchema                                                            |          | {}                                                                               |
+| `configV3Schema`                      | `instructions`                        | instructionConfigSchema                                                          |          | {}                                                                               |
+| `configV3Schema`                      | `webSearch`                           | webSearchConfigSchema                                                            |          | {}                                                                               |
+| `configV3Schema`                      | `browser`                             | browserConfigSchema                                                              |          | {}                                                                               |
+| `configV3Schema`                      | `network`                             | networkConfigSchema                                                              |          | {}                                                                               |
+| `configV3Schema`                      | `security`                            | securityConfigSchema                                                             |          | {}                                                                               |
+| `configV3Schema`                      | `issueTargets`                        | Record<string, issueTargetConfigSchema>                                          |          | {}                                                                               |
+| `configV3Schema`                      | `dataSources`                         | Record<string, dataSourceConfigSchema>                                           |          | {}                                                                               |
+| `configV3Schema`                      | `alertChannels`                       | Record<string, alertChannelConfigSchema>                                         |          | {}                                                                               |
+| `configV3Schema`                      | `experimental`                        | experimentalConfigSchema                                                         |          | {}                                                                               |
 | `runtimeConfigSchema`                 | `maxStepsPerTurn`                     | number                                                                           | yes      |                                                                                  |
 | `runtimeConfigSchema`                 | `subagentDepth`                       | number                                                                           |          | 1                                                                                |
 | `runtimeConfigSchema`                 | `timeouts`                            | timeoutSchema                                                                    |          | {}                                                                               |
 | `runtimeConfigSchema`                 | `maxAttemptsPerStep`                  | number                                                                           |          | 3                                                                                |
 | `runtimeConfigSchema`                 | `providerConcurrency`                 | Record<string, number>                                                           |          | {}                                                                               |
 | `runtimeConfigSchema`                 | `retry`                               | object                                                                           |          | {}                                                                               |
-| `runtimeConfigSchema`                 | `retry.maxAttemptsPerStep`            | number                                                                           |          | 3                                                                                |
+| `runtimeConfigSchema`                 | `retry.maxAttemptsPerStep`            | number                                                                           |          | null                                                                             |
 | `runtimeConfigSchema`                 | `retry.initialBackoffMs`              | number                                                                           |          | 300                                                                              |
 | `runtimeConfigSchema`                 | `retry.maxBackoffMs`                  | number                                                                           |          | 5000                                                                             |
 | `runtimeConfigSchema`                 | `retry.jitterMs`                      | number                                                                           |          | 500                                                                              |
@@ -88,39 +89,43 @@
 | `checkpointConfigSchema`              | `maxBytes`                            | number                                                                           |          | 512 * 1024 * 1024                                                                |
 | `checkpointConfigSchema`              | `ignore`                              | string[]                                                                         |          | []                                                                               |
 | `checkpointConfigSchema`              | `additionalDirs`                      | string[]                                                                         |          | []                                                                               |
-| `modelConfigSchema`                   | `provider`                            | string                                                                           |          |                                                                                  |
-| `modelConfigSchema`                   | `model`                               | string                                                                           |          |                                                                                  |
-| `modelConfigSchema`                   | `enabled`                             | boolean                                                                          |          | true                                                                             |
-| `modelConfigSchema`                   | `capabilities`                        | object                                                                           |          | {}                                                                               |
-| `modelConfigSchema`                   | `capabilities.toolCall`               | boolean                                                                          |          | true                                                                             |
-| `modelConfigSchema`                   | `capabilities.reasoning`              | boolean                                                                          |          | true                                                                             |
-| `modelConfigSchema`                   | `capabilities.thinking`               | boolean                                                                          |          | true                                                                             |
-| `modelConfigSchema`                   | `capabilities.imageInput`             | boolean                                                                          |          | false                                                                            |
-| `modelConfigSchema`                   | `capabilities.pdfInput`               | boolean                                                                          |          | false                                                                            |
-| `modelConfigSchema`                   | `capabilities.videoInput`             | boolean                                                                          |          | false                                                                            |
-| `modelConfigSchema`                   | `contextWindow`                       | [z.literal("auto"), z.number().int().positive()]                                 |          | "auto"                                                                           |
-| `modelConfigSchema`                   | `maxOutputTokens`                     | outputTokenLimitSchema                                                           |          |                                                                                  |
-| `modelConfigSchema`                   | `temperature`                         | number                                                                           |          | null                                                                             |
-| `modelConfigSchema`                   | `topP`                                | number                                                                           |          | null                                                                             |
-| `modelConfigSchema`                   | `reasoningEffort`                     | ["minimal", "low", "medium", "high", "xhigh"]                                    |          | null                                                                             |
-| `modelConfigSchema`                   | `thinkingEnabled`                     | boolean                                                                          |          | true                                                                             |
-| `modelConfigSchema`                   | `stream`                              | boolean                                                                          |          | true                                                                             |
-| `modelConfigSchema`                   | `requestTimeoutSec`                   | number                                                                           |          | null                                                                             |
-| `modelConfigSchema`                   | `variants`                            | Record<string, object>                                                           |          | {}                                                                               |
-| `modelConfigSchema`                   | `variants.model`                      | string                                                                           | yes      |                                                                                  |
-| `modelConfigSchema`                   | `variants.maxOutputTokens`            | outputTokenLimitSchema                                                           |          |                                                                                  |
-| `modelConfigSchema`                   | `variants.temperature`                | number                                                                           |          | null                                                                             |
-| `modelConfigSchema`                   | `variants.topP`                       | number                                                                           |          | null                                                                             |
-| `modelConfigSchema`                   | `variants.reasoningEffort`            | ["minimal", "low", "medium", "high", "xhigh"]                                    |          | null                                                                             |
-| `modelConfigSchema`                   | `variants.thinkingEnabled`            | boolean                                                                          | yes      |                                                                                  |
-| `modelConfigSchema`                   | `variants.requestTimeoutSec`          | number                                                                           |          | null                                                                             |
-| `providerConfigSchema`                | `type`                                | string                                                                           |          |                                                                                  |
+| `providerConfigSchema`                | `name`                                | string                                                                           |          |                                                                                  |
+| `providerConfigSchema`                | `driver`                              | string                                                                           |          |                                                                                  |
 | `providerConfigSchema`                | `enabled`                             | boolean                                                                          |          | true                                                                             |
-| `providerConfigSchema`                | `baseURL`                             | string                                                                           | yes      |                                                                                  |
-| `providerConfigSchema`                | `apiKey`                              | string                                                                           | yes      |                                                                                  |
-| `providerConfigSchema`                | `authHeader`                          | string                                                                           | yes      |                                                                                  |
-| `providerConfigSchema`                | `customHeaders`                       | Record<string, string>                                                           |          | {}                                                                               |
-| `providerConfigSchema`                | `requireOutputLimit`                  | boolean                                                                          | yes      |                                                                                  |
+| `providerConfigSchema`                | `connection`                          | providerConnectionSchema                                                         |          |                                                                                  |
+| `providerConfigSchema`                | `requestDefaults`                     | providerRequestDefaultsSchema                                                    |          |                                                                                  |
+| `providerConnectionSchema`            | `baseURL`                             | string                                                                           | yes      |                                                                                  |
+| `providerConnectionSchema`            | `apiKey`                              | string                                                                           | yes      |                                                                                  |
+| `providerConnectionSchema`            | `authHeader`                          | string                                                                           | yes      |                                                                                  |
+| `providerRequestDefaultsSchema`       | `stream`                              | boolean                                                                          |          | true                                                                             |
+| `providerRequestDefaultsSchema`       | `headers`                             | Record<string, string>                                                           |          | {}                                                                               |
+| `providerRequestDefaultsSchema`       | `options`                             | Record<string, unknown>                                                          |          | {}                                                                               |
+| `modelCatalogSchema`                  | `providers`                           | Record<string, object>                                                           |          | {}                                                                               |
+| `modelCatalogSchema`                  | `providers.models`                    | Record<string, catalogModelSchema>                                               |          | {}                                                                               |
+| `catalogModelSchema`                  | `name`                                | string                                                                           |          |                                                                                  |
+| `catalogModelSchema`                  | `capabilities`                        | modelCapabilitiesSchema                                                          |          | {}                                                                               |
+| `catalogModelSchema`                  | `limits`                              | modelLimitsSchema                                                                |          |                                                                                  |
+| `catalogModelSchema`                  | `status`                              | ["stable", "experimental", "deprecated"]                                         |          | "stable"                                                                         |
+| `catalogModelSchema`                  | `source`                              | ["discovery", "manual"]                                                          |          | "discovery"                                                                      |
+| `modelCapabilitiesSchema`             | `toolCall`                            | boolean                                                                          |          | true                                                                             |
+| `modelCapabilitiesSchema`             | `reasoning`                           | boolean                                                                          |          | true                                                                             |
+| `modelCapabilitiesSchema`             | `thinking`                            | boolean                                                                          |          | true                                                                             |
+| `modelCapabilitiesSchema`             | `imageInput`                          | boolean                                                                          |          | false                                                                            |
+| `modelCapabilitiesSchema`             | `pdfInput`                            | boolean                                                                          |          | false                                                                            |
+| `modelCapabilitiesSchema`             | `videoInput`                          | boolean                                                                          |          | false                                                                            |
+| `modelLimitsSchema`                   | `contextWindow`                       | [z.literal("auto"), z.number().int().positive()]                                 |          | "auto"                                                                           |
+| `modelLimitsSchema`                   | `maxOutputTokens`                     | outputTokenLimitSchema                                                           |          |                                                                                  |
+| `modelOverrideSchema`                 | `enabled`                             | boolean                                                                          |          | true                                                                             |
+| `modelOverrideSchema`                 | `name`                                | string                                                                           | yes      |                                                                                  |
+| `modelOverrideSchema`                 | `requestDefaults`                     | modelOverrideRequestDefaultsSchema                                               |          |                                                                                  |
+| `modelOverrideSchema`                 | `requestOptions`                      | Record<string, unknown>                                                          |          | {}                                                                               |
+| `modelOverrideSchema`                 | `headers`                             | Record<string, string>                                                           |          | {}                                                                               |
+| `modelOverrideRequestDefaultsSchema`  | `temperature`                         | number                                                                           |          | null                                                                             |
+| `modelOverrideRequestDefaultsSchema`  | `topP`                                | number                                                                           |          | null                                                                             |
+| `modelOverrideRequestDefaultsSchema`  | `stream`                              | boolean                                                                          | yes      |                                                                                  |
+| `modelOverrideRequestDefaultsSchema`  | `thinkingEnabled`                     | boolean                                                                          | yes      |                                                                                  |
+| `modelRefSchema`                      | `provider`                            | string                                                                           |          |                                                                                  |
+| `modelRefSchema`                      | `model`                               | string                                                                           |          |                                                                                  |
 | `permissionProfileSchema`             | `approval`                            | ["ask", "auto", "read_only"]                                                     |          |                                                                                  |
 | `permissionProfileSchema`             | `description`                         | string                                                                           |          | ""                                                                               |
 | `permissionProfileSchema`             | `permissions`                         | agentPermissionRulesSchema                                                       | yes      |                                                                                  |
@@ -253,26 +258,26 @@
 解析顺序为 defaults → global → project（project 优先）。完整 schema 见
 `@natalia/config` 的 `tuiConfigSchema`；字段如下：
 
-| 字段 | 类型 | 默认 |
-|---|---|---|
-| `theme` | string | `natalia-dark` |
-| `themeMode` | `"dark" \| "light" \| "system"` | `dark` |
-| `keybinds` | string / string[] / false 的 record | `{}` |
-| `leaderKey` | string | `ctrl+x` |
-| `leaderTimeoutMs` | number | `2000` |
-| `toolDetails` | `"collapsed" \| "expanded"` | `collapsed` |
-| `reasoning` | `"step" \| "hidden"` | `step` |
-| `density` | `"comfortable" \| "compact"` | `comfortable` |
-| `followBottom` | boolean | `true` |
-| `scrollSpeed` | number | `1` |
-| `scrollAcceleration` | boolean | `true` |
-| `mouse` | boolean | `true` |
-| `prompt.maxHeight` | number | `8` |
-| `diffStyle` | `"auto" \| "stacked"` | `auto` |
-| `attention.enabled` | boolean | `false` |
-| `attention.notifications` | boolean | `true` |
-| `attention.sound` | boolean | `false` |
-| `attention.volume` | number | `0.4` |
+| 字段                      | 类型                                | 默认           |
+| ------------------------- | ----------------------------------- | -------------- |
+| `theme`                   | string                              | `natalia-dark` |
+| `themeMode`               | `"dark" \| "light" \| "system"`     | `dark`         |
+| `keybinds`                | string / string[] / false 的 record | `{}`           |
+| `leaderKey`               | string                              | `ctrl+x`       |
+| `leaderTimeoutMs`         | number                              | `2000`         |
+| `toolDetails`             | `"collapsed" \| "expanded"`         | `collapsed`    |
+| `reasoning`               | `"step" \| "hidden"`                | `step`         |
+| `density`                 | `"comfortable" \| "compact"`        | `comfortable`  |
+| `followBottom`            | boolean                             | `true`         |
+| `scrollSpeed`             | number                              | `1`            |
+| `scrollAcceleration`      | boolean                             | `true`         |
+| `mouse`                   | boolean                             | `true`         |
+| `prompt.maxHeight`        | number                              | `8`            |
+| `diffStyle`               | `"auto" \| "stacked"`               | `auto`         |
+| `attention.enabled`       | boolean                             | `false`        |
+| `attention.notifications` | boolean                             | `true`         |
+| `attention.sound`         | boolean                             | `false`        |
+| `attention.volume`        | number                              | `0.4`          |
 
 文件是部分配置：缺省键沿用低优先级的值。写入接受 schema 的任意子集
 （`deepPartial`），消费者无需先读再写。
@@ -284,4 +289,5 @@
 按共享 schema 校验（非法 patch 是参数错误，绝不会产生部分写入），原子写
 入对应作用域文件，并发布 `settings.updated` 事件（携带 scope），订阅者
 据此重新读取而非盲目缓存。
+
 <!-- /config-reference:tui-settings -->

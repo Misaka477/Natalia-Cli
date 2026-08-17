@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { configV2Schema } from "@natalia/contracts";
+import { configV3Schema } from "@natalia/contracts";
 import type { StreamingProvider } from "@natalia/runtime";
 import {
   decomposeFlowConditions,
@@ -62,20 +62,34 @@ test("condition decomposition accepts only strict unique schema JSON", () => {
 });
 
 test("condition model choices contain only resolvable configured providers", () => {
-  const config = configV2Schema.parse({
-    version: 2,
+  const config = configV3Schema.parse({
+    version: 3,
     providers: {
-      ready: { type: "openai-compatible", apiKey: "configured" },
-      missing_key: { type: "anthropic" },
+      ready: {
+        name: "Ready",
+        driver: "openai-compatible",
+        enabled: true,
+        connection: { apiKey: "configured" },
+      },
+      missing_key: {
+        name: "Missing key",
+        driver: "anthropic",
+        enabled: true,
+        connection: {},
+      },
     },
-    models: {
-      usable: { provider: "ready", model: "usable-model" },
-      unavailable: { provider: "missing_key", model: "unavailable-model" },
+    catalog: {
+      providers: {
+        ready: { models: { "usable-model": { name: "usable-model" } } },
+        missing_key: {
+          models: { "unavailable-model": { name: "unavailable-model" } },
+        },
+      },
     },
   });
   expect(flowConditionModels(config)).toEqual([
     {
-      modelID: "usable",
+      modelID: "ready/usable-model",
       providerID: "ready",
       model: "usable-model",
     },
@@ -105,7 +119,7 @@ test("condition decomposition sends only the objective and forbids tools", async
   };
   await expect(
     decomposeFlowConditions({
-      modelID: "evaluator",
+      modelID: "openai-compatible/evaluator-model",
       objective: "Read the source and record evidence",
       provider: model,
     }),
@@ -122,7 +136,7 @@ test("condition decomposition sends only the objective and forbids tools", async
   });
   await expect(
     decomposeFlowConditions({
-      modelID: "evaluator",
+      modelID: "openai-compatible/evaluator-model",
       objective: "Read",
       provider: provider([{ type: "tool_call", calls: [] }]),
     }),

@@ -9,12 +9,21 @@
  */
 export class ProviderConcurrencyLimiter {
   private active = new Map<string, number>();
-  private queues = new Map<string, Array<() => void>>();
+  private queues = new Map<
+    string,
+    Array<{
+      resolve: (release: () => void) => void;
+      reject: (error: unknown) => void;
+      signal?: AbortSignal;
+      abort?: () => void;
+    }>
+  >();
 
   constructor(private readonly caps: Record<string, number>) {}
 
   /** Acquires a slot for a provider; returns the release function. */
-  async acquire(provider: string): Promise<() => void> {
+  async acquire(provider: string, signal?: AbortSignal): Promise<() => void> {
+    if (signal?.aborted) throw cancellationError();
     const cap = this.caps[provider] ?? Infinity;
     if (cap === Infinity) return () => undefined;
     const active = this.active.get(provider) ?? 0;
@@ -22,13 +31,18 @@ export class ProviderConcurrencyLimiter {
       this.active.set(provider, active + 1);
       return () => this.release(provider);
     }
-    return await new Promise<() => void>((resolve) => {
+    return await new Promise<() => void>((resolve, reject) => {
       const queue = this.queues.get(provider) ?? [];
-      queue.push(() => {
-        this.active.set(provider, (this.active.get(provider) ?? 0) + 1);
-        resolve(() => this.release(provider));
-      });
+      const waiter: (typeof queue)[number] = { resolve, reject, signal };
+      waiter.abort = () => {
+        const index = queue.indexOf(waiter);
+        if (index >= 0) queue.splice(index, 1);
+        reject(cancellationError());
+      };
+      queue.push(waiter);
       this.queues.set(provider, queue);
+      signal?.addEventListener("abort", waiter.abort, { once: true });
+      if (signal?.aborted) waiter.abort();
     });
   }
 
@@ -46,9 +60,21 @@ export class ProviderConcurrencyLimiter {
     const active = (this.active.get(provider) ?? 1) - 1;
     if (active <= 0) this.active.delete(provider);
     else this.active.set(provider, active);
-    const next = this.queues.get(provider)?.shift();
-    if (next) next();
+    const queue = this.queues.get(provider);
+    while (queue?.length) {
+      const next = queue.shift()!;
+      next.signal?.removeEventListener("abort", next.abort!);
+      if (next.signal?.aborted) continue;
+      this.active.set(provider, (this.active.get(provider) ?? 0) + 1);
+      next.resolve(() => this.release(provider));
+      break;
+    }
+    if (!queue?.length) this.queues.delete(provider);
   }
+}
+
+function cancellationError() {
+  return new DOMException("provider request cancelled", "AbortError");
 }
 
 /**
@@ -59,8 +85,9 @@ export async function* withProviderConcurrency<T>(
   limiter: ProviderConcurrencyLimiter,
   provider: string,
   run: () => AsyncIterable<T>,
+  signal?: AbortSignal,
 ): AsyncGenerator<T> {
-  const release = await limiter.acquire(provider);
+  const release = await limiter.acquire(provider, signal);
   try {
     yield* run();
   } finally {

@@ -2,11 +2,12 @@ import { expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { configV2Schema } from "@natalia/contracts";
+import { configV3Schema, modelRefKey } from "@natalia/contracts";
 import {
   buildModelCatalog,
-  configureDiscoveredProviderModel,
+  configureProviderModels,
   discoverProviderModels,
+  resolveEffectiveModel,
 } from "../src/catalog";
 import {
   configPatch,
@@ -15,7 +16,7 @@ import {
   updateConfigAtScope,
 } from "../src/service";
 
-test("discovers models from configured provider URL and persists selected model", async () => {
+test("discovers models from configured provider URL and imports them in batch", async () => {
   const requests: Array<{ path: string; authorization: string | null }> = [];
   const server = Bun.serve({
     port: 0,
@@ -32,6 +33,7 @@ test("discovers models from configured provider URL and persists selected model"
   const workspaceRoot = await mkdtemp(
     join(tmpdir(), "natalia-provider-config-"),
   );
+  const globalPath = join(workspaceRoot, "global.json");
 
   try {
     const models = await discoverProviderModels(
@@ -44,68 +46,202 @@ test("discovers models from configured provider URL and persists selected model"
       { path: "/v1/models", authorization: "Bearer secret-key" },
     ]);
 
-    const configured = configureDiscoveredProviderModel(
-      configV2Schema.parse({ version: 2 }),
+    const configured = configureProviderModels(
+      configV3Schema.parse({ version: 3 }),
       {
         providerID: "private-provider",
-        providerType: "openai-compatible",
+        providerName: "Private Gateway",
+        driver: "openai-compatible",
         apiKey: "secret-key",
         baseURL: server.url.toString(),
-        modelID: "model-b",
-        discoveredModels: models,
+        source: "discovery",
+        modelIDs: models,
       },
     );
-    await updateConfig(workspaceRoot, configured);
+    await updateConfig(workspaceRoot, configured, { globalPath });
 
-    const persisted = configV2Schema.parse(
-      JSON.parse(
-        await readFile(join(workspaceRoot, ".natalia", "config.json"), "utf8"),
-      ),
-    );
-    expect(persisted.defaultModel).toBe("private-provider_model-b");
-    expect(persisted.providers["private-provider"]?.baseURL).toBe(
-      server.url.toString().replace(/\/+$/u, ""),
-    );
-    expect(persisted.models[persisted.defaultModel]?.model).toBe("model-b");
+    const persisted = JSON.parse(await readFile(globalPath, "utf8"));
+    expect(persisted.defaultModel).toEqual({
+      provider: "private-provider",
+      model: "model-a",
+    });
+    expect(persisted.providers["private-provider"]).toMatchObject({
+      name: "Private Gateway",
+      driver: "openai-compatible",
+      connection: {
+        baseURL: server.url.toString().replace(/\/+$/u, ""),
+        apiKey: "secret-key",
+      },
+    });
+    expect(
+      persisted.catalog.providers["private-provider"]?.models,
+    ).toMatchObject({
+      "model-a": { source: "discovery" },
+      "model-b": { source: "discovery" },
+    });
   } finally {
     server.stop(true);
     await rm(workspaceRoot, { recursive: true, force: true });
   }
 });
 
-test("rejects a model that provider discovery did not return", () => {
+test("rejects a discovery import without credentials or model IDs", () => {
   expect(() =>
-    configureDiscoveredProviderModel(configV2Schema.parse({ version: 2 }), {
+    configureProviderModels(configV3Schema.parse({ version: 3 }), {
       providerID: "private-provider",
-      providerType: "openai-compatible",
-      apiKey: "secret-key",
-      baseURL: "https://example.invalid",
-      modelID: "invented-model",
-      discoveredModels: ["real-model"],
+      driver: "openai-compatible",
+      source: "discovery",
+      modelIDs: ["real-model"],
     }),
-  ).toThrow("Model was not returned by provider");
+  ).toThrow("Provider API key is required for discovery");
+  expect(() =>
+    configureProviderModels(configV3Schema.parse({ version: 3 }), {
+      providerID: "private-provider",
+      driver: "openai-compatible",
+      source: "manual",
+      modelIDs: [],
+    }),
+  ).toThrow("At least one model ID is required");
 });
 
-test("persists an Anthropic-compatible custom Messages API endpoint", () => {
-  const configured = configureDiscoveredProviderModel(
-    configV2Schema.parse({ version: 2 }),
-    {
-      providerID: "gateway-anthropic",
-      providerType: "anthropic-compatible",
-      apiKey: "test-only",
-      baseURL: "https://gateway.example/v1",
-      modelID: "claude-compatible-model",
-      discoveredModels: ["claude-compatible-model"],
+test("manual import preserves existing overrides and an existing default model", () => {
+  const base = configV3Schema.parse({
+    version: 3,
+    providers: {
+      local: {
+        name: "Local",
+        driver: "openai-compatible",
+        connection: { apiKey: "existing-key" },
+      },
     },
-  );
-  expect(configured.providers["gateway-anthropic"]).toMatchObject({
-    type: "anthropic-compatible",
-    baseURL: "https://gateway.example/v1",
+    catalog: {
+      providers: {
+        local: {
+          models: {
+            m1: { name: "m1", source: "manual" },
+          },
+        },
+      },
+    },
+    modelOverrides: {
+      "local/m1": {
+        enabled: true,
+        requestDefaults: { temperature: 0.7, stream: false },
+      },
+    },
+    defaultModel: { provider: "local", model: "m1" },
   });
-  expect(configured.models[configured.defaultModel]).toMatchObject({
-    provider: "gateway-anthropic",
-    model: "claude-compatible-model",
+  const next = configureProviderModels(base, {
+    providerID: "local",
+    providerName: "Renamed Gateway",
+    driver: "openai-compatible",
+    source: "manual",
+    modelIDs: ["m1", "m2"],
   });
+  // The user's override survives the re-import untouched.
+  expect(next.modelOverrides["local/m1"]).toMatchObject({
+    requestDefaults: { temperature: 0.7, stream: false },
+  });
+  expect(next.modelOverrides["local/m2"]).toBeUndefined();
+  // The previous default stays; the provider name is user editable.
+  expect(next.defaultModel).toEqual({ provider: "local", model: "m1" });
+  expect(next.providers["local"]?.name).toBe("Renamed Gateway");
+  // Existing catalog facts are preserved; new IDs are added with the source.
+  expect(next.catalog.providers["local"]?.models["m1"]).toMatchObject({
+    name: "m1",
+    source: "manual",
+  });
+  expect(next.catalog.providers["local"]?.models["m2"]).toMatchObject({
+    source: "manual",
+    status: "stable",
+  });
+});
+
+test("resolveEffectiveModel merges catalog facts, override and provider defaults", () => {
+  const config = configV3Schema.parse({
+    version: 3,
+    providers: {
+      local: {
+        name: "Local",
+        driver: "openai-compatible",
+        connection: { apiKey: "key" },
+        requestDefaults: {
+          stream: false,
+          headers: { "x-base": "1" },
+          options: { baseOpt: 1 },
+        },
+      },
+    },
+    catalog: {
+      providers: {
+        local: {
+          models: {
+            m1: {
+              name: "m1 name",
+              capabilities: { thinking: false },
+              limits: { maxOutputTokens: 2000 },
+            },
+          },
+        },
+      },
+    },
+    modelOverrides: {
+      "local/m1": {
+        requestDefaults: { temperature: 0.5, thinkingEnabled: false },
+        requestOptions: { opt: 2 },
+        headers: { "x-override": "2" },
+      },
+    },
+  });
+  const effective = resolveEffectiveModel(config, "local/m1");
+  expect(effective).toMatchObject({
+    name: "m1 name",
+    capabilities: { thinking: false },
+    limits: { maxOutputTokens: 2000 },
+    requestDefaults: {
+      temperature: 0.5,
+      topP: null,
+      // stream is not overridden, so the provider-level default wins.
+      stream: false,
+      thinkingEnabled: false,
+      headers: { "x-base": "1", "x-override": "2" },
+      options: { baseOpt: 1, opt: 2 },
+    },
+  });
+  expect(modelRefKey(effective!.ref)).toBe("local/m1");
+});
+
+test("resolveEffectiveModel is undefined for an unknown provider or model", () => {
+  const config = configV3Schema.parse({ version: 3 });
+  expect(
+    resolveEffectiveModel(config, { provider: "missing", model: "m" }),
+  ).toBeUndefined();
+  expect(
+    resolveEffectiveModel(config, { provider: "p", model: "m" }),
+  ).toBeUndefined();
+});
+
+test("NATALIA_MODEL makes a transient default model ref without mutating the catalog", async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), "natalia-env-model-"));
+  try {
+    const resolved = await resolveConfig({
+      workspaceRoot,
+      environment: { NATALIA_MODEL: "openai/gpt-test" },
+    });
+    expect(resolved.config.defaultModel).toEqual({
+      provider: "openai",
+      model: "gpt-test",
+    });
+    expect(resolved.config.catalog.providers.openai).toBeUndefined();
+    expect(resolved.config.modelOverrides["openai/gpt-test"]).toBeUndefined();
+    expect(resolved.sources).toContainEqual({
+      scope: "environment",
+      applied: true,
+      diagnostic: "NATALIA_MODEL",
+    });
+  } finally {
+    await rm(workspaceRoot, { recursive: true, force: true });
+  }
 });
 
 test("writes settings mutations to the requested config scope", async () => {
@@ -160,28 +296,42 @@ test("writes settings mutations to the requested config scope", async () => {
 });
 
 test("config patches preserve complete changed records and delete removed records", () => {
-  const base = configV2Schema.parse({
-    version: 2,
+  const base = configV3Schema.parse({
+    version: 3,
     providers: {
-      retained: { type: "openai", apiKey: "base-key" },
-      removed: { type: "openai", apiKey: "remove-key" },
+      retained: {
+        name: "Retained",
+        driver: "openai",
+        connection: { apiKey: "base-key" },
+      },
+      removed: {
+        name: "Removed",
+        driver: "openai",
+        connection: { apiKey: "remove-key" },
+      },
     },
   });
-  const next = configV2Schema.parse({
+  const next = configV3Schema.parse({
     ...base,
     providers: {
       retained: {
         ...base.providers.retained,
-        baseURL: "https://example.invalid",
+        connection: {
+          ...base.providers.retained.connection,
+          baseURL: "https://example.invalid",
+        },
       },
     },
   });
   expect(configPatch(base, next)).toMatchObject({
     providers: {
       retained: {
-        type: "openai",
-        apiKey: "base-key",
-        baseURL: "https://example.invalid",
+        name: "Retained",
+        driver: "openai",
+        connection: {
+          apiKey: "base-key",
+          baseURL: "https://example.invalid",
+        },
       },
       removed: undefined,
     },
@@ -197,7 +347,7 @@ test("settings arrays and browser fields persist as a minimal selected-scope pat
   process.env.HOME = home;
   try {
     const base = (await resolveConfig({ workspaceRoot })).config;
-    const next = configV2Schema.parse({
+    const next = configV3Schema.parse({
       ...base,
       instructions: {
         ...base.instructions,
@@ -370,15 +520,25 @@ test("settings arrays and browser fields persist as a minimal selected-scope pat
 });
 
 test("catalog excludes providers denied by the configured policy", () => {
-  const config = configV2Schema.parse({
-    version: 2,
+  const config = configV3Schema.parse({
+    version: 3,
     providers: {
-      approved: { type: "openai-compatible", apiKey: "approved-key" },
-      blocked: { type: "openai-compatible", apiKey: "blocked-key" },
+      approved: {
+        name: "Approved",
+        driver: "openai-compatible",
+        connection: { apiKey: "approved-key" },
+      },
+      blocked: {
+        name: "Blocked",
+        driver: "openai-compatible",
+        connection: { apiKey: "blocked-key" },
+      },
     },
-    models: {
-      approved_model: { provider: "approved", model: "approved-model" },
-      blocked_model: { provider: "blocked", model: "blocked-model" },
+    catalog: {
+      providers: {
+        approved: { models: { "approved-model": { name: "approved-model" } } },
+        blocked: { models: { "blocked-model": { name: "blocked-model" } } },
+      },
     },
     experimental: {
       policies: [
@@ -390,13 +550,14 @@ test("catalog excludes providers denied by the configured policy", () => {
   expect(buildModelCatalog(config)).toEqual([
     {
       id: "approved",
-      name: "approved",
-      type: "openai-compatible",
+      name: "Approved",
+      driver: "openai-compatible",
       configured: true,
       models: [
         {
           id: "approved-model",
           provider: "approved",
+          name: "approved-model",
           capabilities: {
             toolCall: true,
             reasoning: true,
@@ -405,6 +566,9 @@ test("catalog excludes providers denied by the configured policy", () => {
             pdfInput: false,
             videoInput: false,
           },
+          limits: { contextWindow: "auto" },
+          status: "stable",
+          source: "discovery",
         },
       ],
     },
@@ -412,30 +576,52 @@ test("catalog excludes providers denied by the configured policy", () => {
 });
 
 test("catalog filters disabled and policy-denied models while preserving capabilities", () => {
-  const config = configV2Schema.parse({
-    version: 2,
-    providers: { local: { type: "openai-compatible", apiKey: "key" } },
-    models: {
-      capable: {
-        provider: "local",
-        model: "capable",
-        capabilities: { toolCall: false, reasoning: false, thinking: false },
+  const config = configV3Schema.parse({
+    version: 3,
+    providers: {
+      local: {
+        name: "Local",
+        driver: "openai-compatible",
+        connection: { apiKey: "key" },
       },
-      disabled: { provider: "local", model: "disabled", enabled: false },
+    },
+    catalog: {
+      providers: {
+        local: {
+          models: {
+            capable: {
+              name: "capable",
+              capabilities: {
+                toolCall: false,
+                reasoning: false,
+                thinking: false,
+              },
+            },
+            disabled: { name: "disabled" },
+            denied: { name: "denied" },
+          },
+        },
+      },
+    },
+    modelOverrides: {
+      "local/disabled": { enabled: false },
+    },
+    experimental: {
+      policies: [
+        { effect: "deny", action: "provider.use", resource: "local/denied" },
+      ],
     },
   });
-  expect(buildModelCatalog(config)[0]?.models).toEqual([
-    {
-      id: "capable",
-      provider: "local",
-      capabilities: {
-        toolCall: false,
-        reasoning: false,
-        thinking: false,
-        imageInput: false,
-        pdfInput: false,
-        videoInput: false,
-      },
+  const models = buildModelCatalog(config)[0]?.models;
+  expect(models?.map((model) => model.id)).toEqual(["capable"]);
+  expect(models?.[0]).toMatchObject({
+    capabilities: {
+      toolCall: false,
+      reasoning: false,
+      thinking: false,
+      imageInput: false,
+      pdfInput: false,
+      videoInput: false,
     },
-  ]);
+  });
 });

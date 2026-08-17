@@ -61,7 +61,8 @@ export const runtimeConfigSchema = z.object({
   providerConcurrency: z.record(z.number().int().min(1)).default({}),
   retry: z
     .object({
-      maxAttemptsPerStep: z.number().int().positive().default(3),
+      // Null means transient provider failures retry until success or cancellation.
+      maxAttemptsPerStep: z.number().int().positive().nullable().default(null),
       initialBackoffMs: z.number().int().positive().default(300),
       maxBackoffMs: z.number().int().positive().default(5000),
       jitterMs: z.number().int().min(0).default(500),
@@ -94,60 +95,133 @@ export const checkpointConfigSchema = z
   })
   .default({});
 
-export const modelConfigSchema = z.object({
-  provider: z.string().min(1),
-  model: z.string().min(1),
-  enabled: z.boolean().default(true),
-  capabilities: z
-    .object({
-      toolCall: z.boolean().default(true),
-      reasoning: z.boolean().default(true),
-      thinking: z.boolean().default(true),
-      imageInput: z.boolean().default(false),
-      pdfInput: z.boolean().default(false),
-      videoInput: z.boolean().default(false),
-    })
-    .default({}),
-  contextWindow: z
-    .union([z.literal("auto"), z.number().int().positive()])
-    .default("auto"),
-  maxOutputTokens: outputTokenLimitSchema,
-  temperature: z.number().min(0).max(2).nullable().default(null),
-  topP: z.number().min(0).max(1).nullable().default(null),
-  reasoningEffort: z
-    .enum(["minimal", "low", "medium", "high", "xhigh"])
-    .nullable()
-    .default(null),
-  thinkingEnabled: z.boolean().default(true),
-  stream: z.boolean().default(true),
-  requestTimeoutSec: z.number().int().positive().nullable().default(null),
-  variants: z
-    .record(
-      z.object({
-        model: z.string().min(1).optional(),
-        maxOutputTokens: outputTokenLimitSchema,
-        temperature: z.number().min(0).max(2).nullable().default(null),
-        topP: z.number().min(0).max(1).nullable().default(null),
-        reasoningEffort: z
-          .enum(["minimal", "low", "medium", "high", "xhigh"])
-          .nullable()
-          .default(null),
-        thinkingEnabled: z.boolean().optional(),
-        requestTimeoutSec: z.number().int().positive().nullable().default(null),
-      }),
-    )
-    .default({}),
+export const modelCapabilitiesSchema = z.object({
+  toolCall: z.boolean().default(true),
+  reasoning: z.boolean().default(true),
+  thinking: z.boolean().default(true),
+  imageInput: z.boolean().default(false),
+  pdfInput: z.boolean().default(false),
+  videoInput: z.boolean().default(false),
 });
 
-export const providerConfigSchema = z.object({
-  type: z.string().min(1),
-  enabled: z.boolean().default(true),
-  baseURL: z.string().url().optional(),
-  apiKey: z.string().min(1).optional(),
-  authHeader: z.string().min(1).optional(),
-  customHeaders: z.record(z.string()).default({}),
-  requireOutputLimit: z.boolean().optional(),
+export const modelLimitsSchema = z
+  .object({
+    contextWindow: z
+      .union([z.literal("auto"), z.number().int().positive()])
+      .default("auto"),
+    maxOutputTokens: outputTokenLimitSchema,
+  })
+  .default({});
+
+/**
+ * A model known to a provider, keyed by the model ID the provider's API
+ * returns. The catalog is where provider-returned facts live (discovery or
+ * user-declared manual import); it is never mutated by a runtime default.
+ */
+export const catalogModelSchema = z.object({
+  name: z.string().min(1),
+  capabilities: modelCapabilitiesSchema.default({}),
+  limits: modelLimitsSchema,
+  status: z.enum(["stable", "experimental", "deprecated"]).default("stable"),
+  source: z.enum(["discovery", "manual"]).default("discovery"),
 });
+
+/**
+ * The provider-visible model catalog. `catalog.providers[providerID].models`
+ * is keyed by the provider's own model ID, so the same model string on two
+ * providers never collides.
+ */
+export const modelCatalogSchema = z
+  .object({
+    providers: z
+      .record(
+        z
+          .object({
+            models: z.record(catalogModelSchema).default({}),
+          })
+          .default({}),
+      )
+      .default({}),
+  })
+  .default({});
+
+export const providerConnectionSchema = z
+  .object({
+    baseURL: z.string().url().optional(),
+    apiKey: z.string().min(1).optional(),
+    authHeader: z.string().optional(),
+  })
+  .default({});
+
+export const providerRequestDefaultsSchema = z
+  .object({
+    stream: z.boolean().default(true),
+    headers: z.record(z.string()).default({}),
+    options: z.record(z.unknown()).default({}),
+  })
+  .default({});
+
+/**
+ * A configured provider, keyed by a stable provider ID. `name` is the
+ * user-editable label; `driver` names the wire protocol adapter. Connection
+ * secrets and request-level defaults are nested so a partial overlay can
+ * update one without replacing the others.
+ */
+export const providerConfigSchema = z.object({
+  name: z.string().min(1),
+  driver: z.string().min(1),
+  enabled: z.boolean().default(true),
+  connection: providerConnectionSchema,
+  requestDefaults: providerRequestDefaultsSchema,
+});
+
+export const modelOverrideRequestDefaultsSchema = z
+  .object({
+    temperature: z.number().min(0).max(2).nullable().default(null),
+    topP: z.number().min(0).max(1).nullable().default(null),
+    // Optional on purpose: an unset field falls through to the provider's
+    // connection-level request default instead of being pinned to `true`.
+    stream: z.boolean().optional(),
+    thinkingEnabled: z.boolean().optional(),
+  })
+  .default({});
+
+/**
+ * User intent layered over the catalog. Keyed by the canonical
+ * `${providerID}/${modelID}` ref, so a user can enable, rename or tune a
+ * specific model without rewriting provider-returned catalog facts.
+ */
+export const modelOverrideSchema = z.object({
+  enabled: z.boolean().default(true),
+  name: z.string().min(1).optional(),
+  requestDefaults: modelOverrideRequestDefaultsSchema,
+  requestOptions: z.record(z.unknown()).default({}),
+  headers: z.record(z.string()).default({}),
+});
+
+/** A canonical model reference: `{provider, model}`. */
+export const modelRefSchema = z
+  .object({
+    provider: z.string().min(1),
+    model: z.string().min(1),
+  })
+  .strict();
+
+export function modelRefKey(ref: ModelRef): string {
+  return `${ref.provider}/${ref.model}`;
+}
+
+export function parseModelRef(input: string): ModelRef {
+  const separator = input.indexOf("/");
+  if (separator <= 0 || separator === input.length - 1)
+    throw new Error(
+      `invalid model reference "${input}"; expected "provider/model"`,
+    );
+  return {
+    provider: input.slice(0, separator),
+    model: input.slice(separator + 1),
+  };
+}
 
 export const modeConfigSchema = z.object({
   description: z.string().default(""),
@@ -754,16 +828,17 @@ export const alertChannelConfigSchema = z.object({
   enabled: z.boolean().default(true),
 });
 
-export const configV2Schema = z.object({
-  version: z.literal(2),
+export const configV3Schema = z.object({
+  version: z.literal(3),
   runtime: runtimeConfigSchema.default({}),
   sandbox: sandboxConfigSchema.default({}),
   team: teamConfigSchema.default({}),
   context: contextConfigSchema.default({}),
   checkpoint: checkpointConfigSchema,
-  models: z.record(modelConfigSchema).default({}),
-  defaultModel: z.string().default(""),
   providers: z.record(providerConfigSchema).default({}),
+  catalog: modelCatalogSchema,
+  modelOverrides: z.record(modelOverrideSchema).default({}),
+  defaultModel: modelRefSchema.nullable().default(null),
   permissionProfiles: z.record(permissionProfileSchema).default({
     ask: {
       approval: "ask",
@@ -798,9 +873,21 @@ export const configV2Schema = z.object({
 
 export type SandboxBackend = z.infer<typeof sandboxConfigSchema>["backend"];
 
-export type ConfigV2 = z.infer<typeof configV2Schema>;
-export type ModelConfig = z.infer<typeof modelConfigSchema>;
+export type ConfigV3 = z.infer<typeof configV3Schema>;
+export type ModelRef = z.infer<typeof modelRefSchema>;
+export type ModelCapabilities = z.infer<typeof modelCapabilitiesSchema>;
+export type ModelLimits = z.infer<typeof modelLimitsSchema>;
+export type CatalogModel = z.infer<typeof catalogModelSchema>;
+export type ModelCatalog = z.infer<typeof modelCatalogSchema>;
 export type ProviderConfig = z.infer<typeof providerConfigSchema>;
+export type ProviderConnection = z.infer<typeof providerConnectionSchema>;
+export type ProviderRequestDefaults = z.infer<
+  typeof providerRequestDefaultsSchema
+>;
+export type ModelOverride = z.infer<typeof modelOverrideSchema>;
+export type ModelOverrideRequestDefaults = z.infer<
+  typeof modelOverrideRequestDefaultsSchema
+>;
 export type PermissionProfile = z.infer<typeof permissionProfileSchema>;
 export type IssueTargetConfig = z.infer<typeof issueTargetConfigSchema>;
 export type DataSourceConfig = z.infer<typeof dataSourceConfigSchema>;

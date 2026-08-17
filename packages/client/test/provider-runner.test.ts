@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
-import { ContextLedger } from "@natalia/runtime";
+import { ContextLedger, providerError } from "@natalia/runtime";
 import type {
   ProviderStreamChunk,
+  ProviderStreamRequest,
   ProviderToolCall,
   StreamingProvider,
 } from "@natalia/runtime";
@@ -58,6 +59,13 @@ function makeHarness(
       verification: string[];
       riskNotes: string[];
     };
+    retryPolicy?: {
+      maxAttemptsPerStep: number | null;
+      initialBackoffMs: number;
+      maxBackoffMs: number;
+      jitterMs: number;
+      maxRetryAfterMs: number;
+    };
   },
 ) {
   const events: RuntimeEvent[] = [];
@@ -103,13 +111,14 @@ function makeHarness(
     naviIntro: () => options?.naviIntro ?? false,
     naviAnswers: () => options?.naviAnswers ?? [],
     activePlan: () => options?.activePlan,
-    retryPolicy: () => ({
-      maxAttemptsPerStep: 1,
-      initialBackoffMs: 1,
-      maxBackoffMs: 1,
-      jitterMs: 0,
-      maxRetryAfterMs: 1,
-    }),
+    retryPolicy: () =>
+      options?.retryPolicy ?? {
+        maxAttemptsPerStep: 1,
+        initialBackoffMs: 1,
+        maxBackoffMs: 1,
+        jitterMs: 0,
+        maxRetryAfterMs: 1,
+      },
     lastProviderUsage: () => lastUsage,
     setLastProviderUsage: (usage) => {
       lastUsage = usage;
@@ -271,6 +280,135 @@ test("aborting the turn mid-stream finishes cancelled with a warning", async () 
       (event) => event.type === "diagnostic" && event.level === "warning",
     ),
   ).toBe(true);
+});
+
+test("a retried partial stream is attempt-stamped and only successful usage commits", async () => {
+  let attempts = 0;
+  const { runner, events, ledger } = makeHarness(
+    {
+      provider: "scripted",
+      model: "m1",
+      async *stream() {
+        attempts++;
+        if (attempts === 1) {
+          yield content("discarded partial");
+          yield usage(90, 9);
+          throw providerError({ kind: "server", message: "temporary outage" });
+        }
+        yield content("clean answer");
+        yield usage(10, 2);
+      },
+    },
+    {
+      retryPolicy: {
+        maxAttemptsPerStep: 2,
+        initialBackoffMs: 1,
+        maxBackoffMs: 1,
+        jitterMs: 0,
+        maxRetryAfterMs: 1,
+      },
+    },
+  );
+  await runner.runTurn(turn);
+  expect(
+    events
+      .filter(
+        (event): event is Extract<RuntimeEvent, { type: "content.delta" }> =>
+          event.type === "content.delta",
+      )
+      .map((event) => ({ text: event.text, attempt: event.attempt })),
+  ).toEqual([
+    { text: "discarded partial", attempt: 1 },
+    { text: "clean answer", attempt: 2 },
+  ]);
+  expect(ledger.snapshot().checkpoint).toMatchObject({
+    inputTokens: 10,
+    outputTokens: 2,
+  });
+});
+
+test("the main agent keeps retrying transient failures until recovery", async () => {
+  let attempts = 0;
+  const { runner, events } = makeHarness(
+    {
+      provider: "scripted",
+      model: "m1",
+      async *stream() {
+        attempts++;
+        if (attempts < 6)
+          throw providerError({ kind: "server", message: "temporary outage" });
+        yield content("recovered after prolonged outage");
+      },
+    },
+    {
+      retryPolicy: {
+        maxAttemptsPerStep: null,
+        initialBackoffMs: 1,
+        maxBackoffMs: 1,
+        jitterMs: 0,
+        maxRetryAfterMs: 1,
+      },
+    },
+  );
+  await runner.runTurn(turn);
+  expect(attempts).toBe(6);
+  expect(events.filter((event) => event.type === "step.retry")).toHaveLength(5);
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "step.retry.cleared",
+      attempts: 6,
+    }),
+  );
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "turn.finished",
+      stopReason: "done",
+    }),
+  );
+});
+
+test("context-limit recovery keeps compacted context and recovered tool results for later steps", async () => {
+  let calls = 0;
+  const requests: ProviderStreamRequest[] = [];
+  const { runner } = makeHarness({
+    provider: "scripted",
+    model: "m1",
+    async *stream(request) {
+      calls++;
+      requests.push(request);
+      if (calls === 1)
+        throw providerError({ kind: "context_limit", message: "too long" });
+      if (calls === 2) {
+        yield content("compacted summary");
+        return;
+      }
+      if (calls === 3) {
+        yield toolCall([
+          { id: "call_recovered", name: "read_file", arguments: "{}" },
+        ]);
+        return;
+      }
+      expect(
+        request.messages.some(
+          (message) =>
+            message.role === "system" &&
+            message.content.includes("compacted summary"),
+        ),
+      ).toBe(true);
+      expect(
+        request.messages.some(
+          (message) =>
+            message.role === "tool" &&
+            message.toolCallID === "call_recovered" &&
+            message.content === "ok",
+        ),
+      ).toBe(true);
+      yield content("recovered final");
+    },
+  });
+  await runner.runTurn(turn);
+  expect(calls).toBe(4);
+  expect(requests).toHaveLength(4);
 });
 
 test("delivered mailbox intents render into the system prompt", async () => {

@@ -1,10 +1,11 @@
-import type { ConfigV2, NataliaTaskDocument } from "@natalia/contracts";
+import type { ConfigV3, NataliaTaskDocument } from "@natalia/contracts";
+import { resolveEffectiveModel } from "@natalia/config";
 import { taskAlertSubscriptions } from "@natalia/workflow";
 
 /** Fails closed for every configured reference a task needs before execution. */
 export function assertTaskReferences(input: {
   task: NataliaTaskDocument;
-  config: ConfigV2;
+  config: ConfigV3;
 }) {
   const profile = input.config.permissionProfiles[input.task.permissionProfile];
   if (!profile)
@@ -46,9 +47,15 @@ export function assertTaskReferences(input: {
       on: subscription.on,
     }),
   );
-  if (input.task.evaluator && !input.config.models[input.task.evaluator.model])
+  if (
+    input.task.evaluator &&
+    !resolveEffectiveModel(input.config, {
+      provider: input.task.evaluator.provider,
+      model: input.task.evaluator.model,
+    })
+  )
     throw new Error(
-      `task evaluator model not found in config: ${input.task.evaluator.model}`,
+      `task evaluator model not found in config: ${input.task.evaluator.provider}/${input.task.evaluator.model}`,
     );
   return {
     permissionProfile: {

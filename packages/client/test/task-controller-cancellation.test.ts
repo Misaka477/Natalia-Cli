@@ -3,7 +3,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  configV2Schema,
+  configV3Schema,
   nataliaFlowDocumentSchema,
   nataliaTaskDocumentSchema,
 } from "@natalia/contracts";
@@ -43,7 +43,7 @@ test("task cancellation reaches a durable terminal invocation", async () => {
     workspaceRoot: root,
     task,
     flow,
-    config: configV2Schema.parse({ version: 2 }),
+    config: configV3Schema.parse({ version: 3 }),
     json: true,
     signal: abort.signal,
     emit: (line) => {
@@ -92,7 +92,7 @@ test("a task cancelled before admission creates no durable invocation", async ()
         displayName: "Never started",
         modules: [{ id: "read", type: "read_search", displayName: "Read" }],
       }),
-      config: configV2Schema.parse({ version: 2 }),
+      config: configV3Schema.parse({ version: 3 }),
       json: true,
       signal: abort.signal,
       emit: () => undefined,

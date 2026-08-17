@@ -1,6 +1,6 @@
 import type {
   CheckpointResourcePolicy,
-  ConfigV2,
+  ConfigV3,
   RuntimeEvent,
   SessionID,
 } from "@natalia/contracts";
@@ -23,8 +23,8 @@ import { checkpointNode, rollbackCheckpointEdge } from "./work-graph";
 export function createCheckpointController(input: {
   sessionID(): SessionID;
   workspaceRoot: string;
-  checkpoint(): ConfigV2["checkpoint"] | undefined;
-  workspace(): ConfigV2["workspace"] | undefined;
+  checkpoint(): ConfigV3["checkpoint"] | undefined;
+  workspace(): ConfigV3["workspace"] | undefined;
   publish(event: RuntimeEvent): void;
   context(): import("@natalia/runtime").ContextLedger;
   subagents(): SubagentRegistry | undefined;

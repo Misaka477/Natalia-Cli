@@ -99,6 +99,8 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "modelCatalog",
     "modelSelection",
     "selectModel",
+    "reasoningEffort",
+    "setReasoningEffort",
     "skills",
     "agentCreate",
     "agentUpdate",

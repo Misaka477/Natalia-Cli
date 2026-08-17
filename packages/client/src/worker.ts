@@ -4,6 +4,7 @@ import type {
   QuestionResponse,
   RuntimeClient,
   RuntimeEvent,
+  RuntimeReasoningEffort,
   SubmitInput,
   SubmittedTurn,
 } from "@natalia/contracts";
@@ -53,6 +54,11 @@ export const WORKER_ROUTE_MEMBERS = {
   "model.catalog": "modelCatalog",
   "model.selection": "modelSelection",
   "model.select": "selectModel",
+  "model.reasoning": "reasoningEffort",
+  "model.reasoning.set": "setReasoningEffort",
+  "permission.list": "permissionList",
+  "permission.save": "permissionSave",
+  "permission.delete": "permissionDelete",
   skills: "skills",
   "workspace.files": "workspaceFiles",
   "workspace.search": "workspaceSearch",
@@ -142,6 +148,11 @@ type WorkerRequest = {
     | "model.catalog"
     | "model.selection"
     | "model.select"
+    | "model.reasoning"
+    | "model.reasoning.set"
+    | "permission.list"
+    | "permission.save"
+    | "permission.delete"
     | "skills"
     | "workspace.files"
     | "workspace.search"
@@ -423,6 +434,29 @@ export function createWorkerRuntimeClient(
     },
     async selectModel(modelID, variant) {
       await request("model.select", { modelID, variant });
+    },
+    async reasoningEffort() {
+      return (await request("model.reasoning")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["reasoningEffort"]>>
+      >;
+    },
+    async setReasoningEffort(effort) {
+      await request("model.reasoning.set", { effort });
+    },
+    async permissionList() {
+      return (await request("permission.list")) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["permissionList"]>>
+      >;
+    },
+    async permissionSave(input) {
+      return (await request("permission.save", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["permissionSave"]>>
+      >;
+    },
+    async permissionDelete(name) {
+      return (await request("permission.delete", name)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["permissionDelete"]>>
+      >;
     },
     async skills() {
       return (await request("skills")) as Awaited<
@@ -799,7 +833,7 @@ export function attachRuntimeClientWorker(
   options?: {
     reload?: () => RuntimeClient;
     workflowExecution?: CapabilityExecutionHost;
-    workflowConfig?: () => Promise<import("@natalia/contracts").ConfigV2>;
+    workflowConfig?: () => Promise<import("@natalia/contracts").ConfigV3>;
     disposeHost?: () => void | Promise<void>;
   },
 ) {
@@ -994,6 +1028,18 @@ export async function handleWorkerRequest(
     const input = request.value as { modelID?: string; variant?: string };
     return await client.selectModel?.(input.modelID, input.variant);
   }
+  if (request.method === "model.reasoning")
+    return await client.reasoningEffort?.();
+  if (request.method === "model.reasoning.set") {
+    const input = request.value as { effort?: RuntimeReasoningEffort };
+    return await client.setReasoningEffort?.(input.effort);
+  }
+  if (request.method === "permission.list")
+    return await client.permissionList?.();
+  if (request.method === "permission.save")
+    return await client.permissionSave?.(request.value as never);
+  if (request.method === "permission.delete")
+    return await client.permissionDelete?.(request.value as string);
   if (request.method === "skills") return await client.skills?.();
   if (request.method === "workspace.files")
     return await client.workspaceFiles?.(request.value as never);

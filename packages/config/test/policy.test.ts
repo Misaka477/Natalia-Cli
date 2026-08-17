@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { modelSelectionStatus, evaluatePolicy } from "../src/policy";
-import { configV2Schema } from "@natalia/contracts";
+import { configV3Schema } from "@natalia/contracts";
 import { resolveConfig } from "../src/service";
 
 test("provider policy defaults to the caller fallback", () => {
@@ -13,17 +13,28 @@ test("provider policy defaults to the caller fallback", () => {
 });
 
 test("model selection distinguishes configured, usable, policy allowed and selected", () => {
-  const config = configV2Schema.parse({
-    version: 2,
-    providers: { company: { type: "openai", apiKey: "local" } },
-    models: {
-      stable: { provider: "company", model: "company-stable" },
-      experimental: { provider: "company", model: "company-experimental-fast" },
-      disabled: {
-        provider: "company",
-        model: "company-disabled",
-        enabled: false,
+  const config = configV3Schema.parse({
+    version: 3,
+    providers: {
+      company: {
+        name: "Company",
+        driver: "openai",
+        connection: { apiKey: "local" },
       },
+    },
+    catalog: {
+      providers: {
+        company: {
+          models: {
+            "company-stable": { name: "company-stable" },
+            "company-experimental-fast": { name: "company-experimental-fast" },
+            "company-disabled": { name: "company-disabled" },
+          },
+        },
+      },
+    },
+    modelOverrides: {
+      "company/company-disabled": { enabled: false },
     },
     experimental: {
       policies: [
@@ -36,21 +47,40 @@ test("model selection distinguishes configured, usable, policy allowed and selec
       ],
     },
   });
-  expect(modelSelectionStatus(config, "stable")).toMatchObject({
+  expect(
+    modelSelectionStatus(config, {
+      provider: "company",
+      model: "company-stable",
+    }),
+  ).toMatchObject({
     configured: true,
     usable: true,
     policyAllowed: true,
     selected: true,
   });
-  expect(modelSelectionStatus(config, "experimental")).toMatchObject({
+  expect(
+    modelSelectionStatus(config, {
+      provider: "company",
+      model: "company-experimental-fast",
+    }),
+  ).toMatchObject({
     usable: true,
     policyAllowed: false,
     reason: "provider_policy_denied",
   });
-  expect(modelSelectionStatus(config, "disabled")).toMatchObject({
+  expect(
+    modelSelectionStatus(config, {
+      provider: "company",
+      model: "company-disabled",
+    }),
+  ).toMatchObject({
     usable: false,
     reason: "model_disabled",
   });
+  // Canonical `provider/model` strings are accepted like model refs.
+  expect(modelSelectionStatus(config, "company/company-stable").selected).toBe(
+    true,
+  );
 });
 
 test("provider policy applies the last matching wildcard rule", () => {
@@ -78,7 +108,7 @@ test("a rejected configuration file reports why, not just that it failed", async
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       permissionProfiles: {
         unattended: {
           approval: "auto",

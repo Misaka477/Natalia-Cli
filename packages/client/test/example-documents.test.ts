@@ -3,7 +3,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installExampleDocuments, scheduledTaskOverview } from "../src";
-import { configV2Schema } from "@natalia/contracts";
+import { configV3Schema } from "@natalia/contracts";
 
 test("example installation creates validated flows and tasks without overwriting", async () => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), "natalia-examples-"));
@@ -25,7 +25,7 @@ test("example installation creates validated flows and tasks without overwriting
   ]);
   const overview = await scheduledTaskOverview({
     workspaceRoot,
-    config: configV2Schema.parse({ version: 2 }),
+    config: configV3Schema.parse({ version: 3 }),
   });
   expect(overview.tasks).toHaveLength(3);
   expect(overview.tasks.every((task) => task.problems.length > 0)).toBe(true);

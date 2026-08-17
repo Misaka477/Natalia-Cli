@@ -4,7 +4,7 @@ import { createMockKeys, createTestRenderer } from "@opentui/core/testing";
 import { render } from "@opentui/solid";
 import { KeymapProvider } from "@opentui/keymap/solid";
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
-import { configV2Schema, type NataliaFlowDocument } from "@natalia/contracts";
+import { configV3Schema, type NataliaFlowDocument } from "@natalia/contracts";
 import type { FlowOverview, FlowRow } from "@natalia/client";
 import {
   buildFlowDetail,
@@ -454,8 +454,8 @@ test("flow orchestration owns module order and activation", async () => {
         <DialogFlows
           overview={{ flows: [flow()], unreadable: [] }}
           workspaceRoot="/tmp/natalia-flow-dialog"
-          config={configV2Schema.parse({
-            version: 2,
+          config={configV3Schema.parse({
+            version: 3,
             permissionProfiles: {
               unattended: {
                 approval: "auto",
@@ -643,16 +643,28 @@ test("condition authoring confirms cross-provider decomposition before saving", 
   const setup = await createTestRenderer({ width: 160, height: 36 });
   const keymap = createDefaultOpenTuiKeymap(setup.renderer);
   const disposeKeymap = registerNataliaKeymap(keymap, setup.renderer);
-  const config = configV2Schema.parse({
-    version: 2,
-    defaultModel: "execution",
+  const config = configV3Schema.parse({
+    version: 3,
+    defaultModel: { provider: "local", model: "execution-model" },
     providers: {
-      local: { type: "openai-compatible", apiKey: "local-key" },
-      external: { type: "anthropic", apiKey: "external-key" },
+      local: {
+        name: "Local",
+        driver: "openai-compatible",
+        connection: { apiKey: "local-key" },
+      },
+      external: {
+        name: "External",
+        driver: "anthropic",
+        connection: { apiKey: "external-key" },
+      },
     },
-    models: {
-      execution: { provider: "local", model: "execution-model" },
-      evaluator: { provider: "external", model: "evaluator-model" },
+    catalog: {
+      providers: {
+        local: { models: { "execution-model": { name: "execution-model" } } },
+        external: {
+          models: { "evaluator-model": { name: "evaluator-model" } },
+        },
+      },
     },
   });
   const document: NataliaFlowDocument = {
@@ -729,7 +741,7 @@ test("condition authoring confirms cross-provider decomposition before saving", 
     await keys.typeText("Read changes and record evidence");
     keys.pressEnter();
     await renderOnce();
-    await keys.typeText("evaluator");
+    await keys.typeText("external/evaluator-model");
     keys.pressEnter();
     await renderOnce();
     expect(setup.captureCharFrame()).toContain(
@@ -744,7 +756,7 @@ test("condition authoring confirms cross-provider decomposition before saving", 
     await renderOnce();
     expect(calls).toEqual([
       {
-        modelID: "evaluator",
+        modelID: "external/evaluator-model",
         objective: "Read changes and record evidence",
       },
     ]);
@@ -780,14 +792,20 @@ test("condition decomposition shows progress while the evaluator is pending", as
   const setup = await createTestRenderer({ width: 160, height: 36 });
   const keymap = createDefaultOpenTuiKeymap(setup.renderer);
   const disposeKeymap = registerNataliaKeymap(keymap, setup.renderer);
-  const config = configV2Schema.parse({
-    version: 2,
-    defaultModel: "evaluator",
+  const config = configV3Schema.parse({
+    version: 3,
+    defaultModel: { provider: "local", model: "evaluator-model" },
     providers: {
-      local: { type: "openai-compatible", apiKey: "local-key" },
+      local: {
+        name: "Local",
+        driver: "openai-compatible",
+        connection: { apiKey: "local-key" },
+      },
     },
-    models: {
-      evaluator: { provider: "local", model: "evaluator-model" },
+    catalog: {
+      providers: {
+        local: { models: { "evaluator-model": { name: "evaluator-model" } } },
+      },
     },
   });
   let resolve!: (value: { conditions: Array<{ text: string }> }) => void;
@@ -857,7 +875,9 @@ test("condition decomposition shows progress while the evaluator is pending", as
     keys.pressEnter();
     await renderOnce();
     expect(setup.captureCharFrame()).toContain("Decomposing Conditions");
-    expect(setup.captureCharFrame()).toContain("Waiting for evaluator");
+    expect(setup.captureCharFrame()).toContain(
+      "Waiting for local/evaluator-model",
+    );
     resolve({ conditions: [{ text: "Read every changed file" }] });
     await renderOnce();
     expect(setup.captureCharFrame()).toContain("Confirm Minimum Conditions");

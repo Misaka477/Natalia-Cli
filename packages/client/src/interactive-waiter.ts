@@ -64,6 +64,8 @@ export type InteractiveWaiterDeps = {
    * was submitted to, never the currently attached one.
    */
   sessionIDForTurn: (turnID: string) => SessionID;
+  /** The subagent that owns a child turn, when this is not a main-agent turn. */
+  agentIDForTurn?: (turnID: string) => string | undefined;
   /**
    * Publish into a specific session's exec (journal + stamp). Approval and
    * question events belong to the turn's session, not whichever session the UI
@@ -115,6 +117,7 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
     if (deps.permissionMode() === "read_only")
       return { reason: readOnlyToolMessage(tool.name) };
     const session = deps.sessionIDForTurn(turnID);
+    const agentID = deps.agentIDForTurn?.(turnID);
     const terminalApproval = terminalApprovalScope(tool.name, call.arguments);
     if (terminalApproval) {
       if (terminalApproval.risk === "terminal_low") {
@@ -157,6 +160,7 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
       scope: terminalApproval?.scope,
       expiresAt: expiresAt ? new Date(expiresAt).toISOString() : undefined,
       revocable: terminalApproval ? true : undefined,
+      agentID,
     });
     try {
       const response = await waitForResponse(
@@ -174,6 +178,7 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
         toolCallID: call.id,
         decision: "rejected",
         reason: response.feedback,
+        agentID,
       });
       return { reason: rejectedToolMessage(tool.name, response.feedback) };
     } catch (error) {
@@ -188,6 +193,7 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
         toolCallID: call.id,
         decision: "rejected",
         reason: "approval expired without an answer",
+        agentID,
       });
       return { reason: expiredToolMessage(tool.name) };
     } finally {
@@ -218,16 +224,21 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
       type: "question.request",
       id: requestID,
       ...request,
+      agentID: deps.agentIDForTurn?.(turnID),
     });
-    const response = await waitForResponse(
-      requestID,
-      pendingQuestions,
-      questionWaiters,
-      deps.abortSignal(turnID),
-      "question timed out",
-    );
-    if (response.rejected) throw new Error("user rejected question");
-    return response.answers;
+    try {
+      const response = await waitForResponse(
+        requestID,
+        pendingQuestions,
+        questionWaiters,
+        deps.abortSignal(turnID),
+        "question timed out",
+      );
+      if (response.rejected) throw new Error("user rejected question");
+      return response.answers;
+    } finally {
+      questionTurnByID.delete(requestID);
+    }
   }
 
   function restoreInteractiveState(events: RuntimeEvent[]) {
@@ -266,7 +277,10 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
     const respondSession = respondGraph
       ? deps.sessionIDForTurn(respondGraph.turnID)
       : deps.sessionID();
-    if (!deps.isPending(respondSession, response.requestID, "approval")) {
+    if (
+      !pendingApprovalRequests.has(response.requestID) &&
+      !deps.isPending(respondSession, response.requestID, "approval")
+    ) {
       publish({
         type: "diagnostic",
         level: "warning",
@@ -284,18 +298,21 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
     const responseSession = graphContext
       ? deps.sessionIDForTurn(graphContext.turnID)
       : deps.sessionID();
+    const agentID = graphContext
+      ? deps.agentIDForTurn?.(graphContext.turnID)
+      : undefined;
     deps.publishForSession(responseSession, {
       type: "approval.response",
       id: response.requestID,
       decision: response.decision,
       feedback: response.feedback,
+      agentID,
     });
     // A resolved approval is a Work Graph fact: who authorized a side effect.
     // The decision is recorded; the preview text is not, because it can carry a
     // command line.
-    deps.publishForSession(
-      responseSession,
-      approvalNode({
+    deps.publishForSession(responseSession, {
+      ...approvalNode({
         approvalID: response.requestID,
         decision: response.decision,
         toolName:
@@ -303,17 +320,18 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
         sessionID: responseSession,
         turnID: graphContext?.turnID,
       }),
-    );
+      agentID,
+    });
     if (graphContext)
-      deps.publishForSession(
-        responseSession,
-        approvalEdge({
+      deps.publishForSession(responseSession, {
+        ...approvalEdge({
           approvalID: response.requestID,
           decision: response.decision,
           turnID: graphContext.turnID,
           callID: graphContext.callID,
         }),
-      );
+        agentID,
+      });
     if (response.decision === "session") {
       const terminalApproval = terminalApprovalByID.get(response.requestID);
       const session = deps.sessionIDForTurn(
@@ -346,7 +364,10 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
     const questionSession = questionTurn
       ? deps.sessionIDForTurn(questionTurn)
       : deps.sessionID();
-    if (!deps.isPending(questionSession, response.requestID, "question")) {
+    if (
+      !questionTurn &&
+      !deps.isPending(questionSession, response.requestID, "question")
+    ) {
       publish({
         type: "diagnostic",
         level: "warning",
@@ -357,14 +378,14 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
         reason: "the question request is no longer pending",
       };
     }
-    publish({
+    deps.publishForSession(questionSession, {
       type: "question.response",
       id: response.requestID,
       answers: response.answers,
       rejected: response.rejected,
+      agentID: questionTurn ? deps.agentIDForTurn?.(questionTurn) : undefined,
     });
     pendingQuestions.set(response.requestID, response);
-    questionTurnByID.delete(response.requestID);
     questionWaiters.get(response.requestID)?.(response);
     return { accepted: true };
   }

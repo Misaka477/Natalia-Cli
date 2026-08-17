@@ -92,7 +92,7 @@ export function applyStatusEvent(
       // prose is presentation, and belongs to whichever UI renders it.
       state.retryBanner = {
         kind: "step_retry",
-        text: `Retrying ${event.operation} after ${event.reason} · attempt ${event.attempt}/${event.maxAttempts} · waiting ${event.waitMs}ms`,
+        text: `Retrying ${event.operation} after ${event.reason} · attempt ${event.attempt}/${event.maxAttempts ?? "unlimited"} · waiting ${event.waitMs}ms`,
       };
       return true;
     case "step.retry.cleared":

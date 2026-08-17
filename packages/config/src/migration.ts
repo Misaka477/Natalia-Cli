@@ -1,44 +1,37 @@
-import { configV2Schema, type ConfigV2 } from "@natalia/contracts";
+import { configV3Schema, type ConfigV3 } from "@natalia/contracts";
 
 export type MigrationSummary = {
   fromVersion: number;
-  toVersion: 2;
+  toVersion: 3;
   changed: string[];
   warnings: string[];
   backupPath?: string;
 };
 
 export type MigrationResult = {
-  config: ConfigV2;
+  config: ConfigV3;
   summary: MigrationSummary;
 };
 
-export function defaultConfigV2(): ConfigV2 {
-  return configV2Schema.parse({
-    version: 2,
-    runtime: {},
-    context: {},
-    defaultModel: "",
-    models: {},
-    providers: {},
-  });
+export function defaultConfigV3(): ConfigV3 {
+  return configV3Schema.parse({ version: 3 });
 }
 
 export function migrateConfig(input: unknown): MigrationResult {
-  const parsed = configV2Schema.safeParse(input);
+  const parsed = configV3Schema.safeParse(input);
   if (parsed.success) {
     return {
       config: parsed.data,
       summary: {
-        fromVersion: 2,
-        toVersion: 2,
+        fromVersion: 3,
+        toVersion: 3,
         changed: [],
         warnings: [],
       },
     };
   }
 
-  throw new Error("only Config v2 JSON configuration is supported");
+  throw new Error("only Config v3 JSON configuration is supported");
 }
 
 export function migrationSummaryText(summary: MigrationSummary) {

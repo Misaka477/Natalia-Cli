@@ -59,3 +59,14 @@ test("withProviderConcurrency holds the slot for the whole stream", async () => 
   // The slot was released after the stream ended.
   expect(limiter.activeCount("test")).toBe(0);
 });
+
+test("a cancelled queued request never acquires a provider slot", async () => {
+  const limiter = new ProviderConcurrencyLimiter({ test: 1 });
+  const release = await limiter.acquire("test");
+  const controller = new AbortController();
+  const queued = limiter.acquire("test", controller.signal);
+  controller.abort();
+  await expect(queued).rejects.toMatchObject({ name: "AbortError" });
+  release();
+  expect(limiter.activeCount("test")).toBe(0);
+});

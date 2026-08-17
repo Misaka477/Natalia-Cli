@@ -1,6 +1,7 @@
 import type { RuntimeEvent, StepRetryOperation } from "@natalia/contracts";
 import {
   asProviderError,
+  providerError,
   redactedProviderMessage,
   type ProviderError,
 } from "./errors";
@@ -9,7 +10,8 @@ export type RetryTimer = (ms: number) => Promise<void>;
 export type RetryRandom = () => number;
 
 export type RetryPolicy = {
-  maxAttemptsPerStep: number;
+  /** Null keeps transient provider failures alive until success or cancellation. */
+  maxAttemptsPerStep: number | null;
   initialBackoffMs: number;
   maxBackoffMs: number;
   jitterMs: number;
@@ -27,15 +29,16 @@ export type RetryRunnerOptions = {
   timer?: RetryTimer;
   random?: RetryRandom;
   onEvent?: (event: RuntimeEvent) => void;
+  signal?: AbortSignal;
 };
 
 export type RetryAttemptContext = {
   attempt: number;
-  maxAttempts: number;
+  maxAttempts: number | null;
 };
 
 export const defaultRetryPolicy: RetryPolicy = {
-  maxAttemptsPerStep: 3,
+  maxAttemptsPerStep: null,
   initialBackoffMs: 300,
   maxBackoffMs: 5000,
   jitterMs: 500,
@@ -76,10 +79,9 @@ export async function runWithRetry<T>(
   const policy = { ...defaultRetryPolicy, ...options.policy };
   const timer = options.timer ?? ((ms) => Bun.sleep(ms));
   const random = options.random ?? Math.random;
-  let lastError: ProviderError | undefined;
-
-  for (let attempt = 1; attempt <= policy.maxAttemptsPerStep; attempt++) {
+  for (let attempt = 1; ; attempt++) {
     try {
+      throwIfAborted(options.signal);
       const result = await fn({
         attempt,
         maxAttempts: policy.maxAttemptsPerStep,
@@ -95,10 +97,28 @@ export async function runWithRetry<T>(
       }
       return result;
     } catch (error) {
+      if (options.signal?.aborted) {
+        const cancelled = cancellationError(options.signal);
+        if (attempt > 1)
+          options.onEvent?.({
+            type: "step.retry.exhausted",
+            id: context.id,
+            operation: context.operation,
+            step: context.step,
+            attempts: attempt,
+            maxAttempts: policy.maxAttemptsPerStep,
+            reason: cancelled.kind,
+            retryable: false,
+            message: redactedProviderMessage(cancelled),
+          });
+        throw cancelled;
+      }
       const providerError = asProviderError(error);
-      lastError = providerError;
       const canRetry = shouldRetryProviderError(providerError);
-      if (!canRetry || attempt >= policy.maxAttemptsPerStep) {
+      const exhausted =
+        policy.maxAttemptsPerStep !== null &&
+        attempt >= policy.maxAttemptsPerStep;
+      if (!canRetry || exhausted) {
         options.onEvent?.({
           type: "step.retry.exhausted",
           id: context.id,
@@ -125,11 +145,59 @@ export async function runWithRetry<T>(
         reason: providerError.kind,
         statusCode: providerError.statusCode,
       });
-      await timer(waitMs);
+      try {
+        await waitForRetry(waitMs, timer, options.signal);
+      } catch (error) {
+        const cancelled = asProviderError(error);
+        options.onEvent?.({
+          type: "step.retry.exhausted",
+          id: context.id,
+          operation: context.operation,
+          step: context.step,
+          attempts: attempt,
+          maxAttempts: policy.maxAttemptsPerStep,
+          reason: cancelled.kind,
+          retryable: false,
+          statusCode: cancelled.statusCode,
+          message: redactedProviderMessage(cancelled),
+        });
+        throw cancelled;
+      }
     }
   }
+}
 
-  throw lastError ?? new Error("retry runner exhausted without an error");
+async function waitForRetry(
+  waitMs: number,
+  timer: RetryTimer,
+  signal?: AbortSignal,
+) {
+  if (!signal) return await timer(waitMs);
+  throwIfAborted(signal);
+  let abort: (() => void) | undefined;
+  try {
+    await Promise.race([
+      timer(waitMs),
+      new Promise<never>((_resolve, reject) => {
+        abort = () => reject(cancellationError(signal));
+        signal.addEventListener("abort", abort, { once: true });
+      }),
+    ]);
+  } finally {
+    if (abort) signal.removeEventListener("abort", abort);
+  }
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) throw cancellationError(signal);
+}
+
+function cancellationError(signal: AbortSignal) {
+  return providerError({
+    kind: "cancel",
+    message: "provider request cancelled",
+    cause: signal.reason,
+  });
 }
 
 export async function runStreamingWithRetry(

@@ -5,7 +5,7 @@ import { DialogPrompt } from "../dialog/DialogPrompt";
 import { useDialog } from "../dialog/provider";
 import { darkTheme } from "../theme/theme";
 import { TextAttributes } from "@opentui/core";
-import type { ConfigV2 } from "@natalia/contracts";
+import type { ConfigV3 } from "@natalia/contracts";
 
 function Status(props: {
   enabled: boolean;
@@ -31,8 +31,8 @@ function Status(props: {
 }
 
 export function DialogMcp(props: {
-  config: ConfigV2;
-  onPersist: (next: ConfigV2) => void;
+  config: ConfigV3;
+  onPersist: (next: ConfigV3) => void;
   statuses?: Record<
     string,
     {
@@ -375,7 +375,7 @@ export function DialogMcp(props: {
     />
   );
 
-  function persist(next: ConfigV2) {
+  function persist(next: ConfigV3) {
     setConfig(next);
     props.onPersist(next);
   }

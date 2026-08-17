@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createTestRenderer } from "@opentui/core/testing";
+import { createMockMouse, createTestRenderer } from "@opentui/core/testing";
 import { render } from "@opentui/solid";
 import type { RuntimeEvent } from "@natalia/contracts";
 import { terminalTranscriptChars } from "@natalia/view-store";
@@ -8,6 +8,11 @@ import {
   useAppState,
   type AppState,
 } from "../src/context/state";
+import { RouteProvider } from "../src/context/route";
+import {
+  SessionFooter,
+  SessionSidebar,
+} from "../src/routes/session/SessionRoute";
 
 /**
  * The TUI now keeps resource facts in `state.facts`, projected by
@@ -106,6 +111,168 @@ test("an identical terminal republish does not churn the projection under a prox
     type: "viewer",
     viewerID: "v1",
   });
+
+  setup.renderer.destroy();
+});
+
+test("activity facts reach the reactive TUI store for active work and user input", async () => {
+  const { setup, send, state } = await mountState();
+  await send(
+    {
+      type: "tool.update",
+      id: "t1",
+      name: "execute",
+      callID: "c1",
+      status: "running",
+      summary: "npm test",
+    },
+    {
+      type: "approval.request",
+      id: "a1",
+      title: "Approve command",
+      preview: "npm test",
+    },
+  );
+
+  expect(state().facts.activities["t1:tool:c1"]).toMatchObject({
+    kind: "command",
+    state: "active",
+  });
+  expect(state().facts.activities["approval:a1"]).toMatchObject({
+    kind: "waiting_for_user",
+    state: "waiting",
+  });
+
+  await send({ type: "approval.response", id: "a1", decision: "once" });
+  expect(state().facts.activities["approval:a1"]).toBeUndefined();
+
+  setup.renderer.destroy();
+});
+
+test("the footer renders English activity text and prioritizes input requests", async () => {
+  const setup = await createTestRenderer({ width: 100, height: 8 });
+  let dispatch: ((event: RuntimeEvent) => void) | undefined;
+  await render(
+    () => (
+      <StateProvider onReady={(bridge) => (dispatch = bridge.dispatch)}>
+        <SessionFooter workspaceRoot="/work/natalia" />
+      </StateProvider>
+    ),
+    setup.renderer,
+  );
+  await setup.renderOnce();
+  if (!dispatch) throw new Error("state provider did not come up");
+
+  dispatch({
+    type: "tool.update",
+    id: "t1",
+    name: "execute",
+    callID: "c1",
+    status: "running",
+    summary: "npm test",
+  });
+  await Bun.sleep(40);
+  await setup.renderOnce();
+  expect(setup.captureCharFrame()).toContain("Running command");
+
+  dispatch({
+    type: "question.request",
+    id: "q1",
+    title: "Which target?",
+  });
+  await Bun.sleep(40);
+  await setup.renderOnce();
+  const frame = setup.captureCharFrame();
+  expect(frame).toContain("Waiting for input");
+  expect(frame).not.toContain("Running command");
+
+  setup.renderer.destroy();
+});
+
+test("the footer exposes the workspace path as a clickable control", async () => {
+  const setup = await createTestRenderer({ width: 100, height: 4 });
+  let selected = 0;
+  await render(
+    () => (
+      <StateProvider>
+        <SessionFooter
+          workspaceRoot="/work/natalia"
+          onWorkspaceSelect={() => selected++}
+        />
+      </StateProvider>
+    ),
+    setup.renderer,
+  );
+  await setup.renderOnce();
+  const frame = setup.captureCharFrame();
+  expect(frame).toContain("/work/natalia ▼");
+
+  const line = frame.split("\n").findIndex((value) => value.includes("/work"));
+  const column = frame.split("\n")[line]!.indexOf("/work") + 2;
+  const mouse = createMockMouse(setup.renderer);
+  await mouse.click(column, line);
+  expect(selected).toBe(1);
+
+  setup.renderer.destroy();
+});
+
+test("the sidebar prioritizes the plan and keeps agent internals out of view", async () => {
+  const setup = await createTestRenderer({ width: 42, height: 24 });
+  let dispatch: ((event: RuntimeEvent) => void) | undefined;
+  await render(
+    () => (
+      <StateProvider onReady={(bridge) => (dispatch = bridge.dispatch)}>
+        <RouteProvider>
+          <SessionSidebar workspaceRoot="/work/very-private-project" />
+        </RouteProvider>
+      </StateProvider>
+    ),
+    setup.renderer,
+  );
+  if (!dispatch) throw new Error("state provider did not come up");
+
+  dispatch({
+    type: "session.created",
+    sessionID: "ses_private" as never,
+    title: "Quiet sidebar",
+  });
+  dispatch({
+    type: "tool.update",
+    id: "todo_1",
+    name: "todo_write",
+    status: "succeeded",
+    summary: "saved 3 todos",
+    argumentsDelta: JSON.stringify({
+      items: [
+        { content: "Inspect the current layout", status: "completed" },
+        { content: "Refine sidebar hierarchy", status: "in_progress" },
+        { content: "Verify interaction states", status: "pending" },
+      ],
+    }),
+  });
+  dispatch({
+    type: "subagent.update",
+    id: "agent_a",
+    status: "running",
+    attached: true,
+    event: "created",
+    task: "This long internal agent task must stay in the detail view",
+    continuation: 0,
+  });
+  await Bun.sleep(40);
+  await setup.renderOnce();
+  const frame = setup.captureCharFrame();
+
+  expect(frame).toContain("Quiet sidebar");
+  expect(frame).toContain("Plan");
+  expect(frame).toContain("Refine sidebar hierarchy");
+  expect(frame).toContain("Agents");
+  expect(frame).toContain("agent_a · running");
+  expect(frame).not.toContain("long internal agent task");
+  expect(frame).not.toContain("ses_private");
+  expect(frame).not.toContain("very-private-project");
+  expect(frame).not.toContain("Tools");
+  expect(frame).not.toContain("Workspace");
 
   setup.renderer.destroy();
 });

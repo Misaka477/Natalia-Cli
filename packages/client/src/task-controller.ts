@@ -1,9 +1,10 @@
 import { resolve } from "node:path";
 import { agentsFromConfig } from "@natalia/agent";
 import type { ResolvedConfig } from "@natalia/config";
+import { resolveEffectiveModel } from "@natalia/config";
 import type { CapabilityRegistryView } from "@natalia/capability";
 import type {
-  ConfigV2,
+  ConfigV3,
   EpisodeID,
   EvaluatorResult,
   NataliaFlowDocument,
@@ -11,6 +12,7 @@ import type {
   RuntimeEvent,
   SessionID,
 } from "@natalia/contracts";
+import { modelRefKey } from "@natalia/contracts";
 import { providerForModel } from "@natalia/runtime";
 import {
   channelsForTaskAlertEvent,
@@ -81,7 +83,7 @@ export function assertConfigApplied(resolved: ResolvedConfig) {
 export function taskPermissionPreview(input: {
   task: NataliaTaskDocument;
   flow: NataliaFlowDocument;
-  config: ConfigV2;
+  config: ConfigV3;
 }) {
   const preview = effectiveFlowPermissions({
     profile: input.config.permissionProfiles[input.task.permissionProfile],
@@ -101,7 +103,7 @@ export function taskPermissionPreview(input: {
 export async function taskPermissionPreviewForDocument(input: {
   workspaceRoot: string;
   path: string;
-  config: ConfigV2;
+  config: ConfigV3;
   contributedDocuments?: ContributedNataliaDocuments;
 }) {
   const documents = new NataliaDocumentStore(
@@ -132,7 +134,7 @@ export async function runTaskFromDocument(input: {
   taskID?: string;
   capabilityRegistry?: CapabilityRegistryView;
   contributedDocuments?: ContributedNataliaDocuments;
-  config: ConfigV2;
+  config: ConfigV3;
   json: boolean;
   emit: (line: string) => void;
   signal?: AbortSignal;
@@ -237,7 +239,7 @@ export async function runTask(input: {
   workspaceRoot: string;
   task: NataliaTaskDocument;
   flow: NataliaFlowDocument;
-  config: ConfigV2;
+  config: ConfigV3;
   json: boolean;
   emit: (line: string) => void;
   signal?: AbortSignal;
@@ -561,7 +563,7 @@ export async function runTask(input: {
  */
 async function drainTaskAlerts(input: {
   alerts: NataliaTaskAlertQueue;
-  config: ConfigV2;
+  config: ConfigV3;
   json: boolean;
   emit: (line: string) => void;
 }) {
@@ -705,7 +707,7 @@ function enqueueTaskAlert(input: {
 function taskIssueReporter(input: {
   workspaceRoot: string;
   task: NataliaTaskDocument;
-  config: ConfigV2;
+  config: ConfigV3;
 }) {
   if (!input.task.issueTarget) return undefined;
   const configured = input.config.issueTargets[input.task.issueTarget];
@@ -765,7 +767,7 @@ function taskIssueReporter(input: {
 function taskDataSourceReader(input: {
   workspaceRoot: string;
   task: NataliaTaskDocument;
-  config: ConfigV2;
+  config: ConfigV3;
   invocationID: string;
 }) {
   if (!input.task.dataSource) return undefined;
@@ -859,7 +861,7 @@ async function runTaskModule(input: {
   workspaceRoot: string;
   task: NataliaTaskDocument;
   flow: NataliaFlowDocument;
-  config: ConfigV2;
+  config: ConfigV3;
   state: NataliaTaskStateStore;
   invocationID: string;
   attempt: number;
@@ -1124,12 +1126,16 @@ function moduleContinuationProgress(input: {
   };
 }
 
-function taskExecutionProvider(config: ConfigV2) {
+function taskExecutionProvider(config: ConfigV3) {
   const agent = agentsFromConfig(config).default();
-  const modelID = agent?.model ?? config.defaultModel;
-  const provider = providerForModel(config, modelID, agent?.variant);
-  const providerKey = config.models[modelID]?.provider;
-  return provider && providerKey ? providerKey : undefined;
+  const ref =
+    agent?.model ??
+    (config.defaultModel ? modelRefKey(config.defaultModel) : undefined);
+  const provider = ref
+    ? providerForModel(config, ref, agent?.variant)
+    : undefined;
+  const effective = ref ? resolveEffectiveModel(config, ref) : undefined;
+  return provider && effective ? effective.providerID : undefined;
 }
 
 function createEvaluatorContext(
@@ -1192,7 +1198,7 @@ function collectEvaluatorContext(
 
 async function evaluateClaimedTaskModule(input: {
   task: NataliaTaskDocument;
-  config: ConfigV2;
+  config: ConfigV3;
   state: NataliaTaskStateStore;
   invocationID: string;
   attempt: number;
@@ -1202,13 +1208,12 @@ async function evaluateClaimedTaskModule(input: {
   signal?: AbortSignal;
 }) {
   if (!input.task.evaluator) return undefined;
-  const model = input.config.models[input.task.evaluator.model];
-  const providerConfig = input.config.providers[input.task.evaluator.provider];
-  if (
-    !model ||
-    !providerConfig ||
-    model.provider !== input.task.evaluator.provider
-  ) {
+  const evaluatorRef = {
+    provider: input.task.evaluator.provider,
+    model: input.task.evaluator.model,
+  };
+  const effective = resolveEffectiveModel(input.config, evaluatorRef);
+  if (!effective || effective.providerID !== input.task.evaluator.provider) {
     input.state.evaluateModule({
       invocationID: input.invocationID,
       attempt: input.attempt,
@@ -1225,7 +1230,7 @@ async function evaluateClaimedTaskModule(input: {
       reason: "task evaluator selection is unavailable in the resolved config",
     };
   }
-  const provider = providerForModel(input.config, input.task.evaluator.model);
+  const provider = providerForModel(input.config, evaluatorRef);
   if (!provider) {
     input.state.evaluateModule({
       invocationID: input.invocationID,

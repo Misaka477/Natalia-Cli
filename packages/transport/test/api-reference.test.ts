@@ -1042,7 +1042,7 @@ function valueRefusalDictionary(): Array<{
 
 /**
  * The config shape dictionary, parsed from the zod schemas in
- * `packages/contracts/src/schemas.ts` (`configV2Schema` validates
+ * `packages/contracts/src/schemas.ts` (`configV3Schema` validates
  * `.natalia/config.json`). One row per schema field, dotted paths for nested
  * objects, `?` for optional fields and the default value where the schema
  * declares one. `z.record(X)` keys are arbitrary; the element type's own
@@ -1066,7 +1066,7 @@ function zodSchemaDictionary(): Array<{
     /export const ([A-Za-z][A-Za-z0-9]*) = ([\s\S]*?)(?=\nexport )/gu,
   )) {
     const name = match[1] ?? "";
-    if (name.endsWith("Schema") || name === "configV2Schema")
+    if (name.endsWith("Schema") || name === "configV3Schema")
       schemas.set(name, (match[2] ?? "").trim());
   }
   const rows: Array<{
@@ -1108,7 +1108,7 @@ function zodSchemaDictionary(): Array<{
     }
     for (const reference of zodReferences(rhs)) visit(reference);
   };
-  visit("configV2Schema");
+  visit("configV3Schema");
   return rows;
 }
 

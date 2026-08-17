@@ -5,7 +5,7 @@ import {
   buildAgentOptions,
   buildAgentVariantOptions,
 } from "../src/component/DialogAgent";
-import { configV2Schema } from "@natalia/contracts";
+import { configV3Schema } from "@natalia/contracts";
 
 test("agent dialog exposes only visible non-subagent agents", () => {
   expect(
@@ -89,16 +89,20 @@ test("agent details retain runtime policy metadata without exposing system promp
   ]);
 });
 
-test("agent override options use the configured model catalog and variants", () => {
-  const config = configV2Schema.parse({
-    version: 2,
-    defaultModel: "alpha",
-    models: {
-      alpha: { provider: "local", model: "alpha" },
-      beta: {
-        provider: "local",
-        model: "beta",
-        variants: { careful: { model: "beta-careful" } },
+test("agent override options use configured model refs", () => {
+  const config = configV3Schema.parse({
+    version: 3,
+    defaultModel: { provider: "local", model: "alpha" },
+    providers: {
+      local: {
+        name: "Local",
+        driver: "openai",
+        connection: { apiKey: "test" },
+      },
+    },
+    catalog: {
+      providers: {
+        local: { models: { alpha: { name: "alpha" }, beta: { name: "beta" } } },
       },
     },
   });
@@ -113,8 +117,10 @@ test("agent override options use the configured model catalog and variants", () 
   };
   expect(
     buildAgentModelOptions(config, agent).map((option) => option.value),
-  ).toEqual(["", "alpha", "beta"]);
+  ).toEqual(["", "local/alpha", "local/beta"]);
   expect(
-    buildAgentVariantOptions(config, "beta").map((option) => option.value),
-  ).toEqual(["", "careful"]);
+    buildAgentVariantOptions(config, "local/beta").map(
+      (option) => option.value,
+    ),
+  ).toEqual([""]);
 });

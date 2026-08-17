@@ -154,7 +154,7 @@ test("chat.open docks the Live Work Chat beside the feed and focuses the chat pa
     expect(frame).toContain("Ask the Chat");
     // The feed stays visible beside the docked view.
     expect(frame).toContain("Ask anything...");
-    expect(frame).toContain("pane: chat");
+    expect(frame).toContain("Chat · read-only");
   } finally {
     mounted.disposeKeymap();
     mounted.setup.renderer.destroy();

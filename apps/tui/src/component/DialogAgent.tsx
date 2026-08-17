@@ -1,10 +1,16 @@
-import { configPatch, resolveConfig, updateConfig } from "@natalia/config";
-import type { ConfigV2, RuntimeAgentCatalogEntry } from "@natalia/contracts";
+import {
+  configPatch,
+  modelSelectionStatus,
+  resolveConfig,
+  updateConfig,
+} from "@natalia/config";
+import type { ConfigV3, RuntimeAgentCatalogEntry } from "@natalia/contracts";
 import { createMemo, createSignal, onMount } from "solid-js";
 import { DialogSelect, type DialogSelectOption } from "../dialog/DialogSelect";
 import { DialogPrompt } from "../dialog/DialogPrompt";
 import { useDialog } from "../dialog/provider";
 import { useLocal } from "../context/local";
+import { defaultModelKey, listModelConfigs } from "./DialogModel";
 
 export function buildAgentOptions(
   agents: RuntimeAgentCatalogEntry[],
@@ -19,36 +25,34 @@ export function buildAgentOptions(
     }));
 }
 
+/** Model options use the canonical `provider/model` ref as the stored value. */
 export function buildAgentModelOptions(
-  config: ConfigV2,
+  config: ConfigV3,
   agent: RuntimeAgentCatalogEntry,
 ): DialogSelectOption<string>[] {
+  const defaultKey = defaultModelKey(config);
   return [
     {
       title: "Default model",
       value: "",
-      description: config.defaultModel || "No default configured",
+      description: defaultKey ?? "No default configured",
     },
-    ...Object.entries(config.models).map(([name, model]) => ({
-      title: name,
-      value: name,
-      description: `${model.model} @ ${model.provider}`,
-    })),
+    ...listModelConfigs(config)
+      .filter(({ key }) => modelSelectionStatus(config, key).selected)
+      .map(({ key, name, providerID, modelID }) => ({
+        title: name,
+        value: key,
+        description: `${providerID} / ${modelID}`,
+      })),
   ];
 }
 
+/** Variants are no longer part of the config model catalog. */
 export function buildAgentVariantOptions(
-  config: ConfigV2,
+  config: ConfigV3,
   modelName: string,
 ): DialogSelectOption<string>[] {
-  const model = config.models[modelName];
-  return [
-    { title: "Default variant", value: "" },
-    ...Object.keys(model?.variants ?? {}).map((name) => ({
-      title: name,
-      value: name,
-    })),
-  ];
+  return [{ title: "Default variant", value: "" }];
 }
 
 export function DialogAgent(props: {
@@ -167,13 +171,14 @@ function DialogAgentOverride(props: {
   agent: RuntimeAgentCatalogEntry;
 }) {
   const dialog = useDialog();
-  const [config, setConfig] = createSignal<ConfigV2>();
+  const [config, setConfig] = createSignal<ConfigV3>();
   onMount(() => {
     void resolveConfig({ workspaceRoot: props.workspaceRoot }).then(
       ({ config }) => setConfig(config),
     );
   });
-  const modelName = () => props.agent.model ?? config()?.defaultModel;
+  const modelName = () =>
+    props.agent.model ?? (config() ? defaultModelKey(config()!) : undefined);
   return (
     <DialogSelect
       title={`Agent override: ${props.agent.name}`}
@@ -254,7 +259,7 @@ function DialogAgentField(props: {
   field: "system" | "steps" | "allow" | "exclude" | "mcp";
 }) {
   const dialog = useDialog();
-  const [config, setConfig] = createSignal<ConfigV2>();
+  const [config, setConfig] = createSignal<ConfigV3>();
   onMount(() => {
     void resolveConfig({ workspaceRoot: props.workspaceRoot }).then(
       ({ config }) => setConfig(config),
@@ -329,7 +334,7 @@ function DialogAgentModel(props: {
   agent: RuntimeAgentCatalogEntry;
 }) {
   const dialog = useDialog();
-  const [config, setConfig] = createSignal<ConfigV2>();
+  const [config, setConfig] = createSignal<ConfigV3>();
   onMount(() => {
     void resolveConfig({ workspaceRoot: props.workspaceRoot }).then(
       ({ config }) => setConfig(config),
@@ -367,7 +372,7 @@ function DialogAgentVariant(props: {
   modelName: string;
 }) {
   const dialog = useDialog();
-  const [config, setConfig] = createSignal<ConfigV2>();
+  const [config, setConfig] = createSignal<ConfigV3>();
   onMount(() => {
     void resolveConfig({ workspaceRoot: props.workspaceRoot }).then(
       ({ config }) => setConfig(config),

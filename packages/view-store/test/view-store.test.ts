@@ -6,6 +6,7 @@ import {
   initialState,
   projectEvents,
   reduceState,
+  selectPrimaryActivity,
   segmentID,
   streamID,
   toolStateID,
@@ -26,7 +27,10 @@ function roles(state: AppState) {
   return state.messages.map((block) => block.role);
 }
 
-const submitted = (id: string, body: string): RuntimeEvent => ({
+const submitted = (
+  id: string,
+  body: string,
+): Extract<RuntimeEvent, { type: "turn.submitted" }> => ({
   type: "turn.submitted",
   id,
   text: body,
@@ -57,6 +61,39 @@ test("a whole turn projects to user text, assistant text and a stop reason", () 
   expect(roles(state)).toEqual(["user", "assistant"]);
   expect(state.activeTurn).toBeUndefined();
   expect(state.lastStopReason).toBe("done");
+});
+
+test("a queued turn stays visibly queued without replacing active work", () => {
+  const state = projectEvents([
+    submitted("t1", "first"),
+    { type: "thinking.delta", id: "t1", text: "working" },
+    { ...submitted("t2", "next"), delivery: "queue" },
+  ]);
+
+  expect(state.messages.find((block) => block.id === "t2:user")?.status).toBe(
+    "queued",
+  );
+  expect(state.activeTurn).toBe("t1");
+  expect(selectPrimaryActivity(state)).toMatchObject({
+    turnID: "t1",
+    kind: "thinking",
+  });
+
+  applyEvent(state, { type: "turn.started", id: "t2" });
+  expect(
+    state.messages.find((block) => block.id === "t2:user")?.status,
+  ).toBeUndefined();
+  expect(state.activeTurn).toBe("t2");
+});
+
+test("cancelling a queued turn clears its queued marker", () => {
+  const state = projectEvents([
+    { ...submitted("t1", "next"), delivery: "queue" },
+    { type: "turn.cancelled", id: "t1", reason: "removed" },
+  ]);
+  expect(state.messages.find((block) => block.id === "t1:user")?.status).toBe(
+    "cancelled",
+  );
 });
 
 test("content.done does not duplicate a response that already streamed", () => {
@@ -216,6 +253,122 @@ test("pending approvals and questions appear and clear on response", () => {
   });
   expect(state.pendingApprovals).toEqual([]);
   expect(state.pendingQuestions).toEqual([]);
+});
+
+test("activity facts follow a turn and prioritize user input", () => {
+  let state = projectEvents([
+    submitted("t1", "update the config"),
+    { type: "thinking.delta", id: "t1", text: "checking" },
+    {
+      type: "tool.update",
+      id: "t1",
+      name: "execute",
+      callID: "c1",
+      status: "running",
+      summary: "npm test",
+    },
+  ]);
+
+  expect(selectPrimaryActivity(state)).toMatchObject({
+    id: "t1:tool:c1",
+    kind: "command",
+    state: "active",
+    label: "execute",
+    detail: "npm test",
+  });
+
+  state = reduceState(state, {
+    type: "approval.request",
+    id: "a1",
+    title: "Approve command",
+    preview: "npm test",
+  });
+  expect(selectPrimaryActivity(state)).toMatchObject({
+    id: "approval:a1",
+    kind: "waiting_for_user",
+    state: "waiting",
+  });
+
+  state = reduceState(state, {
+    type: "approval.response",
+    id: "a1",
+    decision: "once",
+  });
+  expect(selectPrimaryActivity(state)?.kind).toBe("command");
+
+  state = reduceState(state, {
+    type: "tool.update",
+    id: "t1",
+    name: "execute",
+    callID: "c1",
+    status: "succeeded",
+    summary: "tests passed",
+  });
+  expect(selectPrimaryActivity(state)?.kind).toBe("thinking");
+
+  state = reduceState(state, {
+    type: "turn.finished",
+    id: "t1",
+    stopReason: "done",
+  });
+  expect(selectPrimaryActivity(state)).toBeUndefined();
+});
+
+test("retry and compaction activities clear after their terminal events", () => {
+  let state = projectEvents([
+    submitted("t1", "continue"),
+    {
+      type: "turn.retry",
+      id: "t1",
+      attempt: 1,
+      maxAttempts: 3,
+      reason: "rate_limited",
+      retryAfterMs: 1000,
+    },
+    {
+      type: "compaction.begin",
+      id: "c1",
+      trigger: "ratio",
+      beforeTokens: 100,
+      maxTokens: 120,
+      reservedTokens: 10,
+      thresholdPercent: 80,
+      attempt: 1,
+      startedAt: "now",
+    } as RuntimeEvent,
+  ]);
+  expect(selectPrimaryActivity(state)).toMatchObject({
+    id: "retry:t1",
+    kind: "retrying",
+  });
+
+  state = reduceState(state, {
+    type: "thinking.delta",
+    id: "t1",
+    text: "retry recovered",
+  });
+  expect(state.activities["retry:t1"]).toBeUndefined();
+
+  state = reduceState(state, {
+    type: "compaction.end",
+    id: "c1",
+    trigger: "ratio",
+    success: true,
+    beforeTokens: 100,
+    afterTokens: 50,
+    durationMs: 12,
+    attempts: 1,
+  });
+  expect(state.activities["compaction:c1"]).toBeUndefined();
+
+  state = reduceState(state, {
+    type: "step.retry.cleared",
+    id: "t1",
+    operation: "llm_step",
+    step: 1,
+    attempts: 1,
+  });
+  expect(state.activities["retry:t1"]).toBeUndefined();
 });
 
 test("streamed text is confirmed as markdown completes it, not only at the end", () => {

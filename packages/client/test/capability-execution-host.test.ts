@@ -3,7 +3,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CapabilityHost } from "@natalia/capability";
-import { configV2Schema } from "@natalia/contracts";
+import { configV3Schema } from "@natalia/contracts";
 import { NataliaTaskStateStore } from "@natalia/workflow";
 import { CapabilityExecutionHost } from "../src/capability-execution-host";
 import { WorkflowExecutionScheduler } from "../src/workflow-execution-scheduler";
@@ -61,7 +61,7 @@ test("queued capability work revalidates after the scheduler gates", async () =>
   const queued = executions.runTask({
     workspaceRoot: root,
     taskID: "task_doctor",
-    config: configV2Schema.parse({ version: 2 }),
+    config: configV3Schema.parse({ version: 3 }),
   });
 
   await Bun.sleep(0);
@@ -85,7 +85,7 @@ test("started execution leases capability cleanup and streams controller output"
   const handle = executions.runTask({
     workspaceRoot: root,
     taskID: "task_doctor",
-    config: configV2Schema.parse({ version: 2 }),
+    config: configV3Schema.parse({ version: 3 }),
   });
   const output: string[] = [];
   const resolved: string[] = [];
@@ -128,7 +128,7 @@ test("execution host refuses a workspace owned by another capability host", asyn
     executions.runTask({
       workspaceRoot: join(root, "other"),
       taskID: "task_missing",
-      config: configV2Schema.parse({ version: 2 }),
+      config: configV3Schema.parse({ version: 3 }),
     }),
   ).toThrow("belongs to another workspace");
 });

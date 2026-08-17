@@ -1,4 +1,10 @@
-import type { ConfigV2, PolicyStatement } from "@natalia/contracts";
+import {
+  modelRefKey,
+  parseModelRef,
+  type ConfigV3,
+  type ModelRef,
+  type PolicyStatement,
+} from "@natalia/contracts";
 
 export type PolicyEffect = PolicyStatement["effect"];
 
@@ -21,7 +27,8 @@ export function evaluatePolicy(
 }
 
 export type ModelSelectionStatus = {
-  modelID: string;
+  ref: ModelRef;
+  key: string;
   configured: boolean;
   usable: boolean;
   policyAllowed: boolean;
@@ -30,32 +37,39 @@ export type ModelSelectionStatus = {
 };
 
 export function modelSelectionStatus(
-  config: ConfigV2,
-  modelID: string,
+  config: ConfigV3,
+  ref: ModelRef | string,
 ): ModelSelectionStatus {
-  const model = config.models[modelID];
-  if (!model)
+  const modelRef = typeof ref === "string" ? parseModelRef(ref) : ref;
+  const key = modelRefKey(modelRef);
+  const provider = config.providers[modelRef.provider];
+  if (!provider)
     return {
-      modelID,
+      ref: modelRef,
+      key,
+      configured: false,
+      usable: false,
+      policyAllowed: false,
+      selected: false,
+      reason: "provider_not_configured",
+    };
+  const catalogModel =
+    config.catalog?.providers?.[modelRef.provider]?.models?.[modelRef.model];
+  const override = config.modelOverrides[key];
+  if (!catalogModel && !override)
+    return {
+      ref: modelRef,
+      key,
       configured: false,
       usable: false,
       policyAllowed: false,
       selected: false,
       reason: "model_not_configured",
     };
-  const provider = config.providers[model.provider];
-  if (!provider)
+  if (override?.enabled === false)
     return {
-      modelID,
-      configured: true,
-      usable: false,
-      policyAllowed: false,
-      selected: false,
-      reason: "provider_not_configured",
-    };
-  if (!model.enabled)
-    return {
-      modelID,
+      ref: modelRef,
+      key,
       configured: true,
       usable: false,
       policyAllowed: false,
@@ -64,16 +78,18 @@ export function modelSelectionStatus(
     };
   if (!provider.enabled)
     return {
-      modelID,
+      ref: modelRef,
+      key,
       configured: true,
       usable: false,
       policyAllowed: false,
       selected: false,
       reason: "provider_disabled",
     };
-  if (!provider.apiKey)
+  if (!provider.connection?.apiKey)
     return {
-      modelID,
+      ref: modelRef,
+      key,
       configured: true,
       usable: false,
       policyAllowed: false,
@@ -82,12 +98,13 @@ export function modelSelectionStatus(
     };
   const policy = evaluateModelPolicy(
     config.experimental.policies,
-    model.provider,
-    model.model,
+    modelRef.provider,
+    modelRef.model,
   );
   if (policy !== "allow")
     return {
-      modelID,
+      ref: modelRef,
+      key,
       configured: true,
       usable: true,
       policyAllowed: false,
@@ -95,7 +112,8 @@ export function modelSelectionStatus(
       reason: "provider_policy_denied",
     };
   return {
-    modelID,
+    ref: modelRef,
+    key,
     configured: true,
     usable: true,
     policyAllowed: true,

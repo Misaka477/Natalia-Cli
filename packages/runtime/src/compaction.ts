@@ -26,7 +26,10 @@ export type Compactor = {
   compact(input: CompactionInput): Promise<CompactionResult>;
 };
 
-export function providerCompactor(provider: StreamingProvider): Compactor {
+export function providerCompactor(
+  provider: StreamingProvider,
+  signal?: AbortSignal,
+): Compactor {
   return {
     async compact(input) {
       const prompt = [
@@ -55,6 +58,7 @@ export function providerCompactor(provider: StreamingProvider): Compactor {
           },
           { role: "user", content: prompt },
         ],
+        signal,
       })) {
         if (chunk.type === "content") summary += chunk.text;
       }

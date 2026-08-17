@@ -47,6 +47,7 @@ export function createPluginsController(input: {
   syncGlobalCommands(): void;
 }) {
   let registry: ReturnType<typeof createPluginRegistry> | undefined;
+  let reloadSequence = 0;
 
   function roots() {
     return [
@@ -181,7 +182,9 @@ export function createPluginsController(input: {
         const entry = validatePluginPath(resolve(path, ".."), manifest.entry);
         // Bun ignores query strings on file:// URLs, but a plain path with a
         // query is a fresh cache key — the reload must re-read the entry.
-        const module = (await import(`${entry}?reload=${Date.now()}`)) as {
+        const module = (await import(
+          `${entry}?reload=${Date.now()}-${reloadSequence++}`
+        )) as {
           default?: unknown;
         };
         const candidate = module.default as Partial<Plugin>;

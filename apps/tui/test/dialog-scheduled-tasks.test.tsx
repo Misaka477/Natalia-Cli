@@ -5,8 +5,8 @@ import { render } from "@opentui/solid";
 import { KeymapProvider } from "@opentui/keymap/solid";
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
 import {
-  configV2Schema,
-  type ConfigV2,
+  configV3Schema,
+  type ConfigV3,
   type NataliaTaskDocument,
   type NataliaTaskDocumentInput,
 } from "@natalia/contracts";
@@ -42,7 +42,7 @@ async function mountScheduledTasks(
     next: ScheduledTaskOverview;
     notify: (outcome: TaskRunOutcome) => void;
     flows: FlowOverview;
-    config: ConfigV2;
+    config: ConfigV3;
     loadTask: (path: string) => Promise<NataliaTaskDocument>;
     saveTask: (
       document: NataliaTaskDocumentInput,
@@ -140,9 +140,9 @@ async function mountScheduledTasks(
   };
 }
 
-function editorConfig(): ConfigV2 {
-  return configV2Schema.parse({
-    version: 2,
+function editorConfig(): ConfigV3 {
+  return configV3Schema.parse({
+    version: 3,
     permissionProfiles: {
       unattended: { approval: "auto", description: "Task profile" },
     },

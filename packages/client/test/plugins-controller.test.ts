@@ -184,19 +184,26 @@ test("plugin reload re-reads the module after a file change (cache-bust)", async
   // The plugin's file changes on disk (an agent self-edit promoted to the
   // system slot); reload must re-read it, not serve the cached module.
   const entry = join(root, ".natalia", "plugins", "demo.plugin", "index.ts");
-  await writeFile(
-    entry,
-    `import { definePlugin } from "${pluginSdkImportPath()}";
-export default definePlugin({ manifest: { apiVersion: 1, id: "demo.plugin", version: "1.0.0", name: "Demo", capabilities: ["commands"] }, setup(api) { api.commands.register({ name: "reloaded", title: "Reloaded", run() {} }); } });`,
-  );
-  await controller.reload("demo.plugin");
-  const commands = controller.get().commands();
-  // Command names are namespaced to the plugin; the point is the reloaded
-  // module's command replaced the original one, not the cached module.
-  expect(
-    commands.some((command) => command.name === "plugin_demo_plugin_reloaded"),
-  ).toBe(true);
-  await controller.close();
+  try {
+    for (const name of ["reloaded_once", "reloaded_twice"]) {
+      await writeFile(
+        entry,
+        `import { definePlugin } from "${pluginSdkImportPath()}";
+export default definePlugin({ manifest: { apiVersion: 1, id: "demo.plugin", version: "1.0.0", name: "Demo", capabilities: ["commands"] }, setup(api) { api.commands.register({ name: "${name}", title: "Reloaded", run() {} }); } });`,
+      );
+      await controller.reload("demo.plugin");
+    }
+    const commands = controller.get().commands();
+    // Command names are namespaced to the plugin. The second immediate reload
+    // must expose v2 even when both calls happen within one clock tick.
+    expect(
+      commands.some(
+        (command) => command.name === "plugin_demo_plugin_reloaded_twice",
+      ),
+    ).toBe(true);
+  } finally {
+    await controller.close();
+  }
 });
 
 test("the plugin capability owns its tools, commands and listeners (single channel)", async () => {

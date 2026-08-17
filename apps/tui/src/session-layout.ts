@@ -13,6 +13,7 @@ export function sessionLayout(
   const viewWidth = 60;
   const wide = terminalWidth > 120;
   const sidebarVisible = wide ? sidebarMode === "auto" : sidebarOpen;
+  const sidebarGap = sidebarVisible && wide ? 1 : 0;
   // The view dock is a fixed column beside the feed. On narrow terminals it
   // floats over the content like the session sidebar does, so it never forces
   // the feed itself into an unusable sliver.
@@ -21,12 +22,14 @@ export function sessionLayout(
   const contentWidth =
     terminalWidth -
     (sidebarVisible && wide ? sidebarWidth : 0) -
+    sidebarGap -
     (viewVisible && !viewOverlay ? viewWidth : 0);
   return {
     compact,
     short,
     wide,
     sidebarWidth,
+    sidebarGap,
     sidebarVisible,
     sidebarOverlay: sidebarVisible && !wide,
     viewWidth,

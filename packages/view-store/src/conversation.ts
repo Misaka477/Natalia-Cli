@@ -158,7 +158,7 @@ export function applyConversationEvent(
       state.status = "ready";
       return true;
     case "turn.submitted":
-      state.activeTurn = event.id;
+      if (event.delivery !== "queue") state.activeTurn = event.id;
       state.lastSubmission = event;
       state.lastStopReason = undefined;
       state.streams[streamID(event.id, "thinking")] = newStream();
@@ -168,7 +168,11 @@ export function applyConversationEvent(
         role: "user",
         text: userText(event),
         pendingText: "",
+        status: event.delivery === "queue" ? "queued" : undefined,
       });
+      return true;
+    case "turn.started":
+      markTurnStarted(state, event.id);
       return true;
     case "turn.paused":
       state.paused = true;
@@ -179,6 +183,7 @@ export function applyConversationEvent(
       state.footer = "resumed";
       return true;
     case "thinking.delta":
+      markTurnStarted(state, event.id);
       prepareStreamPhase(state, event.id, "thinking");
       // A provider that forbids showing its reasoning is obeyed by never
       // retaining the text: not in the block, and not in the stream either, so
@@ -200,6 +205,7 @@ export function applyConversationEvent(
       markBlockStatus(state, streamID(event.id, "thinking"), "completed");
       return true;
     case "content.delta":
+      markTurnStarted(state, event.id);
       prepareStreamPhase(state, event.id, "assistant");
       appendStream(state, {
         id: streamID(event.id, "assistant"),
@@ -236,6 +242,7 @@ export function applyConversationEvent(
     }
     case "tool.update": {
       const turnID = turnIDForTool(event);
+      markTurnStarted(state, turnID);
       // Model output is committed before its tool card, so a tool update never
       // reorders text around itself.
       flushStream(state, streamID(turnID, "thinking"));
@@ -268,7 +275,8 @@ export function applyConversationEvent(
       );
       return true;
     case "turn.cancelled":
-      state.activeTurn = undefined;
+      if (state.activeTurn === event.id) state.activeTurn = undefined;
+      markTurnCancelled(state, event.id);
       state.paused = false;
       state.lastStopReason = "cancelled";
       state.footer = `cancelled: ${event.reason}`;
@@ -285,6 +293,7 @@ export function applyConversationEvent(
       state.pendingQuestions = [];
       return true;
     case "turn.finished":
+      markTurnStarted(state, event.id);
       flushStream(state, streamID(event.id, "thinking"));
       flushStream(state, streamID(event.id, "assistant"));
       // A turn that has finished has finished reasoning, whether or not the
@@ -309,6 +318,17 @@ export function applyConversationEvent(
     default:
       return false;
   }
+}
+
+function markTurnStarted(state: AppState, turnID: string) {
+  state.activeTurn = turnID;
+  const user = state.messages.find((block) => block.id === `${turnID}:user`);
+  if (user?.status === "queued") user.status = undefined;
+}
+
+function markTurnCancelled(state: AppState, turnID: string) {
+  const user = state.messages.find((block) => block.id === `${turnID}:user`);
+  if (user?.status === "queued") user.status = "cancelled";
 }
 
 function upsertTool(

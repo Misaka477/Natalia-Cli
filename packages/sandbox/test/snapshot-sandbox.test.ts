@@ -23,7 +23,11 @@ test("SnapshotStore captures, diffs and promotes by content hash", async () => {
   await mkdir(candidate, { recursive: true });
   await writeFile(join(candidate, "a.txt"), "changed content");
   await writeFile(join(candidate, "b.txt"), "new");
-  const changes = await store.diff(candidate, base, new Map());
+  const changes = await store.diff(
+    candidate,
+    base,
+    await store.capture(candidate),
+  );
   expect(changes.map((change) => change.path).sort()).toEqual([
     "a.txt",
     "b.txt",
@@ -40,6 +44,33 @@ test("SnapshotStore captures, diffs and promotes by content hash", async () => {
   await store.rollback(host, "s1");
   expect(await readFile(join(host, "a.txt"), "utf8")).toBe("base content");
   expect(await readFile(join(host, "b.txt"), "utf8")).toBe("");
+});
+
+test("SnapshotSandboxManager checks the base out into each candidate worktree", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-snapshot-checkout-"));
+  await mkdir(join(root, "src"), { recursive: true });
+  await writeFile(join(root, "CONTRACT.md"), "shared contract\n");
+  await writeFile(join(root, "src", "index.ts"), "export const base = true;\n");
+  const manager = new SnapshotSandboxManager(root);
+  await manager.initialize();
+
+  const candidate = await manager.create("agent.1");
+
+  expect(await readFile(join(candidate.root, "CONTRACT.md"), "utf8")).toBe(
+    "shared contract\n",
+  );
+  expect(await readFile(join(candidate.root, "src", "index.ts"), "utf8")).toBe(
+    "export const base = true;\n",
+  );
+  expect(await manager.previewMerge("agent.1")).toEqual([]);
+
+  await writeFile(
+    join(candidate.root, "src", "index.ts"),
+    "export const base = false;\n",
+  );
+  expect(await manager.previewMerge("agent.1")).toEqual([
+    { kind: "modify", path: "src/index.ts" },
+  ]);
 });
 
 test("diff after a small change hashes only the changed file, not the whole tree", async () => {
@@ -72,6 +103,8 @@ test("diff after a small change hashes only the changed file, not the whole tree
   // their objects by size/mtime; only the changed one is hashed.
   const candidateIndex = await store.capture(
     join(root, ".natalia", "sandboxes", "perf.1"),
+    await store.loadCandidateIndex("perf.1"),
+    (path) => path === ".natalia-manifest.json",
   );
   const before = puts;
   await store.diff(

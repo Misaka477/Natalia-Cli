@@ -1,20 +1,22 @@
 import { expect, test } from "bun:test";
 import { sessionLayout, timelineLayout } from "../src/session-layout";
 
-test("wide sessions reserve the fixed 42-column sidebar", () => {
+test("wide sessions reserve the sidebar and its one-column gutter", () => {
   expect(sessionLayout(160, 42, "auto", false)).toMatchObject({
     wide: true,
     sidebarWidth: 42,
+    sidebarGap: 1,
     sidebarVisible: true,
     sidebarOverlay: false,
-    contentWidth: 118,
-    toolContentWidth: 114,
+    contentWidth: 117,
+    toolContentWidth: 113,
   });
   expect(sessionLayout(132, 38, "auto", false)).toMatchObject({
     wide: true,
     sidebarWidth: 42,
-    contentWidth: 90,
-    toolContentWidth: 86,
+    sidebarGap: 1,
+    contentWidth: 89,
+    toolContentWidth: 85,
   });
   expect(sessionLayout(160, 42, "hide", false).contentWidth).toBe(160);
 });
@@ -30,6 +32,7 @@ test("normal and narrow sessions keep full width and overlay sidebar", () => {
     wide: false,
     sidebarVisible: false,
     sidebarOverlay: false,
+    sidebarGap: 0,
     contentWidth: 120,
     toolContentWidth: 116,
     promptMaxHeight: 8,
@@ -38,6 +41,7 @@ test("normal and narrow sessions keep full width and overlay sidebar", () => {
     wide: false,
     sidebarVisible: true,
     sidebarOverlay: true,
+    sidebarGap: 0,
     contentWidth: 80,
     toolContentWidth: 76,
   });

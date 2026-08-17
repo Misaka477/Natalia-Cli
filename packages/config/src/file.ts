@@ -9,13 +9,13 @@ import {
   rm,
 } from "node:fs/promises";
 import { dirname } from "node:path";
-import { configV2Schema, type ConfigV2 } from "@natalia/contracts";
+import { configV3Schema, type ConfigV3 } from "@natalia/contracts";
 import {
   migrateConfig,
   migrationSummaryText,
   type MigrationResult,
 } from "./migration";
-import { defaultConfigV2 } from "./migration";
+import { defaultConfigV3 } from "./migration";
 
 export async function loadConfigFile(path: string): Promise<MigrationResult> {
   const raw = await readFile(path, "utf8");
@@ -28,13 +28,13 @@ export async function loadOrCreateConfigFile(path: string) {
     return await loadConfigFile(path);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    const config = defaultConfigV2();
+    const config = defaultConfigV3();
     await saveConfigFile(config, path);
     return {
       config,
       summary: {
-        fromVersion: 2 as const,
-        toVersion: 2 as const,
+        fromVersion: 3 as const,
+        toVersion: 3 as const,
         changed: ["created default TS config"],
         warnings: [],
       },
@@ -42,8 +42,8 @@ export async function loadOrCreateConfigFile(path: string) {
   }
 }
 
-export async function saveConfigFile(config: ConfigV2, path: string) {
-  const parsed = configV2Schema.parse(config);
+export async function saveConfigFile(config: ConfigV3, path: string) {
+  const parsed = configV3Schema.parse(config);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const temporary = `${path}.tmp-${randomUUID()}`;
   try {
@@ -86,7 +86,7 @@ export async function migrateConfigFile(path: string, now = new Date()) {
   const raw = await readFile(path, "utf8");
   const data = parseConfigText(raw);
   const result = migrateConfig(data);
-  if (result.summary.fromVersion !== 2 || result.summary.changed.length) {
+  if (result.summary.fromVersion !== 3 || result.summary.changed.length) {
     const backupPath = `${path}.bak.${now.toISOString().replace(/[:.]/g, "-")}`;
     await copyFile(path, backupPath);
     result.summary.backupPath = backupPath;

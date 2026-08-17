@@ -16,7 +16,7 @@ import {
   buildModelOptions,
   unavailableModelSummary,
 } from "../src/component/DialogModel";
-import { configV2Schema } from "@natalia/contracts";
+import { configV3Schema } from "@natalia/contracts";
 
 test("local TUI state persists model/session/MCP preferences", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-local-tui-"));
@@ -58,26 +58,43 @@ test("prompt stash keeps only the newest bounded entries", () => {
 });
 
 test("model selector excludes unavailable policy and credential configurations", () => {
-  const config = configV2Schema.parse({
-    version: 2,
+  const config = configV3Schema.parse({
+    version: 3,
     providers: {
-      usable: { type: "openai", apiKey: "test" },
-      missing: { type: "openai" },
+      usable: {
+        name: "Usable",
+        driver: "openai",
+        connection: { apiKey: "test" },
+      },
+      missing: { name: "Missing", driver: "openai" },
     },
-    models: {
-      valid: { provider: "usable", model: "valid" },
-      disabled: { provider: "usable", model: "disabled", enabled: false },
-      unavailable: { provider: "missing", model: "unavailable" },
+    catalog: {
+      providers: {
+        usable: {
+          models: {
+            valid: { name: "valid" },
+            disabled: { name: "disabled" },
+          },
+        },
+        missing: {
+          models: { unavailable: { name: "unavailable" } },
+        },
+      },
+    },
+    modelOverrides: {
+      "usable/disabled": { enabled: false },
     },
   });
   expect(
     buildModelOptions(config, { favoriteModels: [], recentModels: [] }).map(
       (option) => option.value,
     ),
-  ).toEqual(["valid"]);
-  expect(unavailableModelSummary(config)).toContain("disabled: model_disabled");
+  ).toEqual(["usable/valid"]);
   expect(unavailableModelSummary(config)).toContain(
-    "unavailable: provider_credentials_unavailable",
+    "usable/disabled: model_disabled",
+  );
+  expect(unavailableModelSummary(config)).toContain(
+    "missing/unavailable: provider_credentials_unavailable",
   );
 });
 
@@ -118,30 +135,39 @@ test("sortModelOptions places favorites then recents first", () => {
 });
 
 test("model selector groups valid favorites and recents without duplicates", () => {
-  const config = configV2Schema.parse({
-    version: 2,
+  const config = configV3Schema.parse({
+    version: 3,
+    defaultModel: { provider: "primary", model: "beta" },
     providers: {
       primary: {
-        type: "openai",
-        apiKey: "test",
-        baseURL: "https://example.test/v1",
+        name: "Primary",
+        driver: "openai",
+        connection: {
+          apiKey: "test",
+          baseURL: "https://example.test/v1",
+        },
       },
     },
-    models: {
-      alpha: { provider: "primary", model: "alpha", contextWindow: "auto" },
-      beta: { provider: "primary", model: "beta", contextWindow: "auto" },
-      gamma: { provider: "primary", model: "gamma", contextWindow: "auto" },
+    catalog: {
+      providers: {
+        primary: {
+          models: {
+            alpha: { name: "alpha" },
+            beta: { name: "beta" },
+            gamma: { name: "gamma" },
+          },
+        },
+      },
     },
-    defaultModel: "beta",
   });
   const options = buildModelOptions(config, {
-    favoriteModels: ["beta", "missing"],
-    recentModels: ["alpha", "beta"],
+    favoriteModels: ["primary/beta", "missing"],
+    recentModels: ["primary/alpha", "primary/beta"],
   });
   expect(options.map((option) => [option.value, option.category])).toEqual([
-    ["beta", "Favorites"],
-    ["alpha", "Recent"],
-    ["gamma", "primary"],
+    ["primary/beta", "Favorites"],
+    ["primary/alpha", "Recent"],
+    ["primary/gamma", "primary"],
   ]);
   expect(options[0]?.footer).toBe("default");
 });

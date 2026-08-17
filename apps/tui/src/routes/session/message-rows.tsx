@@ -100,6 +100,9 @@ function UserBlock(props: {
       <text fg={darkTheme.text} wrapMode="word">
         {props.block.text}
       </text>
+      <Show when={props.block.status === "queued"}>
+        <text fg={darkTheme.muted}>QUEUED</text>
+      </Show>
       <Show when={props.block.pendingText}>
         <text fg={darkTheme.muted} wrapMode="word">
           {props.block.pendingText}

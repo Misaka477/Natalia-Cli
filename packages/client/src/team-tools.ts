@@ -25,7 +25,7 @@ export function createTeamFanoutTool(input: {
   return {
     name: "team_fanout",
     description:
-      "Spawn one sandboxed sub-agent per task in parallel (each in its own worktree, limited to its write domain) and return the PR queue. Each PR carries the candidate's diff, result and build evidence.",
+      "Spawn one sandboxed sub-agent per task in parallel (each in its own checked-out worktree, limited to its write domain) and return the PR queue. The sandbox runtime computes each candidate's diff; each PR carries that diff, result and build evidence.",
     requiresApproval: true,
     parameters: {
       type: "object",

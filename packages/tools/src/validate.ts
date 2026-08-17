@@ -97,6 +97,12 @@ function checkType(
         message: `expected ${type}, got ${typeof value}${typeof value === "number" ? " (non-integer)" : ""}`,
       };
     }
+    if (typeof schema.minimum === "number" && value < schema.minimum) {
+      return { path, message: `must be at least ${schema.minimum}` };
+    }
+    if (typeof schema.maximum === "number" && value > schema.maximum) {
+      return { path, message: `must be at most ${schema.maximum}` };
+    }
     return undefined;
   }
 

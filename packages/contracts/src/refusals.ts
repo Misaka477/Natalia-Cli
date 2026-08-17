@@ -135,6 +135,11 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "error",
     note: "the caller named a model it needs; an unavailable model or unknown variant leaves nothing to proceed with, so there is no partial success to report",
   },
+  reasoningEffort: { refusal: "none", note: "pure read" },
+  setReasoningEffort: {
+    refusal: "error",
+    note: "an unsupported effort or unavailable session leaves no partial state change",
+  },
   skills: { refusal: "none", note: "pure read" },
 
   // --- workspace ---

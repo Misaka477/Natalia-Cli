@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type {
-  ConfigV2,
+  ConfigV3,
   NataliaTaskDocument,
   NataliaTaskDocumentInput,
 } from "@natalia/contracts";
@@ -603,7 +603,7 @@ function SystemCommandInstructions(props: {
   );
 }
 
-function taskEditorProfileOptions(config: ConfigV2) {
+function taskEditorProfileOptions(config: ConfigV3) {
   return Object.entries(config.permissionProfiles).map(([key, profile]) => ({
     title: key,
     value: key,
@@ -635,7 +635,7 @@ function TaskEditor(props: {
     | "dataSource"
     | "systemdScope";
   flows: FlowOverview;
-  config: ConfigV2;
+  config: ConfigV3;
   save: (document: NataliaTaskDocumentInput, path: string) => Promise<void>;
   reload: () => Promise<void>;
   notify: (outcome: TaskRunOutcome) => void;
@@ -1199,7 +1199,7 @@ export async function runWorkflowProcess(input: {
 export function DialogScheduledTasks(props: {
   overview: ScheduledTaskOverview;
   flows?: FlowOverview;
-  config?: ConfigV2;
+  config?: ConfigV3;
   workspaceRoot: string;
   /** Refreshes the caller's overview after a task ran. */
   reload?: () => Promise<void>;

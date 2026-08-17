@@ -794,6 +794,77 @@ test("typed subagent updates remain available outside transcript text", () => {
   });
 });
 
+test("subagent conversation events use the main transcript projection in isolation", () => {
+  const events = [
+    {
+      type: "turn.submitted",
+      id: "subagent:a1",
+      text: "inspect the renderer",
+      byteLength: 20,
+      lineCount: 1,
+      sha256: "test",
+      agentID: "a1",
+    },
+    {
+      type: "thinking.delta",
+      id: "subagent:a1",
+      text: "reading the timeline",
+      agentID: "a1",
+    },
+    {
+      type: "tool.update",
+      id: "subagent:a1:call_read",
+      name: "read_file",
+      callID: "call_read",
+      status: "queued",
+      summary: "queued",
+      argumentsDelta: '{"path":"src/view.tsx"}',
+      agentID: "a1",
+    },
+    {
+      type: "tool.update",
+      id: "subagent:a1:call_read",
+      name: "read_file",
+      callID: "call_read",
+      status: "succeeded",
+      summary: "read complete",
+      result: "source",
+      agentID: "a1",
+    },
+    {
+      type: "content.delta",
+      id: "subagent:a1",
+      text: "renderer inspected",
+      agentID: "a1",
+    },
+    {
+      type: "turn.finished",
+      id: "subagent:a1",
+      stopReason: "done",
+      agentID: "a1",
+    },
+  ] as const;
+  let state = structuredClone(initialState);
+  for (const event of events) state = reduceState(state, event);
+
+  expect(state.messages).toEqual([]);
+  expect(state.subagentStates.a1?.messages.map((block) => block.role)).toEqual([
+    "user",
+    "thinking",
+    "tool",
+    "assistant",
+  ]);
+  expect(state.subagentStates.a1?.messages[1]?.text).toBe(
+    "reading the timeline",
+  );
+  expect(state.subagentStates.a1?.messages[2]?.tool).toMatchObject({
+    name: "read_file",
+    status: "succeeded",
+    argumentsRaw: '{"path":"src/view.tsx"}',
+  });
+  expect(state.subagentStates.a1?.messages[3]?.text).toBe("renderer inspected");
+});
+
 test("todo tool arguments project into shared sidebar state", () => {
   const state = reduceState(structuredClone(initialState), {
     type: "tool.update",

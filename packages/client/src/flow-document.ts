@@ -1,11 +1,13 @@
 import { RuntimeRefusal } from "@natalia/contracts";
 import type {
-  ConfigV2,
+  ConfigV3,
   NataliaFlowDocument,
   NataliaFlowDocumentInput,
   NataliaTaskDocument,
 } from "@natalia/contracts";
 import { agentsFromConfig } from "@natalia/agent";
+import { resolveEffectiveModel } from "@natalia/config";
+import { modelRefKey } from "@natalia/contracts";
 import { providerForModel } from "@natalia/runtime";
 import { NataliaDocumentStore } from "@natalia/workflow";
 import { readdir } from "node:fs/promises";
@@ -85,7 +87,7 @@ export function newFlowID() {
 
 export function manualFlowTask(
   flow: NataliaFlowDocument,
-  config: ConfigV2,
+  config: ConfigV3,
 ): NataliaTaskDocument {
   const permissionProfile = flow.directRun?.permissionProfile;
   if (!permissionProfile)
@@ -100,9 +102,11 @@ export function manualFlowTask(
       `flow manual run profile must use auto approval: ${permissionProfile}`,
     );
   const agent = agentsFromConfig(config).default();
-  const modelID = agent?.model ?? config.defaultModel;
-  const model = config.models[modelID];
-  if (!model || !providerForModel(config, modelID, agent?.variant))
+  const ref =
+    agent?.model ??
+    (config.defaultModel ? modelRefKey(config.defaultModel) : undefined);
+  const effective = ref ? resolveEffectiveModel(config, ref) : undefined;
+  if (!ref || !effective || !providerForModel(config, ref, agent?.variant))
     throw new Error("flow manual run requires an available default model");
   return {
     kind: "natalia-task",
@@ -118,6 +122,6 @@ export function manualFlowTask(
     // instead of the flow being killed outright.
     retry: "once",
     alerts: [],
-    evaluator: { provider: model.provider, model: modelID },
+    evaluator: { provider: effective.providerID, model: effective.ref.model },
   };
 }

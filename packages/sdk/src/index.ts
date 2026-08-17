@@ -45,6 +45,12 @@ export type NataliaSDK = {
   >;
   modelSelection(): Promise<import("@natalia/contracts").RuntimeModelSelection>;
   selectModel(modelID?: string, variant?: string): Promise<void>;
+  reasoningEffort(): Promise<
+    import("@natalia/contracts").RuntimeReasoningEffort | undefined
+  >;
+  setReasoningEffort(
+    effort?: import("@natalia/contracts").RuntimeReasoningEffort,
+  ): Promise<void>;
   skills(): Promise<import("@natalia/contracts").RuntimeSkillCatalogEntry[]>;
   workspaceFiles(input?: {
     query?: string;
@@ -711,6 +717,11 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
         ...(modelID === undefined ? {} : { modelID }),
         ...(variant === undefined ? {} : { variant }),
       });
+    },
+    reasoningEffort: async () =>
+      (await call("model.reasoning", {})) ?? undefined,
+    setReasoningEffort: async (effort) => {
+      await call("model.reasoning.set", effort === undefined ? {} : { effort });
     },
     skills: async () => await call("skills.list", {}),
     workspaceFiles: async (input = {}) => await call("workspace.files", input),

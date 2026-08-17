@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { configV2Schema } from "@natalia/contracts";
+import { configV3Schema } from "@natalia/contracts";
 import { CapabilityRegistry } from "@natalia/capability";
 import { createRealRuntimeClient } from "../src/real-runtime";
 import { runTaskFromDocument } from "../src/task-controller";
@@ -51,7 +51,7 @@ test("workflow contributions appear in catalog and both management overviews", a
   const root = await mkdtemp(join(tmpdir(), "natalia-workflow-contributions-"));
   const registry = registryWithDocuments();
   const projection = workflowContributionsProjection(registry);
-  const config = configV2Schema.parse({ version: 2 });
+  const config = configV3Schema.parse({ version: 3 });
 
   await expect(
     workflowDocumentCatalog(root, config, projection.documents),
@@ -255,7 +255,7 @@ test("task execution resolves current contributions and stops after scope unload
     },
   );
   const output: string[] = [];
-  const config = configV2Schema.parse({ version: 2 });
+  const config = configV3Schema.parse({ version: 3 });
 
   const result = await runTaskFromDocument({
     workspaceRoot: root,

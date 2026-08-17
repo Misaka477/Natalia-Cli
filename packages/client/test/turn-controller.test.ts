@@ -63,6 +63,20 @@ test("steer inputs drain in admission order, queued only after steers", async ()
   expect(turns).toEqual(["s1", "s2", "q1"]);
 });
 
+test("one drain promotes every queued input in FIFO order", async () => {
+  const session = sessionWithInbox([
+    { id: "q1", text: "first", delivery: "queue" },
+    { id: "q2", text: "second", delivery: "queue" },
+    { id: "q3", text: "third", delivery: "queue" },
+  ]);
+  const { controller, turns } = makeController(session);
+  await controller.drain(
+    new AbortController().signal,
+    session.id as unknown as string,
+  );
+  expect(turns).toEqual(["q1", "q2", "q3"]);
+});
+
 test("commands short-circuit turns and flush persistence", async () => {
   const session = sessionWithInbox([
     { id: "c1", text: "/help", delivery: "steer" },

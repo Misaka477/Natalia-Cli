@@ -43,6 +43,10 @@ export type DialogSelectRef<T> = {
 export interface DialogSelectProps<T> {
   title: string;
   options: DialogSelectOption<T>[];
+  /** Verb used for the Enter hint when selection opens a detail view. */
+  submitLabel?: string;
+  /** Verb used for the Escape hint when the dialog returns to a parent screen. */
+  closeLabel?: string;
   placeholder?: string;
   emptyView?: JSX.Element;
   skipFilter?: boolean;
@@ -375,7 +379,13 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
           <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
             {props.title}
           </text>
-          <text fg={darkTheme.muted} onMouseUp={() => dialog.pop()}>
+          <text
+            fg={darkTheme.muted}
+            onMouseUp={() => {
+              if (props.onClose) props.onClose();
+              else dialog.pop();
+            }}
+          >
             esc
           </text>
         </box>
@@ -520,8 +530,8 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
       >
         <text fg={darkTheme.muted}>
           {props.renderFilter === false
-            ? "↑↓ select · Enter apply · Escape close"
-            : "Type to filter · ↑↓ select · Enter apply · Escape close"}
+            ? `↑↓ select · Enter ${props.submitLabel ?? "apply"} · Escape ${props.closeLabel ?? "close"}`
+            : `Type to filter · ↑↓ select · Enter ${props.submitLabel ?? "apply"} · Escape ${props.closeLabel ?? "close"}`}
         </text>
         <Show when={(props.actions?.length ?? 0) > 0}>
           <box flexDirection="row" gap={1}>

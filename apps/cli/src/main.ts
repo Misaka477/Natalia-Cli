@@ -560,7 +560,7 @@ switch (subcommand) {
         : [
             `config: ${report.configPath}`,
             `migration: ${report.migration}`,
-            `default model: ${report.defaultModel.modelID} (${report.defaultModel.selected ? "selected" : (report.defaultModel.reason ?? "unavailable")})`,
+            `default model: ${report.defaultModel.key} (${report.defaultModel.selected ? "selected" : (report.defaultModel.reason ?? "unavailable")})`,
             `sessions: ${report.sessions.count} (${report.sessions.pendingInputs} pending inputs)`,
             EGRESS_ADVISORY,
           ].join("\n"),

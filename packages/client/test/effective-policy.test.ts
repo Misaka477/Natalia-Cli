@@ -3,7 +3,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  configV2Schema,
+  configV3Schema,
   nataliaFlowDocumentSchema,
   permissionProfileSchema,
   type NataliaFlowDocument,
@@ -307,8 +307,8 @@ test("a document preview includes task-scoped issue and data-source tools", asyn
     dataSource: "source",
     issueTarget: "issues",
   });
-  const config = configV2Schema.parse({
-    version: 2,
+  const config = configV3Schema.parse({
+    version: 3,
     permissionProfiles: {
       unattended: {
         approval: "auto",

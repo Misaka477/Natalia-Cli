@@ -4,12 +4,11 @@
  * `WorktreeSandboxManager` needs git because worktrees are git concepts. This
  * backend gives every workspace the same candidate/promotion/rollback surface
  * without git: at create it captures a content-addressed snapshot of the host
- * (the base, plus the candidate's own index so later diffs reuse objects),
- * the candidate works in a copy, `previewMerge` diffs the real candidate
- * against the base by content hash, and `merge` promotes the changed files
- * into the host with a last-known-good backup that `rollback` restores. Git,
- * when present, upgrades to the worktree backend's real commit history; here
- * the semantics are the same, the store is ours.
+ * and checks it out into the candidate worktree, `previewMerge` diffs the real
+ * candidate against the base by content hash, and `merge` promotes the changed
+ * files into the host with a last-known-good backup that `rollback` restores.
+ * Git, when present, upgrades to the worktree backend's real commit history;
+ * here the semantics are the same, the store is ours.
  */
 import { resolve } from "node:path";
 import {
@@ -21,6 +20,8 @@ import { SnapshotStore, type SnapshotIndex } from "./snapshot-store";
 
 /** Paths under a candidate that must never count as a change. */
 const IGNORED_IN_CANDIDATE = (rel: string) =>
+  rel === ".git" ||
+  rel.startsWith(".git/") ||
   rel === ".natalia" ||
   rel.startsWith(".natalia/") ||
   rel === ".natalia-manifest.json";
@@ -39,10 +40,9 @@ export class SnapshotSandboxManager extends WorkspaceSandboxManager {
   }
 
   /**
-   * Creates the isolated copy and captures the base state. The base is the
-   * host's file state at create time (the copy starts empty); the candidate's
-   * own index is saved too, so a later diff reuses objects by size/mtime
-   * instead of re-hashing the whole tree.
+   * Creates the isolated worktree, captures the host as its base, then checks
+   * that base out into the candidate. The candidate index records the checkout
+   * metadata so later diffs can reuse unchanged objects by size/mtime.
    */
   override async create(id: string) {
     const manifest = await super.create(id);
@@ -52,7 +52,8 @@ export class SnapshotSandboxManager extends WorkspaceSandboxManager {
       IGNORED_IN_CANDIDATE,
     );
     await this.store.saveIndex(id, base);
-    await this.store.saveCandidateIndex(id, new Map());
+    const candidate = await this.store.materialize(manifest.root, base);
+    await this.store.saveCandidateIndex(id, candidate);
     return manifest;
   }
 

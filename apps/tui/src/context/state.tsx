@@ -33,6 +33,7 @@ import {
 } from "@natalia/ui-model";
 import {
   applyConversationEvent,
+  applyActivityEvent,
   applyResourceEvent,
   applyStatusEvent,
   initialState as initialFacts,
@@ -147,6 +148,8 @@ export type AppState = {
    * text, and the transcript rows it narrates itself.
    */
   facts: ViewAppState;
+  /** Full TUI states isolated by subagent identity, using this same reducer. */
+  subagentStates: Record<string, AppState>;
   terminalPane: { selectedID?: string; focus: "chat" | "terminal" };
   /** The Chat conversation rows, kept in object identity like the transcript. */
   chatMessages: MessageBlock[];
@@ -170,6 +173,7 @@ export function createInitialState(): AppState {
     ],
     modal: structuredClone(initialModalState),
     facts: initialFacts(),
+    subagentStates: {},
     terminalPane: { focus: "chat" },
     chatMessages: [],
     messages: [],
@@ -237,7 +241,11 @@ export function StateProvider(props: {
     flush();
     const projected = createInitialState();
     const existingTurnIDs = new Set(
-      state.messages
+      [
+        state.messages,
+        ...Object.values(state.subagentStates).map((item) => item.messages),
+      ]
+        .flat()
         .filter((message) => message.role === "user")
         .map((message) => message.id.replace(/:user$/u, "")),
     );
@@ -304,10 +312,23 @@ export function useAppState() {
  * projection produced for the same event, which is the order they happened in.
  */
 function applyEvent(state: AppState, event: RuntimeEvent) {
+  if (event.agentID) {
+    projectSubagentEvent(state, event.agentID, event);
+    return;
+  }
   projectFacts(state, event);
   syncProjectedChat(state);
   syncProjectedRows(state);
   applyTuiEvent(state, event);
+}
+
+function projectSubagentEvent(
+  state: AppState,
+  agentID: string,
+  event: RuntimeEvent,
+) {
+  const child = (state.subagentStates[agentID] ??= createInitialState());
+  applyEvent(child, { ...event, agentID: undefined });
 }
 
 /**
@@ -320,9 +341,14 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
  * would produce two rows for one fact.
  */
 function projectFacts(state: AppState, event: RuntimeEvent) {
-  if (applyConversationEvent(state.facts, event)) return;
-  if (applyChatEvent(state.facts, event)) return;
-  applyStatusEvent(state.facts, event);
+  if (
+    !applyConversationEvent(state.facts, event) &&
+    !applyChatEvent(state.facts, event)
+  )
+    applyStatusEvent(state.facts, event);
+  // Resource facts are still applied by the TUI cases that need before/after
+  // values, but activity observes every event as one reusable shared surface.
+  applyActivityEvent(state.facts, event);
 }
 
 /**

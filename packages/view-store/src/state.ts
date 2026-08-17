@@ -121,6 +121,38 @@ export type PendingQuestion = Extract<
   { type: "question.request" }
 >;
 
+/**
+ * A live unit of runtime work. Consumers render these facts in their own visual
+ * language rather than reinterpreting the complete runtime event stream.
+ */
+export type ActivityKind =
+  | "planning"
+  | "thinking"
+  | "generating"
+  | "tool"
+  | "command"
+  | "workflow"
+  | "subagent"
+  | "compacting"
+  | "retrying"
+  | "waiting_for_user"
+  | "paused";
+
+export type ActivityState = "active" | "waiting" | "paused";
+
+export type ActivityView = {
+  /** Stable source identity, so replaying an event updates instead of duplicates. */
+  id: string;
+  kind: ActivityKind;
+  state: ActivityState;
+  /** The turn that owns this work, when the runtime exposes one. */
+  turnID?: string;
+  /** Runtime-provided name or title, deliberately not UI-localized prose. */
+  label?: string;
+  /** Runtime-provided detail such as a command or tool summary. */
+  detail?: string;
+};
+
 /** An advisory line a UI shows while something transient is happening. */
 export type Banner = { text: string; kind: string };
 
@@ -154,6 +186,8 @@ export type AppState = {
   todos: TodoView[];
   pendingApprovals: PendingApproval[];
   pendingQuestions: PendingQuestion[];
+  /** All currently live work; settled activities are removed by the projection. */
+  activities: Record<string, ActivityView>;
 
   // live work chat
   /** The Chat conversation, projected like the main transcript (§8.3). */
@@ -206,6 +240,7 @@ export function initialState(): AppState {
     todos: [],
     pendingApprovals: [],
     pendingQuestions: [],
+    activities: {},
     chatMessages: [],
     chatStreams: {},
     chatStreamPhases: {},
@@ -245,6 +280,7 @@ export function cloneState(state: AppState): AppState {
     todos: [...state.todos],
     pendingApprovals: [...state.pendingApprovals],
     pendingQuestions: [...state.pendingQuestions],
+    activities: mapRecord(state.activities, (value) => ({ ...value })),
     chatMessages: state.chatMessages.map((block) => ({
       ...block,
       ...(block.tool ? { tool: { ...block.tool } } : {}),

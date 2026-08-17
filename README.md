@@ -85,28 +85,28 @@ If a process stops during an unknown provider or tool side effect, Natalia safel
 
 ### TUI Controls
 
-| Control          | Action                       |
-| ---------------- | ---------------------------- |
-| `Ctrl+N`         | Create a session             |
-| `Ctrl+L`         | Open session history         |
-| `Ctrl+,`         | Open settings                |
-| `Ctrl+P`         | Open command palette         |
-| `Ctrl+C`         | Cancel the active turn       |
-| `Ctrl+I` / `Ctrl+H` | Show runtime status / help |
-| `Ctrl+Shift+K`   | Open checkpoint management   |
-| `F8`             | Open terminal management     |
-| `Ctrl+Shift+B`   | Open sandbox management      |
-| `Ctrl+T`         | Toggle terminal/chat focus   |
-| `Ctrl+S`         | Create a snapshot            |
-| `Ctrl+Shift+G`   | Fork session at the last message |
-| `Ctrl+Shift+T` / `Ctrl+Shift+E` | Edit scheduled tasks / flows |
-| `Ctrl+Shift+C`   | Copy the last assistant or tool message |
+| Control                         | Action                                  |
+| ------------------------------- | --------------------------------------- |
+| `Ctrl+N`                        | Create a session                        |
+| `Ctrl+L`                        | Open session history                    |
+| `Ctrl+,`                        | Open settings                           |
+| `Ctrl+P`                        | Open command palette                    |
+| `Ctrl+C`                        | Cancel the active turn                  |
+| `Ctrl+I` / `Ctrl+H`             | Show runtime status / help              |
+| `Ctrl+Shift+K`                  | Open checkpoint management              |
+| `F8`                            | Open terminal management                |
+| `Ctrl+Shift+B`                  | Open sandbox management                 |
+| `Ctrl+T`                        | Toggle terminal/chat focus              |
+| `Ctrl+S`                        | Create a snapshot                       |
+| `Ctrl+Shift+G`                  | Fork session at the last message        |
+| `Ctrl+Shift+T` / `Ctrl+Shift+E` | Edit scheduled tasks / flows            |
+| `Ctrl+Shift+C`                  | Copy the last assistant or tool message |
 
 Useful slash commands include `/doctor`, `/help`, `/status`, `/skills`, `/checkpoint`, `/checkpoints`, `/rollback <id> --dry-run`, `/pause`, and `/resume`.
 
 ### Configuration
 
-Runtime configuration is typed ConfigV2. Project settings are stored in:
+Runtime configuration is typed ConfigV3. Project settings are stored in:
 
 ```text
 .natalia/config.json
@@ -241,28 +241,28 @@ npm run ts:cli -- daemon-stop
 
 ### TUI 快捷键
 
-| 快捷键           | 操作                             |
-| ---------------- | -------------------------------- |
-| `Ctrl+N`         | 新建 session                     |
-| `Ctrl+L`         | 打开 session history             |
-| `Ctrl+,`         | 打开 settings                    |
-| `Ctrl+P`         | 打开 command palette             |
-| `Ctrl+C`         | 取消当前 turn                    |
-| `Ctrl+I` / `Ctrl+H` | 查看 runtime status / 帮助     |
-| `Ctrl+Shift+K`   | 打开 checkpoint 管理             |
-| `F8`             | 打开终端管理                     |
-| `Ctrl+Shift+B`   | 打开 sandbox 管理                |
-| `Ctrl+T`         | 切换终端/对话焦点                |
-| `Ctrl+S`         | 创建 snapshot                    |
-| `Ctrl+Shift+G`   | 在最后一条消息处 fork session    |
-| `Ctrl+Shift+T` / `Ctrl+Shift+E` | 编辑定时任务 / flow |
-| `Ctrl+Shift+C`   | 复制最后一条 assistant 或 tool 消息 |
+| 快捷键                          | 操作                                |
+| ------------------------------- | ----------------------------------- |
+| `Ctrl+N`                        | 新建 session                        |
+| `Ctrl+L`                        | 打开 session history                |
+| `Ctrl+,`                        | 打开 settings                       |
+| `Ctrl+P`                        | 打开 command palette                |
+| `Ctrl+C`                        | 取消当前 turn                       |
+| `Ctrl+I` / `Ctrl+H`             | 查看 runtime status / 帮助          |
+| `Ctrl+Shift+K`                  | 打开 checkpoint 管理                |
+| `F8`                            | 打开终端管理                        |
+| `Ctrl+Shift+B`                  | 打开 sandbox 管理                   |
+| `Ctrl+T`                        | 切换终端/对话焦点                   |
+| `Ctrl+S`                        | 创建 snapshot                       |
+| `Ctrl+Shift+G`                  | 在最后一条消息处 fork session       |
+| `Ctrl+Shift+T` / `Ctrl+Shift+E` | 编辑定时任务 / flow                 |
+| `Ctrl+Shift+C`                  | 复制最后一条 assistant 或 tool 消息 |
 
 常用 slash command：`/doctor`、`/help`、`/status`、`/skills`、`/checkpoint`、`/checkpoints`、`/rollback <id> --dry-run`、`/pause`、`/resume`。
 
 ### 配置
 
-runtime 使用类型化 ConfigV2。项目配置文件：
+runtime 使用类型化 ConfigV3。项目配置文件：
 
 ```text
 .natalia/config.json

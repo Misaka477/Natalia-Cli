@@ -1,6 +1,10 @@
 import type { ContextEntry } from "./context";
-import { modelSelectionStatus } from "@natalia/config";
-import type { ConfigV2 } from "@natalia/contracts";
+import { modelSelectionStatus, resolveEffectiveModel } from "@natalia/config";
+import {
+  parseModelRef,
+  type ConfigV3,
+  type ModelRef,
+} from "@natalia/contracts";
 import { providerError, providerErrorFromHttp } from "./errors";
 
 export type ProviderMessage = {
@@ -182,6 +186,7 @@ export class OpenAICompatibleProvider implements StreamingProvider {
         statusCode: response.status,
         statusText: response.statusText,
         retryAfter: response.headers.get("retry-after"),
+        retryAfterMs: response.headers.get("retry-after-ms"),
         message: await safeResponseText(response),
       });
     if (!response.body) {
@@ -220,6 +225,7 @@ export class OpenAICompatibleProvider implements StreamingProvider {
         statusCode: response.status,
         statusText: response.statusText,
         retryAfter: response.headers.get("retry-after"),
+        retryAfterMs: response.headers.get("retry-after-ms"),
         message: await safeResponseText(response),
       });
     const data = (await response.json()) as {
@@ -328,6 +334,7 @@ export class AnthropicProvider implements StreamingProvider {
         statusCode: response.status,
         statusText: response.statusText,
         retryAfter: response.headers.get("retry-after"),
+        retryAfterMs: response.headers.get("retry-after-ms"),
         message: await safeResponseText(response),
       });
     if (!response.body) throw new Error("Anthropic response body unavailable");
@@ -414,6 +421,7 @@ export class GeminiProvider implements StreamingProvider {
         statusCode: response.status,
         statusText: response.statusText,
         retryAfter: response.headers.get("retry-after"),
+        retryAfterMs: response.headers.get("retry-after-ms"),
         message: await safeResponseText(response),
       });
     if (!response.body) throw new Error("Gemini response body unavailable");
@@ -455,7 +463,15 @@ export function contextEntriesToProviderMessages(
             call !== undefined && results.has(call.id),
         );
       if (!calls.length) continue;
-      messages.push({ role: "assistant", content: "", toolCalls: calls });
+      const preceding = entries[index - transaction.length];
+      const previousMessage = messages.at(-1);
+      if (
+        preceding?.role === "assistant" &&
+        previousMessage?.role === "assistant" &&
+        previousMessage.toolCalls === undefined
+      )
+        previousMessage.toolCalls = calls;
+      else messages.push({ role: "assistant", content: "", toolCalls: calls });
       for (const call of calls) {
         messages.push({
           role: "tool",
@@ -559,41 +575,51 @@ export function providerFromKind(
   });
 }
 
-/** Resolves a configured model into the same provider adapter used by runtime. */
+/**
+ * Resolves a configured model reference into the same provider adapter used by
+ * the runtime. The reference may be a canonical `"provider/model"` string or a
+ * `{provider, model}` ref; unparsable refs, disabled providers and missing
+ * credentials resolve to `undefined`. V3 dropped model variants, so a variant
+ * name is accepted for call compatibility but never applied.
+ */
 export function providerForModel(
-  config: ConfigV2,
-  modelID: string,
-  variantName?: string,
+  config: ConfigV3,
+  ref: ModelRef | string | null | undefined,
+  _variantName?: string,
+  requestOverride?: { reasoningEffort?: string },
 ): StreamingProvider | undefined {
-  const status = modelSelectionStatus(config, modelID);
+  if (!ref) return undefined;
+  let modelRef: ModelRef;
+  try {
+    modelRef = typeof ref === "string" ? parseModelRef(ref) : ref;
+  } catch {
+    return undefined;
+  }
+  const status = modelSelectionStatus(config, modelRef);
   if (!status.selected) return undefined;
-  const model = config.models[modelID];
-  const providerConfig = model && config.providers[model.provider];
-  if (!model || !providerConfig?.apiKey) return undefined;
-  const variant = variantName ? model.variants[variantName] : undefined;
-  if (variantName && !variant) return undefined;
+  const effective = resolveEffectiveModel(config, modelRef);
+  const providerConfig = effective && config.providers[effective.providerID];
+  if (!effective || !providerConfig?.connection?.apiKey) return undefined;
   return providerFromKind({
     // Keep the runtime provider identity stable: it is the adapter kind used
     // by runtime status, model metadata, and existing evaluator contracts.
-    providerName: providerConfig.type,
-    provider: providerConfig.type,
-    apiKey: providerConfig.apiKey,
-    model: variant?.model ?? model.model,
-    baseURL: providerConfig.baseURL,
-    maxTokens: variant?.maxOutputTokens ?? model.maxOutputTokens ?? undefined,
-    temperature: variant?.temperature ?? model.temperature ?? undefined,
-    topP: variant?.topP ?? model.topP ?? undefined,
-    reasoningEffort: model.capabilities.reasoning
-      ? (variant?.reasoningEffort ?? model.reasoningEffort ?? undefined)
+    providerName: providerConfig.driver,
+    provider: providerConfig.driver,
+    apiKey: providerConfig.connection.apiKey,
+    model: effective.ref.model,
+    baseURL: providerConfig.connection.baseURL,
+    maxTokens: effective.limits.maxOutputTokens ?? undefined,
+    temperature: effective.requestDefaults.temperature ?? undefined,
+    topP: effective.requestDefaults.topP ?? undefined,
+    reasoningEffort:
+      requestOverride?.reasoningEffort ??
+      (typeof effective.requestDefaults.options.reasoningEffort === "string"
+        ? effective.requestDefaults.options.reasoningEffort
+        : undefined),
+    thinkingEnabled: effective.capabilities.thinking
+      ? effective.requestDefaults.thinkingEnabled
       : undefined,
-    thinkingEnabled: model.capabilities.thinking
-      ? (variant?.thinkingEnabled ?? model.thinkingEnabled)
-      : undefined,
-    timeoutMs:
-      (variant?.requestTimeoutSec ?? model.requestTimeoutSec ?? undefined) ===
-      undefined
-        ? undefined
-        : (variant?.requestTimeoutSec ?? model.requestTimeoutSec)! * 1000,
+    timeoutMs: config.runtime.timeouts.requestSec * 1000,
     streamIdleTimeoutMs: config.runtime.timeouts.streamIdleSec * 1000,
   });
 }

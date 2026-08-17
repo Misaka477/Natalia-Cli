@@ -947,7 +947,7 @@ export class SqliteSessionStore {
       `INSERT OR IGNORE INTO message_turns(session_id, turn_id, start_seq)
        SELECT session_id, json_extract(event, '$.id'), seq
        FROM events
-       WHERE session_id = ? AND json_extract(event, '$.type') = 'turn.submitted'`,
+         WHERE session_id = ? AND json_extract(event, '$.type') = 'turn.submitted'`,
       [sessionID],
     );
   }

@@ -1,9 +1,9 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, test } from "bun:test";
-import { createRealRuntimeClient } from "../src";
+import { createRealRuntimeClient as createRuntimeClient } from "../src";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type {
   ProviderStreamRequest,
@@ -24,6 +24,39 @@ import {
 } from "./plugin-test-helpers";
 import { projectedWorkGraphEdges } from "@natalia/session";
 import { toolCallNodeID } from "../src/work-graph";
+
+function createRealRuntimeClient(
+  options: Parameters<typeof createRuntimeClient>[0] = {},
+) {
+  const workspaceRoot = options.workspaceRoot ?? process.cwd();
+  const globalConfigPath =
+    options.globalConfigPath ??
+    join(workspaceRoot, ".natalia-test-global.json");
+  const projectPath = join(workspaceRoot, ".natalia", "config.json");
+  if (
+    !options.globalConfigPath &&
+    !existsSync(globalConfigPath) &&
+    existsSync(projectPath)
+  ) {
+    const project = JSON.parse(readFileSync(projectPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const modelConfig = Object.fromEntries(
+      ["providers", "catalog", "modelOverrides", "defaultModel"].flatMap(
+        (key) => (Object.hasOwn(project, key) ? [[key, project[key]]] : []),
+      ),
+    );
+    if (Object.keys(modelConfig).length) {
+      mkdirSync(workspaceRoot, { recursive: true });
+      writeFileSync(globalConfigPath, JSON.stringify(modelConfig));
+    }
+  }
+  return createRuntimeClient({
+    ...options,
+    globalConfigPath,
+  });
+}
 
 test("real runtime client streams provider output and persists replayable session", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-real-"));
@@ -787,7 +820,7 @@ test("runtime status reflects the configured auto approval profile", async () =>
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       defaultPermission: "trusted",
       permissionProfiles: {
         trusted: { approval: "auto", description: "Trusted workspace" },
@@ -813,7 +846,7 @@ test("tools.paths loads out-of-tree families through the kernel", async () => {
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       tools: { paths: ["extra-tools"] },
     }),
   );
@@ -867,7 +900,7 @@ test("the family watcher hot-reloads a promoted change automatically", async () 
   await mkdir(join(root, ".natalia"), { recursive: true });
   await writeFile(
     join(root, ".natalia", "config.json"),
-    JSON.stringify({ version: 2, tools: { paths: ["extra-tools"] } }),
+    JSON.stringify({ version: 3, tools: { paths: ["extra-tools"] } }),
   );
   await mkdir(join(root, "extra-tools", "extra.family"), { recursive: true });
   await writeFile(
@@ -921,7 +954,7 @@ test("toolFamilyReload hot-swaps an out-of-tree family after promotion", async (
   await mkdir(join(root, ".natalia"), { recursive: true });
   await writeFile(
     join(root, ".natalia", "config.json"),
-    JSON.stringify({ version: 2, tools: { paths: ["extra-tools"] } }),
+    JSON.stringify({ version: 3, tools: { paths: ["extra-tools"] } }),
   );
   await mkdir(join(root, "extra-tools", "extra.family"), { recursive: true });
   await writeFile(
@@ -1092,7 +1125,7 @@ test("the runtime config is a kernel service refreshed on reload", async () => {
   await mkdir(join(root, ".natalia"), { recursive: true });
   await writeFile(
     join(root, ".natalia", "config.json"),
-    JSON.stringify({ version: 2, defaultPermission: "ask" }),
+    JSON.stringify({ version: 3, defaultPermission: "ask" }),
   );
   const kernel = new CapabilityRegistry();
   const client = createRealRuntimeClient({
@@ -1122,7 +1155,7 @@ test("the runtime config is a kernel service refreshed on reload", async () => {
   const unsubscribe = kernel.onServiceUpdate((update) => updates.push(update));
   await writeFile(
     join(root, ".natalia", "config.json"),
-    JSON.stringify({ version: 2, defaultPermission: "auto" }),
+    JSON.stringify({ version: 3, defaultPermission: "auto" }),
   );
   // Reload applies on demand, and the refresh replaces the service in place.
   await client.reloadConfig?.();
@@ -1152,7 +1185,7 @@ test("tools.enabled=false keeps a family out of the runtime catalogue", async ()
   await mkdir(join(root, ".natalia"), { recursive: true });
   await writeFile(
     join(root, ".natalia", "config.json"),
-    JSON.stringify({ version: 2, tools: { enabled: { todo: false } } }),
+    JSON.stringify({ version: 3, tools: { enabled: { todo: false } } }),
   );
   const events: RuntimeEvent[] = [];
   const client = createRealRuntimeClient({
@@ -1183,7 +1216,7 @@ test("read-only profile rejects side-effecting tools without an approval request
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       defaultPermission: "safe",
       permissionProfiles: {
         safe: { approval: "read_only", description: "Read-only workspace" },
@@ -1250,7 +1283,7 @@ test("selected permission profile denies tools outside its allow list before app
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       permissionProfiles: {
         unattended_read: {
           approval: "auto",
@@ -1347,7 +1380,7 @@ test("selected permission profile applies file rules to allowed tools", async ()
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       permissionProfiles: {
         unattended_read: {
           approval: "auto",
@@ -1436,27 +1469,31 @@ test("runtime status reflects committed agent and model selections", async () =>
   await writeFile(
     join(agentRoot, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       providers: {
         alpha: {
-          type: "openai",
-          apiKey: "alpha-key",
-          baseURL: "http://127.0.0.1:9",
+          name: "Alpha",
+          driver: "openai",
+          enabled: true,
+          connection: { apiKey: "alpha-key", baseURL: "http://127.0.0.1:9" },
         },
         beta: {
-          type: "anthropic",
-          apiKey: "beta-key",
-          baseURL: "http://127.0.0.1:9",
+          name: "Beta",
+          driver: "anthropic",
+          enabled: true,
+          connection: { apiKey: "beta-key", baseURL: "http://127.0.0.1:9" },
         },
       },
-      models: {
-        alpha: { provider: "alpha", model: "alpha-model" },
-        beta: { provider: "beta", model: "beta-model" },
+      catalog: {
+        providers: {
+          alpha: { models: { "alpha-model": { name: "alpha-model" } } },
+          beta: { models: { "beta-model": { name: "beta-model" } } },
+        },
       },
-      defaultModel: "alpha",
+      defaultModel: { provider: "alpha", model: "alpha-model" },
       agents: {
-        first: { description: "First", model: "alpha" },
-        second: { description: "Second", model: "beta" },
+        first: { description: "First", model: "alpha/alpha-model" },
+        second: { description: "Second", model: "beta/beta-model" },
       },
       defaultAgent: "first",
     }),
@@ -1481,24 +1518,28 @@ test("runtime status reflects committed agent and model selections", async () =>
   await writeFile(
     join(modelRoot, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       providers: {
         alpha: {
-          type: "openai",
-          apiKey: "alpha-key",
-          baseURL: "http://127.0.0.1:9",
+          name: "Alpha",
+          driver: "openai",
+          enabled: true,
+          connection: { apiKey: "alpha-key", baseURL: "http://127.0.0.1:9" },
         },
         beta: {
-          type: "anthropic",
-          apiKey: "beta-key",
-          baseURL: "http://127.0.0.1:9",
+          name: "Beta",
+          driver: "anthropic",
+          enabled: true,
+          connection: { apiKey: "beta-key", baseURL: "http://127.0.0.1:9" },
         },
       },
-      models: {
-        alpha: { provider: "alpha", model: "alpha-model" },
-        beta: { provider: "beta", model: "beta-model" },
+      catalog: {
+        providers: {
+          alpha: { models: { "alpha-model": { name: "alpha-model" } } },
+          beta: { models: { "beta-model": { name: "beta-model" } } },
+        },
       },
-      defaultModel: "alpha",
+      defaultModel: { provider: "alpha", model: "alpha-model" },
     }),
   );
   const modelClient = createRealRuntimeClient({
@@ -1510,7 +1551,7 @@ test("runtime status reflects committed agent and model selections", async () =>
     provider: "openai",
     model: "alpha-model",
   });
-  await modelClient.selectModel?.("beta");
+  await modelClient.selectModel?.("beta/beta-model");
   expect(await modelClient.runtimeStatus?.()).toMatchObject({
     provider: "anthropic",
     model: "beta-model",
@@ -1523,7 +1564,7 @@ test("runtime agent catalog exposes configured selectable metadata", async () =>
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       defaultAgent: "review",
       agents: {
         review: {
@@ -1605,7 +1646,7 @@ test("TS config applies retry/context/checkpoint policy to an explicit provider"
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       runtime: {
         maxStepsPerTurn: 4,
         retry: {
@@ -1616,11 +1657,22 @@ test("TS config applies retry/context/checkpoint policy to an explicit provider"
         },
       },
       context: { compactionThresholdPercent: 90, reservedOutputTokens: 4096 },
-      defaultModel: "configured",
-      models: {
-        configured: { provider: "configured", model: "configured-model" },
+      defaultModel: { provider: "configured", model: "configured-model" },
+      catalog: {
+        providers: {
+          configured: {
+            models: { "configured-model": { name: "configured-model" } },
+          },
+        },
       },
-      providers: { configured: { type: "openai", apiKey: "test-config-key" } },
+      providers: {
+        configured: {
+          name: "configured",
+          driver: "openai",
+          enabled: true,
+          connection: { apiKey: "test-config-key" },
+        },
+      },
       checkpoint: {
         enabled: false,
         maxFiles: 1,
@@ -1702,7 +1754,7 @@ test("configured agent selection supplies the provider system prompt and tool po
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       agents: {
         reviewer: {
           description: "Review changes",
@@ -1805,7 +1857,7 @@ test("runtime discovers configured remote skills through the local cache", async
     await writeFile(
       join(root, ".natalia", "config.json"),
       JSON.stringify({
-        version: 2,
+        version: 3,
         skills: { urls: [`${server.url}skills/`] },
       }),
     );
@@ -1967,7 +2019,7 @@ test("permission profile disables installed skills and plugins before discovery"
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       permissionProfiles: {
         unattended: {
           approval: "auto",
@@ -2016,7 +2068,7 @@ test("permission profile denies injected MCP tools before execution", async () =
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       permissionProfiles: {
         unattended: {
           approval: "auto",
@@ -2121,7 +2173,7 @@ test("read-only runtime permits workspace trusted read-only plugin tools", async
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       plugins: { readOnly: { "trusted.plugin": true } },
     }),
   );
@@ -2224,7 +2276,7 @@ test("sandbox merge retains manifest path authorization", async () => {
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       defaultAgent: "review",
       agents: {
         review: {
@@ -2289,7 +2341,7 @@ test("grep retains workspace read path authorization", async () => {
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       defaultAgent: "review",
       agents: {
         review: {
@@ -2468,7 +2520,7 @@ test("runtime reports malformed provider tool calls without rendering an empty t
   await mkdir(join(root, ".natalia"), { recursive: true });
   await writeFile(
     join(root, ".natalia", "config.json"),
-    JSON.stringify({ version: 2, runtime: { maxStepsPerTurn: 3 } }),
+    JSON.stringify({ version: 3, runtime: { maxStepsPerTurn: 3 } }),
   );
   const events: RuntimeEvent[] = [];
   const provider: StreamingProvider = {
@@ -2566,7 +2618,7 @@ test("agent permissions block configured file and command execution at tool boun
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       agents: {
         locked: {
           description: "Locked",
@@ -2633,7 +2685,7 @@ test("terminal input cannot bypass the command policy after opening a shell", as
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       agents: {
         locked: {
           description: "Locked",
@@ -2765,7 +2817,7 @@ test("security.redactToolOutput drives redaction when no agent overrides it", as
     await writeFile(
       join(root, ".natalia", "config.json"),
       JSON.stringify({
-        version: 2,
+        version: 3,
         ...(redact === undefined
           ? {}
           : { security: { redactToolOutput: redact } }),
@@ -2821,7 +2873,7 @@ test("agent permissions apply network, environment, and output redaction boundar
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       agents: {
         guarded: {
           description: "Guarded",
@@ -2894,7 +2946,7 @@ test("runtime agent selection applies only at the next provider turn boundary", 
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       agents: {
         first: { description: "First", systemPrompt: "first system" },
         second: { description: "Second", systemPrompt: "second system" },
@@ -2948,7 +3000,7 @@ test("committed agent selection restores when a session runtime is reopened", as
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       agents: {
         first: { description: "First", systemPrompt: "first system" },
         second: { description: "Second", systemPrompt: "second system" },
@@ -2985,7 +3037,7 @@ test("committed agent selection restores when a session runtime is reopened", as
   expect(String(requests[0]?.messages[0]?.content)).toContain("second system");
 });
 
-test("agent model and variant overrides apply when the next provider turn starts", async () => {
+test("agent model overrides apply when the next provider turn starts", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-agent-model-override-"));
   const requests: Array<Record<string, unknown>> = [];
   const server = Bun.serve({
@@ -3002,26 +3054,33 @@ test("agent model and variant overrides apply when the next provider turn starts
     await writeFile(
       join(root, ".natalia", "config.json"),
       JSON.stringify({
-        version: 2,
+        version: 3,
         providers: {
           local: {
-            type: "openai",
-            apiKey: "local-key",
-            baseURL: server.url.toString(),
+            name: "local",
+            driver: "openai",
+            enabled: true,
+            connection: { apiKey: "local-key", baseURL: server.url.toString() },
           },
         },
-        models: {
-          alpha: { provider: "local", model: "alpha" },
-          beta: {
-            provider: "local",
-            model: "beta",
-            variants: { careful: { model: "beta-careful", temperature: 0.2 } },
+        catalog: {
+          providers: {
+            local: {
+              models: {
+                alpha: { name: "alpha" },
+                beta: { name: "beta" },
+              },
+            },
           },
         },
-        defaultModel: "alpha",
+        defaultModel: { provider: "local", model: "alpha" },
         agents: {
-          first: { description: "First", model: "alpha" },
-          second: { description: "Second", model: "beta", variant: "careful" },
+          first: { description: "First", model: "local/alpha" },
+          second: {
+            description: "Second",
+            model: "local/beta",
+            variant: "careful",
+          },
         },
         defaultAgent: "first",
       }),
@@ -3034,11 +3093,7 @@ test("agent model and variant overrides apply when the next provider turn starts
     await client.submit("first");
     client.selectAgent?.("second");
     await client.submit("second");
-    expect(requests.map((request) => request.model)).toEqual([
-      "alpha",
-      "beta-careful",
-    ]);
-    expect(requests[1]?.temperature).toBe(0.2);
+    expect(requests.map((request) => request.model)).toEqual(["alpha", "beta"]);
   } finally {
     server.stop(true);
   }
@@ -3063,42 +3118,77 @@ test("runtime model selections persist across reopen and expose safe catalogs", 
     await writeFile(
       join(root, ".natalia", "config.json"),
       JSON.stringify({
-        version: 2,
+        version: 3,
         providers: {
           local: {
-            type: "openai",
-            apiKey: "local-key",
-            baseURL: server.url.toString(),
+            name: "local",
+            driver: "openai",
+            enabled: true,
+            connection: { apiKey: "local-key", baseURL: server.url.toString() },
           },
         },
-        models: {
-          alpha: { provider: "local", model: "alpha" },
-          beta: {
-            provider: "local",
-            model: "beta",
-            variants: { careful: { model: "beta-careful", temperature: 0.2 } },
+        catalog: {
+          providers: {
+            local: {
+              models: {
+                alpha: { name: "alpha" },
+                beta: {
+                  name: "beta",
+                },
+              },
+            },
           },
         },
-        defaultModel: "alpha",
+        modelOverrides: {
+          "local/beta": {
+            requestDefaults: {
+              temperature: 0.2,
+              topP: null,
+              stream: true,
+              thinkingEnabled: false,
+            },
+          },
+        },
+        defaultModel: { provider: "local", model: "alpha" },
       }),
     );
     const sessionID = "ses_runtime_model_selection" as const;
     const client = createRealRuntimeClient({ workspaceRoot: root, sessionID });
     client.start(() => undefined);
     expect(await client.modelCatalog?.()).toEqual([
-      { id: "alpha", name: "alpha", provider: "local", variants: [] },
-      { id: "beta", name: "beta", provider: "local", variants: ["careful"] },
+      {
+        id: "local/alpha",
+        name: "alpha",
+        provider: "local",
+        variants: [],
+      },
+      {
+        id: "local/beta",
+        name: "beta",
+        provider: "local",
+        variants: [],
+      },
     ]);
-    await client.selectModel?.("beta", "careful");
+    await client.selectModel?.("local/beta");
     expect(await client.modelSelection?.()).toEqual({
-      modelID: "beta",
-      variant: "careful",
+      modelID: "local/beta",
+      variant: undefined,
     });
+    const beforeComposerOverride = await readFile(
+      join(root, ".natalia", "config.json"),
+      "utf8",
+    );
+    await client.setReasoningEffort?.("high");
+    expect(await client.reasoningEffort?.()).toBe("high");
     await client.submit("selected model");
     expect(requests[0]).toMatchObject({
-      model: "beta-careful",
+      model: "beta",
       temperature: 0.2,
+      reasoning_effort: "high",
     });
+    expect(await readFile(join(root, ".natalia", "config.json"), "utf8")).toBe(
+      beforeComposerOverride,
+    );
     await client.dispose?.();
 
     const reopened = createRealRuntimeClient({
@@ -3106,9 +3196,10 @@ test("runtime model selections persist across reopen and expose safe catalogs", 
       sessionID,
     });
     reopened.start(() => undefined);
+    expect(await reopened.reasoningEffort?.()).toBeUndefined();
     await reopened.submit("restored model");
     expect(requests[1]).toMatchObject({
-      model: "beta-careful",
+      model: "beta",
       temperature: 0.2,
     });
   } finally {
@@ -3313,23 +3404,22 @@ test("model slash commands share catalog and durable selection behavior", async 
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       providers: {
         local: {
-          type: "openai",
-          apiKey: "local-key",
-          baseURL: "http://127.0.0.1:9",
+          name: "Local",
+          driver: "openai",
+          connection: { apiKey: "local-key", baseURL: "http://127.0.0.1:9" },
         },
       },
-      models: {
-        alpha: { provider: "local", model: "alpha" },
-        beta: {
-          provider: "local",
-          model: "beta",
-          variants: { fast: { model: "beta-fast" } },
+      catalog: {
+        providers: {
+          local: {
+            models: { alpha: { name: "alpha" }, beta: { name: "beta" } },
+          },
         },
       },
-      defaultModel: "alpha",
+      defaultModel: { provider: "local", model: "alpha" },
     }),
   );
   const events: RuntimeEvent[] = [];
@@ -3342,13 +3432,13 @@ test("model slash commands share catalog and durable selection behavior", async 
   expect(
     events.filter((event) => event.type === "content.delta").at(-1),
   ).toMatchObject({
-    text: expect.stringContaining("beta: beta @ local (fast)"),
+    text: expect.stringContaining("local/beta: beta @ local"),
   });
-  await client.submit("/model beta fast");
+  await client.submit("/model local/beta");
   expect(events).toContainEqual({
     type: "model.selection",
-    modelID: "beta",
-    variant: "fast",
+    modelID: "local/beta",
+    variant: undefined,
     sessionID: "ses_runtime_model_command",
   });
 });
@@ -3359,16 +3449,18 @@ test("configured provider policy denies a selected model without starting a prov
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       providers: {
         local: {
-          type: "openai",
-          apiKey: "local-key",
-          baseURL: "http://127.0.0.1:9",
+          name: "Local",
+          driver: "openai",
+          connection: { apiKey: "local-key", baseURL: "http://127.0.0.1:9" },
         },
       },
-      models: { blocked: { provider: "local", model: "blocked" } },
-      defaultModel: "blocked",
+      catalog: {
+        providers: { local: { models: { blocked: { name: "blocked" } } } },
+      },
+      defaultModel: { provider: "local", model: "blocked" },
       experimental: {
         policies: [
           { effect: "deny", action: "provider.use", resource: "local/blocked" },
@@ -3409,26 +3501,31 @@ test("model capability disables provider-visible tools", async () => {
     await writeFile(
       join(root, ".natalia", "config.json"),
       JSON.stringify({
-        version: 2,
+        version: 3,
         providers: {
           local: {
-            type: "openai",
-            apiKey: "key",
-            baseURL: server.url.toString(),
+            name: "Local",
+            driver: "openai",
+            connection: { apiKey: "key", baseURL: server.url.toString() },
           },
         },
-        models: {
-          text: {
-            provider: "local",
-            model: "text",
-            capabilities: {
-              toolCall: false,
-              reasoning: false,
-              thinking: false,
+        catalog: {
+          providers: {
+            local: {
+              models: {
+                text: {
+                  name: "text",
+                  capabilities: {
+                    toolCall: false,
+                    reasoning: false,
+                    thinking: false,
+                  },
+                },
+              },
             },
           },
         },
-        defaultModel: "text",
+        defaultModel: { provider: "local", model: "text" },
       }),
     );
     const client = createRealRuntimeClient({
@@ -3464,22 +3561,24 @@ test("workspace image attachment is stored privately and lowered for OpenAI-comp
     await writeFile(
       join(root, ".natalia", "config.json"),
       JSON.stringify({
-        version: 2,
+        version: 3,
         providers: {
           local: {
-            type: "openai",
-            apiKey: "key",
-            baseURL: server.url.toString(),
+            name: "Local",
+            driver: "openai",
+            connection: { apiKey: "key", baseURL: server.url.toString() },
           },
         },
-        models: {
-          vision: {
-            provider: "local",
-            model: "vision",
-            capabilities: { imageInput: true },
+        catalog: {
+          providers: {
+            local: {
+              models: {
+                vision: { name: "vision", capabilities: { imageInput: true } },
+              },
+            },
           },
         },
-        defaultModel: "vision",
+        defaultModel: { provider: "local", model: "vision" },
       }),
     );
     const client = createRealRuntimeClient({
@@ -3558,27 +3657,28 @@ test("video attachments are refused by a model or adapter without video input", 
     await writeFile(
       join(root, ".natalia", "config.json"),
       JSON.stringify({
-        version: 2,
+        version: 3,
         providers: {
           local: {
-            type: "openai",
-            apiKey: "key",
-            baseURL: server.url.toString(),
+            name: "Local",
+            driver: "openai",
+            connection: { apiKey: "key", baseURL: server.url.toString() },
           },
         },
-        models: {
-          plain: {
-            provider: "local",
-            model: "plain",
-            capabilities: { imageInput: true },
-          },
-          vision: {
-            provider: "local",
-            model: "vision",
-            capabilities: { imageInput: true, videoInput: true },
+        catalog: {
+          providers: {
+            local: {
+              models: {
+                plain: { name: "plain", capabilities: { imageInput: true } },
+                vision: {
+                  name: "vision",
+                  capabilities: { imageInput: true, videoInput: true },
+                },
+              },
+            },
           },
         },
-        defaultModel: "plain",
+        defaultModel: { provider: "local", model: "plain" },
       }),
     );
     const client = createRealRuntimeClient({
@@ -3609,7 +3709,7 @@ test("video attachments are refused by a model or adapter without video input", 
         ?.event,
     ).toMatchObject({ stopReason: "error" });
     await client.updateConfig?.({
-      patch: { defaultModel: "vision" },
+      patch: { defaultModel: { provider: "local", model: "vision" } },
     });
     await client.submitInput?.({ text: "watch", attachments: ["clip.mp4"] });
     expect(await finishedWithError()).toBe(true);
@@ -3643,16 +3743,18 @@ test("runtime injects a UTF-8 text attachment into the active provider turn", as
     await writeFile(
       join(root, ".natalia", "config.json"),
       JSON.stringify({
-        version: 2,
+        version: 3,
         providers: {
           local: {
-            type: "openai",
-            apiKey: "key",
-            baseURL: server.url.toString(),
+            name: "Local",
+            driver: "openai",
+            connection: { apiKey: "key", baseURL: server.url.toString() },
           },
         },
-        models: { text: { provider: "local", model: "text" } },
-        defaultModel: "text",
+        catalog: {
+          providers: { local: { models: { text: { name: "text" } } } },
+        },
+        defaultModel: { provider: "local", model: "text" },
       }),
     );
     const client = createRealRuntimeClient({
@@ -3691,22 +3793,24 @@ test("runtime lowers a PDF attachment through the Anthropic adapter", async () =
     await writeFile(
       join(root, ".natalia", "config.json"),
       JSON.stringify({
-        version: 2,
+        version: 3,
         providers: {
           local: {
-            type: "anthropic",
-            apiKey: "key",
-            baseURL: server.url.toString(),
+            name: "Local",
+            driver: "anthropic",
+            connection: { apiKey: "key", baseURL: server.url.toString() },
           },
         },
-        models: {
-          pdf: {
-            provider: "local",
-            model: "pdf",
-            capabilities: { pdfInput: true },
+        catalog: {
+          providers: {
+            local: {
+              models: {
+                pdf: { name: "pdf", capabilities: { pdfInput: true } },
+              },
+            },
           },
         },
-        defaultModel: "pdf",
+        defaultModel: { provider: "local", model: "pdf" },
       }),
     );
     const client = createRealRuntimeClient({
@@ -3732,7 +3836,7 @@ test("agent MCP server scope limits provider-visible MCP tools", async () => {
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       agents: { scoped: { description: "Scoped", mcpServers: ["one"] } },
       defaultAgent: "scoped",
     }),
@@ -3781,7 +3885,7 @@ test("agent MCP scope includes only its server prompt and resource tools", async
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       agents: { scoped: { description: "Scoped", mcpServers: ["one"] } },
       defaultAgent: "scoped",
     }),
@@ -3834,7 +3938,7 @@ test("runtime persists and lowers structured agent resource mentions", async () 
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       agents: { review: { description: "Review" } },
     }),
   );
@@ -3983,7 +4087,7 @@ test("real runtime requests a final response after exhausting tool steps", async
   await mkdir(join(root, ".natalia"), { recursive: true });
   await writeFile(
     join(root, ".natalia", "config.json"),
-    JSON.stringify({ version: 2, runtime: { maxStepsPerTurn: 10 } }),
+    JSON.stringify({ version: 3, runtime: { maxStepsPerTurn: 10 } }),
   );
   const requests: ProviderStreamRequest[] = [];
   const provider: StreamingProvider = {
@@ -4386,7 +4490,7 @@ test("queued input wakes an idle session after durable admission", async () => {
   expect(stored.inbox?.[0]?.promotedAt).toEqual(expect.any(String));
 });
 
-test("queued input promotes after the active steer turn becomes idle", async () => {
+test("queued inputs promote in FIFO order after the active turn becomes idle", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-queued-promotion-"));
   const requests: string[] = [];
   let release: (() => void) | undefined;
@@ -4408,13 +4512,19 @@ test("queued input promotes after the active steer turn becomes idle", async () 
   client.start(() => undefined);
   const first = client.submit("first");
   while (!release) await Bun.sleep(1);
-  const queued = await client.submitInput!({
-    text: "queued",
-    delivery: "queue",
-  });
+  const queued = await Promise.all(
+    ["queued one", "queued two", "queued three"].map((text) =>
+      client.submitInput!({ text, delivery: "queue" }),
+    ),
+  );
   release();
   await first;
-  expect(requests).toEqual(["first", "queued"]);
+  expect(requests).toEqual([
+    "first",
+    "queued one",
+    "queued two",
+    "queued three",
+  ]);
   const stored = JSON.parse(
     await readFile(
       join(root, ".natalia", "sessions", "ses_ts7_queued_promotion.json"),
@@ -4422,8 +4532,80 @@ test("queued input promotes after the active steer turn becomes idle", async () 
     ),
   ) as { inbox?: Array<{ id: string; promotedAt?: string }> };
   expect(
-    stored.inbox?.find((item) => item.id === queued.id)?.promotedAt,
-  ).toEqual(expect.any(String));
+    queued.every(
+      (turn) =>
+        stored.inbox?.find((item) => item.id === turn.id)?.promotedAt !==
+        undefined,
+    ),
+  ).toBe(true);
+});
+
+test("queued input still promotes after the active turn is cancelled", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-cancel-queue-"));
+  const requests: string[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_cancel_queue",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        requests.push(request.messages.at(-1)?.content ?? "");
+        if (requests.length === 1)
+          await new Promise<void>((resolve) => {
+            const finish = () => resolve();
+            if (request.signal?.aborted) finish();
+            else
+              request.signal?.addEventListener("abort", finish, { once: true });
+          });
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  const first = client.submit("first");
+  await waitFor(() => requests.length === 1, 5000, "the first turn to start");
+  await client.submitInput!({ text: "queued", delivery: "queue" });
+  client.cancel("skip to queued");
+  await first;
+  await waitFor(
+    () => requests.includes("queued"),
+    5000,
+    "the queued input to run after cancellation",
+  );
+  expect(requests).toEqual(["first", "queued"]);
+});
+
+test("cancelling after admission but before execution does not start the turn", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-cancel-admission-"));
+  const events: RuntimeEvent[] = [];
+  let providerCalls = 0;
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_cancel_admission",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        providerCalls += 1;
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => {
+    events.push(event);
+    if (event.type === "turn.submitted") client.cancel("cancel admission");
+  });
+  await client.submit("do not start");
+  await Bun.sleep(20);
+
+  expect(providerCalls).toBe(0);
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "turn.cancelled",
+      reason: "cancel admission",
+    }),
+  );
 });
 
 test("exact input retry does not duplicate a completed provider turn", async () => {
@@ -6712,7 +6894,10 @@ test("a turn that does not finish normally does not auto-acknowledge delivered i
         // it must not acknowledge a delivered intent.
         yield { type: "content" as const, text: "half" };
         await new Promise((resolve) => setTimeout(resolve, 200));
-        throw new Error("provider failed");
+        throw providerError({
+          kind: "invalid_request",
+          message: "provider rejected the request",
+        });
       },
     },
   });
@@ -7167,7 +7352,24 @@ test("real runtime client spawns and projects a TS/Bun subagent lifecycle", asyn
     ),
   ).toBe(true);
   expect(lifecycle.every((event) => event.continuation === 0)).toBe(true);
-  const history = await client.history?.();
+  const childEvents = events.filter(
+    (event) => event.agentID === lifecycle[0]?.id,
+  );
+  expect(childEvents.some((event) => event.type === "turn.submitted")).toBe(
+    true,
+  );
+  expect(childEvents.some((event) => event.type === "thinking.delta")).toBe(
+    true,
+  );
+  expect(childEvents.some((event) => event.type === "content.delta")).toBe(
+    true,
+  );
+  expect(childEvents.some((event) => event.type === "turn.finished")).toBe(
+    true,
+  );
+  // Startup capability and tool registration events precede subagent progress,
+  // so the default 100-event history page may not reach this lifecycle.
+  const history = await client.history?.({ limit: 1000 });
   expect(
     history?.events.some(
       (item) =>
@@ -7175,6 +7377,7 @@ test("real runtime client spawns and projects a TS/Bun subagent lifecycle", asyn
         item.event.parentSessionID === "ses_ts7_subagent_tool",
     ),
   ).toBe(true);
+  expect(history?.events.some((item) => item.event.agentID)).toBe(false);
 });
 
 test("subagent executes TS native workspace tools before reporting completion", async () => {
@@ -7204,6 +7407,76 @@ test("subagent executes TS native workspace tools before reporting completion", 
         event.text?.includes("tool write_file"),
     ),
   ).toBe(true);
+  const childToolEvents = events.filter(
+    (
+      event,
+    ): event is Extract<RuntimeEvent, { type: "tool.update" }> & {
+      agentID: string;
+    } => Boolean(event.agentID) && event.type === "tool.update",
+  );
+  expect(childToolEvents.map((event) => event.status)).toEqual([
+    "awaiting_approval",
+    "running",
+    "succeeded",
+  ]);
+});
+
+test("subagent approval stays in the child conversation and remains answerable", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-subagent-approval-"));
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_ts7_subagent_approval",
+    provider: subagentToolProvider(),
+    permissionMode: "ask",
+  });
+  client.start((event) => {
+    events.push(event);
+    if (event.type === "approval.request")
+      client.respondApproval?.({
+        requestID: event.id,
+        decision: "once",
+      });
+  });
+
+  await client.submit("delegate a file task");
+  await waitFor(
+    () =>
+      events.some(
+        (event) =>
+          event.type === "subagent.update" && event.status === "completed",
+      ),
+    5000,
+    "the approved subagent tool to complete",
+  );
+
+  const request = events.find(
+    (
+      event,
+    ): event is Extract<RuntimeEvent, { type: "approval.request" }> & {
+      agentID: string;
+    } => event.type === "approval.request" && Boolean(event.agentID),
+  );
+  expect(request).toMatchObject({
+    type: "approval.request",
+    agentID: expect.any(String),
+  });
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "approval.response",
+      id: request?.id,
+      decision: "once",
+      agentID: request?.agentID,
+    }),
+  );
+  expect(await readFile(join(root, "agent-test.txt"), "utf8")).toBe(
+    "agent test success",
+  );
+  expect(
+    (await client.history?.({ limit: 1000 }))?.events.some(
+      (item) => item.event.agentID,
+    ),
+  ).toBe(false);
 });
 
 test("subagent honors configured step limits above twenty", async () => {
@@ -7212,7 +7485,7 @@ test("subagent honors configured step limits above twenty", async () => {
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       defaultAgent: "long_running",
       agents: { long_running: { description: "Long running", maxSteps: 21 } },
     }),
@@ -7557,6 +7830,7 @@ function subagentProvider(): StreamingProvider {
           "focused Natalia TS/Bun subagent",
         )
       ) {
+        yield { type: "thinking", text: "checking the delegated task" };
         yield { type: "content", text: "child result" };
         yield { type: "done" };
         return;
@@ -7872,7 +8146,7 @@ test("the repeated call guard blocks loops but not waiting reads", async () => {
     await mkdir(join(root, ".natalia"), { recursive: true });
     await writeFile(
       join(root, ".natalia", "config.json"),
-      JSON.stringify({ version: 2, runtime: { maxStepsPerTurn: 6 } }),
+      JSON.stringify({ version: 3, runtime: { maxStepsPerTurn: 6 } }),
     );
     const events: RuntimeEvent[] = [];
     const client = createRealRuntimeClient({
@@ -8289,7 +8563,7 @@ test("module completion stays possible when a profile allow-list omits it", asyn
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       permissionProfiles: {
         unattended: {
           approval: "auto",
@@ -9164,7 +9438,7 @@ test("permission management: save validates, delete refuses the default, both pe
   await mkdir(join(root, ".natalia"), { recursive: true });
   await writeFile(
     join(root, ".natalia", "config.json"),
-    JSON.stringify({ version: 2 }),
+    JSON.stringify({ version: 3 }),
   );
   const client = createRealRuntimeClient({
     workspaceRoot: root,
@@ -9217,7 +9491,7 @@ test("mcp server management persists config and survives failed connections", as
   await mkdir(join(root, ".natalia"), { recursive: true });
   await writeFile(
     join(root, ".natalia", "config.json"),
-    JSON.stringify({ version: 2 }),
+    JSON.stringify({ version: 3 }),
   );
   const client = createRealRuntimeClient({
     workspaceRoot: root,
@@ -9262,7 +9536,7 @@ test("agent and provider management persist, validate references and survive app
   await mkdir(join(root, ".natalia"), { recursive: true });
   await writeFile(
     join(root, ".natalia", "config.json"),
-    JSON.stringify({ version: 2 }),
+    JSON.stringify({ version: 3 }),
   );
   const client = createRealRuntimeClient({
     workspaceRoot: root,
@@ -9347,7 +9621,7 @@ export default definePlugin({
   );
   await writeFile(
     join(root, ".natalia", "config.json"),
-    JSON.stringify({ version: 2 }),
+    JSON.stringify({ version: 3 }),
   );
   const client = createRealRuntimeClient({
     workspaceRoot: root,
@@ -10761,10 +11035,34 @@ function sandboxedSubagentProvider(): StreamingProvider {
       const isChild = request.messages.some(
         (message) => message.content === "child sandbox file task",
       );
-      if (
-        isChild &&
-        !request.messages.some((message) => message.role === "tool")
-      ) {
+      const contractRead = request.messages.find(
+        (message) =>
+          message.role === "tool" &&
+          message.toolCallID === "call_sandbox_child_read",
+      );
+      const childWrite = request.messages.some(
+        (message) =>
+          message.role === "tool" &&
+          message.toolCallID === "call_sandbox_child_write",
+      );
+      if (isChild && !contractRead) {
+        yield {
+          type: "tool_call",
+          calls: [
+            {
+              id: "call_sandbox_child_read",
+              name: "read_file",
+              arguments: JSON.stringify({
+                path: "CONTRACT.md",
+              }),
+            },
+          ],
+        };
+        yield { type: "done" };
+        return;
+      }
+      if (isChild && !childWrite) {
+        expect(contractRead?.content).toBe("shared contract\n");
         yield {
           type: "tool_call",
           calls: [
@@ -10812,8 +11110,9 @@ function sandboxedSubagentProvider(): StreamingProvider {
   };
 }
 
-test("a sandboxed subagent writes into its own worktree, not the parent workspace", async () => {
+test("a sandboxed subagent reads the checked-out base and writes only in its worktree", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-sandboxed-subagent-"));
+  await writeFile(join(root, "CONTRACT.md"), "shared contract\n");
   const events: RuntimeEvent[] = [];
   const client = createRealRuntimeClient({
     workspaceRoot: root,
@@ -10848,10 +11147,16 @@ function sandboxedDomainProvider(): StreamingProvider {
       const isChild = request.messages.some(
         (message) => message.content === "child domain task",
       );
-      if (
-        isChild &&
-        !request.messages.some((message) => message.role === "tool")
-      ) {
+      const domainError = request.messages.find(
+        (message) =>
+          message.role === "tool" && message.toolCallID === "call_domain_write",
+      );
+      const recoveredWrite = request.messages.some(
+        (message) =>
+          message.role === "tool" &&
+          message.toolCallID === "call_domain_recovery",
+      );
+      if (isChild && !domainError) {
         // The child tries to write outside its file domain.
         yield {
           type: "tool_call",
@@ -10869,8 +11174,27 @@ function sandboxedDomainProvider(): StreamingProvider {
         yield { type: "done" };
         return;
       }
+      if (isChild && !recoveredWrite) {
+        expect(domainError?.content).toContain("ERROR:");
+        expect(domainError?.content).toContain("outside file domain");
+        yield {
+          type: "tool_call",
+          calls: [
+            {
+              id: "call_domain_recovery",
+              name: "write_file",
+              arguments: JSON.stringify({
+                path: "allowed/recovered.txt",
+                content: "recovered after tool error",
+              }),
+            },
+          ],
+        };
+        yield { type: "done" };
+        return;
+      }
       if (isChild) {
-        yield { type: "content", text: "done" };
+        yield { type: "content", text: "recovered from denied write" };
         yield { type: "done" };
         return;
       }
@@ -10898,7 +11222,7 @@ function sandboxedDomainProvider(): StreamingProvider {
   };
 }
 
-test("a sandboxed sub-agent's writes are narrowed to its file domain", async () => {
+test("a sandboxed sub-agent sees a denied write and self-corrects inside its file domain", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-sandboxed-domain-"));
   const events: RuntimeEvent[] = [];
   const client = createRealRuntimeClient({
@@ -10912,22 +11236,111 @@ test("a sandboxed sub-agent's writes are narrowed to its file domain", async () 
   await waitFor(() =>
     events.some(
       (event) =>
-        event.type === "subagent.update" &&
-        (event.status === "failed" || event.status === "completed"),
+        event.type === "subagent.update" && event.status === "completed",
     ),
   );
-  // The write outside the domain was refused by the ownership-map authorize:
-  // the sub-agent failed, and the forbidden file was never created — in the
-  // parent workspace or anywhere in its sandbox.
+  // The ownership map refuses the first write, but the error is returned to the
+  // child as a tool result so it can recover without restarting its context.
   expect(
     events.some(
-      (event) => event.type === "subagent.update" && event.status === "failed",
+      (event) =>
+        event.type === "subagent.update" && event.status === "completed",
     ),
   ).toBe(true);
   expect(existsSync(join(root, "forbidden"))).toBe(false);
   expect(
     existsSync(join(root, ".natalia", "sandboxes", "a1", "forbidden", "x.txt")),
   ).toBe(false);
+  expect(
+    await readFile(
+      join(root, ".natalia", "sandboxes", "a1", "allowed", "recovered.txt"),
+      "utf8",
+    ),
+  ).toBe("recovered after tool error");
+});
+
+test("a subagent keeps retrying transient failures without respawn", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-subagent-retry-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 3,
+      runtime: {
+        retry: {
+          initialBackoffMs: 1,
+          maxBackoffMs: 1,
+          jitterMs: 0,
+        },
+      },
+    }),
+  );
+  let childAttempts = 0;
+  const provider: StreamingProvider = {
+    provider: "scripted-subagent-retry",
+    model: "scripted-subagent-retry-model",
+    async *stream(request) {
+      const isChild = request.messages.some(
+        (message) => message.content === "child transient task",
+      );
+      if (isChild) {
+        childAttempts++;
+        if (childAttempts < 6)
+          throw providerError({ kind: "server", message: "temporary outage" });
+        yield { type: "content", text: "child recovered" };
+        yield { type: "done" };
+        return;
+      }
+      if (!request.messages.some((message) => message.role === "tool")) {
+        yield {
+          type: "tool_call",
+          calls: [
+            {
+              id: "call_retry_spawn",
+              name: "agent_spawn",
+              arguments: JSON.stringify({ task: "child transient task" }),
+            },
+          ],
+        };
+        yield { type: "done" };
+        return;
+      }
+      yield { type: "content", text: "parent complete" };
+      yield { type: "done" };
+    },
+  };
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_subagent_retry",
+    provider,
+    permissionMode: "auto",
+  });
+  client.start((event) => events.push(event));
+  await client.submit("delegate transient work");
+  await waitFor(() =>
+    events.some(
+      (event) =>
+        event.type === "subagent.update" && event.status === "completed",
+    ),
+  );
+  expect(childAttempts).toBe(6);
+  expect(
+    events.some(
+      (event) =>
+        event.type === "step.retry" &&
+        event.id === "subagent:a1" &&
+        event.sessionID === "ses_subagent_retry",
+    ),
+  ).toBe(true);
+  expect(
+    events.some(
+      (event) =>
+        event.type === "step.retry.cleared" &&
+        event.id === "subagent:a1" &&
+        event.sessionID === "ses_subagent_retry",
+    ),
+  ).toBe(true);
 });
 
 function imageAttachProvider(): StreamingProvider {
@@ -10979,14 +11392,25 @@ test("a model with image input can attach its own screenshot and see it", async 
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
-      defaultModel: "scripted-image",
-      models: {
-        "scripted-image": {
-          provider: "scripted-image",
-          model: "scripted-image-model",
-          capabilities: { imageInput: true },
+      version: 3,
+      providers: {
+        "scripted-image": { name: "Scripted image", driver: "openai" },
+      },
+      catalog: {
+        providers: {
+          "scripted-image": {
+            models: {
+              "scripted-image-model": {
+                name: "Scripted image",
+                capabilities: { imageInput: true },
+              },
+            },
+          },
         },
+      },
+      defaultModel: {
+        provider: "scripted-image",
+        model: "scripted-image-model",
       },
     }),
   );

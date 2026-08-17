@@ -10,8 +10,6 @@ import { ToastProvider } from "../context/toast";
 import { RuntimeProvider } from "../context/runtime";
 import { PromptRefProvider } from "../context/prompt";
 import { KeybindProvider } from "../context/keybind";
-import { LocalProvider } from "../context/local";
-import { ThemeProvider } from "../context/theme";
 import { RouteProvider } from "../context/route";
 import type { AppRoute } from "../context/route";
 import { registerNataliaKeymap } from "../modal/mode-stack";
@@ -101,43 +99,37 @@ export async function runTuiShell(
               <PromptRefProvider>
                 <KeybindProvider>
                   <RouteProvider>
-                    <ThemeProvider workspaceRoot={input.workspaceRoot}>
-                      <LocalProvider workspaceRoot={input.workspaceRoot}>
-                        <App
-                          backend={backend}
-                          createBackend={input.createBackend}
-                          onWorkspaceRootChange={input.onWorkspaceRootChange}
-                          onBackendChange={(next) => {
-                            activeBackend = next;
-                          }}
-                          workspaceRoot={input.workspaceRoot}
-                          onSessionChange={input.onSessionChange}
-                          initialRoute={input.initialRoute}
-                          onHistoryControls={input.onHistoryControls}
-                          onDispatch={(event) => {
-                            events.push(event);
-                            input.onEvent?.(event);
-                            if (
-                              input.initialPrompt &&
-                              input.closeAfterInitialTurn !== false &&
-                              event.type === "turn.finished"
-                            ) {
-                              if (process.env.NATALIA_TUI_SMOKE_MARKER)
-                                void Bun.write(
-                                  process.env.NATALIA_TUI_SMOKE_MARKER,
-                                  "done",
-                                );
-                              setTimeout(
-                                () => renderer.destroy(),
-                                process.env.NATALIA_TUI_SMOKE_MARKER
-                                  ? 1000
-                                  : 50,
-                              );
-                            }
-                          }}
-                        />
-                      </LocalProvider>
-                    </ThemeProvider>
+                    <App
+                      backend={backend}
+                      createBackend={input.createBackend}
+                      onWorkspaceRootChange={input.onWorkspaceRootChange}
+                      onBackendChange={(next) => {
+                        activeBackend = next;
+                      }}
+                      workspaceRoot={input.workspaceRoot}
+                      onSessionChange={input.onSessionChange}
+                      initialRoute={input.initialRoute}
+                      onHistoryControls={input.onHistoryControls}
+                      onDispatch={(event) => {
+                        events.push(event);
+                        input.onEvent?.(event);
+                        if (
+                          input.initialPrompt &&
+                          input.closeAfterInitialTurn !== false &&
+                          event.type === "turn.finished"
+                        ) {
+                          if (process.env.NATALIA_TUI_SMOKE_MARKER)
+                            void Bun.write(
+                              process.env.NATALIA_TUI_SMOKE_MARKER,
+                              "done",
+                            );
+                          setTimeout(
+                            () => renderer.destroy(),
+                            process.env.NATALIA_TUI_SMOKE_MARKER ? 1000 : 50,
+                          );
+                        }
+                      }}
+                    />
                   </RouteProvider>
                 </KeybindProvider>
               </PromptRefProvider>

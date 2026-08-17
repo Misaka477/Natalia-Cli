@@ -1,10 +1,11 @@
-import type { ConfigV2, NataliaFlowDocument } from "@natalia/contracts";
+import type { ConfigV3, NataliaFlowDocument } from "@natalia/contracts";
+import { modelRefKey, parseModelRef } from "@natalia/contracts";
+import { modelSelectionStatus } from "@natalia/config";
+import { listModelConfigs } from "./DialogModel";
 import {
   decomposeFlowConditions,
-  defaultExecutionProviderID,
   deleteFlowDocument,
   effectiveFlowPermissions,
-  flowConditionModels,
   loadFlowDocument,
   newFlowID,
   saveFlowDocument,
@@ -190,6 +191,29 @@ export function soleConditionEvaluator(models: FlowConditionModel[]) {
   return models.length === 1 ? models[0] : undefined;
 }
 
+/** Evaluator candidates: configured model refs whose provider is usable. */
+export function flowConditionModels(config: ConfigV3): FlowConditionModel[] {
+  return listModelConfigs(config)
+    .filter(({ key }) => modelSelectionStatus(config, key).selected)
+    .map(({ key, providerID, modelID }) => ({
+      modelID: key,
+      providerID,
+      model: modelID,
+    }));
+}
+
+/** The provider that would execute the default (or agent-selected) model. */
+export function defaultExecutionProviderID(
+  config: ConfigV3,
+): string | undefined {
+  const agent = config.agents?.[config.defaultAgent ?? ""];
+  const modelID =
+    agent?.model ??
+    (config.defaultModel ? modelRefKey(config.defaultModel) : undefined);
+  if (!modelID) return undefined;
+  return parseModelRef(modelID).provider;
+}
+
 /** One row per stage, in execution order, plus the reasons it cannot run. */
 export function buildFlowDetail(flow: FlowRow): DialogSelectOption<string>[] {
   return [
@@ -273,7 +297,7 @@ export function flowConditionsFromLines(
 export function DialogFlows(props: {
   overview: FlowOverview;
   workspaceRoot?: string;
-  config?: ConfigV2;
+  config?: ConfigV3;
   reload?: () => Promise<void>;
   loadFlow?: (path: string) => Promise<NataliaFlowDocument>;
   saveFlow?: (document: NataliaFlowDocument, path: string) => Promise<void>;
@@ -461,7 +485,7 @@ function ExampleInstallConfirm(props: {
 function FlowEditor(props: {
   draft: NataliaFlowDocument;
   path: string;
-  config?: ConfigV2;
+  config?: ConfigV3;
   save: (document: NataliaFlowDocument, path: string) => Promise<void>;
   reload: () => Promise<void>;
   deleteFlow: (path: string) => Promise<void>;
@@ -1206,7 +1230,7 @@ function FlowEditor(props: {
 
 function FlowProblemDetail(props: {
   draft: NataliaFlowDocument;
-  config?: ConfigV2;
+  config?: ConfigV3;
 }) {
   const dialog = useDialog();
   return (
@@ -1478,7 +1502,7 @@ function FlowModuleEditor(props: ModuleEditorProps) {
 
   if (props.screen.kind === "module-condition-consent") {
     const screen = props.screen;
-    const providerID = props.config?.models[screen.modelID]?.provider;
+    const providerID = parseModelRef(screen.modelID).provider;
     return (
       <DialogSelect
         title="Send Goal to Another Provider?"
@@ -2390,7 +2414,7 @@ type ModuleEditorProps = {
   >;
   advance: (draft: NataliaFlowDocument, screen?: FlowEditorScreen) => void;
   fail: (error: unknown) => void;
-  config?: ConfigV2;
+  config?: ConfigV3;
   decomposeConditions: (input: {
     modelID: string;
     objective: string;
@@ -2431,7 +2455,7 @@ export function reorderFlowModule(
 /** Saveable drafts can still need attention before an unattended task can run. */
 export function flowDraftProblems(
   draft: NataliaFlowDocument,
-  config?: ConfigV2,
+  config?: ConfigV3,
 ): string[] {
   const problems: string[] = [];
   const directProfile = draft.directRun?.permissionProfile;

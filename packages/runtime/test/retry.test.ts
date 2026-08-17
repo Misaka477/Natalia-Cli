@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import type { RuntimeEvent } from "@natalia/contracts";
 import {
   FakeRetryProvider,
   retryScenarios,
@@ -7,6 +8,7 @@ import {
 import {
   mapHttpStatusToErrorKind,
   parseRetryAfterMs,
+  parseRetryAfterMilliseconds,
   providerError,
   providerErrorFromHttp,
   retryDelayMs,
@@ -86,6 +88,42 @@ test("backoff uses exponential jitter and bounded retry-after", () => {
     ),
   ).toBe(5000);
   expect(parseRetryAfterMs("2")).toBe(2000);
+  expect(parseRetryAfterMilliseconds("1250")).toBe(1250);
+  expect(
+    providerErrorFromHttp({
+      statusCode: 429,
+      retryAfter: "8",
+      retryAfterMs: "1250",
+    }).retryAfterMs,
+  ).toBe(1250);
+});
+
+test("cancellation interrupts retry backoff without another attempt", async () => {
+  const controller = new AbortController();
+  let attempts = 0;
+  const events: RuntimeEvent[] = [];
+  const running = runWithRetry(
+    { id: "turn_cancel_backoff", operation: "llm_step", step: 1 },
+    async () => {
+      attempts++;
+      throw providerError({ kind: "server", message: "temporarily down" });
+    },
+    {
+      signal: controller.signal,
+      timer: async () => await new Promise<void>(() => undefined),
+      random: () => 0,
+      onEvent: (event) => events.push(event),
+    },
+  );
+  await Bun.sleep(5);
+  controller.abort(new Error("user cancelled"));
+  await expect(running).rejects.toMatchObject({ kind: "cancel" });
+  expect(attempts).toBe(1);
+  expect(events.map((event) => event.type)).toEqual([
+    "step.retry",
+    "step.retry.exhausted",
+  ]);
+  expect(events.at(-1)).toMatchObject({ reason: "cancel", retryable: false });
 });
 
 test("N timeout attempts then success emit StepRetry and clear banner", async () => {
@@ -103,6 +141,31 @@ test("N timeout attempts then success emit StepRetry and clear banner", async ()
   expect(provider.attempts).toBe(3);
   expect(waits).toEqual([300, 600]);
   expect(events).toEqual(["step.retry", "step.retry", "step.retry.cleared"]);
+});
+
+test("transient failures retry beyond the old attempt budget by default", async () => {
+  let attempts = 0;
+  const retries: Array<number | null> = [];
+  const result = await runWithRetry(
+    { id: "turn_unlimited", operation: "llm_step", step: 1 },
+    async ({ attempt, maxAttempts }) => {
+      attempts = attempt;
+      expect(maxAttempts).toBeNull();
+      if (attempt < 6)
+        throw providerError({ kind: "server", message: "temporarily down" });
+      return "recovered";
+    },
+    {
+      timer: noSleep,
+      random: () => 0,
+      onEvent: (event) => {
+        if (event.type === "step.retry") retries.push(event.maxAttempts);
+      },
+    },
+  );
+  expect(result).toBe("recovered");
+  expect(attempts).toBe(6);
+  expect(retries).toEqual([null, null, null, null, null]);
 });
 
 test("connection, 429, 503, empty and Retry-After fixtures retry", async () => {
@@ -165,6 +228,7 @@ test("attempt exhausted emits redacted summary", async () => {
   const messages: string[] = [];
   await expect(
     runFakeScenario(provider, {
+      policy: { maxAttemptsPerStep: 3 },
       timer: noSleep,
       random: () => 0,
       onEvent: (event) => {

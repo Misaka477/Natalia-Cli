@@ -1,6 +1,7 @@
 import { readdir } from "node:fs/promises";
+import { resolveEffectiveModel } from "@natalia/config";
 import type {
-  ConfigV2,
+  ConfigV3,
   FlowOverview,
   FlowRow,
   FlowStageRow,
@@ -36,7 +37,7 @@ import { nextSystemdRun } from "./systemd-adapter";
  */
 export async function scheduledTaskOverview(input: {
   workspaceRoot: string;
-  config: ConfigV2;
+  config: ConfigV3;
   readNextRun?: typeof nextSystemdRun;
   contributedDocuments?: ContributedNataliaDocuments;
 }): Promise<ScheduledTaskOverview> {
@@ -113,8 +114,16 @@ export async function scheduledTaskOverview(input: {
         else if (!configured.enabled)
           problems.push(`alert channel is disabled: ${channel}`);
       }
-      if (task.evaluator && !input.config.models[task.evaluator.model])
-        problems.push(`evaluator model not found: ${task.evaluator.model}`);
+      if (
+        task.evaluator &&
+        !resolveEffectiveModel(input.config, {
+          provider: task.evaluator.provider,
+          model: task.evaluator.model,
+        })
+      )
+        problems.push(
+          `evaluator model not found: ${task.evaluator.provider}/${task.evaluator.model}`,
+        );
       if (
         task.systemd?.timerUnit &&
         task.systemd.generatedCalendar &&

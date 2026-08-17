@@ -48,9 +48,12 @@ import type {
 } from "@natalia/contracts";
 import {
   ContextLedger,
+  contextEntriesToProviderMessages,
   contextStatusEvent,
   ProviderConcurrencyLimiter,
+  providerCompactor,
   providerForModel,
+  recoverContextLimitOnce,
   type ProviderMessage,
   type ProviderToolCall,
   providerFromEnvironment,
@@ -60,15 +63,18 @@ import {
   withProviderConcurrency,
 } from "@natalia/runtime";
 import {
+  buildModelCatalog,
   discoverProviderModels,
   modelSelectionStatus,
   resolveConfig,
+  resolveEffectiveModel,
   resolveTuiConfig,
   saveTuiConfig,
   updateConfigAtScope,
   verifyTrust,
 } from "@natalia/config";
-import type { ConfigV2 } from "@natalia/contracts";
+import type { ConfigV3 } from "@natalia/contracts";
+import { modelRefKey, parseModelRef, type ModelRef } from "@natalia/contracts";
 import {
   CapabilityRegistry,
   type CapabilityHost,
@@ -343,6 +349,8 @@ export type RealRuntimeClientOptions = {
   episodeID?: import("@natalia/contracts").EpisodeID;
   title?: string;
   workspaceRoot?: string;
+  /** Override the user-level config path, primarily for isolated hosts/tests. */
+  globalConfigPath?: string;
   sessionDir?: string;
   useSqliteStore?: boolean;
   provider?: StreamingProvider;
@@ -628,6 +636,7 @@ export function createRealRuntimeClient(
     isPending: (sessionID, id, kind) =>
       isPendingInteractiveRequest(sessionID, id, kind),
     sessionIDForTurn: (turnID) => turnSession.get(turnID) ?? sessionID,
+    agentIDForTurn: (turnID) => turnAgent.get(turnID),
     publishForSession: (sessionID, event) =>
       publishForSession(executionBySession.get(sessionID), event),
   });
@@ -648,6 +657,8 @@ export function createRealRuntimeClient(
    * judged against the session it belongs to — never the attached one.
    */
   const turnSession = new Map<string, SessionID>();
+  /** Child turn ownership keeps interactive events in the child projection. */
+  const turnAgent = new Map<string, string>();
   /**
    * Everything a running turn reads and writes, keyed per session (D2: one
    * turn per session, sessions in parallel). The runtime keeps one activity
@@ -663,6 +674,7 @@ export function createRealRuntimeClient(
     selectedAgent?: AgentDefinition;
     pendingAgent?: AgentDefinition;
     selectedModel?: { modelID?: string; variant?: string };
+    reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
     lastProviderUsage?: { inputTokens: number; outputTokens: number };
     activeSkill?: Skill;
     endTurnWaitingHuman?: { terminalID: string; reason: string };
@@ -709,13 +721,11 @@ export function createRealRuntimeClient(
   let providerConcurrencyLimiter = new ProviderConcurrencyLimiter({});
   /** The selected model's declared image-input capability, from config. */
   function currentModelImageInput(): boolean {
-    const modelID =
-      selectedAgent?.model ??
-      selectedModel?.modelID ??
-      tsRuntimeConfig?.defaultModel;
+    const ref = selectedModelRefKey();
+    if (!ref || !tsRuntimeConfig) return false;
     return (
-      !!modelID &&
-      (tsRuntimeConfig?.models[modelID]?.capabilities?.imageInput ?? false)
+      resolveEffectiveModel(tsRuntimeConfig, ref)?.capabilities.imageInput ??
+      false
     );
   }
   function mediaTypeForImage(
@@ -862,7 +872,10 @@ export function createRealRuntimeClient(
     providerReconfigured: boolean;
   }> {
     try {
-      const tsConfig = await resolveConfig({ workspaceRoot });
+      const tsConfig = await resolveConfig({
+        workspaceRoot,
+        globalPath: options.globalConfigPath,
+      });
       tsRuntimeConfig = tsConfig.config;
       runtimeContextConfig = contextStatusConfig(tsConfig.config);
       maxSteps = tsConfig.config.runtime.maxStepsPerTurn;
@@ -899,7 +912,10 @@ export function createRealRuntimeClient(
 
   async function initialize() {
     try {
-      const tsConfig = await resolveConfig({ workspaceRoot });
+      const tsConfig = await resolveConfig({
+        workspaceRoot,
+        globalPath: options.globalConfigPath,
+      });
       tsRuntimeConfig = tsConfig.config;
       runtimeContextConfig = contextStatusConfig(tsConfig.config);
       retryPolicy = {
@@ -1000,24 +1016,413 @@ export function createRealRuntimeClient(
     // The concurrent fan-out cap (`team.maxConcurrent`) is enforced here, at
     // the work itself, not at the spawn call.
     let sandboxedSubagentActive = 0;
-    const sandboxedSubagentWaiters: Array<() => void> = [];
-    async function acquireSandboxedSubagentSlot() {
+    const sandboxedSubagentWaiters: Array<{
+      resume: () => void;
+      signal: AbortSignal;
+      abort: () => void;
+    }> = [];
+    async function acquireSandboxedSubagentSlot(signal: AbortSignal) {
       const limit = tsRuntimeConfig?.team?.maxConcurrent ?? 4;
-      if (sandboxedSubagentActive >= limit)
-        await new Promise<void>((resolve) =>
-          sandboxedSubagentWaiters.push(resolve),
-        );
+      if (signal.aborted)
+        throw new DOMException("subagent cancelled", "AbortError");
+      if (sandboxedSubagentActive >= limit) {
+        await new Promise<void>((resolve, reject) => {
+          const waiter = {
+            signal,
+            resume: () => {
+              signal.removeEventListener("abort", waiter.abort);
+              // Transfer the released slot before waking the waiter so a new
+              // spawn cannot steal it between promise resolution and resume.
+              sandboxedSubagentActive++;
+              resolve();
+            },
+            abort: () => {
+              const index = sandboxedSubagentWaiters.indexOf(waiter);
+              if (index >= 0) sandboxedSubagentWaiters.splice(index, 1);
+              reject(new DOMException("subagent cancelled", "AbortError"));
+            },
+          };
+          sandboxedSubagentWaiters.push(waiter);
+          signal.addEventListener("abort", waiter.abort, { once: true });
+          // Cover cancellation between the pre-wait check and listener setup.
+          if (signal.aborted) waiter.abort();
+        });
+        return;
+      }
       sandboxedSubagentActive++;
     }
     function releaseSandboxedSubagentSlot() {
       sandboxedSubagentActive--;
-      sandboxedSubagentWaiters.shift()?.();
+      while (sandboxedSubagentWaiters.length) {
+        const waiter = sandboxedSubagentWaiters.shift()!;
+        if (waiter.signal.aborted) continue;
+        waiter.resume();
+        break;
+      }
+    }
+    function publishSubagentEvent(
+      runner: import("@natalia/subagent").RunnerContext,
+      event: RuntimeEvent,
+    ) {
+      const parentSessionID = subagentsController.get().get(runner.agentId)
+        ?.parentSessionID as SessionID | undefined;
+      publishForSession(
+        parentSessionID ? executionBySession.get(parentSessionID) : activeExec,
+        parentSessionID && event.sessionID === undefined
+          ? { ...event, sessionID: parentSessionID, agentID: runner.agentId }
+          : { ...event, agentID: runner.agentId },
+      );
+    }
+    function subagentTurnID(runner: import("@natalia/subagent").RunnerContext) {
+      const continuation =
+        subagentsController.get().get(runner.agentId)?.continuation ?? 0;
+      return continuation
+        ? `subagent:${runner.agentId}:continuation:${continuation}`
+        : `subagent:${runner.agentId}`;
+    }
+    function beginSubagentConversation(
+      runner: import("@natalia/subagent").RunnerContext,
+      task: string,
+    ) {
+      const id = subagentTurnID(runner);
+      const parentSessionID = subagentsController.get().get(runner.agentId)
+        ?.parentSessionID as SessionID | undefined;
+      if (parentSessionID) turnSession.set(id, parentSessionID);
+      turnAgent.set(id, runner.agentId);
+      publishSubagentEvent(runner, {
+        type: "turn.submitted",
+        id,
+        text: task,
+        byteLength: new TextEncoder().encode(task).byteLength,
+        lineCount: lineCount(task),
+        sha256: createHash("sha256").update(task).digest("hex"),
+      });
+      publishSubagentEvent(runner, { type: "turn.started", id });
+    }
+    function finishSubagentConversation(
+      runner: import("@natalia/subagent").RunnerContext,
+      stopReason: "done" | "cancelled" | "error",
+    ) {
+      const id = subagentTurnID(runner);
+      publishSubagentEvent(runner, {
+        type: "turn.finished",
+        id,
+        stopReason,
+      });
+      turnSession.delete(id);
+      turnAgent.delete(id);
+    }
+    function createSubagentContext(system: string, task: string) {
+      const ledger = new ContextLedger();
+      ledger.add({ id: "system", role: "system", content: system });
+      ledger.add({ id: "task", role: "user", content: task });
+      return ledger;
+    }
+    async function runSubagentProviderStep(
+      ledger: ContextLedger,
+      visibleTools: RuntimeTool[],
+      runner: import("@natalia/subagent").RunnerContext,
+      step: number,
+    ) {
+      const id = subagentTurnID(runner);
+      const runStep = () =>
+        runWithRetry(
+          { id, operation: "llm_step", step },
+          async ({ attempt }) => {
+            let output = "";
+            let thinking = "";
+            const calls: ProviderToolCall[] = [];
+            for await (const chunk of withProviderConcurrency(
+              providerConcurrencyLimiter,
+              provider!.provider,
+              () =>
+                provider!.stream({
+                  messages: contextEntriesToProviderMessages(
+                    ledger.snapshot().entries,
+                  ),
+                  tools: visibleTools.map((tool) => ({
+                    name: tool.name,
+                    description: tool.description,
+                    parameters: tool.parameters,
+                  })),
+                  signal: runner.signal,
+                }),
+              runner.signal,
+            )) {
+              if (chunk.type === "thinking") {
+                thinking += chunk.text;
+                publishSubagentEvent(runner, {
+                  type: "thinking.delta",
+                  id,
+                  text: chunk.text,
+                  attempt,
+                });
+              }
+              if (chunk.type === "content") {
+                output += chunk.text;
+                publishSubagentEvent(runner, {
+                  type: "content.delta",
+                  id,
+                  text: chunk.text,
+                  attempt,
+                });
+              }
+              if (chunk.type === "tool_call") calls.push(...chunk.calls);
+            }
+            return { output, thinking, calls };
+          },
+          {
+            policy: retryPolicy,
+            signal: runner.signal,
+            onEvent: (event) => {
+              publishSubagentEvent(runner, event);
+              if (event.type === "step.retry")
+                runner.log(
+                  `provider retry ${event.attempt}/${event.maxAttempts ?? "unlimited"} after ${event.reason} (${event.waitMs}ms)`,
+                );
+            },
+          },
+        );
+      const result = await recoverContextLimitOnce({
+        id,
+        step,
+        ledger,
+        compactor: providerCompactor(provider!, runner.signal),
+        compact: {
+          id: `${id}:context-limit:${step}`,
+          maxTokens: runtimeContextConfig.max,
+          thresholdPercent: runtimeContextConfig.thresholdPercent,
+          reservedTokens: runtimeContextConfig.reserved,
+          preservedRecentMessages: 8,
+          instruction: "Recover this subagent from the provider context limit.",
+          retry: { policy: retryPolicy, signal: runner.signal },
+        },
+        runStep,
+        onEvent: (event) => publishSubagentEvent(runner, event),
+      });
+      if (result.thinking)
+        publishSubagentEvent(runner, {
+          type: "thinking.done",
+          id,
+          text: result.thinking,
+        });
+      if (result.output)
+        publishSubagentEvent(runner, {
+          type: "content.done",
+          id,
+          text: result.output,
+        });
+      return result;
+    }
+    function appendSubagentAssistant(
+      ledger: ContextLedger,
+      runner: import("@natalia/subagent").RunnerContext,
+      step: number,
+      output: string,
+      calls: ProviderToolCall[],
+    ) {
+      if (output)
+        ledger.add({
+          id: `${runner.agentId}:${step}:assistant`,
+          role: "assistant",
+          content: output,
+        });
+      for (const call of calls)
+        ledger.add({
+          id: `${runner.agentId}:${step}:${call.id}:call`,
+          role: "tool_call",
+          content: `${call.name} ${call.arguments}`,
+          pairID: call.id,
+        });
+    }
+    function appendSubagentToolResult(
+      ledger: ContextLedger,
+      runner: import("@natalia/subagent").RunnerContext,
+      step: number,
+      call: ProviderToolCall,
+      content: string,
+    ) {
+      ledger.add({
+        id: `${runner.agentId}:${step}:${call.id}:result`,
+        role: "tool_result",
+        content,
+        pairID: call.id,
+      });
+    }
+    async function executeSubagentToolCall(input: {
+      call: ProviderToolCall;
+      step: number;
+      runner: import("@natalia/subagent").RunnerContext;
+      visibleTools: RuntimeTool[];
+      childWorkspaceRoot: string;
+      repeatedCalls: Map<string, number>;
+      writeAuthorize?: (input: {
+        toolName: string;
+        path: string;
+      }) => Promise<void>;
+      exposeSandboxes?: boolean;
+    }) {
+      const { call, runner } = input;
+      const displayCallID = `step:${input.step}:${call.id}`;
+      const toolID = `${subagentTurnID(runner)}:${displayCallID}`;
+      const tool = input.visibleTools.find(
+        (candidate) => candidate.name === call.name,
+      );
+      if (!tool) {
+        const message = `subagent requested unavailable or denied tool: ${call.name || "<missing name>"}`;
+        publishSubagentEvent(runner, {
+          type: "tool.update",
+          id: toolID,
+          name: call.name || "invalid_tool_call",
+          callID: displayCallID,
+          status: "failed",
+          summary: message,
+          argumentsDelta: call.arguments,
+          result: message,
+          endedAt: Date.now(),
+        });
+        return `ERROR: ${message}`;
+      }
+      const dedupKey = `${call.name}\u0000${call.arguments}`;
+      const occurrences = (input.repeatedCalls.get(dedupKey) ?? 0) + 1;
+      input.repeatedCalls.set(dedupKey, occurrences);
+      if (occurrences > 12 && !WAITING_TOOLS.has(tool.name)) {
+        const message = `blocked repeated tool call after ${occurrences} identical attempts: ${tool.name}`;
+        publishSubagentEvent(runner, {
+          type: "tool.update",
+          id: toolID,
+          name: tool.name,
+          callID: displayCallID,
+          status: "failed",
+          summary: message,
+          argumentsDelta: call.arguments,
+          result: message,
+          endedAt: Date.now(),
+        });
+        return `ERROR: ${message}`;
+      }
+      const hookEvent: ToolHookEvent = {
+        turnID: subagentTurnID(runner),
+        toolName: tool.name,
+        toolCallID: call.id,
+        arguments: call.arguments,
+      };
+      try {
+        publishSubagentEvent(runner, {
+          type: "tool.update",
+          id: toolID,
+          name: tool.name,
+          callID: displayCallID,
+          status: tool.requiresApproval ? "awaiting_approval" : "queued",
+          summary: tool.requiresApproval ? "awaiting approval" : "queued",
+          argumentsDelta: call.arguments,
+        });
+        const preResult = await toolLayer.preExecute(hookEvent);
+        if (!preResult.allowed)
+          throw new Error(
+            `subagent tool denied by policy: ${preResult.diagnostics.join("; ")}`,
+          );
+        if (permissionMode === "read_only" && tool.requiresApproval)
+          throw new Error(readOnlyToolMessage(tool.name));
+        if (tool.requiresApproval) {
+          const refusal = await interactive.requireApproval(
+            toolID,
+            tool,
+            call,
+            hookEvent.turnID,
+          );
+          if (refusal) throw new Error(refusal.reason);
+        }
+        const parsed = parseToolArguments(call.arguments);
+        const paramErrors = validateToolParameters(tool.parameters, parsed);
+        if (paramErrors.length)
+          throw new Error(
+            `tool "${tool.name}" parameter validation failed: ${paramErrors.map((error) => `${error.path}: ${error.message}`).join("; ")}`,
+          );
+        const parentSessionID = subagentsController
+          .get()
+          .get(runner.agentId)?.parentSessionID;
+        const startedAt = Date.now();
+        publishSubagentEvent(runner, {
+          type: "tool.update",
+          id: toolID,
+          name: tool.name,
+          callID: displayCallID,
+          status: "running",
+          summary: "running",
+          startedAt,
+          metadata: tool.output?.presentCall
+            ? { call: tool.output.presentCall(parsed) }
+            : undefined,
+        });
+        const completeResult = await tool.execute(parsed, {
+          workspaceRoot: input.childWorkspaceRoot,
+          signal: runner.signal,
+          askQuestion: async (question) =>
+            await interactive.requireQuestion(
+              `${toolID}:question`,
+              hookEvent.turnID,
+              question,
+            ),
+          subagents: subagentsController.get(),
+          nativeTerminal: terminalController.get(),
+          ...(input.exposeSandboxes
+            ? { sandboxes: sandboxController.get() }
+            : {}),
+          workspaceReadAuthorize: authorizeWorkspaceRead,
+          ...(input.writeAuthorize
+            ? { workspaceWriteAuthorize: input.writeAuthorize }
+            : {}),
+          sandboxMergeAuthorize: authorizeSandboxMerge,
+          settings: toolSettings(),
+          parentSessionID: parentSessionID ?? sessionID,
+          parentAgentID: runner.agentId,
+          maxSubagentDepth: tsRuntimeConfig?.runtime.subagentDepth,
+        });
+        const finalizedResult =
+          tool.output?.finalizeContent?.(completeResult) ?? completeResult;
+        const result = redactToolOutput(
+          finalizedResult,
+          redactToolOutputEnabled(),
+        );
+        const projectedRender = tool.output?.presentResult?.(parsed, result);
+        await toolLayer.postExecute({ ...hookEvent, result });
+        publishSubagentEvent(runner, {
+          type: "tool.update",
+          id: toolID,
+          name: tool.name,
+          callID: displayCallID,
+          status: "succeeded",
+          summary: result.slice(0, 200),
+          result,
+          metadata: projectedRender ? { render: projectedRender } : undefined,
+          endedAt: Date.now(),
+        });
+        runner.log(`tool ${tool.name}: ${result.slice(0, 240)}`);
+        return result;
+      } catch (error) {
+        if (runner.signal.aborted) throw error;
+        const message = error instanceof Error ? error.message : String(error);
+        await toolLayer.postExecute({ ...hookEvent, error: message });
+        publishSubagentEvent(runner, {
+          type: "tool.update",
+          id: toolID,
+          name: call.name || "invalid_tool_call",
+          callID: call.id,
+          status: "failed",
+          summary: message,
+          result: message,
+          endedAt: Date.now(),
+        });
+        runner.log(`tool ${tool.name}: ERROR: ${message.slice(0, 240)}`);
+        return `ERROR: ${message}`;
+      }
     }
     async function runSandboxedSubagent(
       task: string,
       runner: import("@natalia/subagent").RunnerContext,
     ) {
-      await acquireSandboxedSubagentSlot();
+      await acquireSandboxedSubagentSlot(runner.signal);
       try {
         await runSandboxedSubagentInner(task, runner);
       } finally {
@@ -1060,17 +1465,13 @@ export function createRealRuntimeClient(
         : undefined;
       runner.log(`accepted (sandboxed): ${task}`);
       runner.setStatus("running");
-      const messages: ProviderMessage[] = [
-        {
-          role: "system",
-          // The sandboxed sub-agent's prompt: own worktree + file domain.
-          content: sandboxedSubagentSystemPrompt(writePaths),
-        },
-        { role: "user", content: task },
-      ];
+      beginSubagentConversation(runner, task);
+      const ledger = createSubagentContext(
+        sandboxedSubagentSystemPrompt(writePaths),
+        task,
+      );
+      const repeatedCalls = new Map<string, number>();
       for (let step = 1; step <= effectiveMaxSteps(); step++) {
-        let output = "";
-        const calls: ProviderToolCall[] = [];
         const visibleTools = [...tools.values()].filter(
           (tool) =>
             isToolAllowed(tool.name) &&
@@ -1078,240 +1479,98 @@ export function createRealRuntimeClient(
             !excluded.has(tool.name) &&
             (!allowed.length || allowed.includes(tool.name)),
         );
-        for await (const chunk of withProviderConcurrency(
-          providerConcurrencyLimiter,
-          provider!.provider,
-          () =>
-            provider!.stream({
-              messages,
-              tools: visibleTools.map((tool) => ({
-                name: tool.name,
-                description: tool.description,
-                parameters: tool.parameters,
-              })),
-              signal: runner.signal,
-            }),
-        )) {
-          if (chunk.type === "content") output += chunk.text;
-          if (chunk.type === "tool_call") calls.push(...chunk.calls);
-        }
+        const { output, calls } = await runSubagentProviderStep(
+          ledger,
+          visibleTools,
+          runner,
+          step,
+        );
         if (!calls.length) {
+          appendSubagentAssistant(ledger, runner, step, output, calls);
           runner.log(output.trim() || "completed without text output");
+          finishSubagentConversation(runner, "done");
           return;
         }
-        messages.push({
-          role: "assistant",
-          content: output,
-          toolCalls: calls,
-        });
+        appendSubagentAssistant(ledger, runner, step, output, calls);
         for (const call of calls) {
-          const tool = tools.get(call.name);
-          if (!tool)
-            throw new Error(
-              `subagent requested unavailable tool: ${call.name}`,
-            );
-          if (
-            !isToolAllowed(tool.name) ||
-            excluded.has(tool.name) ||
-            (allowed.length && !allowed.includes(tool.name))
-          )
-            throw new Error(`subagent tool denied by policy: ${tool.name}`);
-          const toolID = `subagent:${runner.agentId}:${step}:${call.id}`;
-          const hookEvent: ToolHookEvent = {
-            turnID: `subagent:${runner.agentId}`,
-            toolName: tool.name,
-            toolCallID: call.id,
-            arguments: call.arguments,
-          };
-          const preResult = await toolLayer.preExecute(hookEvent);
-          if (!preResult.allowed)
-            throw new Error(
-              `subagent tool denied by policy: ${preResult.diagnostics.join("; ")}`,
-            );
-          if (permissionMode === "read_only" && tool.requiresApproval)
-            throw new Error(readOnlyToolMessage(tool.name));
-          if (tool.requiresApproval) {
-            const refusal = await interactive.requireApproval(
-              toolID,
-              tool,
-              call,
-              hookEvent.turnID,
-            );
-            if (refusal) throw new Error(refusal.reason);
-          }
-          const parsed = parseToolArguments(call.arguments);
-          const paramErrors = validateToolParameters(tool.parameters, parsed);
-          if (paramErrors.length)
-            throw new Error(
-              `tool "${tool.name}" parameter validation failed: ${paramErrors.map((error) => `${error.path}: ${error.message}`).join("; ")}`,
-            );
-          // The tool runs against the sub-agent's own worktree, not the parent's
-          // workspace. No nested sandbox manager: the sub-agent works IN its
-          // sandbox rather than managing sandboxes itself.
-          const result = await tool.execute(parsed, {
-            workspaceRoot: sandboxRoot,
-            signal: runner.signal,
-            askQuestion: async (question) =>
-              await interactive.requireQuestion(
-                `${toolID}:question`,
-                hookEvent.turnID,
-                question,
-              ),
-            subagents: subagentsController.get(),
-            nativeTerminal: terminalController.get(),
-            workspaceReadAuthorize: authorizeWorkspaceRead,
-            ...(writeAuthorize
-              ? { workspaceWriteAuthorize: writeAuthorize }
-              : {}),
-            sandboxMergeAuthorize: authorizeSandboxMerge,
-            settings: toolSettings(),
-            parentSessionID: sessionID,
-            parentAgentID: runner.agentId,
-            maxSubagentDepth: tsRuntimeConfig?.runtime.subagentDepth,
+          const result = await executeSubagentToolCall({
+            call,
+            step,
+            runner,
+            visibleTools,
+            childWorkspaceRoot: sandboxRoot,
+            repeatedCalls,
+            writeAuthorize,
           });
-          await toolLayer.postExecute({ ...hookEvent, result });
-          runner.log(`tool ${tool.name}: ${result.slice(0, 240)}`);
-          messages.push({
-            role: "tool",
-            content: result,
-            toolCallID: call.id,
-          });
+          appendSubagentToolResult(ledger, runner, step, call, result);
         }
       }
       throw new Error("subagent step limit reached");
     }
     await subagentsController.init(async (task, runner) => {
       if (!provider) throw new Error("provider unavailable for subagent");
-      const record = subagentsController.get().get(runner.agentId);
-      // `mode: "sandbox"` routes to the sub-agent's own worktree; everything
-      // else keeps the shared-context loop unchanged.
-      if (record?.mode === "sandbox")
-        return await runSandboxedSubagent(task, runner);
-      const allowed = record?.allowedTools ?? [];
-      const excluded = new Set(record?.excludeTools ?? []);
-      const messages: ProviderMessage[] = [
-        {
-          role: "system",
-          content:
-            "You are a focused Natalia TS/Bun subagent. Use the provided native tools for filesystem work. Return a concise factual final result. Never claim a tool action you did not run. Do not reveal private reasoning.",
-        },
-        { role: "user", content: task },
-      ];
-      runner.log(`accepted: ${task}`);
-      for (let step = 1; step <= effectiveMaxSteps(); step++) {
-        let output = "";
-        const calls: ProviderToolCall[] = [];
-        const visibleTools = [...tools.values()].filter(
-          (tool) =>
-            isToolAllowed(tool.name) &&
-            (permissionMode !== "read_only" || !tool.requiresApproval) &&
-            !excluded.has(tool.name) &&
-            (!allowed.length || allowed.includes(tool.name)),
+      try {
+        const record = subagentsController.get().get(runner.agentId);
+        // `mode: "sandbox"` routes to the sub-agent's own worktree; everything
+        // else keeps the shared-context loop unchanged.
+        if (record?.mode === "sandbox")
+          return await runSandboxedSubagent(task, runner);
+        const allowed = record?.allowedTools ?? [];
+        const excluded = new Set(record?.excludeTools ?? []);
+        const ledger = createSubagentContext(
+          "You are a focused Natalia TS/Bun subagent. Use the provided native tools for filesystem work. Return a concise factual final result. Never claim a tool action you did not run. Do not reveal private reasoning.",
+          task,
         );
-        for await (const chunk of withProviderConcurrency(
-          providerConcurrencyLimiter,
-          provider!.provider,
-          () =>
-            provider!.stream({
-              messages,
-              tools: visibleTools.map((tool) => ({
-                name: tool.name,
-                description: tool.description,
-                parameters: tool.parameters,
-              })),
-              signal: runner.signal,
-            }),
-        )) {
-          if (chunk.type === "content") output += chunk.text;
-          if (chunk.type === "tool_call") calls.push(...chunk.calls);
-        }
-        if (!calls.length) {
-          runner.log(output.trim() || "completed without text output");
-          return;
-        }
-        messages.push({
-          role: "assistant",
-          content: output,
-          toolCalls: calls,
-        });
-        for (const call of calls) {
-          const tool = tools.get(call.name);
-          if (!tool)
-            throw new Error(
-              `subagent requested unavailable tool: ${call.name}`,
-            );
-          if (
-            !isToolAllowed(tool.name) ||
-            excluded.has(tool.name) ||
-            (allowed.length && !allowed.includes(tool.name))
-          )
-            throw new Error(`subagent tool denied by policy: ${tool.name}`);
-          const toolID = `subagent:${runner.agentId}:${step}:${call.id}`;
-          const hookEvent: ToolHookEvent = {
-            turnID: `subagent:${runner.agentId}`,
-            toolName: tool.name,
-            toolCallID: call.id,
-            arguments: call.arguments,
-          };
-          const preResult = await toolLayer.preExecute(hookEvent);
-          if (!preResult.allowed)
-            throw new Error(
-              `subagent tool denied by policy: ${preResult.diagnostics.join("; ")}`,
-            );
-          if (permissionMode === "read_only" && tool.requiresApproval)
-            throw new Error(readOnlyToolMessage(tool.name));
-          if (tool.requiresApproval) {
-            // This path reports denials by throwing, so a refusal has to
-            // throw too. Returning it would let the subagent run a call the
-            // user just refused.
-            const refusal = await interactive.requireApproval(
-              toolID,
-              tool,
-              call,
-              hookEvent.turnID,
-            );
-            if (refusal) throw new Error(refusal.reason);
+        const repeatedCalls = new Map<string, number>();
+        runner.log(`accepted: ${task}`);
+        beginSubagentConversation(runner, task);
+        for (let step = 1; step <= effectiveMaxSteps(); step++) {
+          const visibleTools = [...tools.values()].filter(
+            (tool) =>
+              isToolAllowed(tool.name) &&
+              (permissionMode !== "read_only" || !tool.requiresApproval) &&
+              !excluded.has(tool.name) &&
+              (!allowed.length || allowed.includes(tool.name)),
+          );
+          const { output, calls } = await runSubagentProviderStep(
+            ledger,
+            visibleTools,
+            runner,
+            step,
+          );
+          if (!calls.length) {
+            appendSubagentAssistant(ledger, runner, step, output, calls);
+            runner.log(output.trim() || "completed without text output");
+            finishSubagentConversation(runner, "done");
+            return;
           }
-          const parsed = parseToolArguments(call.arguments);
-          const paramErrors = validateToolParameters(tool.parameters, parsed);
-          if (paramErrors.length)
-            throw new Error(
-              `tool "${tool.name}" parameter validation failed: ${paramErrors.map((error) => `${error.path}: ${error.message}`).join("; ")}`,
-            );
-          const result = await tool.execute(parsed, {
-            workspaceRoot,
-            signal: runner.signal,
-            askQuestion: async (question) =>
-              await interactive.requireQuestion(
-                `${toolID}:question`,
-                hookEvent.turnID,
-                question,
-              ),
-            subagents: subagentsController.get(),
-            nativeTerminal: terminalController.get(),
-            sandboxes: sandboxController.get(),
-            workspaceReadAuthorize: authorizeWorkspaceRead,
-            sandboxMergeAuthorize: authorizeSandboxMerge,
-            settings: toolSettings(),
-            parentSessionID: sessionID,
-            parentAgentID: runner.agentId,
-            maxSubagentDepth: tsRuntimeConfig?.runtime.subagentDepth,
-          });
-          await toolLayer.postExecute({ ...hookEvent, result });
-          runner.log(`tool ${tool.name}: ${result.slice(0, 240)}`);
-          messages.push({
-            role: "tool",
-            content: result,
-            toolCallID: call.id,
-          });
+          appendSubagentAssistant(ledger, runner, step, output, calls);
+          for (const call of calls) {
+            const result = await executeSubagentToolCall({
+              call,
+              step,
+              runner,
+              visibleTools,
+              childWorkspaceRoot: workspaceRoot,
+              repeatedCalls,
+              exposeSandboxes: true,
+            });
+            appendSubagentToolResult(ledger, runner, step, call, result);
+          }
         }
+        throw new Error("subagent step limit reached");
+      } catch (error) {
+        finishSubagentConversation(
+          runner,
+          runner.signal.aborted ? "cancelled" : "error",
+        );
+        throw error;
       }
-      throw new Error("subagent step limit reached");
     });
     const subagentRegistry = subagentsController.get();
     subagentRegistry.subscribe((event) => {
       const record = subagentRegistry.get(event.agentId);
-      publish({
+      const update = {
         type: "subagent.update",
         id: event.agentId,
         event: event.event as Extract<
@@ -1328,7 +1587,14 @@ export function createRealRuntimeClient(
         parentSessionID: event.parentSessionID,
         parentAgentID: event.parentAgentID,
         continuation: event.continuation,
-      });
+      } satisfies Extract<RuntimeEvent, { type: "subagent.update" }>;
+      // Registry events can arrive after the UI attaches to another session.
+      // Persist them with the spawning session, rather than whichever session
+      // happens to be active when the asynchronous subagent reports progress.
+      publishForSession(
+        executionBySession.get(event.parentSessionID as SessionID),
+        update,
+      );
       if (event.event === "created" || event.event === "done")
         scheduleRuntimeStatusSnapshot();
     });
@@ -2108,7 +2374,7 @@ export function createRealRuntimeClient(
    * A requested profile (options.permissionProfile) that vanished from disk
    * keeps the current selection; the caller decides whether that is fatal.
    */
-  function reloadPermissionSettings(config: ConfigV2) {
+  function reloadPermissionSettings(config: ConfigV3) {
     const requestedPermissionProfile = options.permissionProfile;
     const defaultPermissionProfile =
       config.permissionProfiles[config.defaultPermission];
@@ -2176,19 +2442,23 @@ export function createRealRuntimeClient(
   function applyAgentProvider() {
     if (options.provider || providerSource !== "ts_config" || !tsRuntimeConfig)
       return;
+    const ref = selectedModelRefKey();
+    if (!ref) {
+      publish({
+        type: "diagnostic",
+        level: "warning",
+        message: `agent ${selectedAgent?.name ?? "default"} model override is unavailable: model_not_configured; retaining current provider`,
+      });
+      return;
+    }
     const next = providerForModel(
       tsRuntimeConfig,
-      selectedAgent?.model ??
-        selectedModel?.modelID ??
-        tsRuntimeConfig.defaultModel,
+      ref,
       selectedAgent?.variant ?? selectedModel?.variant,
+      { reasoningEffort: activeExec?.reasoningEffort },
     );
     if (!next) {
-      const modelID =
-        selectedAgent?.model ??
-        selectedModel?.modelID ??
-        tsRuntimeConfig.defaultModel;
-      const status = modelSelectionStatus(tsRuntimeConfig, modelID);
+      const status = modelSelectionStatus(tsRuntimeConfig, ref);
       publish({
         type: "diagnostic",
         level: "warning",
@@ -2197,6 +2467,17 @@ export function createRealRuntimeClient(
       return;
     }
     provider = next;
+  }
+
+  /** The canonical `provider/model` key of the effective model selection. */
+  function selectedModelRefKey(): string | undefined {
+    const candidate =
+      selectedAgent?.model ??
+      selectedModel?.modelID ??
+      tsRuntimeConfig?.defaultModel ??
+      undefined;
+    if (!candidate) return undefined;
+    return typeof candidate === "string" ? candidate : modelRefKey(candidate);
   }
 
   function effectiveMaxSteps() {
@@ -2225,30 +2506,48 @@ export function createRealRuntimeClient(
   async function selectRuntimeModel(modelID?: string, variant?: string) {
     await ready;
     if (!tsRuntimeConfig) throw new Error("runtime config is unavailable");
+    let ref: ModelRef | undefined;
     if (modelID) {
-      const status = modelSelectionStatus(tsRuntimeConfig, modelID);
+      ref = parseModelRef(modelID);
+      const status = modelSelectionStatus(tsRuntimeConfig, ref);
       if (!status.selected)
         throw new Error(`model is unavailable: ${status.reason ?? modelID}`);
-      if (variant && !tsRuntimeConfig.models[modelID]?.variants[variant])
-        throw new Error(`variant not found: ${variant}`);
     } else if (variant) {
       throw new Error("a variant requires a selected model");
     }
-    selectedModel = modelID ? { modelID, variant } : undefined;
+    // V3 dropped model variants: the variant is carried as an opaque label for
+    // event/selection compatibility but never validated against a model.
+    selectedModel = ref ? { modelID: modelRefKey(ref), variant } : undefined;
+    if (activeExec) activeExec.selectedModel = selectedModel;
     applyAgentProvider();
-    publish({ type: "model.selection", modelID, variant });
+    publish({
+      type: "model.selection",
+      modelID: ref ? modelRefKey(ref) : undefined,
+      variant,
+    });
   }
 
   async function clientModelCatalog() {
     await ready;
-    return Object.entries(tsRuntimeConfig?.models ?? {})
-      .filter(([id]) => modelSelectionStatus(tsRuntimeConfig!, id).selected)
-      .map(([id, model]) => ({
-        id,
-        name: model.model,
-        provider: model.provider,
-        variants: Object.keys(model.variants),
-      }));
+    const config = tsRuntimeConfig;
+    if (!config) return [];
+    return buildModelCatalog(config).flatMap((provider) =>
+      provider.models
+        .filter(
+          (entry) =>
+            modelSelectionStatus(
+              config,
+              modelRefKey({ provider: provider.id, model: entry.id }),
+            ).selected,
+        )
+        .map((entry) => ({
+          id: modelRefKey({ provider: provider.id, model: entry.id }),
+          name: entry.name,
+          provider: provider.id,
+          // V3 removed model variants; the catalog exposes none.
+          variants: [] as string[],
+        })),
+    );
   }
 
   function publish(event: RuntimeEvent) {
@@ -2294,6 +2593,7 @@ export function createRealRuntimeClient(
     // TERM-M.3 (c): a turn that ended as waiting_human persists the typed
     // pending-human state and clears the turn-level marker.
     if (
+      !event.agentID &&
       event.type === "turn.finished" &&
       event.stopReason === "waiting_human"
     ) {
@@ -2302,7 +2602,7 @@ export function createRealRuntimeClient(
       turnSession.delete(event.id);
       if (pending && exec?.session)
         void setPendingHumanTerminal(exec.session.id, pending);
-    } else if (event.type === "turn.finished") {
+    } else if (!event.agentID && event.type === "turn.finished") {
       // Any other settlement discards a stale marker: a request_human call
       // from a turn that later failed must not bleed into the next turn.
       if (exec) exec.endTurnWaitingHuman = undefined;
@@ -2312,6 +2612,7 @@ export function createRealRuntimeClient(
     // starts the continuation turn automatically. Replay never passes through
     // publish, so a replayed detach cannot double-resume.
     if (
+      !event.agentID &&
       event.type === "terminal.timeline" &&
       event.actor === "user" &&
       event.action === "detach"
@@ -2322,6 +2623,7 @@ export function createRealRuntimeClient(
       );
     if (
       exec?.session &&
+      !event.agentID &&
       event.type !== "session.created" &&
       event.type !== "session.ready" &&
       runtimeEventDurability(event) === "durable"
@@ -2348,7 +2650,7 @@ export function createRealRuntimeClient(
         });
     }
     const pluginStartedAt = performance.now();
-    pluginsController.dispatch(event);
+    if (!event.agentID) pluginsController.dispatch(event);
     const pluginMs = performance.now() - pluginStartedAt;
     const sinkStartedAt = performance.now();
     sink?.(event);
@@ -2361,7 +2663,7 @@ export function createRealRuntimeClient(
     // P8 C1 writer: keep the live work-state tracking current and publish a
     // session intelligence snapshot at work-state boundaries. `session.snapshot`
     // is not a trigger, so the snapshot's own publish cannot recurse here.
-    if (event.type === "tool.update") {
+    if (!event.agentID && event.type === "tool.update") {
       const turnID = toolEventTurnID(event);
       if (event.status === "running") activeToolByTurn.set(turnID, event.name);
       else if (
@@ -2369,14 +2671,19 @@ export function createRealRuntimeClient(
       )
         activeToolByTurn.delete(turnID);
     }
-    if (isSessionSnapshotTrigger(event)) publishSessionSnapshot(exec);
+    if (!event.agentID && isSessionSnapshotTrigger(event))
+      publishSessionSnapshot(exec);
     // P8 C3 safe-boundary scheduler: a finished turn is a safe point (§5.2 —
     // "step complete"). Deliver every queued mailbox message so the main agent
     // sees user intents at the boundary, never mid-token. `mailbox.delivered`
     // is not a trigger, so this cannot recurse. Only a turn that finished on
     // purpose is a settlement: a cancelled/aborted/error turn did not complete
     // its context, so its delivered intents stay delivered for another chance.
-    if (event.type === "turn.finished" && event.stopReason === "done") {
+    if (
+      !event.agentID &&
+      event.type === "turn.finished" &&
+      event.stopReason === "done"
+    ) {
       // P8 C3 safe-boundary scheduler: a finished turn is a safe point (§5.2 —
       // "step complete"). Delivery is consumption-driven, not model-discipline-
       // driven: messages delivered at the previous boundary were injected into
@@ -2881,6 +3188,7 @@ export function createRealRuntimeClient(
       ? await storeLocalAttachments({ workspaceRoot, paths: input.attachments })
       : [];
     const id = input.id ?? `turn_${crypto.randomUUID().replace(/-/gu, "")}`;
+    const delivery = input.delivery ?? "steer";
     const submitted: SubmittedTurn = {
       type: "turn.submitted",
       id,
@@ -2888,6 +3196,7 @@ export function createRealRuntimeClient(
       byteLength: new TextEncoder().encode(text).byteLength,
       lineCount: lineCount(text),
       sha256: createHash("sha256").update(text).digest("hex"),
+      ...(delivery === "queue" ? { delivery } : {}),
       attachments: attachments.length ? attachments : undefined,
       resources: input.resources?.length ? input.resources : undefined,
       agents: input.agents?.length ? input.agents : undefined,
@@ -2895,7 +3204,6 @@ export function createRealRuntimeClient(
     if (attachments.length) attachmentReferences.set(`${id}:user`, attachments);
     if (!targetSession)
       throw new Error("session initialization did not complete");
-    const delivery = input.delivery ?? "steer";
     const existing = admittedInputs(targetSession).find(
       (item) => item.id === id,
     );
@@ -3080,14 +3388,30 @@ export function createRealRuntimeClient(
       if (sessionStoreController.sqlite())
         sessionStoreController
           .sqlite()!
-          .replaceInbox(sessionID, snapshot.inbox ?? []);
+          .replaceInbox(snapshot.id, snapshot.inbox ?? []);
       else await sessionStoreController.json().save(snapshot);
     },
     flush: async () => {
       await sessionPersistence;
     },
-    runCommand: async (id, text, signal) =>
-      await handleCommand(id, text, signal),
+    runCommand: async (id, text, signal) => {
+      const ownerID = turnSession.get(id) ?? sessionID;
+      const owner = await ensureExecution(ownerID);
+      publishForSession(owner, {
+        type: "turn.started",
+        id,
+      });
+      try {
+        return await handleCommand(id, text, signal);
+      } catch (error) {
+        publishForSession(owner, {
+          type: "turn.cancelled",
+          id,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    },
     runTurn: async (input) => {
       // P8 C3: deliver queued mailbox intents at the turn boundary, before the
       // system prompt is built, so the main agent sees them in THIS turn. The
@@ -4305,14 +4629,55 @@ export function createRealRuntimeClient(
       await performanceTrace.stop();
     },
     cancel(reason = "user cancel") {
+      const cancelledSessionID = sessionID;
+      const coordinator = sessionRunCoordinator(cancelledSessionID);
+      const runningTurnID = activeExec?.activeTurnID;
+      const pendingTurnID = runningTurnID ? undefined : lastSubmitted?.id;
+      const pendingSessionID = pendingTurnID
+        ? (turnSession.get(pendingTurnID) ?? cancelledSessionID)
+        : undefined;
+      const pendingSession = pendingTurnID
+        ? (executionBySession.get(pendingSessionID!)?.session ?? session)
+        : undefined;
+      const pendingInput = pendingSession?.inbox?.find(
+        (input) => input.id === pendingTurnID && !input.promotedAt,
+      );
+      if (pendingInput && pendingSession) {
+        pendingSession.inbox = pendingSession.inbox?.filter(
+          (input) => input.id !== pendingTurnID,
+        );
+        if (lastSubmitted?.id === pendingTurnID) lastSubmitted = undefined;
+      }
+      paused = false;
+      const waiters = pauseWaiters;
+      pauseWaiters = [];
+      for (const resolveWaiter of waiters) resolveWaiter();
       activeExec?.activeAbort?.abort(reason);
-      void turnCoordinator().interrupt();
-      if (activeExec?.activeTurnID)
+      const cancelledTurnID =
+        runningTurnID ??
+        pendingInput?.id ??
+        (coordinator.active ? lastSubmitted?.id : undefined);
+      if (cancelledTurnID)
         publish({
           type: "turn.cancelled",
-          id: activeExec.activeTurnID,
+          id: cancelledTurnID,
           reason,
         });
+      void (async () => {
+        if (pendingInput)
+          await turnController.persistPromotion(pendingSessionID!);
+        await coordinator.interrupt();
+        // `interrupt` intentionally clears stale wakeups. A prompt admitted with
+        // queue delivery is durable work, not a stale wakeup, so start a fresh
+        // drain after cancellation to promote it at the new idle boundary.
+        await coordinator.wake(drainSessionFor(cancelledSessionID));
+      })().catch((error) =>
+        publish({
+          type: "diagnostic",
+          level: "warning",
+          message: `session cancellation cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+        }),
+      );
     },
     pause(reason = "user pause") {
       // Refusing is a value: a caller that gets `paused: true` when nothing was
@@ -4446,7 +4811,13 @@ export function createRealRuntimeClient(
       // The overview needs resolved config to compute effective permissions, so
       // it is only answerable once the runtime has initialized.
       const config =
-        tsRuntimeConfig ?? (await resolveConfig({ workspaceRoot })).config;
+        tsRuntimeConfig ??
+        (
+          await resolveConfig({
+            workspaceRoot,
+            globalPath: options.globalConfigPath,
+          })
+        ).config;
       return await scheduledTaskOverview({
         workspaceRoot,
         config,
@@ -4505,7 +4876,10 @@ export function createRealRuntimeClient(
       // validates a task document before delivering it, and decides on the
       // result. Only the path policy throws (refused, like workspace paths).
       const config = assertConfigApplied(
-        await resolveConfig({ workspaceRoot }),
+        await resolveConfig({
+          workspaceRoot,
+          globalPath: options.globalConfigPath,
+        }),
       );
       const path = input.path;
       if (
@@ -4650,15 +5024,24 @@ export function createRealRuntimeClient(
     async modelSelection() {
       await ready;
       return {
-        modelID:
-          selectedAgent?.model ??
-          selectedModel?.modelID ??
-          tsRuntimeConfig?.defaultModel,
+        modelID: selectedModelRefKey(),
         variant: selectedAgent?.variant ?? selectedModel?.variant,
       };
     },
     async selectModel(modelID, variant) {
       await selectRuntimeModel(modelID, variant);
+    },
+    async reasoningEffort() {
+      await ready;
+      return activeExec?.reasoningEffort;
+    },
+    async setReasoningEffort(effort) {
+      await ready;
+      if (effort && !isRuntimeReasoningEffort(effort))
+        throw new Error(`unsupported reasoning effort: ${effort}`);
+      if (!activeExec) throw new Error("session execution is unavailable");
+      activeExec.reasoningEffort = effort;
+      applyAgentProvider();
     },
     async skills() {
       await ready;
@@ -4995,9 +5378,14 @@ export function createRealRuntimeClient(
     },
     async permissionSave(input) {
       await ready;
-      await updateConfigAtScope(workspaceRoot, {
-        permissionProfiles: { [input.name]: input.profile },
-      } as never);
+      await updateConfigAtScope(
+        workspaceRoot,
+        {
+          permissionProfiles: { [input.name]: input.profile },
+        } as never,
+        "project",
+        { globalPath: options.globalConfigPath },
+      );
       const result = await applyConfigFromDisk();
       return {
         saved: true,
@@ -5013,26 +5401,41 @@ export function createRealRuntimeClient(
           deleted: false,
           reason: `permission profile is the active default: ${name}`,
         };
-      await updateConfigAtScope(workspaceRoot, {
-        permissionProfiles: { [name]: undefined },
-      } as never);
+      await updateConfigAtScope(
+        workspaceRoot,
+        {
+          permissionProfiles: { [name]: undefined },
+        } as never,
+        "project",
+        { globalPath: options.globalConfigPath },
+      );
       await applyConfigFromDisk();
       return { deleted: true };
     },
     async mcpServerAdd(input) {
       await ready;
-      await updateConfigAtScope(workspaceRoot, {
-        mcpServers: { [input.name]: input.config },
-      } as never);
+      await updateConfigAtScope(
+        workspaceRoot,
+        {
+          mcpServers: { [input.name]: input.config },
+        } as never,
+        "project",
+        { globalPath: options.globalConfigPath },
+      );
       await applyConfigFromDisk();
       await mcpController.reload();
       return { saved: true };
     },
     async mcpServerRemove(name) {
       await ready;
-      await updateConfigAtScope(workspaceRoot, {
-        mcpServers: { [name]: undefined },
-      } as never);
+      await updateConfigAtScope(
+        workspaceRoot,
+        {
+          mcpServers: { [name]: undefined },
+        } as never,
+        "project",
+        { globalPath: options.globalConfigPath },
+      );
       await applyConfigFromDisk();
       await mcpController.reload();
       return { removed: true };
@@ -5045,9 +5448,14 @@ export function createRealRuntimeClient(
           created: false,
           reason: `agent already exists: ${input.name}`,
         };
-      await updateConfigAtScope(workspaceRoot, {
-        agents: { [input.name]: input.config },
-      } as never);
+      await updateConfigAtScope(
+        workspaceRoot,
+        {
+          agents: { [input.name]: input.config },
+        } as never,
+        "project",
+        { globalPath: options.globalConfigPath },
+      );
       await applyConfigFromDisk();
       return { created: true };
     },
@@ -5055,9 +5463,14 @@ export function createRealRuntimeClient(
       await ready;
       if (!tsRuntimeConfig || !tsRuntimeConfig.agents[input.name])
         throw new Error(`agent not found: ${input.name}`);
-      await updateConfigAtScope(workspaceRoot, {
-        agents: { [input.name]: input.config },
-      } as never);
+      await updateConfigAtScope(
+        workspaceRoot,
+        {
+          agents: { [input.name]: input.config },
+        } as never,
+        "project",
+        { globalPath: options.globalConfigPath },
+      );
       await applyConfigFromDisk();
       return { updated: true };
     },
@@ -5069,9 +5482,14 @@ export function createRealRuntimeClient(
           deleted: false,
           reason: `agent is the default agent: ${name}`,
         };
-      await updateConfigAtScope(workspaceRoot, {
-        agents: { [name]: undefined },
-      } as never);
+      await updateConfigAtScope(
+        workspaceRoot,
+        {
+          agents: { [name]: undefined },
+        } as never,
+        "project",
+        { globalPath: options.globalConfigPath },
+      );
       await applyConfigFromDisk();
       return { deleted: true };
     },
@@ -5086,34 +5504,49 @@ export function createRealRuntimeClient(
     },
     async providerAdd(input) {
       await ready;
-      await updateConfigAtScope(workspaceRoot, {
-        providers: {
-          [input.name]: {
-            type: input.type,
-            baseURL: input.baseURL ?? "",
-            apiKey: input.apiKey,
+      await updateConfigAtScope(
+        workspaceRoot,
+        {
+          providers: {
+            [input.name]: {
+              name: input.name,
+              driver: input.type,
+              enabled: true,
+              connection: {
+                baseURL: input.baseURL || undefined,
+                apiKey: input.apiKey,
+              },
+            },
           },
-        },
-      } as never);
+        } as never,
+        "global",
+        { globalPath: options.globalConfigPath },
+      );
       await applyConfigFromDisk();
       return { saved: true };
     },
     async providerRemove(name) {
       await ready;
       const config = tsRuntimeConfig;
-      const referenced = config
-        ? Object.entries(config.models).find(
-            ([, model]) => model.provider === name,
-          )
+      const referencedModel = config
+        ? (Object.keys(config.catalog?.providers?.[name]?.models ?? {})[0] ??
+          Object.keys(config.modelOverrides ?? {})
+            .filter((key) => key.startsWith(`${name}/`))
+            .map((key) => key.slice(name.length + 1))[0])
         : undefined;
-      if (referenced)
+      if (referencedModel)
         return {
           removed: false,
-          reason: `provider is referenced by model: ${referenced[0]}`,
+          reason: `provider is referenced by model: ${referencedModel}`,
         };
-      await updateConfigAtScope(workspaceRoot, {
-        providers: { [name]: undefined },
-      } as never);
+      await updateConfigAtScope(
+        workspaceRoot,
+        {
+          providers: { [name]: undefined },
+        } as never,
+        "global",
+        { globalPath: options.globalConfigPath },
+      );
       await applyConfigFromDisk();
       return { removed: true };
     },
@@ -5169,6 +5602,7 @@ export function createRealRuntimeClient(
         workspaceRoot,
         input.patch as never,
         input.scope ?? "project",
+        { globalPath: options.globalConfigPath },
       );
       // Applying is the same operation as a reload, with the same value-type
       // refusal; share it so the two paths cannot drift.
@@ -7238,20 +7672,15 @@ export function createRealRuntimeClient(
   }
 }
 
-function contextStatusConfig(config?: {
-  context: {
-    compactionThresholdPercent: number;
-    reservedOutputTokens: "auto" | number;
-  };
-  models: Record<string, { contextWindow: "auto" | number }>;
-  defaultModel: string;
-}) {
-  const model = config?.models[config.defaultModel];
+function contextStatusConfig(config?: ConfigV3) {
+  const ref = config?.defaultModel;
+  const effective = ref ? resolveEffectiveModel(config, ref) : undefined;
+  const contextWindow = effective?.limits.contextWindow;
   return {
     max:
-      model?.contextWindow === "auto" || model?.contextWindow === undefined
+      contextWindow === "auto" || contextWindow === undefined
         ? Number(process.env.NATALIA_CONTEXT_WINDOW ?? 200000)
-        : model.contextWindow,
+        : contextWindow,
     thresholdPercent:
       config?.context.compactionThresholdPercent ??
       Number(process.env.NATALIA_CONTEXT_THRESHOLD ?? 85),
@@ -7454,4 +7883,16 @@ function sessionSeed(workspaceRoot: string) {
 
 function lineCount(text: string) {
   return text.length === 0 ? 0 : text.split(/\r\n|\r|\n/u).length;
+}
+
+function isRuntimeReasoningEffort(
+  value: unknown,
+): value is import("@natalia/contracts").RuntimeReasoningEffort {
+  return (
+    value === "minimal" ||
+    value === "low" ||
+    value === "medium" ||
+    value === "high" ||
+    value === "xhigh"
+  );
 }

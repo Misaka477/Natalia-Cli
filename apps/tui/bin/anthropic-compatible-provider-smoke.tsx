@@ -22,20 +22,40 @@ try {
   await keys.typeText("settings");
   keys.pressEnter();
   await Bun.sleep(100);
+
+  // Settings → Providers & Models
   keys.pressEnter();
   await Bun.sleep(80);
-  await keys.typeText("anthropic compatible");
+
+  // Provider manager → + Add Provider
   keys.pressEnter();
   await Bun.sleep(80);
+
+  // Provider ID (stable)
   await keys.typeText("gateway-anthropic");
   keys.pressEnter();
   await Bun.sleep(80);
-  await keys.typeText("test-key");
+
+  // Display name (accept the ID as the label)
   keys.pressEnter();
   await Bun.sleep(80);
+
+  // Driver: Anthropic Compatible
+  await keys.typeText("anthropic compatible");
+  keys.pressEnter();
+  await Bun.sleep(80);
+
+  // Base URL
   await keys.typeText("https://gateway.example/v1");
   keys.pressEnter();
   await Bun.sleep(80);
+
+  // API key
+  await keys.typeText("test-key");
+  keys.pressEnter();
+  await Bun.sleep(80);
+
+  // Anthropic-compatible has no universal listing API: enter model ID manually.
   await keys.typeText("claude-compatible-model");
   keys.pressEnter();
   for (let attempts = 0; attempts < 20; attempts++) {
@@ -45,8 +65,8 @@ try {
   }
   const config = (await resolveConfig({ workspaceRoot })).config;
   if (
-    config.providers["gateway-anthropic"]?.type !== "anthropic-compatible" ||
-    config.models[config.defaultModel]?.model !== "claude-compatible-model"
+    config.providers["gateway-anthropic"]?.driver !== "anthropic-compatible" ||
+    config.defaultModel?.model !== "claude-compatible-model"
   )
     throw new Error("Anthropic-compatible provider was not persisted");
   console.log("anthropic-compatible provider setup smoke passed");

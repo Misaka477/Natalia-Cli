@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test";
-import { createMockKeys, createTestRenderer } from "@opentui/core/testing";
+import { CodeRenderable, type Renderable } from "@opentui/core";
+import {
+  createMockKeys,
+  createTestRenderer,
+  MockTreeSitterClient,
+} from "@opentui/core/testing";
 import { render } from "@opentui/solid";
 import { createSignal } from "solid-js";
 import { KeymapProvider } from "@opentui/keymap/solid";
@@ -27,6 +32,15 @@ function mockBackend(overrides: Record<string, unknown> = {}) {
   } as unknown as RuntimeClient;
 }
 
+function useMockHighlighter(
+  node: Renderable,
+  treeSitterClient: MockTreeSitterClient,
+) {
+  if (node instanceof CodeRenderable) node.treeSitterClient = treeSitterClient;
+  for (const child of node.getChildren())
+    useMockHighlighter(child, treeSitterClient);
+}
+
 async function mountChat(
   messages: MessageBlock[],
   callbacks: {
@@ -43,6 +57,7 @@ async function mountChat(
   const setup = await createTestRenderer({ width: 160, height: 36 });
   const keymap = createDefaultOpenTuiKeymap(setup.renderer);
   const disposeKeymap = registerNataliaKeymap(keymap, setup.renderer);
+  const treeSitterClient = new MockTreeSitterClient({ autoResolveTimeout: 0 });
   const sent: string[] = [];
   const rolledBack: string[] = [];
   const accepted: string[] = [];
@@ -82,11 +97,22 @@ async function mountChat(
     ),
     setup.renderer,
   );
+  // OpenTUI creates markdown's internal CodeRenderable before Solid applies
+  // the renderer's next frame. Swap in the deterministic test client first so
+  // teardown cannot reject a request on the process-wide client.
+  useMockHighlighter(setup.renderer.root, treeSitterClient);
   await Bun.sleep(20);
   await setup.renderOnce();
   return {
     setup,
-    dispose: disposeKeymap,
+    async dispose() {
+      // Let markdown/code highlighters finish before the renderer destroys the
+      // shared TreeSitter client and rejects in-flight highlight requests.
+      await setup.waitForVisualIdle();
+      disposeKeymap();
+      setup.renderer.destroy();
+      await treeSitterClient.destroy();
+    },
     keys: createMockKeys(setup.renderer, { kittyKeyboard: true }),
     sent,
     rolledBack,
@@ -142,8 +168,7 @@ test("an empty conversation invites the collaborator role", async () => {
     expect(frame).toContain("Start a conversation with the Chat");
     expect(frame).toContain("Main agent: running");
   } finally {
-    mounted.dispose();
-    mounted.setup.renderer.destroy();
+    await mounted.dispose();
   }
 });
 
@@ -155,8 +180,7 @@ test("the projected conversation renders through the main feed's row renderer", 
     expect(frame).toContain("it is running step 2 of the plan");
     expect(frame).toContain("session_snapshot");
   } finally {
-    mounted.dispose();
-    mounted.setup.renderer.destroy();
+    await mounted.dispose();
   }
 });
 
@@ -170,8 +194,7 @@ test("sending a message routes it into the Chat conversation", async () => {
     await mounted.setup.renderOnce();
     expect(mounted.sent).toEqual(["why is it installing that dependency"]);
   } finally {
-    mounted.dispose();
-    mounted.setup.renderer.destroy();
+    await mounted.dispose();
   }
 });
 
@@ -185,8 +208,7 @@ test("a non-focused chat pane does not send on enter", async () => {
     await mounted.setup.renderOnce();
     expect(mounted.sent).toHaveLength(0);
   } finally {
-    mounted.dispose();
-    mounted.setup.renderer.destroy();
+    await mounted.dispose();
   }
 });
 
@@ -219,8 +241,7 @@ test("a Chat-proposed plan shows a review card with accept and reject", async ()
     expect(frame).toContain("accept");
     expect(frame).toContain("reject");
   } finally {
-    mounted.dispose();
-    mounted.setup.renderer.destroy();
+    await mounted.dispose();
   }
 });
 
@@ -237,6 +258,7 @@ test("a streamed Chat reply appears incrementally as the projection updates", as
   const setup = await createTestRenderer({ width: 160, height: 36 });
   const keymap = createDefaultOpenTuiKeymap(setup.renderer);
   const disposeKeymap = registerNataliaKeymap(keymap, setup.renderer);
+  const treeSitterClient = new MockTreeSitterClient({ autoResolveTimeout: 0 });
   await render(
     () => (
       <KeymapProvider keymap={keymap}>
@@ -260,6 +282,7 @@ test("a streamed Chat reply appears incrementally as the projection updates", as
     ),
     setup.renderer,
   );
+  useMockHighlighter(setup.renderer.root, treeSitterClient);
   await Bun.sleep(20);
   await setup.renderOnce();
   try {
@@ -290,7 +313,9 @@ test("a streamed Chat reply appears incrementally as the projection updates", as
     await setup.renderOnce();
     expect(setup.captureCharFrame()).toContain("replace the wrapper");
   } finally {
+    await setup.waitForVisualIdle();
     disposeKeymap();
     setup.renderer.destroy();
+    await treeSitterClient.destroy();
   }
 });

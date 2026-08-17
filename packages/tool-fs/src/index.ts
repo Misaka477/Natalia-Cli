@@ -6,6 +6,7 @@
  * capability kernel or the host that loads it.
  */
 import {
+  optionalInteger,
   requireObject,
   requireString,
   workspacePath,
@@ -19,11 +20,16 @@ import { dirname, relative, resolve } from "node:path";
 function readFileTool(): RuntimeTool {
   return {
     name: "read_file",
-    description: "Read a UTF-8 text file inside the workspace.",
+    description:
+      "Read a UTF-8 text file inside the workspace. Use offset (one-based line number) and length (line count) to read part of a file.",
     requiresApproval: false,
     parameters: {
       type: "object",
-      properties: { path: { type: "string" } },
+      properties: {
+        path: { type: "string" },
+        offset: { type: "integer", minimum: 1 },
+        length: { type: "integer", minimum: 1 },
+      },
       required: ["path"],
       additionalProperties: false,
     },
@@ -60,7 +66,28 @@ function readFileTool(): RuntimeTool {
         context.workspaceRoot,
         requireString(args.path, "path"),
       );
-      return await readFile(path, "utf8");
+      const content = await readFile(path, "utf8");
+      if (args.offset === undefined && args.length === undefined)
+        return content;
+
+      const offset = optionalInteger(args.offset, "offset") ?? 1;
+      const length = optionalInteger(args.length, "length");
+      if (offset < 1) throw new Error("offset must be a positive integer");
+      if (length !== undefined && length < 1)
+        throw new Error("length must be a positive integer");
+
+      const lines = content.endsWith("\n")
+        ? content.slice(0, -1).replace(/\r$/u, "").split(/\r?\n/u)
+        : content.split(/\r?\n/u);
+      if (offset > lines.length)
+        throw new Error(`read_file offset is out of range: ${offset}`);
+      const end = Math.min(lines.length, offset - 1 + (length ?? lines.length));
+      const page = lines.slice(offset - 1, end).join("\n");
+      if (end === lines.length) return page;
+
+      const remaining = lines.length - end;
+      const next = end + 1;
+      return `${page}\n\n... ${remaining} more line${remaining === 1 ? "" : "s"}; use offset=${next}${length === undefined ? "" : ` length=${length}`} ...`;
     },
   };
 }

@@ -37,12 +37,16 @@
  *     projections remain owned by session queries.
  */
 import type { RuntimeEvent } from "@natalia/contracts";
+import { applyActivityEvent } from "./activity";
 import { applyChatEvent, applyConversationEvent } from "./conversation";
 import { applyResourceEvent } from "./resources";
 import { applyStatusEvent } from "./status";
 import { cloneState, initialState, type AppState } from "./state";
 
 export {
+  type ActivityKind,
+  type ActivityState,
+  type ActivityView,
   appendBounded,
   boundTranscript,
   checkpointLimit,
@@ -83,6 +87,11 @@ export {
   type WorkGraphNodeView,
 } from "./state";
 export {
+  applyActivityEvent,
+  selectActiveActivities,
+  selectPrimaryActivity,
+} from "./activity";
+export {
   flushStream,
   newStream,
   segmentID,
@@ -105,10 +114,20 @@ export { applyChatEvent, applyConversationEvent } from "./conversation";
  * working when the runtime adds an event.
  */
 export function applyEvent(state: AppState, event: RuntimeEvent): void {
-  if (applyConversationEvent(state, event)) return;
-  if (applyChatEvent(state, event)) return;
-  if (applyResourceEvent(state, event)) return;
+  if (applyConversationEvent(state, event)) {
+    applyActivityEvent(state, event);
+    return;
+  }
+  if (applyChatEvent(state, event)) {
+    applyActivityEvent(state, event);
+    return;
+  }
+  if (applyResourceEvent(state, event)) {
+    applyActivityEvent(state, event);
+    return;
+  }
   applyStatusEvent(state, event);
+  applyActivityEvent(state, event);
 }
 
 /**

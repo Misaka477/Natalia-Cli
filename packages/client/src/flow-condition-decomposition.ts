@@ -1,7 +1,14 @@
 import { agentsFromConfig } from "@natalia/agent";
 import {
+  buildModelCatalog,
+  modelSelectionStatus,
+  resolveEffectiveModel,
+} from "@natalia/config";
+import {
   flowConditionDecompositionSchema,
-  type ConfigV2,
+  modelRefKey,
+  parseModelRef,
+  type ConfigV3,
   type FlowConditionDecomposition,
 } from "@natalia/contracts";
 import { providerForModel, type StreamingProvider } from "@natalia/runtime";
@@ -12,20 +19,33 @@ export type FlowConditionModel = {
   model: string;
 };
 
-export function flowConditionModels(config: ConfigV2): FlowConditionModel[] {
-  return Object.entries(config.models)
-    .filter(([modelID]) => Boolean(providerForModel(config, modelID)))
-    .map(([modelID, model]) => ({
-      modelID,
-      providerID: model.provider,
-      model: model.model,
-    }));
+export function flowConditionModels(config: ConfigV3): FlowConditionModel[] {
+  return buildModelCatalog(config)
+    .flatMap((provider) =>
+      provider.models
+        .filter(
+          (entry) =>
+            modelSelectionStatus(
+              config,
+              modelRefKey({ provider: provider.id, model: entry.id }),
+            ).selected,
+        )
+        .map((entry) => ({
+          modelID: modelRefKey({ provider: provider.id, model: entry.id }),
+          providerID: provider.id,
+          model: entry.id,
+        })),
+    )
+    .sort((left, right) => left.modelID.localeCompare(right.modelID));
 }
 
-export function defaultExecutionProviderID(config: ConfigV2) {
+export function defaultExecutionProviderID(config: ConfigV3) {
   const agent = agentsFromConfig(config).default();
-  const modelID = agent?.model ?? config.defaultModel;
-  return config.models[modelID]?.provider;
+  const candidate =
+    agent?.model ??
+    (config.defaultModel ? modelRefKey(config.defaultModel) : undefined);
+  if (!candidate) return undefined;
+  return resolveEffectiveModel(config, candidate)?.providerID;
 }
 
 export function parseFlowConditionDecomposition(
@@ -56,22 +76,25 @@ export function parseFlowConditionDecomposition(
 }
 
 export async function decomposeFlowConditions(input: {
-  config?: ConfigV2;
+  config?: ConfigV3;
   modelID: string;
   objective: string;
   provider?: StreamingProvider;
 }): Promise<FlowConditionDecomposition> {
   const objective = input.objective.trim();
   if (!objective) throw new Error("a completion objective is required");
-  const model = input.config?.models[input.modelID];
+  const ref = parseModelRef(input.modelID);
+  const effective = input.config
+    ? resolveEffectiveModel(input.config, ref)
+    : undefined;
   const provider =
     input.provider ??
-    (input.config ? providerForModel(input.config, input.modelID) : undefined);
+    (input.config ? providerForModel(input.config, ref) : undefined);
   if (!provider) throw new Error("condition evaluator provider is unavailable");
   if (
-    model &&
-    (provider.model !== model.model ||
-      provider.provider !== input.config?.providers[model.provider]?.type)
+    effective &&
+    (provider.model !== effective.ref.model ||
+      provider.provider !== effective.driver)
   )
     throw new Error("condition evaluator provider does not match the model");
   let content = "";

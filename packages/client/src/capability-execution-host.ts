@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import type { CapabilityHost } from "@natalia/capability";
 import type {
-  ConfigV2,
+  ConfigV3,
   NataliaFlowDocument,
   NataliaTaskDocument,
 } from "@natalia/contracts";
@@ -20,7 +20,7 @@ export type CapabilityTaskExecutionRequest = {
   workspaceRoot: string;
   path?: string;
   taskID?: string;
-  config: ConfigV2;
+  config: ConfigV3;
   json?: boolean;
   requestedBy?: {
     transport: "local" | "worker" | "http";

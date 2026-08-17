@@ -274,7 +274,11 @@ test("compaction failure is atomic and retry events use M9 policy", async () => 
       thresholdPercent: 85,
       reservedTokens: 10,
       preservedRecentMessages: 2,
-      retry: { timer: async () => undefined, random: () => 0 },
+      retry: {
+        policy: { maxAttemptsPerStep: 3 },
+        timer: async () => undefined,
+        random: () => 0,
+      },
       onEvent: (event) => events.push(event.type),
     }),
   ).rejects.toMatchObject({ kind: "timeout" });

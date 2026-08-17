@@ -1,6 +1,10 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { configV2Schema, type ConfigV2 } from "@natalia/contracts";
+import {
+  configV3Schema,
+  parseModelRef,
+  type ConfigV3,
+} from "@natalia/contracts";
 import { globalConfigHome } from "@natalia/platform";
 import { parseConfigText, saveConfigOverlayFile } from "./file";
 import { readFile } from "node:fs/promises";
@@ -14,12 +18,22 @@ export type ConfigScope =
 
 export type ConfigWriteScope = "global" | "project";
 
+export const GLOBAL_MODEL_CONFIG_KEYS = [
+  "providers",
+  "catalog",
+  "modelOverrides",
+  "defaultModel",
+] as const satisfies readonly (keyof ConfigV3)[];
+
+type GlobalModelConfigKey = (typeof GLOBAL_MODEL_CONFIG_KEYS)[number];
+const globalModelConfigKeys = new Set<keyof ConfigV3>(GLOBAL_MODEL_CONFIG_KEYS);
+
 export type ConfigPatch = {
-  [Key in keyof ConfigV2]?: ConfigV2[Key] extends Array<unknown>
-    ? ConfigV2[Key]
-    : ConfigV2[Key] extends Record<string, unknown>
-      ? ConfigPatchValue<ConfigV2[Key]>
-      : ConfigV2[Key];
+  [Key in keyof ConfigV3]?: ConfigV3[Key] extends Array<unknown>
+    ? ConfigV3[Key]
+    : ConfigV3[Key] extends Record<string, unknown>
+      ? ConfigPatchValue<ConfigV3[Key]>
+      : ConfigV3[Key];
 };
 
 type ConfigPatchValue<Value extends Record<string, unknown>> = {
@@ -31,11 +45,10 @@ type ConfigPatchValue<Value extends Record<string, unknown>> = {
 };
 
 /** Produces a minimal overlay, including undefined markers for removed map entries. */
-export function configPatch(base: ConfigV2, next: ConfigV2): ConfigPatch {
+export function configPatch(base: ConfigV3, next: ConfigV3): ConfigPatch {
   const patch = diffValue(base, next) as ConfigPatch;
   const records = {
     providers: recordPatch(base.providers, next.providers),
-    models: recordPatch(base.models, next.models),
     permissionProfiles: recordPatch(
       base.permissionProfiles,
       next.permissionProfiles,
@@ -43,11 +56,16 @@ export function configPatch(base: ConfigV2, next: ConfigV2): ConfigPatch {
     modes: recordPatch(base.modes, next.modes),
     agents: recordPatch(base.agents, next.agents),
     mcpServers: recordPatch(base.mcpServers, next.mcpServers),
+    issueTargets: recordPatch(base.issueTargets, next.issueTargets),
+    dataSources: recordPatch(base.dataSources, next.dataSources),
+    alertChannels: recordPatch(base.alertChannels, next.alertChannels),
   };
   for (const [key, value] of Object.entries(records))
     if (Object.keys(value).length)
       patch[key as keyof ConfigPatch] = value as never;
     else delete patch[key as keyof ConfigPatch];
+  // `catalog` and `modelOverrides` stay as diffValue produced them: nested
+  // records whose partial diffs deep-merge cleanly onto the persisted overlay.
   return patch;
 }
 
@@ -114,7 +132,7 @@ export type ConfigSource = {
 };
 
 export type ResolvedConfig = {
-  config: ConfigV2;
+  config: ConfigV3;
   sources: ConfigSource[];
   projectConfigPath: string;
 };
@@ -149,7 +167,7 @@ export async function resolveConfig(input: {
   const workspaceRoot = resolve(input.workspaceRoot);
   const projectConfigPath = resolve(workspaceRoot, ".natalia", "config.json");
   const globalPath = input.globalPath ?? defaultGlobalConfigPath();
-  let config = configV2Schema.parse({ version: 2 });
+  let config = configV3Schema.parse({ version: 3 });
   const sources: ConfigSource[] = [{ scope: "defaults", applied: true }];
   for (const [scope, path] of [
     ["global", globalPath],
@@ -161,8 +179,21 @@ export async function resolveConfig(input: {
     }
     try {
       const raw = parseConfigText(await readFile(path, "utf8"));
-      config = mergeConfig(config, raw as Partial<ConfigV2>);
-      sources.push({ scope, path, applied: true });
+      const overlay = raw as ConfigPatch;
+      const ignored =
+        scope === "project" ? presentGlobalModelConfigKeys(overlay) : [];
+      config = mergeConfig(
+        config,
+        scope === "project" ? withoutGlobalModelConfig(overlay) : overlay,
+      );
+      sources.push({
+        scope,
+        path,
+        applied: true,
+        diagnostic: ignored.length
+          ? `ignored global-only settings: ${ignored.join(", ")}`
+          : undefined,
+      });
     } catch (error) {
       // The reason has to travel with the source: an ignored configuration file
       // silently drops whatever the operator believed was in effect, including
@@ -178,15 +209,12 @@ export async function resolveConfig(input: {
   const environment = input.environment ?? process.env;
   const model = environment.NATALIA_MODEL;
   if (model) {
-    config = configV2Schema.parse({
+    // A transient default model ref only: the catalog is never mutated by the
+    // environment, so an uncommitted provider key disappears when the env is
+    // cleared.
+    config = configV3Schema.parse({
       ...config,
-      models: {
-        ...config.models,
-        [config.defaultModel]: {
-          ...config.models[config.defaultModel]!,
-          model,
-        },
-      },
+      defaultModel: parseModelRef(model),
     });
     sources.push({
       scope: "environment",
@@ -197,51 +225,53 @@ export async function resolveConfig(input: {
   return { config, sources, projectConfigPath };
 }
 
-function mergeConfig(base: ConfigV2, overlay: ConfigPatch): ConfigV2 {
-  return configV2Schema.parse({
-    ...base,
-    ...overlay,
+function mergeConfig(base: ConfigV3, overlay: ConfigPatch): ConfigV3 {
+  return configV3Schema.parse({
+    version: 3,
     runtime: { ...base.runtime, ...overlay.runtime },
+    sandbox: { ...base.sandbox, ...overlay.sandbox },
+    team: { ...base.team, ...overlay.team },
     context: { ...base.context, ...overlay.context },
     checkpoint: { ...base.checkpoint, ...overlay.checkpoint },
-    providers: mergeRecord(
-      base.providers,
-      overlay.providers as Record<
-        string,
-        ConfigV2["providers"][string] | undefined
-      >,
+    providers: deepMergeObject(base.providers, overlay.providers),
+    catalog: deepMergeObject(base.catalog, overlay.catalog),
+    modelOverrides: deepMergeObject(
+      base.modelOverrides,
+      overlay.modelOverrides,
     ),
-    models: mergeRecord(
-      base.models,
-      overlay.models as Record<string, ConfigV2["models"][string] | undefined>,
-    ),
+    defaultModel:
+      overlay.defaultModel === undefined
+        ? base.defaultModel
+        : (deepMergeObject(
+            base.defaultModel,
+            overlay.defaultModel,
+          ) as ConfigV3["defaultModel"]),
     permissionProfiles: mergeRecord(
       base.permissionProfiles,
       overlay.permissionProfiles as Record<
         string,
-        ConfigV2["permissionProfiles"][string] | undefined
+        ConfigV3["permissionProfiles"][string] | undefined
       >,
     ),
+    defaultPermission: overlay.defaultPermission ?? base.defaultPermission,
     modes: mergeRecord(
       base.modes,
-      overlay.modes as Record<string, ConfigV2["modes"][string] | undefined>,
+      overlay.modes as Record<string, ConfigV3["modes"][string] | undefined>,
     ),
+    defaultMode: overlay.defaultMode ?? base.defaultMode,
     agents: mergeRecord(
       base.agents,
-      overlay.agents as Record<string, ConfigV2["agents"][string] | undefined>,
+      overlay.agents as Record<string, ConfigV3["agents"][string] | undefined>,
     ),
+    defaultAgent: overlay.defaultAgent ?? base.defaultAgent,
     mcpServers: mergeRecord(
       base.mcpServers,
       overlay.mcpServers as Record<
         string,
-        ConfigV2["mcpServers"][string] | undefined
+        ConfigV3["mcpServers"][string] | undefined
       >,
     ),
     skills: { ...base.skills, ...overlay.skills },
-    tools: {
-      enabled: { ...base.tools?.enabled, ...overlay.tools?.enabled },
-      paths: overlay.tools?.paths ?? base.tools?.paths ?? [],
-    },
     plugins: {
       enabled: { ...base.plugins.enabled, ...overlay.plugins?.enabled },
       paths: overlay.plugins?.paths ?? base.plugins.paths,
@@ -250,6 +280,11 @@ function mergeConfig(base: ConfigV2, overlay: ConfigPatch): ConfigV2 {
         ...overlay.plugins?.capabilities,
       },
       readOnly: { ...base.plugins.readOnly, ...overlay.plugins?.readOnly },
+      settings: { ...base.plugins.settings, ...overlay.plugins?.settings },
+    },
+    tools: {
+      enabled: { ...base.tools.enabled, ...overlay.tools?.enabled },
+      paths: overlay.tools?.paths ?? base.tools.paths,
     },
     workspace: { ...base.workspace, ...overlay.workspace },
     instructions: { ...base.instructions, ...overlay.instructions },
@@ -257,8 +292,49 @@ function mergeConfig(base: ConfigV2, overlay: ConfigPatch): ConfigV2 {
     browser: { ...base.browser, ...overlay.browser },
     network: { ...base.network, ...overlay.network },
     security: { ...base.security, ...overlay.security },
+    issueTargets: mergeRecord(
+      base.issueTargets,
+      overlay.issueTargets as Record<
+        string,
+        ConfigV3["issueTargets"][string] | undefined
+      >,
+    ),
+    dataSources: mergeRecord(
+      base.dataSources,
+      overlay.dataSources as Record<
+        string,
+        ConfigV3["dataSources"][string] | undefined
+      >,
+    ),
+    alertChannels: mergeRecord(
+      base.alertChannels,
+      overlay.alertChannels as Record<
+        string,
+        ConfigV3["alertChannels"][string] | undefined
+      >,
+    ),
     experimental: { ...base.experimental, ...overlay.experimental },
   });
+}
+
+/** Recursively merges plain objects; arrays, scalars and null replace. */
+function deepMergeObject(base: unknown, overlay: unknown): unknown {
+  if (overlay === undefined) return base;
+  if (base === undefined) return overlay;
+  if (Array.isArray(base) || Array.isArray(overlay)) return overlay;
+  const baseIsObject = typeof base === "object" && base !== null;
+  const overlayIsObject = typeof overlay === "object" && overlay !== null;
+  if (!baseIsObject || !overlayIsObject) return overlay;
+  const result: Record<string, unknown> = {
+    ...(base as Record<string, unknown>),
+  };
+  for (const [key, value] of Object.entries(
+    overlay as Record<string, unknown>,
+  )) {
+    if (value === undefined) delete result[key];
+    else result[key] = deepMergeObject(result[key], value);
+  }
+  return result;
 }
 
 function mergeRecord<Value>(
@@ -276,24 +352,38 @@ function mergeRecord<Value>(
 export async function updateConfig(
   workspaceRoot: string,
   patch: ConfigPatch,
-): Promise<ConfigV2> {
-  const { config, projectConfigPath } = await resolveConfig({ workspaceRoot });
-  const next = mergeConfig(config, patch);
+  options: { globalPath?: string } = {},
+): Promise<ConfigV3> {
+  return await updateConfigAtScope(workspaceRoot, patch, "project", options);
+}
+
+async function updateProjectConfig(
+  workspaceRoot: string,
+  patch: ConfigPatch,
+  globalPath?: string,
+): Promise<ConfigV3> {
+  const { config, projectConfigPath } = await resolveConfig({
+    workspaceRoot,
+    globalPath,
+  });
+  const projectPatch = withoutGlobalModelConfig(patch);
+  const persisted = await loadOverlay(projectConfigPath);
   const overlay = mergeOverlay(
-    await loadOverlay(projectConfigPath),
-    patch as Record<string, unknown>,
+    persisted,
+    projectPatch as Record<string, unknown>,
   );
-  await saveConfigOverlayFile(projectConfigPath, overlay);
-  return next;
+  if (Object.keys(projectPatch).length)
+    await saveConfigOverlayFile(projectConfigPath, overlay);
+  return mergeConfig(config, projectPatch);
 }
 
 export async function updateGlobalConfig(
   patch: ConfigPatch,
   globalPath?: string,
-): Promise<ConfigV2> {
+): Promise<ConfigV3> {
   const path = globalPath ?? defaultGlobalConfigPath();
   const base = mergeConfig(
-    configV2Schema.parse({ version: 2 }),
+    configV3Schema.parse({ version: 3 }),
     (await loadOverlay(path)) as ConfigPatch,
   );
   const next = mergeConfig(base, patch);
@@ -303,6 +393,52 @@ export async function updateGlobalConfig(
   );
   await saveConfigOverlayFile(path, overlay);
   return next;
+}
+
+/** Moves legacy project model settings into the authoritative global overlay. */
+export async function migrateProjectModelConfigToGlobal(
+  workspaceRoot: string,
+  options: { globalPath?: string } = {},
+): Promise<{ migrated: GlobalModelConfigKey[]; config: ConfigV3 }> {
+  const projectConfigPath = resolve(workspaceRoot, ".natalia", "config.json");
+  const project = await loadOverlay(projectConfigPath);
+  const migrated = presentGlobalModelConfigKeys(project);
+  if (!migrated.length)
+    return {
+      migrated,
+      config: (
+        await resolveConfig({
+          workspaceRoot,
+          globalPath: options.globalPath,
+        })
+      ).config,
+    };
+
+  const globalPath = options.globalPath ?? defaultGlobalConfigPath();
+  const globalBase = mergeConfig(
+    configV3Schema.parse({ version: 3 }),
+    (await loadOverlay(globalPath)) as ConfigPatch,
+  );
+  const effective = mergeConfig(
+    globalBase,
+    onlyGlobalModelConfig(project as ConfigPatch),
+  );
+  const globalPatch = Object.fromEntries(
+    migrated.map((key) => [key, effective[key]]),
+  ) as ConfigPatch;
+  await updateGlobalConfig(globalPatch, globalPath);
+
+  for (const key of migrated) delete project[key];
+  await saveConfigOverlayFile(projectConfigPath, project);
+  return {
+    migrated,
+    config: (
+      await resolveConfig({
+        workspaceRoot,
+        globalPath,
+      })
+    ).config,
+  };
 }
 
 async function loadOverlay(path: string): Promise<Record<string, unknown>> {
@@ -351,7 +487,40 @@ export async function updateConfigAtScope(
   workspaceRoot: string,
   patch: ConfigPatch,
   scope: ConfigWriteScope = "project",
-): Promise<ConfigV2> {
-  if (scope === "global") return await updateGlobalConfig(patch);
-  return await updateConfig(workspaceRoot, patch);
+  options: { globalPath?: string } = {},
+): Promise<ConfigV3> {
+  if (scope === "global")
+    return await updateGlobalConfig(patch, options.globalPath);
+  const globalPatch = onlyGlobalModelConfig(patch);
+  if (Object.keys(globalPatch).length)
+    await updateGlobalConfig(globalPatch, options.globalPath);
+  await updateProjectConfig(workspaceRoot, patch, options.globalPath);
+  return (
+    await resolveConfig({ workspaceRoot, globalPath: options.globalPath })
+  ).config;
+}
+
+function presentGlobalModelConfigKeys(
+  patch: ConfigPatch | Record<string, unknown>,
+): GlobalModelConfigKey[] {
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) return [];
+  return GLOBAL_MODEL_CONFIG_KEYS.filter((key) =>
+    Object.prototype.hasOwnProperty.call(patch, key),
+  );
+}
+
+function withoutGlobalModelConfig(patch: ConfigPatch): ConfigPatch {
+  return Object.fromEntries(
+    Object.entries(patch).filter(
+      ([key]) => !globalModelConfigKeys.has(key as keyof ConfigV3),
+    ),
+  ) as ConfigPatch;
+}
+
+function onlyGlobalModelConfig(patch: ConfigPatch): ConfigPatch {
+  return Object.fromEntries(
+    Object.entries(patch).filter(([key]) =>
+      globalModelConfigKeys.has(key as keyof ConfigV3),
+    ),
+  ) as ConfigPatch;
 }

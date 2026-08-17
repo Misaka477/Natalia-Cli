@@ -8,7 +8,7 @@ import {
   providerForModel,
   readWithIdleTimeout,
 } from "../src/provider";
-import { defaultConfigV2 } from "@natalia/config";
+import { defaultConfigV3 } from "@natalia/config";
 import { ContextWindowResolver } from "../src/modelmeta";
 
 test("OpenAI-compatible provider accepts both base and complete chat endpoint URLs", async () => {
@@ -43,36 +43,41 @@ test("OpenAI-compatible provider accepts both base and complete chat endpoint UR
 });
 
 test("configured provider resolution preserves the adapter provider identity", () => {
-  const config = defaultConfigV2();
+  const config = defaultConfigV3();
   config.providers.internal_gateway = {
-    type: "anthropic-compatible",
-    apiKey: "test-key",
+    name: "Internal Gateway",
+    driver: "anthropic-compatible",
     enabled: true,
-    customHeaders: {},
+    connection: { apiKey: "test-key" },
+    requestDefaults: { stream: true, headers: {}, options: {} },
   };
-  config.models.review = {
-    provider: "internal_gateway",
-    model: "review-model",
-    enabled: true,
-    capabilities: {
-      toolCall: false,
-      reasoning: false,
-      thinking: false,
-      imageInput: false,
-      pdfInput: false,
-      videoInput: false,
+  config.catalog.providers.internal_gateway = {
+    models: {
+      "review-model": {
+        name: "review-model",
+        status: "stable",
+        source: "manual",
+        capabilities: {
+          toolCall: false,
+          reasoning: false,
+          thinking: false,
+          imageInput: false,
+          pdfInput: false,
+          videoInput: false,
+        },
+        limits: { contextWindow: "auto", maxOutputTokens: null },
+      },
     },
-    contextWindow: "auto",
-    maxOutputTokens: null,
-    temperature: null,
-    topP: null,
-    reasoningEffort: null,
-    thinkingEnabled: false,
-    stream: true,
-    requestTimeoutSec: null,
-    variants: {},
   };
-  const provider = providerForModel(config, "review");
+  config.modelOverrides["internal_gateway/review-model"] = {
+    enabled: true,
+    name: "Review",
+    requestDefaults: { temperature: null, topP: null },
+    requestOptions: {},
+    headers: {},
+  };
+  config.defaultModel = { provider: "internal_gateway", model: "review-model" };
+  const provider = providerForModel(config, config.defaultModel);
   expect(provider).toBeInstanceOf(AnthropicProvider);
   expect(provider).toMatchObject({
     provider: "anthropic-compatible",
@@ -734,6 +739,39 @@ test("durable parallel tool calls are grouped before all tool results", () => {
     },
     { role: "tool", toolCallID: "provider_call_1", content: "a" },
     { role: "tool", toolCallID: "provider_call_2", content: "b" },
+  ]);
+});
+
+test("durable assistant text stays on the tool-call message", () => {
+  expect(
+    contextEntriesToProviderMessages([
+      { id: "assistant", role: "assistant", content: "I will inspect it." },
+      {
+        id: "call",
+        role: "tool_call",
+        content: 'read_file {"path":"a.txt"}',
+        pairID: "provider_call",
+      },
+      {
+        id: "result",
+        role: "tool_result",
+        content: "a",
+        pairID: "provider_call",
+      },
+    ]),
+  ).toEqual([
+    {
+      role: "assistant",
+      content: "I will inspect it.",
+      toolCalls: [
+        {
+          id: "provider_call",
+          name: "read_file",
+          arguments: '{"path":"a.txt"}',
+        },
+      ],
+    },
+    { role: "tool", toolCallID: "provider_call", content: "a" },
   ]);
 });
 

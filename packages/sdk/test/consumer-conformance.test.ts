@@ -1116,7 +1116,6 @@ test("an external integration configures the runtime the way the TUI does", asyn
     // merge landed on disk.
     const applied = await sdk.updateConfig({
       patch: {
-        defaultModel: "from_remote",
         runtime: { maxStepsPerTurn: 7 },
       },
     });
@@ -1127,11 +1126,15 @@ test("an external integration configures the runtime the way the TUI does", asyn
     // back through model catalog/selection members.
     expect(typeof report).toBe("object");
 
+    await sdk.setReasoningEffort("high");
+    expect(await sdk.reasoningEffort()).toBe("high");
+    await sdk.setReasoningEffort();
+    expect(await sdk.reasoningEffort()).toBeUndefined();
+
     // Idempotent by patch: replaying the same patch merges to the same
     // result instead of accumulating.
     const replayed = await sdk.updateConfig({
       patch: {
-        defaultModel: "from_remote",
         runtime: { maxStepsPerTurn: 7 },
       },
     });

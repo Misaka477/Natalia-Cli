@@ -92,19 +92,28 @@ export function createTurnController(input: {
   ) {
     const session = input.sessionFor(sessionID);
     if (!session) return;
-    if (signal?.aborted) throw signal.reason;
-    const [next] = promoteNextQueued(session);
-    if (!next) return;
-    await persistInboxPromotion(sessionID);
-    await admit(
-      sessionID,
-      next.id,
-      next.text,
-      next.attachments,
-      next.resources,
-      next.agents,
-      signal,
-    );
+    while (true) {
+      if (signal?.aborted) throw signal.reason;
+      if (
+        admittedInputs(session).some(
+          (entry) => !entry.promotedAt && entry.delivery === "steer",
+        )
+      )
+        return;
+      const [next] = promoteNextQueued(session);
+      if (!next) return;
+      await persistInboxPromotion(sessionID);
+      if (signal?.aborted) throw signal.reason;
+      await admit(
+        sessionID,
+        next.id,
+        next.text,
+        next.attachments,
+        next.resources,
+        next.agents,
+        signal,
+      );
+    }
   }
 
   async function admit(
@@ -131,8 +140,8 @@ export function createTurnController(input: {
   }
 
   /** Persists the promoted-inbox snapshot (used by the runtime's own submit path). */
-  async function persistPromotion() {
-    await persistInboxPromotion(input.session()?.id ?? "");
+  async function persistPromotion(sessionID = input.session()?.id ?? "") {
+    await persistInboxPromotion(sessionID);
   }
 
   return { drain, drainQueue, admit, persistPromotion };

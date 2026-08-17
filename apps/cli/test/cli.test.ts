@@ -3,7 +3,11 @@ import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { defaultConfigV2, saveConfigFile } from "@natalia/config";
+import {
+  defaultConfigV3,
+  migrateProjectModelConfigToGlobal,
+  saveConfigFile,
+} from "@natalia/config";
 import {
   JsonSessionStore,
   SqliteSessionStore,
@@ -28,6 +32,20 @@ import {
   workGraphLines,
   workspaceFilesystemCommand,
 } from "../src";
+
+async function isolateGlobalModelConfig(root: string) {
+  const globalPath =
+    process.platform === "win32"
+      ? join(root, "natalia-cli", "config.json")
+      : join(root, ".config", "natalia-cli", "config.json");
+  await migrateProjectModelConfigToGlobal(root, { globalPath });
+  return {
+    ...process.env,
+    HOME: root,
+    APPDATA: root,
+    USERPROFILE: root,
+  };
+}
 
 test("CLI Work Graph reader projects only safe nodes and edges", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-cli-workgraph-"));
@@ -76,7 +94,7 @@ test("CLI task validate resolves a workspace task and flow without running it", 
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       permissionProfiles: {
         unattended: { approval: "auto", description: "Task profile" },
       },
@@ -145,7 +163,7 @@ test("CLI flow run requires the profile configured on the flow", async () => {
   await mkdir(join(root, ".natalia", "flows"), { recursive: true });
   await writeFile(
     join(root, ".natalia", "config.json"),
-    JSON.stringify({ version: 2 }),
+    JSON.stringify({ version: 3 }),
   );
   await writeFile(
     join(root, ".natalia", "flows", "review.yaml"),
@@ -177,7 +195,7 @@ test("CLI task run creates a task-scoped episode but never treats turn completio
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       permissionProfiles: {
         unattended: { approval: "auto", description: "Task profile" },
       },
@@ -300,7 +318,7 @@ test("CLI task status reports history without creating an execution", async () =
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       permissionProfiles: {
         unattended: { approval: "auto", description: "Task profile" },
       },
@@ -401,7 +419,7 @@ test("CLI task run enqueues an overlap alert and never runs a second invocation"
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       permissionProfiles: {
         unattended: { approval: "auto", description: "Task profile" },
       },
@@ -573,75 +591,61 @@ test("CLI task run evaluates a claimed module without advancing task success", a
     await writeFile(
       join(root, ".natalia", "config.json"),
       JSON.stringify({
-        version: 2,
+        version: 3,
         providers: {
           local: {
-            type: "openai-compatible",
-            apiKey: "test-key",
-            baseURL: server.url,
+            name: "local",
+            driver: "openai-compatible",
             enabled: true,
-            customHeaders: {},
+            connection: { apiKey: "test-key", baseURL: server.url },
           },
         },
-        models: {
-          execution: {
-            provider: "local",
-            model: "execution-model",
-            enabled: true,
-            capabilities: {
-              toolCall: true,
-              reasoning: false,
-              thinking: false,
-              imageInput: false,
-              videoInput: false,
-              pdfInput: false,
+        catalog: {
+          providers: {
+            local: {
+              models: {
+                "execution-model": {
+                  name: "execution-model",
+                  capabilities: {
+                    toolCall: true,
+                    reasoning: false,
+                    thinking: false,
+                    imageInput: false,
+                    pdfInput: false,
+                    videoInput: false,
+                  },
+                  limits: { contextWindow: "auto", maxOutputTokens: null },
+                },
+                "evaluator-model": {
+                  name: "evaluator-model",
+                  capabilities: {
+                    toolCall: false,
+                    reasoning: false,
+                    thinking: false,
+                    imageInput: false,
+                    pdfInput: false,
+                    videoInput: false,
+                  },
+                  limits: { contextWindow: "auto", maxOutputTokens: null },
+                },
+              },
             },
-            contextWindow: "auto",
-            maxOutputTokens: null,
-            temperature: null,
-            topP: null,
-            reasoningEffort: null,
-            thinkingEnabled: false,
-            stream: true,
-            requestTimeoutSec: null,
-            variants: {},
-          },
-          evaluator: {
-            provider: "local",
-            model: "evaluator-model",
-            enabled: true,
-            capabilities: {
-              toolCall: false,
-              reasoning: false,
-              thinking: false,
-              imageInput: false,
-              videoInput: false,
-              pdfInput: false,
-            },
-            contextWindow: "auto",
-            maxOutputTokens: null,
-            temperature: null,
-            topP: null,
-            reasoningEffort: null,
-            thinkingEnabled: false,
-            stream: true,
-            requestTimeoutSec: null,
-            variants: {},
           },
         },
-        defaultModel: "execution",
+        defaultModel: { provider: "local", model: "execution-model" },
         permissionProfiles: {
           unattended: { approval: "auto", description: "Task profile" },
         },
       }),
     );
+    const env = await isolateGlobalModelConfig(root);
     await writeFile(
       join(root, ".natalia", "flows", "review.yaml"),
       "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n    instructions: Read only the source evidence.\n    minimumConditions:\n      - id: c1\n        text: Read the source evidence\n",
     );
     await writeFile(
       join(root, ".natalia", "tasks", "nightly.yaml"),
-      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: token=raw-task-secret Read the source.\npermissionProfile: unattended\nflow:\n  flowID: flow_review\nevaluator:\n  provider: local\n  model: evaluator\n",
+      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: token=raw-task-secret Read the source.\npermissionProfile: unattended\nflow:\n  flowID: flow_review\nevaluator:\n  provider: local\n  model: evaluator-model\n",
     );
     const child = Bun.spawn(
       [
@@ -654,7 +658,7 @@ test("CLI task run evaluates a claimed module without advancing task success", a
         root,
         "--json",
       ],
-      { cwd: root, stdout: "pipe", stderr: "pipe" },
+      { cwd: root, env, stdout: "pipe", stderr: "pipe" },
     );
     await child.exited;
     expect(child.exitCode).toBe(0);
@@ -840,75 +844,61 @@ test("CLI task run completes a two-module flow under distinct episodes and advan
     await writeFile(
       join(root, ".natalia", "config.json"),
       JSON.stringify({
-        version: 2,
+        version: 3,
         providers: {
           local: {
-            type: "openai-compatible",
-            apiKey: "test-key",
-            baseURL: server.url,
+            name: "local",
+            driver: "openai-compatible",
             enabled: true,
-            customHeaders: {},
+            connection: { apiKey: "test-key", baseURL: server.url },
           },
         },
-        models: {
-          execution: {
-            provider: "local",
-            model: "execution-model",
-            enabled: true,
-            capabilities: {
-              toolCall: true,
-              reasoning: false,
-              thinking: false,
-              imageInput: false,
-              videoInput: false,
-              pdfInput: false,
+        catalog: {
+          providers: {
+            local: {
+              models: {
+                "execution-model": {
+                  name: "execution-model",
+                  capabilities: {
+                    toolCall: true,
+                    reasoning: false,
+                    thinking: false,
+                    imageInput: false,
+                    pdfInput: false,
+                    videoInput: false,
+                  },
+                  limits: { contextWindow: "auto", maxOutputTokens: null },
+                },
+                "evaluator-model": {
+                  name: "evaluator-model",
+                  capabilities: {
+                    toolCall: false,
+                    reasoning: false,
+                    thinking: false,
+                    imageInput: false,
+                    pdfInput: false,
+                    videoInput: false,
+                  },
+                  limits: { contextWindow: "auto", maxOutputTokens: null },
+                },
+              },
             },
-            contextWindow: "auto",
-            maxOutputTokens: null,
-            temperature: null,
-            topP: null,
-            reasoningEffort: null,
-            thinkingEnabled: false,
-            stream: true,
-            requestTimeoutSec: null,
-            variants: {},
-          },
-          evaluator: {
-            provider: "local",
-            model: "evaluator-model",
-            enabled: true,
-            capabilities: {
-              toolCall: false,
-              reasoning: false,
-              thinking: false,
-              imageInput: false,
-              videoInput: false,
-              pdfInput: false,
-            },
-            contextWindow: "auto",
-            maxOutputTokens: null,
-            temperature: null,
-            topP: null,
-            reasoningEffort: null,
-            thinkingEnabled: false,
-            stream: true,
-            requestTimeoutSec: null,
-            variants: {},
           },
         },
-        defaultModel: "execution",
+        defaultModel: { provider: "local", model: "execution-model" },
         permissionProfiles: {
           unattended: { approval: "auto", description: "Task profile" },
         },
       }),
     );
+    const env = await isolateGlobalModelConfig(root);
     await writeFile(
       join(root, ".natalia", "flows", "review.yaml"),
       "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n    instructions: Read only the source evidence.\n    minimumConditions:\n      - id: c1\n        text: Read the source evidence\n  - id: report\n    type: read_search\n    displayName: Report\n    instructions: Produce the final report.\n    minimumConditions:\n      - id: c2\n        text: Produce the final report\n",
     );
     await writeFile(
       join(root, ".natalia", "tasks", "nightly.yaml"),
-      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Review the source and produce the report.\npermissionProfile: unattended\nflow:\n  flowID: flow_review\nevaluator:\n  provider: local\n  model: evaluator\n",
+      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Review the source and produce the report.\npermissionProfile: unattended\nflow:\n  flowID: flow_review\nevaluator:\n  provider: local\n  model: evaluator-model\n",
     );
     const child = Bun.spawn(
       [
@@ -921,7 +911,7 @@ test("CLI task run completes a two-module flow under distinct episodes and advan
         root,
         "--json",
       ],
-      { cwd: root, stdout: "pipe", stderr: "pipe" },
+      { cwd: root, env, stdout: "pipe", stderr: "pipe" },
     );
     await child.exited;
     expect(child.exitCode).toBe(0);
@@ -1087,75 +1077,61 @@ test("CLI task run stops the module batch when an evaluator blocks the first mod
     await writeFile(
       join(root, ".natalia", "config.json"),
       JSON.stringify({
-        version: 2,
+        version: 3,
         providers: {
           local: {
-            type: "openai-compatible",
-            apiKey: "test-key",
-            baseURL: server.url,
+            name: "local",
+            driver: "openai-compatible",
             enabled: true,
-            customHeaders: {},
+            connection: { apiKey: "test-key", baseURL: server.url },
           },
         },
-        models: {
-          execution: {
-            provider: "local",
-            model: "execution-model",
-            enabled: true,
-            capabilities: {
-              toolCall: true,
-              reasoning: false,
-              thinking: false,
-              imageInput: false,
-              videoInput: false,
-              pdfInput: false,
+        catalog: {
+          providers: {
+            local: {
+              models: {
+                "execution-model": {
+                  name: "execution-model",
+                  capabilities: {
+                    toolCall: true,
+                    reasoning: false,
+                    thinking: false,
+                    imageInput: false,
+                    pdfInput: false,
+                    videoInput: false,
+                  },
+                  limits: { contextWindow: "auto", maxOutputTokens: null },
+                },
+                "evaluator-model": {
+                  name: "evaluator-model",
+                  capabilities: {
+                    toolCall: false,
+                    reasoning: false,
+                    thinking: false,
+                    imageInput: false,
+                    pdfInput: false,
+                    videoInput: false,
+                  },
+                  limits: { contextWindow: "auto", maxOutputTokens: null },
+                },
+              },
             },
-            contextWindow: "auto",
-            maxOutputTokens: null,
-            temperature: null,
-            topP: null,
-            reasoningEffort: null,
-            thinkingEnabled: false,
-            stream: true,
-            requestTimeoutSec: null,
-            variants: {},
-          },
-          evaluator: {
-            provider: "local",
-            model: "evaluator-model",
-            enabled: true,
-            capabilities: {
-              toolCall: false,
-              reasoning: false,
-              thinking: false,
-              imageInput: false,
-              videoInput: false,
-              pdfInput: false,
-            },
-            contextWindow: "auto",
-            maxOutputTokens: null,
-            temperature: null,
-            topP: null,
-            reasoningEffort: null,
-            thinkingEnabled: false,
-            stream: true,
-            requestTimeoutSec: null,
-            variants: {},
           },
         },
-        defaultModel: "execution",
+        defaultModel: { provider: "local", model: "execution-model" },
         permissionProfiles: {
           unattended: { approval: "auto", description: "Task profile" },
         },
       }),
     );
+    const env = await isolateGlobalModelConfig(root);
     await writeFile(
       join(root, ".natalia", "flows", "review.yaml"),
       "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n    instructions: Read only the source evidence.\n    minimumConditions:\n      - id: c1\n        text: Read the source evidence\n  - id: report\n    type: report_output\n    displayName: Report\n    instructions: Produce the final report.\n    minimumConditions:\n      - id: c2\n        text: Produce the final report\n",
     );
     await writeFile(
       join(root, ".natalia", "tasks", "nightly.yaml"),
-      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Review the source and produce the report.\npermissionProfile: unattended\nflow:\n  flowID: flow_review\nevaluator:\n  provider: local\n  model: evaluator\n",
+      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Review the source and produce the report.\npermissionProfile: unattended\nflow:\n  flowID: flow_review\nevaluator:\n  provider: local\n  model: evaluator-model\n",
     );
     const child = Bun.spawn(
       [
@@ -1168,7 +1144,7 @@ test("CLI task run stops the module batch when an evaluator blocks the first mod
         root,
         "--json",
       ],
-      { cwd: root, stdout: "pipe", stderr: "pipe" },
+      { cwd: root, env, stdout: "pipe", stderr: "pipe" },
     );
     await child.exited;
     expect(child.exitCode).toBe(1);
@@ -1323,75 +1299,61 @@ test("CLI task run retries a blocked first attempt then succeeds under fresh mod
     await writeFile(
       join(root, ".natalia", "config.json"),
       JSON.stringify({
-        version: 2,
+        version: 3,
         providers: {
           local: {
-            type: "openai-compatible",
-            apiKey: "test-key",
-            baseURL: server.url,
+            name: "local",
+            driver: "openai-compatible",
             enabled: true,
-            customHeaders: {},
+            connection: { apiKey: "test-key", baseURL: server.url },
           },
         },
-        models: {
-          execution: {
-            provider: "local",
-            model: "execution-model",
-            enabled: true,
-            capabilities: {
-              toolCall: true,
-              reasoning: false,
-              thinking: false,
-              imageInput: false,
-              videoInput: false,
-              pdfInput: false,
+        catalog: {
+          providers: {
+            local: {
+              models: {
+                "execution-model": {
+                  name: "execution-model",
+                  capabilities: {
+                    toolCall: true,
+                    reasoning: false,
+                    thinking: false,
+                    imageInput: false,
+                    pdfInput: false,
+                    videoInput: false,
+                  },
+                  limits: { contextWindow: "auto", maxOutputTokens: null },
+                },
+                "evaluator-model": {
+                  name: "evaluator-model",
+                  capabilities: {
+                    toolCall: false,
+                    reasoning: false,
+                    thinking: false,
+                    imageInput: false,
+                    pdfInput: false,
+                    videoInput: false,
+                  },
+                  limits: { contextWindow: "auto", maxOutputTokens: null },
+                },
+              },
             },
-            contextWindow: "auto",
-            maxOutputTokens: null,
-            temperature: null,
-            topP: null,
-            reasoningEffort: null,
-            thinkingEnabled: false,
-            stream: true,
-            requestTimeoutSec: null,
-            variants: {},
-          },
-          evaluator: {
-            provider: "local",
-            model: "evaluator-model",
-            enabled: true,
-            capabilities: {
-              toolCall: false,
-              reasoning: false,
-              thinking: false,
-              imageInput: false,
-              videoInput: false,
-              pdfInput: false,
-            },
-            contextWindow: "auto",
-            maxOutputTokens: null,
-            temperature: null,
-            topP: null,
-            reasoningEffort: null,
-            thinkingEnabled: false,
-            stream: true,
-            requestTimeoutSec: null,
-            variants: {},
           },
         },
-        defaultModel: "execution",
+        defaultModel: { provider: "local", model: "execution-model" },
         permissionProfiles: {
           unattended: { approval: "auto", description: "Task profile" },
         },
       }),
     );
+    const env = await isolateGlobalModelConfig(root);
     await writeFile(
       join(root, ".natalia", "flows", "review.yaml"),
       "kind: natalia-flow\nversion: 1\nflowID: flow_review\ndisplayName: Review\nmodules:\n  - id: read\n    type: read_search\n    displayName: Read\n    instructions: Read only the source evidence.\n    minimumConditions:\n      - id: c1\n        text: Read the source evidence\n",
     );
     await writeFile(
       join(root, ".natalia", "tasks", "nightly.yaml"),
-      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Review the source and produce the report.\npermissionProfile: unattended\nretry: once\nalerts:\n  - channel: journal\n    on:\n      - succeeded\n      - attempt_failed\nflow:\n  flowID: flow_review\nevaluator:\n  provider: local\n  model: evaluator\n",
+      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Review the source and produce the report.\npermissionProfile: unattended\nretry: once\nalerts:\n  - channel: journal\n    on:\n      - succeeded\n      - attempt_failed\nflow:\n  flowID: flow_review\nevaluator:\n  provider: local\n  model: evaluator-model\n",
     );
     const child = Bun.spawn(
       [
@@ -1404,7 +1366,7 @@ test("CLI task run retries a blocked first attempt then succeeds under fresh mod
         root,
         "--json",
       ],
-      { cwd: root, stdout: "pipe", stderr: "pipe" },
+      { cwd: root, env, stdout: "pipe", stderr: "pipe" },
     );
     await child.exited;
     expect(child.exitCode).toBe(0);
@@ -1494,7 +1456,7 @@ test("CLI task run rejects non-auto profiles before creating execution state", a
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       permissionProfiles: {
         attended: { approval: "ask", description: "Attended" },
       },
@@ -1774,36 +1736,33 @@ test("CLI session helpers expose safe metadata and local mutations", async () =>
 
 test("CLI doctor reports safe config/model/session availability", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-cli-doctor-"));
-  const config = defaultConfigV2();
+  const config = defaultConfigV3();
   config.providers.local = {
-    type: "openai",
-    apiKey: "local-key",
+    name: "local",
+    driver: "openai",
     enabled: true,
-    customHeaders: {},
+    connection: { apiKey: "local-key" },
+    requestDefaults: { stream: true, headers: {}, options: {} },
   };
-  config.models.local = {
-    provider: "local",
-    model: "model",
-    enabled: true,
-    capabilities: {
-      toolCall: true,
-      reasoning: true,
-      thinking: true,
-      imageInput: false,
-      videoInput: false,
-      pdfInput: false,
+  config.catalog.providers.local = {
+    models: {
+      model: {
+        name: "model",
+        status: "stable",
+        source: "manual",
+        capabilities: {
+          toolCall: true,
+          reasoning: true,
+          thinking: true,
+          imageInput: false,
+          pdfInput: false,
+          videoInput: false,
+        },
+        limits: { contextWindow: "auto", maxOutputTokens: null },
+      },
     },
-    contextWindow: "auto",
-    maxOutputTokens: null,
-    temperature: null,
-    topP: null,
-    reasoningEffort: null,
-    thinkingEnabled: true,
-    stream: true,
-    requestTimeoutSec: null,
-    variants: {},
   };
-  config.defaultModel = "local";
+  config.defaultModel = { provider: "local", model: "model" };
   const path = join(root, "config.json");
   await saveConfigFile(config, path);
   expect(
@@ -1827,7 +1786,7 @@ test("CLI doctor reports safe config/model/session availability", async () => {
 test("CLI doctor states that shell and terminal egress is not bounded here", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-cli-doctor-egress-"));
   const path = join(root, "config.json");
-  await saveConfigFile(defaultConfigV2(), path);
+  await saveConfigFile(defaultConfigV3(), path);
   const child = Bun.spawnSync(
     [
       process.execPath,
@@ -2035,63 +1994,48 @@ test("CLI task run files one issue for a finding and updates it the next night",
     await writeFile(
       join(root, ".natalia", "config.json"),
       JSON.stringify({
-        version: 2,
+        version: 3,
         providers: {
           local: {
-            type: "openai-compatible",
-            apiKey: "test-key",
-            baseURL: provider.url,
+            name: "local",
+            driver: "openai-compatible",
             enabled: true,
-            customHeaders: {},
+            connection: { apiKey: "test-key", baseURL: provider.url },
           },
         },
-        models: {
-          execution: {
-            provider: "local",
-            model: "execution-model",
-            enabled: true,
-            capabilities: {
-              toolCall: true,
-              reasoning: false,
-              thinking: false,
-              imageInput: false,
-              videoInput: false,
-              pdfInput: false,
+        catalog: {
+          providers: {
+            local: {
+              models: {
+                "execution-model": {
+                  name: "execution-model",
+                  capabilities: {
+                    toolCall: true,
+                    reasoning: false,
+                    thinking: false,
+                    imageInput: false,
+                    pdfInput: false,
+                    videoInput: false,
+                  },
+                  limits: { contextWindow: "auto", maxOutputTokens: null },
+                },
+                "evaluator-model": {
+                  name: "evaluator-model",
+                  capabilities: {
+                    toolCall: false,
+                    reasoning: false,
+                    thinking: false,
+                    imageInput: false,
+                    pdfInput: false,
+                    videoInput: false,
+                  },
+                  limits: { contextWindow: "auto", maxOutputTokens: null },
+                },
+              },
             },
-            contextWindow: "auto",
-            maxOutputTokens: null,
-            temperature: null,
-            topP: null,
-            reasoningEffort: null,
-            thinkingEnabled: false,
-            stream: true,
-            requestTimeoutSec: null,
-            variants: {},
-          },
-          evaluator: {
-            provider: "local",
-            model: "evaluator-model",
-            enabled: true,
-            capabilities: {
-              toolCall: false,
-              reasoning: false,
-              thinking: false,
-              imageInput: false,
-              videoInput: false,
-              pdfInput: false,
-            },
-            contextWindow: "auto",
-            maxOutputTokens: null,
-            temperature: null,
-            topP: null,
-            reasoningEffort: null,
-            thinkingEnabled: false,
-            stream: true,
-            requestTimeoutSec: null,
-            variants: {},
           },
         },
-        defaultModel: "execution",
+        defaultModel: { provider: "local", model: "execution-model" },
         permissionProfiles: {
           unattended: { approval: "auto", description: "Task profile" },
         },
@@ -2107,13 +2051,14 @@ test("CLI task run files one issue for a finding and updates it the next night",
         },
       }),
     );
+    const env = await isolateGlobalModelConfig(root);
     await writeFile(
       join(root, ".natalia", "flows", "scan.yaml"),
       "kind: natalia-flow\nversion: 1\nflowID: flow_scan\ndisplayName: Scan\nmodules:\n  - id: report\n    type: report_output\n    displayName: Report\n    instructions: Report the finding to the configured issue target.\n    minimumConditions:\n      - id: c1\n        text: File or update the finding\n",
     );
     await writeFile(
       join(root, ".natalia", "tasks", "nightly.yaml"),
-      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Report the nightly finding.\npermissionProfile: unattended\nissueTarget: logs\nflow:\n  flowID: flow_scan\nevaluator:\n  provider: local\n  model: evaluator\n",
+      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Report the nightly finding.\npermissionProfile: unattended\nissueTarget: logs\nflow:\n  flowID: flow_scan\nevaluator:\n  provider: local\n  model: evaluator-model\n",
     );
     // The forge and provider are served in this process, so the child must run
     // asynchronously: a synchronous spawn would block the event loop that has
@@ -2130,7 +2075,7 @@ test("CLI task run files one issue for a finding and updates it the next night",
           root,
           "--json",
         ],
-        { cwd: root, stdout: "pipe", stderr: "pipe" },
+        { cwd: root, env, stdout: "pipe", stderr: "pipe" },
       );
       const stdout = await new Response(child.stdout).text();
       const stderr = await new Response(child.stderr).text();
@@ -2303,63 +2248,48 @@ test("CLI task run consumes only new log content and never skips it after a fail
     await writeFile(
       join(root, ".natalia", "config.json"),
       JSON.stringify({
-        version: 2,
+        version: 3,
         providers: {
           local: {
-            type: "openai-compatible",
-            apiKey: "test-key",
-            baseURL: provider.url,
+            name: "local",
+            driver: "openai-compatible",
             enabled: true,
-            customHeaders: {},
+            connection: { apiKey: "test-key", baseURL: provider.url },
           },
         },
-        models: {
-          execution: {
-            provider: "local",
-            model: "execution-model",
-            enabled: true,
-            capabilities: {
-              toolCall: true,
-              reasoning: false,
-              thinking: false,
-              imageInput: false,
-              videoInput: false,
-              pdfInput: false,
+        catalog: {
+          providers: {
+            local: {
+              models: {
+                "execution-model": {
+                  name: "execution-model",
+                  capabilities: {
+                    toolCall: true,
+                    reasoning: false,
+                    thinking: false,
+                    imageInput: false,
+                    pdfInput: false,
+                    videoInput: false,
+                  },
+                  limits: { contextWindow: "auto", maxOutputTokens: null },
+                },
+                "evaluator-model": {
+                  name: "evaluator-model",
+                  capabilities: {
+                    toolCall: false,
+                    reasoning: false,
+                    thinking: false,
+                    imageInput: false,
+                    pdfInput: false,
+                    videoInput: false,
+                  },
+                  limits: { contextWindow: "auto", maxOutputTokens: null },
+                },
+              },
             },
-            contextWindow: "auto",
-            maxOutputTokens: null,
-            temperature: null,
-            topP: null,
-            reasoningEffort: null,
-            thinkingEnabled: false,
-            stream: true,
-            requestTimeoutSec: null,
-            variants: {},
-          },
-          evaluator: {
-            provider: "local",
-            model: "evaluator-model",
-            enabled: true,
-            capabilities: {
-              toolCall: false,
-              reasoning: false,
-              thinking: false,
-              imageInput: false,
-              videoInput: false,
-              pdfInput: false,
-            },
-            contextWindow: "auto",
-            maxOutputTokens: null,
-            temperature: null,
-            topP: null,
-            reasoningEffort: null,
-            thinkingEnabled: false,
-            stream: true,
-            requestTimeoutSec: null,
-            variants: {},
           },
         },
-        defaultModel: "execution",
+        defaultModel: { provider: "local", model: "execution-model" },
         permissionProfiles: {
           unattended: { approval: "auto", description: "Task profile" },
         },
@@ -2368,13 +2298,14 @@ test("CLI task run consumes only new log content and never skips it after a fail
         },
       }),
     );
+    const env = await isolateGlobalModelConfig(root);
     await writeFile(
       join(root, ".natalia", "flows", "scan.yaml"),
       "kind: natalia-flow\nversion: 1\nflowID: flow_scan\ndisplayName: Scan\nmodules:\n  - id: scan\n    type: read_search\n    displayName: Scan\n    instructions: Read the new log content.\n    minimumConditions:\n      - id: c1\n        text: Read the new log content\n",
     );
     await writeFile(
       join(root, ".natalia", "tasks", "nightly.yaml"),
-      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Scan the log.\npermissionProfile: unattended\ndataSource: app\nflow:\n  flowID: flow_scan\nevaluator:\n  provider: local\n  model: evaluator\n",
+      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Scan the log.\npermissionProfile: unattended\ndataSource: app\nflow:\n  flowID: flow_scan\nevaluator:\n  provider: local\n  model: evaluator-model\n",
     );
     const runTask = async () => {
       const child = Bun.spawn(
@@ -2388,7 +2319,7 @@ test("CLI task run consumes only new log content and never skips it after a fail
           root,
           "--json",
         ],
-        { cwd: root, stdout: "pipe", stderr: "pipe" },
+        { cwd: root, env, stdout: "pipe", stderr: "pipe" },
       );
       const stdout = await new Response(child.stdout).text();
       await child.exited;
@@ -2605,21 +2536,48 @@ test("CLI task run follows a timestamp watermark through a rotation and a failur
     await writeFile(
       join(root, ".natalia", "config.json"),
       JSON.stringify({
-        version: 2,
+        version: 3,
         providers: {
           local: {
-            type: "openai-compatible",
-            apiKey: "test-key",
-            baseURL: provider.url,
+            name: "local",
+            driver: "openai-compatible",
             enabled: true,
-            customHeaders: {},
+            connection: { apiKey: "test-key", baseURL: provider.url },
           },
         },
-        models: {
-          execution: model("execution-model"),
-          evaluator: model("evaluator-model"),
+        catalog: {
+          providers: {
+            local: {
+              models: {
+                "execution-model": {
+                  name: "execution-model",
+                  capabilities: {
+                    toolCall: true,
+                    reasoning: false,
+                    thinking: false,
+                    imageInput: false,
+                    pdfInput: false,
+                    videoInput: false,
+                  },
+                  limits: { contextWindow: "auto", maxOutputTokens: null },
+                },
+                "evaluator-model": {
+                  name: "evaluator-model",
+                  capabilities: {
+                    toolCall: false,
+                    reasoning: false,
+                    thinking: false,
+                    imageInput: false,
+                    pdfInput: false,
+                    videoInput: false,
+                  },
+                  limits: { contextWindow: "auto", maxOutputTokens: null },
+                },
+              },
+            },
+          },
         },
-        defaultModel: "execution",
+        defaultModel: { provider: "local", model: "execution-model" },
         permissionProfiles: {
           unattended: { approval: "auto", description: "Task profile" },
         },
@@ -2633,13 +2591,14 @@ test("CLI task run follows a timestamp watermark through a rotation and a failur
         },
       }),
     );
+    const env = await isolateGlobalModelConfig(root);
     await writeFile(
       join(root, ".natalia", "flows", "scan.yaml"),
       "kind: natalia-flow\nversion: 1\nflowID: flow_scan\ndisplayName: Scan\nmodules:\n  - id: scan\n    type: read_search\n    displayName: Scan\n    instructions: Read the new entries.\n    minimumConditions:\n      - id: c1\n        text: Read the new entries\n",
     );
     await writeFile(
       join(root, ".natalia", "tasks", "nightly.yaml"),
-      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Scan the entries.\npermissionProfile: unattended\ndataSource: app\nflow:\n  flowID: flow_scan\nevaluator:\n  provider: local\n  model: evaluator\n",
+      "kind: natalia-task\nversion: 1\ntaskID: task_nightly\ndisplayName: Nightly\nschedule: daily 01:00\nprompt: Scan the entries.\npermissionProfile: unattended\ndataSource: app\nflow:\n  flowID: flow_scan\nevaluator:\n  provider: local\n  model: evaluator-model\n",
     );
     const runTask = async () => {
       const child = Bun.spawn(
@@ -2653,7 +2612,7 @@ test("CLI task run follows a timestamp watermark through a rotation and a failur
           root,
           "--json",
         ],
-        { cwd: root, stdout: "pipe", stderr: "pipe" },
+        { cwd: root, env, stdout: "pipe", stderr: "pipe" },
       );
       const stdout = await new Response(child.stdout).text();
       await child.exited;
@@ -2713,7 +2672,7 @@ test("CLI task validate rejects a timestamp source without a field name", async 
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       permissionProfiles: {
         unattended: { approval: "auto", description: "Task profile" },
       },
@@ -2760,42 +2719,38 @@ test("the shipped unattended examples validate against their example config", as
     join(root, ".natalia", "config.json"),
     JSON.stringify({
       ...config,
-      models: {
-        evaluator: {
-          provider: "local",
-          model: "evaluator-model",
-          enabled: true,
-          capabilities: {
-            toolCall: false,
-            reasoning: false,
-            thinking: false,
-            imageInput: false,
-            videoInput: false,
-            pdfInput: false,
-          },
-          contextWindow: "auto",
-          maxOutputTokens: null,
-          temperature: null,
-          topP: null,
-          reasoningEffort: null,
-          thinkingEnabled: false,
-          stream: true,
-          requestTimeoutSec: null,
-          variants: {},
-        },
-      },
       providers: {
         local: {
-          type: "openai-compatible",
-          apiKey: "test-key",
-          baseURL: "http://127.0.0.1:1",
+          name: "local",
+          driver: "openai-compatible",
           enabled: true,
-          customHeaders: {},
+          connection: { apiKey: "test-key", baseURL: "http://127.0.0.1:1" },
         },
       },
-      defaultModel: "evaluator",
+      catalog: {
+        providers: {
+          local: {
+            models: {
+              evaluator: {
+                name: "evaluator",
+                capabilities: {
+                  toolCall: false,
+                  reasoning: false,
+                  thinking: false,
+                  imageInput: false,
+                  videoInput: false,
+                  pdfInput: false,
+                },
+                limits: { contextWindow: "auto", maxOutputTokens: null },
+              },
+            },
+          },
+        },
+      },
+      defaultModel: { provider: "local", model: "evaluator" },
     }),
   );
+  const env = await isolateGlobalModelConfig(root);
   for (const flow of [
     "log-triage.yaml",
     "code-quality.yaml",
@@ -2858,7 +2813,7 @@ test("the shipped unattended examples validate against their example config", as
         root,
         "--json",
       ],
-      { cwd: root, stdout: "pipe", stderr: "pipe" },
+      { cwd: root, env, stdout: "pipe", stderr: "pipe" },
     );
     expect(new TextDecoder().decode(child.stderr)).toBe("");
     expect(child.exitCode).toBe(0);
@@ -2887,7 +2842,7 @@ test("the shipped unattended examples validate against their example config", as
         root,
         "--json",
       ],
-      { cwd: root, stdout: "pipe", stderr: "pipe" },
+      { cwd: root, env, stdout: "pipe", stderr: "pipe" },
     );
     expect(new TextDecoder().decode(preview.stderr)).toBe("");
     expect(preview.exitCode).toBe(0);
@@ -2933,7 +2888,7 @@ test("task validate fails closed on a dangling configuration reference", async (
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       permissionProfiles: {
         unattended: { approval: "auto", description: "Task profile" },
         interactive: { approval: "ask", description: "Interactive" },
@@ -3102,7 +3057,7 @@ test("CLI task timer generates reviewable system units and writes back the unit 
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       permissionProfiles: {
         unattended: { approval: "auto", description: "Task profile" },
       },
@@ -3180,7 +3135,7 @@ test("CLI task run delivers the terminal alert to a configured webhook", async (
     await writeFile(
       join(root, ".natalia", "config.json"),
       JSON.stringify({
-        version: 2,
+        version: 3,
         permissionProfiles: {
           unattended: { approval: "auto", description: "Task profile" },
         },
@@ -3287,7 +3242,7 @@ test("a task refuses to run under a configuration that was silently ignored", as
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       permissionProfiles: {
         unattended: {
           approval: "auto",
@@ -3340,7 +3295,7 @@ test("a flow stage with no minimum completion condition is rejected", async () =
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       permissionProfiles: {
         unattended: { approval: "auto", description: "Task profile" },
       },
@@ -3381,7 +3336,7 @@ test("CLI task preview shows the effective permissions of each stage", async () 
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       permissionProfiles: {
         unattended: {
           approval: "auto",
@@ -3484,7 +3439,7 @@ test("a flow stage that the profile cannot run is rejected before it is schedule
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       permissionProfiles: {
         readonly_tasks: {
           approval: "auto",
@@ -3725,7 +3680,7 @@ test("CLI task list shows every task and fails when one is broken", async () => 
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       permissionProfiles: {
         unattended: { approval: "auto", description: "Task profile" },
       },
@@ -3792,7 +3747,7 @@ test("a bare alert channel stays silent on success and on a retried attempt", as
   await writeFile(
     join(root, ".natalia", "config.json"),
     JSON.stringify({
-      version: 2,
+      version: 3,
       permissionProfiles: {
         unattended: { approval: "auto", description: "Task profile" },
       },

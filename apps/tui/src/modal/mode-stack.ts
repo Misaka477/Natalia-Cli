@@ -178,10 +178,13 @@ export function registerNataliaKeymap(
     offInputBindings();
     offBackspace();
     offEscape();
-    offLeader();
     offBaseLayout();
     offCommaBindings();
     modeStack.dispose();
+    // Solid removes bindings during renderer teardown. Let those `<leader>`
+    // layers disappear before unregistering its token, or the keymap recompiles
+    // a live layer against a missing token and reports a false warning.
+    queueMicrotask(offLeader);
   };
 }
 

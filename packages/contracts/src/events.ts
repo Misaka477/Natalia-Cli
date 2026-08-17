@@ -243,10 +243,13 @@ type RuntimeEventData =
       byteLength: number;
       lineCount: number;
       sha256: string;
+      /** Admission intent. Queued turns are durable but have not started yet. */
+      delivery?: "steer" | "queue";
       attachments?: LocalAttachment[];
       resources?: PromptResourceMention[];
       agents?: PromptAgentMention[];
     }
+  | { type: "turn.started"; id: string }
   | { type: "turn.cancelled"; id: string; reason: string }
   | { type: "turn.paused"; id: string; reason: string }
   | { type: "turn.resumed"; id: string }
@@ -280,7 +283,8 @@ type RuntimeEventData =
       operation: StepRetryOperation;
       step: number;
       attempt: number;
-      maxAttempts: number;
+      /** Null means the retry budget is unlimited. */
+      maxAttempts: number | null;
       waitMs: number;
       reason: ErrorKind;
       statusCode?: number;
@@ -298,7 +302,8 @@ type RuntimeEventData =
       operation: StepRetryOperation;
       step: number;
       attempts: number;
-      maxAttempts: number;
+      /** Null means the retry budget is unlimited. */
+      maxAttempts: number | null;
       reason: ErrorKind;
       statusCode?: number;
       message: string;
@@ -1087,6 +1092,8 @@ type RuntimeEventData =
 export type RuntimeEvent = RuntimeEventData & {
   episodeID?: EpisodeID;
   sessionID?: SessionID;
+  /** Owning subagent for events projected into a child conversation. */
+  agentID?: string;
 };
 
 export type SubmittedTurn = Extract<RuntimeEvent, { type: "turn.submitted" }>;
@@ -1238,6 +1245,12 @@ export type RuntimeModelSelection = {
   modelID?: string;
   variant?: string;
 };
+export type RuntimeReasoningEffort =
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh";
 export type RuntimeAgentCatalogEntry = {
   name: string;
   description: string;
@@ -1667,6 +1680,9 @@ export type RuntimeClient = {
   modelCatalog?(): Promise<RuntimeModelCatalogEntry[]>;
   modelSelection?(): Promise<RuntimeModelSelection>;
   selectModel?(modelID?: string, variant?: string): Promise<void>;
+  /** A session-local Composer override for subsequent provider requests. */
+  reasoningEffort?(): Promise<RuntimeReasoningEffort | undefined>;
+  setReasoningEffort?(effort?: RuntimeReasoningEffort): Promise<void>;
   skills?(): Promise<RuntimeSkillCatalogEntry[]>;
   workspaceFiles?(input?: {
     query?: string;

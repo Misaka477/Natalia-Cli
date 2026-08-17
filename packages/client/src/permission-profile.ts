@@ -1,5 +1,5 @@
 import { readdir } from "node:fs/promises";
-import type { ConfigV2 } from "@natalia/contracts";
+import type { ConfigV3 } from "@natalia/contracts";
 import {
   isKnownModuleTool,
   knownModuleTools,
@@ -48,7 +48,7 @@ export async function permissionProfileUsage(input: {
  * when it is the last profile left.
  */
 export function permissionProfileRemovalProblem(input: {
-  config: ConfigV2;
+  config: ConfigV3;
   name: string;
   usage?: PermissionProfileUsage;
 }): string | undefined {
@@ -65,10 +65,10 @@ export function permissionProfileRemovalProblem(input: {
 }
 
 export function configWithoutPermissionProfile(input: {
-  config: ConfigV2;
+  config: ConfigV3;
   name: string;
   usage?: PermissionProfileUsage;
-}): ConfigV2 {
+}): ConfigV3 {
   const problem = permissionProfileRemovalProblem(input);
   if (problem) throw new Error(problem);
   const profiles = { ...input.config.permissionProfiles };

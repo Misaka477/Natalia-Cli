@@ -14,7 +14,9 @@ import {
   type StreamingProvider,
 } from "@natalia/runtime";
 import type { AgentDefinition, AgentRegistry } from "@natalia/agent";
+import { resolveEffectiveModel } from "@natalia/config";
 import type { resolveConfig } from "@natalia/config";
+import { modelRefKey } from "@natalia/contracts";
 import {
   promoteSteers,
   type DurableInFlightOperation,
@@ -451,7 +453,7 @@ export function createProviderRunner(input: {
     const capabilities = activeModelCapabilities();
     const output = await runWithRetry(
       { id, operation: "llm_step", step },
-      async () => {
+      async ({ attempt }) => {
         await input.setInFlightOperation({
           kind: "provider_dispatch",
           turnID: id,
@@ -461,6 +463,7 @@ export function createProviderRunner(input: {
           assistant: string;
           thinking: string;
           calls: ProviderToolCall[];
+          usage?: ProviderUsage;
         } = {
           assistant: "",
           thinking: "",
@@ -477,26 +480,41 @@ export function createProviderRunner(input: {
           })) {
             if (chunk.type === "thinking") {
               result.thinking += chunk.text;
-              input.publish({ type: "thinking.delta", id, text: chunk.text });
+              input.publish({
+                type: "thinking.delta",
+                id,
+                text: chunk.text,
+                attempt,
+              });
             }
             if (chunk.type === "content") {
               result.assistant += chunk.text;
-              input.publish({ type: "content.delta", id, text: chunk.text });
+              input.publish({
+                type: "content.delta",
+                id,
+                text: chunk.text,
+                attempt,
+              });
             }
             if (chunk.type === "tool_call") result.calls.push(...chunk.calls);
             if (chunk.type === "usage")
-              input.setLastProviderUsage({
+              result.usage = {
                 inputTokens: chunk.inputTokens,
                 outputTokens: chunk.outputTokens,
-              });
+              };
           }
         } finally {
           await input.setInFlightOperation(undefined);
         }
         return result;
       },
-      { onEvent: input.publish, policy: input.retryPolicy() },
+      {
+        onEvent: input.publish,
+        policy: input.retryPolicy(),
+        signal: input.activeAbort()?.signal,
+      },
     );
+    if (output.usage) input.setLastProviderUsage(output.usage);
     if (output.thinking)
       input.publish({ type: "thinking.done", id, text: output.thinking });
     if (output.assistant)
@@ -522,21 +540,25 @@ export function createProviderRunner(input: {
   }
 
   function activeModelCapabilities() {
-    const modelID =
+    const config = input.tsRuntimeConfig();
+    const candidate =
       input.selectedAgent()?.model ??
       input.selectedModel()?.modelID ??
-      input.tsRuntimeConfig()?.defaultModel;
-    const config = input.tsRuntimeConfig();
-    return modelID && config?.models[modelID]
-      ? config.models[modelID].capabilities
-      : {
-          toolCall: true,
-          reasoning: true,
-          thinking: true,
-          imageInput: false,
-          pdfInput: false,
-          videoInput: false,
-        };
+      (config?.defaultModel ? modelRefKey(config.defaultModel) : undefined);
+    const effective =
+      candidate && config
+        ? resolveEffectiveModel(config, candidate)
+        : undefined;
+    return (
+      effective?.capabilities ?? {
+        toolCall: true,
+        reasoning: true,
+        thinking: true,
+        imageInput: false,
+        pdfInput: false,
+        videoInput: false,
+      }
+    );
   }
 
   async function runProviderStepWithRecovery(
@@ -562,7 +584,7 @@ export function createProviderRunner(input: {
       const compacted = await compactContext(
         ledger,
         input.provider()
-          ? providerCompactor(input.provider()!)
+          ? providerCompactor(input.provider()!, input.activeAbort()?.signal)
           : extractiveCompactor(),
         {
           id: `${id}:context-limit`,
@@ -574,6 +596,10 @@ export function createProviderRunner(input: {
           preservedRecentMessages: 8,
           instruction: "Recover from provider context limit before retrying.",
           onEvent: input.publish,
+          retry: {
+            policy: input.retryPolicy(),
+            signal: input.activeAbort()?.signal,
+          },
         },
       );
       if (compacted.compacted)
@@ -591,12 +617,29 @@ export function createProviderRunner(input: {
         reason: "context_limit",
       });
       try {
-        return await runProviderStep(
-          id,
-          contextEntriesToProviderMessages(input.context().snapshot().entries),
-          step,
-          allowToolCalls,
+        const runtimeInstruction =
+          messages[0]?.role === "system" ? messages[0] : undefined;
+        const recoveredMessages = contextEntriesToProviderMessages(
+          input.context().snapshot().entries,
         );
+        if (
+          runtimeInstruction &&
+          recoveredMessages[0]?.content !== runtimeInstruction.content
+        )
+          recoveredMessages.unshift(runtimeInstruction);
+        const originalUser = messages.findLast(
+          (message) => message.role === "user",
+        );
+        const recoveredUser = recoveredMessages.findLast(
+          (message) => message.role === "user",
+        );
+        if (originalUser && recoveredUser)
+          Object.assign(recoveredUser, originalUser);
+        // Keep the caller's conversation authoritative after compaction. Tool
+        // results from this recovered step are appended to this same array, so
+        // later steps cannot fall back to the pre-compaction context.
+        messages.splice(0, messages.length, ...recoveredMessages);
+        return await runProviderStep(id, messages, step, allowToolCalls);
       } catch (retryError) {
         if ((retryError as { kind?: string }).kind === "context_limit")
           throw providerError({

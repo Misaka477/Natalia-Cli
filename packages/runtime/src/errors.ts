@@ -79,6 +79,7 @@ export function providerErrorFromHttp(input: {
   statusCode: number;
   statusText?: string;
   retryAfter?: string | null;
+  retryAfterMs?: string | null;
   message?: string;
   bodyCode?: string;
 }) {
@@ -90,10 +91,19 @@ export function providerErrorFromHttp(input: {
   return providerError({
     kind,
     statusCode: input.statusCode,
-    retryAfterMs: parseRetryAfterMs(input.retryAfter),
+    retryAfterMs:
+      parseRetryAfterMilliseconds(input.retryAfterMs) ??
+      parseRetryAfterMs(input.retryAfter),
     message:
       input.message ?? input.statusText ?? `provider HTTP ${input.statusCode}`,
   });
+}
+
+export function parseRetryAfterMilliseconds(value?: string | null) {
+  if (!value) return undefined;
+  const milliseconds = Number(value);
+  if (!Number.isFinite(milliseconds) || milliseconds < 0) return undefined;
+  return Math.round(milliseconds);
 }
 
 function isContextLimitError(bodyCode?: string, message?: string) {

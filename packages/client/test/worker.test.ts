@@ -6,6 +6,7 @@ import type {
   MCPCatalogSnapshot,
   RuntimeClient,
   RuntimeEvent,
+  RuntimeReasoningEffort,
   SubmittedTurn,
 } from "@natalia/contracts";
 import {
@@ -15,7 +16,7 @@ import {
 import { createRealRuntimeClient } from "../src/real-runtime";
 import { CapabilityHost } from "@natalia/capability";
 import { CapabilityExecutionHost } from "../src/capability-execution-host";
-import { configV2Schema } from "@natalia/contracts";
+import { configV3Schema } from "@natalia/contracts";
 
 test("worker RuntimeClient transport remains behind contracts boundary", async () => {
   const channel = new MessageChannel();
@@ -257,7 +258,7 @@ test("config reload applies changed permission profiles to the same worker clien
     writeFile(
       configPath,
       JSON.stringify({
-        version: 2,
+        version: 3,
         defaultPermission: "active",
         permissionProfiles: { active: { approval } },
         agents,
@@ -428,6 +429,81 @@ test("the worker channel routes the MCP surface", async () => {
   await client.dispose?.();
 });
 
+test("the worker channel routes permission profile management", async () => {
+  const channel = new MessageChannel();
+  let reasoningEffort: RuntimeReasoningEffort | undefined;
+  const host: RuntimeClient = {
+    start() {},
+    async submit(text) {
+      return {
+        type: "turn.submitted",
+        id: "turn_permission",
+        text,
+        byteLength: text.length,
+        lineCount: 1,
+        sha256: "test",
+      };
+    },
+    cancel() {},
+    snapshot: () => ({
+      type: "snapshot.created",
+      id: "snap_permission",
+      files: [],
+    }),
+    diagnostic() {},
+    lastSubmission: () => undefined,
+    permissionList: async () => ({
+      default: "ask",
+      profiles: [
+        {
+          name: "ask",
+          description: "Ask before actions",
+          approval: "ask",
+        },
+      ],
+    }),
+    permissionSave: async (input) => ({
+      saved: input.name === "strict",
+      applied: true,
+    }),
+    permissionDelete: async (name) => ({ deleted: name !== "ask" }),
+    reasoningEffort: async () => reasoningEffort,
+    setReasoningEffort: async (effort) => {
+      reasoningEffort = effort;
+    },
+    respondApproval() {
+      return { accepted: true };
+    },
+    respondQuestion() {
+      return { accepted: true };
+    },
+  };
+  attachRuntimeClientWorker(channel.port1, host);
+  const client = createWorkerRuntimeClient(channel.port2);
+  client.start(() => undefined);
+
+  expect(await client.permissionList?.()).toEqual({
+    default: "ask",
+    profiles: [
+      {
+        name: "ask",
+        description: "Ask before actions",
+        approval: "ask",
+      },
+    ],
+  });
+  expect(
+    await client.permissionSave?.({
+      name: "strict",
+      profile: { description: "Strict profile", approval: "ask" },
+    }),
+  ).toEqual({ saved: true, applied: true });
+  expect(await client.permissionDelete?.("ask")).toEqual({ deleted: false });
+  await client.setReasoningEffort?.("high");
+  expect(await client.reasoningEffort?.()).toBe("high");
+  await client.dispose?.();
+});
+
 test("the worker channel routes workflow management catalogs", async () => {
   const channel = new MessageChannel();
   const host: RuntimeClient = {
@@ -541,7 +617,7 @@ test("the worker streams capability task execution", async () => {
   attachRuntimeClientWorker(channel.port1, createRuntime(), {
     reload: createRuntime,
     workflowExecution: new CapabilityExecutionHost(capabilities),
-    workflowConfig: async () => configV2Schema.parse({ version: 2 }),
+    workflowConfig: async () => configV3Schema.parse({ version: 3 }),
   });
   const client = createWorkerRuntimeClient(channel.port2);
   client.start(() => undefined);
@@ -609,7 +685,7 @@ test("worker cancellation is retained while workflow config is resolving", async
       workflowExecution: new CapabilityExecutionHost(capabilities),
       workflowConfig: async () => {
         await configReady;
-        return configV2Schema.parse({ version: 2 });
+        return configV3Schema.parse({ version: 3 });
       },
     },
   );
