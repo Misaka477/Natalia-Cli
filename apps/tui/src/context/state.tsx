@@ -54,7 +54,8 @@ export type MessageBlock = {
     | "approval"
     | "question"
     | "subagent"
-    | "snapshot";
+    | "snapshot"
+    | "turn_footer";
   text: string;
   status?: string;
   pendingText?: string;
@@ -773,6 +774,16 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
       return;
     case "turn.finished":
       state.status = event.stopReason === "done" ? "ready" : event.stopReason;
+      if (
+        event.model ||
+        event.profile ||
+        event.durationMs !== undefined ||
+        event.inputTokens !== undefined ||
+        event.outputTokens !== undefined
+      ) {
+        const metadata = formatTurnFooter(event);
+        upsertBlock(state, `${event.id}:footer`, "turn_footer", metadata);
+      }
       if (event.stopReason === "done") {
         if (event.reason === "missing_final_response") {
           upsertBlock(
@@ -798,6 +809,34 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
       }
       return;
   }
+}
+
+function formatTurnDuration(durationMs: number) {
+  if (durationMs < 1_000) return `${durationMs}ms`;
+  if (durationMs < 60_000) return `${(durationMs / 1_000).toFixed(1)}s`;
+  return `${Math.floor(durationMs / 60_000)}m ${Math.round((durationMs % 60_000) / 1_000)}s`;
+}
+
+export function formatTurnFooter(
+  event: Pick<
+    Extract<RuntimeEvent, { type: "turn.finished" }>,
+    "profile" | "model" | "durationMs" | "inputTokens" | "outputTokens"
+  >,
+) {
+  const tokens =
+    event.inputTokens !== undefined || event.outputTokens !== undefined
+      ? `${(event.inputTokens ?? 0).toLocaleString("en-US")} in / ${(event.outputTokens ?? 0).toLocaleString("en-US")} out`
+      : undefined;
+  return [
+    event.profile,
+    event.model,
+    event.durationMs !== undefined
+      ? formatTurnDuration(event.durationMs)
+      : undefined,
+    tokens,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function handleCheckpointEvent(

@@ -81,6 +81,7 @@ export function SessionRoute(props: {
   onLoadNewerHistory?: () => Promise<void>;
   backend?: RuntimeClient;
   onExit?: () => void;
+  showInteractivePrompt?: boolean;
 }) {
   const { state, dispatch } = useAppState();
   const viewState = () =>
@@ -285,7 +286,13 @@ export function SessionRoute(props: {
           </box>
         </Show>
       </scrollbox>
-      <Show when={props.backend && modal()?.kind === "approval"}>
+      <Show
+        when={
+          props.showInteractivePrompt !== false &&
+          props.backend &&
+          modal()?.kind === "approval"
+        }
+      >
         <PermissionPrompt
           request={
             modal() as Extract<ReturnType<typeof modal>, { kind: "approval" }>
@@ -294,7 +301,13 @@ export function SessionRoute(props: {
           onExit={props.onExit ?? (() => {})}
         />
       </Show>
-      <Show when={props.backend && modal()?.kind === "question"}>
+      <Show
+        when={
+          props.showInteractivePrompt !== false &&
+          props.backend &&
+          modal()?.kind === "question"
+        }
+      >
         <QuestionPrompt
           request={
             modal() as Extract<ReturnType<typeof modal>, { kind: "question" }>
@@ -365,16 +378,22 @@ export function SessionRoute(props: {
 export function SessionFooter(props: {
   workspaceRoot?: string;
   onWorkspaceSelect?: () => void;
+  viewState?: AppState;
+  context?: string;
+  children?: Array<{ id: string; status?: string }>;
+  onChildSelect?: (id: string) => void;
 }) {
   const { state } = useAppState();
+  const viewState = () => props.viewState ?? state;
+  const primaryActivity = () => selectPrimaryActivity(viewState().facts);
+  const status = createMemo(() => footerStatus(viewState(), primaryActivity()));
   const [scanPosition, setScanPosition] = createSignal(0);
-  const primaryActivity = () => selectPrimaryActivity(state.facts);
-  const activityActive = createMemo(
-    () => primaryActivity()?.state === "active",
-  );
+  const visibleChildren = () => props.children?.slice(0, 3) ?? [];
+  const hiddenChildren = () =>
+    Math.max(0, (props.children?.length ?? 0) - visibleChildren().length);
 
   createEffect(() => {
-    if (!activityActive()) {
+    if (primaryActivity()?.state !== "active") {
       setScanPosition(0);
       return;
     }
@@ -402,38 +421,53 @@ export function SessionFooter(props: {
         <Show when={props.onWorkspaceSelect}> ▼</Show>
       </text>
       <box flexDirection="row" gap={2} flexShrink={0}>
-        <Show when={primaryActivity()}>
-          <text fg={activityColor(primaryActivity()!)}>
-            {activityIndicator(primaryActivity()!, scanPosition())}{" "}
-            {activityLabel(primaryActivity()!)}
-          </text>
+        <Show when={props.context}>
+          <text fg={darkTheme.muted}>{props.context}</text>
         </Show>
-        <Show when={Object.keys(state.facts.terminals).length > 0}>
+        <Show when={props.children?.length}>
+          <box flexDirection="row" gap={1}>
+            <text fg={darkTheme.muted}>children:</text>
+            <For each={visibleChildren()}>
+              {(child) => (
+                <text
+                  fg={subagentColor(child.status ?? "pending")}
+                  onMouseUp={() => props.onChildSelect?.(child.id)}
+                >
+                  {child.id}
+                </text>
+              )}
+            </For>
+            <Show when={hiddenChildren() > 0}>
+              <text fg={darkTheme.muted}>+{hiddenChildren()}</text>
+            </Show>
+          </box>
+        </Show>
+        <Show when={Object.keys(viewState().facts.terminals).length > 0}>
           <text fg={darkTheme.text}>
             <span style={{ fg: darkTheme.success }}>•</span>{" "}
-            {Object.keys(state.facts.terminals).length} terminal
+            {Object.keys(viewState().facts.terminals).length} terminal
           </text>
         </Show>
-        <Show when={Object.keys(state.facts.sandboxes).length > 0}>
+        <Show when={Object.keys(viewState().facts.sandboxes).length > 0}>
           <text fg={darkTheme.text}>
             <span style={{ fg: darkTheme.success }}>•</span>{" "}
-            {Object.keys(state.facts.sandboxes).length} Sandbox
+            {Object.keys(viewState().facts.sandboxes).length} Sandbox
           </text>
         </Show>
-        <text fg={state.status === "ready" ? darkTheme.text : darkTheme.muted}>
+        <text fg={status().tone === "ready" ? darkTheme.text : darkTheme.muted}>
           <span
             style={{
               fg:
-                state.status === "ready"
+                status().tone === "ready"
                   ? darkTheme.success
-                  : state.status === "error"
+                  : status().tone === "error"
                     ? darkTheme.danger
                     : darkTheme.warning,
             }}
           >
-            •
+            {footerIndicator(primaryActivity(), scanPosition())}
           </span>{" "}
-          {state.status}
+          {status().label}
         </text>
         <text fg={darkTheme.muted}>/status</text>
       </box>
@@ -441,17 +475,29 @@ export function SessionFooter(props: {
   );
 }
 
-function activityIndicator(activity: ActivityView, scanPosition: number) {
+function footerIndicator(
+  activity: ActivityView | undefined,
+  scanPosition: number,
+) {
+  if (!activity) return "•";
   if (activity.state === "waiting") return "?";
   if (activity.state === "paused") return "=";
   return [".  ", " . ", "  .", " . "][scanPosition % 4]!;
 }
 
-function activityColor(activity: ActivityView) {
-  if (activity.state === "waiting") return darkTheme.warning;
-  if (activity.state === "paused") return darkTheme.muted;
-  if (activity.kind === "retrying") return darkTheme.warning;
-  return darkTheme.accent;
+function footerStatus(viewState: AppState, activity?: ActivityView) {
+  const modal = activeModal(viewState.modal);
+  if (modal?.kind === "approval")
+    return { label: "Waiting for approval", tone: "waiting" };
+  if (modal?.kind === "question")
+    return { label: "Waiting for answer", tone: "waiting" };
+  if (viewState.status === "error") return { label: "Error", tone: "error" };
+  if (viewState.status === "stopped" || viewState.status === "cancelled")
+    return { label: "Stopped", tone: "waiting" };
+  if (viewState.status === "waiting_human")
+    return { label: "Waiting for human input", tone: "waiting" };
+  if (activity) return { label: activityLabel(activity), tone: "working" };
+  return { label: "Ready", tone: "ready" };
 }
 
 function activityLabel(activity: ActivityView) {
@@ -626,15 +672,17 @@ export function SubagentRoute(props: {
   onMessageCopy?: (text: string) => void;
   backend?: RuntimeClient;
   onExit?: () => void;
+  workspaceRoot?: string;
+  onWorkspaceSelect?: () => void;
 }) {
   const { state } = useAppState();
+  const route = useRouteController();
   const agent = () => state.facts.subagents[props.agentID];
   const messages = () => state.subagentStates[props.agentID]?.messages ?? [];
   const children = () =>
-    Object.values(state.facts.subagents).filter(
-      (candidate) => candidate.parentAgentID === props.agentID,
-    );
-  const route = useRouteController();
+    Object.values(state.facts.subagents)
+      .filter((item) => item.parentAgentID === props.agentID)
+      .map((item) => ({ id: item.id, status: item.status }));
   useBindings(() => ({
     mode: "base",
     bindings: [
@@ -648,39 +696,6 @@ export function SubagentRoute(props: {
   }));
   return (
     <box flexGrow={1} minHeight={0} flexDirection="column">
-      <box
-        flexShrink={0}
-        flexDirection="row"
-        justifyContent="space-between"
-        paddingLeft={3}
-        paddingRight={3}
-        paddingTop={1}
-      >
-        <box flexDirection="column">
-          <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
-            {agent()?.task || props.agentID}
-          </text>
-          <text fg={darkTheme.muted}>
-            {props.agentID} · {agent()?.status ?? "unavailable"}
-          </text>
-        </box>
-        <Show when={children().length > 0}>
-          <box flexDirection="row" gap={1}>
-            <For each={children()}>
-              {(child) => (
-                <text
-                  fg={subagentColor(child.status)}
-                  onMouseUp={() =>
-                    route.push({ kind: "subagent", id: child.id })
-                  }
-                >
-                  {child.id}
-                </text>
-              )}
-            </For>
-          </box>
-        </Show>
-      </box>
       <SessionRoute
         messages={messages()}
         viewState={state.subagentStates[props.agentID]}
@@ -701,23 +716,16 @@ export function SubagentRoute(props: {
         toolPreviewLines={props.toolPreviewLines}
         showJumpToBottom={props.showJumpToBottom}
         onJumpToBottom={props.onJumpToBottom}
+        showInteractivePrompt
       />
-      <box
-        flexShrink={0}
-        flexDirection="row"
-        justifyContent="space-between"
-        paddingLeft={2}
-        paddingRight={2}
-        paddingTop={1}
-        paddingBottom={1}
-        border={["top"]}
-        borderColor={darkTheme.muted}
-      >
-        <text fg={darkTheme.muted}>Subagent detail · read-only</text>
-        <text fg={darkTheme.text} onMouseUp={props.onBack}>
-          Escape return
-        </text>
-      </box>
+      <SessionFooter
+        workspaceRoot={props.workspaceRoot}
+        onWorkspaceSelect={props.onWorkspaceSelect}
+        viewState={state.subagentStates[props.agentID]}
+        context={`${props.agentID} · ${agent()?.status ?? "unavailable"} · Esc back`}
+        children={children()}
+        onChildSelect={(id) => route.push({ kind: "subagent", id })}
+      />
     </box>
   );
 }

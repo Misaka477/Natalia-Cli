@@ -830,6 +830,7 @@ export type NativeTerminalWriteResult = {
 
 export type NativeTerminalAuditEvent = {
   id: string;
+  sessionID?: string;
   cwd: string;
   action:
     | "write"
@@ -1821,6 +1822,7 @@ export class NativeTerminalRegistry {
   ) {
     this.options.onAudit?.({
       id: session.id,
+      sessionID: session.sessionID,
       cwd: session.cwd,
       action,
       actor,

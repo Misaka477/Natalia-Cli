@@ -1,15 +1,13 @@
 import { TextareaRenderable, TextAttributes } from "@opentui/core";
 import { useBindings } from "@opentui/keymap/solid";
-import type { RuntimeClient } from "@natalia/contracts";
+import type { PermissionFamily, RuntimeClient } from "@natalia/contracts";
 import type { ModalRequest } from "@natalia/ui-model";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import { usePromptRef } from "../../context/prompt";
 import { useToast } from "../../context/toast";
 import { themeTokens as darkTheme } from "../../theme/theme";
 import { useModeStack } from "../../modal/mode-stack";
 
 const MODE = "approval";
-
 export function PermissionPrompt(props: {
   request: Extract<ModalRequest, { kind: "approval" }>;
   backend: RuntimeClient;
@@ -27,11 +25,24 @@ export function PermissionPrompt(props: {
   const toast = useToast();
   const [selected, setSelected] = createSignal(0);
   const [expanded, setExpanded] = createSignal(false);
+  const [submitting, setSubmitting] = createSignal(false);
   const actions = ["once", "session", "reject"] as const;
-  const prompt = usePromptRef();
+  const family = () =>
+    (
+      props.request as typeof props.request & {
+        permissionFamily?: PermissionFamily;
+      }
+    ).permissionFamily;
+  const sessionLabel = () =>
+    family()?.sessionAction ??
+    (family()?.label
+      ? `Allow ${family()!.label} for session`
+      : "Allow session");
   let input: TextareaRenderable | undefined;
 
   function reply(decision: (typeof actions)[number], feedback?: string) {
+    if (submitting()) return;
+    setSubmitting(true);
     // The runtime worker can exit underneath the TUI; a delivery that fails
     // must never become an unhandled rejection that takes the process down.
     const outcome = props.backend.respondApproval?.({
@@ -42,6 +53,7 @@ export function PermissionPrompt(props: {
     });
     if (outcome instanceof Promise)
       void outcome.catch((error: unknown) => {
+        setSubmitting(false);
         const detail = error instanceof Error ? error.message : String(error);
         toast.show({
           variant: "error",
@@ -51,12 +63,11 @@ export function PermissionPrompt(props: {
           ),
         });
       });
-    queueMicrotask(() => prompt.focus());
   }
 
   useBindings(() => ({
     mode: MODE,
-    enabled: stage() === "reject",
+    enabled: stage() === "reject" && !submitting(),
     bindings: [
       {
         key: "escape",
@@ -75,7 +86,7 @@ export function PermissionPrompt(props: {
 
   useBindings(() => ({
     mode: MODE,
-    enabled: stage() === "prompt",
+    enabled: stage() === "prompt" && !submitting(),
     bindings: [
       {
         key: "left",
@@ -144,78 +155,75 @@ export function PermissionPrompt(props: {
 
   return (
     <box
+      flexShrink={0}
+      marginLeft={2}
+      marginRight={2}
+      marginTop={1}
       backgroundColor={darkTheme.panel}
-      border={["left"]}
+      border
       borderColor={darkTheme.warning}
       flexDirection="column"
+      paddingLeft={2}
+      paddingRight={2}
+      paddingTop={1}
+      paddingBottom={1}
+      gap={1}
     >
-      <box
-        flexDirection="column"
-        gap={1}
-        paddingLeft={2}
-        paddingRight={2}
-        paddingTop={1}
-        paddingBottom={1}
-      >
-        <box flexDirection="row" gap={1}>
-          <text fg={darkTheme.warning}>△</text>
-          <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>
-            Permission required
-          </text>
-        </box>
-        <text fg={darkTheme.text} wrapMode="word">
-          {props.request.title}
+      <box flexDirection="row" justifyContent="space-between" gap={2}>
+        <text attributes={TextAttributes.BOLD} fg={darkTheme.warning}>
+          Permission required
         </text>
-        <text fg={darkTheme.muted} wrapMode="word">
-          {props.request.preview}
+        <text fg={darkTheme.muted}>
+          {family()?.label ?? props.request.title}
         </text>
-        <Show when={props.request.keyArguments?.length}>
-          <text fg={darkTheme.muted}>
-            args: {props.request.keyArguments?.join(", ")}
-          </text>
-        </Show>
-        <Show when={props.request.risk}>
-          <text fg={darkTheme.muted}>
-            risk:{" "}
-            {props.request.risk === "terminal_low"
-              ? "terminal low"
-              : "terminal high"}
-          </text>
-        </Show>
-        <Show when={props.request.scope}>
-          <text fg={darkTheme.muted} wrapMode="word">
-            scope: {props.request.scope}
-            {props.request.expiresAt
-              ? ` · expires ${props.request.expiresAt}`
-              : ""}
-            {props.request.revocable ? " · revocable" : ""}
-          </text>
-        </Show>
-        <Show when={props.request.detail}>
-          <text fg={darkTheme.muted}>
-            d {expanded() ? "hide" : "show"} detail
-          </text>
-          <Show when={expanded()}>
-            <scrollbox maxHeight={8}>
-              <text fg={darkTheme.text} wrapMode="word">
-                {props.request.detail}
-              </text>
-            </scrollbox>
-          </Show>
-        </Show>
       </box>
+      <text
+        fg={darkTheme.text}
+        attributes={TextAttributes.BOLD}
+        wrapMode="word"
+      >
+        {props.request.preview}
+      </text>
+      <Show when={family()?.scope ?? props.request.scope}>
+        <text fg={darkTheme.muted} wrapMode="word">
+          {family()?.scope ?? props.request.scope}
+          {props.request.expiresAt
+            ? ` · expires ${props.request.expiresAt}`
+            : ""}
+          {props.request.revocable ? " · revocable" : ""}
+        </text>
+      </Show>
+      <Show when={props.request.detail && expanded()}>
+        <scrollbox
+          maxHeight={8}
+          border={["left"]}
+          borderColor={darkTheme.muted}
+          paddingLeft={1}
+        >
+          <text fg={darkTheme.text} wrapMode="word">
+            {props.request.detail}
+          </text>
+        </scrollbox>
+      </Show>
       <Show
         when={stage() === "reject"}
-        fallback={<Actions selected={selected()} onSelect={select} />}
+        fallback={
+          <Actions
+            selected={selected()}
+            sessionLabel={sessionLabel()}
+            submitting={submitting()}
+            onSelect={select}
+          />
+        }
       >
         <box
-          flexDirection="row"
-          gap={2}
-          paddingLeft={2}
-          paddingRight={2}
+          flexDirection="column"
+          gap={1}
+          backgroundColor={darkTheme.background}
+          paddingLeft={1}
+          paddingRight={1}
           paddingTop={1}
           paddingBottom={1}
-          backgroundColor={darkTheme.background}
         >
           <textarea
             ref={(value: TextareaRenderable) => {
@@ -229,52 +237,63 @@ export function PermissionPrompt(props: {
             focusedTextColor={darkTheme.text}
             cursorColor={darkTheme.warning}
           />
-          <text fg={darkTheme.muted}>enter confirm · esc cancel</text>
+          <text fg={darkTheme.muted}>Enter confirm rejection · Esc cancel</text>
         </box>
+      </Show>
+      <Show when={stage() === "prompt" && !submitting()}>
+        <text fg={darkTheme.muted}>
+          ← → select · Enter confirm · Esc reject
+          {props.request.detail
+            ? ` · d ${expanded() ? "hide" : "details"}`
+            : ""}
+        </text>
       </Show>
     </box>
   );
 }
 
-function Actions(props: { selected: number; onSelect(index: number): void }) {
+function Actions(props: {
+  selected: number;
+  sessionLabel: string;
+  submitting: boolean;
+  onSelect(index: number): void;
+}) {
   return (
-    <box
-      flexDirection="column"
-      gap={1}
-      paddingLeft={2}
-      paddingRight={2}
-      paddingTop={1}
-      paddingBottom={1}
-      backgroundColor={darkTheme.background}
-    >
-      <box flexDirection="row" gap={1}>
-        <For each={["Allow once", "Allow session", "Reject"]}>
-          {(label, index) => (
-            <box
-              flexGrow={1}
-              paddingLeft={1}
-              border={["left"]}
-              borderColor={
-                index() === props.selected ? darkTheme.warning : darkTheme.panel
+    <box flexDirection="row" gap={1}>
+      <For
+        each={
+          props.submitting
+            ? ["Applying decision..."]
+            : ["Allow once", props.sessionLabel, "Reject"]
+        }
+      >
+        {(label, index) => (
+          <box
+            flexShrink={0}
+            backgroundColor={
+              index() === props.selected
+                ? darkTheme.warning
+                : darkTheme.background
+            }
+            paddingLeft={1}
+            paddingRight={1}
+            onMouseUp={() => props.onSelect(index())}
+          >
+            <text
+              fg={
+                index() === props.selected
+                  ? darkTheme.background
+                  : darkTheme.text
               }
-              onMouseUp={() => props.onSelect(index())}
+              attributes={
+                index() === props.selected ? TextAttributes.BOLD : undefined
+              }
             >
-              <text
-                fg={darkTheme.text}
-                attributes={
-                  index() === props.selected ? TextAttributes.BOLD : undefined
-                }
-              >
-                {index() === props.selected ? "> " : "  "}
-                {label}
-              </text>
-            </box>
-          )}
-        </For>
-      </box>
-      <text fg={darkTheme.muted}>
-        ←→ select · enter confirm · esc to reject
-      </text>
+              {index() + 1} {label}
+            </text>
+          </box>
+        )}
+      </For>
     </box>
   );
 }

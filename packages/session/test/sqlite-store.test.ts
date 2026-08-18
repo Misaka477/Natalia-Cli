@@ -7,6 +7,41 @@ import type { SessionID } from "@natalia/contracts";
 import { SqliteSessionStore } from "../src";
 import { createSessionRecord } from "../src";
 
+test("SQLite auto titles preserve manual titles and unrelated metadata", () => {
+  const path = join(tmpdir(), `natalia-title-${crypto.randomUUID()}.db`);
+  const store = new SqliteSessionStore(path);
+  const sessionID = "ses_title" as SessionID;
+  try {
+    store.create(sessionID, "New session");
+    store.updateMetadata(sessionID, {
+      pinned: true,
+      lastAccessedAt: "2026-08-17T00:00:00.000Z",
+    });
+    store.setAutoTitle(sessionID, "Generated title", "generated");
+    expect(store.get(sessionID)).toMatchObject({
+      title: "Generated title",
+      metadata: {
+        titleSource: "generated",
+        pinned: true,
+        lastAccessedAt: "2026-08-17T00:00:00.000Z",
+      },
+    });
+
+    store.rename(sessionID, "Manual title");
+    store.setAutoTitle(sessionID, "Delayed title", "generated");
+    expect(store.get(sessionID)).toMatchObject({
+      title: "Manual title",
+      metadata: {
+        titleSource: "manual",
+        pinned: true,
+        lastAccessedAt: "2026-08-17T00:00:00.000Z",
+      },
+    });
+  } finally {
+    store.close();
+  }
+});
+
 test("SQLite session history uses stable sequence cursors", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-sqlite-history-"));
   const store = new SqliteSessionStore(join(root, "sessions.db"));

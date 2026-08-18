@@ -250,7 +250,27 @@ export class SqliteSessionStore {
   rename(id: SessionID, title: string) {
     const trimmed = title.trim();
     if (!trimmed) throw new Error("session title cannot be empty");
-    this.run(`UPDATE sessions SET title = ? WHERE id = ?`, [trimmed, id]);
+    if (!this.get(id)) throw new Error(`session not found: ${id}`);
+    this.run(
+      `UPDATE sessions
+       SET title = ?,
+           metadata = json_set(COALESCE(metadata, '{}'), '$.titleSource', 'manual')
+       WHERE id = ?`,
+      [trimmed, id],
+    );
+    return this.get(id)!;
+  }
+
+  setAutoTitle(id: SessionID, title: string, source: "generated" | "fallback") {
+    if (!this.get(id)) throw new Error(`session not found: ${id}`);
+    this.run(
+      `UPDATE sessions
+       SET title = ?,
+           metadata = json_set(COALESCE(metadata, '{}'), '$.titleSource', ?)
+       WHERE id = ?
+         AND COALESCE(json_extract(metadata, '$.titleSource'), '') <> 'manual'`,
+      [title, source, id],
+    );
     return this.get(id)!;
   }
 

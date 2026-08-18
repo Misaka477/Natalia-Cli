@@ -97,10 +97,14 @@ export function createSessionStoreController(input: {
       if (!sqliteStore) sqliteStore = new SqliteSessionStore(databasePath);
       retainSqliteStore(databasePath, sqliteStore);
       sqliteStorePath = databasePath;
-      sqliteStore.create(
+      const startup = sqliteStore.create(
         input.sessionID(),
-        input.title ?? `Natalia TS session ${input.sessionID()}`,
+        input.title ?? "New session",
       );
+      if (input.title && !startup.metadata.titleSource)
+        sqliteStore.updateMetadata(input.sessionID(), {
+          titleSource: "manual",
+        });
     }
   }
 
@@ -270,16 +274,38 @@ export function createSessionStoreController(input: {
   async function create(input_: { id?: string; title?: string }) {
     const id =
       input_.id ?? `ses_${randomUUID().replace(/-/gu, "").slice(0, 16)}`;
-    if (input_.id) {
-      const existing = await byIDOptional(id);
-      if (existing) return { sessionID: id, created: false };
-    }
+    const store = sqliteStore as SqliteSessionStore | undefined;
+    if (store?.get(id as SessionID)) return { sessionID: id, created: false };
+    if (input_.id && (await byIDOptional(id)))
+      return { sessionID: id, created: false };
     const record = createSessionRecord(
       id as SessionID,
-      input_.title ?? "Untitled session",
+      input_.title ?? "New session",
     );
+    record.metadata = { titleSource: input_.title ? "manual" : "fallback" };
+    if (store) {
+      store.create(record.id, record.title);
+      store.updateMetadata(record.id, record.metadata);
+      return { sessionID: id, created: true };
+    }
     await sessionStore.save(record);
     return { sessionID: id, created: true };
+  }
+
+  async function setAutoTitle(
+    id: string,
+    title: string,
+    source: "generated" | "fallback",
+  ) {
+    const store = sqliteStore as SqliteSessionStore | undefined;
+    if (store)
+      return sqliteSummary(
+        store.setAutoTitle(id as SessionID, title, source),
+        store,
+      );
+    return summary(
+      await sessionStore.setAutoTitle(id as SessionID, title, source),
+    );
   }
 
   async function archive(id: string) {
@@ -335,6 +361,7 @@ export function createSessionStoreController(input: {
     fork,
     delete: del,
     create,
+    setAutoTitle,
     archive,
     export: export_,
     close,

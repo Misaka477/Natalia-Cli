@@ -66,6 +66,12 @@ export function MessageBlockView(props: {
         onCopy={props.onCopy}
       />
     );
+  if (role === "turn_footer")
+    return (
+      <box paddingLeft={3} paddingTop={1}>
+        <text fg={darkTheme.muted}>{props.block.text}</text>
+      </box>
+    );
   return (
     <box
       flexDirection="column"
@@ -86,16 +92,20 @@ function UserBlock(props: {
   onCopy?: (text: string) => void;
   onFork?: (turnID: string, prompt: string) => void;
 }) {
+  const [hover, setHover] = createSignal(false);
   return (
     <box
       flexDirection="column"
       marginTop={props.density === "comfortable" ? 1 : 0}
       border={["left"]}
       borderColor={darkTheme.accent}
+      backgroundColor={darkTheme.panel}
       paddingLeft={2}
       paddingTop={1}
       paddingBottom={1}
       ref={(element: any) => alwaysSeparate.add(element)}
+      onMouseOver={() => setHover(true)}
+      onMouseOut={() => setHover(false)}
     >
       <text fg={darkTheme.text} wrapMode="word">
         {props.block.text}
@@ -108,7 +118,9 @@ function UserBlock(props: {
           {props.block.pendingText}
         </text>
       </Show>
-      <Show when={props.onCopy || (props.onFork && props.block.text)}>
+      <Show
+        when={hover() && (props.onCopy || (props.onFork && props.block.text))}
+      >
         <box flexDirection="row" gap={2} paddingTop={1}>
           <Show when={props.onCopy}>
             <text

@@ -14,11 +14,14 @@
  * `mailbox.acknowledged` events). No mailbox content, tool results or secrets
  * pass through here.
  */
-import type { RuntimeTool } from "@natalia/tools";
+import type { RuntimeTool, ToolExecutionContext } from "@natalia/tools";
 
 export function createMailboxAcknowledgeTool(input: {
   /** The runtime callback: mark each delivered message id acknowledged. */
-  onAcknowledge: (messageIDs: string[]) => Promise<void>;
+  onAcknowledge: (
+    messageIDs: string[],
+    context: ToolExecutionContext,
+  ) => Promise<void>;
 }): RuntimeTool {
   return {
     name: "mailbox_acknowledge",
@@ -38,7 +41,7 @@ export function createMailboxAcknowledgeTool(input: {
       required: ["messageIDs"],
       additionalProperties: false,
     },
-    async execute(raw) {
+    async execute(raw, context) {
       const args =
         raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
       const messageIDs = Array.isArray(args.messageIDs)
@@ -46,7 +49,7 @@ export function createMailboxAcknowledgeTool(input: {
         : [];
       if (!messageIDs.length)
         return "No message ids supplied; nothing to acknowledge.";
-      await input.onAcknowledge(messageIDs);
+      await input.onAcknowledge(messageIDs, context);
       return `Acknowledged ${messageIDs.length} mailbox message(s).`;
     },
   };

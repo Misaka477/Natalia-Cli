@@ -1,9 +1,14 @@
-import type { LocalAttachment, RuntimeEvent } from "@natalia/contracts";
+import type {
+  LocalAttachment,
+  ModelCapabilities,
+  RuntimeEvent,
+} from "@natalia/contracts";
 import {
   ContextLedger,
   compactContext,
   contextEntriesToProviderMessages,
   contextStatusEvent,
+  normalizeRawToolCallProtocol,
   providerCompactor,
   providerError,
   runWithRetry,
@@ -72,6 +77,8 @@ export function createProviderRunner(input: {
   pendingAgent(): AgentDefinition | undefined;
   setPendingAgent(agent: AgentDefinition | undefined): void;
   selectedModel(): { modelID?: string; variant?: string } | undefined;
+  modelCapabilities(): ModelCapabilities;
+  setActiveModelCapabilities(capabilities: ModelCapabilities | undefined): void;
   permissionMode(): PermissionMode;
   workspaceRoot(): string;
   tsRuntimeConfig(): TsRuntimeConfig | undefined;
@@ -166,7 +173,7 @@ export function createProviderRunner(input: {
   publish(event: RuntimeEvent): void;
   applyAgentPolicy(): void;
   applyAgentProvider(): void;
-  persistInboxPromotion(): Promise<void>;
+  persistInboxPromotion(sessionID?: string): Promise<void>;
   createTurnCheckpoint(input: CreateCheckpointInput): Promise<void>;
   isToolAllowed(toolName: string): boolean;
   setInFlightOperation(
@@ -213,6 +220,7 @@ export function createProviderRunner(input: {
     resources: import("@natalia/contracts").PromptResourceMention[] = [],
     agents: import("@natalia/contracts").PromptAgentMention[] = [],
   ) {
+    const startedAt = Date.now();
     if (!input.provider()) {
       const reloaded = await input.reloadConfig();
       if (!reloaded.providerReconfigured) {
@@ -226,7 +234,6 @@ export function createProviderRunner(input: {
         return;
       }
     }
-    const activeProvider = input.provider()!;
     const controller = new AbortController();
     const pending = input.pendingAgent();
     if (pending) {
@@ -240,11 +247,18 @@ export function createProviderRunner(input: {
         pending: false,
       });
     }
+    // A turn is one provider/policy episode. Later steps must not observe a
+    // model or profile selected by another attached session while this one is
+    // running in the background.
+    const activeProvider = input.provider()!;
+    const activeModelCapabilities = input.modelCapabilities();
+    const activePermissionMode = input.permissionMode();
+    input.setActiveModelCapabilities(activeModelCapabilities);
     input.setActiveAbort(controller);
     input.setActiveTurnID(id);
     const currentSession = input.session();
     if (currentSession && promoteSteers(currentSession).length)
-      await input.persistInboxPromotion();
+      await input.persistInboxPromotion(currentSession?.id);
     input.setLastProviderUsage(undefined);
     let assistant = "";
     try {
@@ -261,7 +275,12 @@ export function createProviderRunner(input: {
       const messages = contextEntriesToProviderMessages(
         ledger.snapshot().entries,
       );
-      await lowerContextAttachments(messages, ledger.snapshot().entries);
+      await lowerContextAttachments(
+        messages,
+        ledger.snapshot().entries,
+        activeProvider,
+        activeModelCapabilities,
+      );
       const user = messages.findLast(
         (message) => message.role === "user" && message.content === text,
       );
@@ -325,7 +344,7 @@ export function createProviderRunner(input: {
         role: "system",
         content: runtimeSystemPrompt({
           workspaceRoot: input.workspaceRoot(),
-          permissionMode: input.permissionMode(),
+          permissionMode: activePermissionMode,
           agentName: agent?.name,
           agentPrompt:
             config?.instructions.enabled === false
@@ -356,6 +375,9 @@ export function createProviderRunner(input: {
           id,
           messages,
           step + 1,
+          activeProvider,
+          activeModelCapabilities,
+          activePermissionMode,
         );
         assistant += result.assistant;
         needsFinalResponse = result.toolMessages.length > 0;
@@ -376,6 +398,9 @@ export function createProviderRunner(input: {
             },
           ],
           input.effectiveMaxSteps() + 1,
+          activeProvider,
+          activeModelCapabilities,
+          activePermissionMode,
           false,
         );
         if (!result.assistant.trim()) missingFinalResponse = true;
@@ -408,6 +433,11 @@ export function createProviderRunner(input: {
         id,
         stopReason: input.waitingHuman() ? "waiting_human" : "done",
         reason: missingFinalResponse ? "missing_final_response" : undefined,
+        model: activeProvider.model,
+        profile: activePermissionMode,
+        durationMs: Date.now() - startedAt,
+        inputTokens: providerUsage?.inputTokens,
+        outputTokens: providerUsage?.outputTokens,
       });
       input.publish(await input.runtimeStatusSnapshot());
     } catch (error) {
@@ -420,10 +450,14 @@ export function createProviderRunner(input: {
         type: "turn.finished",
         id,
         stopReason: controller.signal.aborted ? "cancelled" : "error",
+        model: activeProvider.model,
+        profile: activePermissionMode,
+        durationMs: Date.now() - startedAt,
       });
     } finally {
       if (input.activeAbort() === controller) input.setActiveAbort(undefined);
       if (input.activeTurnID() === id) input.setActiveTurnID(undefined);
+      input.setActiveModelCapabilities(undefined);
     }
   }
 
@@ -431,6 +465,9 @@ export function createProviderRunner(input: {
     id: string,
     messages: ProviderMessage[],
     step: number,
+    activeProvider: StreamingProvider,
+    activeModelCapabilities: ModelCapabilities,
+    activePermissionMode: PermissionMode,
     allowToolCalls = true,
   ) {
     const toolMessages: ProviderMessage[] = [];
@@ -440,7 +477,7 @@ export function createProviderRunner(input: {
       [...input.tools()].filter(
         ([name, tool]) =>
           input.isToolAllowed(name) &&
-          (input.permissionMode() !== "read_only" || !tool.requiresApproval) &&
+          (activePermissionMode !== "read_only" || !tool.requiresApproval) &&
           (!agent?.mcpServers.length ||
             !name.startsWith("mcp_") ||
             agent.mcpServers.some((server) =>
@@ -450,7 +487,6 @@ export function createProviderRunner(input: {
       ),
     );
     const materialized = materializeTools(input.tools(), advertised);
-    const capabilities = activeModelCapabilities();
     const output = await runWithRetry(
       { id, operation: "llm_step", step },
       async ({ attempt }) => {
@@ -470,14 +506,16 @@ export function createProviderRunner(input: {
           calls: [],
         };
         try {
-          for await (const chunk of input.provider()!.stream({
-            messages,
-            tools:
-              allowToolCalls && capabilities.toolCall
-                ? materialized.definitions
-                : undefined,
-            signal: input.activeAbort()?.signal,
-          })) {
+          for await (const chunk of normalizeRawToolCallProtocol(
+            activeProvider.stream({
+              messages,
+              tools:
+                allowToolCalls && activeModelCapabilities.toolCall
+                  ? materialized.definitions
+                  : undefined,
+              signal: input.activeAbort()?.signal,
+            }),
+          )) {
             if (chunk.type === "thinking") {
               result.thinking += chunk.text;
               input.publish({
@@ -514,7 +552,13 @@ export function createProviderRunner(input: {
         signal: input.activeAbort()?.signal,
       },
     );
-    if (output.usage) input.setLastProviderUsage(output.usage);
+    if (output.usage) {
+      const previous = input.lastProviderUsage();
+      input.setLastProviderUsage({
+        inputTokens: (previous?.inputTokens ?? 0) + output.usage.inputTokens,
+        outputTokens: (previous?.outputTokens ?? 0) + output.usage.outputTokens,
+      });
+    }
     if (output.thinking)
       input.publish({ type: "thinking.done", id, text: output.thinking });
     if (output.assistant)
@@ -539,7 +583,7 @@ export function createProviderRunner(input: {
     return { assistant: output.assistant, toolMessages };
   }
 
-  function activeModelCapabilities() {
+  function modelCapabilities() {
     const config = input.tsRuntimeConfig();
     const candidate =
       input.selectedAgent()?.model ??
@@ -565,10 +609,21 @@ export function createProviderRunner(input: {
     id: string,
     messages: ProviderMessage[],
     step: number,
+    activeProvider: StreamingProvider,
+    activeModelCapabilities: ModelCapabilities,
+    activePermissionMode: PermissionMode,
     allowToolCalls = true,
   ) {
     try {
-      return await runProviderStep(id, messages, step, allowToolCalls);
+      return await runProviderStep(
+        id,
+        messages,
+        step,
+        activeProvider,
+        activeModelCapabilities,
+        activePermissionMode,
+        allowToolCalls,
+      );
     } catch (error) {
       if ((error as { kind?: string }).kind !== "context_limit") throw error;
       input.publish({
@@ -583,9 +638,7 @@ export function createProviderRunner(input: {
       const ledger = input.context();
       const compacted = await compactContext(
         ledger,
-        input.provider()
-          ? providerCompactor(input.provider()!, input.activeAbort()?.signal)
-          : extractiveCompactor(),
+        providerCompactor(activeProvider, input.activeAbort()?.signal),
         {
           id: `${id}:context-limit`,
           trigger: "context_limit",
@@ -639,7 +692,15 @@ export function createProviderRunner(input: {
         // results from this recovered step are appended to this same array, so
         // later steps cannot fall back to the pre-compaction context.
         messages.splice(0, messages.length, ...recoveredMessages);
-        return await runProviderStep(id, messages, step, allowToolCalls);
+        return await runProviderStep(
+          id,
+          messages,
+          step,
+          activeProvider,
+          activeModelCapabilities,
+          activePermissionMode,
+          allowToolCalls,
+        );
       } catch (retryError) {
         if ((retryError as { kind?: string }).kind === "context_limit")
           throw providerError({
@@ -655,6 +716,8 @@ export function createProviderRunner(input: {
   async function lowerContextAttachments(
     messages: ProviderMessage[],
     entries: ContextEntry[],
+    activeProvider: StreamingProvider,
+    activeModelCapabilities: ModelCapabilities,
   ) {
     let cursor = 0;
     for (const entry of entries) {
@@ -694,22 +757,21 @@ export function createProviderRunner(input: {
             ),
           )
         ).join("\n\n")}`;
-      const capabilities = activeModelCapabilities();
-      if (imageAttachments.length && !capabilities.imageInput)
+      if (imageAttachments.length && !activeModelCapabilities.imageInput)
         throw new Error("selected model does not support image attachments");
-      if (pdfAttachments.length && !capabilities.pdfInput)
+      if (pdfAttachments.length && !activeModelCapabilities.pdfInput)
         throw new Error("selected model does not support PDF attachments");
-      if (videoAttachments.length && !capabilities.videoInput)
+      if (videoAttachments.length && !activeModelCapabilities.videoInput)
         throw new Error("selected model does not support video attachments");
-      if (imageAttachments.length && !input.provider()?.imageInput)
+      if (imageAttachments.length && !activeProvider.imageInput)
         throw new Error(
           "selected provider adapter does not support image attachment lowering",
         );
-      if (pdfAttachments.length && !input.provider()?.pdfInput)
+      if (pdfAttachments.length && !activeProvider.pdfInput)
         throw new Error(
           "selected provider adapter does not support PDF attachment lowering",
         );
-      if (videoAttachments.length && !input.provider()?.videoInput)
+      if (videoAttachments.length && !activeProvider.videoInput)
         throw new Error(
           "selected provider adapter does not support video attachment lowering",
         );
@@ -739,26 +801,6 @@ export function createProviderRunner(input: {
   }
 
   return { runTurn };
-}
-
-/**
- * The fallback compactor used when the provider has no native compaction.
- */
-function extractiveCompactor() {
-  return {
-    async compact(input: {
-      entries: Array<{ role: string; content: string }>;
-    }) {
-      const summary = input.entries
-        .slice(-20)
-        .map((entry) => `${entry.role}: ${entry.content.slice(0, 400)}`)
-        .join("\n");
-      return {
-        summary: summary || "No prior context available.",
-        tokens: Math.max(1, Math.ceil(summary.length / 4)),
-      };
-    },
-  };
 }
 
 function runtimeSystemPrompt(input: {

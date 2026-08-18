@@ -110,6 +110,9 @@ function controlledBackend() {
     submissions,
     queued,
     cancellations: () => cancellations,
+    emit(event: RuntimeEvent) {
+      sink?.(event);
+    },
     finish() {
       releaseFirst();
       for (let index = 1; index <= queued.length; index++)
@@ -124,8 +127,9 @@ function controlledBackend() {
 
 async function mountComposer(
   appProps: Partial<Parameters<typeof App>[0]> = {},
+  size = { width: 120, height: 30 },
 ) {
-  const setup = await createTestRenderer({ width: 120, height: 30 });
+  const setup = await createTestRenderer(size);
   const keymap = createDefaultOpenTuiKeymap(setup.renderer);
   const disposeKeymap = registerNataliaKeymap(keymap, setup.renderer);
   const controls = controlledBackend();
@@ -206,6 +210,119 @@ test("the composer keeps high-frequency configuration controls beside the prompt
     expect(frame).toContain("Default ▼");
     expect(frame).not.toContain("provider not selected");
     expect(frame).not.toContain("commands ·");
+  } finally {
+    mounted.controls.finish();
+    mounted.disposeKeymap();
+    mounted.setup.renderer.destroy();
+  }
+});
+
+test("the composer keeps model and reasoning controls in its narrow bottom toolbar", async () => {
+  const mounted = await mountComposer({}, { width: 32, height: 24 });
+  try {
+    const frame = mounted.setup.captureCharFrame();
+    expect(frame).toContain("Ask");
+    expect(frame).toContain("not-...");
+    expect(frame).toContain("D...");
+    expect(frame).toContain("↑ Send");
+  } finally {
+    mounted.controls.finish();
+    mounted.disposeKeymap();
+    mounted.setup.renderer.destroy();
+  }
+});
+
+test("an active approval replaces the main composer with the decision dock", async () => {
+  const mounted = await mountComposer();
+  try {
+    mounted.controls.emit({
+      type: "approval.request",
+      id: "approval-composer",
+      title: "Read the workspace",
+      preview: "src/app.tsx",
+    });
+    await Bun.sleep(40);
+    await mounted.setup.renderOnce();
+
+    const frame = mounted.setup.captureCharFrame();
+    expect(frame).toContain("Allow session");
+    expect(frame).toContain("Waiting for approval");
+    expect(frame).not.toContain("Ask anything...");
+  } finally {
+    mounted.controls.finish();
+    mounted.disposeKeymap();
+    mounted.setup.renderer.destroy();
+  }
+});
+
+test("resolving an approval restores the draft and composer focus", async () => {
+  const mounted = await mountComposer();
+  try {
+    await mounted.keys.typeText("draft before approval");
+    mounted.controls.emit({
+      type: "approval.request",
+      id: "approval-focus",
+      title: "Read the workspace",
+      preview: "src/app.tsx",
+    });
+    await Bun.sleep(40);
+    await mounted.keys.pressKey("1");
+    mounted.controls.emit({
+      type: "approval.response",
+      id: "approval-focus",
+      decision: "once",
+    });
+    await Bun.sleep(40);
+    await mounted.setup.renderOnce();
+
+    expect(mounted.setup.captureCharFrame()).toContain("draft before approval");
+    await mounted.keys.typeText(" continued");
+    mounted.keys.pressEnter();
+    await Bun.sleep(30);
+    expect(mounted.controls.submissions).toEqual([
+      "draft before approval continued",
+    ]);
+  } finally {
+    mounted.controls.finish();
+    mounted.disposeKeymap();
+    mounted.setup.renderer.destroy();
+  }
+});
+
+test("resolving a question restores the draft and composer focus", async () => {
+  const mounted = await mountComposer();
+  try {
+    await mounted.keys.typeText("draft before question");
+    mounted.controls.emit({
+      type: "question.request",
+      id: "question-focus",
+      title: "Which target?",
+      questions: [
+        {
+          id: "target",
+          question: "Which target?",
+          header: "Target",
+          options: [{ label: "Web", description: "Web target" }],
+        },
+      ],
+    });
+    await Bun.sleep(40);
+    mounted.keys.pressEnter();
+    mounted.controls.emit({
+      type: "question.response",
+      id: "question-focus",
+      answers: [["Web"]],
+    });
+    await Bun.sleep(40);
+    await mounted.setup.renderOnce();
+
+    expect(mounted.setup.captureCharFrame()).toContain("draft before question");
+    await mounted.keys.typeText(" continued");
+    mounted.keys.pressEnter();
+    await Bun.sleep(30);
+    expect(mounted.controls.submissions).toEqual([
+      "draft before question continued",
+    ]);
   } finally {
     mounted.controls.finish();
     mounted.disposeKeymap();

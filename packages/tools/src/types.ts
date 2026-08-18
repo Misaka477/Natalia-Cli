@@ -80,6 +80,8 @@ export type RuntimeTool = ToolExecutionBoundary & {
 
 export type ToolExecutionContext = {
   workspaceRoot: string;
+  /** Session that owns the turn invoking this tool. */
+  sessionID?: string;
   signal?: AbortSignal;
   askQuestion?: (input: {
     title: string;

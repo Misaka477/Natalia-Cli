@@ -62,6 +62,8 @@ export async function runTuiShell(
     exitOnCtrlC: false,
     useKittyKeyboard: {},
     autoFocus: true,
+    consoleMode: "disabled",
+    openConsoleOnError: false,
   });
   const backend =
     input.backend ??

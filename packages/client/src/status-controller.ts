@@ -24,15 +24,23 @@ export function createStatusSnapshotController(input: {
 }) {
   let refreshQueued = false;
 
-  async function snapshot() {
+  async function snapshotFor(overrides?: {
+    provider?: StreamingProvider;
+    context?: ContextLedger;
+    permissionMode?: "ask" | "auto" | "read_only";
+  }) {
     const running = await input.runningCount();
     return statusSnapshot(
-      input.provider(),
-      input.context(),
+      overrides?.provider ?? input.provider(),
+      overrides?.context ?? input.context(),
       input.workspaceRoot,
-      input.permissionMode(),
+      overrides?.permissionMode ?? input.permissionMode(),
       running,
     );
+  }
+
+  async function snapshot() {
+    return await snapshotFor();
   }
 
   function schedule() {
@@ -52,7 +60,7 @@ export function createStatusSnapshotController(input: {
     });
   }
 
-  return { snapshot, schedule };
+  return { snapshot, snapshotFor, schedule };
 }
 
 export type ContextLedger = {

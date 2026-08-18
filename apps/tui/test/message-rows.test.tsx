@@ -8,6 +8,7 @@ import type { MessageBlock } from "../src/context/state";
 import { MessageBlockView } from "../src/routes/session/message-rows";
 import { DialogProvider } from "../src/dialog/provider";
 import { registerNataliaKeymap } from "../src/modal/mode-stack";
+import { RouteProvider } from "../src/context/route";
 
 async function mountBlock(
   block: MessageBlock,
@@ -20,19 +21,21 @@ async function mountBlock(
   await render(
     () => (
       <KeymapProvider keymap={keymap}>
-        <DialogProvider>
-          <MessageBlockView
-            block={block}
-            density="comfortable"
-            toolDetails={toolDetails}
-            reasoning={reasoning}
-            diffStyle="auto"
-            terminalWidth={120}
-            toolPreviewLines={10}
-            onCopy={() => {}}
-            onFork={() => {}}
-          />
-        </DialogProvider>
+        <RouteProvider>
+          <DialogProvider>
+            <MessageBlockView
+              block={block}
+              density="comfortable"
+              toolDetails={toolDetails}
+              reasoning={reasoning}
+              diffStyle="auto"
+              terminalWidth={120}
+              toolPreviewLines={10}
+              onCopy={() => {}}
+              onFork={() => {}}
+            />
+          </DialogProvider>
+        </RouteProvider>
       </KeymapProvider>
     ),
     setup.renderer,
@@ -95,13 +98,13 @@ const toolBlock = (
     },
   }) as unknown as MessageBlock;
 
-test("a user message keeps its copy/fork affordances visible", async () => {
+test("a user message uses a terminal-like rail with compact actions", async () => {
   const mounted = await mountBlock(userBlock);
   try {
     const frame = mounted.setup.captureCharFrame();
     expect(frame).toContain("please switch the server to Bun-native HTTP");
     expect(frame).not.toContain("▎You");
-    expect(frame).toContain("copy");
+    expect(frame).not.toContain("copy");
   } finally {
     mounted.disposeKeymap();
     mounted.setup.renderer.destroy();
@@ -229,14 +232,35 @@ function lineIndex(frame: string, needle: string) {
   return frame.split("\n").findIndex((line) => line.includes(needle));
 }
 
-test("a completed shell collapses to one line when details are collapsed", async () => {
+function expectClosedCard(frame: string, needle: string) {
+  const lines = frame.split("\n");
+  const contentLine = lineIndex(frame, needle);
+  expect(contentLine).toBeGreaterThan(0);
+  expect(lines[contentLine]?.indexOf("│")).toBe(3);
+  expect(
+    lines
+      .slice(0, contentLine)
+      .some((line) => line.includes("┌") && line.includes("┐")),
+  ).toBe(true);
+  expect(
+    lines
+      .slice(contentLine + 1)
+      .some((line) => line.includes("└") && line.includes("┘")),
+  ).toBe(true);
+}
+
+test("a completed shell separates its command from its output", async () => {
   const mounted = await mountBlock(
     shellBlock("succeeded", "1 passing\n2 passing"),
   );
   try {
     const frame = mounted.setup.captureCharFrame();
     expect(frame).toContain("npm test");
-    expect(frame).not.toContain("1 passing");
+    expect(frame).toContain("1 passing");
+    expect(lineIndex(frame, "1 passing")).toBeGreaterThan(
+      lineIndex(frame, "$ npm test"),
+    );
+    expectClosedCard(frame, "$ npm test");
     expect(frame).not.toContain("ShellSpinner");
   } finally {
     mounted.disposeKeymap();
@@ -253,6 +277,54 @@ test("a completed shell shows its output block when details are expanded", async
     const frame = mounted.setup.captureCharFrame();
     expect(frame).toContain("npm test");
     expect(frame).toContain("1 passing");
+  } finally {
+    mounted.disposeKeymap();
+    mounted.setup.renderer.destroy();
+  }
+});
+
+test("an overflowing shell preview exposes expansion without opening by default", async () => {
+  const mounted = await mountBlock(
+    shellBlock(
+      "succeeded",
+      Array.from({ length: 12 }, (_, index) => `line ${index + 1}`).join("\n"),
+    ),
+  );
+  try {
+    const frame = mounted.setup.captureCharFrame();
+    expect(frame).toContain("$ npm test");
+    expect(frame).toContain("line 1");
+    expect(frame).not.toContain("line 12");
+    expect(frame).toContain("Click to expand");
+  } finally {
+    mounted.disposeKeymap();
+    mounted.setup.renderer.destroy();
+  }
+});
+
+test("a compact grep row keeps its query, result count, and elapsed metadata", async () => {
+  const mounted = await mountBlock(
+    toolBlock({
+      name: "grep",
+      kind: "grep",
+      keyArguments: ["pattern=TODO"],
+      redactedArguments: '{"pattern":"TODO","include":"*.ts"}',
+      result: {
+        summary: "2 matches",
+        preview: "src/a.ts:1\nsrc/b.ts:2",
+        detail: "src/a.ts:1\nsrc/b.ts:2",
+        truncated: false,
+        totalChars: 22,
+        totalLines: 2,
+      },
+    }),
+  );
+  try {
+    const frame = mounted.setup.captureCharFrame();
+    expect(frame).toContain('Grep "TODO" in *.ts');
+    expect(frame).toContain("2 matches");
+    expect(frame).toContain("1.2s");
+    expectClosedCard(frame, 'Grep "TODO" in *.ts');
   } finally {
     mounted.disposeKeymap();
     mounted.setup.renderer.destroy();
@@ -300,7 +372,39 @@ test("a diff keeps its block even when details are collapsed", async () => {
   }
 });
 
-test("consecutive tool one-liners pack tight as a run", async () => {
+test("an execute tool renders child calls inside its text row", async () => {
+  const mounted = await mountBlock(
+    toolBlock({
+      name: "execute",
+      kind: "execute",
+      metadata: {
+        toolCalls: [
+          {
+            tool: "grep",
+            status: "completed",
+            input: { pattern: "sessionID" },
+          },
+          {
+            tool: "read_file",
+            status: "error",
+            input: { path: "src/runtime.ts" },
+          },
+        ],
+      },
+    }),
+  );
+  try {
+    const frame = mounted.setup.captureCharFrame();
+    expect(frame).toContain("execute");
+    expect(frame).toContain("↳ grep [pattern=sessionID]");
+    expect(frame).toContain("↳ read_file [path=src/runtime.ts] (failed)");
+  } finally {
+    mounted.disposeKeymap();
+    mounted.setup.renderer.destroy();
+  }
+});
+
+test("consecutive tools render as separate closed cards", async () => {
   const mounted = await mountColumn([
     toolBlock({ keyArguments: ["objective=alpha"] }),
     toolBlock({ keyArguments: ["objective=beta"] }),
@@ -310,7 +414,9 @@ test("consecutive tool one-liners pack tight as a run", async () => {
     const firstLine = lineIndex(frame, "objective=alpha");
     const secondLine = lineIndex(frame, "objective=beta");
     expect(firstLine).toBeGreaterThanOrEqual(0);
-    expect(secondLine).toBe(firstLine + 1);
+    expect(secondLine).toBeGreaterThan(firstLine + 1);
+    expectClosedCard(frame, "objective=alpha");
+    expectClosedCard(frame, "objective=beta");
   } finally {
     mounted.disposeKeymap();
     mounted.setup.renderer.destroy();

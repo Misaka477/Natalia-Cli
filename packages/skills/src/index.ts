@@ -9,7 +9,7 @@ import {
 import { createHash } from "node:crypto";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { profileShellCommand } from "@natalia/platform";
-import type { RuntimeTool } from "@natalia/tools";
+import type { RuntimeTool, ToolExecutionContext } from "@natalia/tools";
 
 export type SkillMetadata = {
   name: string;
@@ -177,7 +177,11 @@ export async function formatSkillForModel(skill: Skill) {
 
 export function createSkillLoadTool(options: {
   registry: () => SkillRegistry | undefined;
-  onLoad?: (skill: Skill, output: string) => void;
+  onLoad?: (
+    skill: Skill,
+    output: string,
+    context: ToolExecutionContext,
+  ) => void;
 }): RuntimeTool {
   return {
     name: "skill_load",
@@ -189,7 +193,7 @@ export function createSkillLoadTool(options: {
       required: ["name"],
       additionalProperties: false,
     },
-    async execute(input) {
+    async execute(input, context) {
       if (!input || typeof input !== "object" || Array.isArray(input))
         throw new Error("skill_load arguments must be an object");
       const name = (input as Record<string, unknown>).name;
@@ -199,7 +203,7 @@ export function createSkillLoadTool(options: {
       if (!registry) throw new Error("skill registry is not initialized");
       const skill = registry.resolve(name);
       const output = await formatSkillForModel(skill);
-      options.onLoad?.(skill, output);
+      options.onLoad?.(skill, output, context);
       return output;
     },
   };

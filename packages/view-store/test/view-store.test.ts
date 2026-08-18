@@ -63,6 +63,22 @@ test("a whole turn projects to user text, assistant text and a stop reason", () 
   expect(state.lastStopReason).toBe("done");
 });
 
+test("a generated session title updates the active conversation", () => {
+  const state = projectEvents([
+    {
+      type: "session.created",
+      sessionID: "ses_1" as SessionID,
+      title: "New session",
+    },
+    {
+      type: "session.title.updated",
+      sessionID: "ses_1" as SessionID,
+      title: "Readable topic",
+    },
+  ]);
+  expect(state.title).toBe("Readable topic");
+});
+
 test("a queued turn stays visibly queued without replacing active work", () => {
   const state = projectEvents([
     submitted("t1", "first"),

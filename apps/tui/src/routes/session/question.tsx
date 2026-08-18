@@ -12,7 +12,6 @@ import {
   onMount,
   Show,
 } from "solid-js";
-import { usePromptRef } from "../../context/prompt";
 import { useToast } from "../../context/toast";
 import { themeTokens as darkTheme } from "../../theme/theme";
 import { useModeStack } from "../../modal/mode-stack";
@@ -33,7 +32,6 @@ export function QuestionPrompt(props: {
     onCleanup(release);
   });
   const renderer = useRenderer();
-  const prompt = usePromptRef();
   const toast = useToast();
   const questions = () => props.request.questions ?? [];
   const single = () =>
@@ -110,7 +108,6 @@ export function QuestionPrompt(props: {
           ),
         });
       });
-    queueMicrotask(() => prompt.focus());
   }
 
   function pick(answer: string, customAnswer = false) {

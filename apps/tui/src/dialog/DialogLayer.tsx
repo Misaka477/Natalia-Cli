@@ -3,6 +3,7 @@ import {
   createMemo,
   createSignal,
   For,
+  onCleanup,
   onMount,
   Show,
   type JSX,
@@ -13,6 +14,7 @@ import { darkTheme } from "../theme/theme";
 import { useBindings } from "@opentui/keymap/solid";
 import type {
   RuntimeDiagnostic,
+  RuntimeEvent,
   RuntimeSessionSummary,
   RuntimeStatusSnapshot,
 } from "@natalia/contracts";
@@ -257,6 +259,9 @@ export function DialogSessionList(props: {
     delete(id: string): Promise<{ id: string; removedAttachments: number }>;
   };
   onSelect?: (sessionID?: string) => void;
+  subscribeRuntimeEvents?: (
+    handler: (event: RuntimeEvent) => void,
+  ) => () => void;
 }) {
   const dialog = useDialog();
   const [sessions, setSessions] = createSignal<RuntimeSessionSummary[]>([]);
@@ -264,32 +269,47 @@ export function DialogSessionList(props: {
   const [loading, setLoading] = createSignal(false);
   const [query, setQuery] = createSignal("");
   const [mode, setMode] = createSignal<"list" | "confirm-delete">("list");
+  const [deleteTargetID, setDeleteTargetID] = createSignal<string>();
   let sessionScroll: ScrollBoxRenderable | undefined;
+  let refreshSequence = 0;
 
-  const filtered = createMemo(() => {
-    const terms = query().toLowerCase().trim().split(/\s+/u).filter(Boolean);
-    if (!terms.length) return sessions();
-    return sessions().filter((s) =>
-      terms.every((t) => `${s.title} ${s.id}`.toLowerCase().includes(t)),
-    );
-  });
+  const filtered = createMemo(() => filterSessions(sessions(), query()));
+  const visible = createMemo(() => filtered().slice(0, 100));
 
-  async function refresh() {
-    setLoading(true);
+  const dateLabel = (createdAt: string) => {
+    const date = new Date(createdAt);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    if (date.toDateString() === today.toDateString()) return "Today";
+    if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+    return date.toLocaleDateString();
+  };
+
+  async function refresh(options: { quiet?: boolean; reset?: boolean } = {}) {
+    if (options.quiet && loading()) return;
+    const sequence = ++refreshSequence;
+    const selectedID = filtered()[selected()]?.id;
+    if (!options.quiet) setLoading(true);
     try {
       const items = await props.backend.list();
+      if (sequence !== refreshSequence) return;
       setSessions(items);
-      setSelected(0);
-      setQuery("");
-      setMode("list");
-      queueMicrotask(() => sessionScroll?.scrollTo(0));
+      if (options.reset) {
+        setSelected(0);
+        setQuery("");
+        setMode("list");
+        queueMicrotask(() => sessionScroll?.scrollTo(0));
+      } else {
+        restoreSessionSelection(items, selectedID, selected());
+      }
     } finally {
-      setLoading(false);
+      if (!options.quiet && sequence === refreshSequence) setLoading(false);
     }
   }
 
   function moveSelection(direction: -1 | 1) {
-    const count = filtered().length;
+    const count = visible().length;
     if (!count) return;
     setSelected((value) => Math.max(0, Math.min(count - 1, value + direction)));
     queueMicrotask(scrollToSelected);
@@ -311,9 +331,11 @@ export function DialogSessionList(props: {
   }
 
   async function confirmDelete() {
-    const session = filtered()[selected()];
+    const session = sessions().find((item) => item.id === deleteTargetID());
     if (!session) return;
     await props.backend.delete(session.id);
+    setDeleteTargetID(undefined);
+    setMode("list");
     void refresh();
   }
 
@@ -324,7 +346,37 @@ export function DialogSessionList(props: {
     props.onSelect?.(copy.id);
   }
 
-  createEffect(() => void refresh());
+  function restoreSessionSelection(
+    items: RuntimeSessionSummary[],
+    selectedID: string | undefined,
+    previousIndex: number,
+  ) {
+    const nextFiltered = filterSessions(items, query()).slice(0, 100);
+    const byID = selectedID
+      ? nextFiltered.findIndex((item) => item.id === selectedID)
+      : -1;
+    setSelected(
+      byID >= 0
+        ? byID
+        : Math.max(0, Math.min(previousIndex, nextFiltered.length - 1)),
+    );
+  }
+
+  onMount(() => {
+    void refresh({ reset: true });
+    const unsubscribe = props.subscribeRuntimeEvents?.((event) => {
+      if (event.type !== "session.title.updated") return;
+      const selectedID = visible()[selected()]?.id;
+      const next = sessions().map((session) =>
+        session.id === event.sessionID
+          ? { ...session, title: event.title }
+          : session,
+      );
+      setSessions(next);
+      restoreSessionSelection(next, selectedID, selected());
+    });
+    onCleanup(() => unsubscribe?.());
+  });
 
   useBindings(() => ({
     mode: "modal",
@@ -336,6 +388,7 @@ export function DialogSessionList(props: {
         group: "Dialog",
         cmd: () => {
           if (mode() === "confirm-delete") {
+            setDeleteTargetID(undefined);
             setMode("list");
           } else {
             dialog.pop();
@@ -370,7 +423,7 @@ export function DialogSessionList(props: {
         desc: "Open session",
         group: "Dialog",
         cmd: () => {
-          const session = filtered()[selected()];
+          const session = visible()[selected()];
           if (session) void selectSession(session);
         },
       },
@@ -389,7 +442,7 @@ export function DialogSessionList(props: {
         desc: "Toggle pin",
         group: "Dialog",
         cmd: () => {
-          const session = filtered()[selected()];
+          const session = visible()[selected()];
           if (session) {
             void props.backend
               .pin(session.id, !session.pinned)
@@ -402,7 +455,7 @@ export function DialogSessionList(props: {
         desc: "Rename session",
         group: "Dialog",
         cmd: () => {
-          const session = filtered()[selected()];
+          const session = visible()[selected()];
           if (session) {
             dialog.push(() => (
               <DialogPrompt
@@ -427,8 +480,11 @@ export function DialogSessionList(props: {
         desc: "Delete session",
         group: "Dialog",
         cmd: () => {
-          const session = filtered()[selected()];
-          if (session) setMode("confirm-delete");
+          const session = visible()[selected()];
+          if (session) {
+            setDeleteTargetID(session.id);
+            setMode("confirm-delete");
+          }
         },
       },
       {
@@ -482,9 +538,20 @@ export function DialogSessionList(props: {
           borderColor={darkTheme.muted}
           ref={(value: ScrollBoxRenderable) => (sessionScroll = value)}
         >
-          <For each={filtered().slice(0, 100)}>
+          <For each={visible()}>
             {(session, index) => (
-              <box flexDirection="row" paddingRight={1}>
+              <box flexDirection="column" paddingRight={1}>
+                <Show
+                  when={
+                    index() === 0 ||
+                    dateLabel(visible()[index() - 1]!.createdAt) !==
+                      dateLabel(session.createdAt)
+                  }
+                >
+                  <text fg={darkTheme.muted}>
+                    {dateLabel(session.createdAt)}
+                  </text>
+                </Show>
                 <text
                   flexGrow={1}
                   overflow="hidden"
@@ -498,7 +565,15 @@ export function DialogSessionList(props: {
                 >
                   {index() === selected() ? ">" : " "}
                   {session.pinned ? "* " : "  "}
-                  {session.title} · {session.id} · {session.events}
+                  {session.title || "Untitled"}
+                </text>
+                <text
+                  fg={darkTheme.muted}
+                  paddingLeft={4}
+                  overflow="hidden"
+                  wrapMode="none"
+                >
+                  {session.id} · {session.events} events
                   {session.pendingHumanTerminal ? " · waiting for human" : ""}
                 </text>
               </box>
@@ -509,7 +584,7 @@ export function DialogSessionList(props: {
       <ConfirmDialog
         open={mode() === "confirm-delete"}
         title="Delete Session"
-        message={`Remove "${filtered()[selected()]?.title ?? ""}" (${filtered()[selected()]?.id ?? ""})? This cannot be undone.`}
+        message={`Remove "${sessions().find((item) => item.id === deleteTargetID())?.title ?? ""}" (${deleteTargetID() ?? ""})? This cannot be undone.`}
         dangerous
         onClose={() => setMode("list")}
         onConfirm={() => {
@@ -517,6 +592,16 @@ export function DialogSessionList(props: {
         }}
       />
     </DialogFrame>
+  );
+}
+
+function filterSessions(items: RuntimeSessionSummary[], query: string) {
+  const terms = query.toLowerCase().trim().split(/\s+/u).filter(Boolean);
+  if (!terms.length) return items;
+  return items.filter((session) =>
+    terms.every((term) =>
+      `${session.title} ${session.id}`.toLowerCase().includes(term),
+    ),
   );
 }
 

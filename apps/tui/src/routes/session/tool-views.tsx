@@ -21,11 +21,7 @@ import type { MessageBlock } from "../../context/state";
 import { themeTokens as darkTheme } from "../../theme/theme";
 import { useRouteController } from "../../context/route";
 import { useDialog } from "../../dialog/provider";
-import {
-  alwaysSeparate,
-  tightRowMargin,
-  tightSiblingMargin,
-} from "./sibling-margin";
+import { alwaysSeparate } from "./sibling-margin";
 import {
   filetype,
   formatPrimitiveArgs,
@@ -78,43 +74,39 @@ function ProjectedToolCard(props: {
   const [expanded, setExpanded] = createSignal(
     props.toolDetails === "expanded",
   );
-  const [hover, setHover] = createSignal(false);
   const summary = () => intent().summary;
-  // A completed card with details collapsed is one line: title · summary.
-  if (props.toolDetails === "collapsed" && tool().status === "succeeded")
-    return (
-      <text
-        paddingLeft={1}
-        fg={darkTheme.text}
-        onMouseOver={() => setHover(true)}
-        onMouseOut={() => setHover(false)}
-        onMouseUp={() => setExpanded((value) => !value)}
-      >
-        {`${toolIcon(intent().kind)} ${intent().title} · ${summary()}${tool().elapsed ? ` · ${tool().elapsed}` : ""}`}
-      </text>
-    );
+  const statusColor = () =>
+    tool().status === "failed" || tool().status === "cancelled"
+      ? darkTheme.danger
+      : tool().status === "awaiting_approval"
+        ? darkTheme.warning
+        : tool().status === "succeeded"
+          ? darkTheme.muted
+          : darkTheme.accent;
   return (
     <box
       flexDirection="column"
-      border={["left"]}
-      borderColor={darkTheme.background}
+      border
+      borderColor={statusColor()}
       backgroundColor={darkTheme.panel}
-      paddingTop={1}
-      paddingBottom={1}
-      paddingLeft={2}
+      paddingTop={0}
+      paddingBottom={0}
+      paddingLeft={1}
+      paddingRight={1}
+      marginLeft={3}
+      marginRight={1}
       marginTop={1}
-      marginBottom={1}
-      gap={1}
-      onMouseOver={() => setHover(true)}
-      onMouseOut={() => setHover(false)}
+      gap={0}
       onMouseUp={() => setExpanded((value) => !value)}
     >
-      <text paddingLeft={3} fg={darkTheme.muted}>
+      <text paddingLeft={1} fg={statusColor()}>
         {`${toolIcon(intent().kind)} ${intent().title}${tool().elapsed ? ` · ${tool().elapsed}` : ""}`}
       </text>
-      <text paddingLeft={1} fg={darkTheme.muted}>
-        {summary()}
-      </text>
+      <Show when={summary()}>
+        <text paddingLeft={1} fg={darkTheme.text}>
+          {summary()}
+        </text>
+      </Show>
       <For each={intent().meta ?? []}>
         {([label, value]) => (
           <text paddingLeft={1} fg={darkTheme.muted}>
@@ -206,7 +198,10 @@ function FallbackToolBlock(props: {
   const [argumentsExpanded, setArgumentsExpanded] = createSignal(false);
   const [hover, setHover] = createSignal(false);
   const diff = () => tool().kind === "diff" && tool().result?.detail;
-  const succeeded = () => tool().status === "succeeded";
+  const compact = () =>
+    props.toolDetails === "collapsed" &&
+    tool().status === "succeeded" &&
+    !diff();
   const openDetail = () => {
     const content = tool().result?.detail || tool().redactedArguments;
     if (!content) return;
@@ -222,10 +217,6 @@ function FallbackToolBlock(props: {
       />
     ));
   };
-  // A completed, non-diff tool with details collapsed is one line, not a card.
-  if (props.toolDetails === "collapsed" && succeeded() && !diff())
-    return <CompactToolLine tool={tool()} onOpen={openDetail} />;
-
   const path = () => toolPath(tool().redactedArguments);
   const diffView = () =>
     props.diffStyle === "stacked" || props.terminalWidth <= 120
@@ -258,15 +249,23 @@ function FallbackToolBlock(props: {
   return (
     <box
       flexDirection="column"
-      border={["left"]}
-      borderColor={darkTheme.background}
+      border
+      borderColor={
+        tool().status === "failed" || tool().status === "cancelled"
+          ? darkTheme.danger
+          : tool().status === "awaiting_approval"
+            ? darkTheme.warning
+            : darkTheme.muted
+      }
       backgroundColor={darkTheme.panel}
-      paddingTop={1}
-      paddingBottom={1}
-      paddingLeft={2}
+      paddingTop={0}
+      paddingBottom={0}
+      paddingLeft={1}
+      paddingRight={1}
+      marginLeft={3}
+      marginRight={1}
       marginTop={1}
-      marginBottom={1}
-      gap={1}
+      gap={0}
       ref={(element: any) => alwaysSeparate.add(element)}
       onMouseOver={() => setHover(true)}
       onMouseOut={() => setHover(false)}
@@ -275,8 +274,11 @@ function FallbackToolBlock(props: {
         setExpanded((value) => !value);
       }}
     >
-      <text paddingLeft={3} fg={darkTheme.muted}>
+      <text paddingLeft={1} fg={darkTheme.muted}>
         {diff() ? title() : `${toolIcon(tool().kind)} ${tool().name}`}
+        {compact() && tool().keyArguments.length
+          ? ` ${tool().keyArguments.join(", ")}`
+          : ""}
         {tool().elapsed ? ` · ${tool().elapsed}` : ""}
       </text>
       <Show when={diff()}>
@@ -304,11 +306,13 @@ function FallbackToolBlock(props: {
           </box>
         )}
       </Show>
-      <Show when={!diff()}>
+      <Show when={!diff() && !compact()}>
         <Show when={!tool().result}>
-          <text fg={darkTheme.text} wrapMode="word">
-            {props.block.text}
-          </text>
+          <Show when={props.block.text}>
+            <text fg={darkTheme.text} wrapMode="word">
+              {props.block.text}
+            </text>
+          </Show>
         </Show>
         <Show when={!tool().argumentsComplete}>
           <text fg={darkTheme.muted}>
@@ -349,38 +353,6 @@ function FallbackToolBlock(props: {
           </text>
         </Show>
       </Show>
-    </box>
-  );
-}
-
-function CompactToolLine(props: {
-  tool: NonNullable<MessageBlock["tool"]>;
-  onOpen(): void;
-}) {
-  const tool = () => props.tool;
-  const [hover, setHover] = createSignal(false);
-  return (
-    <box
-      paddingLeft={3}
-      marginTop={1}
-      flexDirection="row"
-      ref={(element: any) => tightSiblingMargin(element, tightRowMargin)}
-      onMouseOver={() => setHover(true)}
-      onMouseOut={() => setHover(false)}
-      onMouseUp={props.onOpen}
-    >
-      <text width={2} fg={darkTheme.muted}>
-        ✓
-      </text>
-      <text
-        flexGrow={1}
-        fg={hover() ? darkTheme.text : darkTheme.muted}
-        wrapMode="word"
-      >
-        {toolIcon(tool().kind)} {tool().name}
-        {tool().keyArguments.length ? ` ${tool().keyArguments.join(", ")}` : ""}
-        {tool().elapsed ? ` · ${tool().elapsed}` : ""}
-      </text>
     </box>
   );
 }
@@ -471,7 +443,7 @@ function InteractionToolView(props: { block: MessageBlock }) {
           execute
           <For each={calls()}>
             {(call) => (
-              <>{`\n↳ ${call.tool}${formatPrimitiveArgs(call.input)}${call.status === "error" ? " (failed)" : ""}`}</>
+              <span>{`\n↳ ${call.tool}${formatPrimitiveArgs(call.input)}${call.status === "error" ? " (failed)" : ""}`}</span>
             )}
           </For>
         </InlineToolRow>
@@ -735,9 +707,16 @@ function InlineToolRow(props: {
           : darkTheme.text;
   return (
     <box
-      paddingLeft={3}
+      border
+      borderColor={color()}
+      backgroundColor={darkTheme.panel}
+      paddingLeft={1}
+      paddingRight={1}
+      marginLeft={3}
+      marginRight={1}
       marginTop={1}
       flexDirection="column"
+      ref={(element: any) => alwaysSeparate.add(element)}
       onMouseUp={() => failed() && setErrorExpanded((value) => !value)}
     >
       <Show
@@ -762,6 +741,9 @@ function InlineToolRow(props: {
           >
             {props.children as never}
           </text>
+          <Show when={props.tool.elapsed}>
+            <text fg={darkTheme.muted}>{` · ${props.tool.elapsed}`}</text>
+          </Show>
         </box>
       </Show>
       <Show when={failed() && errorExpanded()}>
@@ -789,14 +771,17 @@ function ToolPanel(props: {
     props.tool.summary;
   return (
     <box
-      border={["left"]}
-      borderColor={darkTheme.background}
+      border
+      borderColor={failed() ? darkTheme.danger : darkTheme.muted}
       backgroundColor={hover() ? darkTheme.background : darkTheme.panel}
-      paddingTop={1}
-      paddingBottom={1}
-      paddingLeft={2}
+      paddingTop={0}
+      paddingBottom={0}
+      paddingLeft={1}
+      paddingRight={1}
+      marginLeft={3}
+      marginRight={1}
       marginTop={1}
-      gap={1}
+      gap={0}
       onMouseOver={() => setHover(true)}
       onMouseOut={() => setHover(false)}
       onMouseUp={() => {
@@ -804,7 +789,7 @@ function ToolPanel(props: {
         if (failed()) setErrorExpanded((value) => !value);
       }}
     >
-      <text paddingLeft={3} fg={darkTheme.muted}>
+      <text paddingLeft={1} fg={darkTheme.muted}>
         {props.title}
         {props.tool.elapsed ? ` · ${props.tool.elapsed}` : ""}
       </text>
@@ -860,10 +845,22 @@ function ShellToolView(props: {
   if (!tool().result)
     return (
       <box
-        paddingLeft={3}
+        border
+        borderColor={
+          failed()
+            ? darkTheme.danger
+            : tool().status === "awaiting_approval"
+              ? darkTheme.warning
+              : darkTheme.muted
+        }
+        backgroundColor={darkTheme.panel}
+        paddingLeft={1}
+        paddingRight={1}
+        marginLeft={3}
+        marginRight={1}
         marginTop={1}
         flexDirection="row"
-        ref={(element: any) => tightSiblingMargin(element, tightRowMargin)}
+        ref={(element: any) => alwaysSeparate.add(element)}
       >
         <text width={2} fg={failed() ? darkTheme.danger : darkTheme.muted}>
           {running() ? "│" : failed() ? "✗" : "$"}
@@ -891,49 +888,19 @@ function ShellToolView(props: {
       </box>
     );
 
-  // A completed shell with details collapsed is one line; click opens the block.
-  if (
-    props.toolDetails === "collapsed" &&
-    tool().status === "succeeded" &&
-    !expanded()
-  )
-    return (
-      <box
-        paddingLeft={3}
-        marginTop={1}
-        flexDirection="row"
-        ref={(element: any) => tightSiblingMargin(element, tightRowMargin)}
-        onMouseOver={() => setHover(true)}
-        onMouseOut={() => setHover(false)}
-        onMouseUp={() => {
-          if (renderer.getSelection()?.getSelectedText()) return;
-          setExpanded(true);
-        }}
-      >
-        <text width={2} fg={darkTheme.muted}>
-          ✓
-        </text>
-        <text
-          flexGrow={1}
-          fg={hover() ? darkTheme.text : darkTheme.muted}
-          wrapMode="word"
-        >
-          $ {input().command || tool().name}
-          {tool().elapsed ? ` · ${tool().elapsed}` : ""}
-        </text>
-      </box>
-    );
-
   return (
     <box
-      border={["left"]}
-      borderColor={darkTheme.background}
+      border
+      borderColor={failed() ? darkTheme.danger : darkTheme.muted}
       backgroundColor={hover() ? darkTheme.background : darkTheme.panel}
-      paddingTop={1}
-      paddingBottom={1}
-      paddingLeft={2}
+      paddingTop={0}
+      paddingBottom={0}
+      paddingLeft={1}
+      paddingRight={1}
+      marginLeft={3}
+      marginRight={1}
       marginTop={1}
-      gap={1}
+      gap={0}
       ref={(element: any) => alwaysSeparate.add(element)}
       onMouseOver={() => collapsed().overflow && setHover(true)}
       onMouseOut={() => setHover(false)}
@@ -952,11 +919,14 @@ function ShellToolView(props: {
           # Running in {input().workdir}
         </text>
       </Show>
-      <box gap={1}>
+      <box flexDirection="column" gap={0}>
         <Show
           when={running()}
           fallback={
-            <text fg={failed() ? darkTheme.danger : darkTheme.text}>
+            <text
+              fg={failed() ? darkTheme.danger : darkTheme.text}
+              attributes={TextAttributes.BOLD}
+            >
               $ {input().command || tool().name}
               {tool().elapsed ? ` · ${tool().elapsed}` : ""}
             </text>
@@ -965,12 +935,14 @@ function ShellToolView(props: {
           <ShellSpinner command={input().command || tool().name} />
         </Show>
         <Show when={output()}>
-          <text
-            fg={failed() ? darkTheme.danger : darkTheme.text}
-            wrapMode="word"
-          >
-            {visibleOutput()}
-          </text>
+          <box paddingLeft={2} paddingTop={1} paddingBottom={1}>
+            <text
+              fg={failed() ? darkTheme.danger : darkTheme.muted}
+              wrapMode="word"
+            >
+              {visibleOutput()}
+            </text>
+          </box>
         </Show>
         <Show when={collapsed().overflow}>
           <text fg={darkTheme.muted}>

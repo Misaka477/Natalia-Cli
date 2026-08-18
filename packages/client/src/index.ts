@@ -17,6 +17,11 @@ export {
 export { createFakeBackend } from "./fixture";
 export { createRealRuntimeClient, EGRESS_ADVISORY } from "./real-runtime";
 export {
+  classifyPermissionFamily,
+  PERMISSION_FAMILIES,
+  type PermissionFamily,
+} from "@natalia/contracts";
+export {
   flowOverview,
   scheduledTaskOverview,
   type FlowOverview,

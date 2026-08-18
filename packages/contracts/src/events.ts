@@ -235,6 +235,7 @@ export type ToolStatus =
 
 type RuntimeEventData =
   | { type: "session.created"; sessionID: SessionID; title: string }
+  | { type: "session.title.updated"; sessionID: SessionID; title: string }
   | { type: "session.ready"; sessionID: SessionID }
   | {
       type: "turn.submitted";
@@ -933,6 +934,7 @@ type RuntimeEventData =
       scope?: string;
       expiresAt?: string;
       revocable?: boolean;
+      permissionFamily?: import("./permission-families").PermissionFamily;
     }
   | {
       type: "approval.response";
@@ -959,6 +961,11 @@ type RuntimeEventData =
       id: string;
       stopReason: "done" | "cancelled" | "error" | "waiting_human";
       reason?: "missing_final_response";
+      model?: string;
+      profile?: string;
+      durationMs?: number;
+      inputTokens?: number;
+      outputTokens?: number;
     }
   | {
       type: "flow.module_event";

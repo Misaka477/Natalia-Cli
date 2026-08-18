@@ -183,8 +183,69 @@ test("the footer renders English activity text and prioritizes input requests", 
   await Bun.sleep(40);
   await setup.renderOnce();
   const frame = setup.captureCharFrame();
-  expect(frame).toContain("Waiting for input");
+  expect(frame).toContain("Waiting for answer");
   expect(frame).not.toContain("Running command");
+
+  setup.renderer.destroy();
+});
+
+test("the footer animates active generation instead of showing a static dot", async () => {
+  const setup = await createTestRenderer({ width: 100, height: 4 });
+  let dispatch: ((event: RuntimeEvent) => void) | undefined;
+  await render(
+    () => (
+      <StateProvider onReady={(bridge) => (dispatch = bridge.dispatch)}>
+        <SessionFooter workspaceRoot="/work/natalia" />
+      </StateProvider>
+    ),
+    setup.renderer,
+  );
+  if (!dispatch) throw new Error("state provider did not come up");
+
+  dispatch({ type: "content.delta", id: "turn_generating", text: "hello" });
+  await setup.renderOnce();
+  const first = setup
+    .captureCharFrame()
+    .split("\n")
+    .find((line) => line.includes("Generating"))!;
+  const firstDot = first.lastIndexOf(".", first.indexOf("Generating"));
+
+  await Bun.sleep(170);
+  await setup.renderOnce();
+  const second = setup
+    .captureCharFrame()
+    .split("\n")
+    .find((line) => line.includes("Generating"))!;
+  const secondDot = second.lastIndexOf(".", second.indexOf("Generating"));
+
+  expect(first).toContain("Generating");
+  expect(secondDot).toBe(firstDot + 1);
+  setup.renderer.destroy();
+});
+
+test("turn completion adds one stable footer with model, duration, and usage", async () => {
+  const { setup, send, state } = await mountState();
+  const finished: RuntimeEvent = {
+    type: "turn.finished",
+    id: "turn_metadata",
+    stopReason: "done",
+    profile: "ask",
+    model: "gpt-test",
+    durationMs: 1_250,
+    inputTokens: 1_024,
+    outputTokens: 256,
+  };
+
+  await send(finished, finished);
+
+  const footers = state().messages.filter(
+    (message) => message.id === "turn_metadata:footer",
+  );
+  expect(footers).toHaveLength(1);
+  expect(footers[0]).toMatchObject({
+    role: "turn_footer",
+    text: "ask · gpt-test · 1.3s · 1,024 in / 256 out",
+  });
 
   setup.renderer.destroy();
 });

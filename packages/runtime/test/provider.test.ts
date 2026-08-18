@@ -3,13 +3,170 @@ import {
   AnthropicProvider,
   contextEntriesToProviderMessages,
   GeminiProvider,
+  normalizeRawToolCallProtocol,
   OpenAICompatibleProvider,
   providerFromKind,
   providerForModel,
   readWithIdleTimeout,
 } from "../src/provider";
+import type { ProviderStreamChunk } from "../src/provider";
 import { defaultConfigV3 } from "@natalia/config";
 import { ContextWindowResolver } from "../src/modelmeta";
+
+test("raw XML-like tool protocol becomes structured calls while preserving prose", async () => {
+  async function* source() {
+    yield { type: "content" as const, text: "Before <tool_" };
+    yield {
+      type: "content" as const,
+      text: "call><function=agent_attach><parameter=agentId>a6</parameter><parameter=options>{&quot;mode&quot;:&quot;fast&quot;}</parameter></function></tool_call> after",
+    };
+    yield { type: "done" as const };
+  }
+  const chunks: ProviderStreamChunk[] = [];
+  for await (const chunk of normalizeRawToolCallProtocol(source()))
+    chunks.push(chunk);
+  expect(chunks).toEqual([
+    { type: "content", text: "Before " },
+    { type: "content", text: " after" },
+    {
+      type: "tool_call",
+      calls: [
+        {
+          id: "raw_xml_tool_0",
+          name: "agent_attach",
+          arguments: '{"agentId":"a6","options":{"mode":"fast"}}',
+        },
+      ],
+    },
+    { type: "done" },
+  ]);
+});
+
+test("raw XML-like tool protocol leaves malformed or incomplete blocks untouched", async () => {
+  async function* source() {
+    yield {
+      type: "content" as const,
+      text: "<tool_call><function=read_file><parameter=path>a.txt</function></tool_call>",
+    };
+    yield {
+      type: "content" as const,
+      text: " and <tool_call><function=glob><parameter=pattern>*.ts</parameter>",
+    };
+  }
+  const chunks: ProviderStreamChunk[] = [];
+  for await (const chunk of normalizeRawToolCallProtocol(source()))
+    chunks.push(chunk);
+  expect(chunks.filter((chunk) => chunk.type === "tool_call")).toEqual([]);
+  expect(
+    chunks
+      .filter(
+        (
+          chunk,
+        ): chunk is Extract<(typeof chunks)[number], { type: "content" }> =>
+          chunk.type === "content",
+      )
+      .map((chunk) => chunk.text)
+      .join(""),
+  ).toBe(
+    "<tool_call><function=read_file><parameter=path>a.txt</function></tool_call> and <tool_call><function=glob><parameter=pattern>*.ts</parameter>",
+  );
+});
+
+test("raw XML-like calls duplicate native calls only once", async () => {
+  async function* source() {
+    yield {
+      type: "content" as const,
+      text: '<tool_call><function=glob><parameter=pattern>"*.ts"</parameter></function></tool_call>',
+    };
+    yield {
+      type: "tool_call" as const,
+      calls: [
+        { id: "native_1", name: "glob", arguments: '{"pattern":"*.ts"}' },
+      ],
+    };
+  }
+  const chunks = [];
+  for await (const chunk of normalizeRawToolCallProtocol(source()))
+    chunks.push(chunk);
+  expect(chunks).toEqual([
+    {
+      type: "tool_call",
+      calls: [
+        { id: "native_1", name: "glob", arguments: '{"pattern":"*.ts"}' },
+      ],
+    },
+  ]);
+});
+
+test("native calls with identical arguments retain distinct call IDs", async () => {
+  async function* source() {
+    yield {
+      type: "tool_call" as const,
+      calls: [
+        { id: "native_1", name: "glob", arguments: '{"pattern":"*.ts"}' },
+        { id: "native_2", name: "glob", arguments: '{"pattern":"*.ts"}' },
+      ],
+    };
+  }
+  const chunks: ProviderStreamChunk[] = [];
+  for await (const chunk of normalizeRawToolCallProtocol(source()))
+    chunks.push(chunk);
+  expect(chunks).toEqual([
+    {
+      type: "tool_call",
+      calls: [
+        { id: "native_1", name: "glob", arguments: '{"pattern":"*.ts"}' },
+        { id: "native_2", name: "glob", arguments: '{"pattern":"*.ts"}' },
+      ],
+    },
+  ]);
+});
+
+test("raw and native tool calls retain their source order", async () => {
+  async function* source() {
+    yield {
+      type: "content" as const,
+      text: '<tool_call><function=read_file><parameter=path>"a.ts"</parameter></function></tool_call>',
+    };
+    yield {
+      type: "tool_call" as const,
+      calls: [
+        { id: "native_1", name: "glob", arguments: '{"pattern":"*.ts"}' },
+      ],
+    };
+  }
+  const chunks = [];
+  for await (const chunk of normalizeRawToolCallProtocol(source()))
+    chunks.push(chunk);
+  expect(chunks).toEqual([
+    {
+      type: "tool_call",
+      calls: [
+        {
+          id: "raw_xml_tool_0",
+          name: "read_file",
+          arguments: '{"path":"a.ts"}',
+        },
+        { id: "native_1", name: "glob", arguments: '{"pattern":"*.ts"}' },
+      ],
+    },
+  ]);
+});
+
+test("a partial raw marker is flushed before a native event", async () => {
+  async function* source() {
+    yield { type: "content" as const, text: "Before <tool_" };
+    yield { type: "thinking" as const, text: "checking" };
+  }
+  const chunks = [];
+  for await (const chunk of normalizeRawToolCallProtocol(source()))
+    chunks.push(chunk);
+  expect(chunks).toEqual([
+    { type: "content", text: "Before " },
+    { type: "content", text: "<tool_" },
+    { type: "thinking", text: "checking" },
+  ]);
+});
 
 test("OpenAI-compatible provider accepts both base and complete chat endpoint URLs", async () => {
   const requested: string[] = [];

@@ -40,6 +40,173 @@ export type ProviderStreamChunk =
   | { type: "usage"; inputTokens: number; outputTokens: number }
   | { type: "done" };
 
+/**
+ * Converts complete XML-like tool protocol blocks leaked into content by
+ * compatible model gateways into ordinary provider tool calls. The parser is
+ * intentionally strict: anything it cannot recognize remains assistant text.
+ */
+export async function* normalizeRawToolCallProtocol(
+  source: AsyncIterable<ProviderStreamChunk>,
+): AsyncIterable<ProviderStreamChunk> {
+  let content = "";
+  let generatedCallCount = 0;
+  const orderedCalls: ProviderToolCall[] = [];
+  const rawCallIndices = new Map<string, number[]>();
+  const structuredSignatures = new Set<string>();
+  let done = false;
+
+  const flushContent = function* (
+    final: boolean,
+  ): Iterable<ProviderStreamChunk> {
+    while (content) {
+      const start = content.indexOf("<tool_call>");
+      if (start < 0) {
+        const retained = final ? "" : toolCallPrefixSuffix(content);
+        const text = content.slice(0, content.length - retained.length);
+        content = retained;
+        if (text) yield { type: "content", text };
+        return;
+      }
+      if (start > 0) {
+        yield { type: "content", text: content.slice(0, start) };
+        content = content.slice(start);
+      }
+      const end = content.indexOf("</tool_call>");
+      if (end < 0) {
+        if (final) {
+          yield { type: "content", text: content };
+          content = "";
+        }
+        return;
+      }
+      const blockEnd = end + "</tool_call>".length;
+      const block = content.slice(0, blockEnd);
+      content = content.slice(blockEnd);
+      const call = parseRawToolCall(
+        block,
+        `raw_xml_tool_${generatedCallCount}`,
+      );
+      if (call) {
+        generatedCallCount += 1;
+        const signature = toolCallSignature(call);
+        if (!structuredSignatures.has(signature)) {
+          const indices = rawCallIndices.get(signature) ?? [];
+          indices.push(orderedCalls.length);
+          rawCallIndices.set(signature, indices);
+          orderedCalls.push(call);
+        }
+      } else yield { type: "content", text: block };
+    }
+  };
+
+  for await (const chunk of source) {
+    if (chunk.type === "content") {
+      content += chunk.text;
+      yield* flushContent(false);
+      continue;
+    }
+    if (chunk.type === "tool_call") {
+      yield* flushContent(true);
+      for (const call of chunk.calls) {
+        const signature = toolCallSignature(call);
+        structuredSignatures.add(signature);
+        const indices = rawCallIndices.get(signature);
+        const index = indices?.shift();
+        if (!indices?.length) rawCallIndices.delete(signature);
+        if (index === undefined) orderedCalls.push(call);
+        else orderedCalls[index] = call;
+      }
+      continue;
+    }
+    if (chunk.type === "done") {
+      done = true;
+      continue;
+    }
+    yield* flushContent(true);
+    yield chunk;
+  }
+  yield* flushContent(true);
+  if (orderedCalls.length) yield { type: "tool_call", calls: orderedCalls };
+  if (done) yield { type: "done" };
+}
+
+function parseRawToolCall(
+  block: string,
+  id: string,
+): ProviderToolCall | undefined {
+  const match =
+    /^<tool_call>\s*<function=([A-Za-z_][\w.:-]*)>([\s\S]*?)<\/function>\s*<\/tool_call>$/u.exec(
+      block,
+    );
+  if (!match) return undefined;
+  const name = decodeXMLEntities(match[1]!);
+  const body = match[2]!;
+  const parameters: Record<string, unknown> = {};
+  let cursor = 0;
+  const parameter =
+    /\s*<parameter=([A-Za-z_][\w.:-]*)>([\s\S]*?)<\/parameter>/guy;
+  while (cursor < body.length) {
+    parameter.lastIndex = cursor;
+    const item = parameter.exec(body);
+    if (!item) return undefined;
+    cursor = parameter.lastIndex;
+    const key = decodeXMLEntities(item[1]!);
+    if (Object.hasOwn(parameters, key)) return undefined;
+    parameters[key] = parseRawToolParameter(decodeXMLEntities(item[2]!));
+  }
+  return { id, name, arguments: JSON.stringify(parameters) };
+}
+
+function parseRawToolParameter(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return value;
+  }
+}
+
+function decodeXMLEntities(value: string) {
+  return value.replace(
+    /&(amp|lt|gt|quot|apos);/gu,
+    (_entity, name: string) =>
+      ({ amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" })[name]!,
+  );
+}
+
+function toolCallPrefixSuffix(value: string) {
+  const marker = "<tool_call>";
+  for (
+    let length = Math.min(value.length, marker.length - 1);
+    length > 0;
+    length--
+  )
+    if (value.endsWith(marker.slice(0, length))) return value.slice(-length);
+  return "";
+}
+
+function toolCallSignature(call: ProviderToolCall) {
+  return `${call.name}\u0000${canonicalJSON(call.arguments)}`;
+}
+
+function canonicalJSON(value: string) {
+  try {
+    return JSON.stringify(sortJSON(JSON.parse(value) as unknown));
+  } catch {
+    return value;
+  }
+}
+
+function sortJSON(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortJSON);
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, sortJSON(item)]),
+    );
+  return value;
+}
+
 export type ProviderStreamRequest = {
   messages: ProviderMessage[];
   tools?: ProviderTool[];

@@ -28,6 +28,10 @@ import type {
   RuntimeEvent,
   SessionID,
 } from "@natalia/contracts";
+import {
+  classifyPermissionFamily,
+  PERMISSION_FAMILIES,
+} from "@natalia/contracts";
 import type { ProviderToolCall } from "@natalia/runtime";
 import type { RuntimeTool } from "@natalia/tools";
 import { projectInteractiveRequests } from "@natalia/session";
@@ -37,7 +41,7 @@ import { parseToolArguments, tryParseToolArguments } from "./tool-arguments";
 export type InteractiveWaiterDeps = {
   publish: (event: RuntimeEvent) => void;
   sessionID: () => SessionID;
-  permissionMode: () => "ask" | "auto" | "read_only";
+  permissionMode: (turnID?: string) => "ask" | "auto" | "read_only";
   /**
    * The abort signal of the turn that issued the request, resolved per turn.
    * Parallel sessions make this a per-turn fact: a background turn waiting for
@@ -72,6 +76,7 @@ export type InteractiveWaiterDeps = {
    * is attached to — a background turn's request must land in its own journal.
    */
   publishForSession: (sessionID: SessionID, event: RuntimeEvent) => void;
+  capabilityOwnerForTool?: (toolName: string) => string | undefined;
 };
 
 export type InteractiveWaiter = ReturnType<typeof createInteractiveWaiter>;
@@ -80,22 +85,21 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
   const { publish } = deps;
   const pendingApprovals = new Map<string, ApprovalResponse>();
   const pendingApprovalRequests = new Set<string>();
+  const approvalSessionByID = new Map<string, SessionID>();
   // These grants only live in this RuntimeClient instance. Reopening a
   // durable session must never silently restore side-effecting permissions.
   // D5.3: they are keyed per session — what session A approved never grants
   // session B, and a background turn of A keeps its grants when the UI
   // attaches to B.
-  const sessionApprovedTools = new Map<SessionID, Set<string>>();
-  const approvalToolByID = new Map<string, string>();
+  const sessionApprovedFamilies = new Map<SessionID, Set<string>>();
+  const approvalFamilyByID = new Map<
+    string,
+    ReturnType<typeof classifyPermissionFamily>
+  >();
   const approvalWorkGraphContext = new Map<
     string,
     { turnID: string; callID: string; toolName: string }
   >();
-  const terminalApprovalByID = new Map<
-    string,
-    { scope: string; expiresAt: number }
-  >();
-  const terminalApprovalScopes = new Map<SessionID, Map<string, number>>();
   const approvalWaiters = new Map<
     string,
     (response: ApprovalResponse) => void
@@ -113,21 +117,18 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
     call: ProviderToolCall,
     turnID: string,
   ): Promise<{ reason: string } | undefined> {
-    if (deps.permissionMode() === "auto") return undefined;
-    if (deps.permissionMode() === "read_only")
+    if (deps.permissionMode(turnID) === "auto") return undefined;
+    if (deps.permissionMode(turnID) === "read_only")
       return { reason: readOnlyToolMessage(tool.name) };
     const session = deps.sessionIDForTurn(turnID);
     const agentID = deps.agentIDForTurn?.(turnID);
-    const terminalApproval = terminalApprovalScope(tool.name, call.arguments);
-    if (terminalApproval) {
-      if (terminalApproval.risk === "terminal_low") {
-        const scopes = terminalApprovalScopes.get(session);
-        const expiresAt = scopes?.get(terminalApproval.scope);
-        if (expiresAt && expiresAt > Date.now()) return undefined;
-        scopes?.delete(terminalApproval.scope);
-      }
-    } else if (sessionApprovedTools.get(session)?.has(tool.name))
+    const permissionFamily = classifyPermissionFamily(
+      tool.name,
+      deps.capabilityOwnerForTool?.(tool.name),
+    );
+    if (sessionApprovedFamilies.get(session)?.has(permissionFamily.id))
       return undefined;
+    const terminalApproval = terminalApprovalScope(tool.name, call.arguments);
     const presentation = approvalPresentation(tool.name, call.arguments);
     const expiresAt =
       terminalApproval?.risk === "terminal_low"
@@ -137,17 +138,13 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
     // synchronously; publishing first made an immediate `respondApproval()` look
     // like a response to a non-pending request and silently ignored it.
     pendingApprovalRequests.add(approvalID);
+    approvalSessionByID.set(approvalID, session);
     approvalWorkGraphContext.set(approvalID, {
       turnID,
       callID: call.id,
       toolName: tool.name,
     });
-    if (terminalApproval?.risk === "terminal_low" && expiresAt)
-      terminalApprovalByID.set(approvalID, {
-        scope: terminalApproval.scope,
-        expiresAt,
-      });
-    else approvalToolByID.set(approvalID, tool.name);
+    approvalFamilyByID.set(approvalID, permissionFamily);
     deps.publishForSession(session, {
       type: "approval.request",
       id: approvalID,
@@ -160,6 +157,7 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
       scope: terminalApproval?.scope,
       expiresAt: expiresAt ? new Date(expiresAt).toISOString() : undefined,
       revocable: terminalApproval ? true : undefined,
+      permissionFamily,
       agentID,
     });
     try {
@@ -198,9 +196,9 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
       return { reason: expiredToolMessage(tool.name) };
     } finally {
       pendingApprovalRequests.delete(approvalID);
-      approvalToolByID.delete(approvalID);
+      approvalFamilyByID.delete(approvalID);
       approvalWorkGraphContext.delete(approvalID);
-      terminalApprovalByID.delete(approvalID);
+      approvalSessionByID.delete(approvalID);
     }
   }
 
@@ -274,9 +272,11 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
     response: ApprovalResponse,
   ): InteractiveResponseOutcome {
     const respondGraph = approvalWorkGraphContext.get(response.requestID);
-    const respondSession = respondGraph
-      ? deps.sessionIDForTurn(respondGraph.turnID)
-      : deps.sessionID();
+    const respondSession =
+      approvalSessionByID.get(response.requestID) ??
+      (respondGraph
+        ? deps.sessionIDForTurn(respondGraph.turnID)
+        : deps.sessionID());
     if (
       !pendingApprovalRequests.has(response.requestID) &&
       !deps.isPending(respondSession, response.requestID, "approval")
@@ -295,9 +295,7 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
       };
     }
     const graphContext = approvalWorkGraphContext.get(response.requestID);
-    const responseSession = graphContext
-      ? deps.sessionIDForTurn(graphContext.turnID)
-      : deps.sessionID();
+    const responseSession = respondSession;
     const agentID = graphContext
       ? deps.agentIDForTurn?.(graphContext.turnID)
       : undefined;
@@ -315,8 +313,7 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
       ...approvalNode({
         approvalID: response.requestID,
         decision: response.decision,
-        toolName:
-          graphContext?.toolName ?? approvalToolByID.get(response.requestID),
+        toolName: graphContext?.toolName,
         sessionID: responseSession,
         turnID: graphContext?.turnID,
       }),
@@ -333,26 +330,17 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
         agentID,
       });
     if (response.decision === "session") {
-      const terminalApproval = terminalApprovalByID.get(response.requestID);
-      const session = deps.sessionIDForTurn(
-        graphContext?.turnID ?? `approval:${deps.sessionID()}`,
-      );
-      if (terminalApproval) {
-        const scopes =
-          terminalApprovalScopes.get(session) ?? new Map<string, number>();
-        scopes.set(terminalApproval.scope, terminalApproval.expiresAt);
-        terminalApprovalScopes.set(session, scopes);
-      } else {
-        const toolName = approvalToolByID.get(response.requestID);
-        if (toolName) {
-          const approved = sessionApprovedTools.get(session) ?? new Set();
-          approved.add(toolName);
-          sessionApprovedTools.set(session, approved);
-        }
+      const session = responseSession;
+      const family = approvalFamilyByID.get(response.requestID);
+      if (family) {
+        const approved = sessionApprovedFamilies.get(session) ?? new Set();
+        approved.add(family.id);
+        sessionApprovedFamilies.set(session, approved);
       }
     }
     pendingApprovals.set(response.requestID, response);
     pendingApprovalRequests.delete(response.requestID);
+    approvalSessionByID.delete(response.requestID);
     approvalWaiters.get(response.requestID)?.(response);
     return { accepted: true };
   }
@@ -391,14 +379,16 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
   }
 
   /**
-   * Drops a terminal's low-risk grant. Someone revoking it expects the model's
+   * Drops the current session's interactive-terminal family grant. Someone revoking it expects the model's
    * next keystroke to ask again, so it takes effect now rather than on expiry.
    * Revocation is a UI action, so it targets the currently attached session.
    */
   function revokeTerminalApprovalScope(terminalID: string) {
     const scope = `terminal:${terminalID}:low-risk`;
     const revoked =
-      terminalApprovalScopes.get(deps.sessionID())?.delete(scope) === true;
+      sessionApprovedFamilies
+        .get(deps.sessionID())
+        ?.delete(PERMISSION_FAMILIES.interactiveTerminal.id) === true;
     if (revoked)
       publish({
         type: "diagnostic",
@@ -418,10 +408,15 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
     planID: string;
     title: string;
     detail: string;
+    sessionID?: SessionID;
+    permissionMode?: "ask" | "auto" | "read_only";
+    signal?: AbortSignal;
   }): Promise<ApprovalResponse | undefined> {
-    if (deps.permissionMode() === "auto")
+    const permissionMode = input.permissionMode ?? deps.permissionMode();
+    const sessionID = input.sessionID ?? deps.sessionID();
+    if (permissionMode === "auto")
       return { requestID: input.approvalID, decision: "once" };
-    if (deps.permissionMode() === "read_only")
+    if (permissionMode === "read_only")
       return {
         requestID: input.approvalID,
         decision: "reject",
@@ -431,7 +426,8 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
     // `respondApproval` from an event sink is not mistaken for a response to a
     // non-pending request (same rule as tool approvals, §waiter).
     pendingApprovalRequests.add(input.approvalID);
-    deps.publishForSession(deps.sessionID(), {
+    approvalSessionByID.set(input.approvalID, sessionID);
+    deps.publishForSession(sessionID, {
       type: "approval.request",
       id: input.approvalID,
       title: input.title,
@@ -446,13 +442,15 @@ export function createInteractiveWaiter(deps: InteractiveWaiterDeps) {
         input.approvalID,
         pendingApprovals,
         approvalWaiters,
-        deps.abortSignal("plan_acceptance"),
+        input.signal,
         `plan acceptance timed out: ${input.planID}`,
       );
-    } catch {
+    } catch (error) {
+      if (input.signal?.aborted) throw error;
       return undefined;
     } finally {
       pendingApprovalRequests.delete(input.approvalID);
+      approvalSessionByID.delete(input.approvalID);
     }
   }
 

@@ -5,6 +5,12 @@ import { createStatusSnapshotController } from "./status-controller";
 import { createSessionStoreController } from "./session-store-controller";
 import { createTurnController } from "./turn-controller";
 import { createProviderRunner } from "./provider-runner";
+import {
+  fallbackSessionTitle,
+  generateSessionTitle,
+  isInvalidGeneratedSessionTitle,
+  sanitizeSessionTitleInput,
+} from "./session-title";
 import { createSkillsController } from "./skills-controller";
 import { createSubagentsController } from "./subagents-controller";
 import { createTerminalController } from "./terminal-controller";
@@ -50,6 +56,7 @@ import {
   ContextLedger,
   contextEntriesToProviderMessages,
   contextStatusEvent,
+  normalizeRawToolCallProtocol,
   ProviderConcurrencyLimiter,
   providerCompactor,
   providerForModel,
@@ -73,7 +80,7 @@ import {
   updateConfigAtScope,
   verifyTrust,
 } from "@natalia/config";
-import type { ConfigV3 } from "@natalia/contracts";
+import type { ConfigV3, ModelCapabilities } from "@natalia/contracts";
 import { modelRefKey, parseModelRef, type ModelRef } from "@natalia/contracts";
 import {
   CapabilityRegistry,
@@ -251,6 +258,8 @@ import {
   referencedAttachmentsForSessions,
   storeLocalAttachments,
 } from "./attachments";
+
+type PermissionProfile = ConfigV3["permissionProfiles"][string];
 
 function userSkillRoot() {
   const root = join(globalConfigHome(), "natalia-cli", "skills");
@@ -477,9 +486,16 @@ export function createRealRuntimeClient(
         event.toolName === "flow_module_complete"
       )
         return { allowed: true, diagnostics: [] };
-      const agentResult = await agentToolLayer.preExecute(event);
+      const exec = executionForTurn(event.turnID);
+      const agent = exec ? exec.selectedAgent : selectedAgent;
+      const profile = exec ? exec.permissionProfile : selectedPermissionProfile;
+      const agentResult = await (
+        exec ? agentPolicyLayer(agent) : agentToolLayer
+      ).preExecute(event);
       if (!agentResult.allowed) return agentResult;
-      const profileResult = await permissionProfileToolLayer.preExecute(event);
+      const profileResult = await (
+        exec ? permissionProfileLayer(profile) : permissionProfileToolLayer
+      ).preExecute(event);
       if (!profileResult.allowed) return profileResult;
       const moduleResult = await moduleToolLayer.preExecute(event);
       if (!moduleResult.allowed)
@@ -493,17 +509,17 @@ export function createRealRuntimeClient(
         await modulePermissionToolLayer.preExecute(event);
       if (!modulePermissionToolResult.allowed)
         return modulePermissionToolResult;
-      const extensionResult = extensionToolPermission(event.toolName);
+      const extensionResult = extensionToolPermission(event.toolName, profile);
       if (!extensionResult.allowed) return extensionResult;
       const permission = evaluatePermissionRules(
-        selectedAgent?.permissions,
+        agent?.permissions,
         event.toolName,
         tryParseToolArguments(event.arguments),
         workspaceRoot,
       );
       if (!permission.allowed) return permission;
       const profilePermission = evaluatePermissionRules(
-        selectedPermissionProfile?.permissions,
+        profile?.permissions,
         event.toolName,
         tryParseToolArguments(event.arguments),
         workspaceRoot,
@@ -520,7 +536,7 @@ export function createRealRuntimeClient(
       const bufferedProfileCommandPermission =
         await terminalCommandBuffer.evaluate(
           [
-            selectedPermissionProfile?.commandRules,
+            profile?.commandRules,
             options.taskModuleContext?.moduleCommandRules,
           ].filter(
             (
@@ -531,14 +547,14 @@ export function createRealRuntimeClient(
           event.toolName,
           args,
           [
-            selectedPermissionProfile?.interactivePrograms,
+            profile?.interactivePrograms,
             options.taskModuleContext?.moduleInteractivePrograms,
           ],
         );
       const profileCommandPermission =
         bufferedProfileCommandPermission ??
         (await evaluatePermissionProfileCommandRules(
-          selectedPermissionProfile?.commandRules,
+          profile?.commandRules,
           event.toolName,
           args,
         ));
@@ -563,18 +579,22 @@ export function createRealRuntimeClient(
     postExecute: options.hooks?.postExecute,
   });
   let permissionMode = options.permissionMode ?? "ask";
-  let selectedPermissionProfile:
-    | Awaited<
-        ReturnType<typeof resolveConfig>
-      >["config"]["permissionProfiles"][string]
-    | undefined;
+  let selectedPermissionProfile: PermissionProfile | undefined;
+  let defaultPermissionMode = permissionMode;
+  let defaultPermissionProfile: PermissionProfile | undefined;
   let maxSteps: number | undefined;
   const subagentsController = createSubagentsController({
     workDir: workspaceRoot,
   });
   const terminalController = createTerminalController({
     workspaceRoot,
-    publish,
+    publish: (event) =>
+      publishForSession(
+        event.sessionID
+          ? executionBySession.get(event.sessionID as SessionID)
+          : activeExec,
+        event,
+      ),
     onPerformance: (name, durationMs) =>
       performanceTrace.mark(name, durationMs),
     runtimeID: () => nativeRuntimeID,
@@ -585,17 +605,6 @@ export function createRealRuntimeClient(
   const sandboxController = createSandboxController({
     workspaceRoot,
     backend: () => tsRuntimeConfig?.sandbox.backend,
-  });
-  const checkpointController = createCheckpointController({
-    sessionID: () => sessionID,
-    workspaceRoot,
-    checkpoint: () => tsRuntimeConfig?.checkpoint,
-    workspace: () => tsRuntimeConfig?.workspace,
-    publish,
-    context: () => runtimeContext,
-    subagents: () =>
-      subagentsController.enabled() ? subagentsController.get() : undefined,
-    activeAbort: () => activeAbort,
   });
   const pluginsController = createPluginsController({
     workspaceRoot,
@@ -617,7 +626,7 @@ export function createRealRuntimeClient(
     publish,
   });
   const mcpAccess = mcpController.access;
-  const toolCalls = new Map<string, number>();
+  let toolCalls = new Map<string, number>();
   let runtimeContext = new ContextLedger();
   /**
    * Approvals and questions, and everything that belongs to them. The runtime
@@ -628,7 +637,9 @@ export function createRealRuntimeClient(
   const interactive = createInteractiveWaiter({
     publish: (event) => publish(event),
     sessionID: () => sessionID,
-    permissionMode: () => permissionMode,
+    permissionMode: (turnID) =>
+      (turnID ? executionForTurn(turnID) : activeExec)?.permissionMode ??
+      permissionMode,
     abortSignal: (turnID) =>
       executionBySession.get(turnSession.get(turnID) ?? sessionID)?.activeAbort
         ?.signal,
@@ -637,6 +648,8 @@ export function createRealRuntimeClient(
       isPendingInteractiveRequest(sessionID, id, kind),
     sessionIDForTurn: (turnID) => turnSession.get(turnID) ?? sessionID,
     agentIDForTurn: (turnID) => turnAgent.get(turnID),
+    capabilityOwnerForTool: (toolName) =>
+      capabilityRegistry.ownerOf("tools", toolName),
     publishForSession: (sessionID, event) =>
       publishForSession(executionBySession.get(sessionID), event),
   });
@@ -669,6 +682,15 @@ export function createRealRuntimeClient(
   type SessionExecutionState = {
     session: SessionRecord;
     context: ContextLedger;
+    attachmentReferences: Map<
+      string,
+      import("@natalia/contracts").LocalAttachment[]
+    >;
+    toolCalls: Map<string, number>;
+    provider?: StreamingProvider;
+    activeModelCapabilities?: ModelCapabilities;
+    permissionMode: "ask" | "auto" | "read_only";
+    permissionProfile?: PermissionProfile;
     activeAbort?: AbortController;
     activeTurnID?: string;
     selectedAgent?: AgentDefinition;
@@ -678,9 +700,53 @@ export function createRealRuntimeClient(
     lastProviderUsage?: { inputTokens: number; outputTokens: number };
     activeSkill?: Skill;
     endTurnWaitingHuman?: { terminalID: string; reason: string };
+    lastSubmitted?: SubmittedTurn;
+    paused: boolean;
+    pauseWaiters: Array<() => void>;
+    chatAbort?: AbortController;
+    chatTask?: Promise<void>;
   };
   const executionBySession = new Map<SessionID, SessionExecutionState>();
   let activeExec: SessionExecutionState | undefined;
+  const checkpointControllerBySession = new Map<
+    SessionID,
+    ReturnType<typeof createCheckpointController>
+  >();
+  const checkpointInitBySession = new Map<SessionID, Promise<void>>();
+
+  function checkpointControllerFor(exec: SessionExecutionState) {
+    const id = exec.session.id;
+    const existing = checkpointControllerBySession.get(id);
+    if (existing) return existing;
+    const controller = createCheckpointController({
+      sessionID: () => id,
+      workspaceRoot,
+      checkpoint: () => tsRuntimeConfig?.checkpoint,
+      workspace: () => tsRuntimeConfig?.workspace,
+      publish: (event) => publishForSession(exec, event),
+      context: () => exec.context,
+      subagents: () =>
+        subagentsController.enabled() ? subagentsController.get() : undefined,
+      activeAbort: () => exec.activeAbort,
+    });
+    checkpointControllerBySession.set(id, controller);
+    return controller;
+  }
+
+  async function initializeCheckpointController(exec: SessionExecutionState) {
+    const id = exec.session.id;
+    let pending = checkpointInitBySession.get(id);
+    if (!pending) {
+      pending = checkpointControllerFor(exec).init();
+      checkpointInitBySession.set(id, pending);
+    }
+    await pending;
+    return checkpointControllerFor(exec);
+  }
+
+  function executionForTurn(turnID: string) {
+    return executionBySession.get(turnSession.get(turnID) ?? sessionID);
+  }
   /** D2: serialises workspace writes across parallel sessions. */
   const workspaceWriteLock = createWorkspaceWriteLock();
   let paused = false;
@@ -693,13 +759,15 @@ export function createRealRuntimeClient(
     remoteURLs: () => tsRuntimeConfig?.skills.urls,
   });
   let activeSkill: Skill | undefined;
-  const attachmentReferences = new Map<
+  let attachmentReferences = new Map<
     string,
     import("@natalia/contracts").LocalAttachment[]
   >();
-  const runtimeDiagnostics: Array<
-    Extract<RuntimeEvent, { type: "diagnostic" }> & { at: string }
-  > = [];
+  type RuntimeDiagnostic = Extract<RuntimeEvent, { type: "diagnostic" }> & {
+    at: string;
+  };
+  const runtimeDiagnosticsBySession = new Map<SessionID, RuntimeDiagnostic[]>();
+  const runtimeDiagnostics: RuntimeDiagnostic[] = [];
   const publishedWorkflowContributionDiagnostics = new Set<string>();
   let selectedAgent: AgentDefinition | undefined;
   let selectedModel: { modelID?: string; variant?: string } | undefined;
@@ -720,12 +788,38 @@ export function createRealRuntimeClient(
   /** Per-provider in-flight ceiling for parallel streams (the fan-out cap). */
   let providerConcurrencyLimiter = new ProviderConcurrencyLimiter({});
   /** The selected model's declared image-input capability, from config. */
-  function currentModelImageInput(): boolean {
-    const ref = selectedModelRefKey();
+  function currentModelImageInput(
+    exec: SessionExecutionState | undefined = activeExec,
+  ): boolean {
+    if (exec?.activeModelCapabilities)
+      return exec.activeModelCapabilities.imageInput;
+    const ref = modelRefKeyForSelection(
+      exec ? exec.selectedAgent : selectedAgent,
+      exec ? exec.selectedModel : selectedModel,
+    );
     if (!ref || !tsRuntimeConfig) return false;
     return (
       resolveEffectiveModel(tsRuntimeConfig, ref)?.capabilities.imageInput ??
       false
+    );
+  }
+  function modelCapabilitiesForExecution(
+    exec: SessionExecutionState | undefined,
+  ): ModelCapabilities {
+    const agent = exec?.selectedAgent;
+    const model = exec?.selectedModel;
+    const ref = modelRefKeyForSelection(agent, model);
+    return (
+      (ref && tsRuntimeConfig
+        ? resolveEffectiveModel(tsRuntimeConfig, ref)?.capabilities
+        : undefined) ?? {
+        toolCall: true,
+        reasoning: true,
+        thinking: true,
+        imageInput: false,
+        pdfInput: false,
+        videoInput: false,
+      }
     );
   }
   function mediaTypeForImage(
@@ -815,7 +909,7 @@ export function createRealRuntimeClient(
   let mailboxSequence = 0;
   let chatSequence = 0;
   let collabSequence = 0;
-  let chatBusy = false;
+  const chatTasks = new Set<Promise<unknown>>();
   let planSequence = 0;
   let completionSequence = 0;
 
@@ -832,7 +926,7 @@ export function createRealRuntimeClient(
    * Shared by the query and the action so the two can never disagree.
    */
   function configReloadBlockedReason() {
-    if (activeExec?.activeTurnID)
+    if ([...executionBySession.values()].some((exec) => exec.activeTurnID))
       return "runtime config cannot be applied while a turn is running";
     if (interactive.hasPendingWaiters())
       return "runtime config cannot be applied while an approval or question is pending";
@@ -885,6 +979,10 @@ export function createRealRuntimeClient(
       // Permission changes (default profile switch, auto/ask flip, profile
       // edits) apply immediately, not on the next restart.
       reloadPermissionSettings(tsConfig.config);
+      for (const exec of executionBySession.values()) {
+        exec.permissionMode = permissionMode;
+        exec.permissionProfile = selectedPermissionProfile;
+      }
       applyAgentPolicy();
       if (
         selectedPermissionProfile?.commandRules &&
@@ -900,6 +998,8 @@ export function createRealRuntimeClient(
         if (configured) {
           provider = configured;
           providerSource = "ts_config";
+          for (const exec of executionBySession.values())
+            applyAgentProvider(exec);
           return { read: true, providerReconfigured: true };
         }
       }
@@ -1123,6 +1223,7 @@ export function createRealRuntimeClient(
       visibleTools: RuntimeTool[],
       runner: import("@natalia/subagent").RunnerContext,
       step: number,
+      activeProvider: StreamingProvider,
     ) {
       const id = subagentTurnID(runner);
       const runStep = () =>
@@ -1132,22 +1233,24 @@ export function createRealRuntimeClient(
             let output = "";
             let thinking = "";
             const calls: ProviderToolCall[] = [];
-            for await (const chunk of withProviderConcurrency(
-              providerConcurrencyLimiter,
-              provider!.provider,
-              () =>
-                provider!.stream({
-                  messages: contextEntriesToProviderMessages(
-                    ledger.snapshot().entries,
-                  ),
-                  tools: visibleTools.map((tool) => ({
-                    name: tool.name,
-                    description: tool.description,
-                    parameters: tool.parameters,
-                  })),
-                  signal: runner.signal,
-                }),
-              runner.signal,
+            for await (const chunk of normalizeRawToolCallProtocol(
+              withProviderConcurrency(
+                providerConcurrencyLimiter,
+                activeProvider.provider,
+                () =>
+                  activeProvider.stream({
+                    messages: contextEntriesToProviderMessages(
+                      ledger.snapshot().entries,
+                    ),
+                    tools: visibleTools.map((tool) => ({
+                      name: tool.name,
+                      description: tool.description,
+                      parameters: tool.parameters,
+                    })),
+                    signal: runner.signal,
+                  }),
+                runner.signal,
+              ),
             )) {
               if (chunk.type === "thinking") {
                 thinking += chunk.text;
@@ -1187,7 +1290,7 @@ export function createRealRuntimeClient(
         id,
         step,
         ledger,
-        compactor: providerCompactor(provider!, runner.signal),
+        compactor: providerCompactor(activeProvider, runner.signal),
         compact: {
           id: `${id}:context-limit:${step}`,
           maxTokens: runtimeContextConfig.max,
@@ -1256,6 +1359,7 @@ export function createRealRuntimeClient(
       visibleTools: RuntimeTool[];
       childWorkspaceRoot: string;
       repeatedCalls: Map<string, number>;
+      exec: SessionExecutionState;
       writeAuthorize?: (input: {
         toolName: string;
         path: string;
@@ -1322,7 +1426,7 @@ export function createRealRuntimeClient(
           throw new Error(
             `subagent tool denied by policy: ${preResult.diagnostics.join("; ")}`,
           );
-        if (permissionMode === "read_only" && tool.requiresApproval)
+        if (input.exec.permissionMode === "read_only" && tool.requiresApproval)
           throw new Error(readOnlyToolMessage(tool.name));
         if (tool.requiresApproval) {
           const refusal = await interactive.requireApproval(
@@ -1358,6 +1462,7 @@ export function createRealRuntimeClient(
         const completeResult = await tool.execute(parsed, {
           workspaceRoot: input.childWorkspaceRoot,
           signal: runner.signal,
+          sessionID: input.exec.session.id,
           askQuestion: async (question) =>
             await interactive.requireQuestion(
               `${toolID}:question`,
@@ -1369,13 +1474,15 @@ export function createRealRuntimeClient(
           ...(input.exposeSandboxes
             ? { sandboxes: sandboxController.get() }
             : {}),
-          workspaceReadAuthorize: authorizeWorkspaceRead,
+          workspaceReadAuthorize: (request) =>
+            authorizeWorkspaceRead(request, input.exec),
           ...(input.writeAuthorize
             ? { workspaceWriteAuthorize: input.writeAuthorize }
             : {}),
-          sandboxMergeAuthorize: authorizeSandboxMerge,
-          settings: toolSettings(),
-          parentSessionID: parentSessionID ?? sessionID,
+          sandboxMergeAuthorize: (request) =>
+            authorizeSandboxMerge(request, input.exec),
+          settings: toolSettings(input.exec),
+          parentSessionID: parentSessionID ?? input.exec.session.id,
           parentAgentID: runner.agentId,
           maxSubagentDepth: tsRuntimeConfig?.runtime.subagentDepth,
         });
@@ -1383,7 +1490,7 @@ export function createRealRuntimeClient(
           tool.output?.finalizeContent?.(completeResult) ?? completeResult;
         const result = redactToolOutput(
           finalizedResult,
-          redactToolOutputEnabled(),
+          redactToolOutputEnabled(input.exec),
         );
         const projectedRender = tool.output?.presentResult?.(parsed, result);
         await toolLayer.postExecute({ ...hookEvent, result });
@@ -1421,10 +1528,12 @@ export function createRealRuntimeClient(
     async function runSandboxedSubagent(
       task: string,
       runner: import("@natalia/subagent").RunnerContext,
+      exec: SessionExecutionState,
+      activeProvider: StreamingProvider,
     ) {
       await acquireSandboxedSubagentSlot(runner.signal);
       try {
-        await runSandboxedSubagentInner(task, runner);
+        await runSandboxedSubagentInner(task, runner, exec, activeProvider);
       } finally {
         releaseSandboxedSubagentSlot();
       }
@@ -1432,6 +1541,8 @@ export function createRealRuntimeClient(
     async function runSandboxedSubagentInner(
       task: string,
       runner: import("@natalia/subagent").RunnerContext,
+      exec: SessionExecutionState,
+      activeProvider: StreamingProvider,
     ) {
       const record = subagentsController.get().get(runner.agentId);
       if (!record)
@@ -1471,11 +1582,11 @@ export function createRealRuntimeClient(
         task,
       );
       const repeatedCalls = new Map<string, number>();
-      for (let step = 1; step <= effectiveMaxSteps(); step++) {
+      for (let step = 1; step <= effectiveMaxSteps(exec); step++) {
         const visibleTools = [...tools.values()].filter(
           (tool) =>
-            isToolAllowed(tool.name) &&
-            (permissionMode !== "read_only" || !tool.requiresApproval) &&
+            isToolAllowed(tool.name, exec) &&
+            (exec.permissionMode !== "read_only" || !tool.requiresApproval) &&
             !excluded.has(tool.name) &&
             (!allowed.length || allowed.includes(tool.name)),
         );
@@ -1484,6 +1595,7 @@ export function createRealRuntimeClient(
           visibleTools,
           runner,
           step,
+          activeProvider,
         );
         if (!calls.length) {
           appendSubagentAssistant(ledger, runner, step, output, calls);
@@ -1500,6 +1612,7 @@ export function createRealRuntimeClient(
             visibleTools,
             childWorkspaceRoot: sandboxRoot,
             repeatedCalls,
+            exec,
             writeAuthorize,
           });
           appendSubagentToolResult(ledger, runner, step, call, result);
@@ -1508,13 +1621,19 @@ export function createRealRuntimeClient(
       throw new Error("subagent step limit reached");
     }
     await subagentsController.init(async (task, runner) => {
-      if (!provider) throw new Error("provider unavailable for subagent");
       try {
         const record = subagentsController.get().get(runner.agentId);
+        const exec = executionBySession.get(
+          record?.parentSessionID as SessionID,
+        );
+        if (!exec) throw new Error("parent session unavailable for subagent");
+        const activeProvider = exec.provider;
+        if (!activeProvider)
+          throw new Error("provider unavailable for subagent");
         // `mode: "sandbox"` routes to the sub-agent's own worktree; everything
         // else keeps the shared-context loop unchanged.
         if (record?.mode === "sandbox")
-          return await runSandboxedSubagent(task, runner);
+          return await runSandboxedSubagent(task, runner, exec, activeProvider);
         const allowed = record?.allowedTools ?? [];
         const excluded = new Set(record?.excludeTools ?? []);
         const ledger = createSubagentContext(
@@ -1524,11 +1643,11 @@ export function createRealRuntimeClient(
         const repeatedCalls = new Map<string, number>();
         runner.log(`accepted: ${task}`);
         beginSubagentConversation(runner, task);
-        for (let step = 1; step <= effectiveMaxSteps(); step++) {
+        for (let step = 1; step <= effectiveMaxSteps(exec); step++) {
           const visibleTools = [...tools.values()].filter(
             (tool) =>
-              isToolAllowed(tool.name) &&
-              (permissionMode !== "read_only" || !tool.requiresApproval) &&
+              isToolAllowed(tool.name, exec) &&
+              (exec.permissionMode !== "read_only" || !tool.requiresApproval) &&
               !excluded.has(tool.name) &&
               (!allowed.length || allowed.includes(tool.name)),
           );
@@ -1537,6 +1656,7 @@ export function createRealRuntimeClient(
             visibleTools,
             runner,
             step,
+            activeProvider,
           );
           if (!calls.length) {
             appendSubagentAssistant(ledger, runner, step, output, calls);
@@ -1553,6 +1673,7 @@ export function createRealRuntimeClient(
               visibleTools,
               childWorkspaceRoot: workspaceRoot,
               repeatedCalls,
+              exec,
               exposeSandboxes: true,
             });
             appendSubagentToolResult(ledger, runner, step, call, result);
@@ -1730,20 +1851,29 @@ export function createRealRuntimeClient(
     await sandboxController.init();
     session = sessionStoreController.sqlite()
       ? ((await sessionStoreController.json().load(sessionID)) ??
-        createSessionRecord(
-          sessionID,
-          options.title ?? `Natalia TS session ${sessionID}`,
-        ))
+        createSessionRecord(sessionID, options.title ?? "New session"))
       : await sessionStoreController
           .json()
-          .loadOrCreate(
-            sessionID,
-            options.title ?? `Natalia TS session ${sessionID}`,
-          );
+          .loadOrCreate(sessionID, options.title ?? "New session");
     if (!session) throw new Error("session initialization did not complete");
+    if (options.title && !session.metadata?.titleSource) {
+      session.metadata = { ...session.metadata, titleSource: "manual" };
+      if (!sessionStoreController.sqlite())
+        await sessionStoreController.json().save(session);
+    }
     // D2: the startup session is the first exec; the activity view (the
     // `session`/`runtimeContext` closures) aliases it until an attach switches.
-    activeExec = { session, context: runtimeContext };
+    activeExec = {
+      session,
+      context: runtimeContext,
+      attachmentReferences,
+      toolCalls,
+      provider,
+      permissionMode,
+      permissionProfile: selectedPermissionProfile,
+      paused: false,
+      pauseWaiters: [],
+    };
     executionBySession.set(sessionID, activeExec);
     let sqliteRecovery:
       | ReturnType<
@@ -1847,17 +1977,20 @@ export function createRealRuntimeClient(
       });
     }
     const projection = projectSession(session);
+    const initialDiagnostics =
+      runtimeDiagnosticsBySession.get(session.id) ?? [];
     for (const event of sqliteRecovery?.diagnostics ?? [])
-      runtimeDiagnostics.push({
+      initialDiagnostics.push({
         ...event,
         at: event.at ?? session.createdAt,
       });
     for (const event of projection.replayableEvents)
       if (event.type === "diagnostic")
-        runtimeDiagnostics.push({
+        initialDiagnostics.push({
           ...event,
           at: event.at ?? session.createdAt,
         });
+    runtimeDiagnosticsBySession.set(session.id, initialDiagnostics);
     for (const event of projection.replayableEvents)
       if (event.type === "turn.submitted" && event.attachments?.length)
         attachmentReferences.set(`${event.id}:user`, event.attachments);
@@ -1933,10 +2066,15 @@ export function createRealRuntimeClient(
         createSkillLoadTool({
           registry: () =>
             skillsController.enabled() ? skillsController.get() : undefined,
-          onLoad: (skill, output) => {
-            activeSkill = skill;
-            runtimeContext.add({
-              id: `skill:${skill.qualifiedName}:${runtimeContext.journalStatus().journalOffset}`,
+          onLoad: (skill, output, context) => {
+            const owner = context.sessionID
+              ? executionBySession.get(context.sessionID as SessionID)
+              : undefined;
+            if (!owner) return;
+            owner.activeSkill = skill;
+            if (owner === activeExec) activeSkill = skill;
+            owner.context.add({
+              id: `skill:${skill.qualifiedName}:${owner.context.journalStatus().journalOffset}`,
               role: "system",
               content: output,
             });
@@ -1949,18 +2087,21 @@ export function createRealRuntimeClient(
     tools.set(
       "mailbox_acknowledge",
       createMailboxAcknowledgeTool({
-        onAcknowledge: async (messageIDs) => {
-          if (!session) return;
+        onAcknowledge: async (messageIDs, context) => {
+          const owner = context.sessionID
+            ? executionBySession.get(context.sessionID as SessionID)
+            : undefined;
+          if (!owner) return;
           const at = new Date().toISOString();
           for (const messageID of messageIDs) {
-            const message = projectedMailboxMessages(session.events).find(
+            const message = projectedMailboxMessages(owner.session.events).find(
               (candidate) =>
                 candidate.messageID === messageID &&
                 candidate.status === "delivered",
             );
             if (!message) continue;
             publishForSession(
-              activeExec,
+              owner,
               buildMailboxStatus({
                 id: `${messageID}:acknowledged:${mailboxSequence++}`,
                 messageID,
@@ -2013,7 +2154,7 @@ export function createRealRuntimeClient(
         required: ["messageID", "decision"],
         additionalProperties: false,
       },
-      async execute(parsed) {
+      async execute(parsed, context) {
         const args = parsed as {
           messageID?: string;
           decision?: string;
@@ -2024,11 +2165,14 @@ export function createRealRuntimeClient(
           typeof args.decision !== "string"
         )
           return "collab_respond requires messageID and decision";
-        if (!session) return "no session";
+        const owner = context.sessionID
+          ? executionBySession.get(context.sessionID as SessionID)
+          : undefined;
+        if (!owner) return "no session";
         const messageID = args.messageID;
         // Models routinely truncate the id to its tail; accept an exact id or
         // a unique suffix of it.
-        const target = projectedCollabMessages(session.events).find(
+        const target = projectedCollabMessages(owner.session.events).find(
           (message) =>
             message.kind === "suggestion" &&
             message.status === "proposed" &&
@@ -2037,7 +2181,7 @@ export function createRealRuntimeClient(
               messageID.endsWith(message.id)),
         );
         if (!target) return `no suggestion ${messageID}`;
-        publish({
+        publishForSession(owner, {
           type: "collab.response",
           id: `collab:response:${Date.now().toString(36)}:${collabSequence++}`,
           // Publish with the matched message's real id, not the (possibly
@@ -2063,9 +2207,12 @@ export function createRealRuntimeClient(
         properties: {},
         additionalProperties: false,
       },
-      async execute() {
-        if (!session) return "[]";
-        const messages = projectedCollabMessages(session.events);
+      async execute(_parsed, context) {
+        const owner = context.sessionID
+          ? executionBySession.get(context.sessionID as SessionID)
+          : undefined;
+        if (!owner) return "[]";
+        const messages = projectedCollabMessages(owner.session.events);
         return JSON.stringify(
           messages.slice(-10).map((message) => ({
             id: message.id,
@@ -2092,12 +2239,15 @@ export function createRealRuntimeClient(
         required: ["question"],
         additionalProperties: false,
       },
-      async execute(parsed) {
+      async execute(parsed, context) {
         const args = parsed as { question?: string };
         if (typeof args.question !== "string" || !args.question.trim())
           return "collab_ask requires question";
-        if (!session) return "no session";
-        publish({
+        const exec = context.sessionID
+          ? executionBySession.get(context.sessionID as SessionID)
+          : undefined;
+        if (!exec) return "no session";
+        publishForSession(exec, {
           type: "collab.question",
           id: `collab:question:${Date.now().toString(36)}:${collabSequence++}`,
           from: "main_agent",
@@ -2108,7 +2258,7 @@ export function createRealRuntimeClient(
         // If Navi is not mid-conversation with the user, wake her to answer
         // immediately; if she is chatting, the question waits for her next
         // turn boundary (the queued path).
-        if (!chatBusy) void wakeNavi().catch(() => undefined);
+        if (!exec.chatAbort) void wakeNavi(exec).catch(() => undefined);
         return JSON.stringify({ asked: true });
       },
     } as RuntimeTool);
@@ -2160,12 +2310,16 @@ export function createRealRuntimeClient(
       for (const request of pending.approvals) sink?.(request);
       for (const request of pending.questions) sink?.(request);
     }
-    await checkpointController.init();
+    if (activeExec) await initializeCheckpointController(activeExec);
     // The exec is the turn's view of agent/model state; the closures were the
     // source of truth during init, so mirror them before any turn can run.
     if (activeExec) {
       activeExec.selectedAgent = selectedAgent;
       activeExec.selectedModel = selectedModel;
+      activeExec.activeSkill = activeSkill;
+      activeExec.permissionMode = permissionMode;
+      activeExec.permissionProfile = selectedPermissionProfile;
+      applyAgentProvider(activeExec);
     }
     publish({ type: "session.ready", sessionID });
     // The self-protection rules are the first constitution facts: migrate them
@@ -2331,8 +2485,19 @@ export function createRealRuntimeClient(
     toolName: string,
     status: string,
   ) {
-    publish(toolCallNode({ turnID, callID, toolName, status, sessionID }));
-    publish(toolCallEdge({ turnID, callID }));
+    const exec = executionForTurn(turnID) ?? activeExec;
+    const ownerSessionID = exec?.session.id ?? sessionID;
+    publishForSession(
+      exec,
+      toolCallNode({
+        turnID,
+        callID,
+        toolName,
+        status,
+        sessionID: ownerSessionID,
+      }),
+    );
+    publishForSession(exec, toolCallEdge({ turnID, callID }));
   }
 
   /**
@@ -2350,19 +2515,29 @@ export function createRealRuntimeClient(
   }
 
   function applyAgentPolicy() {
+    agentToolLayer = agentPolicyLayer(selectedAgent);
+    permissionProfileToolLayer = permissionProfileLayer(
+      selectedPermissionProfile,
+    );
+  }
+
+  function agentPolicyLayer(agent: AgentDefinition | undefined) {
     const mode = tsRuntimeConfig?.modes[tsRuntimeConfig.defaultMode];
     const allow = [
-      ...(selectedAgent?.allowedTools ?? mode?.allowedTools ?? []),
-      ...(selectedAgent?.permissions?.tools?.allow ?? []),
+      ...(agent?.allowedTools ?? mode?.allowedTools ?? []),
+      ...(agent?.permissions?.tools?.allow ?? []),
     ];
     const exclude = [
-      ...(selectedAgent?.excludedTools ?? mode?.excludedTools ?? []),
-      ...(selectedAgent?.permissions?.tools?.exclude ?? []),
+      ...(agent?.excludedTools ?? mode?.excludedTools ?? []),
+      ...(agent?.permissions?.tools?.exclude ?? []),
     ];
-    agentToolLayer = createToolPolicyHookLayer({ allow, exclude });
-    permissionProfileToolLayer = createToolPolicyHookLayer({
-      allow: selectedPermissionProfile?.permissions?.tools?.allow,
-      exclude: selectedPermissionProfile?.permissions?.tools?.exclude,
+    return createToolPolicyHookLayer({ allow, exclude });
+  }
+
+  function permissionProfileLayer(profile: PermissionProfile | undefined) {
+    return createToolPolicyHookLayer({
+      allow: profile?.permissions?.tools?.allow,
+      exclude: profile?.permissions?.tools?.exclude,
     });
   }
 
@@ -2376,7 +2551,7 @@ export function createRealRuntimeClient(
    */
   function reloadPermissionSettings(config: ConfigV3) {
     const requestedPermissionProfile = options.permissionProfile;
-    const defaultPermissionProfile =
+    const configuredDefaultPermissionProfile =
       config.permissionProfiles[config.defaultPermission];
     const mode = config.modes[config.defaultMode];
     const modePermissionProfile = mode?.permission
@@ -2388,13 +2563,18 @@ export function createRealRuntimeClient(
       selectedPermissionProfile = found;
     } else {
       selectedPermissionProfile =
-        modePermissionProfile ?? defaultPermissionProfile;
+        modePermissionProfile ?? configuredDefaultPermissionProfile;
     }
     if (!options.permissionMode && selectedPermissionProfile)
       permissionMode = selectedPermissionProfile.approval;
+    defaultPermissionMode = permissionMode;
+    defaultPermissionProfile = selectedPermissionProfile;
   }
 
-  function isToolAllowed(toolName: string) {
+  function isToolAllowed(
+    toolName: string,
+    exec: SessionExecutionState | undefined = activeExec,
+  ) {
     // The module completion tool is system control, not a capability: it must
     // stay available even when a profile, agent or module allow-list forgets to
     // mention it, otherwise the model can never report completion and every
@@ -2403,22 +2583,35 @@ export function createRealRuntimeClient(
       return true;
     return (
       toolLayer.isToolAllowed(toolName) &&
-      agentToolLayer.isToolAllowed(toolName) &&
-      permissionProfileToolLayer.isToolAllowed(toolName) &&
+      (exec
+        ? agentPolicyLayer(exec.selectedAgent).isToolAllowed(toolName)
+        : agentToolLayer.isToolAllowed(toolName)) &&
+      (exec
+        ? permissionProfileLayer(exec.permissionProfile).isToolAllowed(toolName)
+        : permissionProfileToolLayer.isToolAllowed(toolName)) &&
       moduleToolLayer.isToolAllowed(toolName) &&
       modulePermissionToolLayer.isToolAllowed(toolName) &&
-      extensionToolPermission(toolName).allowed
+      extensionToolPermission(
+        toolName,
+        exec ? exec.permissionProfile : selectedPermissionProfile,
+      ).allowed
     );
   }
 
-  function extensionEnabled(extension: "skills" | "mcp" | "plugins") {
+  function extensionEnabled(
+    extension: "skills" | "mcp" | "plugins",
+    profile: PermissionProfile | undefined = selectedPermissionProfile,
+  ) {
     return (
-      selectedPermissionProfile?.extensions?.[extension] !== false &&
+      profile?.extensions?.[extension] !== false &&
       options.taskModuleContext?.moduleExtensions?.[extension] !== false
     );
   }
 
-  function extensionToolPermission(toolName: string) {
+  function extensionToolPermission(
+    toolName: string,
+    profile: PermissionProfile | undefined = selectedPermissionProfile,
+  ) {
     const extension =
       toolName === "skill_load"
         ? "skills"
@@ -2427,7 +2620,7 @@ export function createRealRuntimeClient(
           : toolName.startsWith("plugin_")
             ? "plugins"
             : undefined;
-    if (!extension || extensionEnabled(extension))
+    if (!extension || extensionEnabled(extension, profile))
       return { allowed: true, diagnostics: [] };
     const source =
       options.taskModuleContext?.moduleExtensions?.[extension] === false
@@ -2439,49 +2632,67 @@ export function createRealRuntimeClient(
     };
   }
 
-  function applyAgentProvider() {
+  function applyAgentProvider(
+    exec: SessionExecutionState | undefined = activeExec,
+  ) {
     if (options.provider || providerSource !== "ts_config" || !tsRuntimeConfig)
       return;
-    const ref = selectedModelRefKey();
+    const agent = exec ? exec.selectedAgent : selectedAgent;
+    const model = exec ? exec.selectedModel : selectedModel;
+    const ref = modelRefKeyForSelection(agent, model);
     if (!ref) {
-      publish({
+      publishForSession(exec, {
         type: "diagnostic",
         level: "warning",
-        message: `agent ${selectedAgent?.name ?? "default"} model override is unavailable: model_not_configured; retaining current provider`,
+        message: `agent ${agent?.name ?? "default"} model override is unavailable: model_not_configured; retaining current provider`,
       });
       return;
     }
     const next = providerForModel(
       tsRuntimeConfig,
       ref,
-      selectedAgent?.variant ?? selectedModel?.variant,
-      { reasoningEffort: activeExec?.reasoningEffort },
+      agent?.variant ?? model?.variant,
+      { reasoningEffort: exec?.reasoningEffort },
     );
     if (!next) {
       const status = modelSelectionStatus(tsRuntimeConfig, ref);
-      publish({
+      publishForSession(exec, {
         type: "diagnostic",
         level: "warning",
-        message: `agent ${selectedAgent?.name ?? "default"} model override is unavailable: ${status.reason ?? "provider_not_configured"}; retaining current provider`,
+        message: `agent ${agent?.name ?? "default"} model override is unavailable: ${status.reason ?? "provider_not_configured"}; retaining current provider`,
       });
       return;
     }
-    provider = next;
+    if (exec) exec.provider = next;
+    if (!exec || exec === activeExec) provider = next;
   }
 
   /** The canonical `provider/model` key of the effective model selection. */
-  function selectedModelRefKey(): string | undefined {
+  function modelRefKeyForSelection(
+    agent: AgentDefinition | undefined,
+    model: { modelID?: string; variant?: string } | undefined,
+  ): string | undefined {
     const candidate =
-      selectedAgent?.model ??
-      selectedModel?.modelID ??
+      agent?.model ??
+      model?.modelID ??
       tsRuntimeConfig?.defaultModel ??
       undefined;
     if (!candidate) return undefined;
     return typeof candidate === "string" ? candidate : modelRefKey(candidate);
   }
 
-  function effectiveMaxSteps() {
-    return selectedAgent?.maxSteps ?? maxSteps ?? Number.POSITIVE_INFINITY;
+  function selectedModelRefKey() {
+    return modelRefKeyForSelection(selectedAgent, selectedModel);
+  }
+
+  function effectiveMaxSteps(
+    exec: SessionExecutionState | undefined = activeExec,
+  ) {
+    return (
+      (exec ? exec.selectedAgent : selectedAgent)?.maxSteps ??
+      maxSteps ??
+      Number.POSITIVE_INFINITY
+    );
   }
 
   /**
@@ -2495,15 +2706,21 @@ export function createRealRuntimeClient(
    * while doing nothing is worse than having no switch, so the default follows
    * what the schema already declares.
    */
-  function redactToolOutputEnabled() {
+  function redactToolOutputEnabled(
+    exec: SessionExecutionState | undefined = activeExec,
+  ) {
     return (
-      selectedAgent?.permissions?.redactOutput ??
+      (exec ? exec.selectedAgent : selectedAgent)?.permissions?.redactOutput ??
       tsRuntimeConfig?.security.redactToolOutput ??
       true
     );
   }
 
-  async function selectRuntimeModel(modelID?: string, variant?: string) {
+  async function selectRuntimeModel(
+    modelID?: string,
+    variant?: string,
+    exec: SessionExecutionState | undefined = activeExec,
+  ) {
     await ready;
     if (!tsRuntimeConfig) throw new Error("runtime config is unavailable");
     let ref: ModelRef | undefined;
@@ -2517,10 +2734,13 @@ export function createRealRuntimeClient(
     }
     // V3 dropped model variants: the variant is carried as an opaque label for
     // event/selection compatibility but never validated against a model.
-    selectedModel = ref ? { modelID: modelRefKey(ref), variant } : undefined;
-    if (activeExec) activeExec.selectedModel = selectedModel;
-    applyAgentProvider();
-    publish({
+    const nextSelection = ref
+      ? { modelID: modelRefKey(ref), variant }
+      : undefined;
+    if (exec) exec.selectedModel = nextSelection;
+    if (exec === activeExec) selectedModel = nextSelection;
+    applyAgentProvider(exec);
+    publishForSession(exec, {
       type: "model.selection",
       modelID: ref ? modelRefKey(ref) : undefined,
       variant,
@@ -2584,11 +2804,20 @@ export function createRealRuntimeClient(
     if (event.type === "diagnostic")
       event = { ...event, at: event.at ?? new Date().toISOString() };
     if (event.type === "diagnostic") {
-      runtimeDiagnostics.push({
+      const diagnostic = {
         ...event,
         at: event.at ?? new Date().toISOString(),
-      });
-      if (runtimeDiagnostics.length > 500) runtimeDiagnostics.splice(0, 1);
+      } as RuntimeDiagnostic;
+      const bucketID = exec?.session.id ?? event.sessionID;
+      if (bucketID) {
+        const bucket = runtimeDiagnosticsBySession.get(bucketID) ?? [];
+        bucket.push(diagnostic);
+        if (bucket.length > 500) bucket.splice(0, 1);
+        runtimeDiagnosticsBySession.set(bucketID, bucket);
+      } else {
+        runtimeDiagnostics.push(diagnostic);
+        if (runtimeDiagnostics.length > 500) runtimeDiagnostics.splice(0, 1);
+      }
     }
     // TERM-M.3 (c): a turn that ended as waiting_human persists the typed
     // pending-human state and clears the turn-level marker.
@@ -2921,7 +3150,7 @@ export function createRealRuntimeClient(
     const projection = projectSession(target.session);
     const active = projection.activeTurnIDs.length > 0;
     let agentStatus = "idle";
-    if (paused) agentStatus = "paused";
+    if (target.paused) agentStatus = "paused";
     else if (active) agentStatus = "running";
     const step = target.context.journalStatus().messageCount;
     const activeTurnID = projection.activeTurnIDs[0];
@@ -2955,23 +3184,31 @@ export function createRealRuntimeClient(
   async function setInFlightOperation(
     operation: DurableInFlightOperation | undefined,
   ) {
-    if (!session) return;
-    session.metadata = { ...session.metadata };
-    if (operation) session.metadata.inFlightOperation = operation;
-    else delete session.metadata.inFlightOperation;
+    if (!activeExec) return;
+    await setInFlightOperationFor(activeExec, operation);
+  }
+
+  async function setInFlightOperationFor(
+    exec: SessionExecutionState,
+    operation: DurableInFlightOperation | undefined,
+  ) {
+    const targetSession = exec.session;
+    targetSession.metadata = { ...targetSession.metadata };
+    if (operation) targetSession.metadata.inFlightOperation = operation;
+    else delete targetSession.metadata.inFlightOperation;
     const sessionSnapshot = sessionStoreController.sqlite()
       ? undefined
-      : structuredClone(session);
+      : structuredClone(targetSession);
     sessionPersistence = sessionPersistence
       .then(async () => {
         if (sessionStoreController.sqlite())
-          sessionStoreController.sqlite()!.updateMetadata(sessionID, {
+          sessionStoreController.sqlite()!.updateMetadata(targetSession.id, {
             inFlightOperation: operation,
           });
         else await sessionStoreController.json().save(sessionSnapshot!);
       })
       .catch((error) =>
-        publish({
+        publishForSession(exec, {
           type: "diagnostic",
           level: "warning",
           message: `in-flight operation audit persistence failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -2990,7 +3227,7 @@ export function createRealRuntimeClient(
     input: { terminalID: string; reason: string },
   ) {
     const target = executionBySession.get(forSessionID);
-    const targetSession = target?.session ?? session;
+    const targetSession = target?.session;
     if (!targetSession) return;
     targetSession.metadata = { ...targetSession.metadata };
     targetSession.metadata.pendingHumanTerminal = {
@@ -3011,7 +3248,7 @@ export function createRealRuntimeClient(
         else await sessionStoreController.json().save(sessionSnapshot!);
       })
       .catch((error) =>
-        publish({
+        publishForSession(target, {
           type: "diagnostic",
           level: "warning",
           message: `pending human terminal persistence failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -3022,7 +3259,7 @@ export function createRealRuntimeClient(
 
   async function clearPendingHumanTerminal(forSessionID: SessionID) {
     const target = executionBySession.get(forSessionID);
-    const targetSession = target?.session ?? session;
+    const targetSession = target?.session;
     if (!targetSession?.metadata?.pendingHumanTerminal) return false;
     targetSession.metadata = { ...targetSession.metadata };
     delete targetSession.metadata.pendingHumanTerminal;
@@ -3038,7 +3275,7 @@ export function createRealRuntimeClient(
         else await sessionStoreController.json().save(sessionSnapshot!);
       })
       .catch((error) =>
-        publish({
+        publishForSession(target, {
           type: "diagnostic",
           level: "warning",
           message: `pending human terminal clear failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -3165,9 +3402,8 @@ export function createRealRuntimeClient(
   async function submitInput(input: SubmitInput, forSessionID?: SessionID) {
     await ready;
     const targetSessionID = forSessionID ?? sessionID;
-    const targetExec =
-      executionBySession.get(targetSessionID) ?? activeExec ?? undefined;
-    const targetSession = targetExec?.session ?? session;
+    const targetExec = await ensureExecution(targetSessionID);
+    const targetSession = targetExec.session;
     let text = input.text;
     // /team <message>: the user explicitly requests the agent team. Inject the
     // forcing directive into the turn's context and run the rest as a normal
@@ -3177,8 +3413,8 @@ export function createRealRuntimeClient(
     if (text.trim().startsWith("/team")) {
       const message = text.trim().slice("/team".length).trim();
       if (!message) throw new Error("/team requires a message after it");
-      runtimeContext.add({
-        id: `team-mode:${runtimeContext.journalStatus().journalOffset}`,
+      targetExec.context.add({
+        id: `team-mode:${targetExec.context.journalStatus().journalOffset}`,
         role: "system",
         content: TEAM_MODE_DIRECTIVE,
       });
@@ -3201,7 +3437,8 @@ export function createRealRuntimeClient(
       resources: input.resources?.length ? input.resources : undefined,
       agents: input.agents?.length ? input.agents : undefined,
     };
-    if (attachments.length) attachmentReferences.set(`${id}:user`, attachments);
+    if (attachments.length)
+      targetExec?.attachmentReferences.set(`${id}:user`, attachments);
     if (!targetSession)
       throw new Error("session initialization did not complete");
     const existing = admittedInputs(targetSession).find(
@@ -3223,7 +3460,8 @@ export function createRealRuntimeClient(
       }
       return submitted;
     }
-    lastSubmitted = submitted;
+    targetExec.lastSubmitted = submitted;
+    if (targetExec === activeExec) lastSubmitted = submitted;
     turnSession.set(id, targetSessionID);
     publishForSession(targetExec, submitted);
     // One Work Graph node per turn. The prompt itself is not recorded: it can
@@ -3238,6 +3476,7 @@ export function createRealRuntimeClient(
     );
     // Persist admission before a command or provider can observe this turn.
     await sessionPersistence;
+    rememberTitleInput(targetSessionID, text);
     if (delivery === "queue") {
       void targetCoordinator().wake(drainSessionFor(targetSessionID));
       return submitted;
@@ -3246,6 +3485,138 @@ export function createRealRuntimeClient(
     await targetCoordinator().run(drainSessionFor(targetSessionID));
     await sessionPersistence;
     return submitted;
+  }
+
+  type TitleGenerationTask = {
+    input: string;
+    timer?: ReturnType<typeof setTimeout>;
+    controller?: AbortController;
+    promise?: Promise<void>;
+  };
+  const titleGenerationTasks = new Map<SessionID, TitleGenerationTask>();
+  let runtimeDisposed = false;
+
+  function rememberTitleInput(id: SessionID, text: string) {
+    const sanitized = sanitizeSessionTitleInput(text);
+    if (sanitized.replace(/\[redacted\]|\[home path\]/gu, "").trim().length < 3)
+      return;
+    if (!titleGenerationTasks.has(id))
+      titleGenerationTasks.set(id, { input: text });
+  }
+
+  function scheduleTitleGeneration(id: SessionID) {
+    const task = titleGenerationTasks.get(id);
+    if (!task || task.timer || task.promise || runtimeDisposed) return;
+    task.timer = setTimeout(() => {
+      task.timer = undefined;
+      if (runtimeDisposed || titleGenerationTasks.get(id) !== task) return;
+      if (sessionRunCoordinator(id).active) {
+        scheduleTitleGeneration(id);
+        return;
+      }
+      const controller = new AbortController();
+      task.controller = controller;
+      task.promise = generateTitleForSession(id, task.input, controller.signal)
+        .catch(() => undefined)
+        .finally(() => {
+          if (titleGenerationTasks.get(id) === task)
+            titleGenerationTasks.delete(id);
+        });
+    }, 100);
+  }
+
+  async function cancelTitleGeneration(id: SessionID) {
+    const task = titleGenerationTasks.get(id);
+    if (!task) return;
+    titleGenerationTasks.delete(id);
+    if (task.timer) clearTimeout(task.timer);
+    task.controller?.abort(new Error("session title generation cancelled"));
+    await task.promise?.catch(() => undefined);
+  }
+  function applyGeneratedTitle(
+    id: SessionID,
+    updated: { title: string },
+    source: "generated" | "fallback",
+  ) {
+    const exec = executionBySession.get(id);
+    if (exec) {
+      exec.session.title = updated.title;
+      exec.session.metadata = {
+        ...exec.session.metadata,
+        titleSource: source,
+      };
+    }
+    publishForSession(exec, {
+      type: "session.title.updated",
+      sessionID: id,
+      title: updated.title,
+    });
+  }
+
+  async function generateTitleForSession(
+    id: SessionID,
+    text: string,
+    signal: AbortSignal,
+  ) {
+    const sanitized = sanitizeSessionTitleInput(text);
+    if (sanitized.replace(/\[redacted\]|\[home path\]/gu, "").trim().length < 3)
+      return;
+    const loadCurrent = async () =>
+      sessionStoreController.sqlite()?.get(id) ??
+      (await sessionStoreController.json().load(id));
+    try {
+      await sessionPersistence;
+      const current = await loadCurrent();
+      if (
+        !current ||
+        (current.title !== "New session" &&
+          !isInvalidGeneratedSessionTitle(current.title)) ||
+        current.metadata?.titleSource === "manual"
+      )
+        return;
+      const titleProvider = executionBySession.get(id)?.provider;
+      const titleLimiter = providerConcurrencyLimiter;
+      const generated = titleProvider
+        ? await generateSessionTitle(titleProvider, sanitized, {
+            signal,
+            stream: (request) =>
+              withProviderConcurrency(
+                titleLimiter,
+                titleProvider.provider,
+                () => titleProvider.stream(request),
+                request.signal,
+              ),
+          })
+        : "";
+      if (signal.aborted) return;
+      const title = generated || fallbackSessionTitle(sanitized);
+      const source = generated ? "generated" : "fallback";
+      const updated = await sessionStoreController.setAutoTitle(
+        id,
+        title,
+        source,
+      );
+      const committed = await loadCurrent();
+      if (
+        updated.title === title &&
+        committed?.title === title &&
+        committed.metadata?.titleSource === source
+      )
+        applyGeneratedTitle(id, updated, source);
+    } catch {
+      if (signal.aborted) return;
+      const fallback = fallbackSessionTitle(sanitized);
+      const updated = await sessionStoreController
+        .setAutoTitle(id, fallback, "fallback")
+        .catch(() => undefined);
+      const committed = await loadCurrent().catch(() => undefined);
+      if (
+        updated?.title === fallback &&
+        committed?.title === fallback &&
+        committed.metadata?.titleSource === "fallback"
+      )
+        applyGeneratedTitle(id, updated, "fallback");
+    }
   }
 
   /**
@@ -3265,31 +3636,39 @@ export function createRealRuntimeClient(
     const exec = executionBySession.get(sessionID as SessionID);
     if (!exec) throw new Error(`no execution state for session ${sessionID}`);
     const runner = createProviderRunner({
-      provider: () => provider,
+      provider: () => exec.provider,
       session: () => exec.session,
       context: () => exec.context,
       tools: () => tools,
-      attachmentReferences: () => attachmentReferences,
+      attachmentReferences: () => exec.attachmentReferences,
       mcpAccess: () => mcpAccess,
       agentRegistry: () => agentRegistry,
       activeAbort: () => exec.activeAbort,
       setActiveAbort: (controller) => {
         exec.activeAbort = controller;
+        if (exec === activeExec) activeAbort = controller;
       },
       activeTurnID: () => exec.activeTurnID,
       setActiveTurnID: (id) => {
         exec.activeTurnID = id;
+        if (exec === activeExec) activeTurnID = id;
       },
       selectedAgent: () => exec.selectedAgent,
       setSelectedAgent: (agent) => {
         exec.selectedAgent = agent;
+        if (exec === activeExec) selectedAgent = agent;
       },
       pendingAgent: () => exec.pendingAgent,
       setPendingAgent: (agent) => {
         exec.pendingAgent = agent;
+        if (exec === activeExec) pendingAgent = agent;
       },
       selectedModel: () => exec.selectedModel,
-      permissionMode: () => permissionMode,
+      modelCapabilities: () => modelCapabilitiesForExecution(exec),
+      setActiveModelCapabilities: (capabilities) => {
+        exec.activeModelCapabilities = capabilities;
+      },
+      permissionMode: () => exec.permissionMode,
       workspaceRoot: () => workspaceRoot,
       tsRuntimeConfig: () => tsRuntimeConfig,
       runtimeContextConfig: () => runtimeContextConfig,
@@ -3347,20 +3726,33 @@ export function createRealRuntimeClient(
       },
       taskModuleContext: () => options.taskModuleContext,
       publish: (event) => publishForSession(exec, event),
-      applyAgentPolicy,
-      applyAgentProvider,
-      persistInboxPromotion: () => persistInboxPromotion(),
-      createTurnCheckpoint: async (input) => {
-        if (checkpointController.isEnabled())
-          await checkpointController.get().createCheckpoint(input);
+      applyAgentPolicy: () => {
+        if (exec === activeExec) applyAgentPolicy();
       },
-      isToolAllowed,
-      setInFlightOperation,
+      applyAgentProvider: () => applyAgentProvider(exec),
+      persistInboxPromotion: () => persistInboxPromotion(exec.session.id),
+      createTurnCheckpoint: async (input) => {
+        const controller = await initializeCheckpointController(exec);
+        if (controller.isEnabled())
+          await controller.get().createCheckpoint(input);
+      },
+      isToolAllowed: (toolName) => isToolAllowed(toolName, exec),
+      setInFlightOperation: (operation) =>
+        setInFlightOperationFor(exec, operation),
       executeToolCalls,
-      reloadConfig: async () => await reloadConfigFromDisk(),
-      runtimeStatusSnapshot,
-      effectiveMaxSteps,
-      waitIfPaused,
+      reloadConfig: async () => {
+        const result = await reloadConfigFromDisk();
+        if (result.providerReconfigured) applyAgentProvider(exec);
+        return result;
+      },
+      runtimeStatusSnapshot: () =>
+        statusController.snapshotFor({
+          provider: exec.provider,
+          context: exec.context,
+          permissionMode: exec.permissionMode,
+        }),
+      effectiveMaxSteps: () => effectiveMaxSteps(exec),
+      waitIfPaused: () => waitIfPaused(exec),
       waitingHuman: () => exec.endTurnWaitingHuman,
     });
     runnerBySession.set(sessionID as SessionID, runner);
@@ -3394,15 +3786,14 @@ export function createRealRuntimeClient(
     flush: async () => {
       await sessionPersistence;
     },
-    runCommand: async (id, text, signal) => {
-      const ownerID = turnSession.get(id) ?? sessionID;
-      const owner = await ensureExecution(ownerID);
+    runCommand: async (id, text, signal, ownerID) => {
+      const owner = await ensureExecution(ownerID as SessionID);
       publishForSession(owner, {
         type: "turn.started",
         id,
       });
       try {
-        return await handleCommand(id, text, signal);
+        return await handleCommand(id, text, signal, owner);
       } catch (error) {
         publishForSession(owner, {
           type: "turn.cancelled",
@@ -3410,6 +3801,8 @@ export function createRealRuntimeClient(
           reason: error instanceof Error ? error.message : String(error),
         });
         throw error;
+      } finally {
+        scheduleTitleGeneration(ownerID as SessionID);
       }
     },
     runTurn: async (input) => {
@@ -3418,9 +3811,13 @@ export function createRealRuntimeClient(
       // finish-time settlement alone only made them visible from the turn after
       // (queued while idle → delivered at the previous finish → seen too late).
       deliverQueuedMailboxAtBoundary(
-        executionBySession.get(sessionID as SessionID),
+        executionBySession.get(input.sessionID as SessionID),
       );
-      await providerRunnerFor(input.sessionID).runTurn(input);
+      try {
+        await providerRunnerFor(input.sessionID).runTurn(input);
+      } finally {
+        scheduleTitleGeneration(input.sessionID as SessionID);
+      }
     },
   });
   async function drainSession(signal: AbortSignal) {
@@ -3460,8 +3857,8 @@ export function createRealRuntimeClient(
     );
   }
 
-  async function persistInboxPromotion() {
-    await turnController.persistPromotion();
+  async function persistInboxPromotion(targetSessionID = sessionID) {
+    await turnController.persistPromotion(targetSessionID);
   }
 
   async function loadSessionForAttach(id: SessionID): Promise<SessionRecord> {
@@ -3517,12 +3914,28 @@ export function createRealRuntimeClient(
     const exec: SessionExecutionState = {
       session: loaded,
       context: execContext,
+      attachmentReferences: new Map(
+        projection.replayableEvents.flatMap((event) =>
+          event.type === "turn.submitted" && event.attachments?.length
+            ? [[`${event.id}:user`, event.attachments] as const]
+            : [],
+        ),
+      ),
+      toolCalls: new Map(),
+      provider:
+        options.provider ??
+        (providerSource === "environment" ? provider : undefined),
+      permissionMode: defaultPermissionMode,
+      permissionProfile: defaultPermissionProfile,
       selectedAgent: projection.selectedAgent
         ? agentRegistry?.select(projection.selectedAgent)
         : undefined,
       selectedModel: projection.selectedModel,
+      paused: false,
+      pauseWaiters: [],
     };
     executionBySession.set(sessionID, exec);
+    applyAgentProvider(exec);
     return exec;
   }
 
@@ -3548,50 +3961,66 @@ export function createRealRuntimeClient(
     session = exec.session;
     runtimeContext = exec.context;
     activeExec = exec;
+    attachmentReferences = exec.attachmentReferences;
+    toolCalls = exec.toolCalls;
     terminalController.setActiveSession(nextID);
-    lastSubmitted = undefined;
-    activeAbort = undefined;
-    activeTurnID = undefined;
-    paused = false;
-    pauseWaiters = [];
+    lastSubmitted = exec.lastSubmitted;
+    activeAbort = exec.activeAbort;
+    activeTurnID = exec.activeTurnID;
+    paused = exec.paused;
+    pauseWaiters = exec.pauseWaiters;
     activeSkill = undefined;
     selectedAgent = undefined;
     selectedModel = undefined;
     pendingAgent = undefined;
     lastProviderUsage = undefined;
-    toolCalls.clear();
-    attachmentReferences.clear();
     runtimeDiagnostics.splice(0);
-    runtimeContext.restore({ entries: [], resources: [] });
     applyAgentPolicy();
     applyAgentProvider();
 
     const projection = projectSession(exec.session);
+    const diagnostics = runtimeDiagnosticsBySession.get(exec.session.id) ?? [];
     for (const event of projection.replayableEvents) {
       if (event.type === "diagnostic")
-        runtimeDiagnostics.push({
+        diagnostics.push({
           ...event,
           at: event.at ?? exec.session.createdAt,
         });
-      if (event.type === "turn.submitted" && event.attachments?.length)
-        attachmentReferences.set(`${event.id}:user`, event.attachments);
     }
+    runtimeDiagnosticsBySession.set(exec.session.id, diagnostics);
     // The exec already restored its own ledger, agent and model selection
     // (`ensureExecution`); here the activity closures take the same values so
     // UI reads and the next attach start from them.
     selectedAgent = exec.selectedAgent;
     selectedModel = exec.selectedModel;
+    activeSkill = exec.activeSkill;
+    permissionMode = exec.permissionMode;
+    selectedPermissionProfile = exec.permissionProfile;
+    provider = exec.provider ?? provider;
     if (selectedAgent) {
       applyAgentPolicy();
       applyAgentProvider();
     } else if (selectedModel) {
       applyAgentProvider();
     }
-    await checkpointController.init();
-    publish({ type: "session.ready", sessionID });
-    publish(contextStatusEvent(runtimeContext.status(runtimeContextConfig)));
-    publish(await runtimeStatusSnapshot());
-    return { sessionID };
+    await initializeCheckpointController(exec);
+    publishForSession(exec, {
+      type: "session.ready",
+      sessionID: exec.session.id,
+    });
+    publishForSession(
+      exec,
+      contextStatusEvent(exec.context.status(runtimeContextConfig)),
+    );
+    publishForSession(
+      exec,
+      await statusController.snapshotFor({
+        provider: exec.provider,
+        context: exec.context,
+        permissionMode: exec.permissionMode,
+      }),
+    );
+    return { sessionID: exec.session.id };
   }
 
   // --- Live Work Chat (P8 C2) ---
@@ -3616,17 +4045,21 @@ export function createRealRuntimeClient(
     "plan_propose",
   ]);
 
-  async function enqueueMailboxMessage(input: {
-    source?: "user_via_live_chat" | "system";
-    priority?: "normal" | "high" | "urgent";
-    intent: string;
-    text: string;
-    safeSummary?: string;
-    relatedPlanID?: string;
-    deliveryPolicy?: string;
-  }) {
+  async function enqueueMailboxMessage(
+    input: {
+      source?: "user_via_live_chat" | "system";
+      priority?: "normal" | "high" | "urgent";
+      intent: string;
+      text: string;
+      safeSummary?: string;
+      relatedPlanID?: string;
+      deliveryPolicy?: string;
+    },
+    targetExec?: SessionExecutionState,
+  ) {
     await ready;
-    if (!session) return { queued: false as const };
+    const owner = targetExec ?? activeExec;
+    if (!owner) return { queued: false as const };
     if (
       typeof input.intent !== "string" ||
       input.intent.trim().length === 0 ||
@@ -3637,7 +4070,7 @@ export function createRealRuntimeClient(
     const now = new Date();
     const messageID = `mailbox:${Date.now().toString(36)}:${mailboxSequence++}`;
     publishForSession(
-      activeExec,
+      owner,
       buildMailboxQueued({
         id: `${messageID}:queued`,
         messageID,
@@ -3671,34 +4104,37 @@ export function createRealRuntimeClient(
     // Work Chat must reach it without waiting for the next manual turn, so it
     // is simulated as a direct submission (P8 §7 — the Chat is the steering
     // channel, not a queue that idles silently until the user types again).
-    const coordinator = sessionRunCoordinator(session.id as SessionID);
+    const coordinator = sessionRunCoordinator(owner.session.id as SessionID);
     if (!coordinator.active) {
       void submitInput(
         { text: input.text, delivery: "steer" },
-        session.id as SessionID,
+        owner.session.id as SessionID,
       );
     }
     return { queued: true as const, messageID };
   }
 
-  async function createPlanDraft(input: {
-    title: string;
-    author?: "user" | "live_chat" | "main_agent";
-    objective: string;
-    steps: Array<{
-      id: string;
+  async function createPlanDraft(
+    input: {
       title: string;
-      detail?: string;
-      verification?: string;
-    }>;
-    constraints?: string[];
-    verification?: string[];
-    riskNotes?: string[];
-    relatedMailboxMessageID?: string;
-    supersedesPlanID?: string;
-    taskID?: string;
-  }) {
-    if (!session) return { created: false as const };
+      author?: "user" | "live_chat" | "main_agent";
+      objective: string;
+      steps: Array<{
+        id: string;
+        title: string;
+        detail?: string;
+        verification?: string;
+      }>;
+      constraints?: string[];
+      verification?: string[];
+      riskNotes?: string[];
+      relatedMailboxMessageID?: string;
+      supersedesPlanID?: string;
+      taskID?: string;
+    },
+    targetExec: SessionExecutionState | undefined = activeExec,
+  ) {
+    if (!targetExec) return { created: false as const };
     if (
       typeof input.title !== "string" ||
       input.title.trim().length === 0 ||
@@ -3711,7 +4147,7 @@ export function createRealRuntimeClient(
     const now = new Date();
     const planID = `plan:${Date.now().toString(36)}:${planSequence++}`;
     publishForSession(
-      activeExec,
+      targetExec,
       buildPlanDraftCreated({
         id: `${planID}:draft:0`,
         planID,
@@ -3803,26 +4239,29 @@ export function createRealRuntimeClient(
   }
 
   /** The Chat system prompt: persona + the shared safe live-work context. */
-  function chatSystemPrompt(): string {
-    if (!session) return "You are Natalia's Live Work Chat.";
+  function chatSystemPrompt(
+    exec: SessionExecutionState | undefined = activeExec,
+  ): string {
+    const chatSession = exec?.session;
+    if (!chatSession) return "You are Natalia's Live Work Chat.";
     // The real session intelligence snapshot the runtime publishes, not a
     // stub: agent status (idle/paused/running), step, active tool, changed
     // files and recent output are all journal-derived facts (§56.59).
-    const snapshot = latestSessionSnapshot(session.events);
-    const plans = projectedPlans(session.events);
+    const snapshot = latestSessionSnapshot(chatSession.events);
+    const plans = projectedPlans(chatSession.events);
     const activePlan = plans.find((plan) => plan.status === "active");
-    const mailbox = projectedMailboxMessages(session.events).filter(
+    const mailbox = projectedMailboxMessages(chatSession.events).filter(
       (message) =>
         message.status === "queued" || message.status === "delivered",
     );
-    const drift = projectedDriftFindings(session.events).filter(
+    const drift = projectedDriftFindings(chatSession.events).filter(
       (finding) => finding.status === "open",
     );
-    const decisions = projectedDecisionRecords(session.events).slice(-6);
-    const rules = projectedConstitutionRules(session.events);
-    const activity = recentMainAgentActivity(session.events);
-    const recentTools = recentToolActivity(session.events);
-    const collab = projectedCollabMessages(session.events);
+    const decisions = projectedDecisionRecords(chatSession.events).slice(-6);
+    const rules = projectedConstitutionRules(chatSession.events);
+    const activity = recentMainAgentActivity(chatSession.events);
+    const recentTools = recentToolActivity(chatSession.events);
+    const collab = projectedCollabMessages(chatSession.events);
     const nataliaQuestions = collab.filter(
       (message) => message.kind === "question" && message.status === "proposed",
     );
@@ -3926,7 +4365,9 @@ export function createRealRuntimeClient(
     return lines.filter(Boolean).join("\n");
   }
 
-  function chatTools(): RuntimeTool[] {
+  function chatTools(
+    exec: SessionExecutionState | undefined = activeExec,
+  ): RuntimeTool[] {
     const visible: RuntimeTool[] = [];
     for (const tool of tools.values())
       if (CHAT_READ_ONLY_TOOLS.has(tool.name)) visible.push(tool);
@@ -3942,9 +4383,9 @@ export function createRealRuntimeClient(
           additionalProperties: false,
         },
         async execute() {
-          if (!session) return JSON.stringify({ agentStatus: "unknown" });
+          if (!exec) return JSON.stringify({ agentStatus: "unknown" });
           return JSON.stringify(
-            latestSessionSnapshot(session.events) ?? {
+            latestSessionSnapshot(exec.session.events) ?? {
               agentStatus: "unknown",
               changedFiles: 0,
               unvalidatedChanges: 0,
@@ -3963,9 +4404,9 @@ export function createRealRuntimeClient(
           additionalProperties: false,
         },
         async execute() {
-          if (!session) return "[]";
+          if (!exec) return "[]";
           return JSON.stringify(
-            projectedMailboxMessages(session.events).map((message) => ({
+            projectedMailboxMessages(exec.session.events).map((message) => ({
               messageID: message.messageID,
               priority: message.priority,
               intent: message.intent,
@@ -3991,7 +4432,7 @@ export function createRealRuntimeClient(
           required: ["suggestion"],
           additionalProperties: false,
         },
-        async execute(parsed) {
+        async execute(parsed, context) {
           const args = parsed as {
             suggestion?: string;
             rationale?: string;
@@ -3999,8 +4440,8 @@ export function createRealRuntimeClient(
           };
           if (typeof args.suggestion !== "string" || !args.suggestion.trim())
             return "collab_suggest requires suggestion";
-          if (!session) return "no session";
-          publish({
+          if (!exec) return "no session";
+          publishForSession(exec, {
             type: "collab.suggestion",
             id: `collab:suggestion:${Date.now().toString(36)}:${collabSequence++}`,
             from: "live_chat",
@@ -4016,14 +4457,16 @@ export function createRealRuntimeClient(
           // Symmetric round-robin: if the main agent is idle, wake it to see
           // the suggestion; if it is working, the suggestion reaches its next
           // turn through <navi_collaborations>.
-          const coordinator = sessionRunCoordinator(session.id as SessionID);
+          const coordinator = sessionRunCoordinator(
+            exec.session.id as SessionID,
+          );
           if (!coordinator.active) {
             void submitInput(
               {
                 text: "(Navi sent you a collaboration message — review <navi_collaborations>)",
                 delivery: "steer",
               },
-              session.id as SessionID,
+              exec.session.id as SessionID,
             ).catch(() => undefined);
           }
           return JSON.stringify({ sent: true });
@@ -4043,18 +4486,21 @@ export function createRealRuntimeClient(
           required: ["questionID", "answer"],
           additionalProperties: false,
         },
-        async execute(parsed) {
+        async execute(parsed, context) {
           const args = parsed as { questionID?: string; answer?: string };
           if (
             typeof args.questionID !== "string" ||
             typeof args.answer !== "string"
           )
             return "collab_answer requires questionID and answer";
-          if (!session) return "no session";
+          const owner = context.sessionID
+            ? executionBySession.get(context.sessionID as SessionID)
+            : undefined;
+          if (!owner) return "no session";
           const questionID = args.questionID;
           // Models routinely truncate the id to its tail; accept an exact id
           // or a unique suffix of it.
-          const target = projectedCollabMessages(session.events).find(
+          const target = projectedCollabMessages(owner.session.events).find(
             (message) =>
               message.kind === "question" &&
               message.status === "proposed" &&
@@ -4063,7 +4509,7 @@ export function createRealRuntimeClient(
                 questionID.endsWith(message.id)),
           );
           if (!target) return `no open question ${questionID}`;
-          publish({
+          publishForSession(owner, {
             type: "collab.answer",
             id: `collab:answer:${Date.now().toString(36)}:${collabSequence++}`,
             // The matched question's real id, so the projection marks it answered.
@@ -4112,17 +4558,20 @@ export function createRealRuntimeClient(
           if (typeof args.intent !== "string" || typeof args.text !== "string")
             return "mailbox_send requires intent and text";
           return JSON.stringify(
-            await enqueueMailboxMessage({
-              intent: args.intent,
-              text: args.text,
-              ...(args.priority ? { priority: args.priority as never } : {}),
-              ...(args.deliveryPolicy
-                ? { deliveryPolicy: args.deliveryPolicy as never }
-                : {}),
-              ...(args.relatedPlanID
-                ? { relatedPlanID: args.relatedPlanID }
-                : {}),
-            }),
+            await enqueueMailboxMessage(
+              {
+                intent: args.intent,
+                text: args.text,
+                ...(args.priority ? { priority: args.priority as never } : {}),
+                ...(args.deliveryPolicy
+                  ? { deliveryPolicy: args.deliveryPolicy as never }
+                  : {}),
+                ...(args.relatedPlanID
+                  ? { relatedPlanID: args.relatedPlanID }
+                  : {}),
+              },
+              exec,
+            ),
           );
         },
       },
@@ -4177,14 +4626,19 @@ export function createRealRuntimeClient(
           )
             return "plan_create requires title, objective and steps";
           return JSON.stringify(
-            await createPlanDraft({
-              title: args.title,
-              objective: args.objective,
-              steps: args.steps,
-              ...(args.constraints ? { constraints: args.constraints } : {}),
-              ...(args.verification ? { verification: args.verification } : {}),
-              ...(args.riskNotes ? { riskNotes: args.riskNotes } : {}),
-            }),
+            await createPlanDraft(
+              {
+                title: args.title,
+                objective: args.objective,
+                steps: args.steps,
+                ...(args.constraints ? { constraints: args.constraints } : {}),
+                ...(args.verification
+                  ? { verification: args.verification }
+                  : {}),
+                ...(args.riskNotes ? { riskNotes: args.riskNotes } : {}),
+              },
+              exec,
+            ),
           );
         },
       },
@@ -4211,7 +4665,7 @@ export function createRealRuntimeClient(
           const args = parsed as { planID?: string; reason?: string };
           if (typeof args.planID !== "string")
             return "plan_update requires planID";
-          const plan = projectedPlans(session?.events ?? []).find(
+          const plan = projectedPlans(exec?.session.events ?? []).find(
             (candidate) =>
               candidate.planID === args.planID &&
               candidate.author === "live_chat" &&
@@ -4219,7 +4673,7 @@ export function createRealRuntimeClient(
           );
           if (!plan) return `no live_chat draft ${args.planID}`;
           publishForSession(
-            activeExec,
+            exec,
             buildPlanTransition({
               id: `${plan.planID}:draft:${plan.version + 1}`,
               planID: plan.planID,
@@ -4249,7 +4703,7 @@ export function createRealRuntimeClient(
           const args = parsed as { planID?: string };
           if (typeof args.planID !== "string")
             return "plan_propose requires planID";
-          const plan = projectedPlans(session?.events ?? []).find(
+          const plan = projectedPlans(exec?.session.events ?? []).find(
             (candidate) =>
               candidate.planID === args.planID &&
               candidate.author === "live_chat",
@@ -4257,7 +4711,7 @@ export function createRealRuntimeClient(
           if (!plan || plan.status !== "draft")
             return `no draftable live_chat plan ${args.planID}`;
           publishForSession(
-            activeExec,
+            exec,
             buildPlanTransition({
               id: `${plan.planID}:proposed:${Date.now().toString(36)}`,
               planID: plan.planID,
@@ -4321,16 +4775,48 @@ export function createRealRuntimeClient(
   async function runChatTurn(input: {
     text: string;
     responseMessageID: string;
+    exec: SessionExecutionState;
     /** Internal wake (no user message): respond to Natalia's collaboration
         messages instead of a human prompt. */
     internal?: boolean;
   }) {
-    if (!provider) throw new Error("provider unavailable for live work chat");
-    chatBusy = true;
+    const activeProvider = input.exec.provider;
+    if (!activeProvider)
+      throw new Error("provider unavailable for live work chat");
+    if (input.exec.chatAbort)
+      throw new Error("live work chat is already busy for this session");
+    const chatAbort = new AbortController();
+    input.exec.chatAbort = chatAbort;
+    const task = (async () => {
+      await runChatTurnBody(input, chatAbort.signal);
+    })();
+    input.exec.chatTask = task;
+    chatTasks.add(task);
     try {
-      const history = projectedChatMessages(session?.events ?? []);
+      await task;
+    } finally {
+      chatTasks.delete(task);
+      if (input.exec.chatTask === task) input.exec.chatTask = undefined;
+      if (input.exec.chatAbort === chatAbort) input.exec.chatAbort = undefined;
+    }
+  }
+
+  async function runChatTurnBody(
+    input: {
+      text: string;
+      responseMessageID: string;
+      exec: SessionExecutionState;
+      internal?: boolean;
+    },
+    signal: AbortSignal,
+  ) {
+    const activeProvider = input.exec.provider;
+    if (!activeProvider)
+      throw new Error("provider unavailable for live work chat");
+    try {
+      const history = projectedChatMessages(input.exec.session.events);
       const messages: ProviderMessage[] = [
-        { role: "system", content: chatSystemPrompt() },
+        { role: "system", content: chatSystemPrompt(input.exec) },
       ];
       for (const message of history) {
         if (message.messageID === input.responseMessageID) continue;
@@ -4351,7 +4837,7 @@ export function createRealRuntimeClient(
             "Natalia (the main agent) sent you collaboration messages. Read <natalia_collaborations> in your system context; answer her open questions with collab_answer, acknowledge notices, and keep it short.",
         });
       }
-      const visibleTools = chatTools();
+      const visibleTools = chatTools(input.exec);
       const toolSchemas = visibleTools.map((tool) => ({
         name: tool.name,
         description: tool.description,
@@ -4360,21 +4846,23 @@ export function createRealRuntimeClient(
       let output = "";
       let thinking = "";
       let usedTools = false;
-      for (let step = 1; step <= effectiveMaxSteps(); step++) {
+      for (let step = 1; step <= effectiveMaxSteps(input.exec); step++) {
         const calls: ProviderToolCall[] = [];
-        for await (const chunk of withProviderConcurrency(
-          providerConcurrencyLimiter,
-          provider!.provider,
-          () =>
-            provider!.stream({
-              messages,
-              tools: toolSchemas,
-              signal: new AbortController().signal,
-            }),
+        for await (const chunk of normalizeRawToolCallProtocol(
+          withProviderConcurrency(
+            providerConcurrencyLimiter,
+            activeProvider.provider,
+            () =>
+              activeProvider.stream({
+                messages,
+                tools: toolSchemas,
+                signal,
+              }),
+          ),
         )) {
           if (chunk.type === "thinking") {
             thinking += chunk.text;
-            publish({
+            publishForSession(input.exec, {
               type: "chat.thinking.delta",
               id: `${input.responseMessageID}:thinking:${chatSequence++}`,
               messageID: input.responseMessageID,
@@ -4387,7 +4875,7 @@ export function createRealRuntimeClient(
           }
           if (chunk.type === "content") {
             output += chunk.text;
-            publish({
+            publishForSession(input.exec, {
               type: "chat.message.delta",
               id: `${input.responseMessageID}:delta:${chatSequence++}`,
               messageID: input.responseMessageID,
@@ -4443,12 +4931,13 @@ export function createRealRuntimeClient(
           try {
             result = await tool.execute(parsed, {
               workspaceRoot,
-              signal: new AbortController().signal,
+              signal,
+              sessionID: input.exec.session.id,
             });
           } catch (cause) {
             result = `ERROR: ${cause instanceof Error ? cause.message : String(cause)}`;
           }
-          publish({
+          publishForSession(input.exec, {
             type: "chat.tool.used",
             id: `${input.responseMessageID}:tool:${chatSequence++}`,
             messageID: input.responseMessageID,
@@ -4470,26 +4959,32 @@ export function createRealRuntimeClient(
       // no text came out of the tool loop, run one final provider step without
       // tools (the main agent's needsFinalResponse behaviour).
       if (usedTools && !output.trim()) {
-        for await (const chunk of withProviderConcurrency(
-          providerConcurrencyLimiter,
-          provider!.provider,
-          () =>
-            provider!.stream({
-              messages: [
-                ...messages,
-                {
-                  role: "system",
-                  content:
-                    "Tool execution is complete. Provide the user with a concise final answer summarizing the outcome. Do not call any tools.",
-                },
-              ],
-              tools: undefined,
-              signal: new AbortController().signal,
-            }),
+        for await (const chunk of normalizeRawToolCallProtocol(
+          withProviderConcurrency(
+            providerConcurrencyLimiter,
+            activeProvider.provider,
+            () =>
+              activeProvider.stream({
+                messages: [
+                  ...messages,
+                  {
+                    role: "system",
+                    content:
+                      "Tool execution is complete. Provide the user with a concise final answer summarizing the outcome. Do not call any tools.",
+                  },
+                ],
+                tools: undefined,
+                signal,
+              }),
+          ),
         )) {
+          if (chunk.type === "tool_call")
+            throw new Error(
+              "model emitted tool calls while producing the required final chat response",
+            );
           if (chunk.type === "content") {
             output += chunk.text;
-            publish({
+            publishForSession(input.exec, {
               type: "chat.message.delta",
               id: `${input.responseMessageID}:delta:${chatSequence++}`,
               messageID: input.responseMessageID,
@@ -4498,7 +4993,7 @@ export function createRealRuntimeClient(
           }
         }
       }
-      publish({
+      publishForSession(input.exec, {
         type: "chat.message.added",
         id: `${input.responseMessageID}:chat`,
         messageID: input.responseMessageID,
@@ -4508,7 +5003,6 @@ export function createRealRuntimeClient(
       });
       return { text: output };
     } finally {
-      chatBusy = false;
     }
   }
 
@@ -4518,13 +5012,18 @@ export function createRealRuntimeClient(
    * an idle Chat answers her sister immediately instead of holding the
    * question until the user happens to chat again.
    */
-  async function wakeNavi() {
-    if (!provider || !session || chatBusy) return;
+  async function wakeNavi(exec: SessionExecutionState) {
+    if (!exec.provider || exec.chatAbort) return;
     const responseMessageID = `chat:${Date.now().toString(36)}:${chatSequence++}`;
     try {
-      await runChatTurn({ text: "", responseMessageID, internal: true });
+      await runChatTurn({
+        text: "",
+        responseMessageID,
+        exec,
+        internal: true,
+      });
     } catch (cause) {
-      publish({
+      publishForSession(exec, {
         type: "chat.message.added",
         id: `${responseMessageID}:chat`,
         messageID: responseMessageID,
@@ -4613,13 +5112,33 @@ export function createRealRuntimeClient(
     },
     sessionAttach: attachSession,
     async dispose() {
+      runtimeDisposed = true;
+      await Promise.all(
+        [...titleGenerationTasks.keys()].map(cancelTitleGeneration),
+      );
       terminalCommandBuffer.clearAll();
-      activeExec?.activeAbort?.abort(new Error("runtime disposed"));
-      await turnCoordinator().interrupt();
+      for (const exec of executionBySession.values()) {
+        exec.activeAbort?.abort(new Error("runtime disposed"));
+        exec.chatAbort?.abort(new Error("runtime disposed"));
+        exec.paused = false;
+        for (const resolveWaiter of exec.pauseWaiters) resolveWaiter();
+        exec.pauseWaiters = [];
+      }
+      await Promise.all(
+        [...executionBySession.keys()].map((id) =>
+          sessionRunCoordinator(id).interrupt(),
+        ),
+      );
+      await Promise.allSettled([...chatTasks]);
       // A committed selection and other durable controls must reach disk before
       // a caller opens the same session in a replacement runtime.
       await sessionPersistence;
-      await sessionStoreController.sqlite()?.flushPendingWrites(sessionID);
+      await Promise.all(
+        [...executionBySession.keys()].map(
+          async (id) =>
+            await sessionStoreController.sqlite()?.flushPendingWrites(id),
+        ),
+      );
       await sessionStoreController.close();
       workspaceFilesController.close();
       await toolFamilyWatcher?.();
@@ -4631,8 +5150,11 @@ export function createRealRuntimeClient(
     cancel(reason = "user cancel") {
       const cancelledSessionID = sessionID;
       const coordinator = sessionRunCoordinator(cancelledSessionID);
-      const runningTurnID = activeExec?.activeTurnID;
-      const pendingTurnID = runningTurnID ? undefined : lastSubmitted?.id;
+      const cancelledExec = activeExec;
+      const runningTurnID = cancelledExec?.activeTurnID;
+      const pendingTurnID = runningTurnID
+        ? undefined
+        : cancelledExec?.lastSubmitted?.id;
       const pendingSessionID = pendingTurnID
         ? (turnSession.get(pendingTurnID) ?? cancelledSessionID)
         : undefined;
@@ -4646,17 +5168,20 @@ export function createRealRuntimeClient(
         pendingSession.inbox = pendingSession.inbox?.filter(
           (input) => input.id !== pendingTurnID,
         );
-        if (lastSubmitted?.id === pendingTurnID) lastSubmitted = undefined;
+        if (cancelledExec && cancelledExec.lastSubmitted?.id === pendingTurnID)
+          cancelledExec.lastSubmitted = undefined;
       }
+      if (cancelledExec) cancelledExec.paused = false;
       paused = false;
-      const waiters = pauseWaiters;
-      pauseWaiters = [];
+      const waiters = cancelledExec?.pauseWaiters ?? pauseWaiters;
+      if (cancelledExec) cancelledExec.pauseWaiters = [];
+      else pauseWaiters = [];
       for (const resolveWaiter of waiters) resolveWaiter();
-      activeExec?.activeAbort?.abort(reason);
+      cancelledExec?.activeAbort?.abort(reason);
       const cancelledTurnID =
         runningTurnID ??
         pendingInput?.id ??
-        (coordinator.active ? lastSubmitted?.id : undefined);
+        (coordinator.active ? cancelledExec?.lastSubmitted?.id : undefined);
       if (cancelledTurnID)
         publish({
           type: "turn.cancelled",
@@ -4670,9 +5195,11 @@ export function createRealRuntimeClient(
         // `interrupt` intentionally clears stale wakeups. A prompt admitted with
         // queue delivery is durable work, not a stale wakeup, so start a fresh
         // drain after cancellation to promote it at the new idle boundary.
-        await coordinator.wake(drainSessionFor(cancelledSessionID));
+        await coordinator.wake(
+          drainSessionFor(pendingSessionID ?? cancelledSessionID),
+        );
       })().catch((error) =>
-        publish({
+        publishForSession(cancelledExec, {
           type: "diagnostic",
           level: "warning",
           message: `session cancellation cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -4682,23 +5209,28 @@ export function createRealRuntimeClient(
     pause(reason = "user pause") {
       // Refusing is a value: a caller that gets `paused: true` when nothing was
       // paused has been told the turn is held when it is not.
-      if (!lastSubmitted)
+      const exec = activeExec;
+      if (!exec?.lastSubmitted)
         return { paused: false, reason: "no turn has been submitted" };
-      if (paused) return { paused: true, reason: "already paused" };
+      if (exec.paused) return { paused: true, reason: "already paused" };
+      exec.paused = true;
       paused = true;
-      publish({ type: "turn.paused", id: lastSubmitted.id, reason });
+      publish({ type: "turn.paused", id: exec.lastSubmitted.id, reason });
       publish({ type: "status.update", status: "paused", detail: reason });
       return { paused: true };
     },
     resume() {
-      if (!lastSubmitted)
+      const exec = activeExec;
+      if (!exec?.lastSubmitted)
         return { resumed: false, reason: "no turn has been submitted" };
-      if (!paused) return { resumed: false, reason: "the turn is not paused" };
+      if (!exec.paused)
+        return { resumed: false, reason: "the turn is not paused" };
+      exec.paused = false;
       paused = false;
-      const waiters = pauseWaiters;
-      pauseWaiters = [];
+      const waiters = exec.pauseWaiters;
+      exec.pauseWaiters = [];
       for (const resolveWaiter of waiters) resolveWaiter();
-      publish({ type: "turn.resumed", id: lastSubmitted.id });
+      publish({ type: "turn.resumed", id: exec.lastSubmitted.id });
       publish({ type: "status.update", status: "running", detail: "resumed" });
       return { resumed: true };
     },
@@ -5145,6 +5677,8 @@ export function createRealRuntimeClient(
     // and geometry arbitration are the same ones the model tools go through.
     async nativeTerminalStart(input) {
       await ready;
+      const owner = activeExec;
+      if (!owner) throw new RuntimeRefusal("session is not initialized");
       const nativeTerminal = terminalController.get();
       if (!nativeTerminal)
         throw new RuntimeRefusal("Native Terminal Host is unavailable");
@@ -5154,6 +5688,7 @@ export function createRealRuntimeClient(
             command: input.command,
             cwd: input.cwd ?? workspaceRoot,
             id: input.id,
+            sessionID: owner.session.id,
           }),
         );
       } catch (error) {
@@ -5194,7 +5729,10 @@ export function createRealRuntimeClient(
     },
     async checkpointList() {
       await ready;
-      return (await checkpointController.get().list()).map((record) => ({
+      const owner = activeExec;
+      if (!owner) throw new Error("session is not initialized");
+      const controller = await initializeCheckpointController(owner);
+      return (await controller.get().list()).map((record) => ({
         id: record.id,
         sequence: record.sequence,
         turnID: record.turnID,
@@ -5212,23 +5750,31 @@ export function createRealRuntimeClient(
     },
     async checkpointPreview(id) {
       await ready;
-      return await checkpointController
+      const owner = activeExec;
+      if (!owner) throw new Error("session is not initialized");
+      const controller = await initializeCheckpointController(owner);
+      return await controller
         .get()
-        .previewRollback(
-          id,
-          runtimeContext,
-          checkpointController.resources(),
-          true,
-        );
+        .previewRollback(id, owner.context, controller.resources(), true);
     },
     async checkpointRollback(input) {
       await ready;
-      const preview = await checkpointController.get().rollbackTo(input.id, {
-        context: runtimeContext,
+      const owner = activeExec;
+      if (!owner) throw new Error("session is not initialized");
+      const controller = await initializeCheckpointController(owner);
+      const preview = await controller.get().rollbackTo(input.id, {
+        context: owner.context,
         dryRun: input.dryRun,
-        ...checkpointController.rollbackOptions(),
+        ...controller.rollbackOptions(),
       });
-      publish(await runtimeStatusSnapshot());
+      publishForSession(
+        owner,
+        await statusController.snapshotFor({
+          provider: owner.provider,
+          context: owner.context,
+          permissionMode: owner.permissionMode,
+        }),
+      );
       return preview;
     },
     async sandboxList() {
@@ -5264,19 +5810,21 @@ export function createRealRuntimeClient(
     },
     async sandboxMerge(id) {
       await ready;
+      const owner = activeExec;
+      if (!owner) throw new Error("session is not initialized");
       const sandboxes = sandboxController.get();
-      await authorizeSandboxManagement("sandbox_merge", { id });
+      await authorizeSandboxManagement("sandbox_merge", { id }, owner);
       const changes = await sandboxes.merge(
         id,
         workspaceRoot,
-        async (paths) => await authorizeSandboxMerge({ id, paths }),
+        async (paths) => await authorizeSandboxMerge({ id, paths }, owner),
       );
       const operationID = `sandbox_merge:${id}:${randomUUID()}`;
       // WG4 Phase 3: sandbox merge keeps its own operation provenance (not a
       // tool call), but registers an expected mutation so the auditor can
       // attribute merged paths to the merge operation.
       mutationRegistry.register({
-        sessionID,
+        sessionID: owner.session.id,
         episodeID: options.episodeID,
         operationID,
         toolName: "sandbox_merge",
@@ -5284,26 +5832,29 @@ export function createRealRuntimeClient(
         expectedOperations: ["added", "modified", "deleted"],
       });
       for (const change of changes) {
-        publish(
+        publishForSession(
+          owner,
           workspaceChangeNode({
             operationID,
             path: change.path,
             toolName: "sandbox_merge",
-            sessionID,
+            sessionID: owner.session.id,
           }),
         );
       }
       mutationRegistry.settle(operationID);
-      publish(sandboxes.updateEvent(id));
-      publish(sandboxes.auditEvent(id, "merge"));
+      publishForSession(owner, sandboxes.updateEvent(id));
+      publishForSession(owner, sandboxes.auditEvent(id, "merge"));
       return changes;
     },
     async sandboxDelete(id) {
       await ready;
+      const owner = activeExec;
+      if (!owner) throw new Error("session is not initialized");
       const sandboxes = sandboxController.get();
-      await authorizeSandboxManagement("sandbox_delete", { id });
+      await authorizeSandboxManagement("sandbox_delete", { id }, owner);
       const result = await sandboxes.delete(id);
-      publish({
+      publishForSession(owner, {
         type: "sandbox.update",
         id,
         status: "deleted",
@@ -5318,11 +5869,13 @@ export function createRealRuntimeClient(
     },
     async sandboxResourceStop(input) {
       await ready;
+      const owner = activeExec;
+      if (!owner) throw new Error("session is not initialized");
       const sandboxes = sandboxController.get();
-      await authorizeSandboxManagement("sandbox_resource_stop", input);
+      await authorizeSandboxManagement("sandbox_resource_stop", input, owner);
       const resource = await sandboxes.stopResource(input.id, input.resourceID);
-      publish(sandboxes.updateEvent(input.id));
-      publish(sandboxes.auditEvent(input.id, "resource_stop"));
+      publishForSession(owner, sandboxes.updateEvent(input.id));
+      publishForSession(owner, sandboxes.auditEvent(input.id, "resource_stop"));
       return resource;
     },
     async sessionList() {
@@ -5335,7 +5888,21 @@ export function createRealRuntimeClient(
     },
     async sessionRename(id, title) {
       await ready;
-      return await sessionStoreController.rename(id, title);
+      const updated = await sessionStoreController.rename(id, title);
+      const exec = executionBySession.get(id as SessionID);
+      if (exec) {
+        exec.session.title = updated.title;
+        exec.session.metadata = {
+          ...exec.session.metadata,
+          titleSource: "manual",
+        };
+      }
+      publishForSession(exec, {
+        type: "session.title.updated",
+        sessionID: id as SessionID,
+        title: updated.title,
+      });
+      return updated;
     },
     async sessionPin(id, pinned) {
       await ready;
@@ -5351,6 +5918,7 @@ export function createRealRuntimeClient(
     },
     async sessionDelete(id) {
       await ready;
+      await cancelTitleGeneration(id as SessionID);
       return await sessionStoreController.delete(id);
     },
     async sessionNew(input = {}) {
@@ -5628,7 +6196,13 @@ export function createRealRuntimeClient(
     },
     async diagnostics(limit = 100) {
       await ready;
-      return runtimeDiagnostics.slice(-Math.min(500, Math.max(1, limit)));
+      const entries = activeExec
+        ? [
+            ...runtimeDiagnostics,
+            ...(runtimeDiagnosticsBySession.get(activeExec.session.id) ?? []),
+          ]
+        : runtimeDiagnostics;
+      return entries.slice(-Math.min(500, Math.max(1, limit)));
     },
     snapshot() {
       const event: RuntimeEvent = {
@@ -5643,7 +6217,7 @@ export function createRealRuntimeClient(
       publish({ type: "diagnostic", level, message });
     },
     lastSubmission() {
-      return lastSubmitted;
+      return activeExec?.lastSubmitted;
     },
     async constitutionRules() {
       if (!session) return [];
@@ -5760,7 +6334,8 @@ export function createRealRuntimeClient(
       timeoutSec?: number;
       knownGaps?: string[];
     }) {
-      if (!session) return { recorded: false as const };
+      const owner = activeExec;
+      if (!owner) return { recorded: false as const };
       if (
         typeof input.taskID !== "string" ||
         input.taskID.trim().length === 0 ||
@@ -5800,7 +6375,7 @@ export function createRealRuntimeClient(
         validations: [outcome],
         knownGaps: input.knownGaps,
       });
-      publishForSession(activeExec, event);
+      publishForSession(owner, event);
       return {
         recorded: true as const,
         result,
@@ -6032,10 +6607,11 @@ export function createRealRuntimeClient(
     async chatSubmit(input: { text: string }) {
       await ready;
       const text = typeof input.text === "string" ? input.text.trim() : "";
-      if (!text || !session || !provider) return { messageID: "" };
+      const exec = activeExec;
+      if (!text || !exec?.provider) return { messageID: "" };
       const now = new Date();
       const userMessageID = `chat:${Date.now().toString(36)}:${chatSequence++}`;
-      publish({
+      publishForSession(exec, {
         type: "chat.message.added",
         id: `${userMessageID}:user`,
         messageID: userMessageID,
@@ -6045,9 +6621,9 @@ export function createRealRuntimeClient(
       });
       const responseMessageID = `chat:${Date.now().toString(36)}:${chatSequence++}`;
       try {
-        await runChatTurn({ text, responseMessageID });
+        await runChatTurn({ text, responseMessageID, exec });
       } catch (cause) {
-        publish({
+        publishForSession(exec, {
           type: "chat.message.added",
           id: `${responseMessageID}:chat`,
           messageID: responseMessageID,
@@ -6132,9 +6708,10 @@ export function createRealRuntimeClient(
       return { proposed: true as const };
     },
     async planAccept(planID: string) {
-      if (!session || typeof planID !== "string" || !planID)
+      const owner = activeExec;
+      if (!owner || typeof planID !== "string" || !planID)
         return { accepted: false as const };
-      const plan = projectedPlans(session.events).find(
+      const plan = projectedPlans(owner.session.events).find(
         (p) => p.planID === planID && p.status === "proposed",
       );
       if (!plan) return { accepted: false as const };
@@ -6149,10 +6726,14 @@ export function createRealRuntimeClient(
         planID,
         title: "Accept plan",
         detail: `${plan.title}\n${plan.objective}`,
+        sessionID: owner.session.id,
+        permissionMode: owner.permissionMode,
+        signal: owner.activeAbort?.signal,
       });
-      if (response?.decision === "reject") return { accepted: false as const };
+      if (!response || response.decision === "reject")
+        return { accepted: false as const };
       publishForSession(
-        activeExec,
+        owner,
         buildPlanTransition({
           id: `${planID}:accepted:${plan.version + 1}`,
           planID,
@@ -6403,14 +6984,40 @@ export function createRealRuntimeClient(
     // D2: the request lives in the session whose turn issued it. A response
     // arriving while the UI is attached to another session must be judged
     // against that session's journal, never the attached one's.
-    const target = executionBySession.get(forSessionID)?.session ?? session;
+    const target = executionBySession.get(forSessionID)?.session;
     const pending = projectInteractiveRequests(target?.events ?? []);
     return kind === "approval"
       ? pending.approvals.some((request) => request.id === id)
       : pending.questions.some((request) => request.id === id);
   }
 
-  async function handleCommand(id: string, text: string, signal?: AbortSignal) {
+  async function handleCommand(
+    id: string,
+    text: string,
+    signal: AbortSignal | undefined,
+    commandExec: SessionExecutionState = activeExec!,
+  ) {
+    const commandSession = commandExec.session;
+    const commandContext = commandExec.context;
+    let commandAgent = commandExec.selectedAgent;
+    let commandSkill = commandExec.activeSkill;
+    const commandProvider = commandExec.provider;
+    const commandRuntimeStatusSnapshot = () =>
+      statusController.snapshotFor({
+        provider: commandProvider,
+        context: commandContext,
+        permissionMode: commandExec.permissionMode,
+      });
+    // Commands run inside a session's drain. Bind their output to that session
+    // even when the UI is attached elsewhere.
+    const publish = (event: RuntimeEvent) =>
+      publishForSession(commandExec, event);
+    const runtimeStatusSnapshot = commandRuntimeStatusSnapshot;
+    const runtimeContext = commandContext;
+    const session = commandSession;
+    const provider = commandProvider;
+    const selectedAgent = commandAgent;
+    let activeSkill = commandSkill;
     const trimmed = text.trim();
     if (!trimmed.startsWith("/")) return false;
     if (trimmed === "/help") {
@@ -6441,7 +7048,7 @@ export function createRealRuntimeClient(
           "Natalia TS7 runtime doctor",
           `provider: ${configured}`,
           `workspace: ${workspaceRoot}`,
-          `session: ${sessionID}`,
+          `session: ${commandSession.id}`,
           `native tools: ${tools.size}`,
           `agent: ${selectedAgent?.name ?? "default"}`,
           `skills: ${skillsController.list().length}`,
@@ -6482,7 +7089,10 @@ export function createRealRuntimeClient(
         throw new Error(
           "diagnostics limit must be an integer between 1 and 500",
         );
-      const entries = runtimeDiagnostics.slice(-limit);
+      const entries = [
+        ...runtimeDiagnostics,
+        ...(runtimeDiagnosticsBySession.get(commandExec.session.id) ?? []),
+      ].slice(-limit);
       publish({
         type: "content.delta",
         id,
@@ -6525,13 +7135,14 @@ export function createRealRuntimeClient(
       return true;
     }
     if (/^\/(?:checkpoint|checkpoints|rollback)\b/u.test(trimmed)) {
-      if (!checkpointController.isEnabled())
+      const controller = await initializeCheckpointController(commandExec);
+      if (!controller.isEnabled())
         throw new Error("checkpoint store is not initialized");
       const result = await runCheckpointCommand(
-        checkpointController.get(),
+        controller.get(),
         runtimeContext,
         trimmed,
-        checkpointController.rollbackOptions(),
+        controller.rollbackOptions(),
         // The shared object library: the sandbox's snapshot indices are also
         // owners, so checkpoint GC must never prune a live sandbox object.
         async () => {
@@ -6628,7 +7239,7 @@ export function createRealRuntimeClient(
         .trim()
         .split(/\s+/u);
       if (!modelID) throw new Error("model ID is required");
-      await selectRuntimeModel(modelID, variant);
+      await selectRuntimeModel(modelID, variant, commandExec);
       publish({
         type: "content.delta",
         id,
@@ -6645,7 +7256,10 @@ export function createRealRuntimeClient(
         .split(/\s+/u);
       if (!path || !rest.length)
         throw new Error("usage: /attach <workspace-relative-image> <prompt>");
-      await submitInput({ text: rest.join(" "), attachments: [path] });
+      await submitInput(
+        { text: rest.join(" "), attachments: [path] },
+        commandExec.session.id,
+      );
       return true;
     }
     if (trimmed === "/agents") {
@@ -6668,10 +7282,12 @@ export function createRealRuntimeClient(
       if (!name) throw new Error("agent name is required");
       const agent = agentRegistry?.select(name);
       if (!agent) throw new Error(`agent not found: ${name}`);
-      selectedAgent = agent;
-      if (activeExec) activeExec.selectedAgent = agent;
-      applyAgentPolicy();
-      applyAgentProvider();
+      commandExec.selectedAgent = agent;
+      commandAgent = agent;
+      if (commandExec === activeExec) {
+        applyAgentPolicy();
+      }
+      applyAgentProvider(commandExec);
       publish({ type: "agent.selection", name: agent.name, pending: false });
       publish({
         type: "content.delta",
@@ -6683,7 +7299,8 @@ export function createRealRuntimeClient(
       return true;
     }
     if (trimmed === "/pause") {
-      paused = true;
+      commandExec.paused = true;
+      if (commandExec === activeExec) paused = true;
       publish({ type: "turn.paused", id, reason: "slash command" });
       publish({ type: "content.delta", id, text: "runtime paused" });
       publish({ type: "content.done", id });
@@ -6691,9 +7308,10 @@ export function createRealRuntimeClient(
       return true;
     }
     if (trimmed === "/resume") {
-      paused = false;
-      const waiters = pauseWaiters;
-      pauseWaiters = [];
+      commandExec.paused = false;
+      if (commandExec === activeExec) paused = false;
+      const waiters = commandExec.pauseWaiters;
+      commandExec.pauseWaiters = [];
       for (const resolveWaiter of waiters) resolveWaiter();
       publish({ type: "turn.resumed", id });
       publish({ type: "content.delta", id, text: "runtime resumed" });
@@ -6705,8 +7323,10 @@ export function createRealRuntimeClient(
       activeSkill = skillsController.resolve(
         trimmed.slice("/skill ".length).trim(),
       );
-      runtimeContext.add({
-        id: `skill:${activeSkill.qualifiedName}:${runtimeContext.journalStatus().journalOffset}`,
+      commandExec.activeSkill = activeSkill;
+      commandSkill = activeSkill;
+      commandContext.add({
+        id: `skill:${activeSkill.qualifiedName}:${commandContext.journalStatus().journalOffset}`,
         role: "system",
         content: `Active skill ${activeSkill.name}: ${activeSkill.description}\n${activeSkill.body}`,
       });
@@ -6735,7 +7355,7 @@ export function createRealRuntimeClient(
       // signal is the drain's, not the (never-assigned) activity closure: a
       // cancelled command aborts the skill script's child process.
       const result = await runSkillScript(activeSkill, script, {
-        signal: signal ?? activeExec?.activeAbort?.signal,
+        signal: signal ?? commandExec.activeAbort?.signal,
       });
       publish({
         type: "content.delta",
@@ -6766,8 +7386,11 @@ export function createRealRuntimeClient(
       mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
       dataURL: string;
     }> = [];
+    const exec =
+      executionBySession.get(turnSession.get(turnID) ?? sessionID) ??
+      activeExec;
     const attachImage = async (path: string) => {
-      if (!currentModelImageInput())
+      if (!currentModelImageInput(exec))
         throw new Error(
           "the selected model does not support image input — set models.<name>.capabilities.imageInput",
         );
@@ -6782,9 +7405,6 @@ export function createRealRuntimeClient(
     // local bindings shadow the activity-scoped globals for the whole segment,
     // so every publish lands in that session's journal with its stamp, and the
     // context ledger touched is the turn's own.
-    const exec =
-      executionBySession.get(turnSession.get(turnID) ?? sessionID) ??
-      activeExec;
     const publish = (event: RuntimeEvent) => publishForSession(exec, event);
     const execContext = exec?.context ?? runtimeContext;
     const assistantMessage: ProviderMessage = {
@@ -6850,8 +7470,9 @@ export function createRealRuntimeClient(
         const registered = tools.get(call.name);
         if (
           registered &&
-          (!isToolAllowed(call.name) ||
-            (permissionMode === "read_only" && registered.requiresApproval))
+          (!isToolAllowed(call.name, exec) ||
+            (exec?.permissionMode === "read_only" &&
+              registered.requiresApproval))
         )
           publish({
             type: "policy.decision",
@@ -6860,13 +7481,17 @@ export function createRealRuntimeClient(
             toolCallID: call.id,
             decision: "deny",
             reason:
-              permissionMode === "read_only" && registered.requiresApproval
+              exec?.permissionMode === "read_only" &&
+              registered.requiresApproval
                 ? readOnlyToolMessage(call.name)
                 : !moduleToolLayer.isToolAllowed(call.name)
                   ? `blocked outside active ${options.taskModuleContext?.moduleType} module: ${call.name}`
                   : !modulePermissionToolLayer.isToolAllowed(call.name)
                     ? `blocked by active module policy: ${call.name}`
-                    : (extensionToolPermission(call.name).diagnostics[0] ??
+                    : (extensionToolPermission(
+                        call.name,
+                        exec?.permissionProfile,
+                      ).diagnostics[0] ??
                       "tool is excluded from the runtime catalog by policy"),
           });
         publish({
@@ -6883,7 +7508,9 @@ export function createRealRuntimeClient(
           turnID,
           call.id,
           call.name,
-          registered && permissionMode === "read_only" ? "rejected" : "failed",
+          registered && exec?.permissionMode === "read_only"
+            ? "rejected"
+            : "failed",
         );
         messages.push({
           role: "tool",
@@ -6965,8 +7592,10 @@ export function createRealRuntimeClient(
     toolResource: string,
     commandText?: string,
   ): string | undefined {
-    if (!session) return undefined;
-    const rules = projectedConstitutionRules(session.events);
+    const exec = executionForTurn(turnID) ?? activeExec;
+    if (!exec) return undefined;
+    const publish = (event: RuntimeEvent) => publishForSession(exec, event);
+    const rules = projectedConstitutionRules(exec.session.events);
     let blocked: string | undefined;
 
     if (commandText) {
@@ -7032,8 +7661,9 @@ export function createRealRuntimeClient(
     const execContext = exec?.context ?? runtimeContext;
     const toolID = `${turnID}:${call.id}`;
     const dedupKey = `${call.name}\u0000${call.arguments}`;
-    const occurrences = (toolCalls.get(dedupKey) ?? 0) + 1;
-    toolCalls.set(dedupKey, occurrences);
+    const sessionToolCalls = exec?.toolCalls ?? toolCalls;
+    const occurrences = (sessionToolCalls.get(dedupKey) ?? 0) + 1;
+    sessionToolCalls.set(dedupKey, occurrences);
     if (occurrences > 12 && !WAITING_TOOLS.has(tool.name)) {
       const message = `blocked repeated tool call after ${occurrences} identical attempts: ${tool.name}`;
       publish({
@@ -7063,7 +7693,7 @@ export function createRealRuntimeClient(
       .preStage(async () => {
         const preResult = await toolLayer.preExecute(hookEvent);
         for (const diagnostic of preResult.diagnostics) {
-          publish({
+          publishForSession(exec, {
             type: "diagnostic",
             level: "info",
             message: diagnostic,
@@ -7112,7 +7742,7 @@ export function createRealRuntimeClient(
         return { decision: "deny" as const, reason };
       })
       .preStage(() => {
-        if (!(permissionMode === "read_only" && tool.requiresApproval))
+        if (!(exec?.permissionMode === "read_only" && tool.requiresApproval))
           return { decision: "allow" as const };
         const message = readOnlyToolMessage(tool.name);
         publish({
@@ -7211,7 +7841,7 @@ export function createRealRuntimeClient(
             throw new Error(refusal.reason);
           }
         }
-        await waitIfPaused();
+        await waitIfPaused(exec);
         publish({
           type: "tool.update",
           id: toolID,
@@ -7243,7 +7873,8 @@ export function createRealRuntimeClient(
               `tool "${tool.name}" parameter validation failed: ${detail}`,
             );
           }
-          await setInFlightOperation({
+          if (!exec) throw new Error("session execution state unavailable");
+          await setInFlightOperationFor(exec, {
             kind: "tool_execution",
             turnID,
             toolName: tool.name,
@@ -7302,7 +7933,7 @@ export function createRealRuntimeClient(
           );
           if (writePath) {
             mutationRegistry.register({
-              sessionID,
+              sessionID: exec.session.id,
               turnID,
               callID: call.id,
               toolName: tool.name,
@@ -7314,6 +7945,7 @@ export function createRealRuntimeClient(
             tool.execute(parsed, {
               workspaceRoot,
               signal,
+              sessionID: exec?.session.id ?? sessionID,
               askQuestion: async (question) =>
                 await interactive.requireQuestion(
                   `${toolID}:question`,
@@ -7324,12 +7956,14 @@ export function createRealRuntimeClient(
               nativeTerminal: terminalController.get(),
               sandboxes: sandboxController.get(),
               ...(attachImage ? { attachImage } : {}),
-              workspaceReadAuthorize: authorizeWorkspaceRead,
-              sandboxMergeAuthorize: authorizeSandboxMerge,
+              workspaceReadAuthorize: (request) =>
+                authorizeWorkspaceRead(request, exec),
+              sandboxMergeAuthorize: (request) =>
+                authorizeSandboxMerge(request, exec),
               // The resolved config as a service: a tool family reads it by
               // name (e.g. `sandbox.backend`) instead of re-parsing config.
               runtimeConfig: () => capabilityRegistry.service("runtime.config"),
-              settings: toolSettings(),
+              settings: toolSettings(exec),
               // The turn's own session, not the attached one: a background turn's
               // subagents and terminal starts belong to its session (I1/I3).
               parentSessionID: exec?.session.id ?? sessionID,
@@ -7359,7 +7993,7 @@ export function createRealRuntimeClient(
                       turnID,
                       path: change.path,
                       toolName: tool.name,
-                      sessionID,
+                      sessionID: exec.session.id,
                     }),
                   );
                   publish(
@@ -7387,7 +8021,7 @@ export function createRealRuntimeClient(
             tool.output?.finalizeContent?.(completeResult) ?? completeResult;
           const bounded = await boundToolOutput(
             workspaceRoot,
-            redactToolOutput(finalizedContent, redactToolOutputEnabled()),
+            redactToolOutput(finalizedContent, redactToolOutputEnabled(exec)),
           );
           const result = bounded.text;
           // The tool's own output projection becomes part of the event metadata, so
@@ -7446,7 +8080,7 @@ export function createRealRuntimeClient(
                 turnID,
                 path: changedPath,
                 toolName: tool.name,
-                sessionID,
+                sessionID: exec.session.id,
               }),
             );
             publish(
@@ -7510,7 +8144,8 @@ export function createRealRuntimeClient(
           throw new Error(message);
         } finally {
           releaseWriteLock?.();
-          if (executionAudited) await setInFlightOperation(undefined);
+          if (executionAudited && exec)
+            await setInFlightOperationFor(exec, undefined);
         }
       })
       .postStage(async (_input, content) => {
@@ -7551,17 +8186,27 @@ export function createRealRuntimeClient(
    * decision to act on. Returning instead of throwing is what lets the model
    * read why it was refused and choose a different approach.
    */
-  async function authorizeSandboxMerge(input: { id: string; paths: string[] }) {
+  async function authorizeSandboxMerge(
+    input: { id: string; paths: string[] },
+    exec: SessionExecutionState | undefined = activeExec,
+  ) {
     for (const path of input.paths) {
       const hookEvent: ToolHookEvent = {
-        turnID: activeTurnID ?? `sandbox:${sessionID}`,
+        turnID:
+          exec?.activeTurnID ??
+          activeTurnID ??
+          `sandbox:${exec?.session.id ?? sessionID}`,
         toolName: "sandbox_merge",
         toolCallID: `sandbox:${input.id}:${path}`,
         arguments: JSON.stringify({ id: input.id, path }),
       };
       const preResult = await toolLayer.preExecute(hookEvent);
       for (const diagnostic of preResult.diagnostics)
-        publish({ type: "diagnostic", level: "info", message: diagnostic });
+        publishForSession(exec, {
+          type: "diagnostic",
+          level: "info",
+          message: diagnostic,
+        });
       if (!preResult.allowed)
         throw new Error(
           `sandbox merge denied for "${path}": ${preResult.diagnostics.join("; ")}`,
@@ -7572,53 +8217,72 @@ export function createRealRuntimeClient(
   async function authorizeSandboxManagement(
     toolName: "sandbox_merge" | "sandbox_delete" | "sandbox_resource_stop",
     arguments_: Record<string, string>,
+    exec: SessionExecutionState = activeExec!,
   ) {
     const hookEvent: ToolHookEvent = {
-      turnID: activeTurnID ?? `sandbox:${sessionID}`,
+      turnID: exec.activeTurnID ?? `sandbox:${exec.session.id}`,
       toolName,
       toolCallID: `sandbox:manage:${toolName}:${arguments_.id}`,
       arguments: JSON.stringify(arguments_),
     };
     const result = await toolLayer.preExecute(hookEvent);
     for (const diagnostic of result.diagnostics)
-      publish({ type: "diagnostic", level: "info", message: diagnostic });
+      publishForSession(exec, {
+        type: "diagnostic",
+        level: "info",
+        message: diagnostic,
+      });
     if (!result.allowed)
       throw new Error(
         `${toolName} denied: ${result.diagnostics.join("; ") || "runtime policy denied operation"}`,
       );
   }
 
-  async function authorizeWorkspaceRead(input: {
-    toolName: "glob" | "grep";
-    paths: string[];
-  }) {
+  async function authorizeWorkspaceRead(
+    input: {
+      toolName: "glob" | "grep";
+      paths: string[];
+    },
+    exec: SessionExecutionState | undefined = activeExec,
+  ) {
+    const agent = exec ? exec.selectedAgent : selectedAgent;
     for (const path of input.paths) {
       const permission = evaluatePermissionRules(
-        selectedAgent?.permissions,
+        agent?.permissions,
         input.toolName,
         { path },
         workspaceRoot,
       );
       if (permission.allowed) continue;
       for (const diagnostic of permission.diagnostics)
-        publish({ type: "diagnostic", level: "info", message: diagnostic });
+        publishForSession(exec, {
+          type: "diagnostic",
+          level: "info",
+          message: diagnostic,
+        });
       throw new Error(
         `${input.toolName} denied for "${path}": ${permission.diagnostics.join("; ")}`,
       );
     }
   }
 
-  async function waitIfPaused() {
-    while (paused) {
+  async function waitIfPaused(
+    exec: SessionExecutionState | undefined = activeExec,
+  ) {
+    const state = exec ?? activeExec;
+    while (state ? state.paused : paused) {
       await new Promise<void>((resolveWaiter) => {
-        pauseWaiters.push(resolveWaiter);
+        if (state) state.pauseWaiters.push(resolveWaiter);
+        else pauseWaiters.push(resolveWaiter);
       });
     }
   }
 
-  function toolSettings() {
-    const profileNetwork = selectedPermissionProfile?.permissions?.network;
-    const agentNetwork = selectedAgent?.permissions?.network;
+  function toolSettings(exec: SessionExecutionState | undefined = activeExec) {
+    const profile = exec ? exec.permissionProfile : selectedPermissionProfile;
+    const agent = exec ? exec.selectedAgent : selectedAgent;
+    const profileNetwork = profile?.permissions?.network;
+    const agentNetwork = agent?.permissions?.network;
     const effectiveNetwork = agentNetwork ?? profileNetwork;
     const agentAllowedHosts = agentNetwork?.allowedHosts.length
       ? agentNetwork.allowedHosts
@@ -7660,7 +8324,7 @@ export function createRealRuntimeClient(
           : (effectiveNetwork?.allowPrivate ??
             tsRuntimeConfig?.network.allowPrivate),
       envAllowlist:
-        selectedAgent?.permissions?.env?.allowlist ??
+        agent?.permissions?.env?.allowlist ??
         tsRuntimeConfig?.security.envAllowlist,
     };
     // The `settings` grant's first host consumer: capability contributions

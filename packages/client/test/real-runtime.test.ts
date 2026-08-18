@@ -3323,6 +3323,57 @@ test("runtime session management keeps SQLite projection synchronized", async ()
   store.close();
 });
 
+test("runtime replaces a generated provider ID with a local SQLite title", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-title-id-"));
+  const sessionID = "ses_runtime_title_id" as const;
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  const seeded = new SqliteSessionStore(join(root, ".natalia", "sessions.db"));
+  seeded.create(sessionID, "chatcmpl-tool-b10625d073fa5e8d");
+  seeded.updateMetadata(sessionID, { titleSource: "generated" });
+  seeded.close();
+
+  const provider: StreamingProvider = {
+    provider: "scripted",
+    model: "scripted-model",
+    async *stream(request) {
+      const titleRequest = request.messages.some(
+        (message) =>
+          message.role === "system" &&
+          message.content.includes("Create a concise session topic"),
+      );
+      yield {
+        type: "content",
+        text: titleRequest ? "chatcmpl-tool-b10625d073fa5e8d" : "turn complete",
+      };
+      yield { type: "done" };
+    },
+  };
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    provider,
+    useSqliteStore: true,
+  });
+  client.start(() => undefined);
+  await client.submit("修复会话标题");
+  await waitForAsync(async () => {
+    const current = (await client.sessionList?.())?.find(
+      (item) => item.id === sessionID,
+    );
+    return current?.title === "修复会话标题";
+  });
+  await client.dispose?.();
+
+  const persisted = new SqliteSessionStore(
+    join(root, ".natalia", "sessions.db"),
+  );
+  expect(persisted.get(sessionID)).toMatchObject({
+    title: "修复会话标题",
+    metadata: { titleSource: "fallback" },
+  });
+  persisted.close();
+});
+
 test("runtime rebuilds a missing JSON session from SQLite history", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-runtime-sqlite-rebuild-"));
   const sessionID = "ses_runtime_sqlite_rebuild" as const;
@@ -4184,12 +4235,14 @@ test("tool turns require a non-empty final assistant response", async () => {
       .map((event) => event.text)
       .join(""),
   ).toBe("The file check completed successfully.");
-  expect(events).toContainEqual({
-    type: "turn.finished",
-    id: expect.any(String),
-    stopReason: "done",
-    sessionID: "ses_ts7_final_response",
-  });
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "turn.finished",
+      id: expect.any(String),
+      stopReason: "done",
+      sessionID: "ses_ts7_final_response",
+    }),
+  );
 });
 
 test("tool turns complete with a reason when the model omits its final response", async () => {
@@ -4223,13 +4276,15 @@ test("tool turns complete with a reason when the model omits its final response"
   client.start((event) => events.push(event));
   await client.submit("check the file");
 
-  expect(events).toContainEqual({
-    type: "turn.finished",
-    id: expect.any(String),
-    stopReason: "done",
-    reason: "missing_final_response",
-    sessionID: "ses_ts7_missing_final",
-  });
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "turn.finished",
+      id: expect.any(String),
+      stopReason: "done",
+      reason: "missing_final_response",
+      sessionID: "ses_ts7_missing_final",
+    }),
+  );
   expect(
     events.some(
       (event) => event.type === "diagnostic" && event.level === "error",
@@ -4288,12 +4343,14 @@ test("ordinary tools settle as failed when their execution timeout expires", asy
         event.status === "failed",
     ),
   ).toBeDefined();
-  expect(events).toContainEqual({
-    type: "turn.finished",
-    id: expect.any(String),
-    stopReason: "done",
-    sessionID: "ses_ts7_tool_timeout",
-  });
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "turn.finished",
+      id: expect.any(String),
+      stopReason: "done",
+      sessionID: "ses_ts7_tool_timeout",
+    }),
+  );
 });
 
 test("runtime status counts managed background processes", async () => {
@@ -5500,7 +5557,7 @@ test("real runtime forks a session at a submitted-turn boundary", async () => {
       "utf8",
     ),
   ) as { events: RuntimeEvent[] };
-  expect(fork.title).toBe("Natalia TS session ses_ts7_session_fork (fork)");
+  expect(fork.title).toBe("New session (fork)");
   expect(
     child.events.some(
       (event) => event.type === "turn.submitted" && event.text === "second",
@@ -7421,6 +7478,53 @@ test("subagent executes TS native workspace tools before reporting completion", 
   ]);
 });
 
+test("subagent normalizes raw XML tool calls before executing native tools", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-subagent-raw-xml-"));
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_subagent_raw_xml",
+    provider: subagentRawXMLToolProvider(),
+    permissionMode: "auto",
+  });
+  client.start((event) => events.push(event));
+
+  await client.submit("delegate a raw XML file task");
+  await waitFor(
+    () =>
+      events.some(
+        (event) =>
+          event.type === "subagent.update" && event.status === "completed",
+      ),
+    5_000,
+    "the raw XML subagent tool to complete",
+  );
+
+  expect(await readFile(join(root, "agent-raw-xml.txt"), "utf8")).toBe(
+    "raw XML child success",
+  );
+  expect(
+    events
+      .filter(
+        (event) =>
+          event.type === "tool.update" &&
+          Boolean(event.agentID) &&
+          event.name === "write_file",
+      )
+      .map((event) =>
+        event.type === "tool.update" ? event.status : undefined,
+      ),
+  ).toEqual(["awaiting_approval", "running", "succeeded"]);
+  expect(
+    events.some(
+      (event) =>
+        event.type === "content.delta" &&
+        Boolean(event.agentID) &&
+        event.text.includes("<tool_call>"),
+    ),
+  ).toBe(false);
+});
+
 test("subagent approval stays in the child conversation and remains answerable", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-subagent-approval-"));
   const events: RuntimeEvent[] = [];
@@ -7896,6 +8000,56 @@ function subagentToolProvider(): StreamingProvider {
               id: "call_subagent_tools",
               name: "agent_spawn",
               arguments: JSON.stringify({ task: "child file task" }),
+            },
+          ],
+        };
+        yield { type: "done" };
+        return;
+      }
+      yield { type: "content", text: "parent complete" };
+      yield { type: "done" };
+    },
+  };
+}
+
+function subagentRawXMLToolProvider(): StreamingProvider {
+  return {
+    provider: "scripted-subagent-raw-xml",
+    model: "scripted-subagent-raw-xml-model",
+    async *stream(request: ProviderStreamRequest) {
+      const isChild = request.messages.some(
+        (message) => message.content === "child raw XML file task",
+      );
+      if (
+        isChild &&
+        !request.messages.some((message) => message.role === "tool")
+      ) {
+        yield {
+          type: "content",
+          text: [
+            "Inspecting. ",
+            "<tool_call><function=write_file>",
+            "<parameter=path>&quot;agent-raw-xml.txt&quot;</parameter>",
+            "<parameter=content>&quot;raw XML child success&quot;</parameter>",
+            "</function></tool_call>",
+          ].join(""),
+        };
+        yield { type: "done" };
+        return;
+      }
+      if (isChild) {
+        yield { type: "content", text: "created the raw XML child file" };
+        yield { type: "done" };
+        return;
+      }
+      if (!request.messages.some((message) => message.role === "tool")) {
+        yield {
+          type: "tool_call",
+          calls: [
+            {
+              id: "call_subagent_raw_xml",
+              name: "agent_spawn",
+              arguments: JSON.stringify({ task: "child raw XML file task" }),
             },
           ],
         };
@@ -8895,10 +9049,12 @@ test("session attach switches the active journal while a background turn keeps r
   const root = await mkdtemp(join(tmpdir(), "natalia-session-attach-"));
   let release: (() => void) | undefined;
   let calls = 0;
+  const requests: ProviderStreamRequest[] = [];
   const provider: StreamingProvider = {
     provider: "attach",
     model: "attach",
-    async *stream() {
+    async *stream(request) {
+      requests.push(request);
       calls += 1;
       if (calls === 1)
         await new Promise<void>((resolve) => {
@@ -8951,8 +9107,153 @@ test("session attach switches the active journal while a background turn keeps r
           (entry.event as { sessionID?: string }).sessionID === "ses_attach_a",
       ),
     ).toBe(true);
+
+    await client.submit("after attach");
+    await pollHistoryForFinished(client);
+    const resumed = requests.find((request) =>
+      request.messages.some(
+        (message) =>
+          message.role === "user" && message.content === "after attach",
+      ),
+    );
+    expect(
+      resumed?.messages.some(
+        (message) => message.role === "user" && message.content === "wait",
+      ),
+    ).toBe(true);
   } finally {
     await client.dispose?.();
+  }
+}, 30_000);
+
+test("parallel sessions retain their configured provider across tool steps", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-provider-isolation-"));
+  await writeFile(join(root, "evidence.txt"), "session A evidence");
+  const requests: Array<{
+    model: string;
+    messages: Array<{ role: string; content?: string }>;
+  }> = [];
+  let releaseFirstA: (() => void) | undefined;
+  const server = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      const body = (await request.json()) as (typeof requests)[number];
+      requests.push(body);
+      const isA = body.messages.some(
+        (message) => message.role === "user" && message.content === "session A",
+      );
+      const isB = body.messages.some(
+        (message) => message.role === "user" && message.content === "session B",
+      );
+      const hasToolResult = body.messages.some(
+        (message) => message.role === "tool",
+      );
+      if (isA && !hasToolResult) {
+        await new Promise<void>((resolve) => {
+          releaseFirstA = resolve;
+        });
+        const arguments_ = JSON.stringify({ path: "evidence.txt" });
+        return new Response(
+          [
+            `data: ${JSON.stringify({
+              choices: [
+                {
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: 0,
+                        id: "call_read_a",
+                        function: { name: "read_file", arguments: arguments_ },
+                      },
+                    ],
+                  },
+                },
+              ],
+            })}`,
+            "",
+            'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+            "",
+            "data: [DONE]",
+            "",
+          ].join("\n"),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      }
+      const text = isA ? "session A complete" : isB ? "session B complete" : "";
+      return new Response(
+        [
+          `data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}`,
+          "",
+          "data: [DONE]",
+          "",
+        ].join("\n"),
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    },
+  });
+  try {
+    await mkdir(join(root, ".natalia"), { recursive: true });
+    await writeFile(
+      join(root, ".natalia", "config.json"),
+      JSON.stringify({
+        version: 3,
+        providers: {
+          local: {
+            name: "local",
+            driver: "openai",
+            enabled: true,
+            connection: { apiKey: "local-key", baseURL: server.url.toString() },
+          },
+        },
+        catalog: {
+          providers: {
+            local: {
+              models: {
+                alpha: { name: "alpha" },
+                beta: { name: "beta" },
+              },
+            },
+          },
+        },
+        defaultModel: { provider: "local", model: "alpha" },
+      }),
+    );
+    const client = createRealRuntimeClient({
+      workspaceRoot: root,
+      sessionID: "ses_provider_a",
+      permissionMode: "auto",
+    });
+    client.start(() => undefined);
+    try {
+      await client.sessionNew?.({ id: "ses_provider_b", title: "Session B" });
+      const turnA = client.submit("session A");
+      await waitFor(
+        () => releaseFirstA !== undefined,
+        5_000,
+        "session A's first provider request",
+      );
+
+      await client.sessionAttach?.("ses_provider_b");
+      await client.selectModel?.("local/beta");
+      await client.submit("session B");
+      releaseFirstA?.();
+      await turnA;
+
+      const modelsFor = (text: string) =>
+        requests
+          .filter((request) =>
+            request.messages.some(
+              (message) => message.role === "user" && message.content === text,
+            ),
+          )
+          .map((request) => request.model);
+      expect(modelsFor("session A")).toEqual(["alpha", "alpha"]);
+      expect(modelsFor("session B")).toEqual(["beta"]);
+    } finally {
+      await client.dispose?.();
+    }
+  } finally {
+    server.stop(true);
   }
 }, 30_000);
 
@@ -10825,10 +11126,9 @@ test("an idle Navi answers Natalia's question immediately without a user chat", 
         }
         naviStreamCount++;
         if (naviStreamCount === 1) {
-          const match =
-            /\[Natalia → you\] (collab:question:[a-z0-9]+:[0-9]+)/u.exec(
-              system,
-            );
+          const match = /questionID: (collab:question:[a-z0-9]+:[0-9]+)/u.exec(
+            system,
+          );
           yield {
             type: "tool_call" as const,
             calls: [
@@ -10868,9 +11168,11 @@ test("an idle Navi answers Natalia's question immediately without a user chat", 
 
 test("collab_inbox lets the main agent read Navi's answer on demand", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-collab-inbox-"));
-  let streamCalls = 0;
-  let naviStreamCount = 0;
-  let inboxToolResult = "";
+  let mainAsked = false;
+  let inboxRequested = false;
+  let userTurn = false;
+  let naviAnswered = false;
+  const inboxToolResults: string[] = [];
   const client = createRealRuntimeClient({
     workspaceRoot: root,
     sessionID: "ses_collab_inbox",
@@ -10878,7 +11180,6 @@ test("collab_inbox lets the main agent read Navi's answer on demand", async () =
       provider: "test",
       model: "test",
       async *stream(request) {
-        streamCalls++;
         const system = String(
           (request as { messages: Array<{ role: string; content: string }> })
             .messages[0]?.content ?? "",
@@ -10890,7 +11191,8 @@ test("collab_inbox lets the main agent read Navi's answer on demand", async () =
         ).messages.filter((message) => message.role === "tool");
         const naviTurn = system.includes("<natalia_collaborations>");
         if (!naviTurn) {
-          if (streamCalls === 1) {
+          if (!mainAsked) {
+            mainAsked = true;
             yield {
               type: "tool_call" as const,
               calls: [
@@ -10903,26 +11205,25 @@ test("collab_inbox lets the main agent read Navi's answer on demand", async () =
             };
             return;
           }
-          if (streamCalls === 5) {
+          if (userTurn && !inboxRequested) {
+            inboxRequested = true;
             yield {
               type: "tool_call" as const,
               calls: [{ id: "c5", name: "collab_inbox", arguments: "{}" }],
             };
             return;
           }
-          if (streamCalls === 6) {
-            inboxToolResult = String(toolMessages.at(-1)?.content ?? "");
-          }
+          if (inboxRequested)
+            inboxToolResults.push(String(toolMessages.at(-1)?.content ?? ""));
           yield { type: "content" as const, text: "ok" };
           yield { type: "done" as const };
           return;
         }
-        naviStreamCount++;
-        if (naviStreamCount === 1) {
-          const match =
-            /\[Natalia → you\] (collab:question:[a-z0-9]+:[0-9]+)/u.exec(
-              system,
-            );
+        const match = /questionID: (collab:question:[a-z0-9]+:[0-9]+)/u.exec(
+          system,
+        );
+        if (match && !naviAnswered) {
+          naviAnswered = true;
           yield {
             type: "tool_call" as const,
             calls: [
@@ -10930,7 +11231,7 @@ test("collab_inbox lets the main agent read Navi's answer on demand", async () =
                 id: "c2",
                 name: "collab_answer",
                 arguments: JSON.stringify({
-                  questionID: match?.[1] ?? "",
+                  questionID: match[1],
                   answer: "yes, echo is safe",
                 }),
               },
@@ -10943,12 +11244,21 @@ test("collab_inbox lets the main agent read Navi's answer on demand", async () =
       },
     },
   });
-  client.start(() => undefined);
-  await client.submit("hello");
-  await client.submit("check");
-  await waitForAsync(async () => inboxToolResult.length > 0);
-  expect(inboxToolResult).toContain("yes, echo is safe");
-  await client.dispose?.();
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  try {
+    await client.submit("hello");
+    await waitForAsync(async () =>
+      events.some((event) => event.type === "collab.answer"),
+    );
+    userTurn = true;
+    await client.submit("check");
+    await waitForAsync(async () =>
+      inboxToolResults.some((result) => result.includes("yes, echo is safe")),
+    );
+  } finally {
+    await client.dispose?.();
+  }
 }, 20000);
 
 test("collab_answer accepts a truncated question id (models drop the prefix)", async () => {

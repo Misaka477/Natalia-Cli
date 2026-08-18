@@ -150,6 +150,9 @@ export interface CommandContext {
   setComposerText: (text: string) => void;
   submit: () => Promise<void>;
   updatePreferences: (next: TuiPreferences, scope?: any) => void;
+  subscribeRuntimeEvents?: (
+    handler: (event: import("@natalia/contracts").RuntimeEvent) => void,
+  ) => () => void;
   /**
    * The docked view host. The view column and its pane focus are presentation
    * state owned by the app shell, so commands route through it rather than
@@ -206,6 +209,7 @@ export async function runCommand(command: string, ctx: CommandContext) {
       <DialogSessionList
         backend={sessionBackend}
         onSelect={ctx.changeSession}
+        subscribeRuntimeEvents={ctx.subscribeRuntimeEvents}
       />
     ));
     return;
@@ -341,6 +345,8 @@ export async function runCommand(command: string, ctx: CommandContext) {
     ctx.dialog.push(() => (
       <DialogAttachment
         paths={ctx.attachmentPaths}
+        add={() => void runCommand("prompt.attachment.add", ctx)}
+        pasteImage={() => void runCommand("prompt.attachment.paste-image", ctx)}
         remove={(path) =>
           ctx.setAttachmentPaths((current) =>
             current.filter((item) => item !== path),

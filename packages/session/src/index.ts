@@ -12,6 +12,8 @@ import { join, resolve } from "node:path";
 export type SessionMetadata = {
   pinned?: boolean;
   lastAccessedAt?: string;
+  /** Manual titles take precedence over generated and local fallback titles. */
+  titleSource?: "manual" | "generated" | "fallback";
   inFlightOperation?: DurableInFlightOperation;
   /**
    * TERM-M.3 (c): a terminal the model asked a human to take over, with the
@@ -87,14 +89,7 @@ export class JsonSessionStore {
 
   async save(session: SessionRecord) {
     const snapshot = structuredClone(session);
-    const write = async () => {
-      await mkdir(this.dir, { recursive: true, mode: 0o700 });
-      const temporary = `${this.path(snapshot.id)}.${crypto.randomUUID()}.tmp`;
-      await writeFile(temporary, `${JSON.stringify(snapshot, null, 2)}\n`, {
-        mode: 0o600,
-      });
-      await renameSessionFile(temporary, this.path(snapshot.id));
-    };
+    const write = () => this.writeSnapshot(snapshot);
     const queued = this.writeQueue.then(write, write);
     this.writeQueue = queued.catch(() => undefined);
     return await queued;
@@ -146,6 +141,7 @@ export class JsonSessionStore {
     const trimmed = title.trim();
     if (!trimmed) throw new Error("session title cannot be empty");
     session.title = trimmed;
+    session.metadata = { ...session.metadata, titleSource: "manual" };
     await this.save(session);
     return session;
   }
@@ -160,6 +156,39 @@ export class JsonSessionStore {
     session.metadata = { ...session.metadata, ...partial };
     await this.save(session);
     return session;
+  }
+
+  async setAutoTitle(
+    id: SessionID,
+    title: string,
+    source: "generated" | "fallback",
+  ) {
+    let result: SessionRecord | undefined;
+    const write = async () => {
+      const session = await this.load(id);
+      if (!session) throw new Error(`session not found: ${id}`);
+      if (session.metadata?.titleSource === "manual") {
+        result = session;
+        return;
+      }
+      session.title = title;
+      session.metadata = { ...session.metadata, titleSource: source };
+      result = session;
+      await this.writeSnapshot(session);
+    };
+    const queued = this.writeQueue.then(write, write);
+    this.writeQueue = queued.catch(() => undefined);
+    await queued;
+    return result!;
+  }
+
+  private async writeSnapshot(snapshot: SessionRecord) {
+    await mkdir(this.dir, { recursive: true, mode: 0o700 });
+    const temporary = `${this.path(snapshot.id)}.${crypto.randomUUID()}.tmp`;
+    await writeFile(temporary, `${JSON.stringify(snapshot, null, 2)}\n`, {
+      mode: 0o600,
+    });
+    await renameSessionFile(temporary, this.path(snapshot.id));
   }
 
   async duplicate(id: SessionID, newID?: SessionID, newTitle?: string) {

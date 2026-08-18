@@ -96,6 +96,15 @@ function makeHarness(
     pendingAgent: () => undefined,
     setPendingAgent: () => undefined,
     selectedModel: () => undefined,
+    modelCapabilities: () => ({
+      toolCall: true,
+      reasoning: true,
+      thinking: true,
+      imageInput: false,
+      pdfInput: false,
+      videoInput: false,
+    }),
+    setActiveModelCapabilities: () => undefined,
     permissionMode: () => "auto",
     workspaceRoot: () => "/tmp/ws",
     tsRuntimeConfig: () => undefined,
@@ -252,6 +261,42 @@ test("tool calls execute through the callback and an empty final answer marks mi
   );
   expect(finished?.stopReason).toBe("done");
   expect(finished?.reason).toBe("missing_final_response");
+});
+
+test("raw tool protocol emitted as content reaches the normal tool execution path", async () => {
+  let streamCalls = 0;
+  const { runner, events, executedCalls } = makeHarness({
+    provider: "scripted",
+    model: "m1",
+    async *stream() {
+      streamCalls += 1;
+      if (streamCalls === 1) {
+        yield content(
+          "Inspecting. <tool_call><function=read_file><parameter=path>&quot;a.txt&quot;</parameter></function></tool_call>",
+        );
+        return;
+      }
+      yield content("Finished.");
+    },
+  });
+  await runner.runTurn(turn);
+  expect(executedCalls).toEqual([
+    {
+      call: {
+        id: "raw_xml_tool_0",
+        name: "read_file",
+        arguments: '{"path":"a.txt"}',
+      },
+    },
+  ]);
+  expect(
+    events
+      .filter(
+        (event): event is Extract<RuntimeEvent, { type: "content.delta" }> =>
+          event.type === "content.delta",
+      )
+      .map((event) => event.text),
+  ).toEqual(["Inspecting. ", "Finished."]);
 });
 
 test("aborting the turn mid-stream finishes cancelled with a warning", async () => {

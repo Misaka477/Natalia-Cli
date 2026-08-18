@@ -154,6 +154,10 @@ export function applyConversationEvent(
       state.sessionID = event.sessionID;
       state.title = event.title;
       return true;
+    case "session.title.updated":
+      if (state.sessionID && state.sessionID !== event.sessionID) return false;
+      state.title = event.title;
+      return true;
     case "session.ready":
       state.status = "ready";
       return true;

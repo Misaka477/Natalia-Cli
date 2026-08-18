@@ -138,7 +138,7 @@ export function App(props: {
   const [workspaceRoot, setWorkspaceRoot] = createSignal(props.workspaceRoot);
   const [historyCursor, setHistoryCursor] = createSignal<string>();
   const [newerHistoryCursor, setNewerHistoryCursor] = createSignal<string>();
-  let onRuntimeEvent: ((event: RuntimeEvent) => void) | undefined;
+  const runtimeEventListeners = new Set<(event: RuntimeEvent) => void>();
   let loadingHistory = false;
   let historyHydrate:
     | ((
@@ -205,7 +205,8 @@ export function App(props: {
                 activeBackend.start(
                   (event: RuntimeEvent) => {
                     bridge.dispatch(event);
-                    onRuntimeEvent?.(event);
+                    for (const listener of runtimeEventListeners)
+                      listener(event);
                     props.onDispatch?.(event);
                     if (event.type === "session.ready")
                       void hydrateRecentMessages(
@@ -228,8 +229,9 @@ export function App(props: {
                       : undefined
                   }
                   initialRoute={props.initialRoute}
-                  onRuntimeEvent={(handler) => {
-                    onRuntimeEvent = handler;
+                  subscribeRuntimeEvents={(handler) => {
+                    runtimeEventListeners.add(handler);
+                    return () => runtimeEventListeners.delete(handler);
                   }}
                   onHistoryControls={props.onHistoryControls}
                   onLoadOlderHistory={async () => {
@@ -301,7 +303,9 @@ function Shell(props: {
   onWorkspaceChange?: (root: string) => void;
   onLoadOlderHistory?: () => Promise<void>;
   onLoadNewerHistory?: () => Promise<void>;
-  onRuntimeEvent?: (handler: (event: RuntimeEvent) => void) => void;
+  subscribeRuntimeEvents?: (
+    handler: (event: RuntimeEvent) => void,
+  ) => () => void;
   onHistoryControls?: (controls: {
     loadOlder(): Promise<void>;
     loadNewer(): Promise<void>;
@@ -359,17 +363,23 @@ function Shell(props: {
     );
   const compactComposerControls = () => layout().contentWidth < 64;
   const minimalComposerControls = () => layout().contentWidth < 34;
+  const interactivePromptActive = () =>
+    state.dialog === "approval" || state.dialog === "question";
   // The pane owns the keyboard: chat hands focus to the view's input, main (or
   // a closed view) hands it back to the composer. LiveChatView itself focuses
   // its input when focused(), so this only blurs the side leaving focus.
   createEffect(() => {
     const pane = viewFocus();
     const open = viewActive() !== null;
-    if (open && pane === "chat") {
+    if (interactivePromptActive() || (open && pane === "chat")) {
       composer()?.blur();
       return;
     }
     chatInput()?.blur();
+    queueMicrotask(() => composer()?.focus());
+  });
+  createEffect(() => {
+    if (interactivePromptActive() || route.route().kind === "subagent") return;
     queueMicrotask(() => composer()?.focus());
   });
   const activeSubagentRoute = () => {
@@ -418,12 +428,15 @@ function Shell(props: {
     theme.preview(loaded.theme);
   }
 
-  props.onRuntimeEvent?.((event) => {
-    const reload = reloadTuiPreferencesOnSettingsUpdate(
-      event,
-      reloadTuiPreferences,
-    );
-    if (reload) void reload.catch(toast.error);
+  onMount(() => {
+    const unsubscribe = props.subscribeRuntimeEvents?.((event) => {
+      const reload = reloadTuiPreferencesOnSettingsUpdate(
+        event,
+        reloadTuiPreferences,
+      );
+      if (reload) void reload.catch(toast.error);
+    });
+    onCleanup(() => unsubscribe?.());
   });
 
   createEffect(() => {
@@ -682,6 +695,10 @@ function Shell(props: {
         )),
       toast.error,
     );
+  }
+
+  function openAttachmentManager() {
+    onCommand("prompt.attachment.list");
   }
 
   async function submit() {
@@ -1148,6 +1165,7 @@ function Shell(props: {
       setComposerText,
       submit,
       updatePreferences,
+      subscribeRuntimeEvents: props.subscribeRuntimeEvents,
       viewDock: {
         active: viewActive,
         focus: viewFocus,
@@ -1588,6 +1606,8 @@ function Shell(props: {
               backend={props.backend}
               onExit={() => renderer.destroy()}
               onMessageCopy={copyMessage}
+              workspaceRoot={props.workspaceRoot}
+              onWorkspaceSelect={openWorkspaceSwitcher}
             />
           )}
         </Show>
@@ -1647,7 +1667,7 @@ function Shell(props: {
               (packages/tui/src/component/prompt/index.tsx): an outer anchor, a
               left frame with a rounded bottom-left corner, a padded panel box
               holding the textarea and a meta row, and a one-line bottom frame. */}
-          <box visible={true} width="100%" flexShrink={0}>
+          <box visible={!interactivePromptActive()} width="100%" flexShrink={0}>
             <box
               width="100%"
               border={["left"]}
@@ -1667,61 +1687,7 @@ function Shell(props: {
                 flexGrow={1}
                 width="100%"
               >
-                <box
-                  flexDirection="row"
-                  justifyContent="space-between"
-                  paddingBottom={1}
-                  flexShrink={0}
-                >
-                  <box flexDirection="row" gap={1}>
-                    <text fg={theme.theme.text} onMouseUp={openProfilePicker}>
-                      {compactComposerLabel(
-                        profileLabel(quickProfile()),
-                        minimalComposerControls() ? 9 : 16,
-                      )}{" "}
-                      ▼
-                    </text>
-                    <Show when={!minimalComposerControls()}>
-                      <text fg={theme.theme.muted}>·</text>
-                      <text fg={theme.theme.text} onMouseUp={openModelPicker}>
-                        {compactComposerLabel(
-                          quickModel().modelID ??
-                            state.facts.modelSelection?.modelID ??
-                            statusValues(state.statusSegments).model ??
-                            "Model",
-                          compactComposerControls() ? 12 : 24,
-                        )}{" "}
-                        ▼
-                      </text>
-                    </Show>
-                    <Show when={!compactComposerControls()}>
-                      <text fg={theme.theme.muted}>·</text>
-                      <text
-                        fg={theme.theme.text}
-                        onMouseUp={openReasoningPicker}
-                      >
-                        {reasoningLabel(quickReasoning())} ▼
-                      </text>
-                    </Show>
-                  </box>
-                  <Show when={!compactComposerControls()}>
-                    <text fg={theme.theme.muted}>
-                      {viewActive() === "chat"
-                        ? "Chat focused"
-                        : modelActive()
-                          ? hasQueuedPrompts()
-                            ? `Working · ${queuedPromptCount()} queued`
-                            : "Working"
-                          : (statusValues(state.statusSegments).ctx ?? "Ready")}
-                    </text>
-                  </Show>
-                </box>
-                <box
-                  width="100%"
-                  flexDirection="row"
-                  alignItems="flex-end"
-                  gap={2}
-                >
+                <box width="100%" flexDirection="row" alignItems="flex-end">
                   <textarea
                     ref={(value: TextareaRenderable) => {
                       setComposer(value);
@@ -1793,16 +1759,74 @@ function Shell(props: {
                       }
                     }}
                   />
-                  <box
-                    flexShrink={0}
-                    paddingLeft={1}
-                    paddingRight={1}
-                    onMouseUp={activateComposerControl}
-                  >
+                </box>
+                <box
+                  flexDirection="row"
+                  justifyContent="space-between"
+                  paddingTop={1}
+                  flexShrink={0}
+                >
+                  <box flexDirection="row" gap={1} minWidth={0}>
+                    <text fg={theme.theme.text} onMouseUp={openProfilePicker}>
+                      {compactComposerLabel(
+                        profileLabel(quickProfile()),
+                        minimalComposerControls() ? 6 : 12,
+                      )}{" "}
+                      ▼
+                    </text>
+                    <text fg={theme.theme.muted}>·</text>
+                    <text fg={theme.theme.text} onMouseUp={openModelPicker}>
+                      {compactComposerLabel(
+                        quickModel().modelID ??
+                          state.facts.modelSelection?.modelID ??
+                          statusValues(state.statusSegments).model ??
+                          "Model",
+                        minimalComposerControls()
+                          ? 7
+                          : compactComposerControls()
+                            ? 12
+                            : 24,
+                      )}{" "}
+                      ▼
+                    </text>
+                    <text fg={theme.theme.muted}>·</text>
+                    <text fg={theme.theme.text} onMouseUp={openReasoningPicker}>
+                      {compactComposerLabel(
+                        reasoningLabel(quickReasoning()),
+                        minimalComposerControls() ? 4 : 10,
+                      )}{" "}
+                      ▼
+                    </text>
+                  </box>
+                  <box flexDirection="row" gap={1} flexShrink={0}>
+                    <text
+                      fg={
+                        attachmentPaths().length
+                          ? theme.theme.text
+                          : theme.theme.muted
+                      }
+                      onMouseUp={openAttachmentManager}
+                    >
+                      {minimalComposerControls()
+                        ? `+${attachmentPaths().length}`
+                        : attachmentPaths().length
+                          ? `${attachmentPaths().length} files`
+                          : "+ Add"}
+                    </text>
+                    <Show when={!minimalComposerControls()}>
+                      <text fg={theme.theme.muted}>
+                        {modelActive()
+                          ? hasQueuedPrompts()
+                            ? `${queuedPromptCount()} queued`
+                            : "Working"
+                          : (statusValues(state.statusSegments).ctx ?? "Ready")}
+                      </text>
+                    </Show>
                     <text
                       fg={
                         modelActive() ? theme.theme.danger : theme.theme.accent
                       }
+                      onMouseUp={activateComposerControl}
                     >
                       {modelActive() ? "■ Stop" : "↑ Send"}
                     </text>

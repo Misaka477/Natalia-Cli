@@ -77,6 +77,9 @@ export function createTerminalController(input: {
           input.publish({
             type: "terminal.action",
             id: event.id,
+            ...(event.sessionID
+              ? { sessionID: event.sessionID as RuntimeEvent["sessionID"] }
+              : {}),
             action: event.action,
             redacted: event.redacted,
             target: { kind: "host", cwd: event.cwd },
@@ -84,6 +87,9 @@ export function createTerminalController(input: {
           input.publish({
             type: "terminal.timeline",
             id: event.id,
+            ...(event.sessionID
+              ? { sessionID: event.sessionID as RuntimeEvent["sessionID"] }
+              : {}),
             actor: event.actor === "human" ? "user" : event.actor,
             action: event.action,
             status: "executed",
@@ -109,15 +115,22 @@ export function createTerminalController(input: {
       runtimeDir: nativeRuntimeDir,
       daemonID: randomUUID(),
       onInput: ({ terminalID, paneID, kind, byteLength }) => {
+        const sessionID = nativeTerminal?.session(terminalID).sessionID;
         const summary = `native human input claim accepted: terminal=${terminalID} pane=${paneID} kind=${kind} bytes=${byteLength}`;
         input.publish({
           type: "diagnostic",
+          ...(sessionID
+            ? { sessionID: sessionID as RuntimeEvent["sessionID"] }
+            : {}),
           level: "info",
           message: summary,
         });
         input.publish({
           type: "terminal.timeline",
           id: terminalID,
+          ...(sessionID
+            ? { sessionID: sessionID as RuntimeEvent["sessionID"] }
+            : {}),
           actor: "user",
           action: "write",
           status: "executed",
@@ -125,12 +138,17 @@ export function createTerminalController(input: {
           at: new Date().toISOString(),
         });
       },
-      onDenied: ({ terminalID, paneID, tokenAccepted, paneAccepted }) =>
+      onDenied: ({ terminalID, paneID, tokenAccepted, paneAccepted }) => {
+        const sessionID = nativeTerminal?.session(terminalID).sessionID;
         input.publish({
           type: "diagnostic",
+          ...(sessionID
+            ? { sessionID: sessionID as RuntimeEvent["sessionID"] }
+            : {}),
           level: "warning",
           message: `native input claim denied: terminal=${terminalID} pane=${paneID} token=${tokenAccepted} paneKnown=${paneAccepted}`,
-        }),
+        });
+      },
     });
     nativeTerminal.setHumanInputBridge(nativeInputBroker);
   }

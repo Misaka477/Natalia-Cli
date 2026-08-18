@@ -37,7 +37,12 @@ export function createTurnController(input: {
   saveInbox(snapshot: SessionRecord): Promise<void>;
   /** Waits for all queued persistence steps to land. */
   flush(): Promise<void>;
-  runCommand(id: string, text: string, signal?: AbortSignal): Promise<boolean>;
+  runCommand(
+    id: string,
+    text: string,
+    signal: AbortSignal | undefined,
+    sessionID: string,
+  ): Promise<boolean>;
   runTurn(input: {
     id: string;
     text: string;
@@ -125,7 +130,7 @@ export function createTurnController(input: {
     agents: PromptAgentMention[] = [],
     signal?: AbortSignal,
   ) {
-    if (await input.runCommand(id, text, signal)) {
+    if (await input.runCommand(id, text, signal, sessionID)) {
       await input.flush();
       return;
     }

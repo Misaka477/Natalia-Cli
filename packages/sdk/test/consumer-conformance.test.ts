@@ -853,6 +853,14 @@ test("an external UI takes over approvals and answers questions", async () => {
           event.type === "approval.request",
       )
       .at(-1);
+    console.error(
+      "sdk-approval-debug",
+      request.id,
+      secondRequest?.id,
+      rejectedEvents
+        .filter((event) => event.type === "approval.request")
+        .map((event) => event.id),
+    );
     expect(secondRequest).toBeDefined();
     const refused = await sdk.respondApproval({
       requestID: secondRequest!.id,
