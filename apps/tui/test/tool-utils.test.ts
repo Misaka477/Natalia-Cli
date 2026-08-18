@@ -13,6 +13,7 @@ import {
   toolColor,
   toolIcon,
   toolInput,
+  toolLabel,
   toolPath,
   toolRecord,
 } from "../src/routes/session/tool-utils";
@@ -122,5 +123,14 @@ test("toolIcon returns correct icon label", () => {
   expect(toolIcon("shell")).toBe("$");
   expect(toolIcon("terminal")).toBe("terminal");
   expect(toolIcon("sandbox")).toBe("box");
-  expect(toolIcon("unknown")).toBe("tool");
+  expect(toolIcon("unknown")).toBe("");
+});
+
+test("toolLabel names calls by their actual operation", () => {
+  expect(toolLabel("read_file", "read")).toBe("read");
+  expect(toolLabel("run_shell", "terminal")).toBe("shell");
+  expect(toolLabel("interactive_terminal_snapshot", "terminal")).toBe(
+    "interactive terminal",
+  );
+  expect(toolLabel("todo_read", "generic")).toBe("");
 });

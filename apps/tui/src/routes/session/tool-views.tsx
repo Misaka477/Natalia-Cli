@@ -31,8 +31,8 @@ import {
   parseResultRecord,
   stringField,
   toolColor,
-  toolIcon,
   toolInput,
+  toolLabel,
   toolPath,
   toolRecord,
 } from "./tool-utils";
@@ -75,6 +75,10 @@ function ProjectedToolCard(props: {
     props.toolDetails === "expanded",
   );
   const summary = () => intent().summary;
+  const heading = () =>
+    [toolLabel(tool().name, intent().kind), intent().title]
+      .filter(Boolean)
+      .join(" ");
   const statusColor = () =>
     tool().status === "failed" || tool().status === "cancelled"
       ? darkTheme.danger
@@ -100,7 +104,7 @@ function ProjectedToolCard(props: {
       onMouseUp={() => setExpanded((value) => !value)}
     >
       <text paddingLeft={1} fg={statusColor()}>
-        {`${toolIcon(intent().kind)} ${intent().title}${tool().elapsed ? ` · ${tool().elapsed}` : ""}`}
+        {`${heading()}${tool().elapsed ? ` · ${tool().elapsed}` : ""}`}
       </text>
       <Show when={summary()}>
         <text paddingLeft={1} fg={darkTheme.text}>
@@ -275,7 +279,9 @@ function FallbackToolBlock(props: {
       }}
     >
       <text paddingLeft={1} fg={darkTheme.muted}>
-        {diff() ? title() : `${toolIcon(tool().kind)} ${tool().name}`}
+        {diff()
+          ? title()
+          : `${toolLabel(tool().name, tool().kind) || tool().name}`}
         {compact() && tool().keyArguments.length
           ? ` ${tool().keyArguments.join(", ")}`
           : ""}

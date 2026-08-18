@@ -190,6 +190,7 @@ test("the projected conversation renders through the main feed's row renderer", 
     expect(frame).toContain("what is the agent doing");
     expect(frame).toContain("it is running step 2 of the plan");
     expect(frame).toContain("session_snapshot");
+    expect(frame).not.toContain("tool session_snapshot");
   } finally {
     await mounted.dispose();
   }

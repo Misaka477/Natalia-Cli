@@ -171,5 +171,13 @@ export function toolIcon(kind: string) {
   if (kind === "terminal") return "terminal";
   if (kind === "sandbox") return "box";
   if (kind === "skill") return "skill";
-  return "tool";
+  return "";
+}
+
+export function toolLabel(name: string, kind: string) {
+  if (name === "run_shell") return "shell";
+  if (name.startsWith("interactive_terminal_")) return "interactive terminal";
+  if (name === "read_file" || kind === "read") return "read";
+  if (name === "write_file") return "write";
+  return toolIcon(kind);
 }
