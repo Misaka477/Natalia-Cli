@@ -159,9 +159,10 @@ export interface CommandContext {
    * reaching into a reducer.
    */
   viewDock: {
-    active: () => "chat" | null;
+    active: () => "chat" | "plan" | null;
     focus: () => "main" | "chat";
     openChat(): void;
+    switchView(): void;
     close(): void;
     focusChat(): void;
     focusMain(): void;
@@ -2550,6 +2551,10 @@ export async function runCommand(command: string, ctx: CommandContext) {
       return;
     }
     ctx.viewDock.openChat();
+    return;
+  }
+  if (command === "view.switch") {
+    ctx.viewDock.switchView();
     return;
   }
   if (command === "view.close") {

@@ -93,3 +93,10 @@ test("Live Chat uses responsive single, double, and triple pane layouts", () => 
     contentWidth: 68,
   });
 });
+
+test("double-pane layouts leave the secondary view slot available for switching", () => {
+  const layout = sessionLayout(150, 34, "auto", false, true);
+  expect(layout.paneMode).toBe("double");
+  expect(layout.viewWidth).toBeGreaterThan(0);
+  expect(layout.contentWidth + layout.viewWidth).toBe(150);
+});

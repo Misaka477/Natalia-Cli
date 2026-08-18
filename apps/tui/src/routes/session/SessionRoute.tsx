@@ -599,15 +599,20 @@ export function SessionSidebar(props: {
       bottom={props.overlay ? 0 : undefined}
       zIndex={props.overlay ? 20 : undefined}
       backgroundColor={darkTheme.background}
-      border={props.overlay ? undefined : ["left"]}
+      border={["left", "right"]}
       borderColor={darkTheme.muted}
       paddingTop={1}
       paddingBottom={1}
       paddingLeft={2}
       paddingRight={2}
+      gap={props.compact ? 0 : undefined}
     >
       <scrollbox flexGrow={1}>
-        <box flexDirection="column" gap={2} paddingRight={1}>
+        <box
+          flexDirection="column"
+          gap={props.compact ? 1 : 2}
+          paddingRight={1}
+        >
           <box flexDirection="column">
             <text fg={darkTheme.text} attributes={TextAttributes.BOLD}>
               {state.facts.title || "Natalia session"}

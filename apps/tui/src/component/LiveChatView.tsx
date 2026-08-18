@@ -17,7 +17,10 @@ import {
   onMount,
 } from "solid-js";
 import type { RuntimeClient } from "@natalia/contracts";
-import type { ChatActivityView } from "@natalia/view-store";
+import type {
+  ChatActivityView,
+  SessionIntelligenceView,
+} from "@natalia/view-store";
 import { themeTokens as theme } from "../theme/theme";
 import { MessageBlockView } from "../routes/session/message-rows";
 import type { MessageBlock } from "../context/state";
@@ -65,6 +68,8 @@ export function LiveChatView(props: {
   /** The projected Chat conversation, mapped through the shared adapter. */
   messages: () => MessageBlock[];
   activity: () => ChatActivityView | undefined;
+  /** Live main-agent snapshot projected from the shared runtime event stream. */
+  intelligence?: () => SessionIntelligenceView | undefined;
   /** Whether this pane owns keyboard focus (host pane-focus signal). */
   focused: () => boolean;
   onRequestFocus(): void;
@@ -117,6 +122,7 @@ export function LiveChatView(props: {
     return undefined;
   };
   const proposedPlan = () => plans().find((plan) => plan.status === "proposed");
+  const liveAgentStatus = () => props.intelligence?.() ?? agentStatus();
   const pendingIntents = () =>
     mailbox().filter(
       (message) =>
@@ -250,7 +256,7 @@ export function LiveChatView(props: {
           </text>
         </box>
       </box>
-      <Show when={agentStatus()}>
+      <Show when={liveAgentStatus()}>
         {(status) => (
           <box
             flexShrink={0}

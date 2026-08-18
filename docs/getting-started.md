@@ -186,6 +186,7 @@ Type a request and press Enter. Useful keys:
 | `ctrl+c`            | Cancel the current turn                      |
 | `ctrl+d`            | Exit (on an empty composer)                  |
 | `ctrl+p`            | Command palette                              |
+| `ctrl+g`            | Switch Chat/Plan in the two-pane layout      |
 | `ctrl+b`            | Sidebar                                      |
 | `ctrl+n` / `ctrl+l` | New session / session list                   |
 | `ctrl+,`            | Settings                                     |
@@ -195,6 +196,10 @@ Type a request and press Enter. Useful keys:
 
 Type `/` for commands and `@` to mention a workspace file, an agent, or an MCP
 resource.
+
+Open `Live Work Chat` from the command palette. It appears as an overlay below
+112 columns, shares the secondary pane with Plan from 112 to 167 columns, and
+appears beside Main and Plan from 168 columns onward.
 
 Frequently used commands:
 

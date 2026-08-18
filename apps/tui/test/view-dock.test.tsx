@@ -158,8 +158,10 @@ test("chat.open docks the Live Work Chat beside the feed and focuses the chat pa
     expect(frame).not.toContain("limited tools");
     expect(frame).not.toContain("Chat · read-only");
     const rows = frame.split("\n");
-    expect(rows.findIndex((row) => row.includes("Ask the Chat"))).toBe(
-      rows.findIndex((row) => row.includes("Ask anything")),
+    const promptRow = rows.find((row) => row.includes("Ask the Chat"));
+    expect(promptRow).toContain("Ask anything");
+    expect(promptRow!.indexOf("Ask the Chat")).toBeGreaterThan(
+      promptRow!.indexOf("Ask anything"),
     );
   } finally {
     mounted.disposeKeymap();
@@ -228,6 +230,36 @@ test("medium terminals keep the main conversation readable beside Chat", async (
     expect(frame).toContain("Ask the Chat");
     expect(frame).toContain("Ask anything...");
     expect(frame).not.toContain("Plan");
+  } finally {
+    mounted.disposeKeymap();
+    mounted.setup.renderer.destroy();
+  }
+});
+
+test("view.switch round-trips between Chat and Plan with Ctrl-G", async () => {
+  const mounted = await mountApp();
+  try {
+    await mounted.keys.pressKey("p", { ctrl: true });
+    await Bun.sleep(30);
+    await mounted.keys.typeText("Live Work");
+    await Bun.sleep(30);
+    mounted.keys.pressEnter();
+    await Bun.sleep(60);
+    await mounted.setup.renderOnce();
+    expect(mounted.setup.captureCharFrame()).toContain("Live Work Chat");
+
+    mounted.keys.pressKey("g", { ctrl: true });
+    await Bun.sleep(60);
+    await mounted.setup.renderOnce();
+    const planFrame = mounted.setup.captureCharFrame();
+    expect(planFrame).not.toContain("Live Work Chat");
+
+    mounted.keys.pressKey("g", { ctrl: true });
+    await Bun.sleep(60);
+    await mounted.setup.renderOnce();
+    const chatFrame = mounted.setup.captureCharFrame();
+    expect(chatFrame).toContain("Live Work Chat");
+    expect(chatFrame).toContain("Ask the Chat");
   } finally {
     mounted.disposeKeymap();
     mounted.setup.renderer.destroy();

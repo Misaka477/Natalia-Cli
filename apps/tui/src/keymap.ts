@@ -11,6 +11,8 @@ export const keymapBoundary = {
   status: "ctrl+i",
   help: "ctrl+h",
   sidebar: "ctrl+b",
+  chat: "unset",
+  viewSwitch: "ctrl+g",
   copy: "ctrl+shift+c",
   composer: "history up/down · word move/delete · paste limit 8 MiB",
   scrollUp: "pgup",
@@ -114,6 +116,16 @@ export const commands: Record<string, CommandDef> = {
     id: "session.sidebar.toggle",
     keys: "ctrl+b",
     desc: "Toggle session sidebar",
+  },
+  "chat.open": {
+    id: "chat.open",
+    keys: "unset",
+    desc: "Open and focus Live Work Chat",
+  },
+  "view.switch": {
+    id: "view.switch",
+    keys: "ctrl+g",
+    desc: "Switch between Chat and Plan",
   },
   "message.copy.last": {
     id: "message.copy.last",
@@ -227,11 +239,6 @@ export const commands: Record<string, CommandDef> = {
     id: "session.toggle.thinking",
     keys: "unset",
     desc: "Toggle reasoning visibility",
-  },
-  "chat.open": {
-    id: "chat.open",
-    keys: "unset",
-    desc: "Open the Live Work Chat view",
   },
   "view.close": {
     id: "view.close",

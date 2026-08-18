@@ -10907,6 +10907,76 @@ test("the chat context includes the main agent's recent activity", async () => {
   await client.dispose?.();
 });
 
+test("chat answers with live main context while the main turn is still running", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-chat-live-ctx-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 3,
+      runtime: { providerConcurrency: { test: 1 } },
+    }),
+  );
+  let releaseMain: (() => void) | undefined;
+  let mainReached: (() => void) | undefined;
+  const reached = new Promise<void>((resolve) => {
+    mainReached = resolve;
+  });
+  const parked = new Promise<void>((resolve) => {
+    releaseMain = resolve;
+  });
+  let chatSystemPrompt = "";
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_chat_live_ctx",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        const system = String(
+          (request as { messages: Array<{ role: string; content: string }> })
+            .messages[0]?.content ?? "",
+        );
+        if (system.includes("<natalia_collaborations>")) {
+          chatSystemPrompt = system;
+          yield { type: "content" as const, text: "she is still working" };
+          yield { type: "done" as const };
+          return;
+        }
+        yield {
+          type: "content" as const,
+          text: "inspecting the request routing now",
+        };
+        mainReached?.();
+        await parked;
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  const mainTurn = client.submit("trace the request routing");
+  await reached;
+
+  // Chat has its own task and provider stream, so it settles before the parked
+  // Main turn. Its prompt is built from the current in-memory stream, not only
+  // the last durable content.done event.
+  const chatResult = await client.chatSubmit!({
+    text: "what is the main agent doing right now",
+  });
+  expect(chatResult.messageID).not.toBe("");
+  expect(chatSystemPrompt).toContain("Main agent: running");
+  expect(chatSystemPrompt).toContain("trace the request routing");
+  expect(chatSystemPrompt).toContain("inspecting the request routing now");
+  expect(await client.sessionSnapshot!()).toMatchObject({
+    agentStatus: "running",
+    recentOutput: "inspecting the request routing now",
+  });
+
+  releaseMain?.();
+  await mainTurn;
+  await client.dispose?.();
+});
+
 test("a queued mailbox intent wakes an idle main agent", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-mailbox-deliver-"));
   const systemPrompts: string[] = [];

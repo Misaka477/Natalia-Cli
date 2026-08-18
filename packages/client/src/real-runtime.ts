@@ -674,6 +674,8 @@ export function createRealRuntimeClient(
    * judged against the session it belongs to — never the attached one.
    */
   const turnSession = new Map<string, SessionID>();
+  /** Bounded, non-durable Main output used while a turn is still streaming. */
+  const liveMainOutputByTurn = new Map<string, string>();
   /** Child turn ownership keeps interactive events in the child projection. */
   const turnAgent = new Map<string, string>();
   /**
@@ -2883,6 +2885,13 @@ export function createRealRuntimeClient(
         if (runtimeDiagnostics.length > 500) runtimeDiagnostics.splice(0, 1);
       }
     }
+    if (!event.agentID && event.type === "content.delta") {
+      const current = liveMainOutputByTurn.get(event.id) ?? "";
+      liveMainOutputByTurn.set(
+        event.id,
+        `${current}${event.text}`.slice(-8000),
+      );
+    }
     // TERM-M.3 (c): a turn that ended as waiting_human persists the typed
     // pending-human state and clears the turn-level marker.
     if (
@@ -2966,6 +2975,11 @@ export function createRealRuntimeClient(
     }
     if (!event.agentID && isSessionSnapshotTrigger(event))
       publishSessionSnapshot(exec);
+    if (
+      !event.agentID &&
+      (event.type === "turn.finished" || event.type === "turn.cancelled")
+    )
+      liveMainOutputByTurn.delete(event.id);
     // P8 C3 safe-boundary scheduler: a finished turn is a safe point (§5.2 —
     // "step complete"). Deliver every queued mailbox message so the main agent
     // sees user intents at the boundary, never mid-token. `mailbox.delivered`
@@ -3175,6 +3189,7 @@ export function createRealRuntimeClient(
   function isSessionSnapshotTrigger(event: RuntimeEvent): boolean {
     if (
       event.type === "turn.submitted" ||
+      event.type === "turn.started" ||
       event.type === "turn.finished" ||
       event.type === "turn.cancelled"
     )
@@ -3207,31 +3222,47 @@ export function createRealRuntimeClient(
    * for the finished turn says `idle`, not `running`. Deriving from the journal
    * also makes the same snapshot reproducible from replay.
    */
-  function publishSessionSnapshot(exec?: SessionExecutionState) {
-    const target = exec ?? activeExec;
-    if (!target?.session) return;
-    const events = target.session.events;
-    const projection = projectSession(target.session);
+  function currentSessionSnapshot(
+    exec: SessionExecutionState,
+    id: string,
+  ): Extract<RuntimeEvent, { type: "session.snapshot" }> {
+    const events = exec.session.events;
+    const projection = projectSession(exec.session);
     const active = projection.activeTurnIDs.length > 0;
     let agentStatus = "idle";
-    if (target.paused) agentStatus = "paused";
+    if (exec.paused) agentStatus = "paused";
     else if (active) agentStatus = "running";
-    const step = target.context.journalStatus().messageCount;
+    const step = exec.context.journalStatus().messageCount;
     const activeTurnID = projection.activeTurnIDs[0];
     const activeTool = activeTurnID
       ? activeToolByTurn.get(activeTurnID)
       : undefined;
+    const liveOutput = activeTurnID
+      ? redactToolOutput(liveMainOutputByTurn.get(activeTurnID) ?? "", true)
+          .trim()
+          .slice(-2000)
+      : "";
+    return buildSessionIntelligenceSnapshot({
+      id,
+      events,
+      live: {
+        agentStatus,
+        ...(active ? { currentStep: `step ${step}` } : {}),
+        ...(activeTool ? { activeTool } : {}),
+        ...(liveOutput ? { recentOutput: liveOutput } : {}),
+      },
+    });
+  }
+
+  function publishSessionSnapshot(exec?: SessionExecutionState) {
+    const target = exec ?? activeExec;
+    if (!target?.session) return;
     publishForSession(
       target,
-      buildSessionIntelligenceSnapshot({
-        id: `snapshot:${target.session.id}:${sessionSnapshotSequence++}`,
-        events,
-        live: {
-          agentStatus,
-          ...(active ? { currentStep: `step ${step}` } : {}),
-          ...(activeTool ? { activeTool } : {}),
-        },
-      }),
+      currentSessionSnapshot(
+        target,
+        `snapshot:${target.session.id}:${sessionSnapshotSequence++}`,
+      ),
     );
   }
 
@@ -4251,7 +4282,10 @@ export function createRealRuntimeClient(
    * `content.done` carries each provider step's full assistant text; the last
    * few are enough to ground a live answer without leaking anything sensitive.
    */
-  function recentMainAgentActivity(events: RuntimeEvent[]): string {
+  function recentMainAgentActivity(
+    events: RuntimeEvent[],
+    snapshot?: Extract<RuntimeEvent, { type: "session.snapshot" }>,
+  ): string {
     // The last few exchanges as the user and main agent produced them, with a
     // completion marker on each finished turn — enough to answer "did the main
     // agent finish X" (§8.3 shared context). `content.done` carries each
@@ -4289,6 +4323,30 @@ export function createRealRuntimeClient(
         lastTurnID = "";
       }
     }
+    const settledTurnIDs = new Set(
+      events
+        .filter(
+          (event) =>
+            event.type === "turn.finished" || event.type === "turn.cancelled",
+        )
+        .map((event) => event.id),
+    );
+    const activeTurn = events.findLast(
+      (event): event is Extract<RuntimeEvent, { type: "turn.submitted" }> =>
+        event.type === "turn.submitted" && !settledTurnIDs.has(event.id),
+    );
+    if (activeTurn) {
+      const prompt = redactToolOutput(activeTurn.text, true).trim();
+      const progress = snapshot?.recentOutput?.trim();
+      exchanges.push(
+        `- [user] ${prompt || "(no prompt)"}\n  [Natalia, in progress] ${
+          progress ||
+          (snapshot?.activeTool
+            ? `using ${snapshot.activeTool}`
+            : "working; no text output yet")
+        }`,
+      );
+    }
     if (!exchanges.length) return "";
     return exchanges.slice(-3).join("\n");
   }
@@ -4314,7 +4372,9 @@ export function createRealRuntimeClient(
     // The real session intelligence snapshot the runtime publishes, not a
     // stub: agent status (idle/paused/running), step, active tool, changed
     // files and recent output are all journal-derived facts (§56.59).
-    const snapshot = latestSessionSnapshot(chatSession.events);
+    const snapshot = exec
+      ? currentSessionSnapshot(exec, `snapshot:live:${chatSession.id}`)
+      : latestSessionSnapshot(chatSession.events);
     const plans = projectedPlans(chatSession.events);
     const activePlan = plans.find((plan) => plan.status === "active");
     const mailbox = projectedMailboxMessages(chatSession.events).filter(
@@ -4326,7 +4386,7 @@ export function createRealRuntimeClient(
     );
     const decisions = projectedDecisionRecords(chatSession.events).slice(-6);
     const rules = projectedConstitutionRules(chatSession.events);
-    const activity = recentMainAgentActivity(chatSession.events);
+    const activity = recentMainAgentActivity(chatSession.events, snapshot);
     const recentTools = recentToolActivity(chatSession.events);
     const collab = projectedCollabMessages(chatSession.events);
     const nataliaQuestions = collab.filter(
@@ -4452,11 +4512,7 @@ export function createRealRuntimeClient(
         async execute() {
           if (!exec) return JSON.stringify({ agentStatus: "unknown" });
           return JSON.stringify(
-            latestSessionSnapshot(exec.session.events) ?? {
-              agentStatus: "unknown",
-              changedFiles: 0,
-              unvalidatedChanges: 0,
-            },
+            currentSessionSnapshot(exec, `snapshot:live:${exec.session.id}`),
           );
         },
       },
@@ -4963,17 +5019,17 @@ export function createRealRuntimeClient(
         signal.throwIfAborted();
         const calls: ProviderToolCall[] = [];
         let protocolViolation = "";
+        // Chat is an independent collaboration lane, not provider fan-out from
+        // the Main turn. Putting it behind the Main/subagent semaphore makes a
+        // configured cap of 1 block Chat until Main stops, defeating its core
+        // always-available contract. `chatAbort` still limits this session to
+        // one Chat stream at a time.
         for await (const chunk of requireNativeToolCallProtocol(
-          withProviderConcurrency(
-            providerConcurrencyLimiter,
-            activeProvider.provider,
-            () =>
-              activeProvider.stream({
-                messages,
-                tools: toolSchemas,
-                signal,
-              }),
-          ),
+          activeProvider.stream({
+            messages,
+            tools: toolSchemas,
+            signal,
+          }),
         )) {
           if (chunk.type === "thinking") {
             setPhase("thinking");
@@ -5110,16 +5166,11 @@ export function createRealRuntimeClient(
           let protocolViolation = "";
           let finalOutput = "";
           for await (const chunk of requireNativeToolCallProtocol(
-            withProviderConcurrency(
-              providerConcurrencyLimiter,
-              activeProvider.provider,
-              () =>
-                activeProvider.stream({
-                  messages: finalMessages,
-                  tools: undefined,
-                  signal,
-                }),
-            ),
+            activeProvider.stream({
+              messages: finalMessages,
+              tools: undefined,
+              signal,
+            }),
           )) {
             if (chunk.type === "tool_call")
               throw new Error(
@@ -6993,8 +7044,11 @@ export function createRealRuntimeClient(
       return { completed: true as const };
     },
     async sessionSnapshot() {
-      if (!session) return undefined;
-      return latestSessionSnapshot(session.events);
+      if (!activeExec) return undefined;
+      return currentSessionSnapshot(
+        activeExec,
+        `snapshot:live:${activeExec.session.id}`,
+      );
     },
     async driftFindings() {
       if (!session) return [];

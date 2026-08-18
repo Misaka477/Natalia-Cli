@@ -1,6 +1,7 @@
 export type SidebarMode = "auto" | "hide";
 
 export type SessionPaneMode = "single" | "double" | "triple";
+export type SessionView = "chat" | "plan";
 
 export function sessionLayout(
   terminalWidth: number,

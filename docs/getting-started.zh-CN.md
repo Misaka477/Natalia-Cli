@@ -173,6 +173,7 @@ configured`，说明第 3 步没生效。
 | `ctrl+c`            | 取消当前回合                 |
 | `ctrl+d`            | 退出（输入框为空时）         |
 | `ctrl+p`            | 命令面板                     |
+| `ctrl+g`            | 在双栏布局切换 Chat/Plan      |
 | `ctrl+b`            | 侧边栏                       |
 | `ctrl+n` / `ctrl+l` | 新会话 / 会话列表            |
 | `ctrl+i` / `ctrl+h` | 状态 / 帮助                  |
@@ -180,6 +181,9 @@ configured`，说明第 3 步没生效。
 | `escape`            | 关闭补全                     |
 
 输入 `/` 唤出命令，输入 `@` 引用工作区文件、agent 或 MCP 资源。
+
+可从命令面板打开 `Live Work Chat`。终端宽度小于 112 列时以 overlay 显示，
+112–167 列时与 Plan 共用次级 pane，168 列及以上时与 Main、Plan 同时显示。
 
 常用命令：
 

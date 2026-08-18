@@ -103,7 +103,11 @@ import {
 import { darkTheme } from "../theme/theme";
 import { ThemeProvider, useTheme } from "../context/theme";
 import { LocalProvider, useLocal } from "../context/local";
-import { sessionLayout, type SidebarMode } from "../session-layout";
+import {
+  sessionLayout,
+  type SessionView,
+  type SidebarMode,
+} from "../session-layout";
 import {
   defaultTuiPreferences,
   loadTuiPreferences,
@@ -324,7 +328,7 @@ function Shell(props: {
   // The docked view host: which view is open and which pane owns the keyboard.
   // Presentation state, so it lives here (like the sidebar) rather than in the
   // runtime event stream.
-  const [viewActive, setViewActive] = createSignal<"chat" | null>(null);
+  const [viewActive, setViewActive] = createSignal<SessionView | null>(null);
   const [viewFocus, setViewFocus] = createSignal<"main" | "chat">("main");
   const [chatInput, setChatInput] = createSignal<InputRenderable>();
   const promptRef = usePromptRef();
@@ -1188,6 +1192,11 @@ function Shell(props: {
           setViewActive("chat");
           setViewFocus("chat");
         },
+        switchView: () => {
+          if (layout().paneMode !== "double") return;
+          setViewActive(viewActive() === "plan" ? "chat" : "plan");
+          setViewFocus("main");
+        },
         close: () => {
           setViewActive(null);
           setViewFocus("main");
@@ -1482,76 +1491,17 @@ function Shell(props: {
       width="100%"
       height="100%"
       backgroundColor={theme.theme.background}
+      border={["top", "bottom"]}
+      borderColor={theme.theme.muted}
     >
-      <Show when={layout().viewVisible}>
-        <box
-          position="relative"
-          width={layout().viewWidth}
-          flexShrink={0}
-          height="100%"
-          flexDirection="column"
-          backgroundColor={theme.theme.background}
-          border={["right"]}
-          borderColor={theme.theme.muted}
-        >
-          <LiveChatView
-            backend={props.backend}
-            messages={() => state.chatMessages}
-            activity={() => state.facts.chatActivity}
-            focused={() => viewFocus() === "chat"}
-            onRequestFocus={() => setViewFocus("chat")}
-            onEscape={() => {
-              if (layout().viewOverlay) setViewActive(null);
-              setViewFocus("main");
-            }}
-            onClose={() => {
-              setViewActive(null);
-              setViewFocus("main");
-            }}
-            onInputRef={setChatInput}
-            onSend={(text) => {
-              void props.backend.chatSubmit?.({ text }).catch((error) =>
-                toast.show({
-                  variant: "error",
-                  message: `Chat message not delivered: ${
-                    error instanceof Error ? error.message : String(error)
-                  }`.slice(0, 160),
-                }),
-              );
-            }}
-            onRollback={(toMessageID) => {
-              void props.backend.chatRollback?.({ toMessageID });
-            }}
-            onPlanAccept={(planID) => {
-              void props.backend.planAccept?.(planID).catch((error) =>
-                toast.show({
-                  variant: "error",
-                  message: `Plan not accepted: ${
-                    error instanceof Error ? error.message : String(error)
-                  }`.slice(0, 160),
-                }),
-              );
-            }}
-            onPlanReject={(planID) => {
-              void props.backend.planSupersede?.(
-                planID,
-                "rejected in live work chat",
-              );
-            }}
-            promptMaxHeight={Math.min(
-              preferences().prompt.maxHeight,
-              layout().promptMaxHeight,
-            )}
-            contentWidth={Math.max(1, layout().viewWidth - 4)}
-            density={preferences().density}
-            toolDetails={preferences().toolDetails}
-            reasoning={preferences().reasoning}
-            diffStyle={preferences().diffStyle}
-            toolPreviewLines={layout().toolPreviewLines}
-          />
-        </box>
-      </Show>
-      <box flexGrow={1} minWidth={0} height="100%" flexDirection="column">
+      <box
+        flexGrow={1}
+        minWidth={0}
+        height="100%"
+        flexDirection="column"
+        border={["left", "right"]}
+        borderColor={theme.theme.muted}
+      >
         <Show when={activeSubagentRoute()} keyed>
           {(current) => (
             <SubagentRoute
@@ -1893,6 +1843,104 @@ function Shell(props: {
           />
         </Show>
       </box>
+      <Show
+        when={
+          layout().viewVisible
+            ? viewActive() === "chat"
+              ? "chat"
+              : layout().paneMode === "triple"
+                ? "triple"
+                : false
+            : false
+        }
+        keyed
+      >
+        <box
+          position={layout().viewOverlay ? "absolute" : "relative"}
+          width={layout().viewWidth}
+          flexShrink={0}
+          height="100%"
+          right={layout().viewOverlay ? 0 : undefined}
+          top={layout().viewOverlay ? 0 : undefined}
+          bottom={layout().viewOverlay ? 0 : undefined}
+          zIndex={layout().viewOverlay ? 20 : undefined}
+          flexDirection="column"
+          backgroundColor={theme.theme.background}
+          border={["left", "right"]}
+          borderColor={theme.theme.muted}
+        >
+          <LiveChatView
+            backend={props.backend}
+            messages={() => state.chatMessages}
+            activity={() => state.facts.chatActivity}
+            intelligence={() => state.facts.intelligence}
+            focused={() => viewFocus() === "chat"}
+            onRequestFocus={() => setViewFocus("chat")}
+            onEscape={() => {
+              if (layout().viewOverlay) setViewActive(null);
+              setViewFocus("main");
+            }}
+            onClose={() => {
+              setViewActive(null);
+              setViewFocus("main");
+            }}
+            onInputRef={setChatInput}
+            onSend={(text) => {
+              void props.backend.chatSubmit?.({ text }).catch((error) =>
+                toast.show({
+                  variant: "error",
+                  message: `Chat message not delivered: ${
+                    error instanceof Error ? error.message : String(error)
+                  }`.slice(0, 160),
+                }),
+              );
+            }}
+            onRollback={(toMessageID) => {
+              void props.backend.chatRollback?.({ toMessageID });
+            }}
+            onPlanAccept={(planID) => {
+              void props.backend.planAccept?.(planID).catch((error) =>
+                toast.show({
+                  variant: "error",
+                  message: `Plan not accepted: ${
+                    error instanceof Error ? error.message : String(error)
+                  }`.slice(0, 160),
+                }),
+              );
+            }}
+            onPlanReject={(planID) => {
+              void props.backend.planSupersede?.(
+                planID,
+                "rejected in live work chat",
+              );
+            }}
+            promptMaxHeight={Math.min(
+              preferences().prompt.maxHeight,
+              layout().promptMaxHeight,
+            )}
+            contentWidth={Math.max(1, layout().viewWidth - 4)}
+            density={preferences().density}
+            toolDetails={preferences().toolDetails}
+            reasoning={preferences().reasoning}
+            diffStyle={preferences().diffStyle}
+            toolPreviewLines={layout().toolPreviewLines}
+          />
+        </box>
+      </Show>
+      <Show
+        when={
+          layout().viewVisible &&
+          viewActive() === "plan" &&
+          layout().paneMode === "double"
+        }
+      >
+        <SessionSidebar
+          workspaceRoot={props.workspaceRoot}
+          width={layout().viewWidth}
+          compact
+          overlay={layout().viewOverlay}
+        />
+      </Show>
       <Show when={layout().sidebarGap > 0}>
         <box
           width={layout().sidebarGap}

@@ -91,6 +91,7 @@ If a process stops during an unknown provider or tool side effect, Natalia safel
 | `Ctrl+L`                        | Open session history                    |
 | `Ctrl+,`                        | Open settings                           |
 | `Ctrl+P`                        | Open command palette                    |
+| `Ctrl+G`                        | Switch Chat/Plan in two-pane layout     |
 | `Ctrl+C`                        | Cancel the active turn                  |
 | `Ctrl+I` / `Ctrl+H`             | Show runtime status / help              |
 | `Ctrl+Shift+K`                  | Open checkpoint management              |
@@ -247,6 +248,7 @@ npm run ts:cli -- daemon-stop
 | `Ctrl+L`                        | 打开 session history                |
 | `Ctrl+,`                        | 打开 settings                       |
 | `Ctrl+P`                        | 打开 command palette                |
+| `Ctrl+G`                        | 在双栏布局切换 Chat/Plan             |
 | `Ctrl+C`                        | 取消当前 turn                       |
 | `Ctrl+I` / `Ctrl+H`             | 查看 runtime status / 帮助          |
 | `Ctrl+Shift+K`                  | 打开 checkpoint 管理                |

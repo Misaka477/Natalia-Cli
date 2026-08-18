@@ -10,7 +10,10 @@ import { createSignal } from "solid-js";
 import { KeymapProvider } from "@opentui/keymap/solid";
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
 import type { RuntimeClient } from "@natalia/contracts";
-import type { ChatActivityView } from "@natalia/view-store";
+import type {
+  ChatActivityView,
+  SessionIntelligenceView,
+} from "@natalia/view-store";
 import type { MessageBlock } from "../src/context/state";
 import { LiveChatView } from "../src/component/LiveChatView";
 import { DialogProvider } from "../src/dialog/provider";
@@ -53,6 +56,7 @@ async function mountChat(
     onPlanAccept?: (planID: string) => void;
     onPlanReject?: (planID: string) => void;
     activity?: () => ChatActivityView | undefined;
+    intelligence?: () => SessionIntelligenceView | undefined;
   } = {},
   backendOverrides: Record<string, unknown> = {},
 ) {
@@ -72,6 +76,7 @@ async function mountChat(
             backend={mockBackend(backendOverrides)}
             messages={() => messages}
             activity={callbacks.activity ?? (() => undefined)}
+            intelligence={callbacks.intelligence}
             focused={callbacks.focused ?? (() => true)}
             onRequestFocus={() => {}}
             onEscape={callbacks.onEscape ?? (() => {})}
@@ -224,6 +229,32 @@ test("the Chat footer shows independent activity and elapsed time", async () => 
     expect(frame).toContain("Using session_snapshot");
     expect(frame).toContain("0:01 elapsed");
     expect(frame).not.toContain("• Ready");
+  } finally {
+    await mounted.dispose();
+  }
+});
+
+test("the main status follows the live intelligence projection", async () => {
+  const [intelligence, setIntelligence] =
+    createSignal<SessionIntelligenceView>();
+  const mounted = await mountChat([], { intelligence });
+  try {
+    setIntelligence({
+      type: "session.snapshot",
+      id: "snapshot:live",
+      agentStatus: "running",
+      currentStep: "step 4",
+      activeTool: "read_file",
+      changedFiles: 3,
+      unvalidatedChanges: 1,
+      hasPTY: false,
+      hasSandbox: false,
+    });
+    await mounted.setup.renderOnce();
+    const frame = mounted.setup.captureCharFrame();
+    expect(frame).toContain("Main: running");
+    expect(frame).toContain("step 4");
+    expect(frame).toContain("read_file");
   } finally {
     await mounted.dispose();
   }

@@ -17,10 +17,12 @@
  *    numbers; `recentOutput` is the last confirmed assistant output, bounded to
  *    the schema's 2000-character cap. File contents, tool arguments, command
  *    text and results never enter the snapshot.
- * 2. **Derived from durable events.** Changed files are counted from the
+ * 2. **Replayable by default.** Changed files are counted from the
  *    `workspace_change` Work Graph nodes the runtime already writes; validated
  *    changes come from `evidence.recorded` events (none exist yet, so all
- *    changes are unvalidated — that is the honest answer, not a bug).
+ *    changes are unvalidated — that is the honest answer, not a bug). During a
+ *    running turn, the runtime may override `recentOutput` with a bounded,
+ *    redacted in-memory stream; replay falls back to the last `content.done`.
  */
 import type { RuntimeEvent } from "@natalia/contracts";
 
@@ -28,6 +30,7 @@ export type SessionIntelligenceLive = {
   agentStatus: string;
   currentStep?: string;
   activeTool?: string;
+  recentOutput?: string;
 };
 
 /** The changed workspace files, as recorded by the Work Graph writer. */
@@ -101,7 +104,7 @@ export function buildSessionIntelligenceSnapshot(input: {
 }): Extract<RuntimeEvent, { type: "session.snapshot" }> {
   const changedFiles = countChangedFiles(input.events);
   const validated = countValidatedChanges(input.events);
-  const output = latestConfirmedOutput(input.events);
+  const output = input.live.recentOutput ?? latestConfirmedOutput(input.events);
   return {
     type: "session.snapshot",
     id: input.id,
