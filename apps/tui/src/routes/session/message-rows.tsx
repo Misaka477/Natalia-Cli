@@ -92,7 +92,7 @@ function UserBlock(props: {
   onCopy?: (text: string) => void;
   onFork?: (turnID: string, prompt: string) => void;
 }) {
-  const [hover, setHover] = createSignal(false);
+  const [actionsOpen, setActionsOpen] = createSignal(false);
   return (
     <box
       flexDirection="column"
@@ -104,8 +104,7 @@ function UserBlock(props: {
       paddingTop={1}
       paddingBottom={1}
       ref={(element: any) => alwaysSeparate.add(element)}
-      onMouseOver={() => setHover(true)}
-      onMouseOut={() => setHover(false)}
+      onMouseUp={() => setActionsOpen((open) => !open)}
     >
       <text fg={darkTheme.text} wrapMode="word">
         {props.block.text}
@@ -119,13 +118,18 @@ function UserBlock(props: {
         </text>
       </Show>
       <Show
-        when={hover() && (props.onCopy || (props.onFork && props.block.text))}
+        when={
+          actionsOpen() && (props.onCopy || (props.onFork && props.block.text))
+        }
       >
         <box flexDirection="row" gap={2} paddingTop={1}>
           <Show when={props.onCopy}>
             <text
               fg={darkTheme.muted}
-              onMouseUp={() => props.onCopy?.(props.block.text)}
+              onMouseUp={(event: { stopPropagation(): void }) => {
+                event.stopPropagation();
+                props.onCopy?.(props.block.text);
+              }}
             >
               copy
             </text>
@@ -133,7 +137,10 @@ function UserBlock(props: {
           <Show when={props.onFork}>
             <text
               fg={darkTheme.muted}
-              onMouseUp={() => props.onFork?.(props.block.id, props.block.text)}
+              onMouseUp={(event: { stopPropagation(): void }) => {
+                event.stopPropagation();
+                props.onFork?.(props.block.id, props.block.text);
+              }}
             >
               fork
             </text>

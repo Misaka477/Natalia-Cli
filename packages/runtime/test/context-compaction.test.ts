@@ -93,7 +93,7 @@ test("reserved output resolver prioritizes provider, explicit, catalog and fallb
       contextWindow: 32000,
       configuredReserved: "auto",
     }).tokens,
-  ).toBe(8192);
+  ).toBe(32000);
   expect(
     resolveReservedOutputTokens({
       contextWindow: 200000,

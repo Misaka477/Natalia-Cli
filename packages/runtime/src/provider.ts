@@ -6,6 +6,12 @@ import {
   type ModelRef,
 } from "@natalia/contracts";
 import { providerError, providerErrorFromHttp } from "./errors";
+import {
+  CONSERVATIVE_MODEL_LIMIT_FALLBACK,
+  knownModelOutputLimit,
+  modelsDevModelLimits,
+  type ModelMetadataProvider,
+} from "./modelmeta";
 
 export type ProviderMessage = {
   role: "system" | "user" | "assistant" | "tool";
@@ -33,12 +39,95 @@ export type ProviderToolCall = {
   arguments: string;
 };
 
+export type ProviderFinishReason =
+  | "stop"
+  | "tool_calls"
+  | "length"
+  | "content_filter"
+  | "error"
+  | "unknown";
+
 export type ProviderStreamChunk =
   | { type: "content"; text: string }
   | { type: "thinking"; text: string }
   | { type: "tool_call"; calls: ProviderToolCall[] }
+  | { type: "tool_protocol_violation"; text: string }
   | { type: "usage"; inputTokens: number; outputTokens: number }
-  | { type: "done" };
+  | { type: "done"; finishReason?: ProviderFinishReason };
+
+/**
+ * Keeps textual tool-call markup out of the assistant transcript. Plain text is
+ * never promoted to an executable call; only the provider's structured
+ * `tool_call` chunks are authorized to reach the runtime.
+ */
+export async function* requireNativeToolCallProtocol(
+  source: AsyncIterable<ProviderStreamChunk>,
+): AsyncIterable<ProviderStreamChunk> {
+  let content = "";
+  let violation = "";
+  let structuredCalls = false;
+  let done: Extract<ProviderStreamChunk, { type: "done" }> | undefined;
+
+  const flushContent = function* (
+    final: boolean,
+  ): Iterable<ProviderStreamChunk> {
+    while (content) {
+      const start = textualToolCallMarkerIndex(content);
+      if (start < 0) {
+        const retained = final
+          ? ""
+          : textualToolCallMarkerPrefixSuffix(content);
+        const text = content.slice(0, content.length - retained.length);
+        content = retained;
+        if (text) yield { type: "content", text };
+        return;
+      }
+      if (start > 0) {
+        yield { type: "content", text: content.slice(0, start) };
+        content = content.slice(start);
+      }
+      // Once model-authored tool syntax begins, retain the remainder as one
+      // violation. This also catches malformed or bare <function=...> output.
+      violation += content;
+      content = "";
+      return;
+    }
+  };
+
+  for await (const chunk of source) {
+    if (chunk.type === "content") {
+      content += chunk.text;
+      yield* flushContent(false);
+      continue;
+    }
+    if (chunk.type === "tool_call") {
+      yield* flushContent(true);
+      structuredCalls ||= chunk.calls.length > 0;
+      yield chunk;
+      continue;
+    }
+    if (chunk.type === "done") {
+      done = chunk;
+      continue;
+    }
+    yield* flushContent(true);
+    yield chunk;
+  }
+  yield* flushContent(true);
+  if (violation && !structuredCalls)
+    yield { type: "tool_protocol_violation", text: violation };
+  if (done) yield done;
+}
+
+export function nativeToolCallCorrection(attempt: number) {
+  return [
+    `Tool-call protocol correction ${attempt}: your previous response wrote a tool call as assistant text.`,
+    "Use the provider's native structured function/tool-calling channel now.",
+    "Choose the intended function from the tool definitions supplied with this request and submit its arguments through that function call's structured arguments object.",
+    "Do not print <tool_call> XML, JSON that describes a call, Markdown, or an explanation of the call in assistant content.",
+    "Repeat the intended call through the native tool-calling interface. If no tool is needed, answer the user normally instead.",
+  ].join(" ");
+}
 
 /**
  * Converts complete XML-like tool protocol blocks leaked into content by
@@ -184,6 +273,28 @@ function toolCallPrefixSuffix(value: string) {
   return "";
 }
 
+const textualToolCallMarkers = ["<tool_call", "<function=", "<parameter="];
+
+function textualToolCallMarkerIndex(value: string) {
+  let earliest = -1;
+  for (const marker of textualToolCallMarkers) {
+    const index = value.indexOf(marker);
+    if (index >= 0 && (earliest < 0 || index < earliest)) earliest = index;
+  }
+  return earliest;
+}
+
+function textualToolCallMarkerPrefixSuffix(value: string) {
+  for (const marker of textualToolCallMarkers)
+    for (
+      let length = Math.min(value.length, marker.length - 1);
+      length > 0;
+      length--
+    )
+      if (value.endsWith(marker.slice(0, length))) return value.slice(-length);
+  return "";
+}
+
 function toolCallSignature(call: ProviderToolCall) {
   return `${call.name}\u0000${canonicalJSON(call.arguments)}`;
 }
@@ -219,6 +330,8 @@ export type StreamingProvider = {
   imageInput?: boolean;
   pdfInput?: boolean;
   videoInput?: boolean;
+  listModels?: ModelMetadataProvider["listModels"];
+  modelDetail?: ModelMetadataProvider["modelDetail"];
   stream(request: ProviderStreamRequest): AsyncIterable<ProviderStreamChunk>;
 };
 
@@ -282,6 +395,9 @@ export class OpenAICompatibleProvider implements StreamingProvider {
   private readonly thinkingEnabled?: boolean;
   private readonly timeoutMs?: number;
   private readonly streamIdleTimeoutMs?: number;
+  private modelMetadata?: ReturnType<
+    OpenAICompatibleProvider["fetchModelMetadata"]
+  >;
 
   constructor(options: OpenAICompatibleProviderOptions) {
     this.apiKey = options.apiKey;
@@ -372,20 +488,44 @@ export class OpenAICompatibleProvider implements StreamingProvider {
           inputTokens: data.usage.prompt_tokens,
           outputTokens: data.usage.completion_tokens,
         };
-      yield { type: "done" };
+      yield {
+        type: "done",
+        finishReason: normalizeOpenAIFinishReason(
+          data.choices?.[0]?.finish_reason,
+          Boolean(toolCalls?.length),
+        ),
+      };
       return;
     }
     yield* streamOpenAISSE(response.body, this.streamIdleTimeoutMs);
   }
 
   async listModels(): Promise<
-    Array<{ id: string; contextWindow?: number; inputTokenLimit?: number }>
+    Array<{
+      id: string;
+      contextWindow?: number;
+      inputTokenLimit?: number;
+      maxOutputTokens?: number;
+    }>
+  > {
+    if (!this.modelMetadata) this.modelMetadata = this.fetchModelMetadata();
+    return await this.modelMetadata;
+  }
+
+  private async fetchModelMetadata(): Promise<
+    Array<{
+      id: string;
+      contextWindow?: number;
+      inputTokenLimit?: number;
+      maxOutputTokens?: number;
+    }>
   > {
     const response = await this.fetchImpl(modelsURL(this.baseURL), {
       headers: {
         [this.authHeader]: `Bearer ${this.apiKey}`,
         ...this.customHeaders,
       },
+      signal: AbortSignal.timeout(3_000),
     });
     if (!response.ok)
       throw providerErrorFromHttp({
@@ -401,6 +541,10 @@ export class OpenAICompatibleProvider implements StreamingProvider {
         context_window?: unknown;
         contextWindow?: unknown;
         input_token_limit?: unknown;
+        max_input_tokens?: unknown;
+        max_output_tokens?: unknown;
+        output_token_limit?: unknown;
+        max_tokens?: unknown;
       }>;
     };
     return (data.data ?? []).flatMap((model) =>
@@ -417,7 +561,17 @@ export class OpenAICompatibleProvider implements StreamingProvider {
               inputTokenLimit:
                 typeof model.input_token_limit === "number"
                   ? model.input_token_limit
-                  : undefined,
+                  : typeof model.max_input_tokens === "number"
+                    ? model.max_input_tokens
+                    : undefined,
+              maxOutputTokens:
+                typeof model.max_output_tokens === "number"
+                  ? model.max_output_tokens
+                  : typeof model.output_token_limit === "number"
+                    ? model.output_token_limit
+                    : typeof model.max_tokens === "number"
+                      ? model.max_tokens
+                      : undefined,
             },
           ]
         : [],
@@ -439,6 +593,14 @@ export class AnthropicProvider implements StreamingProvider {
   private readonly maxTokens?: number;
   private readonly temperature?: number;
   private readonly streamIdleTimeoutMs?: number;
+  private modelMetadata?: Promise<
+    Array<{
+      id: string;
+      contextWindow?: number;
+      inputTokenLimit?: number;
+      maxOutputTokens?: number;
+    }>
+  >;
 
   constructor(options: AnthropicProviderOptions) {
     this.apiKey = options.apiKey;
@@ -467,6 +629,11 @@ export class AnthropicProvider implements StreamingProvider {
         ? AbortSignal.any([request.signal, timeout])
         : timeout
       : request.signal;
+    const maxTokens =
+      this.maxTokens ??
+      (await this.outputTokenLimit().catch(
+        () => CONSERVATIVE_MODEL_LIMIT_FALLBACK,
+      ));
     const response = await this.fetchImpl(messagesURL(this.baseURL), {
       method: "POST",
       headers: {
@@ -488,7 +655,7 @@ export class AnthropicProvider implements StreamingProvider {
           description: tool.description,
           input_schema: tool.parameters,
         })),
-        max_tokens: this.maxTokens ?? 4096,
+        max_tokens: maxTokens,
         stream: true,
         ...(this.temperature === undefined
           ? {}
@@ -506,6 +673,75 @@ export class AnthropicProvider implements StreamingProvider {
       });
     if (!response.body) throw new Error("Anthropic response body unavailable");
     yield* streamAnthropicSSE(response.body, this.streamIdleTimeoutMs);
+  }
+
+  async listModels() {
+    if (!this.modelMetadata) this.modelMetadata = this.fetchModelMetadata();
+    return await this.modelMetadata;
+  }
+
+  private async outputTokenLimit() {
+    const model = isLocalProviderURL(this.baseURL)
+      ? undefined
+      : (await this.listModels().catch(() => [])).find(
+          (candidate) => candidate.id === this.model,
+        );
+    if (model?.maxOutputTokens) return model.maxOutputTokens;
+    const catalog = await modelsDevModelLimits(this.provider, this.model);
+    return (
+      catalog?.maxOutputTokens ??
+      knownModelOutputLimit(this.model) ??
+      CONSERVATIVE_MODEL_LIMIT_FALLBACK
+    );
+  }
+
+  private async fetchModelMetadata() {
+    const response = await this.fetchImpl(modelsURL(this.baseURL), {
+      headers: {
+        "x-api-key": this.apiKey,
+        "anthropic-version": this.version,
+      },
+      signal: AbortSignal.timeout(3_000),
+    });
+    if (!response.ok)
+      throw providerErrorFromHttp({
+        statusCode: response.status,
+        statusText: response.statusText,
+        retryAfter: response.headers.get("retry-after"),
+        retryAfterMs: response.headers.get("retry-after-ms"),
+        message: await safeResponseText(response),
+      });
+    const payload = (await response.json()) as {
+      data?: Array<{
+        id?: unknown;
+        max_input_tokens?: unknown;
+        max_tokens?: unknown;
+        context_window?: unknown;
+        max_output_tokens?: unknown;
+      }>;
+    };
+    return (payload.data ?? []).flatMap((model) =>
+      typeof model.id === "string"
+        ? [
+            {
+              id: model.id,
+              contextWindow:
+                typeof model.max_input_tokens === "number"
+                  ? model.max_input_tokens
+                  : typeof model.context_window === "number"
+                    ? model.context_window
+                    : undefined,
+              inputTokenLimit: undefined,
+              maxOutputTokens:
+                typeof model.max_tokens === "number"
+                  ? model.max_tokens
+                  : typeof model.max_output_tokens === "number"
+                    ? model.max_output_tokens
+                    : undefined,
+            },
+          ]
+        : [],
+    );
   }
 }
 
@@ -804,14 +1040,26 @@ function messagesURL(baseURL: string) {
 function modelsURL(baseURL: string) {
   const url = new URL(baseURL);
   url.pathname =
-    url.pathname.replace(/\/chat\/completions$/u, "").replace(/\/$/u, "") +
-    "/models";
+    url.pathname
+      .replace(/\/(?:chat\/completions|messages)$/u, "")
+      .replace(/\/$/u, "") + "/models";
   return url.toString();
+}
+
+function isLocalProviderURL(baseURL: string) {
+  try {
+    const hostname = new URL(baseURL).hostname;
+    return (
+      hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1"
+    );
+  } catch {
+    return false;
+  }
 }
 
 type AnthropicStreamChunk = {
   type?: string;
-  delta?: { text?: string; partial_json?: string };
+  delta?: { text?: string; partial_json?: string; stop_reason?: string | null };
   content_block?: { id?: string; name?: string; type?: string };
   usage?: { input_tokens?: number; output_tokens?: number };
   message?: { usage?: { input_tokens?: number; output_tokens?: number } };
@@ -819,6 +1067,7 @@ type AnthropicStreamChunk = {
 
 type GeminiStreamChunk = {
   candidates?: Array<{
+    finishReason?: string;
     content?: {
       parts?: Array<{
         text?: string;
@@ -835,6 +1084,7 @@ type OpenAIChatCompletion = {
     completion_tokens: number;
   };
   choices?: Array<{
+    finish_reason?: string | null;
     message?: {
       content?: string;
       tool_calls?: Array<{
@@ -889,6 +1139,7 @@ async function* streamOpenAISSE(
   const reader = body.getReader();
   const decoder = new TextDecoder();
   const toolCalls = new Map<number, ProviderToolCall>();
+  const completion: { finishReason?: ProviderFinishReason } = {};
   let buffer = "";
   while (true) {
     const next = await readWithIdleTimeout(reader, streamIdleTimeoutMs);
@@ -897,15 +1148,15 @@ async function* streamOpenAISSE(
     const parts = buffer.split("\n\n");
     buffer = parts.pop() ?? "";
     for (const part of parts) {
-      yield* parseSSEChunks(part, toolCalls);
+      yield* parseSSEChunks(part, toolCalls, completion);
     }
   }
   if (buffer) {
-    yield* parseSSEChunks(buffer, toolCalls);
+    yield* parseSSEChunks(buffer, toolCalls, completion);
   }
   if (toolCalls.size)
     yield { type: "tool_call", calls: [...toolCalls.values()] };
-  yield { type: "done" };
+  yield { type: "done", finishReason: completion.finishReason };
 }
 
 async function* streamAnthropicSSE(
@@ -916,6 +1167,7 @@ async function* streamAnthropicSSE(
   const decoder = new TextDecoder();
   const toolCalls = new Map<number, ProviderToolCall>();
   let currentToolIndex = -1;
+  let finishReason: ProviderFinishReason | undefined;
   let buffer = "";
   while (true) {
     const next = await readWithIdleTimeout(reader, streamIdleTimeoutMs);
@@ -929,6 +1181,11 @@ async function* streamAnthropicSSE(
         const data = line.slice("data:".length).trim();
         if (!data || data === "[DONE]") continue;
         const parsed = JSON.parse(data) as AnthropicStreamChunk;
+        if (parsed.delta?.stop_reason)
+          finishReason = normalizeAnthropicFinishReason(
+            parsed.delta.stop_reason,
+            toolCalls.size > 0,
+          );
         if (parsed.type === "content_block_start") {
           currentToolIndex += 1;
           if (parsed.content_block?.type === "tool_use")
@@ -966,6 +1223,11 @@ async function* streamAnthropicSSE(
       const data = line.slice("data:".length).trim();
       if (!data || data === "[DONE]") continue;
       const parsed = JSON.parse(data) as AnthropicStreamChunk;
+      if (parsed.delta?.stop_reason)
+        finishReason = normalizeAnthropicFinishReason(
+          parsed.delta.stop_reason,
+          toolCalls.size > 0,
+        );
       if (parsed.delta?.text)
         yield { type: "content", text: parsed.delta.text };
       const usage = parsed.usage ?? parsed.message?.usage;
@@ -982,7 +1244,7 @@ async function* streamAnthropicSSE(
   }
   if (toolCalls.size)
     yield { type: "tool_call", calls: [...toolCalls.values()] };
-  yield { type: "done" };
+  yield { type: "done", finishReason };
 }
 
 async function* streamGeminiSSE(
@@ -992,6 +1254,7 @@ async function* streamGeminiSSE(
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let finishReason: ProviderFinishReason | undefined;
   while (true) {
     const next = await readWithIdleTimeout(reader, streamIdleTimeoutMs);
     if (next.done) break;
@@ -1004,6 +1267,10 @@ async function* streamGeminiSSE(
         const data = line.slice("data:".length).trim();
         if (!data || data === "[DONE]") continue;
         const parsed = JSON.parse(data) as GeminiStreamChunk;
+        if (parsed.candidates?.[0]?.finishReason)
+          finishReason = normalizeGeminiFinishReason(
+            parsed.candidates[0].finishReason,
+          );
         const calls: ProviderToolCall[] = [];
         for (const part of parsed.candidates?.[0]?.content?.parts ?? []) {
           if (part.text) yield { type: "content", text: part.text };
@@ -1024,19 +1291,32 @@ async function* streamGeminiSSE(
       }
     }
   }
-  if (buffer) yield* parseGeminiSSEPart(buffer);
-  yield { type: "done" };
+  if (buffer) {
+    const parsed = parseGeminiSSEPart(buffer);
+    for (const chunk of parsed.chunks) yield chunk;
+    finishReason = parsed.finishReason ?? finishReason;
+  }
+  yield { type: "done", finishReason };
 }
 
-function* parseGeminiSSEPart(part: string): Iterable<ProviderStreamChunk> {
+function parseGeminiSSEPart(part: string): {
+  chunks: ProviderStreamChunk[];
+  finishReason?: ProviderFinishReason;
+} {
+  const chunks: ProviderStreamChunk[] = [];
+  let finishReason: ProviderFinishReason | undefined;
   for (const line of part.split("\n")) {
     if (!line.startsWith("data:")) continue;
     const data = line.slice("data:".length).trim();
     if (!data || data === "[DONE]") continue;
     const parsed = JSON.parse(data) as GeminiStreamChunk;
+    if (parsed.candidates?.[0]?.finishReason)
+      finishReason = normalizeGeminiFinishReason(
+        parsed.candidates[0].finishReason,
+      );
     const calls: ProviderToolCall[] = [];
     for (const part of parsed.candidates?.[0]?.content?.parts ?? []) {
-      if (part.text) yield { type: "content", text: part.text };
+      if (part.text) chunks.push({ type: "content", text: part.text });
       if (part.functionCall?.name)
         calls.push({
           id: `gemini_${calls.length}`,
@@ -1044,19 +1324,21 @@ function* parseGeminiSSEPart(part: string): Iterable<ProviderStreamChunk> {
           arguments: JSON.stringify(part.functionCall.args ?? {}),
         });
     }
-    if (calls.length) yield { type: "tool_call", calls };
+    if (calls.length) chunks.push({ type: "tool_call", calls });
     if (parsed.usageMetadata)
-      yield {
+      chunks.push({
         type: "usage",
         inputTokens: parsed.usageMetadata.promptTokenCount ?? 0,
         outputTokens: parsed.usageMetadata.candidatesTokenCount ?? 0,
-      };
+      });
   }
+  return { chunks, finishReason };
 }
 
 function parseSSEChunks(
   part: string,
   toolCalls: Map<number, ProviderToolCall>,
+  completion: { finishReason?: ProviderFinishReason },
 ): ProviderStreamChunk[] {
   const chunks: ProviderStreamChunk[] = [];
   for (const line of part.split("\n")) {
@@ -1071,6 +1353,11 @@ function parseSSEChunks(
         outputTokens: parsed.usage.completion_tokens,
       });
     const choice = parsed.choices?.[0];
+    if (choice?.finish_reason)
+      completion.finishReason = normalizeOpenAIFinishReason(
+        choice.finish_reason,
+        toolCalls.size > 0,
+      );
     const delta = choice?.delta;
     const legacyRecipient =
       delta?.recipient ?? choice?.recipient ?? choice?.message?.recipient;
@@ -1134,6 +1421,38 @@ function parseSSEChunks(
     if (delta?.content) chunks.push({ type: "content", text: delta.content });
   }
   return chunks;
+}
+
+function normalizeOpenAIFinishReason(
+  reason: string | null | undefined,
+  hasToolCalls: boolean,
+): ProviderFinishReason | undefined {
+  if (hasToolCalls || reason === "tool_calls" || reason === "function_call")
+    return "tool_calls";
+  if (reason === "stop") return "stop";
+  if (reason === "length") return "length";
+  if (reason === "content_filter") return "content_filter";
+  return reason ? "unknown" : undefined;
+}
+
+function normalizeAnthropicFinishReason(
+  reason: string,
+  hasToolCalls: boolean,
+): ProviderFinishReason {
+  if (hasToolCalls || reason === "tool_use") return "tool_calls";
+  if (reason === "end_turn" || reason === "stop_sequence") return "stop";
+  if (reason === "max_tokens") return "length";
+  if (reason === "refusal") return "content_filter";
+  return "unknown";
+}
+
+function normalizeGeminiFinishReason(reason: string): ProviderFinishReason {
+  if (reason === "STOP") return "stop";
+  if (reason === "MAX_TOKENS") return "length";
+  if (reason === "SAFETY" || reason === "RECITATION") return "content_filter";
+  if (reason === "MALFORMED_FUNCTION_CALL" || reason === "OTHER")
+    return "error";
+  return "unknown";
 }
 
 function normalizeToolRecipient(recipient: string | undefined) {

@@ -2,6 +2,7 @@ export type ContextWindowSource =
   | "config"
   | "provider_metadata"
   | "provider_detail"
+  | "models_dev"
   | "known_catalog"
   | "fallback";
 
@@ -27,11 +28,21 @@ export type ContextWindowResolution = {
 
 export type ModelMetadataProvider = {
   listModels?(): Promise<
-    Array<{ id: string; contextWindow?: number; inputTokenLimit?: number }>
+    Array<{
+      id: string;
+      contextWindow?: number;
+      inputTokenLimit?: number;
+      maxOutputTokens?: number;
+    }>
   >;
-  modelDetail?(
-    model: string,
-  ): Promise<{ contextWindow?: number; inputTokenLimit?: number } | undefined>;
+  modelDetail?(model: string): Promise<
+    | {
+        contextWindow?: number;
+        inputTokenLimit?: number;
+        maxOutputTokens?: number;
+      }
+    | undefined
+  >;
 };
 
 export type ResolveContextInput = {
@@ -43,6 +54,7 @@ export type ResolveContextInput = {
   providerAdapter?: ModelMetadataProvider;
   now?: Date;
   ttlMs?: number;
+  useModelsDevCatalog?: boolean;
 };
 
 type CacheEntry = ContextWindowResolution;
@@ -91,6 +103,22 @@ export class ContextWindowResolver {
       return result;
     }
 
+    if (input.useModelsDevCatalog) {
+      const catalog = await modelsDevModelLimits(input.provider, input.model);
+      if (catalog?.contextWindow) {
+        const result = resolution(
+          catalog.contextWindow,
+          "models_dev",
+          "medium",
+          now,
+          ttlMs,
+          "Models.dev model catalog context window",
+        );
+        this.cache.set(cacheKey, result);
+        return result;
+      }
+    }
+
     const known = knownModelContextWindow(input.model);
     if (known) {
       const result = resolution(
@@ -120,7 +148,7 @@ export class ContextWindowResolver {
   cacheKey(
     input: Pick<
       ResolveContextInput,
-      "provider" | "model" | "baseURL" | "apiKey"
+      "provider" | "model" | "baseURL" | "apiKey" | "useModelsDevCatalog"
     >,
   ) {
     return [
@@ -128,6 +156,7 @@ export class ContextWindowResolver {
       input.baseURL ?? "default",
       input.model,
       keyIdentity(input.apiKey),
+      input.useModelsDevCatalog ? "models-dev" : "local-only",
     ].join("|");
   }
 
@@ -156,12 +185,132 @@ export class ContextWindowResolver {
 export function knownModelContextWindow(model: string) {
   const normalized = model.toLowerCase();
   if (normalized.includes("gpt-5.5")) return 200_000;
+  if (normalized.includes("gpt-5")) return 400_000;
   if (normalized.includes("gpt-4.1")) return 1_000_000;
-  if (normalized.includes("claude") && normalized.includes("opus"))
-    return 200_000;
+  if (normalized.includes("gpt-4o")) return 128_000;
+  if (normalized.includes("o1") || normalized.includes("o3")) return 200_000;
+  if (normalized.includes("claude")) return 200_000;
+  if (normalized.includes("gemini") && normalized.includes("2.5"))
+    return 1_048_576;
   if (normalized.includes("gemini") && normalized.includes("1.5"))
     return 1_000_000;
   return undefined;
+}
+
+export function knownModelOutputLimit(model: string) {
+  const normalized = model.toLowerCase();
+  if (normalized.includes("gpt-5")) return 128_000;
+  if (normalized.includes("gpt-4.1")) return 32_768;
+  if (normalized.includes("gpt-4o")) return 16_384;
+  if (normalized.includes("claude")) return 64_000;
+  if (normalized.includes("gemini") && normalized.includes("2.5"))
+    return 65_536;
+  return undefined;
+}
+
+export const CONSERVATIVE_MODEL_LIMIT_FALLBACK = 32_000;
+
+export type ModelLimitsMetadata = {
+  contextWindow?: number;
+  inputTokenLimit?: number;
+  maxOutputTokens?: number;
+};
+
+let modelsDevCache:
+  | { expiresAt: number; value: Record<string, ModelsDevProvider> }
+  | undefined;
+let modelsDevPending: Promise<Record<string, ModelsDevProvider>> | undefined;
+
+type ModelsDevProvider = {
+  name?: string;
+  models?: Record<
+    string,
+    {
+      id?: string;
+      limit?: { context?: number; input?: number; output?: number };
+    }
+  >;
+};
+
+export async function modelsDevModelLimits(
+  provider: string,
+  model: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<ModelLimitsMetadata | undefined> {
+  const catalog = await loadModelsDevCatalog(fetchImpl).catch(() => undefined);
+  if (!catalog) return undefined;
+  const candidates = Object.entries(catalog).flatMap(([providerID, item]) => {
+    const entry = item.models?.[model];
+    if (!entry?.limit) return [];
+    const providerText = `${providerID} ${item.name ?? ""}`.toLowerCase();
+    const providerWords = provider
+      .toLowerCase()
+      .split(/[^a-z0-9]+/u)
+      .filter((word) => word.length > 2 && word !== "compatible");
+    return [
+      {
+        providerID,
+        score: providerWords.filter((word) => providerText.includes(word))
+          .length,
+        limit: entry.limit,
+      },
+    ];
+  });
+  if (!candidates.length) return undefined;
+  candidates.sort(
+    (left, right) =>
+      right.score - left.score ||
+      left.providerID.localeCompare(right.providerID),
+  );
+  const selected = candidates[0]!.limit;
+  return {
+    contextWindow: positiveNumber(selected.context),
+    inputTokenLimit: positiveNumber(selected.input),
+    maxOutputTokens: positiveNumber(selected.output),
+  };
+}
+
+async function loadModelsDevCatalog(fetchImpl: typeof fetch) {
+  if (fetchImpl !== fetch) {
+    const response = await fetchImpl("https://models.dev/api.json", {
+      signal: AbortSignal.timeout(3_000),
+    });
+    if (!response.ok)
+      throw new Error(`Models.dev catalog request failed (${response.status})`);
+    return (await response.json()) as Record<string, ModelsDevProvider>;
+  }
+  const now = Date.now();
+  if (modelsDevCache && modelsDevCache.expiresAt > now)
+    return modelsDevCache.value;
+  if (!modelsDevPending) {
+    modelsDevPending = fetchImpl("https://models.dev/api.json", {
+      signal: AbortSignal.timeout(3_000),
+    })
+      .then(async (response) => {
+        if (!response.ok)
+          throw new Error(
+            `Models.dev catalog request failed (${response.status})`,
+          );
+        return (await response.json()) as Record<string, ModelsDevProvider>;
+      })
+      .then((value) => {
+        modelsDevCache = { expiresAt: Date.now() + 24 * 60 * 60 * 1000, value };
+        return value;
+      })
+      .catch(() => {
+        const value: Record<string, ModelsDevProvider> = {};
+        modelsDevCache = { expiresAt: Date.now() + 5 * 60 * 1000, value };
+        return value;
+      })
+      .finally(() => {
+        modelsDevPending = undefined;
+      });
+  }
+  return await modelsDevPending;
+}
+
+function positiveNumber(value: unknown) {
+  return typeof value === "number" && value > 0 ? value : undefined;
 }
 
 function resolution(

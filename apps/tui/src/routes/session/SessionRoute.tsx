@@ -388,6 +388,7 @@ export function SessionFooter(props: {
   const primaryActivity = () => selectPrimaryActivity(viewState().facts);
   const status = createMemo(() => footerStatus(viewState(), primaryActivity()));
   const [scanPosition, setScanPosition] = createSignal(0);
+  const [turnElapsedMs, setTurnElapsedMs] = createSignal(0);
   const visibleChildren = () => props.children?.slice(0, 3) ?? [];
   const hiddenChildren = () =>
     Math.max(0, (props.children?.length ?? 0) - visibleChildren().length);
@@ -400,6 +401,21 @@ export function SessionFooter(props: {
     const timer = setInterval(
       () => setScanPosition((current) => current + 1),
       140,
+    );
+    onCleanup(() => clearInterval(timer));
+  });
+
+  createEffect(() => {
+    const turnID = viewState().facts.activeTurn;
+    if (!turnID) {
+      setTurnElapsedMs(0);
+      return;
+    }
+    const startedAt = Date.now();
+    setTurnElapsedMs(0);
+    const timer = setInterval(
+      () => setTurnElapsedMs(Date.now() - startedAt),
+      1_000,
     );
     onCleanup(() => clearInterval(timer));
   });
@@ -454,25 +470,40 @@ export function SessionFooter(props: {
             {Object.keys(viewState().facts.sandboxes).length} Sandbox
           </text>
         </Show>
-        <text fg={status().tone === "ready" ? darkTheme.text : darkTheme.muted}>
-          <span
-            style={{
-              fg:
-                status().tone === "ready"
-                  ? darkTheme.success
-                  : status().tone === "error"
-                    ? darkTheme.danger
-                    : darkTheme.warning,
-            }}
+        <box flexDirection="row" gap={1}>
+          <text
+            fg={status().tone === "ready" ? darkTheme.text : darkTheme.muted}
           >
-            {footerIndicator(primaryActivity(), scanPosition())}
-          </span>{" "}
-          {status().label}
-        </text>
-        <text fg={darkTheme.muted}>/status</text>
+            <span
+              style={{
+                fg:
+                  status().tone === "ready"
+                    ? darkTheme.success
+                    : status().tone === "error"
+                      ? darkTheme.danger
+                      : darkTheme.warning,
+              }}
+            >
+              {footerIndicator(primaryActivity(), scanPosition())}
+            </span>{" "}
+            {status().label}
+          </text>
+          <Show when={viewState().facts.activeTurn}>
+            <text fg={darkTheme.muted}>
+              · {formatTurnElapsed(turnElapsedMs())}
+            </text>
+          </Show>
+        </box>
       </box>
     </box>
   );
+}
+
+function formatTurnElapsed(elapsedMs: number) {
+  const elapsedSeconds = Math.floor(elapsedMs / 1_000);
+  const minutes = Math.floor(elapsedSeconds / 60);
+  const seconds = String(elapsedSeconds % 60).padStart(2, "0");
+  return `${minutes}:${seconds} elapsed`;
 }
 
 function footerIndicator(

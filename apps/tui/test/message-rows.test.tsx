@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { For } from "solid-js";
-import { createTestRenderer } from "@opentui/core/testing";
+import { createMockMouse, createTestRenderer } from "@opentui/core/testing";
 import { render } from "@opentui/solid";
 import { KeymapProvider } from "@opentui/keymap/solid";
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
@@ -14,6 +14,10 @@ async function mountBlock(
   block: MessageBlock,
   toolDetails: "collapsed" | "expanded" = "collapsed",
   reasoning: "step" | "hidden" = "step",
+  actions: {
+    onCopy?: (text: string) => void;
+    onFork?: (turnID: string, prompt: string) => void;
+  } = {},
 ) {
   const setup = await createTestRenderer({ width: 120, height: 36 });
   const keymap = createDefaultOpenTuiKeymap(setup.renderer);
@@ -31,8 +35,8 @@ async function mountBlock(
               diffStyle="auto"
               terminalWidth={120}
               toolPreviewLines={10}
-              onCopy={() => {}}
-              onFork={() => {}}
+              onCopy={actions.onCopy ?? (() => {})}
+              onFork={actions.onFork ?? (() => {})}
             />
           </DialogProvider>
         </RouteProvider>
@@ -41,7 +45,11 @@ async function mountBlock(
     setup.renderer,
   );
   await setup.renderOnce();
-  return { setup, disposeKeymap };
+  return {
+    setup,
+    disposeKeymap,
+    mouse: createMockMouse(setup.renderer),
+  };
 }
 
 const userBlock: MessageBlock = {
@@ -98,13 +106,46 @@ const toolBlock = (
     },
   }) as unknown as MessageBlock;
 
-test("a user message uses a terminal-like rail with compact actions", async () => {
-  const mounted = await mountBlock(userBlock);
+test("a user message reveals its actions on click instead of hover", async () => {
+  const copied: string[] = [];
+  const forked: Array<[string, string]> = [];
+  const mounted = await mountBlock(userBlock, "collapsed", "step", {
+    onCopy: (text) => copied.push(text),
+    onFork: (turnID, prompt) => forked.push([turnID, prompt]),
+  });
   try {
-    const frame = mounted.setup.captureCharFrame();
+    let frame = mounted.setup.captureCharFrame();
     expect(frame).toContain("please switch the server to Bun-native HTTP");
     expect(frame).not.toContain("▎You");
     expect(frame).not.toContain("copy");
+
+    await mounted.mouse.moveTo(4, 2);
+    await mounted.setup.renderOnce();
+    expect(mounted.setup.captureCharFrame()).not.toContain("copy");
+
+    await mounted.mouse.click(4, 2);
+    await mounted.setup.renderOnce();
+    frame = mounted.setup.captureCharFrame();
+    expect(frame).toContain("copy");
+    expect(frame).toContain("fork");
+
+    const lines = frame.split("\n");
+    const actionLine = lines.findIndex(
+      (line) => line.includes("copy") && line.includes("fork"),
+    );
+    expect(actionLine).toBeGreaterThanOrEqual(0);
+    await mounted.mouse.click(lines[actionLine]!.indexOf("copy"), actionLine);
+    await mounted.setup.renderOnce();
+    expect(copied).toEqual([userBlock.text]);
+    expect(mounted.setup.captureCharFrame()).toContain("copy");
+
+    await mounted.mouse.click(lines[actionLine]!.indexOf("fork"), actionLine);
+    await mounted.setup.renderOnce();
+    expect(forked).toEqual([[userBlock.id, userBlock.text]]);
+
+    await mounted.mouse.click(4, 2);
+    await mounted.setup.renderOnce();
+    expect(mounted.setup.captureCharFrame()).not.toContain("copy");
   } finally {
     mounted.disposeKeymap();
     mounted.setup.renderer.destroy();

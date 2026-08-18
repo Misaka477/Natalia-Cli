@@ -71,6 +71,7 @@ export async function plainStatus(configPath: string) {
     provider: effective.providerID,
     model: effective.ref.model,
     explicitContextWindow: effective.limits.contextWindow,
+    useModelsDevCatalog: true,
   });
   return {
     mode: process.stdout.isTTY ? "tty" : "plain",

@@ -7478,7 +7478,7 @@ test("subagent executes TS native workspace tools before reporting completion", 
   ]);
 });
 
-test("subagent normalizes raw XML tool calls before executing native tools", async () => {
+test("subagent corrects raw XML and executes a native tool call", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-subagent-raw-xml-"));
   const events: RuntimeEvent[] = [];
   const client = createRealRuntimeClient({
@@ -8020,8 +8020,14 @@ function subagentRawXMLToolProvider(): StreamingProvider {
       const isChild = request.messages.some(
         (message) => message.content === "child raw XML file task",
       );
+      const wasCorrected = request.messages.some((message) =>
+        message.content.includes(
+          "Use the provider's native structured function/tool-calling channel now",
+        ),
+      );
       if (
         isChild &&
+        !wasCorrected &&
         !request.messages.some((message) => message.role === "tool")
       ) {
         yield {
@@ -8035,6 +8041,27 @@ function subagentRawXMLToolProvider(): StreamingProvider {
           ].join(""),
         };
         yield { type: "done" };
+        return;
+      }
+      if (
+        isChild &&
+        wasCorrected &&
+        !request.messages.some((message) => message.role === "tool")
+      ) {
+        yield {
+          type: "tool_call",
+          calls: [
+            {
+              id: "call_corrected_write",
+              name: "write_file",
+              arguments: JSON.stringify({
+                path: "agent-raw-xml.txt",
+                content: "raw XML child success",
+              }),
+            },
+          ],
+        };
+        yield { type: "done", finishReason: "tool_calls" };
         return;
       }
       if (isChild) {

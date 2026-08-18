@@ -223,6 +223,37 @@ test("the footer animates active generation instead of showing a static dot", as
   setup.renderer.destroy();
 });
 
+test("the footer times an active turn and hides the timer when it finishes", async () => {
+  const setup = await createTestRenderer({ width: 100, height: 6 });
+  let dispatch: ((event: RuntimeEvent) => void) | undefined;
+  await render(
+    () => (
+      <StateProvider onReady={(bridge) => (dispatch = bridge.dispatch)}>
+        <SessionFooter workspaceRoot="/work/natalia" />
+      </StateProvider>
+    ),
+    setup.renderer,
+  );
+  if (!dispatch) throw new Error("state provider did not come up");
+
+  dispatch({ type: "turn.started", id: "turn_timed" });
+  await setup.renderOnce();
+  expect(setup.captureCharFrame()).toContain("0:00 elapsed");
+
+  await Bun.sleep(1_050);
+  await setup.renderOnce();
+  expect(setup.captureCharFrame()).toContain("0:01 elapsed");
+
+  dispatch({
+    type: "turn.finished",
+    id: "turn_timed",
+    stopReason: "done",
+  });
+  await setup.renderOnce();
+  expect(setup.captureCharFrame()).not.toContain("elapsed");
+  setup.renderer.destroy();
+});
+
 test("turn completion adds one stable footer with model, duration, and usage", async () => {
   const { setup, send, state } = await mountState();
   const finished: RuntimeEvent = {

@@ -263,17 +263,29 @@ test("tool calls execute through the callback and an empty final answer marks mi
   expect(finished?.reason).toBe("missing_final_response");
 });
 
-test("raw tool protocol emitted as content reaches the normal tool execution path", async () => {
+test("textual tool calls receive persistent native-protocol correction", async () => {
   let streamCalls = 0;
+  const correctionPrompts: Array<string | undefined> = [];
   const { runner, events, executedCalls } = makeHarness({
     provider: "scripted",
     model: "m1",
-    async *stream() {
+    async *stream(request) {
+      correctionPrompts.push(request.messages.at(-1)?.content);
       streamCalls += 1;
-      if (streamCalls === 1) {
+      if (streamCalls <= 2) {
         yield content(
           "Inspecting. <tool_call><function=read_file><parameter=path>&quot;a.txt&quot;</parameter></function></tool_call>",
         );
+        return;
+      }
+      if (streamCalls === 3) {
+        yield toolCall([
+          {
+            id: "call_native",
+            name: "read_file",
+            arguments: '{"path":"a.txt"}',
+          },
+        ]);
         return;
       }
       yield content("Finished.");
@@ -283,7 +295,7 @@ test("raw tool protocol emitted as content reaches the normal tool execution pat
   expect(executedCalls).toEqual([
     {
       call: {
-        id: "raw_xml_tool_0",
+        id: "call_native",
         name: "read_file",
         arguments: '{"path":"a.txt"}',
       },
@@ -296,7 +308,101 @@ test("raw tool protocol emitted as content reaches the normal tool execution pat
           event.type === "content.delta",
       )
       .map((event) => event.text),
-  ).toEqual(["Inspecting. ", "Finished."]);
+  ).toEqual(["Inspecting. ", "Inspecting. ", "Finished."]);
+  expect(
+    events.filter(
+      (event) =>
+        event.type === "diagnostic" &&
+        event.message.includes("native tool calling required"),
+    ),
+  ).toHaveLength(2);
+  const corrections = correctionPrompts.slice(1, 3);
+  expect(corrections).toEqual([
+    expect.stringContaining(
+      "Use the provider's native structured function/tool-calling channel now",
+    ),
+    expect.stringContaining(
+      "submit its arguments through that function call's structured arguments object",
+    ),
+  ]);
+  expect(
+    corrections.every((message) =>
+      message?.includes("Do not print <tool_call> XML"),
+    ),
+  ).toBe(true);
+});
+
+test("textual tool calls in the required final response are corrected", async () => {
+  let streamCalls = 0;
+  const prompts: Array<string | undefined> = [];
+  const { runner, events, executedCalls } = makeHarness({
+    provider: "scripted",
+    model: "m1",
+    async *stream(request) {
+      streamCalls += 1;
+      prompts.push(request.messages.at(-1)?.content);
+      if (streamCalls === 1) {
+        yield toolCall([
+          { id: "call_1", name: "read_file", arguments: '{"path":"a"}' },
+        ]);
+        return;
+      }
+      if (streamCalls <= 3) {
+        yield content(
+          "<function=run_shell><parameter=command>git status</parameter></function>",
+        );
+        return;
+      }
+      yield content("All checks passed.");
+    },
+  });
+
+  await runner.runTurn(turn);
+
+  expect(executedCalls.map((entry) => entry.call.name)).toEqual(["read_file"]);
+  expect(streamCalls).toBe(4);
+  expect(
+    events
+      .filter(
+        (event): event is Extract<RuntimeEvent, { type: "content.delta" }> =>
+          event.type === "content.delta",
+      )
+      .map((event) => event.text),
+  ).toEqual(["All checks passed."]);
+  expect(
+    events.find(
+      (event): event is Extract<RuntimeEvent, { type: "turn.finished" }> =>
+        event.type === "turn.finished",
+    )?.reason,
+  ).toBeUndefined();
+  expect(prompts.at(-1)).toContain(
+    "Use the provider's native structured function/tool-calling channel now",
+  );
+});
+
+test("a hard provider finish reason fails instead of completing ready", async () => {
+  const { runner, events } = makeHarness({
+    provider: "scripted",
+    model: "m1",
+    async *stream() {
+      yield content("partial response");
+      yield { type: "done", finishReason: "length" };
+    },
+  });
+
+  await runner.runTurn(turn);
+  const finished = events.find(
+    (event): event is Extract<RuntimeEvent, { type: "turn.finished" }> =>
+      event.type === "turn.finished",
+  );
+  expect(finished?.stopReason).toBe("error");
+  expect(
+    events.some(
+      (event) =>
+        event.type === "diagnostic" &&
+        event.message.includes("provider stopped before completing"),
+    ),
+  ).toBe(true);
 });
 
 test("aborting the turn mid-stream finishes cancelled with a warning", async () => {

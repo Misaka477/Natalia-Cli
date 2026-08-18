@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { buildProviderRequest, ContextWindowResolver } from "../src";
+import {
+  buildProviderRequest,
+  ContextWindowResolver,
+  modelsDevModelLimits,
+} from "../src";
 
 test("resolver priority is explicit config before provider metadata", async () => {
   const resolver = new ContextWindowResolver();
@@ -15,6 +19,30 @@ test("resolver priority is explicit config before provider metadata", async () =
   expect(result.source).toBe("config");
   expect(result.confidence).toBe("high");
   expect(result.ttlMs).toBeGreaterThan(0);
+});
+
+test("Models.dev resolves context and output limits when provider metadata is absent", async () => {
+  const fetchImpl = Object.assign(
+    async () =>
+      Response.json({
+        "stepfun-step-plan": {
+          name: "StepFun Step Plan",
+          models: {
+            "step-3.7-flash": {
+              limit: { context: 256000, input: 256000, output: 256000 },
+            },
+          },
+        },
+      }),
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  expect(
+    await modelsDevModelLimits("step-plan", "step-3.7-flash", fetchImpl),
+  ).toEqual({
+    contextWindow: 256000,
+    inputTokenLimit: 256000,
+    maxOutputTokens: 256000,
+  });
 });
 
 test("resolver uses provider metadata, detail, catalog, fallback and isolated cache", async () => {

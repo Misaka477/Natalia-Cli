@@ -8,13 +8,15 @@ import {
   compactContext,
   contextEntriesToProviderMessages,
   contextStatusEvent,
-  normalizeRawToolCallProtocol,
+  nativeToolCallCorrection,
   providerCompactor,
   providerError,
+  requireNativeToolCallProtocol,
   runWithRetry,
   type ContextEntry,
   type CreateCheckpointInput,
   type ProviderMessage,
+  type ProviderFinishReason,
   type ProviderToolCall,
   type StreamingProvider,
 } from "@natalia/runtime";
@@ -79,6 +81,7 @@ export function createProviderRunner(input: {
   selectedModel(): { modelID?: string; variant?: string } | undefined;
   modelCapabilities(): ModelCapabilities;
   setActiveModelCapabilities(capabilities: ModelCapabilities | undefined): void;
+  refreshContextConfig?(): Promise<void>;
   permissionMode(): PermissionMode;
   workspaceRoot(): string;
   tsRuntimeConfig(): TsRuntimeConfig | undefined;
@@ -241,12 +244,14 @@ export function createProviderRunner(input: {
       input.setPendingAgent(undefined);
       input.applyAgentPolicy();
       input.applyAgentProvider();
+      await input.refreshContextConfig?.();
       input.publish({
         type: "agent.selection",
         name: input.selectedAgent()?.name,
         pending: false,
       });
     }
+    await input.refreshContextConfig?.();
     // A turn is one provider/policy episode. Later steps must not observe a
     // model or profile selected by another attached session while this one is
     // running in the background.
@@ -369,7 +374,10 @@ export function createProviderRunner(input: {
       let needsFinalResponse = false;
       let finalResponse = "";
       let missingFinalResponse = false;
-      for (let step = 0; step < input.effectiveMaxSteps(); step++) {
+      let step = 0;
+      let protocolCorrections = 0;
+      while (step < input.effectiveMaxSteps()) {
+        input.activeAbort()?.signal.throwIfAborted();
         await input.waitIfPaused();
         const result = await runProviderStepWithRecovery(
           id,
@@ -379,6 +387,24 @@ export function createProviderRunner(input: {
           activeModelCapabilities,
           activePermissionMode,
         );
+        if (result.protocolViolation) {
+          protocolCorrections += 1;
+          messages.push({
+            role: "assistant",
+            content: result.protocolViolation,
+          });
+          messages.push({
+            role: "system",
+            content: nativeToolCallCorrection(protocolCorrections),
+          });
+          input.publish({
+            type: "diagnostic",
+            level: "warning",
+            message: `Correcting textual tool call; native tool calling required (attempt ${protocolCorrections})`,
+          });
+          continue;
+        }
+        step += 1;
         assistant += result.assistant;
         needsFinalResponse = result.toolMessages.length > 0;
         usedTools ||= needsFinalResponse;
@@ -387,24 +413,46 @@ export function createProviderRunner(input: {
         finalResponse = "";
       }
       if (usedTools && !finalResponse.trim()) {
-        const result = await runProviderStepWithRecovery(
-          id,
-          [
-            ...messages,
-            {
+        const finalMessages: ProviderMessage[] = [
+          ...messages,
+          {
+            role: "system",
+            content:
+              "Tool execution is complete. Provide the user with a concise final answer summarizing the outcome. Do not call any tools.",
+          },
+        ];
+        while (true) {
+          input.activeAbort()?.signal.throwIfAborted();
+          const result = await runProviderStepWithRecovery(
+            id,
+            finalMessages,
+            input.effectiveMaxSteps() + 1,
+            activeProvider,
+            activeModelCapabilities,
+            activePermissionMode,
+            false,
+          );
+          if (result.protocolViolation) {
+            protocolCorrections += 1;
+            finalMessages.push({
+              role: "assistant",
+              content: result.protocolViolation,
+            });
+            finalMessages.push({
               role: "system",
-              content:
-                "Tool execution is complete. Provide the user with a concise final answer summarizing the outcome. Do not call any tools.",
-            },
-          ],
-          input.effectiveMaxSteps() + 1,
-          activeProvider,
-          activeModelCapabilities,
-          activePermissionMode,
-          false,
-        );
-        if (!result.assistant.trim()) missingFinalResponse = true;
-        else assistant += result.assistant;
+              content: nativeToolCallCorrection(protocolCorrections),
+            });
+            input.publish({
+              type: "diagnostic",
+              level: "warning",
+              message: `Correcting textual tool call in final response; native tool calling required (attempt ${protocolCorrections})`,
+            });
+            continue;
+          }
+          if (!result.assistant.trim()) missingFinalResponse = true;
+          else assistant += result.assistant;
+          break;
+        }
       }
       if (assistant)
         ledger.add({
@@ -499,6 +547,8 @@ export function createProviderRunner(input: {
           assistant: string;
           thinking: string;
           calls: ProviderToolCall[];
+          finishReason?: ProviderFinishReason;
+          protocolViolation?: string;
           usage?: ProviderUsage;
         } = {
           assistant: "",
@@ -506,7 +556,7 @@ export function createProviderRunner(input: {
           calls: [],
         };
         try {
-          for await (const chunk of normalizeRawToolCallProtocol(
+          for await (const chunk of requireNativeToolCallProtocol(
             activeProvider.stream({
               messages,
               tools:
@@ -535,6 +585,9 @@ export function createProviderRunner(input: {
               });
             }
             if (chunk.type === "tool_call") result.calls.push(...chunk.calls);
+            if (chunk.type === "tool_protocol_violation")
+              result.protocolViolation = chunk.text;
+            if (chunk.type === "done") result.finishReason = chunk.finishReason;
             if (chunk.type === "usage")
               result.usage = {
                 inputTokens: chunk.inputTokens,
@@ -561,6 +614,24 @@ export function createProviderRunner(input: {
     }
     if (output.thinking)
       input.publish({ type: "thinking.done", id, text: output.thinking });
+    if (
+      output.finishReason === "length" ||
+      output.finishReason === "content_filter" ||
+      output.finishReason === "error"
+    )
+      throw new Error(
+        `provider stopped before completing the response (${output.finishReason})`,
+      );
+    if (output.finishReason === "tool_calls" && !output.calls.length)
+      throw new Error(
+        "provider reported tool_calls without a complete native tool call",
+      );
+    if (output.protocolViolation)
+      return {
+        assistant: "",
+        toolMessages,
+        protocolViolation: output.protocolViolation,
+      };
     if (output.assistant)
       input.publish({ type: "content.done", id, text: output.assistant });
     if (!allowToolCalls && output.calls.length)

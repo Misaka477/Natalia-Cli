@@ -54,13 +54,17 @@ import type {
 } from "@natalia/contracts";
 import {
   ContextLedger,
+  ContextWindowResolver,
   contextEntriesToProviderMessages,
   contextStatusEvent,
-  normalizeRawToolCallProtocol,
+  nativeToolCallCorrection,
   ProviderConcurrencyLimiter,
   providerCompactor,
   providerForModel,
   recoverContextLimitOnce,
+  requireNativeToolCallProtocol,
+  resolveReservedOutputTokens,
+  modelsDevModelLimits,
   type ProviderMessage,
   type ProviderToolCall,
   providerFromEnvironment,
@@ -688,6 +692,7 @@ export function createRealRuntimeClient(
     >;
     toolCalls: Map<string, number>;
     provider?: StreamingProvider;
+    runtimeContextConfig: ReturnType<typeof defaultContextStatusConfig>;
     activeModelCapabilities?: ModelCapabilities;
     permissionMode: "ask" | "auto" | "read_only";
     permissionProfile?: PermissionProfile;
@@ -781,7 +786,8 @@ export function createRealRuntimeClient(
   let tsRuntimeConfig:
     | Awaited<ReturnType<typeof resolveConfig>>["config"]
     | undefined;
-  let runtimeContextConfig = contextStatusConfig();
+  const contextWindowResolver = new ContextWindowResolver();
+  let runtimeContextConfig = defaultContextStatusConfig();
   let retryPolicy: NonNullable<Parameters<typeof runWithRetry>[2]>["policy"];
   /** The out-of-tree family watcher (HMR's hot half); closed at dispose. */
   let toolFamilyWatcher: (() => Promise<void>) | undefined;
@@ -971,7 +977,6 @@ export function createRealRuntimeClient(
         globalPath: options.globalConfigPath,
       });
       tsRuntimeConfig = tsConfig.config;
-      runtimeContextConfig = contextStatusConfig(tsConfig.config);
       maxSteps = tsConfig.config.runtime.maxStepsPerTurn;
       // The config service is refreshed in place, so consumers of the service
       // are notified of the reload.
@@ -1000,9 +1005,25 @@ export function createRealRuntimeClient(
           providerSource = "ts_config";
           for (const exec of executionBySession.values())
             applyAgentProvider(exec);
+          runtimeContextConfig = await resolveContextStatusConfig(
+            tsConfig.config,
+            provider,
+            contextWindowResolver,
+            modelRefKeyForSelection(selectedAgent, selectedModel),
+          );
+          for (const exec of executionBySession.values())
+            await refreshExecutionContextConfig(exec);
           return { read: true, providerReconfigured: true };
         }
       }
+      runtimeContextConfig = await resolveContextStatusConfig(
+        tsConfig.config,
+        provider,
+        contextWindowResolver,
+        modelRefKeyForSelection(selectedAgent, selectedModel),
+      );
+      for (const exec of executionBySession.values())
+        await refreshExecutionContextConfig(exec);
       return { read: true, providerReconfigured: false };
     } catch {
       /* config file not readable yet */
@@ -1017,7 +1038,6 @@ export function createRealRuntimeClient(
         globalPath: options.globalConfigPath,
       });
       tsRuntimeConfig = tsConfig.config;
-      runtimeContextConfig = contextStatusConfig(tsConfig.config);
       retryPolicy = {
         maxAttemptsPerStep: tsConfig.config.runtime.retry.maxAttemptsPerStep,
         initialBackoffMs: tsConfig.config.runtime.retry.initialBackoffMs,
@@ -1095,6 +1115,12 @@ export function createRealRuntimeClient(
           });
         }
       }
+      runtimeContextConfig = await resolveContextStatusConfig(
+        tsConfig.config,
+        provider,
+        contextWindowResolver,
+        modelRefKeyForSelection(selectedAgent, selectedModel),
+      );
       applyAgentPolicy();
     } catch (error) {
       publish({
@@ -1233,7 +1259,8 @@ export function createRealRuntimeClient(
             let output = "";
             let thinking = "";
             const calls: ProviderToolCall[] = [];
-            for await (const chunk of normalizeRawToolCallProtocol(
+            let protocolViolation = "";
+            for await (const chunk of requireNativeToolCallProtocol(
               withProviderConcurrency(
                 providerConcurrencyLimiter,
                 activeProvider.provider,
@@ -1271,8 +1298,10 @@ export function createRealRuntimeClient(
                 });
               }
               if (chunk.type === "tool_call") calls.push(...chunk.calls);
+              if (chunk.type === "tool_protocol_violation")
+                protocolViolation = chunk.text;
             }
-            return { output, thinking, calls };
+            return { output, thinking, calls, protocolViolation };
           },
           {
             policy: retryPolicy,
@@ -1286,23 +1315,44 @@ export function createRealRuntimeClient(
             },
           },
         );
-      const result = await recoverContextLimitOnce({
-        id,
-        step,
-        ledger,
-        compactor: providerCompactor(activeProvider, runner.signal),
-        compact: {
-          id: `${id}:context-limit:${step}`,
-          maxTokens: runtimeContextConfig.max,
-          thresholdPercent: runtimeContextConfig.thresholdPercent,
-          reservedTokens: runtimeContextConfig.reserved,
-          preservedRecentMessages: 8,
-          instruction: "Recover this subagent from the provider context limit.",
-          retry: { policy: retryPolicy, signal: runner.signal },
-        },
-        runStep,
-        onEvent: (event) => publishSubagentEvent(runner, event),
-      });
+      let correction = 0;
+      let result;
+      while (true) {
+        runner.signal.throwIfAborted();
+        result = await recoverContextLimitOnce({
+          id,
+          step,
+          ledger,
+          compactor: providerCompactor(activeProvider, runner.signal),
+          compact: {
+            id: `${id}:context-limit:${step}`,
+            maxTokens: runtimeContextConfig.max,
+            thresholdPercent: runtimeContextConfig.thresholdPercent,
+            reservedTokens: runtimeContextConfig.reserved,
+            preservedRecentMessages: 8,
+            instruction:
+              "Recover this subagent from the provider context limit.",
+            retry: { policy: retryPolicy, signal: runner.signal },
+          },
+          runStep,
+          onEvent: (event) => publishSubagentEvent(runner, event),
+        });
+        if (!result.protocolViolation) break;
+        correction += 1;
+        ledger.add({
+          id: `${runner.agentId}:${step}:protocol:${correction}:assistant`,
+          role: "assistant",
+          content: result.protocolViolation,
+        });
+        ledger.add({
+          id: `${runner.agentId}:${step}:protocol:${correction}:system`,
+          role: "system",
+          content: nativeToolCallCorrection(correction),
+        });
+        runner.log(
+          `correcting textual tool call; native tool calling required (attempt ${correction})`,
+        );
+      }
       if (result.thinking)
         publishSubagentEvent(runner, {
           type: "thinking.done",
@@ -1863,18 +1913,20 @@ export function createRealRuntimeClient(
     }
     // D2: the startup session is the first exec; the activity view (the
     // `session`/`runtimeContext` closures) aliases it until an attach switches.
-    activeExec = {
+    const initialExec: SessionExecutionState = {
       session,
       context: runtimeContext,
       attachmentReferences,
       toolCalls,
       provider,
+      runtimeContextConfig,
       permissionMode,
       permissionProfile: selectedPermissionProfile,
       paused: false,
       pauseWaiters: [],
     };
-    executionBySession.set(sessionID, activeExec);
+    activeExec = initialExec;
+    executionBySession.set(sessionID, initialExec);
     let sqliteRecovery:
       | ReturnType<
           NonNullable<
@@ -2667,6 +2719,17 @@ export function createRealRuntimeClient(
     if (!exec || exec === activeExec) provider = next;
   }
 
+  async function refreshExecutionContextConfig(exec: SessionExecutionState) {
+    if (!tsRuntimeConfig) return;
+    exec.runtimeContextConfig = await resolveContextStatusConfig(
+      tsRuntimeConfig,
+      exec.provider,
+      contextWindowResolver,
+      modelRefKeyForSelection(exec.selectedAgent, exec.selectedModel),
+    );
+    if (exec === activeExec) runtimeContextConfig = exec.runtimeContextConfig;
+  }
+
   /** The canonical `provider/model` key of the effective model selection. */
   function modelRefKeyForSelection(
     agent: AgentDefinition | undefined,
@@ -2740,6 +2803,7 @@ export function createRealRuntimeClient(
     if (exec) exec.selectedModel = nextSelection;
     if (exec === activeExec) selectedModel = nextSelection;
     applyAgentProvider(exec);
+    if (exec) await refreshExecutionContextConfig(exec);
     publishForSession(exec, {
       type: "model.selection",
       modelID: ref ? modelRefKey(ref) : undefined,
@@ -3668,10 +3732,11 @@ export function createRealRuntimeClient(
       setActiveModelCapabilities: (capabilities) => {
         exec.activeModelCapabilities = capabilities;
       },
+      refreshContextConfig: () => refreshExecutionContextConfig(exec),
       permissionMode: () => exec.permissionMode,
       workspaceRoot: () => workspaceRoot,
       tsRuntimeConfig: () => tsRuntimeConfig,
-      runtimeContextConfig: () => runtimeContextConfig,
+      runtimeContextConfig: () => exec.runtimeContextConfig,
       activeSkill: () => exec.activeSkill,
       skillsList: () => skillsController.list(),
       mailboxMessages: () =>
@@ -3925,6 +3990,7 @@ export function createRealRuntimeClient(
       provider:
         options.provider ??
         (providerSource === "environment" ? provider : undefined),
+      runtimeContextConfig,
       permissionMode: defaultPermissionMode,
       permissionProfile: defaultPermissionProfile,
       selectedAgent: projection.selectedAgent
@@ -3936,6 +4002,7 @@ export function createRealRuntimeClient(
     };
     executionBySession.set(sessionID, exec);
     applyAgentProvider(exec);
+    await refreshExecutionContextConfig(exec);
     return exec;
   }
 
@@ -4010,7 +4077,7 @@ export function createRealRuntimeClient(
     });
     publishForSession(
       exec,
-      contextStatusEvent(exec.context.status(runtimeContextConfig)),
+      contextStatusEvent(exec.context.status(exec.runtimeContextConfig)),
     );
     publishForSession(
       exec,
@@ -4846,9 +4913,13 @@ export function createRealRuntimeClient(
       let output = "";
       let thinking = "";
       let usedTools = false;
-      for (let step = 1; step <= effectiveMaxSteps(input.exec); step++) {
+      let step = 1;
+      let protocolCorrections = 0;
+      while (step <= effectiveMaxSteps(input.exec)) {
+        signal.throwIfAborted();
         const calls: ProviderToolCall[] = [];
-        for await (const chunk of normalizeRawToolCallProtocol(
+        let protocolViolation = "";
+        for await (const chunk of requireNativeToolCallProtocol(
           withProviderConcurrency(
             providerConcurrencyLimiter,
             activeProvider.provider,
@@ -4883,7 +4954,24 @@ export function createRealRuntimeClient(
             });
           }
           if (chunk.type === "tool_call") calls.push(...chunk.calls);
+          if (chunk.type === "tool_protocol_violation")
+            protocolViolation = chunk.text;
         }
+        if (protocolViolation) {
+          protocolCorrections += 1;
+          messages.push({ role: "assistant", content: protocolViolation });
+          messages.push({
+            role: "system",
+            content: nativeToolCallCorrection(protocolCorrections),
+          });
+          publishForSession(input.exec, {
+            type: "diagnostic",
+            level: "warning",
+            message: `Correcting textual chat tool call; native tool calling required (attempt ${protocolCorrections})`,
+          });
+          continue;
+        }
+        step += 1;
         if (!calls.length) break;
         usedTools = true;
         messages.push({ role: "assistant", content: output, toolCalls: calls });
@@ -4959,38 +5047,64 @@ export function createRealRuntimeClient(
       // no text came out of the tool loop, run one final provider step without
       // tools (the main agent's needsFinalResponse behaviour).
       if (usedTools && !output.trim()) {
-        for await (const chunk of normalizeRawToolCallProtocol(
-          withProviderConcurrency(
-            providerConcurrencyLimiter,
-            activeProvider.provider,
-            () =>
-              activeProvider.stream({
-                messages: [
-                  ...messages,
-                  {
-                    role: "system",
-                    content:
-                      "Tool execution is complete. Provide the user with a concise final answer summarizing the outcome. Do not call any tools.",
-                  },
-                ],
-                tools: undefined,
-                signal,
-              }),
-          ),
-        )) {
-          if (chunk.type === "tool_call")
-            throw new Error(
-              "model emitted tool calls while producing the required final chat response",
-            );
-          if (chunk.type === "content") {
-            output += chunk.text;
+        const finalMessages: ProviderMessage[] = [
+          ...messages,
+          {
+            role: "system",
+            content:
+              "Tool execution is complete. Provide the user with a concise final answer summarizing the outcome. Do not call any tools.",
+          },
+        ];
+        while (true) {
+          signal.throwIfAborted();
+          let protocolViolation = "";
+          let finalOutput = "";
+          for await (const chunk of requireNativeToolCallProtocol(
+            withProviderConcurrency(
+              providerConcurrencyLimiter,
+              activeProvider.provider,
+              () =>
+                activeProvider.stream({
+                  messages: finalMessages,
+                  tools: undefined,
+                  signal,
+                }),
+            ),
+          )) {
+            if (chunk.type === "tool_call")
+              throw new Error(
+                "model emitted tool calls while producing the required final chat response",
+              );
+            if (chunk.type === "content") finalOutput += chunk.text;
+            if (chunk.type === "tool_protocol_violation")
+              protocolViolation = chunk.text;
+          }
+          if (protocolViolation) {
+            protocolCorrections += 1;
+            finalMessages.push({
+              role: "assistant",
+              content: protocolViolation,
+            });
+            finalMessages.push({
+              role: "system",
+              content: nativeToolCallCorrection(protocolCorrections),
+            });
+            publishForSession(input.exec, {
+              type: "diagnostic",
+              level: "warning",
+              message: `Correcting textual chat tool call in final response; native tool calling required (attempt ${protocolCorrections})`,
+            });
+            continue;
+          }
+          output += finalOutput;
+          if (finalOutput)
             publishForSession(input.exec, {
               type: "chat.message.delta",
               id: `${input.responseMessageID}:delta:${chatSequence++}`,
               messageID: input.responseMessageID,
-              text: output,
+              text: finalOutput,
             });
-          }
+          break;
         }
       }
       publishForSession(input.exec, {
@@ -8336,24 +8450,83 @@ export function createRealRuntimeClient(
   }
 }
 
-function contextStatusConfig(config?: ConfigV3) {
-  const ref = config?.defaultModel;
-  const effective = ref ? resolveEffectiveModel(config, ref) : undefined;
-  const contextWindow = effective?.limits.contextWindow;
+function defaultContextStatusConfig() {
   return {
-    max:
-      contextWindow === "auto" || contextWindow === undefined
-        ? Number(process.env.NATALIA_CONTEXT_WINDOW ?? 200000)
-        : contextWindow,
-    thresholdPercent:
-      config?.context.compactionThresholdPercent ??
-      Number(process.env.NATALIA_CONTEXT_THRESHOLD ?? 85),
-    reserved:
-      config?.context.reservedOutputTokens === "auto" ||
-      config?.context.reservedOutputTokens === undefined
-        ? Number(process.env.NATALIA_CONTEXT_RESERVED ?? 8192)
-        : config.context.reservedOutputTokens,
+    max: Math.max(32_000, Number(process.env.NATALIA_CONTEXT_WINDOW ?? 32_000)),
+    thresholdPercent: Number(process.env.NATALIA_CONTEXT_THRESHOLD ?? 85),
+    reserved: Math.max(
+      32_000,
+      Number(process.env.NATALIA_CONTEXT_RESERVED ?? 32_000),
+    ),
   };
+}
+
+async function resolveContextStatusConfig(
+  config: ConfigV3,
+  provider: StreamingProvider | undefined,
+  resolver: ContextWindowResolver,
+  selectedRef?: string,
+) {
+  if (!selectedRef && !config.defaultModel) return defaultContextStatusConfig();
+  const effective = resolveEffectiveModel(
+    config,
+    selectedRef ?? config.defaultModel!,
+  );
+  if (!effective) return defaultContextStatusConfig();
+  const providerConfig = config.providers[effective.providerID];
+  const contextWindow = await resolver.resolve({
+    provider: effective.providerID,
+    model: effective.ref.model,
+    baseURL: providerConfig?.connection?.baseURL,
+    apiKey: providerConfig?.connection?.apiKey,
+    explicitContextWindow: effective.limits.contextWindow,
+    providerAdapter:
+      provider?.model === effective.ref.model &&
+      shouldProbeProviderMetadata(providerConfig?.connection?.baseURL)
+        ? provider
+        : undefined,
+    useModelsDevCatalog: true,
+  });
+  const catalog = await modelsDevModelLimits(
+    effective.providerID,
+    effective.ref.model,
+  );
+  const providerMetadata =
+    catalog || !shouldProbeProviderMetadata(providerConfig?.connection?.baseURL)
+      ? undefined
+      : await provider?.listModels?.().catch(() => undefined);
+  const discoveredOutput = providerMetadata?.find(
+    (model) => model.id === effective.ref.model,
+  )?.maxOutputTokens;
+  const reserved = resolveReservedOutputTokens({
+    configuredReserved: config.context.reservedOutputTokens,
+    explicitMaxOutputTokens: effective.limits.maxOutputTokens,
+    providerOutputLimit: discoveredOutput,
+    catalogOutputLimit: catalog?.maxOutputTokens,
+    contextWindow: contextWindow.tokens,
+  });
+  return {
+    max: contextWindow.tokens,
+    thresholdPercent: config.context.compactionThresholdPercent,
+    reserved: Math.min(
+      contextWindow.tokens,
+      reserved.source === "config"
+        ? reserved.tokens
+        : Math.min(50_000, reserved.tokens),
+    ),
+  };
+}
+
+function shouldProbeProviderMetadata(baseURL?: string) {
+  if (!baseURL) return true;
+  try {
+    const hostname = new URL(baseURL).hostname;
+    return (
+      hostname !== "localhost" && hostname !== "127.0.0.1" && hostname !== "::1"
+    );
+  } catch {
+    return false;
+  }
 }
 
 function redactToolOutput(output: string, redact: boolean | undefined) {

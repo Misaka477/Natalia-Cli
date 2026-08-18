@@ -261,18 +261,18 @@ export function resolveReservedOutputTokens(
       diagnostic: "explicit context.reservedOutputTokens",
     };
   }
-  if (input.providerOutputLimit && input.providerOutputLimit > 0) {
-    return {
-      tokens: input.providerOutputLimit,
-      source: "provider_metadata",
-      diagnostic: "provider output metadata",
-    };
-  }
   if (input.explicitMaxOutputTokens && input.explicitMaxOutputTokens > 0) {
     return {
       tokens: input.explicitMaxOutputTokens,
       source: "explicit_output",
       diagnostic: "explicit model.maxOutputTokens",
+    };
+  }
+  if (input.providerOutputLimit && input.providerOutputLimit > 0) {
+    return {
+      tokens: input.providerOutputLimit,
+      source: "provider_metadata",
+      diagnostic: "provider output metadata",
     };
   }
   if (input.catalogOutputLimit && input.catalogOutputLimit > 0) {
@@ -284,12 +284,12 @@ export function resolveReservedOutputTokens(
   }
   const tokens = Math.min(
     50_000,
-    Math.max(8192, Math.floor(input.contextWindow * 0.25)),
+    Math.max(32_000, Math.floor(input.contextWindow * 0.25)),
   );
   return {
     tokens,
     source: "fallback_formula",
-    diagnostic: "conservative formula min(50000,max(8192,context*0.25))",
+    diagnostic: "conservative formula min(50000,max(32000,context*0.25))",
   };
 }
 

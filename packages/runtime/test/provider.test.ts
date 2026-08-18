@@ -8,6 +8,7 @@ import {
   providerFromKind,
   providerForModel,
   readWithIdleTimeout,
+  requireNativeToolCallProtocol,
 } from "../src/provider";
 import type { ProviderStreamChunk } from "../src/provider";
 import { defaultConfigV3 } from "@natalia/config";
@@ -168,6 +169,76 @@ test("a partial raw marker is flushed before a native event", async () => {
   ]);
 });
 
+test("native protocol guard reports textual calls without executing them", async () => {
+  async function* source() {
+    yield { type: "content" as const, text: "Inspecting. <tool_" };
+    yield {
+      type: "content" as const,
+      text: "call><function=read_file><parameter=path>a.txt</parameter></function></tool_call>",
+    };
+    yield { type: "done" as const, finishReason: "stop" as const };
+  }
+  const chunks: ProviderStreamChunk[] = [];
+  for await (const chunk of requireNativeToolCallProtocol(source()))
+    chunks.push(chunk);
+  expect(chunks).toEqual([
+    { type: "content", text: "Inspecting. " },
+    {
+      type: "tool_protocol_violation",
+      text: "<tool_call><function=read_file><parameter=path>a.txt</parameter></function></tool_call>",
+    },
+    { type: "done", finishReason: "stop" },
+  ]);
+  expect(chunks.some((chunk) => chunk.type === "tool_call")).toBe(false);
+});
+
+test("native protocol guard rejects bare function markup split across chunks", async () => {
+  async function* source() {
+    yield { type: "content" as const, text: "Inspecting. <func" };
+    yield {
+      type: "content" as const,
+      text: "tion=run_shell><parameter=command>git status</parameter></function>",
+    };
+    yield { type: "done" as const, finishReason: "stop" as const };
+  }
+  const chunks: ProviderStreamChunk[] = [];
+  for await (const chunk of requireNativeToolCallProtocol(source()))
+    chunks.push(chunk);
+  expect(chunks).toEqual([
+    { type: "content", text: "Inspecting. " },
+    {
+      type: "tool_protocol_violation",
+      text: "<function=run_shell><parameter=command>git status</parameter></function>",
+    },
+    { type: "done", finishReason: "stop" },
+  ]);
+  expect(chunks.some((chunk) => chunk.type === "tool_call")).toBe(false);
+});
+
+test("native protocol guard preserves structured provider calls", async () => {
+  async function* source() {
+    yield {
+      type: "tool_call" as const,
+      calls: [
+        { id: "native_1", name: "read_file", arguments: '{"path":"a.txt"}' },
+      ],
+    };
+    yield { type: "done" as const, finishReason: "tool_calls" as const };
+  }
+  const chunks: ProviderStreamChunk[] = [];
+  for await (const chunk of requireNativeToolCallProtocol(source()))
+    chunks.push(chunk);
+  expect(chunks).toEqual([
+    {
+      type: "tool_call",
+      calls: [
+        { id: "native_1", name: "read_file", arguments: '{"path":"a.txt"}' },
+      ],
+    },
+    { type: "done", finishReason: "tool_calls" },
+  ]);
+});
+
 test("OpenAI-compatible provider accepts both base and complete chat endpoint URLs", async () => {
   const requested: string[] = [];
   const fetchImpl = Object.assign(
@@ -244,9 +315,22 @@ test("configured provider resolution preserves the adapter provider identity", (
 
 test("Anthropic-compatible provider names use the Messages API adapter", async () => {
   const requested: string[] = [];
+  const bodies: Array<Record<string, unknown>> = [];
   const fetchImpl = Object.assign(
-    async (input: URL | RequestInfo) => {
-      requested.push(String(input));
+    async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      requested.push(url);
+      if (url.endsWith("/models"))
+        return Response.json({
+          data: [
+            {
+              id: "claude-compatible-model",
+              max_input_tokens: 200000,
+              max_tokens: 32000,
+            },
+          ],
+        });
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
       return new Response("event: message_stop\ndata: {}\n\n", {
         headers: { "content-type": "text/event-stream" },
       });
@@ -270,9 +354,12 @@ test("Anthropic-compatible provider names use the Messages API adapter", async (
     }
   }
   expect(requested).toEqual([
+    "https://gateway.example/v1/models",
     "https://gateway.example/v1/messages",
+    "https://gateway.example/v1/models",
     "https://gateway.example/v1/messages",
   ]);
+  expect(bodies.map((body) => body.max_tokens)).toEqual([32000, 32000]);
 });
 
 test("OpenAI-compatible provider preserves content and usage from the same SSE frame", async () => {
@@ -434,7 +521,7 @@ test("OpenAI-compatible provider waits for a later function name fragment", asyn
         },
       ],
     },
-    { type: "done" },
+    { type: "done", finishReason: "tool_calls" },
   ]);
 });
 
