@@ -4852,6 +4852,14 @@ export function createRealRuntimeClient(
       throw new Error("provider unavailable for live work chat");
     if (input.exec.chatAbort)
       throw new Error("live work chat is already busy for this session");
+    const startedAt = Date.now();
+    publishForSession(input.exec, {
+      type: "chat.turn.started",
+      id: `${input.responseMessageID}:started`,
+      messageID: input.responseMessageID,
+      startedAt,
+      ...(input.internal ? { internal: true } : {}),
+    });
     const chatAbort = new AbortController();
     input.exec.chatAbort = chatAbort;
     const task = (async () => {
@@ -4861,6 +4869,29 @@ export function createRealRuntimeClient(
     chatTasks.add(task);
     try {
       await task;
+      const endedAt = Date.now();
+      publishForSession(input.exec, {
+        type: "chat.turn.finished",
+        id: `${input.responseMessageID}:finished`,
+        messageID: input.responseMessageID,
+        stopReason: "done",
+        startedAt,
+        endedAt,
+      });
+    } catch (cause) {
+      const endedAt = Date.now();
+      publishForSession(input.exec, {
+        type: "chat.turn.finished",
+        id: `${input.responseMessageID}:finished`,
+        messageID: input.responseMessageID,
+        stopReason: chatAbort.signal.aborted ? "cancelled" : "error",
+        startedAt,
+        endedAt,
+        ...(!chatAbort.signal.aborted
+          ? { error: cause instanceof Error ? cause.message : String(cause) }
+          : {}),
+      });
+      throw cause;
     } finally {
       chatTasks.delete(task);
       if (input.exec.chatTask === task) input.exec.chatTask = undefined;
@@ -4915,6 +4946,19 @@ export function createRealRuntimeClient(
       let usedTools = false;
       let step = 1;
       let protocolCorrections = 0;
+      let phase: Extract<RuntimeEvent, { type: "chat.turn.phase" }>["phase"] =
+        "waiting";
+      const setPhase = (next: typeof phase, toolName?: string) => {
+        if (phase === next && next !== "using_tool") return;
+        phase = next;
+        publishForSession(input.exec, {
+          type: "chat.turn.phase",
+          id: `${input.responseMessageID}:phase:${chatSequence++}`,
+          messageID: input.responseMessageID,
+          phase: next,
+          ...(toolName ? { toolName } : {}),
+        });
+      };
       while (step <= effectiveMaxSteps(input.exec)) {
         signal.throwIfAborted();
         const calls: ProviderToolCall[] = [];
@@ -4932,6 +4976,7 @@ export function createRealRuntimeClient(
           ),
         )) {
           if (chunk.type === "thinking") {
+            setPhase("thinking");
             thinking += chunk.text;
             publishForSession(input.exec, {
               type: "chat.thinking.delta",
@@ -4945,6 +4990,7 @@ export function createRealRuntimeClient(
             continue;
           }
           if (chunk.type === "content") {
+            setPhase("generating");
             output += chunk.text;
             publishForSession(input.exec, {
               type: "chat.message.delta",
@@ -4958,6 +5004,7 @@ export function createRealRuntimeClient(
             protocolViolation = chunk.text;
         }
         if (protocolViolation) {
+          setPhase("waiting");
           protocolCorrections += 1;
           messages.push({ role: "assistant", content: protocolViolation });
           messages.push({
@@ -5016,6 +5063,7 @@ export function createRealRuntimeClient(
             continue;
           }
           let result: string;
+          setPhase("using_tool", tool.name);
           try {
             result = await tool.execute(parsed, {
               workspaceRoot,
@@ -5040,6 +5088,7 @@ export function createRealRuntimeClient(
             argumentsRaw: call.arguments,
             at: new Date().toISOString(),
           });
+          setPhase("waiting");
           messages.push({ role: "tool", content: result, toolCallID: call.id });
         }
       }
@@ -5047,6 +5096,7 @@ export function createRealRuntimeClient(
       // no text came out of the tool loop, run one final provider step without
       // tools (the main agent's needsFinalResponse behaviour).
       if (usedTools && !output.trim()) {
+        setPhase("waiting");
         const finalMessages: ProviderMessage[] = [
           ...messages,
           {
@@ -5097,13 +5147,15 @@ export function createRealRuntimeClient(
             continue;
           }
           output += finalOutput;
-          if (finalOutput)
+          if (finalOutput) {
+            setPhase("generating");
             publishForSession(input.exec, {
               type: "chat.message.delta",
               id: `${input.responseMessageID}:delta:${chatSequence++}`,
               messageID: input.responseMessageID,
               text: finalOutput,
             });
+          }
           break;
         }
       }

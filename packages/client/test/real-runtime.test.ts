@@ -10772,7 +10772,8 @@ test("chat submit runs a live work chat turn and persists the conversation", asy
       },
     },
   });
-  client.start(() => undefined);
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
   const outcome = await client.chatSubmit!({
     text: "what is the agent doing",
   });
@@ -10785,6 +10786,24 @@ test("chat submit runs a live work chat turn and persists the conversation", asy
   });
   expect(history[1]).toMatchObject({ role: "chat" });
   expect(history[1].text).toContain("running step 2");
+  expect(events.filter((event) => event.type.startsWith("chat.turn."))).toEqual(
+    [
+      expect.objectContaining({
+        type: "chat.turn.started",
+        messageID: outcome.messageID,
+      }),
+      expect.objectContaining({
+        type: "chat.turn.phase",
+        messageID: outcome.messageID,
+        phase: "generating",
+      }),
+      expect.objectContaining({
+        type: "chat.turn.finished",
+        messageID: outcome.messageID,
+        stopReason: "done",
+      }),
+    ],
+  );
   await client.dispose?.();
 });
 
@@ -10833,6 +10852,13 @@ test("chat tool calls surface as conversation actions", async () => {
   expect(actions[0]).toMatchObject({ toolName: "mailbox_send" });
   expect((actions[0] as { summary: string }).summary).toContain(
     "queued mailbox intent: constraint",
+  );
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "chat.turn.phase",
+      phase: "using_tool",
+      toolName: "mailbox_send",
+    }),
   );
   await client.dispose?.();
 });

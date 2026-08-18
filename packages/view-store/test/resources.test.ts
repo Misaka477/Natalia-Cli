@@ -498,6 +498,44 @@ test("streamed tool arguments are reassembled before being parsed", () => {
   expect(tool?.argumentsRaw).toBe(args);
 });
 
+test("todos only change after a successful write and can be cleared", () => {
+  const state = projectEvents([
+    {
+      type: "tool.update",
+      id: "t1",
+      name: "todo_write",
+      callID: "c1",
+      status: "succeeded",
+      summary: "saved",
+      argumentsDelta: JSON.stringify({
+        items: [{ content: "old", status: "completed" }],
+      }),
+    },
+    {
+      type: "tool.update",
+      id: "t1",
+      name: "todo_write",
+      callID: "c2",
+      status: "rejected",
+      summary: "rejected",
+      argumentsDelta: JSON.stringify({
+        items: [{ content: "not written", status: "pending" }],
+      }),
+    },
+  ]);
+  expect(state.todos).toEqual([{ content: "old", status: "completed" }]);
+  applyEvent(state, {
+    type: "tool.update",
+    id: "t1",
+    name: "todo_write",
+    callID: "c3",
+    status: "succeeded",
+    summary: "cleared",
+    argumentsDelta: JSON.stringify({ items: [] }),
+  });
+  expect(state.todos).toEqual([]);
+});
+
 test("session intelligence snapshot projects", () => {
   const state = projectEvents([
     {

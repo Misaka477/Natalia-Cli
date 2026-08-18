@@ -153,6 +153,14 @@ export type ActivityView = {
   detail?: string;
 };
 
+export type ChatActivityView = {
+  messageID: string;
+  phase: "waiting" | "thinking" | "generating" | "using_tool";
+  startedAt: number;
+  toolName?: string;
+  error?: string;
+};
+
 /** An advisory line a UI shows while something transient is happening. */
 export type Banner = { text: string; kind: string };
 
@@ -194,6 +202,7 @@ export type AppState = {
   chatMessages: MessageBlock[];
   chatStreams: Record<string, StreamState>;
   chatStreamPhases: Record<string, "thinking" | "assistant">;
+  chatActivity?: ChatActivityView;
 
   // resources
   terminals: Record<string, TerminalView>;

@@ -1055,3 +1055,38 @@ test("chat tool calls render in event order with post-tool text below the card",
   );
   expect(displayText(post!)).toBe(" the main agent is idle.");
 });
+
+test("chat activity follows its own lifecycle without replacing main activity", () => {
+  const state = projectEvents([
+    submitted("t1", "main work"),
+    { type: "turn.started", id: "t1" },
+    {
+      type: "chat.turn.started",
+      id: "chat:m1:started",
+      messageID: "chat:m1",
+      startedAt: 100,
+    },
+    {
+      type: "chat.turn.phase",
+      id: "chat:m1:thinking",
+      messageID: "chat:m1",
+      phase: "thinking",
+    },
+  ]);
+  expect(state.chatActivity).toEqual({
+    messageID: "chat:m1",
+    phase: "thinking",
+    startedAt: 100,
+    toolName: undefined,
+  });
+  expect(selectPrimaryActivity(state)?.turnID).toBe("t1");
+  applyEvent(state, {
+    type: "chat.turn.finished",
+    id: "chat:m1:finished",
+    messageID: "chat:m1",
+    stopReason: "done",
+    startedAt: 100,
+    endedAt: 200,
+  });
+  expect(state.chatActivity).toBeUndefined();
+});

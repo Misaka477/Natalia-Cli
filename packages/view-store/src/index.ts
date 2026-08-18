@@ -63,6 +63,7 @@ export {
   upsertBlock,
   type AppState,
   type Banner,
+  type ChatActivityView,
   type CapabilityView,
   type CheckpointView,
   type ContextView,

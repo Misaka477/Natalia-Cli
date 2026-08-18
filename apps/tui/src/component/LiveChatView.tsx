@@ -8,12 +8,26 @@ import {
 } from "@opentui/core";
 import { useRenderer } from "@opentui/solid";
 import { useBindings } from "@opentui/keymap/solid";
-import { For, Show, createEffect, createSignal, onMount } from "solid-js";
+import {
+  For,
+  Show,
+  createEffect,
+  createSignal,
+  onCleanup,
+  onMount,
+} from "solid-js";
 import type { RuntimeClient } from "@natalia/contracts";
-import { darkTheme } from "../theme/theme";
+import type { ChatActivityView } from "@natalia/view-store";
+import { themeTokens as theme } from "../theme/theme";
 import { MessageBlockView } from "../routes/session/message-rows";
 import type { MessageBlock } from "../context/state";
-import { PROMPT_BOTTOM_BORDER, PROMPT_FRAME_BORDER } from "../prompt-border";
+import {
+  PROMPT_BOTTOM_BORDER,
+  PROMPT_FRAME_BORDER,
+  promptTextareaRows,
+} from "../prompt-border";
+import type { TuiPreferences } from "../settings";
+import { markdownSyntax } from "../routes/session/tool-views";
 
 /**
  * Live Work Chat (P8 C2) as a docked, always-available conversation. The user
@@ -50,6 +64,7 @@ export function LiveChatView(props: {
   backend: RuntimeClient;
   /** The projected Chat conversation, mapped through the shared adapter. */
   messages: () => MessageBlock[];
+  activity: () => ChatActivityView | undefined;
   /** Whether this pane owns keyboard focus (host pane-focus signal). */
   focused: () => boolean;
   onRequestFocus(): void;
@@ -62,9 +77,18 @@ export function LiveChatView(props: {
   onPlanReject(planID: string): void;
   /** The composer's max height, matching the reference TUI's `max(6, h/3)`. */
   promptMaxHeight: number;
+  contentWidth: number;
+  density: TuiPreferences["density"];
+  toolDetails: TuiPreferences["toolDetails"];
+  reasoning: TuiPreferences["reasoning"];
+  diffStyle: TuiPreferences["diffStyle"];
+  toolPreviewLines: number;
 }) {
   const renderer = useRenderer();
   const [draft, setDraft] = createSignal("");
+  const [textareaRows, setTextareaRows] = createSignal(1);
+  const [scanPosition, setScanPosition] = createSignal(0);
+  const [elapsedMs, setElapsedMs] = createSignal(0);
   const [agentStatus, setAgentStatus] = createSignal<
     | {
         agentStatus: string;
@@ -101,6 +125,14 @@ export function LiveChatView(props: {
   const acknowledgedIntents = () =>
     mailbox().filter((message) => message.status === "acknowledged");
 
+  const submitDraft = () => {
+    const text = draft().trim();
+    if (!text) return;
+    setDraft("");
+    if (input) input.setText("");
+    props.onSend(text);
+  };
+
   const refresh = async () => {
     const [snapshot, mailboxRows, planRows] = await Promise.all([
       props.backend.sessionSnapshot?.() ?? Promise.resolve(undefined),
@@ -124,6 +156,35 @@ export function LiveChatView(props: {
     if (props.messages().length > 0)
       queueMicrotask(() => chatScroll?.scrollTo(chatScroll.scrollHeight ?? 0));
   });
+  createEffect(() => {
+    props.contentWidth;
+    props.promptMaxHeight;
+    queueMicrotask(() =>
+      setTextareaRows(promptTextareaRows(input, props.promptMaxHeight)),
+    );
+  });
+  createEffect(() => {
+    if (!props.activity()) {
+      setScanPosition(0);
+      return;
+    }
+    const timer = setInterval(
+      () => setScanPosition((current) => current + 1),
+      140,
+    );
+    onCleanup(() => clearInterval(timer));
+  });
+  createEffect(() => {
+    const activity = props.activity();
+    if (!activity) {
+      setElapsedMs(0);
+      return;
+    }
+    const update = () => setElapsedMs(Date.now() - activity.startedAt);
+    update();
+    const timer = setInterval(update, 1_000);
+    onCleanup(() => clearInterval(timer));
+  });
   useBindings(() => ({
     mode: "base",
     target: inputTarget,
@@ -134,13 +195,7 @@ export function LiveChatView(props: {
         key: "return",
         desc: "Send the message to the Chat",
         group: "Live Work Chat",
-        cmd: () => {
-          const text = draft().trim();
-          if (!text) return;
-          setDraft("");
-          if (input) input.setText("");
-          props.onSend(text);
-        },
+        cmd: submitDraft,
       },
       {
         key: "escape",
@@ -163,7 +218,7 @@ export function LiveChatView(props: {
       width="100%"
       height="100%"
       flexDirection="column"
-      backgroundColor={darkTheme.background}
+      backgroundColor={theme.background}
       onMouseUp={() => {
         if (renderer.getSelection()?.getSelectedText()) return;
         props.onRequestFocus();
@@ -174,35 +229,39 @@ export function LiveChatView(props: {
         flexDirection="row"
         justifyContent="space-between"
         paddingTop={1}
+        paddingBottom={1}
         paddingLeft={2}
         paddingRight={2}
       >
-        <text attributes={TextAttributes.BOLD} fg={darkTheme.accent}>
+        <text attributes={TextAttributes.BOLD} fg={theme.accent}>
           Live Work Chat
         </text>
         <box flexDirection="row" gap={2}>
           <Show when={lastUserMessage()}>
             <text
-              fg={darkTheme.muted}
+              fg={theme.muted}
               onMouseUp={() => props.onRollback(lastUserMessage()!)}
             >
               ↩ rollback
             </text>
           </Show>
-          <text fg={darkTheme.muted} onMouseUp={() => props.onClose()}>
+          <text fg={theme.muted} onMouseUp={() => props.onClose()}>
             × close
           </text>
         </box>
       </box>
       <Show when={agentStatus()}>
         {(status) => (
-          <box flexShrink={0} paddingLeft={2} paddingRight={2}>
-            <text fg={darkTheme.muted}>
-              Main agent: {status().agentStatus}
+          <box
+            flexShrink={0}
+            paddingLeft={2}
+            paddingRight={2}
+            paddingBottom={1}
+          >
+            <text fg={theme.muted} wrapMode="word">
+              Main: {status().agentStatus}
               {status().currentStep ? ` · ${status().currentStep}` : ""}
-              {status().activeTool ? ` · ${status().activeTool}` : ""} ·{" "}
-              {status().changedFiles} changed · {status().unvalidatedChanges}{" "}
-              unvalidated
+              {status().activeTool ? ` · ${status().activeTool}` : ""}
             </text>
           </box>
         )}
@@ -218,23 +277,23 @@ export function LiveChatView(props: {
             paddingTop={1}
             paddingBottom={1}
             border={["left"]}
-            borderColor={darkTheme.accent}
+            borderColor={theme.accent}
           >
-            <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>
+            <text attributes={TextAttributes.BOLD} fg={theme.text}>
               Chat drafted a plan for your review
             </text>
-            <text fg={darkTheme.text} wrapMode="word">
+            <text fg={theme.text} wrapMode="word">
               {plan().title} — {plan().objective}
             </text>
             <box flexDirection="row" gap={2}>
               <text
-                fg={darkTheme.success}
+                fg={theme.success}
                 onMouseUp={() => props.onPlanAccept(plan().planID)}
               >
                 accept
               </text>
               <text
-                fg={darkTheme.danger}
+                fg={theme.danger}
                 onMouseUp={() => props.onPlanReject(plan().planID)}
               >
                 reject
@@ -259,11 +318,10 @@ export function LiveChatView(props: {
               flexDirection="column"
               alignItems="center"
               justifyContent="center"
-              minHeight={12}
-              gap={1}
+              minHeight={8}
             >
-              <text fg={darkTheme.muted}>
-                Start a conversation with the Chat
+              <text fg={theme.muted} wrapMode="word">
+                Ask about the work, inspect progress, or draft a plan.
               </text>
             </box>
           }
@@ -272,12 +330,12 @@ export function LiveChatView(props: {
             {(block) => (
               <MessageBlockView
                 block={block}
-                density="comfortable"
-                toolDetails="collapsed"
-                reasoning="step"
-                diffStyle="auto"
-                terminalWidth={120}
-                toolPreviewLines={10}
+                density={props.density}
+                toolDetails={props.toolDetails}
+                reasoning={props.reasoning}
+                diffStyle={props.diffStyle}
+                terminalWidth={props.contentWidth}
+                toolPreviewLines={props.toolPreviewLines}
               />
             )}
           </For>
@@ -294,12 +352,12 @@ export function LiveChatView(props: {
           paddingRight={2}
           paddingTop={1}
         >
-          <text attributes={TextAttributes.BOLD} fg={darkTheme.text}>
+          <text attributes={TextAttributes.BOLD} fg={theme.text}>
             Intents
           </text>
           <For each={[...pendingIntents(), ...acknowledgedIntents().slice(-2)]}>
             {(message) => (
-              <text fg={darkTheme.muted} wrapMode="word">
+              <text fg={theme.muted} wrapMode="word">
                 [{message.priority}] {message.intent}:{" "}
                 {message.safeSummary ?? ""} · {message.status}
               </text>
@@ -315,7 +373,7 @@ export function LiveChatView(props: {
         <box
           width="100%"
           border={["left"]}
-          borderColor={darkTheme.accent}
+          borderColor={theme.accent}
           customBorderChars={PROMPT_FRAME_BORDER}
         >
           <box
@@ -323,38 +381,48 @@ export function LiveChatView(props: {
             paddingRight={2}
             paddingTop={1}
             flexShrink={0}
-            backgroundColor={darkTheme.panel}
+            backgroundColor={theme.panel}
             flexGrow={1}
             width="100%"
           >
-            <textarea
-              ref={(value: TextareaRenderable) => {
-                input = value;
-                setInputTarget(value as unknown as InputRenderable);
-                props.onInputRef(value as unknown as InputRenderable);
-              }}
-              width="100%"
-              placeholder="Ask the Chat..."
-              placeholderColor={darkTheme.muted}
-              textColor={darkTheme.text}
-              focusedTextColor={darkTheme.text}
-              minHeight={1}
-              maxHeight={props.promptMaxHeight}
-              focusedBackgroundColor={darkTheme.panel}
-              cursorColor={darkTheme.text}
-              onMouseDown={(event: MouseEvent) => event.target?.focus()}
-              onContentChange={() => setDraft(input?.plainText ?? "")}
-            />
+            <box width="100%" flexDirection="row" alignItems="flex-end">
+              <textarea
+                ref={(value: TextareaRenderable) => {
+                  input = value;
+                  setInputTarget(value as unknown as InputRenderable);
+                  props.onInputRef(value as unknown as InputRenderable);
+                  if (draft()) queueMicrotask(() => value.setText(draft()));
+                }}
+                height={textareaRows()}
+                minHeight={1}
+                maxHeight={props.promptMaxHeight}
+                flexGrow={1}
+                minWidth={0}
+                placeholder="Ask the Chat..."
+                placeholderColor={theme.muted}
+                textColor={theme.text}
+                focusedTextColor={theme.text}
+                focusedBackgroundColor={theme.panel}
+                cursorColor={theme.text}
+                syntaxStyle={markdownSyntax()}
+                onMouseDown={(event: MouseEvent) => event.target?.focus()}
+                onContentChange={() => {
+                  setDraft(input?.plainText ?? "");
+                  setTextareaRows(
+                    promptTextareaRows(input, props.promptMaxHeight),
+                  );
+                }}
+              />
+            </box>
             <box
               flexDirection="row"
               flexShrink={0}
               paddingTop={1}
-              gap={1}
-              justifyContent="space-between"
+              justifyContent="flex-end"
             >
-              <box flexDirection="row" gap={1}>
-                <text fg={darkTheme.muted}>Chat · read-only</text>
-              </box>
+              <text fg={theme.accent} onMouseUp={submitDraft}>
+                ↑ Send
+              </text>
             </box>
           </box>
         </box>
@@ -362,10 +430,48 @@ export function LiveChatView(props: {
           height={1}
           width="100%"
           border={["left"]}
-          borderColor={darkTheme.accent}
+          borderColor={theme.accent}
           customBorderChars={PROMPT_BOTTOM_BORDER}
         />
       </box>
+      <box
+        height={1}
+        flexShrink={0}
+        flexDirection="row"
+        justifyContent="flex-end"
+        paddingLeft={1}
+        paddingRight={1}
+      >
+        <text fg={props.activity() ? theme.muted : theme.text}>
+          <span
+            style={{ fg: props.activity() ? theme.warning : theme.success }}
+          >
+            {props.activity()
+              ? [".  ", " . ", "  .", " . "][scanPosition() % 4]
+              : "•"}
+          </span>{" "}
+          {chatActivityLabel(props.activity())}
+          <Show when={props.activity()}>
+            {` · ${formatElapsed(elapsedMs())}`}
+          </Show>
+        </text>
+      </box>
     </box>
   );
+}
+
+function chatActivityLabel(activity: ChatActivityView | undefined) {
+  if (!activity) return "Ready";
+  if (activity.phase === "thinking") return "Thinking";
+  if (activity.phase === "generating") return "Generating";
+  if (activity.phase === "using_tool")
+    return activity.toolName ? `Using ${activity.toolName}` : "Using a tool";
+  return "Working";
+}
+
+function formatElapsed(elapsedMs: number) {
+  const elapsedSeconds = Math.floor(elapsedMs / 1_000);
+  const minutes = Math.floor(elapsedSeconds / 60);
+  const seconds = String(elapsedSeconds % 60).padStart(2, "0");
+  return `${minutes}:${seconds} elapsed`;
 }

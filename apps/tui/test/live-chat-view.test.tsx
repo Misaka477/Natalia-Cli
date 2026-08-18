@@ -10,6 +10,7 @@ import { createSignal } from "solid-js";
 import { KeymapProvider } from "@opentui/keymap/solid";
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
 import type { RuntimeClient } from "@natalia/contracts";
+import type { ChatActivityView } from "@natalia/view-store";
 import type { MessageBlock } from "../src/context/state";
 import { LiveChatView } from "../src/component/LiveChatView";
 import { DialogProvider } from "../src/dialog/provider";
@@ -51,6 +52,7 @@ async function mountChat(
     onRollback?: (toMessageID: string) => void;
     onPlanAccept?: (planID: string) => void;
     onPlanReject?: (planID: string) => void;
+    activity?: () => ChatActivityView | undefined;
   } = {},
   backendOverrides: Record<string, unknown> = {},
 ) {
@@ -69,6 +71,7 @@ async function mountChat(
           <LiveChatView
             backend={mockBackend(backendOverrides)}
             messages={() => messages}
+            activity={callbacks.activity ?? (() => undefined)}
             focused={callbacks.focused ?? (() => true)}
             onRequestFocus={() => {}}
             onEscape={callbacks.onEscape ?? (() => {})}
@@ -91,6 +94,12 @@ async function mountChat(
               callbacks.onPlanReject?.(planID);
             }}
             promptMaxHeight={6}
+            contentWidth={156}
+            density="comfortable"
+            toolDetails="collapsed"
+            reasoning="step"
+            diffStyle="auto"
+            toolPreviewLines={10}
           />
         </DialogProvider>
       </KeymapProvider>
@@ -165,8 +174,10 @@ test("an empty conversation invites the collaborator role", async () => {
   try {
     const frame = mounted.setup.captureCharFrame();
     expect(frame).toContain("Live Work Chat");
-    expect(frame).toContain("Start a conversation with the Chat");
-    expect(frame).toContain("Main agent: running");
+    expect(frame).toContain("Ask about the work, inspect progress");
+    expect(frame).toContain("Main: running");
+    expect(frame).not.toContain("Chat Agent");
+    expect(frame).not.toContain("limited tools");
   } finally {
     await mounted.dispose();
   }
@@ -193,6 +204,25 @@ test("sending a message routes it into the Chat conversation", async () => {
     await Bun.sleep(10);
     await mounted.setup.renderOnce();
     expect(mounted.sent).toEqual(["why is it installing that dependency"]);
+  } finally {
+    await mounted.dispose();
+  }
+});
+
+test("the Chat footer shows independent activity and elapsed time", async () => {
+  const mounted = await mountChat(history, {
+    activity: () => ({
+      messageID: "chat:m2",
+      phase: "using_tool",
+      toolName: "session_snapshot",
+      startedAt: Date.now() - 1_100,
+    }),
+  });
+  try {
+    const frame = mounted.setup.captureCharFrame();
+    expect(frame).toContain("Using session_snapshot");
+    expect(frame).toContain("0:01 elapsed");
+    expect(frame).not.toContain("• Ready");
   } finally {
     await mounted.dispose();
   }
@@ -266,6 +296,7 @@ test("a streamed Chat reply appears incrementally as the projection updates", as
           <LiveChatView
             backend={mockBackend()}
             messages={messages}
+            activity={() => undefined}
             focused={() => true}
             onRequestFocus={() => {}}
             onEscape={() => {}}
@@ -276,6 +307,12 @@ test("a streamed Chat reply appears incrementally as the projection updates", as
             onPlanAccept={() => {}}
             onPlanReject={() => {}}
             promptMaxHeight={6}
+            contentWidth={156}
+            density="comfortable"
+            toolDetails="collapsed"
+            reasoning="step"
+            diffStyle="auto"
+            toolPreviewLines={10}
           />
         </DialogProvider>
       </KeymapProvider>

@@ -56,7 +56,11 @@ import { DialogProviderManager } from "../component/DialogProviderManager";
 import { DialogMcp } from "../component/DialogMcp";
 import { DialogThemeList } from "../component/DialogThemeList";
 import { messageBlockFromProjection } from "../context/view-store-adapter";
-import { PROMPT_BOTTOM_BORDER, PROMPT_FRAME_BORDER } from "../prompt-border";
+import {
+  PROMPT_BOTTOM_BORDER,
+  PROMPT_FRAME_BORDER,
+  promptTextareaRows,
+} from "../prompt-border";
 import { statusValues } from "../routes/session/tool-utils";
 import { markdownSyntax } from "../routes/session/tool-views";
 import { DialogModel } from "../component/DialogModel";
@@ -330,6 +334,7 @@ function Shell(props: {
   const toast = useToast();
   const dialog = useDialog();
   const [composer, setComposer] = createSignal<TextareaRenderable>();
+  const [composerRows, setComposerRows] = createSignal(1);
   const [pastePreview, setPastePreview] = createSignal("");
   const [attachmentPaths, setAttachmentPaths] = createSignal<string[]>([]);
   const [mentionAgents, setMentionAgents] = createSignal<string[]>([]);
@@ -381,6 +386,16 @@ function Shell(props: {
   createEffect(() => {
     if (interactivePromptActive() || route.route().kind === "subagent") return;
     queueMicrotask(() => composer()?.focus());
+  });
+  createEffect(() => {
+    layout().contentWidth;
+    const maxHeight = Math.min(
+      preferences().prompt.maxHeight,
+      layout().promptMaxHeight,
+    );
+    queueMicrotask(() =>
+      setComposerRows(promptTextareaRows(composer(), maxHeight)),
+    );
   });
   const activeSubagentRoute = () => {
     const current = route.route();
@@ -1468,67 +1483,11 @@ function Shell(props: {
       height="100%"
       backgroundColor={theme.theme.background}
     >
-      <Show when={layout().viewVisible && !layout().viewOverlay}>
+      <Show when={layout().viewVisible}>
         <box
+          position="relative"
           width={layout().viewWidth}
           flexShrink={0}
-          height="100%"
-          flexDirection="column"
-          border={["right"]}
-          borderColor={theme.theme.muted}
-        >
-          <LiveChatView
-            backend={props.backend}
-            messages={() => state.chatMessages}
-            focused={() => viewFocus() === "chat"}
-            onRequestFocus={() => setViewFocus("chat")}
-            onEscape={() => setViewFocus("main")}
-            onClose={() => {
-              setViewActive(null);
-              setViewFocus("main");
-            }}
-            onInputRef={setChatInput}
-            onSend={(text) => {
-              void props.backend.chatSubmit?.({ text }).catch((error) =>
-                toast.show({
-                  variant: "error",
-                  message: `Chat message not delivered: ${
-                    error instanceof Error ? error.message : String(error)
-                  }`.slice(0, 160),
-                }),
-              );
-            }}
-            onRollback={(toMessageID) => {
-              void props.backend.chatRollback?.({ toMessageID });
-            }}
-            onPlanAccept={(planID) => {
-              void props.backend.planAccept?.(planID).catch((error) =>
-                toast.show({
-                  variant: "error",
-                  message: `Plan not accepted: ${
-                    error instanceof Error ? error.message : String(error)
-                  }`.slice(0, 160),
-                }),
-              );
-            }}
-            onPlanReject={(planID) => {
-              void props.backend.planSupersede?.(
-                planID,
-                "rejected in live work chat",
-              );
-            }}
-            promptMaxHeight={Math.min(
-              preferences().prompt.maxHeight,
-              layout().promptMaxHeight,
-            )}
-          />
-        </box>
-      </Show>
-      <Show when={layout().viewOverlay}>
-        <box
-          position="absolute"
-          left={0}
-          width={layout().viewWidth}
           height="100%"
           flexDirection="column"
           backgroundColor={theme.theme.background}
@@ -1538,11 +1497,11 @@ function Shell(props: {
           <LiveChatView
             backend={props.backend}
             messages={() => state.chatMessages}
+            activity={() => state.facts.chatActivity}
             focused={() => viewFocus() === "chat"}
             onRequestFocus={() => setViewFocus("chat")}
             onEscape={() => {
-              // An overlay covers the feed, so leaving it also closes it.
-              setViewActive(null);
+              if (layout().viewOverlay) setViewActive(null);
               setViewFocus("main");
             }}
             onClose={() => {
@@ -1583,6 +1542,12 @@ function Shell(props: {
               preferences().prompt.maxHeight,
               layout().promptMaxHeight,
             )}
+            contentWidth={Math.max(1, layout().viewWidth - 4)}
+            density={preferences().density}
+            toolDetails={preferences().toolDetails}
+            reasoning={preferences().reasoning}
+            diffStyle={preferences().diffStyle}
+            toolPreviewLines={layout().toolPreviewLines}
           />
         </box>
       </Show>
@@ -1692,7 +1657,19 @@ function Shell(props: {
                     ref={(value: TextareaRenderable) => {
                       setComposer(value);
                       promptRef.set(value);
+                      queueMicrotask(() =>
+                        setComposerRows(
+                          promptTextareaRows(
+                            value,
+                            Math.min(
+                              preferences().prompt.maxHeight,
+                              layout().promptMaxHeight,
+                            ),
+                          ),
+                        ),
+                      );
                     }}
+                    height={composerRows()}
                     minHeight={1}
                     maxHeight={Math.min(
                       preferences().prompt.maxHeight,
@@ -1723,9 +1700,18 @@ function Shell(props: {
                     syntaxStyle={markdownSyntax()}
                     onMouseDown={(event: MouseEvent) => event.target?.focus()}
                     onPaste={handlePaste}
-                    onContentChange={() =>
-                      setComposerText(composer()?.plainText ?? "")
-                    }
+                    onContentChange={() => {
+                      setComposerText(composer()?.plainText ?? "");
+                      setComposerRows(
+                        promptTextareaRows(
+                          composer(),
+                          Math.min(
+                            preferences().prompt.maxHeight,
+                            layout().promptMaxHeight,
+                          ),
+                        ),
+                      );
+                    }}
                     onKeyDown={(event: {
                       name?: string;
                       ctrl?: boolean;

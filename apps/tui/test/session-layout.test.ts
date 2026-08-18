@@ -61,3 +61,35 @@ test("normal and narrow sessions keep full width and overlay sidebar", () => {
     showComposerHints: true,
   });
 });
+
+test("Live Chat uses responsive single, double, and triple pane layouts", () => {
+  expect(sessionLayout(80, 24, "auto", false, true)).toMatchObject({
+    paneMode: "single",
+    viewVisible: true,
+    viewOverlay: true,
+    viewWidth: 80,
+    sidebarVisible: false,
+    contentWidth: 80,
+  });
+  expect(sessionLayout(112, 24, "auto", false, true)).toMatchObject({
+    paneMode: "double",
+    viewOverlay: false,
+    viewWidth: 48,
+    sidebarVisible: false,
+    contentWidth: 64,
+  });
+  expect(sessionLayout(150, 34, "auto", false, true)).toMatchObject({
+    paneMode: "double",
+    viewWidth: 60,
+    sidebarVisible: false,
+    contentWidth: 90,
+  });
+  expect(sessionLayout(168, 42, "auto", false, true)).toMatchObject({
+    paneMode: "triple",
+    viewWidth: 57,
+    sidebarVisible: true,
+    sidebarOverlay: false,
+    sidebarGap: 1,
+    contentWidth: 68,
+  });
+});

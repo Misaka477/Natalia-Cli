@@ -24,7 +24,7 @@ type TodoItem = {
 function planTool(): RuntimeTool {
   return {
     name: "plan",
-    description: "Create or update the durable workspace execution plan.",
+    description: "Create or update this session's durable execution plan.",
     requiresApproval: true,
     parameters: {
       type: "object",
@@ -41,7 +41,7 @@ function planTool(): RuntimeTool {
 function todoReadTool(): RuntimeTool {
   return {
     name: "todo_read",
-    description: "Read durable workspace todo items.",
+    description: "Read this session's durable todo items.",
     requiresApproval: false,
     parameters: { type: "object", properties: {}, additionalProperties: false },
     output: {
@@ -70,7 +70,14 @@ function todoReadTool(): RuntimeTool {
       },
     },
     async execute(_input, context) {
-      return JSON.stringify(await readTodos(context.workspaceRoot), null, 2);
+      return JSON.stringify(
+        await readTodos(
+          context.workspaceRoot,
+          requireSessionID(context.sessionID),
+        ),
+        null,
+        2,
+      );
     },
   };
 }
@@ -78,7 +85,7 @@ function todoReadTool(): RuntimeTool {
 function todoWriteTool(): RuntimeTool {
   return {
     name: "todo_write",
-    description: "Replace durable workspace todo items.",
+    description: "Replace this session's durable todo items.",
     requiresApproval: true,
     parameters: {
       type: "object",
@@ -99,29 +106,48 @@ function todoWriteTool(): RuntimeTool {
           status,
         } as TodoItem;
       });
-      await mkdir(resolve(context.workspaceRoot, ".natalia"), {
+      const path = todoPath(
+        context.workspaceRoot,
+        requireSessionID(context.sessionID),
+      );
+      await mkdir(resolve(context.workspaceRoot, ".natalia", "todos"), {
         recursive: true,
       });
-      await writeFile(
-        resolve(context.workspaceRoot, ".natalia", "todos.json"),
-        `${JSON.stringify(items, null, 2)}\n`,
-        { mode: 0o600 },
-      );
+      await writeFile(path, `${JSON.stringify(items, null, 2)}\n`, {
+        mode: 0o600,
+      });
       return `saved ${items.length} todo items`;
     },
   };
 }
 
-async function readTodos(workspaceRoot: string): Promise<TodoItem[]> {
+async function readTodos(
+  workspaceRoot: string,
+  sessionID: string,
+): Promise<TodoItem[]> {
   try {
     const parsed = JSON.parse(
-      await readFile(resolve(workspaceRoot, ".natalia", "todos.json"), "utf8"),
+      await readFile(todoPath(workspaceRoot, sessionID), "utf8"),
     ) as TodoItem[];
     return Array.isArray(parsed) ? parsed : [];
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
   }
+}
+
+function requireSessionID(sessionID: string | undefined) {
+  if (!sessionID) throw new Error("todo tools require a session ID");
+  return sessionID;
+}
+
+function todoPath(workspaceRoot: string, sessionID: string) {
+  return resolve(
+    workspaceRoot,
+    ".natalia",
+    "todos",
+    `${encodeURIComponent(sessionID)}.json`,
+  );
 }
 
 export const todoTools: RuntimeTool[] = [
@@ -131,9 +157,7 @@ export const todoTools: RuntimeTool[] = [
 ];
 
 /**
- * Session scope: the todo list belongs to the workspace on disk, but the tools
- * that write it are only meaningful for as long as the session that is working
- * through them.
+ * Session scope: each session owns a separate durable list inside the workspace.
  */
 export function todoToolFamily(): ToolFamily {
   return {

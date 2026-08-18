@@ -362,13 +362,17 @@ function upsertTool(
 
   // The todo list is a projection of the todo tool's own arguments; there is no
   // separate event for it.
-  if (classifyTool(event.name, event.metadata) !== "todo") return;
+  if (
+    classifyTool(event.name, event.metadata) !== "todo" ||
+    event.status !== "succeeded"
+  )
+    return;
   const parsed = parseToolArguments(argumentsRaw);
   if (!parsed.complete || !parsed.redactedJson) return;
   try {
     const input = JSON.parse(parsed.redactedJson) as Record<string, unknown>;
-    const todos = parseTodoItems(input.items ?? input.todos);
-    if (todos.length) state.todos = todos;
+    const candidate = input.items ?? input.todos;
+    if (Array.isArray(candidate)) state.todos = parseTodoItems(candidate);
   } catch {
     // Partial or redacted arguments simply leave the previous list in place.
   }
@@ -648,6 +652,23 @@ function chatTarget(state: AppState): StreamTarget {
  */
 export function applyChatEvent(state: AppState, event: RuntimeEvent): boolean {
   switch (event.type) {
+    case "chat.turn.started":
+      state.chatActivity = {
+        messageID: event.messageID,
+        phase: "waiting",
+        startedAt: event.startedAt,
+      };
+      return true;
+    case "chat.turn.phase":
+      if (state.chatActivity?.messageID === event.messageID) {
+        state.chatActivity.phase = event.phase;
+        state.chatActivity.toolName = event.toolName;
+      }
+      return true;
+    case "chat.turn.finished":
+      if (state.chatActivity?.messageID === event.messageID)
+        state.chatActivity = undefined;
+      return true;
     case "chat.message.added": {
       if (event.role === "user") {
         state.chatMessages.push({

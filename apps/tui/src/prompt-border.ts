@@ -31,3 +31,14 @@ export const PROMPT_BOTTOM_BORDER = {
   leftT: "",
   rightT: "",
 };
+
+export function promptTextareaRows(
+  textarea: { lineCount: number; virtualLineCount: number } | undefined,
+  maxHeight: number,
+) {
+  const measuredRows = Math.max(
+    textarea?.lineCount ?? 1,
+    textarea?.virtualLineCount ?? 1,
+  );
+  return Math.min(maxHeight, Math.max(1, measuredRows));
+}

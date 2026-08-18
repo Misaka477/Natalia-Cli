@@ -405,19 +405,31 @@ test("native glob grep and durable todo tools operate inside the workspace", asy
     .get("todo_write")!
     .execute(
       { items: [{ content: "finish TS7", status: "in_progress" }] },
-      { workspaceRoot: root },
+      { workspaceRoot: root, sessionID: "ses_tools_a" },
     );
   expect(
-    await tools.get("todo_read")!.execute({}, { workspaceRoot: root }),
+    await tools
+      .get("todo_read")!
+      .execute({}, { workspaceRoot: root, sessionID: "ses_tools_a" }),
   ).toContain("finish TS7");
+  expect(
+    await tools
+      .get("todo_read")!
+      .execute({}, { workspaceRoot: root, sessionID: "ses_tools_b" }),
+  ).toBe("[]");
+  await expect(
+    tools.get("todo_read")!.execute({}, { workspaceRoot: root }),
+  ).rejects.toThrow("todo tools require a session ID");
   await tools
     .get("plan")!
     .execute(
       { items: [{ content: "cutover evidence", status: "pending" }] },
-      { workspaceRoot: root },
+      { workspaceRoot: root, sessionID: "ses_tools_a" },
     );
   expect(
-    await tools.get("todo_read")!.execute({}, { workspaceRoot: root }),
+    await tools
+      .get("todo_read")!
+      .execute({}, { workspaceRoot: root, sessionID: "ses_tools_a" }),
   ).toContain("cutover evidence");
 });
 

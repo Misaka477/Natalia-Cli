@@ -98,8 +98,8 @@ function fakeBackend(): RuntimeClient {
   };
 }
 
-async function mountApp() {
-  const setup = await createTestRenderer({ width: 150, height: 34 });
+async function mountApp(width = 150, height = 34) {
+  const setup = await createTestRenderer({ width, height });
   const keymap = createDefaultOpenTuiKeymap(setup.renderer);
   const disposeKeymap = registerNataliaKeymap(keymap, setup.renderer);
   await render(
@@ -150,11 +150,17 @@ test("chat.open docks the Live Work Chat beside the feed and focuses the chat pa
     await mounted.setup.renderOnce();
     const frame = mounted.setup.captureCharFrame();
     expect(frame).toContain("Live Work Chat");
-    expect(frame).toContain("Main agent: running");
+    expect(frame).toContain("Main: running");
     expect(frame).toContain("Ask the Chat");
     // The feed stays visible beside the docked view.
     expect(frame).toContain("Ask anything...");
-    expect(frame).toContain("Chat · read-only");
+    expect(frame).not.toContain("Chat Agent");
+    expect(frame).not.toContain("limited tools");
+    expect(frame).not.toContain("Chat · read-only");
+    const rows = frame.split("\n");
+    expect(rows.findIndex((row) => row.includes("Ask the Chat"))).toBe(
+      rows.findIndex((row) => row.includes("Ask anything")),
+    );
   } finally {
     mounted.disposeKeymap();
     mounted.setup.renderer.destroy();
@@ -181,6 +187,47 @@ test("closing the docked view restores the feed and returns focus", async () => 
     const frame = mounted.setup.captureCharFrame();
     expect(frame).not.toContain("Live Work Chat");
     expect(frame).toContain("Ask anything...");
+  } finally {
+    mounted.disposeKeymap();
+    mounted.setup.renderer.destroy();
+  }
+});
+
+test("narrow terminals open Chat as a full-width conversation", async () => {
+  const mounted = await mountApp(80, 24);
+  try {
+    await mounted.keys.pressKey("p", { ctrl: true });
+    await Bun.sleep(30);
+    await mounted.keys.typeText("Live Work");
+    await Bun.sleep(30);
+    mounted.keys.pressEnter();
+    await Bun.sleep(60);
+    await mounted.setup.renderOnce();
+    const frame = mounted.setup.captureCharFrame();
+    expect(frame).toContain("Live Work Chat");
+    expect(frame).toContain("Ask the Chat");
+    expect(frame).not.toContain("Ask anything...");
+  } finally {
+    mounted.disposeKeymap();
+    mounted.setup.renderer.destroy();
+  }
+});
+
+test("medium terminals keep the main conversation readable beside Chat", async () => {
+  const mounted = await mountApp(112, 24);
+  try {
+    await mounted.keys.pressKey("p", { ctrl: true });
+    await Bun.sleep(30);
+    await mounted.keys.typeText("Live Work");
+    await Bun.sleep(30);
+    mounted.keys.pressEnter();
+    await Bun.sleep(60);
+    await mounted.setup.renderOnce();
+    const frame = mounted.setup.captureCharFrame();
+    expect(frame).toContain("Live Work Chat");
+    expect(frame).toContain("Ask the Chat");
+    expect(frame).toContain("Ask anything...");
+    expect(frame).not.toContain("Plan");
   } finally {
     mounted.disposeKeymap();
     mounted.setup.renderer.destroy();

@@ -994,6 +994,29 @@ type RuntimeEventData =
       text: string;
     }
   | {
+      type: "chat.turn.started";
+      id: string;
+      messageID: string;
+      startedAt: number;
+      internal?: boolean;
+    }
+  | {
+      type: "chat.turn.phase";
+      id: string;
+      messageID: string;
+      phase: "waiting" | "thinking" | "generating" | "using_tool";
+      toolName?: string;
+    }
+  | {
+      type: "chat.turn.finished";
+      id: string;
+      messageID: string;
+      stopReason: "done" | "error" | "cancelled";
+      startedAt: number;
+      endedAt: number;
+      error?: string;
+    }
+  | {
       type: "chat.message.added";
       id: string;
       messageID: string;
@@ -1512,6 +1535,9 @@ export function runtimeEventDurability(
     case "context.status":
     case "status.update":
     case "terminal.update":
+    case "chat.turn.started":
+    case "chat.turn.phase":
+    case "chat.turn.finished":
       return "live";
     case "tool.update":
       return ["succeeded", "failed", "rejected", "cancelled"].includes(

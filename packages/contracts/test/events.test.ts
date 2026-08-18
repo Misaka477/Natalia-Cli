@@ -38,4 +38,12 @@ test("runtime event durability separates deltas from durable settlements", () =>
       preview: "file",
     }),
   ).toBe("durable");
+  expect(
+    runtimeEventDurability({
+      type: "chat.turn.started",
+      id: "chat:started",
+      messageID: "chat:m1",
+      startedAt: 1,
+    }),
+  ).toBe("live");
 });
