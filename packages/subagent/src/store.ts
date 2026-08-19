@@ -7,13 +7,18 @@ const MANIFEST = "manifest.json";
 export class SubagentStore {
   readonly dir: string;
 
-  /**
-   * `workDir` is the workspace root, not the storage directory. Durable state
-   * belongs under the workspace's `.natalia` directory alongside the other
-   * subsystems, so it must never be written into the project root itself.
-   */
-  constructor(workDir?: string) {
-    this.dir = resolve(workDir ?? ".", ".natalia", "subagents");
+  constructor(workDir?: string, sessionID?: string) {
+    if (sessionID) {
+      this.dir = resolve(
+        workDir ?? ".",
+        ".natalia",
+        "sessions",
+        sessionID,
+        "subagents",
+      );
+    } else {
+      this.dir = resolve(workDir ?? ".", ".natalia", "subagents");
+    }
   }
 
   async load(): Promise<SubagentRecord[]> {

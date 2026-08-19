@@ -864,6 +864,79 @@ test("activity events carry phase information to subscribers", async () => {
   expect(phases).toContain("provider");
 });
 
+test("registry with sessionID isolates records from other sessions", async () => {
+  const dir = await tempDir();
+  const regA = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: dir,
+    sessionID: "session-a",
+  });
+  const regB = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: dir,
+    sessionID: "session-b",
+  });
+  await regA.spawn("session-a task");
+  await regB.spawn("session-b task");
+  const listA = regA.list();
+  const listB = regB.list();
+  expect(listA).toHaveLength(1);
+  expect(listB).toHaveLength(1);
+  expect(listA[0]!.id).toBe("a1");
+  expect(listB[0]!.id).toBe("a1");
+  expect(listA[0]!.task).toBe("session-a task");
+  expect(listB[0]!.task).toBe("session-b task");
+});
+
+test("same sessionID resumes id counter across registry restarts", async () => {
+  const dir = await tempDir();
+  const reg1 = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: dir,
+    sessionID: "persistent",
+  });
+  await reg1.spawn("first");
+  expect(reg1.list()[0]!.id).toBe("a1");
+
+  const reg2 = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: dir,
+    sessionID: "persistent",
+  });
+  await reg2.load();
+  expect(reg2.list()).toHaveLength(1);
+  expect(reg2.list()[0]!.id).toBe("a1");
+
+  const rec = await reg2.spawn("second");
+  expect(rec.id).toBe("a2");
+});
+
+test("store uses session-scoped path when sessionID is provided", async () => {
+  const dir = await tempDir();
+  const store = new SubagentStore(dir, "ses_abc");
+  expect(store.dir).toBe(
+    join(dir, ".natalia", "sessions", "ses_abc", "subagents"),
+  );
+});
+
+test("registry without sessionID uses the legacy shared store path", async () => {
+  const dir = await tempDir();
+  const reg = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: dir,
+  });
+  expect(reg.list()).toHaveLength(0);
+  await reg.spawn("shared task");
+  expect(reg.list()).toHaveLength(1);
+  // Second registry without sessionID sees the first agent (legacy behaviour).
+  const reg2 = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: dir,
+  });
+  await reg2.load();
+  expect(reg2.list()).toHaveLength(1);
+});
+
 test("formatStatus includes phase and activity info", async () => {
   const reg = new SubagentRegistry({
     runner: immediateRunner,

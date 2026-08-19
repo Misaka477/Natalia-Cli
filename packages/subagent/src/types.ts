@@ -105,6 +105,7 @@ export type RunnerCallback = (
 export interface SubagentRegistryOptions {
   runner: RunnerCallback;
   workDir?: string;
+  sessionID?: string;
   /** Time source; defaults to Date.now for production. */
   clock?: () => number;
   /** Grace period before idle→stalled; 0 uses the default. */

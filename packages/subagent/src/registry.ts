@@ -46,7 +46,7 @@ export class SubagentRegistry {
     this.runner = opts.runner;
     this.clock = opts.clock ?? (() => Date.now());
     this.stallThresholdMs = opts.stallThresholdMs ?? DEFAULT_STALL_MS;
-    this.store = new SubagentStore(opts.workDir);
+    this.store = new SubagentStore(opts.workDir, opts.sessionID);
   }
 
   async load(): Promise<void> {

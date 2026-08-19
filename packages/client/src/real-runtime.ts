@@ -593,6 +593,7 @@ export function createRealRuntimeClient(
   let maxSteps: number | undefined;
   const subagentsController = createSubagentsController({
     workDir: workspaceRoot,
+    sessionID: () => sessionID,
   });
   const terminalController = createTerminalController({
     workspaceRoot,
