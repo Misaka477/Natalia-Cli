@@ -391,12 +391,8 @@ test("the terminal pane still selects a model pane and releases it on exit", asy
   // Pane selection is presentation, so it stays in the TUI and reads the facts.
   expect(state().terminalPane.selectedID).toBe("t_a");
 
-  await send({ type: "terminal.pane.focus", focus: "terminal" });
-  expect(state().terminalPane.focus).toBe("terminal");
-
   await send(terminalUpdate("t_a", { status: "exited", activity: "waiting" }));
   expect(state().terminalPane.selectedID).toBeUndefined();
-  expect(state().terminalPane.focus).toBe("chat");
 
   setup.renderer.destroy();
 });

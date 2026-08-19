@@ -66,6 +66,12 @@ function makeHarness(
       jitterMs: number;
       maxRetryAfterMs: number;
     };
+    maxSteps?: number;
+    runtimeContextConfig?: {
+      max: number;
+      thresholdPercent: number;
+      reserved: number;
+    };
   },
 ) {
   const events: RuntimeEvent[] = [];
@@ -108,11 +114,12 @@ function makeHarness(
     permissionMode: () => "auto",
     workspaceRoot: () => "/tmp/ws",
     tsRuntimeConfig: () => undefined,
-    runtimeContextConfig: () => ({
-      max: 200000,
-      thresholdPercent: 85,
-      reserved: 8192,
-    }),
+    runtimeContextConfig: () =>
+      options?.runtimeContextConfig ?? {
+        max: 200000,
+        thresholdPercent: 85,
+        reserved: 8192,
+      },
     activeSkill: () => undefined,
     skillsList: () => [],
     mailboxMessages: () => options?.mailboxMessages ?? [],
@@ -160,7 +167,7 @@ function makeHarness(
         level: "info",
         message: "snapshot",
       }) as RuntimeEvent,
-    effectiveMaxSteps: () => 10,
+    effectiveMaxSteps: () => options?.maxSteps ?? 10,
     waitIfPaused: async () => undefined,
     waitingHuman: () => undefined,
   });
@@ -239,7 +246,7 @@ test("no provider and no reconfigured reload finishes with an error diagnostic",
   expect(checkpoints).toEqual([]);
 });
 
-test("tool calls execute through the callback and an empty final answer marks missing_final_response", async () => {
+test("tool calls with an empty final answer emit a deterministic fallback", async () => {
   let streamCalls = 0;
   const { runner, events, executedCalls } = makeHarness({
     provider: "scripted",
@@ -254,38 +261,36 @@ test("tool calls execute through the callback and an empty final answer marks mi
     },
   });
   await runner.runTurn(turn);
+  expect(streamCalls).toBe(2);
   expect(executedCalls.map((entry) => entry.call.name)).toEqual(["read_file"]);
   const finished = events.find(
     (event): event is Extract<RuntimeEvent, { type: "turn.finished" }> =>
       event.type === "turn.finished",
   );
   expect(finished?.stopReason).toBe("done");
-  expect(finished?.reason).toBe("missing_final_response");
+  expect(finished?.reason).toBeUndefined();
+  expect(
+    events
+      .filter(
+        (event): event is Extract<RuntimeEvent, { type: "content.delta" }> =>
+          event.type === "content.delta",
+      )
+      .map((event) => event.text)
+      .join(""),
+  ).toContain("Tool execution completed");
 });
 
-test("textual tool calls receive persistent native-protocol correction", async () => {
+test("complete textual tool calls are normalized and executed once", async () => {
   let streamCalls = 0;
-  const correctionPrompts: Array<string | undefined> = [];
   const { runner, events, executedCalls } = makeHarness({
     provider: "scripted",
     model: "m1",
-    async *stream(request) {
-      correctionPrompts.push(request.messages.at(-1)?.content);
+    async *stream() {
       streamCalls += 1;
-      if (streamCalls <= 2) {
+      if (streamCalls === 1) {
         yield content(
           "Inspecting. <tool_call><function=read_file><parameter=path>&quot;a.txt&quot;</parameter></function></tool_call>",
         );
-        return;
-      }
-      if (streamCalls === 3) {
-        yield toolCall([
-          {
-            id: "call_native",
-            name: "read_file",
-            arguments: '{"path":"a.txt"}',
-          },
-        ]);
         return;
       }
       yield content("Finished.");
@@ -295,7 +300,7 @@ test("textual tool calls receive persistent native-protocol correction", async (
   expect(executedCalls).toEqual([
     {
       call: {
-        id: "call_native",
+        id: "raw_xml_tool_0",
         name: "read_file",
         arguments: '{"path":"a.txt"}',
       },
@@ -308,59 +313,49 @@ test("textual tool calls receive persistent native-protocol correction", async (
           event.type === "content.delta",
       )
       .map((event) => event.text),
-  ).toEqual(["Inspecting. ", "Inspecting. ", "Finished."]);
+  ).toEqual(["Inspecting. ", "Finished."]);
   expect(
     events.filter(
       (event) =>
         event.type === "diagnostic" &&
         event.message.includes("native tool calling required"),
     ),
-  ).toHaveLength(2);
-  const corrections = correctionPrompts.slice(1, 3);
-  expect(corrections).toEqual([
-    expect.stringContaining(
-      "Use the provider's native structured function/tool-calling channel now",
-    ),
-    expect.stringContaining(
-      "submit its arguments through that function call's structured arguments object",
-    ),
-  ]);
-  expect(
-    corrections.every((message) =>
-      message?.includes("Do not print <tool_call> XML"),
-    ),
-  ).toBe(true);
+  ).toHaveLength(0);
 });
 
-test("textual tool calls in the required final response are corrected", async () => {
+test("the configured final step preserves XML-like text without another request", async () => {
   let streamCalls = 0;
-  const prompts: Array<string | undefined> = [];
-  const { runner, events, executedCalls } = makeHarness({
-    provider: "scripted",
-    model: "m1",
-    async *stream(request) {
-      streamCalls += 1;
-      prompts.push(request.messages.at(-1)?.content);
-      if (streamCalls === 1) {
-        yield toolCall([
-          { id: "call_1", name: "read_file", arguments: '{"path":"a"}' },
-        ]);
-        return;
-      }
-      if (streamCalls <= 3) {
+  const requests: ProviderStreamRequest[] = [];
+  const { runner, events, executedCalls } = makeHarness(
+    {
+      provider: "scripted",
+      model: "m1",
+      async *stream(request) {
+        streamCalls += 1;
+        requests.push(request);
+        if (streamCalls === 1) {
+          yield toolCall([
+            {
+              id: "call_1",
+              name: "read_file",
+              arguments: '{"path":"a"}',
+            },
+          ]);
+          return;
+        }
         yield content(
           "<function=run_shell><parameter=command>git status</parameter></function>",
         );
-        return;
-      }
-      yield content("All checks passed.");
+      },
     },
-  });
+    { maxSteps: 2 },
+  );
 
   await runner.runTurn(turn);
 
   expect(executedCalls.map((entry) => entry.call.name)).toEqual(["read_file"]);
-  expect(streamCalls).toBe(4);
+  expect(streamCalls).toBe(2);
+  expect(requests[1]).toMatchObject({ tools: undefined, toolChoice: "none" });
   expect(
     events
       .filter(
@@ -368,16 +363,75 @@ test("textual tool calls in the required final response are corrected", async ()
           event.type === "content.delta",
       )
       .map((event) => event.text),
-  ).toEqual(["All checks passed."]);
+  ).toEqual([
+    "<function=run_shell><parameter=command>git status</parameter></function>",
+  ]);
   expect(
     events.find(
       (event): event is Extract<RuntimeEvent, { type: "turn.finished" }> =>
         event.type === "turn.finished",
     )?.reason,
   ).toBeUndefined();
-  expect(prompts.at(-1)).toContain(
-    "Use the provider's native structured function/tool-calling channel now",
+  expect(
+    requests[1]?.messages.some((message) =>
+      message.content.includes("MAXIMUM STEPS REACHED"),
+    ),
+  ).toBe(true);
+});
+
+test("structured calls on the configured final step are ignored with fallback text", async () => {
+  const requests: ProviderStreamRequest[] = [];
+  const { runner, events, executedCalls } = makeHarness(
+    {
+      provider: "scripted",
+      model: "m1",
+      async *stream(request) {
+        requests.push(request);
+        yield toolCall([
+          { id: "call_forbidden", name: "read_file", arguments: "{}" },
+        ]);
+      },
+    },
+    { maxSteps: 1 },
   );
+
+  await runner.runTurn(turn);
+
+  expect(requests).toHaveLength(1);
+  expect(requests[0]).toMatchObject({ tools: undefined, toolChoice: "none" });
+  expect(executedCalls).toEqual([]);
+  expect(
+    events.some(
+      (event) =>
+        event.type === "content.delta" &&
+        event.text.includes("Tool execution completed"),
+    ),
+  ).toBe(true);
+});
+
+test("malformed textual tool calls fail after bounded corrections", async () => {
+  let streamCalls = 0;
+  const { runner, events, executedCalls } = makeHarness({
+    provider: "scripted",
+    model: "m1",
+    async *stream() {
+      streamCalls += 1;
+      yield content(
+        "<tool_call><function=read_file><parameter=path>a.txt</function></tool_call>",
+      );
+    },
+  });
+
+  await runner.runTurn(turn);
+
+  expect(streamCalls).toBe(3);
+  expect(executedCalls).toEqual([]);
+  expect(
+    events.find(
+      (event): event is Extract<RuntimeEvent, { type: "turn.finished" }> =>
+        event.type === "turn.finished",
+    )?.stopReason,
+  ).toBe("error");
 });
 
 test("a hard provider finish reason fails instead of completing ready", async () => {
@@ -521,7 +575,7 @@ test("the main agent keeps retrying transient failures until recovery", async ()
 test("context-limit recovery keeps compacted context and recovered tool results for later steps", async () => {
   let calls = 0;
   const requests: ProviderStreamRequest[] = [];
-  const { runner } = makeHarness({
+  const { runner, ledger } = makeHarness({
     provider: "scripted",
     model: "m1",
     async *stream(request) {
@@ -557,9 +611,76 @@ test("context-limit recovery keeps compacted context and recovered tool results 
       yield content("recovered final");
     },
   });
+  for (let index = 0; index < 3; index++)
+    ledger.add({
+      id: `old-${index}`,
+      role: index % 2 ? "assistant" : "user",
+      content: `old context ${index}`,
+    });
   await runner.runTurn(turn);
   expect(calls).toBe(4);
   expect(requests).toHaveLength(4);
+});
+
+test("provider steps compact proactively before dispatching an oversized request", async () => {
+  const requests: ProviderStreamRequest[] = [];
+  const { runner, ledger, events } = makeHarness(
+    {
+      provider: "scripted",
+      model: "m1",
+      async *stream(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          yield content("preflight summary");
+          return;
+        }
+        expect(
+          request.messages.some(
+            (message) =>
+              message.role === "system" &&
+              message.content.includes("preflight summary"),
+          ),
+        ).toBe(true);
+        expect(
+          request.messages.some(
+            (message) => message.role === "user" && message.content === "hello",
+          ),
+        ).toBe(true);
+        yield content("done");
+      },
+    },
+    {
+      runtimeContextConfig: {
+        max: 100,
+        thresholdPercent: 50,
+        reserved: 10,
+      },
+    },
+  );
+  ledger.add({
+    id: "old-1",
+    role: "assistant",
+    content: "x".repeat(400),
+    tokens: 100,
+  });
+  ledger.add({
+    id: "old-2",
+    role: "user",
+    content: "older follow-up",
+    tokens: 10,
+  });
+
+  await runner.runTurn(turn);
+
+  expect(requests).toHaveLength(2);
+  expect(
+    events.some(
+      (event) => event.type === "compaction.begin" && event.trigger === "ratio",
+    ),
+  ).toBe(true);
+  expect(events.some((event) => event.type === "context.checkpoint")).toBe(
+    true,
+  );
 });
 
 test("delivered mailbox intents render into the system prompt", async () => {

@@ -166,24 +166,25 @@ configured`，说明第 3 步没生效。
 
 输入需求按回车。常用按键：
 
-| 按键                | 作用                         |
-| ------------------- | ---------------------------- |
-| `enter`             | 提交                         |
-| `ctrl+j`            | 换行（不提交）               |
-| `ctrl+c`            | 取消当前回合                 |
-| `ctrl+d`            | 退出（输入框为空时）         |
-| `ctrl+p`            | 命令面板                     |
-| `ctrl+g`            | 在双栏布局切换 Chat/Plan      |
-| `ctrl+b`            | 侧边栏                       |
-| `ctrl+n` / `ctrl+l` | 新会话 / 会话列表            |
-| `ctrl+i` / `ctrl+h` | 状态 / 帮助                  |
-| `up` / `down`       | 在 `/` 和 `@` 补全列表中移动 |
-| `escape`            | 关闭补全                     |
+| 按键                | 作用                          |
+| ------------------- | ----------------------------- |
+| `enter`             | 提交                          |
+| `ctrl+j`            | 换行（不提交）                |
+| `ctrl+c`            | 取消当前回合                  |
+| `ctrl+d`            | 退出（输入框为空时）          |
+| `ctrl+p`            | 命令面板                      |
+| `alt+p`             | 按当前响应式布局循环切换 pane |
+| `ctrl+b`            | 侧边栏                        |
+| `ctrl+n` / `ctrl+l` | 新会话 / 会话列表             |
+| `ctrl+i` / `ctrl+h` | 状态 / 帮助                   |
+| `up` / `down`       | 在 `/` 和 `@` 补全列表中移动  |
+| `escape`            | 关闭补全                      |
 
 输入 `/` 唤出命令，输入 `@` 引用工作区文件、agent 或 MCP 资源。
 
-可从命令面板打开 `Live Work Chat`。终端宽度小于 112 列时以 overlay 显示，
-112–167 列时与 Plan 共用次级 pane，168 列及以上时与 Main、Plan 同时显示。
+Live Work Chat 和 sidebar 是响应式默认 pane。终端宽度小于 112 列时，
+`Alt+P` 在 Main、Chat、Sidebar 间循环；112–167 列时切换次级 pane；
+168 列及以上时三栏同时显示，并在三者之间循环 focus。
 
 常用命令：
 
@@ -518,12 +519,12 @@ systemctl enable --now natalia-task-log-triage.timer  # 定时任务按需启用
 
 ### 与 Docker 部署的区别
 
-| 维度 | Docker（§11） | 直接部署 |
-| --- | --- | --- |
-| 文件系统边界 | 默认只碰容器内 + 挂载的卷 | 宿主机整个文件系统 |
-| 安全边界 | 容器隔离 + permission profile | 仅 permission profile + 系统用户权限 |
-| WezTerm fork | 镜像内自动编译 | 必须在宿主机原生编译（或拷贝 Ubuntu 二进制） |
-| 常驻进程 | 镜像入口起 sshd（daemon 需自加） | systemd 单元管理 daemon/定时任务 |
+| 维度         | Docker（§11）                    | 直接部署                                     |
+| ------------ | -------------------------------- | -------------------------------------------- |
+| 文件系统边界 | 默认只碰容器内 + 挂载的卷        | 宿主机整个文件系统                           |
+| 安全边界     | 容器隔离 + permission profile    | 仅 permission profile + 系统用户权限         |
+| WezTerm fork | 镜像内自动编译                   | 必须在宿主机原生编译（或拷贝 Ubuntu 二进制） |
+| 常驻进程     | 镜像入口起 sshd（daemon 需自加） | systemd 单元管理 daemon/定时任务             |
 
 ### 部署安全检查清单
 
@@ -561,7 +562,7 @@ permission profile 和系统用户权限，上线前逐项核对（依据 `natal
 | Skill 不出现                                                                    | 见第 6 步的验证说明                                                        |
 | 第一个终端报 WezTerm 超时                                                       | 重试一次，冷启动导致                                                       |
 | agent 在错误的目录里工作                                                        | 传 `--workspace`                                                           |
-| Docker 里 SSH `Permission denied`                                              | 确认 `NATALIA_SSH_PASSWORD` 已设置，或看 `docker logs` 里的随机密码         |
+| Docker 里 SSH `Permission denied`                                               | 确认 `NATALIA_SSH_PASSWORD` 已设置，或看 `docker logs` 里的随机密码        |
 
 排查时可在 TUI 内用 `/doctor` 和 `/diagnostics`，或启动时加 `--doctor` 让它自动
 执行一次报告。

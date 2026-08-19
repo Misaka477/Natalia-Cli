@@ -6,9 +6,14 @@ import type {
 import {
   ContextLedger,
   compactContext,
+  compactionTrigger,
   contextEntriesToProviderMessages,
   contextStatusEvent,
+  estimateTokens,
+  MAX_STEPS_PROMPT,
+  MISSING_FINAL_RESPONSE_FALLBACK,
   nativeToolCallCorrection,
+  normalizeRawToolCallProtocol,
   providerCompactor,
   providerError,
   requireNativeToolCallProtocol,
@@ -46,6 +51,7 @@ export type ProviderUsage = { inputTokens: number; outputTokens: number };
 type TsRuntimeConfig = Awaited<ReturnType<typeof resolveConfig>>["config"];
 type RetryPolicy = NonNullable<Parameters<typeof runWithRetry>[2]>["policy"];
 type PermissionMode = "ask" | "auto" | "read_only";
+const maxProtocolCorrections = 2;
 
 /**
  * The provider runner — knife 7 of the real-runtime split (mainline plan
@@ -371,24 +377,42 @@ export function createProviderRunner(input: {
         }),
       });
       let usedTools = false;
-      let needsFinalResponse = false;
       let finalResponse = "";
-      let missingFinalResponse = false;
+      let ranFinalOnlyStep = false;
       let step = 0;
       let protocolCorrections = 0;
-      while (step < input.effectiveMaxSteps()) {
+      const maxSteps = input.effectiveMaxSteps();
+      while (step < maxSteps) {
         input.activeAbort()?.signal.throwIfAborted();
         await input.waitIfPaused();
+        const reachedStepLimit =
+          Number.isFinite(maxSteps) && step + 1 >= maxSteps;
+        const finalOnlyStep = reachedStepLimit;
+        ranFinalOnlyStep ||= finalOnlyStep;
+        await compactBeforeProviderStep(id, messages, step + 1, activeProvider);
         const result = await runProviderStepWithRecovery(
           id,
-          messages,
+          finalOnlyStep
+            ? [
+                ...messages,
+                {
+                  role: "assistant",
+                  content: MAX_STEPS_PROMPT,
+                },
+              ]
+            : messages,
           step + 1,
           activeProvider,
           activeModelCapabilities,
           activePermissionMode,
+          !finalOnlyStep,
         );
         if (result.protocolViolation) {
           protocolCorrections += 1;
+          if (protocolCorrections > maxProtocolCorrections)
+            throw new Error(
+              "model repeatedly emitted malformed textual tool calls instead of the provider's native tool protocol",
+            );
           messages.push({
             role: "assistant",
             content: result.protocolViolation,
@@ -406,53 +430,24 @@ export function createProviderRunner(input: {
         }
         step += 1;
         assistant += result.assistant;
-        needsFinalResponse = result.toolMessages.length > 0;
-        usedTools ||= needsFinalResponse;
-        if (!needsFinalResponse) finalResponse = result.assistant;
-        if (!needsFinalResponse) break;
-        finalResponse = "";
-      }
-      if (usedTools && !finalResponse.trim()) {
-        const finalMessages: ProviderMessage[] = [
-          ...messages,
-          {
-            role: "system",
-            content:
-              "Tool execution is complete. Provide the user with a concise final answer summarizing the outcome. Do not call any tools.",
-          },
-        ];
-        while (true) {
-          input.activeAbort()?.signal.throwIfAborted();
-          const result = await runProviderStepWithRecovery(
-            id,
-            finalMessages,
-            input.effectiveMaxSteps() + 1,
-            activeProvider,
-            activeModelCapabilities,
-            activePermissionMode,
-            false,
-          );
-          if (result.protocolViolation) {
-            protocolCorrections += 1;
-            finalMessages.push({
-              role: "assistant",
-              content: result.protocolViolation,
-            });
-            finalMessages.push({
-              role: "system",
-              content: nativeToolCallCorrection(protocolCorrections),
-            });
-            input.publish({
-              type: "diagnostic",
-              level: "warning",
-              message: `Correcting textual tool call in final response; native tool calling required (attempt ${protocolCorrections})`,
-            });
-            continue;
-          }
-          if (!result.assistant.trim()) missingFinalResponse = true;
-          else assistant += result.assistant;
+        const calledTools = result.toolMessages.length > 0;
+        usedTools ||= result.hadToolCalls;
+        if (!calledTools || finalOnlyStep) {
+          finalResponse = result.assistant;
           break;
         }
+      }
+      if ((usedTools || ranFinalOnlyStep) && !finalResponse.trim()) {
+        finalResponse = MISSING_FINAL_RESPONSE_FALLBACK;
+        assistant += finalResponse;
+        input.publish({ type: "content.delta", id, text: finalResponse });
+        input.publish({ type: "content.done", id, text: finalResponse });
+        input.publish({
+          type: "diagnostic",
+          level: "warning",
+          message:
+            "Provider omitted the required final text response; emitted a deterministic fallback",
+        });
       }
       if (assistant)
         ledger.add({
@@ -480,7 +475,6 @@ export function createProviderRunner(input: {
         type: "turn.finished",
         id,
         stopReason: input.waitingHuman() ? "waiting_human" : "done",
-        reason: missingFinalResponse ? "missing_final_response" : undefined,
         model: activeProvider.model,
         profile: activePermissionMode,
         durationMs: Date.now() - startedAt,
@@ -556,16 +550,21 @@ export function createProviderRunner(input: {
           calls: [],
         };
         try {
-          for await (const chunk of requireNativeToolCallProtocol(
-            activeProvider.stream({
-              messages,
-              tools:
-                allowToolCalls && activeModelCapabilities.toolCall
-                  ? materialized.definitions
-                  : undefined,
-              signal: input.activeAbort()?.signal,
-            }),
-          )) {
+          const stream = activeProvider.stream({
+            messages,
+            tools:
+              allowToolCalls && activeModelCapabilities.toolCall
+                ? materialized.definitions
+                : undefined,
+            toolChoice: allowToolCalls ? undefined : "none",
+            signal: input.activeAbort()?.signal,
+          });
+          const normalized = allowToolCalls
+            ? requireNativeToolCallProtocol(
+                normalizeRawToolCallProtocol(stream),
+              )
+            : stream;
+          for await (const chunk of normalized) {
             if (chunk.type === "thinking") {
               result.thinking += chunk.text;
               input.publish({
@@ -630,15 +629,19 @@ export function createProviderRunner(input: {
       return {
         assistant: "",
         toolMessages,
+        hadToolCalls: false,
         protocolViolation: output.protocolViolation,
       };
     if (output.assistant)
       input.publish({ type: "content.done", id, text: output.assistant });
     if (!allowToolCalls && output.calls.length)
-      throw new Error(
-        "model emitted tool calls while producing the required final response",
-      );
-    if (output.calls.length) {
+      input.publish({
+        type: "diagnostic",
+        level: "warning",
+        message:
+          "Provider emitted a tool call after tools were disabled; ignored the call and finalized with text",
+      });
+    if (allowToolCalls && output.calls.length) {
       const produced = await input.executeToolCalls(
         id,
         output.calls,
@@ -651,7 +654,11 @@ export function createProviderRunner(input: {
     if (output.assistant && !toolMessages.length) {
       messages.push({ role: "assistant", content: output.assistant });
     }
-    return { assistant: output.assistant, toolMessages };
+    return {
+      assistant: output.assistant,
+      toolMessages,
+      hadToolCalls: output.calls.length > 0,
+    };
   }
 
   function modelCapabilities() {
@@ -717,7 +724,8 @@ export function createProviderRunner(input: {
           maxTokens: config.max,
           thresholdPercent: config.thresholdPercent,
           reservedTokens: config.reserved,
-          preservedRecentMessages: 8,
+          preservedRecentMessages:
+            input.tsRuntimeConfig()?.context.preservedRecentMessages ?? 2,
           instruction: "Recover from provider context limit before retrying.",
           onEvent: input.publish,
           retry: {
@@ -737,32 +745,11 @@ export function createProviderRunner(input: {
         id,
         step,
         attempted: true,
-        compacted: true,
+        compacted: compacted.compacted,
         reason: "context_limit",
       });
       try {
-        const runtimeInstruction =
-          messages[0]?.role === "system" ? messages[0] : undefined;
-        const recoveredMessages = contextEntriesToProviderMessages(
-          input.context().snapshot().entries,
-        );
-        if (
-          runtimeInstruction &&
-          recoveredMessages[0]?.content !== runtimeInstruction.content
-        )
-          recoveredMessages.unshift(runtimeInstruction);
-        const originalUser = messages.findLast(
-          (message) => message.role === "user",
-        );
-        const recoveredUser = recoveredMessages.findLast(
-          (message) => message.role === "user",
-        );
-        if (originalUser && recoveredUser)
-          Object.assign(recoveredUser, originalUser);
-        // Keep the caller's conversation authoritative after compaction. Tool
-        // results from this recovered step are appended to this same array, so
-        // later steps cannot fall back to the pre-compaction context.
-        messages.splice(0, messages.length, ...recoveredMessages);
+        rebuildMessagesAfterCompaction(messages, input.context());
         return await runProviderStep(
           id,
           messages,
@@ -782,6 +769,93 @@ export function createProviderRunner(input: {
         throw retryError;
       }
     }
+  }
+
+  async function compactBeforeProviderStep(
+    id: string,
+    messages: ProviderMessage[],
+    step: number,
+    activeProvider: StreamingProvider,
+  ) {
+    const config = input.runtimeContextConfig();
+    const ledger = input.context();
+    const trigger = compactionTrigger({
+      used: Math.max(
+        ledger.effectiveTokens(),
+        estimateTokens(JSON.stringify(messages)),
+      ),
+      max: config.max,
+      thresholdPercent: config.thresholdPercent,
+      reserved: config.reserved,
+    });
+    if (!trigger) return;
+    const compacted = await compactContext(
+      ledger,
+      providerCompactor(activeProvider, input.activeAbort()?.signal),
+      {
+        id: `${id}:preflight:${step}`,
+        trigger,
+        enabled: input.tsRuntimeConfig()?.context.compactionEnabled ?? true,
+        maxTokens: config.max,
+        thresholdPercent: config.thresholdPercent,
+        reservedTokens: config.reserved,
+        preservedRecentMessages:
+          input.tsRuntimeConfig()?.context.preservedRecentMessages ?? 2,
+        instruction:
+          "Compact before the next provider request while preserving the active task.",
+        onEvent: input.publish,
+        retry: {
+          policy: input.retryPolicy(),
+          signal: input.activeAbort()?.signal,
+        },
+      },
+    );
+    if (!compacted.compacted) return;
+    rebuildMessagesAfterCompaction(messages, ledger);
+    input.publish({
+      type: "context.checkpoint",
+      id: `${id}:preflight:${ledger.journalStatus().journalOffset}`,
+      snapshot: ledger.durableCheckpoint(step),
+    });
+    input.publish(contextStatusEvent(ledger.status(config)));
+  }
+
+  function rebuildMessagesAfterCompaction(
+    messages: ProviderMessage[],
+    ledger: ContextLedger,
+  ) {
+    const runtimeInstruction =
+      messages[0]?.role === "system" ? messages[0] : undefined;
+    const originalUser = messages.findLast(
+      (message) => message.role === "user",
+    );
+    const originalTools = new Map(
+      messages.flatMap((message) =>
+        message.role === "tool" && message.toolCallID
+          ? [[message.toolCallID, message] as const]
+          : [],
+      ),
+    );
+    const compacted = contextEntriesToProviderMessages(
+      ledger.snapshot().entries,
+    );
+    if (
+      runtimeInstruction &&
+      compacted[0]?.content !== runtimeInstruction.content
+    )
+      compacted.unshift(runtimeInstruction);
+    const recoveredUser = compacted.findLast(
+      (message) => message.role === "user",
+    );
+    if (originalUser && recoveredUser)
+      Object.assign(recoveredUser, originalUser);
+    for (const message of compacted) {
+      if (message.role !== "tool" || !message.toolCallID) continue;
+      const original = originalTools.get(message.toolCallID);
+      if (original) Object.assign(message, original);
+    }
+    // This array remains authoritative for later tool steps in the same turn.
+    messages.splice(0, messages.length, ...compacted);
   }
 
   async function lowerContextAttachments(

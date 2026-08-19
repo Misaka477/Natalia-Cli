@@ -7,7 +7,6 @@ import type {
 import { darkTheme } from "../theme/theme";
 import { useDialog } from "../dialog/provider";
 import { DialogSelect } from "../dialog/DialogSelect";
-import { openExternalTerminal } from "../terminal-attach";
 
 export function DialogTerminal(props: { backend: RuntimeClient }) {
   const dialog = useDialog();
@@ -68,19 +67,6 @@ export function DialogTerminal(props: { backend: RuntimeClient }) {
         </box>
       }
       onSelect={(option) => select(option.value)}
-      actions={[
-        {
-          command: "terminal.manage.refresh",
-          title: "r refresh",
-          onTrigger: () => void refresh(),
-        },
-        {
-          command: "terminal.manage.open-hub",
-          title: "Open Terminal Hub",
-          onTrigger: () =>
-            void openExternalTerminal({ backend: props.backend }),
-        },
-      ]}
     />
   );
 }

@@ -473,13 +473,6 @@ test("terminal pane selects among unlimited sessions and closes active view afte
   expect(state.terminalPane.selectedID).toBe("pty_b");
   state = reduceState(state, { type: "terminal.pane.select", id: "pty_a" });
   expect(state.terminalPane.selectedID).toBe("pty_a");
-  state = reduceState(state, { type: "terminal.pane.focus", focus: "chat" });
-  expect(state.terminalPane.focus).toBe("chat");
-  state = reduceState(state, {
-    type: "terminal.pane.focus",
-    focus: "terminal",
-  });
-  expect(state.terminalPane.focus).toBe("terminal");
   state = reduceState(state, {
     type: "terminal.update",
     id: "pty_a",

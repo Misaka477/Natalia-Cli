@@ -8,9 +8,6 @@ export function ModelTerminalPane(props: {
   terminal: TerminalView;
   sessions: TerminalView[];
   onSelect(id: string): void;
-  focus: "chat" | "terminal";
-  onFocus(): void;
-  scrollRef?: { current?: any };
 }) {
   const target = () =>
     props.terminal.target.kind === "host"
@@ -21,9 +18,7 @@ export function ModelTerminalPane(props: {
       flexShrink={0}
       flexDirection="column"
       border
-      borderColor={
-        props.focus === "terminal" ? darkTheme.accent : darkTheme.muted
-      }
+      borderColor={darkTheme.muted}
       paddingLeft={1}
       paddingRight={1}
       paddingTop={1}
@@ -33,16 +28,8 @@ export function ModelTerminalPane(props: {
       backgroundColor={darkTheme.panel}
     >
       <box flexDirection="row" justifyContent="space-between">
-        <text
-          fg={props.focus === "terminal" ? darkTheme.accent : darkTheme.muted}
-          attributes={TextAttributes.BOLD}
-        >
+        <text fg={darkTheme.muted} attributes={TextAttributes.BOLD}>
           Terminal Preview · model control · {props.terminal.status}
-        </text>
-        <text fg={darkTheme.muted} onMouseUp={props.onFocus}>
-          {props.focus === "terminal"
-            ? "preview focus · Ctrl+T chat"
-            : "Ctrl+T preview · F8 manage"}
         </text>
       </box>
       <Show when={props.sessions.length > 1}>

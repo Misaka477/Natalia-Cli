@@ -54,3 +54,14 @@ test("diagnostic events render their safe level and message", () => {
   });
   expect(state.messages.at(-1)?.text).toBe("warning: safe diagnostic");
 });
+
+test("info diagnostics stay out of the transcript and footer", () => {
+  const state = reduceState(initialState, {
+    type: "diagnostic",
+    level: "info",
+    message: "routine startup detail",
+    at: "2026-07-22T00:00:00.000Z",
+  });
+  expect(state.messages).toEqual(initialState.messages);
+  expect(state.footer).toBe(initialState.footer);
+});

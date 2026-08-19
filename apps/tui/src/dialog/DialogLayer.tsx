@@ -24,7 +24,7 @@ import { useDialog } from "./provider";
 import { commands, formatKeybinds } from "../keymap";
 import { useKeybinds } from "../context/keybind";
 
-export function DialogHelp(props: { onClose(): void }) {
+export function DialogHelp() {
   const keybinds = useKeybinds();
   const bindings = () => keybinds.resolved().bindings;
   return (
@@ -451,7 +451,7 @@ export function DialogSessionList(props: {
         },
       },
       {
-        key: "r",
+        key: "alt+e",
         desc: "Rename session",
         group: "Dialog",
         cmd: () => {
@@ -476,7 +476,7 @@ export function DialogSessionList(props: {
         },
       },
       {
-        key: "d",
+        key: "alt+d",
         desc: "Delete session",
         group: "Dialog",
         cmd: () => {
@@ -515,8 +515,8 @@ export function DialogSessionList(props: {
           />
         </Show>
         <text fg={darkTheme.muted}>
-          Enter open · N new · C copy · P pin · R rename · D delete · Escape
-          close
+          Enter open · N new · C copy · P pin · Alt+E rename · Alt+D delete ·
+          Escape close
         </text>
         <Show when={loading()}>
           <text fg={darkTheme.muted}>Loading sessions...</text>

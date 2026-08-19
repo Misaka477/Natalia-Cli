@@ -10,6 +10,31 @@ import {
 import { runWithRetry, type RetryRunnerOptions } from "./retry";
 import type { StreamingProvider } from "./provider";
 
+const COMPACTION_SUMMARY_TEMPLATE = `Use exactly this Markdown structure and keep every section:
+## Objective
+- The user's current goal.
+
+## Important Details
+- Constraints, decisions and reasons, exact identifiers, and facts needed to continue.
+
+## Work State
+### Completed
+- Finished and verified work.
+
+### Active
+- Work currently in progress.
+
+### Blocked
+- Blockers, failures, and unresolved unknowns.
+
+## Next Move
+1. The immediate concrete action.
+
+## Relevant Files
+- Exact path: why it matters.
+
+Use terse bullets. Write "(none)" when a section has no content.`;
+
 export type CompactionInput = {
   entries: ContextEntry[];
   instruction?: string;
@@ -35,6 +60,9 @@ export function providerCompactor(
       const prompt = [
         "Summarize this Natalia agent session for durable context compaction.",
         "Keep user goals, decisions, file/tool facts, unresolved tasks, and rollback-relevant state.",
+        "If the entries contain an earlier summary, update that anchor: retain still-true details, remove stale details, and merge newer facts.",
+        "Preserve exact file paths, symbols, commands, errors, URLs, and identifiers. Do not invent facts or mention the compaction process.",
+        COMPACTION_SUMMARY_TEMPLATE,
         input.instruction
           ? `Extra instruction: ${input.instruction}`
           : undefined,
@@ -97,6 +125,20 @@ export async function compactContext(
     return { compacted: false, skipped: "disabled" as const };
   }
   const snapshot = ledger.snapshot();
+  const preserved = preserveRecentWithToolPairs(
+    snapshot.entries,
+    options.preservedRecentMessages,
+  );
+  const preservedIDs = new Set(preserved.map((entry) => entry.id));
+  const retained = preserved.filter((entry) => entry.role !== "resource");
+  const compactedEntries = snapshot.entries.filter(
+    (entry) => entry.role !== "resource" && !preservedIDs.has(entry.id),
+  );
+  if (
+    !compactedEntries.length ||
+    compactedEntries.every((entry) => entry.role === "summary")
+  )
+    return { compacted: false, skipped: "nothing_to_compact" as const };
   const beforeTokens = ledger.effectiveTokens();
   const started = options.now?.() ?? new Date();
   options.onEvent?.({
@@ -122,27 +164,24 @@ export async function compactContext(
       { id: options.id, operation: "compaction", step: 0 },
       async () =>
         compactor.compact({
-          entries: snapshot.entries.map((entry) =>
+          entries: compactedEntries.map((entry) =>
             largeToolResultContext(entry),
           ),
           instruction: options.instruction,
-          resources: snapshot.resources.map(
-            (resource) => `${resource.kind}:${resource.id} ${resource.summary}`,
-          ),
+          // Active resources are re-injected as live entries after compaction;
+          // summarizing them too would show the model stale duplicate state.
+          resources: [],
         }),
       { ...options.retry, onEvent },
     );
-    const preserved = preserveRecentWithToolPairs(
-      snapshot.entries,
-      options.preservedRecentMessages,
-    );
+    const content = buildCompactionPrompt(result.summary, options.instruction);
     const summary: ContextEntry = {
       id: `${options.id}:summary`,
       role: "summary",
-      content: buildCompactionPrompt(result.summary, options.instruction),
-      tokens: result.tokens ?? estimateTokens(result.summary),
+      content,
+      tokens: result.tokens ?? estimateTokens(content),
     };
-    ledger.replaceAfterCompaction(summary, preserved, undefined);
+    ledger.replaceAfterCompaction(summary, retained, undefined);
     const afterTokens = ledger.effectiveTokens();
     options.onEvent?.({
       type: "compaction.end",
@@ -203,7 +242,7 @@ export async function recoverContextLimitOnce<T>(input: {
       compacted: false,
       reason: "context_limit",
     });
-    await compactContext(input.ledger, input.compactor, {
+    const compacted = await compactContext(input.ledger, input.compactor, {
       ...input.compact,
       trigger: "context_limit",
       force: true,
@@ -214,7 +253,7 @@ export async function recoverContextLimitOnce<T>(input: {
       id: input.id,
       step: input.step,
       attempted: true,
-      compacted: true,
+      compacted: compacted.compacted,
       reason: "context_limit",
     });
     try {

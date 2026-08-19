@@ -113,6 +113,6 @@ describe("surface-opening commands", () => {
       .filter((command) => command.overlay)
       .map((command) => command.id)
       .sort();
-    expect(overlay).toEqual(["palette.toggle", "terminal.manage"]);
+    expect(overlay).toEqual(["palette.toggle"]);
   });
 });

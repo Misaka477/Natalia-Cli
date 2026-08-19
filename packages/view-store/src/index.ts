@@ -27,8 +27,8 @@
  * selections, policy, intelligence).
  *
  * Deliberately **not** projected, and why:
- *   - `dialog.open` / `dialog.close`, `terminal.pane.focus`,
- *     `terminal.pane.select` — UI-only state, owned by whichever UI renders it.
+ *   - `dialog.open` / `dialog.close`, `terminal.pane.select` — UI-only state,
+ *     owned by whichever UI renders it.
  *   - `constitution.rule_added`, `decision.recorded`, `evidence.recorded`,
  *     `drift.finding_opened` — no production writer exists yet, so projecting
  *     them would advertise a feature the runtime does not have. Work Graph and

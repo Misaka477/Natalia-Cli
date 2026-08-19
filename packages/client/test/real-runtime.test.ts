@@ -4132,7 +4132,7 @@ test("run_shell constitution checks allow ordinary cat commands", async () => {
   expect(JSON.stringify(events)).not.toContain("dangerous shell patterns");
 });
 
-test("real runtime requests a final response after exhausting tool steps", async () => {
+test("real runtime reserves the configured final step for a text response", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-tool-finalize-"));
   await writeFile(join(root, "input.txt"), "tool data\n");
   await mkdir(join(root, ".natalia"), { recursive: true });
@@ -4174,8 +4174,19 @@ test("real runtime requests a final response after exhausting tool steps", async
   client.start((event) => events.push(event));
   await client.submit("run every tool step");
 
-  expect(requests).toHaveLength(11);
+  expect(requests).toHaveLength(10);
+  expect(requests.slice(0, -1).every((request) => request.tools?.length)).toBe(
+    true,
+  );
   expect(requests.at(-1)?.tools).toBeUndefined();
+  expect(requests.at(-1)?.toolChoice).toBe("none");
+  expect(
+    requests
+      .at(-1)
+      ?.messages.some((message) =>
+        message.content.includes("MAXIMUM STEPS REACHED"),
+      ),
+  ).toBe(true);
   expect(
     events
       .filter((event) => event.type === "content.delta")
@@ -4215,7 +4226,7 @@ test("tool turns require a non-empty final assistant response", async () => {
               },
             ],
           };
-        } else if (request.tools === undefined) {
+        } else {
           yield {
             type: "content",
             text: "The file check completed successfully.",
@@ -4228,7 +4239,7 @@ test("tool turns require a non-empty final assistant response", async () => {
   client.start((event) => events.push(event));
   await client.submit("check the file");
 
-  expect(requests).toBe(3);
+  expect(requests).toBe(2);
   expect(
     events
       .filter((event) => event.type === "content.delta")
@@ -4245,7 +4256,7 @@ test("tool turns require a non-empty final assistant response", async () => {
   );
 });
 
-test("tool turns complete with a reason when the model omits its final response", async () => {
+test("tool turns emit fallback text when the model omits its final response", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-missing-final-"));
   await writeFile(join(root, "input.txt"), "tool data\n");
   const events: RuntimeEvent[] = [];
@@ -4281,7 +4292,6 @@ test("tool turns complete with a reason when the model omits its final response"
       type: "turn.finished",
       id: expect.any(String),
       stopReason: "done",
-      reason: "missing_final_response",
       sessionID: "ses_ts7_missing_final",
     }),
   );
@@ -4290,6 +4300,12 @@ test("tool turns complete with a reason when the model omits its final response"
       (event) => event.type === "diagnostic" && event.level === "error",
     ),
   ).toBe(false);
+  expect(
+    events
+      .filter((event) => event.type === "content.delta")
+      .map((event) => event.text)
+      .join(""),
+  ).toContain("Tool execution completed");
 });
 
 test("ordinary tools settle as failed when their execution timeout expires", async () => {
@@ -5619,7 +5635,7 @@ test("real runtime client publishes provider chunks before stream completion", a
   ).toBe("first second");
 });
 
-test("real runtime client compacts once and retries on context-limit errors", async () => {
+test("real runtime client retries once when a new turn has no old context to compact", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-context-limit-"));
   const events: RuntimeEvent[] = [];
   const provider = contextLimitThenSuccessProvider();
@@ -5631,15 +5647,13 @@ test("real runtime client compacts once and retries on context-limit errors", as
   client.start((event) => events.push(event));
   await client.submit("Recover context");
 
-  expect(provider.calls).toBe(3);
+  expect(provider.calls).toBe(2);
   expect(
     events.some(
-      (event) => event.type === "context.limit.recovery" && event.compacted,
+      (event) => event.type === "context.limit.recovery" && !event.compacted,
     ),
   ).toBe(true);
-  expect(
-    events.some((event) => event.type === "compaction.end" && event.success),
-  ).toBe(true);
+  expect(events.some((event) => event.type === "compaction.begin")).toBe(false);
   expect(
     events.some(
       (event) => event.type === "content.delta" && event.text === "recovered",
@@ -7597,6 +7611,7 @@ test("subagent honors configured step limits above twenty", async () => {
   for (let step = 0; step < 21; step++)
     await writeFile(join(root, `readable-${step}.txt`), "safe test input");
   const childToolCalls: string[] = [];
+  const childRequests: ProviderStreamRequest[] = [];
   const client = createRealRuntimeClient({
     workspaceRoot: root,
     sessionID: "ses_subagent_step_limit",
@@ -7611,6 +7626,7 @@ test("subagent honors configured step limits above twenty", async () => {
             "focused Natalia TS/Bun subagent",
           );
         if (child) {
+          childRequests.push(request);
           const priorCalls = request.messages.filter(
             (message) => message.role === "tool",
           ).length;
@@ -7630,7 +7646,10 @@ test("subagent honors configured step limits above twenty", async () => {
             yield { type: "done" as const };
             return;
           }
-          yield { type: "content" as const, text: "completed after 20 tools" };
+          yield {
+            type: "content" as const,
+            text: "completed after 20 tools <function=read_file><parameter=path>ignored.txt</parameter></function>",
+          };
           yield { type: "done" as const };
           return;
         }
@@ -7666,11 +7685,34 @@ test("subagent honors configured step limits above twenty", async () => {
   );
 
   expect(childToolCalls).toHaveLength(20);
+  expect(childRequests).toHaveLength(21);
+  expect(
+    childRequests.slice(0, -1).every((request) => request.tools?.length),
+  ).toBe(true);
+  expect(childRequests.at(-1)).toMatchObject({
+    tools: undefined,
+    toolChoice: "none",
+  });
+  expect(
+    childRequests
+      .at(-1)
+      ?.messages.some((message) =>
+        message.content.includes("MAXIMUM STEPS REACHED"),
+      ),
+  ).toBe(true);
   expect(
     events.some(
       (event) =>
         event.type === "subagent.update" &&
         event.text?.includes("completed after 20 tools"),
+    ),
+  ).toBe(true);
+  expect(
+    events.some(
+      (event) =>
+        event.type === "content.delta" &&
+        Boolean(event.agentID) &&
+        event.text.includes("<function=read_file>"),
     ),
   ).toBe(true);
   await client.dispose?.();
@@ -8020,14 +8062,8 @@ function subagentRawXMLToolProvider(): StreamingProvider {
       const isChild = request.messages.some(
         (message) => message.content === "child raw XML file task",
       );
-      const wasCorrected = request.messages.some((message) =>
-        message.content.includes(
-          "Use the provider's native structured function/tool-calling channel now",
-        ),
-      );
       if (
         isChild &&
-        !wasCorrected &&
         !request.messages.some((message) => message.role === "tool")
       ) {
         yield {
@@ -8041,27 +8077,6 @@ function subagentRawXMLToolProvider(): StreamingProvider {
           ].join(""),
         };
         yield { type: "done" };
-        return;
-      }
-      if (
-        isChild &&
-        wasCorrected &&
-        !request.messages.some((message) => message.role === "tool")
-      ) {
-        yield {
-          type: "tool_call",
-          calls: [
-            {
-              id: "call_corrected_write",
-              name: "write_file",
-              arguments: JSON.stringify({
-                path: "agent-raw-xml.txt",
-                content: "raw XML child success",
-              }),
-            },
-          ],
-        };
-        yield { type: "done", finishReason: "tool_calls" };
         return;
       }
       if (isChild) {
@@ -10859,6 +10874,98 @@ test("chat tool calls surface as conversation actions", async () => {
       phase: "using_tool",
       toolName: "mailbox_send",
     }),
+  );
+  await client.dispose?.();
+});
+
+test("chat reserves its configured final step and preserves XML-like text", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-chat-final-step-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({ version: 3, runtime: { maxStepsPerTurn: 2 } }),
+  );
+  const requests: ProviderStreamRequest[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_chat_final_step",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "call_1",
+                name: "mailbox_send",
+                arguments: JSON.stringify({
+                  intent: "notice",
+                  text: "final step test",
+                }),
+              },
+            ],
+          };
+          return;
+        }
+        yield {
+          type: "content" as const,
+          text: "Queued. <function=mailbox_send><parameter=text>already done</parameter></function>",
+        };
+      },
+    },
+  });
+  client.start(() => undefined);
+
+  await client.chatSubmit!({ text: "send a notice" });
+
+  expect(requests).toHaveLength(2);
+  expect(requests[0]?.tools?.length).toBeGreaterThan(0);
+  expect(requests[1]).toMatchObject({ tools: undefined, toolChoice: "none" });
+  expect(
+    requests[1]?.messages.some((message) =>
+      message.content.includes("MAXIMUM STEPS REACHED"),
+    ),
+  ).toBe(true);
+  expect((await client.chatMessages!()).at(-1)?.text).toContain(
+    "<function=mailbox_send>",
+  );
+  await client.dispose?.();
+});
+
+test("chat ignores structured calls on its final step and emits fallback text", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-chat-final-fallback-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({ version: 3, runtime: { maxStepsPerTurn: 1 } }),
+  );
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_chat_final_fallback",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            { id: "call_forbidden", name: "mailbox_send", arguments: "{}" },
+          ],
+        };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+
+  await client.chatSubmit!({ text: "send a notice" });
+
+  expect(events.some((event) => event.type === "chat.tool.used")).toBe(false);
+  expect((await client.chatMessages!()).at(-1)?.text).toContain(
+    "Tool execution completed",
   );
   await client.dispose?.();
 });

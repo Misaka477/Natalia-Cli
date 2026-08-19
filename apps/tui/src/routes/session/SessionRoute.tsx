@@ -37,6 +37,7 @@ import {
   type TimelineRange,
 } from "./timeline-virtualizer";
 import {
+  compactModelLabel,
   compactPath,
   filetype,
   formatToolPath,
@@ -64,7 +65,6 @@ export function SessionRoute(props: {
   emptyHint?: string;
   displayOnly?: boolean;
   scrollRef?: { current?: any };
-  terminalScrollRef?: { current?: any };
   followBottom?: boolean;
   onFollowChange?: (follow: boolean) => void;
   density?: TuiPreferences["density"];
@@ -347,11 +347,6 @@ export function SessionRoute(props: {
                 onSelect={(id) =>
                   dispatch({ type: "terminal.pane.select", id })
                 }
-                focus={state.terminalPane.focus}
-                onFocus={() =>
-                  dispatch({ type: "terminal.pane.focus", focus: "terminal" })
-                }
-                scrollRef={props.terminalScrollRef}
               />
             </Show>
           );
@@ -376,6 +371,7 @@ export function SessionRoute(props: {
 }
 
 export function SessionFooter(props: {
+  width?: number;
   workspaceRoot?: string;
   onWorkspaceSelect?: () => void;
   viewState?: AppState;
@@ -392,6 +388,15 @@ export function SessionFooter(props: {
   const visibleChildren = () => props.children?.slice(0, 3) ?? [];
   const hiddenChildren = () =>
     Math.max(0, (props.children?.length ?? 0) - visibleChildren().length);
+  const workspaceLabel = () =>
+    compactPath(
+      props.workspaceRoot,
+      props.width !== undefined && props.width < 80
+        ? 24
+        : props.width !== undefined && props.width < 120
+          ? 40
+          : Number.POSITIVE_INFINITY,
+    );
 
   createEffect(() => {
     if (primaryActivity()?.state !== "active") {
@@ -407,16 +412,15 @@ export function SessionFooter(props: {
 
   createEffect(() => {
     const turnID = viewState().facts.activeTurn;
-    if (!turnID) {
+    const startedAt = viewState().activeTurnStartedAt;
+    if (!turnID || startedAt === undefined) {
       setTurnElapsedMs(0);
       return;
     }
-    const startedAt = Date.now();
-    setTurnElapsedMs(0);
-    const timer = setInterval(
-      () => setTurnElapsedMs(Date.now() - startedAt),
-      1_000,
-    );
+    const updateElapsed = () =>
+      setTurnElapsedMs(Math.max(0, Date.now() - startedAt));
+    updateElapsed();
+    const timer = setInterval(updateElapsed, 1_000);
     onCleanup(() => clearInterval(timer));
   });
 
@@ -432,8 +436,10 @@ export function SessionFooter(props: {
       <text
         fg={props.onWorkspaceSelect ? darkTheme.text : darkTheme.muted}
         onMouseUp={props.onWorkspaceSelect}
+        overflow="hidden"
+        wrapMode="none"
       >
-        {compactPath(props.workspaceRoot)}
+        {workspaceLabel()}
         <Show when={props.onWorkspaceSelect}> ▼</Show>
       </text>
       <box flexDirection="row" gap={2} flexShrink={0}>
@@ -684,8 +690,11 @@ export function SessionSidebar(props: {
         </box>
       </scrollbox>
       <text fg={darkTheme.muted}>
-        {values().model ?? "model not selected"} ·{" "}
-        {values().ctx ?? "context pending"}
+        {compactModelLabel(
+          values().model ?? "model not selected",
+          Math.max(12, Math.min(24, (props.width ?? 42) - 16)),
+        )}{" "}
+        · {values().ctx ?? "context pending"}
       </text>
     </box>
   );
@@ -755,6 +764,7 @@ export function SubagentRoute(props: {
         showInteractivePrompt
       />
       <SessionFooter
+        width={props.terminalWidth}
         workspaceRoot={props.workspaceRoot}
         onWorkspaceSelect={props.onWorkspaceSelect}
         viewState={state.subagentStates[props.agentID]}

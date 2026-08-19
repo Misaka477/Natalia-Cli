@@ -7,12 +7,12 @@ export const keymapBoundary = {
   palette: "ctrl+p",
   newSession: "ctrl+n",
   sessions: "ctrl+l",
-  settings: "ctrl+comma",
+  settings: "unset",
   status: "ctrl+i",
   help: "ctrl+h",
   sidebar: "ctrl+b",
   chat: "unset",
-  viewSwitch: "ctrl+g",
+  viewSwitch: "alt+p",
   copy: "ctrl+shift+c",
   composer: "history up/down · word move/delete · paste limit 8 MiB",
   scrollUp: "pgup",
@@ -98,7 +98,7 @@ export const commands: Record<string, CommandDef> = {
   "session.list": { id: "session.list", keys: "ctrl+l", desc: "List sessions" },
   "settings.open": {
     id: "settings.open",
-    keys: "ctrl+comma",
+    keys: "unset",
     desc: "Open settings",
   },
   status: { id: "status", keys: "ctrl+i", desc: "Show runtime status" },
@@ -124,8 +124,8 @@ export const commands: Record<string, CommandDef> = {
   },
   "view.switch": {
     id: "view.switch",
-    keys: "ctrl+g",
-    desc: "Switch between Chat and Plan",
+    keys: "alt+p",
+    desc: "Switch pane",
   },
   "message.copy.last": {
     id: "message.copy.last",
@@ -138,16 +138,10 @@ export const commands: Record<string, CommandDef> = {
     desc: "Fork session at the last submitted message",
   },
   snapshot: { id: "snapshot", keys: "ctrl+s", desc: "Create snapshot" },
-  "terminal.focus-toggle": {
-    id: "terminal.focus-toggle",
-    keys: "ctrl+t",
-    desc: "Toggle terminal/chat focus",
-  },
   "terminal.manage": {
     id: "terminal.manage",
-    keys: "f8",
+    keys: "unset",
     desc: "Manage interactive terminal sessions",
-    overlay: true,
   },
   // Task and flow documents are work definitions the operator authors and runs,
   // not tool configuration, so they get their own surfaces instead of living
@@ -240,11 +234,6 @@ export const commands: Record<string, CommandDef> = {
     keys: "unset",
     desc: "Toggle reasoning visibility",
   },
-  "view.close": {
-    id: "view.close",
-    keys: "unset",
-    desc: "Close the docked view and return focus to the feed",
-  },
   "view.focus.chat": {
     id: "view.focus.chat",
     keys: "unset",
@@ -257,11 +246,6 @@ export const commands: Record<string, CommandDef> = {
   },
   cancel: { id: "cancel", keys: "ctrl+c", desc: "Cancel current turn" },
   exit: { id: "exit", keys: "ctrl+d", desc: "Exit on empty composer" },
-  "dialog.close": {
-    id: "dialog.close",
-    keys: "escape",
-    desc: "Close current dialog",
-  },
   "dialog.select.submit": {
     id: "dialog.select.submit",
     keys: "unset",
@@ -306,25 +290,25 @@ export const commands: Record<string, CommandDef> = {
   },
   "model.dialog.favorite": {
     id: "model.dialog.favorite",
-    keys: "f",
+    keys: "alt+f",
     desc: "Toggle model favorite",
     scope: "dialog",
   },
   "agent.dialog.edit": {
     id: "agent.dialog.edit",
-    keys: "f",
+    keys: "alt+e",
     desc: "Edit agent override",
     scope: "dialog",
   },
   "agent.dialog.details": {
     id: "agent.dialog.details",
-    keys: "d",
+    keys: "alt+i",
     desc: "View agent details",
     scope: "dialog",
   },
   "model.dialog.variant": {
     id: "model.dialog.variant",
-    keys: "v",
+    keys: "alt+v",
     desc: "Select model variant",
     scope: "dialog",
   },
@@ -335,7 +319,7 @@ export const commands: Record<string, CommandDef> = {
   },
   "mcp.dialog.delete": {
     id: "mcp.dialog.delete",
-    keys: "d",
+    keys: "alt+d",
     desc: "Delete MCP server",
     scope: "dialog",
   },
@@ -359,7 +343,7 @@ export const commands: Record<string, CommandDef> = {
   },
   "provider.dialog.delete": {
     id: "provider.dialog.delete",
-    keys: "alt+x",
+    keys: "alt+d",
     desc: "Delete provider",
     scope: "dialog",
   },
@@ -371,13 +355,13 @@ export const commands: Record<string, CommandDef> = {
   },
   "provider.model.default": {
     id: "provider.model.default",
-    keys: "alt+d",
+    keys: "alt+s",
     desc: "Set default model",
     scope: "dialog",
   },
   "provider.model.delete": {
     id: "provider.model.delete",
-    keys: "alt+x",
+    keys: "alt+d",
     desc: "Delete model",
     scope: "dialog",
   },
@@ -412,12 +396,12 @@ export const commands: Record<string, CommandDef> = {
   },
   "prompt.stash.list": {
     id: "prompt.stash.list",
-    keys: "ctrl+shift+p",
+    keys: "unset",
     desc: "Open prompt stash",
   },
   "prompt.stash.delete": {
     id: "prompt.stash.delete",
-    keys: "d",
+    keys: "alt+d",
     desc: "Delete stashed prompt",
     scope: "dialog",
   },
@@ -438,7 +422,7 @@ export const commands: Record<string, CommandDef> = {
   },
   "prompt.attachment.remove": {
     id: "prompt.attachment.remove",
-    keys: "alt+x",
+    keys: "alt+d",
     desc: "Remove the most recent attachment (or the selected one in the list)",
   },
   "prompt.autocomplete.prev": {
@@ -508,11 +492,6 @@ export const commands: Record<string, CommandDef> = {
     keys: "end",
     desc: "Scroll to bottom",
   },
-  "dialog.test": {
-    id: "dialog.test",
-    keys: "none",
-    desc: "Test dialog stack (confirm → prompt → select)",
-  },
   "composer.submit": {
     id: "composer.submit",
     keys: "return",
@@ -539,7 +518,6 @@ const leaderBindings: Record<string, string> = {
   "session.new": "<leader>n",
   "session.list": "<leader>l",
   "session.sidebar.toggle": "<leader>b",
-  "settings.open": "<leader>comma",
   "help.open": "<leader>h",
   snapshot: "<leader>c",
   "agent.list": "<leader>a",

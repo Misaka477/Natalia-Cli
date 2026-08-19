@@ -14,7 +14,10 @@ import { RouteProvider, useRouteController } from "../src/context/route";
 import { ToastProvider } from "../src/context/toast";
 import { DialogProvider } from "../src/dialog/provider";
 import { registerNataliaKeymap } from "../src/modal/mode-stack";
-import { SubagentRoute } from "../src/routes/session/SessionRoute";
+import {
+  SessionFooter,
+  SubagentRoute,
+} from "../src/routes/session/SessionRoute";
 
 test("subagent detail renders the shared thinking, tool, and streaming rows", async () => {
   const setup = await createTestRenderer({ width: 120, height: 36 });
@@ -255,6 +258,72 @@ test("nested subagent navigation returns through each parent route", async () =>
   await Bun.sleep(20);
   await setup.renderOnce();
   expect(setup.captureCharFrame()).toContain("a1 · running · Esc back");
+
+  disposeKeymap();
+  setup.renderer.destroy();
+});
+
+test("the parent turn timer keeps running while a subagent route is open", async () => {
+  const setup = await createTestRenderer({ width: 100, height: 12 });
+  const keymap = createDefaultOpenTuiKeymap(setup.renderer);
+  const disposeKeymap = registerNataliaKeymap(keymap, setup.renderer);
+  let dispatch: ((event: RuntimeEvent) => void) | undefined;
+  let openSubagent: (() => void) | undefined;
+  let returnToParent: (() => void) | undefined;
+
+  function RoutedSession() {
+    const route = useRouteController();
+    openSubagent = () => route.push({ kind: "subagent", id: "a1" });
+    returnToParent = () => route.back();
+    const current = () => route.route();
+    return current().kind === "subagent" ? (
+      <SubagentRoute
+        agentID={(current() as { kind: "subagent"; id: string }).id}
+        onBack={() => route.back()}
+        terminalWidth={100}
+      />
+    ) : (
+      <SessionFooter workspaceRoot="/work/natalia" />
+    );
+  }
+
+  await render(
+    () => (
+      <KeymapProvider keymap={keymap}>
+        <ToastProvider>
+          <PromptRefProvider>
+            <DialogProvider>
+              <StateProvider onReady={(bridge) => (dispatch = bridge.dispatch)}>
+                <RouteProvider>
+                  <RoutedSession />
+                </RouteProvider>
+              </StateProvider>
+            </DialogProvider>
+          </PromptRefProvider>
+        </ToastProvider>
+      </KeymapProvider>
+    ),
+    setup.renderer,
+  );
+  if (!dispatch || !openSubagent || !returnToParent)
+    throw new Error("routed session did not come up");
+
+  dispatch({ type: "turn.started", id: "turn_parent" });
+  await setup.renderOnce();
+  expect(setup.captureCharFrame()).toContain("0:00 elapsed");
+
+  await Bun.sleep(1_050);
+  openSubagent();
+  await setup.renderOnce();
+  await Bun.sleep(1_050);
+  returnToParent();
+  await setup.renderOnce();
+
+  const elapsed = setup.captureCharFrame().match(/(\d+):(\d{2}) elapsed/);
+  expect(elapsed).not.toBeNull();
+  expect(Number(elapsed![1]) * 60 + Number(elapsed![2])).toBeGreaterThanOrEqual(
+    2,
+  );
 
   disposeKeymap();
   setup.renderer.destroy();

@@ -327,12 +327,12 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
       ...(props.onExtraKey
         ? [
             {
-              key: "f",
+              key: "alt+e",
               desc: "Extra action",
               group: "Dialog",
               cmd: () => {
                 const option = selected();
-                if (option) props.onExtraKey?.("f", option);
+                if (option) props.onExtraKey?.("e", option);
               },
             },
           ]

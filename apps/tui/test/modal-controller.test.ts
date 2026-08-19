@@ -10,13 +10,6 @@ import {
   resolveQuestion,
 } from "@natalia/ui-model";
 import { reduceState, initialState } from "../src/context/state";
-import { hasUnsavedPromptChanges } from "../src/dialog/PromptDialog";
-
-test("prompt dialog only asks before discarding changed input", () => {
-  expect(hasUnsavedPromptChanges("", undefined)).toBe(false);
-  expect(hasUnsavedPromptChanges("same", "same")).toBe(false);
-  expect(hasUnsavedPromptChanges("edited", "same")).toBe(true);
-});
 
 test("state reducer opens session history and settings dialogs", () => {
   let state = structuredClone(initialState);

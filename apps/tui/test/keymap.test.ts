@@ -74,7 +74,7 @@ describe("command definitions", () => {
     const { bindings } = buildKeybindMap();
     expect(bindings["session.new"]).toContain("<leader>n");
     expect(bindings["session.list"]).toContain("<leader>l");
-    expect(bindings["settings.open"]).toEqual(["ctrl+comma", "<leader>comma"]);
+    expect(bindings["settings.open"]).toBeUndefined();
     expect(bindings["agent.list"]).toEqual(["<leader>a"]);
     expect(bindings["model.list"]).toEqual(["<leader>m"]);
   });
@@ -90,30 +90,28 @@ describe("command definitions", () => {
     expect(bindings["provider.dialog.edit"]).toEqual(["alt+e"]);
     expect(bindings["provider.dialog.models"]).toEqual(["alt+m"]);
     expect(bindings["provider.dialog.toggle"]).toEqual(["alt+t"]);
-    expect(bindings["provider.dialog.delete"]).toEqual(["alt+x"]);
+    expect(bindings["provider.dialog.delete"]).toEqual(["alt+d"]);
     expect(bindings["provider.model.toggle"]).toEqual(["alt+t"]);
-    expect(bindings["provider.model.default"]).toEqual(["alt+d"]);
-    expect(bindings["provider.model.delete"]).toEqual(["alt+x"]);
+    expect(bindings["provider.model.default"]).toEqual(["alt+s"]);
+    expect(bindings["provider.model.delete"]).toEqual(["alt+d"]);
   });
 
   test("known command IDs match documented set", () => {
     expect(commands["palette.toggle"]).toBeDefined();
     expect(commands["session.new"]).toBeDefined();
     expect(commands["session.list"]).toBeDefined();
-    expect(commands["settings.open"]).toBeDefined();
+    expect(commands["settings.open"]).toMatchObject({ keys: "unset" });
     expect(commands["help.open"]).toBeDefined();
     expect(commands["snapshot"]).toBeDefined();
-    expect(commands["terminal.focus-toggle"]).toBeDefined();
     expect(commands["chat.open"]).toMatchObject({ keys: "unset" });
-    expect(commands["view.switch"]).toMatchObject({ keys: "ctrl+g" });
-    expect(commands["terminal.manage"]).toMatchObject({ keys: "f8" });
+    expect(commands["view.switch"]).toMatchObject({ keys: "alt+p" });
+    expect(commands["terminal.manage"]).toMatchObject({ keys: "unset" });
     expect(commands["checkpoint.manage"]).toMatchObject({
       keys: "ctrl+shift+k",
     });
     expect(commands["sandbox.manage"]).toMatchObject({ keys: "ctrl+shift+b" });
     expect(commands["cancel"]).toBeDefined();
     expect(commands["exit"]).toBeDefined();
-    expect(commands["dialog.close"]).toBeDefined();
     expect(commands["dialog.select.submit"]).toBeDefined();
     expect(commands["dialog.select.next"].scope).toBe("dialog");
     expect(commands["model.dialog.favorite"].scope).toBe("dialog");
@@ -130,7 +128,7 @@ describe("command definitions", () => {
       keys: "alt+y",
     });
     expect(commands["prompt.attachment.remove"]).toMatchObject({
-      keys: "alt+x",
+      keys: "alt+d",
     });
     expect(commands["prompt.autocomplete.select"]).toMatchObject({
       keys: "return",

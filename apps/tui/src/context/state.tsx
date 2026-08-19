@@ -149,9 +149,11 @@ export type AppState = {
    * text, and the transcript rows it narrates itself.
    */
   facts: ViewAppState;
+  /** Stable timing anchor for the active turn, retained across route remounts. */
+  activeTurnStartedAt?: number;
   /** Full TUI states isolated by subagent identity, using this same reducer. */
   subagentStates: Record<string, AppState>;
-  terminalPane: { selectedID?: string; focus: "chat" | "terminal" };
+  terminalPane: { selectedID?: string };
   /** The Chat conversation rows, kept in object identity like the transcript. */
   chatMessages: MessageBlock[];
 };
@@ -175,7 +177,7 @@ export function createInitialState(): AppState {
     modal: structuredClone(initialModalState),
     facts: initialFacts(),
     subagentStates: {},
-    terminalPane: { focus: "chat" },
+    terminalPane: {},
     chatMessages: [],
     messages: [],
   };
@@ -317,7 +319,11 @@ function applyEvent(state: AppState, event: RuntimeEvent) {
     projectSubagentEvent(state, event.agentID, event);
     return;
   }
+  const previousActiveTurn = state.facts.activeTurn;
   projectFacts(state, event);
+  if (!state.facts.activeTurn) state.activeTurnStartedAt = undefined;
+  else if (state.facts.activeTurn !== previousActiveTurn)
+    state.activeTurnStartedAt = Date.now();
   syncProjectedChat(state);
   syncProjectedRows(state);
   applyTuiEvent(state, event);
@@ -563,19 +569,13 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
         (terminal.status === "exited" || terminal.status === "failed")
       ) {
         state.terminalPane.selectedID = nextActiveTerminal(state, terminal.id);
-        if (!state.terminalPane.selectedID) state.terminalPane.focus = "chat";
       }
       return;
     }
     case "terminal.pane.select":
       if (activeTerminalIDs(state).includes(event.id)) {
         state.terminalPane.selectedID = event.id;
-        state.terminalPane.focus = "terminal";
       }
-      return;
-    case "terminal.pane.focus":
-      state.terminalPane.focus = event.focus;
-      state.terminalPane.selectedID ??= nextActiveTerminal(state);
       return;
     case "terminal.timeline":
       applyResourceEvent(state.facts, event);
@@ -628,6 +628,7 @@ function applyTuiEvent(state: AppState, event: RuntimeEvent) {
       state.footer = `MCP ${event.server}: ${event.status}`;
       return;
     case "diagnostic":
+      if (event.level === "info") return;
       upsertBlock(
         state,
         `diagnostic:${Date.now()}`,

@@ -13,14 +13,22 @@ describe("permission families", () => {
   });
 
   test("groups terminal operations across terminal IDs and risk levels", () => {
-    expect(classifyPermissionFamily("interactive_terminal_start")).toBe(
+    expect(classifyPermissionFamily("interactive_terminal_start")).toEqual(
       PERMISSION_FAMILIES.interactiveTerminal,
     );
-    expect(classifyPermissionFamily("interactive_terminal_keys")).toBe(
+    expect(classifyPermissionFamily("interactive_terminal_keys")).toEqual(
       PERMISSION_FAMILIES.interactiveTerminal,
     );
-    expect(classifyPermissionFamily("terminal_observe")).toBe(
+    expect(classifyPermissionFamily("terminal_observe")).toEqual(
       PERMISSION_FAMILIES.interactiveTerminal,
+    );
+  });
+
+  test("returns copies so consumers cannot mutate the shared catalog", () => {
+    const classified = classifyPermissionFamily("write_file");
+    classified.scope = "changed by consumer";
+    expect(PERMISSION_FAMILIES.filesystemWrite.scope).toBe(
+      "All filesystem write tools in this session",
     );
   });
 

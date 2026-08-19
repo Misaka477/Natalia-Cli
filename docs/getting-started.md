@@ -179,27 +179,27 @@ A healthy report shows your provider, the workspace path, `native tools: 66`
 
 Type a request and press Enter. Useful keys:
 
-| Key                 | Action                                       |
-| ------------------- | -------------------------------------------- |
-| `enter`             | Submit                                       |
-| `ctrl+j`            | Newline instead of submitting                |
-| `ctrl+c`            | Cancel the current turn                      |
-| `ctrl+d`            | Exit (on an empty composer)                  |
-| `ctrl+p`            | Command palette                              |
-| `ctrl+g`            | Switch Chat/Plan in the two-pane layout      |
-| `ctrl+b`            | Sidebar                                      |
-| `ctrl+n` / `ctrl+l` | New session / session list                   |
-| `ctrl+,`            | Settings                                     |
-| `ctrl+i` / `ctrl+h` | Status / help                                |
-| `up` / `down`       | Move through the `/` and `@` completion list |
-| `escape`            | Dismiss completions                          |
+| Key                 | Action                                        |
+| ------------------- | --------------------------------------------- |
+| `enter`             | Submit                                        |
+| `ctrl+j`            | Newline instead of submitting                 |
+| `ctrl+c`            | Cancel the current turn                       |
+| `ctrl+d`            | Exit (on an empty composer)                   |
+| `ctrl+p`            | Command palette                               |
+| `alt+p`             | Cycle panes for the current responsive layout |
+| `ctrl+b`            | Sidebar                                       |
+| `ctrl+n` / `ctrl+l` | New session / session list                    |
+| `ctrl+i` / `ctrl+h` | Status / help                                 |
+| `up` / `down`       | Move through the `/` and `@` completion list  |
+| `escape`            | Dismiss completions                           |
 
 Type `/` for commands and `@` to mention a workspace file, an agent, or an MCP
 resource.
 
-Open `Live Work Chat` from the command palette. It appears as an overlay below
-112 columns, shares the secondary pane with Plan from 112 to 167 columns, and
-appears beside Main and Plan from 168 columns onward.
+Live Work Chat and the sidebar are responsive default panes. Below 112 columns,
+`Alt+P` cycles Main, Chat, and Sidebar. From 112 to 167 columns it switches
+the secondary pane between Chat and Sidebar. From 168 columns onward all three
+panes are visible and the shortcut cycles focus between them.
 
 Frequently used commands:
 

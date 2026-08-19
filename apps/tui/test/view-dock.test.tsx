@@ -136,18 +136,9 @@ async function mountApp(width = 150, height = 34) {
   };
 }
 
-test("chat.open docks the Live Work Chat beside the feed and focuses the chat pane", async () => {
+test("medium layouts show Main and Chat by default", async () => {
   const mounted = await mountApp();
   try {
-    // Open the palette, filter by the view's display name, apply it.
-    await mounted.keys.pressKey("p", { ctrl: true });
-    await Bun.sleep(30);
-    await mounted.keys.typeText("Live Work");
-    await Bun.sleep(30);
-    await mounted.setup.renderOnce();
-    mounted.keys.pressEnter();
-    await Bun.sleep(60);
-    await mounted.setup.renderOnce();
     const frame = mounted.setup.captureCharFrame();
     expect(frame).toContain("Live Work Chat");
     expect(frame).toContain("Main: running");
@@ -169,97 +160,46 @@ test("chat.open docks the Live Work Chat beside the feed and focuses the chat pa
   }
 });
 
-test("closing the docked view restores the feed and returns focus", async () => {
-  const mounted = await mountApp();
-  try {
-    await mounted.keys.pressKey("p", { ctrl: true });
-    await Bun.sleep(30);
-    await mounted.keys.typeText("Live Work");
-    await Bun.sleep(30);
-    mounted.keys.pressEnter();
-    await Bun.sleep(60);
-    // Open the palette again and close the view.
-    await mounted.keys.pressKey("p", { ctrl: true });
-    await Bun.sleep(30);
-    await mounted.keys.typeText("Close the docked view");
-    await Bun.sleep(30);
-    mounted.keys.pressEnter();
-    await Bun.sleep(60);
-    await mounted.setup.renderOnce();
-    const frame = mounted.setup.captureCharFrame();
-    expect(frame).not.toContain("Live Work Chat");
-    expect(frame).toContain("Ask anything...");
-  } finally {
-    mounted.disposeKeymap();
-    mounted.setup.renderer.destroy();
-  }
-});
-
-test("narrow terminals open Chat as a full-width conversation", async () => {
+test("narrow layouts cycle Main, Chat, Sidebar, and Main", async () => {
   const mounted = await mountApp(80, 24);
   try {
-    await mounted.keys.pressKey("p", { ctrl: true });
-    await Bun.sleep(30);
-    await mounted.keys.typeText("Live Work");
-    await Bun.sleep(30);
-    mounted.keys.pressEnter();
-    await Bun.sleep(60);
-    await mounted.setup.renderOnce();
-    const frame = mounted.setup.captureCharFrame();
-    expect(frame).toContain("Live Work Chat");
-    expect(frame).toContain("Ask the Chat");
-    expect(frame).not.toContain("Ask anything...");
-  } finally {
-    mounted.disposeKeymap();
-    mounted.setup.renderer.destroy();
-  }
-});
+    expect(mounted.setup.captureCharFrame()).toContain("Ask anything...");
+    expect(mounted.setup.captureCharFrame()).not.toContain("Live Work Chat");
 
-test("medium terminals keep the main conversation readable beside Chat", async () => {
-  const mounted = await mountApp(112, 24);
-  try {
-    await mounted.keys.pressKey("p", { ctrl: true });
-    await Bun.sleep(30);
-    await mounted.keys.typeText("Live Work");
-    await Bun.sleep(30);
-    mounted.keys.pressEnter();
-    await Bun.sleep(60);
-    await mounted.setup.renderOnce();
-    const frame = mounted.setup.captureCharFrame();
-    expect(frame).toContain("Live Work Chat");
-    expect(frame).toContain("Ask the Chat");
-    expect(frame).toContain("Ask anything...");
-    expect(frame).not.toContain("Plan");
-  } finally {
-    mounted.disposeKeymap();
-    mounted.setup.renderer.destroy();
-  }
-});
-
-test("view.switch round-trips between Chat and Plan with Ctrl-G", async () => {
-  const mounted = await mountApp();
-  try {
-    await mounted.keys.pressKey("p", { ctrl: true });
-    await Bun.sleep(30);
-    await mounted.keys.typeText("Live Work");
-    await Bun.sleep(30);
-    mounted.keys.pressEnter();
+    mounted.keys.pressKey("p", { meta: true });
     await Bun.sleep(60);
     await mounted.setup.renderOnce();
     expect(mounted.setup.captureCharFrame()).toContain("Live Work Chat");
 
-    mounted.keys.pressKey("g", { ctrl: true });
+    mounted.keys.pressKey("p", { meta: true });
     await Bun.sleep(60);
     await mounted.setup.renderOnce();
-    const planFrame = mounted.setup.captureCharFrame();
-    expect(planFrame).not.toContain("Live Work Chat");
+    expect(mounted.setup.captureCharFrame()).not.toContain("Live Work Chat");
 
-    mounted.keys.pressKey("g", { ctrl: true });
+    mounted.keys.pressKey("p", { meta: true });
     await Bun.sleep(60);
     await mounted.setup.renderOnce();
-    const chatFrame = mounted.setup.captureCharFrame();
-    expect(chatFrame).toContain("Live Work Chat");
-    expect(chatFrame).toContain("Ask the Chat");
+    expect(mounted.setup.captureCharFrame()).toContain("Ask anything...");
+  } finally {
+    mounted.disposeKeymap();
+    mounted.setup.renderer.destroy();
+  }
+});
+
+test("double-pane layouts switch the secondary pane with Alt-P", async () => {
+  const mounted = await mountApp(112, 24);
+  try {
+    expect(mounted.setup.captureCharFrame()).toContain("Live Work Chat");
+
+    mounted.keys.pressKey("p", { meta: true });
+    await Bun.sleep(60);
+    await mounted.setup.renderOnce();
+    expect(mounted.setup.captureCharFrame()).not.toContain("Live Work Chat");
+
+    mounted.keys.pressKey("p", { meta: true });
+    await Bun.sleep(60);
+    await mounted.setup.renderOnce();
+    expect(mounted.setup.captureCharFrame()).toContain("Live Work Chat");
   } finally {
     mounted.disposeKeymap();
     mounted.setup.renderer.destroy();

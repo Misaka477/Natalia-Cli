@@ -9,6 +9,7 @@ import {
   modelRefKey,
   type ConfigV3,
   type ModelCapabilities,
+  type ModelLimits,
   type ModelOverride,
 } from "@natalia/contracts";
 import { DialogSelect, type DialogSelectOption } from "../dialog/DialogSelect";
@@ -77,6 +78,7 @@ export type ProviderModelRow = {
   status: "stable" | "experimental" | "deprecated";
   isDefault: boolean;
   capabilities: ModelCapabilities;
+  contextWindow: ModelLimits["contextWindow"];
   thinkingEnabled: boolean;
 };
 
@@ -120,6 +122,7 @@ export function providerModels(
         status: catalog?.status ?? "stable",
         isDefault: defaultKey === key,
         capabilities: catalog?.capabilities ?? DEFAULT_MODEL_CAPABILITIES,
+        contextWindow: catalog?.limits.contextWindow ?? "auto",
         thinkingEnabled: override?.requestDefaults.thinkingEnabled ?? true,
       };
     });
@@ -232,6 +235,33 @@ export function setModelCapability(
   const model = next.catalog?.providers?.[providerID]?.models?.[modelID];
   if (!model) return next;
   model.capabilities = { ...model.capabilities, [capability]: enabled };
+  return next;
+}
+
+/** Stores a context-window limit on exactly one provider/model catalog entry. */
+export function setModelContextWindow(
+  config: ConfigV3,
+  providerID: string,
+  modelID: string,
+  contextWindow: ModelLimits["contextWindow"],
+): ConfigV3 {
+  const next = structuredClone(config);
+  const models = next.catalog.providers[providerID]?.models;
+  const existing = models?.[modelID];
+  if (existing) {
+    existing.limits = { ...existing.limits, contextWindow };
+    return next;
+  }
+  if (!next.providers[providerID]) return next;
+  const key = modelRefKey({ provider: providerID, model: modelID });
+  next.catalog.providers[providerID] ??= { models: {} };
+  next.catalog.providers[providerID]!.models[modelID] = {
+    name: next.modelOverrides[key]?.name ?? modelID,
+    capabilities: { ...DEFAULT_MODEL_CAPABILITIES },
+    limits: { contextWindow },
+    status: "stable",
+    source: "manual",
+  };
   return next;
 }
 
@@ -380,6 +410,7 @@ type Screen =
   | { kind: "edit-key"; providerID: string }
   | { kind: "models"; providerID: string; selectedModelID?: string }
   | { kind: "model-settings"; providerID: string; modelID: string }
+  | { kind: "model-context-window"; providerID: string; modelID: string }
   | { kind: "models-select"; providerID: string; models: string[] }
   | { kind: "models-manual"; providerID: string; error?: string }
   | { kind: "model-delete"; providerID: string; modelID: string }
@@ -457,6 +488,12 @@ function parentScreen(screen: Screen): Screen | undefined {
         kind: "models",
         providerID: screen.providerID,
         selectedModelID: screen.modelID,
+      };
+    case "model-context-window":
+      return {
+        kind: "model-settings",
+        providerID: screen.providerID,
+        modelID: screen.modelID,
       };
     case "models-select":
     case "models-manual":
@@ -1182,6 +1219,15 @@ export function DialogProviderManager(props: {
             description: row.enabled ? "Enabled" : "Disabled",
           },
           {
+            value: "contextWindow",
+            title: "Context Window",
+            category: "Limits",
+            description:
+              row.contextWindow === "auto"
+                ? "Auto-detect"
+                : `${row.contextWindow.toLocaleString()} tokens`,
+          },
+          {
             value: "reasoning",
             title: "Model supports reasoning",
             category: "Capabilities",
@@ -1215,6 +1261,9 @@ export function DialogProviderManager(props: {
         onSelect={(option) => {
           if (option.value === "enabled") {
             persist(toggleModelEnabled(config(), providerID, modelID));
+          } else if (option.value === "contextWindow") {
+            setScreen({ kind: "model-context-window", providerID, modelID });
+            return;
           } else if (option.value === "thinkingEnabled") {
             persist(
               setModelThinkingEnabled(
@@ -1239,6 +1288,49 @@ export function DialogProviderManager(props: {
               ),
             );
           }
+          setScreen({ kind: "model-settings", providerID, modelID });
+        }}
+      />
+    );
+  }
+
+  if (current.kind === "model-context-window") {
+    const { providerID, modelID } = current;
+    const row = providerModels(config(), providerID).find(
+      (model) => model.modelID === modelID,
+    );
+    if (!row) {
+      setScreen({ kind: "models", providerID });
+      return <span />;
+    }
+    return (
+      <DialogPrompt
+        title={`Context Window: ${row.name}`}
+        description={() => (
+          <text fg={darkTheme.muted}>
+            This limit applies only to {providerID}/{modelID}. Enter a positive
+            token count, or auto to use provider and catalog detection.
+          </text>
+        )}
+        value={String(row.contextWindow)}
+        validate={(value) => {
+          const normalized = value.trim().toLowerCase();
+          if (normalized === "auto") return undefined;
+          const tokens = Number(normalized);
+          return Number.isSafeInteger(tokens) && tokens > 0
+            ? undefined
+            : 'Enter a positive whole number or "auto"';
+        }}
+        onConfirm={(value) => {
+          const normalized = value.trim().toLowerCase();
+          persist(
+            setModelContextWindow(
+              config(),
+              providerID,
+              modelID,
+              normalized === "auto" ? "auto" : Number(normalized),
+            ),
+          );
           setScreen({ kind: "model-settings", providerID, modelID });
         }}
       />

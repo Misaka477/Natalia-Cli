@@ -426,7 +426,6 @@ const EVENT_TRIGGERS: Record<string, string> = {
   "subagent.update": "a subagent session changed state",
   "terminal.action": "a terminal action was performed (human or model side)",
   "terminal.approval": "a terminal approval scope was granted or revoked",
-  "terminal.pane.focus": "the terminal pane focus changed; UI-only",
   "terminal.pane.select": "a terminal pane was selected; UI-only",
   "terminal.timeline": "a terminal action was appended to the timeline",
   "terminal.update": "a terminal session's status or screen changed",

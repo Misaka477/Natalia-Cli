@@ -47,7 +47,6 @@ import { DialogConfirm } from "../dialog/DialogConfirm";
 import { DialogPrompt } from "../dialog/DialogPrompt";
 import { DialogSelect, type DialogSelectOption } from "../dialog/DialogSelect";
 import {
-  DialogHelp,
   DialogDiagnostics,
   DialogSessionList,
   DialogStatus,
@@ -61,14 +60,13 @@ import {
   PROMPT_FRAME_BORDER,
   promptTextareaRows,
 } from "../prompt-border";
-import { statusValues } from "../routes/session/tool-utils";
+import { compactModelLabel, statusValues } from "../routes/session/tool-utils";
 import { markdownSyntax } from "../routes/session/tool-views";
 import { DialogModel } from "../component/DialogModel";
 import { DialogSkill } from "../component/DialogSkill";
 import { DialogStash } from "../component/DialogStash";
 import { DialogAttachment } from "../component/DialogAttachment";
 import { DialogWorkspaceSearch } from "../component/DialogWorkspaceSearch";
-import { DialogTerminal } from "../component/DialogTerminal";
 import { DialogCheckpoint } from "../component/DialogCheckpoint";
 import { DialogSandbox } from "../component/DialogSandbox";
 import { LiveChatView } from "../component/LiveChatView";
@@ -328,8 +326,12 @@ function Shell(props: {
   // The docked view host: which view is open and which pane owns the keyboard.
   // Presentation state, so it lives here (like the sidebar) rather than in the
   // runtime event stream.
-  const [viewActive, setViewActive] = createSignal<SessionView | null>(null);
-  const [viewFocus, setViewFocus] = createSignal<"main" | "chat">("main");
+  const [viewActive, setViewActive] = createSignal<SessionView | null>(
+    renderer.width < 112 ? null : "chat",
+  );
+  const [viewFocus, setViewFocus] = createSignal<"main" | "chat" | "sidebar">(
+    "main",
+  );
   const [chatInput, setChatInput] = createSignal<InputRenderable>();
   const promptRef = usePromptRef();
   const { state, dispatch } = useAppState();
@@ -380,7 +382,7 @@ function Shell(props: {
   createEffect(() => {
     const pane = viewFocus();
     const open = viewActive() !== null;
-    if (interactivePromptActive() || (open && pane === "chat")) {
+    if (interactivePromptActive() || (open && pane !== "main")) {
       composer()?.blur();
       return;
     }
@@ -424,7 +426,6 @@ function Shell(props: {
   });
   const history = new PromptHistory();
   const scrollRef: { current?: any } = {};
-  const terminalScrollRef: { current?: any } = {};
   const [modelSubmissions, setModelSubmissions] = createSignal(0);
   const [workflowRunning, setWorkflowRunning] = createSignal(false);
   const [quickModel, setQuickModel] = createSignal<RuntimeModelSelection>({});
@@ -1193,13 +1194,33 @@ function Shell(props: {
           setViewFocus("chat");
         },
         switchView: () => {
-          if (layout().paneMode !== "double") return;
-          setViewActive(viewActive() === "plan" ? "chat" : "plan");
-          setViewFocus("main");
-        },
-        close: () => {
-          setViewActive(null);
-          setViewFocus("main");
+          if (layout().paneMode === "single") {
+            if (viewActive() === null) {
+              setViewActive("chat");
+              setViewFocus("chat");
+            } else if (viewActive() === "chat") {
+              setViewActive("plan");
+              setViewFocus("sidebar");
+            } else {
+              setViewActive(null);
+              setViewFocus("main");
+            }
+            return;
+          }
+          if (layout().paneMode === "double") {
+            const next = viewActive() === "chat" ? "plan" : "chat";
+            setViewActive(next);
+            setViewFocus(next === "chat" ? "chat" : "sidebar");
+            return;
+          }
+          setViewActive("chat");
+          setViewFocus((current) =>
+            current === "main"
+              ? "chat"
+              : current === "chat"
+                ? "sidebar"
+                : "main",
+          );
         },
         focusChat: () => {
           if (viewActive() === "chat") {
@@ -1285,81 +1306,6 @@ function Shell(props: {
 
   useBindings(() => ({
     mode: "base",
-    priority: 1,
-    enabled: () => state.terminalPane.focus === "terminal",
-    bindings: [
-      {
-        key: "ctrl+t",
-        desc: "Return focus to chat",
-        group: "Terminal",
-        cmd: () =>
-          dispatch({
-            type: "terminal.pane.focus",
-            focus: "chat",
-          }),
-      },
-      {
-        key: "pageup",
-        desc: "Scroll terminal up",
-        group: "Terminal",
-        cmd: () =>
-          terminalScrollRef.current?.scrollBy(
-            -(terminalScrollRef.current.viewport?.height ?? 8) * 0.8,
-          ),
-      },
-      {
-        key: "pagedown",
-        desc: "Scroll terminal down",
-        group: "Terminal",
-        cmd: () =>
-          terminalScrollRef.current?.scrollBy(
-            (terminalScrollRef.current.viewport?.height ?? 8) * 0.8,
-          ),
-      },
-      {
-        key: "home",
-        desc: "Scroll terminal to start",
-        group: "Terminal",
-        cmd: () => terminalScrollRef.current?.scrollTo(0),
-      },
-      {
-        key: "end",
-        desc: "Scroll terminal to end",
-        group: "Terminal",
-        cmd: () =>
-          terminalScrollRef.current?.scrollTo(
-            terminalScrollRef.current.scrollHeight ?? 0,
-          ),
-      },
-      {
-        key: "left",
-        desc: "Previous terminal session",
-        group: "Terminal",
-        cmd: () => moveTerminalSelection(-1),
-      },
-      {
-        key: "right",
-        desc: "Next terminal session",
-        group: "Terminal",
-        cmd: () => moveTerminalSelection(1),
-      },
-      {
-        key: "tab",
-        desc: "Next terminal session",
-        group: "Terminal",
-        cmd: () => moveTerminalSelection(1),
-      },
-      {
-        key: "shift+tab",
-        desc: "Previous terminal session",
-        group: "Terminal",
-        cmd: () => moveTerminalSelection(-1),
-      },
-    ],
-  }));
-
-  useBindings(() => ({
-    mode: "base",
     enabled: () => !composer()?.plainText,
     bindings: [
       {
@@ -1435,30 +1381,8 @@ function Shell(props: {
     ],
   }));
 
-  createEffect(() => {
-    if (route.route().kind === "none" && state.terminalPane.focus === "chat") {
-      setTimeout(() => composer()?.focus(), 1);
-    }
-  });
-
   function toBottom(delay = 50) {
     setTimeout(() => scrollToBottom(scrollRef.current), delay);
-  }
-
-  function moveTerminalSelection(direction: -1 | 1) {
-    const sessions = Object.values(state.facts.terminals).filter(
-      (terminal) =>
-        terminal.ownership === "model" &&
-        terminal.status !== "exited" &&
-        terminal.status !== "failed",
-    );
-    if (sessions.length < 2) return;
-    const current = sessions.findIndex(
-      (terminal) => terminal.id === state.terminalPane.selectedID,
-    );
-    const next =
-      sessions[(current + direction + sessions.length) % sessions.length];
-    if (next) dispatch({ type: "terminal.pane.select", id: next.id });
   }
 
   function setFollowMode(value: boolean) {
@@ -1529,7 +1453,6 @@ function Shell(props: {
         <Show when={!activeSubagentRoute()}>
           <SessionRoute
             scrollRef={scrollRef}
-            terminalScrollRef={terminalScrollRef}
             followBottom={followBottom()}
             onFollowChange={setFollowMode}
             density={preferences().density}
@@ -1712,7 +1635,7 @@ function Shell(props: {
                     </text>
                     <text fg={theme.theme.muted}>·</text>
                     <text fg={theme.theme.text} onMouseUp={openModelPicker}>
-                      {compactComposerLabel(
+                      {compactModelLabel(
                         quickModel().modelID ??
                           state.facts.modelSelection?.modelID ??
                           statusValues(state.statusSegments).model ??
@@ -1820,7 +1743,7 @@ function Shell(props: {
                     {attachmentPaths()
                       .map((path) => path.split("/").at(-1) ?? path)
                       .join(", ")}
-                    {" · Alt+X removes last, Alt+O manage"}
+                    {" · Alt+D removes last, Alt+O manage"}
                   </text>
                 </Show>
               </box>
@@ -1838,6 +1761,7 @@ function Shell(props: {
             />
           </box>
           <SessionFooter
+            width={layout().contentWidth}
             workspaceRoot={props.workspaceRoot}
             onWorkspaceSelect={openWorkspaceSwitcher}
           />
@@ -1878,10 +1802,6 @@ function Shell(props: {
             onRequestFocus={() => setViewFocus("chat")}
             onEscape={() => {
               if (layout().viewOverlay) setViewActive(null);
-              setViewFocus("main");
-            }}
-            onClose={() => {
-              setViewActive(null);
               setViewFocus("main");
             }}
             onInputRef={setChatInput}
@@ -1931,7 +1851,7 @@ function Shell(props: {
         when={
           layout().viewVisible &&
           viewActive() === "plan" &&
-          layout().paneMode === "double"
+          layout().paneMode !== "triple"
         }
       >
         <SessionSidebar

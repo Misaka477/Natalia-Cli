@@ -50,7 +50,6 @@ async function mountChat(
   callbacks: {
     focused?: () => boolean;
     onEscape?: () => void;
-    onClose?: () => void;
     onSend?: (text: string) => void;
     onRollback?: (toMessageID: string) => void;
     onPlanAccept?: (planID: string) => void;
@@ -80,7 +79,6 @@ async function mountChat(
             focused={callbacks.focused ?? (() => true)}
             onRequestFocus={() => {}}
             onEscape={callbacks.onEscape ?? (() => {})}
-            onClose={callbacks.onClose ?? (() => {})}
             onInputRef={() => {}}
             onSend={(text) => {
               sent.push(text);
@@ -332,7 +330,6 @@ test("a streamed Chat reply appears incrementally as the projection updates", as
             focused={() => true}
             onRequestFocus={() => {}}
             onEscape={() => {}}
-            onClose={() => {}}
             onInputRef={() => {}}
             onSend={() => {}}
             onRollback={() => {}}

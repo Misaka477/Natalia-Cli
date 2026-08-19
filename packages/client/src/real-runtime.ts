@@ -57,7 +57,10 @@ import {
   ContextWindowResolver,
   contextEntriesToProviderMessages,
   contextStatusEvent,
+  MAX_STEPS_PROMPT,
+  MISSING_FINAL_RESPONSE_FALLBACK,
   nativeToolCallCorrection,
+  normalizeRawToolCallProtocol,
   ProviderConcurrencyLimiter,
   providerCompactor,
   providerForModel,
@@ -279,6 +282,7 @@ function userSkillRoot() {
  * and the turn's step budget still bounds it.
  */
 const WAITING_TOOLS = new Set(["terminal_observe"]);
+const MAX_PROTOCOL_CORRECTIONS = 2;
 
 /**
  * The application-layer host allowlist is enforced where fetch-style tools
@@ -1252,6 +1256,7 @@ export function createRealRuntimeClient(
       runner: import("@natalia/subagent").RunnerContext,
       step: number,
       activeProvider: StreamingProvider,
+      allowToolCalls = true,
     ) {
       const id = subagentTurnID(runner);
       const runStep = () =>
@@ -1262,25 +1267,32 @@ export function createRealRuntimeClient(
             let thinking = "";
             const calls: ProviderToolCall[] = [];
             let protocolViolation = "";
-            for await (const chunk of requireNativeToolCallProtocol(
-              withProviderConcurrency(
-                providerConcurrencyLimiter,
-                activeProvider.provider,
-                () =>
-                  activeProvider.stream({
-                    messages: contextEntriesToProviderMessages(
-                      ledger.snapshot().entries,
-                    ),
-                    tools: visibleTools.map((tool) => ({
-                      name: tool.name,
-                      description: tool.description,
-                      parameters: tool.parameters,
-                    })),
-                    signal: runner.signal,
-                  }),
-                runner.signal,
-              ),
-            )) {
+            const stream = withProviderConcurrency(
+              providerConcurrencyLimiter,
+              activeProvider.provider,
+              () =>
+                activeProvider.stream({
+                  messages: contextEntriesToProviderMessages(
+                    ledger.snapshot().entries,
+                  ),
+                  tools: allowToolCalls
+                    ? visibleTools.map((tool) => ({
+                        name: tool.name,
+                        description: tool.description,
+                        parameters: tool.parameters,
+                      }))
+                    : undefined,
+                  toolChoice: allowToolCalls ? undefined : "none",
+                  signal: runner.signal,
+                }),
+              runner.signal,
+            );
+            const normalized = allowToolCalls
+              ? requireNativeToolCallProtocol(
+                  normalizeRawToolCallProtocol(stream),
+                )
+              : stream;
+            for await (const chunk of normalized) {
               if (chunk.type === "thinking") {
                 thinking += chunk.text;
                 publishSubagentEvent(runner, {
@@ -1331,7 +1343,8 @@ export function createRealRuntimeClient(
             maxTokens: runtimeContextConfig.max,
             thresholdPercent: runtimeContextConfig.thresholdPercent,
             reservedTokens: runtimeContextConfig.reserved,
-            preservedRecentMessages: 8,
+            preservedRecentMessages:
+              tsRuntimeConfig?.context.preservedRecentMessages ?? 2,
             instruction:
               "Recover this subagent from the provider context limit.",
             retry: { policy: retryPolicy, signal: runner.signal },
@@ -1341,6 +1354,10 @@ export function createRealRuntimeClient(
         });
         if (!result.protocolViolation) break;
         correction += 1;
+        if (correction > MAX_PROTOCOL_CORRECTIONS)
+          throw new Error(
+            "model repeatedly emitted malformed textual tool calls instead of the provider's native tool protocol",
+          );
         ledger.add({
           id: `${runner.agentId}:${step}:protocol:${correction}:assistant`,
           role: "assistant",
@@ -1634,7 +1651,10 @@ export function createRealRuntimeClient(
         task,
       );
       const repeatedCalls = new Map<string, number>();
-      for (let step = 1; step <= effectiveMaxSteps(exec); step++) {
+      const maxSubagentSteps = effectiveMaxSteps(exec);
+      for (let step = 1; step <= maxSubagentSteps; step++) {
+        const isLastStep =
+          Number.isFinite(maxSubagentSteps) && step >= maxSubagentSteps;
         const visibleTools = [...tools.values()].filter(
           (tool) =>
             isToolAllowed(tool.name, exec) &&
@@ -1642,16 +1662,45 @@ export function createRealRuntimeClient(
             !excluded.has(tool.name) &&
             (!allowed.length || allowed.includes(tool.name)),
         );
+        if (isLastStep)
+          ledger.add({
+            id: `${runner.agentId}:${step}:max-steps`,
+            role: "assistant",
+            content: MAX_STEPS_PROMPT,
+          });
         const { output, calls } = await runSubagentProviderStep(
           ledger,
           visibleTools,
           runner,
           step,
           activeProvider,
+          !isLastStep,
         );
-        if (!calls.length) {
-          appendSubagentAssistant(ledger, runner, step, output, calls);
-          runner.log(output.trim() || "completed without text output");
+        if (!calls.length || isLastStep) {
+          const finalOutput =
+            output.trim() ||
+            (isLastStep || step > 1 ? MISSING_FINAL_RESPONSE_FALLBACK : output);
+          appendSubagentAssistant(ledger, runner, step, finalOutput, []);
+          if (isLastStep && calls.length)
+            publishSubagentEvent(runner, {
+              type: "diagnostic",
+              level: "warning",
+              message:
+                "Provider emitted a subagent tool call after tools were disabled; ignored the call and finalized with text",
+            });
+          if (!output.trim() && (isLastStep || step > 1)) {
+            publishSubagentEvent(runner, {
+              type: "content.delta",
+              id: subagentTurnID(runner),
+              text: finalOutput,
+            });
+            publishSubagentEvent(runner, {
+              type: "content.done",
+              id: subagentTurnID(runner),
+              text: finalOutput,
+            });
+          }
+          runner.log(finalOutput.trim() || "completed without text output");
           finishSubagentConversation(runner, "done");
           return;
         }
@@ -1695,7 +1744,10 @@ export function createRealRuntimeClient(
         const repeatedCalls = new Map<string, number>();
         runner.log(`accepted: ${task}`);
         beginSubagentConversation(runner, task);
-        for (let step = 1; step <= effectiveMaxSteps(exec); step++) {
+        const maxSubagentSteps = effectiveMaxSteps(exec);
+        for (let step = 1; step <= maxSubagentSteps; step++) {
+          const isLastStep =
+            Number.isFinite(maxSubagentSteps) && step >= maxSubagentSteps;
           const visibleTools = [...tools.values()].filter(
             (tool) =>
               isToolAllowed(tool.name, exec) &&
@@ -1703,16 +1755,47 @@ export function createRealRuntimeClient(
               !excluded.has(tool.name) &&
               (!allowed.length || allowed.includes(tool.name)),
           );
+          if (isLastStep)
+            ledger.add({
+              id: `${runner.agentId}:${step}:max-steps`,
+              role: "assistant",
+              content: MAX_STEPS_PROMPT,
+            });
           const { output, calls } = await runSubagentProviderStep(
             ledger,
             visibleTools,
             runner,
             step,
             activeProvider,
+            !isLastStep,
           );
-          if (!calls.length) {
-            appendSubagentAssistant(ledger, runner, step, output, calls);
-            runner.log(output.trim() || "completed without text output");
+          if (!calls.length || isLastStep) {
+            const finalOutput =
+              output.trim() ||
+              (isLastStep || step > 1
+                ? MISSING_FINAL_RESPONSE_FALLBACK
+                : output);
+            appendSubagentAssistant(ledger, runner, step, finalOutput, []);
+            if (isLastStep && calls.length)
+              publishSubagentEvent(runner, {
+                type: "diagnostic",
+                level: "warning",
+                message:
+                  "Provider emitted a subagent tool call after tools were disabled; ignored the call and finalized with text",
+              });
+            if (!output.trim() && (isLastStep || step > 1)) {
+              publishSubagentEvent(runner, {
+                type: "content.delta",
+                id: subagentTurnID(runner),
+                text: finalOutput,
+              });
+              publishSubagentEvent(runner, {
+                type: "content.done",
+                id: subagentTurnID(runner),
+                text: finalOutput,
+              });
+            }
+            runner.log(finalOutput.trim() || "completed without text output");
             finishSubagentConversation(runner, "done");
             return;
           }
@@ -5000,6 +5083,8 @@ export function createRealRuntimeClient(
       let output = "";
       let thinking = "";
       let usedTools = false;
+      let finalResponse = "";
+      let ranFinalOnlyStep = false;
       let step = 1;
       let protocolCorrections = 0;
       let phase: Extract<RuntimeEvent, { type: "chat.turn.phase" }>["phase"] =
@@ -5015,22 +5100,39 @@ export function createRealRuntimeClient(
           ...(toolName ? { toolName } : {}),
         });
       };
-      while (step <= effectiveMaxSteps(input.exec)) {
+      const maxChatSteps = effectiveMaxSteps(input.exec);
+      while (step <= maxChatSteps) {
         signal.throwIfAborted();
+        const reachedStepLimit =
+          Number.isFinite(maxChatSteps) && step >= maxChatSteps;
+        const finalOnlyStep = reachedStepLimit;
+        ranFinalOnlyStep ||= finalOnlyStep;
         const calls: ProviderToolCall[] = [];
+        let stepOutput = "";
         let protocolViolation = "";
         // Chat is an independent collaboration lane, not provider fan-out from
         // the Main turn. Putting it behind the Main/subagent semaphore makes a
         // configured cap of 1 block Chat until Main stops, defeating its core
         // always-available contract. `chatAbort` still limits this session to
         // one Chat stream at a time.
-        for await (const chunk of requireNativeToolCallProtocol(
-          activeProvider.stream({
-            messages,
-            tools: toolSchemas,
-            signal,
-          }),
-        )) {
+        const stream = activeProvider.stream({
+          messages: finalOnlyStep
+            ? [
+                ...messages,
+                {
+                  role: "assistant",
+                  content: MAX_STEPS_PROMPT,
+                },
+              ]
+            : messages,
+          tools: finalOnlyStep ? undefined : toolSchemas,
+          toolChoice: finalOnlyStep ? "none" : undefined,
+          signal,
+        });
+        const normalized = finalOnlyStep
+          ? stream
+          : requireNativeToolCallProtocol(normalizeRawToolCallProtocol(stream));
+        for await (const chunk of normalized) {
           if (chunk.type === "thinking") {
             setPhase("thinking");
             thinking += chunk.text;
@@ -5048,6 +5150,7 @@ export function createRealRuntimeClient(
           if (chunk.type === "content") {
             setPhase("generating");
             output += chunk.text;
+            stepOutput += chunk.text;
             publishForSession(input.exec, {
               type: "chat.message.delta",
               id: `${input.responseMessageID}:delta:${chatSequence++}`,
@@ -5059,9 +5162,25 @@ export function createRealRuntimeClient(
           if (chunk.type === "tool_protocol_violation")
             protocolViolation = chunk.text;
         }
+        usedTools ||= calls.length > 0;
+        if (finalOnlyStep) {
+          finalResponse = stepOutput;
+          if (calls.length)
+            publishForSession(input.exec, {
+              type: "diagnostic",
+              level: "warning",
+              message:
+                "Provider emitted a chat tool call after tools were disabled; ignored the call and finalized with text",
+            });
+          break;
+        }
         if (protocolViolation) {
           setPhase("waiting");
           protocolCorrections += 1;
+          if (protocolCorrections > MAX_PROTOCOL_CORRECTIONS)
+            throw new Error(
+              "model repeatedly emitted malformed textual chat tool calls instead of the provider's native tool protocol",
+            );
           messages.push({ role: "assistant", content: protocolViolation });
           messages.push({
             role: "system",
@@ -5075,8 +5194,10 @@ export function createRealRuntimeClient(
           continue;
         }
         step += 1;
-        if (!calls.length) break;
-        usedTools = true;
+        if (!calls.length) {
+          finalResponse = stepOutput;
+          break;
+        }
         messages.push({ role: "assistant", content: output, toolCalls: calls });
         for (const call of calls) {
           const tool = visibleTools.find(
@@ -5145,70 +5266,29 @@ export function createRealRuntimeClient(
             at: new Date().toISOString(),
           });
           setPhase("waiting");
-          messages.push({ role: "tool", content: result, toolCallID: call.id });
+          messages.push({
+            role: "tool",
+            content: result,
+            toolCallID: call.id,
+            toolName: call.name,
+          });
         }
       }
-      // A tool-driven turn must still end in a real reply, not just thinking: if
-      // no text came out of the tool loop, run one final provider step without
-      // tools (the main agent's needsFinalResponse behaviour).
-      if (usedTools && !output.trim()) {
-        setPhase("waiting");
-        const finalMessages: ProviderMessage[] = [
-          ...messages,
-          {
-            role: "system",
-            content:
-              "Tool execution is complete. Provide the user with a concise final answer summarizing the outcome. Do not call any tools.",
-          },
-        ];
-        while (true) {
-          signal.throwIfAborted();
-          let protocolViolation = "";
-          let finalOutput = "";
-          for await (const chunk of requireNativeToolCallProtocol(
-            activeProvider.stream({
-              messages: finalMessages,
-              tools: undefined,
-              signal,
-            }),
-          )) {
-            if (chunk.type === "tool_call")
-              throw new Error(
-                "model emitted tool calls while producing the required final chat response",
-              );
-            if (chunk.type === "content") finalOutput += chunk.text;
-            if (chunk.type === "tool_protocol_violation")
-              protocolViolation = chunk.text;
-          }
-          if (protocolViolation) {
-            protocolCorrections += 1;
-            finalMessages.push({
-              role: "assistant",
-              content: protocolViolation,
-            });
-            finalMessages.push({
-              role: "system",
-              content: nativeToolCallCorrection(protocolCorrections),
-            });
-            publishForSession(input.exec, {
-              type: "diagnostic",
-              level: "warning",
-              message: `Correcting textual chat tool call in final response; native tool calling required (attempt ${protocolCorrections})`,
-            });
-            continue;
-          }
-          output += finalOutput;
-          if (finalOutput) {
-            setPhase("generating");
-            publishForSession(input.exec, {
-              type: "chat.message.delta",
-              id: `${input.responseMessageID}:delta:${chatSequence++}`,
-              messageID: input.responseMessageID,
-              text: finalOutput,
-            });
-          }
-          break;
-        }
+      if ((usedTools || ranFinalOnlyStep) && !finalResponse.trim()) {
+        output += MISSING_FINAL_RESPONSE_FALLBACK;
+        setPhase("generating");
+        publishForSession(input.exec, {
+          type: "chat.message.delta",
+          id: `${input.responseMessageID}:delta:${chatSequence++}`,
+          messageID: input.responseMessageID,
+          text: MISSING_FINAL_RESPONSE_FALLBACK,
+        });
+        publishForSession(input.exec, {
+          type: "diagnostic",
+          level: "warning",
+          message:
+            "Provider omitted the required final chat response; emitted a deterministic fallback",
+        });
       }
       publishForSession(input.exec, {
         type: "chat.message.added",
@@ -8561,8 +8641,8 @@ function defaultContextStatusConfig() {
     max: Math.max(32_000, Number(process.env.NATALIA_CONTEXT_WINDOW ?? 32_000)),
     thresholdPercent: Number(process.env.NATALIA_CONTEXT_THRESHOLD ?? 85),
     reserved: Math.max(
-      32_000,
-      Number(process.env.NATALIA_CONTEXT_RESERVED ?? 32_000),
+      1,
+      Number(process.env.NATALIA_CONTEXT_RESERVED ?? 20_000),
     ),
   };
 }
@@ -8587,16 +8667,16 @@ async function resolveContextStatusConfig(
     apiKey: providerConfig?.connection?.apiKey,
     explicitContextWindow: effective.limits.contextWindow,
     providerAdapter:
+      config.context.autoDetectWindow &&
       provider?.model === effective.ref.model &&
       shouldProbeProviderMetadata(providerConfig?.connection?.baseURL)
         ? provider
         : undefined,
-    useModelsDevCatalog: true,
+    useModelsDevCatalog: config.context.autoDetectWindow,
   });
-  const catalog = await modelsDevModelLimits(
-    effective.providerID,
-    effective.ref.model,
-  );
+  const catalog = config.context.autoDetectWindow
+    ? await modelsDevModelLimits(effective.providerID, effective.ref.model)
+    : undefined;
   const providerMetadata =
     catalog || !shouldProbeProviderMetadata(providerConfig?.connection?.baseURL)
       ? undefined
@@ -8618,7 +8698,7 @@ async function resolveContextStatusConfig(
       contextWindow.tokens,
       reserved.source === "config"
         ? reserved.tokens
-        : Math.min(50_000, reserved.tokens),
+        : Math.min(20_000, reserved.tokens),
     ),
   };
 }

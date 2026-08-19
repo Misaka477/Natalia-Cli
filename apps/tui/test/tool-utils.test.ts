@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { userHomeDirectory } from "@natalia/platform";
 import {
+  compactModelLabel,
   compactPath,
   filetype,
   formatPrimitiveArgs,
@@ -72,6 +73,26 @@ test("compactPath shortens HOME path to ~", () => {
   expect(compactPath(`${home}/project`)).toBe("~/project");
   expect(compactPath("/other/path")).toBe("/other/path");
   expect(compactPath(undefined)).toBe("local workspace");
+});
+
+test("compactPath preserves the most specific directories within a budget", () => {
+  expect(
+    compactPath("/home/user/Development/Natalia_Project/natalia-cli", 24),
+  ).toBe("…/natalia-cli");
+  expect(compactPath("/workspace/project", 20)).toBe("/workspace/project");
+  expect(compactPath("/workspace/exceptionally-long-project", 12)).toBe(
+    "…ong-project",
+  );
+});
+
+test("compactModelLabel removes provider paths and formats model IDs", () => {
+  expect(compactModelLabel("gpt/gpt-5.6-sol", 24)).toBe("GPT 5.6 Sol");
+  expect(compactModelLabel("openrouter/anthropic/claude-sonnet-4-5", 24)).toBe(
+    "Claude Sonnet 4 5",
+  );
+  expect(compactModelLabel("provider/exceptionally-long-model-name", 12)).toBe(
+    "exceptional…",
+  );
 });
 
 test("formatPrimitiveArgs formats key=value pairs", () => {

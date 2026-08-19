@@ -9,6 +9,8 @@ import { DialogProvider, useDialog } from "../src/dialog/provider";
 import {
   deleteProvider,
   DialogProviderManager,
+  providerModels,
+  setModelContextWindow,
 } from "../src/component/DialogProviderManager";
 import { registerNataliaKeymap } from "../src/modal/mode-stack";
 
@@ -32,6 +34,11 @@ function config(): ConfigV3 {
                 pdfInput: false,
                 videoInput: false,
               },
+            },
+            "other-model": {
+              name: "Other model",
+              source: "manual",
+              status: "stable",
             },
           },
         },
@@ -60,6 +67,24 @@ test("deleting a provider removes all model references", () => {
   expect(next.catalog.providers.example).toBeUndefined();
   expect(next.modelOverrides["example/example-model"]).toBeUndefined();
   expect(next.defaultModel).toBeNull();
+});
+
+test("context-window edits are isolated to one provider model", () => {
+  const base = config();
+  const next = setModelContextWindow(base, "example", "example-model", 131072);
+  expect(
+    providerModels(next, "example").map((model) => ({
+      id: model.modelID,
+      contextWindow: model.contextWindow,
+    })),
+  ).toEqual([
+    { id: "example-model", contextWindow: 131072 },
+    { id: "other-model", contextWindow: "auto" },
+  ]);
+  expect(
+    base.catalog.providers.example?.models["example-model"]?.limits
+      .contextWindow,
+  ).toBe("auto");
 });
 
 test("Escape returns through provider model screens before closing", async () => {
@@ -101,6 +126,8 @@ test("Escape returns through provider model screens before closing", async () =>
     keys.pressEnter();
     await renderOnce();
     expect(setup.captureCharFrame()).toContain("Model: Example model");
+    expect(setup.captureCharFrame()).toContain("Context Window");
+    expect(setup.captureCharFrame()).toContain("Auto-detect");
     expect(setup.captureCharFrame().replace(/\s+/gu, " ")).toContain(
       "Escape back",
     );
@@ -112,6 +139,72 @@ test("Escape returns through provider model screens before closing", async () =>
     await renderOnce();
     expect(setup.captureCharFrame()).toContain("Providers");
     expect(setup.captureCharFrame()).toContain("Example Provider");
+  } finally {
+    disposeKeymap();
+    setup.renderer.destroy();
+  }
+});
+
+test("the model editor persists a context window only for the selected model", async () => {
+  const setup = await createTestRenderer({ width: 120, height: 30 });
+  const keymap = createDefaultOpenTuiKeymap(setup.renderer);
+  const disposeKeymap = registerNataliaKeymap(keymap, setup.renderer);
+  let persisted = config();
+  function Harness() {
+    const dialog = useDialog();
+    onMount(() =>
+      dialog.push(() => (
+        <DialogProviderManager
+          config={persisted}
+          onPersist={(next) => {
+            persisted = next;
+          }}
+        />
+      )),
+    );
+    return null;
+  }
+
+  try {
+    await render(
+      () => (
+        <KeymapProvider keymap={keymap}>
+          <DialogProvider>
+            <Harness />
+          </DialogProvider>
+        </KeymapProvider>
+      ),
+      setup.renderer,
+    );
+    const keys = createMockKeys(setup.renderer, { kittyKeyboard: true });
+    const renderOnce = async () => {
+      await Bun.sleep(20);
+      await setup.renderOnce();
+    };
+
+    await renderOnce();
+    keys.pressEnter();
+    await renderOnce();
+    keys.pressEnter();
+    await renderOnce();
+    await keys.typeText("Context Window");
+    keys.pressEnter();
+    await renderOnce();
+    expect(setup.captureCharFrame()).toContain("Context Window: Example model");
+    for (let index = 0; index < "auto".length; index++) keys.pressBackspace();
+    await keys.typeText("131072");
+    keys.pressEnter();
+    await renderOnce();
+
+    expect(
+      persisted.catalog.providers.example?.models["example-model"]?.limits
+        .contextWindow,
+    ).toBe(131072);
+    expect(
+      persisted.catalog.providers.example?.models["other-model"]?.limits
+        .contextWindow,
+    ).toBe("auto");
+    expect(setup.captureCharFrame()).toContain("131,072 tokens");
   } finally {
     disposeKeymap();
     setup.renderer.destroy();

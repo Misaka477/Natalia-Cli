@@ -609,7 +609,6 @@ test("UI-only events are ignored, because they are not runtime facts", () => {
   for (const event of [
     { type: "dialog.open", id: "d1" },
     { type: "dialog.close", id: "d1" },
-    { type: "terminal.pane.focus", focus: "terminal" },
     { type: "terminal.pane.select", id: "t_a" },
   ] as RuntimeEvent[])
     applyEvent(state, event);

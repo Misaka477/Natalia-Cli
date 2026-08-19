@@ -62,13 +62,6 @@ export function DialogSandbox(props: { backend: RuntimeClient }) {
           />
         ))
       }
-      actions={[
-        {
-          command: "sandbox.manage.refresh",
-          title: "r refresh",
-          onTrigger: () => void refresh(),
-        },
-      ]}
     />
   );
 }

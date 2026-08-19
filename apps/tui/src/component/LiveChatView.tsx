@@ -74,7 +74,6 @@ export function LiveChatView(props: {
   focused: () => boolean;
   onRequestFocus(): void;
   onEscape(): void;
-  onClose(): void;
   onInputRef(value: InputRenderable | undefined): void;
   onSend(text: string): void;
   onRollback(toMessageID: string): void;
@@ -209,12 +208,6 @@ export function LiveChatView(props: {
         group: "Live Work Chat",
         cmd: props.onEscape,
       },
-      {
-        key: "r",
-        desc: "Refresh live work state",
-        group: "Live Work Chat",
-        cmd: () => void refresh(),
-      },
     ],
   }));
 
@@ -251,9 +244,6 @@ export function LiveChatView(props: {
               ↩ rollback
             </text>
           </Show>
-          <text fg={theme.muted} onMouseUp={() => props.onClose()}>
-            × close
-          </text>
         </box>
       </box>
       <Show when={liveAgentStatus()}>

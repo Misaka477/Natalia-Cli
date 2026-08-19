@@ -155,10 +155,46 @@ export function statusValues(segments: string[]) {
   ) as Record<string, string>;
 }
 
-export function compactPath(path?: string) {
+export function compactPath(
+  path?: string,
+  maxLength = Number.POSITIVE_INFINITY,
+) {
   if (!path) return "local workspace";
   const home = userHomeDirectory();
-  return home && path.startsWith(home) ? `~${path.slice(home.length)}` : path;
+  const compact =
+    home && path.startsWith(home) ? `~${path.slice(home.length)}` : path;
+  if (compact.length <= maxLength) return compact;
+
+  const parts = compact.split("/").filter(Boolean);
+  let result = parts.at(-1) ?? compact;
+  for (let index = parts.length - 2; index >= 0; index--) {
+    const candidate = `${parts[index]}/${result}`;
+    if (candidate.length + 2 > maxLength) break;
+    result = candidate;
+  }
+  if (result.length + 2 <= maxLength) return `…/${result}`;
+  return result.length <= maxLength
+    ? result
+    : `…${result.slice(-Math.max(1, maxLength - 1))}`;
+}
+
+export function compactModelLabel(value: string, maxLength: number) {
+  const modelID = value.split("/").filter(Boolean).at(-1) ?? value;
+  const label = modelID
+    .replace(/[-_]+/g, " ")
+    .replace(/\b(gpt)\b/gi, "GPT")
+    .replace(/\b(claude)\b/gi, "Claude")
+    .replace(/\b(gemini)\b/gi, "Gemini")
+    .replace(/\b(deepseek)\b/gi, "DeepSeek")
+    .replace(/\b(sonnet)\b/gi, "Sonnet")
+    .replace(/\b(opus)\b/gi, "Opus")
+    .replace(/\b(haiku)\b/gi, "Haiku")
+    .replace(/\b(codex)\b/gi, "Codex")
+    .replace(/\b(sol)\b/gi, "Sol")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (label.length <= maxLength) return label;
+  return `${label.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
 }
 
 export function toolIcon(kind: string) {

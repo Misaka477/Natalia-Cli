@@ -420,7 +420,7 @@ function ToolDetailDialog(props: {
           </text>
         </Show>
       </scrollbox>
-      <text fg={darkTheme.muted}>↑↓ result/arguments tab · escape close</text>
+      <text fg={darkTheme.muted}>escape close</text>
     </box>
   );
 }

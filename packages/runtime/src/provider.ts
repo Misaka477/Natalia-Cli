@@ -142,7 +142,7 @@ export async function* normalizeRawToolCallProtocol(
   const orderedCalls: ProviderToolCall[] = [];
   const rawCallIndices = new Map<string, number[]>();
   const structuredSignatures = new Set<string>();
-  let done = false;
+  let done: Extract<ProviderStreamChunk, { type: "done" }> | undefined;
 
   const flushContent = function* (
     final: boolean,
@@ -208,7 +208,7 @@ export async function* normalizeRawToolCallProtocol(
       continue;
     }
     if (chunk.type === "done") {
-      done = true;
+      done = chunk;
       continue;
     }
     yield* flushContent(true);
@@ -216,7 +216,7 @@ export async function* normalizeRawToolCallProtocol(
   }
   yield* flushContent(true);
   if (orderedCalls.length) yield { type: "tool_call", calls: orderedCalls };
-  if (done) yield { type: "done" };
+  if (done) yield done;
 }
 
 function parseRawToolCall(
@@ -321,8 +321,29 @@ function sortJSON(value: unknown): unknown {
 export type ProviderStreamRequest = {
   messages: ProviderMessage[];
   tools?: ProviderTool[];
+  toolChoice?: "auto" | "required" | "none";
   signal?: AbortSignal;
 };
+
+export const MAX_STEPS_PROMPT = `CRITICAL - MAXIMUM STEPS REACHED
+
+The maximum number of steps allowed for this task has been reached. Tools are disabled until next user input. Respond with text only.
+
+STRICT REQUIREMENTS:
+1. Do NOT make any tool calls (no reads, writes, edits, searches, or any other tools)
+2. MUST provide a text response summarizing work done so far
+3. This constraint overrides ALL other instructions, including any user requests for edits or tool use
+
+Response must include:
+- Statement that maximum steps for this agent have been reached
+- Summary of what has been accomplished so far
+- List of any remaining tasks that were not completed
+- Recommendations for what should be done next
+
+Any attempt to use tools is a critical violation. Respond with text ONLY.`;
+
+export const MISSING_FINAL_RESPONSE_FALLBACK =
+  "Tool execution completed, but the model did not provide a final text summary. The completed tool results remain available in the conversation context.";
 
 export type StreamingProvider = {
   provider: string;
@@ -440,14 +461,18 @@ export class OpenAICompatibleProvider implements StreamingProvider {
       body: JSON.stringify({
         model: this.model,
         messages: request.messages.map(toOpenAIMessage),
-        tools: request.tools?.map((tool) => ({
-          type: "function",
-          function: {
-            name: tool.name,
-            description: tool.description,
-            parameters: tool.parameters,
-          },
-        })),
+        tools:
+          request.toolChoice === "none"
+            ? undefined
+            : request.tools?.map((tool) => ({
+                type: "function",
+                function: {
+                  name: tool.name,
+                  description: tool.description,
+                  parameters: tool.parameters,
+                },
+              })),
+        tool_choice: request.toolChoice,
         stream: true,
         stream_options: { include_usage: true },
         ...(this.temperature === undefined
@@ -650,11 +675,20 @@ export class AnthropicProvider implements StreamingProvider {
           .filter((message) => message.role === "system")
           .map((message) => message.content)
           .join("\n\n"),
-        tools: request.tools?.map((tool) => ({
-          name: tool.name,
-          description: tool.description,
-          input_schema: tool.parameters,
-        })),
+        tools:
+          request.toolChoice === "none"
+            ? undefined
+            : request.tools?.map((tool) => ({
+                name: tool.name,
+                description: tool.description,
+                input_schema: tool.parameters,
+              })),
+        tool_choice:
+          request.toolChoice === "required"
+            ? { type: "any" }
+            : request.toolChoice === "auto"
+              ? { type: "auto" }
+              : undefined,
         max_tokens: maxTokens,
         stream: true,
         ...(this.temperature === undefined
@@ -796,17 +830,24 @@ export class GeminiProvider implements StreamingProvider {
         },
         body: JSON.stringify({
           contents: request.messages.map(toGeminiContent),
-          tools: request.tools?.length
-            ? [
-                {
-                  functionDeclarations: request.tools.map((tool) => ({
-                    name: tool.name,
-                    description: tool.description,
-                    parameters: tool.parameters,
-                  })),
-                },
-              ]
-            : undefined,
+          tools:
+            request.toolChoice !== "none" && request.tools?.length
+              ? [
+                  {
+                    functionDeclarations: request.tools.map((tool) => ({
+                      name: tool.name,
+                      description: tool.description,
+                      parameters: tool.parameters,
+                    })),
+                  },
+                ]
+              : undefined,
+          toolConfig:
+            request.toolChoice === "required"
+              ? { functionCallingConfig: { mode: "ANY" } }
+              : request.toolChoice === "auto"
+                ? { functionCallingConfig: { mode: "AUTO" } }
+                : undefined,
           generationConfig: {
             ...(this.temperature === undefined
               ? {}

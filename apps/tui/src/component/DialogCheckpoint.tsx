@@ -62,13 +62,6 @@ export function DialogCheckpoint(props: { backend: RuntimeClient }) {
           />
         ))
       }
-      actions={[
-        {
-          command: "checkpoint.manage.refresh",
-          title: "r refresh",
-          onTrigger: () => void refresh(),
-        },
-      ]}
     />
   );
 }

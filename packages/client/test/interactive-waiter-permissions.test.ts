@@ -82,15 +82,13 @@ test("session approval grants two distinct tools in one family only", async () =
     "turn_c",
   );
   expect(h.approvalCount()).toBe(2);
-  expect(
-    h.events.find((event) => event.type === "approval.request"),
-  ).toMatchObject({
-    permissionFamily: {
-      id: "filesystem-write",
-      label: "Filesystem writes",
-      scope: expect.any(String),
-    },
-  });
+  const approval = h.events.find(
+    (event): event is Extract<RuntimeEvent, { type: "approval.request" }> =>
+      event.type === "approval.request",
+  );
+  expect(approval?.permissionFamily?.id).toBe("filesystem-write");
+  expect(approval?.permissionFamily?.label).toBe("Filesystem writes");
+  expect(typeof approval?.permissionFamily?.scope).toBe("string");
 });
 
 test("session grants are isolated by session and runtime instance", async () => {

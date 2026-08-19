@@ -219,14 +219,6 @@ if (statusLoadCount() !== 2)
 keys.pressEscape();
 await Bun.sleep(80);
 
-keys.pressKey("F8");
-for (let attempts = 0; attempts < 20 && terminalLoads !== 1; attempts++)
-  await Bun.sleep(25);
-if (terminalLoads !== 1)
-  throw new Error(`expected terminal management load, got ${terminalLoads}`);
-keys.pressEscape();
-await Bun.sleep(80);
-
 keys.pressKey("k", { ctrl: true, shift: true });
 for (let attempts = 0; attempts < 20 && checkpointLoads !== 1; attempts++)
   await Bun.sleep(25);

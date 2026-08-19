@@ -152,7 +152,8 @@ export class ContextLedger {
       used,
       max: input.max,
       source:
-        this.checkpoint && this.entries.length === this.checkpoint.messageCount
+        this.checkpoint?.source === "provider_usage" &&
+        this.entries.length === this.checkpoint.messageCount
           ? "exact_checkpoint"
           : "pending_estimate",
       thresholdPercent: input.thresholdPercent,
@@ -228,7 +229,7 @@ export class ContextLedger {
       tokens:
         estimatedTokens ??
         this.entries.reduce((sum, entry) => sum + (entry.tokens ?? 0), 0),
-      source: "provider_usage",
+      source: "estimate",
     };
     this.compactionGeneration += 1;
     this.journalOffset += 1;
@@ -283,13 +284,13 @@ export function resolveReservedOutputTokens(
     };
   }
   const tokens = Math.min(
-    50_000,
-    Math.max(32_000, Math.floor(input.contextWindow * 0.25)),
+    20_000,
+    Math.max(4_096, Math.floor(input.contextWindow * 0.1)),
   );
   return {
     tokens,
     source: "fallback_formula",
-    diagnostic: "conservative formula min(50000,max(32000,context*0.25))",
+    diagnostic: "conservative formula min(20000,max(4096,context*0.1))",
   };
 }
 

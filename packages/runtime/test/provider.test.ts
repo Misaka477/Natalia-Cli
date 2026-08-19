@@ -43,6 +43,20 @@ test("raw XML-like tool protocol becomes structured calls while preserving prose
   ]);
 });
 
+test("raw XML normalization preserves the provider finish reason", async () => {
+  async function* source() {
+    yield { type: "content" as const, text: "partial" };
+    yield { type: "done" as const, finishReason: "length" as const };
+  }
+  const chunks: ProviderStreamChunk[] = [];
+  for await (const chunk of normalizeRawToolCallProtocol(source()))
+    chunks.push(chunk);
+  expect(chunks).toEqual([
+    { type: "content", text: "partial" },
+    { type: "done", finishReason: "length" },
+  ]);
+});
+
 test("raw XML-like tool protocol leaves malformed or incomplete blocks untouched", async () => {
   async function* source() {
     yield {
@@ -268,6 +282,79 @@ test("OpenAI-compatible provider accepts both base and complete chat endpoint UR
     "https://gateway.example/v1/chat/completions",
     "https://gateway.example/v1/chat/completions",
   ]);
+});
+
+test("provider adapters map tool choice and omit tools when disabled", async () => {
+  const tools = [
+    {
+      name: "read_file",
+      description: "Read a file",
+      parameters: { type: "object", properties: {} },
+    },
+  ];
+  const bodies: Record<string, Array<Record<string, unknown>>> = {
+    openai: [],
+    anthropic: [],
+    gemini: [],
+  };
+  const fetchFor = (name: keyof typeof bodies, response: string) =>
+    Object.assign(
+      async (_input: URL | RequestInfo, init?: RequestInit) => {
+        bodies[name].push(
+          JSON.parse(String(init?.body)) as Record<string, unknown>,
+        );
+        return new Response(response, {
+          headers: { "content-type": "text/event-stream" },
+        });
+      },
+      { preconnect: fetch.preconnect },
+    ) as typeof fetch;
+  const providers = [
+    new OpenAICompatibleProvider({
+      apiKey: "key",
+      model: "model",
+      fetch: fetchFor("openai", "data: [DONE]\n\n"),
+    }),
+    new AnthropicProvider({
+      apiKey: "key",
+      model: "model",
+      maxTokens: 1024,
+      fetch: fetchFor("anthropic", "event: message_stop\ndata: {}\n\n"),
+    }),
+    new GeminiProvider({
+      apiKey: "key",
+      model: "model",
+      fetch: fetchFor("gemini", "data: {}\n\n"),
+    }),
+  ];
+  for (const provider of providers)
+    for (const toolChoice of ["auto", "required", "none"] as const)
+      for await (const _chunk of provider.stream({
+        messages: [],
+        tools,
+        toolChoice,
+      })) {
+        // Drain each stream to force its request.
+      }
+
+  expect(bodies.openai.map((body) => body.tool_choice)).toEqual([
+    "auto",
+    "required",
+    "none",
+  ]);
+  expect(bodies.openai[2]).not.toHaveProperty("tools");
+  expect(bodies.anthropic.map((body) => body.tool_choice)).toEqual([
+    { type: "auto" },
+    { type: "any" },
+    undefined,
+  ]);
+  expect(bodies.anthropic[2]).not.toHaveProperty("tools");
+  expect(bodies.gemini.map((body) => body.toolConfig)).toEqual([
+    { functionCallingConfig: { mode: "AUTO" } },
+    { functionCallingConfig: { mode: "ANY" } },
+    undefined,
+  ]);
+  expect(bodies.gemini[2]).not.toHaveProperty("tools");
 });
 
 test("configured provider resolution preserves the adapter provider identity", () => {

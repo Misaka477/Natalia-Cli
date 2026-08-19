@@ -89,15 +89,12 @@ If a process stops during an unknown provider or tool side effect, Natalia safel
 | ------------------------------- | --------------------------------------- |
 | `Ctrl+N`                        | Create a session                        |
 | `Ctrl+L`                        | Open session history                    |
-| `Ctrl+,`                        | Open settings                           |
 | `Ctrl+P`                        | Open command palette                    |
-| `Ctrl+G`                        | Switch Chat/Plan in two-pane layout     |
+| `Alt+P`                         | Cycle responsive panes                  |
 | `Ctrl+C`                        | Cancel the active turn                  |
 | `Ctrl+I` / `Ctrl+H`             | Show runtime status / help              |
 | `Ctrl+Shift+K`                  | Open checkpoint management              |
-| `F8`                            | Open terminal management                |
 | `Ctrl+Shift+B`                  | Open sandbox management                 |
-| `Ctrl+T`                        | Toggle terminal/chat focus              |
 | `Ctrl+S`                        | Create a snapshot                       |
 | `Ctrl+Shift+G`                  | Fork session at the last message        |
 | `Ctrl+Shift+T` / `Ctrl+Shift+E` | Edit scheduled tasks / flows            |
@@ -113,7 +110,7 @@ Runtime configuration is typed ConfigV3. Project settings are stored in:
 .natalia/config.json
 ```
 
-The Settings Center (Ctrl+,) covers provider/model, runtime (max steps, retry,
+The Settings Center, available from the command palette, covers provider/model, runtime (max steps, retry,
 checkpoints), browser/network, MCP, extensions (skills/plugins), workspace,
 agent modes, permission profiles, and TUI preferences. Settings are saved as
 minimal scope overlays and validated before writing.
@@ -246,15 +243,12 @@ npm run ts:cli -- daemon-stop
 | ------------------------------- | ----------------------------------- |
 | `Ctrl+N`                        | 新建 session                        |
 | `Ctrl+L`                        | 打开 session history                |
-| `Ctrl+,`                        | 打开 settings                       |
 | `Ctrl+P`                        | 打开 command palette                |
-| `Ctrl+G`                        | 在双栏布局切换 Chat/Plan             |
+| `Alt+P`                         | 按响应式布局循环切换 pane           |
 | `Ctrl+C`                        | 取消当前 turn                       |
 | `Ctrl+I` / `Ctrl+H`             | 查看 runtime status / 帮助          |
 | `Ctrl+Shift+K`                  | 打开 checkpoint 管理                |
-| `F8`                            | 打开终端管理                        |
 | `Ctrl+Shift+B`                  | 打开 sandbox 管理                   |
-| `Ctrl+T`                        | 切换终端/对话焦点                   |
 | `Ctrl+S`                        | 创建 snapshot                       |
 | `Ctrl+Shift+G`                  | 在最后一条消息处 fork session       |
 | `Ctrl+Shift+T` / `Ctrl+Shift+E` | 编辑定时任务 / flow                 |
@@ -270,7 +264,7 @@ runtime 使用类型化 ConfigV3。项目配置文件：
 .natalia/config.json
 ```
 
-Settings Center（Ctrl+,）覆盖 provider/model、runtime（max steps、retry、
+Settings Center 可从命令面板打开，覆盖 provider/model、runtime（max steps、retry、
 checkpoints）、browser/network、MCP、extensions（skills/plugins）、workspace、
 agent modes、permission profiles 与 TUI preferences。设置以最小 scope overlay
 保存，并在写入前经过 schema validation。

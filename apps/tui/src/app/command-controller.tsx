@@ -160,10 +160,9 @@ export interface CommandContext {
    */
   viewDock: {
     active: () => "chat" | "plan" | null;
-    focus: () => "main" | "chat";
+    focus: () => "main" | "chat" | "sidebar";
     openChat(): void;
     switchView(): void;
-    close(): void;
     focusChat(): void;
     focusMain(): void;
   };
@@ -2327,33 +2326,7 @@ export async function runCommand(command: string, ctx: CommandContext) {
     return;
   }
   if (command === "help.open") {
-    ctx.dialog.push(() => <DialogHelp onClose={() => ctx.dialog.pop()} />);
-    return;
-  }
-  if (command === "dialog.test") {
-    try {
-      void (async () => {
-        const confirmed = await DialogConfirm.show(
-          ctx.dialog,
-          "Dialog Stack Test",
-          "Press left/right to switch focus, Enter to confirm, Escape to cancel.",
-        );
-        if (confirmed === undefined) return;
-        const name = await DialogPrompt.show(ctx.dialog, "Enter name", {
-          placeholder: "Type something...",
-        });
-        if (name === null) return;
-        ctx.toast.show({
-          variant: "success",
-          message: `Dialog test done: confirmed=${confirmed}, name="${name}"`,
-        });
-      })();
-    } catch (error) {
-      ctx.toast.show({
-        variant: "error",
-        message: `ctx.dialog.test failed: ${error}`,
-      });
-    }
+    ctx.dialog.push(() => <DialogHelp />);
     return;
   }
   if (command === "session.sidebar.toggle") {
@@ -2433,18 +2406,6 @@ export async function runCommand(command: string, ctx: CommandContext) {
   }
   if (command === "exit") {
     if (!ctx.composer()?.plainText) ctx.renderer.destroy();
-    return;
-  }
-  if (command === "ctx.dialog.close") {
-    (ctx.route as any).back();
-    return;
-  }
-  if (command === "terminal.focus-toggle") {
-    if (ctx.state.terminalPane.selectedID)
-      ctx.dispatch({
-        type: "terminal.pane.focus",
-        focus: ctx.state.terminalPane.focus === "chat" ? "terminal" : "chat",
-      });
     return;
   }
   if (command === "terminal.manage") {
@@ -2543,22 +2504,11 @@ export async function runCommand(command: string, ctx: CommandContext) {
     return;
   }
   if (command === "chat.open") {
-    // P8 C2: the Live Work Chat is a docked view, not a modal. Opening it both
-    // shows the column and hands the pane keyboard focus; a second invocation
-    // closes it again.
-    if (ctx.viewDock.active() === "chat") {
-      ctx.viewDock.close();
-      return;
-    }
     ctx.viewDock.openChat();
     return;
   }
   if (command === "view.switch") {
     ctx.viewDock.switchView();
-    return;
-  }
-  if (command === "view.close") {
-    ctx.viewDock.close();
     return;
   }
   if (command === "view.focus.chat") {

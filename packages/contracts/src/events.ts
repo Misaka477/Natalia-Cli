@@ -809,7 +809,6 @@ type RuntimeEventData =
       at: string;
     }
   | { type: "terminal.pane.select"; id: string }
-  | { type: "terminal.pane.focus"; focus: "chat" | "terminal" }
   | {
       type: "sandbox.update";
       id: string;

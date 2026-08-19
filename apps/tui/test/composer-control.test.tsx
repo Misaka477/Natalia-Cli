@@ -206,7 +206,7 @@ test("the composer keeps high-frequency configuration controls beside the prompt
   try {
     const frame = mounted.setup.captureCharFrame();
     expect(frame).toContain("Ask ▼");
-    expect(frame).toContain("not-connected ▼");
+    expect(frame).toContain("not connected ▼");
     expect(frame).toContain("Default ▼");
     expect(frame).not.toContain("provider not selected");
     expect(frame).not.toContain("commands ·");
@@ -222,7 +222,8 @@ test("the composer keeps model and reasoning controls in its narrow bottom toolb
   try {
     const frame = mounted.setup.captureCharFrame();
     expect(frame).toContain("Ask");
-    expect(frame).toContain("not-...");
+    expect(frame).toContain("not");
+    expect(frame).toContain("co…");
     expect(frame).toContain("D...");
     expect(frame).toContain("↑ Send");
   } finally {
@@ -342,7 +343,7 @@ test("clicking the footer path opens the workspace switcher", async () => {
   try {
     const path = labelPosition(
       mounted.setup.captureCharFrame(),
-      `${compactPath(root)} ▼`,
+      `${compactPath(root, 24)} ▼`,
     );
     await mounted.mouse.click(path.x, path.y);
     await Bun.sleep(20);
@@ -350,7 +351,7 @@ test("clicking the footer path opens the workspace switcher", async () => {
 
     const frame = mounted.setup.captureCharFrame();
     expect(frame).toContain("Switch Workspace");
-    expect(frame.replace(/\s/gu, "")).toContain(root);
+    expect(frame.replace(/[\s│]/gu, "")).toContain(root);
     expect(switched).toEqual([]);
 
     mounted.keys.pressEnter();

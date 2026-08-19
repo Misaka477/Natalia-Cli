@@ -295,6 +295,70 @@ test("writes settings mutations to the requested config scope", async () => {
   }
 });
 
+test("persists different context windows for individual provider models", async () => {
+  const workspaceRoot = await mkdtemp(
+    join(tmpdir(), "natalia-model-context-window-"),
+  );
+  const globalPath = join(workspaceRoot, "global.json");
+  try {
+    const base = configV3Schema.parse({
+      version: 3,
+      providers: {
+        local: { name: "Local", driver: "openai-compatible" },
+      },
+      catalog: {
+        providers: {
+          local: {
+            models: {
+              small: { name: "Small" },
+              large: { name: "Large" },
+            },
+          },
+        },
+      },
+    });
+    await updateConfigAtScope(
+      workspaceRoot,
+      { providers: base.providers, catalog: base.catalog },
+      "global",
+      { globalPath },
+    );
+    const next = structuredClone(base);
+    next.catalog.providers.local!.models.small!.limits.contextWindow = 32768;
+    next.catalog.providers.local!.models.large!.limits.contextWindow = 262144;
+    await updateConfigAtScope(
+      workspaceRoot,
+      configPatch(base, next),
+      "global",
+      { globalPath },
+    );
+
+    const resolved = (
+      await resolveConfig({ workspaceRoot, globalPath, environment: {} })
+    ).config;
+    expect(
+      resolved.catalog.providers.local?.models.small?.limits.contextWindow,
+    ).toBe(32768);
+    expect(
+      resolved.catalog.providers.local?.models.large?.limits.contextWindow,
+    ).toBe(262144);
+    expect(JSON.parse(await readFile(globalPath, "utf8"))).toMatchObject({
+      catalog: {
+        providers: {
+          local: {
+            models: {
+              small: { limits: { contextWindow: 32768 } },
+              large: { limits: { contextWindow: 262144 } },
+            },
+          },
+        },
+      },
+    });
+  } finally {
+    await rm(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
 test("config patches preserve complete changed records and delete removed records", () => {
   const base = configV3Schema.parse({
     version: 3,

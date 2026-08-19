@@ -90,7 +90,8 @@ const FAMILIES = {
   },
 } as const satisfies Record<string, PermissionFamily>;
 
-export const PERMISSION_FAMILIES = FAMILIES;
+for (const family of Object.values(FAMILIES)) Object.freeze(family);
+export const PERMISSION_FAMILIES = Object.freeze(FAMILIES);
 
 const FILESYSTEM_READ_NAMES = new Set([
   "read_file",
@@ -135,53 +136,56 @@ export function classifyPermissionFamily(
 ): PermissionFamily {
   const name = toolName.toLowerCase();
   if (name === "terminal_observe" || name.startsWith("interactive_terminal_"))
-    return FAMILIES.interactiveTerminal;
-  if (FILESYSTEM_READ_NAMES.has(name)) return FAMILIES.filesystemRead;
-  if (FILESYSTEM_WRITE_NAMES.has(name)) return FAMILIES.filesystemWrite;
+    return copyFamily(FAMILIES.interactiveTerminal);
+  if (FILESYSTEM_READ_NAMES.has(name))
+    return copyFamily(FAMILIES.filesystemRead);
+  if (FILESYSTEM_WRITE_NAMES.has(name))
+    return copyFamily(FAMILIES.filesystemWrite);
   if (name === "run_shell" || name === "shell" || name.startsWith("shell_"))
-    return FAMILIES.shell;
+    return copyFamily(FAMILIES.shell);
   if (
     name.startsWith("process_") ||
     name.startsWith("managed_process_") ||
     name.startsWith("background_")
   )
-    return FAMILIES.managedProcess;
+    return copyFamily(FAMILIES.managedProcess);
   if (
     name.startsWith("web_") ||
     name.startsWith("browser_") ||
     name === "webfetch" ||
     name === "fetch_url"
   )
-    return FAMILIES.network;
+    return copyFamily(FAMILIES.network);
   if (name.startsWith("agent_") || name.startsWith("team_"))
-    return FAMILIES.agent;
-  if (name.startsWith("sandbox_")) return FAMILIES.sandbox;
-  if (name === "plan" || name.startsWith("todo_")) return FAMILIES.planning;
-  if (name.startsWith("skill_")) return FAMILIES.skills;
+    return copyFamily(FAMILIES.agent);
+  if (name.startsWith("sandbox_")) return copyFamily(FAMILIES.sandbox);
+  if (name === "plan" || name.startsWith("todo_"))
+    return copyFamily(FAMILIES.planning);
+  if (name.startsWith("skill_")) return copyFamily(FAMILIES.skills);
   if (
     name.startsWith("mcp_") ||
     name.startsWith("external_") ||
     name.startsWith("integration_")
   )
-    return FAMILIES.externalIntegration;
+    return copyFamily(FAMILIES.externalIntegration);
 
   switch (capabilityOwner) {
     case "natalia-tool-search":
-      return FAMILIES.filesystemRead;
+      return copyFamily(FAMILIES.filesystemRead);
     case "natalia-tool-shell":
-      return FAMILIES.shell;
+      return copyFamily(FAMILIES.shell);
     case "natalia-tool-terminal":
-      return FAMILIES.interactiveTerminal;
+      return copyFamily(FAMILIES.interactiveTerminal);
     case "natalia-tool-process":
-      return FAMILIES.managedProcess;
+      return copyFamily(FAMILIES.managedProcess);
     case "natalia-tool-web":
-      return FAMILIES.network;
+      return copyFamily(FAMILIES.network);
     case "natalia-tool-agent":
-      return FAMILIES.agent;
+      return copyFamily(FAMILIES.agent);
     case "natalia-tool-sandbox":
-      return FAMILIES.sandbox;
+      return copyFamily(FAMILIES.sandbox);
     case "natalia-tool-todo":
-      return FAMILIES.planning;
+      return copyFamily(FAMILIES.planning);
   }
 
   return {
@@ -191,4 +195,8 @@ export function classifyPermissionFamily(
     scope: `Only ${toolName} in this session`,
     sessionAction: `Allow ${toolName} for session`,
   };
+}
+
+function copyFamily(family: PermissionFamily): PermissionFamily {
+  return { ...family };
 }
