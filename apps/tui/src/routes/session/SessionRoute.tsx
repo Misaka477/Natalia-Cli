@@ -84,6 +84,7 @@ export function SessionRoute(props: {
   showInteractivePrompt?: boolean;
 }) {
   const { state, dispatch } = useAppState();
+  const route = useRouteController();
   const viewState = () =>
     props.viewState ?? (props.displayOnly ? undefined : state);
   const layout = () => timelineLayout(props.terminalWidth ?? 80);
@@ -250,20 +251,41 @@ export function SessionRoute(props: {
               }}
             >
               <For each={group.items}>
-                {(block) => (
-                  <MessageBlockView
-                    block={block}
-                    backend={props.backend}
-                    onCopy={props.onMessageCopy}
-                    onFork={props.onMessageFork}
-                    density={props.density ?? "comfortable"}
-                    toolDetails={props.toolDetails ?? "collapsed"}
-                    reasoning={props.reasoning ?? "step"}
-                    diffStyle={props.diffStyle ?? "auto"}
-                    terminalWidth={props.terminalWidth ?? 80}
-                    toolPreviewLines={props.toolPreviewLines ?? 10}
-                  />
-                )}
+                {(block) => {
+                  const agentID = block.id.startsWith("subagent:")
+                    ? block.id.slice("subagent:".length)
+                    : undefined;
+                  const agent = () =>
+                    agentID ? viewState()?.facts.subagents[agentID] : undefined;
+                  return (
+                    <Show
+                      when={block.role === "subagent" ? agent() : undefined}
+                      fallback={
+                        <MessageBlockView
+                          block={block}
+                          backend={props.backend}
+                          onCopy={props.onMessageCopy}
+                          onFork={props.onMessageFork}
+                          density={props.density ?? "comfortable"}
+                          toolDetails={props.toolDetails ?? "collapsed"}
+                          reasoning={props.reasoning ?? "step"}
+                          diffStyle={props.diffStyle ?? "auto"}
+                          terminalWidth={props.terminalWidth ?? 80}
+                          toolPreviewLines={props.toolPreviewLines ?? 10}
+                        />
+                      }
+                    >
+                      {(current) => (
+                        <SubagentLifecycleCard
+                          agent={current()}
+                          onOpen={() =>
+                            route.push({ kind: "subagent", id: current().id })
+                          }
+                        />
+                      )}
+                    </Show>
+                  );
+                }}
               </For>
             </box>
           )}
@@ -364,6 +386,52 @@ export function SessionRoute(props: {
           <box flexShrink={0} paddingLeft={1} backgroundColor={darkTheme.panel}>
             <text fg={darkTheme.accent}>{banner().text}</text>
           </box>
+        )}
+      </Show>
+    </box>
+  );
+}
+
+function SubagentLifecycleCard(props: {
+  agent: AppState["facts"]["subagents"][string];
+  onOpen(): void;
+}) {
+  const phase = () => props.agent.phase ?? "idle";
+  const health = () =>
+    props.agent.health ??
+    (["completed", "failed", "stopped"].includes(props.agent.status)
+      ? "terminal"
+      : "active");
+  return (
+    <box
+      flexDirection="column"
+      border={["left"]}
+      borderColor={subagentColor(props.agent.status)}
+      paddingLeft={2}
+      marginTop={1}
+      onMouseUp={props.onOpen}
+    >
+      <text
+        fg={subagentColor(props.agent.status)}
+        attributes={TextAttributes.BOLD}
+      >
+        {props.agent.id} · {props.agent.status} · {phase()} · {health()}
+      </text>
+      <Show when={props.agent.task}>
+        <text fg={darkTheme.text} wrapMode="word">
+          {props.agent.task}
+        </text>
+      </Show>
+      <Show when={props.agent.activityDetail}>
+        <text fg={darkTheme.muted} wrapMode="word">
+          {props.agent.activityDetail}
+        </text>
+      </Show>
+      <Show when={props.agent.lastActivityAt}>
+        {(lastActivityAt) => (
+          <text fg={darkTheme.muted}>
+            last activity {new Date(lastActivityAt()).toLocaleTimeString()}
+          </text>
         )}
       </Show>
     </box>

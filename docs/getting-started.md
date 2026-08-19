@@ -221,6 +221,18 @@ one to an editor that blocks until closed:
 setx EDITOR "code --wait"
 ```
 
+### Coordinating subagents
+
+For parallel work, ask the agent to spawn independent subagents and wait for
+them together. Natalia uses `agent_wait` for this coordination, so quiet work
+does not generate status-polling noise. A wait timeout means only that the
+caller stopped waiting; the subagents keep running and can be waited on again.
+
+Stopping is guarded. `agent_stop` requires a reason, and normal requests do not
+interrupt active or recently active subagents. Force stop is an approved
+override for work that must be interrupted immediately and is recorded as such
+in the lifecycle audit.
+
 ## 6. Install skills
 
 A skill is a directory containing `SKILL.md`. Natalia discovers skills at

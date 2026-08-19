@@ -41,6 +41,7 @@ const catalogue: Array<
   ["agent_spawn", true],
   ["agent_status", false],
   ["agent_stop", true],
+  ["agent_wait", false],
   ["ask_user", false],
   ["background_audit", false],
   ["background_cleanup", true],

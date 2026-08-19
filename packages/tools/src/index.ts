@@ -33,6 +33,8 @@ export type {
   RuntimeTool,
   ToolExecutionBoundary,
   ToolExecutionContext,
+  ToolOutputDefinition,
+  ToolRenderIntent,
   ToolSchema,
 } from "./types";
 

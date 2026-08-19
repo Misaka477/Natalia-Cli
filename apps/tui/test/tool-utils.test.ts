@@ -1,6 +1,12 @@
 import { expect, test } from "bun:test";
 import { userHomeDirectory } from "@natalia/platform";
 import {
+  classifyTool,
+  projectToolCall,
+  projectToolRender,
+} from "@natalia/ui-model";
+import type { ToolRenderIntent } from "@natalia/ui-model";
+import {
   compactModelLabel,
   compactPath,
   filetype,
@@ -154,4 +160,42 @@ test("toolLabel names calls by their actual operation", () => {
     "interactive terminal",
   );
   expect(toolLabel("todo_read", "generic")).toBe("");
+});
+
+test("classifyTool identifies every agent tool as a subagent", () => {
+  for (const name of [
+    "agent_spawn",
+    "agent_list",
+    "agent_status",
+    "agent_output",
+    "agent_wait",
+    "agent_stop",
+    "agent_resume",
+    "agent_retry",
+    "agent_attach",
+    "agent_detach",
+    "agent_cleanup",
+    "agent_audit",
+  ]) {
+    expect(classifyTool(name)).toBe("subagent");
+  }
+});
+
+test("subagent call and result projection intents decode from metadata", () => {
+  const call: ToolRenderIntent = {
+    kind: "generic",
+    title: "a1",
+    summary: "check",
+  };
+  const render: ToolRenderIntent = {
+    kind: "generic",
+    title: "a1",
+    summary: "status completed",
+    meta: [["taskID", "a1"]],
+  };
+  expect(projectToolCall({ call })).toEqual(call);
+  expect(projectToolRender({ render })).toEqual(render);
+  expect(projectToolCall({ call: { kind: "generic", title: "a1" } })).toBe(
+    undefined,
+  );
 });

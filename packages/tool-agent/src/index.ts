@@ -20,6 +20,7 @@ import type {
   RuntimeTool,
   ToolExecutionContext,
   ToolFamily,
+  ToolOutputDefinition,
 } from "@natalia/tools";
 
 function requireSubagents(context: ToolExecutionContext) {
@@ -60,7 +61,11 @@ function agentSpawnTool(): RuntimeTool {
         };
       },
       presentResult(_args, value) {
-        const taskID = JSON.parse(value)?.taskID as string | undefined;
+        const result = JSON.parse(value) as {
+          id?: string;
+          taskID?: string;
+        } | null;
+        const taskID = result?.taskID ?? result?.id;
         return {
           kind: "generic",
           title: "subagent",
@@ -98,6 +103,19 @@ function agentListTool(): RuntimeTool {
     "List TS/Bun subagents.",
     false,
     async (registry) => await registry.formatList(),
+    false,
+    {},
+    () => ({
+      kind: "generic",
+      title: "subagents",
+      summary: "list",
+      meta: [["collapsible", "true"]],
+    }),
+    (_args, value) => ({
+      kind: "generic",
+      title: "subagents",
+      summary: `listed ${subagentListCount(value)}`,
+    }),
   );
 }
 
@@ -109,6 +127,13 @@ function agentStatusTool(): RuntimeTool {
     async (registry, args) =>
       await registry.formatStatus(requireString(args.id, "id")),
     true,
+    {},
+    idCall("check", true),
+    (args, value) => ({
+      kind: "generic",
+      title: requireString(requireObject(args).id, "id"),
+      summary: `status ${/\[([^\]]+)\]/u.exec(value)?.[1] ?? "unknown"}`,
+    }),
   );
 }
 
@@ -124,6 +149,12 @@ function agentOutputTool(): RuntimeTool {
       ),
     true,
     { verbose: { type: "boolean" } },
+    idCall("read output", true),
+    (args) => ({
+      kind: "generic",
+      title: requireString(requireObject(args).id, "id"),
+      summary: "output read",
+    }),
   );
 }
 
@@ -132,11 +163,47 @@ function agentStopTool(): RuntimeTool {
     "agent_stop",
     "Stop a running TS/Bun subagent.",
     true,
-    async (registry, args) =>
-      registry.stop(requireString(args.id, "id"))
-        ? "stopped"
-        : "subagent is not running",
+    async (registry, args) => {
+      const id = requireString(args.id, "id");
+      const force = args.force === true;
+      const result = registry.requestStop(
+        id,
+        requireString(args.reason, "reason"),
+        force,
+      );
+      switch (result.outcome) {
+        case "stopped":
+          return force
+            ? `Stopped ${id} (force interrupted an active agent)`
+            : `Stopped ${id}`;
+        case "protected":
+          return `Protected ${id}`;
+        case "not_found":
+          return "Agent not found";
+        case "not_running":
+          return "Agent is not running";
+      }
+    },
     true,
+    {
+      reason: { type: "string" },
+      force: { type: "boolean" },
+    },
+    idCall("stop"),
+    (args, value) => ({
+      kind: "generic",
+      title: requireString(requireObject(args).id, "id"),
+      summary: value.startsWith("Stopped ")
+        ? value.includes("force interrupted")
+          ? "force stopped · interrupted active agent"
+          : "stopped"
+        : value.startsWith("Protected ")
+          ? "protected · agent still active"
+          : value === "Agent not found"
+            ? "not found"
+            : "not running",
+    }),
+    ["id", "reason"],
   );
 }
 
@@ -150,6 +217,13 @@ function agentResumeTool(): RuntimeTool {
         ? "resumed"
         : "subagent is not paused",
     true,
+    {},
+    idCall("resume"),
+    (args, value) => ({
+      kind: "generic",
+      title: requireString(requireObject(args).id, "id"),
+      summary: value === "resumed" ? "resumed" : "not paused",
+    }),
   );
 }
 
@@ -165,6 +239,13 @@ function agentRetryTool(): RuntimeTool {
         : "subagent is not stopped or failed";
     },
     true,
+    {},
+    idCall("retry"),
+    (args, value) => ({
+      kind: "generic",
+      title: requireString(requireObject(args).id, "id"),
+      summary: `continuation ${/started continuation (\d+)/u.exec(value)?.[1] ?? "unavailable"}`,
+    }),
   );
 }
 
@@ -178,6 +259,13 @@ function agentAttachTool(): RuntimeTool {
         ? "attached"
         : "subagent not found",
     true,
+    {},
+    idCall("attach"),
+    (args, value) => ({
+      kind: "generic",
+      title: requireString(requireObject(args).id, "id"),
+      summary: value === "attached" ? "attached" : "not found",
+    }),
   );
 }
 
@@ -191,6 +279,13 @@ function agentDetachTool(): RuntimeTool {
         ? "detached"
         : "subagent not found",
     true,
+    {},
+    idCall("detach"),
+    (args, value) => ({
+      kind: "generic",
+      title: requireString(requireObject(args).id, "id"),
+      summary: value === "detached" ? "detached" : "not found",
+    }),
   );
 }
 
@@ -201,7 +296,126 @@ function agentCleanupTool(): RuntimeTool {
     true,
     async (registry, args) =>
       JSON.stringify({ removed: registry.cleanup(args.dryRun === true) }),
+    false,
+    {},
+    () => ({ kind: "generic", title: "subagents", summary: "cleanup" }),
+    (_args, value) => {
+      const removed = (JSON.parse(value) as { removed?: unknown[] }).removed;
+      return {
+        kind: "generic",
+        title: "subagents",
+        summary: `removed ${removed?.length ?? 0}`,
+      };
+    },
   );
+}
+
+function agentWaitTool(): RuntimeTool {
+  return {
+    name: "agent_wait",
+    description:
+      "Wait for one or more subagents to complete. until supports all_terminal or any_terminal. Does not stop the subagent on timeout.",
+    requiresApproval: false,
+    parameters: {
+      type: "object",
+      properties: {
+        ids: { type: "array", items: { type: "string" } },
+        until: { type: "string", enum: ["all_terminal", "any_terminal"] },
+        timeoutMs: { type: "number" },
+      },
+      required: ["ids", "until"],
+      additionalProperties: false,
+    },
+    output: {
+      schema: {
+        type: "object",
+        properties: {
+          completed: { type: "array" },
+          pending: { type: "array" },
+          timedOut: { type: "boolean" },
+          results: { type: "object" },
+        },
+        additionalProperties: false,
+      },
+      presentCall(args) {
+        const ids = (requireObject(args).ids as unknown[]).map(String);
+        const until = requireObject(args).until as string;
+        const suffix = until === "any_terminal" ? "any" : "all";
+        return {
+          kind: "generic",
+          title: until === "any_terminal" ? "any" : "all",
+          summary:
+            ids.length > 2
+              ? `waiting for ${ids.length} agents`
+              : `waiting for ${ids.join(", ")}`,
+          meta: [["collapsible", "true"]],
+        };
+      },
+      presentResult(_args, value) {
+        let parsed: {
+          completed?: unknown[];
+          pending?: unknown[];
+          timedOut?: boolean;
+        };
+        try {
+          parsed = JSON.parse(value);
+        } catch {
+          return { kind: "generic", title: "wait", summary: "completed" };
+        }
+        const completed = (parsed.completed ?? []).length;
+        const pending = (parsed.pending ?? []).length;
+        const total = completed + pending;
+        let summary: string;
+        if (parsed.timedOut) {
+          summary =
+            pending > 0 ? `timed out · ${pending} pending` : "timed out";
+        } else if (pending === 0) {
+          summary = `${completed} completed`;
+        } else {
+          summary = `${completed}/${total} completed`;
+        }
+        return { kind: "generic", title: "wait", summary };
+      },
+    },
+    async execute(input, context) {
+      const args = requireObject(input);
+      const ids = ((args.ids as unknown[]) ?? []).map((id) => String(id));
+      if (ids.length === 0) throw new Error("ids is required");
+      const until =
+        (args.until as string) === "any_terminal"
+          ? "any_terminal"
+          : "all_terminal";
+      const timeoutMs =
+        typeof args.timeoutMs === "number" ? args.timeoutMs : 120_000;
+      const registry = requireSubagents(context);
+      const results = await registry.wait(
+        ids,
+        until,
+        timeoutMs,
+        context.signal,
+      );
+      const terminalStatuses = new Set(["completed", "failed", "stopped"]);
+      const completed: string[] = [];
+      const pending: string[] = [];
+      for (const id of ids) {
+        const r = results[id] ?? { status: "idle", phase: "idle" };
+        if (terminalStatuses.has(r.status)) completed.push(id);
+        else pending.push(id);
+      }
+      const timedOut = pending.length > 0;
+      return JSON.stringify({
+        completed,
+        pending,
+        timedOut,
+        results: Object.fromEntries(
+          Object.entries(results).map(([id, r]) => [
+            id,
+            { status: r.status, phase: r.phase },
+          ]),
+        ),
+      });
+    },
+  };
 }
 
 function agentAuditTool(): RuntimeTool {
@@ -214,7 +428,45 @@ function agentAuditTool(): RuntimeTool {
         numberOr(args.tail, 0) || undefined,
         optionalString(args.format),
       ),
+    false,
+    {},
+    () => ({ kind: "generic", title: "subagents", summary: "audit" }),
+    (_args, value) => ({
+      kind: "generic",
+      title: "subagents",
+      summary: `read ${auditEntryCount(value)} audit entries`,
+    }),
   );
+}
+
+type PresentCall = NonNullable<ToolOutputDefinition["presentCall"]>;
+type PresentResult = NonNullable<ToolOutputDefinition["presentResult"]>;
+
+function idCall(summary: string, collapsible = false): PresentCall {
+  return (args) => ({
+    kind: "generic",
+    title: requireString(requireObject(args).id, "id"),
+    summary,
+    meta: collapsible ? [["collapsible", "true"]] : undefined,
+  });
+}
+
+function subagentListCount(value: string) {
+  if (value === "no subagents") return 0;
+  return value
+    .split("\n")
+    .filter((line) => line && !line.startsWith("remaining_resources:")).length;
+}
+
+function auditEntryCount(value: string) {
+  if (value === "<no agent audit entries>") return 0;
+  try {
+    const entries = JSON.parse(value) as unknown;
+    if (Array.isArray(entries)) return entries.length;
+  } catch {
+    // The default audit format is one entry per line.
+  }
+  return value.split("\n").filter(Boolean).length;
 }
 
 function agentRegistryTool(
@@ -227,6 +479,9 @@ function agentRegistryTool(
   ) => Promise<string>,
   requiresID = false,
   extraProperties: Record<string, unknown> = {},
+  presentCall?: PresentCall,
+  presentResult?: PresentResult,
+  requiredProperties?: string[],
 ): RuntimeTool {
   return {
     name,
@@ -241,8 +496,13 @@ function agentRegistryTool(
         format: { type: "string" },
         ...extraProperties,
       },
-      required: requiresID ? ["id"] : undefined,
+      required: requiredProperties ?? (requiresID ? ["id"] : undefined),
       additionalProperties: false,
+    },
+    output: {
+      schema: { type: "object", properties: {} },
+      presentCall,
+      presentResult,
     },
     async execute(input, context) {
       const args = requireObject(input);
@@ -258,6 +518,7 @@ export function agentTools(): RuntimeTool[] {
     agentListTool(),
     agentStatusTool(),
     agentOutputTool(),
+    agentWaitTool(),
     agentStopTool(),
     agentResumeTool(),
     agentRetryTool(),

@@ -2,6 +2,8 @@ import type {
   SubagentID,
   SubagentStatus,
   SubagentRecord,
+  SubagentPhase,
+  SubagentHealth,
   OutputEntry,
   AuditEntry,
   SubagentEvent,
@@ -13,9 +15,24 @@ import type {
 import { SubagentStore } from "./store";
 import { formatStatusCounts, truncate } from "./format";
 
+const DEFAULT_STALL_MS = 30_000;
+
+export type StopResult =
+  | { outcome: "stopped"; id: string }
+  | { outcome: "not_found"; id: string }
+  | { outcome: "not_running"; id: string; status: SubagentStatus }
+  | {
+      outcome: "protected";
+      id: string;
+      health: "active" | "quiet";
+      retryAfterMs: number;
+    };
+
 export class SubagentRegistry {
   readonly store: SubagentStore;
   private readonly runner: RunnerCallback;
+  private readonly clock: () => number;
+  private readonly stallThresholdMs: number;
   private records = new Map<SubagentID, SubagentRecord>();
   private running = new Map<SubagentID, AbortController>();
   private subscribers = new Set<(event: SubagentEvent) => void>();
@@ -23,28 +40,38 @@ export class SubagentRegistry {
   private auditSeq = 0;
   private nextID = 1;
   private readonly maxAudit = 1000;
+  private activityThrottle = new Map<SubagentID, number>();
 
   constructor(opts: SubagentRegistryOptions) {
     this.runner = opts.runner;
+    this.clock = opts.clock ?? (() => Date.now());
+    this.stallThresholdMs = opts.stallThresholdMs ?? DEFAULT_STALL_MS;
     this.store = new SubagentStore(opts.workDir);
   }
 
   async load(): Promise<void> {
     const records = await this.store.load();
     let recovered = false;
+    const now = this.clock();
     for (const rec of records) {
-      // A runner is process-local. Never pretend a previous process still owns it.
       if (rec.status === "running" || rec.status === "paused") {
         rec.status = "stopped";
-        rec.updatedAt = Date.now();
+        rec.updatedAt = now;
+        rec.endedAt = now;
+        rec.phase = "finalizing";
+        rec.lastActivityAt = now;
+        rec.activityDetail = "runtime restarted";
         rec.outputs.push({
           step: rec.outputs.length + 1,
           text: "subagent stopped because the owning runtime restarted; resubmit the task to continue",
-          timestamp: rec.updatedAt,
+          timestamp: now,
         });
         recovered = true;
       }
-      this.records.set(rec.id, rec);
+      if (!rec.phase) rec.phase = derivePhase(rec);
+      if (rec.lastActivityAt === undefined) rec.lastActivityAt = rec.updatedAt;
+      if (!rec.startedAt) rec.startedAt = rec.createdAt;
+      this.records.set(rec.id, rec as SubagentRecord);
       const n = parseInt(rec.id.slice(1), 10);
       if (n >= this.nextID) this.nextID = n + 1;
     }
@@ -63,7 +90,7 @@ export class SubagentRegistry {
     this.assertDepth(options.parentAgentID, options.maxDepth);
 
     const id = `a${this.nextID++}` as SubagentID;
-    const now = Date.now();
+    const now = this.clock();
     const record: SubagentRecord = {
       id,
       task,
@@ -80,6 +107,10 @@ export class SubagentRegistry {
       parentSessionID: options.parentSessionID,
       parentAgentID: options.parentAgentID,
       continuation: 0,
+      phase: "queued",
+      lastActivityAt: now,
+      activityDetail: "spawned",
+      startedAt: now,
     };
 
     this.records.set(id, record);
@@ -89,12 +120,77 @@ export class SubagentRegistry {
     return record;
   }
 
+  health(id: SubagentID): SubagentHealth {
+    const record = this.records.get(id);
+    if (!record) return "terminal";
+    if (["completed", "failed", "stopped"].includes(record.status))
+      return "terminal";
+    if (record.phase === "waiting") return "active";
+    const elapsed = this.clock() - record.lastActivityAt;
+    const quietGrace = Math.min(5_000, this.stallThresholdMs * 0.5);
+    if (elapsed < quietGrace) return "active";
+    if (elapsed < this.stallThresholdMs) return "quiet";
+    return "stalled";
+  }
+
+  reportActivity(id: SubagentID, phase: SubagentPhase, detail: string) {
+    const record = this.records.get(id);
+    if (!record) return;
+    const now = this.clock();
+    const prevThrottle = this.activityThrottle.get(id) ?? 0;
+    if (now - prevThrottle < 500 && phase !== record.phase) {
+      this.activityThrottle.set(id, now);
+    } else if (now - prevThrottle < 5_000) {
+      return;
+    } else {
+      this.activityThrottle.set(id, now);
+    }
+    record.lastActivityAt = now;
+    record.phase = phase;
+    record.activityDetail = detail;
+    if (phase !== "queued" && record.status === "idle") {
+      record.status = "running";
+      record.startedAt = now;
+    }
+    this.emit({
+      agentId: id,
+      event: "activity",
+      status: record.status,
+      attached: record.attached,
+      timestamp: now,
+      phase,
+      activityDetail: detail,
+    });
+  }
+
+  requestStop(id: SubagentID, reason: string, force = false): StopResult {
+    const record = this.records.get(id);
+    if (!record) return { outcome: "not_found", id };
+    if (!["running", "paused"].includes(record.status))
+      return { outcome: "not_running", id, status: record.status };
+    const h = this.health(id);
+    if (h === "terminal")
+      return { outcome: "not_running", id, status: record.status };
+    if (h !== "stalled" && !force) {
+      const retryAfterMs = Math.max(
+        0,
+        this.stallThresholdMs - (this.clock() - record.lastActivityAt),
+      );
+      return { outcome: "protected", id, health: h, retryAfterMs };
+    }
+    this.doStop(id, reason, force);
+    return { outcome: "stopped", id };
+  }
+
   async retry(id: SubagentID): Promise<SubagentRecord | undefined> {
     const record = this.records.get(id);
     if (!record || !["stopped", "failed"].includes(record.status))
       return undefined;
     record.continuation = (record.continuation ?? 0) + 1;
-    record.updatedAt = Date.now();
+    record.updatedAt = this.clock();
+    record.lastActivityAt = this.clock();
+    record.activityDetail = "retry";
+    record.phase = "queued";
     record.outputs.push({
       step: record.outputs.length + 1,
       text: `retrying continuation ${record.continuation}`,
@@ -109,8 +205,22 @@ export class SubagentRegistry {
     const id = record.id;
     const abortController = new AbortController();
     this.running.set(id, abortController);
+    const now = this.clock();
     record.status = "running";
-    record.updatedAt = Date.now();
+    record.updatedAt = now;
+    record.startedAt = now;
+    record.lastActivityAt = now;
+    record.phase = "provider";
+    record.activityDetail = "starting";
+    this.emit({
+      agentId: id,
+      event: "activity",
+      status: record.status,
+      attached: record.attached,
+      timestamp: now,
+      phase: "provider",
+      activityDetail: "starting",
+    });
 
     const ctx: RunnerContext = {
       agentId: id,
@@ -118,39 +228,42 @@ export class SubagentRegistry {
         const entry: OutputEntry = {
           step: record.outputs.length + 1,
           text,
-          timestamp: Date.now(),
+          timestamp: this.clock(),
         };
         record.outputs.push(entry);
-        record.updatedAt = Date.now();
+        record.updatedAt = this.clock();
+        record.lastActivityAt = this.clock();
         this.emit({
           agentId: id,
           event: "log",
           text,
           status: record.status,
           attached: record.attached,
-          timestamp: Date.now(),
+          timestamp: this.clock(),
         });
       },
       setStatus: (s: string) => {
         (record as any).status = s;
-        record.updatedAt = Date.now();
+        record.updatedAt = this.clock();
+        record.lastActivityAt = this.clock();
         this.addAudit({
           agentId: id,
           action: "status",
           status: s,
           attached: record.attached,
-          timestamp: Date.now(),
+          timestamp: this.clock(),
         });
         this.emit({
           agentId: id,
           event: "status",
           status: s,
           attached: record.attached,
-          timestamp: Date.now(),
+          timestamp: this.clock(),
         });
       },
-      get signal() {
-        return anySignal(abortController.signal, signal);
+      signal: anySignal(abortController.signal, signal),
+      reportActivity: (phase, detail) => {
+        this.reportActivity(id, phase, detail);
       },
     };
 
@@ -159,52 +272,74 @@ export class SubagentRegistry {
       action: "created",
       status: record.status,
       attached: record.attached,
-      timestamp: Date.now(),
+      timestamp: this.clock(),
     });
     this.emit({
       agentId: id,
       event: "created",
       status: record.status,
       attached: record.attached,
-      timestamp: Date.now(),
+      timestamp: this.clock(),
     });
 
     const runPromise = Promise.resolve().then(async () => {
       try {
         await this.runner(record.task, ctx);
-        (record as any).status = abortController.signal.aborted
+        const finalStatus = abortController.signal.aborted
           ? "stopped"
           : "completed";
+        (record as any).status = finalStatus;
+        record.phase = "finalizing";
+        record.activityDetail = finalStatus;
+        record.endedAt = this.clock();
+        record.lastActivityAt = this.clock();
+        this.emit({
+          agentId: id,
+          event: finalStatus === "completed" ? "done" : "stopped",
+          status: finalStatus,
+          attached: record.attached,
+          timestamp: this.clock(),
+          phase: "finalizing",
+          activityDetail: finalStatus,
+        });
       } catch (err) {
-        if (
+        const finalStatus =
           (err as Error)?.name === "AbortError" ||
           abortController.signal.aborted
-        ) {
-          (record as any).status = "stopped";
-        } else {
-          (record as any).status = "failed";
+            ? "stopped"
+            : "failed";
+        (record as any).status = finalStatus;
+        record.phase = "finalizing";
+        record.activityDetail =
+          finalStatus === "stopped" ? "aborted" : String(err);
+        record.endedAt = this.clock();
+        record.lastActivityAt = this.clock();
+        if (finalStatus === "failed") {
           record.outputs.push({
             step: record.outputs.length + 1,
             text: String(err),
-            timestamp: Date.now(),
+            timestamp: this.clock(),
           });
         }
-      } finally {
-        record.updatedAt = Date.now();
-        this.running.delete(id);
         this.emit({
           agentId: id,
-          event: "done",
-          status: record.status,
+          event: finalStatus === "stopped" ? "stopped" : "done",
+          status: finalStatus,
           attached: record.attached,
-          timestamp: Date.now(),
+          timestamp: this.clock(),
+          phase: "finalizing",
+          activityDetail: record.activityDetail,
         });
+      } finally {
+        record.updatedAt = this.clock();
+        this.running.delete(id);
+        this.activityThrottle.delete(id);
         this.addAudit({
           agentId: id,
           action: "done",
           status: record.status,
           attached: record.attached,
-          timestamp: Date.now(),
+          timestamp: this.clock(),
         });
         await this.save();
       }
@@ -233,32 +368,48 @@ export class SubagentRegistry {
     return this.records.get(id)?.outputs;
   }
 
-  stop(id: SubagentID): boolean {
+  private doStop(id: SubagentID, reason: string, force: boolean) {
     const record = this.records.get(id);
-    if (!record) return false;
-    if (record.status !== "running") return false;
+    if (!record) return;
     const ctrl = this.running.get(id);
     if (ctrl) {
       ctrl.abort();
       record.status = "stopped";
-      record.updatedAt = Date.now();
+      record.updatedAt = this.clock();
+      record.phase = "finalizing";
+      record.activityDetail = reason;
+      record.endedAt = this.clock();
+      record.lastActivityAt = this.clock();
       this.addAudit({
         agentId: id,
         action: "stop",
         status: "stopped",
         attached: record.attached,
-        timestamp: Date.now(),
+        timestamp: this.clock(),
+        stopReason: reason,
+        requestedBy: "model",
+        force,
       });
       this.emit({
         agentId: id,
         event: "stopped",
         status: "stopped",
         attached: record.attached,
-        timestamp: Date.now(),
+        timestamp: this.clock(),
+        phase: "finalizing",
+        activityDetail: reason,
+        stopReason: reason,
+        requestedBy: "model",
+        force,
       });
       void this.save();
     }
-    return true;
+  }
+
+  stop(id: SubagentID): boolean {
+    return (
+      this.requestStop(id, "model requested stop", false).outcome === "stopped"
+    );
   }
 
   async resume(id: SubagentID): Promise<boolean> {
@@ -267,20 +418,23 @@ export class SubagentRegistry {
     if (record.status !== "paused") return false;
     if (this.running.has(id)) return false;
     record.status = "running";
-    record.updatedAt = Date.now();
+    record.updatedAt = this.clock();
+    record.lastActivityAt = this.clock();
+    record.phase = "queued";
+    record.activityDetail = "resume";
     this.addAudit({
       agentId: id,
       action: "resume",
       status: "running",
       attached: record.attached,
-      timestamp: Date.now(),
+      timestamp: this.clock(),
     });
     this.emit({
       agentId: id,
       event: "resumed",
       status: "running",
       attached: record.attached,
-      timestamp: Date.now(),
+      timestamp: this.clock(),
     });
     await this.save();
     await this.start(record);
@@ -291,20 +445,20 @@ export class SubagentRegistry {
     const record = this.records.get(id);
     if (!record) return false;
     record.attached = true;
-    record.updatedAt = Date.now();
+    record.updatedAt = this.clock();
     this.addAudit({
       agentId: id,
       action: "attach",
       status: record.status,
       attached: true,
-      timestamp: Date.now(),
+      timestamp: this.clock(),
     });
     this.emit({
       agentId: id,
       event: "attached",
       status: record.status,
       attached: true,
-      timestamp: Date.now(),
+      timestamp: this.clock(),
     });
     return true;
   }
@@ -313,20 +467,20 @@ export class SubagentRegistry {
     const record = this.records.get(id);
     if (!record) return false;
     record.attached = false;
-    record.updatedAt = Date.now();
+    record.updatedAt = this.clock();
     this.addAudit({
       agentId: id,
       action: "detach",
       status: record.status,
       attached: false,
-      timestamp: Date.now(),
+      timestamp: this.clock(),
     });
     this.emit({
       agentId: id,
       event: "detached",
       status: record.status,
       attached: false,
-      timestamp: Date.now(),
+      timestamp: this.clock(),
     });
     return true;
   }
@@ -350,7 +504,7 @@ export class SubagentRegistry {
           action: "cleanup",
           status: "completed",
           attached: false,
-          timestamp: Date.now(),
+          timestamp: this.clock(),
         });
       }
       this.save();
@@ -373,6 +527,9 @@ export class SubagentRegistry {
           agent_id: e.agentId,
           action: e.action,
           status: e.status,
+          stop_reason: e.stopReason,
+          requested_by: e.requestedBy,
+          force: e.force,
           time: new Date(e.timestamp).toISOString(),
         })),
         null,
@@ -382,7 +539,7 @@ export class SubagentRegistry {
     return entries
       .map(
         (e) =>
-          `${new Date(e.timestamp).toISOString()} event_id=${e.eventId} agent_id=${e.agentId} action=${e.action} status=${e.status} attached=${e.attached}`,
+          `${new Date(e.timestamp).toISOString()} event_id=${e.eventId} agent_id=${e.agentId} action=${e.action} status=${e.status} attached=${e.attached}${e.stopReason ? ` stop_reason=${JSON.stringify(e.stopReason)} requested_by=${e.requestedBy} force=${e.force}` : ""}`,
       )
       .join("\n");
   }
@@ -431,12 +588,103 @@ export class SubagentRegistry {
     ];
     if (rec.modelProfile) lines.push(`  model_profile: ${rec.modelProfile}`);
     lines.push(`  mode: ${rec.mode}`);
+    lines.push(`  phase: ${rec.phase}`);
+    lines.push(
+      `  last_activity: ${new Date(rec.lastActivityAt).toISOString()}`,
+    );
+    lines.push(`  activity: ${rec.activityDetail}`);
     lines.push(`  created: ${new Date(rec.createdAt).toISOString()}`);
     lines.push(`  updated: ${new Date(rec.updatedAt).toISOString()}`);
+    lines.push(`  started: ${new Date(rec.startedAt).toISOString()}`);
+    if (rec.endedAt)
+      lines.push(`  ended: ${new Date(rec.endedAt).toISOString()}`);
     for (const o of rec.outputs) {
       lines.push(`  [step ${o.step}] ${truncate(o.text, 200)}`);
     }
     return lines.join("\n");
+  }
+
+  wait(
+    ids: string[],
+    until: "all_terminal" | "any_terminal",
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<Record<string, { status: SubagentStatus; phase: SubagentPhase }>> {
+    return new Promise((resolve) => {
+      const deadline = this.clock() + timeoutMs;
+      const terminalStatuses = new Set(["completed", "failed", "stopped"]);
+
+      const check = (): boolean => {
+        const results: Record<
+          string,
+          { status: SubagentStatus; phase: SubagentPhase }
+        > = {};
+        let terminalCount = 0;
+        for (const id of ids) {
+          const rec = this.records.get(id);
+          const status = rec?.status ?? "idle";
+          const phase = rec?.phase ?? "idle";
+          results[id] = { status, phase };
+          if (terminalStatuses.has(status)) terminalCount++;
+        }
+        if (
+          until === "all_terminal"
+            ? terminalCount === ids.length
+            : terminalCount > 0
+        ) {
+          resolve(results);
+          return true;
+        }
+        return false;
+      };
+
+      if (check()) return;
+
+      const unsub = this.subscribe((event) => {
+        if (!ids.includes(event.agentId)) return;
+        if (check()) unsub();
+      });
+
+      const timer = setInterval(() => {
+        if (this.clock() >= deadline) {
+          clearInterval(timer);
+          unsub();
+          const results: Record<
+            string,
+            { status: SubagentStatus; phase: SubagentPhase }
+          > = {};
+          for (const id of ids) {
+            const rec = this.records.get(id);
+            results[id] = {
+              status: rec?.status ?? "idle",
+              phase: rec?.phase ?? "idle",
+            };
+          }
+          resolve(results);
+        }
+      }, 200);
+
+      signal?.addEventListener(
+        "abort",
+        () => {
+          clearInterval(timer);
+          unsub();
+          const results: Record<
+            string,
+            { status: SubagentStatus; phase: SubagentPhase }
+          > = {};
+          for (const id of ids) {
+            const rec = this.records.get(id);
+            results[id] = {
+              status: rec?.status ?? "idle",
+              phase: rec?.phase ?? "idle",
+            };
+          }
+          resolve(results);
+        },
+        { once: true },
+      );
+    });
   }
 
   getAuditEntries(): AuditEntry[] {
@@ -445,9 +693,13 @@ export class SubagentRegistry {
 
   private emit(event: SubagentEvent) {
     const record = this.records.get(event.agentId);
-    event.parentSessionID = record?.parentSessionID;
-    event.parentAgentID = record?.parentAgentID;
-    event.continuation = record?.continuation;
+    if (record) {
+      event.parentSessionID = record.parentSessionID;
+      event.parentAgentID = record.parentAgentID;
+      event.continuation = record.continuation;
+      event.phase = event.phase ?? record.phase;
+      event.activityDetail = event.activityDetail ?? record.activityDetail;
+    }
     for (const fn of this.subscribers) {
       try {
         fn(event);
@@ -478,6 +730,9 @@ export class SubagentRegistry {
     status: string;
     attached: boolean;
     timestamp: number;
+    stopReason?: string;
+    requestedBy?: "model" | "user" | "parent" | "runtime";
+    force?: boolean;
   }) {
     this.auditSeq++;
     const auditEntry: AuditEntry = {
@@ -487,6 +742,9 @@ export class SubagentRegistry {
       status: entry.status,
       attached: entry.attached,
       timestamp: entry.timestamp,
+      stopReason: entry.stopReason,
+      requestedBy: entry.requestedBy,
+      force: entry.force,
     };
     this.auditEntries.push(auditEntry);
     if (this.auditEntries.length > this.maxAudit) {
@@ -495,6 +753,15 @@ export class SubagentRegistry {
       );
     }
   }
+}
+
+function derivePhase(rec: { status: string }): SubagentPhase {
+  const s = rec.status;
+  if (s === "idle") return "idle";
+  if (s === "paused") return "waiting";
+  if (s === "completed" || s === "failed" || s === "stopped")
+    return "finalizing";
+  return "provider";
 }
 
 function anySignal(...signals: (AbortSignal | undefined)[]): AbortSignal {

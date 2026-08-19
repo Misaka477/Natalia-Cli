@@ -8,6 +8,17 @@ export type SubagentStatus =
   | "completed"
   | "failed";
 
+export type SubagentPhase =
+  | "idle"
+  | "queued"
+  | "provider"
+  | "tool"
+  | "retrying"
+  | "finalizing"
+  | "waiting";
+
+export type SubagentHealth = "active" | "quiet" | "stalled" | "terminal";
+
 export interface OutputEntry {
   step: number;
   text: string;
@@ -21,6 +32,9 @@ export interface AuditEntry {
   status: string;
   timestamp: number;
   attached: boolean;
+  stopReason?: string;
+  requestedBy?: "model" | "user" | "parent" | "runtime";
+  force?: boolean;
 }
 
 export interface SubagentEvent {
@@ -33,6 +47,11 @@ export interface SubagentEvent {
   parentSessionID?: string;
   parentAgentID?: SubagentID;
   continuation?: number;
+  phase?: SubagentPhase;
+  activityDetail?: string;
+  stopReason?: string;
+  requestedBy?: "model" | "user" | "parent" | "runtime";
+  force?: boolean;
 }
 
 export interface SubagentRecord {
@@ -51,6 +70,11 @@ export interface SubagentRecord {
   parentSessionID?: string;
   parentAgentID?: SubagentID;
   continuation?: number;
+  phase: SubagentPhase;
+  lastActivityAt: number;
+  activityDetail: string;
+  startedAt: number;
+  endedAt?: number;
 }
 
 export interface SpawnOptions {
@@ -58,11 +82,6 @@ export interface SpawnOptions {
   modelProfile?: string;
   allowedTools?: string[];
   excludeTools?: string[];
-  /**
-   * The paths (relative to the sub-agent's worktree) this sub-agent may write —
-   * the ownership map's domain for a fan-out agent. Absent = no domain
-   * restriction (same authority as the main agent).
-   */
   writePaths?: string[];
   signal?: AbortSignal;
   parentSessionID?: string;
@@ -75,6 +94,7 @@ export interface RunnerContext {
   log(text: string): void;
   setStatus(status: string): void;
   signal: AbortSignal;
+  reportActivity(phase: SubagentPhase, detail: string): void;
 }
 
 export type RunnerCallback = (
@@ -85,4 +105,8 @@ export type RunnerCallback = (
 export interface SubagentRegistryOptions {
   runner: RunnerCallback;
   workDir?: string;
+  /** Time source; defaults to Date.now for production. */
+  clock?: () => number;
+  /** Grace period before idle→stalled; 0 uses the default. */
+  stallThresholdMs?: number;
 }

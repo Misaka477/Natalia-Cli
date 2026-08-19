@@ -39,8 +39,6 @@ export type FanOutPR = {
   buildEvidence?: { ok: boolean; exitCode: number; output: string };
 };
 
-const TERMINAL = new Set(["completed", "failed", "stopped"]);
-
 /**
  * Spawns every task as a sandboxed sub-agent, waits for all of them, and
  * returns one PR per task.
@@ -140,15 +138,16 @@ async function waitForAllTerminal(
   ids: string[],
   timeoutMs: number,
 ): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (ids.every((id) => TERMINAL.has(registry.status(id) ?? ""))) return;
-    await Bun.sleep(50);
-  }
-  const stuck = ids.filter((id) => !TERMINAL.has(registry.status(id) ?? ""));
-  throw new Error(
-    `fan-out timed out waiting for sub-agents: ${stuck.join(", ")}`,
+  const results = await registry.wait(ids, "all_terminal", timeoutMs);
+  const stuck = ids.filter(
+    (id) =>
+      !["completed", "failed", "stopped"].includes(results[id]?.status ?? ""),
   );
+  if (stuck.length > 0) {
+    throw new Error(
+      `fan-out timed out waiting for sub-agents: ${stuck.join(", ")}`,
+    );
+  }
 }
 
 /**

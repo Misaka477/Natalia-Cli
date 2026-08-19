@@ -1843,6 +1843,15 @@ export function createRealRuntimeClient(
         parentSessionID: event.parentSessionID,
         parentAgentID: event.parentAgentID,
         continuation: event.continuation,
+        phase: event.phase ?? record?.phase,
+        activityDetail: event.activityDetail ?? record?.activityDetail,
+        health: subagentRegistry.health(event.agentId),
+        lastActivityAt: record?.lastActivityAt,
+        startedAt: record?.startedAt,
+        endedAt: record?.endedAt,
+        stopReason: event.stopReason,
+        requestedBy: event.requestedBy,
+        force: event.force,
       } satisfies Extract<RuntimeEvent, { type: "subagent.update" }>;
       // Registry events can arrive after the UI attaches to another session.
       // Persist them with the spawning session, rather than whichever session

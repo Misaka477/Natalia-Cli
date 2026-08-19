@@ -59,6 +59,7 @@ function ProjectedToolCard(props: {
   block: MessageBlock;
   toolDetails: "expanded" | "collapsed";
 }) {
+  const route = useRouteController();
   const tool = () => props.block.tool!;
   // The result card wins once it exists; before that the call card carries the
   // title and summary (a file path, a command), so the running card is the
@@ -71,10 +72,21 @@ function ProjectedToolCard(props: {
       title: tool().name,
       summary: tool().status,
     } as ToolRenderIntent);
+  const callIntent = () => projectToolCall(tool().metadata);
   const [expanded, setExpanded] = createSignal(
     props.toolDetails === "expanded",
   );
   const summary = () => intent().summary;
+  const taskID = () =>
+    intent().meta?.find(([label]) => label === "taskID")?.[1];
+  const collapsible = () =>
+    [intent(), callIntent()].some(
+      (projection) =>
+        projection?.meta?.some(
+          ([label, value]) => label === "collapsible" && value === "true",
+        ) ?? false,
+    );
+  const compact = () => collapsible() && !expanded();
   const heading = () =>
     [toolLabel(tool().name, intent().kind), intent().title]
       .filter(Boolean)
@@ -101,24 +113,34 @@ function ProjectedToolCard(props: {
       marginRight={1}
       marginTop={1}
       gap={0}
-      onMouseUp={() => setExpanded((value) => !value)}
+      onMouseUp={() => {
+        const id = taskID();
+        if (id) route.push({ kind: "subagent", id });
+        else setExpanded((value) => !value);
+      }}
     >
       <text paddingLeft={1} fg={statusColor()}>
-        {`${heading()}${tool().elapsed ? ` · ${tool().elapsed}` : ""}`}
+        {`${heading()}${compact() && summary() ? ` · ${summary()}` : ""}${tool().elapsed ? ` · ${tool().elapsed}` : ""}`}
       </text>
-      <Show when={summary()}>
+      <Show when={!compact() && summary()}>
         <text paddingLeft={1} fg={darkTheme.text}>
           {summary()}
         </text>
       </Show>
-      <For each={intent().meta ?? []}>
+      <For
+        each={
+          compact()
+            ? []
+            : (intent().meta ?? []).filter(([label]) => label !== "collapsible")
+        }
+      >
         {([label, value]) => (
           <text paddingLeft={1} fg={darkTheme.muted}>
             {`${label}: ${value}`}
           </text>
         )}
       </For>
-      <Show when={expanded() && intent().body}>
+      <Show when={!compact() && expanded() && intent().body}>
         {(content) => (
           <box paddingLeft={1}>
             <text fg={darkTheme.text} wrapMode="word">
@@ -487,31 +509,6 @@ function InteractionToolView(props: { block: MessageBlock }) {
         Web Search "{stringField(input(), "query")}"
       </InlineToolRow>
     );
-
-  if (tool().kind === "subagent") {
-    const task = () => stringField(input(), "task", "description");
-    const mode = () => stringField(input(), "mode", "subagent_type") || "Agent";
-    const record = () => result();
-    return (
-      <InlineToolRow
-        icon={tool().status === "succeeded" ? "✓" : "│"}
-        pending="Delegating..."
-        complete={Boolean(task())}
-        spinner={running()}
-        tool={tool()}
-        onClick={
-          record().id
-            ? () => route.push({ kind: "subagent", id: String(record().id) })
-            : undefined
-        }
-      >
-        {mode()} Task — {task()}
-        <Show when={record().id || record().status}>
-          {`\n↳ ${[record().id, record().status].filter(Boolean).join(" · ")}`}
-        </Show>
-      </InlineToolRow>
-    );
-  }
 
   if (tool().kind === "todo") {
     const todos = () =>

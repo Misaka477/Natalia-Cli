@@ -3,9 +3,24 @@ import { mkdtemp, mkdir, readdir, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { SubagentRegistry, SubagentStore } from "../src";
+import type { SubagentEvent } from "../src";
 
 function tempDir() {
   return mkdtemp(join(tmpdir(), "natalia-subagent-"));
+}
+
+function fakeClock(initial = 0) {
+  let current = initial;
+  return {
+    now: () => current,
+    advance: (milliseconds: number) => (current += milliseconds),
+  };
+}
+
+function subscribeTo(registry: SubagentRegistry) {
+  const events: SubagentEvent[] = [];
+  const unsubscribe = registry.subscribe((event) => events.push(event));
+  return { events, unsubscribe };
 }
 
 function immediateRunner(
@@ -136,22 +151,23 @@ test("formatOutput defaults to the concise final result and keeps verbose audit 
   );
 });
 
-test("stop aborts running agent", async () => {
+test("stop compatibility wrapper protects an active agent", async () => {
   const dir = await tempDir();
   const reg = new SubagentRegistry({ runner: delayedRunner, workDir: dir });
   await reg.spawn("stop test");
   expect(reg.status("a1")).toBe("running");
   const ok = reg.stop("a1");
-  expect(ok).toBeTrue();
-  await new Promise((r) => setTimeout(r, 20));
-  expect(reg.status("a1")).toBe("stopped");
+  expect(ok).toBeFalse();
+  expect(reg.status("a1")).toBe("running");
 });
 
-test("stop persists a running agent status without waiting for completion", async () => {
+test("force stop persists a running agent status without waiting for completion", async () => {
   const dir = await tempDir();
   const reg = new SubagentRegistry({ runner: delayedRunner, workDir: dir });
   await reg.spawn("persist stop");
-  expect(reg.stop("a1")).toBeTrue();
+  expect(reg.requestStop("a1", "operator override", true).outcome).toBe(
+    "stopped",
+  );
   await Bun.sleep(20);
   expect((await new SubagentStore(dir).load())[0]?.status).toBe("stopped");
 });
@@ -162,6 +178,86 @@ test("stop returns false for unknown agent", async () => {
     workDir: await tempDir(),
   });
   expect(reg.stop("missing" as any)).toBeFalse();
+});
+
+test("requestStop protects an active agent", async () => {
+  const clock = fakeClock(1_000);
+  const reg = new SubagentRegistry({
+    runner: delayedRunner,
+    workDir: await tempDir(),
+    clock: clock.now,
+    stallThresholdMs: 1_000,
+  });
+  const rec = await reg.spawn("protected stop");
+  expect(reg.requestStop(rec.id, "no longer needed")).toEqual({
+    outcome: "protected",
+    id: rec.id,
+    health: "active",
+    retryAfterMs: 1_000,
+  });
+  expect(rec.status).toBe("running");
+});
+
+test("requestStop with force interrupts an active agent and records why", async () => {
+  const reg = new SubagentRegistry({
+    runner: delayedRunner,
+    workDir: await tempDir(),
+  });
+  const { events } = subscribeTo(reg);
+  const rec = await reg.spawn("forced stop");
+  expect(reg.requestStop(rec.id, "operator override", true)).toEqual({
+    outcome: "stopped",
+    id: rec.id,
+  });
+  const stopped = events.find((event) => event.event === "stopped");
+  expect(stopped).toMatchObject({
+    stopReason: "operator override",
+    requestedBy: "model",
+    force: true,
+  });
+  expect(reg.getAuditEntries()).toContainEqual(
+    expect.objectContaining({
+      action: "stop",
+      stopReason: "operator override",
+      requestedBy: "model",
+      force: true,
+    }),
+  );
+});
+
+test("requestStop allows a stalled agent with a reason", async () => {
+  const clock = fakeClock(1_000);
+  const reg = new SubagentRegistry({
+    runner: delayedRunner,
+    workDir: await tempDir(),
+    clock: clock.now,
+    stallThresholdMs: 1_000,
+  });
+  const rec = await reg.spawn("stalled stop");
+  clock.advance(1_000);
+  expect(reg.health(rec.id)).toBe("stalled");
+  expect(reg.requestStop(rec.id, "no activity for one second")).toEqual({
+    outcome: "stopped",
+    id: rec.id,
+  });
+  expect(rec.activityDetail).toBe("no activity for one second");
+});
+
+test("requestStop is idempotent after an agent stops", async () => {
+  const reg = new SubagentRegistry({
+    runner: delayedRunner,
+    workDir: await tempDir(),
+  });
+  const rec = await reg.spawn("double stop");
+  expect(reg.requestStop(rec.id, "first stop", true).outcome).toBe("stopped");
+  expect(reg.requestStop(rec.id, "second stop", true)).toEqual({
+    outcome: "not_running",
+    id: rec.id,
+    status: "stopped",
+  });
+  expect(
+    reg.getAuditEntries().filter((entry) => entry.action === "stop"),
+  ).toHaveLength(1);
 });
 
 test("resume restarts a paused runner", async () => {
@@ -287,15 +383,15 @@ test("subscribe receives events", async () => {
     runner: immediateRunner,
     workDir: await tempDir(),
   });
-  const events: any[] = [];
-  const unsub = reg.subscribe((e) => events.push(e));
+  const { events, unsubscribe } = subscribeTo(reg);
   await reg.spawn("events");
   await new Promise((r) => setTimeout(r, 10));
-  expect(events.length).toBeGreaterThanOrEqual(3);
-  expect(events[0].event).toBe("created");
+  const eventNames = events.map((e) => e.event);
+  expect(eventNames.length).toBeGreaterThanOrEqual(3);
+  expect(eventNames).toContain("created");
   const done = events.find((e) => e.event === "done");
   expect(done).toBeDefined();
-  unsub();
+  unsubscribe();
 });
 
 test("subscribe unsubscribe stops events", async () => {
@@ -303,12 +399,18 @@ test("subscribe unsubscribe stops events", async () => {
     runner: immediateRunner,
     workDir: await tempDir(),
   });
-  const events: any[] = [];
-  const unsub = reg.subscribe((e) => events.push(e));
-  unsub();
+  const { events, unsubscribe } = subscribeTo(reg);
+  unsubscribe();
   await reg.spawn("unsub");
   await new Promise((r) => setTimeout(r, 10));
   expect(events).toHaveLength(0);
+});
+
+test("fake clock advances deterministically", () => {
+  const clock = fakeClock(1_000);
+  expect(clock.now()).toBe(1_000);
+  clock.advance(250);
+  expect(clock.now()).toBe(1_250);
 });
 
 test("formatList returns formatted output", async () => {
@@ -371,6 +473,10 @@ test("store saves and loads manifest", async () => {
       outputs: [{ step: 1, text: "ok", timestamp: now }],
       createdAt: now,
       updatedAt: now,
+      phase: "finalizing",
+      lastActivityAt: now,
+      activityDetail: "completed",
+      startedAt: now,
     },
   ]);
   const loaded = await store.load();
@@ -414,6 +520,10 @@ test("store keeps its state under .natalia and never in the workspace root", asy
       outputs: [{ step: 1, text: "done", timestamp: now }],
       createdAt: now,
       updatedAt: now,
+      phase: "finalizing",
+      lastActivityAt: now,
+      activityDetail: "completed",
+      startedAt: now,
     },
   ]);
   // A workspace root is the user's project directory. Writing a manifest there
@@ -469,6 +579,10 @@ test("load restores agents from store on construction", async () => {
       outputs: [{ step: 1, text: "done", timestamp: now }],
       createdAt: now,
       updatedAt: now,
+      phase: "finalizing",
+      lastActivityAt: now,
+      activityDetail: "completed",
+      startedAt: now,
     },
   ]);
   const reg = new SubagentRegistry({ runner: immediateRunner, workDir: dir });
@@ -494,6 +608,10 @@ test("load marks process-local running agents stopped after runtime restart", as
       outputs: [],
       createdAt: now,
       updatedAt: now,
+      phase: "provider",
+      lastActivityAt: now,
+      activityDetail: "running",
+      startedAt: now,
     },
   ]);
   const registry = new SubagentRegistry({
@@ -599,4 +717,179 @@ test("runner failure sets failed status", async () => {
   await new Promise((r) => setTimeout(r, 10));
   expect(rec.status).toBe("failed");
   expect(rec.outputs.some((o) => o.text.includes("runner failed"))).toBeTrue();
+});
+
+test("reportActivity updates lastActivityAt and phase", async () => {
+  const reg = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: await tempDir(),
+  });
+  const rec = await reg.spawn("activity test");
+  expect(rec.phase).not.toBe("idle");
+  expect(rec.lastActivityAt).toBeGreaterThanOrEqual(rec.createdAt);
+  expect(rec.activityDetail).toBeTruthy();
+});
+
+test("reportActivity from external caller updates the record without touching status", async () => {
+  const dir = await tempDir();
+  const reg = new SubagentRegistry({
+    runner: async (_task, ctx) => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    },
+    workDir: dir,
+  });
+  const rec = await reg.spawn("external activity");
+  const prevActivity = rec.lastActivityAt;
+  await Bun.sleep(5);
+  reg.reportActivity(rec.id, "tool", "read_file");
+  const updated = reg.get(rec.id)!;
+  expect(updated.lastActivityAt).toBeGreaterThan(prevActivity);
+  expect(updated.phase).toBe("tool");
+  expect(updated.activityDetail).toBe("read_file");
+  expect(updated.status).toBe("running");
+});
+
+test("health returns terminal for completed agents", async () => {
+  const reg = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: await tempDir(),
+  });
+  const rec = await reg.spawn("health completed");
+  await Bun.sleep(10);
+  expect(reg.health(rec.id)).toBe("terminal");
+});
+
+test("health returns active shortly after activity and quiet after stall threshold", async () => {
+  let aborted = false;
+  const reg = new SubagentRegistry({
+    runner: async (_task, ctx) => {
+      await new Promise<void>((resolve) => {
+        ctx.signal.addEventListener(
+          "abort",
+          () => {
+            aborted = true;
+            resolve();
+          },
+          { once: true },
+        );
+      });
+    },
+    workDir: await tempDir(),
+    stallThresholdMs: 800,
+  });
+  const rec = await reg.spawn("health phases");
+  expect(reg.health(rec.id)).toBe("active");
+  await Bun.sleep(900);
+  expect(reg.health(rec.id)).toBe("stalled");
+  reg.stop(rec.id);
+  await Bun.sleep(100);
+  expect(aborted).toBeTrue();
+  expect(reg.health(rec.id)).toBe("terminal");
+});
+
+test("wait resolves when all agents reach terminal", async () => {
+  let callCount = 0;
+  const reg = new SubagentRegistry({
+    runner: async () => {
+      callCount++;
+      if (callCount === 1) await Bun.sleep(30);
+    },
+    workDir: await tempDir(),
+  });
+  const a1 = await reg.spawn("wait a1");
+  const a2 = await reg.spawn("wait a2");
+  const results = await reg.wait([a1.id, a2.id], "all_terminal", 5000);
+  expect(results[a1.id].status).toBe("completed");
+  expect(results[a2.id].status).toBe("completed");
+});
+
+test("wait resolves when any agent reaches terminal", async () => {
+  const reg = new SubagentRegistry({
+    runner: async () => {
+      await Bun.sleep(100);
+    },
+    workDir: await tempDir(),
+  });
+  const a1 = await reg.spawn("wait any fast");
+  const a2 = await reg.spawn("wait any slow");
+  const results = await reg.wait([a1.id, a2.id], "any_terminal", 10000);
+  const terminalIds = Object.entries(results).filter(([, r]) =>
+    ["completed", "failed", "stopped"].includes(r.status),
+  );
+  expect(terminalIds.length).toBeGreaterThanOrEqual(1);
+});
+
+test("wait returns current results on timeout", async () => {
+  const reg = new SubagentRegistry({
+    runner: async () => {
+      await Bun.sleep(500);
+    },
+    workDir: await tempDir(),
+  });
+  const a1 = await reg.spawn("wait timeout");
+  const results = await reg.wait([a1.id], "all_terminal", 100);
+  expect(results[a1.id].status).toBe("running");
+});
+
+test("wait respects caller abort signal", async () => {
+  const reg = new SubagentRegistry({
+    runner: async () => {
+      await Bun.sleep(500);
+    },
+    workDir: await tempDir(),
+  });
+  const a1 = await reg.spawn("wait abort");
+  const ac = new AbortController();
+  setTimeout(() => ac.abort(), 50);
+  const results = await reg.wait([a1.id], "all_terminal", 5000, ac.signal);
+  expect(results[a1.id].status).toBe("running");
+});
+
+test("activity events carry phase information to subscribers", async () => {
+  const reg = new SubagentRegistry({
+    runner: async (_task, ctx) => {
+      ctx.setStatus("running");
+      await Bun.sleep(5);
+      ctx.log("midway");
+      await Bun.sleep(5);
+    },
+    workDir: await tempDir(),
+  });
+  const { events } = subscribeTo(reg);
+  await reg.spawn("activity events");
+  await Bun.sleep(30);
+  const activityEvents = events.filter((e) => e.event === "activity");
+  expect(activityEvents.length).toBeGreaterThanOrEqual(1);
+  const phases = activityEvents.map((e) => e.phase).filter(Boolean);
+  expect(phases).toContain("provider");
+});
+
+test("formatStatus includes phase and activity info", async () => {
+  const reg = new SubagentRegistry({
+    runner: immediateRunner,
+    workDir: await tempDir(),
+  });
+  await reg.spawn("format status detail");
+  const s = await reg.formatStatus("a1");
+  expect(s).toContain("phase:");
+  expect(s).toContain("activity:");
+  expect(s).toContain("last_activity:");
+});
+
+test("reportActivity with throttled updates does not flood subscribers", async () => {
+  const reg = new SubagentRegistry({
+    runner: async (_task, ctx) => {
+      await Bun.sleep(20);
+    },
+    workDir: await tempDir(),
+  });
+  const { events } = subscribeTo(reg);
+  const rec = await reg.spawn("throttle");
+  for (let i = 0; i < 50; i++) {
+    reg.reportActivity(rec.id, "tool", `op-${i}`);
+  }
+  const activityEvents = events.filter(
+    (e) => e.event === "activity" && e.agentId === rec.id,
+  );
+  expect(activityEvents.length).toBeLessThan(50);
 });

@@ -355,12 +355,29 @@ type RuntimeEventData =
         | "stopped"
         | "resumed"
         | "attached"
-        | "detached";
+        | "detached"
+        | "activity";
       task?: string;
       text?: string;
       parentSessionID?: string;
       parentAgentID?: string;
       continuation?: number;
+      phase?:
+        | "idle"
+        | "queued"
+        | "provider"
+        | "tool"
+        | "retrying"
+        | "finalizing"
+        | "waiting";
+      activityDetail?: string;
+      health?: "active" | "quiet" | "stalled" | "terminal";
+      lastActivityAt?: number;
+      startedAt?: number;
+      endedAt?: number;
+      stopReason?: string;
+      requestedBy?: "model" | "user" | "parent" | "runtime";
+      force?: boolean;
     }
   | {
       type: "mcp.status";
