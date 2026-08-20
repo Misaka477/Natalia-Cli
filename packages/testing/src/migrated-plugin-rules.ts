@@ -59,6 +59,23 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-tool-todo",
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/capabilities/tool-family-capabilities.ts",
+    ],
+    forbidden: [
+      {
+        description: "direct todo package import",
+        pattern: /from\s+["']@natalia\/tool-todo["']/u,
+      },
+      {
+        description: "direct todo tool construction",
+        pattern: /\b(?:todoToolFamily|todoTools|createTodoPlugin)\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(

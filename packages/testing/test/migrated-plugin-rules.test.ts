@@ -14,19 +14,24 @@ test("migrated plugin rules retain built-in plugin protections", () => {
     ["natalia-tool-pdf", 'import { x } from "@natalia/tool-pdf"'],
     ["natalia-tool-pdf", "createPdfPlugin()"],
     ["natalia-tool-ask", 'import { askTools } from "@natalia/tool-ask"'],
+    ["natalia-tool-todo", 'import { todoTools } from "@natalia/tool-todo"'],
   ])
     expect(findMigratedPluginViolations(target, source)).toContainEqual(
       expect.objectContaining({ pluginID }),
     );
 });
 
-test("ask migration protects the legacy static capability root", () => {
-  expect(
-    findMigratedPluginViolations(
-      "packages/client/src/capabilities/tool-family-capabilities.ts",
-      "askToolFamily()",
-    ),
-  ).toEqual([expect.objectContaining({ pluginID: "natalia-tool-ask" })]);
+test("tool migrations protect the legacy static capability root", () => {
+  for (const [pluginID, source] of [
+    ["natalia-tool-ask", "askToolFamily()"],
+    ["natalia-tool-todo", "todoToolFamily()"],
+  ])
+    expect(
+      findMigratedPluginViolations(
+        "packages/client/src/capabilities/tool-family-capabilities.ts",
+        source,
+      ),
+    ).toEqual([expect.objectContaining({ pluginID })]);
 });
 
 test("migrated plugin rules only protect declared composition roots", () => {

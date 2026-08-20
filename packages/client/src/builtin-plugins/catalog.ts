@@ -1,5 +1,6 @@
 import { createPdfPlugin, PDF_PLUGIN_ID } from "@natalia/tool-pdf";
 import { ASK_PLUGIN_ID, createAskPlugin } from "@natalia/tool-ask";
+import { createTodoPlugin, TODO_PLUGIN_ID } from "@natalia/tool-todo";
 import type { Plugin } from "@natalia/plugin";
 import type { Skill } from "@natalia/skills";
 import type { ToolExecutionContext } from "@natalia/tools";
@@ -14,6 +15,7 @@ export {
   PDF_PLUGIN_ID,
   SKILLS_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
+  TODO_PLUGIN_ID,
 };
 
 export type BuiltinPluginEntry = {
@@ -25,6 +27,7 @@ export type BuiltinPluginEntry = {
 export function builtinPluginCatalog(input: {
   askEnabled: boolean;
   pdfEnabled: boolean;
+  todoEnabled: boolean;
   skills?: {
     workspaceRoot: string;
     userRoot?: string;
@@ -41,6 +44,11 @@ export function builtinPluginCatalog(input: {
       id: ASK_PLUGIN_ID,
       enabled: input.askEnabled,
       create: () => createAskPlugin(),
+    },
+    {
+      id: TODO_PLUGIN_ID,
+      enabled: input.todoEnabled,
+      create: () => createTodoPlugin(),
     },
     {
       id: SKILLS_PLUGIN_ID,

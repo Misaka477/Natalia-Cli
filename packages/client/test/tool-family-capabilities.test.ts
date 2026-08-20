@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
 import { CapabilityRegistry } from "@natalia/capability";
-import { todoToolFamily } from "@natalia/tool-todo";
 import {
   applyToolFamilyEnabledFilter,
   builtinToolFamilies,
@@ -27,21 +26,14 @@ test("the host composes the built-in catalogue from families", () => {
     ...Object.keys(family.aliases ?? {}),
   ]);
   expect(staticNames).not.toContain("ask_user");
+  expect(staticNames).not.toContain("todo_read");
   expect(builtinToolNames()).toEqual(expect.arrayContaining(staticNames));
   expect(builtinToolNames()).toContain("ask_user");
+  expect(builtinToolNames()).toEqual(
+    expect.arrayContaining(["plan", "todo_read", "todo_write"]),
+  );
   expect(builtinToolNames({ ask: false })).not.toContain("ask_user");
-});
-
-test("a family packaged outside the framework loads like any other", () => {
-  // `@natalia/tool-todo` depends on the tool-authoring surface only. If the host
-  // had to special-case it, the packaging shape would not be reusable.
-  const registry = new CapabilityRegistry();
-  const { tools } = createToolRegistryFromCapabilities({ registry });
-  for (const tool of todoToolFamily().tools) {
-    expect(tools.has(tool.name)).toBe(true);
-    expect(registry.ownerOf("tools", tool.name)).toBe("natalia-tool-todo");
-  }
-  expect(builtinToolFamilies().map((family) => family.id)).toContain("todo");
+  expect(builtinToolNames({ todo: false })).not.toContain("todo_read");
 });
 
 test("each family declares exactly the tools grant", () => {
@@ -73,9 +65,11 @@ test("every built-in tool is owned by the family that contributed it", () => {
 test("unloading a family removes its tools from the kernel", () => {
   const registry = new CapabilityRegistry();
   createToolRegistryFromCapabilities({ registry });
-  const todo = builtinToolFamilies().find((family) => family.id === "todo")!;
-  expect(registry.unload(toolFamilyCapabilityID("todo"))).toBe(true);
-  for (const tool of todo.tools)
+  const search = builtinToolFamilies().find(
+    (family) => family.id === "search",
+  )!;
+  expect(registry.unload(toolFamilyCapabilityID("search"))).toBe(true);
+  for (const tool of search.tools)
     expect(registry.ownerOf("tools", tool.name)).toBeUndefined();
   // Other families are untouched — unload releases one family's contributions,
   // not the catalogue.
@@ -97,7 +91,7 @@ test("terminal aliases survive the kernel round trip", () => {
 test("a family that fails to load leaves none of its tools callable", () => {
   const registry = new CapabilityRegistry();
   const broken = builtinToolFamilies().map((family) =>
-    family.id === "todo"
+    family.id === "search"
       ? {
           ...family,
           tools: [...family.tools, { ...family.tools[0]!, name: "" }],
@@ -109,12 +103,14 @@ test("a family that fails to load leaves none of its tools callable", () => {
     families: broken,
   });
   expect(outcome.failed.map((entry) => entry.id)).toEqual([
-    toolFamilyCapabilityID("todo"),
+    toolFamilyCapabilityID("search"),
   ]);
   // Activation rolled back, so the family is absent rather than half-present:
   // the tools it had already contributed before the bad one are gone too.
-  const todo = builtinToolFamilies().find((family) => family.id === "todo")!;
-  for (const tool of todo.tools) expect(tools.has(tool.name)).toBe(false);
+  const search = builtinToolFamilies().find(
+    (family) => family.id === "search",
+  )!;
+  for (const tool of search.tools) expect(tools.has(tool.name)).toBe(false);
   expect(tools.has("read_file")).toBe(true);
 });
 
@@ -129,16 +125,17 @@ test("registering the same families twice is refused, not silently doubled", () 
     expect(failure.reason).toMatch(/already loaded/u);
 });
 
-test("config enabled=false keeps a family out of the registry entirely", () => {
+test("config enabled=false keeps a static family out of the registry entirely", () => {
   const registry = new CapabilityRegistry();
   const { tools } = createToolRegistryFromCapabilities({
     registry,
-    enabled: { todo: false },
+    enabled: { search: false },
   });
-  // The todo family's tools are never assembled, and its capability is absent.
-  for (const tool of todoToolFamily().tools)
-    expect(tools.has(tool.name)).toBe(false);
-  expect(registry.has(toolFamilyCapabilityID("todo"))).toBe(false);
+  const search = builtinToolFamilies().find(
+    (family) => family.id === "search",
+  )!;
+  for (const tool of search.tools) expect(tools.has(tool.name)).toBe(false);
+  expect(registry.has(toolFamilyCapabilityID("search"))).toBe(false);
   // Everything else still loads.
   expect(tools.has("read_file")).toBe(true);
 });
@@ -146,17 +143,19 @@ test("config enabled=false keeps a family out of the registry entirely", () => {
 test("applyToolFamilyEnabledFilter removes a disabled family after assembly", () => {
   const registry = new CapabilityRegistry();
   const { tools } = createToolRegistryFromCapabilities({ registry });
-  expect(tools.has("todo_read")).toBe(true);
+  expect(tools.has("grep")).toBe(true);
   const cascaded = applyToolFamilyEnabledFilter({
     tools,
     registry,
     families: builtinToolFamilies(),
-    enabled: { todo: false },
+    enabled: { search: false },
   });
   expect(cascaded).toEqual([]);
-  for (const tool of todoToolFamily().tools)
-    expect(tools.has(tool.name)).toBe(false);
-  expect(registry.has(toolFamilyCapabilityID("todo"))).toBe(false);
+  const search = builtinToolFamilies().find(
+    (family) => family.id === "search",
+  )!;
+  for (const tool of search.tools) expect(tools.has(tool.name)).toBe(false);
+  expect(registry.has(toolFamilyCapabilityID("search"))).toBe(false);
 });
 
 test("a family that depends on a disabled one is cascade-disabled with a reason", () => {

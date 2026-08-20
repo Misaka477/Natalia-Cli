@@ -197,6 +197,7 @@ import {
   builtinPluginCatalog,
   PDF_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
+  TODO_PLUGIN_ID,
 } from "./builtin-plugins/catalog";
 import {
   loadLocalToolFamilies,
@@ -2027,6 +2028,10 @@ export function createRealRuntimeClient(
         !options.tools &&
         tsRuntimeConfig?.tools.enabled.ask !== false &&
         tsRuntimeConfig?.plugins.enabled[ASK_PLUGIN_ID] !== false,
+      todoEnabled:
+        !options.tools &&
+        tsRuntimeConfig?.tools.enabled.todo !== false &&
+        tsRuntimeConfig?.plugins.enabled[TODO_PLUGIN_ID] !== false,
       pdfEnabled:
         extensionEnabled("plugins") &&
         tsRuntimeConfig?.plugins.enabled[PDF_PLUGIN_ID] !== false,

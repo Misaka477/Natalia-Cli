@@ -131,10 +131,6 @@ test("subagent retry is exposed as an explicit continuation tool", () => {
   expect(tools.get("agent_retry")?.description).toContain("continuation");
 });
 
-test("plan retains the approval boundary of its durable todo write", () => {
-  expect(builtinTools().get("plan")?.requiresApproval).toBe(true);
-});
-
 test("managed process registry persists state for restart and background aliases", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-persist-"));
   const first = builtinTools();
@@ -383,7 +379,7 @@ test("managed process IDs and deadlines are isolated by workspace", async () => 
     .execute({ id: "proc_same" }, { workspaceRoot: secondRoot });
 });
 
-test("native glob grep and durable todo tools operate inside the workspace", async () => {
+test("native glob and grep operate inside the workspace", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-discovery-"));
   await writeFile(join(root, "needle.ts"), "export const needle = 'found';\n");
   await writeFile(join(root, "other.txt"), "nothing here\n");
@@ -401,36 +397,6 @@ test("native glob grep and durable todo tools operate inside the workspace", asy
         { workspaceRoot: root },
       ),
   ).toContain("needle.ts:1:");
-  await tools
-    .get("todo_write")!
-    .execute(
-      { items: [{ content: "finish TS7", status: "in_progress" }] },
-      { workspaceRoot: root, sessionID: "ses_tools_a" },
-    );
-  expect(
-    await tools
-      .get("todo_read")!
-      .execute({}, { workspaceRoot: root, sessionID: "ses_tools_a" }),
-  ).toContain("finish TS7");
-  expect(
-    await tools
-      .get("todo_read")!
-      .execute({}, { workspaceRoot: root, sessionID: "ses_tools_b" }),
-  ).toBe("[]");
-  await expect(
-    tools.get("todo_read")!.execute({}, { workspaceRoot: root }),
-  ).rejects.toThrow("todo tools require a session ID");
-  await tools
-    .get("plan")!
-    .execute(
-      { items: [{ content: "cutover evidence", status: "pending" }] },
-      { workspaceRoot: root, sessionID: "ses_tools_a" },
-    );
-  expect(
-    await tools
-      .get("todo_read")!
-      .execute({}, { workspaceRoot: root, sessionID: "ses_tools_a" }),
-  ).toContain("cutover evidence");
 });
 
 test("glob and grep preflight every exposed or read workspace path", async () => {
@@ -528,8 +494,9 @@ test("media and browser visit tools provide native TS metadata", async () => {
   }
 });
 
-test("migrated ask tool is absent from the static tool assembly", () => {
+test("migrated plugin tools are absent from the static tool assembly", () => {
   expect(builtinTools().has("ask_user")).toBe(false);
+  expect(builtinTools().has("todo_read")).toBe(false);
 });
 
 test("web_search uses a native configured endpoint without proxying Go", async () => {

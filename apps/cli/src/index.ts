@@ -5,6 +5,7 @@ import {
   compactionDisplayLine,
   globWorkspaceFiles,
   listWorkspaceFiles,
+  migratedBuiltinToolFamilies,
   readWorkspaceFile,
   retryDisplayLine,
   searchWorkspaceFiles,
@@ -483,23 +484,34 @@ export async function workspaceFilesystemCommand(input: {
  * loads — so the CLI and the runtime can never disagree about what a family id
  * means.
  */
-export function toolFamilyCatalogue() {
-  return builtinToolFamilies().map((family) => ({
-    id: family.id,
-    name: family.name,
-    version: family.version,
-    description: family.description,
-    scope: family.scope,
-    dependencies: family.dependencies ?? [],
-    tools: family.tools.map((tool) => tool.name),
-  }));
+export function toolFamilyCatalogue(): Array<{
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  scope: string;
+  dependencies: readonly string[];
+  tools: readonly string[];
+}> {
+  return [
+    ...builtinToolFamilies().map((family) => ({
+      id: family.id,
+      name: family.name,
+      version: family.version,
+      description: family.description,
+      scope: family.scope,
+      dependencies: family.dependencies ?? [],
+      tools: family.tools.map((tool) => tool.name),
+    })),
+    ...migratedBuiltinToolFamilies,
+  ];
 }
 
 export async function installToolFamily(input: {
   workspaceRoot: string;
   familyID: string;
 }): Promise<{ installed: boolean; note?: string }> {
-  const families = builtinToolFamilies();
+  const families = toolFamilyCatalogue();
   const family = families.find((candidate) => candidate.id === input.familyID);
   if (!family)
     throw new Error(
@@ -524,7 +536,7 @@ export async function uninstallToolFamily(input: {
   workspaceRoot: string;
   familyID: string;
 }): Promise<{ uninstalled: boolean; note?: string }> {
-  const families = builtinToolFamilies();
+  const families = toolFamilyCatalogue();
   const family = families.find((candidate) => candidate.id === input.familyID);
   if (!family)
     throw new Error(

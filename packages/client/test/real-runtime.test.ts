@@ -1180,35 +1180,40 @@ test("the runtime config is a kernel service refreshed on reload", async () => {
   await client.dispose?.();
 }, 60_000);
 
-test("tools.enabled=false keeps a family out of the runtime catalogue", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-tools-enabled-"));
-  await mkdir(join(root, ".natalia"), { recursive: true });
-  await writeFile(
-    join(root, ".natalia", "config.json"),
-    JSON.stringify({ version: 3, tools: { enabled: { todo: false } } }),
-  );
-  const events: RuntimeEvent[] = [];
-  const client = createRealRuntimeClient({
-    workspaceRoot: root,
-    sessionID: "ses_runtime_tools_enabled",
-    provider: scriptedProvider("ready"),
-  });
-  client.start((event) => events.push(event));
-  await waitFor(() => events.some((event) => event.type === "session.ready"));
-  const registered = events.filter(
-    (event): event is Extract<RuntimeEvent, { type: "tool.registered" }> =>
-      event.type === "tool.registered",
-  );
-  // The disabled family never appears in the catalogue...
-  expect(
-    registered.some(
-      (event) => event.name.startsWith("todo_") || event.name === "plan",
-    ),
-  ).toBe(false);
-  // ...and the rest of the families do.
-  expect(registered.some((event) => event.name === "read_file")).toBe(true);
-  await client.dispose?.();
-}, 60_000);
+for (const [label, config] of [
+  ["legacy family switch", { tools: { enabled: { todo: false } } }],
+  ["plugin switch", { plugins: { enabled: { "natalia-tool-todo": false } } }],
+] as const)
+  test(`disabled todo ${label} leaves no tool, capability or persistence`, async () => {
+    const root = await mkdtemp(
+      join(tmpdir(), "natalia-runtime-todo-disabled-"),
+    );
+    await mkdir(join(root, ".natalia"), { recursive: true });
+    await writeFile(
+      join(root, ".natalia", "config.json"),
+      JSON.stringify({ version: 3, ...config }),
+    );
+    const events: RuntimeEvent[] = [];
+    const kernel = new CapabilityRegistry();
+    const client = createRealRuntimeClient({
+      workspaceRoot: root,
+      sessionID: `ses_runtime_todo_disabled_${label.replaceAll(" ", "_")}`,
+      capabilityRegistry: kernel,
+      provider: scriptedProvider("ready"),
+    });
+    client.start((event) => events.push(event));
+    await waitFor(() => events.some((event) => event.type === "session.ready"));
+    expect(
+      events.some(
+        (event) =>
+          event.type === "tool.registered" &&
+          (event.name.startsWith("todo_") || event.name === "plan"),
+      ),
+    ).toBe(false);
+    expect(kernel.has("natalia-tool-todo")).toBe(false);
+    expect(existsSync(join(root, ".natalia", "todos"))).toBe(false);
+    await client.dispose?.();
+  }, 60_000);
 
 for (const [label, config] of [
   ["legacy family switch", { tools: { enabled: { ask: false } } }],

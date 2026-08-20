@@ -30,7 +30,6 @@ import { sandboxToolFamily } from "@natalia/tool-sandbox";
 import { shellToolFamily } from "@natalia/tool-shell";
 import { terminalToolFamily } from "@natalia/tool-terminal";
 import { webToolFamily } from "@natalia/tool-web";
-import { todoToolFamily } from "@natalia/tool-todo";
 import {
   createToolRegistry,
   type RuntimeTool,
@@ -62,7 +61,6 @@ export function builtinToolFamilies(
   return [
     fsToolFamily(),
     searchToolFamily(),
-    todoToolFamily(),
     agentToolFamily(),
     terminalToolFamily(),
     sandboxToolFamily(),
@@ -79,8 +77,31 @@ export function builtinToolNames(enabled?: Record<string, boolean>): string[] {
     ...Object.keys(family.aliases ?? {}),
   ]);
   if (enabled?.ask !== false) names.push("ask_user");
+  if (enabled?.todo !== false) names.push("plan", "todo_read", "todo_write");
   return names;
 }
+
+/** Metadata for migrated families retained by the deprecated `tool` CLI. */
+export const migratedBuiltinToolFamilies = [
+  {
+    id: "ask",
+    name: "Interactive Question Tools",
+    version: "1.0.0",
+    description: "Asking the user a structured question.",
+    scope: "session",
+    dependencies: [],
+    tools: ["ask_user"],
+  },
+  {
+    id: "todo",
+    name: "Todo Tools",
+    version: "1.0.0",
+    description: "The session's task list.",
+    scope: "session",
+    dependencies: [],
+    tools: ["plan", "todo_read", "todo_write"],
+  },
+] as const;
 
 /** The capability id a family is loaded as. */
 export function toolFamilyCapabilityID(familyID: string) {
