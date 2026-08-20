@@ -27,13 +27,16 @@ test("the host composes the built-in catalogue from families", () => {
   ]);
   expect(staticNames).not.toContain("ask_user");
   expect(staticNames).not.toContain("todo_read");
+  expect(staticNames).not.toContain("glob");
   expect(builtinToolNames()).toEqual(expect.arrayContaining(staticNames));
   expect(builtinToolNames()).toContain("ask_user");
   expect(builtinToolNames()).toEqual(
     expect.arrayContaining(["plan", "todo_read", "todo_write"]),
   );
+  expect(builtinToolNames()).toEqual(expect.arrayContaining(["glob", "grep"]));
   expect(builtinToolNames({ ask: false })).not.toContain("ask_user");
   expect(builtinToolNames({ todo: false })).not.toContain("todo_read");
+  expect(builtinToolNames({ search: false })).not.toContain("glob");
 });
 
 test("each family declares exactly the tools grant", () => {
@@ -65,11 +68,9 @@ test("every built-in tool is owned by the family that contributed it", () => {
 test("unloading a family removes its tools from the kernel", () => {
   const registry = new CapabilityRegistry();
   createToolRegistryFromCapabilities({ registry });
-  const search = builtinToolFamilies().find(
-    (family) => family.id === "search",
-  )!;
-  expect(registry.unload(toolFamilyCapabilityID("search"))).toBe(true);
-  for (const tool of search.tools)
+  const web = builtinToolFamilies().find((family) => family.id === "web")!;
+  expect(registry.unload(toolFamilyCapabilityID("web"))).toBe(true);
+  for (const tool of web.tools)
     expect(registry.ownerOf("tools", tool.name)).toBeUndefined();
   // Other families are untouched — unload releases one family's contributions,
   // not the catalogue.
@@ -91,7 +92,7 @@ test("terminal aliases survive the kernel round trip", () => {
 test("a family that fails to load leaves none of its tools callable", () => {
   const registry = new CapabilityRegistry();
   const broken = builtinToolFamilies().map((family) =>
-    family.id === "search"
+    family.id === "web"
       ? {
           ...family,
           tools: [...family.tools, { ...family.tools[0]!, name: "" }],
@@ -103,14 +104,12 @@ test("a family that fails to load leaves none of its tools callable", () => {
     families: broken,
   });
   expect(outcome.failed.map((entry) => entry.id)).toEqual([
-    toolFamilyCapabilityID("search"),
+    toolFamilyCapabilityID("web"),
   ]);
   // Activation rolled back, so the family is absent rather than half-present:
   // the tools it had already contributed before the bad one are gone too.
-  const search = builtinToolFamilies().find(
-    (family) => family.id === "search",
-  )!;
-  for (const tool of search.tools) expect(tools.has(tool.name)).toBe(false);
+  const web = builtinToolFamilies().find((family) => family.id === "web")!;
+  for (const tool of web.tools) expect(tools.has(tool.name)).toBe(false);
   expect(tools.has("read_file")).toBe(true);
 });
 
@@ -129,13 +128,11 @@ test("config enabled=false keeps a static family out of the registry entirely", 
   const registry = new CapabilityRegistry();
   const { tools } = createToolRegistryFromCapabilities({
     registry,
-    enabled: { search: false },
+    enabled: { web: false },
   });
-  const search = builtinToolFamilies().find(
-    (family) => family.id === "search",
-  )!;
-  for (const tool of search.tools) expect(tools.has(tool.name)).toBe(false);
-  expect(registry.has(toolFamilyCapabilityID("search"))).toBe(false);
+  const web = builtinToolFamilies().find((family) => family.id === "web")!;
+  for (const tool of web.tools) expect(tools.has(tool.name)).toBe(false);
+  expect(registry.has(toolFamilyCapabilityID("web"))).toBe(false);
   // Everything else still loads.
   expect(tools.has("read_file")).toBe(true);
 });
@@ -143,19 +140,17 @@ test("config enabled=false keeps a static family out of the registry entirely", 
 test("applyToolFamilyEnabledFilter removes a disabled family after assembly", () => {
   const registry = new CapabilityRegistry();
   const { tools } = createToolRegistryFromCapabilities({ registry });
-  expect(tools.has("grep")).toBe(true);
+  expect(tools.has("web_fetch")).toBe(true);
   const cascaded = applyToolFamilyEnabledFilter({
     tools,
     registry,
     families: builtinToolFamilies(),
-    enabled: { search: false },
+    enabled: { web: false },
   });
   expect(cascaded).toEqual([]);
-  const search = builtinToolFamilies().find(
-    (family) => family.id === "search",
-  )!;
-  for (const tool of search.tools) expect(tools.has(tool.name)).toBe(false);
-  expect(registry.has(toolFamilyCapabilityID("search"))).toBe(false);
+  const web = builtinToolFamilies().find((family) => family.id === "web")!;
+  for (const tool of web.tools) expect(tools.has(tool.name)).toBe(false);
+  expect(registry.has(toolFamilyCapabilityID("web"))).toBe(false);
 });
 
 test("a family that depends on a disabled one is cascade-disabled with a reason", () => {

@@ -379,55 +379,6 @@ test("managed process IDs and deadlines are isolated by workspace", async () => 
     .execute({ id: "proc_same" }, { workspaceRoot: secondRoot });
 });
 
-test("native glob and grep operate inside the workspace", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-tools-discovery-"));
-  await writeFile(join(root, "needle.ts"), "export const needle = 'found';\n");
-  await writeFile(join(root, "other.txt"), "nothing here\n");
-  const tools = builtinTools();
-  expect(
-    await tools
-      .get("glob")!
-      .execute({ pattern: "**/*.ts" }, { workspaceRoot: root }),
-  ).toBe("needle.ts");
-  expect(
-    await tools
-      .get("grep")!
-      .execute(
-        { pattern: "needle", include: "**/*.ts" },
-        { workspaceRoot: root },
-      ),
-  ).toContain("needle.ts:1:");
-});
-
-test("glob and grep preflight every exposed or read workspace path", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-tools-read-policy-"));
-  await writeFile(join(root, "allowed.ts"), "const value = 'needle';\n");
-  await writeFile(join(root, "protected.ts"), "const secret = 'needle';\n");
-  const checks: Array<{ toolName: string; paths: string[] }> = [];
-  const context = {
-    workspaceRoot: root,
-    workspaceReadAuthorize: async (input: {
-      toolName: string;
-      paths: string[];
-    }) => {
-      checks.push(input);
-      if (input.paths.includes("protected.ts")) throw new Error("protected");
-    },
-  };
-  const tools = builtinTools();
-  await expect(
-    tools.get("glob")!.execute({ pattern: "*.ts" }, context),
-  ).rejects.toThrow("protected");
-  await expect(
-    tools.get("grep")!.execute({ pattern: "needle", include: "*.ts" }, context),
-  ).rejects.toThrow("protected");
-  expect(checks).toEqual([
-    { toolName: "glob", paths: ["allowed.ts", "protected.ts"] },
-    { toolName: "grep", paths: ["allowed.ts"] },
-    { toolName: "grep", paths: ["protected.ts"] },
-  ]);
-});
-
 test("media and browser visit tools provide native TS metadata", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-browser-"));
   await writeFile(
@@ -497,6 +448,8 @@ test("media and browser visit tools provide native TS metadata", async () => {
 test("migrated plugin tools are absent from the static tool assembly", () => {
   expect(builtinTools().has("ask_user")).toBe(false);
   expect(builtinTools().has("todo_read")).toBe(false);
+  expect(builtinTools().has("glob")).toBe(false);
+  expect(builtinTools().has("grep")).toBe(false);
 });
 
 test("web_search uses a native configured endpoint without proxying Go", async () => {

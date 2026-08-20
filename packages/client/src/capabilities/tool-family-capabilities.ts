@@ -21,7 +21,6 @@ import type {
 } from "@natalia/capability";
 import { agentToolFamily } from "@natalia/tool-agent";
 import { fsToolFamily } from "@natalia/tool-fs";
-import { searchToolFamily } from "@natalia/tool-search";
 import {
   ManagedProcessRegistry,
   processToolFamily,
@@ -60,7 +59,6 @@ export function builtinToolFamilies(
 ): ToolFamily[] {
   return [
     fsToolFamily(),
-    searchToolFamily(),
     agentToolFamily(),
     terminalToolFamily(),
     sandboxToolFamily(),
@@ -78,6 +76,7 @@ export function builtinToolNames(enabled?: Record<string, boolean>): string[] {
   ]);
   if (enabled?.ask !== false) names.push("ask_user");
   if (enabled?.todo !== false) names.push("plan", "todo_read", "todo_write");
+  if (enabled?.search !== false) names.push("glob", "grep");
   return names;
 }
 
@@ -100,6 +99,15 @@ export const migratedBuiltinToolFamilies = [
     scope: "session",
     dependencies: [],
     tools: ["plan", "todo_read", "todo_write"],
+  },
+  {
+    id: "search",
+    name: "Search Tools",
+    version: "1.0.0",
+    description: "Finding files by name and content in the workspace.",
+    scope: "workspace",
+    dependencies: [],
+    tools: ["glob", "grep"],
   },
 ] as const;
 

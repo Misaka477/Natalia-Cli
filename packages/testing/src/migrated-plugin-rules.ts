@@ -76,6 +76,23 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-tool-search",
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/capabilities/tool-family-capabilities.ts",
+    ],
+    forbidden: [
+      {
+        description: "direct search package import",
+        pattern: /from\s+["']@natalia\/tool-search["']/u,
+      },
+      {
+        description: "direct search tool construction",
+        pattern: /\b(?:searchToolFamily|searchTools|createSearchPlugin)\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(

@@ -196,6 +196,7 @@ import {
   ASK_PLUGIN_ID,
   builtinPluginCatalog,
   PDF_PLUGIN_ID,
+  SEARCH_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
   TODO_PLUGIN_ID,
 } from "./builtin-plugins/catalog";
@@ -2032,6 +2033,10 @@ export function createRealRuntimeClient(
         !options.tools &&
         tsRuntimeConfig?.tools.enabled.todo !== false &&
         tsRuntimeConfig?.plugins.enabled[TODO_PLUGIN_ID] !== false,
+      searchEnabled:
+        !options.tools &&
+        tsRuntimeConfig?.tools.enabled.search !== false &&
+        tsRuntimeConfig?.plugins.enabled[SEARCH_PLUGIN_ID] !== false,
       pdfEnabled:
         extensionEnabled("plugins") &&
         tsRuntimeConfig?.plugins.enabled[PDF_PLUGIN_ID] !== false,

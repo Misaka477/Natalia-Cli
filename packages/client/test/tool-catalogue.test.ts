@@ -106,6 +106,8 @@ const catalogue: Array<
 
 const migratedPluginTools = new Set([
   "ask_user",
+  "glob",
+  "grep",
   "plan",
   "todo_read",
   "todo_write",
