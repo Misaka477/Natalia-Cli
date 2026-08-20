@@ -4152,7 +4152,7 @@ test("workspace image attachment is stored privately and lowered for OpenAI-comp
     });
     client.start(() => undefined);
     await client.submitInput?.({ text: "inspect", attachments: ["image.png"] });
-    const history = await client.history?.();
+    const history = await client.history?.({ limit: 500 });
     expect(
       history?.events.find((item) => item.event.type === "turn.submitted")
         ?.event,

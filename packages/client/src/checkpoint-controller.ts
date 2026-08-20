@@ -139,3 +139,18 @@ export function createCheckpointController(input: {
 
   return { init, get, isEnabled, resources, rollbackOptions };
 }
+
+export type CheckpointController = ReturnType<
+  typeof createCheckpointController
+>;
+
+/** The per-session accessors a host passes to create one checkpoint controller. */
+export type CheckpointControllerAccessors = {
+  sessionID(): SessionID;
+  checkpoint(): ConfigV3["checkpoint"] | undefined;
+  workspace(): ConfigV3["workspace"] | undefined;
+  publish(event: RuntimeEvent): void;
+  context(): import("@natalia/runtime").ContextLedger;
+  subagents(): SubagentRegistry | undefined;
+  activeAbort(): AbortController | undefined;
+};

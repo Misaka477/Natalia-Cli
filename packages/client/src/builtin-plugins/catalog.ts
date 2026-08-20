@@ -53,6 +53,10 @@ import {
   MCP_PLUGIN_ID,
 } from "./mcp-controller-plugin";
 import {
+  createCheckpointControllerPlugin,
+  CHECKPOINT_PLUGIN_ID,
+} from "./checkpoint-controller-plugin";
+import {
   createSkillsPlugin,
   SKILLS_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
@@ -150,6 +154,8 @@ export function builtinPluginCatalog(input: {
     enabled(): boolean;
     publish(event: RuntimeEvent): void;
   };
+  /** Checkpoint controller factory. */
+  checkpoint?: { workspaceRoot: string };
 }): BuiltinPluginEntry[] {
   return [
     {
@@ -291,6 +297,18 @@ export function builtinPluginCatalog(input: {
             id: MCP_PLUGIN_ID,
             enabled: true,
             create: () => createMcpControllerPlugin(input.mcp!),
+          },
+        ]
+      : []),
+    ...(input.checkpoint
+      ? [
+          {
+            id: CHECKPOINT_PLUGIN_ID,
+            enabled: true,
+            create: () =>
+              createCheckpointControllerPlugin({
+                workspaceRoot: input.checkpoint!.workspaceRoot,
+              }),
           },
         ]
       : []),

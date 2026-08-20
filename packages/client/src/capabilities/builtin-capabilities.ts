@@ -1,12 +1,10 @@
 /**
  * Registration records for the built-in subsystems.
  *
- * Terminal, sandbox and MCP controllers are real plugins now and own their
- * capability through the plugin lifecycle. Checkpoint is still constructed
- * directly by the runtime (per session), so its record keeps it visible and
- * auditable through the capability registry rather than owning its wiring. It
- * is a visibility-only record and declares **no grants**, because a grant is
- * permission to contribute and it contributes nothing.
+ * Terminal, sandbox, MCP and checkpoint controllers are all real plugins now and
+ * own their capability through the plugin lifecycle. No built-in subsystem is
+ * constructed directly by the runtime anymore, so there are no visibility-only
+ * records left to declare.
  */
 import type {
   CapabilityRegistration,
@@ -14,15 +12,7 @@ import type {
 } from "@natalia/capability";
 
 export function builtinCapabilities(): CapabilityRegistration[] {
-  return [
-    {
-      id: "natalia-checkpoint",
-      name: "Checkpoint",
-      version: "1.0.0",
-      scope: "workspace",
-      grants: [],
-    },
-  ];
+  return [];
 }
 
 export type CapabilityLoadedEvent = {

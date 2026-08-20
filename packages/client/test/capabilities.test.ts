@@ -21,19 +21,12 @@ import {
 // standing up a runtime. If any of these tests needed a real client, the
 // extraction would not have bought anything.
 
-test("built-in capability records are stable data", () => {
+test("no built-in subsystem keeps a visibility-only record", () => {
   const records = builtinCapabilities();
-  expect(records.map((record) => record.id)).toEqual(["natalia-checkpoint"]);
-  // Terminal, sandbox and MCP are real plugins now and own their capability
-  // through the plugin lifecycle. Checkpoint is still constructed directly by
-  // the runtime (per session), so its record stays a visibility-only record:
-  // it must declare a scope and claim no grant — a grant is permission to
-  // contribute, and a record that contributes nothing while claiming `tools`
-  // shows up as a tool provider that provides no tool.
-  for (const record of records) {
-    expect(record.scope).toBeString();
-    expect(record.grants).toEqual([]);
-  }
+  // Terminal, sandbox, checkpoint and MCP controllers are all real plugins now
+  // and own their capability through the plugin lifecycle; there is nothing
+  // left for the runtime to construct directly, so no record claims a grant.
+  expect(records).toEqual([]);
 });
 
 test("no built-in subsystem record claims to provide tools", () => {
@@ -43,40 +36,12 @@ test("no built-in subsystem record claims to provide tools", () => {
   expect(registry.withGrant("tools")).toEqual([]);
 });
 
-test("registration emits one durable event per capability that loaded", () => {
-  // Against the real registry, not a stand-in: a fake that accepts everything
-  // would not notice if the kernel started refusing these records.
+test("registration emits no events when there are no records", () => {
   const registry = new CapabilityRegistry();
   const outcome = registerBuiltinCapabilities(registry);
   expect(outcome.failed).toEqual([]);
-  expect(outcome.loaded).toHaveLength(1);
-  expect(outcome.loaded[0]).toMatchObject({
-    type: "capability.loaded",
-    id: "cap:natalia-checkpoint",
-    apiVersion: 1,
-    scope: "workspace",
-  });
-  expect(registry.list().map((record) => record.id)).toEqual(
-    builtinCapabilities().map((record) => record.id),
-  );
-});
-
-test("a capability that fails to load is reported with a reason", () => {
-  // The journal must never claim a capability is present when loading refused
-  // it, and "absent for no stated reason" is just as bad.
-  const registry = new CapabilityRegistry();
-  registry.load({
-    id: "natalia-checkpoint",
-    name: "Squatter",
-    version: "0.0.1",
-    scope: "workspace",
-    grants: [],
-  });
-  const outcome = registerBuiltinCapabilities(registry);
   expect(outcome.loaded).toEqual([]);
-  expect(outcome.failed).toHaveLength(1);
-  expect(outcome.failed[0]).toMatchObject({ id: "cap:natalia-checkpoint" });
-  expect(outcome.failed[0]!.reason).toContain("already loaded");
+  expect(registry.list()).toEqual([]);
 });
 
 test("the task module plugin owns its tools through the kernel", async () => {

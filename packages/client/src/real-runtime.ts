@@ -20,7 +20,11 @@ import {
 } from "./agent-team-prompts";
 import type { SandboxController } from "./sandbox-controller";
 import { createTeamFanoutTool, createTeamReviewTool } from "./team-tools";
-import { createCheckpointController } from "./checkpoint-controller";
+import type { CheckpointController } from "./checkpoint-controller";
+import {
+  CHECKPOINT_FACTORY_SERVICE,
+  type CheckpointControllerFactory,
+} from "./builtin-plugins/checkpoint-controller-plugin";
 import type { McpAccess, McpController } from "./mcp-controller";
 import type { WorkspaceFilesController } from "./workspace-files-controller";
 import { createPluginsController } from "./plugins-controller";
@@ -171,7 +175,6 @@ import {
   removeTaskSystemd,
   saveTaskDocument,
 } from "./task-document";
-import { registerBuiltinCapabilities } from "./capabilities/builtin-capabilities";
 import {
   applyToolFamilyEnabledFilter,
   builtinToolFamilies,
@@ -688,7 +691,7 @@ export function createRealRuntimeClient(
   let activeExec: SessionExecutionState | undefined;
   const checkpointControllerBySession = new Map<
     SessionID,
-    ReturnType<typeof createCheckpointController>
+    CheckpointController
   >();
   const checkpointInitBySession = new Map<SessionID, Promise<void>>();
 
@@ -696,9 +699,13 @@ export function createRealRuntimeClient(
     const id = exec.session.id;
     const existing = checkpointControllerBySession.get(id);
     if (existing) return existing;
-    const controller = createCheckpointController({
+    const factory = capabilityRegistry.service<CheckpointControllerFactory>(
+      CHECKPOINT_FACTORY_SERVICE,
+    );
+    if (!factory)
+      throw new Error("checkpoint controller unavailable (natalia-checkpoint)");
+    const controller = factory({
       sessionID: () => id,
-      workspaceRoot,
       checkpoint: () => tsRuntimeConfig?.checkpoint,
       workspace: () => tsRuntimeConfig?.workspace,
       publish: (event) => publishForSession(exec, event),
@@ -2009,62 +2016,47 @@ export function createRealRuntimeClient(
             },
           }
         : {}),
-      ...(options.tools
-        ? {}
-        : {
-            workspace: {
-              workspaceRoot,
-              listPaths: async () => {
-                const entries = await findWorkspaceFiles({
-                  workspaceRoot,
-                  limit: 1000,
-                });
-                return entries
-                  .filter((entry) => entry.type === "file")
-                  .map((entry) => entry.path);
-              },
-            },
-          }),
-      ...(options.tools
-        ? {}
-        : {
-            terminal: {
-              workspaceRoot,
-              publish: (event: RuntimeEvent) =>
-                publishForSession(
-                  event.sessionID
-                    ? executionBySession.get(event.sessionID as SessionID)
-                    : activeExec,
-                  event,
-                ),
-              onPerformance: (name: string, durationMs: number) =>
-                performanceTrace.mark(name, durationMs),
-              runtimeID: () => nativeRuntimeID,
-              userRuntimeHome: () => userRuntimeHome(),
-              windowMode: () =>
-                tsRuntimeConfig?.runtime.terminal.windowMode ?? "auto",
-              external: options.nativeTerminal,
-            },
-          }),
-      ...(options.tools
-        ? {}
-        : {
-            sandbox: {
-              workspaceRoot,
-              backend: () => tsRuntimeConfig?.sandbox.backend,
-            },
-          }),
-      ...(options.tools
-        ? {}
-        : {
-            mcp: {
-              servers: () => tsRuntimeConfig?.mcpServers ?? {},
-              workspaceRoot,
-              tools,
-              enabled: () => extensionEnabled("mcp"),
-              publish,
-            },
-          }),
+      workspace: {
+        workspaceRoot,
+        listPaths: async () => {
+          const entries = await findWorkspaceFiles({
+            workspaceRoot,
+            limit: 1000,
+          });
+          return entries
+            .filter((entry) => entry.type === "file")
+            .map((entry) => entry.path);
+        },
+      },
+      terminal: {
+        workspaceRoot,
+        publish: (event: RuntimeEvent) =>
+          publishForSession(
+            event.sessionID
+              ? executionBySession.get(event.sessionID as SessionID)
+              : activeExec,
+            event,
+          ),
+        onPerformance: (name: string, durationMs: number) =>
+          performanceTrace.mark(name, durationMs),
+        runtimeID: () => nativeRuntimeID,
+        userRuntimeHome: () => userRuntimeHome(),
+        windowMode: () =>
+          tsRuntimeConfig?.runtime.terminal.windowMode ?? "auto",
+        external: options.nativeTerminal,
+      },
+      sandbox: {
+        workspaceRoot,
+        backend: () => tsRuntimeConfig?.sandbox.backend,
+      },
+      mcp: {
+        servers: () => tsRuntimeConfig?.mcpServers ?? {},
+        workspaceRoot,
+        tools,
+        enabled: () => extensionEnabled("mcp"),
+        publish,
+      },
+      checkpoint: { workspaceRoot },
     });
     for (const entry of builtinPlugins) {
       if (!entry.enabled) continue;
@@ -2591,22 +2583,24 @@ export function createRealRuntimeClient(
   }
 
   /**
-   * Publishes the built-in capability catalogue. The records are data owned by
-   * `capabilities/builtin-capabilities.ts`; this only supplies the registry and
-   * forwards the resulting durable events.
+   * Publishes the loaded capability catalogue into the durable journal. Every
+   * capability the kernel holds — built-in tool families, controllers,
+   * workspace services and plugins alike — is a real capability and belongs in
+   * the journal, so a consumer projection sees what is loaded. Published after
+   * the session exists, so the events land in the session's history.
    */
   function publishBuiltinCapabilities() {
-    const outcome = registerBuiltinCapabilities(capabilityRegistry);
-    for (const event of outcome.loaded) publish(event);
-    // A capability that refused to load says so, rather than being absent for no
-    // stated reason.
-    for (const event of outcome.failed)
+    for (const record of capabilityRegistry.list()) {
       publish({
-        type: "diagnostic",
-        level: "warning",
-        owner: "natalia-runtime",
-        message: `capability ${event.id} failed: ${event.reason}`,
+        type: "capability.loaded",
+        id: `cap:${record.id}`,
+        apiVersion: 1,
+        name: record.name,
+        version: record.version,
+        scope: record.scope,
+        grants: record.grants,
       });
+    }
   }
 
   /**

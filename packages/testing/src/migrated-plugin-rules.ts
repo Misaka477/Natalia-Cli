@@ -306,6 +306,16 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-checkpoint",
+    targets: ["packages/client/src/real-runtime.ts"],
+    forbidden: [
+      {
+        description: "direct checkpoint controller construction",
+        pattern: /\bcreateCheckpointController\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(
