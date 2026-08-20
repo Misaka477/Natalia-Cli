@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
 import { CapabilityRegistry } from "@natalia/capability";
+import { ToolRegistry } from "@natalia/tools";
+import { terminalTools, terminalToolFamily } from "@natalia/tool-terminal";
 import {
   builtinToolNames,
   createToolRegistryFromCapabilities,
@@ -106,6 +108,18 @@ const catalogue: Array<
 ];
 
 const migratedPluginTools = new Set([
+  "agent_attach",
+  "agent_audit",
+  "agent_cleanup",
+  "agent_detach",
+  "agent_list",
+  "agent_output",
+  "agent_resume",
+  "agent_retry",
+  "agent_spawn",
+  "agent_status",
+  "agent_stop",
+  "agent_wait",
   "apply_patch",
   "ask_user",
   "browser_screenshot",
@@ -114,10 +128,44 @@ const migratedPluginTools = new Set([
   "glob",
   "grep",
   "image_read",
+  "interactive_input",
+  "interactive_keys",
+  "interactive_list",
+  "interactive_read",
+  "interactive_resize",
+  "interactive_search",
+  "interactive_send_line",
+  "interactive_snapshot",
+  "interactive_start",
+  "interactive_stop",
+  "interactive_terminal_input",
+  "interactive_terminal_keys",
+  "interactive_terminal_list",
+  "interactive_terminal_read",
+  "interactive_terminal_request_human",
+  "interactive_terminal_resize",
+  "interactive_terminal_search",
+  "interactive_terminal_send_line",
+  "interactive_terminal_snapshot",
+  "interactive_terminal_start",
+  "interactive_terminal_stop",
+  "interactive_terminal_write",
+  "interactive_write",
   "plan",
   "read_file",
   "read_media_file",
   "run_shell",
+  "sandbox_create",
+  "sandbox_delete",
+  "sandbox_diff",
+  "sandbox_execute",
+  "sandbox_merge",
+  "sandbox_resource_list",
+  "sandbox_resource_output",
+  "sandbox_resource_start",
+  "sandbox_resource_stop",
+  "sandbox_write",
+  "terminal_observe",
   "todo_read",
   "todo_write",
   "web_fetch",
@@ -160,20 +208,15 @@ test("the interactive terminal aliases resolve to the tools they stand for", () 
   // The short names are what a model tends to reach for; they are registered as
   // aliases rather than duplicate tools so there is one implementation and one
   // approval boundary per action.
-  const registry = builtinRegistry();
-  for (const [alias, target] of [
-    ["interactive_start", "interactive_terminal_start"],
-    ["interactive_read", "interactive_terminal_read"],
-    ["interactive_search", "interactive_terminal_search"],
-    ["interactive_write", "interactive_terminal_write"],
-    ["interactive_send_line", "interactive_terminal_send_line"],
-    ["interactive_keys", "interactive_terminal_keys"],
-    ["interactive_input", "interactive_terminal_input"],
-    ["interactive_snapshot", "interactive_terminal_snapshot"],
-    ["interactive_resize", "interactive_terminal_resize"],
-    ["interactive_stop", "interactive_terminal_stop"],
-    ["interactive_list", "interactive_terminal_list"],
-  ] as const) {
+  const registry = new ToolRegistry();
+  for (const tool of terminalTools()) registry.set(tool.name, tool);
+  for (const [alias, target] of Object.entries(
+    terminalToolFamily().aliases ?? {},
+  ))
+    registry.addAlias(alias, target);
+  for (const [alias, target] of Object.entries(
+    terminalToolFamily().aliases ?? {},
+  )) {
     expect(registry.get(alias)?.name).toBe(target);
     // `has` resolves aliases too, so a caller can check either name...
     expect(registry.has(alias)).toBe(true);

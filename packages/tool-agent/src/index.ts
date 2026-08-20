@@ -16,6 +16,7 @@ import {
   requireString,
 } from "@natalia/tools";
 import type { SubagentRegistry } from "@natalia/subagent";
+import type { Plugin } from "@natalia/plugin";
 import type {
   RuntimeTool,
   ToolExecutionContext,
@@ -540,5 +541,31 @@ export function agentToolFamily(): ToolFamily {
     description: "Delegating work to a subagent.",
     scope: "session",
     tools: [...agentTools()],
+  };
+}
+
+export const AGENT_PLUGIN_ID = "natalia-tool-agent";
+
+export function createAgentPlugin(): Plugin {
+  return {
+    manifest: {
+      apiVersion: 2,
+      id: AGENT_PLUGIN_ID,
+      version: "1.0.0",
+      name: "Subagent Tools",
+      description: "Delegating work to a subagent.",
+      entry: "natalia:tool-agent",
+      scope: "session",
+      provides: [],
+      requires: [],
+      optionalRequires: [],
+      conflicts: [],
+      dependencies: [],
+      hooks: {},
+      integrationPoints: ["tools"],
+    },
+    setup(api) {
+      for (const tool of agentTools()) api.tools.register(tool);
+    },
   };
 }

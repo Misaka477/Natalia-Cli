@@ -18,6 +18,7 @@ import {
   requireString,
 } from "@natalia/tools";
 import type { WorkspaceSandboxManager } from "@natalia/sandbox";
+import type { Plugin } from "@natalia/plugin";
 import type {
   RuntimeTool,
   ToolExecutionContext,
@@ -391,5 +392,31 @@ export function sandboxToolFamily(): ToolFamily {
     description: "Isolated workspaces and their merge back.",
     scope: "workspace",
     tools: [...sandboxTools()],
+  };
+}
+
+export const SANDBOX_PLUGIN_ID = "natalia-tool-sandbox";
+
+export function createSandboxPlugin(): Plugin {
+  return {
+    manifest: {
+      apiVersion: 2,
+      id: SANDBOX_PLUGIN_ID,
+      version: "1.0.0",
+      name: "Sandbox Tools",
+      description: "Isolated workspaces and their merge back.",
+      entry: "natalia:tool-sandbox",
+      scope: "workspace",
+      provides: [],
+      requires: [],
+      optionalRequires: [],
+      conflicts: [],
+      dependencies: [],
+      hooks: {},
+      integrationPoints: ["tools"],
+    },
+    setup(api) {
+      for (const tool of sandboxTools()) api.tools.register(tool);
+    },
   };
 }

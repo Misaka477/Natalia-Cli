@@ -16,7 +16,9 @@ import type { ToolFamily } from "@natalia/tools";
 
 test("the host composes the built-in catalogue from families", () => {
   const families = builtinToolFamilies();
-  expect(families.length).toBeGreaterThan(1);
+  // After the plugin migrations, `process` is the last static family; the rest
+  // load through the built-in plugin catalog.
+  expect(families.length).toBe(1);
   for (const family of families) {
     expect(family.tools.length).toBeGreaterThan(0);
     expect(family.scope).toBeString();
@@ -54,6 +56,18 @@ test("the host composes the built-in catalogue from families", () => {
   expect(staticNames).not.toContain("run_shell");
   expect(builtinToolNames()).toContain("run_shell");
   expect(builtinToolNames({ shell: false })).not.toContain("run_shell");
+  expect(staticNames).not.toContain("agent_spawn");
+  expect(builtinToolNames()).toContain("agent_spawn");
+  expect(builtinToolNames({ agent: false })).not.toContain("agent_retry");
+  expect(staticNames).not.toContain("interactive_terminal_start");
+  expect(builtinToolNames()).toContain("interactive_terminal_start");
+  expect(builtinToolNames()).toContain("interactive_start");
+  expect(builtinToolNames({ terminal: false })).not.toContain(
+    "terminal_observe",
+  );
+  expect(staticNames).not.toContain("sandbox_create");
+  expect(builtinToolNames()).toContain("sandbox_create");
+  expect(builtinToolNames({ sandbox: false })).not.toContain("sandbox_merge");
 });
 
 test("each family declares exactly the tools grant", () => {
@@ -91,21 +105,7 @@ test("unloading a family removes its tools from the kernel", () => {
   expect(registry.unload(toolFamilyCapabilityID("process"))).toBe(true);
   for (const tool of process.tools)
     expect(registry.ownerOf("tools", tool.name)).toBeUndefined();
-  // Other families are untouched — unload releases one family's contributions,
-  // not the catalogue.
-  expect(registry.ownerOf("tools", "agent_list")).toBe(
-    toolFamilyCapabilityID("agent"),
-  );
-});
-
-test("terminal aliases survive the kernel round trip", () => {
-  const registry = new CapabilityRegistry();
-  const { tools } = createToolRegistryFromCapabilities({ registry });
-  // The alias resolves to the same tool the family contributed, so the shorter
-  // name a model may use is not silently missing after the move to the kernel.
-  expect(tools.get("interactive_start")).toBe(
-    tools.get("interactive_terminal_start"),
-  );
+  expect(registry.has(toolFamilyCapabilityID("process"))).toBe(false);
 });
 
 test("a family that fails to load leaves none of its tools callable", () => {
@@ -131,7 +131,6 @@ test("a family that fails to load leaves none of its tools callable", () => {
     (family) => family.id === "process",
   )!;
   for (const tool of process.tools) expect(tools.has(tool.name)).toBe(false);
-  expect(tools.has("agent_list")).toBe(true);
 });
 
 test("registering the same families twice is refused, not silently doubled", () => {
@@ -156,8 +155,6 @@ test("config enabled=false keeps a static family out of the registry entirely", 
   )!;
   for (const tool of process.tools) expect(tools.has(tool.name)).toBe(false);
   expect(registry.has(toolFamilyCapabilityID("process"))).toBe(false);
-  // Everything else still loads.
-  expect(tools.has("agent_list")).toBe(true);
 });
 
 test("applyToolFamilyEnabledFilter removes a disabled family after assembly", () => {

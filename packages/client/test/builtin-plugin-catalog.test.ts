@@ -1,25 +1,31 @@
 import { expect, test } from "bun:test";
 import {
+  AGENT_PLUGIN_ID,
   ASK_PLUGIN_ID,
   builtinPluginCatalog,
   FS_READ_PLUGIN_ID,
   FS_WRITE_PLUGIN_ID,
   PDF_PLUGIN_ID,
+  SANDBOX_PLUGIN_ID,
   SEARCH_PLUGIN_ID,
   SHELL_PLUGIN_ID,
   SKILLS_PLUGIN_ID,
+  TERMINAL_PLUGIN_ID,
   TODO_PLUGIN_ID,
   WEB_PLUGIN_ID,
 } from "../src/builtin-plugins/catalog";
 
 test("built-in plugin catalog is lazy and has unique matching ids", () => {
   const catalog = builtinPluginCatalog({
+    agentEnabled: true,
     askEnabled: true,
     fsReadEnabled: true,
     fsWriteEnabled: true,
     pdfEnabled: true,
+    sandboxEnabled: true,
     searchEnabled: true,
     shellEnabled: true,
+    terminalEnabled: true,
     todoEnabled: true,
     webEnabled: true,
   });
@@ -31,6 +37,9 @@ test("built-in plugin catalog is lazy and has unique matching ids", () => {
     FS_WRITE_PLUGIN_ID,
     WEB_PLUGIN_ID,
     SHELL_PLUGIN_ID,
+    AGENT_PLUGIN_ID,
+    TERMINAL_PLUGIN_ID,
+    SANDBOX_PLUGIN_ID,
     SKILLS_PLUGIN_ID,
     PDF_PLUGIN_ID,
   ]);

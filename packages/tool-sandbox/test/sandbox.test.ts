@@ -5,8 +5,16 @@ import { tmpdir } from "node:os";
 import {
   SnapshotSandboxManager,
   WorktreeSandboxManager,
+  WorkspaceSandboxManager,
 } from "@natalia/sandbox";
-import { sandboxToolFamily, sandboxTools } from "../src";
+import { createPluginRegistry } from "@natalia/plugin";
+import { createToolRegistry } from "@natalia/tools";
+import {
+  createSandboxPlugin,
+  SANDBOX_PLUGIN_ID,
+  sandboxToolFamily,
+  sandboxTools,
+} from "../src";
 
 async function git(cwd: string, args: string[]) {
   const process = Bun.spawn(["git", ...args], {
@@ -31,6 +39,19 @@ test("the sandbox family describes the tools it ships", () => {
   expect(family.tools.map((tool) => tool.name)).toEqual(
     sandboxTools().map((tool) => tool.name),
   );
+});
+
+test("the sandbox plugin owns its tools and unloads cleanly", async () => {
+  const tools = createToolRegistry([]);
+  const registry = createPluginRegistry({ tools });
+  await registry.loadBuiltin(createSandboxPlugin());
+  expect(registry.list()[0]).toMatchObject({
+    id: SANDBOX_PLUGIN_ID,
+    scope: "workspace",
+  });
+  for (const tool of sandboxTools()) expect(tools.has(tool.name)).toBe(true);
+  await registry.unload(SANDBOX_PLUGIN_ID);
+  for (const tool of sandboxTools()) expect(tools.has(tool.name)).toBe(false);
 });
 
 test("sandbox tools refuse without a sandbox manager", async () => {
@@ -144,3 +165,65 @@ test("sandbox_create reads the resolved config service (runtimeConfig) to name i
   // service is genuinely used by a real production tool, not just plugins.
   expect(parsed.backend).toBe("worktree");
 });
+test("sandbox tools create execute diff and merge through the registry", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-sandbox-"));
+  const events: string[] = [];
+  const context = {
+    workspaceRoot: root,
+    sandboxes: new WorkspaceSandboxManager(join(root, ".natalia", "sandboxes")),
+    onSandboxEvent: (event: { type: string }) => events.push(event.type),
+  };
+  const tools = new Map(sandboxTools().map((tool) => [tool.name, tool]));
+  await tools.get("sandbox_create")!.execute({ id: "box" }, context);
+  expect(
+    await tools
+      .get("sandbox_execute")!
+      .execute({ id: "box", command: "printf sandbox-tool-ok" }, context),
+  ).toContain("sandbox-tool-ok");
+  await tools
+    .get("sandbox_write")!
+    .execute(
+      { id: "box", path: "nested/note.txt", content: "sandbox content" },
+      context,
+    );
+  expect(
+    await tools.get("sandbox_diff")!.execute({ id: "box" }, context),
+  ).toContain("nested/note.txt");
+  await tools.get("sandbox_merge")!.execute({ id: "box" }, context);
+  expect(await readFile(join(root, "nested", "note.txt"), "utf8")).toBe(
+    "sandbox content",
+  );
+  expect(events).toContain("sandbox.update");
+  const resource = JSON.parse(
+    await tools.get("sandbox_resource_start")!.execute(
+      {
+        id: "box",
+        resourceID: "resource_tool",
+        command: "printf tool-resource; sleep 30",
+      },
+      context,
+    ),
+  ) as { id: string };
+  await waitForOutput(
+    async () =>
+      tools
+        .get("sandbox_resource_output")!
+        .execute({ id: "box", resourceID: resource.id }, context),
+    "tool-resource",
+  );
+  expect(
+    await tools.get("sandbox_resource_list")!.execute({ id: "box" }, context),
+  ).toContain("resource_tool");
+  await tools
+    .get("sandbox_resource_stop")!
+    .execute({ id: "box", resourceID: resource.id }, context);
+  await tools.get("sandbox_delete")!.execute({ id: "box" }, context);
+  expect(events).toContain("sandbox.audit");
+});
+
+async function waitForOutput(read: () => Promise<string>, expected = "ready") {
+  for (let index = 0; index < 50; index++) {
+    if ((await read()).includes(expected)) return;
+    await Bun.sleep(20);
+  }
+}

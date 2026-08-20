@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@natalia/tools": "workspace:*",
+    "@natalia/plugin": "workspace:*",
     "@natalia/subagent": "workspace:*"
   }
 }

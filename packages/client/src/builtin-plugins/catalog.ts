@@ -9,6 +9,12 @@ import {
 } from "@natalia/tool-fs-write";
 import { createWebPlugin, WEB_PLUGIN_ID } from "@natalia/tool-web";
 import { createShellPlugin, SHELL_PLUGIN_ID } from "@natalia/tool-shell";
+import { createAgentPlugin, AGENT_PLUGIN_ID } from "@natalia/tool-agent";
+import {
+  createTerminalPlugin,
+  TERMINAL_PLUGIN_ID,
+} from "@natalia/tool-terminal";
+import { createSandboxPlugin, SANDBOX_PLUGIN_ID } from "@natalia/tool-sandbox";
 import type { Plugin } from "@natalia/plugin";
 import type { Skill } from "@natalia/skills";
 import type { ToolExecutionContext } from "@natalia/tools";
@@ -19,14 +25,17 @@ import {
 } from "./skills-plugin";
 
 export {
+  AGENT_PLUGIN_ID,
   ASK_PLUGIN_ID,
   FS_READ_PLUGIN_ID,
   FS_WRITE_PLUGIN_ID,
   PDF_PLUGIN_ID,
+  SANDBOX_PLUGIN_ID,
   SEARCH_PLUGIN_ID,
   SHELL_PLUGIN_ID,
   SKILLS_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
+  TERMINAL_PLUGIN_ID,
   TODO_PLUGIN_ID,
   WEB_PLUGIN_ID,
 };
@@ -38,12 +47,15 @@ export type BuiltinPluginEntry = {
 };
 
 export function builtinPluginCatalog(input: {
+  agentEnabled: boolean;
   askEnabled: boolean;
   fsReadEnabled: boolean;
   fsWriteEnabled: boolean;
   pdfEnabled: boolean;
+  sandboxEnabled: boolean;
   searchEnabled: boolean;
   shellEnabled: boolean;
+  terminalEnabled: boolean;
   todoEnabled: boolean;
   webEnabled: boolean;
   skills?: {
@@ -92,6 +104,21 @@ export function builtinPluginCatalog(input: {
       id: SHELL_PLUGIN_ID,
       enabled: input.shellEnabled,
       create: () => createShellPlugin(),
+    },
+    {
+      id: AGENT_PLUGIN_ID,
+      enabled: input.agentEnabled,
+      create: () => createAgentPlugin(),
+    },
+    {
+      id: TERMINAL_PLUGIN_ID,
+      enabled: input.terminalEnabled,
+      create: () => createTerminalPlugin(),
+    },
+    {
+      id: SANDBOX_PLUGIN_ID,
+      enabled: input.sandboxEnabled,
+      create: () => createSandboxPlugin(),
     },
     {
       id: SKILLS_PLUGIN_ID,

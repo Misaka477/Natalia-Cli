@@ -68,7 +68,11 @@ export type PluginAPI = {
    * instead of duplicating a parser.
    */
   runtimeConfig?: () => unknown;
-  tools: { register(tool: RuntimeTool): () => void };
+  tools: {
+    register(tool: RuntimeTool): () => void;
+    /** Adds a model-facing alias for a tool this plugin registered. */
+    registerAlias(alias: string, target: string): () => void;
+  };
   /**
    * Services this plugin provides (declared in the manifest's `provides`):
    * contributed to the capability kernel as `services`, so other capabilities
@@ -399,6 +403,15 @@ export function createPluginRegistry(input: {
           );
           disposers.push(dispose);
           return dispose;
+        },
+        registerAlias(alias, target) {
+          assertCapability(manifest, "tools", allowedOverride);
+          const prefix = (name: string) =>
+            loadContext.builtin
+              ? name
+              : `plugin_${manifest.id.replace(/[^a-z0-9_]/giu, "_")}_${name}`;
+          input.tools.addAlias(prefix(alias), prefix(target));
+          return () => undefined;
         },
       },
       services: {

@@ -1,5 +1,12 @@
 import { expect, test } from "bun:test";
-import { agentToolFamily, agentTools } from "../src";
+import { createPluginRegistry } from "@natalia/plugin";
+import { createToolRegistry } from "@natalia/tools";
+import {
+  AGENT_PLUGIN_ID,
+  agentToolFamily,
+  agentTools,
+  createAgentPlugin,
+} from "../src";
 
 const EXPECTED_TOOL_NAMES = [
   "agent_spawn",
@@ -23,6 +30,19 @@ test("the subagent family describes the tools it ships", () => {
   expect(family.tools.map((tool) => tool.name)).toEqual(
     agentTools().map((tool) => tool.name),
   );
+});
+
+test("the agent plugin owns its tools and unloads cleanly", async () => {
+  const tools = createToolRegistry([]);
+  const registry = createPluginRegistry({ tools });
+  await registry.loadBuiltin(createAgentPlugin());
+  expect(registry.list()[0]).toMatchObject({
+    id: AGENT_PLUGIN_ID,
+    scope: "session",
+  });
+  for (const tool of agentTools()) expect(tools.has(tool.name)).toBe(true);
+  await registry.unload(AGENT_PLUGIN_ID);
+  for (const tool of agentTools()) expect(tools.has(tool.name)).toBe(false);
 });
 
 test("every agent_* tool declares presentCall and presentResult", () => {
@@ -143,4 +163,12 @@ test("agent tools refuse without the subagent registry", async () => {
   await expect(
     tool.execute({ prompt: "hi" }, { workspaceRoot: "/tmp" } as never),
   ).rejects.toThrow(/subagent runtime unavailable/u);
+});
+
+test("agent_retry is exposed as an explicit continuation tool", () => {
+  const tool = agentTools().find(
+    (candidate) => candidate.name === "agent_retry",
+  )!;
+  expect(tool.requiresApproval).toBe(true);
+  expect(tool.description).toContain("continuation");
 });

@@ -194,13 +194,16 @@ import {
 } from "./capabilities/runtime-config-capability";
 import {
   ASK_PLUGIN_ID,
+  AGENT_PLUGIN_ID,
   builtinPluginCatalog,
   FS_READ_PLUGIN_ID,
   FS_WRITE_PLUGIN_ID,
   PDF_PLUGIN_ID,
+  SANDBOX_PLUGIN_ID,
   SEARCH_PLUGIN_ID,
   SHELL_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
+  TERMINAL_PLUGIN_ID,
   TODO_PLUGIN_ID,
   WEB_PLUGIN_ID,
 } from "./builtin-plugins/catalog";
@@ -2057,6 +2060,18 @@ export function createRealRuntimeClient(
         !options.tools &&
         tsRuntimeConfig?.tools.enabled.shell !== false &&
         tsRuntimeConfig?.plugins.enabled[SHELL_PLUGIN_ID] !== false,
+      agentEnabled:
+        !options.tools &&
+        tsRuntimeConfig?.tools.enabled.agent !== false &&
+        tsRuntimeConfig?.plugins.enabled[AGENT_PLUGIN_ID] !== false,
+      terminalEnabled:
+        !options.tools &&
+        tsRuntimeConfig?.tools.enabled.terminal !== false &&
+        tsRuntimeConfig?.plugins.enabled[TERMINAL_PLUGIN_ID] !== false,
+      sandboxEnabled:
+        !options.tools &&
+        tsRuntimeConfig?.tools.enabled.sandbox !== false &&
+        tsRuntimeConfig?.plugins.enabled[SANDBOX_PLUGIN_ID] !== false,
       pdfEnabled:
         extensionEnabled("plugins") &&
         tsRuntimeConfig?.plugins.enabled[PDF_PLUGIN_ID] !== false,

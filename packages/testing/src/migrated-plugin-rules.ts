@@ -162,6 +162,58 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-tool-agent",
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/capabilities/tool-family-capabilities.ts",
+    ],
+    forbidden: [
+      {
+        description: "direct agent package import",
+        pattern: /from\s+["']@natalia\/tool-agent["']/u,
+      },
+      {
+        description: "direct agent tool construction",
+        pattern: /\b(?:agentToolFamily|agentTools|createAgentPlugin)\b/u,
+      },
+    ],
+  },
+  {
+    id: "natalia-tool-terminal",
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/capabilities/tool-family-capabilities.ts",
+    ],
+    forbidden: [
+      {
+        description: "direct terminal package import",
+        pattern: /from\s+["']@natalia\/tool-terminal["']/u,
+      },
+      {
+        description: "direct terminal tool construction",
+        pattern:
+          /\b(?:terminalToolFamily|terminalTools|createTerminalPlugin)\b/u,
+      },
+    ],
+  },
+  {
+    id: "natalia-tool-sandbox",
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/capabilities/tool-family-capabilities.ts",
+    ],
+    forbidden: [
+      {
+        description: "direct sandbox package import",
+        pattern: /from\s+["']@natalia\/tool-sandbox["']/u,
+      },
+      {
+        description: "direct sandbox tool construction",
+        pattern: /\b(?:sandboxToolFamily|sandboxTools|createSandboxPlugin)\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(
