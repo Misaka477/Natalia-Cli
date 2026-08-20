@@ -68,3 +68,6 @@ export function createMcpController(input: {
 
   return { reload, close, access };
 }
+
+export type McpController = ReturnType<typeof createMcpController>;
+export type McpAccess = McpController["access"];

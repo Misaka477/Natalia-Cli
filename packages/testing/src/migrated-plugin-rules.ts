@@ -276,6 +276,36 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-terminal",
+    targets: ["packages/client/src/real-runtime.ts"],
+    forbidden: [
+      {
+        description: "direct terminal controller construction",
+        pattern: /\bcreateTerminalController\b/u,
+      },
+    ],
+  },
+  {
+    id: "natalia-sandbox",
+    targets: ["packages/client/src/real-runtime.ts"],
+    forbidden: [
+      {
+        description: "direct sandbox controller construction",
+        pattern: /\bcreateSandboxController\b/u,
+      },
+    ],
+  },
+  {
+    id: "natalia-mcp",
+    targets: ["packages/client/src/real-runtime.ts"],
+    forbidden: [
+      {
+        description: "direct mcp controller construction",
+        pattern: /\bcreateMcpController\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(

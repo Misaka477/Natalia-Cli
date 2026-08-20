@@ -63,3 +63,5 @@ export function createSandboxController(input: {
     },
   };
 }
+
+export type SandboxController = ReturnType<typeof createSandboxController>;

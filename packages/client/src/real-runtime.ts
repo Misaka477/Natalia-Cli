@@ -12,16 +12,16 @@ import {
   sanitizeSessionTitleInput,
 } from "./session-title";
 import { createSubagentsController } from "./subagents-controller";
-import { createTerminalController } from "./terminal-controller";
+import type { TerminalController } from "./terminal-controller";
 import { SnapshotSandboxManager } from "@natalia/sandbox";
 import {
   TEAM_MODE_DIRECTIVE,
   sandboxedSubagentSystemPrompt,
 } from "./agent-team-prompts";
-import { createSandboxController } from "./sandbox-controller";
+import type { SandboxController } from "./sandbox-controller";
 import { createTeamFanoutTool, createTeamReviewTool } from "./team-tools";
 import { createCheckpointController } from "./checkpoint-controller";
-import { createMcpController } from "./mcp-controller";
+import type { McpAccess, McpController } from "./mcp-controller";
 import type { WorkspaceFilesController } from "./workspace-files-controller";
 import { createPluginsController } from "./plugins-controller";
 import { RuntimeRefusal } from "@natalia/contracts";
@@ -202,6 +202,9 @@ import {
   WORKSPACE_MUTATIONS_SERVICE,
   WORKSPACE_WRITE_LOCK_SERVICE,
 } from "./builtin-plugins/workspace-plugin";
+import { TERMINAL_CONTROLLER_SERVICE } from "./builtin-plugins/terminal-controller-plugin";
+import { SANDBOX_CONTROLLER_SERVICE } from "./builtin-plugins/sandbox-controller-plugin";
+import { MCP_CONTROLLER_SERVICE } from "./builtin-plugins/mcp-controller-plugin";
 import type { TaskModuleContext } from "./capabilities/task-module-tools";
 import {
   flowOverview as flowOverviewForWorkspace,
@@ -450,7 +453,7 @@ export function createRealRuntimeClient(
     // input is refused when the host cannot answer at all.
     foregroundProgram: async (paneID) => {
       try {
-        const ttyName = await terminalController.get()?.ttyName(paneID);
+        const ttyName = await terminalController?.get()?.ttyName(paneID);
         if (!ttyName)
           return {
             supported: false as const,
@@ -575,26 +578,15 @@ export function createRealRuntimeClient(
     workDir: workspaceRoot,
     sessionID: () => sessionID,
   });
-  const terminalController = createTerminalController({
-    workspaceRoot,
-    publish: (event) =>
-      publishForSession(
-        event.sessionID
-          ? executionBySession.get(event.sessionID as SessionID)
-          : activeExec,
-        event,
-      ),
-    onPerformance: (name, durationMs) =>
-      performanceTrace.mark(name, durationMs),
-    runtimeID: () => nativeRuntimeID,
-    userRuntimeHome: () => userRuntimeHome(),
-    windowMode: () => tsRuntimeConfig?.runtime.terminal.windowMode ?? "auto",
-    external: options.nativeTerminal,
-  });
-  const sandboxController = createSandboxController({
-    workspaceRoot,
-    backend: () => tsRuntimeConfig?.sandbox.backend,
-  });
+  /**
+   * Controllers provided by the terminal/sandbox/mcp built-in plugins, resolved
+   * after they load during `start`. All consumers run post-start, so the
+   * services are in place by the time they are read.
+   */
+  let terminalController: TerminalController | undefined;
+  let sandboxController: SandboxController | undefined;
+  let mcpController: McpController | undefined;
+  let mcpAccess: McpAccess = [];
   const pluginsController = createPluginsController({
     workspaceRoot,
     tools,
@@ -607,14 +599,6 @@ export function createRealRuntimeClient(
     publish,
     syncGlobalCommands: () => setGlobalPluginCommands(commandCatalogEntries()),
   });
-  const mcpController = createMcpController({
-    servers: () => tsRuntimeConfig?.mcpServers ?? {},
-    workspaceRoot,
-    tools,
-    enabled: () => extensionEnabled("mcp"),
-    publish,
-  });
-  const mcpAccess = mcpController.access;
   let toolCalls = new Map<string, number>();
   let runtimeContext = new ContextLedger();
   /**
@@ -756,6 +740,12 @@ export function createRealRuntimeClient(
       throw new Error("workspace write lock unavailable");
     return workspaceWriteLock;
   }
+  /** Sandbox RPCs need the controller; its absence is a host misconfiguration. */
+  function requireSandboxes() {
+    const sandboxes = sandboxController?.get();
+    if (!sandboxes) throw new Error("sandbox controller unavailable");
+    return sandboxes;
+  }
   let paused = false;
   let pauseWaiters: Array<() => void> = [];
   let ready: Promise<void> | undefined;
@@ -872,7 +862,7 @@ export function createRealRuntimeClient(
     permissionMode: () => permissionMode,
     runningCount: async () =>
       subagentsController.runningCount() +
-      sandboxController.runningResourceCount() +
+      (sandboxController?.runningResourceCount() ?? 0) +
       ((await capabilityRegistry
         .service<{
           runningCount(input: { workspaceRoot: string }): Promise<number>;
@@ -1517,9 +1507,9 @@ export function createRealRuntimeClient(
               question,
             ),
           subagents: subagentsController.get(),
-          nativeTerminal: terminalController.get(),
+          nativeTerminal: terminalController?.get(),
           ...(input.exposeSandboxes
-            ? { sandboxes: sandboxController.get() }
+            ? { sandboxes: sandboxController?.get() }
             : {}),
           workspaceReadAuthorize: (request) =>
             authorizeWorkspaceRead(request, input.exec),
@@ -1597,7 +1587,9 @@ export function createRealRuntimeClient(
       const allowed = record.allowedTools ?? [];
       const excluded = new Set(record.excludeTools ?? []);
       // The sub-agent's own worktree, created through the sandbox backend.
-      const manifest = await sandboxController.get().create(runner.agentId);
+      const manifest = await sandboxController?.get()?.create(runner.agentId);
+      if (!manifest)
+        throw new Error("sandbox controller unavailable for subagent worktree");
       const sandboxRoot = manifest.root;
       // The ownership map's domain: paths (relative to the sub-agent's
       // worktree) it may write. Absent = unrestricted (same authority as the
@@ -1846,7 +1838,7 @@ export function createRealRuntimeClient(
         scheduleRuntimeStatusSnapshot();
     });
     if (tsRuntimeConfig && extensionEnabled("mcp")) {
-      await mcpController.reload();
+      await mcpController?.reload();
     }
     // The config's `tools.enabled` decides which built-in families stay: a
     // disabled family's capability is unloaded and its tools dropped, so they
@@ -2033,6 +2025,46 @@ export function createRealRuntimeClient(
               },
             },
           }),
+      ...(options.tools
+        ? {}
+        : {
+            terminal: {
+              workspaceRoot,
+              publish: (event: RuntimeEvent) =>
+                publishForSession(
+                  event.sessionID
+                    ? executionBySession.get(event.sessionID as SessionID)
+                    : activeExec,
+                  event,
+                ),
+              onPerformance: (name: string, durationMs: number) =>
+                performanceTrace.mark(name, durationMs),
+              runtimeID: () => nativeRuntimeID,
+              userRuntimeHome: () => userRuntimeHome(),
+              windowMode: () =>
+                tsRuntimeConfig?.runtime.terminal.windowMode ?? "auto",
+              external: options.nativeTerminal,
+            },
+          }),
+      ...(options.tools
+        ? {}
+        : {
+            sandbox: {
+              workspaceRoot,
+              backend: () => tsRuntimeConfig?.sandbox.backend,
+            },
+          }),
+      ...(options.tools
+        ? {}
+        : {
+            mcp: {
+              servers: () => tsRuntimeConfig?.mcpServers ?? {},
+              workspaceRoot,
+              tools,
+              enabled: () => extensionEnabled("mcp"),
+              publish,
+            },
+          }),
     });
     for (const entry of builtinPlugins) {
       if (!entry.enabled) continue;
@@ -2054,10 +2086,20 @@ export function createRealRuntimeClient(
       capabilityRegistry.service<WorkspaceFilesController>(
         WORKSPACE_FILES_SERVICE,
       );
-    await terminalController.init();
-    terminalController.setActiveSession(sessionID);
+    terminalController = capabilityRegistry.service<TerminalController>(
+      TERMINAL_CONTROLLER_SERVICE,
+    );
+    sandboxController = capabilityRegistry.service<SandboxController>(
+      SANDBOX_CONTROLLER_SERVICE,
+    );
+    mcpController = capabilityRegistry.service<McpController>(
+      MCP_CONTROLLER_SERVICE,
+    );
+    mcpAccess = mcpController?.access ?? [];
+    await terminalController?.init();
+    terminalController?.setActiveSession(sessionID);
 
-    await sandboxController.init();
+    await sandboxController?.init();
     session = sessionStoreController.sqlite()
       ? ((await sessionStoreController.json().load(sessionID)) ??
         createSessionRecord(sessionID, options.title ?? "New session"))
@@ -2314,13 +2356,13 @@ export function createRealRuntimeClient(
             subagentsController.enabled()
               ? subagentsController.get()
               : undefined,
-          sandboxes: () => sandboxController.get(),
+          sandboxes: () => sandboxController?.get(),
         }),
       );
       tools.set(
         "team_review",
         createTeamReviewTool({
-          sandboxes: () => sandboxController.get(),
+          sandboxes: () => sandboxController?.get(),
         }),
       );
     }
@@ -4189,7 +4231,7 @@ export function createRealRuntimeClient(
     activeExec = exec;
     attachmentReferences = exec.attachmentReferences;
     toolCalls = exec.toolCalls;
-    terminalController.setActiveSession(nextID);
+    terminalController?.setActiveSession(nextID);
     lastSubmitted = exec.lastSubmitted;
     activeAbort = exec.activeAbort;
     activeTurnID = exec.activeTurnID;
@@ -5685,8 +5727,8 @@ export function createRealRuntimeClient(
       );
       await sessionStoreController.close();
       await pluginsController.close();
-      await mcpController.close();
-      await terminalController.close();
+      await mcpController?.close();
+      await terminalController?.close();
       await performanceTrace.stop();
     },
     cancel(reason = "user cancel") {
@@ -6150,13 +6192,13 @@ export function createRealRuntimeClient(
     },
     async nativeTerminalList() {
       await ready;
-      return ((await terminalController.get()?.reconcile()) ?? []).map(
+      return ((await terminalController?.get()?.reconcile()) ?? []).map(
         publicNativeTerminal,
       );
     },
     async nativeTerminalRead(id) {
       await ready;
-      const nativeTerminal = terminalController.get();
+      const nativeTerminal = terminalController?.get();
       if (!nativeTerminal)
         throw new Error("Native Terminal Host is unavailable");
       const { text } = await nativeTerminal.read(id, { maxLines: 200 });
@@ -6164,7 +6206,7 @@ export function createRealRuntimeClient(
     },
     async nativeTerminalOpenHub() {
       await ready;
-      const nativeTerminal = terminalController.get();
+      const nativeTerminal = terminalController?.get();
       if (!nativeTerminal)
         throw new Error("Native Terminal Host is unavailable");
       const hub = await nativeTerminal.openHub();
@@ -6172,14 +6214,14 @@ export function createRealRuntimeClient(
     },
     async nativeTerminalRevokeApprovalScope(id) {
       await ready;
-      const nativeTerminal = terminalController.get();
+      const nativeTerminal = terminalController?.get();
       if (!nativeTerminal)
         throw new Error("Native Terminal Host is unavailable");
       return interactive.revokeTerminalApprovalScope(id);
     },
     async nativeTerminalReleaseHumanControl(id) {
       await ready;
-      const nativeTerminal = terminalController.get();
+      const nativeTerminal = terminalController?.get();
       if (!nativeTerminal)
         throw new Error("Native Terminal Host is unavailable");
       const sessionView = publicNativeTerminal(
@@ -6192,21 +6234,21 @@ export function createRealRuntimeClient(
     },
     async nativeTerminalBeginSecureInput(id) {
       await ready;
-      const nativeTerminal = terminalController.get();
+      const nativeTerminal = terminalController?.get();
       if (!nativeTerminal)
         throw new Error("Native Terminal Host is unavailable");
       return publicNativeTerminal(nativeTerminal.beginSecureInput(id));
     },
     async nativeTerminalEndSecureInput(id) {
       await ready;
-      const nativeTerminal = terminalController.get();
+      const nativeTerminal = terminalController?.get();
       if (!nativeTerminal)
         throw new Error("Native Terminal Host is unavailable");
       return publicNativeTerminal(nativeTerminal.endSecureInput(id));
     },
     async nativeTerminalStop(id) {
       await ready;
-      const nativeTerminal = terminalController.get();
+      const nativeTerminal = terminalController?.get();
       if (!nativeTerminal)
         throw new Error("Native Terminal Host is unavailable");
       return {
@@ -6221,7 +6263,7 @@ export function createRealRuntimeClient(
       await ready;
       const owner = activeExec;
       if (!owner) throw new RuntimeRefusal("session is not initialized");
-      const nativeTerminal = terminalController.get();
+      const nativeTerminal = terminalController?.get();
       if (!nativeTerminal)
         throw new RuntimeRefusal("Native Terminal Host is unavailable");
       try {
@@ -6239,7 +6281,7 @@ export function createRealRuntimeClient(
     },
     async nativeTerminalWrite(input) {
       await ready;
-      const nativeTerminal = terminalController.get();
+      const nativeTerminal = terminalController?.get();
       if (!nativeTerminal)
         throw new RuntimeRefusal("Native Terminal Host is unavailable");
       try {
@@ -6253,7 +6295,7 @@ export function createRealRuntimeClient(
     },
     async nativeTerminalResize(input) {
       await ready;
-      const nativeTerminal = terminalController.get();
+      const nativeTerminal = terminalController?.get();
       if (!nativeTerminal)
         throw new RuntimeRefusal("Native Terminal Host is unavailable");
       try {
@@ -6321,7 +6363,7 @@ export function createRealRuntimeClient(
     },
     async sandboxList() {
       await ready;
-      const sandboxes = sandboxController.get();
+      const sandboxes = requireSandboxes();
       return (await sandboxes.list()).map((sandbox) => ({
         id: sandbox.id,
         root: sandbox.root,
@@ -6333,17 +6375,17 @@ export function createRealRuntimeClient(
     },
     async sandboxDiff(id) {
       await ready;
-      const sandboxes = sandboxController.get();
+      const sandboxes = requireSandboxes();
       return await sandboxes.previewMerge(id);
     },
     async sandboxResources(id) {
       await ready;
-      const sandboxes = sandboxController.get();
+      const sandboxes = requireSandboxes();
       return sandboxes.resourcesFor(id);
     },
     async sandboxResourceOutput(input) {
       await ready;
-      const sandboxes = sandboxController.get();
+      const sandboxes = requireSandboxes();
       return await sandboxes.resourceOutput(
         input.id,
         input.resourceID,
@@ -6354,7 +6396,7 @@ export function createRealRuntimeClient(
       await ready;
       const owner = activeExec;
       if (!owner) throw new Error("session is not initialized");
-      const sandboxes = sandboxController.get();
+      const sandboxes = requireSandboxes();
       await authorizeSandboxManagement("sandbox_merge", { id }, owner);
       const changes = await sandboxes.merge(
         id,
@@ -6393,7 +6435,7 @@ export function createRealRuntimeClient(
       await ready;
       const owner = activeExec;
       if (!owner) throw new Error("session is not initialized");
-      const sandboxes = sandboxController.get();
+      const sandboxes = requireSandboxes();
       await authorizeSandboxManagement("sandbox_delete", { id }, owner);
       const result = await sandboxes.delete(id);
       publishForSession(owner, {
@@ -6413,7 +6455,7 @@ export function createRealRuntimeClient(
       await ready;
       const owner = activeExec;
       if (!owner) throw new Error("session is not initialized");
-      const sandboxes = sandboxController.get();
+      const sandboxes = requireSandboxes();
       await authorizeSandboxManagement("sandbox_resource_stop", input, owner);
       const resource = await sandboxes.stopResource(input.id, input.resourceID);
       publishForSession(owner, sandboxes.updateEvent(input.id));
@@ -6533,7 +6575,7 @@ export function createRealRuntimeClient(
         { globalPath: options.globalConfigPath },
       );
       await applyConfigFromDisk();
-      await mcpController.reload();
+      await mcpController?.reload();
       return { saved: true };
     },
     async mcpServerRemove(name) {
@@ -6547,7 +6589,7 @@ export function createRealRuntimeClient(
         { globalPath: options.globalConfigPath },
       );
       await applyConfigFromDisk();
-      await mcpController.reload();
+      await mcpController?.reload();
       return { removed: true };
     },
     async agentCreate(input) {
@@ -7691,7 +7733,7 @@ export function createRealRuntimeClient(
         // The shared object library: the sandbox's snapshot indices are also
         // owners, so checkpoint GC must never prune a live sandbox object.
         async () => {
-          const manager = sandboxController.get();
+          const manager = requireSandboxes();
           return manager instanceof SnapshotSandboxManager
             ? await manager.referencedObjectIDs()
             : undefined;
@@ -8268,7 +8310,7 @@ export function createRealRuntimeClient(
           const terminalID = tryParseToolArguments(call.arguments).id;
           if (typeof terminalID === "string") {
             try {
-              await terminalController.get()?.write(terminalID, "\x15");
+              await terminalController?.get()?.write(terminalID, "\x15");
               publish({
                 type: "diagnostic",
                 level: "warning",
@@ -8515,8 +8557,8 @@ export function createRealRuntimeClient(
                   question,
                 ),
               subagents: subagentsController.get(),
-              nativeTerminal: terminalController.get(),
-              sandboxes: sandboxController.get(),
+              nativeTerminal: terminalController?.get(),
+              sandboxes: sandboxController?.get(),
               ...(attachImage ? { attachImage } : {}),
               ...(attachPdf ? { attachPdf } : {}),
               workspaceReadAuthorize: (request) =>

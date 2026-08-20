@@ -11098,12 +11098,23 @@ test("capabilities() surfaces each capability's effective contributions", async 
     expect(taskModule?.contributions).toEqual([
       { kind: "tools", name: "flow_module_complete" },
     ]);
-    // Built-in records declare grants without contributing; the array still exists.
+    // Terminal/sandbox/mcp are real plugins now; their contributions are the
+    // controller services they provide, not empty arrays.
     const terminal = records?.find(
       (record) => record.id === "natalia-terminal",
     );
-    expect(terminal?.contributions).toEqual([]);
+    expect(terminal?.contributions).toEqual([
+      { kind: "services", name: "terminal.controller" },
+    ]);
     expect(terminal?.scope).toBe("session");
+    const sandbox = records?.find((record) => record.id === "natalia-sandbox");
+    expect(sandbox?.contributions).toEqual([
+      { kind: "services", name: "sandbox.controller" },
+    ]);
+    const mcp = records?.find((record) => record.id === "natalia-mcp");
+    expect(mcp?.contributions).toEqual([
+      { kind: "services", name: "mcp.controller" },
+    ]);
     // The query is metadata only: no payload leaks through it.
     expect(JSON.stringify(taskModule?.contributions)).not.toContain("store");
   } finally {

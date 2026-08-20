@@ -231,3 +231,5 @@ export function createTerminalController(input: {
 
   return { init, get, setActiveSession, close };
 }
+
+export type TerminalController = ReturnType<typeof createTerminalController>;

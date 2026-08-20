@@ -23,16 +23,13 @@ import {
 
 test("built-in capability records are stable data", () => {
   const records = builtinCapabilities();
-  expect(records.map((record) => record.id)).toEqual([
-    "natalia-terminal",
-    "natalia-sandbox",
-    "natalia-checkpoint",
-    "natalia-mcp",
-  ]);
-  // These are visibility-only records for subsystems the runtime still wires
-  // itself. They must declare a scope, and they must claim no grant: a grant is
-  // permission to contribute, and a record that contributes nothing while
-  // claiming `tools` shows up as a tool provider that provides no tool.
+  expect(records.map((record) => record.id)).toEqual(["natalia-checkpoint"]);
+  // Terminal, sandbox and MCP are real plugins now and own their capability
+  // through the plugin lifecycle. Checkpoint is still constructed directly by
+  // the runtime (per session), so its record stays a visibility-only record:
+  // it must declare a scope and claim no grant — a grant is permission to
+  // contribute, and a record that contributes nothing while claiming `tools`
+  // shows up as a tool provider that provides no tool.
   for (const record of records) {
     expect(record.scope).toBeString();
     expect(record.grants).toEqual([]);
@@ -52,12 +49,12 @@ test("registration emits one durable event per capability that loaded", () => {
   const registry = new CapabilityRegistry();
   const outcome = registerBuiltinCapabilities(registry);
   expect(outcome.failed).toEqual([]);
-  expect(outcome.loaded).toHaveLength(4);
+  expect(outcome.loaded).toHaveLength(1);
   expect(outcome.loaded[0]).toMatchObject({
     type: "capability.loaded",
-    id: "cap:natalia-terminal",
+    id: "cap:natalia-checkpoint",
     apiVersion: 1,
-    scope: "session",
+    scope: "workspace",
   });
   expect(registry.list().map((record) => record.id)).toEqual(
     builtinCapabilities().map((record) => record.id),
@@ -69,20 +66,16 @@ test("a capability that fails to load is reported with a reason", () => {
   // it, and "absent for no stated reason" is just as bad.
   const registry = new CapabilityRegistry();
   registry.load({
-    id: "natalia-sandbox",
+    id: "natalia-checkpoint",
     name: "Squatter",
     version: "0.0.1",
     scope: "workspace",
     grants: [],
   });
   const outcome = registerBuiltinCapabilities(registry);
-  expect(outcome.loaded.map((event) => event.id)).toEqual([
-    "cap:natalia-terminal",
-    "cap:natalia-checkpoint",
-    "cap:natalia-mcp",
-  ]);
+  expect(outcome.loaded).toEqual([]);
   expect(outcome.failed).toHaveLength(1);
-  expect(outcome.failed[0]).toMatchObject({ id: "cap:natalia-sandbox" });
+  expect(outcome.failed[0]).toMatchObject({ id: "cap:natalia-checkpoint" });
   expect(outcome.failed[0]!.reason).toContain("already loaded");
 });
 

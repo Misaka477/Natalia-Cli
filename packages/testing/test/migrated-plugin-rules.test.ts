@@ -49,6 +49,9 @@ test("migrated plugin rules retain built-in plugin protections", () => {
     ],
     ["natalia-local-tools", "loadLocalToolFamilies({ roots })"],
     ["natalia-workspace", "createWorkspaceWriteLock()"],
+    ["natalia-terminal", "createTerminalController({})"],
+    ["natalia-sandbox", "createSandboxController({})"],
+    ["natalia-mcp", "createMcpController({})"],
   ])
     expect(findMigratedPluginViolations(target, source)).toContainEqual(
       expect.objectContaining({ pluginID }),

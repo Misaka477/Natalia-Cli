@@ -18,8 +18,14 @@ import { createSandboxPlugin, SANDBOX_PLUGIN_ID } from "@natalia/tool-sandbox";
 import { createProcessPlugin, PROCESS_PLUGIN_ID } from "@natalia/tool-process";
 import type { Plugin } from "@natalia/plugin";
 import type { Skill } from "@natalia/skills";
-import type { ToolExecutionContext } from "@natalia/tools";
-import type { ConfigV3 } from "@natalia/contracts";
+import type { ToolExecutionContext, ToolRegistry } from "@natalia/tools";
+import type {
+  ConfigV3,
+  MCPServerConfig,
+  RuntimeEvent,
+} from "@natalia/contracts";
+import type { SandboxBackend } from "@natalia/contracts";
+import type { NativeTerminalRegistry } from "@natalia/native-terminal";
 import type { TaskModuleContext } from "../capabilities/task-module-tools";
 import {
   createTaskModulePlugin,
@@ -34,6 +40,18 @@ import {
   LOCAL_TOOLS_PLUGIN_ID,
 } from "./local-tools-plugin";
 import { createWorkspacePlugin, WORKSPACE_PLUGIN_ID } from "./workspace-plugin";
+import {
+  createTerminalControllerPlugin,
+  TERMINAL_PLUGIN_ID as TERMINAL_CONTROLLER_PLUGIN_ID,
+} from "./terminal-controller-plugin";
+import {
+  createSandboxControllerPlugin,
+  SANDBOX_PLUGIN_ID as SANDBOX_CONTROLLER_PLUGIN_ID,
+} from "./sandbox-controller-plugin";
+import {
+  createMcpControllerPlugin,
+  MCP_PLUGIN_ID,
+} from "./mcp-controller-plugin";
 import {
   createSkillsPlugin,
   SKILLS_PLUGIN_ID,
@@ -108,6 +126,29 @@ export function builtinPluginCatalog(input: {
   workspace?: {
     workspaceRoot: string;
     listPaths: () => Promise<string[]>;
+  };
+  /** Native terminal panes controller. */
+  terminal?: {
+    workspaceRoot: string;
+    publish(event: RuntimeEvent): void;
+    onPerformance(name: string, durationMs: number): void;
+    runtimeID(): string;
+    userRuntimeHome(): string | undefined;
+    windowMode(): "auto" | "windowless" | "window";
+    external?: NativeTerminalRegistry;
+  };
+  /** Sandbox controller. */
+  sandbox?: {
+    workspaceRoot: string;
+    backend?(): SandboxBackend | undefined;
+  };
+  /** MCP controller. */
+  mcp?: {
+    servers(): Record<string, MCPServerConfig>;
+    workspaceRoot: string;
+    tools: ToolRegistry;
+    enabled(): boolean;
+    publish(event: RuntimeEvent): void;
   };
 }): BuiltinPluginEntry[] {
   return [
@@ -223,6 +264,33 @@ export function builtinPluginCatalog(input: {
                 workspaceRoot: input.workspace!.workspaceRoot,
                 listPaths: input.workspace!.listPaths,
               }),
+          },
+        ]
+      : []),
+    ...(input.terminal
+      ? [
+          {
+            id: TERMINAL_CONTROLLER_PLUGIN_ID,
+            enabled: true,
+            create: () => createTerminalControllerPlugin(input.terminal!),
+          },
+        ]
+      : []),
+    ...(input.sandbox
+      ? [
+          {
+            id: SANDBOX_CONTROLLER_PLUGIN_ID,
+            enabled: true,
+            create: () => createSandboxControllerPlugin(input.sandbox!),
+          },
+        ]
+      : []),
+    ...(input.mcp
+      ? [
+          {
+            id: MCP_PLUGIN_ID,
+            enabled: true,
+            create: () => createMcpControllerPlugin(input.mcp!),
           },
         ]
       : []),

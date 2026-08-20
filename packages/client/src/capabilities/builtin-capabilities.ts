@@ -1,19 +1,12 @@
 /**
  * Registration records for the built-in subsystems.
  *
- * Scope, honestly: terminal, sandbox, checkpoint and MCP are still constructed
- * directly by the runtime, so these records make them visible and auditable
- * through the capability registry rather than owning their wiring. They are
- * visibility-only records and declare **no grants**, because a grant is
- * permission to contribute and these contribute nothing: claiming `tools` here
- * put them in `withGrant("tools")` as tool providers that provide no tool.
- *
- * The tools these subsystems expose are owned by their tool-family capabilities
- * (`natalia-tool-terminal`, `natalia-tool-sandbox` in
- * `tool-family-capabilities.ts`), which really do contribute them. The
- * task-module capability in `task-module-capability.ts` is the other example to
- * copy: it contributes its tools through the kernel, so the runtime never names
- * them.
+ * Terminal, sandbox and MCP controllers are real plugins now and own their
+ * capability through the plugin lifecycle. Checkpoint is still constructed
+ * directly by the runtime (per session), so its record keeps it visible and
+ * auditable through the capability registry rather than owning its wiring. It
+ * is a visibility-only record and declares **no grants**, because a grant is
+ * permission to contribute and it contributes nothing.
  */
 import type {
   CapabilityRegistration,
@@ -23,31 +16,10 @@ import type {
 export function builtinCapabilities(): CapabilityRegistration[] {
   return [
     {
-      id: "natalia-terminal",
-      name: "Terminal",
-      version: "1.0.0",
-      scope: "session",
-      grants: [],
-    },
-    {
-      id: "natalia-sandbox",
-      name: "Sandbox",
-      version: "1.0.0",
-      scope: "workspace",
-      grants: [],
-    },
-    {
       id: "natalia-checkpoint",
       name: "Checkpoint",
       version: "1.0.0",
       scope: "workspace",
-      grants: [],
-    },
-    {
-      id: "natalia-mcp",
-      name: "MCP Server",
-      version: "1.0.0",
-      scope: "session",
       grants: [],
     },
   ];
