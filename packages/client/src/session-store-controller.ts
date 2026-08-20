@@ -367,3 +367,7 @@ export function createSessionStoreController(input: {
     close,
   };
 }
+
+export type SessionStoreController = ReturnType<
+  typeof createSessionStoreController
+>;

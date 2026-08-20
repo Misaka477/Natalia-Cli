@@ -61,6 +61,10 @@ import {
   SUBAGENTS_PLUGIN_ID,
 } from "./subagents-controller-plugin";
 import {
+  createSessionStoreControllerPlugin,
+  SESSION_STORE_PLUGIN_ID,
+} from "./session-store-controller-plugin";
+import {
   createSkillsPlugin,
   SKILLS_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
@@ -162,6 +166,14 @@ export function builtinPluginCatalog(input: {
   checkpoint?: { workspaceRoot: string };
   /** Subagents controller. */
   subagents?: { workDir: string; sessionID?: () => string | undefined };
+  /** Session store controller. */
+  sessionStore?: {
+    workspaceRoot: string;
+    sessionID(): import("@natalia/contracts").SessionID;
+    sessionDir?: string;
+    useSqliteStore?: boolean;
+    title?: string;
+  };
 }): BuiltinPluginEntry[] {
   return [
     {
@@ -327,6 +339,22 @@ export function builtinPluginCatalog(input: {
               createSubagentsControllerPlugin({
                 workDir: input.subagents!.workDir,
                 sessionID: input.subagents!.sessionID,
+              }),
+          },
+        ]
+      : []),
+    ...(input.sessionStore
+      ? [
+          {
+            id: SESSION_STORE_PLUGIN_ID,
+            enabled: true,
+            create: () =>
+              createSessionStoreControllerPlugin({
+                workspaceRoot: input.sessionStore!.workspaceRoot,
+                sessionID: input.sessionStore!.sessionID,
+                sessionDir: input.sessionStore!.sessionDir,
+                useSqliteStore: input.sessionStore!.useSqliteStore,
+                title: input.sessionStore!.title,
               }),
           },
         ]

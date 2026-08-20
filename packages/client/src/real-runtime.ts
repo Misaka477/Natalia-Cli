@@ -2,7 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, dirname, join, resolve } from "node:path";
 import { createStatusSnapshotController } from "./status-controller";
-import { createSessionStoreController } from "./session-store-controller";
+import type { SessionStoreController } from "./session-store-controller";
+import { SESSION_STORE_CONTROLLER_SERVICE } from "./builtin-plugins/session-store-controller-plugin";
 import { createTurnController } from "./turn-controller";
 import { createProviderRunner } from "./provider-runner";
 import {
@@ -404,13 +405,7 @@ export function createRealRuntimeClient(
 ): RuntimeClient {
   let workspaceRoot = resolve(options.workspaceRoot ?? process.cwd());
   let sessionID: SessionID;
-  const sessionStoreController = createSessionStoreController({
-    workspaceRoot,
-    sessionID: () => sessionID,
-    sessionDir: options.sessionDir,
-    useSqliteStore: options.useSqliteStore,
-    title: options.title,
-  });
+  let sessionStoreController!: SessionStoreController;
   let provider = options.provider ?? providerFromEnvironment();
   let providerSource:
     | "explicit"
@@ -1210,6 +1205,13 @@ export function createRealRuntimeClient(
         },
         checkpoint: { workspaceRoot },
         subagents: { workDir: workspaceRoot, sessionID: () => sessionID },
+        sessionStore: {
+          workspaceRoot,
+          sessionID: () => sessionID,
+          sessionDir: options.sessionDir,
+          useSqliteStore: options.useSqliteStore,
+          title: options.title,
+        },
       });
       for (const entry of builtinPlugins) {
         if (!entry.enabled) continue;
@@ -1244,6 +1246,13 @@ export function createRealRuntimeClient(
       subagentsController = capabilityRegistry.service<SubagentsController>(
         SUBAGENTS_CONTROLLER_SERVICE,
       );
+      const resolvedSessionStore =
+        capabilityRegistry.service<SessionStoreController>(
+          SESSION_STORE_CONTROLLER_SERVICE,
+        );
+      if (!resolvedSessionStore)
+        throw new Error("session store unavailable (natalia-session-store)");
+      sessionStoreController = resolvedSessionStore;
       retryPolicy = {
         maxAttemptsPerStep: tsConfig.config.runtime.retry.maxAttemptsPerStep,
         initialBackoffMs: tsConfig.config.runtime.retry.initialBackoffMs,
@@ -1327,7 +1336,7 @@ export function createRealRuntimeClient(
     }
     sessionID =
       options.sessionID ?? (`ses_${sessionSeed(workspaceRoot)}` as SessionID);
-    await sessionStoreController.init();
+    await sessionStoreController?.init();
     // T-2: the sandboxed sub-agent path. A sub-agent spawned with
     // `mode: "sandbox"` gets its own sandbox worktree — its file tools operate
     // in that worktree, not the parent's workspace — and the turn loop is
@@ -2099,17 +2108,17 @@ export function createRealRuntimeClient(
     terminalController?.setActiveSession(sessionID);
 
     await sandboxController?.init();
-    session = sessionStoreController.sqlite()
-      ? ((await sessionStoreController.json().load(sessionID)) ??
+    session = sessionStoreController?.sqlite()
+      ? ((await sessionStoreController?.json().load(sessionID)) ??
         createSessionRecord(sessionID, options.title ?? "New session"))
       : await sessionStoreController
-          .json()
+          ?.json()
           .loadOrCreate(sessionID, options.title ?? "New session");
     if (!session) throw new Error("session initialization did not complete");
     if (options.title && !session.metadata?.titleSource) {
       session.metadata = { ...session.metadata, titleSource: "manual" };
-      if (!sessionStoreController.sqlite())
-        await sessionStoreController.json().save(session);
+      if (!sessionStoreController?.sqlite())
+        await sessionStoreController?.json().save(session);
     }
     // D2: the startup session is the first exec; the activity view (the
     // `session`/`runtimeContext` closures) aliases it until an attach switches.
@@ -2130,17 +2139,17 @@ export function createRealRuntimeClient(
     let sqliteRecovery:
       | ReturnType<
           NonNullable<
-            ReturnType<typeof sessionStoreController.sqlite>
+            ReturnType<SessionStoreController["sqlite"]>
           >["loadRecoveryProjection"]
         >
       | undefined;
     let sqliteEpoch: ReturnType<
       NonNullable<
-        ReturnType<typeof sessionStoreController.sqlite>
+        ReturnType<SessionStoreController["sqlite"]>
       >["loadContextEpoch"]
     >;
     let indexedPagedRecovery = false;
-    const sessionSqlite = sessionStoreController.sqlite();
+    const sessionSqlite = sessionStoreController?.sqlite();
     if (sessionSqlite) {
       let durable = sessionSqlite.get(sessionID);
       sqliteEpoch = sessionSqlite.loadContextEpoch(sessionID);
@@ -2182,10 +2191,10 @@ export function createRealRuntimeClient(
     if (activeExec) activeExec.session = session;
     await cleanupUnreferencedAttachments({
       workspaceRoot,
-      attachments: sessionStoreController.sqlite()
-        ? sessionStoreController.sqlite()!.referencedAttachments()
+      attachments: sessionStoreController?.sqlite()
+        ? sessionStoreController?.sqlite()!.referencedAttachments()
         : referencedAttachmentsForSessions(
-            await sessionStoreController.json().list(),
+            await sessionStoreController?.json().list(),
           ),
     }).catch((error) =>
       publish({
@@ -2213,13 +2222,13 @@ export function createRealRuntimeClient(
     if (interruptedOperation) {
       delete session.metadata?.inFlightOperation;
       sessionStoreController
-        .sqlite()
+        ?.sqlite()
         ?.updateMetadata(sessionID, { inFlightOperation: undefined });
     }
     if (interrupted.length || interruptedOperation) {
-      if (sessionStoreController.sqlite())
-        sessionStoreController.sqlite()!.appendEvents(sessionID, interrupted);
-      else await sessionStoreController.json().save(session);
+      if (sessionStoreController?.sqlite())
+        sessionStoreController?.sqlite()!.appendEvents(sessionID, interrupted);
+      else await sessionStoreController?.json().save(session);
       publish({
         type: "diagnostic",
         level: "warning",
@@ -2286,7 +2295,7 @@ export function createRealRuntimeClient(
       runtimeContext,
       sqliteEpoch
         ? sessionStoreController
-            .sqlite()!
+            ?.sqlite()!
             .loadEventsAfter(sessionID, sqliteEpoch.baselineSeq)
         : modelVisibleEvents(projection.replayableEvents),
     );
@@ -3082,17 +3091,17 @@ export function createRealRuntimeClient(
       runtimeEventDurability(event) === "durable"
     ) {
       appendSessionEvent(exec.session, event);
-      const sessionSnapshot = sessionStoreController.sqlite()
+      const sessionSnapshot = sessionStoreController?.sqlite()
         ? undefined
         : structuredClone(exec.session);
       const execSessionID = exec.session.id;
       sessionPersistence = sessionPersistence
         .then(async () => {
-          if (sessionStoreController.sqlite())
+          if (sessionStoreController?.sqlite())
             await sessionStoreController
-              .sqlite()!
+              ?.sqlite()!
               .appendEventAsync(execSessionID, event);
-          else await sessionStoreController.json().save(sessionSnapshot!);
+          else await sessionStoreController?.json().save(sessionSnapshot!);
         })
         .catch((error) => {
           sink?.({
@@ -3442,16 +3451,16 @@ export function createRealRuntimeClient(
     targetSession.metadata = { ...targetSession.metadata };
     if (operation) targetSession.metadata.inFlightOperation = operation;
     else delete targetSession.metadata.inFlightOperation;
-    const sessionSnapshot = sessionStoreController.sqlite()
+    const sessionSnapshot = sessionStoreController?.sqlite()
       ? undefined
       : structuredClone(targetSession);
     sessionPersistence = sessionPersistence
       .then(async () => {
-        if (sessionStoreController.sqlite())
-          sessionStoreController.sqlite()!.updateMetadata(targetSession.id, {
+        if (sessionStoreController?.sqlite())
+          sessionStoreController?.sqlite()!.updateMetadata(targetSession.id, {
             inFlightOperation: operation,
           });
-        else await sessionStoreController.json().save(sessionSnapshot!);
+        else await sessionStoreController?.json().save(sessionSnapshot!);
       })
       .catch((error) =>
         publishForSession(exec, {
@@ -3481,17 +3490,17 @@ export function createRealRuntimeClient(
       reason: input.reason,
       since: new Date().toISOString(),
     };
-    const sessionSnapshot = sessionStoreController.sqlite()
+    const sessionSnapshot = sessionStoreController?.sqlite()
       ? undefined
       : structuredClone(targetSession);
     const pendingSnapshot = targetSession.metadata.pendingHumanTerminal;
     sessionPersistence = sessionPersistence
       .then(async () => {
-        if (sessionStoreController.sqlite())
-          sessionStoreController.sqlite()!.updateMetadata(forSessionID, {
+        if (sessionStoreController?.sqlite())
+          sessionStoreController?.sqlite()!.updateMetadata(forSessionID, {
             pendingHumanTerminal: pendingSnapshot,
           });
-        else await sessionStoreController.json().save(sessionSnapshot!);
+        else await sessionStoreController?.json().save(sessionSnapshot!);
       })
       .catch((error) =>
         publishForSession(target, {
@@ -3509,16 +3518,16 @@ export function createRealRuntimeClient(
     if (!targetSession?.metadata?.pendingHumanTerminal) return false;
     targetSession.metadata = { ...targetSession.metadata };
     delete targetSession.metadata.pendingHumanTerminal;
-    const sessionSnapshot = sessionStoreController.sqlite()
+    const sessionSnapshot = sessionStoreController?.sqlite()
       ? undefined
       : structuredClone(targetSession);
     sessionPersistence = sessionPersistence
       .then(async () => {
-        if (sessionStoreController.sqlite())
-          sessionStoreController.sqlite()!.updateMetadata(forSessionID, {
+        if (sessionStoreController?.sqlite())
+          sessionStoreController?.sqlite()!.updateMetadata(forSessionID, {
             pendingHumanTerminal: undefined,
           });
-        else await sessionStoreController.json().save(sessionSnapshot!);
+        else await sessionStoreController?.json().save(sessionSnapshot!);
       })
       .catch((error) =>
         publishForSession(target, {
@@ -3816,8 +3825,8 @@ export function createRealRuntimeClient(
     if (sanitized.replace(/\[redacted\]|\[home path\]/gu, "").trim().length < 3)
       return;
     const loadCurrent = async () =>
-      sessionStoreController.sqlite()?.get(id) ??
-      (await sessionStoreController.json().load(id));
+      sessionStoreController?.sqlite()?.get(id) ??
+      (await sessionStoreController?.json().load(id));
     try {
       await sessionPersistence;
       const current = await loadCurrent();
@@ -3845,7 +3854,7 @@ export function createRealRuntimeClient(
       if (signal.aborted) return;
       const title = generated || fallbackSessionTitle(sanitized);
       const source = generated ? "generated" : "fallback";
-      const updated = await sessionStoreController.setAutoTitle(
+      const updated = await sessionStoreController?.setAutoTitle(
         id,
         title,
         source,
@@ -3861,7 +3870,7 @@ export function createRealRuntimeClient(
       if (signal.aborted) return;
       const fallback = fallbackSessionTitle(sanitized);
       const updated = await sessionStoreController
-        .setAutoTitle(id, fallback, "fallback")
+        ?.setAutoTitle(id, fallback, "fallback")
         .catch(() => undefined);
       const committed = await loadCurrent().catch(() => undefined);
       if (
@@ -4044,11 +4053,11 @@ export function createRealRuntimeClient(
       return sessionPersistence;
     },
     saveInbox: async (snapshot) => {
-      if (sessionStoreController.sqlite())
+      if (sessionStoreController?.sqlite())
         sessionStoreController
-          .sqlite()!
+          ?.sqlite()!
           .replaceInbox(snapshot.id, snapshot.inbox ?? []);
-      else await sessionStoreController.json().save(snapshot);
+      else await sessionStoreController?.json().save(snapshot);
     },
     flush: async () => {
       await sessionPersistence;
@@ -4129,9 +4138,9 @@ export function createRealRuntimeClient(
   }
 
   async function loadSessionForAttach(id: SessionID): Promise<SessionRecord> {
-    const loaded = await sessionStoreController.json().load(id);
+    const loaded = await sessionStoreController?.json().load(id);
     if (!loaded) throw new Error(`session not found: ${id}`);
-    const sessionSqlite = sessionStoreController.sqlite();
+    const sessionSqlite = sessionStoreController?.sqlite();
     if (!sessionSqlite) return loaded;
     const durable = sessionSqlite.get(id);
     if (!durable) {
@@ -4169,7 +4178,7 @@ export function createRealRuntimeClient(
     const loaded = await loadSessionForAttach(sessionID);
     const execContext = new ContextLedger();
     const projection = projectSession(loaded);
-    const sessionSqlite = sessionStoreController.sqlite();
+    const sessionSqlite = sessionStoreController?.sqlite();
     const epoch = sessionSqlite?.loadContextEpoch(sessionID);
     if (epoch) execContext.restoreDurableCheckpoint(epoch.snapshot);
     restoreContextFromEvents(
@@ -4218,7 +4227,7 @@ export function createRealRuntimeClient(
 
     // A replacement runtime can open the old session as soon as attach returns.
     await sessionPersistence;
-    await sessionStoreController.sqlite()?.flushPendingWrites(sessionID);
+    await sessionStoreController?.sqlite()?.flushPendingWrites(sessionID);
 
     // D2: the attached session becomes the activity exec. Its ledger is its
     // own — restoring into the shared one would clobber the previous session's
@@ -5665,9 +5674,9 @@ export function createRealRuntimeClient(
       await ready;
       const after = Math.max(0, options.after ?? 0);
       const limit = Math.min(500, Math.max(1, options.limit ?? 100));
-      if (sessionStoreController.sqlite())
+      if (sessionStoreController?.sqlite())
         return sessionStoreController
-          .sqlite()!
+          ?.sqlite()!
           .loadEventPage(sessionID, { after, limit });
       const events = session?.events ?? [];
       const page = events.slice(after, after + limit + 1);
@@ -5681,9 +5690,9 @@ export function createRealRuntimeClient(
     async messages(options = {}) {
       await ready;
       if (!session) throw new Error("session initialization did not complete");
-      if (sessionStoreController.sqlite())
+      if (sessionStoreController?.sqlite())
         return sessionStoreController
-          .sqlite()!
+          ?.sqlite()!
           .loadMessagePage(sessionID, options);
       return projectSessionMessages(session, options);
     },
@@ -5723,10 +5732,10 @@ export function createRealRuntimeClient(
       await Promise.all(
         [...executionBySession.keys()].map(
           async (id) =>
-            await sessionStoreController.sqlite()?.flushPendingWrites(id),
+            await sessionStoreController?.sqlite()?.flushPendingWrites(id),
         ),
       );
-      await sessionStoreController.close();
+      await sessionStoreController?.close();
       await pluginsController.close();
       await mcpController?.close();
       await terminalController?.close();
@@ -6465,15 +6474,15 @@ export function createRealRuntimeClient(
     },
     async sessionList() {
       await ready;
-      return await sessionStoreController.list();
+      return await sessionStoreController?.list();
     },
     async sessionTouch(id) {
       await ready;
-      await sessionStoreController.touch(id);
+      await sessionStoreController?.touch(id);
     },
     async sessionRename(id, title) {
       await ready;
-      const updated = await sessionStoreController.rename(id, title);
+      const updated = await sessionStoreController?.rename(id, title);
       const exec = executionBySession.get(id as SessionID);
       if (exec) {
         exec.session.title = updated.title;
@@ -6491,32 +6500,32 @@ export function createRealRuntimeClient(
     },
     async sessionPin(id, pinned) {
       await ready;
-      return await sessionStoreController.pin(id, pinned);
+      return await sessionStoreController?.pin(id, pinned);
     },
     async sessionDuplicate(id, title) {
       await ready;
-      return await sessionStoreController.duplicate(id, title);
+      return await sessionStoreController?.duplicate(id, title);
     },
     async sessionFork(id, turnID, title) {
       await ready;
-      return await sessionStoreController.fork(id, turnID, title);
+      return await sessionStoreController?.fork(id, turnID, title);
     },
     async sessionDelete(id) {
       await ready;
       await cancelTitleGeneration(id as SessionID);
-      return await sessionStoreController.delete(id);
+      return await sessionStoreController?.delete(id);
     },
     async sessionNew(input = {}) {
       await ready;
-      return await sessionStoreController.create(input);
+      return await sessionStoreController?.create(input);
     },
     async sessionArchive(id) {
       await ready;
-      return await sessionStoreController.archive(id);
+      return await sessionStoreController?.archive(id);
     },
     async sessionExport(id) {
       await ready;
-      return await sessionStoreController.export(id);
+      return await sessionStoreController?.export(id);
     },
     async permissionList() {
       await ready;
@@ -7698,7 +7707,7 @@ export function createRealRuntimeClient(
       return true;
     }
     if (trimmed === "/sessions") {
-      const store = sessionStoreController.sqlite();
+      const store = sessionStoreController?.sqlite();
       const listing = store
         ? store
             .list()
@@ -7707,7 +7716,7 @@ export function createRealRuntimeClient(
                 `${item.id}  ${item.title}  ${store.eventCount(item.id)} events`,
             )
             .join("\n")
-        : (await sessionStoreController.json().list())
+        : (await sessionStoreController?.json().list())
             .map(
               (item) =>
                 `${item.id}  ${item.title}  ${item.events.length} events`,

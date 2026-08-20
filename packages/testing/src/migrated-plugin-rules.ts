@@ -326,6 +326,16 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-session-store",
+    targets: ["packages/client/src/real-runtime.ts"],
+    forbidden: [
+      {
+        description: "direct session store controller construction",
+        pattern: /\bcreateSessionStoreController\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(
