@@ -346,6 +346,17 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-tool-pipeline",
+    targets: ["packages/client/src/real-runtime.ts"],
+    forbidden: [
+      {
+        description: "direct policy construction in the host",
+        pattern:
+          /(?<!\.)\b(?:createToolPolicyHookLayer|evaluatePermissionRules|workspaceWritePathForTool|commandTextForTool)\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(

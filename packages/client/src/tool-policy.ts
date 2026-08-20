@@ -953,3 +953,11 @@ function compilePatterns(patterns?: string[]): RegExp[] {
     return new RegExp(`^${escaped}$`, "u");
   });
 }
+
+export type ToolPolicyService = {
+  createHookLayer: typeof createToolPolicyHookLayer;
+  evaluatePermissionRules: typeof evaluatePermissionRules;
+  workspaceWritePathForTool: typeof workspaceWritePathForTool;
+  workspaceWritePathsForTool: typeof workspaceWritePathsForTool;
+  commandTextForTool: typeof commandTextForTool;
+};

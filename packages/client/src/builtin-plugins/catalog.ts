@@ -66,6 +66,10 @@ import {
 } from "./session-store-controller-plugin";
 import { createTeamPlugin, TEAM_PLUGIN_ID } from "./team-plugin";
 import {
+  createToolPipelinePlugin,
+  TOOL_PIPELINE_PLUGIN_ID,
+} from "./tool-pipeline-plugin";
+import {
   createSkillsPlugin,
   SKILLS_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
@@ -177,6 +181,8 @@ export function builtinPluginCatalog(input: {
   };
   /** Team fan-out tools, gated on the host's extension switch. */
   team?: { enabled: boolean };
+  /** The tool policy funnel (always on). */
+  toolPipeline?: { enabled: boolean };
 }): BuiltinPluginEntry[] {
   return [
     {
@@ -368,6 +374,15 @@ export function builtinPluginCatalog(input: {
             id: TEAM_PLUGIN_ID,
             enabled: input.team.enabled,
             create: () => createTeamPlugin({ enabled: input.team!.enabled }),
+          },
+        ]
+      : []),
+    ...(input.toolPipeline
+      ? [
+          {
+            id: TOOL_PIPELINE_PLUGIN_ID,
+            enabled: input.toolPipeline.enabled,
+            create: () => createToolPipelinePlugin(),
           },
         ]
       : []),

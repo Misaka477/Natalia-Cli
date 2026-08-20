@@ -261,17 +261,15 @@ import {
 import { ensureBashCommandParser } from "./bash-command-policy";
 import { RuntimePerformanceTrace } from "./performance-trace";
 import {
-  commandTextForTool,
-  workspaceWritePathForTool,
-  createToolPolicyHookLayer,
-  evaluatePermissionRules,
   evaluatePermissionProfileCommandRules,
   TerminalCommandBuffer,
   type ToolHookEvent,
   type ToolHooks,
   type ToolPolicy,
   type ToolPolicyHookLayer,
+  type ToolPolicyService,
 } from "./tool-policy";
+import { TOOL_POLICY_SERVICE } from "./builtin-plugins/tool-pipeline-plugin";
 import {
   attachmentDataURL,
   attachmentText,
@@ -434,16 +432,17 @@ export function createRealRuntimeClient(
     ? []
     : initialFamilies!.outcome.failed;
   const workspaceCapabilityView = options.capabilityHost?.view;
-  let agentToolLayer = createToolPolicyHookLayer();
-  let permissionProfileToolLayer = createToolPolicyHookLayer();
-  const moduleToolLayer = createToolPolicyHookLayer(
-    options.taskModuleContext
-      ? moduleToolPolicy(options.taskModuleContext.moduleType)
-      : undefined,
-  );
-  const modulePermissionToolLayer = createToolPolicyHookLayer(
-    options.taskModuleContext?.modulePermissions?.tools,
-  );
+  /**
+   * The tool policy funnel, resolved from the `natalia-tool-pipeline` plugin
+   * after it loads during `start`. The policy layers are built once the service
+   * is in hand; every consumer runs post-start.
+   */
+  let toolPolicy: ToolPolicyService | undefined;
+  let agentToolLayer!: ToolPolicyHookLayer;
+  let permissionProfileToolLayer!: ToolPolicyHookLayer;
+  let moduleToolLayer!: ToolPolicyHookLayer;
+  let modulePermissionToolLayer!: ToolPolicyHookLayer;
+  let toolLayer!: ToolPolicyHookLayer;
   const terminalCommandBuffer = new TerminalCommandBuffer({
     // Confirming the pane's foreground program is what lets an authorized
     // interactive program own the pane without reopening the shell bypass: the
@@ -465,107 +464,6 @@ export function createRealRuntimeClient(
         };
       }
     },
-  });
-  const toolLayer = createToolPolicyHookLayer(options.toolPolicy, {
-    preExecute: async (event) => {
-      // System control, not a capability: an allow-list that forgets it must not
-      // be able to make module completion impossible.
-      if (
-        options.taskModuleContext &&
-        event.toolName === "flow_module_complete"
-      )
-        return { allowed: true, diagnostics: [] };
-      const exec = executionForTurn(event.turnID);
-      const agent = exec ? exec.selectedAgent : selectedAgent;
-      const profile = exec ? exec.permissionProfile : selectedPermissionProfile;
-      const agentResult = await (
-        exec ? agentPolicyLayer(agent) : agentToolLayer
-      ).preExecute(event);
-      if (!agentResult.allowed) return agentResult;
-      const profileResult = await (
-        exec ? permissionProfileLayer(profile) : permissionProfileToolLayer
-      ).preExecute(event);
-      if (!profileResult.allowed) return profileResult;
-      const moduleResult = await moduleToolLayer.preExecute(event);
-      if (!moduleResult.allowed)
-        return {
-          ...moduleResult,
-          diagnostics: [
-            `blocked outside active ${options.taskModuleContext?.moduleType} module: ${event.toolName}`,
-          ],
-        };
-      const modulePermissionToolResult =
-        await modulePermissionToolLayer.preExecute(event);
-      if (!modulePermissionToolResult.allowed)
-        return modulePermissionToolResult;
-      const extensionResult = extensionToolPermission(event.toolName, profile);
-      if (!extensionResult.allowed) return extensionResult;
-      const permission = evaluatePermissionRules(
-        agent?.permissions,
-        event.toolName,
-        tryParseToolArguments(event.arguments),
-        workspaceRoot,
-      );
-      if (!permission.allowed) return permission;
-      const profilePermission = evaluatePermissionRules(
-        profile?.permissions,
-        event.toolName,
-        tryParseToolArguments(event.arguments),
-        workspaceRoot,
-      );
-      if (!profilePermission.allowed) return profilePermission;
-      const args = tryParseToolArguments(event.arguments);
-      const modulePermission = evaluatePermissionRules(
-        options.taskModuleContext?.modulePermissions,
-        event.toolName,
-        args,
-        workspaceRoot,
-      );
-      if (!modulePermission.allowed) return modulePermission;
-      const bufferedProfileCommandPermission =
-        await terminalCommandBuffer.evaluate(
-          [
-            profile?.commandRules,
-            options.taskModuleContext?.moduleCommandRules,
-          ].filter(
-            (
-              rules,
-            ): rules is import("./tool-policy").PermissionProfileCommandRules =>
-              Boolean(rules),
-          ),
-          event.toolName,
-          args,
-          [
-            profile?.interactivePrograms,
-            options.taskModuleContext?.moduleInteractivePrograms,
-          ],
-        );
-      const profileCommandPermission =
-        bufferedProfileCommandPermission ??
-        (await evaluatePermissionProfileCommandRules(
-          profile?.commandRules,
-          event.toolName,
-          args,
-        ));
-      if (!profileCommandPermission.allowed) return profileCommandPermission;
-      if (!bufferedProfileCommandPermission) {
-        const moduleCommandPermission =
-          await evaluatePermissionProfileCommandRules(
-            options.taskModuleContext?.moduleCommandRules,
-            event.toolName,
-            args,
-            "active module",
-          );
-        if (!moduleCommandPermission.allowed) return moduleCommandPermission;
-      }
-      return (
-        (await options.hooks?.preExecute?.(event)) ?? {
-          allowed: true,
-          diagnostics: [],
-        }
-      );
-    },
-    postExecute: options.hooks?.postExecute,
   });
   let permissionMode = options.permissionMode ?? "ask";
   let selectedPermissionProfile: PermissionProfile | undefined;
@@ -1214,6 +1112,7 @@ export function createRealRuntimeClient(
         team: {
           enabled: extensionEnabled("plugins") || extensionEnabled("skills"),
         },
+        toolPipeline: { enabled: true },
       });
       for (const entry of builtinPlugins) {
         if (!entry.enabled) continue;
@@ -1255,6 +1154,128 @@ export function createRealRuntimeClient(
       if (!resolvedSessionStore)
         throw new Error("session store unavailable (natalia-session-store)");
       sessionStoreController = resolvedSessionStore;
+      toolPolicy =
+        capabilityRegistry.service<ToolPolicyService>(TOOL_POLICY_SERVICE);
+      if (!toolPolicy)
+        throw new Error("tool pipeline unavailable (natalia-tool-pipeline)");
+      agentToolLayer = toolPolicy.createHookLayer();
+      permissionProfileToolLayer = toolPolicy.createHookLayer();
+      moduleToolLayer = toolPolicy.createHookLayer(
+        options.taskModuleContext
+          ? moduleToolPolicy(options.taskModuleContext.moduleType)
+          : undefined,
+      );
+      modulePermissionToolLayer = toolPolicy.createHookLayer(
+        options.taskModuleContext?.modulePermissions?.tools,
+      );
+      toolLayer = toolPolicy!.createHookLayer(options.toolPolicy, {
+        preExecute: async (event) => {
+          // System control, not a capability: an allow-list that forgets it must not
+          // be able to make module completion impossible.
+          if (
+            options.taskModuleContext &&
+            event.toolName === "flow_module_complete"
+          )
+            return { allowed: true, diagnostics: [] };
+          const exec = executionForTurn(event.turnID);
+          const agent = exec ? exec.selectedAgent : selectedAgent;
+          const profile = exec
+            ? exec.permissionProfile
+            : selectedPermissionProfile;
+          const agentResult = await (
+            exec ? agentPolicyLayer(agent) : agentToolLayer
+          ).preExecute(event);
+          if (!agentResult.allowed) return agentResult;
+          const profileResult = await (
+            exec ? permissionProfileLayer(profile) : permissionProfileToolLayer
+          ).preExecute(event);
+          if (!profileResult.allowed) return profileResult;
+          const moduleResult = await moduleToolLayer.preExecute(event);
+          if (!moduleResult.allowed)
+            return {
+              ...moduleResult,
+              diagnostics: [
+                `blocked outside active ${options.taskModuleContext?.moduleType} module: ${event.toolName}`,
+              ],
+            };
+          const modulePermissionToolResult =
+            await modulePermissionToolLayer.preExecute(event);
+          if (!modulePermissionToolResult.allowed)
+            return modulePermissionToolResult;
+          const extensionResult = extensionToolPermission(
+            event.toolName,
+            profile,
+          );
+          if (!extensionResult.allowed) return extensionResult;
+          const permission = toolPolicy!.evaluatePermissionRules(
+            agent?.permissions,
+            event.toolName,
+            tryParseToolArguments(event.arguments),
+            workspaceRoot,
+          );
+          if (!permission.allowed) return permission;
+          const profilePermission = toolPolicy!.evaluatePermissionRules(
+            profile?.permissions,
+            event.toolName,
+            tryParseToolArguments(event.arguments),
+            workspaceRoot,
+          );
+          if (!profilePermission.allowed) return profilePermission;
+          const args = tryParseToolArguments(event.arguments);
+          const modulePermission = toolPolicy!.evaluatePermissionRules(
+            options.taskModuleContext?.modulePermissions,
+            event.toolName,
+            args,
+            workspaceRoot,
+          );
+          if (!modulePermission.allowed) return modulePermission;
+          const bufferedProfileCommandPermission =
+            await terminalCommandBuffer.evaluate(
+              [
+                profile?.commandRules,
+                options.taskModuleContext?.moduleCommandRules,
+              ].filter(
+                (
+                  rules,
+                ): rules is import("./tool-policy").PermissionProfileCommandRules =>
+                  Boolean(rules),
+              ),
+              event.toolName,
+              args,
+              [
+                profile?.interactivePrograms,
+                options.taskModuleContext?.moduleInteractivePrograms,
+              ],
+            );
+          const profileCommandPermission =
+            bufferedProfileCommandPermission ??
+            (await evaluatePermissionProfileCommandRules(
+              profile?.commandRules,
+              event.toolName,
+              args,
+            ));
+          if (!profileCommandPermission.allowed)
+            return profileCommandPermission;
+          if (!bufferedProfileCommandPermission) {
+            const moduleCommandPermission =
+              await evaluatePermissionProfileCommandRules(
+                options.taskModuleContext?.moduleCommandRules,
+                event.toolName,
+                args,
+                "active module",
+              );
+            if (!moduleCommandPermission.allowed)
+              return moduleCommandPermission;
+          }
+          return (
+            (await options.hooks?.preExecute?.(event)) ?? {
+              allowed: true,
+              diagnostics: [],
+            }
+          );
+        },
+        postExecute: options.hooks?.postExecute,
+      });
       retryPolicy = {
         maxAttemptsPerStep: tsConfig.config.runtime.retry.maxAttemptsPerStep,
         initialBackoffMs: tsConfig.config.runtime.retry.initialBackoffMs,
@@ -2730,11 +2751,11 @@ export function createRealRuntimeClient(
       ...(agent?.excludedTools ?? mode?.excludedTools ?? []),
       ...(agent?.permissions?.tools?.exclude ?? []),
     ];
-    return createToolPolicyHookLayer({ allow, exclude });
+    return toolPolicy!.createHookLayer({ allow, exclude });
   }
 
   function permissionProfileLayer(profile: PermissionProfile | undefined) {
-    return createToolPolicyHookLayer({
+    return toolPolicy!.createHookLayer({
       allow: profile?.permissions?.tools?.allow,
       exclude: profile?.permissions?.tools?.exclude,
     });
@@ -8376,11 +8397,14 @@ export function createRealRuntimeClient(
           // `apply_patch` reports the whole-workspace scope `"."` because it can
           // touch many files; `write_file`/`edit_file` report their single path.
           // Anything else has no path scope and falls through to "global".
-          workspaceWritePathForTool(
+          toolPolicy!.workspaceWritePathForTool(
             tool.name,
             tryParseToolArguments(call.arguments),
           ) ?? "global",
-          commandTextForTool(tool.name, tryParseToolArguments(call.arguments)),
+          toolPolicy!.commandTextForTool(
+            tool.name,
+            tryParseToolArguments(call.arguments),
+          ),
         );
         if (!blocked) return { decision: "allow" as const };
         publish({
@@ -8516,7 +8540,7 @@ export function createRealRuntimeClient(
           // D2: workspace writes serialise across sessions. A background turn's
           // write waits for the attached session's write (and vice versa), so two
           // turns can never interleave edits to the same workspace.
-          releaseWriteLock = workspaceWritePathForTool(
+          releaseWriteLock = toolPolicy!.workspaceWritePathForTool(
             tool.name,
             parsed as Record<string, unknown>,
           )
@@ -8526,7 +8550,7 @@ export function createRealRuntimeClient(
           // auditor can attribute a watcher-confirmed change to this call. Only
           // workspace-writing tools register; the authorized path is the tool's own
           // path argument (the same scope the write lock protects).
-          const writePath = workspaceWritePathForTool(
+          const writePath = toolPolicy!.workspaceWritePathForTool(
             tool.name,
             parsed as Record<string, unknown>,
           );
@@ -8670,7 +8694,7 @@ export function createRealRuntimeClient(
           // Only after success: a write that failed did not change the workspace, and
           // a graph that says otherwise sends a reader looking for a change that is
           // not there.
-          const changedPath = workspaceWritePathForTool(
+          const changedPath = toolPolicy!.workspaceWritePathForTool(
             tool.name,
             tryParseToolArguments(call.arguments),
           );
@@ -8719,7 +8743,7 @@ export function createRealRuntimeClient(
           // WG4 Phase 3: a failed write did not change the workspace — drop the
           // expected mutation so it cannot attribute a later unrelated hint.
           if (
-            workspaceWritePathForTool(
+            toolPolicy!.workspaceWritePathForTool(
               tool.name,
               tryParseToolArguments(call.arguments),
             )
@@ -8847,7 +8871,7 @@ export function createRealRuntimeClient(
   ) {
     const agent = exec ? exec.selectedAgent : selectedAgent;
     for (const path of input.paths) {
-      const permission = evaluatePermissionRules(
+      const permission = toolPolicy!.evaluatePermissionRules(
         agent?.permissions,
         input.toolName,
         { path },
