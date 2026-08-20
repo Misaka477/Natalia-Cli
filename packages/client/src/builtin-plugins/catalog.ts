@@ -30,6 +30,10 @@ import {
   RUNTIME_CONFIG_PLUGIN_ID,
 } from "./runtime-config-plugin";
 import {
+  createLocalToolsPlugin,
+  LOCAL_TOOLS_PLUGIN_ID,
+} from "./local-tools-plugin";
+import {
   createSkillsPlugin,
   SKILLS_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
@@ -85,6 +89,20 @@ export function builtinPluginCatalog(input: {
   taskModule?: TaskModuleContext;
   /** The resolved runtime config, provided as the `runtime.config` service. */
   runtimeConfig?: ConfigV3;
+  /** Out-of-tree tool families from configured `tools.paths`. */
+  localTools?: {
+    roots: string[];
+    enabled?: Record<string, boolean>;
+    trust?: {
+      workspaceRoot: string;
+      verify: (
+        key: string,
+        entryPath: string,
+      ) => Promise<{ verified: boolean; expected?: string; actual?: string }>;
+    };
+    onError?: (id: string, error: unknown) => void;
+    onChange?: (familyID: string, entryPath: string) => void;
+  };
 }): BuiltinPluginEntry[] {
   return [
     {
@@ -170,6 +188,22 @@ export function builtinPluginCatalog(input: {
             id: RUNTIME_CONFIG_PLUGIN_ID,
             enabled: true,
             create: () => createRuntimeConfigPlugin(input.runtimeConfig!),
+          },
+        ]
+      : []),
+    ...(input.localTools
+      ? [
+          {
+            id: LOCAL_TOOLS_PLUGIN_ID,
+            enabled: true,
+            create: () =>
+              createLocalToolsPlugin({
+                roots: input.localTools!.roots,
+                enabled: input.localTools!.enabled,
+                trust: input.localTools!.trust,
+                onError: input.localTools!.onError,
+                onChange: input.localTools!.onChange,
+              }),
           },
         ]
       : []),

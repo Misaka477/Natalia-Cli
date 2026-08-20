@@ -136,6 +136,7 @@ import {
   ToolExecutionPipeline,
   validateToolParameters,
   type RuntimeTool,
+  type ToolFamily,
   type ToolMaterialization,
   type ToolRegistry,
 } from "@natalia/tools";
@@ -198,11 +199,7 @@ import {
   TODO_PLUGIN_ID,
   WEB_PLUGIN_ID,
 } from "./builtin-plugins/catalog";
-import {
-  loadLocalToolFamilies,
-  reloadLocalToolFamily,
-  watchLocalToolFamilies,
-} from "./capabilities/local-tool-families";
+import { LOCAL_TOOLS_RELOAD_SERVICE } from "./builtin-plugins/local-tools-plugin";
 import type { TaskModuleContext } from "./capabilities/task-module-tools";
 import {
   flowOverview as flowOverviewForWorkspace,
@@ -777,8 +774,6 @@ export function createRealRuntimeClient(
   const contextWindowResolver = new ContextWindowResolver();
   let runtimeContextConfig = defaultContextStatusConfig();
   let retryPolicy: NonNullable<Parameters<typeof runWithRetry>[2]>["policy"];
-  /** The out-of-tree family watcher (HMR's hot half); closed at dispose. */
-  let toolFamilyWatcher: (() => Promise<void>) | undefined;
   /** Per-provider in-flight ceiling for parallel streams (the fan-out cap). */
   let providerConcurrencyLimiter = new ProviderConcurrencyLimiter({});
   /** The selected model's declared image-input capability, from config. */
@@ -1895,96 +1890,6 @@ export function createRealRuntimeClient(
     // the same kernel, so they own their tools the same way. They load here
     // because dynamic import is async and the built-in catalogue is assembled at
     // construction — before this point no config is resolved yet.
-    if (
-      tsRuntimeConfig &&
-      !options.tools &&
-      tsRuntimeConfig.tools.paths.length
-    ) {
-      const extraFamilies = await loadLocalToolFamilies({
-        roots: tsRuntimeConfig.tools.paths.map((path) =>
-          resolve(workspaceRoot, path),
-        ),
-        enabled: tsRuntimeConfig.tools.enabled,
-        onError: (id, error) =>
-          publish({
-            type: "diagnostic",
-            level: "warning",
-            owner: "natalia-tools",
-            message: `tool family ${id} failed to load: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          }),
-        // Out-of-tree packages are verified against the trust database: a
-        // package whose bytes changed since install is reported, not silently
-        // replaced by whatever is on disk now.
-        trust: {
-          workspaceRoot,
-          verify: (key, entryPath) =>
-            verifyTrust(workspaceRoot, key, entryPath),
-        },
-      });
-      const outcome = registerToolFamilyCapabilities(
-        capabilityRegistry,
-        extraFamilies,
-      );
-      for (const entry of outcome.loaded)
-        for (const name of entry.tools) {
-          const owned = capabilityRegistry.contribution<
-            import("@natalia/tools").RuntimeTool
-          >("tools", name);
-          if (owned) tools.set(name, owned);
-        }
-      for (const failure of outcome.failed)
-        publish({
-          type: "diagnostic",
-          level: "warning",
-          owner: failure.id,
-          message: `tool family ${failure.id} is not loaded: ${failure.reason}`,
-        });
-      // The "hot" half of HMR: watch the family entries, and when one changes,
-      // verify it against the trust database. A trusted change (the agent's
-      // promoted edit, with the record re-pinned) is hot-reloaded; an untrusted
-      // edit is reported — a package must not change without a promotion.
-      toolFamilyWatcher = await watchLocalToolFamilies({
-        roots: tsRuntimeConfig.tools.paths.map((path) =>
-          resolve(workspaceRoot, path),
-        ),
-        onChange: async (familyID, entryPath) => {
-          const verified = await verifyTrust(
-            workspaceRoot,
-            resolve(entryPath, ".."),
-            entryPath,
-          );
-          if (verified.expected && !verified.verified) {
-            publish({
-              type: "diagnostic",
-              level: "warning",
-              owner: toolFamilyCapabilityID(familyID),
-              message: `tool family ${familyID} changed on disk without a promotion — refusing to hot reload`,
-            });
-            return;
-          }
-          try {
-            await hotReloadToolFamily(familyID);
-            publish({
-              type: "diagnostic",
-              level: "info",
-              owner: toolFamilyCapabilityID(familyID),
-              message: `tool family ${familyID} hot-reloaded`,
-            });
-          } catch (error) {
-            publish({
-              type: "diagnostic",
-              level: "warning",
-              owner: toolFamilyCapabilityID(familyID),
-              message: `tool family ${familyID} hot reload failed: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            });
-          }
-        },
-      });
-    }
     await pluginsController.init({ loadLocal: false });
     const builtinPlugins = builtinPluginCatalog({
       askEnabled:
@@ -2060,6 +1965,70 @@ export function createRealRuntimeClient(
         ? { taskModule: options.taskModuleContext }
         : {}),
       ...(tsRuntimeConfig ? { runtimeConfig: tsRuntimeConfig } : {}),
+      ...(tsRuntimeConfig &&
+      !options.tools &&
+      tsRuntimeConfig.tools.paths.length
+        ? {
+            localTools: {
+              roots: tsRuntimeConfig.tools.paths.map((path) =>
+                resolve(workspaceRoot, path),
+              ),
+              enabled: tsRuntimeConfig.tools.enabled,
+              onError: (id: string, error: unknown) =>
+                publish({
+                  type: "diagnostic",
+                  level: "warning",
+                  owner: "natalia-tools",
+                  message: `tool family ${id} failed to load: ${
+                    error instanceof Error ? error.message : String(error)
+                  }`,
+                }),
+              trust: {
+                workspaceRoot,
+                verify: (key: string, entryPath: string) =>
+                  verifyTrust(workspaceRoot, key, entryPath),
+              },
+              onChange: async (familyID: string, entryPath: string) => {
+                // The "hot" half of HMR: verify against the trust database. A
+                // trusted change (the agent's promoted edit, with the record
+                // re-pinned) is hot-reloaded; an untrusted edit is reported — a
+                // package must not change without a promotion.
+                const verified = await verifyTrust(
+                  workspaceRoot,
+                  resolve(entryPath, ".."),
+                  entryPath,
+                );
+                if (verified.expected && !verified.verified) {
+                  publish({
+                    type: "diagnostic",
+                    level: "warning",
+                    owner: toolFamilyCapabilityID(familyID),
+                    message: `tool family ${familyID} changed on disk without a promotion — refusing to hot reload`,
+                  });
+                  return;
+                }
+                try {
+                  await hotReloadToolFamily(familyID);
+                  publish({
+                    type: "diagnostic",
+                    level: "info",
+                    owner: toolFamilyCapabilityID(familyID),
+                    message: `tool family ${familyID} hot-reloaded`,
+                  });
+                } catch (error) {
+                  publish({
+                    type: "diagnostic",
+                    level: "warning",
+                    owner: toolFamilyCapabilityID(familyID),
+                    message: `tool family ${familyID} hot reload failed: ${
+                      error instanceof Error ? error.message : String(error)
+                    }`,
+                  });
+                }
+              },
+            },
+          }
+        : {}),
     });
     for (const entry of builtinPlugins) {
       if (!entry.enabled) continue;
@@ -2604,49 +2573,17 @@ export function createRealRuntimeClient(
   async function hotReloadToolFamily(familyID: string) {
     if (options.tools || !tsRuntimeConfig)
       throw new Error("tool family reload is not available");
-    const family = await reloadLocalToolFamily({
-      roots: tsRuntimeConfig.tools.paths.map((path) =>
-        resolve(workspaceRoot, path),
-      ),
-      familyID,
-      enabled: tsRuntimeConfig.tools.enabled,
-      onError: (key, error) =>
-        publish({
-          type: "diagnostic",
-          level: "warning",
-          owner: toolFamilyCapabilityID(familyID),
-          message: `tool family ${familyID} failed to reload: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }),
-      trust: {
-        workspaceRoot,
-        verify: (key, entryPath) => verifyTrust(workspaceRoot, key, entryPath),
-      },
-    });
-    // Hot swap: release the old capability and its tools, then re-register the
-    // freshly imported family and move the kernel-accepted tools in.
+    // The local-tools plugin owns the family lifecycle; the host only asks it
+    // to swap the family and then reports what changed in the tool catalog.
+    const reload = capabilityRegistry.service<
+      (familyID: string) => Promise<ToolFamily>
+    >(LOCAL_TOOLS_RELOAD_SERVICE);
+    if (!reload)
+      throw new Error(
+        "local tool families are not loaded (natalia-local-tools)",
+      );
     const before = new Set(tools.keys());
-    const oldTools = capabilityRegistry
-      .contributions<RuntimeTool>("tools")
-      .filter(
-        (contribution) =>
-          contribution.capabilityID === toolFamilyCapabilityID(familyID),
-      )
-      .map((contribution) => contribution.name);
-    capabilityRegistry.unload(toolFamilyCapabilityID(familyID));
-    for (const name of oldTools) tools.delete(name);
-    const outcome = registerToolFamilyCapabilities(capabilityRegistry, [
-      family,
-    ]);
-    for (const entry of outcome.loaded)
-      for (const name of entry.tools) {
-        const owned = capabilityRegistry.contribution<RuntimeTool>(
-          "tools",
-          name,
-        );
-        if (owned) tools.set(name, owned);
-      }
+    await reload(familyID);
     // Publish what changed so the projected tool catalog stays honest.
     for (const name of before) {
       if (tools.has(name)) continue;
@@ -5732,7 +5669,6 @@ export function createRealRuntimeClient(
       );
       await sessionStoreController.close();
       workspaceFilesController.close();
-      await toolFamilyWatcher?.();
       await pluginsController.close();
       await mcpController.close();
       await terminalController.close();

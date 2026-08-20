@@ -47,6 +47,7 @@ test("migrated plugin rules retain built-in plugin protections", () => {
       "natalia-runtime-config",
       "registerRuntimeConfigCapability(registry, cfg)",
     ],
+    ["natalia-local-tools", "loadLocalToolFamilies({ roots })"],
   ])
     expect(findMigratedPluginViolations(target, source)).toContainEqual(
       expect.objectContaining({ pluginID }),

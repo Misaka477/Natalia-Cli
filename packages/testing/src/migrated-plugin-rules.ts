@@ -254,6 +254,17 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-local-tools",
+    targets: ["packages/client/src/real-runtime.ts"],
+    forbidden: [
+      {
+        description: "direct local family loading",
+        pattern:
+          /\b(?:loadLocalToolFamilies|reloadLocalToolFamily|watchLocalToolFamilies)\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(

@@ -886,11 +886,13 @@ export default (): ToolFamily => ({
     (event): event is Extract<RuntimeEvent, { type: "tool.registered" }> =>
       event.type === "tool.registered",
   );
-  // The out-of-tree family's tool is in the catalogue, owned by its capability
-  // like any built-in — nothing about an external family is special-cased.
+  // The out-of-tree family's tool is in the catalogue, owned by the local-tools
+  // plugin like any other built-in — nothing about an external family is
+  // special-cased once it loads. The journal scope is the plugin's workspace
+  // scope, because the plugin owns every family it loads.
   expect(registered.find((event) => event.name === "extra_run")).toMatchObject({
-    owner: "natalia-tool-extra.family",
-    scope: "session",
+    owner: "natalia-local-tools",
+    scope: "workspace",
   });
   await client.dispose?.();
 }, 60_000);
