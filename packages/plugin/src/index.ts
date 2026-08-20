@@ -1,41 +1,17 @@
 import { readdir, readFile } from "node:fs/promises";
 import { extname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { z } from "zod";
 import type { RuntimeTool, ToolRegistry } from "@natalia/tools";
+import {
+  manifestIntegrationPoints,
+  pluginManifestSchema,
+  type PluginIntegrationPoint,
+  type PluginManifest,
+} from "./manifest";
+import { resolvePluginDependencies } from "./dependencies";
 
-export const PLUGIN_API_VERSION = 1;
-
-/**
- * How long a plugin's contributions live. This is the same vocabulary the
- * capability kernel uses, so a host can attribute a plugin's tools to the
- * plugin with the scope the plugin declared.
- */
-export const pluginScopeSchema = z.enum(["process", "workspace", "session"]);
-
-export const pluginManifestSchema = z.object({
-  apiVersion: z.literal(PLUGIN_API_VERSION),
-  id: z.string().regex(/^[a-z0-9][a-z0-9._-]*$/u),
-  version: z.string().regex(/^\d+\.\d+\.\d+(?:[-+][a-z0-9.-]+)?$/iu),
-  name: z.string().min(1),
-  description: z.string().default(""),
-  entry: z.string().default("index.ts"),
-  capabilities: z.array(z.enum(["tools", "events", "commands"])).default([]),
-  scope: pluginScopeSchema.default("session"),
-  /**
-   * Service names this plugin provides, first-class capability features: the
-   * plugin's capability declares them, so another capability can resolve them
-   * by name and subscribe to their updates.
-   */
-  provides: z.array(z.string()).default([]),
-  /**
-   * Service names this plugin needs before its setup runs. The plugin's
-   * capability stays pending until every required service is provided — the
-   * same dependency-ordered activation a built-in capability gets.
-   */
-  requires: z.array(z.string()).default([]),
-});
-export type PluginManifest = z.infer<typeof pluginManifestSchema>;
+export * from "./dependencies";
+export * from "./manifest";
 /**
  * One problem found while validating a plugin's own config.
  *
@@ -100,14 +76,33 @@ export type PluginAPI = {
    */
   services: {
     provide(name: string, value: unknown): () => void;
+    get<T>(name: string): T | undefined;
+    on<T>(name: string, listener: (value: T | undefined) => void): () => void;
   };
-  events: { on(listener: (event: unknown) => void): () => void };
+  events: {
+    on(listener: (event: unknown) => void): () => void;
+    on(type: string, listener: (event: unknown) => void): () => void;
+  };
   /**
    * Commands a plugin adds to the palette. Gated on the "commands" capability
    * like everything else, and owned by the registry so unloading a plugin also
    * removes its commands.
    */
   commands: { register(command: PluginCommand): () => void };
+  resources: PluginNamedContributionRegistry;
+  projections: PluginNamedContributionRegistry;
+  workflows: PluginNamedContributionRegistry;
+  settingsSchema: PluginNamedContributionRegistry;
+  adapters: PluginNamedContributionRegistry;
+  scheduler: { add(job: PluginNamedContribution): () => void };
+  effects: {
+    signal: AbortSignal;
+    run<T>(effect: (signal: AbortSignal) => Promise<T>): Promise<T>;
+  };
+};
+export type PluginNamedContribution = { name: string; [key: string]: unknown };
+export type PluginNamedContributionRegistry = {
+  register(contribution: PluginNamedContribution): () => void;
 };
 export type PluginCommand = {
   name: string;
@@ -182,7 +177,13 @@ export type PluginContributionKind =
   | "tools"
   | "commands"
   | "listeners"
-  | "services";
+  | "services"
+  | "resources"
+  | "projections"
+  | "workflows"
+  | "settingsSchema"
+  | "adapters"
+  | "schedulerJobs";
 
 export type PluginLoadContext = {
   /** Built-ins keep stable public names; external plugins remain namespaced. */
@@ -228,6 +229,10 @@ export function createPluginRegistry(input: {
   onUnload?: (pluginID: string, context: PluginLoadContext) => void;
   /** The runtime's resolved config accessor, exposed to plugins as `api.runtimeConfig`. */
   runtimeConfig?: () => unknown;
+  service?: <T>(name: string) => T | undefined;
+  onServiceUpdate?: (
+    listener: (update: { name: string }) => void,
+  ) => () => void;
 }) {
   const plugins = new Map<
     string,
@@ -236,6 +241,8 @@ export function createPluginRegistry(input: {
       listeners: Set<(event: unknown) => void>;
       commands: Map<string, PluginCommand>;
       dispose: Array<() => void>;
+      abort: AbortController;
+      effects: Set<Promise<unknown>>;
       loadContext: PluginLoadContext;
     }
   >();
@@ -250,18 +257,45 @@ export function createPluginRegistry(input: {
   ) => {
     const entry = { pluginID, action, detail, timestamp: Date.now() };
     audit.push(entry);
-    input.onAudit?.(entry);
+    try {
+      input.onAudit?.(entry);
+    } catch {
+      // Audit consumers cannot corrupt plugin lifecycle state.
+    }
+  };
+  const once = (dispose: () => void) => {
+    let active = true;
+    return () => {
+      if (!active) return;
+      active = false;
+      dispose();
+    };
+  };
+  const ownedDisposer = (...releases: Array<() => void>) =>
+    once(() => {
+      const errors = cleanup(releases);
+      if (errors[0] !== undefined) throw errors[0];
+    });
+  const cleanup = (disposers: Array<() => void>): unknown[] => {
+    const errors: unknown[] = [];
+    for (const dispose of [...disposers].reverse())
+      try {
+        dispose();
+      } catch (error) {
+        errors.push(error);
+      }
+    return errors;
   };
   const assertCapability = (
     manifest: PluginManifest,
-    capability: "tools" | "events" | "commands",
+    capability: PluginIntegrationPoint,
     allowedOverride?: string[],
   ) => {
     const granted = allowedOverride ? new Set(allowedOverride) : allowed;
     const constrained =
       allowedOverride !== undefined || input.allowed !== undefined;
     if (
-      !manifest.capabilities.includes(capability) ||
+      !manifestIntegrationPoints(manifest).includes(capability) ||
       (constrained && !granted.has(capability))
     ) {
       writeAudit(manifest.id, "denied", capability);
@@ -277,6 +311,23 @@ export function createPluginRegistry(input: {
     const manifest = pluginManifestSchema.parse(plugin.manifest);
     if (plugins.has(manifest.id))
       throw new Error(`plugin already loaded: ${manifest.id}`);
+    if (manifest.apiVersion === 2) {
+      const resolution = resolvePluginDependencies(
+        [manifest],
+        [...plugins.values()].map((entry) => entry.plugin.manifest),
+      );
+      const unresolved = [...resolution.denied, ...resolution.pending][0];
+      if (unresolved) {
+        writeAudit(
+          manifest.id,
+          resolution.denied.length ? "denied" : "failed",
+          unresolved.reason,
+        );
+        throw new Error(
+          `plugin dependency unresolved: ${manifest.id}: ${unresolved.reason}`,
+        );
+      }
+    }
     // Validate before anything is registered: misconfiguration must fail
     // loud at load, never reach `setup` as a half-applied config.
     let resolvedConfig: unknown;
@@ -292,8 +343,11 @@ export function createPluginRegistry(input: {
     }
     const listeners = new Set<(event: unknown) => void>();
     const commands = new Map<string, PluginCommand>();
-    const providedServices = new Set<string>();
+    const providedServices = new Map<string, number>();
     const disposers: Array<() => void> = [];
+    const abort = new AbortController();
+    const effects = new Set<Promise<unknown>>();
+    let listenerSequence = 0;
     // The kernel channel is resolved before setup: the plugin's capability
     // loads (and, for a plugin that declares `requires`, waits for the
     // required services to appear) so setup runs only once the capability is
@@ -325,7 +379,7 @@ export function createPluginRegistry(input: {
             : `plugin_${manifest.id.replace(/[^a-z0-9_]/giu, "_")}_${tool.name}`;
           // Dynamic plugin tools require approval unless the workspace explicitly
           // trusts a plugin's own read-only side-effect declaration.
-          const owned = {
+          const ownedTool = {
             ...tool,
             name,
             requiresApproval:
@@ -333,13 +387,17 @@ export function createPluginRegistry(input: {
                 ? tool.requiresApproval
                 : true,
           };
-          input.tools.set(name, owned);
-          const dispose = () => {
-            if (input.tools.get(name) === owned) input.tools.delete(name);
-          };
+          if (input.tools.get(name) !== undefined)
+            throw new Error(`plugin tool already registered: ${name}`);
+          const releaseKernel = pluginContribute?.("tools", name, ownedTool);
+          input.tools.set(name, ownedTool);
+          const dispose = ownedDisposer(
+            ...(releaseKernel ? [releaseKernel] : []),
+            () => {
+              if (input.tools.get(name) === ownedTool) input.tools.delete(name);
+            },
+          );
           disposers.push(dispose);
-          if (pluginContribute)
-            disposers.push(pluginContribute("tools", name, owned));
           return dispose;
         },
       },
@@ -349,27 +407,60 @@ export function createPluginRegistry(input: {
             throw new Error(
               `plugin ${manifest.id} provided undeclared service: ${name}`,
             );
-          disposers.push(() => undefined);
-          providedServices.add(name);
-          if (pluginContribute)
-            disposers.push(pluginContribute("services", name, value));
-          return () => undefined;
+          assertCapability(manifest, "services", allowedOverride);
+          const releaseKernel = pluginContribute?.("services", name, value);
+          providedServices.set(name, (providedServices.get(name) ?? 0) + 1);
+          const dispose = ownedDisposer(
+            ...(releaseKernel ? [releaseKernel] : []),
+            () => {
+              const remaining = (providedServices.get(name) ?? 1) - 1;
+              if (remaining > 0) providedServices.set(name, remaining);
+              else providedServices.delete(name);
+            },
+          );
+          disposers.push(dispose);
+          return dispose;
+        },
+        get: <T>(name: string) => input.service?.<T>(name),
+        on: <T>(name: string, listener: (value: T | undefined) => void) => {
+          const unsubscribe = input.onServiceUpdate?.((update) => {
+            if (update.name === name) listener(input.service?.<T>(name));
+          });
+          const dispose = once(unsubscribe ?? (() => undefined));
+          disposers.push(dispose);
+          return dispose;
         },
       },
       events: {
-        on(listener) {
+        on(
+          typeOrListener: string | ((event: unknown) => void),
+          typedListener?: (event: unknown) => void,
+        ) {
           assertCapability(manifest, "events", allowedOverride);
+          const listener =
+            typeof typeOrListener === "function"
+              ? typeOrListener
+              : (event: unknown) => {
+                  if (
+                    event &&
+                    typeof event === "object" &&
+                    "type" in event &&
+                    event.type === typeOrListener
+                  )
+                    typedListener?.(event);
+                };
+          const contributionName = `plugin_${manifest.id.replace(/[^a-z0-9_]/giu, "_")}_listener_${++listenerSequence}`;
+          const releaseKernel = pluginContribute?.(
+            "listeners",
+            contributionName,
+            listener,
+          );
           listeners.add(listener);
-          const dispose = () => listeners.delete(listener);
+          const dispose = ownedDisposer(
+            ...(releaseKernel ? [releaseKernel] : []),
+            () => listeners.delete(listener),
+          );
           disposers.push(dispose);
-          if (pluginContribute)
-            disposers.push(
-              pluginContribute(
-                "listeners",
-                `plugin_${manifest.id.replace(/[^a-z0-9_]/giu, "_")}_listener_${listeners.size}`,
-                listener,
-              ),
-            );
           return dispose;
         },
       },
@@ -383,27 +474,75 @@ export function createPluginRegistry(input: {
             : `plugin_${manifest.id.replace(/[^a-z0-9_]/giu, "_")}_${command.name}`;
           if (commandOwners.has(name))
             throw new Error(`plugin command already registered: ${name}`);
-          const owned: PluginCommand = {
+          const ownedCommand: PluginCommand = {
             ...command,
             name,
             category: command.category ?? manifest.name,
           };
-          commands.set(name, owned);
+          const releaseKernel = pluginContribute?.(
+            "commands",
+            name,
+            ownedCommand,
+          );
+          commands.set(name, ownedCommand);
           commandOwners.set(name, manifest.id);
-          const dispose = () => {
-            commands.delete(name);
-            commandOwners.delete(name);
-          };
+          const dispose = ownedDisposer(
+            ...(releaseKernel ? [releaseKernel] : []),
+            () => {
+              commands.delete(name);
+              commandOwners.delete(name);
+            },
+          );
           disposers.push(dispose);
-          if (pluginContribute)
-            disposers.push(pluginContribute("commands", name, owned));
           return dispose;
+        },
+      },
+      resources: namedRegistry("resources", "resources"),
+      projections: namedRegistry("projections", "projections"),
+      workflows: namedRegistry("workflows", "workflows"),
+      settingsSchema: namedRegistry("settingsSchema", "settingsSchema"),
+      adapters: namedRegistry("adapters", "adapters"),
+      scheduler: {
+        add: namedRegistry("schedulerJobs", "schedulerJobs").register,
+      },
+      effects: {
+        signal: abort.signal,
+        run<T>(effect: (signal: AbortSignal) => Promise<T>) {
+          if (abort.signal.aborted)
+            return Promise.reject(
+              new Error(`plugin is unloading: ${manifest.id}`),
+            );
+          const task = Promise.resolve().then(() => effect(abort.signal));
+          effects.add(task);
+          void task.finally(() => effects.delete(task)).catch(() => undefined);
+          return task;
         },
       },
       // The runtime's resolved config, when the host provides it: a plugin
       // reads the effective config by name instead of duplicating a parser.
       ...(input.runtimeConfig ? { runtimeConfig: input.runtimeConfig } : {}),
     };
+
+    function namedRegistry(
+      point: PluginIntegrationPoint,
+      kind: PluginContributionKind,
+    ): PluginNamedContributionRegistry {
+      return {
+        register(contribution) {
+          assertCapability(manifest, point, allowedOverride);
+          if (!contribution.name)
+            throw new Error(
+              `plugin ${manifest.id} contributed unnamed ${kind}`,
+            );
+          const dispose = once(
+            pluginContribute?.(kind, contribution.name, contribution) ??
+              (() => undefined),
+          );
+          disposers.push(dispose);
+          return dispose;
+        },
+      };
+    }
     try {
       await plugin.setup(api);
       const missingServices = manifest.provides.filter(
@@ -414,8 +553,14 @@ export function createPluginRegistry(input: {
           `plugin ${manifest.id} did not provide declared services: ${missingServices.join(", ")}`,
         );
     } catch (error) {
-      for (const dispose of [...disposers].reverse()) dispose();
-      input.onUnload?.(manifest.id, loadContext);
+      abort.abort();
+      await Promise.allSettled(effects);
+      cleanup(disposers);
+      try {
+        input.onUnload?.(manifest.id, loadContext);
+      } catch {
+        // The setup error remains primary; host cleanup is best-effort here.
+      }
       writeAudit(
         manifest.id,
         "failed",
@@ -428,9 +573,80 @@ export function createPluginRegistry(input: {
       listeners,
       commands,
       dispose: disposers,
+      abort,
+      effects,
       loadContext,
     });
     writeAudit(manifest.id, "loaded");
+  }
+
+  async function unloadOne(id: string) {
+    const entry = plugins.get(id);
+    if (!entry) throw new Error(`plugin not found: ${id}`);
+    const errors: unknown[] = [];
+    entry.abort.abort();
+    try {
+      await entry.plugin.dispose?.();
+    } catch (error) {
+      errors.push(error);
+    }
+    await Promise.allSettled(entry.effects);
+    errors.push(...cleanup(entry.dispose));
+    plugins.delete(id);
+    try {
+      input.onUnload?.(id, entry.loadContext);
+    } catch (error) {
+      errors.push(error);
+    }
+    const error = errors[0];
+    writeAudit(
+      id,
+      error === undefined ? "unloaded" : "failed",
+      error instanceof Error
+        ? error.message
+        : error === undefined
+          ? undefined
+          : String(error),
+    );
+    if (error !== undefined) throw error;
+  }
+
+  function dependentOrder(id: string): string[] {
+    const order: string[] = [];
+    const visited = new Set<string>();
+    const visit = (dependencyID: string) => {
+      for (const [candidateID, entry] of [...plugins].reverse()) {
+        if (visited.has(candidateID)) continue;
+        const manifest = entry.plugin.manifest;
+        if (
+          manifest.apiVersion !== 2 ||
+          !manifest.dependencies.some(
+            (dependency) =>
+              !dependency.optional && dependency.id === dependencyID,
+          )
+        )
+          continue;
+        visited.add(candidateID);
+        visit(candidateID);
+        order.push(candidateID);
+      }
+    };
+    visit(id);
+    return order;
+  }
+
+  async function unloadMany(ids: string[]) {
+    const errors: unknown[] = [];
+    for (const id of ids)
+      if (plugins.has(id))
+        try {
+          await unloadOne(id);
+        } catch (error) {
+          errors.push(error);
+        }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1)
+      throw new AggregateError(errors, "multiple plugins failed to unload");
   }
 
   return {
@@ -438,33 +654,21 @@ export function createPluginRegistry(input: {
       await loadPlugin(plugin, allowedOverride, config, { builtin: false });
     },
     async loadBuiltin(plugin: Plugin, config?: unknown) {
-      await loadPlugin(plugin, plugin.manifest.capabilities, config, {
-        builtin: true,
-      });
+      await loadPlugin(
+        plugin,
+        manifestIntegrationPoints(pluginManifestSchema.parse(plugin.manifest)),
+        config,
+        {
+          builtin: true,
+        },
+      );
     },
     async unload(id: string) {
-      const entry = plugins.get(id);
-      if (!entry) throw new Error(`plugin not found: ${id}`);
-      let disposeError: unknown;
-      try {
-        await entry.plugin.dispose?.();
-      } catch (error) {
-        disposeError = error;
-      } finally {
-        for (const dispose of [...entry.dispose].reverse()) dispose();
-        plugins.delete(id);
-        input.onUnload?.(id, entry.loadContext);
-        writeAudit(
-          id,
-          disposeError === undefined ? "unloaded" : "failed",
-          disposeError instanceof Error
-            ? disposeError.message
-            : disposeError === undefined
-              ? undefined
-              : String(disposeError),
-        );
-      }
-      if (disposeError !== undefined) throw disposeError;
+      if (!plugins.has(id)) throw new Error(`plugin not found: ${id}`);
+      await unloadMany([...dependentOrder(id), id]);
+    },
+    async unloadAll() {
+      await unloadMany([...plugins.keys()].reverse());
     },
     dispatch(event: unknown) {
       for (const entry of plugins.values())
@@ -523,34 +727,44 @@ export async function loadLocalPlugins(input: {
   onError?: (id: string, error: unknown) => void;
 }) {
   const loaded: PluginManifest[] = [];
+  const discovered: Array<{ manifest: PluginManifest; path: string }> = [];
   for (const root of input.roots) {
-    const manifests = await discoverPluginManifests(root);
-    for (const { manifest, path } of manifests) {
-      if (input.enabled?.[manifest.id] === false) continue;
-      try {
-        const entry = validatePluginPath(resolve(path, ".."), manifest.entry);
-        const module = (await import(pathToFileURL(entry).href)) as {
-          default?: unknown;
-        };
-        const plugin = module.default;
-        if (!plugin || typeof plugin !== "object")
-          throw new Error(
-            `plugin module has no default export: ${manifest.id}`,
-          );
-        const candidate = plugin as Partial<Plugin>;
-        if (!candidate.setup || typeof candidate.setup !== "function")
-          throw new Error(
-            `plugin module has no setup function: ${manifest.id}`,
-          );
-        await input.registry.load(
-          { ...candidate, manifest } as Plugin,
-          input.capabilities?.[manifest.id],
-          input.settings?.[manifest.id],
-        );
-        loaded.push(manifest);
-      } catch (error) {
-        input.onError?.(manifest.id, error);
-      }
+    for (const item of await discoverPluginManifests(root))
+      if (input.enabled?.[item.manifest.id] !== false) discovered.push(item);
+  }
+  const resolution = resolvePluginDependencies(
+    discovered.map((item) => item.manifest),
+    input.registry.list(),
+  );
+  for (const unresolved of [...resolution.denied, ...resolution.pending])
+    input.onError?.(
+      unresolved.id,
+      new Error(`plugin dependency unresolved: ${unresolved.reason}`),
+    );
+  const byID = new Map(discovered.map((item) => [item.manifest.id, item]));
+  for (const id of resolution.order) {
+    const item = byID.get(id);
+    if (!item) continue;
+    const { manifest, path } = item;
+    try {
+      const entry = validatePluginPath(resolve(path, ".."), manifest.entry);
+      const module = (await import(pathToFileURL(entry).href)) as {
+        default?: unknown;
+      };
+      const plugin = module.default;
+      if (!plugin || typeof plugin !== "object")
+        throw new Error(`plugin module has no default export: ${manifest.id}`);
+      const candidate = plugin as Partial<Plugin>;
+      if (!candidate.setup || typeof candidate.setup !== "function")
+        throw new Error(`plugin module has no setup function: ${manifest.id}`);
+      await input.registry.load(
+        { ...candidate, manifest } as Plugin,
+        input.capabilities?.[manifest.id],
+        input.settings?.[manifest.id],
+      );
+      loaded.push(manifest);
+    } catch (error) {
+      input.onError?.(manifest.id, error);
     }
   }
   return loaded;

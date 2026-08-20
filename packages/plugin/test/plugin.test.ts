@@ -4,9 +4,594 @@ import { createToolRegistry } from "@natalia/tools";
 import {
   createPluginRegistry,
   definePlugin,
+  pluginManifestSchema,
+  resolvePluginDependencies,
   resolvePluginConfig,
   runPluginConformance,
 } from "../src";
+
+test("plugin manifest v2 keeps v1 compatibility and applies defaults", () => {
+  expect(
+    pluginManifestSchema.parse({
+      apiVersion: 2,
+      id: "v2.plugin",
+      version: "2.0.0",
+      name: "V2",
+    }),
+  ).toMatchObject({
+    apiVersion: 2,
+    scope: "session",
+    optionalRequires: [],
+    conflicts: [],
+    dependencies: [],
+    integrationPoints: [],
+  });
+  expect(
+    pluginManifestSchema.parse({
+      apiVersion: 1,
+      id: "v1.plugin",
+      version: "1.0.0",
+      name: "V1",
+    }),
+  ).toMatchObject({ apiVersion: 1, capabilities: [], scope: "session" });
+});
+
+test("plugin dependency resolver orders required dependencies", () => {
+  const provider = pluginManifestSchema.parse({
+    apiVersion: 2,
+    id: "provider.plugin",
+    version: "1.4.0",
+    name: "Provider",
+  });
+  const consumer = pluginManifestSchema.parse({
+    apiVersion: 2,
+    id: "consumer.plugin",
+    version: "1.0.0",
+    name: "Consumer",
+    dependencies: [
+      { id: "provider.plugin", spec: "^1.2.0" },
+      { id: "missing.optional", spec: "*", optional: true },
+    ],
+  });
+  expect(resolvePluginDependencies([consumer, provider])).toEqual({
+    order: ["provider.plugin", "consumer.plugin"],
+    pending: [],
+    denied: [],
+  });
+});
+
+test("plugin dependency resolver orders available optional dependencies", () => {
+  const manifest = (id: string, input: Record<string, unknown> = {}) =>
+    pluginManifestSchema.parse({
+      apiVersion: 2,
+      id,
+      version: "1.0.0",
+      name: id,
+      ...input,
+    });
+  expect(
+    resolvePluginDependencies([
+      manifest("consumer.plugin", {
+        dependencies: [
+          { id: "optional.plugin", spec: "^1.0.0", optional: true },
+        ],
+      }),
+      manifest("optional.plugin"),
+    ]).order,
+  ).toEqual(["optional.plugin", "consumer.plugin"]);
+});
+
+test("plugin dependency resolver reports missing, cycles, and conflicts", () => {
+  const manifest = (id: string, input: Record<string, unknown> = {}) =>
+    pluginManifestSchema.parse({
+      apiVersion: 2,
+      id,
+      version: "1.0.0",
+      name: id,
+      ...input,
+    });
+  const result = resolvePluginDependencies(
+    [
+      manifest("a.plugin", {
+        dependencies: [{ id: "b.plugin", spec: "*" }],
+      }),
+      manifest("b.plugin", {
+        dependencies: [{ id: "a.plugin", spec: "*" }],
+      }),
+      manifest("missing.plugin", {
+        dependencies: [{ id: "absent.plugin", spec: ">=1.0.0" }],
+      }),
+      manifest("conflict.plugin", { conflicts: ["active.plugin"] }),
+    ],
+    [manifest("active.plugin")],
+  );
+  expect(result.order).toEqual([]);
+  expect(result.pending).toEqual(
+    expect.arrayContaining([
+      { id: "a.plugin", reason: "plugin dependency cycle" },
+      { id: "b.plugin", reason: "plugin dependency cycle" },
+      expect.objectContaining({ id: "missing.plugin" }),
+    ]),
+  );
+  expect(result.denied).toContainEqual({
+    id: "conflict.plugin",
+    reason: 'conflicts with "active.plugin"',
+  });
+});
+
+test("plugin dependency resolver propagates unavailable dependencies", () => {
+  const manifest = (id: string, input: Record<string, unknown> = {}) =>
+    pluginManifestSchema.parse({
+      apiVersion: 2,
+      id,
+      version: "1.0.0",
+      name: id,
+      ...input,
+    });
+  const result = resolvePluginDependencies([
+    manifest("consumer.plugin", {
+      dependencies: [{ id: "provider.plugin", spec: "*" }],
+    }),
+    manifest("provider.plugin", {
+      dependencies: [{ id: "missing.plugin", spec: "*" }],
+    }),
+  ]);
+  expect(result.order).toEqual([]);
+  expect(result.pending).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: "provider.plugin" }),
+      {
+        id: "consumer.plugin",
+        reason: 'requires unavailable plugin "provider.plugin"',
+      },
+    ]),
+  );
+});
+
+test("plugin dependency conflicts are enforced from either side", () => {
+  const manifest = (id: string, conflicts: string[] = []) =>
+    pluginManifestSchema.parse({
+      apiVersion: 2,
+      id,
+      version: "1.0.0",
+      name: id,
+      conflicts,
+    });
+  expect(
+    resolvePluginDependencies(
+      [manifest("incoming.plugin")],
+      [manifest("active.plugin", ["incoming.plugin"])],
+    ).denied,
+  ).toEqual([
+    {
+      id: "incoming.plugin",
+      reason: 'conflicts with "active.plugin"',
+    },
+  ]);
+});
+
+test("plugin registry enforces v2 dependencies and conflicts before setup", async () => {
+  const registry = createPluginRegistry({ tools: createToolRegistry([]) });
+  const plugin = (
+    id: string,
+    input: {
+      dependencies?: Array<{ id: string; spec: string }>;
+      conflicts?: string[];
+    } = {},
+  ) =>
+    definePlugin({
+      manifest: {
+        apiVersion: 2,
+        id,
+        version: "1.0.0",
+        name: id,
+        description: "",
+        entry: `natalia:${id}`,
+        scope: "workspace",
+        provides: [],
+        requires: [],
+        optionalRequires: [],
+        conflicts: input.conflicts ?? [],
+        dependencies: (input.dependencies ?? []).map((dependency) => ({
+          ...dependency,
+          optional: false,
+          peer: false,
+        })),
+        hooks: {},
+        integrationPoints: [],
+      },
+      setup() {},
+    });
+  await expect(
+    registry.loadBuiltin(
+      plugin("consumer.plugin", {
+        dependencies: [{ id: "provider.plugin", spec: "^1.0.0" }],
+      }),
+    ),
+  ).rejects.toThrow("plugin dependency unresolved");
+  await registry.loadBuiltin(plugin("provider.plugin"));
+  await registry.loadBuiltin(
+    plugin("consumer.plugin", {
+      dependencies: [{ id: "provider.plugin", spec: "^1.0.0" }],
+    }),
+  );
+  await expect(
+    registry.loadBuiltin(
+      plugin("conflict.plugin", { conflicts: ["provider.plugin"] }),
+    ),
+  ).rejects.toThrow('conflicts with "provider.plugin"');
+});
+
+test("unloading a provider unloads required dependents first", async () => {
+  const cleanup: string[] = [];
+  const registry = createPluginRegistry({ tools: createToolRegistry([]) });
+  const plugin = (id: string, dependencies: string[] = []) =>
+    definePlugin({
+      manifest: {
+        apiVersion: 2,
+        id,
+        version: "1.0.0",
+        name: id,
+        description: "",
+        entry: `natalia:${id}`,
+        scope: "workspace",
+        provides: [],
+        requires: [],
+        optionalRequires: [],
+        conflicts: [],
+        dependencies: dependencies.map((dependency) => ({
+          id: dependency,
+          spec: "*",
+          optional: false,
+          peer: false,
+        })),
+        hooks: {},
+        integrationPoints: [],
+      },
+      setup() {},
+      dispose() {
+        cleanup.push(id);
+      },
+    });
+  await registry.loadBuiltin(plugin("provider.plugin"));
+  await registry.loadBuiltin(plugin("middle.plugin", ["provider.plugin"]));
+  await registry.loadBuiltin(plugin("consumer.plugin", ["middle.plugin"]));
+  await registry.unload("provider.plugin");
+  expect(cleanup).toEqual([
+    "consumer.plugin",
+    "middle.plugin",
+    "provider.plugin",
+  ]);
+  expect(registry.list()).toEqual([]);
+});
+
+test("batch unload isolates plugin cleanup failures", async () => {
+  const cleanup: string[] = [];
+  const registry = createPluginRegistry({ tools: createToolRegistry([]) });
+  for (const id of ["first.plugin", "broken.plugin", "last.plugin"])
+    await registry.loadBuiltin(
+      definePlugin({
+        manifest: {
+          apiVersion: 1,
+          id,
+          version: "1.0.0",
+          name: id,
+          description: "",
+          entry: `natalia:${id}`,
+          scope: "workspace",
+          capabilities: [],
+          provides: [],
+          requires: [],
+        },
+        setup() {},
+        dispose() {
+          cleanup.push(id);
+          if (id === "broken.plugin") throw new Error("cleanup failed");
+        },
+      }),
+    );
+  await expect(registry.unloadAll()).rejects.toThrow("cleanup failed");
+  expect(cleanup).toEqual(["last.plugin", "broken.plugin", "first.plugin"]);
+  expect(registry.list()).toEqual([]);
+});
+
+test("v2 contributions and typed services use the shared ownership channel", async () => {
+  const contributions: Array<{ kind: string; name: string }> = [];
+  const releases: string[] = [];
+  let serviceValue: unknown = { ready: true };
+  let serviceListener: ((update: { name: string }) => void) | undefined;
+  const seenServices: unknown[] = [];
+  const registry = createPluginRegistry({
+    tools: createToolRegistry([]),
+    service: <T>() => serviceValue as T,
+    onServiceUpdate(listener) {
+      serviceListener = listener;
+      return () => {
+        serviceListener = undefined;
+      };
+    },
+    contribute: () => (kind, name) => {
+      contributions.push({ kind, name });
+      return () => releases.push(`${kind}:${name}`);
+    },
+  });
+  await registry.loadBuiltin(
+    definePlugin({
+      manifest: {
+        apiVersion: 2,
+        id: "natalia-v2",
+        version: "2.0.0",
+        name: "V2",
+        description: "",
+        entry: "natalia:v2",
+        scope: "workspace",
+        provides: [],
+        requires: [],
+        optionalRequires: [],
+        conflicts: [],
+        dependencies: [],
+        hooks: {},
+        integrationPoints: [
+          "resources",
+          "projections",
+          "workflows",
+          "settingsSchema",
+          "adapters",
+          "schedulerJobs",
+        ],
+      },
+      setup(api) {
+        expect(api.services.get<{ ready: boolean }>("status.service")).toEqual({
+          ready: true,
+        });
+        api.services.on("status.service", (value) => seenServices.push(value));
+        api.resources.register({ name: "resource" });
+        api.projections.register({ name: "projection" });
+        api.workflows.register({ name: "workflow" });
+        api.settingsSchema.register({ name: "settings" });
+        api.adapters.register({ name: "adapter" });
+        api.scheduler.add({ name: "job" });
+      },
+    }),
+  );
+  serviceValue = { ready: false };
+  serviceListener?.({ name: "status.service" });
+  expect(seenServices).toEqual([{ ready: false }]);
+  expect(contributions).toEqual([
+    { kind: "resources", name: "resource" },
+    { kind: "projections", name: "projection" },
+    { kind: "workflows", name: "workflow" },
+    { kind: "settingsSchema", name: "settings" },
+    { kind: "adapters", name: "adapter" },
+    { kind: "schedulerJobs", name: "job" },
+  ]);
+  await registry.unload("natalia-v2");
+  expect(releases).toEqual([
+    "schedulerJobs:job",
+    "adapters:adapter",
+    "settingsSchema:settings",
+    "workflows:workflow",
+    "projections:projection",
+    "resources:resource",
+  ]);
+  expect(serviceListener).toBeUndefined();
+});
+
+test("plugin cleanup is reverse ordered and isolates disposer failures", async () => {
+  const cleanup: string[] = [];
+  const registry = createPluginRegistry({
+    tools: createToolRegistry([]),
+    contribute: () => (_kind, name) => () => {
+      cleanup.push(name);
+      if (name === "middle") throw new Error("middle cleanup failed");
+    },
+  });
+  await registry.loadBuiltin(
+    definePlugin({
+      manifest: {
+        apiVersion: 2,
+        id: "natalia-cleanup",
+        version: "2.0.0",
+        name: "Cleanup",
+        description: "",
+        entry: "natalia:cleanup",
+        scope: "workspace",
+        provides: [],
+        requires: [],
+        optionalRequires: [],
+        conflicts: [],
+        dependencies: [],
+        hooks: {},
+        integrationPoints: ["resources"],
+      },
+      setup(api) {
+        api.resources.register({ name: "first" });
+        api.resources.register({ name: "middle" });
+        api.resources.register({ name: "last" });
+      },
+    }),
+  );
+  await expect(registry.unload("natalia-cleanup")).rejects.toThrow(
+    "middle cleanup failed",
+  );
+  expect(cleanup).toEqual(["last", "middle", "first"]);
+  expect(registry.list()).toEqual([]);
+});
+
+test("manual registration disposal releases local and kernel ownership", async () => {
+  const tools = createToolRegistry([]);
+  const released: string[] = [];
+  let dispatches = 0;
+  let dispose!: () => void;
+  const registry = createPluginRegistry({
+    tools,
+    contribute: () => (kind, name) => () => released.push(`${kind}:${name}`),
+  });
+  await registry.loadBuiltin(
+    definePlugin({
+      manifest: {
+        apiVersion: 1,
+        id: "natalia-dynamic",
+        version: "1.0.0",
+        name: "Dynamic",
+        description: "",
+        entry: "natalia:dynamic",
+        scope: "workspace",
+        capabilities: ["tools", "commands", "events"],
+        provides: [],
+        requires: [],
+      },
+      setup(api) {
+        const releases = [
+          api.tools.register({
+            name: "dynamic_tool",
+            description: "Dynamic",
+            requiresApproval: false,
+            parameters: { type: "object", properties: {} },
+            async execute() {
+              return "ok";
+            },
+          }),
+          api.commands.register({
+            name: "dynamic_command",
+            title: "Dynamic command",
+            run() {},
+          }),
+          api.events.on(() => {
+            dispatches += 1;
+          }),
+        ];
+        dispose = () => {
+          for (const release of releases.reverse()) release();
+        };
+      },
+    }),
+  );
+  dispose();
+  dispose();
+  registry.dispatch({ type: "test" });
+  expect(tools.has("dynamic_tool")).toBe(false);
+  expect(registry.commands()).toEqual([]);
+  expect(dispatches).toBe(0);
+  expect(released).toEqual([
+    "listeners:plugin_natalia_dynamic_listener_1",
+    "commands:dynamic_command",
+    "tools:dynamic_tool",
+  ]);
+  await registry.unload("natalia-dynamic");
+  expect(released).toHaveLength(3);
+});
+
+test("setup failure rolls back every registered contribution", async () => {
+  const tools = createToolRegistry([]);
+  const cleanup: string[] = [];
+  let unloaded = 0;
+  const registry = createPluginRegistry({
+    tools,
+    contribute: () => (kind, name) => () => cleanup.push(`${kind}:${name}`),
+    onUnload: () => {
+      unloaded += 1;
+    },
+  });
+  await expect(
+    registry.loadBuiltin(
+      definePlugin({
+        manifest: {
+          apiVersion: 2,
+          id: "natalia-rollback",
+          version: "2.0.0",
+          name: "Rollback",
+          description: "",
+          entry: "natalia:rollback",
+          scope: "workspace",
+          provides: [],
+          requires: [],
+          optionalRequires: [],
+          conflicts: [],
+          dependencies: [],
+          hooks: {},
+          integrationPoints: ["tools", "commands", "resources"],
+        },
+        setup(api) {
+          api.tools.register({
+            name: "rollback_tool",
+            description: "Rollback",
+            requiresApproval: false,
+            parameters: { type: "object", properties: {} },
+            async execute() {
+              return "ok";
+            },
+          });
+          api.commands.register({
+            name: "rollback_command",
+            title: "Rollback command",
+            run() {},
+          });
+          api.resources.register({ name: "rollback_resource" });
+          throw new Error("setup failed");
+        },
+      }),
+    ),
+  ).rejects.toThrow("setup failed");
+  expect(tools.has("rollback_tool")).toBe(false);
+  expect(registry.commands()).toEqual([]);
+  expect(registry.list()).toEqual([]);
+  expect(cleanup).toEqual([
+    "resources:rollback_resource",
+    "commands:rollback_command",
+    "tools:rollback_tool",
+  ]);
+  expect(unloaded).toBe(1);
+});
+
+test("plugin-owned effects are cancelled and settled before unload completes", async () => {
+  let observedAbort = false;
+  let releaseSetup!: () => void;
+  const started = new Promise<void>((resolve) => {
+    releaseSetup = resolve;
+  });
+  const registry = createPluginRegistry({ tools: createToolRegistry([]) });
+  await registry.loadBuiltin(
+    definePlugin({
+      manifest: {
+        apiVersion: 2,
+        id: "natalia-effects",
+        version: "2.0.0",
+        name: "Effects",
+        description: "",
+        entry: "natalia:effects",
+        scope: "workspace",
+        provides: [],
+        requires: [],
+        optionalRequires: [],
+        conflicts: [],
+        dependencies: [],
+        hooks: {},
+        integrationPoints: [],
+      },
+      setup(api) {
+        void api.effects.run(
+          (signal) =>
+            new Promise<void>((resolve) => {
+              signal.addEventListener(
+                "abort",
+                () => {
+                  observedAbort = true;
+                  resolve();
+                },
+                { once: true },
+              );
+              releaseSetup();
+            }),
+        );
+      },
+    }),
+  );
+  await started;
+  await registry.unload("natalia-effects");
+  expect(observedAbort).toBe(true);
+  expect(registry.list()).toEqual([]);
+});
 
 test("plugin registrations are capability-gated and removed on unload", async () => {
   const tools = createToolRegistry([]);
@@ -102,6 +687,36 @@ test("declared services must be provided before activation completes", async () 
           requires: [],
         },
         setup() {},
+      }),
+    ),
+  ).rejects.toThrow("did not provide declared services");
+  expect(registry.list()).toEqual([]);
+});
+
+test("declared services must remain active through setup", async () => {
+  const registry = createPluginRegistry({
+    tools: createToolRegistry([]),
+    contribute: () => () => () => {},
+  });
+  await expect(
+    registry.loadBuiltin(
+      definePlugin({
+        manifest: {
+          apiVersion: 1,
+          id: "natalia-disposed-service",
+          version: "1.0.0",
+          name: "Disposed Service",
+          description: "",
+          entry: "natalia:disposed-service",
+          scope: "workspace",
+          capabilities: [],
+          provides: ["disposed.service"],
+          requires: [],
+        },
+        setup(api) {
+          const dispose = api.services.provide("disposed.service", {});
+          dispose();
+        },
       }),
     ),
   ).rejects.toThrow("did not provide declared services");

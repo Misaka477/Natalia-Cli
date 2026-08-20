@@ -55,9 +55,14 @@ export type CapabilityGrant =
   | "tools"
   | "commands"
   | "settings"
+  | "settingsSchema"
   | "workflows"
+  /** @deprecated Use `projections`; retained for v1 capability manifests. */
   | "projection"
+  | "projections"
   | "resources"
+  | "adapters"
+  | "schedulerJobs"
   | "listeners"
   | "services";
 

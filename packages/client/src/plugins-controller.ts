@@ -8,6 +8,7 @@ import {
   createPluginRegistry,
   discoverPluginManifests,
   loadLocalPlugins,
+  manifestIntegrationPoints,
   validatePluginPath,
   type Plugin,
   type PluginLoadContext,
@@ -79,10 +80,26 @@ export function createPluginsController(input: {
         // `listeners` grant; execution stays in the registry, ownership is the
         // kernel's.
         const grants: CapabilityGrant[] = [];
+        const integrationPoints = manifestIntegrationPoints(manifest);
         if (manifest.provides.length) grants.push("services");
-        if (manifest.capabilities.includes("tools")) grants.push("tools");
-        if (manifest.capabilities.includes("commands")) grants.push("commands");
-        if (manifest.capabilities.includes("events")) grants.push("listeners");
+        const grantForPoint: Partial<
+          Record<(typeof integrationPoints)[number], CapabilityGrant>
+        > = {
+          tools: "tools",
+          commands: "commands",
+          events: "listeners",
+          services: "services",
+          resources: "resources",
+          projections: "projections",
+          workflows: "workflows",
+          settingsSchema: "settingsSchema",
+          adapters: "adapters",
+          schedulerJobs: "schedulerJobs",
+        };
+        for (const point of integrationPoints) {
+          const grant = grantForPoint[point];
+          if (grant && !grants.includes(grant)) grants.push(grant);
+        }
         const provides: string[] = [];
         const result = input.capabilityRegistry.tryLoad(
           {
@@ -144,6 +161,9 @@ export function createPluginsController(input: {
       // The runtime's resolved config as a service: plugins read it by name,
       // refreshed in place on config reload (the D2 change notify).
       runtimeConfig: () => input.capabilityRegistry.service("runtime.config"),
+      service: <T>(name: string) => input.capabilityRegistry.service<T>(name),
+      onServiceUpdate: (listener) =>
+        input.capabilityRegistry.onServiceUpdate(listener),
     });
     input.syncGlobalCommands();
     if (options.loadLocal !== false) await loadLocal();

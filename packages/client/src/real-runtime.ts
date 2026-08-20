@@ -153,7 +153,11 @@ import {
   globalConfigHome,
   userRuntimeHome,
 } from "@natalia/platform";
-import { setGlobalPluginCommands, type PluginCommand } from "@natalia/plugin";
+import {
+  manifestIntegrationPoints,
+  setGlobalPluginCommands,
+  type PluginCommand,
+} from "@natalia/plugin";
 import {
   moduleToolPolicy,
   NataliaTaskStateStore,
@@ -5898,7 +5902,7 @@ export function createRealRuntimeClient(
         version: plugin.version,
         name: plugin.name,
         description: plugin.description,
-        capabilities: plugin.capabilities,
+        capabilities: manifestIntegrationPoints(plugin),
       }));
     },
     async commandCatalog() {

@@ -1,5 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { findMigratedPluginViolations } from "../src/migrated-plugin-rules";
 
 const root = process.cwd();
 const dependencyGuarded = [
@@ -32,13 +33,6 @@ const forbiddenCapabilityFactoryImports = [
   /from\s+["'](?:\.\.\/)+apps\//u,
   /from\s+["']@opentui\//u,
   /from\s+["']solid-js/u,
-];
-const forbiddenStaticPluginWiring = [
-  /\bcreateSkillsController\b/u,
-  /\bdiscoverSkills\b/u,
-  /\bcreateSkillLoadTool\b/u,
-  /from\s+["']@natalia\/tool-pdf["']/u,
-  /\bcreatePdf(?:Plugin|ReadTool)\b/u,
 ];
 const productionRoots = ["apps", "packages", "cmd", "internal", "scripts"];
 /**
@@ -197,12 +191,11 @@ for (const dir of deepImportRoots)
   });
 for (const dir of productionRoots)
   await scan(join(root, dir), sourceExtensions, (full, text) => {
-    if (full === join(root, "packages/client/src/real-runtime.ts"))
-      for (const pattern of forbiddenStaticPluginWiring)
-        if (pattern.test(text))
-          failures.push(
-            `${full}: built-in features must be mounted through the plugin catalog, not statically wired ${pattern}`,
-          );
+    const relative = full.slice(root.length + 1);
+    for (const violation of findMigratedPluginViolations(relative, text))
+      failures.push(
+        `${full}: migrated plugin "${violation.pluginID}" must be mounted through the plugin catalog: ${violation.description}`,
+      );
     for (const pattern of forbiddenTraceNames) {
       if (pattern.test(text))
         failures.push(`${full}: upstream trace name found`);
