@@ -26,6 +26,7 @@
     { "path": "packages/sdk" },
     { "path": "packages/testing" },
     { "path": "packages/subagent" },
-    { "path": "packages/plugin" }
+    { "path": "packages/plugin" },
+    { "path": "packages/installer" }
   ]
 }

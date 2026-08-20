@@ -1,14 +1,43 @@
 import { expect, test } from "bun:test";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { z } from "zod";
 import { createToolRegistry } from "@natalia/tools";
 import {
   createPluginRegistry,
   definePlugin,
+  discoverPluginManifests,
   pluginManifestSchema,
   resolvePluginDependencies,
   resolvePluginConfig,
   runPluginConformance,
 } from "../src";
+
+test("plugin discovery scans unscoped and scoped installed packages", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-plugin-discovery-"));
+  const packages = [
+    join(root, "node_modules", "plain-plugin"),
+    join(root, "node_modules", "@fixture", "scoped-plugin"),
+  ];
+  for (const [index, directory] of packages.entries()) {
+    await mkdir(directory, { recursive: true });
+    await writeFile(
+      join(directory, "natalia.plugin.json"),
+      JSON.stringify({
+        apiVersion: 1,
+        id: `fixture.plugin.${index}`,
+        version: "1.0.0",
+        name: `Fixture ${index}`,
+      }),
+    );
+  }
+  expect(
+    (await discoverPluginManifests(root))
+      .map((entry) => entry.manifest.id)
+      .sort(),
+  ).toEqual(["fixture.plugin.0", "fixture.plugin.1"]);
+});
 
 test("plugin manifest v2 keeps v1 compatibility and applies defaults", () => {
   expect(

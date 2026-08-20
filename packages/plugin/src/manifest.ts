@@ -1,4 +1,8 @@
 import { z } from "zod";
+import type {
+  PluginPackageConfig,
+  PluginPackageSource,
+} from "@natalia/contracts";
 
 export const PLUGIN_API_VERSION = 2;
 
@@ -78,11 +82,7 @@ export type PluginIntegrationPoint = z.infer<
   typeof pluginIntegrationPointSchema
 >;
 
-export type PluginPackageSource =
-  | { type: "registry"; spec: string }
-  | { type: "tarball"; url: string }
-  | { type: "git"; url: string; ref?: string }
-  | { type: "path"; path: string };
+export type { PluginPackageSource } from "@natalia/contracts";
 
 export type PluginInstallationMetadata = {
   id: string;
@@ -98,6 +98,8 @@ export type PluginInstallationMetadata = {
     peer?: boolean;
   }>;
 };
+
+export type InstalledPluginPackage = PluginPackageConfig;
 
 export function manifestIntegrationPoints(
   manifest: PluginManifest,

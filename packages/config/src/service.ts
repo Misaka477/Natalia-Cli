@@ -59,11 +59,20 @@ export function configPatch(base: ConfigV3, next: ConfigV3): ConfigPatch {
     issueTargets: recordPatch(base.issueTargets, next.issueTargets),
     dataSources: recordPatch(base.dataSources, next.dataSources),
     alertChannels: recordPatch(base.alertChannels, next.alertChannels),
+    pluginPackages: recordPatch(base.plugins.packages, next.plugins.packages),
   };
-  for (const [key, value] of Object.entries(records))
+  for (const [key, value] of Object.entries(records)) {
+    if (key === "pluginPackages") {
+      if (Object.keys(value).length) {
+        patch.plugins ??= {};
+        patch.plugins.packages = value as never;
+      } else if (patch.plugins) delete patch.plugins.packages;
+      continue;
+    }
     if (Object.keys(value).length)
       patch[key as keyof ConfigPatch] = value as never;
     else delete patch[key as keyof ConfigPatch];
+  }
   // `catalog` and `modelOverrides` stay as diffValue produced them: nested
   // records whose partial diffs deep-merge cleanly onto the persisted overlay.
   return patch;
@@ -281,6 +290,13 @@ function mergeConfig(base: ConfigV3, overlay: ConfigPatch): ConfigV3 {
       },
       readOnly: { ...base.plugins.readOnly, ...overlay.plugins?.readOnly },
       settings: { ...base.plugins.settings, ...overlay.plugins?.settings },
+      packages: mergeRecord(
+        base.plugins.packages,
+        overlay.plugins?.packages as Record<
+          string,
+          ConfigV3["plugins"]["packages"][string] | undefined
+        >,
+      ),
     },
     tools: {
       enabled: { ...base.tools.enabled, ...overlay.tools?.enabled },

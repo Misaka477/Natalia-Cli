@@ -504,16 +504,49 @@ export const skillsConfigSchema = z.object({
   urls: z.array(z.string().url()).default([]),
 });
 
+export const pluginPackageSourceSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("registry"), spec: z.string().min(1) }),
+  z.object({ type: z.literal("tarball"), url: z.string().min(1) }),
+  z.object({
+    type: z.literal("git"),
+    url: z.string().min(1),
+    ref: z.string().min(1).optional(),
+  }),
+  z.object({ type: z.literal("path"), path: z.string().min(1) }),
+]);
+
+export const pluginPackageConfigSchema = z.object({
+  source: pluginPackageSourceSchema,
+  version: z.string().min(1),
+  integrity: z.string().min(1).optional(),
+  signature: z.string().min(1).optional(),
+  scope: z.enum(["process", "workspace", "session"]),
+});
+
+export const pluginIntegrationPointSchema = z.enum([
+  "tools",
+  "commands",
+  "events",
+  "services",
+  "resources",
+  "projections",
+  "workflows",
+  "settingsSchema",
+  "adapters",
+  "schedulerJobs",
+]);
+
 export const pluginConfigSchema = z.object({
   enabled: z.record(z.boolean()).default({}),
   paths: z.array(z.string()).default([]),
-  capabilities: z.record(z.array(z.enum(["tools", "events"]))).default({}),
+  capabilities: z.record(z.array(pluginIntegrationPointSchema)).default({}),
   readOnly: z.record(z.boolean()).default({}),
   // Per-plugin config, keyed by plugin id. The runtime does not interpret these
   // values: each plugin validates its own entry with the config schema it
   // declares, so an invalid entry fails that plugin's load instead of silently
   // reaching its setup.
   settings: z.record(z.unknown()).default({}),
+  packages: z.record(pluginPackageConfigSchema).default({}),
 });
 
 /**
@@ -890,6 +923,8 @@ export const configV3Schema = z.object({
 export type SandboxBackend = z.infer<typeof sandboxConfigSchema>["backend"];
 
 export type ConfigV3 = z.infer<typeof configV3Schema>;
+export type PluginPackageSource = z.infer<typeof pluginPackageSourceSchema>;
+export type PluginPackageConfig = z.infer<typeof pluginPackageConfigSchema>;
 export type ModelRef = z.infer<typeof modelRefSchema>;
 export type ModelCapabilities = z.infer<typeof modelCapabilitiesSchema>;
 export type ModelLimits = z.infer<typeof modelLimitsSchema>;

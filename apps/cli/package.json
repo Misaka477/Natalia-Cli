@@ -19,6 +19,7 @@
     "@natalia/client": "workspace:*",
     "@natalia/config": "workspace:*",
     "@natalia/contracts": "workspace:*",
+    "@natalia/installer": "workspace:*",
     "@natalia/platform": "workspace:*",
     "@natalia/runtime": "workspace:*",
     "@natalia/session": "workspace:*",

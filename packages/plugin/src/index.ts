@@ -696,12 +696,30 @@ export async function discoverPluginManifests(root: string) {
   const dir = resolve(root);
   const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
   const manifests: Array<{ manifest: PluginManifest; path: string }> = [];
-  for (const directory of [
+  const directories = [
     dir,
     ...entries
       .filter((entry) => entry.isDirectory())
       .map((entry) => join(dir, entry.name)),
-  ]) {
+  ];
+  const modulesDir = join(dir, "node_modules");
+  const modules = await readdir(modulesDir, { withFileTypes: true }).catch(
+    () => [],
+  );
+  for (const entry of modules) {
+    if (!entry.isDirectory()) continue;
+    const packagePath = join(modulesDir, entry.name);
+    if (!entry.name.startsWith("@")) {
+      directories.push(packagePath);
+      continue;
+    }
+    for (const scoped of await readdir(packagePath, {
+      withFileTypes: true,
+    }).catch(() => []))
+      if (scoped.isDirectory())
+        directories.push(join(packagePath, scoped.name));
+  }
+  for (const directory of directories) {
     const path = join(directory, "natalia.plugin.json");
     try {
       manifests.push({

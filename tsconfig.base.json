@@ -14,6 +14,7 @@
       "@natalia/agent": ["packages/agent/src/index.ts"],
       "@natalia/config": ["packages/config/src/index.ts"],
       "@natalia/contracts": ["packages/contracts/src/index.ts"],
+      "@natalia/installer": ["packages/installer/src/index.ts"],
       "@natalia/mcp": ["packages/mcp/src/index.ts"],
       "@natalia/object-store": ["packages/object-store/src/index.ts"],
       "@natalia/native-terminal": ["packages/native-terminal/src/index.ts"],

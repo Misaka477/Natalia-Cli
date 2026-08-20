@@ -16,6 +16,9 @@
       "path": "../../packages/contracts"
     },
     {
+      "path": "../../packages/installer"
+    },
+    {
       "path": "../../packages/platform"
     },
     {

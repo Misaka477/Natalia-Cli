@@ -58,6 +58,14 @@ import {
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { readFile } from "node:fs/promises";
+import {
+  doctorPlugins,
+  installPlugin,
+  listInstalledPlugins,
+  reconcilePlugins,
+  setPluginEnabled,
+  uninstallPlugin,
+} from "@natalia/installer";
 
 import {
   deleteLocalSession,
@@ -795,6 +803,50 @@ switch (subcommand) {
       break;
     }
     throw new Error("trust requires list or remove");
+  }
+
+  case "plugin": {
+    const action = argv[1];
+    const target = argv[2];
+    const workspaceRoot = valueAfter(argv, "--workspace") ?? process.cwd();
+    const print = (value: unknown) =>
+      console.log(JSON.stringify(value, null, 2));
+    if (action === "install") {
+      if (!target) throw new Error("plugin install requires a package spec");
+      print(await installPlugin({ workspaceRoot, spec: target }));
+      break;
+    }
+    if (action === "enable" || action === "disable") {
+      if (!target) throw new Error(`plugin ${action} requires a plugin id`);
+      print(
+        await setPluginEnabled({
+          workspaceRoot,
+          pluginID: target,
+          enabled: action === "enable",
+        }),
+      );
+      break;
+    }
+    if (action === "uninstall") {
+      if (!target) throw new Error("plugin uninstall requires a plugin id");
+      print(await uninstallPlugin({ workspaceRoot, pluginID: target }));
+      break;
+    }
+    if (action === "list" || action === "status") {
+      print(await listInstalledPlugins(workspaceRoot));
+      break;
+    }
+    if (action === "reconcile") {
+      print(await reconcilePlugins(workspaceRoot));
+      break;
+    }
+    if (action === "doctor") {
+      print(await doctorPlugins(workspaceRoot));
+      break;
+    }
+    throw new Error(
+      "plugin requires install, enable, disable, uninstall, list, status, reconcile, or doctor",
+    );
   }
 
   case "uninstall": {

@@ -402,6 +402,28 @@ test("config patches preserve complete changed records and delete removed record
   });
 });
 
+test("config patches delete removed plugin package records", () => {
+  const base = configV3Schema.parse({
+    version: 3,
+    plugins: {
+      packages: {
+        "fixture.plugin": {
+          source: { type: "registry", spec: "@fixture/plugin" },
+          version: "1.0.0",
+          scope: "workspace",
+        },
+      },
+    },
+  });
+  const next = configV3Schema.parse({
+    ...base,
+    plugins: { ...base.plugins, packages: {} },
+  });
+  expect(configPatch(base, next)).toMatchObject({
+    plugins: { packages: { "fixture.plugin": undefined } },
+  });
+});
+
 test("settings arrays and browser fields persist as a minimal selected-scope patch", async () => {
   const workspaceRoot = await mkdtemp(
     join(tmpdir(), "natalia-config-settings-surface-"),
