@@ -1025,6 +1025,221 @@ export function createRealRuntimeClient(
         globalPath: options.globalConfigPath,
       });
       tsRuntimeConfig = tsConfig.config;
+      // The permission profile's extension gates (skills/mcp/plugins) must be
+      // applied before the plugin catalog is assembled, or a disabled extension
+      // would still load its plugin.
+      reloadPermissionSettings(tsConfig.config);
+      await pluginsController.init({ loadLocal: false });
+      const builtinPlugins = builtinPluginCatalog({
+        askEnabled:
+          !options.tools &&
+          tsRuntimeConfig?.tools.enabled.ask !== false &&
+          tsRuntimeConfig?.plugins.enabled[ASK_PLUGIN_ID] !== false,
+        todoEnabled:
+          !options.tools &&
+          tsRuntimeConfig?.tools.enabled.todo !== false &&
+          tsRuntimeConfig?.plugins.enabled[TODO_PLUGIN_ID] !== false,
+        searchEnabled:
+          !options.tools &&
+          tsRuntimeConfig?.tools.enabled.search !== false &&
+          tsRuntimeConfig?.plugins.enabled[SEARCH_PLUGIN_ID] !== false,
+        fsReadEnabled:
+          !options.tools &&
+          tsRuntimeConfig?.tools.enabled.fs !== false &&
+          tsRuntimeConfig?.plugins.enabled[FS_READ_PLUGIN_ID] !== false,
+        fsWriteEnabled:
+          !options.tools &&
+          tsRuntimeConfig?.tools.enabled.fs !== false &&
+          tsRuntimeConfig?.plugins.enabled[FS_WRITE_PLUGIN_ID] !== false,
+        webEnabled:
+          !options.tools &&
+          tsRuntimeConfig?.tools.enabled.web !== false &&
+          tsRuntimeConfig?.plugins.enabled[WEB_PLUGIN_ID] !== false,
+        shellEnabled:
+          !options.tools &&
+          tsRuntimeConfig?.tools.enabled.shell !== false &&
+          tsRuntimeConfig?.plugins.enabled[SHELL_PLUGIN_ID] !== false,
+        agentEnabled:
+          !options.tools &&
+          tsRuntimeConfig?.tools.enabled.agent !== false &&
+          tsRuntimeConfig?.plugins.enabled[AGENT_PLUGIN_ID] !== false,
+        terminalEnabled:
+          !options.tools &&
+          tsRuntimeConfig?.tools.enabled.terminal !== false &&
+          tsRuntimeConfig?.plugins.enabled[TERMINAL_PLUGIN_ID] !== false,
+        sandboxEnabled:
+          !options.tools &&
+          tsRuntimeConfig?.tools.enabled.sandbox !== false &&
+          tsRuntimeConfig?.plugins.enabled[SANDBOX_PLUGIN_ID] !== false,
+        processEnabled:
+          !options.tools &&
+          tsRuntimeConfig?.tools.enabled.process !== false &&
+          tsRuntimeConfig?.plugins.enabled[PROCESS_PLUGIN_ID] !== false,
+        pdfEnabled:
+          extensionEnabled("plugins") &&
+          tsRuntimeConfig?.plugins.enabled[PDF_PLUGIN_ID] !== false,
+        ...(extensionEnabled("skills")
+          ? {
+              skills: {
+                workspaceRoot,
+                userRoot: userSkillRoot(),
+                remoteURLs: tsRuntimeConfig?.skills.urls,
+                onLoad: (skill, output, context) => {
+                  const owner = context.sessionID
+                    ? executionBySession.get(context.sessionID as SessionID)
+                    : undefined;
+                  if (!owner) return;
+                  owner.activeSkill = skill;
+                  if (owner === activeExec) activeSkill = skill;
+                  owner.context.add({
+                    id: `skill:${skill.qualifiedName}:${owner.context.journalStatus().journalOffset}`,
+                    role: "system",
+                    content: output,
+                  });
+                },
+              },
+            }
+          : {}),
+        ...(options.taskModuleContext
+          ? { taskModule: options.taskModuleContext }
+          : {}),
+        ...(tsRuntimeConfig ? { runtimeConfig: tsRuntimeConfig } : {}),
+        ...(tsRuntimeConfig &&
+        !options.tools &&
+        tsRuntimeConfig.tools.paths.length
+          ? {
+              localTools: {
+                roots: tsRuntimeConfig.tools.paths.map((path) =>
+                  resolve(workspaceRoot, path),
+                ),
+                enabled: tsRuntimeConfig.tools.enabled,
+                onError: (id: string, error: unknown) =>
+                  publish({
+                    type: "diagnostic",
+                    level: "warning",
+                    owner: "natalia-tools",
+                    message: `tool family ${id} failed to load: ${
+                      error instanceof Error ? error.message : String(error)
+                    }`,
+                  }),
+                trust: {
+                  workspaceRoot,
+                  verify: (key: string, entryPath: string) =>
+                    verifyTrust(workspaceRoot, key, entryPath),
+                },
+                onChange: async (familyID: string, entryPath: string) => {
+                  // The "hot" half of HMR: verify against the trust database. A
+                  // trusted change (the agent's promoted edit, with the record
+                  // re-pinned) is hot-reloaded; an untrusted edit is reported — a
+                  // package must not change without a promotion.
+                  const verified = await verifyTrust(
+                    workspaceRoot,
+                    resolve(entryPath, ".."),
+                    entryPath,
+                  );
+                  if (verified.expected && !verified.verified) {
+                    publish({
+                      type: "diagnostic",
+                      level: "warning",
+                      owner: toolFamilyCapabilityID(familyID),
+                      message: `tool family ${familyID} changed on disk without a promotion — refusing to hot reload`,
+                    });
+                    return;
+                  }
+                  try {
+                    await hotReloadToolFamily(familyID);
+                    publish({
+                      type: "diagnostic",
+                      level: "info",
+                      owner: toolFamilyCapabilityID(familyID),
+                      message: `tool family ${familyID} hot-reloaded`,
+                    });
+                  } catch (error) {
+                    publish({
+                      type: "diagnostic",
+                      level: "warning",
+                      owner: toolFamilyCapabilityID(familyID),
+                      message: `tool family ${familyID} hot reload failed: ${
+                        error instanceof Error ? error.message : String(error)
+                      }`,
+                    });
+                  }
+                },
+              },
+            }
+          : {}),
+        workspace: {
+          workspaceRoot,
+          listPaths: async () => {
+            const entries = await findWorkspaceFiles({
+              workspaceRoot,
+              limit: 1000,
+            });
+            return entries
+              .filter((entry) => entry.type === "file")
+              .map((entry) => entry.path);
+          },
+        },
+        terminal: {
+          workspaceRoot,
+          publish: (event: RuntimeEvent) =>
+            publishForSession(
+              event.sessionID
+                ? executionBySession.get(event.sessionID as SessionID)
+                : activeExec,
+              event,
+            ),
+          onPerformance: (name: string, durationMs: number) =>
+            performanceTrace.mark(name, durationMs),
+          runtimeID: () => nativeRuntimeID,
+          userRuntimeHome: () => userRuntimeHome(),
+          windowMode: () =>
+            tsRuntimeConfig?.runtime.terminal.windowMode ?? "auto",
+          external: options.nativeTerminal,
+        },
+        sandbox: {
+          workspaceRoot,
+          backend: () => tsRuntimeConfig?.sandbox.backend,
+        },
+        mcp: {
+          servers: () => tsRuntimeConfig?.mcpServers ?? {},
+          workspaceRoot,
+          tools,
+          enabled: () => extensionEnabled("mcp"),
+          publish,
+        },
+        checkpoint: { workspaceRoot },
+      });
+      for (const entry of builtinPlugins) {
+        if (!entry.enabled) continue;
+        await pluginsController.loadBuiltin(
+          entry.create(),
+          tsRuntimeConfig?.plugins.settings[entry.id],
+        );
+      }
+      if (extensionEnabled("plugins")) await pluginsController.loadLocal();
+      // The workspace built-in provides these services during its setup; every
+      // consumer below runs after this point.
+      workspaceWriteLock = capabilityRegistry.service<WorkspaceWriteLock>(
+        WORKSPACE_WRITE_LOCK_SERVICE,
+      );
+      mutationRegistry = capabilityRegistry.service<MutationRegistry>(
+        WORKSPACE_MUTATIONS_SERVICE,
+      );
+      workspaceFilesController =
+        capabilityRegistry.service<WorkspaceFilesController>(
+          WORKSPACE_FILES_SERVICE,
+        );
+      terminalController = capabilityRegistry.service<TerminalController>(
+        TERMINAL_CONTROLLER_SERVICE,
+      );
+      sandboxController = capabilityRegistry.service<SandboxController>(
+        SANDBOX_CONTROLLER_SERVICE,
+      );
+      mcpController = capabilityRegistry.service<McpController>(
+        MCP_CONTROLLER_SERVICE,
+      );
+      mcpAccess = mcpController?.access ?? [];
       retryPolicy = {
         maxAttemptsPerStep: tsConfig.config.runtime.retry.maxAttemptsPerStep,
         initialBackoffMs: tsConfig.config.runtime.retry.initialBackoffMs,
@@ -1047,7 +1262,6 @@ export function createRealRuntimeClient(
         throw new Error(
           `permission profile not found: ${options.permissionProfile}`,
         );
-      reloadPermissionSettings(tsConfig.config);
       if (
         (selectedPermissionProfile?.commandRules &&
           selectedPermissionProfile.commandRules.mode !== "none") ||
@@ -1877,217 +2091,6 @@ export function createRealRuntimeClient(
     // the same kernel, so they own their tools the same way. They load here
     // because dynamic import is async and the built-in catalogue is assembled at
     // construction — before this point no config is resolved yet.
-    await pluginsController.init({ loadLocal: false });
-    const builtinPlugins = builtinPluginCatalog({
-      askEnabled:
-        !options.tools &&
-        tsRuntimeConfig?.tools.enabled.ask !== false &&
-        tsRuntimeConfig?.plugins.enabled[ASK_PLUGIN_ID] !== false,
-      todoEnabled:
-        !options.tools &&
-        tsRuntimeConfig?.tools.enabled.todo !== false &&
-        tsRuntimeConfig?.plugins.enabled[TODO_PLUGIN_ID] !== false,
-      searchEnabled:
-        !options.tools &&
-        tsRuntimeConfig?.tools.enabled.search !== false &&
-        tsRuntimeConfig?.plugins.enabled[SEARCH_PLUGIN_ID] !== false,
-      fsReadEnabled:
-        !options.tools &&
-        tsRuntimeConfig?.tools.enabled.fs !== false &&
-        tsRuntimeConfig?.plugins.enabled[FS_READ_PLUGIN_ID] !== false,
-      fsWriteEnabled:
-        !options.tools &&
-        tsRuntimeConfig?.tools.enabled.fs !== false &&
-        tsRuntimeConfig?.plugins.enabled[FS_WRITE_PLUGIN_ID] !== false,
-      webEnabled:
-        !options.tools &&
-        tsRuntimeConfig?.tools.enabled.web !== false &&
-        tsRuntimeConfig?.plugins.enabled[WEB_PLUGIN_ID] !== false,
-      shellEnabled:
-        !options.tools &&
-        tsRuntimeConfig?.tools.enabled.shell !== false &&
-        tsRuntimeConfig?.plugins.enabled[SHELL_PLUGIN_ID] !== false,
-      agentEnabled:
-        !options.tools &&
-        tsRuntimeConfig?.tools.enabled.agent !== false &&
-        tsRuntimeConfig?.plugins.enabled[AGENT_PLUGIN_ID] !== false,
-      terminalEnabled:
-        !options.tools &&
-        tsRuntimeConfig?.tools.enabled.terminal !== false &&
-        tsRuntimeConfig?.plugins.enabled[TERMINAL_PLUGIN_ID] !== false,
-      sandboxEnabled:
-        !options.tools &&
-        tsRuntimeConfig?.tools.enabled.sandbox !== false &&
-        tsRuntimeConfig?.plugins.enabled[SANDBOX_PLUGIN_ID] !== false,
-      processEnabled:
-        !options.tools &&
-        tsRuntimeConfig?.tools.enabled.process !== false &&
-        tsRuntimeConfig?.plugins.enabled[PROCESS_PLUGIN_ID] !== false,
-      pdfEnabled:
-        extensionEnabled("plugins") &&
-        tsRuntimeConfig?.plugins.enabled[PDF_PLUGIN_ID] !== false,
-      ...(extensionEnabled("skills")
-        ? {
-            skills: {
-              workspaceRoot,
-              userRoot: userSkillRoot(),
-              remoteURLs: tsRuntimeConfig?.skills.urls,
-              onLoad: (skill, output, context) => {
-                const owner = context.sessionID
-                  ? executionBySession.get(context.sessionID as SessionID)
-                  : undefined;
-                if (!owner) return;
-                owner.activeSkill = skill;
-                if (owner === activeExec) activeSkill = skill;
-                owner.context.add({
-                  id: `skill:${skill.qualifiedName}:${owner.context.journalStatus().journalOffset}`,
-                  role: "system",
-                  content: output,
-                });
-              },
-            },
-          }
-        : {}),
-      ...(options.taskModuleContext
-        ? { taskModule: options.taskModuleContext }
-        : {}),
-      ...(tsRuntimeConfig ? { runtimeConfig: tsRuntimeConfig } : {}),
-      ...(tsRuntimeConfig &&
-      !options.tools &&
-      tsRuntimeConfig.tools.paths.length
-        ? {
-            localTools: {
-              roots: tsRuntimeConfig.tools.paths.map((path) =>
-                resolve(workspaceRoot, path),
-              ),
-              enabled: tsRuntimeConfig.tools.enabled,
-              onError: (id: string, error: unknown) =>
-                publish({
-                  type: "diagnostic",
-                  level: "warning",
-                  owner: "natalia-tools",
-                  message: `tool family ${id} failed to load: ${
-                    error instanceof Error ? error.message : String(error)
-                  }`,
-                }),
-              trust: {
-                workspaceRoot,
-                verify: (key: string, entryPath: string) =>
-                  verifyTrust(workspaceRoot, key, entryPath),
-              },
-              onChange: async (familyID: string, entryPath: string) => {
-                // The "hot" half of HMR: verify against the trust database. A
-                // trusted change (the agent's promoted edit, with the record
-                // re-pinned) is hot-reloaded; an untrusted edit is reported — a
-                // package must not change without a promotion.
-                const verified = await verifyTrust(
-                  workspaceRoot,
-                  resolve(entryPath, ".."),
-                  entryPath,
-                );
-                if (verified.expected && !verified.verified) {
-                  publish({
-                    type: "diagnostic",
-                    level: "warning",
-                    owner: toolFamilyCapabilityID(familyID),
-                    message: `tool family ${familyID} changed on disk without a promotion — refusing to hot reload`,
-                  });
-                  return;
-                }
-                try {
-                  await hotReloadToolFamily(familyID);
-                  publish({
-                    type: "diagnostic",
-                    level: "info",
-                    owner: toolFamilyCapabilityID(familyID),
-                    message: `tool family ${familyID} hot-reloaded`,
-                  });
-                } catch (error) {
-                  publish({
-                    type: "diagnostic",
-                    level: "warning",
-                    owner: toolFamilyCapabilityID(familyID),
-                    message: `tool family ${familyID} hot reload failed: ${
-                      error instanceof Error ? error.message : String(error)
-                    }`,
-                  });
-                }
-              },
-            },
-          }
-        : {}),
-      workspace: {
-        workspaceRoot,
-        listPaths: async () => {
-          const entries = await findWorkspaceFiles({
-            workspaceRoot,
-            limit: 1000,
-          });
-          return entries
-            .filter((entry) => entry.type === "file")
-            .map((entry) => entry.path);
-        },
-      },
-      terminal: {
-        workspaceRoot,
-        publish: (event: RuntimeEvent) =>
-          publishForSession(
-            event.sessionID
-              ? executionBySession.get(event.sessionID as SessionID)
-              : activeExec,
-            event,
-          ),
-        onPerformance: (name: string, durationMs: number) =>
-          performanceTrace.mark(name, durationMs),
-        runtimeID: () => nativeRuntimeID,
-        userRuntimeHome: () => userRuntimeHome(),
-        windowMode: () =>
-          tsRuntimeConfig?.runtime.terminal.windowMode ?? "auto",
-        external: options.nativeTerminal,
-      },
-      sandbox: {
-        workspaceRoot,
-        backend: () => tsRuntimeConfig?.sandbox.backend,
-      },
-      mcp: {
-        servers: () => tsRuntimeConfig?.mcpServers ?? {},
-        workspaceRoot,
-        tools,
-        enabled: () => extensionEnabled("mcp"),
-        publish,
-      },
-      checkpoint: { workspaceRoot },
-    });
-    for (const entry of builtinPlugins) {
-      if (!entry.enabled) continue;
-      await pluginsController.loadBuiltin(
-        entry.create(),
-        tsRuntimeConfig?.plugins.settings[entry.id],
-      );
-    }
-    if (extensionEnabled("plugins")) await pluginsController.loadLocal();
-    // The workspace built-in provides these services during its setup; every
-    // consumer below runs after this point.
-    workspaceWriteLock = capabilityRegistry.service<WorkspaceWriteLock>(
-      WORKSPACE_WRITE_LOCK_SERVICE,
-    );
-    mutationRegistry = capabilityRegistry.service<MutationRegistry>(
-      WORKSPACE_MUTATIONS_SERVICE,
-    );
-    workspaceFilesController =
-      capabilityRegistry.service<WorkspaceFilesController>(
-        WORKSPACE_FILES_SERVICE,
-      );
-    terminalController = capabilityRegistry.service<TerminalController>(
-      TERMINAL_CONTROLLER_SERVICE,
-    );
-    sandboxController = capabilityRegistry.service<SandboxController>(
-      SANDBOX_CONTROLLER_SERVICE,
-    );
-    mcpController = capabilityRegistry.service<McpController>(
-      MCP_CONTROLLER_SERVICE,
-    );
-    mcpAccess = mcpController?.access ?? [];
     await terminalController?.init();
     terminalController?.setActiveSession(sessionID);
 
