@@ -19,6 +19,11 @@ import { createProcessPlugin, PROCESS_PLUGIN_ID } from "@natalia/tool-process";
 import type { Plugin } from "@natalia/plugin";
 import type { Skill } from "@natalia/skills";
 import type { ToolExecutionContext } from "@natalia/tools";
+import type { TaskModuleContext } from "../capabilities/task-module-tools";
+import {
+  createTaskModulePlugin,
+  TASK_MODULE_PLUGIN_ID,
+} from "./task-module-plugin";
 import {
   createSkillsPlugin,
   SKILLS_PLUGIN_ID,
@@ -71,6 +76,8 @@ export function builtinPluginCatalog(input: {
       context: ToolExecutionContext,
     ) => void;
   };
+  /** Present only when the host runs inside a flow-module execution. */
+  taskModule?: TaskModuleContext;
 }): BuiltinPluginEntry[] {
   return [
     {
@@ -141,5 +148,14 @@ export function builtinPluginCatalog(input: {
       enabled: input.pdfEnabled,
       create: () => createPdfPlugin(),
     },
+    ...(input.taskModule
+      ? [
+          {
+            id: TASK_MODULE_PLUGIN_ID,
+            enabled: true,
+            create: () => createTaskModulePlugin(input.taskModule!),
+          },
+        ]
+      : []),
   ];
 }

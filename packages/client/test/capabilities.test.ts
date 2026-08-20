@@ -10,11 +10,12 @@ import {
   type TaskModuleContext,
 } from "../src/capabilities/task-module-tools";
 import { CapabilityRegistry } from "@natalia/capability";
+import { createPluginRegistry } from "@natalia/plugin";
+import { createToolRegistry } from "@natalia/tools";
 import {
-  registerTaskModuleCapability,
-  taskModuleCapability,
-  TASK_MODULE_CAPABILITY_ID,
-} from "../src/capabilities/task-module-capability";
+  createTaskModulePlugin,
+  TASK_MODULE_PLUGIN_ID,
+} from "../src/builtin-plugins/task-module-plugin";
 
 // The point of extracting these factories is that they can be exercised without
 // standing up a runtime. If any of these tests needed a real client, the
@@ -85,19 +86,42 @@ test("a capability that fails to load is reported with a reason", () => {
   expect(outcome.failed[0]!.reason).toContain("already loaded");
 });
 
-test("the task module capability owns its tools through the kernel", () => {
-  const registry = new CapabilityRegistry();
-  const result = registerTaskModuleCapability(
-    registry,
-    moduleContext({
-      reportIssue: async () => ({}),
-      readDataSource: async () => ({}),
-    }),
+test("the task module plugin owns its tools through the kernel", async () => {
+  const kernel = new CapabilityRegistry();
+  const tools = createToolRegistry([]);
+  const registry = createPluginRegistry({
+    tools,
+    contribute: (manifest, context) => {
+      const capabilityID = context.builtin ? manifest.id : `cap:${manifest.id}`;
+      kernel.tryLoad({
+        id: capabilityID,
+        name: manifest.name,
+        version: manifest.version,
+        description: manifest.description,
+        scope: manifest.scope,
+        grants: ["tools"],
+        provides: [],
+      });
+      return (kind, name, payload) => {
+        kernel.contribute(capabilityID, kind, name, payload);
+        return () => undefined;
+      };
+    },
+    onUnload: (pluginID, context) => {
+      kernel.unload(context.builtin ? pluginID : `cap:${pluginID}`);
+    },
+  });
+  await registry.loadBuiltin(
+    createTaskModulePlugin(
+      moduleContext({
+        reportIssue: async () => ({}),
+        readDataSource: async () => ({}),
+      }),
+    ),
   );
-  expect(result.ok).toBe(true);
 
   // The runtime never names these tools; it reads whatever the kernel accepted.
-  const contributed = registry
+  const contributed = kernel
     .contributions<{ name: string }>("tools")
     .map((entry) => entry.name);
   expect(contributed).toEqual([
@@ -105,27 +129,22 @@ test("the task module capability owns its tools through the kernel", () => {
     "report_issue",
     "read_data_source",
   ]);
-  expect(registry.ownerOf("tools", "report_issue")).toBe(
-    TASK_MODULE_CAPABILITY_ID,
-  );
+  expect(kernel.ownerOf("tools", "report_issue")).toBe(TASK_MODULE_PLUGIN_ID);
 
   // Unloading releases them, which is the property the runtime depends on when a
   // session ends.
-  expect(registry.unloadScope("session")).toEqual([TASK_MODULE_CAPABILITY_ID]);
-  expect(registry.contributions("tools")).toEqual([]);
+  await registry.unload(TASK_MODULE_PLUGIN_ID);
+  expect(kernel.contributions("tools")).toEqual([]);
 });
 
-test("the task module capability may only contribute tools", () => {
-  // It declares the "tools" grant alone, so the kernel is what stops it from
+test("the task module plugin declares the tools integration point only", () => {
+  // The manifest grants "tools" alone, so the kernel is what stops it from
   // quietly acquiring a command or a settings surface later.
-  expect(taskModuleCapability().grants).toEqual(["tools"]);
-  const registry = new CapabilityRegistry();
-  const result = registry.tryLoad(taskModuleCapability(), (capability) => {
-    capability.contribute("commands", "/sneaky", () => {});
-  });
-  expect(result.ok).toBe(false);
-  if (!result.ok)
-    expect(result.reason).toContain('without the "commands" grant');
+  const plugin = createTaskModulePlugin(moduleContext());
+  expect(plugin.manifest.apiVersion).toBe(2);
+  if (plugin.manifest.apiVersion === 2)
+    expect(plugin.manifest.integrationPoints).toEqual(["tools"]);
+  expect(plugin.manifest.scope).toBe("session");
 });
 
 function moduleContext(

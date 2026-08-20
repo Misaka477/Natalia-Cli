@@ -42,6 +42,7 @@ test("migrated plugin rules retain built-in plugin protections", () => {
       "natalia-tool-process",
       'import { managedProcessTools } from "@natalia/tool-process"',
     ],
+    ["natalia-task-module", "taskModuleTools(context)"],
   ])
     expect(findMigratedPluginViolations(target, source)).toContainEqual(
       expect.objectContaining({ pluginID }),

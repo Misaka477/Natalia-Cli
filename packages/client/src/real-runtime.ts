@@ -175,10 +175,6 @@ import {
 } from "./task-document";
 import { registerBuiltinCapabilities } from "./capabilities/builtin-capabilities";
 import {
-  registerTaskModuleCapability,
-  TASK_MODULE_CAPABILITY_ID,
-} from "./capabilities/task-module-capability";
-import {
   applyToolFamilyEnabledFilter,
   builtinToolFamilies,
   createToolRegistryFromCapabilities,
@@ -443,30 +439,6 @@ export function createRealRuntimeClient(
     ? []
     : initialFamilies!.outcome.failed;
   const workspaceCapabilityView = options.capabilityHost?.view;
-  if (options.taskModuleContext) {
-    const registered = registerTaskModuleCapability(
-      capabilityRegistry,
-      options.taskModuleContext,
-    );
-    if (!registered.ok)
-      throw new Error(`task module capability failed: ${registered.reason}`);
-    // The capability owns its tool names; the runtime only moves what the kernel
-    // accepted into the registry the executor reads. A task-scoped tool may never
-    // shadow a registered one, or a flow could silently replace a policy-checked
-    // implementation. Only this capability's own contributions are moved: the
-    // built-in families are already in the registry, and re-reading them here
-    // would report every one of them as a shadowing attempt.
-    for (const contribution of capabilityRegistry.contributions<RuntimeTool>(
-      "tools",
-    )) {
-      if (contribution.capabilityID !== TASK_MODULE_CAPABILITY_ID) continue;
-      if (tools.has(contribution.name))
-        throw new Error(
-          `task module context cannot replace ${contribution.name}`,
-        );
-      tools.set(contribution.name, contribution.payload);
-    }
-  }
   let agentToolLayer = createToolPolicyHookLayer();
   let permissionProfileToolLayer = createToolPolicyHookLayer();
   const moduleToolLayer = createToolPolicyHookLayer(
@@ -2098,6 +2070,9 @@ export function createRealRuntimeClient(
               },
             },
           }
+        : {}),
+      ...(options.taskModuleContext
+        ? { taskModule: options.taskModuleContext }
         : {}),
     });
     for (const entry of builtinPlugins) {

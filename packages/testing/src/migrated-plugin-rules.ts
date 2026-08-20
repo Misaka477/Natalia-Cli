@@ -232,6 +232,17 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-task-module",
+    targets: ["packages/client/src/real-runtime.ts"],
+    forbidden: [
+      {
+        description: "task module tool construction",
+        pattern:
+          /\b(?:registerTaskModuleCapability|taskModuleCapability|taskModuleTools)\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(
