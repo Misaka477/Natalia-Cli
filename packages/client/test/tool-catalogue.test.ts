@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import { CapabilityRegistry } from "@natalia/capability";
-import { createToolRegistryFromCapabilities } from "../src/capabilities/tool-family-capabilities";
+import {
+  builtinToolNames,
+  createToolRegistryFromCapabilities,
+} from "../src/capabilities/tool-family-capabilities";
 
 /** The catalogue the host actually assembles, through the kernel. */
 function builtinRegistry() {
@@ -10,11 +13,11 @@ function builtinRegistry() {
 }
 
 /**
- * The not-yet-migrated static tool catalogue, pinned.
+ * The public built-in tool catalogue, pinned.
  *
  * It lives with the host because the host composes it: the families come from
- * `@natalia/tools` and from separately packaged ones like `@natalia/tool-todo`,
- * and only the assembled result is the surface a model sees.
+ * `@natalia/tools`, separately packaged families and built-in plugins, and only
+ * the assembled result is the surface a model sees.
  *
  * This is a policy surface, not an inventory: a tool that quietly disappears
  * changes what the model can do, a name that changes breaks every transcript and
@@ -51,6 +54,7 @@ const catalogue: Array<
   ["background_stop", true],
   ["browser_screenshot", true, 60],
   ["browser_visit", false, 30],
+  ["ask_user", false],
   ["edit_file", true],
   ["glob", false],
   ["grep", false],
@@ -100,7 +104,14 @@ const catalogue: Array<
   ["write_file", true],
 ];
 
-test("the static tool catalogue is exactly this, with these approval boundaries", () => {
+const migratedPluginTools = new Set(["ask_user"]);
+
+test("the public tool catalogue retains migrated plugin tool names", () => {
+  for (const name of migratedPluginTools)
+    expect(builtinToolNames()).toContain(name);
+});
+
+test("the static tool catalogue contains only unmigrated tools", () => {
   const registry = builtinRegistry();
   const actual = [...registry.entries()]
     .map(
@@ -113,6 +124,7 @@ test("the static tool catalogue is exactly this, with these approval boundaries"
     )
     .sort((left, right) => left[0].localeCompare(right[0]));
   const expected = catalogue
+    .filter(([name]) => !migratedPluginTools.has(name))
     .map(
       ([name, requiresApproval, timeoutSec]) =>
         [name, requiresApproval, timeoutSec] as [
