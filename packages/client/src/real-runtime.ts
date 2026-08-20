@@ -11,7 +11,8 @@ import {
   isInvalidGeneratedSessionTitle,
   sanitizeSessionTitleInput,
 } from "./session-title";
-import { createSubagentsController } from "./subagents-controller";
+import type { SubagentsController } from "./subagents-controller";
+import { SUBAGENTS_CONTROLLER_SERVICE } from "./builtin-plugins/subagents-controller-plugin";
 import type { TerminalController } from "./terminal-controller";
 import { SnapshotSandboxManager } from "@natalia/sandbox";
 import {
@@ -577,10 +578,7 @@ export function createRealRuntimeClient(
   let defaultPermissionMode = permissionMode;
   let defaultPermissionProfile: PermissionProfile | undefined;
   let maxSteps: number | undefined;
-  const subagentsController = createSubagentsController({
-    workDir: workspaceRoot,
-    sessionID: () => sessionID,
-  });
+  let subagentsController: SubagentsController | undefined;
   /**
    * Controllers provided by the terminal/sandbox/mcp built-in plugins, resolved
    * after they load during `start`. All consumers run post-start, so the
@@ -711,7 +709,9 @@ export function createRealRuntimeClient(
       publish: (event) => publishForSession(exec, event),
       context: () => exec.context,
       subagents: () =>
-        subagentsController.enabled() ? subagentsController.get() : undefined,
+        (subagentsController?.enabled() ?? false)
+          ? subagentsController!.get()
+          : undefined,
       activeAbort: () => exec.activeAbort,
     });
     checkpointControllerBySession.set(id, controller);
@@ -868,7 +868,7 @@ export function createRealRuntimeClient(
     workspaceRoot,
     permissionMode: () => permissionMode,
     runningCount: async () =>
-      subagentsController.runningCount() +
+      (subagentsController?.runningCount() ?? 0) +
       (sandboxController?.runningResourceCount() ?? 0) +
       ((await capabilityRegistry
         .service<{
@@ -1209,6 +1209,7 @@ export function createRealRuntimeClient(
           publish,
         },
         checkpoint: { workspaceRoot },
+        subagents: { workDir: workspaceRoot, sessionID: () => sessionID },
       });
       for (const entry of builtinPlugins) {
         if (!entry.enabled) continue;
@@ -1240,6 +1241,9 @@ export function createRealRuntimeClient(
         MCP_CONTROLLER_SERVICE,
       );
       mcpAccess = mcpController?.access ?? [];
+      subagentsController = capabilityRegistry.service<SubagentsController>(
+        SUBAGENTS_CONTROLLER_SERVICE,
+      );
       retryPolicy = {
         maxAttemptsPerStep: tsConfig.config.runtime.retry.maxAttemptsPerStep,
         initialBackoffMs: tsConfig.config.runtime.retry.initialBackoffMs,
@@ -1380,7 +1384,7 @@ export function createRealRuntimeClient(
       runner: import("@natalia/subagent").RunnerContext,
       event: RuntimeEvent,
     ) {
-      const parentSessionID = subagentsController.get().get(runner.agentId)
+      const parentSessionID = subagentsController?.get()?.get(runner.agentId)
         ?.parentSessionID as SessionID | undefined;
       publishForSession(
         parentSessionID ? executionBySession.get(parentSessionID) : activeExec,
@@ -1391,7 +1395,7 @@ export function createRealRuntimeClient(
     }
     function subagentTurnID(runner: import("@natalia/subagent").RunnerContext) {
       const continuation =
-        subagentsController.get().get(runner.agentId)?.continuation ?? 0;
+        subagentsController?.get()?.get(runner.agentId)?.continuation ?? 0;
       return continuation
         ? `subagent:${runner.agentId}:continuation:${continuation}`
         : `subagent:${runner.agentId}`;
@@ -1401,7 +1405,7 @@ export function createRealRuntimeClient(
       task: string,
     ) {
       const id = subagentTurnID(runner);
-      const parentSessionID = subagentsController.get().get(runner.agentId)
+      const parentSessionID = subagentsController?.get()?.get(runner.agentId)
         ?.parentSessionID as SessionID | undefined;
       if (parentSessionID) turnSession.set(id, parentSessionID);
       turnAgent.set(id, runner.agentId);
@@ -1702,8 +1706,8 @@ export function createRealRuntimeClient(
             `tool "${tool.name}" parameter validation failed: ${paramErrors.map((error) => `${error.path}: ${error.message}`).join("; ")}`,
           );
         const parentSessionID = subagentsController
-          .get()
-          .get(runner.agentId)?.parentSessionID;
+          ?.get()
+          ?.get(runner.agentId)?.parentSessionID;
         const startedAt = Date.now();
         publishSubagentEvent(runner, {
           type: "tool.update",
@@ -1727,7 +1731,7 @@ export function createRealRuntimeClient(
               hookEvent.turnID,
               question,
             ),
-          subagents: subagentsController.get(),
+          subagents: subagentsController?.get(),
           nativeTerminal: terminalController?.get(),
           ...(input.exposeSandboxes
             ? { sandboxes: sandboxController?.get() }
@@ -1802,7 +1806,7 @@ export function createRealRuntimeClient(
       exec: SessionExecutionState,
       activeProvider: StreamingProvider,
     ) {
-      const record = subagentsController.get().get(runner.agentId);
+      const record = subagentsController?.get()?.get(runner.agentId);
       if (!record)
         throw new Error(`subagent record not found: ${runner.agentId}`);
       const allowed = record.allowedTools ?? [];
@@ -1914,9 +1918,9 @@ export function createRealRuntimeClient(
       }
       throw new Error("subagent step limit reached");
     }
-    await subagentsController.init(async (task, runner) => {
+    await subagentsController?.init(async (task, runner) => {
       try {
-        const record = subagentsController.get().get(runner.agentId);
+        const record = subagentsController?.get()?.get(runner.agentId);
         const exec = executionBySession.get(
           record?.parentSessionID as SessionID,
         );
@@ -2018,7 +2022,7 @@ export function createRealRuntimeClient(
         throw error;
       }
     });
-    const subagentRegistry = subagentsController.get();
+    const subagentRegistry = subagentsController!.get();
     subagentRegistry.subscribe((event) => {
       const record = subagentRegistry.get(event.agentId);
       const update = {
@@ -2348,8 +2352,8 @@ export function createRealRuntimeClient(
         "team_fanout",
         createTeamFanoutTool({
           subagents: () =>
-            subagentsController.enabled()
-              ? subagentsController.get()
+            (subagentsController?.enabled() ?? false)
+              ? subagentsController!.get()
               : undefined,
           sandboxes: () => sandboxController?.get(),
         }),
@@ -8553,7 +8557,7 @@ export function createRealRuntimeClient(
                   turnID,
                   question,
                 ),
-              subagents: subagentsController.get(),
+              subagents: subagentsController?.get(),
               nativeTerminal: terminalController?.get(),
               sandboxes: sandboxController?.get(),
               ...(attachImage ? { attachImage } : {}),

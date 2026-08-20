@@ -31,3 +31,5 @@ export function createSubagentsController(input: {
 
   return { init, enabled, get, runningCount };
 }
+
+export type SubagentsController = ReturnType<typeof createSubagentsController>;

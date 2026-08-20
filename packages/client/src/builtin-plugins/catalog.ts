@@ -57,6 +57,10 @@ import {
   CHECKPOINT_PLUGIN_ID,
 } from "./checkpoint-controller-plugin";
 import {
+  createSubagentsControllerPlugin,
+  SUBAGENTS_PLUGIN_ID,
+} from "./subagents-controller-plugin";
+import {
   createSkillsPlugin,
   SKILLS_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
@@ -156,6 +160,8 @@ export function builtinPluginCatalog(input: {
   };
   /** Checkpoint controller factory. */
   checkpoint?: { workspaceRoot: string };
+  /** Subagents controller. */
+  subagents?: { workDir: string; sessionID?: () => string | undefined };
 }): BuiltinPluginEntry[] {
   return [
     {
@@ -308,6 +314,19 @@ export function builtinPluginCatalog(input: {
             create: () =>
               createCheckpointControllerPlugin({
                 workspaceRoot: input.checkpoint!.workspaceRoot,
+              }),
+          },
+        ]
+      : []),
+    ...(input.subagents
+      ? [
+          {
+            id: SUBAGENTS_PLUGIN_ID,
+            enabled: true,
+            create: () =>
+              createSubagentsControllerPlugin({
+                workDir: input.subagents!.workDir,
+                sessionID: input.subagents!.sessionID,
               }),
           },
         ]

@@ -316,6 +316,16 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-subagents",
+    targets: ["packages/client/src/real-runtime.ts"],
+    forbidden: [
+      {
+        description: "direct subagents controller construction",
+        pattern: /\bcreateSubagentsController\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(

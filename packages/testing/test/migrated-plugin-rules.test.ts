@@ -53,6 +53,7 @@ test("migrated plugin rules retain built-in plugin protections", () => {
     ["natalia-sandbox", "createSandboxController({})"],
     ["natalia-mcp", "createMcpController({})"],
     ["natalia-checkpoint", "createCheckpointController({})"],
+    ["natalia-subagents", "createSubagentsController({})"],
   ])
     expect(findMigratedPluginViolations(target, source)).toContainEqual(
       expect.objectContaining({ pluginID }),
