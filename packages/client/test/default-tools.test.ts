@@ -528,22 +528,8 @@ test("media and browser visit tools provide native TS metadata", async () => {
   }
 });
 
-test("ask_user tool delegates to the runtime question channel", async () => {
-  const tools = builtinTools();
-  const result = await tools.get("ask_user")!.execute(
-    { question: "Pick one", options: ["yes", "no"] },
-    {
-      workspaceRoot: tmpdir(),
-      askQuestion: async (request) => {
-        expect(request.questions[0]?.options).toEqual([
-          { label: "yes" },
-          { label: "no" },
-        ]);
-        return [["yes"]];
-      },
-    },
-  );
-  expect(result).toContain("yes");
+test("migrated ask tool is absent from the static tool assembly", () => {
+  expect(builtinTools().has("ask_user")).toBe(false);
 });
 
 test("web_search uses a native configured endpoint without proxying Go", async () => {

@@ -22,16 +22,14 @@ test("the host composes the built-in catalogue from families", () => {
     expect(family.tools.length).toBeGreaterThan(0);
     expect(family.scope).toBeString();
   }
-  // The family list is the built-in inventory: the names policy knows are the
-  // names the families provide, aliases included, with no second list anywhere.
-  expect(new Set(builtinToolNames())).toEqual(
-    new Set(
-      families.flatMap((family) => [
-        ...family.tools.map((tool) => tool.name),
-        ...Object.keys(family.aliases ?? {}),
-      ]),
-    ),
-  );
+  const staticNames = families.flatMap((family) => [
+    ...family.tools.map((tool) => tool.name),
+    ...Object.keys(family.aliases ?? {}),
+  ]);
+  expect(staticNames).not.toContain("ask_user");
+  expect(builtinToolNames()).toEqual(expect.arrayContaining(staticNames));
+  expect(builtinToolNames()).toContain("ask_user");
+  expect(builtinToolNames({ ask: false })).not.toContain("ask_user");
 });
 
 test("a family packaged outside the framework loads like any other", () => {

@@ -10,7 +10,7 @@ function builtinRegistry() {
 }
 
 /**
- * The built-in tool catalogue, pinned.
+ * The not-yet-migrated static tool catalogue, pinned.
  *
  * It lives with the host because the host composes it: the families come from
  * `@natalia/tools` and from separately packaged ones like `@natalia/tool-todo`,
@@ -42,7 +42,6 @@ const catalogue: Array<
   ["agent_status", false],
   ["agent_stop", true],
   ["agent_wait", false],
-  ["ask_user", false],
   ["background_audit", false],
   ["background_cleanup", true],
   ["background_list", false],
@@ -101,7 +100,7 @@ const catalogue: Array<
   ["write_file", true],
 ];
 
-test("the built-in tool catalogue is exactly this, with these approval boundaries", () => {
+test("the static tool catalogue is exactly this, with these approval boundaries", () => {
   const registry = builtinRegistry();
   const actual = [...registry.entries()]
     .map(

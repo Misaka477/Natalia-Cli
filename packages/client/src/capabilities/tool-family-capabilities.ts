@@ -20,7 +20,6 @@ import type {
   CapabilityRegistryHost,
 } from "@natalia/capability";
 import { agentToolFamily } from "@natalia/tool-agent";
-import { askToolFamily } from "@natalia/tool-ask";
 import { fsToolFamily } from "@natalia/tool-fs";
 import { searchToolFamily } from "@natalia/tool-search";
 import {
@@ -63,7 +62,6 @@ export function builtinToolFamilies(
   return [
     fsToolFamily(),
     searchToolFamily(),
-    askToolFamily(),
     todoToolFamily(),
     agentToolFamily(),
     terminalToolFamily(),
@@ -76,10 +74,12 @@ export function builtinToolFamilies(
 
 /** Every built-in tool name, including the aliases a model may use. */
 export function builtinToolNames(enabled?: Record<string, boolean>): string[] {
-  return builtinToolFamilies(undefined, enabled).flatMap((family) => [
+  const names = builtinToolFamilies(undefined, enabled).flatMap((family) => [
     ...family.tools.map((tool) => tool.name),
     ...Object.keys(family.aliases ?? {}),
   ]);
+  if (enabled?.ask !== false) names.push("ask_user");
+  return names;
 }
 
 /** The capability id a family is loaded as. */

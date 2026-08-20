@@ -14,6 +14,9 @@ import {
   type RuntimeTool,
   type ToolFamily,
 } from "@natalia/tools";
+import type { Plugin } from "@natalia/plugin";
+
+export const ASK_PLUGIN_ID = "natalia-tool-ask";
 
 function askUserTool(): RuntimeTool {
   return {
@@ -94,5 +97,29 @@ export function askToolFamily(): ToolFamily {
     description: "Asking the user a structured question.",
     scope: "session",
     tools: askTools,
+  };
+}
+
+export function createAskPlugin(): Plugin {
+  return {
+    manifest: {
+      apiVersion: 2,
+      id: ASK_PLUGIN_ID,
+      version: "1.0.0",
+      name: "Interactive Question Tools",
+      description: "Asking the user a structured question.",
+      entry: "natalia:tool-ask",
+      scope: "session",
+      provides: [],
+      requires: [],
+      optionalRequires: [],
+      conflicts: [],
+      dependencies: [],
+      hooks: {},
+      integrationPoints: ["tools"],
+    },
+    setup(api) {
+      for (const tool of askTools) api.tools.register(tool);
+    },
   };
 }

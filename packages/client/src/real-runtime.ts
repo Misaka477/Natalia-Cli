@@ -193,6 +193,7 @@ import {
   registerRuntimeConfigCapability,
 } from "./capabilities/runtime-config-capability";
 import {
+  ASK_PLUGIN_ID,
   builtinPluginCatalog,
   PDF_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
@@ -2022,6 +2023,10 @@ export function createRealRuntimeClient(
     }
     await pluginsController.init({ loadLocal: false });
     const builtinPlugins = builtinPluginCatalog({
+      askEnabled:
+        !options.tools &&
+        tsRuntimeConfig?.tools.enabled.ask !== false &&
+        tsRuntimeConfig?.plugins.enabled[ASK_PLUGIN_ID] !== false,
       pdfEnabled:
         extensionEnabled("plugins") &&
         tsRuntimeConfig?.plugins.enabled[PDF_PLUGIN_ID] !== false,

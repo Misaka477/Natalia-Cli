@@ -6,17 +6,27 @@ import {
 
 const target = "packages/client/src/real-runtime.ts";
 
-test("migrated plugin rules retain skills and PDF protections", () => {
+test("migrated plugin rules retain built-in plugin protections", () => {
   for (const [pluginID, source] of [
     ["natalia-skills", "createSkillsController()"],
     ["natalia-skills", "discoverSkills()"],
     ["natalia-skills", "createSkillLoadTool()"],
     ["natalia-tool-pdf", 'import { x } from "@natalia/tool-pdf"'],
     ["natalia-tool-pdf", "createPdfPlugin()"],
+    ["natalia-tool-ask", 'import { askTools } from "@natalia/tool-ask"'],
   ])
-    expect(findMigratedPluginViolations(target, source)).toEqual([
+    expect(findMigratedPluginViolations(target, source)).toContainEqual(
       expect.objectContaining({ pluginID }),
-    ]);
+    );
+});
+
+test("ask migration protects the legacy static capability root", () => {
+  expect(
+    findMigratedPluginViolations(
+      "packages/client/src/capabilities/tool-family-capabilities.ts",
+      "askToolFamily()",
+    ),
+  ).toEqual([expect.objectContaining({ pluginID: "natalia-tool-ask" })]);
 });
 
 test("migrated plugin rules only protect declared composition roots", () => {

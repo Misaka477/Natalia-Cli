@@ -1,13 +1,15 @@
 import { expect, test } from "bun:test";
 import {
+  ASK_PLUGIN_ID,
   builtinPluginCatalog,
   PDF_PLUGIN_ID,
   SKILLS_PLUGIN_ID,
 } from "../src/builtin-plugins/catalog";
 
 test("built-in plugin catalog is lazy and has unique matching ids", () => {
-  const catalog = builtinPluginCatalog({ pdfEnabled: true });
+  const catalog = builtinPluginCatalog({ askEnabled: true, pdfEnabled: true });
   expect(catalog.map((entry) => entry.id)).toEqual([
+    ASK_PLUGIN_ID,
     SKILLS_PLUGIN_ID,
     PDF_PLUGIN_ID,
   ]);

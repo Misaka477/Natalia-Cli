@@ -42,6 +42,23 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-tool-ask",
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/capabilities/tool-family-capabilities.ts",
+    ],
+    forbidden: [
+      {
+        description: "direct ask package import",
+        pattern: /from\s+["']@natalia\/tool-ask["']/u,
+      },
+      {
+        description: "direct ask tool construction",
+        pattern: /\b(?:askToolFamily|askTools|createAskPlugin)\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(
