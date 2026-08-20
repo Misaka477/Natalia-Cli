@@ -13,9 +13,12 @@ import {
   type RuntimeTool,
   type ToolFamily,
 } from "@natalia/tools";
+import type { Plugin } from "@natalia/plugin";
 import { createHash } from "node:crypto";
 import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
+
+export const FS_PLUGIN_ID = "natalia-tool-fs";
 
 function readFileTool(): RuntimeTool {
   return {
@@ -272,6 +275,30 @@ export function fsToolFamily(): ToolFamily {
     description: "Reading, writing and editing workspace files.",
     scope: "workspace",
     tools: fileTools,
+  };
+}
+
+export function createFsPlugin(): Plugin {
+  return {
+    manifest: {
+      apiVersion: 2,
+      id: FS_PLUGIN_ID,
+      version: "1.0.0",
+      name: "Filesystem Tools",
+      description: "Reading, writing and editing workspace files.",
+      entry: "natalia:tool-fs",
+      scope: "workspace",
+      provides: [],
+      requires: [],
+      optionalRequires: [],
+      conflicts: [],
+      dependencies: [],
+      hooks: {},
+      integrationPoints: ["tools"],
+    },
+    setup(api) {
+      for (const tool of fileTools) api.tools.register(tool);
+    },
   };
 }
 

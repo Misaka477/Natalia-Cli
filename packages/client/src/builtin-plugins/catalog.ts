@@ -2,6 +2,7 @@ import { createPdfPlugin, PDF_PLUGIN_ID } from "@natalia/tool-pdf";
 import { ASK_PLUGIN_ID, createAskPlugin } from "@natalia/tool-ask";
 import { createTodoPlugin, TODO_PLUGIN_ID } from "@natalia/tool-todo";
 import { createSearchPlugin, SEARCH_PLUGIN_ID } from "@natalia/tool-search";
+import { createFsPlugin, FS_PLUGIN_ID } from "@natalia/tool-fs";
 import type { Plugin } from "@natalia/plugin";
 import type { Skill } from "@natalia/skills";
 import type { ToolExecutionContext } from "@natalia/tools";
@@ -13,6 +14,7 @@ import {
 
 export {
   ASK_PLUGIN_ID,
+  FS_PLUGIN_ID,
   PDF_PLUGIN_ID,
   SEARCH_PLUGIN_ID,
   SKILLS_PLUGIN_ID,
@@ -28,6 +30,7 @@ export type BuiltinPluginEntry = {
 
 export function builtinPluginCatalog(input: {
   askEnabled: boolean;
+  fsEnabled: boolean;
   pdfEnabled: boolean;
   searchEnabled: boolean;
   todoEnabled: boolean;
@@ -57,6 +60,11 @@ export function builtinPluginCatalog(input: {
       id: SEARCH_PLUGIN_ID,
       enabled: input.searchEnabled,
       create: () => createSearchPlugin(),
+    },
+    {
+      id: FS_PLUGIN_ID,
+      enabled: input.fsEnabled,
+      create: () => createFsPlugin(),
     },
     {
       id: SKILLS_PLUGIN_ID,

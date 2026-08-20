@@ -93,6 +93,23 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-tool-fs",
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/capabilities/tool-family-capabilities.ts",
+    ],
+    forbidden: [
+      {
+        description: "direct fs package import",
+        pattern: /from\s+["']@natalia\/tool-fs["']/u,
+      },
+      {
+        description: "direct fs tool construction",
+        pattern: /\b(?:fsToolFamily|fileTools|createFsPlugin|imageReadTool)\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(

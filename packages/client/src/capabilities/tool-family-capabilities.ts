@@ -20,7 +20,6 @@ import type {
   CapabilityRegistryHost,
 } from "@natalia/capability";
 import { agentToolFamily } from "@natalia/tool-agent";
-import { fsToolFamily } from "@natalia/tool-fs";
 import {
   ManagedProcessRegistry,
   processToolFamily,
@@ -58,7 +57,6 @@ export function builtinToolFamilies(
   enabled?: Record<string, boolean>,
 ): ToolFamily[] {
   return [
-    fsToolFamily(),
     agentToolFamily(),
     terminalToolFamily(),
     sandboxToolFamily(),
@@ -77,6 +75,14 @@ export function builtinToolNames(enabled?: Record<string, boolean>): string[] {
   if (enabled?.ask !== false) names.push("ask_user");
   if (enabled?.todo !== false) names.push("plan", "todo_read", "todo_write");
   if (enabled?.search !== false) names.push("glob", "grep");
+  if (enabled?.fs !== false)
+    names.push(
+      "read_file",
+      "write_file",
+      "edit_file",
+      "read_media_file",
+      "image_read",
+    );
   return names;
 }
 
@@ -108,6 +114,21 @@ export const migratedBuiltinToolFamilies = [
     scope: "workspace",
     dependencies: [],
     tools: ["glob", "grep"],
+  },
+  {
+    id: "fs",
+    name: "Filesystem Tools",
+    version: "1.0.0",
+    description: "Reading, writing and editing workspace files.",
+    scope: "workspace",
+    dependencies: [],
+    tools: [
+      "read_file",
+      "write_file",
+      "edit_file",
+      "read_media_file",
+      "image_read",
+    ],
   },
 ] as const;
 

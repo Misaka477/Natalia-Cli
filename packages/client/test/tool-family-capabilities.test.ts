@@ -28,15 +28,20 @@ test("the host composes the built-in catalogue from families", () => {
   expect(staticNames).not.toContain("ask_user");
   expect(staticNames).not.toContain("todo_read");
   expect(staticNames).not.toContain("glob");
+  expect(staticNames).not.toContain("read_file");
   expect(builtinToolNames()).toEqual(expect.arrayContaining(staticNames));
   expect(builtinToolNames()).toContain("ask_user");
   expect(builtinToolNames()).toEqual(
     expect.arrayContaining(["plan", "todo_read", "todo_write"]),
   );
   expect(builtinToolNames()).toEqual(expect.arrayContaining(["glob", "grep"]));
+  expect(builtinToolNames()).toEqual(
+    expect.arrayContaining(["read_file", "write_file", "edit_file"]),
+  );
   expect(builtinToolNames({ ask: false })).not.toContain("ask_user");
   expect(builtinToolNames({ todo: false })).not.toContain("todo_read");
   expect(builtinToolNames({ search: false })).not.toContain("glob");
+  expect(builtinToolNames({ fs: false })).not.toContain("read_file");
 });
 
 test("each family declares exactly the tools grant", () => {
@@ -74,8 +79,8 @@ test("unloading a family removes its tools from the kernel", () => {
     expect(registry.ownerOf("tools", tool.name)).toBeUndefined();
   // Other families are untouched — unload releases one family's contributions,
   // not the catalogue.
-  expect(registry.ownerOf("tools", "read_file")).toBe(
-    toolFamilyCapabilityID("fs"),
+  expect(registry.ownerOf("tools", "agent_list")).toBe(
+    toolFamilyCapabilityID("agent"),
   );
 });
 
@@ -110,7 +115,7 @@ test("a family that fails to load leaves none of its tools callable", () => {
   // the tools it had already contributed before the bad one are gone too.
   const web = builtinToolFamilies().find((family) => family.id === "web")!;
   for (const tool of web.tools) expect(tools.has(tool.name)).toBe(false);
-  expect(tools.has("read_file")).toBe(true);
+  expect(tools.has("agent_list")).toBe(true);
 });
 
 test("registering the same families twice is refused, not silently doubled", () => {
@@ -134,7 +139,7 @@ test("config enabled=false keeps a static family out of the registry entirely", 
   for (const tool of web.tools) expect(tools.has(tool.name)).toBe(false);
   expect(registry.has(toolFamilyCapabilityID("web"))).toBe(false);
   // Everything else still loads.
-  expect(tools.has("read_file")).toBe(true);
+  expect(tools.has("agent_list")).toBe(true);
 });
 
 test("applyToolFamilyEnabledFilter removes a disabled family after assembly", () => {

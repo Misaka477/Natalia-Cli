@@ -1280,6 +1280,42 @@ for (const [label, config] of [
     await client.dispose?.();
   }, 60_000);
 
+for (const [label, config] of [
+  ["legacy family switch", { tools: { enabled: { fs: false } } }],
+  ["plugin switch", { plugins: { enabled: { "natalia-tool-fs": false } } }],
+] as const)
+  test(`disabled fs ${label} leaves no tool or capability`, async () => {
+    const root = await mkdtemp(join(tmpdir(), "natalia-runtime-fs-disabled-"));
+    await mkdir(join(root, ".natalia"), { recursive: true });
+    await writeFile(
+      join(root, ".natalia", "config.json"),
+      JSON.stringify({ version: 3, ...config }),
+    );
+    const events: RuntimeEvent[] = [];
+    const kernel = new CapabilityRegistry();
+    const client = createRealRuntimeClient({
+      workspaceRoot: root,
+      sessionID: `ses_runtime_fs_disabled_${label.replaceAll(" ", "_")}`,
+      capabilityRegistry: kernel,
+      provider: scriptedProvider("ready"),
+    });
+    client.start((event) => events.push(event));
+    await waitFor(() => events.some((event) => event.type === "session.ready"));
+    expect(
+      events.some(
+        (event) =>
+          event.type === "tool.registered" &&
+          (event.name === "read_file" ||
+            event.name === "write_file" ||
+            event.name === "edit_file" ||
+            event.name === "read_media_file" ||
+            event.name === "image_read"),
+      ),
+    ).toBe(false);
+    expect(kernel.has("natalia-tool-fs")).toBe(false);
+    await client.dispose?.();
+  }, 60_000);
+
 test("read-only profile rejects side-effecting tools without an approval request", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-runtime-read-only-"));
   await mkdir(join(root, ".natalia"), { recursive: true });
@@ -1408,10 +1444,9 @@ test("selected permission profile denies tools outside its allow list before app
   client.start((event) => events.push(event));
   await client.submit("inspect only");
 
-  expect(requests[0]?.tools?.map((tool) => tool.name)).toEqual([
-    "read_file",
-    "web_fetch",
-  ]);
+  expect(requests[0]?.tools?.map((tool) => tool.name).sort()).toEqual(
+    ["read_file", "web_fetch"].sort(),
+  );
   expect(events).toContainEqual(
     expect.objectContaining({
       type: "policy.decision",

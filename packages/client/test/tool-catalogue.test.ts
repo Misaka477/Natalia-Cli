@@ -106,11 +106,16 @@ const catalogue: Array<
 
 const migratedPluginTools = new Set([
   "ask_user",
+  "edit_file",
   "glob",
   "grep",
+  "image_read",
   "plan",
+  "read_file",
+  "read_media_file",
   "todo_read",
   "todo_write",
+  "write_file",
 ]);
 
 test("the public tool catalogue retains migrated plugin tool names", () => {

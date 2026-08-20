@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   ASK_PLUGIN_ID,
   builtinPluginCatalog,
+  FS_PLUGIN_ID,
   PDF_PLUGIN_ID,
   SEARCH_PLUGIN_ID,
   SKILLS_PLUGIN_ID,
@@ -11,6 +12,7 @@ import {
 test("built-in plugin catalog is lazy and has unique matching ids", () => {
   const catalog = builtinPluginCatalog({
     askEnabled: true,
+    fsEnabled: true,
     pdfEnabled: true,
     searchEnabled: true,
     todoEnabled: true,
@@ -19,6 +21,7 @@ test("built-in plugin catalog is lazy and has unique matching ids", () => {
     ASK_PLUGIN_ID,
     TODO_PLUGIN_ID,
     SEARCH_PLUGIN_ID,
+    FS_PLUGIN_ID,
     SKILLS_PLUGIN_ID,
     PDF_PLUGIN_ID,
   ]);

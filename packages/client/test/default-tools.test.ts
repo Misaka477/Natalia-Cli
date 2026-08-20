@@ -21,34 +21,6 @@ function builtinTools(processRegistry = new ManagedProcessRegistry()) {
 import { NativeTerminalRegistry } from "@natalia/native-terminal";
 import { WorkspaceSandboxManager } from "@natalia/sandbox";
 
-test("default file tools read write and edit inside workspace", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-tools-files-"));
-  const tools = builtinTools();
-  await tools
-    .get("write_file")!
-    .execute(
-      { path: "example.txt", content: "hello" },
-      { workspaceRoot: root },
-    );
-  expect(
-    await tools
-      .get("read_file")!
-      .execute({ path: "example.txt" }, { workspaceRoot: root }),
-  ).toBe("hello");
-  await tools
-    .get("edit_file")!
-    .execute(
-      { path: "example.txt", oldText: "hello", newText: "updated" },
-      { workspaceRoot: root },
-    );
-  expect(await readFile(join(root, "example.txt"), "utf8")).toBe("updated");
-  await expect(
-    tools
-      .get("read_file")!
-      .execute({ path: "../escape" }, { workspaceRoot: root }),
-  ).rejects.toThrow("path escapes workspace");
-});
-
 test("default shell and process tools execute real commands", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-process-"));
   await writeFile(join(root, "data.txt"), "ok\n");
@@ -379,18 +351,9 @@ test("managed process IDs and deadlines are isolated by workspace", async () => 
     .execute({ id: "proc_same" }, { workspaceRoot: secondRoot });
 });
 
-test("media and browser visit tools provide native TS metadata", async () => {
+test("browser visit tools provide native TS metadata", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-browser-"));
-  await writeFile(
-    join(root, "image.png"),
-    new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
-  );
   const tools = builtinTools();
-  expect(
-    await tools
-      .get("read_media_file")!
-      .execute({ path: "image.png" }, { workspaceRoot: root }),
-  ).toContain('"kind": "png"');
   let browserHeaders: Headers | undefined;
   const server = Bun.serve({
     port: 0,
@@ -450,6 +413,10 @@ test("migrated plugin tools are absent from the static tool assembly", () => {
   expect(builtinTools().has("todo_read")).toBe(false);
   expect(builtinTools().has("glob")).toBe(false);
   expect(builtinTools().has("grep")).toBe(false);
+  expect(builtinTools().has("read_file")).toBe(false);
+  expect(builtinTools().has("write_file")).toBe(false);
+  expect(builtinTools().has("edit_file")).toBe(false);
+  expect(builtinTools().has("image_read")).toBe(false);
 });
 
 test("web_search uses a native configured endpoint without proxying Go", async () => {
