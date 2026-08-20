@@ -17,11 +17,14 @@ import {
   workspacePath,
 } from "@natalia/tools";
 import { runShell } from "@natalia/tool-shell";
+import type { Plugin } from "@natalia/plugin";
 import type {
   RuntimeTool,
   ToolExecutionContext,
   ToolFamily,
 } from "@natalia/tools";
+
+export const WEB_PLUGIN_ID = "natalia-tool-web";
 
 function webFetchTool(): RuntimeTool {
   return {
@@ -370,5 +373,29 @@ export function webToolFamily(): ToolFamily {
     description: "Fetching and searching the web.",
     scope: "session",
     tools: webTools,
+  };
+}
+
+export function createWebPlugin(): Plugin {
+  return {
+    manifest: {
+      apiVersion: 2,
+      id: WEB_PLUGIN_ID,
+      version: "1.0.0",
+      name: "Web Tools",
+      description: "Fetching and searching the web.",
+      entry: "natalia:tool-web",
+      scope: "session",
+      provides: [],
+      requires: [],
+      optionalRequires: [],
+      conflicts: [],
+      dependencies: [],
+      hooks: {},
+      integrationPoints: ["tools"],
+    },
+    setup(api) {
+      for (const tool of webTools) api.tools.register(tool);
+    },
   };
 }

@@ -8,6 +8,7 @@ import {
   SEARCH_PLUGIN_ID,
   SKILLS_PLUGIN_ID,
   TODO_PLUGIN_ID,
+  WEB_PLUGIN_ID,
 } from "../src/builtin-plugins/catalog";
 
 test("built-in plugin catalog is lazy and has unique matching ids", () => {
@@ -18,6 +19,7 @@ test("built-in plugin catalog is lazy and has unique matching ids", () => {
     pdfEnabled: true,
     searchEnabled: true,
     todoEnabled: true,
+    webEnabled: true,
   });
   expect(catalog.map((entry) => entry.id)).toEqual([
     ASK_PLUGIN_ID,
@@ -25,6 +27,7 @@ test("built-in plugin catalog is lazy and has unique matching ids", () => {
     SEARCH_PLUGIN_ID,
     FS_READ_PLUGIN_ID,
     FS_WRITE_PLUGIN_ID,
+    WEB_PLUGIN_ID,
     SKILLS_PLUGIN_ID,
     PDF_PLUGIN_ID,
   ]);

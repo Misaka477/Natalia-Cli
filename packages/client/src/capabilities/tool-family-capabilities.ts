@@ -27,7 +27,6 @@ import {
 import { sandboxToolFamily } from "@natalia/tool-sandbox";
 import { shellToolFamily } from "@natalia/tool-shell";
 import { terminalToolFamily } from "@natalia/tool-terminal";
-import { webToolFamily } from "@natalia/tool-web";
 import {
   createToolRegistry,
   type RuntimeTool,
@@ -62,7 +61,6 @@ export function builtinToolFamilies(
     sandboxToolFamily(),
     shellToolFamily(),
     processToolFamily(processRegistry),
-    webToolFamily(),
   ].filter((family) => enabled?.[family.id] !== false);
 }
 
@@ -79,6 +77,13 @@ export function builtinToolNames(enabled?: Record<string, boolean>): string[] {
     names.push("read_file", "read_media_file", "image_read");
   if (enabled?.fs !== false && enabled?.["fs-write"] !== false)
     names.push("write_file", "edit_file", "apply_patch");
+  if (enabled?.web !== false)
+    names.push(
+      "web_fetch",
+      "web_search",
+      "browser_visit",
+      "browser_screenshot",
+    );
   return names;
 }
 
@@ -128,6 +133,15 @@ export const migratedBuiltinToolFamilies = [
     scope: "workspace",
     dependencies: [],
     tools: ["write_file", "edit_file", "apply_patch"],
+  },
+  {
+    id: "web",
+    name: "Web Tools",
+    version: "1.0.0",
+    description: "Fetching and searching the web.",
+    scope: "session",
+    dependencies: [],
+    tools: ["web_fetch", "web_search", "browser_visit", "browser_screenshot"],
   },
 ] as const;
 

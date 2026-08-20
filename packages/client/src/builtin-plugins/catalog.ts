@@ -7,6 +7,7 @@ import {
   createFsWritePlugin,
   FS_WRITE_PLUGIN_ID,
 } from "@natalia/tool-fs-write";
+import { createWebPlugin, WEB_PLUGIN_ID } from "@natalia/tool-web";
 import type { Plugin } from "@natalia/plugin";
 import type { Skill } from "@natalia/skills";
 import type { ToolExecutionContext } from "@natalia/tools";
@@ -25,6 +26,7 @@ export {
   SKILLS_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
   TODO_PLUGIN_ID,
+  WEB_PLUGIN_ID,
 };
 
 export type BuiltinPluginEntry = {
@@ -40,6 +42,7 @@ export function builtinPluginCatalog(input: {
   pdfEnabled: boolean;
   searchEnabled: boolean;
   todoEnabled: boolean;
+  webEnabled: boolean;
   skills?: {
     workspaceRoot: string;
     userRoot?: string;
@@ -76,6 +79,11 @@ export function builtinPluginCatalog(input: {
       id: FS_WRITE_PLUGIN_ID,
       enabled: input.fsWriteEnabled,
       create: () => createFsWritePlugin(),
+    },
+    {
+      id: WEB_PLUGIN_ID,
+      enabled: input.webEnabled,
+      create: () => createWebPlugin(),
     },
     {
       id: SKILLS_PLUGIN_ID,

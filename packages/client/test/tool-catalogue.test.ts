@@ -108,6 +108,8 @@ const catalogue: Array<
 const migratedPluginTools = new Set([
   "apply_patch",
   "ask_user",
+  "browser_screenshot",
+  "browser_visit",
   "edit_file",
   "glob",
   "grep",
@@ -117,6 +119,8 @@ const migratedPluginTools = new Set([
   "read_media_file",
   "todo_read",
   "todo_write",
+  "web_fetch",
+  "web_search",
   "write_file",
 ]);
 

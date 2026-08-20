@@ -128,6 +128,23 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-tool-web",
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/capabilities/tool-family-capabilities.ts",
+    ],
+    forbidden: [
+      {
+        description: "direct web package import",
+        pattern: /from\s+["']@natalia\/tool-web["']/u,
+      },
+      {
+        description: "direct web tool construction",
+        pattern: /\b(?:webToolFamily|webTools|createWebPlugin)\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(

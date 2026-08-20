@@ -351,63 +351,6 @@ test("managed process IDs and deadlines are isolated by workspace", async () => 
     .execute({ id: "proc_same" }, { workspaceRoot: secondRoot });
 });
 
-test("browser visit tools provide native TS metadata", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-tools-browser-"));
-  const tools = builtinTools();
-  let browserHeaders: Headers | undefined;
-  const server = Bun.serve({
-    port: 0,
-    fetch: (request) => {
-      browserHeaders = request.headers;
-      return new Response("<title>TS Browser</title><main>browser-ok</main>");
-    },
-  });
-  try {
-    expect(
-      await tools.get("browser_visit")!.execute(
-        { url: server.url.toString() },
-        {
-          workspaceRoot: root,
-          settings: {
-            allowLocalhost: true,
-            allowedSchemes: ["http"],
-            browserUserAgent: "Natalia browser test",
-            browserHeaders: { "x-natalia-test": "enabled" },
-          },
-        },
-      ),
-    ).toContain("browser-ok");
-    expect(browserHeaders?.get("user-agent")).toBe("Natalia browser test");
-    expect(browserHeaders?.get("x-natalia-test")).toBe("enabled");
-    await expect(
-      tools
-        .get("browser_visit")!
-        .execute(
-          { url: server.url.toString() },
-          { workspaceRoot: root, settings: { allowLocalhost: false } },
-        ),
-    ).rejects.toThrow("localhost network access is not allowed");
-    await expect(
-      tools
-        .get("browser_visit")!
-        .execute(
-          { url: server.url.toString() },
-          { workspaceRoot: root, settings: { allowedSchemes: ["https"] } },
-        ),
-    ).rejects.toThrow("network scheme is not allowed");
-    await expect(
-      tools
-        .get("browser_visit")!
-        .execute(
-          { url: server.url.toString() },
-          { workspaceRoot: root, settings: { browserEnabled: false } },
-        ),
-    ).rejects.toThrow("browser tools are disabled");
-  } finally {
-    server.stop(true);
-  }
-});
-
 test("migrated plugin tools are absent from the static tool assembly", () => {
   expect(builtinTools().has("ask_user")).toBe(false);
   expect(builtinTools().has("todo_read")).toBe(false);
@@ -418,55 +361,10 @@ test("migrated plugin tools are absent from the static tool assembly", () => {
   expect(builtinTools().has("edit_file")).toBe(false);
   expect(builtinTools().has("image_read")).toBe(false);
   expect(builtinTools().has("apply_patch")).toBe(false);
-});
-
-test("web_search uses a native configured endpoint without proxying Go", async () => {
-  const tools = builtinTools();
-  const saved = process.env.NATALIA_WEB_SEARCH_URL;
-  const server = Bun.serve({
-    port: 0,
-    fetch: (request) => {
-      expect(new URL(request.url).searchParams.get("q")).toBe("Natalia TS7");
-      return new Response("native search result");
-    },
-  });
-  process.env.NATALIA_WEB_SEARCH_URL = server.url.toString();
-  try {
-    await expect(
-      tools
-        .get("web_search")!
-        .execute({ query: "Natalia TS7" }, { workspaceRoot: tmpdir() }),
-    ).resolves.toContain("native search result");
-  } finally {
-    server.stop(true);
-    if (saved) process.env.NATALIA_WEB_SEARCH_URL = saved;
-    else delete process.env.NATALIA_WEB_SEARCH_URL;
-  }
-});
-
-test("web_search selects the configured endpoint only when its priority permits", async () => {
-  const tools = builtinTools();
-  const configured = Bun.serve({
-    port: 0,
-    fetch: () => new Response("configured provider result"),
-  });
-  try {
-    await expect(
-      tools.get("web_search")!.execute(
-        { query: "priority" },
-        {
-          workspaceRoot: tmpdir(),
-          settings: {
-            webSearchEndpoint: configured.url.toString(),
-            webSearchProviderPriority: ["configured", "duckduckgo"],
-            allowLocalhost: true,
-          },
-        },
-      ),
-    ).resolves.toContain("configured provider result");
-  } finally {
-    configured.stop(true);
-  }
+  expect(builtinTools().has("web_fetch")).toBe(false);
+  expect(builtinTools().has("web_search")).toBe(false);
+  expect(builtinTools().has("browser_visit")).toBe(false);
+  expect(builtinTools().has("browser_screenshot")).toBe(false);
 });
 
 test("interactive Terminal tools keep model I/O on one native host pane", async () => {

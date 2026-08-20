@@ -201,6 +201,7 @@ import {
   SEARCH_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
   TODO_PLUGIN_ID,
+  WEB_PLUGIN_ID,
 } from "./builtin-plugins/catalog";
 import {
   loadLocalToolFamilies,
@@ -2047,6 +2048,10 @@ export function createRealRuntimeClient(
         !options.tools &&
         tsRuntimeConfig?.tools.enabled.fs !== false &&
         tsRuntimeConfig?.plugins.enabled[FS_WRITE_PLUGIN_ID] !== false,
+      webEnabled:
+        !options.tools &&
+        tsRuntimeConfig?.tools.enabled.web !== false &&
+        tsRuntimeConfig?.plugins.enabled[WEB_PLUGIN_ID] !== false,
       pdfEnabled:
         extensionEnabled("plugins") &&
         tsRuntimeConfig?.plugins.enabled[PDF_PLUGIN_ID] !== false,

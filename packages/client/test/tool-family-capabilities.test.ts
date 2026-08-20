@@ -48,6 +48,9 @@ test("the host composes the built-in catalogue from families", () => {
   expect(builtinToolNames({ "fs-read": false })).toContain("write_file");
   expect(builtinToolNames({ "fs-write": false })).not.toContain("apply_patch");
   expect(builtinToolNames({ "fs-write": false })).toContain("read_file");
+  expect(staticNames).not.toContain("web_fetch");
+  expect(builtinToolNames()).toContain("web_fetch");
+  expect(builtinToolNames({ web: false })).not.toContain("web_search");
 });
 
 test("each family declares exactly the tools grant", () => {
@@ -79,9 +82,11 @@ test("every built-in tool is owned by the family that contributed it", () => {
 test("unloading a family removes its tools from the kernel", () => {
   const registry = new CapabilityRegistry();
   createToolRegistryFromCapabilities({ registry });
-  const web = builtinToolFamilies().find((family) => family.id === "web")!;
-  expect(registry.unload(toolFamilyCapabilityID("web"))).toBe(true);
-  for (const tool of web.tools)
+  const process = builtinToolFamilies().find(
+    (family) => family.id === "process",
+  )!;
+  expect(registry.unload(toolFamilyCapabilityID("process"))).toBe(true);
+  for (const tool of process.tools)
     expect(registry.ownerOf("tools", tool.name)).toBeUndefined();
   // Other families are untouched — unload releases one family's contributions,
   // not the catalogue.
@@ -103,7 +108,7 @@ test("terminal aliases survive the kernel round trip", () => {
 test("a family that fails to load leaves none of its tools callable", () => {
   const registry = new CapabilityRegistry();
   const broken = builtinToolFamilies().map((family) =>
-    family.id === "web"
+    family.id === "process"
       ? {
           ...family,
           tools: [...family.tools, { ...family.tools[0]!, name: "" }],
@@ -115,12 +120,14 @@ test("a family that fails to load leaves none of its tools callable", () => {
     families: broken,
   });
   expect(outcome.failed.map((entry) => entry.id)).toEqual([
-    toolFamilyCapabilityID("web"),
+    toolFamilyCapabilityID("process"),
   ]);
   // Activation rolled back, so the family is absent rather than half-present:
   // the tools it had already contributed before the bad one are gone too.
-  const web = builtinToolFamilies().find((family) => family.id === "web")!;
-  for (const tool of web.tools) expect(tools.has(tool.name)).toBe(false);
+  const process = builtinToolFamilies().find(
+    (family) => family.id === "process",
+  )!;
+  for (const tool of process.tools) expect(tools.has(tool.name)).toBe(false);
   expect(tools.has("agent_list")).toBe(true);
 });
 
@@ -139,11 +146,13 @@ test("config enabled=false keeps a static family out of the registry entirely", 
   const registry = new CapabilityRegistry();
   const { tools } = createToolRegistryFromCapabilities({
     registry,
-    enabled: { web: false },
+    enabled: { process: false },
   });
-  const web = builtinToolFamilies().find((family) => family.id === "web")!;
-  for (const tool of web.tools) expect(tools.has(tool.name)).toBe(false);
-  expect(registry.has(toolFamilyCapabilityID("web"))).toBe(false);
+  const process = builtinToolFamilies().find(
+    (family) => family.id === "process",
+  )!;
+  for (const tool of process.tools) expect(tools.has(tool.name)).toBe(false);
+  expect(registry.has(toolFamilyCapabilityID("process"))).toBe(false);
   // Everything else still loads.
   expect(tools.has("agent_list")).toBe(true);
 });
@@ -151,17 +160,19 @@ test("config enabled=false keeps a static family out of the registry entirely", 
 test("applyToolFamilyEnabledFilter removes a disabled family after assembly", () => {
   const registry = new CapabilityRegistry();
   const { tools } = createToolRegistryFromCapabilities({ registry });
-  expect(tools.has("web_fetch")).toBe(true);
+  expect(tools.has("process_start")).toBe(true);
   const cascaded = applyToolFamilyEnabledFilter({
     tools,
     registry,
     families: builtinToolFamilies(),
-    enabled: { web: false },
+    enabled: { process: false },
   });
   expect(cascaded).toEqual([]);
-  const web = builtinToolFamilies().find((family) => family.id === "web")!;
-  for (const tool of web.tools) expect(tools.has(tool.name)).toBe(false);
-  expect(registry.has(toolFamilyCapabilityID("web"))).toBe(false);
+  const process = builtinToolFamilies().find(
+    (family) => family.id === "process",
+  )!;
+  for (const tool of process.tools) expect(tools.has(tool.name)).toBe(false);
+  expect(registry.has(toolFamilyCapabilityID("process"))).toBe(false);
 });
 
 test("a family that depends on a disabled one is cascade-disabled with a reason", () => {
