@@ -1282,7 +1282,17 @@ for (const [label, config] of [
 
 for (const [label, config] of [
   ["legacy family switch", { tools: { enabled: { fs: false } } }],
-  ["plugin switch", { plugins: { enabled: { "natalia-tool-fs": false } } }],
+  [
+    "plugin switch",
+    {
+      plugins: {
+        enabled: {
+          "natalia-tool-fs-read": false,
+          "natalia-tool-fs-write": false,
+        },
+      },
+    },
+  ],
 ] as const)
   test(`disabled fs ${label} leaves no tool or capability`, async () => {
     const root = await mkdtemp(join(tmpdir(), "natalia-runtime-fs-disabled-"));
@@ -1313,9 +1323,44 @@ for (const [label, config] of [
             event.name === "apply_patch"),
       ),
     ).toBe(false);
-    expect(kernel.has("natalia-tool-fs")).toBe(false);
+    expect(kernel.has("natalia-tool-fs-read")).toBe(false);
+    expect(kernel.has("natalia-tool-fs-write")).toBe(false);
     await client.dispose?.();
   }, 60_000);
+
+test("disabling only the fs read plugin keeps the write tools", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-runtime-fs-read-off-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 3,
+      plugins: { enabled: { "natalia-tool-fs-read": false } },
+    }),
+  );
+  const events: RuntimeEvent[] = [];
+  const kernel = new CapabilityRegistry();
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_runtime_fs_read_off",
+    capabilityRegistry: kernel,
+    provider: scriptedProvider("ready"),
+  });
+  client.start((event) => events.push(event));
+  await waitFor(() => events.some((event) => event.type === "session.ready"));
+  const registered = new Set(
+    events
+      .filter((event) => event.type === "tool.registered")
+      .map((event) => event.name),
+  );
+  for (const name of ["read_file", "read_media_file", "image_read"])
+    expect(registered.has(name)).toBe(false);
+  for (const name of ["write_file", "edit_file", "apply_patch"])
+    expect(registered.has(name)).toBe(true);
+  expect(kernel.has("natalia-tool-fs-read")).toBe(false);
+  expect(kernel.has("natalia-tool-fs-write")).toBe(true);
+  await client.dispose?.();
+}, 60_000);
 
 test("read-only profile rejects side-effecting tools without an approval request", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-runtime-read-only-"));

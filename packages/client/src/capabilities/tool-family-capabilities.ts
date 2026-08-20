@@ -75,15 +75,10 @@ export function builtinToolNames(enabled?: Record<string, boolean>): string[] {
   if (enabled?.ask !== false) names.push("ask_user");
   if (enabled?.todo !== false) names.push("plan", "todo_read", "todo_write");
   if (enabled?.search !== false) names.push("glob", "grep");
-  if (enabled?.fs !== false)
-    names.push(
-      "read_file",
-      "write_file",
-      "edit_file",
-      "read_media_file",
-      "image_read",
-      "apply_patch",
-    );
+  if (enabled?.fs !== false && enabled?.["fs-read"] !== false)
+    names.push("read_file", "read_media_file", "image_read");
+  if (enabled?.fs !== false && enabled?.["fs-write"] !== false)
+    names.push("write_file", "edit_file", "apply_patch");
   return names;
 }
 
@@ -117,20 +112,22 @@ export const migratedBuiltinToolFamilies = [
     tools: ["glob", "grep"],
   },
   {
-    id: "fs",
-    name: "Filesystem Tools",
+    id: "fs-read",
+    name: "Filesystem Read Tools",
     version: "1.0.0",
-    description: "Reading, writing and editing workspace files.",
+    description: "Reading workspace files and media metadata.",
     scope: "workspace",
     dependencies: [],
-    tools: [
-      "read_file",
-      "write_file",
-      "edit_file",
-      "read_media_file",
-      "image_read",
-      "apply_patch",
-    ],
+    tools: ["read_file", "read_media_file", "image_read"],
+  },
+  {
+    id: "fs-write",
+    name: "Filesystem Write Tools",
+    version: "1.0.0",
+    description: "Writing and editing workspace files.",
+    scope: "workspace",
+    dependencies: [],
+    tools: ["write_file", "edit_file", "apply_patch"],
   },
 ] as const;
 

@@ -43,6 +43,11 @@ test("the host composes the built-in catalogue from families", () => {
   expect(builtinToolNames({ todo: false })).not.toContain("todo_read");
   expect(builtinToolNames({ search: false })).not.toContain("glob");
   expect(builtinToolNames({ fs: false })).not.toContain("read_file");
+  expect(builtinToolNames({ fs: false })).not.toContain("write_file");
+  expect(builtinToolNames({ "fs-read": false })).not.toContain("read_file");
+  expect(builtinToolNames({ "fs-read": false })).toContain("write_file");
+  expect(builtinToolNames({ "fs-write": false })).not.toContain("apply_patch");
+  expect(builtinToolNames({ "fs-write": false })).toContain("read_file");
 });
 
 test("each family declares exactly the tools grant", () => {

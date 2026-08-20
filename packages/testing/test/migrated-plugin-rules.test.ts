@@ -19,7 +19,14 @@ test("migrated plugin rules retain built-in plugin protections", () => {
       "natalia-tool-search",
       'import { searchTools } from "@natalia/tool-search"',
     ],
-    ["natalia-tool-fs", 'import { fileTools } from "@natalia/tool-fs"'],
+    [
+      "natalia-tool-fs-read",
+      'import { readFileTools } from "@natalia/tool-fs-read"',
+    ],
+    [
+      "natalia-tool-fs-write",
+      'import { writeFileTools } from "@natalia/tool-fs-write"',
+    ],
   ])
     expect(findMigratedPluginViolations(target, source)).toContainEqual(
       expect.objectContaining({ pluginID }),
@@ -31,7 +38,8 @@ test("tool migrations protect the legacy static capability root", () => {
     ["natalia-tool-ask", "askToolFamily()"],
     ["natalia-tool-todo", "todoToolFamily()"],
     ["natalia-tool-search", "searchToolFamily()"],
-    ["natalia-tool-fs", "fsToolFamily()"],
+    ["natalia-tool-fs-read", "fsReadToolFamily()"],
+    ["natalia-tool-fs-write", "fsWriteToolFamily()"],
   ])
     expect(
       findMigratedPluginViolations(

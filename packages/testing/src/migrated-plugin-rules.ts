@@ -94,19 +94,37 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
     ],
   },
   {
-    id: "natalia-tool-fs",
+    id: "natalia-tool-fs-read",
     targets: [
       "packages/client/src/real-runtime.ts",
       "packages/client/src/capabilities/tool-family-capabilities.ts",
     ],
     forbidden: [
       {
-        description: "direct fs package import",
-        pattern: /from\s+["']@natalia\/tool-fs["']/u,
+        description: "direct fs-read package import",
+        pattern: /from\s+["']@natalia\/tool-fs-read["']/u,
       },
       {
-        description: "direct fs tool construction",
-        pattern: /\b(?:fsToolFamily|fileTools|createFsPlugin|imageReadTool)\b/u,
+        description: "direct fs-read tool construction",
+        pattern: /\b(?:fsReadToolFamily|readFileTools|createFsReadPlugin)\b/u,
+      },
+    ],
+  },
+  {
+    id: "natalia-tool-fs-write",
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/capabilities/tool-family-capabilities.ts",
+    ],
+    forbidden: [
+      {
+        description: "direct fs-write package import",
+        pattern: /from\s+["']@natalia\/tool-fs-write["']/u,
+      },
+      {
+        description: "direct fs-write tool construction",
+        pattern:
+          /\b(?:fsWriteToolFamily|writeFileTools|createFsWritePlugin)\b/u,
       },
     ],
   },

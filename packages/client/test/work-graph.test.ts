@@ -136,7 +136,7 @@ test("runtime startup records the effective tool catalogue as metadata", async (
   // names the family that owns a tool and the scope that family declared —
   // not an anonymous `natalia-runtime`.
   expect(registered.find((event) => event.name === "read_file")).toMatchObject({
-    owner: "natalia-tool-fs",
+    owner: "natalia-tool-fs-read",
     scope: "workspace",
     recovery: "fail_closed",
   });

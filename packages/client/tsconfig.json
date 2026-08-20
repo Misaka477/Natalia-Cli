@@ -52,7 +52,10 @@
       "path": "../tool-ask"
     },
     {
-      "path": "../tool-fs"
+      "path": "../tool-fs-read"
+    },
+    {
+      "path": "../tool-fs-write"
     },
     {
       "path": "../tool-pdf"

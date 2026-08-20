@@ -2,7 +2,11 @@ import { createPdfPlugin, PDF_PLUGIN_ID } from "@natalia/tool-pdf";
 import { ASK_PLUGIN_ID, createAskPlugin } from "@natalia/tool-ask";
 import { createTodoPlugin, TODO_PLUGIN_ID } from "@natalia/tool-todo";
 import { createSearchPlugin, SEARCH_PLUGIN_ID } from "@natalia/tool-search";
-import { createFsPlugin, FS_PLUGIN_ID } from "@natalia/tool-fs";
+import { createFsReadPlugin, FS_READ_PLUGIN_ID } from "@natalia/tool-fs-read";
+import {
+  createFsWritePlugin,
+  FS_WRITE_PLUGIN_ID,
+} from "@natalia/tool-fs-write";
 import type { Plugin } from "@natalia/plugin";
 import type { Skill } from "@natalia/skills";
 import type { ToolExecutionContext } from "@natalia/tools";
@@ -14,7 +18,8 @@ import {
 
 export {
   ASK_PLUGIN_ID,
-  FS_PLUGIN_ID,
+  FS_READ_PLUGIN_ID,
+  FS_WRITE_PLUGIN_ID,
   PDF_PLUGIN_ID,
   SEARCH_PLUGIN_ID,
   SKILLS_PLUGIN_ID,
@@ -30,7 +35,8 @@ export type BuiltinPluginEntry = {
 
 export function builtinPluginCatalog(input: {
   askEnabled: boolean;
-  fsEnabled: boolean;
+  fsReadEnabled: boolean;
+  fsWriteEnabled: boolean;
   pdfEnabled: boolean;
   searchEnabled: boolean;
   todoEnabled: boolean;
@@ -62,9 +68,14 @@ export function builtinPluginCatalog(input: {
       create: () => createSearchPlugin(),
     },
     {
-      id: FS_PLUGIN_ID,
-      enabled: input.fsEnabled,
-      create: () => createFsPlugin(),
+      id: FS_READ_PLUGIN_ID,
+      enabled: input.fsReadEnabled,
+      create: () => createFsReadPlugin(),
+    },
+    {
+      id: FS_WRITE_PLUGIN_ID,
+      enabled: input.fsWriteEnabled,
+      create: () => createFsWritePlugin(),
     },
     {
       id: SKILLS_PLUGIN_ID,

@@ -195,7 +195,8 @@ import {
 import {
   ASK_PLUGIN_ID,
   builtinPluginCatalog,
-  FS_PLUGIN_ID,
+  FS_READ_PLUGIN_ID,
+  FS_WRITE_PLUGIN_ID,
   PDF_PLUGIN_ID,
   SEARCH_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
@@ -2038,10 +2039,14 @@ export function createRealRuntimeClient(
         !options.tools &&
         tsRuntimeConfig?.tools.enabled.search !== false &&
         tsRuntimeConfig?.plugins.enabled[SEARCH_PLUGIN_ID] !== false,
-      fsEnabled:
+      fsReadEnabled:
         !options.tools &&
         tsRuntimeConfig?.tools.enabled.fs !== false &&
-        tsRuntimeConfig?.plugins.enabled[FS_PLUGIN_ID] !== false,
+        tsRuntimeConfig?.plugins.enabled[FS_READ_PLUGIN_ID] !== false,
+      fsWriteEnabled:
+        !options.tools &&
+        tsRuntimeConfig?.tools.enabled.fs !== false &&
+        tsRuntimeConfig?.plugins.enabled[FS_WRITE_PLUGIN_ID] !== false,
       pdfEnabled:
         extensionEnabled("plugins") &&
         tsRuntimeConfig?.plugins.enabled[PDF_PLUGIN_ID] !== false,
