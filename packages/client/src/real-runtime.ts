@@ -199,6 +199,7 @@ import {
   FS_WRITE_PLUGIN_ID,
   PDF_PLUGIN_ID,
   SEARCH_PLUGIN_ID,
+  SHELL_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
   TODO_PLUGIN_ID,
   WEB_PLUGIN_ID,
@@ -2052,6 +2053,10 @@ export function createRealRuntimeClient(
         !options.tools &&
         tsRuntimeConfig?.tools.enabled.web !== false &&
         tsRuntimeConfig?.plugins.enabled[WEB_PLUGIN_ID] !== false,
+      shellEnabled:
+        !options.tools &&
+        tsRuntimeConfig?.tools.enabled.shell !== false &&
+        tsRuntimeConfig?.plugins.enabled[SHELL_PLUGIN_ID] !== false,
       pdfEnabled:
         extensionEnabled("plugins") &&
         tsRuntimeConfig?.plugins.enabled[PDF_PLUGIN_ID] !== false,

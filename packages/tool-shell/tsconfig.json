@@ -7,6 +7,9 @@
   "include": ["src", "test"],
   "references": [
     {
+      "path": "../plugin"
+    },
+    {
       "path": "../tools"
     },
     {

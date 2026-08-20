@@ -8,6 +8,7 @@
 import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
 import { profileShellCommand } from "@natalia/platform";
+import type { Plugin } from "@natalia/plugin";
 import { numberOr, requireObject, requireString } from "@natalia/tools";
 import { safeToolEnv, terminateChildProcessTree } from "@natalia/tools";
 import type {
@@ -15,6 +16,8 @@ import type {
   ToolExecutionContext,
   ToolFamily,
 } from "@natalia/tools";
+
+export const SHELL_PLUGIN_ID = "natalia-tool-shell";
 
 function runShellTool(): RuntimeTool {
   return {
@@ -149,5 +152,29 @@ export function shellToolFamily(): ToolFamily {
     description: "One-shot command execution.",
     scope: "session",
     tools: shellTools,
+  };
+}
+
+export function createShellPlugin(): Plugin {
+  return {
+    manifest: {
+      apiVersion: 2,
+      id: SHELL_PLUGIN_ID,
+      version: "1.0.0",
+      name: "Shell Tools",
+      description: "One-shot command execution.",
+      entry: "natalia:tool-shell",
+      scope: "session",
+      provides: [],
+      requires: [],
+      optionalRequires: [],
+      conflicts: [],
+      dependencies: [],
+      hooks: {},
+      integrationPoints: ["tools"],
+    },
+    setup(api) {
+      for (const tool of shellTools) api.tools.register(tool);
+    },
   };
 }

@@ -2,13 +2,34 @@ import { expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { shellToolFamily, shellTools, runShell } from "../src";
+import { createPluginRegistry } from "@natalia/plugin";
+import { createToolRegistry } from "@natalia/tools";
+import {
+  createShellPlugin,
+  SHELL_PLUGIN_ID,
+  shellToolFamily,
+  shellTools,
+  runShell,
+} from "../src";
 
 test("the shell family describes the tool it ships", () => {
   const family = shellToolFamily();
   expect(family.id).toBe("shell");
   expect(family.scope).toBe("session");
   expect(family.tools).toEqual(shellTools);
+});
+
+test("the shell plugin owns run_shell and unloads cleanly", async () => {
+  const tools = createToolRegistry([]);
+  const registry = createPluginRegistry({ tools });
+  await registry.loadBuiltin(createShellPlugin());
+  expect(registry.list()[0]).toMatchObject({
+    id: SHELL_PLUGIN_ID,
+    scope: "session",
+  });
+  expect(tools.has("run_shell")).toBe(true);
+  await registry.unload(SHELL_PLUGIN_ID);
+  expect(tools.has("run_shell")).toBe(false);
 });
 
 test("run_shell runs a command inside the workspace and reports exit", async () => {

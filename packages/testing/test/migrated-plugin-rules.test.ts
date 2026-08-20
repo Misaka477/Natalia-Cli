@@ -28,6 +28,7 @@ test("migrated plugin rules retain built-in plugin protections", () => {
       'import { writeFileTools } from "@natalia/tool-fs-write"',
     ],
     ["natalia-tool-web", 'import { webTools } from "@natalia/tool-web"'],
+    ["natalia-tool-shell", 'import { shellTools } from "@natalia/tool-shell"'],
   ])
     expect(findMigratedPluginViolations(target, source)).toContainEqual(
       expect.objectContaining({ pluginID }),
@@ -42,6 +43,7 @@ test("tool migrations protect the legacy static capability root", () => {
     ["natalia-tool-fs-read", "fsReadToolFamily()"],
     ["natalia-tool-fs-write", "fsWriteToolFamily()"],
     ["natalia-tool-web", "webToolFamily()"],
+    ["natalia-tool-shell", "shellToolFamily()"],
   ])
     expect(
       findMigratedPluginViolations(

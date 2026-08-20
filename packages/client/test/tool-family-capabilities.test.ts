@@ -51,6 +51,9 @@ test("the host composes the built-in catalogue from families", () => {
   expect(staticNames).not.toContain("web_fetch");
   expect(builtinToolNames()).toContain("web_fetch");
   expect(builtinToolNames({ web: false })).not.toContain("web_search");
+  expect(staticNames).not.toContain("run_shell");
+  expect(builtinToolNames()).toContain("run_shell");
+  expect(builtinToolNames({ shell: false })).not.toContain("run_shell");
 });
 
 test("each family declares exactly the tools grant", () => {

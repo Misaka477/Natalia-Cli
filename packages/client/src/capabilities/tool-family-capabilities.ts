@@ -25,7 +25,6 @@ import {
   processToolFamily,
 } from "@natalia/tool-process";
 import { sandboxToolFamily } from "@natalia/tool-sandbox";
-import { shellToolFamily } from "@natalia/tool-shell";
 import { terminalToolFamily } from "@natalia/tool-terminal";
 import {
   createToolRegistry,
@@ -59,7 +58,6 @@ export function builtinToolFamilies(
     agentToolFamily(),
     terminalToolFamily(),
     sandboxToolFamily(),
-    shellToolFamily(),
     processToolFamily(processRegistry),
   ].filter((family) => enabled?.[family.id] !== false);
 }
@@ -84,6 +82,7 @@ export function builtinToolNames(enabled?: Record<string, boolean>): string[] {
       "browser_visit",
       "browser_screenshot",
     );
+  if (enabled?.shell !== false) names.push("run_shell");
   return names;
 }
 
@@ -142,6 +141,15 @@ export const migratedBuiltinToolFamilies = [
     scope: "session",
     dependencies: [],
     tools: ["web_fetch", "web_search", "browser_visit", "browser_screenshot"],
+  },
+  {
+    id: "shell",
+    name: "Shell Tools",
+    version: "1.0.0",
+    description: "One-shot command execution.",
+    scope: "session",
+    dependencies: [],
+    tools: ["run_shell"],
   },
 ] as const;
 

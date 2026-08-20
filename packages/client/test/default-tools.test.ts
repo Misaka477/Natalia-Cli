@@ -21,15 +21,9 @@ function builtinTools(processRegistry = new ManagedProcessRegistry()) {
 import { NativeTerminalRegistry } from "@natalia/native-terminal";
 import { WorkspaceSandboxManager } from "@natalia/sandbox";
 
-test("default shell and process tools execute real commands", async () => {
+test("default process tools execute real commands", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tools-process-"));
-  await writeFile(join(root, "data.txt"), "ok\n");
   const tools = builtinTools();
-  const shell = await tools
-    .get("run_shell")!
-    .execute({ command: "cat data.txt" }, { workspaceRoot: root });
-  expect(shell).toContain("ok");
-
   const started = JSON.parse(
     await tools.get("process_start")!.execute(
       {
@@ -365,6 +359,7 @@ test("migrated plugin tools are absent from the static tool assembly", () => {
   expect(builtinTools().has("web_search")).toBe(false);
   expect(builtinTools().has("browser_visit")).toBe(false);
   expect(builtinTools().has("browser_screenshot")).toBe(false);
+  expect(builtinTools().has("run_shell")).toBe(false);
 });
 
 test("interactive Terminal tools keep model I/O on one native host pane", async () => {

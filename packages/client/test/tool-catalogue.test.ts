@@ -117,6 +117,7 @@ const migratedPluginTools = new Set([
   "plan",
   "read_file",
   "read_media_file",
+  "run_shell",
   "todo_read",
   "todo_write",
   "web_fetch",

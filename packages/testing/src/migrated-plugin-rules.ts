@@ -145,6 +145,23 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-tool-shell",
+    targets: [
+      "packages/client/src/real-runtime.ts",
+      "packages/client/src/capabilities/tool-family-capabilities.ts",
+    ],
+    forbidden: [
+      {
+        description: "direct shell package import",
+        pattern: /from\s+["']@natalia\/tool-shell["']/u,
+      },
+      {
+        description: "direct shell tool construction",
+        pattern: /\b(?:shellToolFamily|shellTools|createShellPlugin)\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(
