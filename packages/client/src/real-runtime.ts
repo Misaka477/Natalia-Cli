@@ -21,7 +21,6 @@ import {
   sandboxedSubagentSystemPrompt,
 } from "./agent-team-prompts";
 import type { SandboxController } from "./sandbox-controller";
-import { createTeamFanoutTool, createTeamReviewTool } from "./team-tools";
 import type { CheckpointController } from "./checkpoint-controller";
 import {
   CHECKPOINT_FACTORY_SERVICE,
@@ -1212,6 +1211,9 @@ export function createRealRuntimeClient(
           useSqliteStore: options.useSqliteStore,
           title: options.title,
         },
+        team: {
+          enabled: extensionEnabled("plugins") || extensionEnabled("skills"),
+        },
       });
       for (const entry of builtinPlugins) {
         if (!entry.enabled) continue;
@@ -2355,25 +2357,8 @@ export function createRealRuntimeClient(
     // suggestions (adopt/reject/defer) and may ask her a question — she sees
     // both in her next turn's context, so neither agent waits for the user.
     // Agent-team: the main agent orchestrates a fan-out via these tools and
-    // acts as the lead reviewer. Host-registered like the skills/mailbox tools.
-    if (extensionEnabled("plugins") || extensionEnabled("skills")) {
-      tools.set(
-        "team_fanout",
-        createTeamFanoutTool({
-          subagents: () =>
-            (subagentsController?.enabled() ?? false)
-              ? subagentsController!.get()
-              : undefined,
-          sandboxes: () => sandboxController?.get(),
-        }),
-      );
-      tools.set(
-        "team_review",
-        createTeamReviewTool({
-          sandboxes: () => sandboxController?.get(),
-        }),
-      );
-    }
+    // acts as the lead reviewer. The team tools register through the
+    // `natalia-team` built-in plugin, gated on the same extension switch.
     tools.set("collab_respond", {
       name: "collab_respond",
       description:

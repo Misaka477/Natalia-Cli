@@ -336,6 +336,16 @@ export const migratedPluginRules: readonly MigratedPluginRule[] = [
       },
     ],
   },
+  {
+    id: "natalia-team",
+    targets: ["packages/client/src/real-runtime.ts"],
+    forbidden: [
+      {
+        description: "direct team tool construction",
+        pattern: /\b(?:createTeamFanoutTool|createTeamReviewTool)\b/u,
+      },
+    ],
+  },
 ];
 
 export function findMigratedPluginViolations(

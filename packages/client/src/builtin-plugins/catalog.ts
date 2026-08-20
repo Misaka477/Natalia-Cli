@@ -64,6 +64,7 @@ import {
   createSessionStoreControllerPlugin,
   SESSION_STORE_PLUGIN_ID,
 } from "./session-store-controller-plugin";
+import { createTeamPlugin, TEAM_PLUGIN_ID } from "./team-plugin";
 import {
   createSkillsPlugin,
   SKILLS_PLUGIN_ID,
@@ -174,6 +175,8 @@ export function builtinPluginCatalog(input: {
     useSqliteStore?: boolean;
     title?: string;
   };
+  /** Team fan-out tools, gated on the host's extension switch. */
+  team?: { enabled: boolean };
 }): BuiltinPluginEntry[] {
   return [
     {
@@ -356,6 +359,15 @@ export function builtinPluginCatalog(input: {
                 useSqliteStore: input.sessionStore!.useSqliteStore,
                 title: input.sessionStore!.title,
               }),
+          },
+        ]
+      : []),
+    ...(input.team
+      ? [
+          {
+            id: TEAM_PLUGIN_ID,
+            enabled: input.team.enabled,
+            create: () => createTeamPlugin({ enabled: input.team!.enabled }),
           },
         ]
       : []),
