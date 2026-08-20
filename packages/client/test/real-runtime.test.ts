@@ -1703,6 +1703,69 @@ test("TS config applies retry/context/checkpoint policy to an explicit provider"
   ).toBe(true);
 });
 
+test("context budget follows the executing model instead of a mismatched configured default", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-active-model-context-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 3,
+      context: { compactionThresholdPercent: 91 },
+      defaultModel: { provider: "configured", model: "configured-model" },
+      catalog: {
+        providers: {
+          configured: {
+            models: {
+              "configured-model": {
+                name: "configured-model",
+                limits: { contextWindow: 500_000 },
+              },
+            },
+          },
+        },
+      },
+      providers: {
+        configured: {
+          name: "configured",
+          driver: "openai",
+          enabled: true,
+          connection: { apiKey: "test-config-key" },
+        },
+      },
+    }),
+  );
+  const events: RuntimeEvent[] = [];
+  const provider: StreamingProvider = {
+    provider: "configured",
+    model: "actual-model",
+    listModels: async () => [
+      { id: "actual-model", contextWindow: 64_000, maxOutputTokens: 4_096 },
+    ],
+    async *stream() {
+      yield { type: "content" as const, text: "done" };
+    },
+  };
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_active_model_context",
+    provider,
+  });
+  client.start((event) => events.push(event));
+  try {
+    await client.submit("hello");
+    expect(
+      events.some(
+        (event) =>
+          event.type === "context.status" &&
+          event.max === 64_000 &&
+          event.thresholdPercent === 91,
+      ),
+    ).toBe(true);
+  } finally {
+    await client.dispose?.();
+  }
+});
+
 test("runtime does not cap steps when no maximum is configured", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-unlimited-steps-"));
   let calls = 0;
@@ -2069,7 +2132,68 @@ test("permission profile disables installed skills and plugins before discovery"
       (tool) => tool.name === "skill_load",
     ),
   ).toBe(false);
+  expect(
+    (await client.capabilities?.())?.some(
+      (capability) => capability.id === "natalia-tool-pdf",
+    ),
+  ).toBe(false);
+  expect(
+    (await client.registeredTools?.())?.some(
+      (tool) => tool.name === "pdf_read",
+    ),
+  ).toBe(false);
   await client.dispose?.();
+});
+
+test("PDF built-in plugin is owned by the kernel and can be absent", async () => {
+  const enabledRoot = await mkdtemp(join(tmpdir(), "natalia-pdf-enabled-"));
+  const enabled = createRealRuntimeClient({
+    workspaceRoot: enabledRoot,
+    sessionID: "ses_pdf_enabled",
+    provider: scriptedProvider("unused"),
+  });
+  enabled.start(() => undefined);
+  expect(
+    (await enabled.capabilities?.())?.find(
+      (capability) => capability.id === "natalia-tool-pdf",
+    ),
+  ).toMatchObject({
+    grants: ["tools"],
+    contributions: [{ kind: "tools", name: "pdf_read" }],
+  });
+  expect(
+    (await enabled.registeredTools?.())?.find(
+      (tool) => tool.name === "pdf_read",
+    ),
+  ).toMatchObject({ owner: "natalia-tool-pdf", requiresApproval: false });
+  await enabled.dispose?.();
+
+  const disabledRoot = await mkdtemp(join(tmpdir(), "natalia-pdf-disabled-"));
+  await mkdir(join(disabledRoot, ".natalia"), { recursive: true });
+  await writeFile(
+    join(disabledRoot, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 3,
+      plugins: { enabled: { "natalia-tool-pdf": false } },
+    }),
+  );
+  const disabled = createRealRuntimeClient({
+    workspaceRoot: disabledRoot,
+    sessionID: "ses_pdf_disabled",
+    provider: scriptedProvider("unused"),
+  });
+  disabled.start(() => undefined);
+  expect(
+    (await disabled.capabilities?.())?.some(
+      (capability) => capability.id === "natalia-tool-pdf",
+    ),
+  ).toBe(false);
+  expect(
+    (await disabled.registeredTools?.())?.some(
+      (tool) => tool.name === "pdf_read",
+    ),
+  ).toBe(false);
+  await disabled.dispose?.();
 });
 
 test("permission profile denies injected MCP tools before execution", async () => {
@@ -12289,7 +12413,7 @@ function imageAttachProvider(): StreamingProvider {
       // Second step: the attached image must be in the messages the model sees.
       const hasImage = request.messages.some(
         (message) =>
-          message.role === "tool" &&
+          message.role === "user" &&
           Array.isArray(message.images) &&
           (message.images as unknown[]).length > 0,
       );
@@ -12352,7 +12476,7 @@ test("a model with image input can attach its own screenshot and see it", async 
     .filter((event) => event.type === "content.delta")
     .map((event) => (event as { text: string }).text)
     .join("");
-  // The second provider step saw the attached image on the tool message.
+  // The second provider step saw the attached image as multimodal user content.
   expect(text).toContain("saw my screenshot");
   await client.dispose?.();
 }, 60_000);

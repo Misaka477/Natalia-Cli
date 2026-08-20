@@ -8,7 +8,10 @@ import type {
 } from "@natalia/runtime";
 import type { RuntimeEvent } from "@natalia/contracts";
 import { ToolRegistry } from "@natalia/tools";
-import { createProviderRunner } from "../src/provider-runner";
+import {
+  createProviderRunner,
+  estimateProviderMessages,
+} from "../src/provider-runner";
 
 function content(text: string): ProviderStreamChunk {
   return { type: "content", text };
@@ -688,9 +691,75 @@ test("provider steps compact proactively before dispatching an oversized request
       (event) => event.type === "compaction.begin" && event.trigger === "ratio",
     ),
   ).toBe(true);
+  const begin = events.find(
+    (event): event is Extract<RuntimeEvent, { type: "compaction.begin" }> =>
+      event.type === "compaction.begin",
+  );
+  expect(begin?.beforeTokens).toBeGreaterThanOrEqual(100);
   expect(events.some((event) => event.type === "context.checkpoint")).toBe(
     true,
   );
+});
+
+test("provider message estimates exclude binary data URLs", () => {
+  const base = estimateProviderMessages([{ role: "user", content: "read it" }]);
+  const encoded = "A".repeat(2_000_000);
+  const image = estimateProviderMessages([
+    {
+      role: "user",
+      content: "read it",
+      images: [
+        { mediaType: "image/png", dataURL: `data:image/png;base64,${encoded}` },
+      ],
+    },
+  ]);
+  const pdf = estimateProviderMessages([
+    {
+      role: "user",
+      content: "read it",
+      pdfs: [
+        {
+          mediaType: "application/pdf",
+          dataURL: `data:application/pdf;base64,${encoded}`,
+        },
+      ],
+    },
+  ]);
+
+  expect(image).toBe(base + 256);
+  expect(pdf).toBe(base + 256);
+});
+
+test("a turn keeps the context budget snapshotted with its active model", async () => {
+  const runtimeContextConfig = {
+    max: 100_000,
+    thresholdPercent: 50,
+    reserved: 1_000,
+  };
+  let calls = 0;
+  const { runner, events } = makeHarness(
+    {
+      provider: "scripted",
+      model: "model-at-turn-start",
+      async *stream() {
+        calls += 1;
+        if (calls === 1) {
+          runtimeContextConfig.max = 10;
+          yield toolCall([
+            { id: "call_1", name: "read_file", arguments: "{}" },
+          ]);
+          return;
+        }
+        yield content("done");
+      },
+    },
+    { runtimeContextConfig },
+  );
+
+  await runner.runTurn(turn);
+
+  expect(calls).toBe(2);
+  expect(events.some((event) => event.type === "compaction.begin")).toBe(false);
 });
 
 test("delivered mailbox intents render into the system prompt", async () => {

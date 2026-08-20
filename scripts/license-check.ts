@@ -33,6 +33,13 @@ const packageLicenses = new Map<
 >();
 const packageRoot = "node_modules/.bun";
 if (!(await Bun.file("bun.lock").exists())) throw new Error("missing bun.lock");
+const lockedPackages = new Set(
+  [
+    ...(await Bun.file("bun.lock").text()).matchAll(
+      /:\s*\["([^"]+@[^"\s]+)"/gu,
+    ),
+  ].map((match) => match[1]!),
+);
 for (const directory of await readdir(packageRoot)) {
   const modules = `${packageRoot}/${directory}/node_modules`;
   let entries;
@@ -131,6 +138,7 @@ async function recordPackage(path: string) {
   const license = manifest.license ?? "UNKNOWN";
   const packages = licenses.get(license) ?? [];
   const id = `${manifest.name ?? path}@${manifest.version ?? "unknown"}`;
+  if (!lockedPackages.has(id)) return;
   if (!packages.includes(id)) packages.push(id);
   licenses.set(license, packages);
   if (packageLicenses.has(id)) return;

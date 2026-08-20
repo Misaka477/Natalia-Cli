@@ -15,6 +15,7 @@ const dependencyGuarded = [
   "packages/subagent",
   "packages/workflow",
   "packages/plugin",
+  "packages/tool-pdf",
 ];
 const capabilityRoots = ["packages/capabilities"];
 /**
@@ -32,10 +33,12 @@ const forbiddenCapabilityFactoryImports = [
   /from\s+["']@opentui\//u,
   /from\s+["']solid-js/u,
 ];
-const forbiddenStaticSkillsWiring = [
+const forbiddenStaticPluginWiring = [
   /\bcreateSkillsController\b/u,
   /\bdiscoverSkills\b/u,
   /\bcreateSkillLoadTool\b/u,
+  /from\s+["']@natalia\/tool-pdf["']/u,
+  /\bcreatePdf(?:Plugin|ReadTool)\b/u,
 ];
 const productionRoots = ["apps", "packages", "cmd", "internal", "scripts"];
 /**
@@ -195,10 +198,10 @@ for (const dir of deepImportRoots)
 for (const dir of productionRoots)
   await scan(join(root, dir), sourceExtensions, (full, text) => {
     if (full === join(root, "packages/client/src/real-runtime.ts"))
-      for (const pattern of forbiddenStaticSkillsWiring)
+      for (const pattern of forbiddenStaticPluginWiring)
         if (pattern.test(text))
           failures.push(
-            `${full}: built-in skills must be mounted through its plugin, not statically wired ${pattern}`,
+            `${full}: built-in features must be mounted through the plugin catalog, not statically wired ${pattern}`,
           );
     for (const pattern of forbiddenTraceNames) {
       if (pattern.test(text))

@@ -6,6 +6,13 @@ const packages = new Map<
   { license: string; path: string; text: string }
 >();
 const packageRoot = "node_modules/.bun";
+const lockedPackages = new Set(
+  [
+    ...(await Bun.file("bun.lock").text()).matchAll(
+      /:\s*\["([^"]+@[^"\s]+)"/gu,
+    ),
+  ].map((match) => match[1]!),
+);
 
 for (const directory of await readdir(packageRoot)) {
   const modules = `${packageRoot}/${directory}/node_modules`;
@@ -56,6 +63,7 @@ async function record(path: string) {
     license?: string;
   };
   const id = `${manifest.name ?? path}@${manifest.version ?? "unknown"}`;
+  if (!lockedPackages.has(id)) return;
   if (packages.has(id)) return;
   const directory = dirname(path);
   const files = await readdir(directory);

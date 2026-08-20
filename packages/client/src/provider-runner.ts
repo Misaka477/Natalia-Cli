@@ -46,6 +46,27 @@ import {
   isTextAttachment,
 } from "./attachments";
 
+export function estimateProviderMessages(messages: ProviderMessage[]) {
+  let tokens = 0;
+  for (const message of messages) {
+    tokens += estimateTokens(message.content);
+    if (message.toolName) tokens += estimateTokens(message.toolName);
+    if (message.toolCallID) tokens += estimateTokens(message.toolCallID);
+    for (const call of message.toolCalls ?? [])
+      tokens +=
+        estimateTokens(call.id) +
+        estimateTokens(call.name) +
+        estimateTokens(call.arguments);
+    // Binary data URLs are transport encoding, not tokenizer-visible text.
+    // Keep a small protocol allowance until provider usage supplies the exact
+    // model-specific multimodal cost.
+    tokens += (message.images?.length ?? 0) * 256;
+    tokens += (message.pdfs?.length ?? 0) * 256;
+    tokens += (message.videos?.length ?? 0) * 256;
+  }
+  return tokens;
+}
+
 export type ProviderUsage = { inputTokens: number; outputTokens: number };
 
 type TsRuntimeConfig = Awaited<ReturnType<typeof resolveConfig>>["config"];
@@ -277,6 +298,7 @@ export function createProviderRunner(input: {
     const activeProvider = input.provider()!;
     const activeModelCapabilities = input.modelCapabilities();
     const activePermissionMode = input.permissionMode();
+    const activeContextConfig = { ...input.runtimeContextConfig() };
     input.setActiveModelCapabilities(activeModelCapabilities);
     input.setActiveAbort(controller);
     input.setActiveTurnID(id);
@@ -417,7 +439,13 @@ export function createProviderRunner(input: {
           Number.isFinite(maxSteps) && step + 1 >= maxSteps;
         const finalOnlyStep = reachedStepLimit && !pendingNaviChat;
         ranFinalOnlyStep ||= finalOnlyStep;
-        await compactBeforeProviderStep(id, messages, step + 1, activeProvider);
+        await compactBeforeProviderStep(
+          id,
+          messages,
+          step + 1,
+          activeProvider,
+          activeContextConfig,
+        );
         const result = await runProviderStepWithRecovery(
           id,
           finalOnlyStep
@@ -434,6 +462,7 @@ export function createProviderRunner(input: {
           activeModelCapabilities,
           activePermissionMode,
           !finalOnlyStep,
+          activeContextConfig,
         );
         if (result.protocolViolation) {
           protocolCorrections += 1;
@@ -757,6 +786,7 @@ export function createProviderRunner(input: {
     activeModelCapabilities: ModelCapabilities,
     activePermissionMode: PermissionMode,
     allowToolCalls = true,
+    contextConfig = input.runtimeContextConfig(),
   ) {
     try {
       return await runProviderStep(
@@ -778,7 +808,6 @@ export function createProviderRunner(input: {
         compacted: false,
         reason: "context_limit",
       });
-      const config = input.runtimeContextConfig();
       const ledger = input.context();
       const compacted = await compactContext(
         ledger,
@@ -787,9 +816,9 @@ export function createProviderRunner(input: {
           id: `${id}:context-limit`,
           trigger: "context_limit",
           force: true,
-          maxTokens: config.max,
-          thresholdPercent: config.thresholdPercent,
-          reservedTokens: config.reserved,
+          maxTokens: contextConfig.max,
+          thresholdPercent: contextConfig.thresholdPercent,
+          reservedTokens: contextConfig.reserved,
           preservedRecentMessages:
             input.tsRuntimeConfig()?.context.preservedRecentMessages ?? 2,
           instruction: "Recover from provider context limit before retrying.",
@@ -842,14 +871,15 @@ export function createProviderRunner(input: {
     messages: ProviderMessage[],
     step: number,
     activeProvider: StreamingProvider,
+    config: { max: number; thresholdPercent: number; reserved: number },
   ) {
-    const config = input.runtimeContextConfig();
     const ledger = input.context();
+    const used = Math.max(
+      ledger.effectiveTokens(),
+      estimateProviderMessages(messages),
+    );
     const trigger = compactionTrigger({
-      used: Math.max(
-        ledger.effectiveTokens(),
-        estimateTokens(JSON.stringify(messages)),
-      ),
+      used,
       max: config.max,
       thresholdPercent: config.thresholdPercent,
       reserved: config.reserved,
@@ -867,6 +897,7 @@ export function createProviderRunner(input: {
         reservedTokens: config.reserved,
         preservedRecentMessages:
           input.tsRuntimeConfig()?.context.preservedRecentMessages ?? 2,
+        beforeTokens: used,
         instruction:
           "Compact before the next provider request while preserving the active task.",
         onEvent: input.publish,

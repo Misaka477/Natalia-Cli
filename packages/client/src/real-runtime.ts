@@ -189,9 +189,10 @@ import {
   registerRuntimeConfigCapability,
 } from "./capabilities/runtime-config-capability";
 import {
-  createSkillsPlugin,
+  builtinPluginCatalog,
+  PDF_PLUGIN_ID,
   SKILLS_REGISTRY_SERVICE,
-} from "./builtin-plugins/skills-plugin";
+} from "./builtin-plugins/catalog";
 import {
   loadLocalToolFamilies,
   reloadLocalToolFamily,
@@ -819,6 +820,21 @@ export function createRealRuntimeClient(
       false
     );
   }
+  function currentModelPdfInput(
+    exec: SessionExecutionState | undefined = activeExec,
+  ): boolean {
+    if (exec?.activeModelCapabilities)
+      return exec.activeModelCapabilities.pdfInput;
+    const ref = modelRefKeyForSelection(
+      exec ? exec.selectedAgent : selectedAgent,
+      exec ? exec.selectedModel : selectedModel,
+    );
+    if (!ref || !tsRuntimeConfig) return false;
+    return (
+      resolveEffectiveModel(tsRuntimeConfig, ref)?.capabilities.pdfInput ??
+      false
+    );
+  }
   function modelCapabilitiesForExecution(
     exec: SessionExecutionState | undefined,
   ): ModelCapabilities {
@@ -1261,6 +1277,11 @@ export function createRealRuntimeClient(
       runner: import("@natalia/subagent").RunnerContext,
       step: number,
       activeProvider: StreamingProvider,
+      activeContextConfig: {
+        max: number;
+        thresholdPercent: number;
+        reserved: number;
+      },
       allowToolCalls = true,
     ) {
       const id = subagentTurnID(runner);
@@ -1345,9 +1366,9 @@ export function createRealRuntimeClient(
           compactor: providerCompactor(activeProvider, runner.signal),
           compact: {
             id: `${id}:context-limit:${step}`,
-            maxTokens: runtimeContextConfig.max,
-            thresholdPercent: runtimeContextConfig.thresholdPercent,
-            reservedTokens: runtimeContextConfig.reserved,
+            maxTokens: activeContextConfig.max,
+            thresholdPercent: activeContextConfig.thresholdPercent,
+            reservedTokens: activeContextConfig.reserved,
             preservedRecentMessages:
               tsRuntimeConfig?.context.preservedRecentMessages ?? 2,
             instruction:
@@ -1657,6 +1678,7 @@ export function createRealRuntimeClient(
       );
       const repeatedCalls = new Map<string, number>();
       const maxSubagentSteps = effectiveMaxSteps(exec);
+      const activeContextConfig = { ...exec.runtimeContextConfig };
       for (let step = 1; step <= maxSubagentSteps; step++) {
         const isLastStep =
           Number.isFinite(maxSubagentSteps) && step >= maxSubagentSteps;
@@ -1679,6 +1701,7 @@ export function createRealRuntimeClient(
           runner,
           step,
           activeProvider,
+          activeContextConfig,
           !isLastStep,
         );
         if (!calls.length || isLastStep) {
@@ -1750,6 +1773,7 @@ export function createRealRuntimeClient(
         runner.log(`accepted: ${task}`);
         beginSubagentConversation(runner, task);
         const maxSubagentSteps = effectiveMaxSteps(exec);
+        const activeContextConfig = { ...exec.runtimeContextConfig };
         for (let step = 1; step <= maxSubagentSteps; step++) {
           const isLastStep =
             Number.isFinite(maxSubagentSteps) && step >= maxSubagentSteps;
@@ -1772,6 +1796,7 @@ export function createRealRuntimeClient(
             runner,
             step,
             activeProvider,
+            activeContextConfig,
             !isLastStep,
           );
           if (!calls.length || isLastStep) {
@@ -1992,27 +2017,40 @@ export function createRealRuntimeClient(
       });
     }
     await pluginsController.init({ loadLocal: false });
-    if (extensionEnabled("skills"))
+    const builtinPlugins = builtinPluginCatalog({
+      pdfEnabled:
+        extensionEnabled("plugins") &&
+        tsRuntimeConfig?.plugins.enabled[PDF_PLUGIN_ID] !== false,
+      ...(extensionEnabled("skills")
+        ? {
+            skills: {
+              workspaceRoot,
+              userRoot: userSkillRoot(),
+              remoteURLs: tsRuntimeConfig?.skills.urls,
+              onLoad: (skill, output, context) => {
+                const owner = context.sessionID
+                  ? executionBySession.get(context.sessionID as SessionID)
+                  : undefined;
+                if (!owner) return;
+                owner.activeSkill = skill;
+                if (owner === activeExec) activeSkill = skill;
+                owner.context.add({
+                  id: `skill:${skill.qualifiedName}:${owner.context.journalStatus().journalOffset}`,
+                  role: "system",
+                  content: output,
+                });
+              },
+            },
+          }
+        : {}),
+    });
+    for (const entry of builtinPlugins) {
+      if (!entry.enabled) continue;
       await pluginsController.loadBuiltin(
-        createSkillsPlugin({
-          workspaceRoot,
-          userRoot: userSkillRoot(),
-          remoteURLs: tsRuntimeConfig?.skills.urls,
-          onLoad: (skill, output, context) => {
-            const owner = context.sessionID
-              ? executionBySession.get(context.sessionID as SessionID)
-              : undefined;
-            if (!owner) return;
-            owner.activeSkill = skill;
-            if (owner === activeExec) activeSkill = skill;
-            owner.context.add({
-              id: `skill:${skill.qualifiedName}:${owner.context.journalStatus().journalOffset}`,
-              role: "system",
-              content: output,
-            });
-          },
-        }),
+        entry.create(),
+        tsRuntimeConfig?.plugins.settings[entry.id],
       );
+    }
     if (extensionEnabled("plugins")) await pluginsController.loadLocal();
     await terminalController.init();
     terminalController.setActiveSession(sessionID);
@@ -7925,21 +7963,32 @@ export function createRealRuntimeClient(
       mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
       dataURL: string;
     }> = [];
+    const pendingPdfs: Array<{
+      mediaType: "application/pdf";
+      dataURL: string;
+    }> = [];
     const exec =
       executionBySession.get(turnSession.get(turnID) ?? sessionID) ??
       activeExec;
-    const attachImage = async (path: string) => {
-      if (!currentModelImageInput(exec))
-        throw new Error(
-          "the selected model does not support image input — set models.<name>.capabilities.imageInput",
-        );
-      const mediaType = mediaTypeForImage(path);
-      const bytes = await readFile(resolve(workspaceRoot, path));
-      pendingImages.push({
-        mediaType,
-        dataURL: `data:${mediaType};base64,${bytes.toString("base64")}`,
-      });
-    };
+    const attachImage = currentModelImageInput(exec)
+      ? async (path: string) => {
+          const mediaType = mediaTypeForImage(path);
+          const bytes = await readFile(resolve(workspaceRoot, path));
+          pendingImages.push({
+            mediaType,
+            dataURL: `data:${mediaType};base64,${bytes.toString("base64")}`,
+          });
+        }
+      : undefined;
+    const attachPdf = currentModelPdfInput(exec)
+      ? async (path: string) => {
+          const bytes = await readFile(resolve(workspaceRoot, path));
+          pendingPdfs.push({
+            mediaType: "application/pdf",
+            dataURL: `data:application/pdf;base64,${bytes.toString("base64")}`,
+          });
+        }
+      : undefined;
     // D2: a tool segment belongs to the session its turn was submitted to. The
     // local bindings shadow the activity-scoped globals for the whole segment,
     // so every publish lands in that session's journal with its stamp, and the
@@ -8074,15 +8123,13 @@ export function createRealRuntimeClient(
         call,
         resolved.tool,
         attachImage,
+        attachPdf,
       );
       messages.push({
         role: "tool",
         toolCallID: call.id,
         toolName: call.name,
         content: toolResultContent(result, call.id, options.taskModuleContext),
-        // B: an image the model attached travels on the tool message, so the
-        // next provider step shows it back to the model.
-        ...(pendingImages.length ? { images: pendingImages.splice(0) } : {}),
       });
       execContext.add({
         id: `${turnID}:${call.id}:result`,
@@ -8091,6 +8138,15 @@ export function createRealRuntimeClient(
         pairID: call.id,
       });
     }
+    if (pendingImages.length || pendingPdfs.length)
+      messages.push({
+        role: "user",
+        content: pendingPdfs.length
+          ? "The original PDF is attached as the result of the preceding tool call. Read every selected page in order using native document understanding. Do not claim that local OCR or page-image rendering was used."
+          : "Rendered page images are attached as the result of the preceding tool call. Read every image in attachment order. A visual attachment means the PDF text extractor found little text or vision was explicitly requested; it does not by itself prove the page is scanned. Do not claim that local OCR was used.",
+        ...(pendingImages.length ? { images: pendingImages } : {}),
+        ...(pendingPdfs.length ? { pdfs: pendingPdfs } : {}),
+      });
     return messages;
   }
 
@@ -8190,6 +8246,7 @@ export function createRealRuntimeClient(
     call: ProviderToolCall,
     tool: RuntimeTool,
     attachImage?: (path: string) => Promise<void>,
+    attachPdf?: (path: string) => Promise<void>,
   ) {
     // D2: same shadowing as `executeToolCalls` — this segment's events and
     // ledger belong to the turn's session.
@@ -8495,6 +8552,7 @@ export function createRealRuntimeClient(
               nativeTerminal: terminalController.get(),
               sandboxes: sandboxController.get(),
               ...(attachImage ? { attachImage } : {}),
+              ...(attachPdf ? { attachPdf } : {}),
               workspaceReadAuthorize: (request) =>
                 authorizeWorkspaceRead(request, exec),
               sandboxMergeAuthorize: (request) =>
@@ -8779,7 +8837,7 @@ export function createRealRuntimeClient(
 
   async function authorizeWorkspaceRead(
     input: {
-      toolName: "glob" | "grep";
+      toolName: string;
       paths: string[];
     },
     exec: SessionExecutionState | undefined = activeExec,
@@ -8898,34 +8956,47 @@ async function resolveContextStatusConfig(
     selectedRef ?? config.defaultModel!,
   );
   if (!effective) return defaultContextStatusConfig();
-  const providerConfig = config.providers[effective.providerID];
+  const executingModel = provider?.model ?? effective.ref.model;
+  const selectionMatchesProvider = executingModel === effective.ref.model;
+  const executingProvider = selectionMatchesProvider
+    ? effective.providerID
+    : (provider?.provider ?? effective.providerID);
+  const providerConfig = config.providers[executingProvider];
+  const canProbeExecutingProvider =
+    selectionMatchesProvider || !!providerConfig;
   const contextWindow = await resolver.resolve({
-    provider: effective.providerID,
-    model: effective.ref.model,
+    provider: executingProvider,
+    model: executingModel,
     baseURL: providerConfig?.connection?.baseURL,
     apiKey: providerConfig?.connection?.apiKey,
-    explicitContextWindow: effective.limits.contextWindow,
+    explicitContextWindow: selectionMatchesProvider
+      ? effective.limits.contextWindow
+      : undefined,
     providerAdapter:
       config.context.autoDetectWindow &&
-      provider?.model === effective.ref.model &&
+      canProbeExecutingProvider &&
       shouldProbeProviderMetadata(providerConfig?.connection?.baseURL)
         ? provider
         : undefined,
     useModelsDevCatalog: config.context.autoDetectWindow,
   });
   const catalog = config.context.autoDetectWindow
-    ? await modelsDevModelLimits(effective.providerID, effective.ref.model)
+    ? await modelsDevModelLimits(executingProvider, executingModel)
     : undefined;
   const providerMetadata =
-    catalog || !shouldProbeProviderMetadata(providerConfig?.connection?.baseURL)
+    catalog ||
+    !canProbeExecutingProvider ||
+    !shouldProbeProviderMetadata(providerConfig?.connection?.baseURL)
       ? undefined
       : await provider?.listModels?.().catch(() => undefined);
   const discoveredOutput = providerMetadata?.find(
-    (model) => model.id === effective.ref.model,
+    (model) => model.id === executingModel,
   )?.maxOutputTokens;
   const reserved = resolveReservedOutputTokens({
     configuredReserved: config.context.reservedOutputTokens,
-    explicitMaxOutputTokens: effective.limits.maxOutputTokens,
+    explicitMaxOutputTokens: selectionMatchesProvider
+      ? effective.limits.maxOutputTokens
+      : undefined,
     providerOutputLimit: discoveredOutput,
     catalogOutputLimit: catalog?.maxOutputTokens,
     contextWindow: contextWindow.tokens,

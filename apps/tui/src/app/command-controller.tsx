@@ -104,6 +104,7 @@ import {
 import { PromptHistory, shouldUseHistory } from "../prompt/history";
 import type { TuiPreferences } from "../settings";
 import {
+  parseCompactionThreshold,
   parseSettingsStringRecord,
   parseSettingsRecord,
 } from "./settings-utils";
@@ -666,7 +667,7 @@ export async function runCommand(command: string, ctx: CommandContext) {
       {
         title: "Runtime Config",
         value: "runtime",
-        description: "Max steps, retry, terminal window",
+        description: "Max steps, retry, compaction, terminal window",
       },
       {
         title: "TUI Preferences",
@@ -2126,6 +2127,11 @@ export async function runCommand(command: string, ctx: CommandContext) {
                         : "Off",
                     },
                     {
+                      title: "Compaction Threshold",
+                      value: "compact-threshold",
+                      description: `${resolved.context?.compactionThresholdPercent ?? 85}% of current model context`,
+                    },
+                    {
                       title: "Terminal Window",
                       value: "window-mode",
                       description: String(
@@ -2138,6 +2144,30 @@ export async function runCommand(command: string, ctx: CommandContext) {
                     if (opt.value === "compact") {
                       next.context!.compactionEnabled =
                         !next.context!.compactionEnabled;
+                      void saveConfig(next);
+                      return;
+                    }
+                    if (opt.value === "compact-threshold") {
+                      const value = await DialogPrompt.show(
+                        ctx.dialog,
+                        "Compaction threshold (%)",
+                        {
+                          placeholder: String(
+                            next.context!.compactionThresholdPercent,
+                          ),
+                        },
+                      );
+                      if (value == null) return;
+                      const threshold = parseCompactionThreshold(value);
+                      if (threshold === undefined) {
+                        ctx.toast.show({
+                          variant: "warning",
+                          message:
+                            "Compaction threshold must be an integer from 50 to 99",
+                        });
+                        return;
+                      }
+                      next.context!.compactionThresholdPercent = threshold;
                       void saveConfig(next);
                       return;
                     }

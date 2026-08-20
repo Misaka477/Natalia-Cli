@@ -441,7 +441,7 @@ test("glob and grep preflight every exposed or read workspace path", async () =>
   const context = {
     workspaceRoot: root,
     workspaceReadAuthorize: async (input: {
-      toolName: "glob" | "grep";
+      toolName: string;
       paths: string[];
     }) => {
       checks.push(input);

@@ -98,7 +98,7 @@ export type ToolExecutionContext = {
   nativeTerminal?: NativeTerminalRegistry;
   sandboxes?: WorkspaceSandboxManager;
   workspaceReadAuthorize?: (input: {
-    toolName: "glob" | "grep";
+    toolName: string;
     paths: string[];
   }) => Promise<void>;
   /**
@@ -117,6 +117,8 @@ export type ToolExecutionContext = {
    * capability; absent = images cannot be attached.
    */
   attachImage?: (path: string) => Promise<void>;
+  /** Attaches a PDF to the next provider step for native model understanding. */
+  attachPdf?: (path: string) => Promise<void>;
   sandboxMergeAuthorize?: (input: {
     id: string;
     paths: string[];

@@ -21,3 +21,10 @@ export function parseSettingsRecord(value: string) {
     return undefined;
   }
 }
+
+export function parseCompactionThreshold(value: string) {
+  const threshold = Number(value.trim());
+  return Number.isInteger(threshold) && threshold >= 50 && threshold <= 99
+    ? threshold
+    : undefined;
+}

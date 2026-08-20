@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@natalia/tool-pdf",
+  "version": "0.0.0-m13",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "1.0.7",
+    "@natalia/plugin": "workspace:*",
+    "@natalia/tools": "workspace:*",
+    "pdfjs-dist": "6.2.108"
+  }
+}

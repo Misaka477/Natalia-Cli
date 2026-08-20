@@ -15,6 +15,7 @@
     { "path": "packages/config" },
     { "path": "packages/platform" },
     { "path": "packages/tools" },
+    { "path": "packages/tool-pdf" },
     { "path": "packages/terminal" },
     { "path": "packages/terminal" },
     { "path": "packages/sandbox" },

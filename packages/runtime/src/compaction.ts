@@ -104,6 +104,7 @@ export type CompactionOptions = {
   thresholdPercent: number;
   reservedTokens: number;
   preservedRecentMessages: number;
+  beforeTokens?: number;
   instruction?: string;
   enabled?: boolean;
   force?: boolean;
@@ -139,7 +140,7 @@ export async function compactContext(
     compactedEntries.every((entry) => entry.role === "summary")
   )
     return { compacted: false, skipped: "nothing_to_compact" as const };
-  const beforeTokens = ledger.effectiveTokens();
+  const beforeTokens = options.beforeTokens ?? ledger.effectiveTokens();
   const started = options.now?.() ?? new Date();
   options.onEvent?.({
     type: "compaction.begin",
